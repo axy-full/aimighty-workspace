@@ -8,6 +8,7 @@ import { workbenchScopeFor } from "@/lib/workbench/request-scope";
 import { CONSUMER_VIDEO_MODES, CONSUMER_VIDEO_RATIOS, CONSUMER_VIDEO_RESOLUTIONS, consumerVideoInputSchema, type ConsumerVideoInput } from "@/lib/higgsfield-consumer/video-contract";
 import { awaitingReconciliation, setAsideUnconfirmed, SET_ASIDE_LABEL } from "@/lib/higgsfield-consumer/job-state";
 import styles from "./consumer-marketing-video.module.css";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 type Job = {
   id: string; draftId: string; status: "quoted" | "dispatching" | "accepted" | "uncertain" | "failed" | "completed";
@@ -176,7 +177,7 @@ export function ConsumerMarketingVideo({ project, scope, enabled, onSave, onAsse
     const token = lifecycle.current;
     pending.current = true; setBusy(action); setError(""); setNotice("");
     try {
-      if (action === "quote" && onSave && !await onSave()) throw new Error("Save this project before requesting a video quote.");
+      if (action === "quote" && onSave && !await onSave()) throw new SaveFailedError();
       if (!live.current || lifecycle.current !== token) return;
       if (action === "submit") {
         const next = [...new Set([...attemptIds.current, job!.id])].slice(-100);

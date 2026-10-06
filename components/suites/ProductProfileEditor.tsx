@@ -7,6 +7,7 @@ import { saveProduct, switchProduct } from "@/lib/workbench/moleculr-creative";
 import type { Asset, Project } from "@/lib/workbench/studio";
 import type { ProductExtraction } from "@/lib/workbench/product-extraction-types";
 import styles from "./moleculr-creative.module.css";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 export function ProductProfileEditor({
   project,
@@ -79,7 +80,7 @@ export function ProductProfileEditor({
       if (!["https:", "http:"].includes(url.protocol))
         throw new Error("Use a public http or https product page.");
       if (onSave && !(await onSave()))
-        throw new Error("Save this project before reading the product page.");
+        throw new SaveFailedError();
       if (!alive.current) return;
       const response = await fetch("/api/workbench/moleculr/extract-product", {
         method: "POST",

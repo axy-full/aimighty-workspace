@@ -6,6 +6,7 @@ import type { MediaIdentity } from "@/lib/genjutsuRequest";
 import type { DispatchRequest } from "@/lib/workspace/generate-submit";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import type { TakeStage, TakeStatus } from "@/lib/workspace/takes";
+import { SAVING_NOW } from "../workbench/save-then-continue";
 
 /**
  * Viral = Genjutsu, on Particl's API key for every
@@ -92,7 +93,7 @@ export function moveReference(state: ViralState, id: string, dir: -1 | 1): Viral
  */
 export function viralBlock(state: ViralState, extra: { hasProject: boolean; saved: boolean }): string | null {
   if (!extra.hasProject) return "Open a project first.";
-  if (!extra.saved) return "Save this project first.";
+  if (!extra.saved) return SAVING_NOW;
   if (!state.source) return `Add one source video (${SOURCE_SECONDS.min}–${SOURCE_SECONDS.max} s).`;
   if (!state.references.length) return "Add at least one reference image.";
   if (state.references.length > REFERENCE_MAX) return `Up to ${REFERENCE_MAX} reference images: remove ${state.references.length - REFERENCE_MAX}.`;

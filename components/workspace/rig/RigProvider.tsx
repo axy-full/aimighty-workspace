@@ -35,6 +35,8 @@ import { videoReferenceProblem } from "@/lib/generationReferences";
 import { useTeamCanvas, type TeamCanvasApi } from "./use-team-canvas";
 import { useCutouts, type CutoutsApi } from "./use-cutouts";
 import { useBoardOpen } from "@/lib/board/active";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
+import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
 
 /**
  * The Rig's live state, shared by the shot list, the node graph, the
@@ -582,7 +584,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
         if (settled.state === "lost") earlier = settled.reason;
         /* Mapping, references and the request body are the shot's as it is now; the re-quote,
            the gate and the paid POST are the shared dispatch (generate-submit). */
-        if (!(await flush()) || draftRef.current?.project.id !== draftId) throw new Error("Save your latest work before generating.");
+        if (!(await flush()) || draftRef.current?.project.id !== draftId) throw new SaveFailedError();
         const mapping = await studioRequest<unknown>(`${API}/projects`, {
           method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
           body: JSON.stringify({ action: "map-shot", projectId: draftId, nodeId: shot.id }),
@@ -746,7 +748,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     const node = current?.project.nodes.find((n) => n.id === id);
     const productionId = current?.project.productionProjectId;
     if (!current || !node) return "That card is no longer on the canvas.";
-    if (!productionId) return "Save this project before locking a master.";
+    if (!productionId) return SAVING_NOW;
     const problem = lockProblem(node, current.project, !!node.elementId && mastersRef.current.has(node.elementId));
     if (problem) return problem;
     /* The card as this window shows it reaches the team canvas first: the lock reads it there. */

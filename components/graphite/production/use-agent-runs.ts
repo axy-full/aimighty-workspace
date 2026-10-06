@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { clearDevelopment, developmentInput, readDevelopment, recordDevelopment, withDevelopmentLock, type PendingDevelopment } from "@/lib/workbench/development-client";
 import type { DevelopmentJob, DevelopmentQuote, DevelopmentRequest, DevelopmentState } from "@/lib/workbench/development-types";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 const ENDPOINT = "/api/workbench/development";
 export type AgentRequest = Omit<DevelopmentRequest, "projectId" | "requestId" | "sourceHash" | "maxCredits" | "maxUsd">;
@@ -64,7 +65,7 @@ export function useAgentRuns({ scope, projectId, save }: { scope: string; projec
   const estimate = useCallback(async (request: AgentRequest) => {
     setBusy("Estimating…"); setError(""); setQuote(null);
     try {
-      if (!(await saveRef.current())) throw new Error("Save the project before asking the agent for an estimate.");
+      if (!(await saveRef.current())) throw new SaveFailedError();
       const input: DevelopmentRequest = { ...request, projectId, requestId: crypto.randomUUID() };
       const value = await studioRequest<DevelopmentQuote>(ENDPOINT, { method: "POST", headers: headers(), body: JSON.stringify({ ...input, quoteOnly: true }) });
       if (active.current) setQuote({ value, input });

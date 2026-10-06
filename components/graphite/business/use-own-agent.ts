@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ThinkingModel } from "@/components/atomik/ModelPicker";
 import type { AtomikJob } from "@/lib/workbench/atomik-server";
+import { saveMessage } from "@/lib/workbench/save-then-continue";
 
 type AgentState = { configured: boolean; models: ThinkingModel[]; jobs: AtomikJob[] };
 
@@ -23,7 +24,7 @@ export function useOwnAgent(scope: string, projectId: string, active: boolean) {
     try {
       const response = await fetch(`/api/workbench/atomik?projectId=${encodeURIComponent(projectId)}`, { cache: "no-store", headers: { "X-Workbench-Scope": scope } });
       const value = await response.json().catch(() => null) as Partial<AgentState> & { error?: string } | null;
-      if (!response.ok) throw new Error(value?.error || "The agent’s runs could not be read.");
+      if (!response.ok) throw new Error(saveMessage(value?.error || "The agent’s runs could not be read."));
       const data: AgentState = { configured: Boolean(value?.configured), models: Array.isArray(value?.models) ? value!.models! : [], jobs: Array.isArray(value?.jobs) ? value!.jobs! : [] };
       if (sequence.current === own) setState({ key, data });
     } catch (error) {

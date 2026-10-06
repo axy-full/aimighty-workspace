@@ -36,8 +36,8 @@ test("only a stored original is actionable: a take in flight, held, failed, stop
 });
 
 test("an unsaved project cannot re-edit or edit yet; a file with no picture or sound has no next tool; unknown kinds none", () => {
-  expect(nextActions(one([gen("g")]), { saved: false })[0]).toMatchObject({ enabled: false, why: "Save the project first." });
-  expect(nextActions(one([gen("v", { kind: "video" })]), { saved: false })[0]).toMatchObject({ enabled: false, why: "Save the project first." });
+  expect(nextActions(one([gen("g")]), { saved: false })[0]).toMatchObject({ enabled: false, why: "Saving this project…" });
+  expect(nextActions(one([gen("v", { kind: "video" })]), { saved: false })[0]).toMatchObject({ enabled: false, why: "Saving this project…" });
   expect(nextActions(one([], [up("u_doc", { mime: "application/pdf", kind: "file", filename: "script.pdf" })]), saved)).toEqual([]);
   expect(nextActions(one([gen("m", { kind: "model" })]), saved)).toEqual([]);
   /* An upload the browser cannot show inline has no stored picture to open the tools on. */

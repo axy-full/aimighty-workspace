@@ -337,7 +337,7 @@ test("what cannot go says why and sends nothing: a sound's actions are not offer
   const unsaved = await open(page, "/suites?suite=atomik&page=agent&sp=agent", false);
   const still = await inspect(page, info, "generation:gen_still");
   for (const id of ["re-edit", "upscale", "outpaint", "animate"]) await expect(still.getByTestId(`next-${id}`)).toBeDisabled();
-  await expect(still.getByTestId("next-why")).toHaveText("Save the project first.");
+  await expect(still.getByTestId("next-why")).toHaveText("Saving this project…");
   expect(unsaved.server.quotes).toEqual([]);
   expect([...errors, ...unsaved.errors]).toEqual([]);
 });

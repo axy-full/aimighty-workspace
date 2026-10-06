@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from './ui/button';
 import { studioRequest } from './GenerationDialog';
 import styles from './soul-identity-panel.module.css';
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 const endpoint = '/api/soul/identities';
 const statusLabels: Record<SoulIdentity['status'], string> = {
@@ -54,7 +55,7 @@ export function SoulIdentityPanel({ project, subjectType, assetId, scope, enable
     const started = epoch.current;
     setRefreshing(true);
     try {
-      if (!(await callbacks.current.onSave())) throw new Error('Save this project before loading its identities.');
+      if (!(await callbacks.current.onSave())) throw new SaveFailedError();
       if (!alive.current || started !== epoch.current) return;
       const value = await studioRequest<SoulIdentityState>(`${endpoint}?${new URLSearchParams({ projectId: project.id })}`, { headers: { 'X-Workbench-Scope': scope }, cache: 'no-store' });
       if (alive.current && started === epoch.current) { setState(value); setError(''); }
@@ -88,7 +89,7 @@ export function SoulIdentityPanel({ project, subjectType, assetId, scope, enable
         if (paid.pending.url !== endpoint || body.projectId !== project.id) throw new Error('Return to the original project to recover this training request.');
       } else {
         if (!state?.configured || !terms || !price || !consent || !name.trim() || references.length < terms.minPhotos || references.length > terms.maxPhotos) throw new Error('Add the required portraits, name and consent before training.');
-        if (!(await callbacks.current.onSave())) throw new Error('Save this project before training an identity.');
+        if (!(await callbacks.current.onSave())) throw new SaveFailedError();
         if (!alive.current) return;
         body = { projectId: project.id, name: name.trim(), description: description.trim(), subjectType, references, consent: true,
           ...(typeof credits === 'number' ? { maxCredits: credits } : { maxUsd: dollars }) };

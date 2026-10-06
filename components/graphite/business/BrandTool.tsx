@@ -6,6 +6,7 @@ import { EMPTY_BRAND_KIT, brandKitSchema, type BrandKit } from "@/lib/workbench/
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { OWN_LIMITS } from "@/lib/shell/business-own";
 import { CardHead, Field, PicturePicker, Said, SaveLine, adoptEntry, briefOf, changeBrief, importToDraft, refreshLibrary, uploadToDraft, useLatest, useWork, type OwnEditor } from "./own-kit";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 const FONTS: [BrandKit["font"], string][] = [["system", "System"], ["geometric", "Geometric"], ["editorial", "Editorial"]];
 const HEX = /^#[\da-f]{6}$/i;
@@ -41,7 +42,7 @@ export function BrandTool({ scope, editor, items, initial }: { scope: string; ed
     let parsed: URL;
     try { parsed = new URL(url); } catch { throw new Error("Enter the brand’s website, starting with https://"); }
     if (!["https:", "http:"].includes(parsed.protocol)) throw new Error("Use a public http or https website.");
-    if (!(await editor.ensureSaved())) throw new Error("Save the project before reading its brand website.");
+    if (!(await editor.ensureSaved())) throw new SaveFailedError();
     reading.current?.abort();
     const abort = new AbortController();
     reading.current = abort;

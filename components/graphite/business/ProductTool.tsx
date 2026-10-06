@@ -7,6 +7,7 @@ import type { ProductExtraction } from "@/lib/workbench/product-extraction-types
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { OWN_LIMITS, chooseProduct, productLabel, unsavedProduct } from "@/lib/shell/business-own";
 import { CardHead, Field, PicturePicker, Said, SaveLine, adoptEntry, briefOf, changeBrief, importToDraft, refreshLibrary, uploadToDraft, useLatest, useWork, type OwnEditor } from "./own-kit";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 const BLANK: Partial<MoleculrBrief> = { activeProductId: undefined, productName: "", productUrl: "", productDescription: "", productBrand: "", productAssetIds: [], productSource: undefined };
 
@@ -62,7 +63,7 @@ export function ProductTool({ scope, editor, items, initial }: { scope: string; 
     let url: URL;
     try { url = new URL(brief.productUrl.trim()); } catch { throw new Error("Enter the product page, starting with https://"); }
     if (!["https:", "http:"].includes(url.protocol)) throw new Error("Use a public http or https product page.");
-    if (!(await editor.ensureSaved())) throw new Error("Save this project before reading the product page.");
+    if (!(await editor.ensureSaved())) throw new SaveFailedError();
     reading.current?.abort();
     const abort = new AbortController();
     reading.current = abort;

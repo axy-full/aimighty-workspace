@@ -53,7 +53,7 @@ test("the well takes exactly one 4–30 s video at index 0 and up to 8 ordered i
 
 test("the primary says why it cannot run, in order, and never asks for a connected account", () => {
   expect(viralBlock(INITIAL_VIRAL, { ...ready, hasProject: false })).toBe("Open a project first.");
-  expect(viralBlock(INITIAL_VIRAL, { ...ready, saved: false })).toBe("Save this project first.");
+  expect(viralBlock(INITIAL_VIRAL, { ...ready, saved: false })).toBe("Saving this project…");
   expect(viralBlock(INITIAL_VIRAL, ready)).toBe("Add one source video (4–30 s).");
   const withSource = addMedia(INITIAL_VIRAL, video("src", 10)).state;
   expect(viralBlock(withSource, ready)).toBe("Add at least one reference image.");

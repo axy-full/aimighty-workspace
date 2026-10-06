@@ -201,7 +201,7 @@ test("a take that did not render, a file with nothing to edit, and an unsaved pr
   await assets(page, info);
   await tile(page, "generation:gen_still").click();
   await expect(page.getByTestId("inspector").getByTestId("next-re-edit")).toBeDisabled();
-  await expect(page.getByTestId("inspector").getByTestId("next-why")).toHaveText("Save the project first.");
+  await expect(page.getByTestId("inspector").getByTestId("next-why")).toHaveText("Saving this project…");
   if (!WIDE.includes(info.project.name)) await page.getByTestId("close-inspector").click();
   await assets(page, info);
   await tile(page, "upload:up_script").click();
