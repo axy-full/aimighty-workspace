@@ -73,8 +73,9 @@ test("a shot dragged to a new place in Shots reorders the draft; ⌘Z puts the o
   const first = page.locator('[data-card-id="node-shot0001"]'), second = page.locator('[data-card-id="node-shot0002"]');
   await expect(second).toBeInViewport();
   await page.waitForTimeout(500);
-  const eyebrow = (id: string) => page.locator(`[data-card-id="${id}"] .bd-eyebrow`);
-  await expect(eyebrow("node-shot0001")).toHaveText("Shot 1");
+  /* A shot card names its place in the draft: "Shot 1 · <its framing>" (Stream 5's take card, gx-take-name). */
+  const eyebrow = (id: string) => page.locator(`[data-card-id="${id}"] .gx-take-name`);
+  await expect(eyebrow("node-shot0001")).toHaveText("Shot 1 · Opening wide");
   const a = (await first.boundingBox())!, b = (await second.boundingBox())!;
   expect(b.x).toBeGreaterThan(a.x);
 
@@ -89,19 +90,19 @@ test("a shot dragged to a new place in Shots reorders the draft; ⌘Z puts the o
 
   /* The draft's order changed: the second shot is Shot 1, and sits first. */
   await expect(page.getByTestId("board-slot")).toHaveCount(0);
-  await expect(eyebrow("node-shot0002")).toHaveText("Shot 1");
-  await expect(eyebrow("node-shot0001")).toHaveText("Shot 2");
+  await expect(eyebrow("node-shot0002")).toHaveText("Shot 1 · The first stall");
+  await expect(eyebrow("node-shot0001")).toHaveText("Shot 2 · Opening wide");
   await expect.poll(async () => (await second.boundingBox())!.x).toBeLessThan((await first.boundingBox())!.x);
 
   await undo(page);
-  await expect(eyebrow("node-shot0001")).toHaveText("Shot 1");
-  await expect(eyebrow("node-shot0002")).toHaveText("Shot 2");
+  await expect(eyebrow("node-shot0001")).toHaveText("Shot 1 · Opening wide");
+  await expect(eyebrow("node-shot0002")).toHaveText("Shot 2 · The first stall");
 
   /* A press that does not move, or a small wobble, is a click: the order stays and the card is selected. */
   const c = (await second.boundingBox())!;
   await page.mouse.click(c.x + c.width / 2, c.y + c.height / 2);
   await expect(second).toHaveAttribute("data-selected", "true");
-  await expect(eyebrow("node-shot0001")).toHaveText("Shot 1");
+  await expect(eyebrow("node-shot0001")).toHaveText("Shot 1 · Opening wide");
   expect(paid).toEqual([]);
 });
 
@@ -117,8 +118,10 @@ test("a lasso of free cards moves together onto the dots, and ⌫ takes them off
   await page.waitForTimeout(600);
   const one = page.locator('[data-card-id="node-note0002"]'), two = page.locator('[data-card-id="node-note0003"]');
   const was = { one: await placeOf(page, "node-note0002"), two: await placeOf(page, "node-note0003") };
-  await one.click();
-  await two.click({ modifiers: ["Shift"] });
+  /* The Inspector opens over the right edge on the first press and floats over the canvas (by design), so the
+     right-hand card is pressed first and the Shift-click lands on the left-hand one, which it does not cover. */
+  await two.click();
+  await one.click({ modifiers: ["Shift"] });
   await expect(page.locator(".bd-node[data-selected]")).toHaveCount(2);
   const box = (await one.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
