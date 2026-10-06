@@ -3,7 +3,7 @@ import type { Client, InStatement, Transaction } from "@libsql/client";
 import { db, now, ready } from "@/lib/db";
 import type { PreparedAdmission } from "../admissionTypes";
 import type { CanvasOp, OpOutcome } from "./canvas-ops-model";
-import { PLAN_APPROVAL_SCHEMA } from "./plan-approval";
+import { PLAN_APPROVAL_GUARDS, PLAN_APPROVAL_SCHEMA } from "./plan-approval";
 import type { CompiledPlan, RigAgentMode, RigAgentState, RigAgentStepState, StepTool } from "./rig-agent-plan";
 
 /*
@@ -89,6 +89,8 @@ const SCHEMA = [
    )`,
   /* A plan approved once (lib/workbench/plan-approval.ts): one row per run, written by a person only. */
   PLAN_APPROVAL_SCHEMA,
+  /* Its person-only rule, also on a table made before the CHECK matched the function (additive triggers). */
+  ...PLAN_APPROVAL_GUARDS,
 ];
 
 /** Additive columns for paid work, on tables an earlier version may already have made. */

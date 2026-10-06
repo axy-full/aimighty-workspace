@@ -229,6 +229,39 @@ test("the pure rules: only a person approves; the quote is the server's prices s
   expect(pa.fixRoom({ ...approval, fixes: { "1": [9, 11] } }, 1)).toEqual({ used: 2, left: 0, listed: true });
 });
 
+test("the table refuses exactly the approvers the function refuses (review L1): its CHECK on a new table, its guard triggers on a table made before", async () => {
+  const { isPersonApprover, PLAN_APPROVAL_SCHEMA, PLAN_APPROVAL_GUARDS } = await import("../../lib/workbench/plan-approval");
+  const { createClient } = await import("@libsql/client");
+  const ids = [
+    "agent:rar_1", "AGENT:rar_1", "Agent:x", "mcp:x", "MCP:x", "token:x", "auto", "AUTO", "Auto", "auto:x", "plan:x", "PLAN:x", "system:x", "cron:x", "worker:x",
+    " ana", "ana ", "\tana", "ana\n", "\u00a0ana", "ana\ufeff", "", " ", "ana", "u_123", "user-7", "automaton", "planner", "agentx",
+  ];
+  const insert = (c: ReturnType<typeof createClient>, id: string, n: number) =>
+    c.execute({ sql: "INSERT INTO rig_plan_approvals(id,run_id,production_id,approved_by,approved_at,expires_at,fingerprint,steps,total_tenths,ceiling_tenths,limit_credits,created_at) VALUES(?,?,'p',?,0,1,'f','[]',1,2,1,0)", args: [`a${n}`, `r${n}`, id] })
+      .then(() => true, () => false);
+  /* A new table: its CHECK. */
+  const fresh = createClient({ url: `file:${path.join(dir, "check-fresh.db")}` });
+  await fresh.execute(PLAN_APPROVAL_SCHEMA);
+  /* A table made before, with the earlier, weaker CHECK: the triggers refuse what the CHECK lets through. */
+  const older = createClient({ url: `file:${path.join(dir, "check-older.db")}` });
+  await older.execute(PLAN_APPROVAL_SCHEMA.replace(/CHECK \(NOT [\s\S]*\)\n\)$/, "CHECK (approved_by <> '' AND approved_by <> 'auto' AND approved_by NOT LIKE 'agent:%' AND approved_by NOT LIKE 'mcp:%' AND approved_by NOT LIKE 'token:%')\n)"));
+  expect((await older.execute("SELECT sql FROM sqlite_master WHERE name='rig_plan_approvals'")).rows[0].sql).toContain("approved_by <> 'auto'");
+  for (const guard of PLAN_APPROVAL_GUARDS) { await older.execute(guard); await older.execute(guard); }
+  const mismatched: string[] = [];
+  let n = 0;
+  for (const id of ids) {
+    const fn = isPersonApprover(id);
+    const [a, b] = [await insert(fresh, id, n), await insert(older, id, n)];
+    n++;
+    if (a !== fn || b !== fn) mismatched.push(`${JSON.stringify(id)}: function ${fn}, new table ${a}, older table ${b}`);
+  }
+  expect(mismatched).toEqual([]);
+  /* A change of approver is held to the same rule. */
+  await expect(fresh.execute("UPDATE rig_plan_approvals SET approved_by='Worker:x' WHERE approved_by='ana'")).rejects.toThrow();
+  await expect(older.execute("UPDATE rig_plan_approvals SET approved_by='Worker:x' WHERE approved_by='ana'")).rejects.toThrow(/Only a person approves spending/);
+  fresh.close(); older.close();
+});
+
 test("one approval covers exactly the plan: the gate shows the server's total (the card's figures are its figures), the person approves once, and every listed render goes with no further tap", async () => {
   await inRun("once", async (ws) => {
     const { agent, r, deps, runId, run } = await atGate(ws, (shot) => (shot === "1" ? 0.3 : 0.45));
@@ -303,8 +336,8 @@ test("an agent, an MCP caller, a token or a teammate cannot approve a plan or dr
     const { db } = await import("../../lib/db");
     expect((await db().execute({ sql: "SELECT COUNT(*) AS n FROM rig_plan_approvals WHERE run_id=?", args: [runId] })).rows[0].n).toBe(0);
     expect(r.calls).toEqual([]);
-    /* The table itself refuses a machine as the approver. */
-    await expect(db().execute({ sql: "INSERT INTO rig_plan_approvals(id,run_id,production_id,approved_by,approved_at,expires_at,fingerprint,steps,total_tenths,ceiling_tenths,limit_credits,created_at) VALUES('rpa_m','rar_m','prod-1',?,0,1,'f','[]',1,2,1,0)", args: [ATOMIK(runId)] })).rejects.toThrow(/CHECK/i);
+    /* The table itself refuses a machine as the approver (its guard trigger, and its CHECK behind it). */
+    await expect(db().execute({ sql: "INSERT INTO rig_plan_approvals(id,run_id,production_id,approved_by,approved_at,expires_at,fingerprint,steps,total_tenths,ceiling_tenths,limit_credits,created_at) VALUES('rpa_m','rar_m','prod-1',?,0,1,'f','[]',1,2,1,0)", args: [ATOMIK(runId)] })).rejects.toThrow(/CHECK|Only a person approves spending/i);
     /* The route: a session only (tokens are refused by requireSession), and both actions only through it. */
     const { readFileSync } = await import("node:fs");
     const route = readFileSync(path.join(process.cwd(), "app/api/workbench/team-canvas/route.ts"), "utf8");

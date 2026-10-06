@@ -34,13 +34,27 @@ export const THIRD_FIX = `This shot has had its ${MAX_FIXES_PER_SHOT} fixes unde
 export const NOT_IN_PLAN = "Not in the approved plan, so it asks at its own price.";
 export const PRICE_MOVED = "This render's price changed since the plan was approved. Look at it again.";
 
+/** Approver id prefixes that name a machine, never a person. The function and the table's own check read this one list. */
+export const MACHINE_PREFIXES = ["agent", "mcp", "token", "auto", "plan", "system", "cron", "worker"] as const;
+const MACHINE = new RegExp(`^(${MACHINE_PREFIXES.join("|")}):`, "i");
+
 /** An approver id that names a person: never an agent's run, an MCP caller, a token, Auto or the system. */
 export function isPersonApprover(id: unknown): id is string {
   if (typeof id !== "string") return false;
   const value = id.trim();
   if (!value || value !== id) return false;
   if (value.toLowerCase() === "auto") return false;
-  return !/^(agent|mcp|token|auto|plan|system|cron|worker):/i.test(value);
+  return !MACHINE.test(value);
+}
+
+/**
+ * The same refusal in SQL, for the table's CHECK and its guard triggers: blank, padded with any whitespace
+ * String.prototype.trim removes, `auto` in any case, or a machine prefix in any case.
+ */
+const JS_WHITESPACE = "char(9,10,11,12,13,32,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288,65279)";
+export function notAPersonSql(column: string): string {
+  return `(${column} IS NULL OR ${column} = '' OR ${column} <> trim(${column}, ${JS_WHITESPACE}) OR lower(${column}) = 'auto' OR `
+    + MACHINE_PREFIXES.map((p) => `lower(${column}) LIKE '${p}:%'`).join(" OR ") + ")";
 }
 
 /* ── The quote ────────────────────────────────────────────────────────── */
@@ -176,8 +190,18 @@ export const PLAN_APPROVAL_SCHEMA = `CREATE TABLE IF NOT EXISTS rig_plan_approva
   closed_at INTEGER,
   closed_reason TEXT,
   created_at INTEGER NOT NULL,
-  CHECK (approved_by <> '' AND approved_by <> 'auto' AND approved_by NOT LIKE 'agent:%' AND approved_by NOT LIKE 'mcp:%' AND approved_by NOT LIKE 'token:%')
+  CHECK (NOT ${notAPersonSql("approved_by")})
 )`;
+
+/**
+ * The same rule for a table made before its CHECK matched the function (SQLite cannot change a CHECK in place, and a
+ * rebuild is not additive): triggers that refuse a machine approver on insert and on any change of approved_by.
+ * Created on first use beside the table; harmless on a table whose CHECK already refuses the same ids.
+ */
+export const PLAN_APPROVAL_GUARDS = (["INSERT", "UPDATE OF approved_by"] as const).map((event) =>
+  `CREATE TRIGGER IF NOT EXISTS rig_plan_approvals_person_${event === "INSERT" ? "insert" : "update"} BEFORE ${event} ON rig_plan_approvals
+   WHEN ${notAPersonSql("NEW.approved_by")}
+   BEGIN SELECT RAISE(ABORT, 'Only a person approves spending.'); END`);
 
 const parse = <T,>(text: unknown, fallback: T): T => { if (text == null) return fallback; try { return JSON.parse(String(text)) as T; } catch { return fallback; } };
 
