@@ -7,6 +7,7 @@ import type { BoardCtx } from "../cards/types";
 import { spendAttrsOf } from "@/lib/spend";
 import { usePriceTitle } from "../../Price";
 import { PriceWords } from "./PriceWords";
+import { ClientLink } from "@/components/graphite/security/ClientLink";
 
 /*
  * Crew review in the docked panel (design/particl-graphite/README.md § 3.1 m; lead decision 21): "Ask the crew" on
@@ -71,6 +72,8 @@ export function CrewReview({ ctx }: { ctx: BoardCtx }) {
           </div>
         </div>
       ))}
+      {/* The production's review set for a client who does not sign in (Gaps A, "Copy client link"). */}
+      <ClientLink productionId={ctx.productionId} toast={ctx.toast} />
     </div>
   );
 }

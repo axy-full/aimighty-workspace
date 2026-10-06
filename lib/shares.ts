@@ -3,6 +3,7 @@ import { platformDb, platformReady, getWorkspace } from "./platform";
 import type { TenantWorkspace } from "./tenant";
 import { mintTokenSecret, tokenHash } from "./auth";
 import { id as newId, now } from "./db";
+import { randomBytes } from "node:crypto";
 
 /**
  * Client review links (brief 2.6).
@@ -28,9 +29,11 @@ const rowToShare = (r: any): Share => ({
 
 export const shareLive = (s: Share, at = Date.now()): boolean => !s.revokedAt && s.expiresAt > at;
 
-export async function mintShare(input: { workspaceId: string; projectId: string; label?: string; days?: number; by: string; actorId?: string }): Promise<{ share: Share; token: string }> {
+export async function mintShare(input: { workspaceId: string; projectId: string; label?: string; days?: number; by: string; actorId?: string; neutral?: boolean }): Promise<{ share: Share; token: string }> {
   await platformReady();
-  const token = mintTokenSecret();
+  /* A Crew review client link (lib/security/review-link.ts) carries nothing but randomness: unlike the API-token
+     format, its secret never names the workspace in a URL that is sent to people outside it. */
+  const token = input.neutral ? `rv_${randomBytes(32).toString("base64url")}` : mintTokenSecret();
   const days = Math.max(1, Math.min(MAX_SHARE_DAYS, Math.round(input.days ?? SHARE_DAYS)));
   const sid = newId("shr"); const ts = now();
   await platformDb().batch([{
