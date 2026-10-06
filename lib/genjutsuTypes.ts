@@ -10,7 +10,11 @@ export const GENJUTSU_RESOLUTIONS = ["480p", "720p", "1080p"] as const;
 export type GenjutsuResolution = (typeof GENJUTSU_RESOLUTIONS)[number];
 export const GENJUTSU_LIMITS = {
   minSeconds: 4,
-  maxSeconds: 30,
+  /**
+   * The longest source clip Particl takes, for now (owner, 6 October 2026): 8 s keeps a 1080p take under the 200 cr ask line. The
+   * one number the picker, the quote and the send all read, so a longer clip is refused before any estimate (lib/genjutsu.ts).
+   */
+  maxSeconds: 8,
   minImages: 1,
   maxImages: 8,
   /** Object Swap needs at least this many pixels in each source frame (width × height). */

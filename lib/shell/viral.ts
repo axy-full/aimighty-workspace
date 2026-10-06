@@ -12,7 +12,7 @@ import { SAVING_NOW } from "../workbench/save-then-continue";
  * Viral = Genjutsu, on Particl's API key for every
  * workspace and every member. Pure: the two variants behind the Motion
  * Transfer and Object Swap pages, the well's rule (exactly one source video
- * of 4–30 s, then 1–8 ordered reference images: the API's own limits), what
+ * of 4–8 s, then 1–8 ordered reference images: the API's own limits), what
  * blocks the primary, and the request the shared dispatch sends
  * (lib/workspace/generate-submit.ts: POST /api/generate/quote, then POST
  * /api/generate with the approved ceiling). The price on the button is that
@@ -32,8 +32,10 @@ export type ViralPage = keyof typeof VIRAL_PAGES;
 /** What the key route renders (lib/genjutsuTypes.ts): 480p, 720p and 1080p, each at the provider's live estimate. */
 export const VIRAL_RESOLUTIONS: readonly string[] = GENJUTSU_RESOLUTIONS;
 export type ViralResolution = string;
-/** The documented source window (lib/genjutsuTypes.ts): at least 4 s, at most 30 s. Object Swap's pixel floor is admission's to say. */
+/** The source window (lib/genjutsuTypes.ts): at least 4 s, at most 8 s for now. Object Swap's pixel floor is admission's to say. */
 export const SOURCE_SECONDS = { min: GENJUTSU_LIMITS.minSeconds, max: GENJUTSU_LIMITS.maxSeconds } as const;
+/** Why a longer clip is not taken: said beside the refusal, never alone. */
+export const SOURCE_WHY = `Motion transfer and Object swap take clips up to ${SOURCE_SECONDS.max} s for now; pick a shorter one or trim it first.`;
 /** The API takes 1–8 reference images. */
 export const REFERENCE_MAX = GENJUTSU_LIMITS.maxImages;
 export const PROMPT_MAX = GENJUTSU_LIMITS.maxPromptChars;
@@ -70,12 +72,22 @@ export function viralMedia(entry: LibraryEntry): ViralMedia | null {
 /** What happens when a Library asset lands in the well. */
 export function addMedia(state: ViralState, media: ViralMedia): { state: ViralState; note: string | null } {
   if (media.kind === "video") {
-    if (media.seconds != null && (media.seconds < SOURCE_SECONDS.min || media.seconds > SOURCE_SECONDS.max)) return { state, note: `The source video must be ${SOURCE_SECONDS.min}–${SOURCE_SECONDS.max} s; this one is ${Math.round(media.seconds)} s.` };
+    if (media.seconds != null && (media.seconds < SOURCE_SECONDS.min || media.seconds > SOURCE_SECONDS.max)) return { state, note: `The source video must be ${SOURCE_SECONDS.min}–${SOURCE_SECONDS.max} s; this one is ${Math.round(media.seconds)} s. ${SOURCE_WHY}` };
     return { state: { ...state, source: media }, note: state.source ? `Source video replaced with ${media.name}.` : null };
   }
   if (state.references.some((r) => r.id === media.id)) return { state, note: `${media.name} is already a reference.` };
   if (state.references.length >= REFERENCE_MAX) return { state, note: `Up to ${REFERENCE_MAX} reference images.` };
   return { state: { ...state, references: [...state.references, media] }, note: null };
+}
+/** Drag a reference to a new place: it lands at `to` (0-based), the others keep their order. Same state back when nothing moves. */
+export function moveReferenceTo(state: ViralState, id: string, to: number): ViralState {
+  const from = state.references.findIndex((r) => r.id === id);
+  const target = Math.max(0, Math.min(state.references.length - 1, Math.round(to)));
+  if (from < 0 || from === target) return state;
+  const next = [...state.references];
+  const [moved] = next.splice(from, 1);
+  next.splice(target, 0, moved);
+  return { ...state, references: next };
 }
 export function moveReference(state: ViralState, id: string, dir: -1 | 1): ViralState {
   const i = state.references.findIndex((r) => r.id === id);

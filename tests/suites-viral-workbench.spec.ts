@@ -20,7 +20,7 @@ import { smallTargets } from "./phoneFloors";
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-const CLIP = { url: "/fixtures/clip.mp4", name: "walk.mp4", type: "video/mp4" };
+const CLIP = { url: "/fixtures/clip-6s.mp4", name: "walk.mp4", type: "video/mp4" };
 const STILLS = [
   { url: "/campaign/character.webp", name: "wren.webp", type: "image/webp" },
   { url: "/campaign/environment.webp", name: "dunes.webp", type: "image/webp" },
@@ -88,7 +88,7 @@ async function noSideScroll(page: Page) {
 const priced = (verb: string) => new RegExp(`^${verb} · up to \\d[\\d,]* cr$`);
 const figure = async (page: Page) => Number(((await page.getByTestId("viral-generate").innerText()).match(/up to ([\d,]+) cr/)?.[1] ?? "").replace(/,/g, ""));
 
-test("Motion Transfer on the API key: a 4–30 s source and ordered stills, the live estimate on the button, one send at that figure, and the take lands", async ({ page, playwright }, info) => {
+test("Motion Transfer on the API key: a 4–8 s source and ordered stills, the live estimate on the button, one send at that figure, and the take lands", async ({ page, playwright }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(240_000);
   const s = await seed(page, playwright, "owner");
@@ -98,13 +98,13 @@ test("Motion Transfer on the API key: a 4–30 s source and ordered stills, the 
   expect(new URL(page.url()).searchParams.get("suite")).not.toBe("subatomik");
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "motion");
   await expect(page.getByTestId("make-title")).toHaveText("Motion transfer");
-  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
+  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–8 s).");
   /* The account's owner-run card is gone for good: this page is the composer. */
   await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
 
   await dropFiles(page, [CLIP]);
-  await expect(page.getByTestId("viral-source")).toContainText("walk.mp4 · 10 s", { timeout: 60_000 });
-  await expect(page.getByTestId("viral-source-card")).toContainText("SOURCE · 10 s");
+  await expect(page.getByTestId("viral-source")).toContainText("walk.mp4 · 6 s", { timeout: 60_000 });
+  await expect(page.getByTestId("viral-source-card")).toContainText("SOURCE · 6 s");
   await expect(page.getByTestId("viral-reason")).toHaveText("Add at least one reference image.");
   await expect(page.getByTestId("viral-source-download")).toHaveAttribute("href", /^\/api\/uploads\/[A-Za-z0-9_-]+\?download=1$/);
   await dropFiles(page, STILLS);
