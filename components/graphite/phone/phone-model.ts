@@ -48,7 +48,27 @@ export type PhoneRoute = {
    * renders under the phone's header, with a back to Home (DECISIONS 11).
    */
   own: boolean;
+  /**
+   * The address is a control-room page the phone has no screen for (Activity, Memory, Skills). Until after the
+   * demo it opens a plain "Open this on a larger screen" page, never a broken layout or Home with no word.
+   */
+  larger: LargerPage | null;
 };
+
+/** The control room's pages with no phone screen yet. */
+export type LargerPage = "activity" | "memory" | "skills";
+export const LARGER_TITLES: Record<LargerPage, string> = { activity: "Activity", memory: "Memory", skills: "Skills" };
+
+/**
+ * Activity (`page=runs`), Skills (`page=saved-skills`) and Memory (`page=memory`) are the control room's pages; Memory and
+ * Skills also live under Agent's backing page (`page=agent&sp=memory|saved-skills`), where the shell writes them.
+ */
+export function largerPage(q: URLSearchParams): LargerPage | null {
+  if (q.get("suite") !== "atomik" || q.get("view") || q.has("screen")) return null;
+  const page = q.get("page"), sp = q.get("sp");
+  const which = page === "agent" ? sp : page;
+  return which === "runs" ? "activity" : which === "memory" ? "memory" : which === "saved-skills" ? "skills" : null;
+}
 
 /** The Studio's old stages: each is a region of the board (lib/board/routes.ts), and on a phone the board is its project's Record. */
 const BOARD_PAGES: ReadonlySet<string> = new Set(["rig", "brief", "boards", "cast", "takes", "astra", "edit", "deliver"]);
@@ -95,6 +115,7 @@ export function readPhone(search: string | URLSearchParams): PhoneRoute {
     run: q.get("run") && ID.test(q.get("run")!) ? q.get("run") : null,
     cast: q.get("cast") && /^[A-Za-z0-9_.:-]{1,160}$/.test(q.get("cast")!) ? q.get("cast") : null,
     own: ownAddress(q),
+    larger: largerPage(q),
   };
 }
 
