@@ -6,6 +6,7 @@ import { deriveLooks } from "../looks/derive";
 import { pickedLook } from "../looks/model";
 import { storyboard } from "../storyboard/model";
 import type { PlanModel } from "./model";
+import { samplePlanCard, samplePlanModel } from "./sample";
 import { planStepsOpen } from "./ui";
 import { nextChoices, NEXT_GROUP_TITLE, showWhereNext } from "./next";
 import { shotTakes, shotsTakeOver } from "../take/take-model";
@@ -95,6 +96,12 @@ export function derivePlanCards(src: BoardSource): BoardCard[] {
       ...(inGroup ? {} : { summary: run.state === "awaiting_approval" ? "Plan at the gate" : run.state === "running" ? "Atomik is working" : "Waiting for you" }),
       data: { run, open: planStepsOpen(run.id) } satisfies PlanData,
     });
+  }
+  /* The explore-only sample has no run: its plan is built from the ledger's recorded prices (stream 12), never seeded. */
+  if (!run && src.sample && src.sample.plan.steps.length) {
+    const inGroup = cards.some((c) => c.id === STUDIO_GROUP.storyboard);
+    const card = samplePlanCard(samplePlanModel(src.sample.plan.steps, src.sample.line), planStepsOpen("sample"));
+    cards.push(inGroup ? card : { ...card, region: "shots", order: -1, group: undefined });
   }
   return cards;
 }

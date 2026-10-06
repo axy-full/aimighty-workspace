@@ -45,6 +45,8 @@ import { PeerCursors, WhoIsHere } from "./Presence";
 import { HistoryDrawer, LibraryDrawer } from "./drawers/Drawers";
 import { addInput } from "@/lib/production/rig-build";
 import { entryAsset } from "@/lib/production/sequence";
+import { useSampleBoard } from "@/lib/demo/use-sample";
+import { sampleGate } from "@/lib/demo/sample";
 import "./board.css";
 
 /*
@@ -114,12 +116,16 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const [now] = useState(() => Date.now());
   /* Atomik's run on this production, for the plan card: stream 7's seam (the docked panel's one read of the board agent). */
   const agent = useBoardAgent().run;
+  /* The explore-only sample (stream 12): its recorded prices, and the line every paid control carries. */
+  const { board: sampleBoard } = useSampleBoard();
+  const gate = useMemo(() => sampleGate(project, sampleBoard?.sample ?? null), [project, sampleBoard]);
+  const sample = gate.exploreOnly ? sampleBoard : null;
 
   /* An Ads or Social board's own session data (stream 11): pending site reads, the agent's runs. */
   const extra = useKindExtra(kind, project);
   const src = useMemo<BoardSource | null>(() => (project ? {
-    kind, project, shots: rig.shots, jobs: rig.jobs, library: items, masters: rig.masters, extra, agent, now,
-  } : null), [kind, project, rig.shots, rig.jobs, items, rig.masters, extra, agent, now]);
+    kind, project, shots: rig.shots, jobs: rig.jobs, library: items, masters: rig.masters, extra, agent, sample, now,
+  } : null), [kind, project, rig.shots, rig.jobs, items, rig.masters, extra, agent, sample, now]);
   /* What Make filed while this board was open (the "Made in Make" band; session only, never saved). */
   const [madeNow, setMadeNow] = useState<{ projectId: string; nodeId: string }[]>([]);
   const madeHere = useMemo<MadeEntry[]>(() => madeNow.filter((m) => m.projectId === project?.id).map((m) => ({ nodeId: m.nodeId })), [madeNow, project?.id]);
@@ -423,14 +429,14 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const [seams] = useState(() => new BoardSeams());
   const [dockOpen, setDockOpen] = useState(false);
   const ctx = useMemo<BoardCtx | null>(() => (project ? {
-    kind, scope, project, productionId: project.productionProjectId ?? null, offline, selection, select, glide,
+    kind, scope, project, productionId: project.productionProjectId ?? null, offline, readOnly: gate.readOnly, exploreOnly: gate.exploreOnly, selection, select, glide,
     openInspector: (id: string) => select(id),
     openReview: (takeId?: string) => seams.call("review", takeId),
     askAtomik: (words: string) => seams.call("atomik", words),
     openMake: (type) => shell.openMake(type),
     toast: (text, undo) => { if (undo) undoable(undo.label, undo.run); ws.toast(text); },
     rig,
-  } : null), [glide, kind, offline, project, rig, scope, seams, select, selection, shell, undoable, ws]);
+  } : null), [gate.exploreOnly, gate.readOnly, glide, kind, offline, project, rig, scope, seams, select, selection, shell, undoable, ws]);
 
   const watchers = useMemo(() => {
     const out = new Map<string, RoomPeer>();
@@ -496,7 +502,10 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   if (compact) {
     return (
       <BoardInternalsProvider value={internals}>
-        <div className="bd bd--compact" data-testid="board" data-board-kind={kind}><List ctx={ctx} cards={placed.cards} />{drawerEl}</div>
+        <div className="bd bd--compact" data-testid="board" data-board-kind={kind} data-sample={gate.exploreOnly ? "1" : undefined}>
+          {gate.exploreOnly ? <p className="bd-sample bd-sample--list" role="status" data-testid="board-sample">{gate.exploreOnly}</p> : null}
+          <List ctx={ctx} cards={placed.cards} />{drawerEl}
+        </div>
       </BoardInternalsProvider>
     );
   }
@@ -504,7 +513,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const regionBoxes = board.rail.flatMap((entry) => { const box = placed.regions.get(entry.id); return box ? [box] : []; });
   return (
     <BoardInternalsProvider value={internals}>
-      <div className="bd" style={style} data-testid="board" data-board-kind={kind} data-tool={tool} data-offline={offline || undefined}>
+      <div className="bd" style={style} data-testid="board" data-board-kind={kind} data-tool={tool} data-offline={offline || undefined} data-sample={gate.exploreOnly ? "1" : undefined}>
         <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} />
         <div className="bd-main" data-testid="board-canvas">
           {list ? <List ctx={ctx} cards={placed.cards} /> : (
@@ -524,6 +533,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           {list ? null : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} />
           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}
+          {gate.exploreOnly ? <p className="bd-sample" role="status" data-testid="board-sample">{gate.exploreOnly}</p> : null}
           {live ? <WhoIsHere peers={peers} /> : null}
           <input ref={files} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} />
         </div>

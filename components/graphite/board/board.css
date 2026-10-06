@@ -172,6 +172,15 @@
   border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-toast); font-size: 12.5px; font-weight: 500; white-space: nowrap;
 }
 
+/* The explore-only sample (stream 12): the same pill, top right, in the sample's own words. */
+.bd-sample {
+  position: absolute; right: 16px; top: 16px; z-index: 30; margin: 0; padding: 9px 16px; border-radius: 999px; background: var(--gx-card);
+  border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-toast); font-size: 12.5px; font-weight: 500; max-width: calc(100% - 32px);
+}
+.bd-offline ~ .bd-sample { top: 60px; }
+/* The compact list has no canvas to float over: the line is its first row. */
+.bd-sample--list { position: static; margin: 12px 16px 0; border-radius: 12px; white-space: normal; max-width: none; }
+
 /* ── React Flow's attribution, at the reading floor ── */
 .bd-flow .react-flow__attribution { background: var(--gx-root); padding: 2px 8px; font-size: 12px; }
 .bd-flow .react-flow__attribution a { color: var(--gx-quiet); }

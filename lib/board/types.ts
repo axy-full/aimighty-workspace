@@ -3,6 +3,7 @@ import type { RigAgentRunView } from "@/lib/workbench/rig-agent-plan";
 import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import type { RigShot } from "@/lib/workspace/shots";
+import type { SampleBoard } from "@/lib/demo/board";
 
 /*
  * The board's card interface (design/particl-graphite/README.md § 1.1, § 3.1):
@@ -81,5 +82,7 @@ export type BoardSource = {
   extra?: unknown;
   /** Atomik's run on this production; null until stream 7 provides it. */
   agent: BoardAgentView | null;
+  /** The explore-only sample production's recorded prices, cast and cut (stream 12, lib/demo); null on any other production. */
+  sample?: SampleBoard | null;
   now: number;
 };

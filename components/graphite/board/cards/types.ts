@@ -29,6 +29,10 @@ export type BoardCtx = {
   productionId: string | null;
   /** The board is read-only: no drags; a spending button reads "Needs a connection". */
   offline: boolean;
+  /** Why nothing can be written (a production nothing may be written to), or null. Stream 12 supplies it; the sample leaves free edits alone. */
+  readOnly?: string | null;
+  /** The sample production's line: set on the explore-only sample, where every paid control is disabled with it (stream 12). */
+  exploreOnly?: string | null;
   selection: BoardSelection;
   select(id: string | null, opts?: { add?: boolean }): void;
   /** Glides the board to a region, or to a card (.35 s, the design's easing). */
