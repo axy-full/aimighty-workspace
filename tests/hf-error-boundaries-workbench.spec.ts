@@ -301,7 +301,7 @@ test("Gen: one bad take costs its tile, a failing results grid keeps the compose
 
   /* One take throws: its tile keeps its place, the others render. */
   await arm(page, ["take:generation:gen_wide"]);
-  await results.getByRole("button", { name: "Images", exact: true }).click();
+  await results.getByRole("button", { name: "Takes", exact: true }).click();
   const tile = results.getByTestId("take-fault");
   await expect(tile).toHaveCount(1);
   await expect(tile).toContainText("Wide on the water");
@@ -334,7 +334,7 @@ test("Gen: one bad take costs its tile, a failing results grid keeps the compose
   await fault.getByTestId("fault-retry").click();
   await expect(fault).toHaveCount(0);
   await arm(page, ["gen-results"]);
-  await results.getByRole("button", { name: "Images", exact: true }).click();
+  await results.getByRole("button", { name: "Takes", exact: true }).click();
   await expect(fault).toContainText("Results stopped");
   await compose();
   await expect(prompt).toHaveValue("a fox crossing a frozen harbour at dawn");

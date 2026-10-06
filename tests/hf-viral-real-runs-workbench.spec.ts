@@ -169,7 +169,7 @@ test("Recreate from an earlier account run loads what the key carries and says w
   expect(cancels).toHaveLength(1);
   expect(cancels[0]).toContain("/api/generations/t_queue/cancel");
   /* Twelve stills on the account; this route takes eight. */
-  await page.getByTestId("history-result").getByRole("button", { name: "Recreate" }).click();
+  await page.getByTestId("history-result").getByRole("button", { name: "Open in Make" }).click();
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "swap");
   await expect(page.getByTestId("toast")).toContainText("Loaded the first 8 of 12 references; this route takes up to 8.");
   await expect(page.getByTestId("viral-source")).toContainText("walk.mp4");

@@ -29,7 +29,7 @@ import { AtomikGate } from "./AtomikGate";
 import { BusinessSuite } from "./business/BusinessSuite";
 import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
 import { MakePanel } from "./MakePanel";
-import { assetLabels, assetCapabilities, assetRef, type AssetRef } from "@/lib/shell/assets";
+import { ASSET_LABEL, assetCapabilities, assetRef, type AssetRef } from "@/lib/shell/assets";
 import { setShotDropHandler } from "@/lib/shell/drop-targets";
 import { useAssetActions } from "@/lib/shell/use-asset-actions";
 import { INSPECTOR_SURFACE, endBindings, galleryItems, pickGallery, publishedGallery, setPreviewBinder, type BoundAction } from "@/lib/shell/preview-bridge";
@@ -484,7 +484,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         )}>
           <AtomikSheet />
         </Boundary>
-        <ContextMenu caps={caps} labels={shell.ctx?.target.kind === "asset" ? assetLabels(ctxEntry?.asset.origin ?? null) : undefined} onCommand={(cmd) => command(cmd, shell.ctx?.target ?? selection())} />
+        <ContextMenu caps={caps} labels={shell.ctx?.target.kind === "asset" ? ASSET_LABEL : undefined} onCommand={(cmd) => command(cmd, shell.ctx?.target ?? selection())} />
         {moving ? (
           <div className="gx-veil" onClick={() => setMoving(null)} data-testid="move-veil">
             <div className="gx-sheet" role="dialog" aria-modal="true" aria-label={`Move ${moving.name} to`} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setMoving(null); } }}>

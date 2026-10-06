@@ -130,5 +130,5 @@ test("home feature cards read the first sentence of the intro; Library derives f
     expect(libraryFor(id).map((g) => g.items.length), id).toEqual(expected);
   }
   expect(firstSentence("Describe the outcome; the agent plans it. It reaches every suite.")).toBe("Describe the outcome; the agent plans it.");
-  expect(PAGES.particl.find((p) => p.id === "astra")!.title).toBe("Astra 3D");
+  expect(PAGES.particl.find((p) => p.id === "astra")!.title).toBe("3D blocking");
 });

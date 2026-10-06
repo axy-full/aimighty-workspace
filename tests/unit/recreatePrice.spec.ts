@@ -44,6 +44,21 @@ test("no price is never a figure: the server's refusal, a missing engine and a r
   expect(unpriced).toMatchObject({ state: "unavailable" });
 });
 
+test("a reference that is gone is dropped from the quote, and the price then says about", async () => {
+  const log: string[] = [];
+  const gone: QuoteReader = async (url, init) => {
+    log.push(url);
+    if (url.startsWith("/api/workbench/engines?") && url.includes("uploadId=")) throw new Error("A selected upload is unavailable in this workspace.");
+    if (url.startsWith("/api/workbench/engines?")) return { credits: 9 };
+    if (url.startsWith("/api/workbench/engines")) return engines;
+    throw new Error(`not mocked ${url} ${init?.method ?? ""}`);
+  };
+  const price = await quoteRecreate(take({ params: { resolution: "720p", duration: 5, references: [{ uploadId: "up_gone", role: "reference_image", kind: "image" }] } }), gone);
+  expect(price).toEqual({ state: "ready", credits: 9, approximate: true });
+  expect(priceWords(price as never)).toBe("about 9 cr");
+  expect(log.filter((u) => u.includes("model=seedance_2_5")).map((u) => u.includes("uploadId="))).toEqual([true, false]);
+});
+
 test("a take Make cannot recreate has no price, and the reason is Make's own", async () => {
   const price = await quoteRecreate(take({ params: { task: "dub" } }), reader([], {}));
   expect(price).toMatchObject({ state: "unavailable" });

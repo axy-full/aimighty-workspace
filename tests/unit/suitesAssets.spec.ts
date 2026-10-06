@@ -24,14 +24,13 @@ test("every command is offered; the ones this asset cannot do say exactly why", 
   const disabled = items.filter((i) => !i.sep && i.disabled).map((i) => (i.sep ? "" : `${i.command}: ${i.reason}`));
   expect(disabled).toEqual(["paste: Nothing copied yet.", "duplicate: A generation has one copy. Recreate makes a new take from the same recipe.", "undo: Nothing to undo."]);
   expect(ASSET_LABEL.retry).toBe("Recreate");
-  expect(ASSET_LABEL.delete).toBe("Move to trash");
 
   const forUpload = assetCapabilities({ ...base, asset: up, otherProjects: 0 });
   expect(forUpload.why.retry).toContain("nothing to recreate");
-  /* A take from a tool Gen does not have is blocked, and says why. */
-  const edit = assetCapabilities({ ...base, asset: { ...gen, noRecreate: "Made with a tool Gen does not have. Run it again from that tool." } });
+  /* A take from a tool Make does not have is blocked, and says why. */
+  const edit = assetCapabilities({ ...base, asset: { ...gen, noRecreate: "Made with a tool Make does not have. Run it again from that tool." } });
   expect(edit.can.retry).toBeUndefined();
-  expect(edit.why.retry).toBe("Made with a tool Gen does not have. Run it again from that tool.");
+  expect(edit.why.retry).toBe("Made with a tool Make does not have. Run it again from that tool.");
   expect(forUpload.why.move).toContain("no other project");
   expect(assetCapabilities({ ...base, asset: audio }).why["use-as-reference"]).toBe("References are images and videos.");
 });
@@ -119,7 +118,7 @@ test("a take Gen cannot make again from its own inputs says why, and Recreate is
   expect(blockOf({ model: "eleven_music", kind: "audio", params: { task: "music", lengthMs: 45_000, instrumental: true } })).toBeNull();
   expect(blockOf({ model: "eleven_sfx", kind: "audio", params: { task: "sound", durationSeconds: 3, loop: false } })).toBeNull();
   expect(blockOf({ model: "eleven_multilingual_v2", kind: "audio", params: { task: "speech", voiceId: "abc123XYZ", settings: {} } })).toBeNull();
-  expect(blockOf({ model: "eleven_v3", kind: "audio", params: { task: "dialogue", lines: [{ text: "Hi", voiceId: "v1" }] } })).toBe("A dialogue is made in Edit & Sound, not Gen.");
+  expect(blockOf({ model: "eleven_v3", kind: "audio", params: { task: "dialogue", lines: [{ text: "Hi", voiceId: "v1" }] } })).toBe("A dialogue is made in Edit & Sound, not Make.");
   expect(blockOf({ model: "eleven_sts", kind: "audio", params: { task: "voiceChange", voiceId: "v1", sourceGenId: "g2" } })).toContain("source clip");
   expect(blockOf({ model: "dub", kind: "audio", params: { task: "dub", sourceKind: "generation", sourceId: "g3" } })).toContain("source clip");
   for (const task of ["edit", "motion", "upscale", "reframe", "genjutsu"])

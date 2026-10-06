@@ -269,7 +269,7 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
       {take.note ? <p className="gx-gen-note" role="status" data-testid="viral-take-note">{take.note}</p> : null}
       <div className="gx-gen-cta gx-make-go">
         <span className="gx-make-dest" data-testid="make-dest">{project ? `To ${project.name} · Library` : null}</span>
-        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(reason) || busy || credits == null} aria-describedby={reason ? "vr-reason" : undefined} aria-label={buttonName} title={priced ? figureTitle : undefined} data-priced={priced ? "" : undefined}
+        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(reason) || busy || credits == null} aria-describedby={reason ? "vr-reason" : undefined} aria-label={buttonName} title={priced ? figureTitle : undefined} data-priced={priced ? "" : undefined} data-spend={priced ? "priced" : "unpriced"}
           onClick={() => { if (request) void take.submit(request, key, credits); }} data-testid="viral-generate">
           {label ?? (<><span className="gx-go-act">{copy.verb}</span>{priced ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span><Price value={figure} /></span> : null}</>)}
         </button>
@@ -491,13 +491,13 @@ function TakeCard({ take, now, opening, cancel, onRecreate, onCompare, onSend }:
       {take.status === "failed" && take.failureLine ? <span className="gx-asset-fail" data-testid="history-take-failure">{take.failureLine}</span> : null}
       {done ? (
         <div className="cw-sol-actions">
-          <button type="button" className="gx-hbtn" onClick={() => onRecreate(take)}>Recreate</button>
+          <button type="button" className="gx-hbtn" onClick={() => onRecreate(take)}>Open in Make</button>
           <button type="button" className="gx-hbtn" disabled={!take.url} onClick={onCompare}>Compare</button>
           <button type="button" className="gx-hbtn" disabled={!take.url || opening} onClick={() => onSend(take)}>{opening ? "Opening…" : "Send to Edit"}</button>
           <a className="gx-hbtn" href={downloadHref("generation", take.id)} download data-testid="history-take-download">Download</a>
         </div>
       ) : take.status === "failed" ? (
-        <div className="cw-sol-actions"><button type="button" className="gx-hbtn" onClick={() => onRecreate(take)}>Recreate</button></div>
+        <div className="cw-sol-actions"><button type="button" className="gx-hbtn" onClick={() => onRecreate(take)}>Open in Make</button></div>
       ) : cancel ? (
         <div className="cw-sol-actions"><button type="button" className="gx-hbtn" disabled={cancel.cancelling === take.id} onClick={() => void cancel.cancel(take.id)} data-testid="history-take-cancel">{cancel.cancelling === take.id ? "Cancelling…" : "Cancel"}</button></div>
       ) : null}

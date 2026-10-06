@@ -237,7 +237,7 @@ test("the words everyone meets since the sign-in was retired: what ran on the ac
   /* Viral and Business run on Particl's API key for everyone, and Business › Ads is removed: neither has a retired card. */
   expect(Object.keys(OWNER_RUNS).sort()).toEqual(["cast", "workflows"]);
   expect(OWNER_RUNS.cast.eyebrow).toBe("Cast · Identity");
-  expect(OWNER_RUNS.cast.alternative).toMatchObject({ type: "image", action: "Open Gen · Images" });
+  expect(OWNER_RUNS.cast.alternative).toMatchObject({ type: "image", action: "Open Make · Images" });
   expect(OWNER_RUNS.cast.alternative?.what).toContain("Studio image engines");
   /* Dubbing, voice change and social cuts have no Studio engine that makes the same thing: no alternative is invented. */
   expect(OWNER_RUNS.workflows.alternative).toBeNull();

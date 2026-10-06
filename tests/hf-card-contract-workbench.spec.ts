@@ -147,9 +147,10 @@ test("Gen › Results: skeletons while reading, a failed read with Try again, a 
   const failedThumb = (await tile(results, "Night swim").locator(".gx-asset-thumb").boundingBox())!;
   const okThumb = (await tile(results, "Pier at first light").locator(".gx-asset-thumb").boundingBox())!;
   expect(Math.abs(failedThumb.height - okThumb.height)).toBeLessThan(1);
-  /* Filed by what it is: the failed and the cancelled clip are under Video with the other clips. */
-  await results.getByRole("button", { name: "Video", exact: true }).click();
-  await expect(results.getByTestId("take-tile")).toHaveCount(4);
+  /* Recent's filters are All · Takes · Unfiled · Filed (README § 3.2): the failed and the cancelled take are takes like the others. */
+  await results.getByRole("button", { name: "Takes", exact: true }).click();
+  await expect(tile(results, "Night swim")).toBeVisible();
+  await expect(tile(results, "Pier in fog")).toBeVisible();
   await results.getByRole("button", { name: "All", exact: true }).click();
 
   /* A finished take with no stored copy: Preview unavailable, and Refresh reads it again. */
