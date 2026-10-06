@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { useMake, type MakeModel } from "../make/use-make";
 import { MakePriceText } from "../make/Compose";
-import { Price, usePriceTitle } from "../Price";
+import { usePriceTitle } from "../Price";
 import type { ComposerType } from "@/lib/workspace/composer";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import type { Project } from "@/lib/workbench/studio";
