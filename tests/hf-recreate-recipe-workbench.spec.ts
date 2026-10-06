@@ -503,7 +503,11 @@ test("when the engines cannot be read, the card gives the composer's one reason 
     setup: async (page) => { await page.route(/\/api\/workbench\/engines$/, (route) => route.fulfill({ status: 500, json: { error: failed } })); },
   });
   const inspector = await inspect(page, "gen_harbour");
-  await inspector.getByTestId("inspector-recreate").click();
+  /* With the engines unread there is no price for Recreate: the Inspector's button is disabled and says why (README § 5); ⌘R still hands Make the recipe, which gives its own one reason. */
+  await expect(inspector.getByTestId("inspector-recreate")).toBeDisabled();
+  await expect(inspector.getByTestId("inspector-recreate")).toHaveAttribute("title", failed);
+  await inspector.getByTestId("inspector-copy-prompt").focus();
+  await page.keyboard.press("ControlOrMeta+r");
   await expect(page.getByTestId("gen-recipe-refs")).toHaveText("1 of 2 refs");
   /* The model, the references and the shot setup (which lands on the chips whatever the engines say); no per-setting chips. */
   const chips = page.getByTestId("gen-recipe-chips").locator("li");
