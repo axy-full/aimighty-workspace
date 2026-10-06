@@ -160,7 +160,8 @@ test("Recreate lands the whole recipe in a Gen that is already open, waits for i
   await prompt.fill("my own words");
 
   const inspector = await inspect(page, "gen_harbour");
-  await expect(inspector.getByTestId("inspector-recreate")).toBeEnabled();
+  /* Recreate waits for Make's own price; the first engine read of a fresh workspace on a fresh dev server can take a while. */
+  await expect(inspector.getByTestId("inspector-recreate")).toBeEnabled({ timeout: 90_000 });
   await inspector.getByTestId("inspector-recreate").click();
   await expect(page.getByTestId("toast")).toHaveText("Harbour dusk’s recipe is in Make.");
 
