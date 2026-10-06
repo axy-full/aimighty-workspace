@@ -15,6 +15,8 @@ import { getRun, rigAgentExists, stepsOf, type RunRow } from "@/lib/workbench/ri
 import { RIG_AGENT_OFF, rigAgentEnabled, runView, type RunLedger } from "@/lib/workbench/rig-agent";
 import { rigJobCeiling } from "@/lib/workbench/rig-agent-limits";
 import { stepTitle } from "@/lib/workbench/rig-agent-runs";
+import { planApprovalOf } from "@/lib/workbench/plan-approval";
+import { creditFigure } from "@/lib/runLimit";
 import type { RigAgentPaidStepView } from "@/lib/workbench/rig-agent-plan";
 import {
   sortQueue,
@@ -172,7 +174,7 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
   for (const id of ids) {
     const run = await getRun(db(), id);
     if (!run) continue;
-    const view = runView(run, await stepsOf(db(), run.id), viewer.id, await ledgerOf(run));
+    const view = runView(run, await stepsOf(db(), run.id), viewer.id, await ledgerOf(run), await planApprovalOf(db(), run.id));
     productions.push(run.productionId);
     const open = { kind: "board" as const, productionId: run.productionId, draftId: null };
     if (run.state === "awaiting_approval" && view.proposal) {
@@ -194,6 +196,31 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
         sample: false,
         approve: { kind: "board-approve", productionId: run.productionId, runId: run.id, fingerprint: p.fingerprint },
         decline: view.mine ? { kind: "board-decline", productionId: run.productionId, runId: run.id } : null,
+        open,
+      });
+      continue;
+    }
+    /* The plan gate: one item, the plan at the server's total, approved once on its own screen (CLAUDE.md rule 14). */
+    const quote = run.state === "needs_you" && view.plan?.quote && !view.plan.approval ? view.plan.quote : null;
+    if (quote) {
+      const price = quote.approximate ? upTo(quote.total) : exact(quote.total);
+      items.push({
+        id: `board-plan:${run.id}`,
+        source: "board-plan",
+        title: shortText(view.proposal?.title || run.goal) || "Atomik's plan",
+        where: "Board",
+        at: run.updatedAt,
+        project: NO_PROJECT,
+        price,
+        needsAdmin: false,
+        canApprove: view.mine && enabled,
+        why: !enabled ? RIG_AGENT_OFF : !view.mine ? BOARD_NOT_YOURS : null,
+        shortBy: shortOf(ctx.balance, price),
+        note: `At most ${creditFigure(quote.ceiling)} cr with fixes`,
+        step: null,
+        sample: false,
+        approve: { kind: "board-approve", productionId: run.productionId, runId: run.id, fingerprint: quote.fingerprint, plan: true },
+        decline: null,
         open,
       });
       continue;

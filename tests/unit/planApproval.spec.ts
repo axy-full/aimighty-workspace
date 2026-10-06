@@ -246,6 +246,14 @@ test("one approval covers exactly the plan: the gate shows the server's total (t
     expect(model.title).toBe(`Make 2 shots · ${creditFigure(a + b)} cr · at most ${creditFigure(2 * (a + b))} cr`);
     expect(model.primary).toMatchObject({ kind: "plan", label: `Approve · ${creditFigure(a + b)} cr`, fingerprint: run.plan!.quote!.fingerprint, blocked: null });
     const fingerprint = run.plan!.quote!.fingerprint;
+    /* The one queue lists the plan once, at the server's total, to approve once (never a row per render). */
+    const { readApprovals } = await import("../../lib/control-room/approvals.server");
+    const queue = await readApprovals({ id: OWNER, role: "admin", owner: true });
+    const boardItems = queue.items.filter((i) => i.source === "board-plan" || i.source === "board-render");
+    expect(boardItems.map((i) => [i.source, i.price, i.approve])).toEqual([
+      ["board-plan", { kind: "exact", credits: a + b }, { kind: "board-approve", productionId: "prod-1", runId, fingerprint, plan: true }],
+    ]);
+    expect(boardItems[0].note).toBe(`At most ${creditFigure(2 * (a + b))} cr with fixes`);
     /* Not the right plan: refused. */
     await expect(agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: "0".repeat(64), userId: OWNER })).rejects.toMatchObject({ status: 409 });
     const planned = (await meterRow(agent.planEventId(runId)))!.credits;

@@ -46,6 +46,8 @@ type Run = {
   balanceAtStart: number | null;
   thinking: number | null;
   rendered: number | null;
+  /** The most the approved plan may spend, fixes included (2 × its total), as the card said it. */
+  ceiling: number | null;
 };
 
 async function open(browser: Browser, viewport: { width: number; height: number }, phone: boolean): Promise<Run> {
@@ -57,7 +59,7 @@ async function open(browser: Browser, viewport: { width: number; height: number 
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  return { page, context, spend: watchSpending(page), errors, started: 0, taps: 0, marks: {}, email: "", draftId: "", productionId: "", balanceAtStart: null, thinking: null, rendered: null };
+  return { page, context, spend: watchSpending(page), errors, started: 0, taps: 0, marks: {}, email: "", draftId: "", productionId: "", balanceAtStart: null, thinking: null, rendered: null, ceiling: null };
 }
 
 const elapsed = (run: Run) => (run.started ? Date.now() - run.started : 0);
@@ -75,7 +77,7 @@ async function screenIsClean(run: Run, spendRoots: string[] = []) {
   for (const root of spendRoots) await expect.poll(() => unpricedSpendButtons(page, root), { message: `spending buttons without a price inside ${root}`, timeout: 15_000 }).toEqual([]);
 }
 
-/** The agent half of "only a person approves": a token (how an agent, a skill or an MCP caller acts) tries to approve. */
+/** The agent half of "only a person approves": a token (how an agent, a skill or an MCP caller acts) tries to approve the plan once it is priced. */
 async function anAgentCannotApprove(run: Run, runId: string, fingerprint: string | null) {
   const { headers } = await scopeFor(run.page.request);
   const minted = await run.page.request.post("/api/tokens", { headers, data: { name: "Five-minute agent", scope: "render", capCredits: 500 } });
@@ -86,7 +88,8 @@ async function anAgentCannotApprove(run: Run, runId: string, fingerprint: string
   });
   try {
     const attempts = [
-      { action: "agent.approve", fingerprint: fingerprint ?? "f".repeat(64) },
+      { action: "agent.approvePlan", fingerprint: fingerprint ?? "f".repeat(64) },
+      { action: "agent.approve", fingerprint: "f".repeat(64) },
       { action: "agent.limit", limit: 400 },
       { action: "agent.render", seq: 1 },
     ];
@@ -102,7 +105,8 @@ async function anAgentCannotApprove(run: Run, runId: string, fingerprint: string
   const { headers: h } = await scopeFor(run.page.request);
   const after = await runOf(run.page.request, h, run.productionId, run.draftId);
   expect(after.run?.id).toBe(runId);
-  expect(after.run?.state, "the plan is still waiting for a person").toBe("awaiting_approval");
+  expect(after.run?.state, "the plan is still waiting for a person").toBe("needs_you");
+  expect(after.run?.plan?.quote, "the plan is still unapproved, at its quote").toBeTruthy();
 }
 
 /* ───────────────────────────── a laptop, 1440x900 ───────────────────────────── */
@@ -199,52 +203,58 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     mark(run, "plan card");
   });
 
-  test.fixme("7 · the plan card says 'Make N shots · N cr · at most 2N cr' and Approve carries its price", async () => {
-    /* FIXME: the card shows no total before approval ('priced when it runs') and Approve has no figure; the server-priced plan and plan-level approval are U1 PR 3 and 4. */
-    const card = run.page.getByTestId("board-plan");
-    await expect(card).toContainText(/Make \d+ shots? · \d[\d,]* cr · at most \d[\d,]* cr/);
-    await expect(run.page.getByTestId("board-plan-primary")).toHaveText(/^Approve · (up to )?\d[\d,]* cr$/);
+  test("7 · Build is free; once its shots are on the board the card says 'Make N shots · N cr · at most 2N cr' and Approve carries its price", async () => {
+    const { page } = run;
+    const primary = page.getByTestId("board-plan-primary");
+    await expect(primary).toHaveText("Build · free");
+    await tap(run, primary);
+    await expect(primary).toHaveText(/^Approve · (up to )?\d[\d,]*(\.\d)? cr$/, { timeout: 90_000 });
+    const card = page.getByTestId("board-plan");
+    await expect(card).toContainText(/Make \d+ shots? · (up to )?\d[\d,]*(\.\d)? cr · at most \d[\d,]*(\.\d)? cr/);
+    run.ceiling = Number(/at most (\d[\d,]*(?:\.\d)?) cr/.exec(await card.innerText())?.[1].replace(/,/g, "") ?? NaN);
+    expect(run.spend.spent.map((s) => s.kind), "building billed nothing").toEqual(["agent.plan"]);
+    run.thinking = Number(/Thinking · (\d[\d,]*(?:\.\d)?) cr/.exec(await visibleText(page))?.[1] ?? NaN);
+    await screenIsClean(run, ['[data-testid="board-plan"]', '[data-testid="board-agent-panel"]']);
+    mark(run, "plan priced");
   });
 
-  test("8 · an agent identity cannot approve the plan, raise its limit or press a render", async () => {
+  test("8 · an agent identity cannot approve the plan, build it, raise its limit or press a render", async () => {
     const { headers } = await scopeFor(run.page.request);
     const state = await runOf(run.page.request, headers, run.productionId, run.draftId);
-    expect(state.run?.state).toBe("awaiting_approval");
-    await anAgentCannotApprove(run, state.run!.id, state.run!.proposal?.fingerprint ?? null);
-    await expect(run.page.getByTestId("board-plan")).toContainText(/Make \d+ shots?/);
+    expect(state.run?.state).toBe("needs_you");
+    await anAgentCannotApprove(run, state.run!.id, state.run!.plan?.quote?.fingerprint ?? null);
+    await expect(run.page.getByTestId("board-plan-primary")).toHaveText(/^Approve · /);
     expect(run.spend.spent.map((s) => s.kind), "the agent's tries spent nothing").toEqual(["agent.plan"]);
   });
 
-  test("9 · a person approves the plan; each render then asks at its own price", async () => {
+  test("9 · a person approves the plan once, at its price; the first render goes with no tap of its own", async () => {
     const { page } = run;
-    await expect(page.getByTestId("board-plan-primary")).toHaveText(/^Approve/);
-    await tap(run, page.getByTestId("board-plan-primary"));
     const primary = page.getByTestId("board-plan-primary");
-    await expect(primary).toHaveText(/^Render · \d[\d,]*(\.\d)? cr$/, { timeout: 90_000 });
-    expect(run.spend.spent.map((s) => s.kind), "approving the plan billed no render").toEqual(["agent.plan"]);
-    await expect(page.getByTestId("board-plan")).toContainText(/Making \d+ shots?/);
-    run.thinking = Number(/Thinking · (\d[\d,]*(?:\.\d)?) cr/.exec(await visibleText(page))?.[1] ?? NaN);
+    run.spend.allow("agent.approvePlan", await primary.innerText());
+    await tap(run, primary);
+    const card = page.getByTestId("board-plan");
+    await expect(card).toContainText(/Rendered · [\d.,]+ cr settled/, { timeout: 120_000 });
+    run.spend.close("agent.approvePlan");
+    await expect(card).toContainText(/Making \d+ shots?/);
+    run.rendered = Number(/Rendered · ([\d.,]+) cr settled/.exec(await card.innerText())?.[1].replace(/,/g, "") ?? NaN);
+    expect(run.rendered).toBeGreaterThan(0);
+    expect(run.spend.spent.map((s) => s.kind), "one approval, and no render pressed").toEqual(["agent.plan", "agent.approvePlan"]);
     await screenIsClean(run, ['[data-testid="board-plan"]', '[data-testid="board-agent-panel"]']);
     mark(run, "plan approved");
   });
 
-  test("10 · a person presses Render at its price and the first take lands on the board", async () => {
+  test("10 · the first take lands on the board", async () => {
     const { page } = run;
-    const primary = page.getByTestId("board-plan-primary");
-    run.rendered = Number(cr.exec(await primary.innerText())?.[1]);
-    expect(run.rendered).toBeGreaterThan(0);
-    run.spend.allow("agent.render", `Render · ${run.rendered} cr`);
-    await tap(run, primary);
-    await expect(page.getByTestId("board-plan")).toContainText(/Rendered · [\d.,]+ cr settled/, { timeout: 120_000 });
-    run.spend.close("agent.render");
     /* The take is on the board's Shots; the person goes there from the rail. */
     await tap(run, page.getByTestId("board-rail").getByRole("button", { name: "Shots" }));
     const first = page.getByTestId("take-card").filter({ hasText: "Shot 1" });
     await expect(first.locator("img, video").first()).toBeVisible({ timeout: 30_000 });
     mark(run, "first render on the board");
-    expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan", "agent.render"]);
-    /* The ledger matches: the balance fell by what Atomik's thinking and the render were priced at, and no more. */
-    await expect.poll(() => balanceCr(page), { timeout: 30_000 }).toBe((run.balanceAtStart ?? NaN) - (run.thinking ?? NaN) - run.rendered!);
+    expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan", "agent.approvePlan"]);
+    /* The ledger matches: the balance fell by the thinking and at least the first render, and never by more than the plan's ceiling. */
+    const start = (run.balanceAtStart ?? NaN) - (run.thinking ?? NaN);
+    await expect.poll(() => balanceCr(page), { timeout: 30_000 }).toBeLessThanOrEqual(start - run.rendered!);
+    expect(await balanceCr(page)).toBeGreaterThanOrEqual(start - run.ceiling!);
     await screenIsClean(run, ['[data-testid="board-plan"]']);
   });
 
@@ -268,7 +278,7 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     await tap(run, approve);
     await expect(page.getByTestId("board-group").filter({ hasText: /Shots · 1 of \d+ approved/ })).toBeVisible({ timeout: 30_000 });
     mark(run, "first take approved");
-    expect(run.spend.spent.map((s) => s.kind), "approving a take spends nothing").toEqual(["agent.plan", "agent.render"]);
+    expect(run.spend.spent.map((s) => s.kind), "approving a take spends nothing").toEqual(["agent.plan", "agent.approvePlan"]);
     expect(bannedNamesIn(await visibleText(page)), "retired names on screen").toEqual([]);
   });
 
@@ -361,13 +371,13 @@ test.describe("the five-minute test · phone 390x844", () => {
     mark(run, "plan waits");
   });
 
-  test("7 · the plan opens on its own screen: the steps, the Total, Approve, Change, Hold", async () => {
+  test("7 · the plan opens on its own screen: the steps, the Total, Build · free, Change, Hold", async () => {
     const { page } = run;
     await tap(run, page.getByTestId("phone-row-plan"));
     await expect(page.getByTestId("phone-plan")).toBeVisible({ timeout: 60_000 });
     await expect(page.getByTestId("phone-plan-title")).toHaveText(/Make \d+ shots?/);
     await expect(page.getByTestId("phone-plan-total")).toBeVisible();
-    await expect(page.getByTestId("phone-plan-primary")).toHaveText(/^Approve/);
+    await expect(page.getByTestId("phone-plan-primary")).toHaveText("Build · free");
     await expect(page.getByTestId("phone-plan-change")).toBeVisible();
     await expect(page.getByTestId("phone-plan-hold")).toBeVisible();
     await screenIsClean(run, ['[data-testid="mobile-actions"]']);
@@ -375,42 +385,50 @@ test.describe("the five-minute test · phone 390x844", () => {
     mark(run, "plan screen");
   });
 
-  test.fixme("8 · the plan's button is its price: 'Approve · N cr', the Total above it, 'up to N cr more for fixes'", async () => {
-    /* FIXME: before approval the steps say 'priced when it runs', the Total says 'not priced yet' and Approve has no figure; server-priced plan and plan-level approval are U1 PR 3 and 4. */
-    await expect(run.page.getByTestId("phone-plan-primary")).toHaveText(/^Approve · (up to )?\d[\d,]* cr$/);
-    await expect(run.page.getByTestId("phone-plan-total")).toContainText(cr);
-  });
-
-  test("9 · an agent identity cannot approve the plan, raise its limit or press a render", async () => {
-    const { headers } = await scopeFor(run.page.request);
-    const state = await runOf(run.page.request, headers, run.productionId, run.draftId);
-    expect(state.run?.state).toBe("awaiting_approval");
-    await anAgentCannotApprove(run, state.run!.id, state.run!.proposal?.fingerprint ?? null);
-    await expect(run.page.getByTestId("phone-plan-primary")).toHaveText(/^Approve/);
-    expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan"]);
-  });
-
-  test("10 · a person approves the plan; Home then offers the first render at its price", async () => {
+  test("8 · Build is free; Home then offers the plan at its price, and on its screen the button is the price", async () => {
     const { page } = run;
     await tap(run, page.getByTestId("phone-plan-primary"));
     await expect(page.getByTestId("phone-home")).toBeVisible({ timeout: 90_000 });
-    const row = page.getByTestId("phone-row-approve").first();
+    const row = page.getByTestId("phone-row-plan");
     await expect(row).toHaveText(cr, { timeout: 90_000 });
-    expect(run.spend.spent.map((s) => s.kind), "approving the plan billed no render").toEqual(["agent.plan"]);
-    run.rendered = Number(cr.exec(await row.innerText())?.[1].replace(/,/g, ""));
+    expect(run.spend.spent.map((s) => s.kind), "building billed nothing").toEqual(["agent.plan"]);
+    await tap(run, row);
+    await expect(page.getByTestId("phone-plan-primary")).toHaveText(/^Approve · (up to )?\d[\d,]*(\.\d)? cr$/, { timeout: 60_000 });
+    await expect(page.getByTestId("phone-plan-title")).toHaveText(/Make \d+ shots? · (up to )?\d[\d,]*(\.\d)? cr · at most \d[\d,]*(\.\d)? cr/);
+    await expect(page.getByTestId("phone-plan-total")).toContainText(cr);
+    run.ceiling = Number(/at most (\d[\d,]*(?:\.\d)?) cr/.exec(await page.getByTestId("phone-plan-title").innerText())?.[1].replace(/,/g, "") ?? NaN);
+    await screenIsClean(run, ['[data-testid="mobile-actions"]']);
+    await expectFloors(page, "phone plan at its price", { scope: ".ph-app" });
+    mark(run, "plan priced");
+  });
+
+  test("9 · an agent identity cannot approve the plan, build it, raise its limit or press a render", async () => {
+    const { headers } = await scopeFor(run.page.request);
+    const state = await runOf(run.page.request, headers, run.productionId, run.draftId);
+    expect(state.run?.state).toBe("needs_you");
+    await anAgentCannotApprove(run, state.run!.id, state.run!.plan?.quote?.fingerprint ?? null);
+    await expect(run.page.getByTestId("phone-plan-primary")).toHaveText(/^Approve · /);
+    expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan"]);
+  });
+
+  test("10 · a person approves the plan once, at its price, and goes Home", async () => {
+    const { page } = run;
+    const primary = page.getByTestId("phone-plan-primary");
+    run.spend.allow("agent.approvePlan", await primary.innerText());
+    await tap(run, primary);
+    await expect(page.getByTestId("phone-home")).toBeVisible({ timeout: 90_000 });
+    expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan", "agent.approvePlan"]);
     await screenIsClean(run, ['[data-testid="phone-home"]']);
-    await expectFloors(page, "phone Home with the render", { scope: ".ph-app" });
     mark(run, "plan approved");
   });
 
-  test("11 · a person presses the price and the first take is ready to review", async () => {
+  test("11 · the first render goes with no tap of its own and is ready to review", async () => {
     const { page } = run;
-    run.spend.allow("agent.render", `phone row · ${run.rendered} cr`);
-    await tap(run, page.getByTestId("phone-row-approve").first());
-    /* The render is settled when the balance falls by its price. */
-    await expect.poll(async () => Number(cr.exec(await page.getByTestId("phone-credits").innerText())?.[1].replace(/,/g, "")), { timeout: 120_000 })
-      .toBeLessThanOrEqual((run.balanceAtStart ?? NaN) - run.rendered!);
-    run.spend.close("agent.render");
+    const { headers } = await scopeFor(page.request);
+    /* The first render settles under the plan's approval: no press of its own. */
+    await expect.poll(async () => (await runOf(page.request, headers, run.productionId, run.draftId)).run?.paid.find((p) => p.tool === "render")?.charged ?? null, { timeout: 120_000 }).not.toBeNull();
+    run.spend.close("agent.approvePlan");
+    run.rendered = (await runOf(page.request, headers, run.productionId, run.draftId)).run!.paid.find((p) => p.tool === "render")!.charged!;
     if (!(await page.getByTestId("phone-open-review").waitFor({ state: "visible", timeout: 8_000 }).then(() => true, () => false))) {
       /* As on the laptop: the project's Library is not read again after Atomik's render, so Home offers the take for review only once the app is opened again. */
       test.info().annotations.push({ type: "issue", description: "After an Atomik render the phone's Home offers the take for review only after the app is reloaded (the project's Library is not re-read)." });
@@ -422,10 +440,10 @@ test.describe("the five-minute test · phone 390x844", () => {
     }
     await expect(page.getByTestId("phone-open-review")).toBeVisible({ timeout: 60_000 });
     mark(run, "first render ready");
-    expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan", "agent.render"]);
-    /* The ledger matches: the balance fell by what the thinking and the render were priced at. */
-    await expect.poll(async () => Number(cr.exec(await page.getByTestId("phone-credits").innerText())?.[1].replace(/,/g, "")), { timeout: 30_000 })
-      .toBeLessThanOrEqual((run.balanceAtStart ?? NaN) - run.rendered!);
+    expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan", "agent.approvePlan"]);
+    /* The ledger matches: the balance fell by at least the first render and never by more than the plan's ceiling past the thinking. */
+    const balance = async () => Number(cr.exec(await page.getByTestId("phone-credits").innerText())?.[1].replace(/,/g, ""));
+    await expect.poll(balance, { timeout: 30_000 }).toBeLessThanOrEqual((run.balanceAtStart ?? NaN) - run.rendered);
     await screenIsClean(run, ['[data-testid="phone-home"]']);
   });
 
@@ -439,7 +457,7 @@ test.describe("the five-minute test · phone 390x844", () => {
     await tap(run, page.getByTestId("phone-approve"));
     await expect(page.getByText(/approved · nothing spent/)).toBeVisible({ timeout: 15_000 });
     mark(run, "first take approved");
-    expect(run.spend.spent.map((s) => s.kind), "approving a take spends nothing").toEqual(["agent.plan", "agent.render"]);
+    expect(run.spend.spent.map((s) => s.kind), "approving a take spends nothing").toEqual(["agent.plan", "agent.approvePlan"]);
   });
 
   test("13 · all of it inside five minutes, within the tap budget, nothing paid unasked", async () => {
