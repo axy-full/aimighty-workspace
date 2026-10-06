@@ -43,7 +43,7 @@ export function EngineList({ make, id, scope }: { make: MakeModel; id: string; s
                   <span className="gx-mk-row-name">{m.label}</span>
                   {m.description ? <span className="gx-mk-row-sub">{m.description}</span> : null}
                 </span>
-                <span className="gx-mk-row-price" title={row.value ? undefined : row.title}><Price value={row.value} /></span>
+                <span className="gx-mk-row-price" title={row.value ? undefined : row.title} data-testid="make-engine-row-price">{row.value ? <Price value={row.value} /> : row.about ? <span className="gx-price" data-price="about" style={{ whiteSpace: "nowrap" }}>{row.about}</span> : null}</span>
               </button>
             );
           })}

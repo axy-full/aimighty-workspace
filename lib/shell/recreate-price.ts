@@ -2,6 +2,8 @@ import { audioSeconds, activeModel, chosenKey, composerSettings, composerVoices,
 import { nodeAudioBody, speechVoiceFor, type NodeAudioSetup } from "@/lib/workbench/generation-audio";
 import type { CtxPrice } from "./context-menu";
 import { recipePrompt, recreateBlock, recreatePreset, type RecipeSource } from "./recipe";
+import { isCinemaStudioModel } from "../cinemaStudioTypes";
+import { cinemaPriceDollars, cinemaPriceWords } from "../cinemaHold";
 
 /**
  * What "Recreate" costs, for the right-click menu (design/particl-graphite/README.md § 4, § 5: every control that spends shows its
@@ -13,7 +15,8 @@ import { recipePrompt, recreateBlock, recreatePreset, type RecipeSource } from "
  */
 export type RecreatePrice =
   | { state: "reading" }
-  | { state: "ready"; credits: number; approximate: boolean }
+  /* `held`: Cinema Studio, whose approval holds 3N and is said "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
+  | { state: "ready"; credits: number; approximate: boolean; held?: true }
   | { state: "unavailable"; reason: string };
 
 /** How a request is read: the caller's own scoped fetch. Rejects with an Error whose message is the server's reason. */
@@ -74,14 +77,15 @@ export async function quoteRecreate(source: RecipeSource, read: QuoteReader, pro
       withoutRefs = true;
       result = await ask(false);
     }
-    return result.credits == null ? { state: "unavailable", reason: "This engine cannot be priced with these settings." } : { state: "ready", credits: result.credits, approximate: result.approximate || withoutRefs };
+    return result.credits == null ? { state: "unavailable", reason: "This engine cannot be priced with these settings." } : { state: "ready", credits: result.credits, approximate: result.approximate || withoutRefs, ...(isCinemaStudioModel(model.id) ? { held: true as const } : {}) };
   } catch (error) {
     return { state: "unavailable", reason: reasonOf(error) };
   }
 }
 
-/** "43 cr", or "about 43 cr" where the engine settles on what it delivers (the composer's own wording). */
+/** "43 cr", "about 43 cr" where the engine settles on what it delivers, or Cinema Studio's "about N cr, at most 3N cr" (the composer's own wording). */
 export function priceWords(price: Extract<RecreatePrice, { state: "ready" }>): string {
+  if (price.held) return cinemaPriceWords(price.credits);
   return `${price.approximate ? "about " : ""}${price.credits.toLocaleString("en-US")} cr`;
 }
 
@@ -89,6 +93,8 @@ export function priceWords(price: Extract<RecreatePrice, { state: "ready" }>): s
 export function ctxPrice(price: RecreatePrice, creditUsd: number | undefined): CtxPrice {
   if (price.state === "reading") return { state: "reading" };
   if (price.state === "unavailable") return { state: "unavailable", reason: price.reason };
-  const hover = typeof creditUsd === "number" && creditUsd > 0 ? `${price.approximate ? "About " : ""}US$${(price.credits * creditUsd).toFixed(2)}` : undefined;
+  const hover = typeof creditUsd === "number" && creditUsd > 0
+    ? price.held ? cinemaPriceDollars(price.credits, creditUsd) ?? undefined : `${price.approximate ? "About " : ""}US$${(price.credits * creditUsd).toFixed(2)}`
+    : undefined;
   return { state: "ready", text: priceWords(price), ...(hover ? { hover } : {}) };
 }

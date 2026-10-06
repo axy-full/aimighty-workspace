@@ -31,8 +31,11 @@ test("the button's figure is the live quote times its takes, and nothing for a s
   expect(buttonFigure(null, key, 1)).toBeNull();
 });
 
-test("Cinema Studio is hidden from Make by one flag (off while its hold is unmerged)", () => {
-  expect(hiddenInMake(CINEMA_STUDIO_MODEL_ID)).toBe(!MAKE_SHOWS_CINEMA);
+test("Cinema Studio is offered in Make (its 3N hold is in), at \"about N cr, at most 3N cr\"", () => {
+  expect(MAKE_SHOWS_CINEMA).toBe(true);
+  expect(hiddenInMake(CINEMA_STUDIO_MODEL_ID)).toBe(false);
+  expect(cinemaParts(31)).toEqual(["about 31 cr,", "at most 93 cr"]);
+  expect(figureWords(makeFigure(31, true))).toBe("about 31 cr, at most 93 cr");
   expect(hiddenInMake(SEEDANCE.id)).toBe(false);
 });
 

@@ -15,6 +15,8 @@ import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import { useSession } from "@/lib/session";
 import { cleanCinemaControls, isCinemaStudioAudioMime, isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
+import { cinemaPriceWords } from "@/lib/cinemaHold";
+import { hiddenInMake } from "@/lib/shell/make-price";
 import type { Project } from "@/lib/workbench/studio";
 import { composerButtonParts, EMPTY_PROMPT, READING_MODELS, shownTotal, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
 import { cleanSetup, composeForSend, recoverSetup, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
@@ -29,8 +31,8 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
  * price, the one send at the price on the button, the held take when credits are short. What it adds is the new
  * interface's Auto (README § 0 rule 2): the type is inferred from the words until the person picks one, and the
  * engine and its settings are the composer's own defaults, shown as one line with Change. Prices come out as
- * PriceValues for components/graphite/Price.tsx; Cinema Studio's approximate figure keeps the composer's own
- * wording until its helper lands (PR #523).
+ * PriceValues for components/graphite/Price.tsx; Cinema Studio's approximate figure is said in its own words,
+ * "about N cr, at most 3N cr" (lib/cinemaHold.ts), the most a take may charge, which is what it holds.
  */
 
 export type MakeInput = {
@@ -87,7 +89,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     announceMade({ projectId: made.projectId, nodeId: made.nodeId, name: made.name });
     shell.closeMake();
   }, [ws, shell, surface]);
-  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent });
+  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent, hide: hiddenInMake });
   const { state, model, offered, settings, submitting } = composer;
   const dispatch = composer.dispatch;
   /* Back from where the words were left: only into an empty box, before anything else (a recipe, ⌘K's "make …") lands in it. */
@@ -307,10 +309,12 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   const rates = sheetRates?.key === priceKey ? sheetRates : null;
   const readingRates = wantsRates && !rates;
   /** One row's figure, as a price: exact where the server priced the row, none where it did not. */
-  const rowValue = useCallback((m: ComposerModel): { value: PriceValue | null; title: string } => {
+  const rowValue = useCallback((m: ComposerModel): MakePrice & { title: string } => {
     const row = rowPrice(m, null, priceAt, rates, readingRates);
-    /* Cinema Studio's rows carry an approximate figure; its words are its own (PR #523), so the row shows none. */
-    return { value: row.kind === "rate" && row.credits != null && !row.approximate ? exact(row.credits) : null, title: row.kind === "none" ? "Priced on Make once the words are in" : row.title };
+    const priced = row.kind === "rate" && row.credits != null ? row.credits : null;
+    /* Cinema Studio's row says what approving it holds: "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
+    const about = priced != null && isCinemaStudioModel(m.id) ? cinemaPriceWords(priced) : null;
+    return { value: priced != null && !row.approximate ? exact(priced) : null, about, title: row.kind === "none" ? "Priced on Make once the words are in" : row.title };
   }, [priceAt, rates, readingRates]);
 
   /* ── The words ───────────────────────────────────────────────────────── */
@@ -354,7 +358,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   const approximate = Boolean(composer.quote?.approximate);
   const takeCredits = composer.credits;
   const total = submitting ? null : shownTotal(composer.quote, composer.quoteKey, count);
-  /* Cinema Studio's approximate figure keeps the composer's own words ("about N cr") until PR #523's helper lands. */
+  /* Cinema Studio's approximate figure is the composer's own words, "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
   const aboutOneTake = () => composerButtonParts({ quote: composer.quote, quoteKey: composer.quoteKey, submitting: false, count: 1, verb: "Make" }).price;
   const soundTask = model?.audioTask === "sound" || model?.audioTask === "music" ? model.audioTask : null;
   const line = (state.type === "audio"
