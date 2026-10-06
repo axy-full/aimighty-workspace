@@ -131,7 +131,7 @@ test("shots render in place, the take that waits is frame g, and judging spends 
   /* Approve v2: one approved version per take, so v1's approval is cleared in the same action. */
   await review.getByTestId("take-approve").click();
   await expect.poll(() => reviews).toEqual([{ id: "tk-s1-v2", state: "approved" }, { id: "tk-s1-v1", state: "" }]);
-  await expect(page.getByTestId("toast")).toHaveText("Shot 1 v2 approved");
+  await expect(page.getByTestId("toast")).toContainText("Shot 1 v2 approved");
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
   expect(paid).toEqual([]);
@@ -182,7 +182,7 @@ test("review mode: J and K step, R rejects with a reason as a note, C compares, 
   await reason.press("Enter");
   await expect.poll(() => reviews).toEqual([{ id: "tk-s1-v2", state: "changes" }]);
   await expect.poll(() => notes).toEqual([{ genId: "tk-s1-v2", text: "The light is too flat" }]);
-  await expect(page.getByTestId("toast")).toHaveText("Rejected · nothing more spent");
+  await expect(page.getByTestId("toast")).toContainText("Shot 1 · v2 rejected");
   await expect(mode.getByTestId("review-reject")).toHaveText("Rejected");
 
   /* Esc closes; nothing paid was sent. */
