@@ -7,6 +7,7 @@ import { cardStatus } from "@/lib/workspace/rig-board";
 import { cardWidth } from "@/lib/workspace/rig-graph";
 import { rigSubtitle, type RigShot } from "@/lib/workspace/shots";
 import { GroupFrame, LabelCard, NodeCard, NoteCard, type LabelData, type NodeCardData, type NoteData, type Preview } from "./board/FallbackCards";
+import { shotReferenceDrop } from "./accepts";
 import { defineCard, type CardSet } from "./types";
 
 /*
@@ -129,7 +130,7 @@ const PLAIN = (kind: "take" | "made" | "cast" | "looks" | "doc" | "tool" | "medi
   defineCard<NodeCardData>({
     kind, size: () => SIZE[kind], Card: NodeCard,
     /* A still or a video dropped on a shot becomes its reference (rig-build's addInput, as the Rig's own library does). */
-    ...(kind === "take" ? { accepts: (drop, card) => drop.type === "asset" && (drop.media === "image" || drop.media === "video") && card.nodeId ? { type: "reference" as const, shotId: card.nodeId, assetId: drop.assetId } : null } : {}),
+    ...(kind === "take" ? { accepts: shotReferenceDrop } : {}),
   });
 
 export const boardCards: CardSet = {
