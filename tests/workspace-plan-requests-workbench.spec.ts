@@ -284,7 +284,7 @@ test("a variant Marketing Studio never configured is named, not guessed at, and 
   expect(state.errors).toEqual([]);
 });
 
-test("Shorts ran on the Higgsfield account and is off for Release 1: no page, no plan, its old address opens the suite's first page", async ({ page }, info) => {
+test("Shorts ran on the Higgsfield account and is off for Release 1: no page and no plan to open, its old address opens the suite's first page", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const project = { ...newProject("Viral launch"), id: "ws-plan-shorts", productionProjectId: "ws-plan-production" } as Project;
   const state = await fixture(page, project);
@@ -293,9 +293,8 @@ test("Shorts ran on the Higgsfield account and is off for Release 1: no page, no
   await expect(page.getByTestId("page-title")).not.toHaveText("Shorts");
   await expect(page.locator('[data-page-body="shorts"]')).toHaveCount(0);
   await expect(page.getByText(/Shorts is retired/)).toHaveCount(0);
-  await openAtomik(page);
-  await expect(page.getByTestId("atomik-plan-title")).toBeVisible();
-  await expect(page.getByTestId("atomik-plan-title")).not.toHaveText("Make a set of shorts");
+  /* With no Shorts page, its Atomik plan has nowhere to open from (tests/unit/signinOffRelease1.spec.ts holds the registries). */
+  await expect(page.getByText("Make a set of shorts")).toHaveCount(0);
   expect(state.quotes).toEqual([]);
   expect(state.dispatches).toEqual([]);
   expect(state.external).toEqual([]);
