@@ -1,4 +1,5 @@
 import { scanSpend, type SpendReport } from "./spendScan";
+import { NOT_SPENDING_BUTTONS, NOT_SPENDING_FILES } from "./paidRoutes";
 
 /**
  * The D0 surfaces where every spending control must carry a price (owner's D0 review, items 5 to 9, 13): the Make panel and quick
@@ -26,12 +27,12 @@ export const spendSurfaceOf = (path: string): SpendSurface | null => SPEND_SURFA
 
 /**
  * The gaps per file: 1 when the file reaches a paid route and carries no opt-in, plus one for each button labelled with a spend
- * verb that carries none.
+ * verb that carries none. A file or button that was traced and does not spend is excused in paidRoutes.ts, with its reason.
  */
 export function gapsByFile(report: SpendReport): Record<string, number> {
   const gaps: Record<string, number> = {};
-  for (const site of report.sites) if (!site.optedIn) gaps[site.path] = (gaps[site.path] ?? 0) + 1;
-  for (const label of report.labels) gaps[label.path] = (gaps[label.path] ?? 0) + 1;
+  for (const site of report.sites) if (!site.optedIn && !(site.path in NOT_SPENDING_FILES)) gaps[site.path] = (gaps[site.path] ?? 0) + 1;
+  for (const label of report.labels) if (!(`${label.path}::${label.label}` in NOT_SPENDING_BUTTONS)) gaps[label.path] = (gaps[label.path] ?? 0) + 1;
   return gaps;
 }
 

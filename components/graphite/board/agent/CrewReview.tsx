@@ -4,6 +4,7 @@ import { useShell } from "@/lib/shell/state";
 import { useCrew } from "@/lib/crew/use-crew";
 import { upTo } from "@/lib/shell/price-words";
 import type { BoardCtx } from "../cards/types";
+import { spendAttrsOf } from "@/lib/spend";
 import { usePriceTitle } from "../../Price";
 import { PriceWords } from "./PriceWords";
 
@@ -51,7 +52,7 @@ export function CrewReview({ ctx }: { ctx: BoardCtx }) {
         ))}
       </div>
       <div className="ag-actions">
-        <button type="button" className="ag-btn ag-btn-primary" disabled={room.blocked !== null || room.running} title={title ?? undefined} onClick={() => void room.runRound()} data-testid="crew-ask">
+        <button type="button" className="ag-btn ag-btn-primary" disabled={room.blocked !== null || room.running} aria-busy={room.running || undefined} title={title ?? undefined} onClick={() => void room.runRound()} data-testid="crew-ask" {...spendAttrsOf(price)}>
           {room.running ? "The crew is reading…" : <>Ask the crew{price ? <> · <PriceWords value={price} /></> : null}</>}
         </button>
       </div>

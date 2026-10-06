@@ -49,6 +49,38 @@ export const NOT_SPENDING: Record<string, string> = {
   "rig/elements": "creating an asset is free; training is priced on its own route (identities)",
 };
 
+/**
+ * Files the scan puts on the paid path although no control in them starts paid work. The scan follows a route's name through
+ * a hook or a helper, and a route can be both read and spent on (a GET, a quote-only POST, a run), so it over-approximates.
+ * A file goes here only after its handlers were traced, and says what it does instead:
+ *  - `why`: what the file does with the route (reads it, quotes it, opens Make or a dialog) and where the press that spends lives;
+ *  - `priced`: the files that own the priced, marked button, for a file that only hands them the paid handler. Each must carry the
+ *    opt-in and be imported by the excused file (tests/unit/spend-buttons.spec.ts).
+ * An entry whose file is no longer on the paid path, or has been marked itself, fails: the list cannot go stale. A spend-verb
+ * label in the file still needs its own marker (or an entry in NOT_SPENDING_BUTTONS).
+ */
+export type FileExcuse = { why: string; priced?: string[] };
+export const NOT_SPENDING_FILES: Record<string, FileExcuse> = {
+  "components/graphite/control-room/ApprovalsView.tsx": { why: "lists the approvals queue and hands each row the queue's approve and decline; the rows own the Approve button (priced, marked) and Approve in one go owns its confirm", priced: ["components/graphite/control-room/ApprovalRow.tsx", "components/graphite/control-room/BatchApprove.tsx"] },
+  "components/graphite/make/Make.tsx": { why: "the Make panel's frame: it holds the composer's state for its tabs and hands it to Compose, which owns the Make button (priced, marked)", priced: ["components/graphite/make/Compose.tsx"] },
+  "components/graphite/board/ads/AdsOverlay.tsx": { why: "reads the Campaign agent's runs (a GET) for the cards and draws the run dialog, whose own button quotes and then reserves up to the quote on a person's press" },
+  "components/graphite/board/ads/cards/HookCards.tsx": { why: "the only paid-route string is a quote-only request (nothing reserved); 'Write N more' opens the run dialog, where the press that spends lives" },
+  "components/graphite/board/agent/RecordTab.tsx": { why: "reads the approvals queue and the activity to list what was approved and what waits; its buttons only open things, and nothing here approves or spends" },
+  "components/graphite/board/cards/cast/CastCard.tsx": { why: "reads the identity list (a GET) and shows the training price; 'Build identity' opens the Inspector and 'Lock as master' is free" },
+  "components/graphite/board/inspector/CastBody.tsx": { why: "reads the identity list (a GET); its buttons copy, lock the master (free) or open Make; nothing here starts training" },
+  "components/graphite/board/cards/plan/NextCard.tsx": { why: "reads one quote (quote-only) for the stills card and opens Make filled; Make shows its own price and a person presses it" },
+  "components/graphite/board/cards/take/TakeCard.tsx": { why: "reads the project's checks (a GET); Retry hands the recipe to Make to be priced again, and Release is ReleaseTake's own priced, marked button" },
+  "components/graphite/board/inspector/TakeBody.tsx": { why: "reads the project's checks (a GET) and one quote; 'Change with words · N cr' opens Make, where the press that spends is priced" },
+};
+
+/**
+ * A button whose label reads like a spend verb and that does not spend, as "path::label". Each says what the press does.
+ */
+export const NOT_SPENDING_BUTTONS: Record<string, string> = {
+  "components/graphite/control-room/ActivityView.tsx::Run again": "puts the run's request back in Atomik's box and opens Atomik; nothing is sent, and the Ask there shows its own price",
+  "components/graphite/make/Recent.tsx::Make something": "switches the panel from Recent to its Make tab; nothing is made until Make is pressed there",
+};
+
 /** A route file with any of these in its source is one that can spend, or prices something that does. */
 export const SPEND_MARKERS =
   /\b(maxCredits|quoteOnly|withGenerationRequest|reserveGenerationSpend|executeGenerationAdmission|executeAudioAdmission|executeDubbingAdmission|runPaidText|releaseHeldJobs|reserveRecoveryContinuation)\b/;
@@ -57,7 +89,7 @@ export const SPEND_MARKERS =
  * What the label of a button that spends starts with. A button with one of these as its text is a paid control
  * and must say what it costs. Deliberately short: a verb that is also free elsewhere ("Run", "Retry", "Send") is not here.
  */
-export const SPEND_LABEL = /^\s*(Make(?!\s+(?:member|admin|owner|editor|viewer)\b)|Generate|Render|Release|Recreate|Again|Upscale|Transfer motion|Swap object|Train|Dub|Transcribe|Approve (?:and|&) run|Run again|Re-?run)\b/;
+export const SPEND_LABEL = /^\s*(Make(?!\s+(?:member|admin|owner|editor|viewer|a\s+token)\b)|Generate|Render|Release|Recreate|Again|Upscale|Transfer motion|Swap object|Train|Dub|Transcribe|Approve (?:and|&) run|Run again|Re-?run)\b/;
 
 /** `dir` as a regex over a client string whose template holes are written `{}`. */
 export function routePattern(dir: string): RegExp {

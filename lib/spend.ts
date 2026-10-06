@@ -10,6 +10,8 @@
  * and a missing price is `null`: the control then renders disabled with `data-spend="unpriced"`.
  */
 
+import { priceWords, type PriceValue } from "@/lib/shell/price-words";
+
 export type SpendPrice =
   /** A price the server quoted: "43 cr". */
   | { cr: number; upTo?: false; atMost?: undefined }
@@ -57,4 +59,15 @@ export type SpendAttrs = {
 export function spendAttrs(price: SpendPrice): SpendAttrs {
   const text = priceLabel(price);
   return text === null ? { "data-spend": "unpriced", disabled: true } : { "data-spend": "priced", "data-spend-price": text };
+}
+
+/**
+ * `spendAttrs` for a price the screen already holds as a PriceValue (lib/shell/price-words.ts: "43 cr", "up to 69 cr", "free"):
+ * the marker carries the very words the person reads, and no price at all leaves the control disabled and "unpriced".
+ *
+ *   <button type="button" {...spendAttrsOf(price)} onClick={ask}>Ask · <Price value={price} /></button>
+ */
+export function spendAttrsOf(value: PriceValue | null | undefined): SpendAttrs {
+  const words = priceWords(value);
+  return words === null ? { "data-spend": "unpriced", disabled: true } : { "data-spend": "priced", "data-spend-price": words };
 }

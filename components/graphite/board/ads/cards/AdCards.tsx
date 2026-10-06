@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Price } from "@/components/graphite/Price";
 import { exact } from "@/lib/shell/price-words";
+import { spendAttrsOf } from "@/lib/spend";
 import { estimateReason } from "@/lib/shell/key-estimate";
 import { useKeyTake } from "@/lib/shell/use-key-take";
 import { sendReference } from "@/lib/shell/reference-inbox";
@@ -82,7 +83,7 @@ export function ImageAdCard({ data }: CardProps<ImageAdData>) {
         {running ? <Note role="status">{running.held ? "Held · it starts when credits arrive" : running.generation?.status === "queued" ? "Queued" : "Rendering"} · <Price value={exact(running.credits)} /></Note> : null}
         {run.phase === "done" ? <Note role="status">Done · it is in Ads below.</Note> : null}
         <Actions>
-          <Btn primary disabled={Boolean(reason) || busy || rig.status !== "ready"} onClick={() => { if (request) void take.submit(request, key, credits); }} data-testid="ads-image-ad-make">
+          <Btn primary disabled={Boolean(reason) || busy || rig.status !== "ready"} aria-busy={busy || undefined} onClick={() => { if (request) void take.submit(request, key, credits); }} data-testid="ads-image-ad-make" {...spendAttrsOf(price)}>
             {phase === "submitting" ? "Submitting…" : running ? "Rendering…" : <>Make the image ad{price ? <> · <Price value={price} /></> : null}</>}
           </Btn>
         </Actions>

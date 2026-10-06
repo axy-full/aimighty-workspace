@@ -1,10 +1,5 @@
 {
   "ratchet": {
-    "app/(app)/admin/page.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "page the handoff does not draw: kept: no frame in the design (reading floor, #515)"
-    },
     "app/(app)/atomik/breakdown/page.tsx": {
       "count": 1,
       "until": "2026-10-08",
@@ -48,27 +43,12 @@
     "components/astra-blender/AstraAgentPanel.tsx": {
       "count": 1,
       "until": "2026-10-08",
-      "by": "goes with the file; UNOWNED (\u00a79): Astra Blender workspace (3D)"
+      "by": "goes with the file; UNOWNED (§9): Astra Blender workspace (3D)"
     },
     "components/astra-blender/AstraRenderPanel.tsx": {
       "count": 1,
       "until": "2026-10-08",
       "by": "Astra Blender workspace (3D): UNOWNED: 3D blocking tool"
-    },
-    "components/graphite/AssetInspector.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "stream 5 (cards 2)"
-    },
-    "components/graphite/JobsTray.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "stream 1"
-    },
-    "components/graphite/NextActionPanel.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "stream 5: say \"Topaz upscale\""
     },
     "components/graphite/SuitesShell.tsx": {
       "count": 1,
@@ -95,32 +75,7 @@
       "until": "2026-10-08",
       "by": "stream 11 (Ads and Social)"
     },
-    "components/graphite/production/BeatsStage.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "stream 4 (cards 1)"
-    },
-    "components/graphite/production/BriefStage.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "stream 4 (cards 1)"
-    },
     "components/graphite/production/CastIdentities.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "stream 5 (cards 2)"
-    },
-    "components/graphite/production/CastStage.tsx": {
-      "count": 3,
-      "until": "2026-10-08",
-      "by": "stream 5 (cards 2)"
-    },
-    "components/graphite/production/EditStage.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "goes with the file: stream 5 (cards 2)"
-    },
-    "components/graphite/production/EnvironmentStage.tsx": {
       "count": 1,
       "until": "2026-10-08",
       "by": "stream 5 (cards 2)"
@@ -129,11 +84,6 @@
       "count": 1,
       "until": "2026-10-08",
       "by": "goes with the file: stream 3 (board canvas)"
-    },
-    "components/graphite/production/StoryboardStage.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "goes with the file: stream 4 (cards 1)"
     },
     "components/graphite/production/TranscribePanel.tsx": {
       "count": 1,
@@ -262,16 +212,6 @@
     }
   },
   "strict": {
-    "components/graphite/GenView.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #512/#514 (Make: every paid button shows its price)"
-    },
-    "components/graphite/viral/ViralView.tsx": {
-      "count": 3,
-      "until": "2026-10-08",
-      "by": "D0 #512/#514 (Make: every paid button shows its price)"
-    },
     "components/make/AstraUpscale.tsx": {
       "count": 1,
       "until": "2026-10-08",

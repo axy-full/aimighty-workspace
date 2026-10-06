@@ -27,7 +27,7 @@ import { SpendButton } from "@/components/graphite/SpendButton";
 // renders "Make · 43 cr"; disabled until there is a price
 ```
 
-Or, on a button you already have:
+A screen that already holds the price as a `PriceValue` (`lib/shell/price-words.ts`: `exact`, `upTo`, `FREE`) spreads `spendAttrsOf(price)`, so the marker carries the very words the person reads. Or, on a button you already have:
 
 ```tsx
 import { spendAttrs, priceLabel } from "@/lib/spend";
@@ -48,3 +48,13 @@ import { spendAttrs, priceLabel } from "@/lib/spend";
 Limit of (2): static analysis cannot see which handler a prop hands to a child, so the opt-in is per file at the place the paid call is wired. A child that receives a paid handler as a prop marks its own button (3 and 4 catch the ones that are labelled or rendered).
 
 If a file reaches a paid route without a button that spends (a quote-only reader, say), do not weaken the check: move the paid call behind the button's own component, or add the route to `NOT_SPENDING` with the reason if it truly does not spend.
+
+### A file or button that does not spend
+
+The scan follows a route's name, and a route can be read, quoted and spent on, so it over-approximates. When a file reaches a paid route but no control in it starts paid work, trace its handlers (it reads, it quotes with `quoteOnly`, it opens Make or a dialog, or it hands the paid handler to a child that owns the button) and excuse it in `tests/helpers/paidRoutes.ts`, with the reason:
+
+- `NOT_SPENDING_FILES[path] = { why, priced? }`: `priced` lists the files that own the marked button for a file that only hands them the handler; each must carry the opt-in and be imported by the excused file.
+- `NOT_SPENDING_BUTTONS["path::label"] = why`: a button labelled like a spend verb that does not spend (it only opens or navigates).
+- A route that no client press spends on goes in `NOT_SPENDING`, as before.
+
+`tests/unit/spend-buttons.spec.ts` (EXCUSES) fails when an entry goes stale: the file left the paid path or was marked itself, a priced file lost its marker, or the button is gone. Never excuse a control that starts a paid job: mark it, and with no price yet it stays disabled as `data-spend="unpriced"`.
