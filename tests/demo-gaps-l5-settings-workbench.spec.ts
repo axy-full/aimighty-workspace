@@ -9,6 +9,11 @@ import { SIZES, desktop, floors, shot, watchErrors, watchPaid } from "./helpers/
  * consent, its own kind) end to end; a person opens the job in Make, where Make prices it, or dismisses it. Team
  * shows two-factor per person and the three roles. Nothing paid is sent. Neutral names only.
  */
+/** Settings' own style sheet has arrived (a dev server can serve the page a moment before it). */
+async function styled(page: Page) {
+  await expect.poll(() => page.evaluate(() => { const el = document.querySelector(".gs-page"); return el ? getComputedStyle(el).paddingTop : "0px"; })).not.toBe("0px");
+}
+
 async function signIn(page: Page) {
   const { workspace } = await signInWithNewInterface(page.request, "Settings Tester");
   const me = await (await page.request.get("/api/me")).json() as { id: string };
@@ -23,6 +28,7 @@ test("Connections: a token that prepares jobs, shown once; it can't approve, spe
   const errors = watchErrors(page);
   await page.goto("/suites?view=workspace&tab=connections");
   await expect(page.getByTestId("settings-title")).toHaveText("Connections");
+  await styled(page);
   await page.getByTestId("settings-token-make").click();
   const form = page.getByTestId("settings-token-form");
   await expect(form.getByRole("dialog")).toContainText("New token for an outside agent");
@@ -74,6 +80,7 @@ test("Connections: a token that prepares jobs, shown once; it can't approve, spe
 
   /* A person sees it waiting, opens it in Make (where Make prices it), and nothing is sent. */
   await page.reload();
+  await styled(page);
   const job = page.getByTestId("settings-prepared-job");
   await expect(job).toHaveCount(1);
   await expect(job).toContainText("A slow push on a quiet street at first light");
@@ -96,6 +103,7 @@ test("Team security: two-factor per person, and the owner, admin and member role
   const errors = watchErrors(page);
   await page.goto("/suites?view=workspace&tab=team");
   await expect(page.getByTestId("settings-title")).toHaveText("Team");
+  await styled(page);
   const me = page.getByTestId("settings-member").first();
   await expect(me).toContainText("two-factor off");
   await expect(me).toContainText("owner");

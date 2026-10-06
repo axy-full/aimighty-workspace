@@ -64,12 +64,12 @@ async function notClipped(card: ReturnType<Page["getByTestId"]>, where: string) 
   expect(out, `${where}: clipped on the card`).toEqual([]);
 }
 
-async function recordConsent(page: Page, root: ReturnType<Page["getByTestId"]>) {
+async function recordConsent(page: Page, root: ReturnType<Page["getByTestId"]>, wait = 30_000) {
   await root.getByTestId("consent-person").fill("A Person");
   await root.getByTestId("consent-use-ads").click();
   await expect(root.getByTestId("consent-save")).toHaveAttribute("aria-disabled", "true");
   await root.getByTestId("consent-file-input").setInputFiles({ name: "consent-statement.wav", mimeType: "audio/wav", buffer: silentWav() });
-  await expect(root.getByTestId("consent-recording-state")).toContainText("recorded just now", { timeout: 30_000 });
+  await expect(root.getByTestId("consent-recording-state")).toContainText("recorded just now", { timeout: wait });
   await root.getByTestId("consent-attest-box").check();
   await expect(root.getByTestId("consent-save")).not.toHaveAttribute("aria-disabled", /.*/);
   await page.waitForTimeout(300);
@@ -158,18 +158,17 @@ test("Identity on the Cast card: consent not recorded, the consent step, consent
 test("The phone's consent step: a person records it, full screen, 44 px targets; nothing paid", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name) || !phone(page), "phones and the landscape phone; the board's dialog is above");
   const { project, paid } = await seed(page);
-  /* Warm-up: on a cold dev server the upload routes compile on first use and the dev client reloads the page mid-upload.
-     Asking each once first (refused: no file) keeps that reload out of the person's steps. */
-  for (const step of ["session", "chunk", "finish"]) await page.request.post(`/api/uploads/${step}`, { data: {} });
   const errors = watchErrors(page);
-  await page.goto(`/suites?project=${project.id}&screen=consent&cast=${encodeURIComponent("cast:cast:cast-lead")}`);
   const screen = page.getByTestId("phone-consent");
-  await expect(screen).toBeVisible();
-  /* The shell settles the address once (it adds the default page); wait for it, so the form isn't drawn twice mid-fill. */
-  await page.waitForLoadState("networkidle");
-  await expect(screen).toBeVisible();
-  await expect(screen).toContainText("Record consent · Lead");
-  await recordConsent(page, screen);
+  /* On a cold dev server the first upload compiles routes and the dev client reloads the page once, mid-step (a dev
+     artefact, not the product): the steps are then taken again from the top, on the warm server. */
+  await expect(async () => {
+    await page.goto(`/suites?project=${project.id}&screen=consent&cast=${encodeURIComponent("cast:cast:cast-lead")}`);
+    await expect(screen).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await expect(screen).toContainText("Record consent · Lead");
+    await recordConsent(page, screen, 15_000);
+  }).toPass({ timeout: 100_000 });
   await floors(page, "Phone consent", "[data-testid=phone-consent]");
   await shot(page, "consent-phone", info);
   const posted = page.waitForResponse((r) => r.url().endsWith("/api/identity-consents") && r.request().method() === "POST");
