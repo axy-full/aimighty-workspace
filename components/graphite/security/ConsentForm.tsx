@@ -114,7 +114,7 @@ export function ConsentForm({ scope, projectId, subjectKey, subjectLabel, onDone
   };
 
   const chip = (on: boolean, label: string, onClick: () => void, testId: string) => (
-    <button type="button" className="gsec-chip" aria-pressed={on} onClick={onClick} data-testid={testId}>{on ? "✓ " : ""}{label}</button>
+    <button key={testId} type="button" className="gsec-chip" aria-pressed={on} onClick={onClick} data-testid={testId}>{on ? "✓ " : ""}{label}</button>
   );
 
   return (

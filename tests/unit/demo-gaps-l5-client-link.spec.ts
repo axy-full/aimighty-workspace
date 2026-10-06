@@ -173,7 +173,8 @@ test("the client approves or asks for changes on a take in the set, and on nothi
 
   /* The team reads what the client said; the client's view shows its own decision. */
   const team = await (await r.team.GET(scoped(who, `${ORIGIN}/api/review-links?projectId=prod_one`), undefined as never)).json();
-  expect(team.said.map((s: { verdict: string | null; text: string | null }) => [s.verdict, s.text])).toEqual(expect.arrayContaining([["approved", null], [null, "Love the light."], [null, "Slower walk?"]]));
+  expect(team.said.map((s: { verdict: string | null; text: string | null }) => [s.verdict, s.text])).toEqual(expect.arrayContaining([["approved", "Love the light."], [null, "Slower walk?"]]));
+  expect(team.said).toHaveLength(2);
   const view = await (await r.view.GET(new Request(`${ORIGIN}/api/review/${token}`), ctx(token))).json();
   expect(view.takes[1].verdict).toMatchObject({ verdict: "approved", guest: "Client" });
 

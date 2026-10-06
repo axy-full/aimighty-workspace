@@ -175,8 +175,15 @@ export async function clientResponses(projectId: string, shareIds: string[]): Pr
           WHERE g.project_id = ? ORDER BY x.created_at DESC LIMIT 50`,
     args: [...shareIds, ...shareIds, projectId],
   });
-  return rs.rows.map((r) => ({
-    genId: String(r.gen_id), shot: r.shot_code ? String(r.shot_code) : null, version: Number(r.version ?? 1), guest: String(r.guest || "The client"),
-    verdict: r.verdict === "approved" ? "approved" : r.verdict === "changes" ? "changes" : null, text: r.text == null ? null : String(r.text), at: Number(r.created_at),
-  }));
+  /* A decision and the comment sent with it are one thing the client said: same take, same name, same moment. */
+  const out: ClientSaid[] = [];
+  for (const r of rs.rows) {
+    const row: ClientSaid = {
+      genId: String(r.gen_id), shot: r.shot_code ? String(r.shot_code) : null, version: Number(r.version ?? 1), guest: String(r.guest || "The client"),
+      verdict: r.verdict === "approved" ? "approved" : r.verdict === "changes" ? "changes" : null, text: r.text == null ? null : String(r.text), at: Number(r.created_at),
+    };
+    const twin = out.find((o) => o.genId === row.genId && o.guest === row.guest && o.at === row.at && (o.verdict == null) !== (row.verdict == null));
+    if (twin) { twin.verdict ??= row.verdict; twin.text ??= row.text; } else out.push(row);
+  }
+  return out;
 }

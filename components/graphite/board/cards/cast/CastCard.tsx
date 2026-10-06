@@ -33,7 +33,7 @@ function Btn({ className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement>) {
 }
 
 const WELL = 173;
-export const CAST_SIZE = { cast: { w: 308, h: WELL + 275 }, environment: { w: 308, h: WELL + 173 }, element: { w: 308, h: WELL + 173 } } as const;
+export const CAST_SIZE = { cast: { w: 308, h: WELL + 320 }, environment: { w: 308, h: WELL + 173 }, element: { w: 308, h: WELL + 173 } } as const;
 
 export function CastCard({ card, data, ctx }: CardProps<CastCardData>) {
   const shell = useShell();

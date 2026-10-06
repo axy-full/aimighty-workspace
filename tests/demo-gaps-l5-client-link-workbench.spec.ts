@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { seedBoard } from "./helpers/s03-board";
-import { SIZES, desktop, floors, shot, tenantDb, watchPaid } from "./helpers/l5";
+import { SIZES, desktop, floors, shot, tenantDb, watchErrors, watchPaid } from "./helpers/l5";
 
 /*
  * Lane 5 · Crew review's client link and the client's own view (Gaps A). Real local ENGINE_MOCK=1 server and routes:
@@ -50,6 +50,7 @@ test("Copy client link in Crew review: one production's review set, its expiry, 
   test.skip(!SIZES.includes(info.project.name) || !desktop(page), "Crew review is in the board's docked panel, desktop only");
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const { project, paid } = await seed(page);
+  const errors = watchErrors(page);
   await page.goto(`/suites?project=${project.id}&view=board&frame=m`);
   const link = page.getByTestId("crew-review").getByTestId("client-link");
   await expect(link).toBeVisible({ timeout: 30_000 });
@@ -79,6 +80,7 @@ test("Copy client link in Crew review: one production's review set, its expiry, 
   await expect(link.getByTestId("client-link-count")).toHaveText("No live link. Copy one to share the review.");
   expect((await page.request.get(`/api/review/${token}`)).status()).toBe(404);
   expect(paid).toEqual([]);
+  expect(errors).toEqual([]);
 });
 
 test("The client's view, signed out: the review set only, approve or ask for changes with a comment, at every size", async ({ page, context }, info) => {
@@ -87,6 +89,7 @@ test("The client's view, signed out: the review set only, approve or ask for cha
   const url = await mint(page, headers, productionId);
   await context.clearCookies();
   const paid = watchPaid(page);
+  const errors = watchErrors(page);
   await page.route("**/api/review/*/media/**", (route) => route.fulfill({ status: 200, contentType: "video/mp4", body: clip }));
   await page.goto(new URL(url).pathname);
   const view = page.getByTestId("client-review");
@@ -112,4 +115,5 @@ test("The client's view, signed out: the review set only, approve or ask for cha
   await expect(page.getByTestId("client-take").nth(1)).toContainText(/You approved this · \d{1,2} \w{3} \d{4}/);
   await shot(page, "client-approved", info);
   expect(paid).toEqual([]);
+  expect(errors).toEqual([]);
 });

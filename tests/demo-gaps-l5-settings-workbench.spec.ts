@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInWithNewInterface } from "./helpers/newInterface";
-import { SIZES, floors, shot, watchPaid } from "./helpers/l5";
+import { SIZES, floors, shot, watchErrors, watchPaid } from "./helpers/l5";
 
 /*
  * Lane 5 · Settings › Connections (MCP tokens) and Settings › Team (Team security), Gaps B. Real local ENGINE_MOCK=1
@@ -20,6 +20,7 @@ test("Connections: a token that prepares jobs, shown once; it can't approve, spe
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await signIn(page);
   const paid = watchPaid(page);
+  const errors = watchErrors(page);
   await page.goto("/suites?view=workspace&tab=connections");
   await expect(page.getByTestId("settings-title")).toHaveText("Connections");
   await page.getByTestId("settings-token-make").click();
@@ -84,12 +85,14 @@ test("Connections: a token that prepares jobs, shown once; it can't approve, spe
   await expect(page.getByTestId("gen-prompt")).toHaveValue("A slow push on a quiet street at first light");
   await shot(page, "token-prepared-make", info);
   expect(paid).toEqual([]);
+  expect(errors).toEqual([]);
 });
 
 test("Team security: two-factor per person, and the owner, admin and member roles only", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   await signIn(page);
   const paid = watchPaid(page);
+  const errors = watchErrors(page);
   await page.goto("/suites?view=workspace&tab=team");
   await expect(page.getByTestId("settings-title")).toHaveText("Team");
   const me = page.getByTestId("settings-member").first();
@@ -104,8 +107,11 @@ test("Team security: two-factor per person, and the owner, admin and member role
   await expect(roles.nth(0)).toContainText("1");
   await page.getByTestId("settings-security").getByRole("button").first().click();
   await expect(page.getByTestId("settings-two-step")).toContainText("Your two-factor sign-in");
+  await expect(page.getByTestId("settings-two-step")).not.toContainText("Reading…");
+  await expect(page.getByTestId("settings-sessions")).not.toContainText("Reading…");
   await page.getByTestId("settings-roles").scrollIntoViewIfNeeded();
   await floors(page, "Team security", ".gs");
   await shot(page, "team", info);
   expect(paid).toEqual([]);
+  expect(errors).toEqual([]);
 });

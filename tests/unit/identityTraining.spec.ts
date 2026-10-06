@@ -95,6 +95,8 @@ test("the train route refuses a run that costs more than the approved price, bef
     "@/lib/creditTerms": { billCredits },
     "@/lib/identityTraining": { trainApprovalProblem },
     "@/lib/generationRequests": { withGenerationRequest: (_r: Request, _u: string, run: () => Promise<Response>) => run(), SpendReservationError: class extends Error {} },
+    /* Training records consent, so the route is people-only; the caller here is a signed-in person. */
+    "@/lib/security/people-only": await import("../../lib/security/people-only"),
   });
   const post = (body: unknown) => route.POST(
     new Request("http://localhost/api/identities/idn_1/train", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),

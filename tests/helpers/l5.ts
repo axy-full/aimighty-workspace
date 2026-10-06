@@ -58,3 +58,12 @@ export function watchPaid(page: Page): string[] {
   });
   return paid;
 }
+
+/** The page's own errors (an uncaught exception, or a console error), so a screen that throws fails its spec. */
+export function watchErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  /* A refused read the page handles ("Failed to load resource") is the network's note, not the page's error. */
+  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`); });
+  return errors;
+}
