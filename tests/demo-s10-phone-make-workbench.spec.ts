@@ -173,7 +173,7 @@ test("the Atomik sheet: a how-to is answered free with an offer; \"make …\" fi
 });
 
 test("the Atomik sheet: \"remember …\" says plainly that Memory is not on the phone, offers no button, and writes nothing", async ({ page }, info) => {
-  test.skip(!PHONES.includes(info.project.name), "phone widths");
+  test.skip(!isCompact(info), "phone widths");
   test.setTimeout(120_000);
   const { seen } = await seed(page);
   const writes: string[] = [];
