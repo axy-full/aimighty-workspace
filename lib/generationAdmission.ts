@@ -2,6 +2,7 @@ import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/ge
 import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem, genjutsuFrameProblem } from "@/lib/genjutsu";
 import { CINEMA_STUDIO_LIMITS, isCinemaStudioAudioMime, isCinemaStudioModel, readCinemaControls } from "@/lib/cinemaStudioTypes";
 import { cinemaStudioEnabled, cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH } from "@/lib/cinemaStudio";
+import { HOLD_NEEDS_A_PERSON, holdBandOf, isAgentApprover } from "@/lib/cinemaHold";
 import { CINEMA_SOUND_UNAVAILABLE, cinemaSoundOffered } from "@/lib/cinemaSoundPricing";
 import { readDraft } from "@/lib/workbench/records";
 import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
@@ -2029,9 +2030,12 @@ export async function executeGenerationAdmission(
         hasVideoInput,
         { audio: params.generateAudio, task: task.id, fps60: params.fps60 },
       )?.net ?? 0;
+    /* Cinema Studio holds its quote times its band (lib/cinemaHold.ts): "about N cr, at most 3N cr". The approval
+       (`maxCredits`), the balance and a held take's `needs` are all the hold; any other engine's band is 1. */
+    const band = holdBandOf(modelId);
     if (
       body.maxCredits != null &&
-      quotedCredits(estUsd, modelId) > body.maxCredits
+      quotedCredits(estUsd, modelId) * band > body.maxCredits
     ) {
       return admissionReply(
         {
@@ -2049,6 +2053,8 @@ export async function executeGenerationAdmission(
         takeUsd: estUsd,
         modelId,
         isAdmin: got.user.role === "admin",
+        /* A take that holds its ceiling counts at its hold (lib/cinemaHold.ts). */
+        band,
       });
       if (stop)
         return admissionReply(
@@ -2060,11 +2066,12 @@ export async function executeGenerationAdmission(
       renderKeyNameFor(model.provider),
       estUsd,
       modelId,
+      band,
     );
     if (!wall.ok && wall.status !== 402)
       return admissionReply({ error: wall.error }, { status: wall.status });
     let hold = !wall.ok ? heldInfo(estUsd, "video", modelId) : null;
-    const capV = await checkCap(projectId, estUsd, modelId);
+    const capV = await checkCap(projectId, estUsd, modelId, band);
     if (!capV.allow)
       return admissionReply({ error: capV.error }, { status: 409 });
     if (capV.notice) notices.push(capV.notice);
@@ -2174,7 +2181,7 @@ export async function executeGenerationAdmission(
           source: sourceRef,
           rules: rules.map((r) => r.id),
         },
-        { approximate: cinema },
+        { approximate: cinema, band },
       );
       if (stopped) return stopped;
     }
@@ -2192,6 +2199,10 @@ export async function executeGenerationAdmission(
       return admissionReply({ error: "Confirm the quoted transform credit ceiling before generating." }, { status: 400 });
     if (cinema && body.maxCredits == null)
       return admissionReply({ error: "Review the approximate credit price before generating with Cinema Studio." }, { status: 400 });
+    /* Only a person approves a hold (lib/cinemaHold.ts): an outside agent on an API token (an MCP client) or an Atomik
+       run's own id may price it and explain it, never approve it. Preparing stops at the checkpoint above. */
+    if (band > 1 && (got.token || isAgentApprover(got.user.id)))
+      return admissionReply({ error: HOLD_NEEDS_A_PERSON }, { status: 403 });
 
     // Row first, so a failed submit is still visible rather than silently lost.
     // The claim is bound in the same write: a claim naming no job proves there is none.
@@ -2343,7 +2354,8 @@ export async function executeGenerationAdmission(
           shotId,
           createdBy: got.user.id,
         },
-        { token: got.token, run: options.run },
+        /* Cinema Studio holds its quote times its band, recorded on its meter row (lib/cinemaHold.ts). */
+        { token: got.token, run: options.run, holdBand: band },
       );
     } catch (e) {
       /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik
