@@ -1,5 +1,4 @@
 "use client";
-import { spendAttrsOf } from "@/lib/spend";
 import { useState } from "react";
 import { DEFAULT_ENHANCER, ENHANCER_LABEL } from "@/lib/shell/enhancer";
 import { exact } from "@/lib/shell/price-words";
