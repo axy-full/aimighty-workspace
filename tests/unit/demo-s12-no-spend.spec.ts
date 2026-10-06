@@ -259,3 +259,47 @@ test("a mark that is present but cannot be read fails closed: never read as no s
     expect(ok.status).toBeLessThan(300);
   });
 });
+
+test("Transcribe on the sample is refused as a conflict (409) in the sample's words, never 402; the press shows that line, with nothing to top up", async () => {
+  let answer: { status: number; body: string; complete: string | null } | null = null;
+  await scope(name("transcribe"), { sample: true }, async () => {
+    const { db } = await import("../../lib/db");
+    await db().execute({
+      sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,duration_s,created_at) VALUES(?,?,?,?,?,?,?,?,?,0)",
+      args: ["up_line", "line.wav", "audio/wav", "wav", 1000, "sha", "/api/uploads/up_line", "audio", 30],
+    });
+    const { withGenerationRequest } = await import("../../lib/generationRequests");
+    const { transcribe } = await import("../../lib/transcription");
+    let calls = 0;
+    const deps = { readSource: async () => Buffer.from("audio"), provider: async (): Promise<never> => { calls++; throw new Error("The provider must not be reached"); } };
+    /* The quote still answers. */
+    const quote = await transcribe({ sourceUploadId: "up_line", projectId: "film", diarize: true, quoteOnly: true }, "owner");
+    expect(quote.status).toBe(200);
+    /* As the route composes it: the claim, then the transcription inside it. */
+    const body = { sourceUploadId: "up_line", projectId: "film", diarize: true, maxCredits: 100000 };
+    const req = new Request("http://localhost/api/audio/transcribe", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": "request-transcribe-sample" }, body: JSON.stringify(body) });
+    const refused = await withGenerationRequest(req, "owner", async (claim) => {
+      const reply = await transcribe(body, "owner", { claim, deps });
+      return Response.json(reply.body, { status: reply.status });
+    });
+    expect(refused.status).toBe(409);
+    expect(await refused.clone().json()).toEqual({ error: SAMPLE_LINE, charged: 0 });
+    expect(calls).toBe(0);
+    expect(await meters()).toHaveLength(0);
+    answer = { status: refused.status, body: await refused.text(), complete: refused.headers.get("Idempotency-Status") };
+  });
+  /* The browser's press, answered exactly so: the sample's line, final, with no new price to approve. */
+  const { sendTranscription } = await import("../../lib/workbench/transcription-request");
+  const items = new Map<string, string>();
+  const storage = { getItem: (k: string) => items.get(k) ?? null, setItem: (k: string, v: string) => void items.set(k, v), removeItem: (k: string) => void items.delete(k) };
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(answer!.body, {
+    status: answer!.status, headers: { "Content-Type": "application/json", ...(answer!.complete ? { "Idempotency-Status": answer!.complete } : {}) },
+  })) as typeof fetch;
+  try {
+    const outcome = await sendTranscription({ scope: "particl-active-ws_unit-owner", slot: "transcribe-sample", body: { sourceUploadId: "up_line", projectId: "film", diarize: true, maxCredits: 3 }, credits: 3, storage, locks: null });
+    expect(outcome).toEqual({ state: "released", reason: SAMPLE_LINE, failed: true });
+  } finally { globalThis.fetch = original; }
+  /* The Transcribe panel shows a released press's reason as its alert, and offers no top-up. */
+  expect(readFileSync("components/graphite/production/TranscribePanel.tsx", "utf8")).not.toMatch(/top.?up/i);
+});

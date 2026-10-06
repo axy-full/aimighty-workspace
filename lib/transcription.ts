@@ -13,6 +13,7 @@ import { GROK_STT_MODEL, grokTranscribe, grokTranscriptionUsd, grokVoiceConfigur
 import { XaiHttpError } from "./xaiErrors";
 import { PreflightError } from "./preflight";
 import { LEDGER_UNIT_PAUSED } from "./ledgerUnit";
+import { SAMPLE_LINE } from "./demo/sample";
 
 /**
  * Grok transcription of a stored audio or video original (owner, 23
@@ -232,7 +233,8 @@ async function transcription(input: TranscriptionInput, userId: string, options:
   };
   try { await (options.deps?.reserve ?? reserveGenerationSpend)({ ...event, status: "running", engineCostUsd: estimateUsd }, { token: currentTenant()?.token }); }
   catch (error) {
-    if (error instanceof SpendReservationError) return { status: error.message === LEDGER_UNIT_PAUSED ? 503 : 402, body: { error: error.message, charged: 0 } };
+    /* The sample production is a conflict with the project, answered as every other door answers it (409), never "not enough credits". */
+    if (error instanceof SpendReservationError) return { status: error.message === LEDGER_UNIT_PAUSED ? 503 : error.message === SAMPLE_LINE ? 409 : 402, body: { error: error.message, charged: 0 } };
     /* Not a refusal: the write may have landed with its acknowledgement lost. Nothing was sent, so a hold it
        left is released — found by the event's own id — before anything is said; one that cannot be is answered from the meter. */
     if ((await meteredCharge(event.id))?.status === "running") await meter({ ...event, status: "failed", engineCostUsd: 0 }, { critical: true });
