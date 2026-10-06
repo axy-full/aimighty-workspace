@@ -21,7 +21,8 @@ import { RecordScreen } from "./RecordScreen";
 import { MakeScreen } from "./MakeScreen";
 import { AtomikSheet } from "./AtomikSheet";
 import { StatesScreen } from "./StatesScreen";
-import { DRAWN_SCREENS, phoneSearch, readPhone, reviewQueue, type PhoneRoute, type PhoneScreen } from "./phone-model";
+import { LargerScreen } from "./LargerScreen";
+import { DRAWN_SCREENS, LARGER_TITLES, phoneSearch, readPhone, reviewQueue, type PhoneRoute, type PhoneScreen } from "./phone-model";
 import { useOnline, useQueuedJudgements } from "./use-online";
 
 export type PhoneAppProps = {
@@ -118,13 +119,15 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- as above
   }, [shellAtomik]);
 
+  /* Activity, Memory and Skills have no phone screen until after the demo: a plain page that says so, with a way Home. */
+  const larger = !page && route.asked === "home" ? route.larger : null;
   const sheet = !page && route.screen === "atomik";
   /* Under the Atomik sheet the screen it was opened from still shows. */
   const screen = page ? null : sheet ? under : route.screen;
   /* The bar stays on every phone screen but the full-screen review and plan approval (SOW § 2); Change with words keeps it under its sheet. */
   const tabs = screen !== "review" && screen !== "plan";
   /* States is Home's own (the master lights Home there). */
-  const active: PhoneTab | null = page ? null : sheet ? "atomik" : screen === "record" ? "record" : screen === "make" ? "make" : screen === "home" || screen === "states" ? "home" : null;
+  const active: PhoneTab | null = page || larger ? null : sheet ? "atomik" : screen === "record" ? "record" : screen === "make" ? "make" : screen === "home" || screen === "states" ? "home" : null;
   const inReview = screen === "review" || screen === "fix";
 
   return (
@@ -138,8 +141,10 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
           onQueue={judgements.add} onDone={() => go({ screen: "home" })} />
       ) : (
         <>
-          <PhoneHeader title={page ? page.title : screen === "record" && project ? project.name : screen === "states" ? `${project?.name ?? "Particl"} · states` : TITLES[screen ?? "home"] ?? "Particl"} account={account} onBack={page || screen !== "home" ? home : null} onTopUp={topUp} />
-          {screen === "make" && !page ? (
+          <PhoneHeader title={page ? page.title : larger ? LARGER_TITLES[larger] : screen === "record" && project ? project.name : screen === "states" ? `${project?.name ?? "Particl"} · states` : TITLES[screen ?? "home"] ?? "Particl"} account={account} onBack={page || larger || screen !== "home" ? home : null} onTopUp={topUp} />
+          {larger ? (
+            <LargerScreen page={larger} onHome={home} />
+          ) : screen === "make" && !page ? (
             <MakeScreen scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} balance={account?.credits?.balance ?? null}
               projects={data.status} onProject={(id) => projectActions.onPick(id)} online={online} onTopUp={topUp} />
           ) : screen === "states" ? (

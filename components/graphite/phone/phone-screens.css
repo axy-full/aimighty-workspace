@@ -248,3 +248,9 @@
   .ph-state-acts { flex-direction: row; flex-wrap: wrap; }
   .ph-state-acts > .ph-btn { width: auto; flex: 1 1 160px; }
 }
+
+/* ── "Open this on a larger screen" (Activity, Memory, Skills until after the demo): title, one line, Home ── */
+.ph-larger { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding-top: 8px; }
+.ph-larger-title { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
+.ph-larger-line { margin: 0 0 8px; font-size: 15px; line-height: 1.45; color: var(--gx-text-2); }
+.ph-larger > .ph-btn { min-width: 140px; }
