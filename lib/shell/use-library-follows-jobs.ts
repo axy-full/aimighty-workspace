@@ -28,7 +28,7 @@ export function useLibraryFollowsJobs(projectId: string | null, refreshLibrary: 
   const tray = useJobsTray();
   const seen = useRef<{ project: string | null; ids: Set<string> } | null>(null);
   const refresh = useRef(refreshLibrary);
-  refresh.current = refreshLibrary;
+  useEffect(() => { refresh.current = refreshLibrary; });
   const trayRefresh = tray?.refresh;
 
   /* A plan was approved or a render was pressed, on the board (AGENT_CHANGED) or from Needs you (APPROVALS_CHANGED): read the tray now rather than on its next turn. */
