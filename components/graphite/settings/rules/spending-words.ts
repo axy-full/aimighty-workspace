@@ -1,6 +1,6 @@
 /**
  * The spending rules in words (pure, so the unit specs hold each line to the code). Copy says what the
- * code does (DECISIONS 2, 9, 10): limits by role, never a named person; no pause at 80 % yet; Ask unless a
+ * code does (DECISIONS 2, 9, 10): limits by role, never a named person; at the warning share (80 % unless changed) an Auto run asks again (lib/caps.ts budgetAsk); Ask unless a
  * person picks Auto for one Board run.
  */
 import type { ApprovalRule } from "@/lib/approvalRule";
@@ -31,7 +31,7 @@ export type SpendingLines = {
   modeLine: string;
   /** "Auto is picked per Board run, for drafts at or under 200 cr." */
   autoLine: string | null;
-  /** "Warn at 80% of a production's cap · at the cap a producer unlocks it" */
+  /** "Ask at 80% of a production’s budget · at the cap an admin unlocks it" */
   budgetLine: string | null;
 };
 
@@ -50,7 +50,7 @@ export function spendingLines(r: SpendingRules, cr: (n: number) => string): Spen
     platformLineText: r.platformLine === null ? null : `Any job over ${cr(r.platformLine)} needs a person’s approval, even under Auto.`,
     modeLine: "Every paid step waits for a person.",
     autoLine: r.perJobLine === null ? null : `Auto is picked per Board run, for drafts at or under ${cr(r.perJobLine)}.`,
-    budgetLine: r.capWarnPct === null || r.atCap === null ? null : `Warn at ${r.capWarnPct}% of a production’s cap · ${AT_CAP[r.atCap]}`,
+    budgetLine: r.capWarnPct === null || r.atCap === null ? null : `Ask at ${r.capWarnPct}% of a production’s budget · ${AT_CAP[r.atCap]}`,
   };
 }
 

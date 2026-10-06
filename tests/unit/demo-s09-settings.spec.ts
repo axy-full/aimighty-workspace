@@ -143,7 +143,7 @@ test.describe("the spending rules, read-only (DECISIONS 1, 10)", () => {
     expect(l.platformLineText).toBe("Any job over 200 cr needs a person’s approval, even under Auto.");
     expect(l.modeLine).toBe("Every paid step waits for a person.");
     expect(l.autoLine).toBe("Auto is picked per Board run, for drafts at or under 200 cr.");
-    expect(l.budgetLine).toBe("Warn at 80% of a production’s cap · at the cap an admin unlocks it");
+    expect(l.budgetLine).toBe("Ask at 80% of a production’s budget · at the cap an admin unlocks it");
     expect(spendingLines({ ...base, rule: "anyone" }, creditsText).ruleLine).toBe("Members render freely.");
     expect(spendingLines({ ...base, rule: "producer" }, creditsText).ruleLine).toBe("A producer signs off on every take.");
     expect(spendingLines({ ...base, platformLine: null, perJobLine: null }, creditsText)).toMatchObject({ platformLineText: null, autoLine: null });

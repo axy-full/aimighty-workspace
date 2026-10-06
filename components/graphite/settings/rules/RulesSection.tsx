@@ -8,6 +8,7 @@ import type { ApprovalRule } from "@/lib/approvalRule";
 import { Btn, Fold, Note, Problem, Row, Section } from "../parts";
 import { useRead, useWrite } from "../use-settings";
 import { useSpendingRules } from "./spending";
+import { BudgetSection } from "./BudgetSection";
 import { capInput, productionLine, ruleValue, type ProductionBudget } from "./spending-words";
 
 /**
@@ -26,6 +27,8 @@ import { capInput, productionLine, ruleValue, type ProductionBudget } from "./sp
  */
 export function RulesSection() {
   const rules = useSpendingRules();
+  /* `&edit=rules` opens Budget and cap's panel (design Gaps B frame URLs). */
+  const [openAtStart] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("edit") === "rules");
   const session = useSession();
   const write = useWrite();
   const { toast } = useWorkspace();
@@ -73,6 +76,7 @@ export function RulesSection() {
 
   return (
     <>
+      <BudgetSection rules={rules} openAtStart={openAtStart} />
       <Section label="Who may approve" meta="people only · Atomik never approves" testId="settings-approve">
         {rules.error ? <Problem text={rules.error} onRetry={rules.retry} testId="settings-rules-error" /> : null}
         <Row name="Rule" line={loaded ? rules.ruleLine ?? undefined : undefined} value={ruleValueText} valueTitle={loaded && rules.rule === "cap" && rules.shotCap != null ? creditsUsd(rules.shotCap, rate) : null} testId="settings-rule">
@@ -99,16 +103,16 @@ export function RulesSection() {
         ) : null}
         <Row name="Platform line" line={rules.platformLineText ?? undefined} value={rules.platformLine != null ? creditsText(rules.platformLine) : "—"}
           valueTitle={rules.platformLine != null ? creditsUsd(rules.platformLine, rate) : null} testId="settings-platform-line" />
-        <Row name="Budget per production" line={loaded ? rules.budgetLine ?? undefined : undefined} testId="settings-budget">
+        <Row name="At a production’s budget" line={loaded ? rules.budgetLine ?? undefined : undefined} testId="settings-budget">
           {canChange && loaded ? <Btn pressed={editing === "budget"} onClick={() => setEditing(editing === "budget" ? null : "budget")} testId="settings-budget-change">Change</Btn> : null}
         </Row>
         {editing === "budget" && canChange ? (
           <div className="gs-edit" data-testid="settings-budget-edit">
-            <span className="gs-eyebrow">Warn at</span>
-            <div className="gs-choice gs-choice-wrap" role="radiogroup" aria-label="Warn at">
+            <span className="gs-eyebrow">Ask at</span>
+            <div className="gs-choice gs-choice-wrap" role="radiogroup" aria-label="Ask at">
               {[...CAP_WARN_OPTIONS, ...(rules.capWarnPct != null && !CAP_WARN_OPTIONS.some(([v]) => v === String(rules.capWarnPct)) ? [[String(rules.capWarnPct), `${rules.capWarnPct}% of the cap`] as const] : [])].map(([id, label]) => (
                 <button key={id} type="button" role="radio" aria-checked={String(rules.capWarnPct) === id} className="gs-btn" disabled={busy}
-                  onClick={() => { if (String(rules.capWarnPct) !== id) void save({ capWarnPct: id }, budgetBefore(), `Warning at ${id}% of a production’s cap.`); }} data-testid={`settings-warn-${id}`}>{label}</button>
+                  onClick={() => { if (String(rules.capWarnPct) !== id) void save({ capWarnPct: id }, budgetBefore(), `Asking at ${id}% of a production’s budget.`); }} data-testid={`settings-warn-${id}`}>{label}</button>
               ))}
             </div>
             <span className="gs-eyebrow">At a production’s cap</span>
