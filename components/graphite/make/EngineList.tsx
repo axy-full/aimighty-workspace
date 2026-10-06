@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { DEFAULT_ENHANCER, ENHANCER_LABEL } from "@/lib/shell/enhancer";
 import { exact } from "@/lib/shell/price-words";
+import { cinemaPriceWords } from "@/lib/cinemaHold";
 import { spendAttrsOf } from "@/lib/spend";
 import { CINEMA_BANK } from "@/lib/workspace/cinema-vocabulary";
 import { AUDIO_SECONDS, TAKES_MAX, draftOffered, shownTotal, soundOffered, stepAudioSeconds } from "@/lib/workspace/composer";
@@ -243,7 +244,10 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
             const total = shownTotal(composer.quote, composer.quoteKey, n);
             return (
               <button key={n} type="button" className="gx-chip" aria-pressed={takes === n} disabled={Boolean(settings.draft) || n > TAKES_MAX} onClick={() => set({ type: "count", value: n })} data-testid={`gen-takes-${n}`}>
-                {takes === n ? "✓ " : ""}×{n}{total != null ? <> · <Price value={exact(total)} /></> : null}
+                {takes === n ? "✓ " : ""}×{n}{total == null ? null
+                  /* Cinema Studio's figure is approximate and held at 3N: said as every approval of it is (lib/cinemaHold.ts). */
+                  : composer.quote?.approximate ? <> · <span className="gx-price" data-price="about">{cinemaPriceWords(total)}</span></>
+                  : <> · <Price value={exact(total)} /></>}
               </button>
             );
           })}

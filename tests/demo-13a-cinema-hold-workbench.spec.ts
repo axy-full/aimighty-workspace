@@ -33,12 +33,13 @@ async function openAdvanced(page: Page) {
   await expect(page.getByTestId("make-advanced")).toBeVisible();
 }
 
-/** More takes, from Make's Advanced, once the button is priced. */
-async function moreTakes(page: Page, presses: number) {
+/** A number of takes, from Make's Advanced, once the button is priced; each chip says what that many would hold. */
+async function pickTakes(page: Page, takes: number) {
   await expect(page.getByTestId("gen-generate")).toHaveText(/\d cr/, { timeout: 60_000 });
   await openAdvanced(page);
-  const more = page.getByTestId("gen-takes").getByRole("button", { name: "More", exact: true });
-  for (let i = 0; i < presses; i++) await more.click();
+  const chip = page.getByTestId(`gen-takes-${takes}`);
+  await expect(chip).toHaveText(`×${takes} · about ${takes * N} cr, at most ${3 * takes * N} cr`);
+  await chip.click();
 }
 
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
@@ -159,7 +160,7 @@ test("a batch approves each take's hold: Make 3 takes says about 3N cr, at most 
   test.skip(!SIZES.includes(info.project.name) || PHONES.includes(info.project.name), "Make's panel, every desktop viewport");
   test.setTimeout(180_000);
   const { sent, errors, go } = await open(page, info);
-  await moreTakes(page, 2);
+  await pickTakes(page, 3);
   await expect(go).toHaveText(`Make 3 takes · about ${3 * N} cr, at most ${9 * N} cr`);
   await priceFits(page, go);
   await shot(page, info, "make-hold-batch");
