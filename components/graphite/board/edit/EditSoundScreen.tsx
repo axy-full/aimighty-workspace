@@ -8,6 +8,7 @@ import { useProductionJobs } from "@/components/workbench/use-production-jobs";
 import { useSoundPlacements } from "@/components/workbench/use-sound-placements";
 import { TimelineCut } from "@/components/graphite/production/TimelineCut";
 import { FREE } from "@/lib/shell/price-words";
+import { spendAttrsOf } from "@/lib/spend";
 import { audioClips } from "@/lib/workbench/audio";
 import { colorLutAsset } from "@/lib/workbench/color";
 import { LOUDNESS_TARGETS, gainToTarget, loudnessVerdict, verdictWords } from "@/lib/workbench/loudness";
@@ -151,7 +152,7 @@ function EditBody({ project, ctx, draft, onClose }: { project: Project; ctx: Boa
               <button type="button" className="gx-es-btn" disabled data-testid="es-progress" role="status">Rendering the movie · {percent}%</button>
             </>
           ) : (
-            <button type="button" className="gx-es-btn gx-es-btn--go" disabled={!canExport} title={why ?? "Encodes the cut into a video file in this browser. Free: nothing is charged."} onClick={() => void out.start()} data-testid="es-export">
+            <button type="button" className="gx-es-btn gx-es-btn--go" disabled={!canExport} title={why ?? "Encodes the cut into a video file in this browser. Free: nothing is charged."} onClick={() => void out.start()} data-testid="es-export" {...spendAttrsOf(FREE)}>
               Export the cut · <Price value={FREE} />
             </button>
           )}

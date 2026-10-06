@@ -26,10 +26,12 @@ async function open(page: Page) {
   });
   /* A client's comment from a review link reads beside the team's, on the take. */
   await page.route(/\/api\/notes\?genId=tk-s3/, async (route) => {
-    const response = await route.fetch();
-    const body = await response.json() as { notes: Record<string, unknown>[] };
-    body.notes.push({ id: "client-1", text: "Love the light. Can the walk be slower?", author: "A client", userId: "", createdAt: Date.now() - 60_000, guest: true, mentions: [] });
-    await route.fulfill({ response, json: body });
+    try {
+      const response = await route.fetch();
+      const body = await response.json() as { notes: Record<string, unknown>[] };
+      body.notes.push({ id: "client-1", text: "Love the light. Can the walk be slower?", author: "A client", userId: "", createdAt: Date.now() - 60_000, guest: true, mentions: [] });
+      await route.fulfill({ response, json: body });
+    } catch { /* the test ended while this read was in flight */ }
   });
   page.on("request", (r) => { if (r.method() === "POST" && new URL(r.url()).pathname === "/api/notes") notes.push(r.postDataJSON()); });
   const say = await page.request.post("/api/notes", { headers: { "X-Workbench-Scope": seeded.scope }, data: { genId: "tk-s3", text: "Hold one beat longer before she turns." } });
