@@ -8,7 +8,6 @@ import type { ScreenModule } from "./screens";
 export const ADS_SCREEN: ScreenModule = {
   id: "board-ads",
   landed: true,
-  always: true,
   params: ["frame", "card"],
   rows: [
     { from: "?suite=moleculr&page=marketing&sp=dtc", to: "?view=board&kind=ads&frame=2&card=image-ad" },
@@ -30,7 +29,6 @@ export const ADS_SCREEN: ScreenModule = {
 export const SOCIAL_SCREEN: ScreenModule = {
   id: "board-social",
   landed: true,
-  always: true,
   params: ["frame", "card"],
   /* Viral's History is the Social board's History drawer (README § 1.2); Motion transfer and Object swap are Make's quick tools (lib/shell/make.ts). */
   rows: [

@@ -9,7 +9,6 @@ import { STAGE_ROWS } from "@/lib/shell/stage-redirects";
 export const BOARD_SCREEN: ScreenModule = {
   id: "board",
   landed: true,
-  always: true,
   params: ["kind", "frame", "list", "region", "drawer", "review", "start"],
   /* Old → new. Each old Studio stage is a region of the board (README § 1.2); the Rig is the board itself. The table is
      lib/shell/stage-redirects.ts: the pages are gone, so this is for every workspace and has no way back. */

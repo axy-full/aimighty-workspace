@@ -285,8 +285,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   /* ⌘K › "Ask Atomik: …": the words land in the Agent's request box (still to be read and planned), not lost on the way.
      With no project open yet they wait in this tab and land as soon as one resolves. */
   const ask = (text: string) => {
-    /* The new interface: the words open Atomik's panel (`&atomik=1&q=…`), which takes them from there. */
-    if (shell.newInterface && isLanded("atomik")) { shell.openAtomik("panel", text); return; }
+    /* The words open Atomik's panel (`&atomik=1&q=…`), which takes them from there. */
+    if (isLanded("atomik")) { shell.openAtomik("panel", text); return; }
     if (project) prefillAgentRequest(session.requestScope, "atomik", project.id, text);
     else if (holdAgentRequest(session.requestScope, text) && data.status !== "loading") toast("Your request goes into Agent once a project is open.");
     shell.goSuite("atomik", "agent");
@@ -361,9 +361,9 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const stageKey = `${shell.suite.id}:${shell.page.id}:${project?.id ?? ""}`;
   const stageProbe = `stage:${shell.page.id}`;
   const screenCtx: ScreenContext = { shell, scope, account, project, items, library, data, projectActions, now, onCreate: createFromSeed };
-  /* The new interface's chrome variables: how far right panels reach (Home and the other views pad by it), and the board's dock (Make sits beside it). */
+  /* The chrome variables: how far right panels reach (Home and the other views pad by it), and the board's dock (Make sits beside it). */
   const onBoard = shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
-  const rootStyle = shell.newInterface || onBoard ? ({ "--gx-overlay-right": `${shell.make ? 441 : shell.atomik ? 341 : 0}px`, "--board-dock": `${shell.dockRight}px` } as React.CSSProperties) : undefined;
+  const rootStyle = { "--gx-overlay-right": `${shell.make ? 441 : shell.atomik ? 341 : 0}px`, "--board-dock": `${shell.dockRight}px` } as React.CSSProperties;
   /* The phone's own screens replace the header, strip, body and tab bar (switch on and landed; lib/shell/screens.ts › phoneAt). */
   const phoneOn = shell.phone.on;
   const phonePage = shell.view === "workspace" ? { title: "Settings", body: shell.screen === "settings" ? <SettingsBody ctx={screenCtx} /> : <WorkspaceView account={account} /> } : null;
@@ -371,7 +371,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
       <JobsTrayProvider>
-      <div className="gx" data-interface={shell.newInterface ? "new" : "old"} data-screen={shell.screen ?? undefined} data-phone={phoneOn ? (shell.phone.framed ? "framed" : "") : undefined}
+      <div className="gx" data-screen={shell.screen ?? undefined} data-phone={phoneOn ? (shell.phone.framed ? "framed" : "") : undefined}
         data-view={shell.view} data-suite={shell.suite.id} style={rootStyle} onContextMenu={onContext} onClick={() => shell.ctx && shell.closeCtx()}>
         {session.workspace?.suspended ? (
           <div role="status" data-testid="workspace-suspended" style={{ padding: "8px 20px", background: "var(--gx-card)", borderBottom: "1px solid var(--gx-hair)", color: "var(--gx-waiting)" }}>

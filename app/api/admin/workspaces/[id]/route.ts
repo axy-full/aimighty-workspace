@@ -7,7 +7,6 @@ import { runInTenant } from "@/lib/tenant";
 import { releaseHeldJobs } from "@/lib/held";
 import { restoreDeletedWorkspace } from "@/lib/purge";
 import { HOUSE_NOT_BILLED, isHouseWorkspace } from "@/lib/houseWorkspace";
-import { setWorkspaceNewInterface } from "@/lib/shell/new-interface.server";
 
 export const dynamic = "force-dynamic";
 
@@ -59,13 +58,6 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }
   if ("internalTest" in body) {
     await setWorkspaceInternalTest(id, Boolean(body.internalTest));
     out.internalTest = Boolean(body.internalTest);
-  }
-  /* The per-workspace "new interface" switch (lib/shell/new-interface.ts): a workspace setting, off by default, the platform
-     owner's alone. It changes which screens the shell draws, never what anything costs, who may sign in, or what is stored. */
-  if ("newInterface" in body) {
-    if (typeof body.newInterface !== "boolean") return NextResponse.json({ error: "newInterface must be true or false." }, { status: 400 });
-    if (!(await setWorkspaceNewInterface(id, body.newInterface, got.user.id))) return NextResponse.json({ error: "The new interface could not be changed for this workspace." }, { status: 400 });
-    out.newInterface = body.newInterface;
   }
   if ("flagged" in body) {
     const on = Boolean(body.flagged);

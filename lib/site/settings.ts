@@ -22,7 +22,7 @@ export type SiteSettings = {
 
 export const DEFAULT_SITE: SiteSettings = Object.freeze({ openSignup: false, guestHome: false, guestWorkspace: null }) as SiteSettings;
 
-/** The same well-formed id shape the new-interface switch accepts. */
+/** A well-formed workspace id. */
 const WORKSPACE_ID = /^[A-Za-z0-9_.:-]{1,120}$/;
 
 /** What is stored, made safe: booleans only when they are exactly true, a workspace id only when it is well formed. */

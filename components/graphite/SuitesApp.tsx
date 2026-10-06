@@ -8,8 +8,7 @@ import { RigProvider, RigSeams } from "@/components/workspace/rig/RigProvider";
 import { ShellProvider, shellParams, SUITES_PATH } from "@/lib/shell/state";
 import { normalize } from "@/lib/shell/ia";
 import { fromMakeLink } from "@/lib/shell/make";
-import { route, tracksParams } from "@/lib/shell/screens";
-import { useNewInterface } from "@/lib/shell/new-interface";
+import { route } from "@/lib/shell/screens";
 import { SuitesShell } from "./SuitesShell";
 
 const subscribe = () => () => {};
@@ -28,15 +27,10 @@ export default function SuitesApp({ scope, initialAccount }: { scope: string; in
      design file's spelling is read in the app's (lib/shell/ia.ts › normalize). */
   const search = useSearchParams().toString();
   /* …and an old Gen or Viral quick-tool address is Make's own (lib/shell/make.ts), for the state layer as for the shell. */
-  const on = useNewInterface();
-  const [initialSearch] = useState(() => {
-    const spelled = normalize(search);
-    /* The screen registry's rows too (lib/shell/screens.ts), which the server has already applied to a signed-in request: with the
-       switch on, every landed screen's; with it off, the board's alone (it shows for everyone). */
-    return tracksParams(on) ? route(search, on) : fromMakeLink(spelled) ?? spelled;
-  });
-  /* The params the shell keeps across its own address writes: today's, plus the new screens' own with the switch on. */
-  const keep = useMemo(() => shellParams(on), [on]);
+  /* The screen registry's rows too (lib/shell/screens.ts), which the server has already applied to a signed-in request. */
+  const [initialSearch] = useState(() => route(search));
+  /* The params the shell keeps across its own address writes: today's, plus the screens' own. */
+  const keep = useMemo(() => shellParams(), []);
   /* The same element every time, so a URL change re-renders this component
      alone and not every provider below it. */
   const tree = useMemo(() => (

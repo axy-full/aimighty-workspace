@@ -33,7 +33,6 @@ type Admin = {
   platformKeysByDefault: boolean; defaultAllowanceUsd: number | null;
   creditUsd: number; welcomeCredits: number | null;
   /** The new interface is on for every workspace (the owner's last switch). */
-  interfaceEveryone?: boolean;
   plans: PlanDef[];
   concurrency: { byEngine: { engine: string; peak: number; at: number; jobs: number }[]; overall: { peak: number; at: number }; days: number } | null;
   workspaces: Ws[];
@@ -52,8 +51,6 @@ type Ws = {
   suspended: boolean; suspendedReason: string | null; flagged: boolean; flagNote: string | null;
   limits: { concurrency: number | null; rendersPerHour: number | null; storageGb: number | null };
   internalTest?: boolean;
-  /** The per-workspace "new interface" switch (lib/shell/new-interface.ts), on for this workspace in particular. */
-  newInterface?: boolean;
   planId: PlanId | null;
 };
 
@@ -166,7 +163,6 @@ export default function AdminPage() {
             <PreviewsCard />
 
             <section className="scard">
-              <InterfaceEveryone everyone={Boolean(data.interfaceEveryone)} onChanged={refresh} />
               <div className="scard-h"><span>Workspaces</span><span>{live} on this deployment{deleted ? `, ${deleted} deleted` : ""}. Every organisation uses Particl credits. Approved invitations start with {data.welcomeCredits ?? "—"} credits; self-serve sign-ups start with 0. Click a balance to add credits. The house workspace is never billed in credits; its spend reads at cost.</span></div>
               <div className="flex flex-col">
                 <div className="steam is-head !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px] !text-[12px] !text-lead"><span>WORKSPACE</span><span>OWNER</span><span>30 DAYS</span><span>KEYS</span><span className="text-right">STATE</span></div>
@@ -176,7 +172,7 @@ export default function AdminPage() {
                     <span className="flex flex-col gap-0.5"><span>{w.owner?.name ?? "—"}</span><span className="text-[12px] text-lead">{w.owner?.email ?? ""}</span></span>
                     <SpendCell s={w.spend30} grants={w.grants} />
                     <CreditsCell w={w} onChanged={refresh} />
-                    <StateCell w={w} plans={data.plans ?? DEFAULT_PLANS} everyone={Boolean(data.interfaceEveryone)} onChanged={refresh} />
+                    <StateCell w={w} plans={data.plans ?? DEFAULT_PLANS} onChanged={refresh} />
                   </div>
                 ))}
               </div>
@@ -328,41 +324,8 @@ function SpendCell({ s, grants }: { s: Ws["spend30"]; grants: Ws["grants"] }) {
   );
 }
 
-/**
- * The new interface for every workspace at once (lib/shell/new-interface.ts): the owner's last switch, flipped only after
- * the old screens are gone (docs/old-shells.md). One press asks first; it changes which screens are drawn, nothing a
- * workspace is charged.
- */
-function InterfaceEveryone({ everyone, onChanged }: { everyone: boolean; onChanged: () => void }) {
-  const [busy, setBusy] = useState(false);
-  async function flip() {
-    const next = !everyone;
-    const ok = await appConfirm(next ? "Turn the new interface on for every workspace?" : "Turn the new interface off for every workspace?",
-      next ? "Every workspace, including customers', then sees the new screens on its next page load." : "Workspaces you turned on one by one keep it; everyone else goes back to today's screens.",
-      { confirmLabel: next ? "Turn on for everyone" : "Turn off for everyone", danger: next });
-    if (!ok) return;
-    setBusy(true);
-    try {
-      const res = await fetch("/api/admin/interface", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ everyone: next }) });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
-      onChanged();
-    } catch (e) { await appAlert("Not changed", (e as Error).message); }
-    finally { setBusy(false); }
-  }
-  return (
-    <div className="scard-h" data-testid="new-interface-everyone">
-      <span>New interface</span>
-      <span className="flex items-center gap-2">
-        <span>{everyone ? "On for every workspace." : "Off by default. Turn it on per workspace below (State column), or for everyone at once."}</span>
-        <button type="button" className={`chip !py-0.5 !text-[12px] ${everyone ? "is-on" : ""}`} disabled={busy} onClick={flip} aria-pressed={everyone}>{everyone ? "Everyone · on" : "Everyone · off"}</button>
-      </span>
-    </div>
-  );
-}
-
 /** Active, flagged for review, or suspended — and the two levers. */
-function StateCell({ w, plans, everyone, onChanged }: { w: Ws; plans: PlanDef[]; everyone: boolean; onChanged: () => void }) {
+function StateCell({ w, plans, onChanged }: { w: Ws; plans: PlanDef[]; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
@@ -396,18 +359,9 @@ function StateCell({ w, plans, everyone, onChanged }: { w: Ws; plans: PlanDef[];
     if (!(await appConfirm("Restore this workspace?", "Its owner gets access back and turns the rest of the team on from People.", { confirmLabel: "Restore" }))) return;
     await patch({ restore: true });
   }
-  /* The new interface for this workspace (lib/shell/new-interface.ts): off by default; the platform owner turns it on for his own and the demo workspace. */
-  const interfaceChip = (
-    <button type="button" className={`chip !py-0.5 !text-[12px] ${w.newInterface || everyone ? "is-on" : ""}`} disabled={busy || everyone} data-testid="new-interface-chip" aria-pressed={Boolean(w.newInterface || everyone)}
-      onClick={() => patch({ newInterface: !w.newInterface })}
-      title={everyone ? "On for every workspace. Turn that off first to choose workspaces one by one." : "The new interface for this workspace only. Off, the workspace keeps today's screens."}>
-      {`New interface · ${w.newInterface || everyone ? "on" : "off"}`}
-    </button>
-  );
   if (w.legacy) return (
     <span className="flex flex-col items-end gap-1">
       <span className="mono-s text-right !text-[12px] !text-lead">THE PLATFORM</span>
-      {interfaceChip}
     </span>
   );
   // Suspending and flagging mark a workspace, so they apply to a deleted one too.
@@ -437,8 +391,7 @@ function StateCell({ w, plans, everyone, onChanged }: { w: Ws; plans: PlanDef[];
         {marks}
         <button type="button" className="chip !py-0.5 !text-[12px]" disabled={busy} onClick={setLimits} title={`Own limits: ${w.limits.concurrency ?? "—"} at once · ${w.limits.rendersPerHour ?? "—"} an hour · ${w.limits.storageGb ?? "—"} GB`}>Limits</button>
         <button type="button" className={`chip !py-0.5 !text-[12px] ${w.internalTest ? "is-on" : ""}`} disabled={busy} onClick={() => patch({ internalTest: !w.internalTest })} title="The platform's own internal test workspace: the one place a real engine call may be made for the platform's sake">{w.internalTest ? "Test workspace" : "Make test"}</button>
-        {interfaceChip}
-        <PlanChip w={w} plans={plans} busy={busy} patch={patch} />
+          <PlanChip w={w} plans={plans} busy={busy} patch={patch} />
       </span>
     </span>
   );

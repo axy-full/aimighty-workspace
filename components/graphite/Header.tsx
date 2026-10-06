@@ -81,11 +81,11 @@ export function Header({ account, project = null, bar = null }: { account: Works
   }, [menu]);
   const goTo = (id: HeaderSegmentId) => {
     setMenu(false);
-    if (id === "home") { if (shell.newInterface) shell.goHome(); else shell.goSuite("studio", shell.wide ? "stages" : "home"); }
+    if (id === "home") shell.goHome();
     else if (id === "project") shell.goProject();
     else if (id === "make") shell.goGen();
-    /* New interface, once Atomik's panel has landed: the segment opens and closes the panel over whatever is on screen. */
-    else if (shell.newInterface && isLanded("atomik")) { if (shell.atomik) shell.closeAtomik(); else shell.openAtomik(); }
+    /* Once Atomik's panel has landed: the segment opens and closes the panel over whatever is on screen. */
+    else if (isLanded("atomik")) { if (shell.atomik) shell.closeAtomik(); else shell.openAtomik(); }
     else shell.goSuite("atomik");
   };
   const badge = <span className="gx-brand-mark" data-testid="suite-mark">{mark}</span>;

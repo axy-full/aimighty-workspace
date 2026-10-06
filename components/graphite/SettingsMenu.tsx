@@ -6,7 +6,6 @@ import { useSession } from "@/lib/session";
 import { personLine, workspaceLine } from "@/lib/shell/person";
 import { signOut } from "@/lib/shell/sign-out";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { useNewInterface } from "@/lib/shell/new-interface";
 import { useGoSettings } from "./settings/navigate";
 
 type Item = { id: string; label: string; run: () => void };
@@ -25,7 +24,6 @@ export function SettingsMenu({ anchor, onClose }: { anchor: RefObject<HTMLButton
   const shell = useShell();
   const session = useSession();
   const scopedFetch = useScopedFetch();
-  const fresh = useNewInterface();
   const goSettings = useGoSettings();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
@@ -44,7 +42,7 @@ export function SettingsMenu({ anchor, onClose }: { anchor: RefObject<HTMLButton
   const close = () => { onClose(); anchor.current?.focus(); };
   const go = (run: () => void) => () => { onClose(); run(); };
   const current = session.workspace?.id ?? null;
-  const others = fresh ? (session.workspaces ?? []).filter((w) => w.id !== current) : [];
+  const others = (session.workspaces ?? []).filter((w) => w.id !== current);
   /* Another of your workspaces: the route Workspace › General's switch uses, then the shell from the top. */
   const switchTo = (id: string) => async () => {
     if (busy) return;
@@ -59,21 +57,13 @@ export function SettingsMenu({ anchor, onClose }: { anchor: RefObject<HTMLButton
     }
   };
   const items: Item[] = [
-    ...(fresh ? [
-      { id: "team", label: "Team", run: go(() => goSettings("team")) },
-      { id: "credits", label: "Plan & credits", run: go(() => goSettings("credits")) },
-      { id: "rules", label: "Spending rules", run: go(() => goSettings("rules")) },
-      { id: "connections", label: "Connections", run: go(() => goSettings("connections")) },
-      { id: "advanced", label: "Advanced", run: go(() => goSettings("advanced")) },
-    ] : [
-      { id: "team", label: "Team", run: go(() => shell.goWorkspace("people")) },
-      { id: "credits", label: "Plan & credits", run: go(() => shell.goWorkspace("credits")) },
-      { id: "rules", label: "Spending rules", run: go(() => shell.goSuite("atomik", "budget")) },
-      { id: "connections", label: "Connections", run: go(() => shell.goSuite("atomik", "skills")) },
-      { id: "advanced", label: "Advanced", run: go(() => shell.goWorkspace("engines")) },
-    ]),
+    { id: "team", label: "Team", run: go(() => goSettings("team")) },
+    { id: "credits", label: "Plan & credits", run: go(() => goSettings("credits")) },
+    { id: "rules", label: "Spending rules", run: go(() => goSettings("rules")) },
+    { id: "connections", label: "Connections", run: go(() => goSettings("connections")) },
+    { id: "advanced", label: "Advanced", run: go(() => goSettings("advanced")) },
     ...others.map((w) => ({ id: `switch-${w.id}`, label: `Switch to ${w.name}`, run: () => void switchTo(w.id)() })),
-    ...(fresh && session.superAdmin ? [{ id: "platform-desk", label: "Platform desk", run: () => { onClose(); window.location.assign("/admin"); } }] : []),
+    ...(session.superAdmin ? [{ id: "platform-desk", label: "Platform desk", run: () => { onClose(); window.location.assign("/admin"); } }] : []),
     {
       id: "sign-out", label: busy ? "Signing out…" : "Sign out", run: () => {
         if (busy) return;

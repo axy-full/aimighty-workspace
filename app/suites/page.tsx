@@ -41,11 +41,9 @@ export default async function Suites({ searchParams }: { searchParams: Promise<R
   const to = moved === null ? spelled : `${SHELL_PATH}${moved ? `?${moved}` : ""}`;
   if (to) redirect(to);
   const { scope, session, initialAccount } = await shellBootstrap(searchParams);
-  /* The new interface (lib/shell/screens.ts): for a workspace with the switch on, an old address opens its new screen once that
-     screen has landed, and a bare landing opens Home; with it off, or before a screen has landed, a new address opens today's page
-     for it. One more 307, only when something moves, and only now: the switch is read with the session. Off, nothing here changes. */
-  const on = session.workspace?.newInterface === true;
-  const routed = route(asked, on);
+  /* The screen registry (lib/shell/screens.ts): an old address opens its screen, and a bare landing opens Home. One more 307,
+     only when something moves, and only now: the session is read first. */
+  const routed = route(asked);
   if (!sameSearch(routed, asked)) redirect(`${SHELL_PATH}${routed}`);
   return (
     <SessionProvider key={scope} value={session}>

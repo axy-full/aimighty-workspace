@@ -2,7 +2,7 @@
  * Atomik's control room, four places (design/particl-graphite/README.md § 1.1,
  * § 3.4; Atomik frames g–j): the page strip's labels, and each page's title
  * and hint as the frames have them. The shell's strip and its mount read this
- * list when the new interface is on (lib/shell/new-interface.ts); the URLs are
+ * list; the URLs are
  * `?suite=atomik&page=<id>`.
  */
 export const CONTROL_ROOM_PAGES = [

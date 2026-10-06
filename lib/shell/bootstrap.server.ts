@@ -8,7 +8,6 @@ import { runInTenant } from "@/lib/tenant";
 import { workbenchScopeFor } from "@/lib/workbench/request-scope";
 import { shellEntryRedirect } from "@/lib/signIn";
 import { searchStringOf } from "@/lib/workspace/switchover";
-import { newInterfaceEnabled } from "./new-interface.server";
 
 /**
  * Who runs the connected Higgsfield account in this workspace, by name, for a
@@ -57,8 +56,6 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
       id: ctx.workspace.id, name: ctx.workspace.name, slug: ctx.workspace.slug, suspended: Boolean(ctx.workspace.suspendedAt), suspendedReason: ctx.workspace.suspendedReason, internalTest: Boolean(ctx.workspace.internalTest),
       /* A member's owner-run card names who runs the connected account; the owner needs no such line. */
       ownerName: owner ? null : await ownerNameOf(ctx.workspace.id).catch(() => null),
-      /* The per-workspace "new interface" switch (lib/shell/new-interface.ts): one boolean, never the list. */
-      newInterface: await newInterfaceEnabled(ctx.workspace.id),
     },
     role: ctx.role ?? null,
     owner,

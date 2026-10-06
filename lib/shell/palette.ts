@@ -17,7 +17,7 @@ export type PaletteRun =
   | { type: "model"; id: string }
   | { type: "asset"; id: string }
   | { type: "ask"; text: string }
-  /* The new interface's places (lib/shell/new-interface.ts on): README § 1.1. */
+  /* The screens' places: README § 1.1. */
   | { type: "home" }
   | { type: "region"; region: string }
   | { type: "atomik" }
@@ -28,33 +28,6 @@ export type PaletteRow = { group: string; label: string; hint: string; run: Pale
 
 /** At most twelve rows, as the master lists (the last is always "Ask Atomik: …" once something is typed). */
 export const PALETTE_ROWS = 12;
-
-export function paletteIndex(input: { models: { id: string; name: string; kind: string }[]; assets: { id: string; name: string; kind: string }[] }): PaletteRow[] {
-  return [
-    { group: "CREATE", label: "Generate", hint: "G", run: { type: "gen" } },
-    { group: "CREATE", label: "Motion transfer", hint: "Make · one source video and references", run: { type: "gen", tool: "motion" } },
-    { group: "CREATE", label: "Object swap", hint: "Make · one element replaced", run: { type: "gen", tool: "swap" } },
-    /* The suites left the header (header option B); until their boards ship (S3, S4) and the control room (D1), ⌘K is how they are reached. */
-    ...SHELL_SUITES.map((s): PaletteRow => ({ group: "SUITE", label: s.label, hint: s.name, run: { type: "suite", suite: s.id } })),
-    /* The ten Studio stage pages are gone: the board's regions are where each of them went. */
-    ...STUDIO_RAIL.map((r): PaletteRow => ({ group: "STUDIO", label: r.label, hint: "The board", run: { type: "region", region: r.id } })),
-    /* The phone's own Home and Studio grid have no desktop page to open. */
-    ...ALL_SHELL_PAGES.filter(({ page }) => !page.phoneOnly).map(({ suite, page }): PaletteRow => ({ group: suite.label.toUpperCase(), label: `${page.n} ${page.title}`, hint: page.hint, run: { type: "page", suite: suite.id, page: page.id } })),
-    ...CREW_PAGES.map((p): PaletteRow => ({ group: "CREW", label: `${p.n} ${p.label === "Room" ? "Crew room" : p.label}`, hint: p.title === "Crew" ? "Brainstorm with the crew" : p.title, run: { type: "crew", page: p.id } })),
-    ...WORKSPACE_TABS.map((t): PaletteRow => ({ group: "WORKSPACE", label: t.label, hint: "Workspace", run: { type: "workspace", tab: t.id } })),
-    ...input.models.map((m): PaletteRow => ({ group: "MODEL", label: m.name, hint: m.kind, run: { type: "model", id: m.id } })),
-    ...input.assets.map((a): PaletteRow => ({ group: "ASSET", label: a.name, hint: a.kind, run: { type: "asset", id: a.id } })),
-  ];
-}
-
-/** Every word of the query must appear; label matches rank above group/hint matches, prefixes first. */
-export function searchPalette(rows: PaletteRow[], query: string, limit = PALETTE_ROWS): PaletteRow[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return rows.slice(0, limit);
-  const hits = rankPalette(rows, q, limit - 1);
-  /* Whatever was typed can always be handed to the agent. */
-  return [...hits, { group: "ATOMIK", label: `Ask Atomik: ${query.trim()}`, hint: "↵", run: { type: "ask", text: query.trim() } }];
-}
 
 function rankPalette(rows: PaletteRow[], q: string, limit: number): PaletteRow[] {
   const words = q.split(/\s+/);
