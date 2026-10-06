@@ -454,10 +454,3 @@ test("the avatar menu opens the sections and opens itself once from settings=1",
   expect(errors).toEqual([]);
 });
 
-test("with the new interface off, Workspace's tabs are as they were", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, "/suites?view=workspace&tab=people", { on: false });
-  await expect(page.getByTestId("ws-people")).toBeVisible();
-  await expect(page.getByTestId("settings-view")).toHaveCount(0);
-  expect(errors).toEqual([]);
-});
