@@ -18,6 +18,9 @@ import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
 import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
 import { useShell } from "@/lib/shell/state";
+import { useRecreatePrice } from "@/lib/shell/use-recreate-price";
+import { ctxPrice } from "@/lib/shell/recreate-price";
+import type { RecipeSource } from "@/lib/shell/recipe";
 import { JobsTrayProvider } from "@/lib/shell/use-jobs-tray";
 import { boundUndo, splitUndoHint } from "@/lib/shell/undo";
 import { AtomikSheet } from "./AtomikSheet";
@@ -95,15 +98,22 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
 
   const clipPayload = shell.clip?.payload as { asset: AssetRef; fromProjectId: string } | undefined;
   const selectedAsset = (() => { const s = selection(); const e = s.kind === "asset" ? items.find((i) => i.take.id === s.id) : null; return e ? assetRef(e) : null; })();
+  /* The take under an open right-click menu, when Recreate can run for it: its price is read here (lib/shell/use-recreate-price.ts). */
+  const ctxTarget = shell.ctx?.target;
+  const ctxEntry = ctxTarget?.kind === "asset" ? items.find((i) => i.take.id === ctxTarget.id) ?? null : null;
+  const recreatable = ctxEntry && ctxEntry.asset.origin === "generation" && !assetRef(ctxEntry).noRecreate ? ctxEntry : null;
+  const recreatePrice = useRecreatePrice(session.requestScope ?? scope, recreatable?.take.id ?? null, recreatable ? (recreatable.asset.value as RecipeSource) : null, project?.aspect);
   const caps: CtxCapabilities = (() => {
     const target = shell.ctx?.target;
     /* A Rig shot: Delete (with ⌘Z) while the Rig is on screen; the asset commands do not apply. */
-    if (target?.kind === "node") return { can: rigDeleteHandler() ? { delete: true } : {}, why: { delete: "Open the Rig to delete a shot." }, hasClipboard: Boolean(shell.clip), canUndo: shell.canUndo };
+    if (target?.kind === "node") return { can: rigDeleteHandler() ? { delete: true } : {}, why: { delete: "Open the Board to delete a shot." }, hasClipboard: Boolean(shell.clip), canUndo: shell.canUndo };
     const entry = target?.kind === "asset" ? items.find((i) => i.take.id === target.id) : null;
-    return assetCapabilities({
+    const base = assetCapabilities({
       asset: entry ? assetRef(entry) : selectedAsset, clip: shell.clip && clipPayload ? { mode: shell.clip.mode, asset: clipPayload.asset } : null,
       projectId: project?.id ?? null, otherProjects: data.projects.filter((p) => p.id !== project?.id).length, canUndo: shell.canUndo,
     });
+    /* Recreate spends once Make is pressed: its price is Make's own, read from the server's quote while the menu is open. */
+    return base.can.retry && recreatePrice ? { ...base, price: { retry: ctxPrice(recreatePrice, session.rates.creditUsd) } } : base;
   })();
 
   const command = (cmd: CtxCommand, target: CtxTarget) => {
@@ -117,7 +127,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     if (target.kind === "node") {
       const remove = rigDeleteHandler();
       if (cmd !== "delete") { toast("Not available for a shot."); return; }
-      if (!remove) { toast("Open the Rig to delete a shot."); return; }
+      if (!remove) { toast("Open the Board to delete a shot."); return; }
       const why = remove(target.id);
       if (why) toast(why);
       return;
@@ -147,7 +157,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const rigProject = useRef(rigProjectId);
   useEffect(() => { rigProject.current = rigProjectId; }, [rigProjectId]);
   const sinkRigUndo = (entry: RigUndo) =>
-    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Rig is still opening this project."));
+    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Board is still opening this project."));
   /* The Inspector's buttons and the Rig's drop use the same path. */
   useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink(sinkRigUndo); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
 

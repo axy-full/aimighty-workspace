@@ -9,6 +9,7 @@ import { NOT_GENERATED, SAY, assetRef, referenceRole, type AssetRef } from "./as
 import { recreateBlock, recreatePreset } from "./recipe";
 import { sendReference } from "./reference-inbox";
 import { useShell } from "./state";
+import { withUndoHint } from "./undo";
 
 /**
  * Recreate (and Use settings only): the take's recipe goes to Make through its
@@ -84,8 +85,7 @@ export function useAssetActions(input: { scope: string; project: Project | null;
     const asset = assetRef(entry), from = projectId;
     try {
       await trash(asset, from);
-      shell.pushUndo({ label: SAY.restored(asset.name), undo: () => restore(asset, from) });
-      ws.toast(SAY.deleted(asset));
+      shell.pushUndo({ label: SAY.restored(asset.name), undo: () => restore(asset, from) }, withUndoHint(SAY.deleted(asset)));
     } catch (error) { fail(error); }
   }, [find, projectId, trash, restore, shell, ws, fail]);
 

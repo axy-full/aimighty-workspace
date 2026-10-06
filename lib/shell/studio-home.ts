@@ -77,12 +77,12 @@ export function suiteTiles(cards: readonly StageCard[], facts: HomeFacts): Suite
   return [
     /* The prototype said "eight stages"; the owner's Production brief (23 September) sets the count, so it is read from the strip. */
     { id: "studio", label: "Studio", color: "#0A84FF", line: `Brief to delivery, ${COUNT_WORDS[cards.length] ?? cards.length} stages.`, fact: `${done} of ${cards.length} done` },
-    /* Gen has no 3D (Astra is the 3D stage), and "ready" was never checked: the fact is the engine Gen opens on. */
-    { id: "gen", label: "Gen", color: "#BF5AF2", line: "Video, images, audio — one composer.", fact: facts.rendering ? `${facts.rendering} rendering` : `${facts.videoEngine} · default` },
-    { id: "business", label: "Business", color: "#FF9F0A", line: "Image ads, brand kit, product, briefs.", fact: "Opens on Image ads" },
-    { id: "viral", label: "Viral", color: "#FF453A", line: "Genjutsu: motion transfer, object swap.", fact: `${facts.viralResolution} · quoted on the source` },
+    /* Make has no 3D (3D blocking is its own stage), and "ready" was never checked: the fact is the engine Make opens on. */
+    { id: "gen", label: "Make", color: "#BF5AF2", line: "Video, images, audio — one composer.", fact: facts.rendering ? `${facts.rendering} rendering` : `${facts.videoEngine} · default` },
+    { id: "business", label: "Ads", color: "#FF9F0A", line: "Image ads, brand kit, product, briefs.", fact: "Opens on Image ads" },
+    { id: "viral", label: "Social", color: "#FF453A", line: "Motion transfer, object swap.", fact: `${facts.viralResolution} · quoted on the source` },
     { id: "atomik", label: "Atomik", color: "#30D158", line: "Plans, prices, waits for your word.", fact: `${facts.awaiting} awaiting approval` },
-    { id: "crew", label: "Crew", color: "#BF5AF2", line: "One Grok agent per department.", fact: facts.seats == null ? "seats loading" : `${facts.seats} ${facts.seats === 1 ? "seat" : "seats"}` },
+    { id: "crew", label: "Crew review", color: "#BF5AF2", line: "One Grok agent per department.", fact: facts.seats == null ? "seats loading" : `${facts.seats} ${facts.seats === 1 ? "seat" : "seats"}` },
   ];
 }
 

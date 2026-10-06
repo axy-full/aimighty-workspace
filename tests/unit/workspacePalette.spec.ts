@@ -42,7 +42,7 @@ test("filtering is a case-insensitive substring on label or group, capped at eig
   const all = paletteCommands({ shots });
   expect(filterPalette(all, "")).toHaveLength(PALETTE_LIMIT);
   expect(filterPalette(all, "").map((c) => c.label).slice(0, 2)).toEqual(["Generate\u2026", "Brief & Script"]);
-  expect(filterPalette(all, "RIG")[0]).toMatchObject({ label: "Rig", group: "STUDIO" });
+  expect(filterPalette(all, "BOARD").find((c) => c.label === "Board")).toMatchObject({ label: "Board", group: "STUDIO" });
   expect(filterPalette(all, "  DEPART ").map((c) => c.label)).toEqual(["Departure"]);
   expect(filterPalette(all, "viral").every((c) => c.group === "VIRAL")).toBe(true);
   /* Group matches too: "atomik" finds the run-this-page row and plan titles. */

@@ -109,7 +109,6 @@ async function gateRowUp(page: Page) {
 
 /** The Library's Assets: the tab bar's Assets on a portrait phone; elsewhere the page head's Library, then its Assets tab. */
 async function openAssets(page: Page) {
-  if (await page.getByTestId("tabbar-assets").isVisible()) { await page.getByTestId("tabbar-assets").click(); return; }
   await page.getByTestId("toggle-library").click();
   const tab = page.getByTestId("library").getByRole("tab", { name: /Assets/ });
   if (await tab.count()) await tab.click();
@@ -465,7 +464,7 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
 
   /* The primary keeps its price whole, under its action. */
   const primary = page.getByTestId("primary-action");
-  await expect(primary).toHaveText("Generate · 18 cr");
+  await expect(primary).toHaveText("Make · 18 cr");
   const [act, price] = await Promise.all([primary.locator(".gx-go-act").boundingBox(), primary.locator(".gx-go-price").boundingBox()]);
   expect(price!.y).toBeGreaterThan(act!.y + act!.height - 1);
 
@@ -477,8 +476,8 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   if (SHOTS) { await settle(page); await page.screenshot({ path: join(SHOTS, `${info.project.name.replace("workbench-", "")}-projects.png`), animations: "disabled" }); }
   await page.keyboard.press("Escape");
   const strip = page.getByRole("navigation", { name: "Pages" });
-  await expect(strip.getByRole("button", { name: /Rig/ })).toHaveAttribute("aria-current", "page");
-  const [bar, tab] = await Promise.all([strip.boundingBox(), strip.getByRole("button", { name: /Rig/ }).boundingBox()]);
+  await expect(strip.getByRole("button", { name: /Board/ })).toHaveAttribute("aria-current", "page");
+  const [bar, tab] = await Promise.all([strip.boundingBox(), strip.getByRole("button", { name: /Board/ }).boundingBox()]);
   expect(tab!.x).toBeGreaterThanOrEqual(bar!.x - 0.5);
   expect(tab!.x + tab!.width).toBeLessThanOrEqual(bar!.x + bar!.width + 0.5);
   expect(errors).toEqual([]);

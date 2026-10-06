@@ -265,6 +265,8 @@ export function useComposer(options: {
   verb?: string;
   /** Told once a press has been accepted by the server (see ComposerSent). Optional; nothing depends on it. */
   onSent?: (sent: ComposerSent) => void;
+  /** Engines this host does not offer at all (not in the list, not selected, not the default). A module-level function, so it is stable. */
+  hide?: (modelId: string) => boolean;
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
@@ -317,7 +319,8 @@ export function useComposer(options: {
   const quote = quoteAnswer?.scope === scope ? quoteAnswer.quote : null;
   const setQuote = useCallback((value: ComposerQuote | null) => setQuoteAnswer({ scope, quote: value }), [scope]);
 
-  const models = useMemo(() => workspaceModels(engines.rows, audio), [engines.rows, audio]);
+  const hide = options.hide;
+  const models = useMemo(() => workspaceModels(engines.rows, audio).filter((m) => !hide?.(m.id)), [engines.rows, audio, hide]);
   const offered = useMemo(() => offeredModels(state, models), [state, models]);
   const model = useMemo(() => activeModel(state, models), [state, models]);
   const settings = useMemo(() => composerSettings(model, target?.aspect, state.picks), [model, target?.aspect, state.picks]);
@@ -350,7 +353,9 @@ export function useComposer(options: {
     ? nodeAudioBody({ task: model.audioTask, text: state.prompt, seconds, instrumental: state.instrumental, voiceId, modelId: model.id })
     : null;
 
-  const blockedForQuote = !open || !model || !state.prompt.trim() || (options.projects != null && options.projects !== "ready");
+  /* A still or a clip is priced by its settings, not its words, so the price is read before anything is typed (Make shows it on the
+     button and the engine line from the start). Sound is priced by its words (speech), so it waits for them. */
+  const blockedForQuote = !open || !model || (Boolean(audioBody) && !state.prompt.trim()) || (options.projects != null && options.projects !== "ready");
 
   useEffect(() => {
     /* A figure for other inputs is already stale by its key; nothing is reset here. */

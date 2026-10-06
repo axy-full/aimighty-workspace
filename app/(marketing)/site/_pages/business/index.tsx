@@ -6,8 +6,8 @@ import { Amber, Fact, Grid, Group, Note, Section, SuiteHeader } from "@/componen
 import { ACCESS_HREF, SITE_SUITES } from "@/lib/marketing/site";
 
 export const metadata: Metadata = {
-  title: "Business Suite",
-  description: "The Moleculr Business Suite: product, brand, cast, format, variants, design and publishing in one marketing studio.",
+  title: "Ads",
+  description: "Ads: product, brand, cast, format, variants, design and publishing in one marketing studio.",
 };
 
 /* Limits as the code enforces them: lib/workbench/studio-schema.ts (moleculrSchema),
@@ -55,13 +55,13 @@ export default function BusinessPage() {
   return (
     <SitePage active="business">
       <SuiteHeader
-        eyebrow="03 · Moleculr Business Suite"
+        eyebrow="03 · Ads"
         title="Build and grow your brand from one marketing studio."
-        lead="One studio: a product, who presents it, what it says and where it runs. Configure a variant and it becomes a generation node bound to your saved originals, so a reload or a handoff to Rig keeps every reference."
+        lead="One studio: a product, who presents it, what it says and where it runs. Configure a variant and it becomes a generation node bound to your saved originals, so a reload or a handoff to the Board keeps every reference."
         pages={suite.pages}
         cta={<>
           <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>
-          <Link href="/" className="mk-btn mk-btn--secondary">Open Gen</Link>
+          <Link href="/" className="mk-btn mk-btn--secondary">Open Make</Link>
         </>}
       />
 

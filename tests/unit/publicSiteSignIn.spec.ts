@@ -42,7 +42,7 @@ test("no public page offers what needs a Higgsfield sign-in", () => {
   const found = files.flatMap((file) => renderable(file).flatMap((text) => retiredFindings(text).map((why) => `${file}: ${why}`)));
   expect(found).toEqual([]);
   /* The page lists the header and the suites strip print: Viral without Shorts, Atomik without its Generate page. */
-  expect(SITE_SUITES.find((suite) => suite.id === "viral")!.pages).toEqual(["Motion Transfer", "Object Swap", "Sources", "Compare", "History"]);
+  expect(SITE_SUITES.find((suite) => suite.id === "viral")!.pages).toEqual(["Motion transfer", "Object swap", "Sources", "Compare", "History"]);
   expect(SITE_SUITES.find((suite) => suite.id === "atomik")!.pages).not.toContain("Generate");
 });
 

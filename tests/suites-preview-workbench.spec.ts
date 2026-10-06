@@ -305,7 +305,7 @@ test("the Inspector's Preview starts at its take in the page's list; Recreate an
   await expect(page.getByTestId("make-panel")).toBeVisible();
   await expect(page.getByTestId("page-title")).toHaveText("Agent");
   await expect(page.getByTestId("gen-recipe-name")).toHaveText(frameName(4));
-  await expect(page.getByTestId("toast")).toContainText(`${frameName(4)}’s recipe is in Gen.`);
+  await expect(page.getByTestId("toast")).toContainText(`${frameName(4)}’s recipe is in Make.`);
 
   /* Use as reference, from the Inspector's own list again. */
   await tile(page, "generation:gen_005").click();

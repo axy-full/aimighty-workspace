@@ -25,7 +25,7 @@ test("every suite has the README's pages, numbered in order, with its group gaps
     business: ["01 Image ads", "|02 Setup", "|03 Brand", "04 Product", "05 Format", "06 Hooks", "07 Reference", "08 Design"],
     /* Motion Transfer and Object Swap are Make's quick tools (lib/shell/make.ts); History stays a page. */
     viral: ["01 History"],
-    atomik: ["01 Agent", "|02 Runs", "03 Approvals", "04 Budget", "|05 Models", "06 Tools", "07 Memory", "08 Skills"],
+    atomik: ["01 Agent", "|02 Activity", "03 Approvals", "04 Budget", "|05 Models", "06 Tools", "07 Memory", "08 Skills"],
   });
 });
 
@@ -41,7 +41,7 @@ test("Atomik › Skills is the shell's own page beside Memory, on Agent's backin
   expect(shellPage("atomik", "skills")?.title).toBe("Tools & connections");
   expect(pageOfLegacy("atomik", "agent")?.id).toBe("agent");
   expect(pageOfLegacy("atomik", "agent", "saved-skills")?.id).toBe("saved-skills");
-  expect(searchPalette(paletteIndex({ models: [], assets: [] }), "saved runs")[0].run).toEqual({ type: "page", suite: "atomik", page: "saved-skills" });
+  expect(searchPalette(paletteIndex({ models: [], assets: [] }), "skills")[0].run).toEqual({ type: "page", suite: "atomik", page: "saved-skills" });
 });
 
 test("every shell page is backed by a page the state layer really has", () => {
@@ -90,13 +90,11 @@ test("suite names and marks are the design's, verbatim, with Atomik renamed by t
      README's names; the never-name rule covers the legacy screens only.
      Owner, 28 September 2026: Atomik is "Just Atomik agent". */
   expect(SHELL_SUITES.map((s) => [s.mark, s.name])).toEqual([
-    ["STUDIO", "Particl Production Studio"],
-    ["BUSINESS", "Moleculr Business Suite"],
-    ["VIRAL", "Subatomik Viral Studio · Genjutsu"],
+    ["STUDIO", "Studio"],
+    ["ADS", "Ads"],
+    ["SOCIAL", "Social"],
     ["AGENT", "Atomik Agent"],
   ]);
-  /* The suites left the header: each is still a ⌘K row, under its own name, until its board ships. */
-  for (const s of SHELL_SUITES) expect(paletteIndex({ models: [], assets: [] }).find((r) => r.run.type === "suite" && r.run.suite === s.id)).toMatchObject({ label: s.label, hint: s.name });
 });
 
 /* ── Undo ───────────────────────────────────────────────────────────────── */
@@ -182,11 +180,11 @@ test("a blocked item stays in the menu, disabled, with its reason", () => {
 
 test("a Rig node leaves out commands the Rig does not carry out, and keeps a blocked one that has its own reason", () => {
   /* What SuitesShell gives a node while the Rig is on screen, and while it is not. */
-  const onRig = ctxItems({ kind: "node", id: "n" }, caps({ can: { delete: true }, why: { delete: "Open the Rig to delete a shot." }, canUndo: true }));
+  const onRig = ctxItems({ kind: "node", id: "n" }, caps({ can: { delete: true }, why: { delete: "Open the Board to delete a shot." }, canUndo: true }));
   expect(commands(onRig)).toEqual(["paste", "—", "delete", "undo"]);
   expect(find(onRig, "delete").disabled).toBeFalsy();
-  const offRig = ctxItems({ kind: "node", id: "n" }, caps({ why: { delete: "Open the Rig to delete a shot." } }));
-  expect(find(offRig, "delete")).toMatchObject({ disabled: true, reason: "Open the Rig to delete a shot." });
+  const offRig = ctxItems({ kind: "node", id: "n" }, caps({ why: { delete: "Open the Board to delete a shot." } }));
+  expect(find(offRig, "delete")).toMatchObject({ disabled: true, reason: "Open the Board to delete a shot." });
   for (const gone of ["copy", "cut", "duplicate", "bypass", "unplug", "move", "retry"]) expect(onRig.some((i) => !i.sep && i.command === gone)).toBe(false);
   /* When Bypass is wired it appears, in the README's place. */
   expect(commands(ctxItems({ kind: "node", id: "n" }, caps({ can: { bypass: true, delete: true } })))).toEqual(["paste", "—", "bypass", "—", "delete", "undo"]);
@@ -253,8 +251,7 @@ test("a lingering selection does not take ⌘C from selected text, nor ⌫/⌘R/
 /* ── ⌘K ─────────────────────────────────────────────────────────────────── */
 
 const rows = paletteIndex({
-  models: [{ id: "m1", name: "Seedance 2.5", kind: "video" }],
-  assets: [{ id: "tk_1", name: "Rigging diagram", kind: "image" }],
+  assets: [{ id: "tk_1", name: "Board diagram", kind: "image" }],
 });
 
 test("the palette indexes Generate, suites, every page, Workspace, models and assets", () => {
@@ -285,5 +282,8 @@ test("search ranks a page's own name first and always ends with Ask Atomik", () 
   expect(searchPalette(rows, "zzzz")).toEqual([expect.objectContaining({ run: { type: "ask", text: "zzzz" } })]);
   expect(searchPalette(rows, "")).toHaveLength(PALETTE_ROWS);
   expect(searchPalette(rows, "a").length).toBeLessThanOrEqual(PALETTE_ROWS);
-  expect(searchPalette(rows, "budget atomik")[0].run).toEqual({ type: "page", suite: "atomik", page: "budget" });
+  /* The retired names find nothing but the agent. */
+  for (const old of ["viral", "business", "generate", "rig", "astra", "moleculr", "genjutsu", "soul", "higgsfield"]) expect(searchPalette(rows, old).map((r) => r.run.type), old).toEqual(["ask"]);
+  expect(searchPalette(rows, "motion transfer")[0].run).toEqual({ type: "make", mode: "motion" });
+  expect(searchPalette(rows, "spending")[0].run).toEqual({ type: "settings", section: "rules" });
 });

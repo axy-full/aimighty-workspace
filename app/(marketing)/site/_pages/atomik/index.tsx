@@ -24,7 +24,7 @@ const AGENT_CHIPS = ["≤ 8 actions", "editable nodes", "≤ 6 visuals", "links 
    sits under the body, beside the one sentence it qualifies. */
 const TILES: { tag: string; name: string; body: string; badge?: string; gated?: string }[] = [
   { tag: "01 Agent", name: "Agent",
-    body: "Plain-language planning against the saved project and the references you select. Pictures and text files dropped in are filed on the project. Its actions land on Rig as editable nodes." },
+    body: "Plain-language planning against the saved project and the references you select. Pictures and text files dropped in are filed on the project. Its actions land on the Board as editable nodes." },
   { tag: "Crew · 7 departments", name: "Crew",
     body: "Director, DOP, Production designer, Costume stylist, Editor, Producer and Continuity supervisor in one room. Each round they propose, challenge one another, and the chair converges three solutions." },
   { tag: "02 Runs", name: "Runs",
@@ -74,7 +74,7 @@ export default async function AtomikPage() {
         pages={SITE_SUITES.find((s) => s.id === "atomik")!.pages}
         cta={<>
           <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>
-          <Link href="/" className="mk-btn mk-btn--secondary">Open Gen</Link>
+          <Link href="/" className="mk-btn mk-btn--secondary">Open Make</Link>
         </>}
       />
 
@@ -82,7 +82,7 @@ export default async function AtomikPage() {
         <Cols col={400} className={styles.agentCols}>
           <div className={styles.copy}>
             <Head eyebrow="01 · Agent" title="Describe the outcome. Approve each step."
-              lead="The agent reads the brief, script, direction and shot list, plus the references you select: uploaded text, images, and three sampled frames per video, six visuals at most. PDFs, audio and links count as descriptions only, and no URL is ever fetched. Its actions go to Rig as editable nodes." />
+              lead="The agent reads the brief, script, direction and shot list, plus the references you select: uploaded text, images, and three sampled frames per video, six visuals at most. PDFs, audio and links count as descriptions only, and no URL is ever fetched. Its actions go to the Board as editable nodes." />
             <Chips items={AGENT_CHIPS} />
           </div>
 

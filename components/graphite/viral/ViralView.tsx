@@ -12,7 +12,7 @@ import { useKeyTake } from "@/lib/shell/use-key-take";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import {
   INITIAL_VIRAL, PROMPT_MAX, REFERENCE_MAX, VARIANT_NAME, VIRAL_COPY, VIRAL_PAGES, VIRAL_RESOLUTIONS,
-  aboutCredits, addMedia, canCancel, downloadHref, estimateReason, genjutsuInput, mirrorSeek, moveReference,
+  addMedia, canCancel, downloadHref, estimateReason, genjutsuInput, mirrorSeek, moveReference,
   takeDone, takeInFlight, takeRecipe, takeWords, viralBlock, viralMedia, viralRequest, viralTakes,
   type MirrorMark, type ViralMedia, type ViralPage, type ViralState, type ViralTake,
 } from "@/lib/shell/viral";
@@ -24,6 +24,8 @@ import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useClock } from "../ResumedJobs";
 import { Glyph } from "../icons";
+import { Price, usePriceTitle } from "../Price";
+import { priceWords, upTo } from "@/lib/shell/price-words";
 
 /**
  * Viral = Genjutsu (FINAL_SPEC §1 step 3), on Particl's API key for every
@@ -212,7 +214,12 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
     onDrop: dropped,
   };
   const run = take.run;
-  const label = run.phase === "submitting" ? "Submitting…" : run.phase === "running" ? "Rendering…" : credits != null ? `${copy.verb} · ${aboutCredits(credits)}` : copy.verb;
+  /* The button wears the live estimate as "up to N cr" (the price shown before anything is paid), and waits for it: with no figure it is disabled. */
+  const figure = upTo(credits);
+  const figureTitle = usePriceTitle(figure) ?? undefined;
+  const priced = run.phase !== "submitting" && run.phase !== "running" && figure != null;
+  const label = run.phase === "submitting" ? "Submitting…" : run.phase === "running" ? "Rendering…" : null;
+  const buttonName = label ?? (priced ? `${copy.verb} · ${priceWords(figure)}` : copy.verb);
   const estimateFailed = Boolean(!blocked && take.estimate?.key === key && take.estimate.error);
   const running = run.phase === "running" ? run : null;
   const runningTake = running ? viralTakes(items, variant).find((t) => t.id === running.jobId) ?? null : null;
@@ -263,7 +270,7 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
         <span className="gx-make-engine-line">
           <span className="gx-model-name">{tool.name}</span>
           <span className="gx-make-engine-part">{s.resolution}</span>
-          {credits != null ? <span className="gx-make-engine-part gx-mono" data-testid="make-engine-price">{aboutCredits(credits)}</span> : null}
+          {credits != null ? <span className="gx-make-engine-part gx-mono" data-testid="make-engine-price" title={figureTitle}><Price value={figure} /></span> : null}
         </span>
       </div>
 
@@ -277,8 +284,10 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
       {take.note ? <p className="gx-gen-note" role="status" data-testid="viral-take-note">{take.note}</p> : null}
       <div className="gx-gen-cta gx-make-go">
         <span className="gx-make-dest" data-testid="make-dest">{project ? `To ${project.name} · Library` : null}</span>
-        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(reason) || busy} aria-describedby={reason ? "vr-reason" : undefined}
-          onClick={() => { if (request) void take.submit(request, key, credits); }} data-testid="viral-generate">{label}</button>
+        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(reason) || busy || credits == null} aria-describedby={reason ? "vr-reason" : undefined} aria-label={buttonName} title={priced ? figureTitle : undefined} data-priced={priced ? "" : undefined} data-spend={priced ? "priced" : "unpriced"}
+          onClick={() => { if (request) void take.submit(request, key, credits); }} data-testid="viral-generate">
+          {label ?? (<><span className="gx-go-act">{copy.verb}</span>{priced ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span><Price value={figure} /></span> : null}</>)}
+        </button>
       </div>
 
       {/* Below: what the drawn panel has no place for yet, as the Viral page had it. */}
@@ -286,7 +295,7 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
         {credits != null ? <p className="gx-gen-foot" data-testid="viral-foot">An estimate from the live price · filed to this project’s takes</p> : null}
         {running ? (
           <div className="vr-done" role="status" data-testid="viral-running">
-            <span className="gx-gen-note">{running.held ? "Held · it starts when credits arrive." : runningTake ? takeWords(runningTake).label : "Queued"} · {aboutCredits(running.credits)}</span>
+            <span className="gx-gen-note">{running.held ? "Held · it starts when credits arrive." : runningTake ? takeWords(runningTake).label : "Queued"} · {priceWords(upTo(running.credits))}</span>
             {runningTake && canCancel(runningTake, session) ? (
               <span className="vr-done-actions">
                 <button type="button" className="gx-hbtn" disabled={take.cancelling === running.jobId} onClick={() => void take.cancel(running.jobId)} data-testid="viral-cancel">{take.cancelling === running.jobId ? "Cancelling…" : "Cancel"}</button>
@@ -497,13 +506,13 @@ function TakeCard({ take, now, opening, cancel, onRecreate, onCompare, onSend }:
       {take.status === "failed" && take.failureLine ? <span className="gx-asset-fail" data-testid="history-take-failure">{take.failureLine}</span> : null}
       {done ? (
         <div className="cw-sol-actions">
-          <button type="button" className="gx-hbtn" onClick={() => onRecreate(take)}>Recreate</button>
+          <button type="button" className="gx-hbtn" onClick={() => onRecreate(take)}>Open in Make</button>
           <button type="button" className="gx-hbtn" disabled={!take.url} onClick={onCompare}>Compare</button>
           <button type="button" className="gx-hbtn" disabled={!take.url || opening} onClick={() => onSend(take)}>{opening ? "Opening…" : "Send to Edit"}</button>
           <a className="gx-hbtn" href={downloadHref("generation", take.id)} download data-testid="history-take-download">Download</a>
         </div>
       ) : take.status === "failed" ? (
-        <div className="cw-sol-actions"><button type="button" className="gx-hbtn" onClick={() => onRecreate(take)}>Recreate</button></div>
+        <div className="cw-sol-actions"><button type="button" className="gx-hbtn" onClick={() => onRecreate(take)}>Open in Make</button></div>
       ) : cancel ? (
         <div className="cw-sol-actions"><button type="button" className="gx-hbtn" disabled={cancel.cancelling === take.id} onClick={() => void cancel.cancel(take.id)} data-testid="history-take-cancel">{cancel.cancelling === take.id ? "Cancelling…" : "Cancel"}</button></div>
       ) : null}

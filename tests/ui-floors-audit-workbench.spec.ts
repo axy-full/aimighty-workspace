@@ -295,7 +295,7 @@ test("Atomik › Runs, Budget and Models: the suite's buttons, links and fields 
   const { errors } = await open(page, "/suites?suite=atomik&page=runs&sp=runs", "spec-page");
   const strip = page.getByRole("navigation", { name: "Pages" });
   const suite = page.locator(".pxw-tool--atomik");
-  for (const [tab, ready] of [["Runs", "Build your first plan"], ["Budget", "Project generation spend"], ["Models", "Effective routing"]] as const) {
+  for (const [tab, ready] of [["Activity", "Build your first plan"], ["Budget", "Project generation spend"], ["Models", "Effective routing"]] as const) {
     await strip.getByRole("button", { name: new RegExp(tab) }).click();
     await expect(suite.getByText(ready, { exact: true })).toBeVisible();
     if (tab === "Budget") await expect(suite.getByRole("button", { name: "Save cap" })).toBeVisible();
@@ -320,7 +320,7 @@ test("Atomik: a projects or budget read that failed says Try again, never Retry"
   await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Atomik" }).click();
   await closeSuitesMenu(page);
   const strip = page.getByRole("navigation", { name: "Pages" });
-  await strip.getByRole("button", { name: /Runs/ }).click();
+  await strip.getByRole("button", { name: /Activity/ }).click();
   const projects = page.locator(".pxw-tool--atomik [role='alert']").filter({ hasText: "could not load this project" });
   await expect(projects).toBeVisible();
   await expect(projects.getByRole("button", { name: "Try again", exact: true })).toBeVisible();

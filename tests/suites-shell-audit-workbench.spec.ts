@@ -47,7 +47,7 @@ test("Recreate pressed on Gen lands at once, with the take's own references, and
   await page.getByTestId("make-tab-recent").click();
   await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_wide']").click();
   await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
-  await expect(page.getByTestId("toast")).toContainText("Wide on the water’s recipe is in Gen.");
+  await expect(page.getByTestId("toast")).toContainText("Wide on the water’s recipe is in Make.");
   /* No Open: Gen is where it landed (lib/shell/confirmations). */
   await expect(page.getByTestId("toast-open")).toHaveCount(0);
   /* Already in Gen, the Inspector's overlay closes by itself so the composer is what is seen. */
@@ -70,7 +70,7 @@ test("Recreate pressed on Gen lands at once, with the take's own references, and
   expect(errors).toEqual([]);
 });
 
-test("phone: Assets from More (Workspace) opens the Library over the suite page", async ({ page }, info) => {
+test("phone: the bar reads Home · Record · Make · Atomik on every screen, lights the tab the screen belongs to, and points nowhere old", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "phone widths");
   const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   await page.getByTestId("tabbar-more").click();

@@ -162,11 +162,11 @@ test("the platform desk's preview renders carry the per-clip price as their ceil
     });
     await page.goto("/admin");
     const press = async () => {
-      const render = page.getByRole("button", { name: "Render 1 previews", exact: true });
+      const render = page.getByRole("button", { name: /^Render 1 previews · [\d,]+ cr$/ });
       await expect(render).toBeEnabled({ timeout: 60_000 });
       await render.click();
       await page.getByRole("dialog").getByRole("button", { name: /^Spend \$/ }).click();
-      await expect(page.getByRole("button", { name: "Render 1 previews", exact: true })).toBeEnabled({ timeout: 60_000 });
+      await expect(page.getByRole("button", { name: /^Render 1 previews · [\d,]+ cr$/ })).toBeEnabled({ timeout: 60_000 });
     };
 
     const landedId = await loseNextReply(page);

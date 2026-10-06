@@ -395,7 +395,7 @@ test("Open in Takes opens the take that was clicked on the board's Shots region 
   await expect(page.getByTestId("make-panel")).toBeVisible();
   await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("A slow push-in on a lighthouse at dusk");
-  await expect(page.getByTestId("toast")).toHaveText("Lighthouse at dusk’s recipe is in Gen.");
+  await expect(page.getByTestId("toast")).toHaveText("Lighthouse at dusk’s recipe is in Make.");
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Lighthouse at dusk");
   expect(paid).toEqual([]);
   expect(errors).toEqual([]);
@@ -478,7 +478,7 @@ test("the tray reads at the server's pace, not while the tab is hidden, and soon
   await page.getByTestId("running-jobs").click();
   await expect(page.getByTestId("jobs-empty").locator("p")).toHaveText("Nothing is rendering or waiting, and nothing finished in the last 6 hours.");
   await expect(page.getByTestId("jobs-summary")).toHaveCount(0);
-  await expect(page.getByTestId("jobs-generate")).toHaveText("Generate");
+  await expect(page.getByTestId("jobs-generate")).toHaveText("Open Make");
   await expect(page.getByTestId("running-jobs")).toHaveAccessibleName("Jobs");
 
   /* A failed read says so, keeps asking on its own, and Try again asks at once. */

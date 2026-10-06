@@ -238,7 +238,7 @@ test("an old link in the design file's spelling is sent, with a 307, to the app'
   expect(errors).toEqual([]);
 });
 
-test("⌘K finds a page, runs the top hit on Enter and closes on Escape", async ({ page }, info) => {
+test("⌘K finds a board region, runs the top hit on Enter and closes on Escape", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   await open(page);
   await openSuitesMenu(page);

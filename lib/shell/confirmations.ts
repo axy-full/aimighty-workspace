@@ -16,7 +16,7 @@ export type Confirmation = { text: string; open?: Destination };
 
 /** The name a destination goes by on screen: the board's place for a Studio stage, the strip's label for another page, Gen, or Library. */
 export function destinationName(d: Destination): string {
-  if (d.to === "gen") return "Gen";
+  if (d.to === "gen") return "Make";
   if (d.to === "library") return "Library";
   if (d.suite === "studio" && isStageId(d.page)) return stagePlace(d.page);
   const page = shellPage(d.suite, d.page);
@@ -55,7 +55,7 @@ export const CONFIRM = {
   /** Crew › → Board writes a draft scene node on the board (not a Storyboard frame, which comes from the beat sheet). */
   crewRig: (title: string, nodeId?: string): Confirmation => ({ text: `Added to the Board · ${title}`, open: page("studio", "rig", nodeId ? { kind: "shot", id: nodeId } : undefined) }),
   /** Crew › Open in Gen puts the solution in Gen's prompt; nothing is copied or written. */
-  crewGen: (): Confirmation => ({ text: "The solution is Gen’s prompt", open: { to: "gen" } }),
+  crewGen: (): Confirmation => ({ text: "The solution is Make’s prompt", open: { to: "gen" } }),
   /** Crew › File minutes: the markdown is stored in this project's Library. */
   minutesFiled: (): Confirmation => ({ text: "Minutes filed in the Library", open: { to: "library" } }),
   /** Business › a finished take opens in Shots, selected. */

@@ -158,15 +158,20 @@ test("a source and references in each tool: the card, the four-across references
   for (const tool of ["motion", "swap"] as const) {
     await page.goto(`/suites?make=${tool}`);
     await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", tool);
+    /* No price yet, so the button names only what it does and waits (it never invents a figure). */
+    await expect(page.getByTestId("viral-generate")).toBeDisabled();
+    await expect(page.getByTestId("viral-generate")).toHaveText(tool === "motion" ? "Transfer motion" : "Swap object");
     await dropFiles(page, [CLIP, ...STILLS]);
     await expect(page.getByTestId("viral-source")).toContainText("walk.mp4 · 10 s", { timeout: 60_000 });
     await expect(page.getByTestId("viral-reference")).toHaveCount(2, { timeout: 60_000 });
     await expect(page.getByTestId("viral-well")).toContainText("2 of 8");
     if (tool === "motion") {
       /* The mock engine's estimate, on the line and on the button alike. */
-      await expect(page.getByTestId("viral-generate")).toHaveText(/^Transfer motion · about \d[\d,]* cr$/, { timeout: 60_000 });
+      await expect(page.getByTestId("viral-generate")).toHaveText(/^Transfer motion · up to \d[\d,]* cr$/, { timeout: 60_000 });
       const price = (await page.getByTestId("make-engine-price").innerText()).trim();
       expect(await page.getByTestId("viral-generate").innerText()).toContain(price);
+      await expect(page.getByTestId("viral-generate")).toBeEnabled();
+      await expect(page.getByTestId("viral-generate")).toHaveAttribute("title", /^up to \$\d+\.\d\d$/);
     } else {
       /* This clip is under Object Swap's pixel floor: admission says so before any estimate, and the button waits. */
       await expect(page.getByTestId("viral-reason")).toContainText("409,600 pixels", { timeout: 60_000 });

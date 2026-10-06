@@ -88,20 +88,20 @@ export const SHELL_SUITES: ShellSuite[] = [
      Image ads, then Setup, then Particl's own tools (lib/shell/business-own.ts). The suite opens on
      Image ads; the Ads page is gone (design/particl-graphite/README.md › What this design removes),
      and an old `sp=ads` link lands on Image ads (SHELL_PAGE_ALIASES). */
-  own(build("business", "Business", "BUSINESS", "Moleculr Business Suite", "moleculr", [1, 2], [
+  own(build("business", "Ads", "ADS", "Ads", "moleculr", [1, 2], [
     ["dtc", "Image ads", "Image ads", "Branded stills from your products and references", "marketing"],
     ["setup", "Setup", "Setup items", "Saved products, brand kit and reference ad", "marketing"],
     ["brand", "Brand", "Brand kit", "Read from your website, reviewed before it is used", "marketing"],
     ["product", "Product", "Product profiles", "Approved facts and original photographs", "marketing"],
-    ["format", "Format", "Creative briefs", "Eighteen briefs in six formats, made in Gen", "marketing"],
+    ["format", "Format", "Creative briefs", "Eighteen briefs in six formats, made in Make", "marketing"],
     ["hooks", "Hooks", "Hooks", "Up to twelve opening lines, written against the brief", "marketing"],
     ["reference", "Reference", "Reference ad", "A video you own, reviewed for what to adapt", "marketing"],
     ["design", "Design", "Poster designer", "Editable layers, exported as a full-size PNG", "marketing"],
   ])),
   /* Viral's History is the shell's own view (step 3). Motion Transfer and Object Swap, on Particl's API key through
-     /api/generate (Genjutsu on the key), are Make's quick tools now (`make=motion|swap`, lib/shell/make.ts); their old
+     /api/generate (Motion transfer and Object swap on the key), are Make's quick tools now (`make=motion|swap`, lib/shell/make.ts); their old
      pages' links open Make over the page on screen, and `goSuite("viral", "motion" | "swap")` does the same. */
-  own(build("viral", "Viral", "VIRAL", "Subatomik Viral Studio · Genjutsu", "subatomik", [], [
+  own(build("viral", "Social", "SOCIAL", "Social", "subatomik", [], [
     ["history", "History", "History", "Every result, retained as original bytes", "history"],
   ])),
   /* Tools & connections is the shell's own view (it replaced the step-5 pack list, whose packs now sit
@@ -114,7 +114,7 @@ export const SHELL_SUITES: ShellSuite[] = [
   /* Owner, 28 September 2026: "Just Atomik agent". */
   own(build("atomik", "Atomik", "AGENT", "Atomik Agent", "atomik", [1, 4], [
     ["agent", "Agent", "Agent", "Plan, price, then run", "agent"],
-    ["runs", "Runs", "Runs", "Durable, recoverable, accounted", "runs"],
+    ["runs", "Activity", "Activity", "Durable, recoverable, accounted", "runs"],
     ["approvals", "Approvals", "Approvals", "Nothing paid without a gate", "approvals"],
     ["budget", "Budget", "Budget", "Settled accounting, not estimates", "budget"],
     ["models", "Models", "Models", "Thinking for planning, engines for output", "models"],
@@ -200,7 +200,7 @@ export const ALL_SHELL_PAGES: { suite: ShellSuite; page: ShellPage }[] = SHELL_S
 /** Crew's own strip: 01 Room · 02 Members · 03 Sessions, with the prototype's titles and hints. */
 export type CrewPageId = "room" | "members" | "sessions";
 export const CREW_PAGES: { id: CrewPageId; n: string; label: string; title: string; hint: string }[] = [
-  { id: "room", n: "01", label: "Room", title: "Crew", hint: "A room of Grok agents, one per department. They propose, challenge each other, then the chair converges." },
+  { id: "room", n: "01", label: "Room", title: "Crew review", hint: "A room of Grok agents, one per department. They propose, challenge each other, then the chair converges." },
   { id: "members", n: "02", label: "Members", title: "Members", hint: "Role cards the room can seat. Each is one agent with its own stance and effort." },
   { id: "sessions", n: "03", label: "Sessions", title: "Sessions", hint: "Every room this project has run, with its solutions and settled cost." },
 ];
