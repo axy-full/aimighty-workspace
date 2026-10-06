@@ -42,6 +42,19 @@ async function pickTakes(page: Page, takes: number) {
   await chip.click();
 }
 
+/**
+ * Opens `url` once the page is done loading, on a cold dev server too. Its first visit compiles the route, and the dev
+ * server may then reload the page while a test is already driving it. So: visit, wait until the network is quiet (the
+ * route and its chunks are in) and the screen's first control is up, and visit again, which loads the compiled page
+ * whole. The second visit is the one the test drives. Nothing here is a longer timeout for a step of the test.
+ */
+async function openSettled(page: Page, url: string, ready: string) {
+  for (const visit of ["warm-up", "test"]) {
+    await page.goto(url, { waitUntil: "networkidle", timeout: 120_000 });
+    await expect(page.getByTestId(ready), visit).toBeVisible({ timeout: 120_000 });
+  }
+}
+
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
 
 const HELD = /^about \d[\d,.]* cr, at most \d[\d,.]* cr$/;
@@ -87,8 +100,7 @@ async function open(page: Page, info: TestInfo, admit: (take: number) => "runnin
   page.on("pageerror", (error) => errors.push(error.message));
   if (PHONES.includes(info.project.name)) {
     /* The phone's Make: Change opens the engines, each priced; Cinema Studio's row says what approving it holds. */
-    await page.goto("/suites?screen=make");
-    await expect(page.getByTestId("phone-make-prompt")).toBeVisible({ timeout: 60_000 });
+    await openSettled(page, "/suites?screen=make", "phone-make-prompt");
     await page.getByTestId("phone-make-change").click();
     const row = page.getByTestId("phone-make-engine-row").filter({ hasText: "Cinema Studio 4.0" });
     await expect(row.getByTestId("phone-make-engine-row-price")).toHaveText(HELD, { timeout: 60_000 });
@@ -101,8 +113,7 @@ async function open(page: Page, info: TestInfo, admit: (take: number) => "runnin
     await page.getByTestId("phone-make-prompt").fill(WORDS);
     return { quotes, sent, errors, go: page.getByTestId("phone-make-go") };
   }
-  await page.goto("/suites?make=video");
-  await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 60_000 });
+  await openSettled(page, "/suites?make=video", "gen-view");
   /* Make names the project its take lands in. */
   await expect(page.getByTestId("make-dest")).toContainText("To Lighthouse hold · Library");
   /* Cinema Studio, from Make's engine list: its row says what approving it holds. */
@@ -191,8 +202,7 @@ test("the Jobs tray: a held Cinema Studio take's Release says about N cr, at mos
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   /* The header's Jobs pill, on any desktop screen: Make's here. */
-  await page.goto("/suites?make=video");
-  await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 60_000 });
+  await openSettled(page, "/suites?make=video", "gen-view");
   const pill = page.getByTestId("running-jobs");
   await expect(pill).toHaveAccessibleName(/1 held/, { timeout: 30_000 });
   await pill.click();
