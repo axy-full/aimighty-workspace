@@ -14,6 +14,7 @@ import { XaiHttpError } from "./xaiErrors";
 import { PreflightError } from "./preflight";
 import { LEDGER_UNIT_PAUSED } from "./ledgerUnit";
 import { SAMPLE_LINE } from "./demo/sample";
+import { sampleSpendRefusal } from "./demo/spend-guard.server";
 
 /**
  * Grok transcription of a stored audio or video original (owner, 23
@@ -218,6 +219,9 @@ async function transcription(input: TranscriptionInput, userId: string, options:
   const terms = currentBillingTerms(TRANSCRIPTION_JOB.kind, TRANSCRIPTION_JOB.model);
   const estimatedCredits = paidByPlatform("xai") ? creditsAtTerms(estimateUsd, terms) : 0;
   if (input.quoteOnly === true) return { status: 200, body: { quoteOnly: true, estimatedCredits, seconds: length.seconds } };
+  /* The sample production spends nothing: refused before the price shown or the balance is asked, as the audio and generation doors do. */
+  const sample = await sampleSpendRefusal(typeof input.projectId === "string" ? input.projectId : null);
+  if (sample) return { status: 409, body: { error: sample, charged: 0 } };
   /* A paid transcription is saved on its claim before it is charged, so it runs only under one (the route's withGenerationRequest). */
   const claim = options.claim;
   if (!claim) return { status: 500, body: { error: "This transcription was not sent under a request key. Nothing was sent or charged.", charged: 0 } };
@@ -233,7 +237,7 @@ async function transcription(input: TranscriptionInput, userId: string, options:
   };
   try { await (options.deps?.reserve ?? reserveGenerationSpend)({ ...event, status: "running", engineCostUsd: estimateUsd }, { token: currentTenant()?.token }); }
   catch (error) {
-    /* The sample production is a conflict with the project, answered as every other door answers it (409), never "not enough credits". */
+    /* The backstop for the sample production (refused above): a conflict with the project (409), never "not enough credits". */
     if (error instanceof SpendReservationError) return { status: error.message === LEDGER_UNIT_PAUSED ? 503 : error.message === SAMPLE_LINE ? 409 : 402, body: { error: error.message, charged: 0 } };
     /* Not a refusal: the write may have landed with its acknowledgement lost. Nothing was sent, so a hold it
        left is released — found by the event's own id — before anything is said; one that cannot be is answered from the meter. */

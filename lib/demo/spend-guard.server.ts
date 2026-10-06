@@ -28,8 +28,8 @@ export async function sampleSpendRefusal(projectId: string | null | undefined, s
  * The stored mark as the guard reads it, failing closed: a mark that is there but is not one this code wrote (it does
  * not parse, or has another version or shape) is never read as "no sample". If it still names its production, that
  * production is the sample; if it names none, nobody can tell which production is, so every paid job is refused
- * ("unreadable") until an owner marks the sample again (which archives the bad row) or undoes it. Only an undone mark
- * (`hiddenAt` set) reads as none, whatever else its shape.
+ * ("unreadable") until an owner marks the sample again, which replaces the bad row (undo cannot clear it: it skips a
+ * mark it cannot read). Only an undone mark (`hiddenAt` set) reads as none, whatever else its shape.
  */
 function guardMark(stored: unknown): { projectId: string } | "unreadable" | null {
   const mark = parseSampleMark(String(stored));
