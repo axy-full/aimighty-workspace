@@ -99,6 +99,7 @@ test("phone Home: what needs you first, with the price as the button; renders wi
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("Keyframe · Shot 3 · retake");
   await expect(rows.first().getByTestId("phone-row-approve")).toHaveText("3 cr");
+  await expect(rows.first().getByTestId("phone-row-approve")).toHaveAttribute("data-spend-price", "3 cr");
   /* Over the per-shot rule: a member sees who presses it, never a button. */
   await expect(rows.nth(1)).toContainText("Needs an admin");
   await expect(rows.nth(1).getByRole("button")).toHaveCount(0);
