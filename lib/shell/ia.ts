@@ -33,6 +33,8 @@ export type ShellPage = {
   own?: boolean;
   /** Never a tab in the stage strip: the phone's Home, and the Studio home (the phone's stage grid; on a desktop, where the mark goes). */
   phoneOnly?: boolean;
+  /** Never a tab in the stage strip, though the address still resolves: Atomik's retired Agent, Budget, Models and Tools pages (the panel and Settings took them). */
+  stripHidden?: boolean;
 };
 
 export type ShellSuite = {
@@ -81,6 +83,11 @@ function own(suite: ShellSuite, only?: readonly string[]): ShellSuite {
   return { ...suite, pages: suite.pages.map((p) => (!only || only.includes(p.id) ? { ...p, own: true } : p)) };
 }
 
+/** Only these pages are tabs of the suite's strip, with no numbers; every other page of the suite stays reachable by address but is not a tab. */
+function controlRoomOnly(suite: ShellSuite, tabs: readonly string[]): ShellSuite {
+  return { ...suite, pages: suite.pages.map((p) => (tabs.includes(p.id) ? { ...p, n: "" } : { ...p, n: "", stripHidden: true })) };
+}
+
 /** Group starts: Business after 01 and 02; Atomik after 01 and 04. */
 export const SHELL_SUITES: ShellSuite[] = [
   studioSuite(),
@@ -112,16 +119,19 @@ export const SHELL_SUITES: ShellSuite[] = [
      Skills (saved runs, run again with new words) is the same kind of page, beside Memory; its id is
      `saved-skills` because `skills` has always meant Tools & connections. */
   /* Owner, 28 September 2026: "Just Atomik agent". */
-  own(build("atomik", "Atomik", "AGENT", "Atomik Agent", "atomik", [1, 4], [
+  /* The control room's four tabs come first, in the design's order and without numbers (Atomik frames g–j): Approvals, Activity,
+     Skills, Memory. Agent, Budget, Models and Tools are retired as pages (the panel and Settings took them; their addresses
+     redirect), so none is a tab. */
+  controlRoomOnly(own(build("atomik", "Atomik", "AGENT", "Atomik Agent", "atomik", [], [
+    ["approvals", "Approvals", "Approvals", "One queue across projects", "approvals"],
+    ["runs", "Activity", "Activity", "Runs and spend · settled cost per run and project", "runs"],
+    ["saved-skills", "Skills", "Skills", "Saved runs, run again with new words", "agent"],
+    ["memory", "Memory", "Memory", "Brand, audience, references and cast", "agent"],
     ["agent", "Agent", "Agent", "Plan, price, then run", "agent"],
-    ["runs", "Activity", "Activity", "Durable, recoverable, accounted", "runs"],
-    ["approvals", "Approvals", "Approvals", "Nothing paid without a gate", "approvals"],
     ["budget", "Budget", "Budget", "Settled accounting, not estimates", "budget"],
     ["models", "Models", "Models", "Thinking for planning, engines for output", "models"],
     ["skills", "Tools", "Tools & connections", "What Atomik reaches, and what reaches Particl", "skills"],
-    ["memory", "Memory", "Memory", "Brand, audience and references Atomik keeps in mind", "agent"],
-    ["saved-skills", "Skills", "Skills", "Saved runs, run again with new words", "agent"],
-  ]), ["skills", "memory", "saved-skills"]),
+  ]), ["skills", "memory", "saved-skills"]), ["approvals", "runs", "saved-skills", "memory"]),
 ];
 
 /**
