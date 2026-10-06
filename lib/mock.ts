@@ -12,7 +12,7 @@ import { guessKind, unfence } from "./atomikMemoryText";
  * the same rows, polls, storage and metering as the real thing — that is
  * the point — but no vendor is called and nobody's money moves.
  *
- * The rule behind it (docs/particl-sow.md §3, rule 1): development never
+ * The rule behind it (docs/particl-sow-v1.md §3, rule 1): development never
  * bills a customer workspace. A real engine call is a deliberate act in a
  * test workspace with the cost said out loud first.
  */
