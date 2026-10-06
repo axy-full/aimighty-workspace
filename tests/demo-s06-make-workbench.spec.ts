@@ -74,6 +74,9 @@ async function shot(page: Page, project: string, name: string) {
   await page.screenshot({ path: `${SHOTS}/${name}-${size}.png` });
 }
 
+/** Make keeps the words a person typed (lib/draft.ts): the warm-up's words would come back into the "empty" box after its reload, so they are let go first. */
+const forgetDrafts = (page: Page) => page.evaluate(() => { for (const key of Object.keys(localStorage)) if (key.startsWith("aw_draft:")) localStorage.removeItem(key); });
+
 /** The words, the way a person types them (the composer listens to input events). */
 async function say(page: Page, words: string) {
   const box = page.getByTestId("gen-prompt");
@@ -90,6 +93,8 @@ test("Make, new interface: the panel as drawn, the type inferred from the words,
   await page.goto("/suites?make=1");
   await say(page, "make shot 2 at golden hour");
   await expect(page.getByTestId("gen-generate")).toHaveText(/cr$/, { timeout: 90_000 }).catch(() => undefined);
+  await page.waitForTimeout(1_000);
+  await forgetDrafts(page);
   await page.goto("/suites?make=1");
   const panel = page.getByTestId("make-panel");
   await expect(panel).toHaveAttribute("data-ui", "new");
@@ -280,7 +285,7 @@ test("Recent: the master's chips, and an empty project teaches by doing", async 
 
 test("the quick tools open over the panel", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  test.skip(isCompact(info), "Motion transfer and Object swap are not drawn on a phone in Release 1: the SOW draws them as modes of the panel (§2.4) and lists only simple Make for the phone (§2.8), so ?make=motion|swap shows Home there; no phone twin by design");
+  test.skip(isCompact(info), "at compact widths the shell mounts the phone app, which draws no quick tools yet (?make=motion|swap shows Home there): a product gap. The phone twin is demo-s10-phone-make-workbench (the quick tools on a phone), fixme until the phone draws them");
   test.setTimeout(120_000);
   const { errors, sends } = await seed(page, { credits: 5000 });
   await page.goto("/suites?make=video");

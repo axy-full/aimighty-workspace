@@ -45,6 +45,9 @@ async function seed(page: Page, credits = 5000) {
   return { name, seen, project };
 }
 
+/** Make keeps the words a person typed (lib/draft.ts): the warm-up's words would come back into the "empty" box after its reload, so they are let go first. */
+const forgetDrafts = (page: Page) => page.evaluate(() => { for (const key of Object.keys(localStorage)) if (key.startsWith("aw_draft:")) localStorage.removeItem(key); });
+
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
 async function floors(page: Page, where: string) {
   expect(await smallText(page), `${where}: text under 12px`).toEqual([]);
@@ -61,6 +64,8 @@ test("Make: the words, the type, the engine line with Change, References with Ad
   await page.goto("/suites?screen=make");
   await page.getByTestId("phone-make-prompt").fill("make shot 2 at golden hour");
   await expect(page.getByTestId("phone-make-go")).toHaveText(/cr$/, { timeout: 90_000 }).catch(() => undefined);
+  await page.waitForTimeout(1_000);
+  await forgetDrafts(page);
   await page.goto("/suites?screen=make");
   await expect(page.getByTestId("phone-title")).toHaveText("Make");
   await expect(page.getByTestId("phone-tab-make")).toHaveAttribute("aria-current", "page");
@@ -375,4 +380,24 @@ test("shellMode says what the shell mounts: the phone app at the three small siz
   await expect(page.getByTestId(isCompact(info) ? "phone-app" : "home")).toBeVisible({ timeout: 90_000 });
   expect(await shellIsPhone(page)).toBe(isCompact(info));
   await expect(page.getByTestId("phone-app")).toHaveCount(isCompact(info) ? 1 : 0);
+});
+
+/**
+ * Twin of demo-s06-make "the quick tools open over the panel". Motion transfer and Object swap stay in Release 1 (lead, 6 Oct), but the
+ * phone app draws no quick tool today: `?make=motion` and `?make=swap` show Home (components/graphite/phone/phone-model.ts › readPhone draws
+ * Make only, and SuitesShell mounts MakePanel only when the phone app is off). PRODUCT GAP, not a test fault: this is what the phone
+ * must do once it draws them, fixme until then so the skip of the desktop test is not a silent drop. Nothing is sent either way.
+ */
+test("the quick tools on a phone: Motion transfer and Object swap open from their address, and nothing is sent", async ({ page }, info) => {
+  test.skip(!isCompact(info), "phone widths; the desktop panel's own is demo-s06-make");
+  test.fixme(true, "product gap: the phone app draws no quick tools; ?make=motion|swap shows Home on a phone");
+  const { seen } = await seed(page);
+  for (const [tool, title] of [["motion", "Motion transfer"], ["swap", "Object swap"]] as const) {
+    await page.goto(`/suites?make=${tool}`);
+    await expect(page.getByTestId("phone-title")).toHaveText(title);
+    await expect(page.getByTestId("phone-home")).toHaveCount(0);
+    await floors(page, title);
+  }
+  expect(seen.generates, "nothing is sent").toEqual([]);
+  expect(seen.errors).toEqual([]);
 });
