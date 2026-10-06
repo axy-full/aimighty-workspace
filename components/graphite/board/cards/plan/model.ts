@@ -224,7 +224,7 @@ export function planModel(input: PlanInput): PlanModel | null {
   /* The plan's figures are the server's only (review L2): its quote at the gate, then the approved total. Before the gate
      (the proposal, Build · free) the card adds nothing up: no total, no "at most", no fix line, no balance after. */
   const total: PriceValue | null = gate ? (gate.approximate ? upTo(gate.total) : exact(gate.total))
-    : approval ? exact(approval.total)
+    : approval ? (approval.approximate ? upTo(approval.total) : exact(approval.total))
     : !steps.length ? FREE : null;
   const totalCredits = total ? ceilingOf(total) : null;
   const takesCounted = counted.filter((s) => s.kind === "take");

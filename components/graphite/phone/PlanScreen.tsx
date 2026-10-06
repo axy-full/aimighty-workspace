@@ -51,6 +51,8 @@ export function PlanScreen({ scope, project, runId, online, onHome, onTopUp, onC
     if (pressed.current && model && model.phase !== "proposal") {
       const press = pressed.current;
       pressed.current = false;
+      /* "Approved" only when the server holds the plan's approval (review L6): a run that moved on otherwise (a stop) says nothing here. */
+      if (press.kind === "plan" && model.used == null) return;
       toast(press.kind === "plan" ? press.words : "Building the board · free");
       onHome();
     }
@@ -114,7 +116,8 @@ export function PlanScreen({ scope, project, runId, online, onHome, onTopUp, onC
             pressed.current = approve.kind === "approve" ? { kind: "approve" }
               : approve.kind === "plan" && model.total && model.ceiling != null ? { kind: "plan", words: `Approved · ${priceWords(model.total)}, at most ${creditsText(model.ceiling)} with fixes` }
               : approve.kind === "plan" ? { kind: "plan", words: "Plan approved" } : false;
-            void plan.act(approve);
+            /* A refused press (402 short, 409 changed) clears it: nothing is said, and the screen shows the refusal. */
+            void plan.act(approve).then((ok) => { if (!ok) pressed.current = false; });
           }} />
         ) : null}
         {approve?.blocked && !short && approve.blocked !== NEEDS_CONNECTION ? <p className="ph-row-line ph-plan-why" role="status">{approve.blocked}</p> : null}

@@ -46,7 +46,8 @@ export type PlanState = {
   problem: string | null;
   held: boolean;
   setHeld: (held: boolean) => void;
-  act: (primary: PlanPrimary) => Promise<void>;
+  /** Sends the press; answers whether the server took it (false: refused, or not sent). */
+  act: (primary: PlanPrimary) => Promise<boolean>;
 };
 
 export function usePlan(ctx: BoardCtx, run: RigAgentRunView | null, readOnly: string | null): PlanState {
@@ -100,7 +101,7 @@ export function usePlan(ctx: BoardCtx, run: RigAgentRunView | null, readOnly: st
   }, [ctx.scope, ctx.productionId]);
 
   const act = useCallback(async (primary: PlanPrimary) => {
-    if (!run || busy || primary.blocked) return;
+    if (!run || busy || primary.blocked) return false;
     setBusy(true);
     setProblem(null);
     try {
@@ -113,9 +114,11 @@ export function usePlan(ctx: BoardCtx, run: RigAgentRunView | null, readOnly: st
       } else {
         await post({ action: "agent.limit", runId: run.id, limit: primary.raiseTo });
       }
+      return true;
     } catch (error) {
       /* The run's own refusal words for a request it answered (as the Rig's run card shows them); otherwise a plain retry line. */
       setProblem(error instanceof DraftRequestError && error.status && error.status < 500 && error.status !== 401 ? error.message : "Atomik could not do that just now. Try again.");
+      return false;
     } finally {
       setBusy(false);
       /* Whoever reads the run for the board (Atomik's panel) reads it again now. */

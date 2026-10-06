@@ -452,6 +452,8 @@ export type RigAgentPlanView = {
   blocked: string | null;
   approval: {
     mine: boolean; at: number; expiresAt: number; total: number; ceiling: number;
+    /** A listed render may settle above its quote: the total reads "up to". */
+    approximate: boolean;
     /** What the plan's renders and fixes have used of the ceiling: settled at their final charge (after any refund), plus holds. */
     used: number;
     /** Fixes drawn, by the shot's step. */

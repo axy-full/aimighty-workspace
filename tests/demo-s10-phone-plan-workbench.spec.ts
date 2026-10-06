@@ -56,7 +56,17 @@ const sceneNode = (id: string, title: string, boardShotId: string, engine: strin
   id, title, type: "scene", x, y: 100, width: 238, linked: [], role: "Director", status: "draft", mode: "Video", engine, durationS: 5, ratio: "16:9", resolution: "1080p", boardShotId, text: `${title}.`,
 });
 
-async function open(page: Page, run: ReturnType<typeof proposal>, prices: [number, number, number], query = "screen=plan") {
+/** The run as the server answers after its plan's approval: running, the approval's record in place of the quote. */
+function approvedOf(run: ReturnType<typeof proposal>) {
+  const quote = (run as unknown as { plan?: { quote?: { total: number; ceiling: number; approximate: boolean } | null } }).plan?.quote;
+  return {
+    ...run, state: "running",
+    plan: quote ? { quote: null, blocked: null, approval: { mine: true, at: Date.now(), expiresAt: Date.now() + 1, total: quote.total, ceiling: quote.ceiling, approximate: quote.approximate, used: 0, fixes: {}, maxFixes: 2, open: true, closedReason: null } } : null,
+  };
+}
+
+/** `refuse`: the status the server answers the plan's approval with, when it refuses it (402 short, 409 changed). */
+async function open(page: Page, run: ReturnType<typeof proposal>, prices: [number, number, number], query = "screen=plan", refuse?: { status: number; error: string }) {
   const workspaceId = (await signInWithNewInterface(page.request, "Phone Plan Tester")).workspace.id;
   const me = await (await page.request.get("/api/me")).json() as { id: string };
   const scope = `particl-active-${workspaceId}-${me.id}`;
@@ -76,12 +86,13 @@ async function open(page: Page, run: ReturnType<typeof proposal>, prices: [numbe
   await page.route(/\/api\/workbench\/team-canvas(\?|$)/, async (route) => {
     const url = new URL(route.request().url());
     if (route.request().method() === "GET" && url.searchParams.get("agent") === "1")
-      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ agent: { enabled: true, run: posts.some((p) => p.action === "agent.approve" || p.action === "agent.approvePlan") ? { ...run, state: "running" } : run, ask: null } }) });
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ agent: { enabled: true, run: posts.some((p) => p.action === "agent.approvePlan" && !refuse) ? approvedOf(run) : posts.some((p) => p.action === "agent.approve") ? { ...run, state: "running" } : run, ask: null } }) });
     if (route.request().method() === "POST") {
       const body = route.request().postDataJSON() as Record<string, unknown>;
       if (typeof body.action === "string" && body.action.startsWith("agent.")) {
         posts.push(body);
-        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ agent: { enabled: true, run: { ...run, state: "running" } } }) });
+        if (refuse && body.action === "agent.approvePlan") return route.fulfill({ status: refuse.status, contentType: "application/json", body: JSON.stringify({ error: refuse.error }) });
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ agent: { enabled: true, run: body.action === "agent.approvePlan" ? approvedOf(run) : { ...run, state: "running" } } }) });
       }
     }
     return route.continue();
@@ -177,6 +188,22 @@ test("the plan gate: Make 3 shots · 93 cr · at most 186 cr from the server, th
   }
   expect(paid).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+test("a refused Approve (short, or the plan changed) never says Approved: the screen stays with the server's words (review L6)", async ({ page }, info) => {
+  test.skip(!PORTRAIT.includes(info.project.name), "portrait phones");
+  for (const refuse of [{ status: 402, error: "Short by 3 cr. Top up, then approve. Nothing is spent until you do." }, { status: 409, error: "The plan's prices changed. Look at it again before approving." }]) {
+    const { posts, paid } = await open(page, gate([43, 43, 7]), [43, 43, 7], "screen=plan", refuse);
+    await expect(page.getByTestId("phone-plan-primary")).toHaveText("Approve · 93 cr", { timeout: 20_000 });
+    await page.getByTestId("phone-plan-primary").click();
+    await expect.poll(() => posts.length).toBe(1);
+    await expect(page.getByRole("alert")).toContainText(refuse.error);
+    await expect(page.getByTestId("phone-plan")).toBeVisible();
+    await page.waitForTimeout(1500);
+    await expect(page.getByText(/Approved ·/)).toHaveCount(0);
+    expect(paid).toEqual([]);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
 });
 
 test("Hold goes Home and calls nothing", async ({ page }, info) => {

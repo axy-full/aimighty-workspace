@@ -6,7 +6,7 @@ import path from "node:path";
 import type { AdmissionActor, AdmissionReply, PreparedAdmission } from "../../lib/admissionTypes";
 import type { TenantWorkspace } from "../../lib/tenant";
 import type { RunSpend } from "../../lib/runLimit";
-import { newProject, type CanvasNode, type Project } from "../../lib/workbench/studio";
+import { newProject, type Asset, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import type { BoardSnapshot } from "../../lib/workbench/rig-agent-plan";
 import { mockPlannerModel, runPlanner, MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL } from "../../lib/workbench/rig-agent-planner";
 import { creditFigure } from "../../lib/runLimit";
@@ -71,8 +71,9 @@ async function inRun<T>(name: string, fn: (ws: TenantWorkspace) => Promise<T>, c
 
 type Behaviour = { throwBeforeClaim?: boolean; throwAfterReply?: boolean; pendingClaim?: boolean };
 
-function renders(ws: TenantWorkspace, usdOf: (node: string) => number) {
-  const calls: { key: string; savedKey: string | null; savedState: string | null; run: RunSpend | undefined }[] = [];
+/** `xai`: shots whose engine settles on what the provider states (worst case 3 × the quote), as an approximate engine does. */
+function renders(ws: TenantWorkspace, usdOf: (node: string) => number, xai: ReadonlySet<string> = new Set()) {
+  const calls: { key: string; savedKey: string | null; savedState: string | null; run: RunSpend | undefined; prompt: string }[] = [];
   const behaviour: Behaviour = {};
   /* The price the admission would compute now, per shot: a moved price refuses an old approval. */
   const priceNow = new Map<string, number>();
@@ -82,7 +83,11 @@ function renders(ws: TenantWorkspace, usdOf: (node: string) => number) {
     const shot = shotOf(body);
     const usd = priceNow.get(shot) ?? usdOf(shot);
     const credits = billCredits(usd, "mock");
-    const compiled = { model: { provider: "byteplus" }, estUsd: usd, shot, draft: body.draft === true, resolution: body.resolution };
+    /* The compile covers the prompt, as a real one does: an edited shot is a different quote fingerprint. */
+    const compiled = {
+      model: { provider: xai.has(shot) ? "xai" : "byteplus" }, estUsd: usd, shot, prompt: String(body.prompt ?? ""), engine: body.model ?? null, references: body.references ?? [],
+      draft: body.draft === true, resolution: body.resolution,
+    };
     const quote = { estimatedCredits: credits, price: credits, unit: "cr" as const };
     return { ok: true as const, value: { version: 1 as const, kind: "video" as const, workspaceId: ws.id, actorId: actor.user.id, request: { ...body, maxCredits: credits }, compiled, quote: { ...quote, fingerprint: sha({ compiled, quote }) } } satisfies PreparedAdmission };
   };
@@ -91,7 +96,7 @@ function renders(ws: TenantWorkspace, usdOf: (node: string) => number) {
     const { withGenerationRequestData, bindGenerationRequestStatement, reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
     const { preparedClaimFingerprint } = await import("../../lib/admissionSupport");
     const saved = (await db().execute({ sql: "SELECT state,request_key FROM rig_agent_steps WHERE request_key=?", args: [options.requestKey] })).rows[0];
-    calls.push({ key: options.requestKey, savedKey: saved ? String(saved.request_key) : null, savedState: saved ? String(saved.state) : null, run: options.run });
+    calls.push({ key: options.requestKey, savedKey: saved ? String(saved.request_key) : null, savedState: saved ? String(saved.state) : null, run: options.run, prompt: String(prepared.request.prompt ?? "") });
     if (behaviour.throwBeforeClaim) { behaviour.throwBeforeClaim = false; throw new Error("the function died before the request left"); }
     if (behaviour.pendingClaim) {
       behaviour.pendingClaim = false;
@@ -177,9 +182,9 @@ const credits = async (usd: number) => (await import("../../lib/creditTerms")).b
 const ATOMIK = (runId: string) => `agent:${runId}`;
 
 /** A run at its plan gate: built, every render priced by the server, waiting for the one approval. */
-async function atGate(ws: TenantWorkspace, usdOf: (shot: string) => number, shots = 2) {
+async function atGate(ws: TenantWorkspace, usdOf: (shot: string) => number, shots = 2, xai: ReadonlySet<string> = new Set()) {
   const agent = await import("../../lib/workbench/rig-agent");
-  const r = renders(ws, usdOf);
+  const r = renders(ws, usdOf, xai);
   const deps = await depsFor(ws, r);
   const runId = await approvedRun(deps, { limit: 500, shots });
   expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
@@ -387,6 +392,142 @@ test("render N+1 asks: a render the approval does not list, or one whose price m
     const { THIRD_FIX } = await import("../../lib/workbench/plan-approval");
     await expect(agent.fixRigAgentShot({ productionId: "prod-1", runId, seq: first.seq, userId: OWNER })).rejects.toMatchObject({ status: 409, message: THIRD_FIX });
     expect(r.calls).toHaveLength(4);
+  });
+});
+
+test("an edited shot asks again under the plan (review M1): its prompt, its engine or its references changed after the approval, and it is never sent as its old request", async () => {
+  await inRun("edited", async (ws) => {
+    const { agent, r, deps, runId, run } = await atGate(ws, () => 0.3, 4);
+    await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
+    const { readTeamCanvas, patchTeamCanvas } = await import("../../lib/workbench/team-canvas");
+    const { db } = await import("../../lib/db");
+    const steps = takeSteps(run);
+    const nodeOf = async (seq: number) => String((await db().execute({ sql: "SELECT node_id FROM rig_agent_steps WHERE run_id=? AND seq=?", args: [runId, seq] })).rows[0].node_id);
+    const edit = async (seq: number, change: (node: CanvasNode) => CanvasNode, extra: { nodes?: CanvasNode[]; assets?: Asset[] } = {}) => {
+      const canvas = (await readTeamCanvas("prod-1"))!.canvas;
+      const node = canvas.nodes[await nodeOf(seq)]!;
+      await patchTeamCanvas("prod-1", { upsertNodes: [change(node), ...(extra.nodes ?? [])], removeNodes: [], upsertAssets: extra.assets ?? [], order: [...canvas.order, ...(extra.nodes ?? []).map((n) => n.id)] }, OWNER);
+    };
+    /* Shot 1 goes under the plan. Meanwhile the person edits shots 2, 3 and 4 on the board. */
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(1);
+    await edit(steps[1].seq, (n) => ({ ...n, text: `${n.text ?? ""} EDITED: at night, in the rain.` }));
+    await edit(steps[2].seq, (n) => ({ ...n, engine: "fal-ai/kling-video/v3/standard" }));
+    const picture: Asset = { id: "asset-ref-1", name: "Ref", kind: "image", category: "Reference", url: "/api/uploads/up_ref_1", description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [], uploadId: "up_ref_1" };
+    await edit(steps[3].seq, (n) => ({ ...n, linked: [...n.linked, "media-ref-1"] }), { nodes: [scene("media-ref-1", { type: "media", title: "Ref", assetId: picture.id, mode: undefined })], assets: [picture] });
+    await settleTake((await renderRows())[0].id, "succeeded", 0.3);
+    for (const [i, what] of [[1, "prompt"], [2, "engine"], [3, "reference"]] as const) {
+      expect(await agent.advanceRigAgentRun(runId, deps), what).toEqual({ state: "needs_you", more: false });
+      const shown = await view();
+      const step = takeSteps(shown)[i];
+      /* Nothing more was sent: the edited shot waits for a tap at its new price, outside the plan. */
+      expect(r.calls, what).toHaveLength(1);
+      expect(step, what).toMatchObject({ state: "waiting", inPlan: false, canRender: true });
+      expect(step.fingerprint, what).not.toBe(takeSteps(run)[i].fingerprint);
+      expect(shown.reason, what).toContain("price changed since the plan was approved");
+      if (i === 1) {
+        /* The tap sends the request as the board has it now. */
+        await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: step.seq, fingerprint: step.fingerprint, userId: OWNER });
+        await agent.advanceRigAgentRun(runId, deps);
+        expect(r.calls).toHaveLength(2);
+        expect(r.calls[1].prompt).toContain("EDITED");
+        await settleTake((await renderRows())[1].id, "succeeded", 0.3);
+        r.calls.pop();
+      } else {
+        await agent.skipRigAgentStep({ productionId: "prod-1", runId, seq: step.seq, userId: OWNER });
+      }
+    }
+  });
+});
+
+test("a tap is for the request as priced when the render's turn comes: a shot edited after its tap asks again", async () => {
+  await inRun("taplate", async (ws) => {
+    const { agent, r, deps, runId, run } = await atGate(ws, () => 0.3);
+    /* Outside any plan: the person taps shot 2 ahead of its turn, then edits it before shot 1 is done. */
+    const second = takeSteps(run)[1];
+    await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: second.seq, fingerprint: second.fingerprint, userId: OWNER });
+    const first = takeSteps(run)[0];
+    await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: first.seq, fingerprint: first.fingerprint, userId: OWNER });
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(1);
+    const { readTeamCanvas, patchTeamCanvas } = await import("../../lib/workbench/team-canvas");
+    const { db } = await import("../../lib/db");
+    const node = String((await db().execute({ sql: "SELECT node_id FROM rig_agent_steps WHERE run_id=? AND seq=?", args: [runId, second.seq] })).rows[0].node_id);
+    const canvas = (await readTeamCanvas("prod-1"))!.canvas;
+    await patchTeamCanvas("prod-1", { upsertNodes: [{ ...canvas.nodes[node]!, text: `${canvas.nodes[node]!.text ?? ""} EDITED.` }], removeNodes: [], upsertAssets: [], order: canvas.order }, OWNER);
+    await settleTake((await renderRows())[0].id, "succeeded", 0.3);
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+    expect(r.calls).toHaveLength(1);
+    expect(takeSteps(await view())[1]).toMatchObject({ state: "waiting", canRender: true });
+  });
+});
+
+test("the plan never spends past its stated ceiling (review L1): a render tapped before the approval and settling under its hold leaves no extra room", async () => {
+  await inRun("slack", async (ws) => {
+    /* Shot 1 settles on what the provider states (held at 3 × its quote); shot 2 is exact. */
+    const { agent, r, deps, runId, run } = await atGate(ws, () => 0.3, 2, new Set(["1"]));
+    const a = await credits(0.3);
+    const [first, second] = takeSteps(run);
+    await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: first.seq, fingerprint: first.fingerprint, userId: OWNER });
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(1);
+    const gate = (await view()).plan!.quote!;
+    expect([gate.total, gate.ceiling]).toEqual([a, 2 * a]);
+    const planned = (await meterRow(agent.planEventId(runId)))!.credits;
+    const approved = await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: gate.fingerprint, userId: OWNER });
+    /* The design's limit: planning used plus 2T, whatever the earlier tap holds. */
+    expect(approved.money!.limit).toBeCloseTo(planned + 2 * a, 5);
+    /* Shot 1 settles at its quote, under its 3a hold. */
+    await settleTake((await renderRows())[0].id, "succeeded", 0.3);
+    await agent.advanceRigAgentRun(runId, deps);
+    await settleTake((await renderRows())[1].id, "succeeded", 0.3);
+    await agent.advanceRigAgentRun(runId, deps);
+    /* A fix of shot 2 would make a + a + a past planning + 2a: it waits at the limit, with nothing sent. */
+    await agent.fixRigAgentShot({ productionId: "prod-1", runId, seq: second.seq, userId: OWNER });
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+    const shown = await view();
+    expect(shown.paid.at(-1)).toMatchObject({ state: "paused", pause: "limit" });
+    expect(r.calls).toHaveLength(2);
+    expect(shown.plan!.approval!.used).toBeLessThanOrEqual(shown.plan!.approval!.ceiling);
+    expect(shown.money!.spent).toBeLessThanOrEqual(planned + 2 * a + 1e-9);
+  });
+});
+
+test("an approximate plan keeps 'up to' after its approval (review L3)", async () => {
+  await inRun("approx", async (ws) => {
+    const { agent, runId, run } = await atGate(ws, () => 0.3, 1, new Set(["1"]));
+    const { planModel } = await import("../../components/graphite/board/cards/plan/model");
+    expect(planModel({ run, enabled: true, balance: 1000, rule: null, readOnly: null })!.total!.kind).toBe("up-to");
+    await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
+    const after = await view();
+    expect(after.plan!.approval!.approximate).toBe(true);
+    expect(planModel({ run: after, enabled: true, balance: 1000, rule: null, readOnly: null })!.total).toEqual({ kind: "up-to", credits: run.plan!.quote!.total });
+  });
+});
+
+test("a render the plan approved is held to the approval when it resumes (review L2): after expiry, a limit raise does not send it; it asks", async () => {
+  await inRun("stale", async (ws) => {
+    const { agent, r, deps, runId, run } = await atGate(ws, () => 0.3);
+    await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
+    const { db } = await import("../../lib/db");
+    /* Shot 1 approved under the plan, then paused at the limit (as send() does when the limit no longer fits). */
+    const s1 = takeSteps(run)[0].seq;
+    const approval = String((await db().execute({ sql: "SELECT id FROM rig_plan_approvals WHERE run_id=?", args: [runId] })).rows[0].id);
+    await db().execute({ sql: "UPDATE rig_agent_steps SET state='paused',pause='limit',approved_fingerprint=?,approved_by=?,approval_id=? WHERE run_id=? AND seq=?", args: [takeSteps(run)[0].fingerprint, OWNER, approval, runId, s1] });
+    await db().execute({ sql: "UPDATE rig_agent_runs SET state='needs_you' WHERE id=?", args: [runId] });
+    /* Eight days later. */
+    await db().execute({ sql: "UPDATE rig_plan_approvals SET expires_at=1 WHERE run_id=?", args: [runId] });
+    await agent.raiseRigAgentLimit({ productionId: "prod-1", runId, limit: (await view()).money!.limit + 1, userId: OWNER });
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+    expect(r.calls).toHaveLength(0);
+    const shown = await view();
+    expect(shown.reason).toContain("expired");
+    /* The person's own tap then sends it: their tap, not the plan's. */
+    const step = takeSteps(shown)[0];
+    await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: step.seq, fingerprint: step.fingerprint, userId: OWNER });
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(1);
+    expect((await db().execute({ sql: "SELECT approval_id,approved_by FROM rig_agent_steps WHERE run_id=? AND seq=?", args: [runId, s1] })).rows[0]).toMatchObject({ approval_id: null, approved_by: OWNER });
   });
 });
 

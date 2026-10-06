@@ -126,6 +126,8 @@ function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedg
       approval: {
         mine: approval.approvedBy === viewer, at: approval.approvedAt, expiresAt: approval.expiresAt,
         total: fromTenths(approval.totalTenths), ceiling: fromTenths(approval.ceilingTenths),
+        /* A render that may settle above its quote keeps the total "up to" (review L3). */
+        approximate: approval.steps.some((s) => toTenths(s.worst) > toTenths(s.quote)),
         used: fromTenths(used.settledTenths + used.heldTenths),
         fixes: Object.fromEntries(Object.entries(approval.fixes).map(([shot, list]) => [shot, list.length])), maxFixes: MAX_FIXES_PER_SHOT,
         open: !closed, closedReason: closed,
@@ -455,10 +457,11 @@ export async function renderRigAgentStep(input: { productionId: string; runId: s
     if (step.state === "waiting") {
       if (!fingerprint || !step.admission || fingerprint !== step.admission.quote.fingerprint)
         throw new RigAgentError("This render's price changed. Look at it again before approving it.", 409);
-      await patchStep(tx, step.id, { approved_at: at, approved_by: input.userId, approved_fingerprint: fingerprint, reason: null }, ["waiting"]);
+      /* A person's own tap: its own approval, not the plan's. */
+      await patchStep(tx, step.id, { approved_at: at, approved_by: input.userId, approved_fingerprint: fingerprint, approval_id: null, reason: null }, ["waiting"]);
     } else if (step.state === "paused") {
       const same = !!fingerprint && !!step.admission && fingerprint === step.admission.quote.fingerprint;
-      const approval = same ? { approved_at: at, approved_by: input.userId, approved_fingerprint: fingerprint } : {};
+      const approval = same ? { approved_at: at, approved_by: input.userId, approved_fingerprint: fingerprint, approval_id: null } : {};
       /* Retry: its checks run again at the same price; Price again: it is priced afresh. */
       await patchStep(tx, step.id, step.admission && step.pause !== "unpriced" && step.pause !== "record"
         ? { state: "waiting", reason: null, pause: null, ...approval }
@@ -543,8 +546,10 @@ export async function approveRigAgentPlan(input: { productionId: string; runId: 
     /* The balance against the plan's total, before it starts (rule 14); every hold checks it again. */
     if (credits && toTenths(credits.balance) < quote.totalTenths)
       throw new RigAgentError(`Short by ${creditFigure(fromTenths(quote.totalTenths - toTenths(credits.balance)))} cr. Top up, then approve. Nothing is spent until you do.`, 402);
-    const tally = runTally(charges);
-    const limit = fromTenths(tally.settledTenths + tally.worstTenths + quote.ceilingTenths);
+    /* The design's limit (review L1): what Atomik's planning used, plus the plan's ceiling, so the run never spends past the
+       plan's stated "at most". A render tapped on its own before this draws on the same room; it is never added to it. */
+    const planning = runTally(charges.filter((c) => c.id === planEventId(run.id)));
+    const limit = fromTenths(planning.settledTenths + planning.worstTenths + quote.ceilingTenths);
     const at = now();
     await insertPlanApproval(tx, { runId: run.id, productionId: run.productionId, approvedBy: input.userId, at, quote, limitCredits: limit });
     const record: LimitRecord = { credits: limit, mode: run.mode, jobCeiling: run.perJobCap ?? 0, by: input.userId, at };

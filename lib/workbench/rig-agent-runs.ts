@@ -15,7 +15,7 @@ import { isShotNode, rigShots } from "../workspace/shots";
 import { generationRequestBody, type GenerationReference } from "./generation-request";
 import { mediaReferenceIdentity } from "./media-reference-input";
 import { mapNodeShot, readDraft } from "./records";
-import { coverage, planApprovalOf } from "./plan-approval";
+import { approvalClosed, coverage, planApprovalOf } from "./plan-approval";
 import { effectiveJobCeiling, rigJobCeiling } from "./rig-agent-limits";
 import { creditFigure, type RigAgentState, type RigAgentStepState } from "./rig-agent-plan";
 import { getRun, patchRun, patchStep, rigAgentReady, stepsOf, type PauseKind, type RunRow, type StepRow } from "./rig-agent-store";
@@ -337,21 +337,33 @@ async function price(run: RunRow, step: StepRow, deps: PaidDeps): Promise<Moved>
   return CONTINUE;
 }
 
-async function gate(run: RunRow, step: StepRow, deps: PaidDeps): Promise<Moved> {
-  const admission = step.admission;
-  if (!admission || step.quoteCredits == null) {
-    await patchStep(db(), step.id, { state: "next" }, ["waiting"]);
+async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Moved> {
+  if (!waiting.admission || waiting.quoteCredits == null) {
+    await patchStep(db(), waiting.id, { state: "next" }, ["waiting"]);
     return CONTINUE;
   }
+  /* Its turn: priced again from the board as it is now (review M1). A shot edited since it was priced (its prompt,
+     references or engine) is a new fingerprint, so no earlier tap or plan approval covers it: it asks again. */
+  const fresh = await priceRender(run, waiting, deps);
+  if (!fresh.ok) return pause(run, waiting, fresh.reason, fresh.pause, ["waiting"]);
+  let step = waiting;
+  if (fresh.admission.quote.fingerprint !== waiting.admission.quote.fingerprint) {
+    if (!(await patchStep(db(), waiting.id, { admission: fresh.admission, quote_credits: fresh.quote, band: fresh.band, approval_id: null }, ["waiting"]))) return CONTINUE;
+    step = { ...waiting, admission: fresh.admission, quoteCredits: fresh.quote, band: fresh.band, approvalId: null };
+  }
+  const admission = fresh.admission;
+  const quoteCredits = fresh.quote;
   const fingerprint = admission.quote.fingerprint;
-  const tapped = step.approvedFingerprint === fingerprint;
   /* The plan's one approval, when the person gave it (a plan is approved once). */
   await rigAgentReady();
-  const approval = tapped ? null : await planApprovalOf(db(), run.id);
+  const approval = await planApprovalOf(db(), run.id);
+  /* A tap covers exactly this price. One the plan's approval gave holds only while that approval is open (review L2). */
+  const tapped = step.approvedFingerprint === fingerprint
+    && (!step.approvalId || (!!approval && approval.id === step.approvalId && !approvalClosed(approval, now())));
   /* Before it: in Ask, every render the plan names is priced now (free), so the plan can be approved once at its total. */
   if (!tapped && !approval && run.mode !== "auto" && step.fixOf == null) await priceAhead(run, step, deps);
   const band = step.band ?? 1;
-  const over = await limitProblem(run, step.quoteCredits, band);
+  const over = await limitProblem(run, quoteCredits, band);
   if (over) return pause(run, step, over, "limit", ["waiting"]);
   const short = await creditsProblem(admission);
   if (short) return pause(run, step, short, "credits", ["waiting"]);
@@ -363,26 +375,26 @@ async function gate(run: RunRow, step: StepRow, deps: PaidDeps): Promise<Moved> 
   const line = effectiveJobCeiling(run.perJobCap, await (deps.ceiling ?? rigJobCeiling)());
   const title = stepTitle(run, step);
   if (approval) {
-    const worst = step.quoteCredits * Math.max(1, band);
-    const cover = coverage(approval, { seq: step.seq, fixOf: step.fixOf, quote: step.quoteCredits, worst, fingerprint }, now(), line);
+    const worst = quoteCredits * Math.max(1, band);
+    const cover = coverage(approval, { seq: step.seq, fixOf: step.fixOf, quote: quoteCredits, worst, fingerprint }, now(), line);
     if (cover.ok) {
       /* The person's plan approval is this render's approval: no new tap. The hold still checks the balance, the cap, the allowance and the limit. */
       await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: approval.approvedBy, approved_fingerprint: fingerprint, approval_id: approval.id, reason: null }, ["waiting"]);
       return CONTINUE;
     }
-    const why = `${title} · about ${figure(step.quoteCredits)} · ${cover.reason}`;
+    const why = `${title} · about ${figure(quoteCredits)} · ${cover.reason}`;
     await patchStep(db(), step.id, { reason: why }, ["waiting"]);
     return needsYou(run, why);
   }
   /* Auto spends without a tap only on drafts (plan §8): a shot whose engine has no draft renders at full quality, so it asks. */
   const draft = admission.request.draft === true;
-  if (run.mode === "auto" && draft && toTenths(step.quoteCredits) <= toTenths(line)) {
+  if (run.mode === "auto" && draft && toTenths(quoteCredits) <= toTenths(line)) {
     await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: "auto", approved_fingerprint: fingerprint, reason: null }, ["waiting"]);
     return CONTINUE;
   }
-  const why = run.mode !== "auto" ? `${title} is ready to render · about ${figure(step.quoteCredits)}.`
-    : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · about ${figure(step.quoteCredits)}. Render it, skip it, or stop.`
-    : `${title} is about ${figure(step.quoteCredits)}, over the ${figure(line)} a draft may cost without asking. Render it, skip it, or stop.`;
+  const why = run.mode !== "auto" ? `${title} is ready to render · about ${figure(quoteCredits)}.`
+    : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · about ${figure(quoteCredits)}. Render it, skip it, or stop.`
+    : `${title} is about ${figure(quoteCredits)}, over the ${figure(line)} a draft may cost without asking. Render it, skip it, or stop.`;
   await patchStep(db(), step.id, { reason: why }, ["waiting"]);
   return needsYou(run, why);
 }

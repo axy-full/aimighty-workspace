@@ -99,7 +99,7 @@ test("the plan gate: the title and the button are the server's figures, Make 3 s
 });
 
 test("after the plan's approval: what it has used of its ceiling, and a render outside it asks at its own price", () => {
-  const approval = { mine: true, at: 1, expiresAt: 2, total: 93, ceiling: 186, used: 43, fixes: {}, maxFixes: 2, open: true, closedReason: null };
+  const approval = { mine: true, at: 1, expiresAt: 2, total: 93, ceiling: 186, approximate: false, used: 43, fixes: {}, maxFixes: 2, open: true, closedReason: null };
   const m = planModel(base({ run: gate({ state: "running", plan: { quote: null, blocked: null, approval } }) }))!;
   expect(m.title).toBe("Making 3 shots");
   expect(m.total).toEqual({ kind: "exact", credits: 93 });
@@ -108,6 +108,9 @@ test("after the plan's approval: what it has used of its ceiling, and a render o
   expect(m.primary).toBeNull();
   const asks = planModel(base({ run: gate({ state: "needs_you", plan: { quote: null, blocked: null, approval } }) }))!;
   expect(asks.primary).toMatchObject({ kind: "render", label: "Render · 43 cr" });
+  /* An approximate plan keeps "up to" after its approval, as at the gate (review L3). */
+  const approx = planModel(base({ run: gate({ state: "running", plan: { quote: null, blocked: null, approval: { ...approval, total: 179, ceiling: 358, approximate: true } } }) }))!;
+  expect(approx.total).toEqual({ kind: "up-to", credits: 179 });
 });
 
 test("a keyframe still is priced on its own line and marked a still", () => {
