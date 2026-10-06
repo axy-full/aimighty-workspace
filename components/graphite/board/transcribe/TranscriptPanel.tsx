@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import { withScript } from "@/lib/production/script-versions";
+import { trimVersions, withScript } from "@/lib/production/script-versions";
 import { MAX_SCRIPT_CHARS } from "@/lib/workbench/screenplay";
 import { EarlierScripts } from "../EarlierScripts";
 import { typingIn } from "../review/review-model";
@@ -46,7 +46,7 @@ function Panel({ ctx, slot, name }: { ctx: BoardCtx; slot: string; name: string 
     if (refused) { ctx.toast(refused); return; }
     void ctx.rig.save();
     ctx.toast(before.script.trim() ? "The transcript is the script now. The earlier script is kept under Earlier scripts, and under Undo." : "The transcript is the script now.", {
-      label: "Undo", run: () => { ctx.rig.apply((p) => ({ ...p, script: before.script, scriptVersions: before.versions })); void ctx.rig.save(); },
+      label: "Undo", run: () => { ctx.rig.apply((p) => ({ ...p, script: before.script, scriptVersions: before.versions ? trimVersions(before.versions) : undefined })); void ctx.rig.save(); },
     });
   };
   const download = () => {
