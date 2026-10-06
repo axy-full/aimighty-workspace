@@ -14,7 +14,7 @@ import { SpecRowView } from "../cards/deliver/SpecRow";
 import type { CardProps } from "../cards/types";
 
 /*
- * The Inspector on the Deliver card: the spec and its checks, the existing on-device renderer (Render master: free,
+ * The Inspector on the Deliver card: the spec and its checks, the existing browser export (Export the cut: free,
  * with its progress and Download), and, folded under Advanced, the exports the frame does not draw: the editorial
  * package, EDL, FCPXML and Premiere XML. Nothing here is paid and nothing is sent anywhere.
  */
@@ -46,7 +46,7 @@ export function DeliverBody({ data, ctx }: CardProps<CutCardData>) {
       <div className="gx-insp-rows-plain">{deliverRows(cut).map((r) => <SpecRowView key={r.key} row={r} />)}</div>
       {act ? (
         <section data-testid="insp-render">
-          <div className="gx-insp-eyebrow-row"><span className="gx-insp-eyebrow">Render master</span><Price value={FREE} /></div>
+          <div className="gx-insp-eyebrow-row"><span className="gx-insp-eyebrow">Export the cut</span><Price value={FREE} /></div>
           {cut.problem && cut.clips.length === 0 ? <p className="gx-insp-quiet">{cut.problem}</p> : <div className="ps"><MovieExport project={project} scope={ctx.scope} /></div>}
         </section>
       ) : null}
