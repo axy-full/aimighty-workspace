@@ -116,6 +116,8 @@ test("Draw the storyboard: every shot without a frame is priced by the server an
   const mounted = await draw.waitFor({ state: "visible", timeout: 20_000 }).then(() => true, () => false);
   test.skip(!mounted, "the docked Atomik panel does not mount the storyboard button on this branch");
   await expect(draw).toHaveText(/^Draw the storyboard · [\d.,]+ cr$/, { timeout: 30_000 });
+  await expect(draw).toHaveAttribute("data-spend", "priced");
+  await expect(draw).toHaveAttribute("data-spend-price", /^[\d.,]+ cr$/);
   expect(sent).toEqual([]);
   await expect(draw).toHaveAttribute("title", /\$[\d.]+/);
   await draw.click();

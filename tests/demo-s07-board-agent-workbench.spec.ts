@@ -52,6 +52,7 @@ test("the dock: a rail that opens to Atomik, an ask at the server's price, a pro
   const read = await (await page.request.get(`/api/workbench/team-canvas?productionId=${productionId}&agent=1&projectId=${project.id}`, { headers })).json() as { agent: { ask: { planning: number } } };
   const planning = read.agent.ask.planning;
   await expect(panel.getByTestId("agent-ask")).toHaveText(/^Ask · up to [\d.,]+ cr$/);
+  await expect(panel.getByTestId("agent-ask")).toHaveAttribute("data-spend-price", /^up to [\d.,]+ cr$/);
   await expect(panel.getByTestId("agent-ask")).toBeDisabled();
   await panel.getByTestId("agent-input").fill("Two shots of the market opening at dawn.");
   await expect(panel.getByTestId("agent-ask")).toBeEnabled();
@@ -74,6 +75,7 @@ test("the dock: a rail that opens to Atomik, an ask at the server's price, a pro
   await panel.getByTestId("agent-build").click();
   /* The first render is priced and waits for the person who asked: Render · N cr is the queue's approval at that price, and is not pressed here. */
   await expect(panel.getByTestId("agent-render").first()).toHaveText(/^Render · (up to )?[\d.,]+ cr$/, { timeout: 60_000 });
+  await expect(panel.getByTestId("agent-render").first()).toHaveAttribute("data-spend", "priced");
   await expect(panel.getByTestId("agent-skip").first()).toBeVisible();
   await expect(panel.getByTestId("agent-render-state").first()).toHaveText("Ready");
   expect(await smallTextIn(page, ".ag"), "text under 12 px").toEqual([]);

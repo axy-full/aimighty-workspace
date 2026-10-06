@@ -37,6 +37,8 @@ test("Crew review: an old Crew link lands on it; the crew is asked at its quote,
   /* The button wears the round's own price and nothing is asked until it is pressed. */
   const ask = crew.getByTestId("crew-ask");
   await expect(ask).toHaveText(/^Ask the crew · up to [\d.,]+ cr$/, { timeout: 30_000 });
+  await expect(ask).toHaveAttribute("data-spend", "priced");
+  await expect(ask).toHaveAttribute("data-spend-price", /^up to [\d.,]+ cr$/);
   expect(posted.filter((p) => /rounds/.test(p.url))).toEqual([]);
   expect(await smallTextIn(page, ".ag"), "text under 12 px").toEqual([]);
   await shot(page, "crew-ask", info);

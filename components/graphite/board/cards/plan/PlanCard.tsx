@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import { Price, usePriceTitle } from "@/components/graphite/Price";
 import { useShell } from "@/lib/shell/state";
+import { spendAttrsOf } from "@/lib/spend";
 import { paidBlockOf } from "../doc/DocCards";
 import type { CardProps } from "../types";
 import type { PlanData } from "./derive";
@@ -73,7 +74,8 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
 function PrimaryButton({ primary, busy, onPress }: { primary: PlanPrimary; busy: boolean; onPress: () => void }) {
   const title = usePriceTitle(primary.kind === "raise" ? null : primary.price);
   return (
-    <button type="button" className="gx-plan-primary nodrag" title={title ?? undefined} disabled={busy || Boolean(primary.blocked)} onClick={onPress} data-testid="board-plan-primary">
+    <button type="button" className="gx-plan-primary nodrag" title={title ?? undefined} disabled={busy || Boolean(primary.blocked)} aria-busy={busy || undefined} onClick={onPress} data-testid="board-plan-primary"
+      {...((primary.kind === "render" || primary.kind === "plan") && primary.price ? spendAttrsOf(primary.price) : {})}>
       {busy ? "Sending…" : primary.label}
     </button>
   );

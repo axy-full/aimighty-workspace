@@ -86,6 +86,8 @@ test("the plan sits in the Storyboard group's open slot; Hold calls nothing; Bui
   expect(group && at && at.x >= group.x && at.y >= group.y && at.x + at.width <= group.x + group.width && at.y + at.height <= group.y + group.height).toBe(true);
   /* Building spends nothing and approves no spending: the shots are priced once they are on the board. */
   await expect(plan.getByTestId("board-plan-primary")).toHaveText("Build · free");
+  /* Building spends nothing: Build carries no spend marker. */
+  await expect(plan.getByTestId("board-plan-primary")).not.toHaveAttribute("data-spend", /.*/);
   await expect(plan.getByTestId("board-plan-hold")).toBeVisible();
   await expect(plan.getByTestId("board-plan-change")).toBeVisible();
   await expect(plan).toContainText("One approval covers the shots and up to 2 fixes each; anything else asks.");
@@ -133,6 +135,8 @@ test("the plan sits in the Storyboard group's open slot; Hold calls nothing; Bui
   /* The card's figures are the server's: the title, and the price as the button. */
   await expect(plan).toContainText(`Make 2 shots · ${cr(total)} · at most ${cr(ceiling)}`, { timeout: 20_000 });
   await expect(plan.getByTestId("board-plan-primary")).toHaveText(`Approve · ${cr(total)}`);
+  /* The plan's Approve spends: it carries its price marker. */
+  await expect(plan.getByTestId("board-plan-primary")).toHaveAttribute("data-spend", "priced");
   await expect(plan.getByTestId("board-plan-step")).toHaveCount(2);
   await expect(plan.getByTestId("board-plan-step").first().locator(".gx-price")).toHaveText(/^(up to )?[\d.,]+ cr$/);
   await expect(plan.getByTestId("board-plan-hold")).toBeVisible();
@@ -259,6 +263,7 @@ test("the plan gate: Make 3 shots · 93 cr · at most 186 cr, the server's figur
   await expect(plan).toContainText("Make 3 shots · 93 cr · at most 186 cr");
   await expect(plan.getByTestId("board-plan-line")).toContainText("Fixes if needed: up to 2 per shot, within 186 cr");
   await expect(plan.getByTestId("board-plan-primary")).toHaveText("Approve · 93 cr");
+  await expect(plan.getByTestId("board-plan-primary")).toHaveAttribute("data-spend-price", "93 cr");
   await expect(plan.getByTestId("board-plan-primary")).toHaveAttribute("title", /^\$[\d.]+$/);
   const rows = plan.getByTestId("board-plan-step");
   await expect(rows).toHaveCount(3);

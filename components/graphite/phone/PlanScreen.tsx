@@ -6,6 +6,7 @@ import { balanceLine, type PlanModel, type PlanPrimary } from "../board/cards/pl
 import type { BoardCtx } from "../board/cards/types";
 import { Price, usePriceTitle } from "../Price";
 import { creditsText, priceWords } from "@/lib/shell/price-words";
+import { spendAttrsOf } from "@/lib/spend";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { Project } from "@/lib/workbench/studio";
 import { NEEDS_CONNECTION } from "./HomeScreen";
@@ -140,7 +141,8 @@ function Primary({ primary, busy, online, onPress }: { primary: PlanPrimary; bus
   const title = usePriceTitle(primary.kind === "raise" ? null : primary.price);
   const blocked = !online ? NEEDS_CONNECTION : primary.blocked;
   return (
-    <button type="button" className="ph-btn ph-btn--primary" title={title ?? undefined} disabled={busy || Boolean(blocked)} onClick={onPress} data-testid="phone-plan-primary">
+    <button type="button" className="ph-btn ph-btn--primary" title={title ?? undefined} disabled={busy || Boolean(blocked)} aria-busy={busy || undefined} onClick={onPress} data-testid="phone-plan-primary"
+      {...(online && (primary.kind === "render" || primary.kind === "plan") && primary.price ? spendAttrsOf(primary.price) : {})}>
       {busy ? "Sending…" : !online ? NEEDS_CONNECTION : primary.label}
     </button>
   );

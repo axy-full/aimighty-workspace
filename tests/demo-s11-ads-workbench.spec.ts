@@ -126,6 +126,8 @@ test("the image-ad card: Marketing Studio Image 2.0 Alpha with the estimate on i
   await expect(ad.getByTestId("ads-image-ad-engine")).toContainText("Marketing Studio Image · 2.0 Alpha · 1:1 · 2K");
   /* The estimate, from the quote route; the button carries it as "N cr" once it is known. */
   await expect(ad.getByTestId("ads-image-ad-make")).toContainText(/Make the image ad · \d[\d.,]* cr/, { timeout: 30_000 });
+  await expect(ad.getByTestId("ads-image-ad-make")).toHaveAttribute("data-spend", "priced");
+  await expect(ad.getByTestId("ads-image-ad-make")).toHaveAttribute("data-spend-price", /^[\d.,]+ cr$/);
   await shot(page, "ads-image-ad");
   /* Change unfolds the aspect and size. */
   await ad.getByRole("button", { name: "Change" }).click();

@@ -1,5 +1,4 @@
 "use client";
-import { spendAttrs } from "@/lib/spend";
 import { useMemo, useState } from "react";
 import Boundary from "@/components/Boundary";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
@@ -95,7 +94,7 @@ export function Recent({ project, items, library, projects, make }: {
       {!running && !shown.length && !view.skeletons && !view.banner ? (
         <div className="gx-mk-empty" data-testid="gen-results-empty">
           <p>{items.length ? `Nothing ${chip === "Filed" ? "filed on a shot" : chip === "Unfiled" ? "unfiled" : "made"} here yet.` : "Nothing made in this project yet."}</p>
-          <button type="button" className="gx-hbtn" onClick={() => shell.setMake(make.state.type)} data-testid="make-recent-make" {...spendAttrs("free")}>Make something</button>
+          <button type="button" className="gx-hbtn" onClick={() => shell.setMake(make.state.type)} data-testid="make-recent-make">Make something</button>
         </div>
       ) : null}
     </section>

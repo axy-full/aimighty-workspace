@@ -137,10 +137,10 @@ function parse(path: string, files: Set<string>, read: (path: string) => string)
     if (ts.isJsxAttribute(n) && /^on(Click|Submit|Press)$/.test(n.name.getText(sf))) mod.hasControl = true;
     if ((ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) && /^(button|Button|SpendButton|form)$/.test(n.tagName.getText(sf))) mod.hasControl = true;
     if ((ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) && n.tagName.getText(sf) === "SpendButton") mod.optedIn = true;
-    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "spendAttrs") mod.optedIn = true;
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && /^spendAttrs\w*$/.test(n.expression.text)) mod.optedIn = true;
     if (ts.isJsxElement(n) && /^(button|Button)$/.test(n.openingElement.tagName.getText(sf))) {
       const attrs = n.openingElement.attributes.properties;
-      const marked = attrs.some((a) => (ts.isJsxAttribute(a) && a.name.getText(sf) === "data-spend") || ts.isJsxSpreadAttribute(a) && /spendAttrs/.test(a.expression.getText(sf)));
+      const marked = attrs.some((a) => (ts.isJsxAttribute(a) && a.name.getText(sf) === "data-spend") || ts.isJsxSpreadAttribute(a) && /spendAttrs\w*\(/.test(a.expression.getText(sf)));
       const texts: string[] = [];
       for (const child of n.children) {
         if (ts.isJsxText(child)) texts.push(child.text.replace(/\s+/g, " ").trim());

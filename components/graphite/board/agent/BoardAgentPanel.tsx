@@ -8,6 +8,7 @@ import { BoardQuestions } from "../cards/questions/BoardQuestions";
 import { showQuestions } from "../cards/questions/model";
 import { DrawStoryboard } from "../cards/storyboard/DrawStoryboard";
 import type { BoardCtx } from "../cards/types";
+import { spendAttrsOf } from "@/lib/spend";
 import { usePriceTitle } from "../../Price";
 import { CrewReview } from "./CrewReview";
 import { RecordTab } from "./RecordTab";
@@ -83,7 +84,7 @@ export function BoardAgentPanel({ ctx, onCollapse }: { ctx: BoardCtx; onCollapse
         <div className="ag-box">
           <textarea ref={box} aria-label="Ask Atomik" placeholder="Ask Atomik…" rows={2} value={words} maxLength={2000} onChange={(e) => { setWords(e.target.value); setSaid(null); }}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} data-testid="agent-input" />
-          <button type="button" className="ag-btn ag-btn-primary ag-ask" disabled={ask.disabled} title={title ?? undefined} onClick={() => void send()} data-testid="agent-ask">{ask.label}</button>
+          <button type="button" className="ag-btn ag-btn-primary ag-ask" disabled={ask.disabled} aria-busy={busy || undefined} title={title ?? undefined} onClick={() => void send()} data-testid="agent-ask" {...spendAttrsOf(ask.price)}>{ask.label}</button>
         </div>
         {said ?? ask.reason ? <p className="ag-note" role="status" data-testid="agent-ask-note">{said ?? ask.reason}</p> : null}
       </div> : null}

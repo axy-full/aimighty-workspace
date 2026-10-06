@@ -131,6 +131,7 @@ test("the proposal: the three lines at the server's prices, the Total, the most 
   await expect(page.getByTestId("phone-plan-fixes")).toContainText("at most 186 cr");
   await expect(page.getByTestId("phone-plan-balance")).toContainText(/Balance after · [\d,]+ cr now/);
   await expect(page.getByTestId("phone-plan-primary")).toHaveText("Build · free");
+  await expect(page.getByTestId("phone-plan-primary")).not.toHaveAttribute("data-spend", /.*/);
   await expect(page.getByTestId("phone-plan-primary")).toBeEnabled();
   /* No SH-style ids anywhere on the screen (DECISIONS 39). */
   expect(await page.getByTestId("phone-plan").innerText()).not.toMatch(/\bSH\d\d\b|Keyframes/);
@@ -162,6 +163,7 @@ test("the plan gate: Make 3 shots · 93 cr · at most 186 cr from the server, th
   await expect(page.getByTestId("phone-plan-total")).toContainText("93 cr");
   await expect(page.getByTestId("phone-plan-fixes")).toContainText("at most 186 cr");
   await expect(page.getByTestId("phone-plan-primary")).toHaveText("Approve · 93 cr");
+  await expect(page.getByTestId("phone-plan-primary")).toHaveAttribute("data-spend-price", "93 cr");
   await floors(page, "Plan gate");
   await shot(page, info.project.name, "plan-gate");
   expect(posts).toEqual([]);
