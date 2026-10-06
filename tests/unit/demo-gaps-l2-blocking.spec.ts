@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { newProject, type Asset, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import {
-  BLOCKING_CATEGORY, LENSES, addFigure, addProp, blockingOf, cameraView, moveAt, moveEnd, moveWords, roleOf, sceneFromShot, shotSource, hasStaleBlockingInputs, tidyBlockingInputs, withBlockingFrame, withCameraView, withLens,
+  BLOCKING_CATEGORY, BLOCKING_INPUT_PREFIX, LENSES, addFigure, addProp, blockingOf, cameraView, moveAt, moveEnd, moveWords, roleOf, sceneFromShot, shotSource, hasStaleBlockingInputs, tidyBlockingInputs, withBlockingFrame, withCameraView, withLens,
   type Move,
 } from "../../lib/production/blocking";
 import type { BeatSheet } from "../../lib/production/beats";
@@ -137,25 +137,38 @@ test("entries for shots that are no longer in the project are dropped as a save 
   expect(Object.keys(saved.production!.blocking!).sort()).toEqual(["node-shot1", "node-shot2"]);
 });
 
-test("a second save replaces the earlier frame input; inputs two windows left behind are found and tidied, and a person's own input stays", () => {
+test("a save and the tidy touch only the input nodes a blocking save made; a person's own reference is never taken off, even of a blocking frame", () => {
   const { scene, move } = sceneFromShot(project(), "node-shot1");
   const entry = { scene, move, savedAt: "2026-10-06T10:20:00.000Z" };
-  const own = frame("mine"); own.category = "Reference";
-  let p = withBlockingFrame(project(), "node-shot1", entry, own, "My reference");
-  p = { ...p, assets: p.assets.map((a) => (a.id === "mine" ? { ...a, category: "Reference" } : a)) };
+  const shotOf = (p: Project) => p.nodes.find((n) => n.id === "node-shot1")!;
+  const assetsOf = (p: Project) => shotOf(p).linked.map((id) => p.nodes.find((n) => n.id === id)!.assetId).sort();
+  /* A person's own references: one plain, and one that is a blocking frame they dragged in from the Library (same category, no tag). */
+  const mine = frame("mine"); mine.category = "Reference";
+  const dragged = frame("dragged");
+  let p = project();
+  p = { ...p, assets: [mine, dragged] };
+  p = { ...p, nodes: [...p.nodes.map((n) => (n.id === "node-shot1" ? { ...n, linked: ["person-1", "person-2"] } : n)),
+    { id: "person-1", title: "mine", type: "media", x: 0, y: 0, width: 220, linked: [], assetId: "mine" } as CanvasNode,
+    { id: "person-2", title: "dragged", type: "media", x: 0, y: 0, width: 220, linked: [], assetId: "dragged" } as CanvasNode] };
   p = withBlockingFrame(p, "node-shot1", entry, frame("f1"), "Shot 1 · 3D blocking");
   p = withBlockingFrame(p, "node-shot1", entry, frame("f2"), "Shot 1 · 3D blocking");
-  const shot = () => p.nodes.find((n) => n.id === "node-shot1")!;
-  const assets = () => shot().linked.map((id) => p.nodes.find((n) => n.id === id)!.assetId).sort();
-  expect(assets()).toEqual(["f2", "mine"]);
-  /* Two windows' saves merged: both frames are linked, and only the one the entry names is current. */
+  expect(assetsOf(p)).toEqual(["dragged", "f2", "mine"]);
+  expect(shotOf(p).linked.filter((id) => id.startsWith(BLOCKING_INPUT_PREFIX))).toHaveLength(1);
+  /* Two windows' saves merged: a second tagged input is found and tidied; the person's two stay. */
   const merged = withBlockingFrame(p, "node-shot1", entry, frame("f3"), "Shot 1 · 3D blocking");
-  const extra: Project = { ...merged, nodes: [...merged.nodes, { ...p.nodes.find((n) => n.assetId === "f2")!, id: "node-dup" } as CanvasNode].map((n) => (n.id === "node-shot1" ? { ...n, linked: [...n.linked, "node-dup"] } : n)), assets: merged.assets };
+  const dup = { ...p.nodes.find((n) => n.assetId === "f2")!, id: `${BLOCKING_INPUT_PREFIX}dup` } as CanvasNode;
+  const extra: Project = { ...merged, nodes: [...merged.nodes, dup].map((n) => (n.id === "node-shot1" ? { ...n, linked: [...n.linked, dup.id] } : n)) };
   expect(hasStaleBlockingInputs(extra, "node-shot1")).toBe(true);
   const tidy = tidyBlockingInputs(extra, "node-shot1");
   expect(hasStaleBlockingInputs(tidy, "node-shot1")).toBe(false);
-  expect(tidy.nodes.find((n) => n.id === "node-shot1")!.linked.map((id) => tidy.nodes.find((x) => x.id === id)!.assetId).sort()).toEqual(["f3", "mine"]);
+  expect(assetsOf(tidy)).toEqual(["dragged", "f3", "mine"]);
   expect(tidyBlockingInputs(tidy, "node-shot1")).toBe(tidy);
+  /* An input that has the blocking category but no tag (from before the tag, or dragged in) is left, even when it is not the current frame. */
+  const old = frame("old");
+  const legacy: Project = { ...tidy, assets: [...tidy.assets, old], nodes: [...tidy.nodes, { id: "node-old", title: "old", type: "media", x: 0, y: 0, width: 220, linked: [], assetId: "old" } as CanvasNode].map((n) => (n.id === "node-shot1" ? { ...n, linked: [...n.linked, "node-old"] } : n)) };
+  expect(hasStaleBlockingInputs(legacy, "node-shot1")).toBe(false);
+  expect(assetsOf(tidyBlockingInputs(legacy, "node-shot1"))).toContain("old");
+  expect(assetsOf(withBlockingFrame(legacy, "node-shot1", entry, frame("f4"), "Shot 1 · 3D blocking"))).toEqual(["dragged", "f4", "mine", "old"]);
 });
 
 test("names are trimmed and a blank one never reaches the scene: a beat sheet of spaces still builds a scene that saves", () => {

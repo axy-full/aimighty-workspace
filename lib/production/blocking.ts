@@ -2,7 +2,7 @@ import { type AstraObject, type AstraScene, type AstraVector3 } from "../astra-b
 import type { BeatShot } from "./beats";
 import { boardShots } from "./boards";
 import { BLOCKING_TOO_MANY, blockingSchema, type Blocking, type BlockingEntry, type Move, type MoveKind } from "./blocking-schema";
-import type { Asset, Project } from "../workbench/studio";
+import { uid, type Asset, type Project } from "../workbench/studio";
 import { RigBuildError, addInput } from "./rig-build";
 
 /*
@@ -137,17 +137,21 @@ export function sceneFromShot(project: Project, nodeId: string): { scene: AstraS
 
 /* ── Saving a frame to the shot ──────────────────────────────────────────────────── */
 
-/** The category a saved blocking frame is filed under, so its inputs can be told from a person's own. */
+/** The category a saved blocking frame is filed under. */
 export const BLOCKING_CATEGORY = "3D blocking";
-const isBlockingInput = (project: Project, node: Project["nodes"][number]) =>
-  node.type === "media" && [...project.assets, ...(project.sharedAssets ?? [])].some((a) => a.id === node.assetId && a.category === BLOCKING_CATEGORY);
+/**
+ * Every input node a blocking save creates carries this id prefix: that is the tag. A save and the tidy only ever act on tagged nodes, so a reference
+ * a person added themselves (even of a blocking frame, dragged from the Library) is never taken off, and an input from before the tag is left alone.
+ */
+export const BLOCKING_INPUT_PREFIX = "blocking-input-";
+const isBlockingInput = (node: Project["nodes"][number]) => node.type === "media" && node.id.startsWith(BLOCKING_INPUT_PREFIX);
 
-/** The blocking-frame inputs linked into a shot that are not its current frame, and used by no other card: what a second save, or two windows saving at once, leaves behind. */
+/** The tagged blocking-frame inputs linked into a shot that are not its current frame, and used by no other card: what a second save, or two windows saving at once, leaves behind. */
 function staleInputs(project: Project, nodeId: string, currentAssetId: string | undefined): string[] {
   const shot = project.nodes.find((n) => n.id === nodeId);
   if (!shot) return [];
   return project.nodes
-    .filter((n) => shot.linked.includes(n.id) && isBlockingInput(project, n) && n.assetId !== currentAssetId && !project.nodes.some((o) => o.id !== nodeId && o.linked.includes(n.id)))
+    .filter((n) => shot.linked.includes(n.id) && isBlockingInput(n) && n.assetId !== currentAssetId && !project.nodes.some((o) => o.id !== nodeId && o.linked.includes(n.id)))
     .map((n) => n.id);
 }
 const without = (project: Project, gone: Set<string>): Project => ({
@@ -183,7 +187,7 @@ function blockingProblem(issue: { path: PropertyKey[]; message: string } | undef
 export function withBlockingFrame(project: Project, nodeId: string, entry: Omit<BlockingEntry, "frameAssetId">, asset: Asset, title: string): Project {
   const cleaned = cleanName(title) || "3D blocking";
   const cleared = without(project, new Set(staleInputs(project, nodeId, undefined)));
-  const next = addInput(cleared, nodeId, { ...asset, name: cleanName(asset.name) || cleaned }, cleaned);
+  const next = addInput(cleared, nodeId, { ...asset, name: cleanName(asset.name) || cleaned }, cleaned, uid("blocking-input"));
   const live = new Set(next.nodes.map((n) => n.id));
   const kept = Object.fromEntries(Object.entries((next.production?.blocking as Blocking | undefined) ?? {}).filter(([id]) => live.has(id)));
   const blocking: Blocking = { ...kept, [nodeId]: { ...entry, frameAssetId: asset.id } };
