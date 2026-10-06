@@ -345,6 +345,8 @@
    .25s. The dot is green for a confirmation that carries its Open or Undo (something was done), the quiet ink for the
    rest, which can be a refusal or an error. */
 .gx-toast { position: fixed; top: 66px; right: 16px; z-index: 90; width: max-content; max-width: min(480px, calc(100vw - 32px)); display: flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: var(--gx-r-pill); font-size: 12px; font-weight: 500; line-height: 18px; background: var(--gx-card); border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-toast); animation: gx-in var(--gx-t-toast) var(--gx-ease) both; }
+/* On a board the toast sits at the canvas's top right, beside the docked panel rather than over it (Gaps B, the Undo toast). */
+.gx[data-screen^="board"] .gx-toast { right: calc(16px + var(--board-dock, 0px)); }
 .gx-toast::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-text-2); }
 .gx-toast[data-open]::before { background: var(--gx-done); }
 

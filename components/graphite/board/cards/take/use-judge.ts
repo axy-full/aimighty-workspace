@@ -79,7 +79,8 @@ export function useJudge(scope: string, projectId: string, toast: JudgeToast): J
       await reviewProjectTake(scope, projectId, version.genId, "changes");
       /* The mark stands whether or not the note lands; a note that did not land says so. */
       const noted = await postTakeNote(scope, version.genId, cleanRejectReason(reason)).then(() => true, () => false);
-      toast(noted ? "Rejected · nothing more spent" : "Rejected · nothing more spent. The reason was not saved.", { label: `Shot ${row.index} ${version.label} rejected`, run: () => { void restore(before); } });
+      const said = `Shot ${row.index} · ${version.label} rejected`;
+      toast(noted ? said : `${said}. The reason was not saved.`, { label: said, run: () => { void restore(before); } });
       return true;
     } catch (error) {
       toast(error instanceof Error ? error.message : "The review was not saved.");
