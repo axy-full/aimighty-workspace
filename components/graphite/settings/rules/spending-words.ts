@@ -31,7 +31,7 @@ export type SpendingLines = {
   modeLine: string;
   /** "Auto is picked per Board run, for drafts at or under 200 cr." */
   autoLine: string | null;
-  /** "Ask at 80% of a production’s budget · at the cap an admin unlocks it" */
+  /** "Auto drafts ask at 80% of a production’s budget · at the cap an admin unlocks it" */
   budgetLine: string | null;
 };
 
@@ -50,7 +50,7 @@ export function spendingLines(r: SpendingRules, cr: (n: number) => string): Spen
     platformLineText: r.platformLine === null ? null : `Any job over ${cr(r.platformLine)} needs a person’s approval, even under Auto.`,
     modeLine: "Every paid step waits for a person.",
     autoLine: r.perJobLine === null ? null : `Auto is picked per Board run, for drafts at or under ${cr(r.perJobLine)}.`,
-    budgetLine: r.capWarnPct === null || r.atCap === null ? null : `Ask at ${r.capWarnPct}% of a production’s budget · ${AT_CAP[r.atCap]}`,
+    budgetLine: r.capWarnPct === null || r.atCap === null ? null : `Auto drafts ask at ${r.capWarnPct}% of a production’s budget · ${AT_CAP[r.atCap]}`,
   };
 }
 

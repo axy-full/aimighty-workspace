@@ -72,13 +72,13 @@ test("an admin edits the budget per production and the per-shot cap; a field sav
   await page.getByTestId("settings-budget-field").press("Enter");
   await expect(page.getByTestId("settings-budget-state")).toHaveText("Saved · last changed by you");
   await expect.poll(async () => (await settingsOf(page.request)).productionBudgetCredits).toBe("400");
-  await expect(panel).toContainText("Atomik’s Auto runs pause at 80 % (320 cr) and ask whether to continue; a person’s own render is warned and goes on to the budget.");
+  await expect(panel).toContainText("Atomik’s Auto drafts pause at 80 % (320 cr) and ask whether to continue; an approved plan and a person’s own render run on to the budget.");
   /* Leaving the field saves it. */
   await page.getByTestId("settings-cap-field").pressSequentially("50");
   await page.getByTestId("settings-budget-field").focus();
   await expect.poll(async () => { const s = await settingsOf(page.request); return [s.approvalRule, s.shotCapCredits]; }).toEqual(["cap", "50"]);
   await expect(panel).toContainText("A step over this needs an admin’s approval.");
-  await expect(page.getByTestId("settings-budget-value")).toContainText("Atomik’s Auto runs ask at 320 cr (80 %)");
+  await expect(page.getByTestId("settings-budget-value")).toContainText("Atomik’s Auto drafts ask at 320 cr (80 %)");
   await expect(page.getByTestId("settings-budget-value").locator(".gs-row-v")).toHaveText("400 cr");
   await expect(page.getByTestId("settings-cap-value").locator(".gs-row-v")).toHaveText("50 cr");
   /* A figure the route would refuse is said, and not saved. */

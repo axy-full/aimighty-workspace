@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import type { RigAgentPaidStepView, RigAgentRunView } from "../../lib/workbench/rig-agent-plan";
 import { planModel, type PlanInput } from "../../components/graphite/board/cards/plan/model";
 import { planMoneyState, type BudgetRead } from "../../components/graphite/board/cards/plan/money-state";
-import { budgetPause, budgetPauseLine, cleanBudget, cleanWarnPct } from "../../lib/budgetPause";
+import { budgetPause, budgetPauseLine, cleanBudget, cleanWarnPct, planBudgetLine } from "../../lib/budgetPause";
 import { settingProblem } from "../../lib/settingValues";
 import { DEFAULTS } from "../../lib/settings";
 import { cleanShotCap } from "../../lib/approvalRule";
@@ -189,13 +189,13 @@ test("the budget per production is a whole number of credits or none; the per-sh
 });
 
 test("Budget and cap in words: the pause at 320 cr of 400, the cap per shot, and what a typed field saves", () => {
-  /* Said as the code does it: Atomik's Auto runs ask at 80 %; a person's own render is warned and goes on to the budget. */
-  expect(budgetLine({ budget: 400, warnPct: 80 }, creditsText)).toBe("Atomik’s Auto runs ask at 320 cr (80 %)");
+  /* Said as the code does it: Atomik's Auto drafts ask at 80 %; an approved plan and a person's own render run on to the budget. */
+  expect(budgetLine({ budget: 400, warnPct: 80 }, creditsText)).toBe("Atomik’s Auto drafts ask at 320 cr (80 %)");
   expect(budgetLine({ budget: null, warnPct: 80 }, creditsText)).toBe("none · a production follows its own cap, if it has one");
   /* A figure typed on the way to another (0) is no budget, never a crash. */
   expect(budgetHelp({ budget: 0, warnPct: 80 }, creditsText)).toBe("No budget: each production follows its own cap, if it has one.");
   expect(budgetLine({ budget: 0, warnPct: 80 }, creditsText)).toBe("none · a production follows its own cap, if it has one");
-  expect(budgetHelp({ budget: 400, warnPct: 80 }, creditsText)).toBe("Atomik’s Auto runs pause at 80 % (320 cr) and ask whether to continue; a person’s own render is warned and goes on to the budget.");
+  expect(budgetHelp({ budget: 400, warnPct: 80 }, creditsText)).toBe("Atomik’s Auto drafts pause at 80 % (320 cr) and ask whether to continue; an approved plan and a person’s own render run on to the budget.");
   expect(capRow({ rule: "cap", shotCap: 50 }, creditsText)).toEqual({ value: "50 cr", line: "per shot" });
   expect(capRow({ rule: "anyone", shotCap: 50 }, creditsText)).toEqual({ value: "off", line: "anyone on the team may approve a step" });
   expect(capRow({ rule: "producer", shotCap: 50 }, creditsText).value).toBe("producer");
@@ -236,4 +236,19 @@ test("Retry's price is the quote of the request Retry makes again; a take Make c
   expect(retryQuoteBody(take({ projectId: null }))).toBeNull();
   expect(retryQuoteBody(take({ params: { ratio: "16:9", resolution: "1080p", finalOf: "gen_draft" } }))).toBeNull();
   expect(retryQuoteBody(take({ params: { resolution: "1080p" } }))).toBeNull();
+});
+
+test("the plan's at most against the budget, in one line: past the 80 % ask, more than is left (stops at the cap, or warns), or nothing", () => {
+  const line = (o: Partial<Parameters<typeof planBudgetLine>[0]>) => planBudgetLine({ name: "A 15-second film", atMost: 186, cap: 400, used: 0, warnPct: 80, unlocked: false, atCap: "producer", ...o });
+  expect(line({})).toBeNull();
+  expect(line({ used: 134 })).toBe("This plan can take A 15-second film past 80 % of its budget (320 of 400 cr).");
+  expect(line({ used: 133 })).toBeNull();
+  expect(line({ used: 300 })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (100 cr); it will stop at the cap.");
+  expect(line({ used: 300, atCap: "stop" })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (100 cr); it will stop at the cap.");
+  expect(line({ used: 300, atCap: "warn" })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (100 cr); it goes past the cap with a warning.");
+  expect(line({ used: 500 })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (0 cr); it will stop at the cap.");
+  expect(line({ used: 300, unlocked: true })).toBeNull();
+  expect(line({ cap: null })).toBeNull();
+  expect(line({ atMost: 0 })).toBeNull();
+  expect(line({ used: 134, name: " " })).toBe("This plan can take this production past 80 % of its budget (320 of 400 cr).");
 });

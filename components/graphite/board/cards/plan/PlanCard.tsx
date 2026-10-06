@@ -10,7 +10,7 @@ import { publishPlanModel, setPlanStepsOpen } from "./ui";
 import { balanceLine, fixLine, type PlanModel, type PlanPrimary } from "./model";
 import { usePlan } from "./use-plan";
 import { planMoneyState } from "./money-state";
-import { MoneyActions, MoneyLine, PausedBody, useMoveOffer, usePlanBudget, useTopUpLabel } from "./MoneyStates";
+import { MoneyActions, MoneyLine, PausedBody, useMoveOffer, usePlanBudget, usePlanBudgetLine, useTopUpLabel } from "./MoneyStates";
 import "./plan.css";
 
 /**
@@ -33,6 +33,7 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   const topUp = useTopUpLabel(ctx.scope, live && model?.phase === "proposal" && model.balance?.short != null);
   const budget = usePlanBudget(ctx.scope, ctx.productionId, live && model?.phase === "needs-you");
   const move = useMoveOffer(ctx, live ? data.run : null, live ? model : null);
+  const budgetLine = usePlanBudgetLine(ctx.scope, ctx.productionId, live ? data.run?.id ?? null : null, live && model?.primary?.kind === "plan");
   const money = live && model ? planMoneyState({ model, admin: plan.admin, shotCap: plan.rule?.rule === "cap" ? plan.rule.cap : null, budget, topUp, move }) : null;
   /* The Inspector shows the same steps from this model: the server is asked for each price once. */
   useEffect(() => { publishPlanModel(runId, model); }, [runId, model]);
@@ -53,6 +54,7 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
         {proposal && plan.held ? <div className="gx-plan-line" role="status">On hold · nothing spent</div> : null}
       </div>
       {paused ? <PausedBody state={paused} /> : money ? <MoneyLine state={money} /> : null}
+      {budgetLine ? <div className="gx-plan-state" role="note" data-testid="board-plan-budget-line"><span className="gx-plan-dot" aria-hidden="true" />{budgetLine}</div> : null}
       {money && (money.kind === "admin" || money.kind === "unavailable") && money.restLine ? <div className="gx-plan-why" data-testid="board-plan-rest">{money.restLine}</div> : null}
       {short ? (
         <div className="gx-plan-short" role="status">

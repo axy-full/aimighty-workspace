@@ -41,3 +41,24 @@ export function budgetPause(o: { cap: number | null; spent: number; needs: numbe
 export function budgetPauseLine(p: Pick<BudgetPause, "pct" | "spent" | "cap">): string {
   return `Paused at ${p.pct} % of the budget: ${whole(p.spent)} of ${whole(p.cap)} cr used. Continue or stop.`;
 }
+
+/**
+ * Where a plan's "at most" (its ceiling, the server's quote) would take a production against its cap or budget, said
+ * before the plan is approved (the plan card at the gate). An approved plan runs without a tap up to the production's
+ * cap (lib/workbench/plan-approval.ts); Atomik's 80 % ask is for Auto drafts only. So the card says, in one line:
+ *  - "This plan's at most N cr is more than <name> has left (M cr); it will stop at the cap." when it cannot all fit
+ *    (or "… it goes past the cap with a warning." when the workspace's rule at the cap only warns);
+ *  - "This plan can take <name> past 80 % of its budget (N of M cr)." when it would reach the share;
+ *  - nothing otherwise, or when an admin unlocked the production past its cap. Pure; nothing here spends.
+ */
+export function planBudgetLine(o: { name: string; atMost: number; cap: number | null; used: number; warnPct: number; unlocked: boolean; atCap: "producer" | "stop" | "warn" }): string | null {
+  if (o.cap == null || !(o.cap > 0) || o.unlocked || !(o.atMost > 0)) return null;
+  const name = o.name.trim() || "this production";
+  const left = Math.max(0, o.cap - o.used);
+  if (o.atMost > left + 1e-9) {
+    return `This plan’s at most ${whole(o.atMost)} cr is more than ${name} has left (${whole(left)} cr); ${o.atCap === "warn" ? "it goes past the cap with a warning." : "it will stop at the cap."}`;
+  }
+  const pause = budgetPause({ cap: o.cap, spent: o.used, needs: o.atMost, warnPct: o.warnPct })!;
+  if (pause.reached) return `This plan can take ${name} past ${pause.pct} % of its budget (${whole(o.used + o.atMost)} of ${whole(o.cap)} cr).`;
+  return null;
+}

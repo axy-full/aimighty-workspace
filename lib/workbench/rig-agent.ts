@@ -218,6 +218,19 @@ async function viewOf(runId: string, viewer: string): Promise<RigAgentRunView> {
   return runView(run, await stepsOf(db(), runId), viewer, await ledgerOf(run), await planApprovalOf(db(), runId));
 }
 
+/**
+ * The plan gate's quote for a run on this production, exactly as the plan card shows it (its total and its "at most"),
+ * or null when the run is not at the gate. Read-only: the budget read sets it against the production's budget.
+ */
+export async function planGateQuote(productionId: string, runId: string): Promise<{ total: number; ceiling: number } | null> {
+  if (!(await rigAgentExists())) return null;
+  const run = await runOfProduction(db(), productionId, runId);
+  if (!run) return null;
+  const ledger = await ledgerOf(run);
+  const view = planView(run, await stepsOf(db(), run.id), "", ledger, await planApprovalOf(db(), run.id), effectiveJobCeiling(run.perJobCap, ledger.ceiling ?? run.perJobCap ?? 0));
+  return view?.quote ? { total: view.quote.total, ceiling: view.quote.ceiling } : null;
+}
+
 /** What asking costs, for the ask form: the suggested limit, the per-job line, and the planning turn's approximate ceiling. */
 export type RigAgentAskTerms = { limit: number; jobCeiling: number; planning: number | null };
 

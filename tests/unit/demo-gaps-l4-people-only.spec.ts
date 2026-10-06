@@ -85,6 +85,7 @@ async function harness() {
     projects: load<typeof import("../../app/api/projects/route")>("app/api/projects/route.ts", deps),
     production: load<typeof import("../../app/api/productions/[id]/route")>("app/api/productions/[id]/route.ts", deps),
     release: load<typeof import("../../app/api/jobs/[id]/release/route")>("app/api/jobs/[id]/release/route.ts", deps),
+    budget: load<typeof import("../../app/api/workbench/budget/route")>("app/api/workbench/budget/route.ts", deps),
   };
 }
 
@@ -376,4 +377,53 @@ test("Ask an admin judges a step as the gate does (what the shot holds plus this
     await setSetting("approvalRule", "anyone", "boss");
     await setSetting("shotCapCredits", "50", "boss");
   });
+});
+
+test("before Approve at the plan gate, the server says where the plan's at most takes the production: past 80 % of its budget, or more than it has left (it stops at the cap)", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { setSetting } = await import("../../lib/settings");
+  const { db } = await import("../../lib/db");
+  const store = await import("../../lib/workbench/rig-agent-store");
+  const api = await harness();
+  mode = "session";
+  await runInTenant(WS, async () => {
+    await store.rigAgentReady();
+    /* One live run per production: the earlier test's run has ended. */
+    await db().execute("UPDATE rig_agent_runs SET state='done' WHERE production_id='prod-l4'");
+    const take = (id: string, seq: number, quote: number) => ({
+      sql: "INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,node_id,prepared,state,quote_credits,band,admission,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0,0)",
+      args: [id, "rar_gate", seq, "render", `Render Shot ${seq}`, "take", `node-${seq}`, "{}", "waiting", quote, 1, JSON.stringify({ quote: { fingerprint: `fp-${seq}` } })],
+    });
+    await db().batch([
+      { sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,plan,cap_credits,per_job_cap,created_at,updated_at) VALUES('rar_gate','prod-l4','d','boss','req-gate','g','auto','needs_you',NULL,500,200,0,0)", args: [] },
+      take("st_g1", 1, 43), take("st_g2", 2, 43), take("st_g3", 3, 7),
+    ], "write");
+  });
+  const read = async () => (await (await api.budget.GET(req("/api/workbench/budget?productionId=prod-l4&runId=rar_gate", "GET"), undefined as never)).json()) as { budget: { used: number } | null; plan: { atMost: number; line: string | null } | null };
+  const set = (k: string, v: string) => runInTenant(WS, () => setSetting(k, v, "boss"));
+  /* The plan: 43 + 43 + 7 = 93 cr, at most 186 cr with fixes (the server's own quote, as the card shows it). A 1,000 cr budget holds it. */
+  await set("productionBudgetCredits", "1000");
+  const first = await read();
+  expect(first).toMatchObject({ plan: { atMost: 186, line: null } });
+  /* What the production has already used (an earlier take on it), as the gate counts it. */
+  const used = Math.round(first.budget!.used);
+  /* 200 cr left: the plan fits, and takes it past the 80 % ask. */
+  await set("productionBudgetCredits", String(used + 200));
+  expect((await read()).plan!.line).toBe(`This plan can take A 15-second film past 80 % of its budget (${(used + 186).toLocaleString("en-US")} of ${(used + 200).toLocaleString("en-US")} cr).`);
+  /* 150 cr left: more than it has left; it will stop at the cap (or go past with a warning, where the rule only warns). */
+  await set("productionBudgetCredits", String(used + 150));
+  expect((await read()).plan!.line).toBe("This plan’s at most 186 cr is more than A 15-second film has left (150 cr); it will stop at the cap.");
+  await set("atCap", "warn");
+  expect((await read()).plan!.line).toBe("This plan’s at most 186 cr is more than A 15-second film has left (150 cr); it goes past the cap with a warning.");
+  await set("atCap", "producer");
+  /* Unlocked past its cap by an admin: nothing to say. No budget: nothing to say. No run named: no plan figure. */
+  await exec("UPDATE projects SET cap_unlocked=1 WHERE id='prod-l4'");
+  expect((await read()).plan!.line).toBeNull();
+  await exec("UPDATE projects SET cap_unlocked=0 WHERE id='prod-l4'");
+  const noRun = await (await api.budget.GET(req("/api/workbench/budget?productionId=prod-l4", "GET"), undefined as never)).json() as { plan: unknown };
+  expect(noRun.plan).toBeNull();
+  await set("productionBudgetCredits", "");
+  expect((await (await api.budget.GET(req("/api/workbench/budget?productionId=prod-l4&runId=rar_gate", "GET"), undefined as never)).json() as { budget: unknown; plan: unknown })).toMatchObject({ budget: null, plan: null });
+  /* Reading it spends nothing and approves nothing. */
+  expect(await runInTenant(WS, async () => (await db().execute("SELECT state FROM rig_agent_runs WHERE id='rar_gate'")).rows[0].state)).toBe("needs_you");
 });

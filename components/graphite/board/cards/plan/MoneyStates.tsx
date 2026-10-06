@@ -61,6 +61,25 @@ export function usePlanBudget(scope: string, productionId: string | null, wanted
 }
 
 /**
+ * At the plan gate, before Approve: where the plan's "at most" (its server quote) would take the production against its
+ * cap or budget, in the server's one line (GET /api/workbench/budget with the run; lib/budgetPause.ts planBudgetLine).
+ * An approved plan runs to the cap without asking; this is said before the person approves it. Null when nothing to say.
+ */
+export function usePlanBudgetLine(scope: string, productionId: string | null, runId: string | null, atGate: boolean): string | null {
+  const [line, setLine] = useState<{ key: string; text: string | null } | null>(null);
+  const key = `${productionId}|${runId}`;
+  useEffect(() => {
+    if (!atGate || !productionId || !runId) return;
+    let alive = true;
+    void draftRequest<{ plan?: { line: string | null } | null }>(`/api/workbench/budget?productionId=${encodeURIComponent(productionId)}&runId=${encodeURIComponent(runId)}`, scope)
+      .then((r) => { if (alive) setLine({ key, text: r?.plan?.line ?? null }); })
+      .catch(() => { /* no line: Approve keeps its price, and the gate holds at the cap */ });
+    return () => { alive = false; };
+  }, [scope, productionId, runId, atGate, key]);
+  return atGate && line?.key === key ? line.text : null;
+}
+
+/**
  * Another engine for a step whose engine can't render: the engine another shot of the plan renders on, and the
  * server's quote for this step on it (the same free quote the plan's other prices come from). Null when there is none.
  */

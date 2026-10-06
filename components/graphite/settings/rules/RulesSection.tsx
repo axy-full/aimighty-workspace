@@ -113,7 +113,7 @@ export function RulesSection({ open = null }: { open?: SettingsFold | null } = {
             <div className="gs-choice gs-choice-wrap" role="radiogroup" aria-label="Ask at">
               {[...CAP_WARN_OPTIONS, ...(rules.capWarnPct != null && !CAP_WARN_OPTIONS.some(([v]) => v === String(rules.capWarnPct)) ? [[String(rules.capWarnPct), `${rules.capWarnPct}% of the cap`] as const] : [])].map(([id, label]) => (
                 <button key={id} type="button" role="radio" aria-checked={String(rules.capWarnPct) === id} className="gs-btn" disabled={busy}
-                  onClick={() => { if (String(rules.capWarnPct) !== id) void save({ capWarnPct: id }, budgetBefore(), `Asking at ${id}% of a production’s budget.`); }} data-testid={`settings-warn-${id}`}>{label}</button>
+                  onClick={() => { if (String(rules.capWarnPct) !== id) void save({ capWarnPct: id }, budgetBefore(), `Auto drafts ask at ${id}% of a production’s budget.`); }} data-testid={`settings-warn-${id}`}>{label}</button>
               ))}
             </div>
             <span className="gs-eyebrow">At a production’s cap</span>

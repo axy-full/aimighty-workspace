@@ -317,3 +317,39 @@ test("paused at 80 % of the budget: 320 of 400 cr used; Continue · 7 cr is the 
   expect(seeded.posts[1]).toMatchObject({ action: "agent.stop", runId: RUN });
   expect(seeded.paid).toEqual([]);
 });
+
+test("before Approve at the plan gate, one plain line says where the plan's at most takes the production against its budget; Approve keeps its price (board and phone)", async ({ page }, info) => {
+  const { workspace } = await signInLocally(page.request, "Plan Budget Tester");
+  await grant(workspace.id, 2000);
+  const LINE = "This plan’s at most 186 cr is more than A 15-second film has left (150 cr); it will stop at the cap.";
+  /* The server's line (GET /api/workbench/budget with the run; its figures: tests/unit/demo-gaps-l4-people-only.spec.ts). */
+  const seeded = await board(page, page.request, workspace.id, gateRun([43, 43, 7]));
+  const reads: string[] = [];
+  await page.route("**/api/workbench/budget?**", (route) => {
+    reads.push(new URL(route.request().url()).search);
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ budget: { cap: 400, used: 250, warnPct: 80, pauseAt: 320, unlocked: false, from: "workspace" }, plan: { atMost: 186, line: LINE } }) });
+  });
+  if (desktop(page)) {
+    await page.goto(`/suites?project=${seeded.project.id}&view=board`);
+    const card = plan(page);
+    await expect(card.getByTestId("board-plan-budget-line")).toHaveText(LINE, { timeout: 20_000 });
+    await expect(card.getByTestId("board-plan-primary")).toHaveText("Approve · 93 cr");
+    await expect(card.getByTestId("board-plan-primary")).toHaveAttribute("data-spend-price", "93 cr");
+    await expect(card.getByTestId("board-plan-primary")).toBeEnabled();
+    expect(await smallText(page)).toEqual([]);
+    await shoot(page, "money-plan-budget", info.project.name);
+  } else {
+    await page.goto(`/suites?project=${seeded.project.id}&screen=plan`);
+    await expect(page.getByTestId("phone-plan-budget-line")).toHaveText(LINE, { timeout: 20_000 });
+    await expect(page.getByTestId("phone-plan-primary")).toHaveText("Approve · 93 cr");
+    await expect(page.getByTestId("phone-plan-primary")).toHaveAttribute("data-spend-price", "93 cr");
+    const size = await page.getByTestId("phone-plan-budget-line").evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+    expect(size).toBeGreaterThanOrEqual(12);
+    expect(await overflow(page)).toBeLessThanOrEqual(0);
+    await shoot(page, "money-plan-budget", info.project.name);
+  }
+  /* The card asked with the run; nothing was pressed, nothing spent. */
+  expect(reads.some((q) => q.includes(`runId=${RUN}`))).toBe(true);
+  expect(seeded.posts).toEqual([]);
+  expect(seeded.paid).toEqual([]);
+});
