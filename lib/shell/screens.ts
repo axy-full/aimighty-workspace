@@ -74,7 +74,8 @@ export function spelling(search: string, screens: readonly ScreenModule[] = SCRE
 }
 
 /** A bare landing: no page of the shell is named, so the master's first screen (Home) is where it opens. */
-const PLACE = ["view", "suite", "page", "sp", "make", "asset", "import", "cp", "tab", "room", "sel"] as const;
+/* `make=` is a panel over a screen, not a place: `?make=video` is Make over Home. */
+const PLACE = ["view", "suite", "page", "sp", "asset", "import", "cp", "tab", "room", "sel"] as const;
 const bare = (q: URLSearchParams) => !PLACE.some((key) => q.has(key));
 
 /** The rows that apply: the landed screens' `rows`; every other screen's `fallback`. */
