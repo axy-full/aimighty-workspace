@@ -1,17 +1,17 @@
-# Status now: 6 October 2026, 08:05 IST, PAUSED by the owner
+# Status now: 6 October 2026, 09:51 IST, resumed
 
-**Paused by the owner.** Agents are stopping at a safe point: work in progress is committed and pushed, slots are released, and resume notes are in the lead's private notes. Nothing merges and nothing deploys while paused. The morning report was sent at 07:45 IST.
+**Resumed** at 09:55 IST: up to 8 agents, 3 test slots. No UI merges until the owner's preview check; no money merge without the owner's yes. main is `e3fb0c98` (#541, the npm-advisory lockfile fix, merged on green CI).
 
 ## Done today
 - The US$0.10 switch: #524 merged; production reads `creditUsd 0.1`. Step 6 green.
-- Merged: #524, #529 (the $0.10 sweep), #528 (the clean slate), #526 (React Flow).
+- Merged: #524, #529 (the $0.10 sweep), #528 (the clean slate), #526 (React Flow), #531 (deny rules), #541 (npm advisory fix).
 - Rollback rule: never roll back to a deployment from before #524.
 
 ## Overnight, in order
 | # | Item | Branch / PR | State | Next |
 |---|---|---|---|---|
 | 1 | D0: 13 owner fixes and 2 CI checks | #511, #513, #512, #514, #515 on `d0/*` | Fixes 1–11 done and cleaned up (#511 `fe1a9c77` → #513 `17d202db` → #512 `b847efa2` → #514 `228a1176` → #515 `4e3ffca3`); unit green on every head; CI checks are draft #533 (green) | Finish the browser specs on #515; owner preview check |
-| 2 | Cinema "at most 3N" | #523 failed review → replacement #540 (`61dcb02c`) | Re-review PASS on the code; CI running | Owner's yes (approval named #523); #541 (npm advisory lockfile fix) first |
+| 2 | Cinema "at most 3N" | #523 failed review → replacement #540 (`61dcb02c`) | Re-review PASS on the code; CI running | #540 brought up to date with main (`5a0f941f`, lockfile only), CI running; waits for the owner's yes |
 | 3 | Deny rules for destructive git commands | #531 | **Merged** (`3ce363d8`); CI green, production deploy succeeded | Done |
 | 4 | The board for everyone (Studio, Ads, Social) | `demo/board-everyone` from `demo/integration` (`08368b84`) | Draft #535: stage pages deleted, redirects, preview built; unit green; CI workbench shards red (old specs) | Board PR: delete the ten stage pages, redirect their routes, delete their styles, preview. Target Wed 7 Oct evening |
 | 5 | Autosave, then Make's short form | Draft #532 (autosave), draft #534 (Make short form, stacked on #514) | Built and tested | Owner preview check |
