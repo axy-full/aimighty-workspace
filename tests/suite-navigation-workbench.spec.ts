@@ -139,7 +139,7 @@ test("shared suite shell keeps draft context, account controls and guarded keybo
   // The home route has no project query. It must retain this tab's captured
   // selection, even though another tab changed the persisted preference above.
   for (const suite of SUITES)
-    await expect(page.locator(".suite-home-card").filter({ hasText: suite.name })).toHaveAttribute("href", suiteHref(suite.id, project.id));
+    await expect(page.locator(".suite-home-card").filter({ hasText: new RegExp(`^${suite.name}`) })).toHaveAttribute("href", suiteHref(suite.id, project.id));
   await expect(page.getByRole("link", { name: "Break down a screenplay", exact: true })).toHaveAttribute("href", suiteHref("particl", project.id, "script"));
   await expect(page.getByRole("link", { name: "Start from a saved recipe", exact: true })).toHaveAttribute("href", suiteHref("atomik", project.id, "recipes"));
   await expect(page.getByRole("textbox", { name: "Your next production brief", exact: true })).toBeEnabled();
