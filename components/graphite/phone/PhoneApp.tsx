@@ -128,6 +128,7 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
 
   const sheet = !page && route.screen === "atomik";
   /* Said once the sheet is mounted, so its conversation is listening (components/atomik/skills/useSkillRunOpens.ts). */
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- One-shot hand-off: the chat id is said once the sheet is mounted, then cleared.
   useEffect(() => { if (sheet && pendingChat) { openAtomikChat(pendingChat); setPendingChat(null); } }, [sheet, pendingChat]);
   /* Under the Atomik sheet the screen it was opened from still shows. */
   const screen = page ? null : sheet ? under : route.screen;
