@@ -51,7 +51,7 @@
       "by": "goes with the file: stream 3 (Library drawer) + stream 6 (Make > Recent)"
     },
     "components/astra-blender/AstraAgentPanel.tsx": {
-      "count": 15,
+      "count": 14,
       "until": "2026-10-08",
       "by": "goes with the file; UNOWNED (§9): Astra Blender workspace (3D)"
     },
@@ -84,31 +84,6 @@
       "count": 4,
       "until": "2026-10-08",
       "by": "goes with the file: stream 7 (Atomik: Crew review, frame m)"
-    },
-    "components/graphite/production/AstraOutputs.tsx": {
-      "count": 3,
-      "until": "2026-10-08",
-      "by": "goes with the file; UNOWNED (§9): Astra outputs page"
-    },
-    "components/graphite/production/CastStage.tsx": {
-      "count": 3,
-      "until": "2026-10-08",
-      "by": "stream 5 (cards 2)"
-    },
-    "components/graphite/production/EditStage.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "goes with the file: stream 5 (cards 2)"
-    },
-    "components/graphite/production/RigExtras.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "goes with the file: stream 3 (board canvas)"
-    },
-    "components/graphite/production/StoryboardStage.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "goes with the file: stream 4 (cards 1)"
     },
     "components/graphite/production/TimelineCut.tsx": {
       "count": 1,
@@ -285,11 +260,6 @@
       "until": "2026-10-08",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
-    "lib/jobsTray.ts": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
     "lib/mediaBindings.ts": {
       "count": 2,
       "until": "2026-10-08",
@@ -400,11 +370,6 @@
       "until": "2026-10-08",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
-    "lib/workbench/studio.ts": {
-      "count": 3,
-      "until": "2026-10-08",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
     "lib/workbench/verify-server.ts": {
       "count": 1,
       "until": "2026-10-08",
@@ -436,198 +401,6 @@
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     }
   },
-  "strict": {
-    "components/graphite/TabBar.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #511 (header, tab and page names)"
-    },
-    "components/graphite/mobile/StudioHome.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #511/#514 (phone Home, quick tools)"
-    },
-    "lib/shell/palette.ts": {
-      "count": 3,
-      "until": "2026-10-08",
-      "by": "D0 #513 (overlays: ⌘K, right-click, toasts)"
-    },
-    "components/graphite/AssetInspector.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #511 (header, tab and page names)"
-    },
-    "components/graphite/Header.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #511 (header, tab and page names)"
-    },
-    "components/graphite/NextActionPanel.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #511 (header, tab and page names)"
-    },
-    "components/graphite/SuitesShell.tsx": {
-      "count": 3,
-      "until": "2026-10-08",
-      "by": "D0 #511 (header, tab and page names)"
-    },
-    "lib/nav.ts": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #511 (header, tab and page names)"
-    },
-    "lib/shell/assets.ts": {
-      "count": 2,
-      "until": "2026-10-08",
-      "by": "D0 #513 (overlays: ⌘K, right-click, toasts)"
-    },
-    "lib/shell/confirmations.ts": {
-      "count": 5,
-      "until": "2026-10-08",
-      "by": "D0 #513 (overlays: ⌘K, right-click, toasts)"
-    },
-    "lib/shell/connected-capability.ts": {
-      "count": 2,
-      "until": "2026-10-08",
-      "by": "D0 #512 (Make)"
-    },
-    "lib/shell/enhancer.ts": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #512 (Make)"
-    },
-    "lib/shell/ia.ts": {
-      "count": 19,
-      "until": "2026-10-08",
-      "by": "D0 #511 (header, tab and page names)"
-    },
-    "lib/shell/production-tools.ts": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #511 (header, tab and page names)"
-    },
-    "lib/shell/recipe.ts": {
-      "count": 5,
-      "until": "2026-10-08",
-      "by": "D0 #512 (Make)"
-    },
-    "lib/shell/studio-home.ts": {
-      "count": 2,
-      "until": "2026-10-08",
-      "by": "D0 #511/#514 (phone Home, quick tools)"
-    },
-    "lib/shell/tools-connections.ts": {
-      "count": 3,
-      "until": "2026-10-08",
-      "by": "D0 #511 (header, tab and page names)"
-    },
-    "lib/suites.ts": {
-      "count": 8,
-      "until": "2026-10-08",
-      "by": "D0 #511 (header, tab and page names)"
-    },
-    "lib/workspace/navigation.ts": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #511 (header, tab and page names)"
-    },
-    "lib/workspace/pages.ts": {
-      "count": 9,
-      "until": "2026-10-08",
-      "by": "D0 #511 (header, tab and page names)"
-    },
-    "app/(marketing)/site/_pages/atomik/index.tsx": {
-      "count": 3,
-      "until": "2026-10-08",
-      "by": "site/copy-names (stream 15)"
-    },
-    "app/(marketing)/site/_pages/business/index.tsx": {
-      "count": 7,
-      "until": "2026-10-08",
-      "by": "site/copy-names (stream 15)"
-    },
-    "app/(marketing)/site/_pages/gen/index.tsx": {
-      "count": 10,
-      "until": "2026-10-08",
-      "by": "site/copy-names (stream 15)"
-    },
-    "app/(marketing)/site/_pages/studio/index.tsx": {
-      "count": 12,
-      "until": "2026-10-08",
-      "by": "site/copy-names (stream 15)"
-    },
-    "app/(marketing)/site/_pages/viral/index.tsx": {
-      "count": 5,
-      "until": "2026-10-08",
-      "by": "site/copy-names (stream 15)"
-    },
-    "app/(marketing)/site/_pages/workspace/index.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "site/copy-names (stream 15)"
-    },
-    "app/(marketing)/site/layout.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "site/copy-names (stream 15)"
-    },
-    "components/marketing/HeroPrompt.tsx": {
-      "count": 2,
-      "until": "2026-10-08",
-      "by": "site/copy-names (stream 15)"
-    },
-    "components/marketing/SharedBottom.tsx": {
-      "count": 2,
-      "until": "2026-10-08",
-      "by": "site/copy-names (stream 15)"
-    },
-    "lib/marketing/site.ts": {
-      "count": 6,
-      "until": "2026-10-08",
-      "by": "stream 15: not on site/copy-names yet"
-    },
-    "lib/site.ts": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "stream 15: not on site/copy-names yet"
-    }
-  },
-  "titles": {
-    "app/(app)/generate/page.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #512 (the Gen page redirects to Make)"
-    },
-    "app/(app)/make/[kind]/page.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #512 (the Gen page redirects to Make)"
-    },
-    "app/(app)/subatomik/page.tsx": {
-      "count": 4,
-      "until": "2026-10-08",
-      "by": "D0 #514 / stream 11 (Social)"
-    },
-    "app/layout.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "stream 1 / flip PR (home-screen title, /workbench)"
-    },
-    "app/workbench/page.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "stream 1 / flip PR (home-screen title, /workbench)"
-    },
-    "components/make/GenWorkspace.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #512 (the Gen page redirects to Make)"
-    },
-    "components/suites/SubatomikWorkspace.tsx": {
-      "count": 2,
-      "until": "2026-10-08",
-      "by": "D0 #514 / stream 11 (Social)"
-    }
-  }
+  "strict": {},
+  "titles": {}
 }

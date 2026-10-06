@@ -17,11 +17,11 @@ test("seam b: the phone's own screens never share the page with the desktop's Ma
   expect(shell.indexOf("const phoneOn = shell.phone.on;")).toBeLessThan(shell.indexOf("shell.make && !phoneOn"));
 });
 
-test("seam c: ⌘K's ask seam opens Atomik's panel with the words when the new interface is on, and the old Agent page otherwise", () => {
+test("seam c: ⌘K's ask seam opens Atomik's panel with the words, and the Agent page only before the panel has landed", () => {
   const ask = shell.slice(shell.indexOf("const ask = (text: string) => {"), shell.indexOf("const openProjectId"));
-  expect(ask).toContain('shell.newInterface && isLanded("atomik")');
+  expect(ask).toContain('isLanded("atomik")');
   expect(ask).toContain('shell.openAtomik("panel", text)');
-  /* The old path stays for the switch off. */
+  /* The old path stays for a panel that has not landed. */
   expect(ask).toContain('shell.goSuite("atomik", "agent")');
   expect(ask.indexOf("shell.openAtomik")).toBeLessThan(ask.indexOf("prefillAgentRequest"));
   expect(shell).toContain("<Palette items={items} onAsk={ask} project={project} />");
@@ -31,7 +31,7 @@ test("seam a: the board's source takes Atomik's run from stream 7's seam, with n
   const board = read("components/graphite/board/BoardView.tsx");
   expect(board).toContain("const agent = useBoardAgent().run;");
   expect(board).not.toContain("usePlanRun");
-  expect(board).toMatch(/masters: rig\.masters, extra, agent, now/);
+  expect(board).toMatch(/masters: rig\.masters, extra, agent, sample, now/);
   /* The poll stays for the phone's Plan screen, which has no board, and AGENT_CHANGED stays the plan card's event. */
   expect(read("components/graphite/phone/PlanScreen.tsx")).toContain("usePlanRun");
   expect(read("components/graphite/board/cards/plan/use-plan.ts")).toContain("AGENT_CHANGED");

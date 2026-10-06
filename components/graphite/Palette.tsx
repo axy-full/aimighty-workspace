@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MODELS, displayModelName, isOffered } from "@/lib/models";
 import { Glyph } from "./icons";
 import { newPaletteIndex, searchNewPalette, type PaletteRow, type PaletteRun } from "@/lib/shell/palette";
 import { useShell } from "@/lib/shell/state";
@@ -17,7 +16,7 @@ import "./palette.css";
 
 /**
  * ⌘K (README § 3.4): search and Atomik in one box — Home, the board's places, Make, Atomik and its control room, Settings,
- * models and assets, and under them Atomik's card for what was typed ("go to …", "make …", "approve everything under N cr",
+ * and assets (the design lists no engines), and under them Atomik's card for what was typed ("go to …", "make …", "approve everything under N cr",
  * a question, a request). Enter runs the top hit; Esc closes.
  */
 export function Palette(props: { items: LibraryEntry[]; onAsk: (text: string) => void; project?: Project | null }) {
@@ -45,7 +44,7 @@ function AtomikPalette({ items, project }: { items: LibraryEntry[]; project: Pro
   const intent = useMemo(() => atomikIntent(query), [query]);
   const index = useMemo(() => newPaletteIndex({
     rail: STUDIO_RAIL,
-    models: MODELS.filter((m) => isOffered(m) && !m.hidden).map((m) => ({ id: m.id, name: displayModelName(m.id), kind: m.kind === "video" ? "Video" : "Image" })),
+    models: [],
     assets: items.map((i) => ({ id: i.take.id, name: i.take.name, kind: i.media ?? "file" })),
   }), [items]);
   const goTo = intent.kind === "go" ? matchPlace(intent.place, STUDIO_RAIL) : null;
@@ -62,12 +61,6 @@ function AtomikPalette({ items, project }: { items: LibraryEntry[]; project: Pro
       case "control": places.control(r.page); return;
       case "settings": places.settings(r.section); return;
       case "gen": shell.openMake(r.tool); return;
-      case "model": {
-        const model = MODELS.find((m) => m.id === r.id && isOffered(m));
-        if (model) shell.openMake({ prompt: "", model: model.id, type: model.kind, billing: "workspace" });
-        else shell.openMake();
-        return;
-      }
       case "asset": dispatch({ type: "patch", patch: { selKind: "take", selId: r.id } }); shell.openInspector(); return;
       default: return;
     }

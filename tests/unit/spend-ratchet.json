@@ -48,7 +48,7 @@
     "components/astra-blender/AstraAgentPanel.tsx": {
       "count": 1,
       "until": "2026-10-08",
-      "by": "goes with the file; UNOWNED (§9): Astra Blender workspace (3D)"
+      "by": "goes with the file; UNOWNED (\u00a79): Astra Blender workspace (3D)"
     },
     "components/astra-blender/AstraRenderPanel.tsx": {
       "count": 1,
@@ -262,17 +262,7 @@
     }
   },
   "strict": {
-    "components/graphite/DraftFinal.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #512/#514 (Make: every paid button shows its price)"
-    },
     "components/graphite/GenView.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #512/#514 (Make: every paid button shows its price)"
-    },
-    "components/graphite/ReleaseTake.tsx": {
       "count": 1,
       "until": "2026-10-08",
       "by": "D0 #512/#514 (Make: every paid button shows its price)"

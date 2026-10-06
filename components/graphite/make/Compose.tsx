@@ -137,7 +137,7 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
       ) : null}
       <div className="gx-mk-go">
         <span className="gx-mk-dest" data-testid="make-dest">{make.dest}</span>
-        <button type="button" className="gx-primary gx-mk-go-btn" aria-disabled={waits || undefined} data-waits={waits ? "" : undefined}
+        <button type="button" className="gx-primary gx-mk-go-btn" aria-disabled={waits || undefined} data-waits={waits ? "" : undefined} data-spend={make.go.price ? "priced" : "unpriced"}
           aria-describedby={reason ? "gx-mk-reason" : undefined} title={(waits ? make.go.blocked : goTitle) ?? undefined} onClick={press} data-testid="gen-generate">
           <span>{make.go.action}</span>
           {make.go.price ? <><span className="gx-mk-go-sep"> · </span><MakePriceText price={make.go.price} /></> : null}

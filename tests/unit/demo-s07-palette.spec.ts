@@ -24,12 +24,11 @@ test("the empty palette lists Home, the board's places, Make and Atomik first, a
   expect(first[0].hint).toBe("What needs you");
 });
 
-test("the index reaches the control room, Settings' five sections, models and assets", () => {
+test("the index reaches the control room, Settings' five sections and assets", () => {
   const labels = (q: string) => searchNewPalette(index, q).map((r) => r.run);
   expect(labels("activity")[0]).toEqual({ type: "control", page: "runs" });
   expect(labels("spending rules")[0]).toEqual({ type: "settings", section: "rules" });
   expect(labels("plan & credits")[0]).toEqual({ type: "settings", section: "credits" });
-  expect(labels("engine one")[0]).toEqual({ type: "model", id: "m1" });
   expect(labels("mirrored")[0]).toEqual({ type: "asset", id: "a1" });
   expect(labels("motion transfer")[0]).toEqual({ type: "gen", tool: "motion" });
 });

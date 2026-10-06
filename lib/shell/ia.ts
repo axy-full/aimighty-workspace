@@ -69,7 +69,7 @@ function build(id: ShellSuiteId, label: string, mark: string, name: string, lega
 function studioSuite(): ShellSuite {
   const legacy = { suite: "particl" as Suite, page: "brief" as PageId };
   return {
-    id: "studio", label: "Studio", mark: "STUDIO", name: "Particl Production Studio", legacy: "particl",
+    id: "studio", label: "Studio", mark: "STUDIO", name: "Studio", legacy: "particl",
     pages: [
       { id: "stages", n: "", label: "Studio", title: "Studio", hint: "Every stage, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },
       { id: "home", n: "", label: "Home", title: "Where to?", hint: "Every suite, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },

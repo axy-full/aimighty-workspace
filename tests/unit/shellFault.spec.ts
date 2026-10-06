@@ -233,9 +233,9 @@ test.describe("the shell's walls, in source", () => {
   });
 
   test("Make walls off its results and each take", () => {
-    const gen = read("components/graphite/MakePanel.tsx");
-    expect(gen).toMatch(/<Boundary what="Results" probe="gen-results"/);
-    expect(gen).toMatch(/<Boundary what="This take" probe=\{`take:\$\{entry\.take\.id\}`\}.*<TileFault/);
+    const recent = read("components/graphite/make/Recent.tsx");
+    expect(recent).toMatch(/<Boundary what="Recent" probe="make-recent"/);
+    expect(recent).toMatch(/<Boundary what="This take" probe=\{`take:\$\{entry\.take\.id\}`\}.*<TileFault/);
   });
 
   test("the Suites segment has its own error page; it keeps the header and retries with retry()", () => {
