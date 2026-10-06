@@ -1010,7 +1010,8 @@ async function routeFixture() {
         return input.id === held;
       },
     },
-    "@/lib/higgsfield-consumer/retired": await import("../../lib/higgsfield-consumer/retired"),
+    /* The connection route's handlers kept behind signInOff, as they ran before Release 1 (the switch itself: tests/unit/signinRetiredGuard.spec.ts). */
+    "@/lib/higgsfield-consumer/retired": { ...(await import("../../lib/higgsfield-consumer/retired")), signInOff: (kept: unknown) => kept },
     "@/lib/higgsfield-consumer/oauth": {
       ...(await modules()).oauth,
       beginConsumerAuthorization: async () => {

@@ -16,8 +16,8 @@ import { PLANS } from "../../lib/workspace/plans";
  * presets, voices or diagnostics answers 410 before any rate allowance or
  * service is touched. For Release 1 the reads R1 kept for jobs already running
  * (status reads, saved-job lists, a lost batch's check) and the credit history
- * answer 410 too (signInOff); only the connection route (its read, Set aside
- * and Disconnect) reaches its code, until the owner has disconnected.
+ * answer 410 too (signInOff), and so does the connection route (its read, Set
+ * aside and Disconnect): no request reads, refreshes or revokes a stored grant.
  *
  * Each route runs for real — the tenant wrapper, the owner and render
  * guards, the body reader, the route's own schemas — and every function any
@@ -236,22 +236,22 @@ test("Release 1: status, a lost batch's check, the saved lists and the credit hi
   }
 });
 
-test("until the owner has disconnected, the connection route still reaches its code: its read, Set aside and Disconnect", async () => {
+test("the connection route is off too: its read, Set aside and Disconnect answer 410 and touch no grant", async () => {
   const route = MIXED.connection;
   const loaded = await loadRoute(route.file);
   for (const [action, body] of Object.entries(route.stays)) {
-    const before = loaded.touched.length;
-    const { response } = await loaded.call("POST", body);
-    expect(response.status, action).not.toBe(410);
-    expect(loaded.touched.length, `${action} reaches its service`).toBeGreaterThan(before);
+    const { response, network } = await loaded.call("POST", body);
+    await expectRetired(response);
+    expect(network, action).toBe(0);
   }
-  const read = await loadRoute(route.file);
-  expect((await read.handlers.GET(new Request(`https://particl.example/${route.file}`, { headers: { "X-Workbench-Scope": scope } }))).status).not.toBe(410);
-  expect(read.touched.length).toBeGreaterThan(0);
-  const connection = await loadRoute(route.file);
-  const disconnect = await connection.handlers.DELETE(new Request(`https://particl.example/${route.file}`, { method: "DELETE", headers: { "X-Workbench-Scope": scope } }));
-  expect(disconnect.status).not.toBe(410);
-  expect(connection.touched).toEqual(["@/lib/higgsfield-consumer/oauth#removeConsumerConnection"]);
+  for (const method of ["GET", "DELETE"]) {
+    const response = await loaded.handlers[method](new Request(`https://particl.example/${route.file}`, { method, headers: { "X-Workbench-Scope": scope } }));
+    await expectRetired(response);
+  }
+  expect(loaded.touched).toEqual([]);
+  expect(loaded.limits).toEqual([]);
+  const source = readFileSync(route.file, "utf8");
+  for (const method of ["GET", "POST", "DELETE"]) expect(source).toContain(`export const ${method} = signInOff(kept${method});`);
 });
 
 test("each mixed route retires exactly its new-work actions, and checks before its allowance, render gate or service", () => {

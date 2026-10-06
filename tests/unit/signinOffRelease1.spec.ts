@@ -72,7 +72,7 @@ test("no mounted surface offers a sign-in feature or reads the connected account
   /* The sign-in surfaces stay in their files, unmounted: nothing else imports or renders them. */
   const surfaces = [
     "HiggsfieldConsumerConnection", "ConsumerVideoVerification", "ConsumerCreditActivity", "DeveloperApiRow", "WorkflowHost", "WorkflowHosts",
-    "AtomikVoiceTools", "ConsumerMarketingVideo", "MarketingTemplates", "ConsumerShorts", "ShortsPage", "FormPage", "OwnerRunCard", "ResumedJobs",
+    "ConnectedAccountRow", "AtomikVoiceTools", "ConsumerMarketingVideo", "MarketingTemplates", "ConsumerShorts", "ShortsPage", "FormPage", "OwnerRunCard", "ResumedJobs",
   ];
   const own = (file: string) => surfaces.some((surface) => file.endsWith(`/${surface}.tsx`)) || file.startsWith("lib/higgsfield-consumer/") || file.startsWith("app/api/higgsfield/consumer/");
   const all = ["app", "components", "lib"].flatMap(files);
@@ -81,6 +81,9 @@ test("no mounted surface offers a sign-in feature or reads the connected account
     const source = readFileSync(file, "utf8");
     for (const surface of surfaces) expect(source, `${file} renders ${surface}`).not.toMatch(new RegExp(`<${surface}[\\s/>]`));
   }
+  /* Settings › Connections and Workspace › Engines have no connected-account row. */
+  for (const file of ["components/graphite/settings/connections/ConnectionsSection.tsx", "components/graphite/WorkspaceView.tsx"])
+    expect(readFileSync(file, "utf8"), file).not.toContain("ConnectedAccountRow");
   /* The /usage page has no connected-account tab. */
   const usage = readFileSync("app/(app)/usage/page.tsx", "utf8");
   expect(usage).not.toContain("ConsumerCreditActivity");
