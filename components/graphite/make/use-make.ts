@@ -329,7 +329,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     : orphan ? `The words cite ${orphan.tag}, which is gone. Add a reference or change the words.`
     : null;
   const waiting = composer.blocked === EMPTY_PROMPT ? "Say what to make." : composer.blocked;
-  const blocked = submitting ? waiting : recipeWait ?? waiting;
+  const blockedBase = submitting ? waiting : recipeWait ?? waiting;
   /* Auto (Advanced): with an enhancement on the card, it is what goes. */
   const pending = useRef(false);
   useEffect(() => {
@@ -337,6 +337,12 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     pending.current = false;
     if (!recipeWait) composer.generate();
   }, [state.prompt, composer, recipeWait]);
+  /* Auto, "enhance first": with it on and no enhancement on the card yet, the press enhances the words (the enhancer's own priced
+     route, at the figure it quoted) and then sends the take. The button's figure is the take plus the enhancement, so the person
+     approves both at once; a raw: line is never enhanced, and a Cinema Studio take, quoted as "about", does not take Auto. */
+  const autoNeeds = enhancer.auto && !enhancer.enhanced && Boolean(state.prompt.trim()) && !isRawPrompt(state.prompt) && !composer.quote?.approximate;
+  const enhanceCredits = autoNeeds ? enhancer.credits : null;
+  const blocked = blockedBase ?? (autoNeeds && enhanceCredits == null ? enhancer.blocked ?? "Pricing the enhancement…" : null);
   const make = useCallback(() => {
     if (recipeWait) return;
     if (model && !composer.blocked) used(model.id);
@@ -346,8 +352,18 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
       enhancer.dismiss();
       return;
     }
+    if (autoNeeds) {
+      if (enhancer.credits == null || composer.blocked) return;
+      void enhancer.run().then((words) => {
+        if (!words) return;
+        pending.current = true;
+        dispatch({ type: "prompt", value: words });
+        enhancer.dismiss();
+      });
+      return;
+    }
     composer.generate();
-  }, [recipeWait, model, composer, used, enhancer, state.prompt, dispatch]);
+  }, [recipeWait, model, composer, used, enhancer, state.prompt, dispatch, autoNeeds]);
 
   /* ── What the line and the button say ───────────────────────────────── */
   const count = settings.draft ? 1 : Math.max(1, state.count);
@@ -362,10 +378,12 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     : state.type === "image" ? [model?.label, settings.resolution]
     : [model?.label, settings.resolution, model?.durations?.length ? `${settings.duration} s` : null]).filter((part): part is string => Boolean(part));
   const linePrice: MakePrice | null = takeCredits == null ? null : approximate ? { value: null, about: aboutOneTake() } : { value: exact(takeCredits), about: null };
-  const goPrice: MakePrice | null = total == null ? null : approximate ? { value: null, about: composer.buttonParts.price } : { value: exact(total), about: null };
+  /* Auto's enhancement is in the figure: the button reads take + enhancement, and waits (unpriced) while the enhancement is still being priced. */
+  const goPrice: MakePrice | null = total == null || (autoNeeds && enhanceCredits == null) ? null
+    : approximate ? { value: null, about: composer.buttonParts.price } : { value: exact(total + (enhanceCredits ?? 0)), about: null };
   const balanceNow = balance !== undefined ? balance : session.credits?.balance ?? null;
   /* Make stays pressable when the balance is short (the take waits, held, until credits arrive): the line only says so. */
-  const short = !approximate && total != null && !submitting ? shortByWords(balanceNow, exact(total)) : null;
+  const short = !approximate && total != null && !submitting ? shortByWords(balanceNow, exact(total + (enhanceCredits ?? 0))) : null;
 
   return {
     composer, state, model, settings, offered, tool, recent, submitting,
@@ -376,7 +394,9 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     readingModels: composer.blocked === READING_MODELS,
     line, linePrice, go: { action: composer.buttonParts.action, price: goPrice, blocked, press: make }, short,
     dest: makeDest(composer.project?.name, onBoard),
-    notices: [state.notice, composer.projectNotice, presetNote].filter((n): n is string => Boolean(n)),
+    /* A press that did not go through has its own Result block (Compose); its reason is not repeated as a note. */
+    result: composer.failed && state.notice ? state.notice : null,
+    notices: [composer.failed ? null : state.notice, composer.projectNotice, presetNote].filter((n): n is string => Boolean(n)),
     recipe: recipe && !recipe.hidden ? {
       name: recipe.preset.from?.name ?? null, settingsOnly: Boolean(recipe.preset.settingsOnly), reading: recipe.refs.reading,
       chips: recipeChips({
@@ -387,7 +407,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
       missing: recipe.refs.missing, total: recipe.refs.total,
       undo: undoRecipe, hide: hideRecipe,
     } : null,
-    enhancer, soundTask,
+    enhancer, soundTask, enhanceCredits, autoNeeds, balance: balanceNow,
   };
 }
 

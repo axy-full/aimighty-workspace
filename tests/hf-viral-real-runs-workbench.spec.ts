@@ -26,7 +26,7 @@ const SHOTS = process.env.VIRAL_SHOTS;
 const fixture = (): Project => ({ ...newProject("Harbour dusk study"), id: "ws-runs", productionProjectId: "prod-ws", shotMappings: {} });
 const MOTION = "higgsfield-genjutsu-motion-transfer", SWAP = "higgsfield-genjutsu-object-swap";
 const MIN = 60_000;
-const uploads = [upload({ id: "up_src", filename: "walk.mp4", mime: "video/mp4", kind: "video", durationS: 12 }), upload({ id: "up_ref", filename: "wren.png", mime: "image/png" }),
+const uploads = [upload({ id: "up_src", filename: "walk.mp4", mime: "video/mp4", kind: "video", durationS: 6 }), upload({ id: "up_ref", filename: "wren.png", mime: "image/png" }),
   ...Array.from({ length: 12 }, (_, i) => upload({ id: `up_r${i}`, filename: `still-${i}.png`, mime: "image/png" }))];
 const keyParams = (resolution = "720p", extra: Record<string, unknown> = {}) => ({
   resolution, rawPrompt: "", sourceUploadId: "up_src", workbenchProjectId: "ws-runs",

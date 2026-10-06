@@ -162,7 +162,7 @@ test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's 
   await page.goto(`/suites?suite=subatomik&page=motion&sp=motion&project=${film.id}`);
   await expect(page.getByTestId("viral-view")).toBeVisible();
   await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
-  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
+  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–8 s).");
   await expect(page.getByTestId("viral-generate")).toBeVisible();
   await expect(page.getByTestId("spec-plan-owner")).toHaveCount(0);
   await noSideScroll(page);
@@ -208,7 +208,7 @@ test("an old sp=ads link shows image-ads-view for a member too, Setup names no o
   await page.goto(`/suites?suite=subatomik&page=motion&sp=motion&project=${film.id}`);
   await expect(page.getByTestId("viral-view")).toBeVisible();
   await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
-  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
+  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–8 s).");
   await expect(page.getByTestId("viral-generate")).toBeVisible();
   await noBadges(page);
   await noSideScroll(page);
