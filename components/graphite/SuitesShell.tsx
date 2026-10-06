@@ -164,7 +164,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const rigProject = useRef(rigProjectId);
   useEffect(() => { rigProject.current = rigProjectId; }, [rigProjectId]);
   const sinkRigUndo = (entry: RigUndo) =>
-    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Board is still opening this project."));
+    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Board is still opening this project."), entry.say);
   /* The Inspector's buttons and the Rig's drop use the same path. */
   useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink(sinkRigUndo); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
 
