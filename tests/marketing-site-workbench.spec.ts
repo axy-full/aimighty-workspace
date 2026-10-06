@@ -105,7 +105,7 @@ test("the hero keeps a visitor's prompt and opens it in Gen, which prices the ta
   await go.click();
   const signIn = page.locator(".mk-take").getByRole("link", { name: "Sign in" });
   await expect(signIn).toHaveAttribute("href", "/login?next=%2Fsuites%3Fmake%3Dvideo");
-  await expect(page.locator(".mk-take-meta")).toHaveText("Sign in and it opens in Gen.");
+  await expect(page.locator(".mk-take-meta")).toHaveText("Sign in and it opens in Make.");
 
   await signInLocally(page.request);
   await page.goto("/suites?make=video");
