@@ -328,7 +328,15 @@ export async function advancePaidSteps(runId: string, ctx: PaidContext, deps: Pa
       return (await needsYou(run, `${forAdmin.map((s) => stepTitle(run, s)).join(", ")} ${forAdmin.length === 1 ? "waits" : "wait"} for an admin. The rest of the plan is done.`) as { kind: "stop"; tick: PaidTick }).tick;
     }
     if (!step) {
-      const finished = await patchRun(db(), run.id, { state: "done", reason: null, finished_at: now(), wake_at: null }, ["running"]);
+      /* Done only if no render was added meanwhile (a Fix or a Retry pressed while this tick read the steps; review N2). */
+      const at = now();
+      /* (A run asked before limits never pays, so its renders stay as next steps: it simply ends.) */
+      const open = run.capCredits == null ? "" : ` AND NOT EXISTS (SELECT 1 FROM rig_agent_steps WHERE run_id=? AND purpose='take' AND state IN ('next','waiting','approved','sending','rendering'))`;
+      const finished = (await db().execute({
+        sql: `UPDATE rig_agent_runs SET state='done',reason=NULL,finished_at=?,wake_at=NULL,updated_at=? WHERE id=? AND state='running'${open}`,
+        args: run.capCredits == null ? [at, at, run.id] : [at, at, run.id, run.id],
+      })).rowsAffected > 0;
+      if (!finished && (await getRun(db(), run.id))?.state === "running") continue;
       return { state: finished ? "done" : (await getRun(db(), run.id))?.state ?? null, more: false };
     }
     const moved = await advanceStep(run, step, ctx, deps);
@@ -387,8 +395,11 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
   }
   let step = waiting;
   if (fresh.admission.quote.fingerprint !== waiting.admission.quote.fingerprint) {
-    if (!(await patchStep(db(), waiting.id, { admission: fresh.admission, quote_credits: fresh.quote, band: fresh.band, approval_id: null }, ["waiting"]))) return CONTINUE;
-    step = { ...waiting, admission: fresh.admission, quoteCredits: fresh.quote, band: fresh.band, approvalId: null };
+    /* No earlier approval survives a moved price: neither the plan's nor a tap's (review N1). */
+    if (!(await patchStep(db(), waiting.id, {
+      admission: fresh.admission, quote_credits: fresh.quote, band: fresh.band, approval_id: null, approved_fingerprint: null, approved_by: null, approved_at: null,
+    }, ["waiting"]))) return CONTINUE;
+    step = { ...waiting, admission: fresh.admission, quoteCredits: fresh.quote, band: fresh.band, approvalId: null, approvedFingerprint: null, approvedBy: null, approvedAt: null };
   }
   const admission = fresh.admission;
   const quoteCredits = fresh.quote;
@@ -511,7 +522,11 @@ async function recordReply(run: RunRow, step: StepRow, reply: AdmissionReply): P
   if (body.pending === true || reply.status >= 500) return wakeIn(run, PENDING_CHECK_MS, { state: "running", more: false });
   /* The shot or its price moved since it was priced: priced again, and approved again. */
   if (body.quoteChanged === true) {
-    await patchStep(db(), step.id, { state: "next", admission: null, quote_credits: null, approval_id: null, reason: "This shot changed since it was priced, so it is priced again." }, ["sending"]);
+    /* Priced again, and approved again: the earlier approval goes, so an expired plan approval is never read as a tap (review N1). */
+    await patchStep(db(), step.id, {
+      state: "next", admission: null, quote_credits: null, approval_id: null, approved_fingerprint: null, approved_by: null, approved_at: null,
+      reason: "This shot changed since it was priced, so it is priced again.",
+    }, ["sending"]);
     return CONTINUE;
   }
   if (body.runHold === "slots") {

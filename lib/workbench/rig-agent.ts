@@ -651,8 +651,17 @@ export async function fixRigAgentShot(input: { productionId: string; runId: stri
     if (!room.listed) throw new RigAgentError("That shot is not in the approved plan.", 409);
     const steps = await stepsOf(tx, found.id);
     const ofShot = steps.filter((s) => s.purpose === "take" && (s.seq === shotSeq || s.fixOf === shotSeq));
-    /* A fix of this shot still on its way: the same answer (a lost reply, a second press). */
-    if (ofShot.some((s) => s.fixOf === shotSeq && !["done", "failed", "skipped"].includes(s.state))) return false;
+    /* A fix of this shot still on its way: the same answer (a lost reply, a second press). If a worker tick finished the
+       run just as it was added, the run goes back to work so the fix is never stranded on its fix count (review N2). */
+    if (ofShot.some((s) => s.fixOf === shotSeq && !["done", "failed", "skipped"].includes(s.state))) {
+      const current = (await getRun(tx, found.id))!;
+      if (current.state !== "done") return false;
+      try {
+        return await patchRun(tx, current.id, { state: "running", reason: null, wake_at: now(), finished_at: null }, ["done"]);
+      } catch {
+        throw new RigAgentError("Another build is under way on this production. Stop it, or wait for it to finish.", 409);
+      }
+    }
     if (!room.left) throw new RigAgentError(THIRD_FIX, 409);
     const latest = ofShot.at(-1)!;
     if (latest.state !== "done" && latest.state !== "failed") throw new RigAgentError("A shot is fixed once its take is back.", 409);

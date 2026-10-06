@@ -630,6 +630,62 @@ test("a step that needs an admin asks on its own and holds up nothing (owner dec
   }
 });
 
+test("a render the plan approved that came back through a moved price is held to the approval (review N1): after expiry, a limit raise does not send it", async () => {
+  await inRun("n1", async (ws) => {
+    const { agent, r, runId, run } = await atGate(ws, () => 0.3);
+    /* The price moves between the gate's pricing and the send: admission's checkpoint catches it. */
+    let flip = false;
+    const deps = await depsFor(ws, r, {
+      prepare: async (body: Record<string, unknown>, actor: AdmissionActor) => { const res = await r.prepare(body, actor); if (flip) { flip = false; r.priceNow.set("1", 0.2); } return res; },
+    });
+    await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
+    flip = true;
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+    expect(await renderRows()).toEqual([]);
+    const { db } = await import("../../lib/db");
+    const s1 = takeSteps(run)[0].seq;
+    /* Neither the plan's approval nor any tap survives the moved price. */
+    expect((await db().execute({ sql: "SELECT approved_fingerprint,approved_by,approved_at,approval_id FROM rig_agent_steps WHERE run_id=? AND seq=?", args: [runId, s1] })).rows[0])
+      .toMatchObject({ approved_fingerprint: null, approved_by: null, approved_at: null, approval_id: null });
+    /* The price goes back to what was approved, and the approval expires; a limit raise is not a tap. */
+    r.priceNow.delete("1");
+    await db().execute({ sql: "UPDATE rig_plan_approvals SET expires_at=1 WHERE run_id=?", args: [runId] });
+    await agent.raiseRigAgentLimit({ productionId: "prod-1", runId, limit: (await view()).money!.limit + 1, userId: OWNER });
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+    expect(await renderRows()).toEqual([]);
+    expect((await view()).reason).toContain("expired");
+  });
+});
+
+test("a fix is never stranded when a worker tick finishes the run as it is pressed (review N2): pressing again puts the run back to work, and the fix goes", async () => {
+  await inRun("n2", async (ws) => {
+    const { agent, r, deps, runId, run } = await atGate(ws, () => 0.3);
+    await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
+    await agent.advanceRigAgentRun(runId, deps);
+    await settleTake((await renderRows())[0].id, "succeeded", 0.3);
+    await agent.advanceRigAgentRun(runId, deps);
+    await settleTake((await renderRows())[1].id, "succeeded", 0.3);
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "done", more: false });
+    const first = takeSteps(run)[0];
+    await agent.fixRigAgentShot({ productionId: "prod-1", runId, seq: first.seq, userId: OWNER });
+    /* A worker tick that read the steps before the fix committed then finishes the run. */
+    const { db } = await import("../../lib/db");
+    await db().execute({ sql: "UPDATE rig_agent_runs SET state='done',wake_at=NULL WHERE id=? AND state='running'", args: [runId] });
+    /* Pressing Fix again: the same fix (no second one drawn), and the run is back at work. */
+    expect((await agent.fixRigAgentShot({ productionId: "prod-1", runId, seq: first.seq, userId: OWNER })).state).toBe("running");
+    expect((await view()).plan!.approval!.fixes).toEqual({ [String(first.seq)]: 1 });
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(3);
+    /* And a tick never writes done over a render added after it read the steps. */
+    await settleTake((await renderRows())[2].id, "succeeded", 0.3);
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "done", more: false });
+    await agent.fixRigAgentShot({ productionId: "prod-1", runId, seq: first.seq, userId: OWNER });
+    await db().execute({ sql: "UPDATE rig_agent_runs SET state='running' WHERE id=?", args: [runId] });
+    expect(await agent.advanceRigAgentRun(runId, deps)).not.toEqual({ state: "done", more: false });
+    expect(r.calls).toHaveLength(4);
+  });
+});
+
 test("a moved price asks again: the render is priced afresh and waits for a tap at its new price, never adopted under the plan", async () => {
   await inRun("moved", async (ws) => {
     const { agent, r, deps, runId, run } = await atGate(ws, () => 0.3);
