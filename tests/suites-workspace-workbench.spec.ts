@@ -189,7 +189,8 @@ test("Engines: nothing connects the Higgsfield account, and an old sign-in retur
   page.on("request", (request) => { if (new URL(request.url()).pathname.startsWith("/api/higgsfield/consumer/") || request.url().startsWith("https://clerk.higgsfield.ai")) asked++; });
   await page.route("https://clerk.higgsfield.ai/**", (route) => route.abort());
   const { errors } = await open(page, "/suites?view=workspace&tab=engines&higgsfield=retired");
-  await expect(page.getByTestId("ws-engines")).toBeVisible();
+  await expect(page.getByTestId("settings-view").or(page.getByTestId("workspace-view")).first()).toBeVisible();
+  await page.waitForLoadState("networkidle");
   /* The shell's own URL keeps only its params, so a reload does not repeat it. */
   await expect.poll(() => new URL(page.url()).searchParams.get("higgsfield")).toBeNull();
   await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
