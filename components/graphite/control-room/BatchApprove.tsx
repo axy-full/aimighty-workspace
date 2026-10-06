@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { BATCH_UNDER_DEFAULT, cleanUnder, selectBatch, type QueueItem } from "@/lib/control-room/queue";
 import { exact } from "@/lib/shell/price-words";
+import { spendAttrsOf } from "@/lib/spend";
 import type { BatchResult } from "@/lib/control-room/approve";
 import { Price, usePriceTitle } from "../Price";
 
@@ -56,7 +57,8 @@ export function BatchApprove({ items, run }: {
       {batch.inPlan.length ? (
         <p className="cr-text" data-testid="batch-in-plan">Approved in their plans, left out: {batch.inPlan.map((item) => item.title).join(" · ")}</p>
       ) : null}
-      <button type="button" className="cr-primary" disabled={!batch.items.length || busy !== null} title={dollars} onClick={() => void confirm()} data-testid="batch-confirm">
+      <button type="button" className="cr-primary" disabled={!batch.items.length || busy !== null} aria-busy={busy !== null || undefined} title={dollars} onClick={() => void confirm()} data-testid="batch-confirm"
+        {...(batch.items.length ? spendAttrsOf(batch.total) : {})}>
         {busy ? `Approving ${Math.min(busy.done + 1, busy.of)} of ${busy.of}…`
           : batch.items.length ? <>Confirm · approve {batch.items.length} {batch.items.length === 1 ? "item" : "items"} · <Price value={batch.total} /></>
           : "Nothing to approve"}

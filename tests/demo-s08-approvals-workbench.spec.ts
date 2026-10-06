@@ -97,6 +97,9 @@ test("a held take in this workspace is approved through its own route at the pri
   const row = page.locator(`[data-item="held:${id}"]`);
   await expect(row).toBeVisible();
   await expect(row.getByTestId("approval-approve")).toHaveText(new RegExp(`^Approve · ${credits.toLocaleString("en-US")} cr$`));
+  /* The button that spends carries the marker and the very price it shows (docs/ui-checks.md). */
+  await expect(row.getByTestId("approval-approve")).toHaveAttribute("data-spend", "priced");
+  await expect(row.getByTestId("approval-approve")).toHaveAttribute("data-spend-price", /^(up to )?[\\d.,]+ cr$/);
   await expect(row).toContainText("It starts when credits arrive; nothing is spent until then");
   await floors(page, info.project.use.isMobile === true);
   await shoot(page, info.project.name, "approvals-real");
@@ -194,6 +197,7 @@ test("every kind of wait reads as the code has it; one tap approves only the lis
   await expect(batch.getByTestId("batch-line")).toHaveText("Keyframe retake (3 cr) · Dialogue line (up to 1 cr)");
   await expect(batch.getByTestId("batch-in-plan")).toContainText("Plan three takes");
   await expect(batch.getByTestId("batch-confirm")).toHaveText("Confirm · approve 2 items · up to 4 cr");
+  await expect(batch.getByTestId("batch-confirm")).toHaveAttribute("data-spend-price", "up to 4 cr");
   await batch.getByTestId("batch-confirm").click();
   await expect(batch.getByTestId("batch-result")).toHaveText("Approved 1 of 2. Stopped at Dialogue line: This render's price changed. Look at it again before approving it.");
   expect(sent).toEqual([

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type MutableRefObject } from "react";
 import { useApprovals } from "@/lib/control-room/use-approvals";
 import { selectBatch, type QueueItem } from "@/lib/control-room/queue";
 import { priceWords } from "@/lib/shell/price-words";
+import { spendAttrsOf } from "@/lib/spend";
 import { useWorkspace } from "@/lib/workspace/state";
 import { Price, usePriceTitle } from "../../Price";
 
@@ -67,7 +68,7 @@ export function PaletteApproveCard({ under, onDone, enterRef }: { under: number;
       <div className="ak-pcard-foot">
         <span className="ak-pcard-note">Only you approve spend. Enter shows this list; the button approves.</span>
         {batch.items.length && totalWords ? (
-          <button type="button" className="ak-btn ak-btn-primary" disabled={busy} title={title ?? undefined} onClick={() => void confirm()} data-testid="palette-approve-confirm">
+          <button type="button" className="ak-btn ak-btn-primary" disabled={busy} aria-busy={busy || undefined} title={title ?? undefined} onClick={() => void confirm()} data-testid="palette-approve-confirm" {...spendAttrsOf(batch.total)}>
             {busy ? "Approving…" : `Approve ${batch.items.length} ${batch.items.length === 1 ? "item" : "items"} · ${totalWords}`}
           </button>
         ) : null}

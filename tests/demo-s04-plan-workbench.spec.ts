@@ -86,6 +86,8 @@ test("the plan sits in the Storyboard group's open slot; Hold calls nothing; App
   expect(group && at && at.x >= group.x && at.y >= group.y && at.x + at.width <= group.x + group.width && at.y + at.height <= group.y + group.height).toBe(true);
   /* The button carries no figure the code does not spend: Approve builds (free); each render asks at its price. */
   await expect(plan.getByTestId("board-plan-primary")).toHaveText("Approve");
+  /* Approving builds free and each render asks at its own price (decision 27): Approve carries no spend marker. */
+  await expect(plan.getByTestId("board-plan-primary")).not.toHaveAttribute("data-spend", /.*/);
   await expect(plan.getByTestId("board-plan-hold")).toBeVisible();
   await expect(plan.getByTestId("board-plan-change")).toBeVisible();
   await expect(plan).toContainText("Each shot asks at its price before it renders.");
@@ -128,6 +130,7 @@ test("the plan sits in the Storyboard group's open slot; Hold calls nothing; App
   await expect.poll(async () => (await agent()).agent.run?.state, { timeout: 45_000 }).toBe("needs_you");
   await expect(plan).toContainText("Making 2 shots", { timeout: 20_000 });
   await expect(plan.getByTestId("board-plan-primary")).toHaveText(/^Render · (up to )?[\d.,]+ cr$/);
+  await expect(plan.getByTestId("board-plan-primary")).toHaveAttribute("data-spend", "priced");
   await expect(plan.getByTestId("board-plan-step").first()).toContainText("Ready");
   await expect(plan.getByTestId("board-plan-step").nth(1)).toContainText("Up next");
   await expect(plan.getByTestId("board-plan-hold")).toHaveCount(0);

@@ -103,7 +103,7 @@ export function MakeScreen({ scope, project, items, workspaceName, balance, proj
           </div>
         ) : null}
         <button type="button" className="ph-btn ph-btn--primary" aria-disabled={waits || undefined} title={(waits ? reason : goTitle) ?? undefined}
-          data-waits={waits ? "" : undefined} onClick={press} data-testid="phone-make-go">
+          data-waits={waits ? "" : undefined} data-spend={online && make.go.price ? "priced" : "unpriced"} onClick={press} data-testid="phone-make-go">
           {!online ? NEEDS_CONNECTION : <>
             <span>{make.go.action}</span>
             {make.go.price ? <><span> · </span><MakePriceText price={make.go.price} /></> : null}

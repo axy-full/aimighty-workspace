@@ -18,8 +18,16 @@ const TYPE_WORD = { video: "Video", image: "Image", audio: "Audio" } as const;
  * Advanced, folded: every setting the handoff does not draw (README § 0 rule 2: advanced settings sit folded).
  */
 export function EngineList({ make, id, scope }: { make: MakeModel; id: string; scope: string }) {
-  const { state, model, settings, composer } = make;
+  const { state, model, settings, composer, enhancer } = make;
   const [advanced, setAdvanced] = useState(false);
+  /* What a closed Advanced is holding that differs from the plain default, said on its line, so nothing that changes what is made hides. */
+  const advancedNotes = [
+    !settings.draft && state.count > 1 ? `${state.count} takes` : null,
+    settings.draft ? "Draft" : null,
+    settings.generateAudio ? "With sound" : null,
+    enhancer.auto ? "Auto enhance" : null,
+    make.soundTask === "music" && state.instrumental ? "Instrumental" : null,
+  ].filter(Boolean) as string[];
   const lengths = model?.durations ?? [];
   const chips = lengths.length ? [...new Set([...DRAWN_LENGTHS.filter((d) => lengths.includes(d)), settings.duration])].sort((a, b) => a - b) : [];
   return (
@@ -75,7 +83,7 @@ export function EngineList({ make, id, scope }: { make: MakeModel; id: string; s
         </div>
       ) : null}
       <button type="button" className="gx-mk-fold" aria-expanded={advanced} aria-controls={`${id}-advanced`} onClick={() => setAdvanced(!advanced)} data-testid="make-advanced-toggle">
-        <span>Advanced</span><span className="gx-mk-fold-mark" aria-hidden="true">{advanced ? "–" : "+"}</span>
+        <span>Advanced</span>{!advanced && advancedNotes.length ? <span className="gx-mk-fold-notes" data-testid="make-advanced-notes">{advancedNotes.join(" · ")}</span> : null}<span className="gx-mk-fold-mark" aria-hidden="true">{advanced ? "–" : "+"}</span>
       </button>
       {advanced ? <Advanced make={make} id={`${id}-advanced`} scope={scope} lengths={lengths.filter((d) => !chips.includes(d)).length ? lengths : []} /> : null}
     </div>

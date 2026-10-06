@@ -2,6 +2,7 @@
 import { usePriceTitle } from "@/components/graphite/Price";
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { priceWords } from "@/lib/shell/price-words";
+import { spendAttrsOf } from "@/lib/spend";
 import { useStoryboardDraw } from "./use-frames";
 import "./storyboard.css";
 
@@ -23,8 +24,8 @@ export function DrawStoryboard({ readOnly = null, onDrawn }: { readOnly?: string
       {draw.pricing === "error" ? (
         <button type="button" className="gx-draw-btn" data-quiet="" onClick={draw.tryAgain} data-testid="board-draw-try-again">Try again</button>
       ) : (
-        <button type="button" className="gx-draw-btn" title={title ?? undefined} disabled={Boolean(blocked) || !words || draw.busy}
-          onClick={() => { void draw.draw().then((n) => { if (n) onDrawn?.(n); }); }} data-testid="board-draw-button">
+        <button type="button" className="gx-draw-btn" title={title ?? undefined} disabled={Boolean(blocked) || !words || draw.busy} aria-busy={draw.busy || undefined}
+          onClick={() => { void draw.draw().then((n) => { if (n) onDrawn?.(n); }); }} data-testid="board-draw-button" {...spendAttrsOf(draw.price)}>
           {draw.busy ? "Sending frames…" : words ? `Draw the storyboard · ${words}` : "Draw the storyboard"}
         </button>
       )}

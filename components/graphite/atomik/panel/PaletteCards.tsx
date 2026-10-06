@@ -2,6 +2,7 @@
 import { useEffect, type MutableRefObject } from "react";
 import { useAtomikQuote } from "@/lib/useAtomikQuote";
 import { askButton, thinkingLine, type AtomikIntent } from "@/lib/shell/atomik-panel";
+import { spendAttrsOf } from "@/lib/spend";
 import { usePriceTitle } from "../../Price";
 import { usePlaces } from "./use-places";
 import type { Project } from "@/lib/workbench/studio";
@@ -34,7 +35,7 @@ export function PaletteAskCard({ intent, project, onClose, enterRef }: {
       <div className="ak-pcard-foot">
         <span className="ak-pcard-note" data-testid="palette-thinking-line">{button.reason ?? thinkingLine(intent, credits)}</span>
         <button type="button" className="ak-btn ak-btn-primary" disabled={button.disabled} title={title ?? (button.price?.kind === "free" ? "How-to answers are free" : undefined)}
-          onClick={press} data-testid="palette-ask">{button.label}</button>
+          onClick={press} data-testid="palette-ask" {...spendAttrsOf(button.price)}>{button.label}</button>
       </div>
     </div>
   );

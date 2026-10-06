@@ -4,8 +4,9 @@ import { spawnSync } from "node:child_process";
 import { scanSpend, type SpendReport } from "../helpers/spendScan";
 import { SPEND_SURFACES, gapsByFile, spendSurfaceOf } from "../helpers/spendSurfaces";
 import { compare, expired, growth, lowered, onMain, readJson, shapeProblems, type Section } from "../helpers/ratchet";
-import { NOT_SPENDING, PAID_ROUTES, SPEND_LABEL, SPEND_MARKERS, routePattern } from "../helpers/paidRoutes";
-import { hasCreditFigure, priceLabel, spendAttrs } from "../../lib/spend";
+import { NOT_SPENDING, NOT_SPENDING_BUTTONS, NOT_SPENDING_FILES, PAID_ROUTES, SPEND_LABEL, SPEND_MARKERS, routePattern } from "../helpers/paidRoutes";
+import { hasCreditFigure, priceLabel, spendAttrs, spendAttrsOf, spendAttrsText } from "../../lib/spend";
+import { FREE, exact, upTo } from "../../lib/shell/price-words";
 import { SpendButton } from "../../components/graphite/SpendButton";
 
 /**
@@ -106,15 +107,16 @@ test("the opt-in is read: data-spend, spendAttrs, SpendButton; and a spend verb 
     "components/B.tsx": `import { send } from "@/lib/send";\nimport { spendAttrs } from "@/lib/spend";\nexport function B() { return <button {...spendAttrs(null)} onClick={send}>x</button>; }`,
     "components/C.tsx": `import { send } from "@/lib/send";\nimport { SpendButton } from "@/components/graphite/SpendButton";\nexport function C() { return <SpendButton label="Make" price={null} onClick={send} />; }`,
     "components/D.tsx": `import { send } from "@/lib/send";\nexport function D() { return <div><button onClick={send}>Make</button><button>Cancel</button><button data-spend="priced">Render · 2 cr</button></div>; }`,
+    "components/E.tsx": `import { send } from "@/lib/send";\nimport { spendAttrsOf } from "@/lib/spend";\nexport function E() { return <button {...spendAttrsOf(null)} onClick={send}>Make</button>; }`,
   };
   const report = scanFixture(files);
-  expect(report.sites.map((site) => [site.path, site.optedIn])).toEqual([["components/A.tsx", true], ["components/B.tsx", true], ["components/C.tsx", true], ["components/D.tsx", true]]);
+  expect(report.sites.map((site) => [site.path, site.optedIn])).toEqual([["components/A.tsx", true], ["components/B.tsx", true], ["components/C.tsx", true], ["components/D.tsx", true], ["components/E.tsx", true]]);
   expect(report.labels.map((hit) => [hit.path, hit.label])).toEqual([["components/D.tsx", "Make"]]);
 });
 
 test("the spend verbs: the labels of paid buttons, and not the words that are free elsewhere", () => {
   for (const label of ["Make", "Make · 43 cr", "Generate", "Render", "Recreate", "Again", "Again · 1 cr", "Upscale video", "Transfer motion", "Swap object", "Release", "Train identity", "Approve & run"]) expect(SPEND_LABEL.test(label), label).toBe(true);
-  for (const label of ["Cancel", "Retry", "Run", "Send", "Maker", "Make member", "Make admin", "Try again", "Save", "Delete"]) expect(SPEND_LABEL.test(label), label).toBe(false);
+  for (const label of ["Cancel", "Retry", "Run", "Send", "Maker", "Make member", "Make admin", "Make a token", "Try again", "Save", "Delete"]) expect(SPEND_LABEL.test(label), label).toBe(false);
 });
 
 /* ---------------------------------------------------------------------------------------------- */
@@ -163,6 +165,22 @@ test("a control with no price is disabled and says so; a priced one carries the 
   const busy = shown({ label: "Make", price: { cr: 43 }, busy: true });
   expect(busy.props.disabled).toBe(true);
   expect(busy.props["aria-busy"]).toBe(true);
+});
+
+test("a price the screen holds as a PriceValue marks the control with the words the person reads; no price leaves it disabled", () => {
+  expect(spendAttrsOf(exact(43))).toEqual({ "data-spend": "priced", "data-spend-price": "43 cr" });
+  expect(spendAttrsOf(exact(0.5))).toEqual({ "data-spend": "priced", "data-spend-price": "0.5 cr" });
+  expect(spendAttrsOf(upTo(68.2))).toEqual({ "data-spend": "priced", "data-spend-price": "up to 69 cr" });
+  expect(spendAttrsOf(FREE)).toEqual({ "data-spend": "priced", "data-spend-price": "free" });
+  for (const none of [null, undefined, exact(Number.NaN), exact(-1)]) expect(spendAttrsOf(none)).toEqual({ "data-spend": "unpriced", disabled: true });
+});
+
+test("a control that quotes first and spends on its next press is marked only once its text carries a credit figure", () => {
+  expect(spendAttrsText("43 cr")).toEqual({ "data-spend": "priced", "data-spend-price": "43 cr" });
+  expect(spendAttrsText("Run · about 7 cr")).toEqual({ "data-spend": "priced", "data-spend-price": "about 7 cr" });
+  expect(spendAttrsText("Run · 1,200 cr estimated")).toEqual({ "data-spend": "priced", "data-spend-price": "1,200 cr" });
+  expect(spendAttrsText("$4.30")).toEqual({});
+  for (const none of ["—", "Saved request", "Getting quote…", "", null, undefined]) expect(spendAttrsText(none), String(none)).toEqual({});
 });
 
 /* ---------------------------------------------------------------------------------------------- */
@@ -224,6 +242,28 @@ test("RATCHET · a strict-surface file is only in the strict section, and any ot
   const baseline = ratchetFile();
   expect(Object.keys(baseline.ratchet).filter((path) => spendSurfaceOf(path)), "on a strict surface: move it to the strict section").toEqual([]);
   expect(Object.keys(baseline.strict).filter((path) => !spendSurfaceOf(path)), "not on a strict surface: move it to the ratchet section").toEqual([]);
+});
+
+test("EXCUSES · a file or button that is excused as not spending is still on the paid path, says why, and its priced control is marked", () => {
+  const { sites, labels } = current();
+  const unmarked = new Set(sites.filter((site) => !site.optedIn).map((site) => site.path));
+  for (const [path, excuse] of Object.entries(NOT_SPENDING_FILES)) {
+    expect(existsSync(path), `${path} does not exist`).toBe(true);
+    expect(excuse.why.trim().length, `${path}: say what the file does instead`).toBeGreaterThanOrEqual(30);
+    expect(unmarked.has(path), `${path} is no longer on the paid path without a marker: remove it from NOT_SPENDING_FILES`).toBe(true);
+    for (const priced of excuse.priced ?? []) {
+      expect(existsSync(priced), `${priced} does not exist`).toBe(true);
+      const source = readFileSync(priced, "utf8");
+      expect(/data-spend|spendAttrs\w*\(|<SpendButton/.test(source), `${priced} owns the paid button for ${path} and must carry the opt-in`).toBe(true);
+      const base = priced.replace(/^.*\//, "").replace(/\.tsx?$/, "");
+      expect(new RegExp(`from ["'][^"']*/${base}["']`).test(readFileSync(path, "utf8")), `${path} must import ${priced}`).toBe(true);
+    }
+  }
+  const found = new Set(labels.map((hit) => `${hit.path}::${hit.label}`));
+  for (const [key, why] of Object.entries(NOT_SPENDING_BUTTONS)) {
+    expect(why.trim().length, `${key}: say what the press does`).toBeGreaterThanOrEqual(30);
+    expect(found.has(key), `${key} is no longer a spend-verb button without a marker: remove it from NOT_SPENDING_BUTTONS`).toBe(true);
+  }
 });
 
 test("RATCHET · no section is bigger than where this branch left main", () => {
