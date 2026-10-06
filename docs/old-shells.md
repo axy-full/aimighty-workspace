@@ -6,19 +6,17 @@ The live shell is `/suites` (`app/suites/page.tsx` → `components/graphite/Suit
 
 Release 1 has one design. `?shell=legacy`, the `particl_shell` cookie, the switch-over gate and the account menu's "Use the previous workspace" are gone. Every old route below is a plain redirect to its final address in the Suites shell (`lib/shell/old-routes.ts`, held by `tests/unit/r1OldRoutes.spec.ts`): one hop, 307, the query that matters kept. The table further down is the older inventory; where it says a route is "Redirected today? No", read this section instead.
 
-| Old address | New address |
-|---|---|
-| `/`, `/workbench`, `/workspace` | `/suites?view=home`; `project=` kept; `/workbench?stage=` is the board's region (`lib/shell/stage-redirects.ts`); `?suite=moleculr` is the Ads board |
-| `/atomik` | `?atomik=1` (the panel); `page=approvals\|runs\|memory\|saved-skills` keep their control-room addresses; `budget`, `models`, `skills` are Settings sections |
-| `/subatomik`, `/subatomic` | `?make=motion` (`page=swap` is `make=swap`; `page=history` is the Social board's History drawer) |
-| `/generate`, `/images`, `/audio`, `/make/[kind]` | `?make=video\|image\|audio`; an unknown kind stays a 404 |
-| `/library`, `/all` | `?make=recent` |
-| `/productions` | `?view=home` |
-| `/productions/[prod]/[project]/media`, `/shots` | `?project=<studio project>&view=board&region=shots` |
-| `/projects/[id]/canvas`, `/canvas/[id]`, `/rig/canvas/[boardId]`, `/rig/recipes/[projectId]` | `?project=<studio project>&view=board` |
-| `/projects/[id]/rig/elements` | `?project=<studio project>&view=board&region=cast` |
-| `/rig/run/[runId]`, `/pipelines`, `/dashboard` | `?suite=atomik&page=runs` (Control room > Activity) |
-| `/settings`, `/team`, `/usage`, `/connect` | `?view=workspace&tab=advanced&open=workspace`, `tab=team`, `tab=credits&open=usage`, `tab=connections` |
+- `/`, `/workbench`, `/workspace` → `/suites?view=home`; `project=` kept; `/workbench?stage=` is the board's region (`lib/shell/stage-redirects.ts`); `?suite=moleculr` is the Ads board
+- `/atomik` → `?atomik=1` (the panel); `page=approvals\|runs\|memory\|saved-skills` keep their control-room addresses; `budget`, `models`, `skills` are Settings sections
+- `/subatomik`, `/subatomic` → `?make=motion` (`page=swap` is `make=swap`; `page=history` is the Social board's History drawer)
+- `/generate`, `/images`, `/audio`, `/make/[kind]` → `?make=video\|image\|audio`; an unknown kind stays a 404
+- `/library`, `/all` → `?make=recent`
+- `/productions` → `?view=home`
+- `/productions/[prod]/[project]/media`, `/shots` → `?project=<studio project>&view=board&region=shots`
+- `/projects/[id]/canvas`, `/canvas/[id]`, `/rig/canvas/[boardId]`, `/rig/recipes/[projectId]` → `?project=<studio project>&view=board`
+- `/projects/[id]/rig/elements` → `?project=<studio project>&view=board&region=cast`
+- `/rig/run/[runId]`, `/pipelines`, `/dashboard` → `?suite=atomik&page=runs` (Control room > Activity)
+- `/settings`, `/team`, `/usage`, `/connect` → `?view=workspace&tab=advanced&open=workspace`, `tab=team`, `tab=credits&open=usage`, `tab=connections`
 
 A route that names a production project (or a board) is turned into the Studio project that holds its work (the same read as `GET /api/workbench/projects?production=`); when none is linked, the address opens Home.
 

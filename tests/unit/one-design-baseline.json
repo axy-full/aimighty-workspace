@@ -66,7 +66,6 @@
     "components/suites/subatomik.module.css",
     "components/suites/suite-agent.module.css",
     "components/suites/suite-navigation.css",
-    "components/switchover/switchover.css",
     "components/upload-recovery.module.css",
     "components/workbench/MarketingStudioPanel.module.css",
     "components/workbench/SequenceColor.module.css",
@@ -86,10 +85,6 @@
     "components/workspace/workspace.css"
   ],
   "words": {
-    "app/(app)/productions/[prod]/[project]/shots/page.tsx": 1,
-    "app/(app)/productions/page.tsx": 1,
-    "app/(app)/rig/canvas/[boardId]/page.tsx": 8,
-    "app/(app)/rig/recipes/[projectId]/page.tsx": 1,
     "components/ElementScreen.tsx": 1,
     "components/ProductionNav.tsx": 1,
     "components/ShotBindings.tsx": 1,
