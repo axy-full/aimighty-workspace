@@ -4,6 +4,7 @@ import { EffectsCard, SocialUnavailableCard, SourceCard } from "./cards";
 import { SocialHistoryDrawer } from "./HistoryDrawer";
 import { SIZES, socialCards, type EffectsData, type SourceData, type UnavailableData } from "./social-model";
 import { StartSource } from "./StartSource";
+import { TRANSCRIBE_ROW } from "../transcribe/TranscribeAction";
 
 /*
  * Stream 11's Social board (README § 1.1, § 3.3): rail Source · Clips · Hooks · Effects · Posts. What exists today is drawn: the
@@ -11,7 +12,7 @@ import { StartSource } from "./StartSource";
  * posts read "Not in Particl yet" (gap G3), with no price and no sample result.
  */
 const defs = [
-  defineCard<SourceData>({ kind: "social-source", size: () => SIZES.source, Card: SourceCard }),
+  defineCard<SourceData>({ kind: "social-source", size: () => ({ ...SIZES.source, h: SIZES.source.h + TRANSCRIBE_ROW }), Card: SourceCard }),
   defineCard<EffectsData>({ kind: "social-effects", size: () => SIZES.effects, Card: EffectsCard }),
   defineCard<UnavailableData>({ kind: "social-unavailable", size: () => SIZES.unavailable, Card: SocialUnavailableCard }),
 ];

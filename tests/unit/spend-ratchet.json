@@ -75,11 +75,6 @@
       "until": "2026-10-08",
       "by": "goes with the file: stream 3 (board canvas)"
     },
-    "components/graphite/production/TranscribePanel.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "stream 5 (cards 2)"
-    },
     "components/marketing/HeroPrompt.tsx": {
       "count": 1,
       "until": "2026-10-08",

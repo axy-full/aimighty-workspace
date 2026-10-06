@@ -5,11 +5,12 @@ import type { ViralPage } from "@/lib/shell/viral";
 import { SOURCE_SECONDS } from "@/lib/shell/viral";
 import { Actions, Btn, Meta, Note, Title, Well } from "../ads/cards/common";
 import type { CardProps } from "../cards/types";
+import { TranscribeAction } from "../transcribe/TranscribeAction";
 import { clock, type EffectsData, type SourceData, type UnavailableData } from "./social-model";
 
 /* The Social board's cards: a source video with Motion transfer and Object swap, the Effects card, and what is not built. */
 
-export function SourceCard({ data }: CardProps<SourceData>) {
+export function SourceCard({ data, ctx }: CardProps<SourceData>) {
   const shell = useShell();
   const open = (page: ViralPage) => sendViralSource(page, data.media, (tab) => shell.openMake(tab));
   return (
@@ -24,6 +25,7 @@ export function SourceCard({ data }: CardProps<SourceData>) {
             <Btn onClick={() => open("swap")} data-testid="social-source-swap">Object swap</Btn>
           </Actions>
         ) : <Note>Motion transfer and Object swap take a source of {SOURCE_SECONDS.min}–{SOURCE_SECONDS.max} s{data.seconds ? `; this one is ${clock(data.seconds)}` : ""}.</Note>}
+        <TranscribeAction ctx={ctx} source={data.origin === "upload" ? { uploadId: data.media.sourceId } : { genId: data.media.sourceId }} name={data.name} />
       </span>
     </article>
   );
