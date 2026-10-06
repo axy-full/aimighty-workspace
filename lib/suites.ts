@@ -75,7 +75,7 @@ export const PAGES: Record<SuiteId, SuitePage[]> = {
     { id: "budget", label: "Budget" },
     { id: "models", label: "Models" },
   ],
-  moleculr: [{ id: "marketing", label: "Marketing Studio" }],
+  moleculr: [{ id: "marketing", label: "Product image" }],
   subatomik: [
     { id: "motion-transfer", label: "Motion Transfer" },
     { id: "object-swap", label: "Object Swap" },

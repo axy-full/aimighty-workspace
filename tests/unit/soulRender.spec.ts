@@ -503,7 +503,7 @@ test("the Cast page's request and filing: a character, its own identity, its fam
   /* Built earlier with a stills model that made a place or a persona: read-only, named without the old family word. Never built, or the two character models: editable. */
   const built = { takes: [{ genId: "gen_hfc_1", at: "2026-09-24T00:00:00.000Z" }] };
   expect(retiredModelOf({ ...newEntry("element", "Harbour"), model: "soul_location", ...built })).toBe("Location still");
-  expect(retiredModelOf({ ...newEntry("character", "Nova"), model: "soul_cast", elementId: "el_1" })).toBe("Persona still");
+  expect(retiredModelOf({ ...newEntry("character", "Nova"), model: "soul_cast", elementId: "el_1" })).toBe("Identity still");
   expect(retiredModelOf({ ...newEntry("element", "Harbour"), model: "soul_location" })).toBeNull();
   expect(retiredModelOf({ ...newEntry("character", "Wren"), model: "soul_cinematic", ...built })).toBeNull();
   expect(retiredModelOf({ ...newEntry("character", "Wren"), model: "soul_2", ...built })).toBeNull();

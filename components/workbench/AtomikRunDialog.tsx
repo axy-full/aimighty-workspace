@@ -203,7 +203,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}>
     <DialogContent className="ps ps-dialog" showCloseButton={!busy}>
       <DialogHeader>
-        <DialogTitle>{astraBlender ? 'Build with Astra' : referenceAd ? 'Analyze reference ad' : suite ? SUITE_AGENT_COPY[suite].title : role === 'marketing' ? 'Run Marketing Studio' : member ? 'Run ' + member.name : 'Plan with Genie'}</DialogTitle>
+        <DialogTitle>{astraBlender ? 'Build with Astra' : referenceAd ? 'Analyze reference ad' : suite ? SUITE_AGENT_COPY[suite].title : role === 'marketing' ? 'Run Product image' : member ? 'Run ' + member.name : 'Plan with Genie'}</DialogTitle>
         <DialogDescription>{project.name} · {refs.length} selected reference{refs.length === 1 ? '' : 's'}</DialogDescription>
       </DialogHeader>
       <div className="dialog-fields">

@@ -418,7 +418,7 @@ test("estimate trusts only positive USD, bounds JSON, and redacts vendor/transpo
   globalThis.fetch = async () =>
     new Response("PRIVATE CREDENTIAL", { status: 401 });
   await expect(estimateMarketingInput(input)).rejects.toThrow(
-    "This connected account cannot access Marketing Studio.",
+    "This connected account cannot access Product image.",
   );
   globalThis.fetch = async () => {
     throw new Error("PRIVATE TOKEN");

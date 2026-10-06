@@ -188,7 +188,7 @@ test("Marketing Studio 2.5: the planner names a build, each build keeps its own 
   ]);
   /* Every one is a setting admission accepts, in the shape the Marketing Studio forms send. */
   for (const p of turn.propose) expect(() => marketingSettings(p.params.marketing), p.title).not.toThrow();
-  expect(turn.say).toContain("Future build — it names a Marketing Studio build that is not offered");
+  expect(turn.say).toContain("Future build — it names a Product image build that is not offered");
   expect(turn.propose[0].params.inputs).toEqual({ references: ["product.png"], preset: "Bold studio", build: "2.5 Flare" });
   expect(keyStepInputsLine(turn.propose[0])).toBe("Uses 1 still from the library with the Bold studio preset, on 2.5 Flare.");
   expect(keyStepInputsLine(turn.propose[2])).toBe("Made from the prompt alone.");

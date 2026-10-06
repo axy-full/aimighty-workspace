@@ -136,7 +136,7 @@ test("a variant missing any dialog choice is left out and named, never completed
   const prepared = withVariant({ generation: { modelId: MARKETING_IMAGE_MODEL_ID, ratio: "1:1", marketing: acceptedImage.marketing } });
   expect(marketingPlanRequests(prepared)).toEqual([]);
   expect(marketingRequestGaps(prepared)).toEqual([
-    "Quiet mornings: no resolution accepted yet — configure its generation in Marketing Studio once.",
+    "Quiet mornings: no resolution accepted yet — configure its generation in Product image once.",
   ]);
 
   /* Never configured at all: no engine. */
@@ -167,7 +167,7 @@ test("a variant missing any dialog choice is left out and named, never completed
 test("Marketing Studio's plan runs on the page's bodies and refuses without them", () => {
   let provided = new Set<RequestKey>();
   const plans = withRequestGate(PLANS, () => provided);
-  expect(plans.marketing.runnable(ctx())).toEqual({ ok: false, reason: "Needs Marketing Studio data" });
+  expect(plans.marketing.runnable(ctx())).toEqual({ ok: false, reason: "Needs Product image data" });
 
   const variants = marketingPlanRequests(withVariant({ generation: acceptedImage }));
   provided = new Set<RequestKey>(["variants"]);

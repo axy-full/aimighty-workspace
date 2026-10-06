@@ -40,7 +40,7 @@ export function EffectsCard({ data }: CardProps<EffectsData>) {
           <div className="ab-row"><dt>Motion transfer</dt><dd><Btn onClick={() => shell.openMake("motion")} data-testid="social-effects-motion">Open in Make</Btn></dd></div>
           <div className="ab-row"><dt>Object swap</dt><dd><Btn onClick={() => shell.openMake("swap")} data-testid="social-effects-swap">Open in Make</Btn></dd></div>
         </dl>
-        <Meta>{data.sources ? `${data.sources} ${data.sources === 1 ? "source fits" : "sources fit"}` : "No source of 4–30 s yet"}</Meta>
+        <Meta>{data.sources ? `${data.sources} ${data.sources === 1 ? "source fits" : "sources fit"}` : `No source of ${SOURCE_SECONDS.min}–${SOURCE_SECONDS.max} s yet`}</Meta>
       </span>
     </article>
   );
