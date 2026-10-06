@@ -1,6 +1,6 @@
-# Status now: 6 October 2026, 07:23 IST, morning report sent
+# Status now: 6 October 2026, 08:05 IST, PAUSED by the owner
 
-The owner is asleep. Overnight rules: at most 5 agents, heavy browser suites one at a time, and no UI merges. Only #523 (after the independent money review and green CI) and #531 (deny rules, after green CI) may merge. No generation, no paid actions, and no Vercel, Turso, Stripe or DNS changes. The morning report is due by 08:00 IST.
+**Paused by the owner.** Agents are stopping at a safe point: work in progress is committed and pushed, slots are released, and resume notes are in the lead's private notes. Nothing merges and nothing deploys while paused. The morning report was sent at 07:45 IST.
 
 ## Done today
 - The US$0.10 switch: #524 merged; production reads `creditUsd 0.1`. Step 6 green.
