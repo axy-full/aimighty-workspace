@@ -5,6 +5,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { dimLabels, smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { openAdvanced } from "./helpers/makeAdvanced";
 
 /**
  * Idea 23 — Gen's Audio output is whole: a line has a voice picker whose list
@@ -92,6 +93,7 @@ async function open(page: Page) {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`/suites?make=video&project=${DRAFT}`);
   await expect(page.getByTestId("gen-view")).toBeVisible();
+  await openAdvanced(page);
   await expect(page.getByTestId("project-name")).toHaveText("Harbour sound study");
   return { quotes, charges, mismatched, errors, store };
 }
@@ -204,7 +206,7 @@ test("a line: the voice list is the chosen model's own and swaps with it, each c
   const { quotes, charges, mismatched, errors } = await open(page);
   /* Gen makes video, images and sound: no 3D tab, whoever is signed in. Analysis ran through the signed-in
      account, which is retired, so it is gone for everyone. */
-  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab")).toHaveText(["Video", "Images", "Audio", "Edit"]);
+  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab")).toHaveText(["Video", "Images", "Audio"]);
   await page.getByRole("tab", { name: "Audio" }).click();
   await pickModel(page, /^Grok Voice$/);
   const line = "Not tonight. The ice will hold until morning.";

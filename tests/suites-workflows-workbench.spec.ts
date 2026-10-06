@@ -41,12 +41,12 @@ async function noSideScroll(page: Page) {
 }
 
 
-test("Gen has no Analysis tab, for the owner too: its four output tabs keep one row", async ({ page }, info) => {
+test("Gen has no Analysis tab, for the owner too: its three output tabs keep one row", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, consumer } = await open(page, "/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   const output = page.getByRole("tablist", { name: "Output" });
-  await expect(output.getByRole("tab")).toHaveText(["Video", "Images", "Audio", "Edit"]);
+  await expect(output.getByRole("tab")).toHaveText(["Video", "Images", "Audio"]);
   await expect(page.getByTestId("gen-tab-analysis")).toHaveCount(0);
   await expect(page.getByTestId("workflow-video_analysis")).toHaveCount(0);
   const tabs = await output.getByRole("tab").all();

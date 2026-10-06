@@ -251,6 +251,7 @@ test("a lingering selection does not take ⌘C from selected text, nor ⌫/⌘R/
 /* ── ⌘K ─────────────────────────────────────────────────────────────────── */
 
 const rows = paletteIndex({
+  models: [],
   assets: [{ id: "tk_1", name: "Board diagram", kind: "image" }],
 });
 

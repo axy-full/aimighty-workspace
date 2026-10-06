@@ -7,6 +7,7 @@ import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/
 import { moreTakes } from "./helpers/genTakes";
 import { CINEMA_STUDIO_MODEL_ID } from "../lib/cinemaStudioTypes";
 import { MAKE_SHOWS_CINEMA } from "../lib/shell/make-price";
+import { openAdvanced } from "./helpers/makeAdvanced";
 
 /**
  * Gen's model sheet: a search field, a Recent group, spec chips and a price on
@@ -63,6 +64,7 @@ async function open(page: Page, options: Options = {}) {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
+  await openAdvanced(page);
   await expect(page.getByTestId("project-name")).toHaveText("Harbour picker study");
   return { errors, quotes, consumer, priced };
 }
@@ -339,6 +341,7 @@ test("Recent leads with the last three models used for this output, never repeat
 
   await page.reload();
   await expect(page.getByTestId("gen-view")).toBeVisible();
+  await openAdvanced(page);
   sheet = await openSheet(page);
   await expect(group(page, "gen-model-recent")).toHaveText([order[2], order[0], order[1]]);
   /* Recent is per output: Images has its own, and nothing is used there yet. */
@@ -396,6 +399,7 @@ test("the sheet shows it is reading, then the list; a failed read says why inste
   failing = true;
   await page.reload();
   await expect(page.getByTestId("gen-view")).toBeVisible();
+  await openAdvanced(page);
   sheet = await openSheet(page);
   await expect(sheet.getByTestId("gen-model-empty").locator(".gx-empty")).toHaveText("The engine list is unavailable right now.");
   await expect(sheet.getByRole("option")).toHaveCount(0);

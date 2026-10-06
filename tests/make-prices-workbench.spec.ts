@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
+import { openAdvanced } from "./helpers/makeAdvanced";
 
 /**
  * D0 review items 6-8: every paid control in Make wears the server's price, the engine sheet quotes at the size and
@@ -91,6 +92,7 @@ test("the engine sheet quotes every row at the size and length the composer hold
   const errors = await open(page, "/suites?make=video");
   const line = page.getByTestId("make-engine-price");
   await expect(line).toHaveText(/cr$/, { timeout: 30_000 });
+  await openAdvanced(page);
   await page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p", exact: true }).click();
   await page.getByTestId("gen-length").selectOption("5");
   await expect(page.getByTestId("gen-generate")).toHaveText(/^Make · \d+(\.\d)? cr$/, { timeout: 30_000 });

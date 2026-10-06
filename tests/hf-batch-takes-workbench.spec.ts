@@ -6,6 +6,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, type LibraryRoute } from "./helpers/workspaceFixtures";
 import { moreTakes } from "./helpers/genTakes";
+import { openAdvanced } from "./helpers/makeAdvanced";
 
 /**
  * Takes 2–4 of one Generate go as ONE priced batch and land as ONE strip
@@ -51,6 +52,7 @@ async function open(page: Page, options: { library?: LibraryRoute } = {}) {
 async function gen(page: Page) {
   await page.goto(`/suites?make=video&project=${DRAFT}`);
   await expect(page.getByTestId("gen-view")).toBeVisible();
+  await openAdvanced(page);
   await expect(page.getByTestId("project-name")).toHaveText("Harbour batch study");
 }
 
