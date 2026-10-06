@@ -1,4 +1,4 @@
-# Status now: 6 October 2026, 03:58 IST, working overnight
+# Status now: 6 October 2026, 07:23 IST, morning report sent
 
 The owner is asleep. Overnight rules: at most 5 agents, heavy browser suites one at a time, and no UI merges. Only #523 (after the independent money review and green CI) and #531 (deny rules, after green CI) may merge. No generation, no paid actions, and no Vercel, Turso, Stripe or DNS changes. The morning report is due by 08:00 IST.
 
@@ -10,10 +10,10 @@ The owner is asleep. Overnight rules: at most 5 agents, heavy browser suites one
 ## Overnight, in order
 | # | Item | Branch / PR | State | Next |
 |---|---|---|---|---|
-| 1 | D0: 13 owner fixes and 2 CI checks | #511, #513, #512, #514, #515 on `d0/*` | Fixes 1–11 done; chain merged (#511 `2df93dd5` → #513 `4d4d9771` → #512 `c7033fac` → #514 `793a0597` → #515 `1faa94f1`); CI checks are draft #533 | Final names and price cleanup, full gates, then the review page |
-| 2 | Cinema "at most 3N" | #523 (`3018e5f8`) | Up to date with main, unit green | Independent money review running; merge on PASS and green CI |
+| 1 | D0: 13 owner fixes and 2 CI checks | #511, #513, #512, #514, #515 on `d0/*` | Fixes 1–11 done and cleaned up (#511 `fe1a9c77` → #513 `17d202db` → #512 `b847efa2` → #514 `228a1176` → #515 `4e3ffca3`); unit green on every head; CI checks are draft #533 (green) | Finish the browser specs on #515; owner preview check |
+| 2 | Cinema "at most 3N" | #523 failed review → replacement #540 (`61dcb02c`) | Re-review PASS on the code; CI running | Owner's yes (approval named #523); #541 (npm advisory lockfile fix) first |
 | 3 | Deny rules for destructive git commands | #531 | **Merged** (`3ce363d8`); CI green, production deploy succeeded | Done |
-| 4 | The board for everyone (Studio, Ads, Social) | `demo/board-everyone` from `demo/integration` (`08368b84`) | Board agent working: delete stage pages, redirects, draft PR for the preview | Board PR: delete the ten stage pages, redirect their routes, delete their styles, preview. Target Wed 7 Oct evening |
+| 4 | The board for everyone (Studio, Ads, Social) | `demo/board-everyone` from `demo/integration` (`08368b84`) | Draft #535: stage pages deleted, redirects, preview built; unit green; CI workbench shards red (old specs) | Board PR: delete the ten stage pages, redirect their routes, delete their styles, preview. Target Wed 7 Oct evening |
 | 5 | Autosave, then Make's short form | Draft #532 (autosave), draft #534 (Make short form, stacked on #514) | Built and tested | Owner preview check |
 | 6 | Guest Home follow-ups; dunes draft v3 | `site/guest-home*`, `design/master-round-2`, `site/copy-names` | Draft PRs #536 (master round 2), #537 (guest Home), #538 (guest Home on), #539 (site copy); dunes draft v3 ready for the owner | Owner preview; nothing generates |
 
