@@ -13,12 +13,31 @@ export async function sampleSpendRefusal(projectId: string | null | undefined, s
   await ready();
   /* Read straight from the workspace's settings, so this file pulls in nothing heavy: it sits under every reservation. */
   const stored = (await db().execute({ sql: `SELECT value FROM settings WHERE key = ?`, args: [SAMPLE_SETTING_KEY] })).rows[0];
-  const mark = stored ? parseSampleMark(String(stored.value)) : null;
+  const mark = stored ? guardMark(stored.value) : null;
   if (!mark) return null;
+  if (mark === "unreadable") return SAMPLE_LINE;
   if (projectId && projectId === mark.projectId) return SAMPLE_LINE;
   if (shotId) {
     const row = (await db().execute({ sql: `SELECT project_id FROM shots WHERE id = ?`, args: [shotId] })).rows[0];
     if (row && String(row.project_id) === mark.projectId) return SAMPLE_LINE;
   }
   return null;
+}
+
+/**
+ * The stored mark as the guard reads it, failing closed: a mark that is there but is not one this code wrote (it does
+ * not parse, or has another version or shape) is never read as "no sample". If it still names its production, that
+ * production is the sample; if it names none, nobody can tell which production is, so every paid job is refused
+ * ("unreadable") until an owner marks the sample again (which archives the bad row) or undoes it. Only an undone mark
+ * (`hiddenAt` set) reads as none, whatever else its shape.
+ */
+function guardMark(stored: unknown): { projectId: string } | "unreadable" | null {
+  const mark = parseSampleMark(String(stored));
+  if (mark) return mark;
+  let value: unknown;
+  try { value = JSON.parse(String(stored)); } catch { return "unreadable"; }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "unreadable";
+  const m = value as Record<string, unknown>;
+  if (typeof m.hiddenAt === "number" && m.hiddenAt > 0) return null;
+  return typeof m.projectId === "string" && m.projectId ? { projectId: m.projectId } : "unreadable";
 }
