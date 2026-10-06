@@ -152,7 +152,8 @@ async function openGen(page: Page, generations: ReturnType<typeof generation>[] 
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Lighthouse study");
+  /* Make names the project its take lands in. */
+  await expect(page.getByTestId("make-dest")).toContainText("To Lighthouse study · Library");
   await expect(page.getByTestId("make-engine-line")).toContainText("Seedance");
   return { errors, priced, reads, holdSound: (until: Promise<void> | null) => { hold = until; } };
 }
@@ -172,10 +173,12 @@ async function openAdvanced(page: Page) {
 }
 
 async function pickModel(page: Page, name: RegExp) {
-  /* Make's engine list: Change opens it, a row picks its engine and closes it. */
-  const change = page.getByTestId("gen-model");
-  await change.scrollIntoViewIfNeeded();
-  await change.click();
+  /* Make's engine list: Change opens it (unless Advanced has it open), a row picks its engine and closes it. */
+  if (!(await page.getByTestId("make-engines").isVisible())) {
+    const change = page.getByTestId("gen-model");
+    await change.scrollIntoViewIfNeeded();
+    await change.click();
+  }
   const row = page.getByTestId("make-engine-row").filter({ has: page.locator(".gx-mk-row-name", { hasText: name }) });
   await row.click();
   await expect(page.getByTestId("make-engines")).toHaveCount(0);
@@ -191,7 +194,6 @@ test("Gen: the Sound switch is off on Cinema Studio, a WAV reference leaves it o
   await pickModel(page, /^Cinema Studio 4\.0/);
   const row = page.getByTestId("gen-sound-option");
   const sound = page.getByTestId("gen-sound-toggle");
-  await expect(row.locator(".gx-eyebrow")).toHaveText("Sound");
   await expect(sound).toHaveRole("switch");
   await expect(sound).toHaveAccessibleName("With sound");
   await expect(sound).toHaveAttribute("aria-checked", "false");
@@ -204,7 +206,7 @@ test("Gen: the Sound switch is off on Cinema Studio, a WAV reference leaves it o
   /* A WAV dropped as a reference is cited and priced, and the switch stays where it was. */
   const well = page.getByTestId("gen-well");
   await dropId(page, well, "upload:room-tone");
-  await expect(well).toContainText("@Audio1 · Room tone.wav");
+  await expect(well.getByTestId("make-reference")).toHaveAttribute("title", "@Audio1 · Room tone.wav");
   await expect.poll(() => reads.some((q) => q.get("model") === CINEMA && q.getAll("uploadId").includes("room-tone"))).toBe(true);
   await expect(sound).toHaveAttribute("aria-checked", "false");
   expect(reads.every((q) => !q.has("audio")), "a read asked for sound").toBe(true);
@@ -279,27 +281,23 @@ test("Gen: turning Sound on asks for the price again, at the figure for a take w
   expect(errors).toEqual([]);
 });
 
-test("Gen: Recreate of a Cinema Studio take made with sound turns the switch back on, and the card says when it is changed here", async ({ page }, info) => {
+test("Gen: Again on a Cinema Studio take made with sound turns the switch back on at the held price for sound; turned off here, it goes silent", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors, priced, reads } = await openGen(page, [TAKE()]);
   await page.getByTestId("make-tab-recent").click();
-  await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_cinema_sound']").click();
-  await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
+  /* Recent's card for the take: Again puts its recipe in Make. */
+  await page.locator('[data-testid="make-recent-card"][data-take*="gen_cinema_sound"]').getByTestId("make-again").click();
   await expect(page.getByTestId("make-engine-line")).toContainText("Cinema Studio 4.0");
+  await openAdvanced(page);
   const sound = page.getByTestId("gen-sound-toggle");
   await expect(sound).toHaveAttribute("aria-checked", "true");
-  const chip = page.getByTestId("gen-recipe-chips").locator("[data-chip='sound']");
-  await expect(chip).toHaveText("With sound");
-  await expect(chip).toHaveAttribute("data-state", "kept");
   await expect.poll(() => reads.some((q) => q.get("model") === CINEMA && q.get("audio") === "1")).toBe(true);
   await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 36 cr, at most 108 cr");
   await shot(page, info, "gen-sound-recreate");
-  /* Turned off here: the card says so, and Generate sends a silent take. */
+  /* Turned off here: Make sends a silent take, at the silent figure. */
   await sound.scrollIntoViewIfNeeded();
   await sound.click();
-  await expect(chip).toHaveText("With sound → silent");
-  await expect(chip).toHaveAttribute("data-state", "changed");
-  await expect(page.getByTestId("gen-recipe-why").locator("[data-note='sound']")).toHaveText("Sound Changed here");
+  await expect(sound).toHaveAttribute("aria-checked", "false");
   await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 31 cr, at most 93 cr");
   await page.getByTestId("gen-generate").click();
   await expect.poll(() => priced.length).toBe(1);
@@ -316,15 +314,13 @@ test("Gen, where sound is not offered: Cinema Studio has no Sound switch, a Recr
   await expect(page.getByTestId("gen-cinema-camera_movement")).toBeVisible();
   await expect(page.getByTestId("gen-sound-option")).toHaveCount(0);
   await expect(page.getByTestId("gen-sound-toggle")).toHaveCount(0);
-  /* Recreate of a take made with sound: the switch cannot come back here, and the card says so. */
+  /* Again on a take made with sound: the switch cannot come back here, and the card says so. */
   await page.getByTestId("make-tab-recent").click();
-  await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_cinema_sound']").click();
-  await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
+  /* Recent's card for the take: Again puts its recipe in Make. */
+  await page.locator('[data-testid="make-recent-card"][data-take*="gen_cinema_sound"]').getByTestId("make-again").click();
   await expect(page.getByTestId("make-engine-line")).toContainText("Cinema Studio 4.0");
-  const chip = page.getByTestId("gen-recipe-chips").locator("[data-chip='sound']");
-  await expect(chip).toHaveText("With sound → silent");
-  await expect(chip).toHaveAttribute("data-state", "changed");
-  await expect(page.getByTestId("gen-recipe-why").locator("[data-note='sound']")).toHaveText("Sound Cinema Studio 4.0 has no Sound switch here");
+  await expect(page.getByTestId("gen-recipe")).toContainText("Cinema Studio 4.0 has no Sound switch here");
+  await openAdvanced(page);
   await expect(page.getByTestId("gen-sound-option")).toHaveCount(0);
   const go = page.getByTestId("gen-generate");
   await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");

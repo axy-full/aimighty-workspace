@@ -102,7 +102,8 @@ async function open(page: Page, info: TestInfo, admit: (take: number) => "runnin
   }
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByTestId("project-name")).toHaveText("Lighthouse hold");
+  /* Make names the project its take lands in. */
+  await expect(page.getByTestId("make-dest")).toContainText("To Lighthouse hold · Library");
   /* Cinema Studio, from Make's engine list: its row says what approving it holds. */
   const change = page.getByTestId("gen-model");
   await change.scrollIntoViewIfNeeded();
@@ -188,10 +189,11 @@ test("the Jobs tray: a held Cinema Studio take's Release says about N cr, at mos
   await page.route(/\/api\/jobs\?view=tray/, (route) => route.fulfill({ json: { jobs, pollAfterSeconds: 60 } }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`/suites?suite=studio&page=rig&project=${DRAFT}`);
-  await expect(page.getByTestId("project-name").first()).toHaveText("Lighthouse hold");
+  /* The header's Jobs pill, on any desktop screen: Make's here. */
+  await page.goto("/suites?make=video");
+  await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 60_000 });
   const pill = page.getByTestId("running-jobs");
-  await expect(pill).toHaveAccessibleName(/1 held/);
+  await expect(pill).toHaveAccessibleName(/1 held/, { timeout: 30_000 });
   await pill.click();
   const panel = page.getByRole("dialog", { name: "Jobs" });
   await expect(panel).toBeVisible();

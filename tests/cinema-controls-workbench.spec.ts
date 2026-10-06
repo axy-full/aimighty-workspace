@@ -124,7 +124,8 @@ async function openGen(page: Page, generations: ReturnType<typeof generation>[] 
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Lighthouse study");
+  /* Make names the project its take lands in. */
+  await expect(page.getByTestId("make-dest")).toContainText("To Lighthouse study · Library");
   await expect(page.getByTestId("make-engine-line")).toContainText("Seedance");
   return { errors, priced, reads };
 }
@@ -144,10 +145,12 @@ async function openAdvanced(page: Page) {
 }
 
 async function pickModel(page: Page, name: RegExp) {
-  /* Make's engine list: Change opens it, a row picks its engine and closes it. */
-  const change = page.getByTestId("gen-model");
-  await change.scrollIntoViewIfNeeded();
-  await change.click();
+  /* Make's engine list: Change opens it (unless Advanced has it open), a row picks its engine and closes it. */
+  if (!(await page.getByTestId("make-engines").isVisible())) {
+    const change = page.getByTestId("gen-model");
+    await change.scrollIntoViewIfNeeded();
+    await change.click();
+  }
   const row = page.getByTestId("make-engine-row").filter({ has: page.locator(".gx-mk-row-name", { hasText: name }) });
   await row.click();
   await expect(page.getByTestId("make-engines")).toHaveCount(0);
@@ -286,17 +289,17 @@ test("a WAV upload is Cinema Studio's sound reference (@Audio1) at the same pric
   const go = page.getByTestId("gen-generate");
   await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   const well = page.getByTestId("gen-well");
-  await expect(well).toContainText("Drag stills, clips or WAV sounds here from the Library.");
+  await expect(well).toContainText("drag from the Library or the board");
 
   /* An MP3 is not the provider's documented audio input: refused, with the reason, and nothing lands. */
   await dropId(page, well, "upload:voice-line");
   await expect(page.getByRole("alert").filter({ hasText: "Cinema Studio takes sound references as WAV files uploaded to this workspace." })).toBeVisible();
-  await expect(well.locator(".gx-ref")).toHaveCount(0);
+  await expect(well.getByTestId("make-reference")).toHaveCount(0);
   /* A WAV lands, cited the way the engine counts it. */
   await dropId(page, well, "upload:room-tone");
-  await expect(well.locator(".gx-ref")).toHaveCount(1);
-  await expect(well).toContainText("@Audio1 · Room tone.wav");
-  await expect(well.locator(".gx-ref-wave")).toBeVisible();
+  await expect(well.getByTestId("make-reference")).toHaveCount(1);
+  await expect(well.getByTestId("make-reference")).toHaveAttribute("title", "@Audio1 · Room tone.wav");
+  await expect(well.locator(".gx-mk-wave")).toBeVisible();
   /* Priced with the sound in the read, at the same approximate figure. */
   await expect.poll(() => reads.some((q) => q.get("model") === CINEMA && q.getAll("uploadId").includes("room-tone"))).toBe(true);
   await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
@@ -320,28 +323,26 @@ test("a WAV upload is Cinema Studio's sound reference (@Audio1) at the same pric
   expect(errors).toEqual([]);
 });
 
-test("Recreate brings a Cinema Studio take's controls back onto its chips and its WAV sound back into References; the card says when the chips no longer hold them", async ({ page }, info) => {
+test("Again brings a Cinema Studio take's controls back onto its chips and its WAV sound back into References, at the held price", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors, priced } = await openGen(page, [TAKE()]);
   await page.getByTestId("make-tab-recent").click();
-  await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_cinema_take']").click();
-  await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
+  /* Recent's card for the take: Again puts its recipe in Make. */
+  await page.locator('[data-testid="make-recent-card"][data-take*="gen_cinema_take"]').getByTestId("make-again").click();
   await expect(page.getByTestId("make-engine-line")).toContainText("Cinema Studio 4.0");
+  await openAdvanced(page);
   await expect(chip(page, "camera_movement")).toHaveAttribute("aria-label", "Movement: Crane up");
   await expect(chip(page, "genre")).toHaveAttribute("aria-label", "Genre: Noir");
   await expect(chip(page, "light")).toHaveAttribute("aria-label", "Light: Auto");
-  const row = page.getByTestId("gen-recipe-cinema");
-  await expect(row).toHaveText("Crane up · Noir");
-  await expect(row).toHaveAttribute("data-state", "kept");
-  await expect(page.getByTestId("gen-well")).toContainText("@Audio1 · Room tone.wav");
+  await expect(page.getByTestId("gen-recipe")).toBeVisible();
+  await expect(page.getByTestId("gen-well").getByTestId("make-reference")).toHaveAttribute("title", "@Audio1 · Room tone.wav");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("@Audio1 hums while a lighthouse keeper climbs");
   await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 31 cr, at most 93 cr");
   await shot(page, info, "cinema-recreate");
-  /* A change made here: the card says so. */
+  /* A change made here goes with the take. */
   await chip(page, "genre").click();
   await page.getByTestId("gen-film-sheet").locator("[data-option='genre:drama']").click();
-  await expect(row).toHaveAttribute("data-state", "changed");
-  await expect(page.getByTestId("gen-recipe-why").locator("[data-note='cinema']")).toHaveText("Controls Changed here");
+  await expect(chip(page, "genre")).toHaveAttribute("aria-label", "Genre: Drama");
   /* Generate sends the take's controls as they stand now, and its sound. */
   await page.getByTestId("gen-generate").click();
   await expect.poll(() => priced.length).toBe(1);
