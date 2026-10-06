@@ -210,16 +210,16 @@ async function priced(page: Page, run: ReturnType<typeof proposal>, prices: [num
   return { project, posts, paid };
 }
 
-test("a priced proposal: three shots at the server's prices, 93 cr for them, at most 186 cr with fixes, the balance after; Build · free sends the run's own approval of the build and nothing else", async ({ page }, info) => {
+test("a priced proposal: each shot at the server's quote, but no total, no 'at most', no fix line before the gate (review L2); Build · free sends the run's own approval of the build and nothing else", async ({ page }, info) => {
   test.skip(!desktop(page), "the canvas is desktop only");
   const { project, posts, paid } = await priced(page, proposal(500, 486), [43, 43, 7]);
   await page.goto(`/suites?project=${project.id}&view=board`);
   const plan = page.locator('[data-card-id="plan:run"]').getByTestId("board-plan");
   await expect(plan).toBeVisible({ timeout: 20_000 });
   await expect(plan).toContainText("Make 3 shots");
-  await expect(plan.getByTestId("board-plan-line")).toContainText("93 cr for the 3 shots");
-  await expect(plan.getByTestId("board-plan-line")).toContainText("Fixes if needed: up to 2 per shot, within 186 cr");
-  await expect(plan.getByTestId("board-plan-line")).toContainText(/\d[\d,]* cr left after/);
+  /* The card adds nothing up before the server's plan quote: no total, no ceiling, no fix line, no balance after. */
+  await expect(plan.getByTestId("board-plan-line")).toHaveCount(0);
+  await expect(plan).not.toContainText(/at most|Fixes if needed|for the 3 shots|left after|Short by|93 cr/);
   /* Building approves no spending: the button carries no figure. */
   await expect(plan.getByTestId("board-plan-primary")).toHaveText("Build · free");
   await expect(plan.getByTestId("board-plan-primary")).toBeEnabled();

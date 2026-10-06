@@ -112,7 +112,7 @@ async function floors(page: Page, where: string) {
   expect(await lastRowClearsPinned(page), `${where}: the last row clears the pinned actions`).toEqual([]);
 }
 
-test("the proposal: the three lines at the server's prices, the Total, the most with fixes and the balance after; Build is free", async ({ page }, info) => {
+test("the proposal: the three lines at the server's prices, and no total, no 'at most' and no balance after before the gate (review L2); Build is free", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "phone widths");
   const { posts, paid, errors } = await open(page, proposal(500, 486), [43, 43, 7]);
   await expect(page.getByTestId("phone-title")).toHaveText("Plan approval");
@@ -125,11 +125,12 @@ test("the proposal: the three lines at the server's prices, the Total, the most 
   await expect(rows.nth(1).locator(".gx-price")).toHaveText("43 cr");
   await expect(rows.nth(2).locator(".gx-price")).toHaveText("7 cr");
   await expect(rows.nth(0).locator(".gx-price")).toHaveAttribute("title", /^\$[\d.]+$/);
-  await expect(page.getByTestId("phone-plan-total")).toContainText("93 cr");
-  /* At most 2 × the Total with fixes; building approves no spending, so the button carries no figure. */
-  await expect(page.getByTestId("phone-plan-fixes")).toContainText("up to 2 per shot");
-  await expect(page.getByTestId("phone-plan-fixes")).toContainText("at most 186 cr");
-  await expect(page.getByTestId("phone-plan-balance")).toContainText(/Balance after · [\d,]+ cr now/);
+  /* The screen adds nothing up before the server's plan quote; building approves no spending, so the button carries no figure. */
+  await expect(page.getByTestId("phone-plan-total")).toContainText("not priced yet");
+  await expect(page.getByTestId("phone-plan-total")).not.toContainText(/\d+ cr/);
+  await expect(page.getByTestId("phone-plan-fixes")).toHaveCount(0);
+  await expect(page.getByTestId("phone-plan-balance")).toHaveCount(0);
+  await expect(page.getByTestId("phone-plan")).not.toContainText(/at most|93 cr/);
   await expect(page.getByTestId("phone-plan-primary")).toHaveText("Build · free");
   await expect(page.getByTestId("phone-plan-primary")).not.toHaveAttribute("data-spend", /.*/);
   await expect(page.getByTestId("phone-plan-primary")).toBeEnabled();

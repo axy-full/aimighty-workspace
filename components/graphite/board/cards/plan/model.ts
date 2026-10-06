@@ -1,5 +1,5 @@
 import type { ApprovalRule } from "@/lib/approvalRule";
-import { FREE, creditsText, exact, priceSum, priceWords, shortBy, upTo, type PriceValue } from "@/lib/shell/price-words";
+import { FREE, creditsText, exact, priceWords, shortBy, upTo, type PriceValue } from "@/lib/shell/price-words";
 import { STATED_CHARGE_BAND, ceilTenths, fromTenths, toTenths } from "@/lib/runLimit";
 import type { RigAgentPaidStepView, RigAgentRunView, RigAgentStepState } from "@/lib/workbench/rig-agent-plan";
 
@@ -221,15 +221,15 @@ export function planModel(input: PlanInput): PlanModel | null {
 
   const counted = steps.filter((s) => s.state !== "skipped" && !s.unavailable && !s.asksAlone);
   const approval = plan?.approval ?? null;
-  /* At the gate the total is the server's quote, never this card's sum; after approval, the approved total. */
+  /* The plan's figures are the server's only (review L2): its quote at the gate, then the approved total. Before the gate
+     (the proposal, Build · free) the card adds nothing up: no total, no "at most", no fix line, no balance after. */
   const total: PriceValue | null = gate ? (gate.approximate ? upTo(gate.total) : exact(gate.total))
     : approval ? exact(approval.total)
-    : !steps.length ? FREE : counted.length && counted.every((s) => s.price) ? priceSum(counted.map((s) => s.price)) : null;
+    : !steps.length ? FREE : null;
   const totalCredits = total ? ceilingOf(total) : null;
   const takesCounted = counted.filter((s) => s.kind === "take");
-  const ceiling = gate ? gate.ceiling : approval ? approval.ceiling
-    : total && total.kind !== "free" && counted.length ? fromTenths(PLAN_CEILING_MULTIPLE * toTenths(ceilingOf(total))) : null;
-  const balance = input.balance == null ? null : {
+  const ceiling = gate ? gate.ceiling : approval ? approval.ceiling : null;
+  const balance = input.balance == null || !total || total.kind === "free" ? null : {
     now: input.balance,
     after: totalCredits == null ? null : Math.round((input.balance - totalCredits) * 10) / 10,
     short: shortBy(input.balance, total),

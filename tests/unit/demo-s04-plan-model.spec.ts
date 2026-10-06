@@ -30,7 +30,7 @@ function run(over: Partial<RigAgentRunView> = {}): RigAgentRunView {
 const estimates = { 1: { credits: 43, approximate: false }, 3: { credits: 43, approximate: false }, 5: { credits: 7, approximate: false } };
 const base = (over: Partial<PlanInput> = {}): PlanInput => ({ run: run(), enabled: true, estimates, balance: 2000, rule: null, readOnly: null, ...over });
 
-test("the proposal lists every take at the server's price, the total as a line, the most with fixes and the balance after", () => {
+test("before the gate (review L2) the proposal lists each take at the server's own quote, and adds nothing up: no total, no 'at most', no fix line, no balance after; Build · free only", () => {
   const m = planModel(base())!;
   expect(m.phase).toBe("proposal");
   expect(m.title).toBe("Make 3 shots");
@@ -39,14 +39,20 @@ test("the proposal lists every take at the server's price, the total as a line, 
     ["Shot 2", { kind: "exact", credits: 43 }, "estimate"],
     ["Shot 3", { kind: "exact", credits: 7 }, "estimate"],
   ]);
-  expect(m.total).toEqual({ kind: "exact", credits: 93 });
-  /* The button carries no figure: building is free and approves no spending; the plan is approved once its shots are priced on the board. */
-  expect(m.primary).toMatchObject({ kind: "approve", label: "Build · free", price: null, raiseTo: null, fingerprint: FP, blocked: null });
-  expect(m.totalLine).toBe("93 cr for the 3 shots");
-  /* At most 2 × the total, fixes included (93 → 186). */
-  expect(m.ceiling).toBe(186);
-  expect(fixLine(m)).toBe("Fixes if needed: up to 2 per shot, within 186 cr");
-  expect(balanceLine(m)).toBe("1,907 cr left after");
+  /* The card never sums its own figures: they come only from the server's plan quote at the gate. */
+  expect(m.total).toBeNull();
+  expect(m.primary).toEqual({ kind: "approve", label: "Build · free", price: null, raiseTo: null, fingerprint: FP, blocked: null });
+  expect(m.totalLine).toBeNull();
+  expect(m.ceiling).toBeNull();
+  expect(fixLine(m)).toBeNull();
+  expect(m.balance).toBeNull();
+  expect(balanceLine(m)).toBeNull();
+  expect(m.title).not.toMatch(/at most|\d+ cr/);
+  /* Whatever the estimates say, before the gate there is no figure to approve: the same with a short balance or an approximate engine. */
+  for (const over of [{ balance: 50 }, { estimates: { ...estimates, 1: { credits: 43, approximate: true } } }] as Partial<PlanInput>[]) {
+    const other = planModel(base(over))!;
+    expect([other.total, other.ceiling, other.totalLine, fixLine(other), balanceLine(other), other.primary?.label]).toEqual([null, null, null, null, null, "Build · free"]);
+  }
   /* Verify steps cost nothing today and are not on the card. */
   expect(m.steps).toHaveLength(3);
 });
@@ -104,24 +110,21 @@ test("after the plan's approval: what it has used of its ceiling, and a render o
   expect(asks.primary).toMatchObject({ kind: "render", label: "Render · 43 cr" });
 });
 
-test("a keyframe still is priced and totalled, and the most with fixes is twice the total (66 → 132)", () => {
+test("a keyframe still is priced on its own line and marked a still", () => {
   const m = planModel(base({
     run: run({ paid: [step(1, "Keyframes"), step(2, "Hero take"), step(3, "Draft takes")] }),
     estimates: { 1: { credits: 9, approximate: false }, 2: { credits: 43, approximate: false }, 3: { credits: 14, approximate: false } },
     stills: new Set([1]),
   }))!;
-  expect(m.total).toEqual({ kind: "exact", credits: 66 });
-  expect(m.ceiling).toBe(132);
+  expect(m.steps.map((s) => s.price)).toEqual([{ kind: "exact", credits: 9 }, { kind: "exact", credits: 43 }, { kind: "exact", credits: 14 }]);
   expect(m.steps[0].kind).toBe("still");
 });
 
-test("an engine that settles on what the provider states reads up to its band, and so does the total", () => {
+test("an engine that settles on what the provider states reads up to its band on its line", () => {
   expect(estimatePrice({ credits: 43, approximate: true })).toEqual({ kind: "up-to", credits: 129 });
   const m = planModel(base({ estimates: { ...estimates, 1: { credits: 43, approximate: true } } }))!;
-  expect(m.total).toEqual({ kind: "up-to", credits: 179 });
+  expect(m.steps[0].price).toEqual({ kind: "up-to", credits: 129 });
   expect(m.primary).toMatchObject({ label: "Build · free" });
-  expect(m.totalLine).toBe("up to 179 cr for the 3 shots");
-  expect(m.ceiling).toBe(358);
 });
 
 test("a take with no price yet leaves the total, the allowance and the raise unknown: Approve carries no figure", () => {
@@ -134,10 +137,10 @@ test("a take with no price yet leaves the total, the allowance and the raise unk
   expect(balanceLine(m)).toBeNull();
 });
 
-test("an unavailable engine says why and is left out of the total", () => {
+test("an unavailable engine says why and carries no price", () => {
   const m = planModel(base({ estimates: { ...estimates, 5: { unavailable: "no key for this engine" } } }))!;
   expect(m.steps[2].unavailable).toBe("Unavailable · no key for this engine");
-  expect(m.total).toEqual({ kind: "exact", credits: 86 });
+  expect(m.steps[2].price).toBeNull();
 });
 
 test("the per-shot rule marks the steps over it, worded by role", () => {
@@ -147,15 +150,15 @@ test("the per-shot rule marks the steps over it, worded by role", () => {
   expect(planModel(base({ rule: { rule: "anyone", cap: 50, admin: false } }))!.ruleLine).toBeNull();
 });
 
-test("only the person who asked builds, never while switched off or read-only; a short balance is said before the plan is priced", () => {
+test("only the person who asked builds, never while switched off or read-only; the balance is not judged before the plan is priced", () => {
   expect(planModel(base({ run: run({ mine: false }) }))!.primary?.blocked).toBe(NOT_MINE);
   expect(planModel(base({ enabled: false }))!.primary?.blocked).toBe(SWITCHED_OFF);
   expect(planModel(base({ readOnly: "Sample production · nothing you do here spends credits" }))!.primary?.blocked).toBe("Sample production · nothing you do here spends credits");
-  /* Building spends nothing, so it is not held back by the balance; the plan's Approve is (above). */
+  /* Building spends nothing, so it is not held back by the balance; the plan's Approve is, at the gate (above). */
   const short = planModel(base({ balance: 50 }))!;
   expect(short.primary?.blocked).toBeNull();
-  expect(short.balance?.short).toBe(43);
-  expect(balanceLine(short)).toBe("Short by 43 cr");
+  expect(short.balance).toBeNull();
+  expect(balanceLine(short)).toBeNull();
 });
 
 test("a run with no plan approval (built before it, or a tap per render) still asks each render at its own price, in its own words", () => {
