@@ -4,7 +4,7 @@ import { db, now, ready } from "./db";
 import { engineFor } from "./engines";
 import type { RenderHandle } from "./engines/types";
 import { isGenjutsuModel } from "./genjutsuTypes";
-import { isCinemaStudioModel, isHiggsfieldVideoModel } from "./cinemaStudioTypes";
+import { CINEMA_STUDIO_MODEL_ID, isCinemaStudioModel, isHiggsfieldVideoModel } from "./cinemaStudioTypes";
 import { cinemaStudioDeliveredUsd, cinemaStudioSettlement } from "./cinemaStudio";
 import { restoreHiggsfieldGenerationReceipt, settleHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
@@ -22,7 +22,7 @@ import { engineMock, fixtureUrl } from "./mock";
 import { fixtureBytes } from "./mockFs";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import { fundedOutcome } from "./providerFailure";
-import { higgsfieldRequestOutcome, serializeOutcome } from "./providerOutcome";
+import { higgsfieldRequestOutcome, noAnswerOutcome, serializeOutcome } from "./providerOutcome";
 
 type Original = { bytes: number; sha256: string; width: number; height: number; seconds: number; requestId: string };
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
@@ -70,9 +70,13 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
           if (original) throw new Error("Contradictory provider outcome");
           /* Its own status and words; its FAQ says failed and NSFW requests are refunded, and only completions billed. */
           const said = await fundedOutcome(higgsfieldRequestOutcome(state.raw), id, "higgsfield").catch(() => null);
-          await writeGenerationOutcome({ sql: `UPDATE generations SET status=?,cost_usd=0,error=?,provider_outcome=COALESCE(?,provider_outcome),updated_at=? WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.higgsfieldVideoPollToken')=?`,
-            args: [state.status, state.error || (isGenjutsuModel(String(row.model)) ? "The connected account canceled this transform request." : "The connected account canceled this request."), said ? serializeOutcome(said) : null, now(), id, token] },
-            { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "failed", engineCostUsd: 0, projectId: row.project_id == null ? null : String(row.project_id), createdBy: row.created_by == null ? undefined : String(row.created_by), providerOutcome: said });
+          /* A failed Cinema Studio take is charged what its provider reported for it, never past its quote (N), and nothing
+             when it reported nothing (owner's decision, 6 October 2026; the meter caps it, lib/meter.ts heldSettlement). */
+          const failedUsd = isCinemaStudioModel(String(row.model)) && typeof state.costUsd === "number" && Number.isFinite(state.costUsd) && state.costUsd > 0
+            ? state.costUsd : 0;
+          await writeGenerationOutcome({ sql: `UPDATE generations SET status=?,cost_usd=?,error=?,provider_outcome=COALESCE(?,provider_outcome),updated_at=? WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.higgsfieldVideoPollToken')=?`,
+            args: [state.status, Math.min(failedUsd, usd), state.error || (isGenjutsuModel(String(row.model)) ? "The connected account canceled this transform request." : "The connected account canceled this request."), said ? serializeOutcome(said) : null, now(), id, token] },
+            { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "failed", engineCostUsd: failedUsd, projectId: row.project_id == null ? null : String(row.project_id), createdBy: row.created_by == null ? undefined : String(row.created_by), providerOutcome: said });
           await deliverGenerationSettlement(id);
           await settleHiggsfieldGenerationReceipt(id);
           return;
@@ -182,4 +186,49 @@ export async function cancelGenjutsuVideo(id: string): Promise<{status: "request
     }
     return {status:"requested"};
   });
+}
+
+/** How long a Cinema Studio take may wait for its provider's answer before its hold is released (owner, 6 October 2026). */
+export const CINEMA_ANSWER_LIMIT_MS = 24 * 3_600_000;
+export const CINEMA_UNANSWERED = "No answer from the engine after 24 hours. Nothing was charged, and the credits it held are back.";
+
+/**
+ * The time limit on a Cinema Studio take's hold: a take that has had no answer from its provider for 24 hours since it
+ * was sent (`created_at`, restarted when a held take is released) ends as failed, charged nothing, its hold released at
+ * once, and recorded for the platform admin desk (its failed takes card reads the outcome). One take at a time, under
+ * the same recovery job as its collector, and only while no collection holds its lease, so a take whose answer is
+ * arriving right now is never cut off. Nothing is sent to the provider. The cron sync runs it (app/api/cron/sync).
+ */
+export async function expireUnansweredCinemaTakes(options: { limit?: number; deadlineAt?: number; at?: number } = {}): Promise<{ expired: string[] }> {
+  await ready();
+  const at = options.at ?? now();
+  const rows = (await db().execute({
+    sql: `SELECT id, model, project_id, shot_id, created_by FROM generations
+          WHERE deleted=0 AND kind='video' AND provider='higgsfield' AND model=? AND status IN ('queued','running') AND created_at <= ?
+            AND COALESCE(json_extract(params,'$.higgsfieldVideoPollUntil'),0) < ?
+          ORDER BY created_at, id LIMIT ?`,
+    args: [CINEMA_STUDIO_MODEL_ID, at - CINEMA_ANSWER_LIMIT_MS, at, Math.max(1, Math.min(20, options.limit ?? 5))],
+  })).rows;
+  const expired: string[] = [];
+  for (const row of rows) {
+    if (options.deadlineAt != null && Date.now() >= options.deadlineAt) break;
+    const id = String(row.id);
+    const ended = await withRecoveryJob(requireTenant().id, id, async () => {
+      const said = noAnswerOutcome("higgsfield", "run", CINEMA_UNANSWERED);
+      const written = await writeGenerationOutcome({
+        sql: `UPDATE generations SET status='failed',cost_usd=0,error=?,provider_outcome=COALESCE(provider_outcome,?),updated_at=?
+              WHERE id=? AND deleted=0 AND status IN ('queued','running') AND created_at <= ? AND COALESCE(json_extract(params,'$.higgsfieldVideoPollUntil'),0) < ?`,
+        args: [CINEMA_UNANSWERED, serializeOutcome(said), now(), id, at - CINEMA_ANSWER_LIMIT_MS, now()],
+      }, { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "failed", engineCostUsd: 0, providerOutcome: said,
+        projectId: row.project_id == null ? null : String(row.project_id), shotId: row.shot_id == null ? null : String(row.shot_id),
+        createdBy: row.created_by == null ? undefined : String(row.created_by) });
+      if (!written) return false;
+      await deliverGenerationSettlement(id);
+      await settleHiggsfieldGenerationReceipt(id).catch(() => {});
+      return true;
+    });
+    if (ended) expired.push(id);
+  }
+  if (expired.length) invalidate(PROJECTS_KEY);
+  return { expired };
 }

@@ -200,7 +200,8 @@ export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: strin
     case "failed":
       return {
         ...base, stage: "failed", tone: "red", settledAt: row.settledAt ?? null,
-        label: unbilled ? "Failed · not billed" : "Failed", reason: typedReason(row.failure) ?? failureLine(row.error, params), price: charged, ...again(),
+        /* A held take (Cinema Studio) that failed charging nothing had its hold released whole. */
+        label: unbilled ? (holdBandOf(row.model) > 1 && money.unit === "cr" ? "Failed · not charged" : "Failed · not billed") : "Failed", reason: typedReason(row.failure) ?? failureLine(row.error, params), price: charged, ...again(),
       };
     case "cancelled": {
       /* Discarded while held: the person's own doing, not a failure, and nothing was reserved for it. */

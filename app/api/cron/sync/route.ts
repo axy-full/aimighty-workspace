@@ -24,6 +24,7 @@ import { drainPipelineWakeups } from "@/lib/pipeline/executor";
 import { sweepConsumerJobs } from "@/lib/higgsfield-consumer/sweep";
 import { drainCanvasPushes } from "@/lib/workbench/canvas-push";
 import { drainRigAgentWakeups } from "@/lib/workbench/rig-agent";
+import { expireUnansweredCinemaTakes } from "@/lib/genjutsuVideo";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -144,6 +145,12 @@ export async function GET(req: Request) {
               if ("failed" in report && report.failed)
                 throw new Error("UPLOAD_CLEANUP_FAILED");
             });
+            // A Cinema Studio take with no answer from its provider after 24 hours: failed, charged nothing, its hold
+            // released and the admin desk told (lib/genjutsuVideo.ts). Before held_jobs, so the credits it frees
+            // can start what waits for them. Free: nothing is sent to any provider.
+            await stage("cinema_unanswered", () =>
+              expireUnansweredCinemaTakes({ limit: 5, deadlineAt }),
+            );
             await stage("held_jobs", () =>
               releaseHeldJobs({ defer: (fn) => afterResponse(fn) }),
             );

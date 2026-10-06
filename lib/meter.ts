@@ -7,7 +7,7 @@ import { paidByPlatformEngine } from "./platformSpend";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx } from "./billingLedger";
 import { LedgerUnitPausedError, ledgerOpenTx, restateFactor, workspaceUnitTx } from "./ledgerUnit";
 import { isHouseWorkspace } from "./houseWorkspace";
-import { parseOutcome, serializeOutcome, type BillingState, type BillingUnit, type FailureKind, type ProviderOutcome } from "./providerOutcome";
+import { noAnswerOutcome, parseOutcome, serializeOutcome, type BillingState, type BillingUnit, type FailureKind, type ProviderOutcome } from "./providerOutcome";
 
 /**
  * The metering layer. Every engine call, whatever the vendor, is written
@@ -76,20 +76,29 @@ type HeldRow = { readonly [column: string]: unknown };
 
 /**
  * The cost a held take (`hold_band` > 1, lib/cinemaHold.ts) is charged at as it ends, and what the vendor charged
- * past its hold. While it runs, its row holds its quote: it settles at its figure up to the quote times its band,
- * and at the quote itself when it ends with no figure — so its bill is never past the hold, never in debt, and the
- * rest of the hold is released at once. Once settled, a later figure may lower its charge, never raise it; and
- * while it runs, nothing moves its hold. Any other job is charged at its figure, unchanged.
+ * past what it may be charged. While it runs, its row holds its quote:
+ *  - finished, it settles at its figure up to the quote times its band (the hold), and at the quote itself when it
+ *    reports no figure;
+ *  - failed, it settles at the figure its provider reported, up to the quote (N, never the hold), and at nothing
+ *    when its provider reported none (owner's decision, 6 October 2026); `unreported` says so, for the admin;
+ * so its bill is never past the hold, never in debt, and the rest of the hold is released at once. Once settled, a
+ * later figure may lower its charge, never raise it; and while it runs, nothing moves its hold. Any other job is
+ * charged at its figure, unchanged.
  */
-export function heldSettlement(row: HeldRow | undefined, status: MeterStatus, figure: number | null): { cost: number | null; overrunUsd: number | null } {
+export function heldSettlement(row: HeldRow | undefined, status: MeterStatus, figure: number | null): { cost: number | null; overrunUsd: number | null; unreported?: true } {
   const band = Number(row?.hold_band ?? 0);
   const basis = Number(row?.engine_cost_usd);
   if (!row || !(band > 1) || !Number.isFinite(basis) || basis < 0) return { cost: figure, overrunUsd: null };
   if (status === "running") return { cost: null, overrunUsd: null };
-  const cap = row.status === "running" ? basis * band : basis;
-  if (figure == null) return { cost: row.status === "running" ? basis : null, overrunUsd: null };
-  /* Past the hold, the platform's: counted once, when the take first settles. */
-  return figure > cap ? { cost: cap, overrunUsd: row.status === "running" ? figure - cap : null } : { cost: figure, overrunUsd: null };
+  const running = row.status === "running";
+  if (status === "failed" && running) {
+    if (figure == null || !(figure > 0)) return { cost: 0, overrunUsd: null, ...(figure == null ? { unreported: true as const } : {}) };
+    return figure > basis ? { cost: basis, overrunUsd: figure - basis } : { cost: figure, overrunUsd: null };
+  }
+  const cap = running ? basis * band : basis;
+  if (figure == null) return { cost: running ? basis : null, overrunUsd: null };
+  /* Past what it may be charged, the platform's: counted once, when the take first settles. */
+  return figure > cap ? { cost: cap, overrunUsd: running ? figure - cap : null } : { cost: figure, overrunUsd: null };
 }
 
 export class FundingSourceChangedError extends Error {
@@ -165,6 +174,9 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
         const held = heldSettlement(row, e.status, figure);
         const cost = held.cost;
         const overrun = reportedOverrun + (held.overrunUsd ?? 0);
+        /* A held take that failed with no figure from its provider is charged nothing, and the platform admin desk hears
+           of it (its failed takes card reads the outcome); the person's take reads "Failed · not charged". */
+        const outcome = e.providerOutcome ?? (held.unreported ? noAnswerOutcome("higgsfield", "run", "The take failed and its provider reported no cost; nothing was charged.") : null);
         // A key added or removed while the provider runs cannot change who funded this attempt.
         const fundedByPlatform = row ? Boolean(row.paid_by_platform) : paid;
         /* A NEW paid row while the record (the platform's, or this workspace's own) counts in another price
@@ -209,7 +221,7 @@ export async function meter(e: MeterEvent, opts: { critical?: boolean } = {}): P
                 updated_at = excluded.updated_at`,
         args: [e.id, workspaceId, e.projectId ?? null, e.shotId ?? null, e.kind, e.engine, e.model, e.status,
                cost, billed, fundedByPlatform ? 1 : 0, e.durationMs ?? null, e.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin,
-               e.providerOutcome ? serializeOutcome(e.providerOutcome) : null, overrun > 0 ? overrun : null],
+               outcome ? serializeOutcome(outcome) : null, overrun > 0 ? overrun : null],
         });
         if (e.status === "succeeded" || (e.status === "failed" && cost === 0)) await resolveRecoveryJobTx(tx, workspaceId, e.id);
       }, ts);

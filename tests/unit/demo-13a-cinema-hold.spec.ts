@@ -126,15 +126,19 @@ test("one wording and one band: about N cr, at most 3N cr, for Cinema Studio alo
   expect(composerButtonLabel({ quote, quoteKey: "k", submitting: false, count: 3 })).toBe("Generate 3 takes · about 93 cr, at most 279 cr");
 });
 
-test("the settlement rule: actual cost up to the hold, the hold past it, the quote with no figure, and a hold never moved while it runs", async () => {
+test("the settlement rule: finished, its cost up to the hold and the quote with no figure; failed, its reported cost up to the quote and nothing with none; a hold never moved while it runs", async () => {
   const { heldSettlement } = await import("../../lib/meter");
   const { cinemaStudioSettlement } = await import("../../lib/cinemaStudio");
   const running = { status: "running", engine_cost_usd: 2, hold_band: 3 };
   expect(heldSettlement(running, "succeeded", 2.5)).toEqual({ cost: 2.5, overrunUsd: null });
   expect(heldSettlement(running, "succeeded", 6)).toEqual({ cost: 6, overrunUsd: null });
   expect(heldSettlement(running, "succeeded", 9)).toEqual({ cost: 6, overrunUsd: 3 });
-  expect(heldSettlement(running, "failed", null)).toEqual({ cost: 2, overrunUsd: null });
+  expect(heldSettlement(running, "succeeded", null)).toEqual({ cost: 2, overrunUsd: null });
+  /* Failed (owner's decision, 6 October 2026): nothing with no figure, flagged for the admin; a reported cost up to N. */
+  expect(heldSettlement(running, "failed", null)).toEqual({ cost: 0, overrunUsd: null, unreported: true });
   expect(heldSettlement(running, "failed", 0)).toEqual({ cost: 0, overrunUsd: null });
+  expect(heldSettlement(running, "failed", 1.5)).toEqual({ cost: 1.5, overrunUsd: null });
+  expect(heldSettlement(running, "failed", 5)).toEqual({ cost: 2, overrunUsd: 3 });
   expect(heldSettlement(running, "running", 2)).toEqual({ cost: null, overrunUsd: null });
   /* Once settled, a later figure may lower the charge, never raise it. */
   const settled = { status: "succeeded", engine_cost_usd: 2.5, hold_band: 3 };
@@ -203,7 +207,7 @@ test("the balance must cover the hold: short of 3N the take waits, held, with To
   expect(await f.balance()).toBe(0);
 }));
 
-test("a take settles at its actual cost and the rest of the hold comes back at once; with no figure it is charged N; a failure, nothing", async () => fixture("hold_settle", 1_000, async (f) => {
+test("a take settles at its actual cost and the rest of the hold comes back at once; finished with no figure, N; failed, its reported cost up to N, or nothing", async () => fixture("hold_settle", 1_000, async (f) => {
   const { reserveGenerationSpend } = await import("../../lib/generationRequests");
   const { meter } = await import("../../lib/meter");
   const { creditsAtTerms, currentBillingTerms } = await import("../../lib/billingTerms");
@@ -223,9 +227,25 @@ test("a take settles at its actual cost and the rest of the hold comes back at o
   expect(before - await f.balance()).toBe(creditsAtTerms(2.5, terms));
   expect(await f.meterRow("hold_actual")).toMatchObject({ status: "succeeded", billed_credits: creditsAtTerms(2.5, terms), engine_cost_usd: 2.5, overrun_usd: null });
   before = await take("hold_unknown");
-  await end("hold_unknown", "failed", null);
+  await end("hold_unknown", "succeeded", null);
   expect(before - await f.balance()).toBe(n);
-  expect(await f.meterRow("hold_unknown")).toMatchObject({ status: "failed", billed_credits: n });
+  expect(await f.meterRow("hold_unknown")).toMatchObject({ status: "succeeded", billed_credits: n });
+  /* Failed and its provider reported no cost: nothing, the whole hold back, and the admin desk hears of it. */
+  before = await take("hold_failed_silent");
+  await end("hold_failed_silent", "failed", null);
+  expect(await f.balance()).toBe(before);
+  expect(await f.meterRow("hold_failed_silent")).toMatchObject({ status: "failed", billed_credits: 0 });
+  const { providerFailuresSince } = await import("../../lib/meter");
+  const desk = await providerFailuresSince(0, 100);
+  expect(desk.recent.find((r) => r.id === "hold_failed_silent")).toMatchObject({ engine: "higgsfield", kind: "no_answer", message: expect.stringContaining("nothing was charged") });
+  /* Failed with a reported cost: that, never past N; past N the rest is the platform's. */
+  before = await take("hold_failed_cost");
+  await end("hold_failed_cost", "failed", 1);
+  expect(before - await f.balance()).toBe(creditsAtTerms(1, terms));
+  before = await take("hold_failed_big");
+  await end("hold_failed_big", "failed", 5);
+  expect(before - await f.balance()).toBe(n);
+  expect(await f.meterRow("hold_failed_big")).toMatchObject({ billed_credits: n, overrun_usd: 3 });
   before = await take("hold_failed");
   await end("hold_failed", "failed", 0);
   expect(await f.balance()).toBe(before);

@@ -202,13 +202,13 @@ test("a take held at one price of a credit settles in the next, once: paused bef
     const run = await convertAllCredits({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row", cutoverAt: Date.UTC(2026, 9, 3, 14, 41, 44), endAt: Date.now(), dryRun: false, at: Date.now() + 1_000, by: "owner", universe: ["hold_ws_unit"] });
     expect(run.ledgerUnitAfter).toBe(0.1);
     expect((await row("u_over"))!.billed).toBe(held * 8);
-    /* Ten times its quote: capped at the converted hold, the over recorded; no figure: N, converted once. */
+    /* Ten times its quote: capped at the converted hold, the over recorded; failed with no figure: nothing. */
     await inTenant(ws, () => meter({ ...take("u_over", USD * 10), status: "succeeded" }));
     await inTenant(ws, () => meter({ ...take("u_nofig", null), status: "failed" }));
     const over = (await row("u_over"))!, nofig = (await row("u_nofig"))!;
     expect(over.billed).toBeLessThanOrEqual(held * 8);
     expect(over.overrun).not.toBeNull();
-    expect(nofig.billed).toBe((held / 3) * 8);
+    expect(nofig.billed).toBe(0);
     /* The same figure again moves nothing. */
     await inTenant(ws, () => meter({ ...take("u_over", USD * 10), status: "succeeded" }));
     expect((await row("u_over"))!.billed).toBe(over.billed);
