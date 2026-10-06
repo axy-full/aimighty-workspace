@@ -835,14 +835,14 @@ test("no charge without an approval: a price that moved after the tap is priced 
     await agent.advanceRigAgentRun(runId, deps);
     const first = (await view()).paid[0];
     await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: first.seq, fingerprint: first.fingerprint, userId: OWNER });
-    /* The shot changed after the tap: admission refuses the old approval, and nothing is reserved. */
+    /* The shot changed after the tap: priced again when its turn comes, the old approval no longer covers it, and nothing is sent or reserved. */
     r.priceNow.set("1", 0.9);
     expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
     let run = await view();
     expect(run.paid[0]).toMatchObject({ state: "waiting", quote: await credits(0.9) });
     expect(run.paid[0].fingerprint).not.toBe(first.fingerprint);
     expect(await renderRows()).toEqual([]);
-    expect(r.calls).toHaveLength(1);
+    expect(r.calls).toHaveLength(0);
     /* The switch off: no tap is taken, and the run pauses before its next paid step; on again, the tap sends it. */
     const previous = process.env.RIG_AGENT_ENABLED;
     process.env.RIG_AGENT_ENABLED = "0";
@@ -855,12 +855,12 @@ test("no charge without an approval: a price that moved after the tap is priced 
     process.env.RIG_AGENT_ENABLED = "0";
     try {
       expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "paused", more: false });
-      expect(r.calls).toHaveLength(1);
+      expect(r.calls).toHaveLength(0);
     } finally {
       if (previous === undefined) delete process.env.RIG_AGENT_ENABLED; else process.env.RIG_AGENT_ENABLED = previous;
     }
     await agent.advanceRigAgentRun(runId, deps);
-    expect(r.calls).toHaveLength(2);
+    expect(r.calls).toHaveLength(1);
     run = await view();
     expect(run.paid[0].state).toBe("rendering");
   });
