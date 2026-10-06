@@ -101,8 +101,8 @@ export function providerDisplayName(id: string): string {
 const FAMILY_RENAMES: [RegExp, string][] = [
   [/\bSoul[\s-]+ID\b/gi, "Identity"],
   [/\bSoul[\s-]+Character\b/gi, IDENTITY_RENDER_NAME],
-  [/\bHiggsfield\s+Soul\b/gi, "Persona"],
-  [/\bSoul(?=\s+(?:\d|Cinema|Cast|Location|v\d))/gi, "Persona"],
+  [/\bHiggsfield\s+Soul\b/gi, "Identity"],
+  [/\bSoul(?=\s+(?:\d|Cinema|Cast|Location|v\d))/gi, "Identity"],
   [/\bNano\s+Banana\b/gi, "Image"],
   [/\bGPT[-\s]?Image\b/gi, "Forge Image"],
   [/\bChatGPT\b/gi, "your assistant"],

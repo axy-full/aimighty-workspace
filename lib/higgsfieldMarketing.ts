@@ -53,7 +53,7 @@ export function marketingSettings(value: unknown): MarketingSettings {
   const parsed = settingsSchema.safeParse(value ?? {});
   if (!parsed.success)
     throw new MarketingError(
-      "Choose valid Marketing Studio settings.",
+      "Choose valid Product image settings.",
       400,
       "invalid_settings",
     );
@@ -103,7 +103,7 @@ export function marketingInput(
     (checked.enhancePrompt && (imageUrls.length < 1 || imageUrls.length > 2))
   )
     throw new MarketingError(
-      "Marketing Studio needs a prompt of 1–5000 characters, a supported size/aspect and at most 16 images. Presets require 1–2 images.",
+      "Product image needs a prompt of 1–5000 characters, a supported size/aspect and at most 16 images. Presets require 1–2 images.",
       400,
       "invalid_input",
     );
@@ -198,9 +198,9 @@ async function readCall(url: string, body?: unknown) {
         if (status === 403) throw marketingBalanceError();
         throw new MarketingError(
           status === 401
-            ? "This connected account cannot access Marketing Studio."
+            ? "This connected account cannot access Product image."
             : status === 404
-              ? "Marketing Studio is unavailable for this connection."
+              ? "Product image is unavailable for this connection."
               : status === 429
                 ? "The connected account is rate limiting requests. Try again shortly."
                 : "Marketing pricing or presets are temporarily unavailable.",
@@ -464,7 +464,7 @@ export async function estimateMarketingInput(
 export function marketingPreflightError(): HiggsfieldHttpError {
   return new HiggsfieldHttpError(
     422,
-    "The Marketing Studio quote or connection changed or could not be verified. Nothing was submitted; review a fresh quote.",
+    "The Product image quote or connection changed or could not be verified. Nothing was submitted; review a fresh quote.",
   );
 }
 

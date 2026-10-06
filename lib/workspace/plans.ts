@@ -1086,13 +1086,13 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
 
   marketing: plan("marketing", {
     title: "Build the campaign set",
-    line: "Takes the variants set up on Marketing Studio, prices each one and renders the set. Generation is billed per variant, so the run stops for approval first.",
+    line: "Takes the variants set up on Product image, prices each one and renders the set. Generation is billed per variant, so the run stops for approval first.",
     priceLabel: "Quote at gate",
     doneLine: (_ctx, io) => `${plural(count(io.admitted), "variant")} sent to render`,
     runnable: (ctx) => {
       const project = needProject(ctx);
       if (!project.ok) return project;
-      return variants(ctx).length ? OK : notYet("configure the variant set on Marketing Studio first.");
+      return variants(ctx).length ? OK : notYet("configure the variant set on Product image first.");
     },
     steps: [
       step(
@@ -1110,7 +1110,7 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
         ),
       ),
       step("Render the variants", "dispatch", (ctx) => plural(variants(ctx).length, "variant"), generationDispatch("ws-marketing", "variant")),
-      step("File to the campaign", "file", "→ Marketing Studio", fileJobs("variant")),
+      step("File to the campaign", "file", "→ Product image", fileJobs("variant")),
     ],
   }),
 

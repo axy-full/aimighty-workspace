@@ -7,7 +7,7 @@ import { ACCESS_HREF, SITE_SUITES } from "@/lib/marketing/site";
 
 export const metadata: Metadata = {
   title: "Ads",
-  description: "Ads: product, brand, cast, format, variants, design and publishing in one marketing studio.",
+  description: "Ads: product, brand, cast, format, variants, design and publishing in one place.",
 };
 
 /* Limits as the code enforces them: lib/workbench/studio-schema.ts (moleculrSchema),
@@ -56,7 +56,7 @@ export default function BusinessPage() {
     <SitePage active="business">
       <SuiteHeader
         eyebrow="03 · Ads"
-        title="Build and grow your brand from one marketing studio."
+        title="Build and grow your brand from one place."
         lead="One studio: a product, who presents it, what it says and where it runs. Configure a variant and it becomes a generation node bound to your saved originals, so a reload or a handoff to the Board keeps every reference."
         pages={suite.pages}
         cta={<>
@@ -65,7 +65,7 @@ export default function BusinessPage() {
         </>}
       />
 
-      <Section id="business-studio" panel label="Marketing Studio">
+      <Section id="business-studio" panel label="Product image">
         <Grid col={180} style={{ gap: 10 }}>
           {FACTS.map(([k, v]) => <Fact key={k} k={k} v={v} />)}
         </Grid>

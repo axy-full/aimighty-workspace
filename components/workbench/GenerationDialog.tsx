@@ -481,7 +481,7 @@ function TakeDialog({
             {audioTask === "music" && <label><input type="checkbox" checked={instrumental} disabled={busy || !!pending} onChange={event => setInstrumental(event.target.checked)} />Instrumental</label>}
           </div>}
           {kind !== "audio" && model?.marketing && <div className="generation-options">
-            <label className="field-label">Build<select aria-label="Marketing Studio build" value={marketing.variant ?? "alpha"} disabled={busy || !!pending} onChange={event => {
+            <label className="field-label">Build<select aria-label="Product image build" value={marketing.variant ?? "alpha"} disabled={busy || !!pending} onChange={event => {
               const variant = event.target.value as MarketingBuild;
               setMarketing({ ...(variant === "alpha" ? {} : { variant }), quality: marketingQualityFor({ ...marketing, variant }),
                 enhancePrompt: marketing.enhancePrompt, ...(marketing.presetId ? { presetId: marketing.presetId } : {}) });
@@ -491,7 +491,7 @@ function TakeDialog({
             <label className="field-label">Image quality<select aria-label={`${PRODUCT_IMAGE_NAME} quality`} value={marketing.quality} disabled={busy || !!pending || (marketing.enhancePrompt && (marketing.variant ?? "alpha") === "alpha")} onChange={event => setMarketing({ ...marketing, quality: event.target.value as MarketingQuality })}>
               {marketingQualities(marketing.variant).map(quality => <option key={quality.id} value={quality.id}>{quality.label}</option>)}
             </select></label>
-            <p className="muted small-copy">{marketing.enhancePrompt ? `Preset enhancement · product first, optional cast second${(marketing.variant ?? "alpha") === "alpha" ? " · high quality" : ""}` : "Marketing Studio · direct creative direction"}. {(marketing.variant ?? "alpha") === "alpha" ? "Price is checked live before rendering." : "The price is approximate; the delivered image settles it."}</p>
+            <p className="muted small-copy">{marketing.enhancePrompt ? `Preset enhancement · product first, optional cast second${(marketing.variant ?? "alpha") === "alpha" ? " · high quality" : ""}` : "Product image · direct creative direction"}. {(marketing.variant ?? "alpha") === "alpha" ? "Price is checked live before rendering." : "The price is approximate; the delivered image settles it."}</p>
           </div>}
           {kind !== "audio" && model?.soulIdentity && (
             <div className="generation-options">
