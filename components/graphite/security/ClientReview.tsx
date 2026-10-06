@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { posterSrc } from "@/lib/format";
 import { dateWords } from "@/lib/security/consent-words";
 import "./security.css";
@@ -41,11 +41,11 @@ export function ClientReview({ token, data, onChanged }: { token: string; data: 
   const first = useMemo(() => data.takes.find((t) => t.state === "review" && !t.verdict) ?? data.takes[0] ?? null, [data.takes]);
   const [pick, setPick] = useState<string | null>(first?.id ?? null);
   const take = data.takes.find((t) => t.id === pick) ?? first;
-  const [name, setName] = useState("");
+  /* The name a client last used, read once when the page mounts (as the older review page does). */
+  const [name, setName] = useState(() => { try { return typeof localStorage === "undefined" ? "" : localStorage.getItem("aw_review_name") ?? ""; } catch { return ""; } });
   const [text, setText] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
-  useEffect(() => { try { setName(localStorage.getItem("aw_review_name") ?? ""); } catch { /* storage off */ } }, []);
 
   /* The comment travels with the decision, as the design draws it: one press, one record. */
   const send = async (what: "approved" | "changes") => {

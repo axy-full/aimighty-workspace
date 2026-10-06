@@ -99,7 +99,9 @@ export const POST = withTenant(async function POST(req: Request) {
   const name = String(body.name ?? "").trim().slice(0, 60);
   if (!name) return NextResponse.json({ error: "Give the token a name" }, { status: 400 });
 
-  const scope: TokenScope = body.scope === "read" ? "read" : "render";
+  /* A token made here is read-only or prepares jobs (Gaps B); "render" is accepted from the older pages and the
+     CLI, as before. Only the word itself grants spending. */
+  const scope: TokenScope = body.scope === "read" ? "read" : body.scope === "prepare" ? "prepare" : "render";
   /* The ceiling, in the workspace's unit (lib/tokenCeiling.ts). Absent or
      blank is "no limit"; any other value must read as a figure or nothing is
      made. A value that did not read used to be stored as no limit: an

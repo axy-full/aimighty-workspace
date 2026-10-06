@@ -65,7 +65,7 @@ export function ClientLink({ productionId, toast }: { productionId: string | nul
   };
 
   const live = (data?.links ?? []).filter((l) => l.live);
-  const until = live[0]?.expiresAt ?? (data ? Date.now() + data.days * 86_400_000 : null);
+  const until = live[0]?.expiresAt ?? null;
   return (
     <section className="gsec-link" aria-label="Client link" data-testid="client-link">
       <span className="gsec-eyebrow">Client link</span>
@@ -76,7 +76,7 @@ export function ClientLink({ productionId, toast }: { productionId: string | nul
             {fresh ? <span className="gsec-link-url" data-testid="client-link-url">{fresh}</span> : null}
             <div className="gsec-tags">
               <span className="gsec-tag">Can approve</span><span className="gsec-tag">Can comment</span>
-              <span className="gsec-tag" data-testid="client-link-expiry">No sign-in · expires {until ? dateWords(until) : "in 30 days"}</span>
+              <span className="gsec-tag" data-testid="client-link-expiry">No sign-in · expires {until ? dateWords(until) : `after ${data.days} days`}</span>
             </div>
             <span data-testid="client-link-count">{live.length ? `${live.length} live ${live.length === 1 ? "link" : "links"} · this production’s review only` : "No live link. Copy one to share the review."}</span>
             {data.canManage ? live.map((l) => (

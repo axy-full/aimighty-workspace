@@ -3,6 +3,7 @@ import { getGeneration } from "@/lib/jobs";
 import { requireUser, withTenant } from "@/lib/auth";
 import { releaseHeldJobs } from "@/lib/held";
 import { mayRelease } from "@/lib/workspace/release";
+import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -22,6 +23,8 @@ const releasedBefore = (gen: { status: string; params: Record<string, unknown> }
 export const POST = withTenant(async function POST(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
+  /* Releasing a held take approves its spend: people only, never an API or MCP token of any scope (owner rule). */
+  if (!isPerson({ user: got.user, token: got.token })) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   const { id } = await params;
   const body = await req.json().catch(() => null) as { credits?: unknown } | null;
   const approved = Number(body?.credits ?? Number.NaN);

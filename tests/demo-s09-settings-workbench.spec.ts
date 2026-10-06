@@ -331,7 +331,7 @@ test("Connections: tokens as the code has them, made and shown once, revoked in 
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("Can generate · 120 cr of 500 cr this month · used 2h ago");
   await expect(rows.nth(1)).toContainText("Read-only · never used");
-  await expect(page.getByTestId("settings-tokens")).not.toContainText(/prepare jobs|approves each/i);
+  /* Older tokens say what they do; a new one reads or prepares jobs a person approves (Gaps B, lane 5). */
   await expect(page.getByTestId("settings-publishing-row")).toHaveCount(3);
   await expect(page.getByTestId("settings-publishing")).toContainText("Not connected");
   await expect(page.getByTestId("settings-publishing").getByRole("button")).toHaveCount(0);
@@ -341,12 +341,12 @@ test("Connections: tokens as the code has them, made and shown once, revoked in 
 
   await page.getByTestId("settings-token-make").click();
   await page.getByTestId("settings-token-name").fill("Studio assistant");
-  await expect(page.getByTestId("settings-token-ceiling")).toHaveValue("500");
-  await page.getByTestId("settings-token-ceiling").fill("120");
+  await expect(page.getByTestId("settings-token-scope-prepare")).toHaveAttribute("aria-checked", "true");
   await page.getByTestId("settings-token-create").click();
   await expect(page.getByTestId("settings-token-secret")).toHaveText("pk_secret_once_123");
-  expect(writes.find((w) => w.url === "/api/tokens")?.body).toEqual({ name: "Studio assistant", scope: "render", capCredits: 120 });
+  expect(writes.find((w) => w.url === "/api/tokens")?.body).toEqual({ name: "Studio assistant", scope: "prepare" });
   await expect(page.getByTestId("settings-token")).toHaveCount(3);
+  await page.getByTestId("settings-token-done").click();
   await floors(page, "Connections, fresh token");
   await shot(page, "connections-token");
   /* The secret fills the setup, which is one fold away. */
@@ -355,7 +355,7 @@ test("Connections: tokens as the code has them, made and shown once, revoked in 
   await page.getByTestId("settings-client-mcp").click();
   await expect(page.getByTestId("settings-setup-step").nth(1)).toContainText("Bearer pk_secret_once_123");
   await page.getByTestId("settings-fold-mcp-toggle").click();
-  await expect(page.getByTestId("settings-mcp-tool")).toHaveCount(7);
+  await expect(page.getByTestId("settings-mcp-tool")).toHaveCount(8);
   await expect(page.getByTestId("settings-mcp-tool").filter({ hasText: "render_shot" })).toContainText("Can generate");
   await floors(page, "Connections, folds open");
   await page.getByTestId("settings-fold-mcp").scrollIntoViewIfNeeded();

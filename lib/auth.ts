@@ -226,7 +226,7 @@ async function resolveStore(): Promise<TenantStore> {
  * handler that reaches for data before checking who is asking still
  * cannot get any.
  */
-export function withTenant<Req extends Request = Request, Ctx = unknown>(handler: (req: Req, ctx: Ctx) => Promise<Response>, options: { readOnlyPostTransport?: boolean; requireRequestScope?: boolean; allowMfaEnrollment?: boolean; /** The one kind of write a `prepare` token may make: preparing a job for a person to approve. */ preparedJobs?: boolean } = {}) {
+export function withTenant<Req extends Request = Request, Ctx = unknown>(handler: (req: Req, ctx: Ctx) => Promise<Response>, options: { readOnlyPostTransport?: boolean; requireRequestScope?: boolean; allowMfaEnrollment?: boolean; /** The one kind of write a `prepare` token may make: preparing a job for a person to approve. */ preparedJobs?: boolean; /** The MCP endpoint's JSON-RPC over POST: its tools call the app's routes with the same bearer. */ mcpTransport?: boolean } = {}) {
   return recoveryRoute(async (req: Req, ctx: Ctx): Promise<Response> => {
     let store: TenantStore;
     try { store = await resolveStore(); }
@@ -237,7 +237,7 @@ export function withTenant<Req extends Request = Request, Ctx = unknown>(handler
     if(!['GET','HEAD','OPTIONS'].includes(req.method)){
       if(store.token?.scope==='read'&&!(req.method==='POST'&&options.readOnlyPostTransport))return Response.json({error:'This token is read-only.'},{status:403});
       /* A prepare token writes nothing but a prepared job (and speaks MCP over POST): every other write is refused here, before any handler runs. */
-      if(store.token?.scope==='prepare'&&!(req.method==='POST'&&(options.readOnlyPostTransport||options.preparedJobs)))return Response.json({error:'This token prepares jobs; a person approves each in Particl.'},{status:403});
+      if(store.token?.scope==='prepare'&&!(req.method==='POST'&&(options.mcpTransport||options.preparedJobs)))return Response.json({error:'This token prepares jobs; a person approves each in Particl.'},{status:403});
       const origin=req.headers.get('origin');
       if(!store.token&&origin&&origin!==new URL(req.url).origin)return Response.json({error:'Invalid request origin.'},{status:403});
     }

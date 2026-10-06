@@ -109,3 +109,4 @@
   .gcl-acts { flex-direction: column-reverse; }
   .gcl-acts .gsec-btn { width: 100%; }
 }
+.gsec-head-gap { margin-bottom: 14px; }
