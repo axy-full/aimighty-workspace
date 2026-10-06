@@ -22,6 +22,7 @@ import { useRecreatePrice } from "@/lib/shell/use-recreate-price";
 import { ctxPrice } from "@/lib/shell/recreate-price";
 import type { RecipeSource } from "@/lib/shell/recipe";
 import { JobsTrayProvider } from "@/lib/shell/use-jobs-tray";
+import { useLibraryFollowsJobs } from "@/lib/shell/use-library-follows-jobs";
 import { boundUndo, splitUndoHint } from "@/lib/shell/undo";
 import { AtomikSheet } from "./AtomikSheet";
 import { ContextMenu } from "./ContextMenu";
@@ -62,6 +63,12 @@ import { isLanded } from "@/lib/shell/screens";
 import { seededProject, type CreateSeed } from "@/lib/shell/create-project";
 
 /** What this build cannot do yet says so on the item; build step 3 (assets) wires the rest to the library's own routes. */
+
+/** Mounted inside the jobs tray's provider: a finished take lands in the open project's Library (lib/shell/use-library-follows-jobs.ts). */
+function LibraryFollowsJobs({ projectId, refresh }: { projectId: string | null; refresh: () => Promise<void> }) {
+  useLibraryFollowsJobs(projectId, refresh);
+  return null;
+}
 
 /**
  * One shell (design/particl-graphite/README.md › Shell): header, stage strip,
@@ -371,6 +378,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   return (
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
       <JobsTrayProvider>
+      <LibraryFollowsJobs projectId={project?.id ?? null} refresh={library.refresh} />
       <div className="gx" data-screen={shell.screen ?? undefined} data-phone={phoneOn ? (shell.phone.framed ? "framed" : "") : undefined}
         data-view={shell.view} data-suite={shell.suite.id} style={rootStyle} onContextMenu={onContext} onClick={() => shell.ctx && shell.closeCtx()}>
         {session.workspace?.suspended ? (

@@ -27,8 +27,8 @@ import { expectFloors } from "./phoneFloors";
  *      npx playwright test --config=playwright.five-minute.config.ts   (the config's set-up warms the server first)
  */
 const FIVE_MINUTES = 5 * 60_000;
-/** Taps from the invitation link to the approved take (clicks and ticks; typing is not a tap). Set from the first green run, which includes the reload the board and the phone need to offer the first take (3 taps on the laptop, 1 on the phone); lower it when a PR removes a tap. */
-const TAP_BUDGET = { desktop: 12, phone: 8 };
+/** Taps from the invitation link to the approved take (clicks and ticks; typing is not a tap). Set from the first green run; lower it when a PR removes a tap. */
+const TAP_BUDGET = { desktop: 9, phone: 7 };
 const BRIEF = "A 15-second film about a courier crossing a rooftop at dawn, three shots.";
 const cr = /(\d[\d,]*(?:\.\d)?)\s*cr\b/i;
 
@@ -125,39 +125,39 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     expect(forged.ok(), "a made-up invitation opens nothing").toBe(false);
     run.started = Date.now();
     await run.page.goto(invite.link, { timeout: 120_000 });
-    await expect(run.page.getByRole("heading", { name: /create your studio workspace/i })).toBeVisible({ timeout: 60_000 });
-    await expect(run.page.getByLabel(/work email/i)).toHaveValue(invite.email);
-    await expect(run.page.getByLabel(/work email/i)).toHaveJSProperty("readOnly", true);
-    await expect(run.page.getByLabel(/your name/i)).toHaveValue(invite.name);
+    await expect(run.page.getByRole("heading", { name: /create your account/i })).toBeVisible({ timeout: 60_000 });
+    await expect(run.page.getByTestId("signup-email")).toHaveValue(invite.email);
+    await expect(run.page.getByTestId("signup-email")).toHaveJSProperty("readOnly", true);
+    /* The invitation names the person, so the form does not ask again. */
+    await expect(run.page.getByTestId("signup-name")).toHaveCount(0);
     await screenIsClean(run);
   });
 
   test("2 · the person names the workspace and signs up", async () => {
     const { page } = run;
-    await page.getByLabel(/workspace name/i).fill("Five Minute Studio");
-    await page.getByLabel(/^password/i).fill(PASSPHRASE);
-    await page.getByLabel(/^confirm password/i).fill(PASSPHRASE);
-    await tap(run, page.getByRole("checkbox"));
-    await tap(run, page.getByRole("button", { name: /Create the workspace/ }));
+    await page.getByTestId("signup-workspace").fill("Five Minute Studio");
+    await page.getByTestId("signup-password").fill(PASSPHRASE);
+    await page.getByTestId("signup-confirm").fill(PASSPHRASE);
+    await tap(run, page.getByTestId("signup-terms"));
+    await tap(run, page.getByTestId("signup-submit"));
     await page.waitForURL((url) => !/\/signup/.test(url.pathname), { timeout: 120_000 });
     mark(run, "signed up");
     run.balanceAtStart = null;
   });
 
-  test.fixme("3 · sign-up lands on Home, 'What are we making?'", async () => {
-    /* FIXME: sign-up still sends a new person to /workbench?onboarding=1, which opens the old Studio 'Start a production' page, not Home. */
-    await expect(run.page.getByTestId("home")).toBeVisible();
-    await expect(run.page.getByRole("heading", { name: "What are we making?" })).toBeVisible();
-  });
-
-  test("4 · Home: 'What are we making?', the brief typed, Start with its price", async () => {
+  test("3 · sign-up lands on Home, 'What are we making?'", async () => {
     const { page } = run;
-    /* Step 3 is not built, so the person goes to Home by its address (Home's own tab, in the header, is on the page they land on). */
-    await page.goto("/suites?view=home", { timeout: 120_000 });
-    await expect(page.getByRole("heading", { name: "What are we making?" })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole("heading", { name: "What are we making?" })).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByTestId("home")).toBeVisible();
+    expect(new URL(page.url()).searchParams.get("view"), "the address is Home's").toBe("home");
     await expect(page.getByTestId("home-start")).toHaveText(/^Start · up to \d[\d,]* cr$/, { timeout: 30_000 });
     run.balanceAtStart = await balanceCr(page);
     expect(run.balanceAtStart, "the header shows the balance").not.toBeNull();
+    mark(run, "landed on Home");
+  });
+
+  test("4 · Home: the brief typed, Start with its price, the templates", async () => {
+    const { page } = run;
     await page.getByTestId("home-brief").fill(BRIEF);
     await expect(page.getByTestId("home-templates")).toBeVisible();
     await screenIsClean(run, ['[data-testid="home-start-row"]']);
@@ -252,17 +252,8 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     const { page } = run;
     const first = page.getByTestId("take-card").filter({ hasText: "Shot 1" });
     const approve = page.getByTestId("insp-approve");
+    /* No reload: the board read the Library again when the render finished. */
     await tap(run, first);
-    if (!(await approve.waitFor({ state: "visible", timeout: 8_000 }).then(() => true, () => false))) {
-      /* The board's Library is not read again after Atomik's render, so the take cannot be judged until the board is opened again.
-         The person does that; it is recorded as an issue, not hidden. */
-      test.info().annotations.push({ type: "issue", description: "After an Atomik render the board offers the take for approval only after the board is reloaded (the project's Library is not re-read)." });
-      run.taps++;
-      await page.reload();
-      await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
-      await tap(run, page.getByTestId("board-rail").getByRole("button", { name: "Shots" }));
-      await tap(run, first);
-    }
     await expect(approve).toBeVisible({ timeout: 30_000 });
     expect(await unpricedSpendButtons(page, '[data-testid="board-inspector"]'), "inspector buttons that spend carry their price").toEqual([]);
     await tap(run, approve);
@@ -300,32 +291,27 @@ test.describe("the five-minute test · phone 390x844", () => {
     run.email = invite.email;
     run.started = Date.now();
     await run.page.goto(invite.link, { timeout: 120_000 });
-    await expect(run.page.getByRole("heading", { name: /create your studio workspace/i })).toBeVisible({ timeout: 60_000 });
-    await expect(run.page.getByLabel(/work email/i)).toHaveValue(invite.email);
-    await expect(run.page.getByLabel(/your name/i)).toHaveValue(invite.name);
+    await expect(run.page.getByRole("heading", { name: /create your account/i })).toBeVisible({ timeout: 60_000 });
+    await expect(run.page.getByTestId("signup-email")).toHaveValue(invite.email);
+    /* The invitation names the person, so the form does not ask again. */
+    await expect(run.page.getByTestId("signup-name")).toHaveCount(0);
     await screenIsClean(run);
   });
 
   test("2 · the person names the workspace and signs up", async () => {
     const { page } = run;
-    await page.getByLabel(/workspace name/i).fill("Five Minute Studio");
-    await page.getByLabel(/^password/i).fill(PASSPHRASE);
-    await page.getByLabel(/^confirm password/i).fill(PASSPHRASE);
-    await tap(run, page.getByRole("checkbox"));
-    await tap(run, page.getByRole("button", { name: /Create the workspace/ }));
+    await page.getByTestId("signup-workspace").fill("Five Minute Studio");
+    await page.getByTestId("signup-password").fill(PASSPHRASE);
+    await page.getByTestId("signup-confirm").fill(PASSPHRASE);
+    await tap(run, page.getByTestId("signup-terms"));
+    await tap(run, page.getByTestId("signup-submit"));
     await page.waitForURL((url) => !/\/signup/.test(url.pathname), { timeout: 120_000 });
     mark(run, "signed up");
   });
 
-  test.fixme("3 · sign-up lands on the phone's Home", async () => {
-    /* FIXME: as on the laptop, sign-up lands on /workbench?onboarding=1 (the old Studio start page), not Home. */
-    await expect(run.page.getByTestId("phone-home")).toBeVisible();
-  });
-
-  test("4 · the phone's Home opens: Needs you, Nothing waiting, the balance in the header", async () => {
+  test("3 · sign-up lands on the phone's Home: Needs you, Nothing waiting, the balance in the header", async () => {
     const { page } = run;
-    await page.goto("/suites?view=home", { timeout: 120_000 });
-    await expect(page.getByTestId("phone-home")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("phone-home")).toBeVisible({ timeout: 90_000 });
     await expect(page.getByTestId("phone-nothing")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("phone-credits")).toContainText(cr);
     run.balanceAtStart = Number(cr.exec(await page.getByTestId("phone-credits").innerText())?.[1].replace(/,/g, ""));
@@ -411,15 +397,7 @@ test.describe("the five-minute test · phone 390x844", () => {
     await expect.poll(async () => Number(cr.exec(await page.getByTestId("phone-credits").innerText())?.[1].replace(/,/g, "")), { timeout: 120_000 })
       .toBeLessThanOrEqual((run.balanceAtStart ?? NaN) - run.rendered!);
     run.spend.close("agent.render");
-    if (!(await page.getByTestId("phone-open-review").waitFor({ state: "visible", timeout: 8_000 }).then(() => true, () => false))) {
-      /* As on the laptop: the project's Library is not read again after Atomik's render, so Home offers the take for review only once the app is opened again. */
-      test.info().annotations.push({ type: "issue", description: "After an Atomik render the phone's Home offers the take for review only after the app is reloaded (the project's Library is not re-read)." });
-      await page.reload();
-      await expect(page.getByTestId("phone-app")).toBeVisible({ timeout: 60_000 });
-      /* The app opens on the project's Record; Home is one tap away. */
-      await tap(run, page.getByTestId("phone-tab-home"));
-      await expect(page.getByTestId("phone-home")).toBeVisible({ timeout: 30_000 });
-    }
+    /* No reload: Home read the Library again when the render finished. */
     await expect(page.getByTestId("phone-open-review")).toBeVisible({ timeout: 60_000 });
     mark(run, "first render ready");
     expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan", "agent.render"]);

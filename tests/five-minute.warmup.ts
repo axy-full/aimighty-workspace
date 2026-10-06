@@ -19,11 +19,11 @@ export default async function warmUp(config: FullConfig) {
       const page = await context.newPage();
       const invite = await mockInvitation(base, "Warm Up");
       await page.goto(invite.link, { timeout: 120_000 });
-      await page.getByLabel(/workspace name/i).fill("Warm up");
-      await page.getByLabel(/^password/i).fill(PASSPHRASE);
-      await page.getByLabel(/^confirm password/i).fill(PASSPHRASE);
-      await page.getByRole("checkbox").check();
-      await page.getByRole("button", { name: /Create the workspace/ }).click();
+      await page.getByTestId("signup-workspace").fill("Warm up");
+      await page.getByTestId("signup-password").fill(PASSPHRASE);
+      await page.getByTestId("signup-confirm").fill(PASSPHRASE);
+      await page.getByTestId("signup-terms").check();
+      await page.getByTestId("signup-submit").click();
       await page.waitForURL((url) => !/signup/.test(url.pathname), { timeout: 120_000 });
       await page.goto("/suites?view=home", { timeout: 120_000 });
       await page.waitForTimeout(2500);

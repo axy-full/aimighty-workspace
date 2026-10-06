@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { expect, type Page } from "@playwright/test";
 import { signInWithNewInterface } from "./newInterface";
 import { newProject, type CanvasNode } from "../../lib/workbench/studio";
+import type { BeatSheet } from "../../lib/production/beats";
 
 /* Stream 3's browser specs share this: a signed-in local workspace with the new interface on and a production with today's canvas nodes. Neutral names only. */
 export const SHOTS = process.env.S03_SHOTS || join(tmpdir(), "claude-s03-shots");
@@ -10,13 +11,27 @@ export const SHOTS = process.env.S03_SHOTS || join(tmpdir(), "claude-s03-shots")
 export const node = (id: string, type: CanvasNode["type"], title: string, extra: Partial<CanvasNode> = {}): CanvasNode =>
   ({ id, title, type, x: 0, y: 0, width: 254, linked: [], ...extra });
 
-export async function seedBoard(page: Page, more: CanvasNode[] = []) {
+/** The production's shot list (its beat sheet), which the board's List view draws; the canvas nodes alone are not rows. Same two shots as the canvas. */
+const SCRIPT_SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+const beatSheet = (): BeatSheet => ({
+  scriptSha256: SCRIPT_SHA, updatedAt: new Date().toISOString(),
+  scenes: [{
+    id: "scene-a", heading: "EXT. MARKET - DAWN", summary: "", beats: [], characters: [], locations: [], props: [],
+    shots: [
+      { id: "shot-a1", description: "Wide on the empty market at first light.", framing: "Wide", movement: "Locked off · 24mm", lighting: "", sound: "", duration: 4 },
+      { id: "shot-a2", description: "Hands lift the shutter of the first stall.", framing: "Close-up", movement: "Held · 85mm", lighting: "", sound: "", duration: 3 },
+    ],
+  }],
+});
+
+export async function seedBoard(page: Page, more: CanvasNode[] = [], options: { beats?: boolean } = {}) {
   const workspaceId = (await signInWithNewInterface(page.request, "Board Tester")).workspace.id;
   const me = await (await page.request.get("/api/me")).json() as { id: string };
   const scope = `particl-active-${workspaceId}-${me.id}`;
   const project = {
     ...newProject("Board fixture"),
     brief: "A short film about a morning market opening.",
+    ...(options.beats ? { production: { beats: beatSheet() } } : {}),
     nodes: [
       node("node-brief01", "brief", "The brief", { text: "A morning market opens; light comes up on the stalls." }),
       node("node-look0001", "moodboard", "Morning light", { text: "Low sun, warm stalls." }),
