@@ -17,19 +17,20 @@ import "./posts.css";
  */
 const DOT: Record<PostState, string> = { draft: "idle", waiting: "needs", scheduled: "done", posted: "done", failed: "bad" };
 export type PostCardData = { id: string };
+/** The schedule: this hour tomorrow is a person's default; a time picker is a later step. */
+function tomorrow(): number { const d = new Date(Date.now() + 24 * 3_600_000); d.setMinutes(0, 0, 0); return d.getTime(); }
 
 export function PostCard({ data }: CardProps<PostCardData>) {
   const post = usePosts().find((p) => p.id === data.id);
   const act = usePostActions();
   const shell = useShell();
   const [said, setSaid] = useState<string | null>(null);
+  const [now] = useState(() => Date.now());
   if (!post) return null;
   const person = act.actor !== null;
-  /* The schedule: the next hour of the next day is a person's default; a time picker is a later step. */
-  const when = () => { const d = new Date(Date.now() + 24 * 3_600_000); d.setMinutes(0, 0, 0); return d.getTime(); };
   const press = (a: PostAction) => {
     setSaid(null);
-    const refusal = a === "send" ? act.send(post) : a === "approve" ? act.approve(post, when()) : a === "unschedule" ? act.unschedule(post) : a === "retry" ? act.retry(post, when()) : (shell.goWorkspace("connections"), null);
+    const refusal = a === "send" ? act.send(post) : a === "approve" ? act.approve(post, tomorrow()) : a === "unschedule" ? act.unschedule(post) : a === "retry" ? act.retry(post, tomorrow()) : (shell.goWorkspace("connections"), null);
     if (refusal) setSaid(refusal);
   };
   return (
@@ -38,7 +39,7 @@ export function PostCard({ data }: CardProps<PostCardData>) {
       <span className="ab-body">
         <Title>{PLATFORM_NAME[post.platform]} · {post.format}</Title>
         <Meta>{post.clip}</Meta>
-        <span className="sb-post-state" data-tone={DOT[post.state]} data-testid="social-post-state"><span className="sb-dot" aria-hidden="true" />{stateLine(post, Date.now())}</span>
+        <span className="sb-post-state" data-tone={DOT[post.state]} data-testid="social-post-state"><span className="sb-dot" aria-hidden="true" />{stateLine(post, now)}</span>
         <Actions>
           {actionsOf(post).map((a) => {
             if (a === "approve") return <Btn key={a} primary disabled={!person} title={person ? undefined : "Only a signed-in person approves a post"} onClick={() => press(a)} data-testid="social-post-approve">Approve post</Btn>;
