@@ -1,4 +1,5 @@
 "use client";
+import { spendAttrsText } from "@/lib/spend";
 import { useMemo, useRef, useState, useImperativeHandle, type Ref } from "react";
 import { Film, Upload } from "lucide-react";
 import { useGenAssetInput, type GenAssetInputHandle } from "@/lib/genAssetInput";
@@ -381,6 +382,8 @@ export default function AstraUpscale({
               busy || uploading || !!paid.error || (!paid.pending && !source)
             }
             onClick={() => void (paid.pending || quote ? submit() : review())}
+            aria-busy={busy || undefined}
+            {...spendAttrsText((paid.pending ? String(paid.pending.context?.price || "Saved request") : quote ? price(quote) : null))}
           >
             <span>
               {busy

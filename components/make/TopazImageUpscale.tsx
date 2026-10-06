@@ -1,5 +1,6 @@
 "use client";
 
+import { spendAttrsText } from "@/lib/spend";
 import { useRef, useState, useImperativeHandle, type Ref } from "react";
 import { Image as ImageIcon, Upload } from "lucide-react";
 import { useGenAssetInput, type GenAssetInputHandle } from "@/lib/genAssetInput";
@@ -417,6 +418,8 @@ export default function TopazImageUpscale({
               busy || uploading || !!paid.error || (!paid.pending && !canQuote)
             }
             onClick={() => void (paid.pending || quote ? submit() : review())}
+            aria-busy={busy || undefined}
+            {...spendAttrsText((paid.pending ? String(savedContext?.price ?? "Saved request") : quote ? priceLabel(quote) : null))}
           >
             <span>
               {busy

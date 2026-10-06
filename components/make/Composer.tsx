@@ -1,5 +1,6 @@
 "use client";
 
+import { spendAttrsText } from "@/lib/spend";
 import {
   useCallback,
   useEffect,
@@ -1500,7 +1501,9 @@ function ScopedComposer({
           className={styles.generate}
           onClick={render}
           disabled={busy || (signedIn && (!ready || unknown.length > 0))}
+          aria-busy={busy || undefined}
           data-render=""
+          {...(signedIn ? spendAttrsText(costLabel) : {})}
         >
           <span>
             {primaryLabel}

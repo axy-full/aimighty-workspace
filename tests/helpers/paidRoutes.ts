@@ -63,7 +63,9 @@ export type FileExcuse = { why: string; priced?: string[] };
 export const NOT_SPENDING_FILES: Record<string, FileExcuse> = {
   "components/graphite/control-room/ApprovalsView.tsx": { why: "lists the approvals queue and hands each row the queue's approve and decline; the rows own the Approve button (priced, marked) and Approve in one go owns its confirm", priced: ["components/graphite/control-room/ApprovalRow.tsx", "components/graphite/control-room/BatchApprove.tsx"] },
   "components/graphite/make/Make.tsx": { why: "the Make panel's frame: it holds the composer's state for its tabs and hands it to Compose, which owns the Make button (priced, marked)", priced: ["components/graphite/make/Compose.tsx"] },
-  "components/graphite/board/ads/AdsOverlay.tsx": { why: "reads the Campaign agent's runs (a GET) for the cards and draws the run dialog, whose own button quotes and then reserves up to the quote on a person's press" },
+  "components/graphite/board/ads/AdsOverlay.tsx": { why: "reads the Campaign agent's runs (a GET) for the cards and draws the run dialog, whose own button quotes and then reserves up to the quote on a person's press", priced: ["components/workbench/AtomikRunDialog.tsx"] },
+  "components/graphite/business/HooksTool.tsx": { why: "reads the Campaign agent's runs (a GET); 'See the price' opens the run dialog, whose own button quotes and then reserves up to the quote on a person's press", priced: ["components/workbench/AtomikRunDialog.tsx"] },
+  "components/graphite/business/ReferenceTool.tsx": { why: "reads the Campaign agent's runs (a GET); 'See the price' opens the run dialog, whose own button quotes and then reserves up to the quote on a person's press; Apply the direction edits the brief", priced: ["components/workbench/AtomikRunDialog.tsx"] },
   "components/graphite/board/ads/cards/HookCards.tsx": { why: "the only paid-route string is a quote-only request (nothing reserved); 'Write N more' opens the run dialog, where the press that spends lives" },
   "components/graphite/board/agent/RecordTab.tsx": { why: "reads the approvals queue and the activity to list what was approved and what waits; its buttons only open things, and nothing here approves or spends" },
   "components/graphite/board/cards/cast/CastCard.tsx": { why: "reads the identity list (a GET) and shows the training price; 'Build identity' opens the Inspector and 'Lock as master' is free" },
@@ -78,6 +80,8 @@ export const NOT_SPENDING_FILES: Record<string, FileExcuse> = {
  */
 export const NOT_SPENDING_BUTTONS: Record<string, string> = {
   "components/graphite/control-room/ActivityView.tsx::Run again": "puts the run's request back in Atomik's box and opens Atomik; nothing is sent, and the Ask there shows its own price",
+  "components/make/UnfiledWall.tsx::Upscale video": "opens the upscale tool with this take as its source; the tool quotes, and its own button wears the price",
+  "components/make/UnfiledWall.tsx::Upscale image": "opens the upscale tool with this take as its source; the tool quotes, and its own button wears the price",
   "components/graphite/make/Recent.tsx::Make something": "switches the panel from Recent to its Make tab; nothing is made until Make is pressed there",
 };
 

@@ -2,6 +2,7 @@
 import type { AstraRequest } from '@/lib/astra-blender/proposal';
 
 import { useEffect, useRef, useState } from 'react';
+import { spendAttrsText } from '@/lib/spend';
 import type { SuiteId } from '@/lib/suites';
 import { SUITE_AGENT_COPY } from '@/lib/workbench/suite-agent-plan';
 import type { Project } from '@/lib/workbench/studio';
@@ -198,6 +199,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
     } finally { submitting.current = false; if (mounted.current) setBusy(false); }
   }
 
+  const runLabel = busy ? 'Submitting…' : !loaded ? error ? 'Recovery unavailable' : 'Checking earlier requests…' : pending ? 'Recover this request' : shownQuote ? (approximate ? `Run · about ${shownQuote.estimateCredits} cr` : `Run · ${shownQuote.estimateCredits} cr estimated`) : error ? 'Estimate unavailable' : 'Loading estimate…';
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}>
     <DialogContent className="ps ps-dialog" showCloseButton={!busy}>
       <DialogHeader>
@@ -232,8 +234,8 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
         {error && <p className="save-problem" role="alert">{error}</p>}
         {pending && error && !terminal && <p className="muted small-copy">Recovery uses the saved request ID, including after closing this dialog or reloading.</p>}
         {terminal ? <Button className="btn" onClick={onClose}>Close and review Activity</Button> :
-          <Button className="btn primary" disabled={busy || !loaded || (!shownQuote && !pending) || (!pending && !readyFrames) || request.trim().length < 3} onClick={() => void submit()}>
-            {busy ? 'Submitting…' : !loaded ? error ? 'Recovery unavailable' : 'Checking earlier requests…' : pending ? 'Recover this request' : shownQuote ? (approximate ? `Run · about ${shownQuote.estimateCredits} cr` : `Run · ${shownQuote.estimateCredits} cr estimated`) : error ? 'Estimate unavailable' : 'Loading estimate…'}
+          <Button className="btn primary" disabled={busy || !loaded || (!shownQuote && !pending) || (!pending && !readyFrames) || request.trim().length < 3} aria-busy={busy || undefined} onClick={() => void submit()} {...spendAttrsText(runLabel)}>
+            {runLabel}
           </Button>}
       </div>
     </DialogContent>

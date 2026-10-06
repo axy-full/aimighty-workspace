@@ -65,16 +65,6 @@
       "until": "2026-10-08",
       "by": "stream 11 (Ads and Social)"
     },
-    "components/graphite/business/HooksTool.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "stream 11 (Ads and Social)"
-    },
-    "components/graphite/business/ReferenceTool.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "stream 11 (Ads and Social)"
-    },
     "components/graphite/production/CastIdentities.tsx": {
       "count": 1,
       "until": "2026-10-08",
@@ -129,11 +119,6 @@
       "count": 1,
       "until": "2026-10-08",
       "by": "goes with the file: stream 7 (Atomik)"
-    },
-    "components/workbench/AtomikRunDialog.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "UNOWNED: \"Build with Astra\" (3D blocking tool)"
     },
     "components/workbench/DevelopmentPanel.tsx": {
       "count": 1,
@@ -211,31 +196,5 @@
       "by": "no inventory row: the lead assigns it (the board PR deletes the old screens)"
     }
   },
-  "strict": {
-    "components/make/AstraUpscale.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #512/#514 (Make: every paid button shows its price)"
-    },
-    "components/make/Composer.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #512/#514 (Make: every paid button shows its price)"
-    },
-    "components/make/SeedanceEdit.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #512/#514 (Make: every paid button shows its price)"
-    },
-    "components/make/TopazImageUpscale.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "D0 #512/#514 (Make: every paid button shows its price)"
-    },
-    "components/make/UnfiledWall.tsx": {
-      "count": 2,
-      "until": "2026-10-08",
-      "by": "D0 #512/#514 (Make: every paid button shows its price)"
-    }
-  }
+  "strict": {}
 }

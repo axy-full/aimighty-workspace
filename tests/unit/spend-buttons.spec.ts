@@ -5,7 +5,7 @@ import { scanSpend, type SpendReport } from "../helpers/spendScan";
 import { SPEND_SURFACES, gapsByFile, spendSurfaceOf } from "../helpers/spendSurfaces";
 import { compare, expired, growth, lowered, onMain, readJson, shapeProblems, type Section } from "../helpers/ratchet";
 import { NOT_SPENDING, NOT_SPENDING_BUTTONS, NOT_SPENDING_FILES, PAID_ROUTES, SPEND_LABEL, SPEND_MARKERS, routePattern } from "../helpers/paidRoutes";
-import { hasCreditFigure, priceLabel, spendAttrs, spendAttrsOf } from "../../lib/spend";
+import { hasCreditFigure, priceLabel, spendAttrs, spendAttrsOf, spendAttrsText } from "../../lib/spend";
 import { FREE, exact, upTo } from "../../lib/shell/price-words";
 import { SpendButton } from "../../components/graphite/SpendButton";
 
@@ -175,6 +175,14 @@ test("a price the screen holds as a PriceValue marks the control with the words 
   for (const none of [null, undefined, exact(Number.NaN), exact(-1)]) expect(spendAttrsOf(none)).toEqual({ "data-spend": "unpriced", disabled: true });
 });
 
+test("a control that quotes first and spends on its next press is marked only once its text carries a credit figure", () => {
+  expect(spendAttrsText("43 cr")).toEqual({ "data-spend": "priced", "data-spend-price": "43 cr" });
+  expect(spendAttrsText("Run · about 7 cr")).toEqual({ "data-spend": "priced", "data-spend-price": "about 7 cr" });
+  expect(spendAttrsText("Run · 1,200 cr estimated")).toEqual({ "data-spend": "priced", "data-spend-price": "1,200 cr" });
+  expect(spendAttrsText("$4.30")).toEqual({});
+  for (const none of ["—", "Saved request", "Getting quote…", "", null, undefined]) expect(spendAttrsText(none), String(none)).toEqual({});
+});
+
 /* ---------------------------------------------------------------------------------------------- */
 /* The repository as it stands: strict D0 surfaces, then the dated ratchet.                        */
 /* ---------------------------------------------------------------------------------------------- */
@@ -246,7 +254,7 @@ test("EXCUSES · a file or button that is excused as not spending is still on th
     for (const priced of excuse.priced ?? []) {
       expect(existsSync(priced), `${priced} does not exist`).toBe(true);
       const source = readFileSync(priced, "utf8");
-      expect(/data-spend|spendAttrs(?:Of)?\(|<SpendButton/.test(source), `${priced} owns the paid button for ${path} and must carry the opt-in`).toBe(true);
+      expect(/data-spend|spendAttrs\w*\(|<SpendButton/.test(source), `${priced} owns the paid button for ${path} and must carry the opt-in`).toBe(true);
       const base = priced.replace(/^.*\//, "").replace(/\.tsx?$/, "");
       expect(new RegExp(`from ["'][^"']*/${base}["']`).test(readFileSync(path, "utf8")), `${path} must import ${priced}`).toBe(true);
     }

@@ -43,6 +43,15 @@ export function hasCreditFigure(text: string | null | undefined): boolean {
   return !!text && CREDIT_FIGURE.test(text);
 }
 
+/**
+ * For a control that first quotes and then spends on the next press ("Review cost", then "Upscale · 23 cr"): the marker only
+ * once the text it shows carries a credit figure, so the press that sends is the one that wears the price. No figure, no marker.
+ */
+export function spendAttrsText(text: string | null | undefined): Partial<SpendAttrs> {
+  const price = hasCreditFigure(text) ? text!.match(/(?:up to |about )?<?\d[\d,]*(?:\.\d+)?\s*cr\b(?:, at most \d[\d,]*(?:\.\d+)? cr\b)?|\bfree\b/i)?.[0] : null;
+  return price ? { "data-spend": "priced", "data-spend-price": price } : {};
+}
+
 export type SpendAttrs = {
   "data-spend": "priced" | "unpriced";
   "data-spend-price"?: string;
