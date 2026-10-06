@@ -38,7 +38,10 @@ test("entry points: a workspace goes straight to Suites; a visitor signs in and 
   const moved = await page.request.get("/images", { maxRedirects: 0 });
   expect(moved.status()).toBe(307);
   const response = await page.goto("/workbench?stage=brief");
-  expect(response?.request().redirectedFrom()?.url()).toContain("/workbench?stage=brief");
+  /* The chain is two 307s (/workbench → /suites?suite=particl&page=brief → the board), and Playwright's redirectedFrom() is one hop back: walk it to the request the person made. */
+  let first = response?.request();
+  for (let hop = first?.redirectedFrom(); hop; hop = first?.redirectedFrom()) first = hop;
+  expect(first?.url()).toContain("/workbench?stage=brief");
   /* The Studio's Brief page is deleted: the old stage address ends on the board's Brief region (one more 307 inside /suites). */
   await expect(page).toHaveURL(/\/suites\?(?=.*view=board)(?=.*region=brief)/);
   await page.goto("/");
