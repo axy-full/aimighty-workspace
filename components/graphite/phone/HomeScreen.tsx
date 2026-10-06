@@ -41,10 +41,14 @@ const when = (at: number, now: number) => {
  * Projects are stream 2's project cards (components/graphite/home/use-project-cards.ts): the same lines as the
  * desktop Home, counted from the same queue.
  */
-export function HomeScreen({ scope, approvals, projects, project, items, online, now, onReview, onPlan, onProject, onTopUp }: {
+export function HomeScreen({ scope, approvals, projects, projectsError = null, onRetryProjects, project, items, online, now, onReview, onPlan, onProject, onTopUp }: {
   scope: string;
   approvals: ApprovalsState;
   projects: readonly ProjectSummary[];
+  /** The server's words when the projects list could not be read, or null. */
+  projectsError?: string | null;
+  /** Reads the projects list again (a read, never a paid retry). */
+  onRetryProjects?: () => void;
   project: Project | null;
   items: readonly LibraryEntry[];
   online: boolean;
@@ -86,6 +90,12 @@ export function HomeScreen({ scope, approvals, projects, project, items, online,
       </section>
       <section className="ph-section" aria-label="Projects">
         <Eyebrow>Projects</Eyebrow>
+        {projectsError ? (
+          <div className="ph-row ph-row--note" role="status" data-testid="phone-projects-error">
+            <span className="ph-row-text"><span className="ph-row-line">{projectsError}</span></span>
+            <button type="button" className="ph-btn" onClick={() => onRetryProjects?.()} data-testid="phone-projects-error-retry">Try again</button>
+          </div>
+        ) : null}
         <div className="ph-projects">
           {cards.map((card) => <ProjectCard key={card.id} scope={scope} card={card} open={card.id === project?.id} onOpen={() => onProject(card.id)} />)}
         </div>

@@ -152,7 +152,7 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
             {page ? <div className="ph-page">{page.body}</div> : screen === "record" ? (
               <RecordScreen scope={scope} project={project} items={items} queue={approvals.items} now={now} onPlan={openPlan} onReview={() => go({ screen: "review" })} />
             ) : (
-              <HomeScreen scope={scope} approvals={approvals} projects={data.projects} project={project} items={items} online={online} now={now}
+              <HomeScreen scope={scope} approvals={approvals} projects={data.projects} projectsError={data.status === "error" ? data.error ?? "Projects could not be loaded." : null} onRetryProjects={data.retry} project={project} items={items} online={online} now={now}
                 onReview={() => go({ screen: "review" })}
                 onPlan={openPlan}
                 onProject={(id) => { projectActions.onPick(id); if (DRAWN_SCREENS.has("record")) go({ screen: "record" }); }}
