@@ -405,7 +405,7 @@ test("a library step is never kept: the form says why, a template refuses its en
     const draft = await s.draftFromRun(chatId);
     const library = draft.steps.filter((x) => x.model === MARKETING || x.model === MOTION);
     expect(library.map((x) => [x.title, x.label, x.keep, x.why])).toEqual([
-      ["Campaign still", "Marketing Studio Image", false, t.LIBRARY_STEP_REASON],
+      ["Campaign still", "Product image", false, t.LIBRARY_STEP_REASON],
       ["Motion transfer", "Motion Transfer", false, t.LIBRARY_STEP_REASON],
     ]);
     /* The default save keeps the rest of the plan and leaves the library steps out. */

@@ -8,6 +8,7 @@ import type { SoulIdentity, SoulTrainingVersion } from "@/lib/workbench/soul-ide
 import { useIdentities } from "@/lib/workspace/identities";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 const ENDPOINT = "/api/soul/identities";
 const STATUS: Record<SoulIdentity["status"], string> = { submitting: "Sending", training: "Training", ready: "Ready", failed: "Failed", uncertain: "Needs review" };
@@ -81,7 +82,7 @@ export function CastIdentities({ scope, projectId, items, save }: { scope: strin
         if (paid.pending.url !== ENDPOINT || body.projectId !== projectId) throw new Error("Return to the original project to recover this training request.");
       } else {
         if (blocked || !version) throw new Error(blocked ?? "No identity version has a training price yet.");
-        if (!(await save())) throw new Error("Save the project before building an identity.");
+        if (!(await save())) throw new SaveFailedError();
         const references: Reference[] = picked.flatMap((id) => {
           const e = stills.find((s) => s.take.id === id);
           return !e ? [] : [e.asset.origin === "upload" ? { uploadId: e.take.sourceId } : { genId: e.take.sourceId }];

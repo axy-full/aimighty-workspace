@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { SAY, referenceRole } from "@/lib/shell/assets";
-import { recipePrompt, recreateBlock } from "@/lib/shell/recipe";
+import { recipePrompt, recreateBlock, type RecipeSource } from "@/lib/shell/recipe";
+import { priceWords } from "@/lib/shell/recreate-price";
+import { useRecreatePrice } from "@/lib/shell/use-recreate-price";
 import { useShell } from "@/lib/shell/state";
 import { formatProviderCreditQuote, providerCreditQuote } from "@/lib/providerCreditQuote";
 import { settledFact } from "@/lib/usageLedgerTerms";
@@ -23,7 +25,7 @@ import { copyAssetLink } from "@/lib/shell/copy-asset-link";
 import { useSession } from "@/lib/session";
 import { LoadBanner } from "./TakeTile";
 import { ReleaseTake } from "./ReleaseTake";
-import { AssetNextActions, revealNext } from "./AssetNextActions";
+import { AssetNextActions } from "./AssetNextActions";
 import { madeFrom as toolSource, type NextActionId } from "@/lib/shell/next-actions";
 import { RememberAsset } from "./atomik/MemoryView";
 
@@ -47,6 +49,9 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const made = entry?.asset.origin === "generation" ? entry.asset.value : null;
   const quote = made ? providerCreditQuote(made.providerCreditQuote) : null;
   const settled = useLedgerEntry(made && !quote ? made.id : null, entry?.take.status);
+  /* Recreate spends once Make is pressed: its price is Make's own, read from the server's quote (lib/shell/recreate-price.ts). */
+  const recreatable = made && !recreateBlock(made) ? (made as RecipeSource) : null;
+  const recreatePrice = useRecreatePrice(scope, recreatable ? id : null, recreatable, project?.aspect);
   /* A take older than the loaded pages (a link, the desk's search) is asked for by id once the library has read; an answer
      for another project or take than the one shown now is dropped. */
   const projectId = project?.id ?? null;
@@ -112,15 +117,12 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   /* Preview walks the page's list from this take (lib/shell/preview-bridge); a link names the workspace, the production and the take. */
   const preview = entryPreview(entry);
   const copyLink = async () => toast(await copyAssetLink({ workspace: session.workspace?.id, production: project?.productionProjectId, asset: take.id }));
-  /* Next opens the tool on this take: the take is selected first, so Takes opens on it (a page change is the history entry;
-     already on Takes, opening it is). Nothing is quoted or sent here. */
+  /* Next opens the tool on this take: the take is selected first, and the board opens on the region that holds the tool
+     (Edit & Sound is the Cut region, every other tool the Shots region). Nothing is quoted or sent here. */
   const openNext = (next: NextActionId) => {
     if (next === "edit-sound") { shell.goSuite("studio", "edit"); return; }
-    const onTakes = shell.view === "suite" && shell.suite.id === "studio" && shell.page.id === "takes";
-    shell.selectAsset(take.id, { reason: onTakes ? "open" : "pick" });
-    if (!onTakes) shell.goSuite("studio", "takes");
-    else if (!shell.wide) shell.closePanels();
-    revealNext(next);
+    shell.selectAsset(take.id, { reason: "pick" });
+    shell.goSuite("studio", "takes");
   };
   return (
     <div className="gx-insp-asset" data-testid="asset-inspector">
@@ -145,8 +147,12 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
       {take.status === "held" ? <div className="gx-insp-actions" data-testid="inspector-release"><ReleaseTake key={take.id} entry={entry} onReleased={library.refresh} place="inspector" /></div> : null}
       {generation ? (
         <div className="gx-insp-actions" data-testid="inspector-recipe">
-          <button type="button" className="gx-primary" disabled={Boolean(noRecreate)} onClick={() => command("retry")} data-testid="inspector-recreate">Recreate</button>
-          <button type="button" className="gx-hbtn" disabled={Boolean(noRecreate)} title="The model and its settings; the prompt in Gen stays" onClick={() => recreate(entry, true)} data-testid="inspector-settings-only">Use settings only</button>
+          <button type="button" className="gx-primary" disabled={Boolean(noRecreate) || recreatePrice?.state !== "ready"} onClick={() => command("retry")} data-testid="inspector-recreate"
+            title={recreatePrice?.state === "unavailable" ? recreatePrice.reason : recreatePrice?.state === "reading" ? "Reading the price…" : undefined}
+            data-spend={recreatePrice?.state === "ready" ? "priced" : "unpriced"} data-spend-price={recreatePrice?.state === "ready" ? priceWords(recreatePrice) : undefined}>
+            Recreate{recreatePrice?.state === "ready" ? ` · ${priceWords(recreatePrice)}` : ""}
+          </button>
+          <button type="button" className="gx-hbtn" disabled={Boolean(noRecreate)} title="The model and its settings; the prompt in Make stays" onClick={() => recreate(entry, true)} data-testid="inspector-settings-only">Use settings only</button>
           <button type="button" className="gx-hbtn" disabled={!words} onClick={() => void copyPrompt()} data-testid="inspector-copy-prompt">Copy prompt</button>
           {noRecreate ? <p className="gx-reason gx-insp-why" data-testid="inspector-recreate-why">{noRecreate}</p> : null}
         </div>

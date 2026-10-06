@@ -45,7 +45,7 @@ export type Plan = {astraNative?:AstraNativeProposal;astraBlender?:AstraProposal
 /** Production suite state (owner's brief, 23 September): what the director approved at each gate. */
 export type ScriptApproval = { at: string; source: 'agent' | 'hand'; jobId?: string; sha256: string };
 export type Production = { scriptApproval?: ScriptApproval; beats?: import('../production/beats').BeatSheet; boards?: import('../production/boards').Boards; cast?: import('../production/cast').Cast; environment?: import('../production/environment').Environment; beatSource?: import('../production/beats').BeatSource; /** The director's unsent notes to the writer (lib/production/notes.ts); they three-way merge like any other text. */ notes?: import('../production/notes').AgentNotes };
-export type Project = {production?:Production;astraNative?:AstraNativeSource;astraBlender?:AstraScene;moleculr?:MoleculrBrief;marketingBrief?:MarketingBrief;bins?:AssetBin[];colorGrade?:ColorGrade;productionProjectId?:string; shotMappings?:Record<string,string>; bibleVersion?:number; id:string; name:string; description:string; brief:string; audience:string; deliverables:string; direction:string; fps:number; aspect:string; assets:Asset[]; nodes:CanvasNode[]; shots:Shot[]; plans:Plan[]; briefPinned:boolean; lookPinned:boolean; createdAt:string; sharedAssetIds:string[]; sharedNodeIds:string[]; audioAssetId?:string; audioClips?:AudioClip[]; clipAudio?:boolean; script?:string;scriptFormat?:'screenplay'|'adfilm';scriptSource?:ScriptSource;scriptReviews?:Record<string,SceneReview>;developmentApplications?:string[]; sharedNodes?:CanvasNode[]; sharedAssets?:Asset[];
+export type Project = {production?:Production;astraNative?:AstraNativeSource;astraBlender?:AstraScene;moleculr?:MoleculrBrief;marketingBrief?:MarketingBrief;bins?:AssetBin[];colorGrade?:ColorGrade;productionProjectId?:string; shotMappings?:Record<string,string>; bibleVersion?:number; id:string; name:string; description:string; brief:string; audience:string; deliverables:string; direction:string; fps:number; aspect:string; assets:Asset[]; nodes:CanvasNode[]; shots:Shot[]; plans:Plan[]; briefPinned:boolean; lookPinned:boolean; createdAt:string; sharedAssetIds:string[]; sharedNodeIds:string[]; audioAssetId?:string; audioClips?:AudioClip[]; clipAudio?:boolean; script?:string;scriptFormat?:'screenplay'|'adfilm';/** The board it opens on (lib/board/kind.ts): set when a template makes it; absent, read from its data. */boardKind?:'studio'|'ads'|'social';scriptSource?:ScriptSource;scriptReviews?:Record<string,SceneReview>;developmentApplications?:string[]; sharedNodes?:CanvasNode[]; sharedAssets?:Asset[];
  /** Ids of records made from a source every window shares (stableId) that someone took out of this draft, oldest first: a stale window that makes them again leaves them out when it merges (lib/workbench/merge.ts noteTakenOut). */
  takenOut?:string[]};
 /** The visible production stages, in dock order. Retired IDs stay in `Stage` as aliases (see `normalizeStage`). */
@@ -53,8 +53,8 @@ export const STAGES: {id:Stage; label:string; hint:string}[] = [
  {id:'brief',label:'Brief & Script',hint:'Find the story and the production in it'},
  {id:'storyboard',label:'Boards',hint:'Define the visual world and plan every frame'},
  {id:'characters',label:'Cast & Elements',hint:'Keep identity consistent and build a reusable world'},
- {id:'astra-blender',label:'Astra',hint:'Shape your scene with GPT-6 Astra'},
- {id:'canvas',label:'Rig',hint:'Bring it all together'},
+ {id:'astra-blender',label:'3D blocking',hint:'Block your scene in 3D before you render'},
+ {id:'canvas',label:'Board',hint:'Bring it all together'},
  {id:'assets',label:'Takes',hint:'Select the right take'},
  {id:'edit',label:'Edit & Sound',hint:'Shape the story'},
  {id:'export',label:'Deliver',hint:'Ready for the next room'}];
@@ -67,8 +67,10 @@ export function normalizeStage(value: string | null | undefined): Stage | null {
 }
 export function isVisibleStage(value: Stage): boolean { return STAGES.some(stage => stage.id === value); }
 export function uid(prefix='id') {return prefix+'-'+crypto.randomUUID().slice(0,8)}
+/** The seed project's id: the draft the Studio opens on before anything is saved. */
+export const SEED_PROJECT_ID='untitled-film';
 export function seedProject():Project {const p:Project={
- id:'dune-studies',name:'Dune Studies',description:'Fashion film · Concept 01',script:'EXT. MIRRORED DUNES - LATE AFTERNOON\n\nCaramel dunes stretch into the distance. A monumental chrome sphere reflects the empty horizon. Hold for four seconds.\n\nEXT. MIRRORED DUNES - CONTINUOUS\n\nMIRA, wearing an ivory tailored suit and long scarf, enters the frame. She approaches the sphere. Fabric catches the wind. Six seconds.\n\nMIRA\nWhat if the world saw you differently?\n\nEXT. MIRROR SPHERE - LATE AFTERNOON\n\nHer reflection moves across the surface. The camera holds. Five seconds. Leave room for the end line.',
+ id:SEED_PROJECT_ID,name:'Untitled film',description:'Fashion film · Concept 01',script:'EXT. MIRRORED DUNES - LATE AFTERNOON\n\nCaramel dunes stretch into the distance. A monumental chrome sphere reflects the empty horizon. Hold for four seconds.\n\nEXT. MIRRORED DUNES - CONTINUOUS\n\nTHE LEAD, wearing an ivory tailored suit and long scarf, enters the frame. She approaches the sphere. Fabric catches the wind. Six seconds.\n\nTHE LEAD\nWhat if the world saw you differently?\n\nEXT. MIRROR SPHERE - LATE AFTERNOON\n\nHer reflection moves across the surface. The camera holds. Five seconds. Leave room for the end line.',
  brief:'A 15-second fashion film about quiet confidence in an extraordinary world. A woman crosses a sculptural desert landscape. A mirror sphere reflects the world around her. Her presence changes the way we see it.',
  audience:'Design-conscious audiences, 25–40. Premium fashion and culture.',
  deliverables:'15s hero film · 6s cutdown · 3 campaign stills · 16:9 and 9:16',
@@ -76,13 +78,13 @@ export function seedProject():Project {const p:Project={
  fps:24,aspect:'16:9',sharedAssetIds:['environment'],sharedNodeIds:['look','world'],briefPinned:true,lookPinned:false,createdAt:'2026-09-13T00:00:00Z',
  assets:[
   {id:'hero',name:'The encounter',kind:'image',category:'Shot',url:'/campaign/hero.webp',description:'Wide composition · 35mm · Late afternoon',prompt:'An ivory-suited woman walks through caramel dunes beside a monumental mirror sphere. Soft late-afternoon sunlight. Preserve a short dark bob, ivory suit and long scarf. Wide composition, tactile 35mm film.',status:'Continuity note',locked:false,version:1,refs:['character','environment']},
-  {id:'character',name:'Mira / character study',kind:'image',category:'Character',url:'/campaign/character.webp',description:'Front · Three-quarter · Profile',prompt:'Character continuity reference: adult woman, short dark bob, ivory tailored suit with straight trousers, long ivory scarf. Natural expression. Neutral studio. Match the inner layer to the selected hero before final project.',status:'Draft',locked:false,version:1,refs:[]},
+  {id:'character',name:'Lead / character study',kind:'image',category:'Character',url:'/campaign/character.webp',description:'Front · Three-quarter · Profile',prompt:'Character continuity reference: adult woman, short dark bob, ivory tailored suit with straight trousers, long ivory scarf. Natural expression. Neutral studio. Match the inner layer to the selected hero before final project.',status:'Draft',locked:false,version:1,refs:[]},
   {id:'environment',name:'The mirrored dunes',kind:'image',category:'Environment',url:'/campaign/environment.webp',description:'Environment plate · Warm daylight',prompt:'Sculptural caramel sand dunes, a monumental mirror-polished chrome sphere on the right, pale blue sky. No people. Low warm sun, realistic reflections, tactile fine grain.',status:'Selected',locked:true,version:1,refs:[]}
  ],
  nodes:[
   {id:'look',title:'A world out of the ordinary',type:'moodboard',assetId:'environment',text:'Warm sand. Cool chrome. Quiet confidence.',x:40,y:60,width:270,linked:[]},
-  {id:'cast',title:'Mira / character sheet',type:'character',assetId:'character',x:40,y:384,width:270,linked:[]},
-  {id:'scene',title:'The encounter',type:'scene',assetId:'hero',text:'Mira enters. The landscape becomes a reflection.',x:374,y:88,width:344,linked:['look','cast','world']},
+  {id:'cast',title:'Lead / character sheet',type:'character',assetId:'character',x:40,y:384,width:270,linked:[]},
+  {id:'scene',title:'The encounter',type:'scene',assetId:'hero',text:'The lead enters. The landscape becomes a reflection.',x:374,y:88,width:344,linked:['look','cast','world']},
   {id:'world',title:'The mirrored dunes',type:'element',assetId:'environment',x:40,y:708,width:270,linked:[]},
   {id:'direction',title:'Director’s note',type:'note',text:'Let the world feel impossible.\nLet her feel completely real.\n\nHold the frame. Give the fabric room to move.',x:374,y:469,width:344,linked:['scene']},
   {id:'colour',title:'Desert daylight',type:'grade',x:782,y:99,width:236,linked:['scene'],role:'Colourist',operations:[{id:'sample-colour',kind:'grade',enabled:true,values:{brightness:103,contrast:105,saturation:90}}]},
@@ -91,7 +93,7 @@ export function seedProject():Project {const p:Project={
  ],
  shots:[
  {id:'s01',name:'01 — A different world',assetId:'environment',duration:96,sourceIn:0,note:'Wide establishing frame. The sphere catches the first light.'},
- {id:'s02',name:'02 — The encounter',assetId:'hero',duration:144,sourceIn:0,note:'Mira walks into frame. Hold the camera. Let the scarf move.'},
+ {id:'s02',name:'02 — The encounter',assetId:'hero',duration:144,sourceIn:0,note:'The lead walks into frame. Hold the camera. Let the scarf move.'},
  {id:'s03',name:'03 — Leave an impression',assetId:'hero',duration:120,sourceIn:0,note:'Resolve on her reflection. Leave space for the end line.'}],plans:[]};return {...p,sharedNodes:structuredClone(p.nodes.filter(n=>p.sharedNodeIds.includes(n.id))),sharedAssets:structuredClone(p.assets.filter(a=>p.sharedAssetIds.includes(a.id)))};}
 export function newProject(name:string):Project {const p=seedProject();return {...p,id:uid('project'),name,description:'New project',brief:'',script:'',audience:'',deliverables:'',direction:'',briefPinned:false,lookPinned:false,assets:[],nodes:[],shots:[],plans:[],sharedAssetIds:[],sharedNodeIds:[],sharedAssets:[],sharedNodes:[],createdAt:new Date().toISOString()};}
 export function timecode(frame:number,fps:number) {const f=Math.max(0,Math.round(frame));return [Math.floor(f/(fps*3600)),Math.floor(f/(fps*60))%60,Math.floor(f/fps)%60,f%fps].map(n=>String(n).padStart(2,'0')).join(':');}

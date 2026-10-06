@@ -22,6 +22,7 @@ import { reconcileWorkspaces } from "@/lib/reconciliation";
 import { cleanupExpiredUploads } from "@/lib/uploadReservations";
 import { drainPipelineWakeups } from "@/lib/pipeline/executor";
 import { sweepConsumerJobs } from "@/lib/higgsfield-consumer/sweep";
+import { SIGN_IN_OFF } from "@/lib/higgsfield-consumer/retired";
 import { drainCanvasPushes } from "@/lib/workbench/canvas-push";
 import { drainRigAgentWakeups } from "@/lib/workbench/rig-agent";
 
@@ -119,12 +120,14 @@ export async function GET(req: Request) {
               const report = await syncSoulIdentities(2, { deadlineAt });
               if (report.failed) throw new Error("SOUL_RECONCILIATION_FAILED");
             });
-            // Connected-account jobs finish with no page open: read the
-            // due ones (free reads, one-time collection, never a re-send).
-            await stage("connected_jobs", async () => {
-              const report = await sweepConsumerJobs({ limit: 2, deadlineAt });
-              deferred ||= report.deferred;
-            });
+            // Connected-account jobs finished with no page open. Off for
+            // Release 1 with the Higgsfield sign-in (SIGN_IN_OFF in
+            // lib/higgsfield-consumer/retired.ts): no stored grant is read.
+            if (!SIGN_IN_OFF)
+              await stage("connected_jobs", async () => {
+                const report = await sweepConsumerJobs({ limit: 2, deadlineAt });
+                deferred ||= report.deferred;
+              });
             // Server-made Rig canvas changes the live room has not taken yet
             // (free; the room only ever gets what the saved canvas holds).
             await stage("canvas_pushes", () =>

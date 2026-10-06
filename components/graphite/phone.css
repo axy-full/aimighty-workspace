@@ -87,11 +87,9 @@
      never held to the pane's height with the overflow running past the padding and the last row under the bar (#389). */
   .gx .gx-stage > *, .gx .gx-stage > .gx-legacy.pxw { flex-shrink: 0; flex-basis: auto; }
   .gx .gx-toast { bottom: calc(var(--ph-bar-h) + var(--ph-bar-gap) + 10px); }
-  /* The Rig's shots are the page: its Library (drag or + onto a shot) follows the list or the canvas instead of
-     pushing the canvas under the tab bar. */
-  .gx .gx-stage > .gx-legacy.pxw:has(> .pxw-rig-library) { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; }
-  .gx .gx-stage > .gx-legacy.pxw > .pxw-rig-library { order: 1; margin: 12px 0 0; }
-  .gx .gx-stage > .gx-legacy.pxw:has(> .pxw-rig-library) > .pxw-content { min-height: max-content; }
+  
+  
+  
   .gx .gx-first .gx-gen-error { scroll-margin-bottom: 12px; }
   /* Atomik's approval row (components/graphite/AtomikGate), under the top bar on every page while a run waits: a bordered
      row of its own, what it is on two lines at most and the plan's line on one, Not now and Approve (the exact quote) at its end. */

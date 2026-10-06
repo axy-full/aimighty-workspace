@@ -20,9 +20,9 @@ import { smallTargets } from "./phoneFloors";
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-const CLIP = { url: "/fixtures/clip.mp4", name: "walk.mp4", type: "video/mp4" };
+const CLIP = { url: "/fixtures/clip-6s.mp4", name: "walk.mp4", type: "video/mp4" };
 const STILLS = [
-  { url: "/campaign/character.webp", name: "mira.webp", type: "image/webp" },
+  { url: "/campaign/character.webp", name: "wren.webp", type: "image/webp" },
   { url: "/campaign/environment.webp", name: "dunes.webp", type: "image/webp" },
 ];
 
@@ -84,11 +84,11 @@ async function dropFiles(page: Page, files: { url: string; name: string; type: s
 async function noSideScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
 }
-/** A priced button reads "<verb> · about N cr": an estimate, whole, never shortened. */
-const priced = (verb: string) => new RegExp(`^${verb} · about \\d[\\d,]* cr$`);
-const figure = async (page: Page) => Number(((await page.getByTestId("viral-generate").innerText()).match(/about ([\d,]+) cr/)?.[1] ?? "").replace(/,/g, ""));
+/** A priced button reads "<verb> · up to N cr": an estimate, whole, never shortened. */
+const priced = (verb: string) => new RegExp(`^${verb} · up to \\d[\\d,]* cr$`);
+const figure = async (page: Page) => Number(((await page.getByTestId("viral-generate").innerText()).match(/up to ([\d,]+) cr/)?.[1] ?? "").replace(/,/g, ""));
 
-test("Motion Transfer on the API key: a 4–30 s source and ordered stills, the live estimate on the button, one send at that figure, and the take lands", async ({ page, playwright }, info) => {
+test("Motion Transfer on the API key: a 4–8 s source and ordered stills, the live estimate on the button, one send at that figure, and the take lands", async ({ page, playwright }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(240_000);
   const s = await seed(page, playwright, "owner");
@@ -98,13 +98,13 @@ test("Motion Transfer on the API key: a 4–30 s source and ordered stills, the 
   expect(new URL(page.url()).searchParams.get("suite")).not.toBe("subatomik");
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "motion");
   await expect(page.getByTestId("make-title")).toHaveText("Motion transfer");
-  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
+  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–8 s).");
   /* The account's owner-run card is gone for good: this page is the composer. */
   await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
 
   await dropFiles(page, [CLIP]);
-  await expect(page.getByTestId("viral-source")).toContainText("walk.mp4 · 10 s", { timeout: 60_000 });
-  await expect(page.getByTestId("viral-source-card")).toContainText("SOURCE · 10 s");
+  await expect(page.getByTestId("viral-source")).toContainText("walk.mp4 · 6 s", { timeout: 60_000 });
+  await expect(page.getByTestId("viral-source-card")).toContainText("SOURCE · 6 s");
   await expect(page.getByTestId("viral-reason")).toHaveText("Add at least one reference image.");
   await expect(page.getByTestId("viral-source-download")).toHaveAttribute("href", /^\/api\/uploads\/[A-Za-z0-9_-]+\?download=1$/);
   await dropFiles(page, STILLS);
@@ -117,14 +117,14 @@ test("Motion Transfer on the API key: a 4–30 s source and ordered stills, the 
   await expect(page.getByTestId("viral-generate")).toHaveText(priced("Transfer motion"), { timeout: 60_000 });
   await expect(page.getByTestId("viral-foot")).toHaveText("An estimate from the live price · filed to this project’s takes");
   /* The tool's line carries the same estimate as the button. */
-  await expect(page.getByTestId("make-engine-price")).toHaveText(/^about \d[\d,]* cr$/);
+  await expect(page.getByTestId("make-engine-price")).toHaveText(/^up to \d[\d,]* cr$/);
   const quote = s.quotes.at(-1)!;
   expect(quote).toMatchObject({ model: "higgsfield-genjutsu-motion-transfer", task: "genjutsu", resolution: "720p", prompt: "", workbenchProjectId: s.projectId, refine: false });
   expect(quote).not.toHaveProperty("shotId");
   expect((quote.references as { role: string }[]).map((r) => r.role)).toEqual(["reference_image", "reference_image"]);
   expect(quote.sourceUploadId).toEqual(expect.any(String));
-  const [dunes, mira] = quote.references as { uploadId: string }[];
-  expect(dunes.uploadId).not.toBe(mira.uploadId);
+  const [dunes, wren] = quote.references as { uploadId: string }[];
+  expect(dunes.uploadId).not.toBe(wren.uploadId);
   if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="viral-view"]'), "44px targets").toEqual([]);
   await noSideScroll(page);
 
@@ -198,18 +198,18 @@ test("a member of a managed workspace runs Viral on the workspace's credits: the
   /* History lists it from the Library, with its next steps: a member reaches it from the tool like anyone else. */
   await page.getByTestId("viral-open-history").click();
   await expect(page.getByTestId("make-panel")).toHaveCount(0);
-  await expect(page.getByTestId("page-title")).toHaveText("History");
+  await expect(page.getByTestId("history-view")).toBeVisible();
   const result = page.getByTestId("history-result");
   await expect(result).toHaveCount(1, { timeout: 30_000 });
   await expect(result).toContainText("Motion Transfer · 720p");
-  for (const action of ["Recreate", "Compare", "Send to Edit"]) await expect(result.getByRole("button", { name: action })).toBeEnabled();
+  for (const action of ["Open in Make", "Compare", "Send to Edit"]) await expect(result.getByRole("button", { name: action })).toBeEnabled();
   await expect(result.getByTestId("history-take-download")).toHaveAttribute("href", /\?download=1$/);
   await result.getByRole("button", { name: "Compare" }).click();
   const compare = page.getByRole("dialog", { name: "Compare" });
   await expect(compare.locator("video")).toHaveCount(2);
   await compare.getByRole("button", { name: "Close" }).click();
   /* Recreate brings the same inputs back, priced again before anything runs. */
-  await result.getByRole("button", { name: "Recreate" }).click();
+  await result.getByRole("button", { name: "Open in Make" }).click();
   await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "motion");
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "motion");
   await expect(page.getByTestId("viral-source")).toContainText("walk.mp4");

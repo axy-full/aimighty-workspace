@@ -30,7 +30,7 @@ test("Workspace › Dashboard: totals, by project and person, stalls, a project 
   const production = String((await saved.json()).productionProjectId);
 
   /* Two real (mock) renders in the project. */
-  for (const prompt of ["A red fox on the ice", "Mara at the window"]) {
+  for (const prompt of ["A red fox on the ice", "Keeper at the window"]) {
     const body = { prompt, model: "gemini-3.1-flash-image", projectId: production, shotId: "", ratio: "16:9", resolution: "1K", duration: 5, refine: false, references: [] };
     const quote = await page.request.post("/api/generate/quote", { headers, data: body }).then((r) => r.json());
     const made = await page.request.post("/api/generate", { headers: { ...headers, "Idempotency-Key": `dash-${randomUUID()}` }, data: { ...body, maxCredits: quote.estimatedCredits, quoteFingerprint: quote.fingerprint } });

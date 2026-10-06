@@ -34,7 +34,7 @@ const SCRIPT = seedProject().script!;
 function fixture(): Project {
   const sha = createHash("sha256").update(SCRIPT).digest("hex");
   const scene = (n: number, heading: string) => ({
-    id: `scene-${n}`, heading, summary: `What scene ${n} is for.`, characters: ["MIRA"], locations: [heading], props: [],
+    id: `scene-${n}`, heading, summary: `What scene ${n} is for.`, characters: ["WREN"], locations: [heading], props: [],
     beats: [1, 2].map((b) => ({ id: `beat-${n}-${b}`, text: `Scene ${n}, beat ${b}.` })),
     shots: [1, 2].map((t) => ({ id: `shot-${n}-${t}`, description: `Scene ${n}, shot ${t}.`, framing: "Wide", movement: "Slow push-in", lighting: "Low sun", sound: "Wind" })),
   });
@@ -130,66 +130,13 @@ async function sideways(page: Page, scrollers: string[] = []) {
 
 test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
 
-test("Deliver: the strip's numbers, the stage facts, the card feet and the package's labels read at the floor; its buttons are 44px on touch", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, "/suites?suite=studio&page=deliver&sp=deliver", "stage-view");
-  await expect(page.locator(".pxw-package-actions")).toBeVisible();
-  for (const selector of [".gx-strip .gx-tab:not([aria-current]) .gx-tab-n", ".gx-stage-facts dt", ".gx-stage-card-foot:not([data-state='COMPLETE']):not([data-state='ACTIVE']):not([data-state='WAITING'])", ".pxw-package-facts span"])
-    expect(await dimLabels(page, selector), `${selector}: under #7C7C84`).toEqual([]);
-  expect(await sideways(page, ["[data-testid='content']"])).toEqual([]);
-  if (TOUCH.includes(info.project.name)) expect(await smallTargets(page, ".pxw-package"), "Deliver's package: targets under 44×44").toEqual([]);
-  expect(errors).toEqual([]);
-});
 
-test("Beats and Storyboards: scene, shot and card-foot numbers read at the floor", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, "/suites?suite=studio&page=brief&sp=beats", "beats-stage");
-  await expect(page.getByTestId("beat-scene").first()).toBeVisible();
-  for (const selector of [".pd-scene-n", ".pd-beat-card-foot"]) expect(await dimLabels(page, selector), `${selector}: under #7C7C84`).toEqual([]);
-  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Storyboards/ }).click();
-  await expect(page.getByTestId("boards-stage")).toBeVisible();
-  await expect(page.locator(".pd-shot-n").first()).toBeVisible();
-  expect(await dimLabels(page, ".pd-shot-n"), ".pd-shot-n: under #7C7C84").toEqual([]);
-  expect(errors).toEqual([]);
-});
 
-test("Edit & Sound fits the screen: nothing sideways, its labels at the floor, 44px targets on touch", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, "/suites?suite=studio&page=edit&sp=edit", "content");
-  await expect(page.getByTestId("assembly")).toBeVisible();
-  await expect(page.locator(".pxw-stem").first()).toBeVisible();
-  /* It was held at 680px wide and scrolled sideways inside a phone's page. */
-  expect(await sideways(page, ["[data-testid='content']", ".gx-legacy > .pxw-content"])).toEqual([]);
-  for (const selector of [".pxw-assembly-sub", ".pxw-stem-name > span", ".pxw-stem-note", ".pxw-stem-state"])
-    expect(await dimLabels(page, selector), `${selector}: under #7C7C84`).toEqual([]);
-  if (TOUCH.includes(info.project.name)) {
-    expect(await smallTargets(page, ".pxw-edit"), "Edit & Sound: targets under 44×44").toEqual([]);
-    expect(await smallTargets(page, "[data-testid='timeline-cut'] .pd-more"), "Add takes: targets under 44×44").toEqual([]);
-  }
-  expect(errors).toEqual([]);
-});
 
-test("Environment: a long file name never widens the page, and the library pickers are 44px on touch", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, "/suites?suite=studio&page=boards&sp=environment", "environment-stage");
-  const picker = page.getByTestId("environment-add-reference").first();
-  await expect(picker).toBeEnabled();
-  await expect(picker.locator("option", { hasText: "harbour-plate-wide-establishing-shot-at-first-light-final-graded-v12.webp" })).toHaveCount(1);
-  expect(await sideways(page, ["[data-testid='content']"])).toEqual([]);
-  for (const id of ["environment-add-reference", "environment-use-plate"]) {
-    const box = (await page.getByTestId(id).first().boundingBox())!;
-    expect(box.x + box.width, `${id} inside the screen`).toBeLessThanOrEqual(page.viewportSize()!.width);
-    if (TOUCH.includes(info.project.name)) expect(Math.round(box.height), `${id} height`).toBeGreaterThanOrEqual(44);
-  }
-  /* The place name keeps the field's height in the card's column (it had collapsed to 20px away from a phone's width). */
-  const name = (await page.getByTestId("environment-name").first().boundingBox())!;
-  expect(Math.round(name.height), "the place name's height").toBeGreaterThanOrEqual(TOUCH.includes(info.project.name) ? 44 : 36);
-  expect(errors).toEqual([]);
-});
 
 test("⌘K: the field is a 44px target on touch; its groups, hints and keys read at the floor", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, "/suites?suite=studio&page=takes&sp=takes", "edit-stage");
+  const { errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent", "spec-page");
   /* On a phone, Search waits behind the header's context badge. */
   await openSuitesMenu(page);
   await page.getByTestId("header-search").click();
@@ -210,30 +157,6 @@ test("Workspace › Dashboard: the tables' column headers read at the floor", as
   expect(errors).toEqual([]);
 });
 
-test("a draft that could not be read says Try again, never Retry (Deliver's tool, Edit & Sound)", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  /* Workspace reads no stage's draft, so the stages below read theirs for the first time once the connection is down
-     (the shell already holds the project, so its own head stays). */
-  const { errors } = await open(page, "/suites?view=workspace&tab=general", "workspace-view");
-  let down = true;
-  await page.route(/\/api\/workbench\/projects\?id=/, (route) => (down && route.request().method() === "GET" ? route.fulfill({ status: 503, json: { error: "Studio could not load this project (503)." } }) : route.fallback()));
-  await openSuitesMenu(page);
-  /* The project's segment opens its Studio pages (header option B). */
-  await page.getByRole("tablist", { name: "Suites" }).locator('[data-suite-tab="project"]').click();
-  await closeSuitesMenu(page);
-  const strip = page.getByRole("navigation", { name: "Pages" });
-  for (const [tab, alert] of [[/Deliver/, "[data-testid='stage-work'] [role='alert']"], [/Edit & Sound/, ".pxw-edit [role='alert']"]] as const) {
-    await strip.getByRole("button", { name: tab }).click();
-    const failed = page.locator(alert).filter({ hasText: "could not load this project" });
-    await expect(failed).toBeVisible();
-    await expect(failed.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
-    await expect(failed.getByRole("button", { name: /Retry/ })).toHaveCount(0);
-  }
-  down = false;
-  await page.locator(".pxw-edit [role='alert']").getByRole("button", { name: "Try again", exact: true }).click();
-  await expect(page.getByTestId("assembly")).toBeVisible();
-  expect(errors).toEqual([]);
-});
 
 test("the old shell's home: a projects read that failed says Try again, never Retry, and reads again", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
@@ -282,7 +205,7 @@ async function touchTargets(page: Page, scope: string): Promise<string[]> {
 
 test("Library: the overlay's list and its closing note end above the tab bar, where a tap lands on them", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, "/suites?suite=studio&page=takes&sp=takes", "edit-stage");
+  const { errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent", "spec-page");
   const library = page.getByTestId("library");
   if (!(await library.isVisible())) await page.getByTestId("toggle-library").click();
   const assets = library.getByRole("tab", { name: /Assets/ });
@@ -344,35 +267,6 @@ async function agentReads(page: Page) {
   return refused;
 }
 
-test("the agent's model and effort pickers are 44px targets on touch, closed and open", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  await page.route("**/api/workbench/development**", (route) => (route.request().method() === "GET" ? route.fulfill({ json: { configured: true, models: AGENT_MODELS, jobs: [] } }) : route.abort("blockedbyclient")));
-  const { errors } = await open(page, "/suites?suite=studio&page=brief&sp=brief", "brief-stage");
-  const bar = page.getByTestId("agent-bar");
-  const model = bar.getByRole("button", { name: "Agent model" });
-  const effort = bar.getByRole("combobox", { name: "Agent effort" });
-  await expect(model).toContainText("Claude Sonnet 4.6");
-  await expect(effort).toBeEnabled();
-  if (TOUCH.includes(info.project.name)) {
-    for (const [name, control] of [["the model picker", model], ["the effort picker", effort]] as const) {
-      const box = (await control.boundingBox())!;
-      expect.soft(Math.round(box.height), `${name}'s height`).toBeGreaterThanOrEqual(44);
-    }
-    /* Open, the picker's search, its family filters, its close (a phone's sheet) and its rows keep the floor too. */
-    await model.click();
-    const picker = page.getByRole("dialog", { name: "Choose a thinking model" });
-    await expect(picker.getByRole("option", { name: "Claude Sonnet 4.6" })).toBeVisible();
-    expect.soft(await touchTargets(page, "[role='dialog'][aria-label='Choose a thinking model']"), "the model picker, open").toEqual([]);
-    await page.keyboard.press("Escape");
-    await expect(picker).toBeHidden();
-    await effort.click();
-    await expect(page.getByRole("option", { name: /High/ })).toBeVisible();
-    expect.soft(await touchTargets(page, "[role='listbox']"), "the effort picker, open").toEqual([]);
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("listbox")).toBeHidden();
-  }
-  expect(errors).toEqual([]);
-});
 
 test("Atomik › Agent: the agent panel's controls are 44px targets on touch; the page's group notes read at the floor", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
@@ -401,7 +295,7 @@ test("Atomik › Runs, Budget and Models: the suite's buttons, links and fields 
   const { errors } = await open(page, "/suites?suite=atomik&page=runs&sp=runs", "spec-page");
   const strip = page.getByRole("navigation", { name: "Pages" });
   const suite = page.locator(".pxw-tool--atomik");
-  for (const [tab, ready] of [["Runs", "Build your first plan"], ["Budget", "Project generation spend"], ["Models", "Effective routing"]] as const) {
+  for (const [tab, ready] of [["Activity", "Build your first plan"], ["Budget", "Project generation spend"], ["Models", "Effective routing"]] as const) {
     await strip.getByRole("button", { name: new RegExp(tab) }).click();
     await expect(suite.getByText(ready, { exact: true })).toBeVisible();
     if (tab === "Budget") await expect(suite.getByRole("button", { name: "Save cap" })).toBeVisible();
@@ -426,7 +320,7 @@ test("Atomik: a projects or budget read that failed says Try again, never Retry"
   await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Atomik" }).click();
   await closeSuitesMenu(page);
   const strip = page.getByRole("navigation", { name: "Pages" });
-  await strip.getByRole("button", { name: /Runs/ }).click();
+  await strip.getByRole("button", { name: /Activity/ }).click();
   const projects = page.locator(".pxw-tool--atomik [role='alert']").filter({ hasText: "could not load this project" });
   await expect(projects).toBeVisible();
   await expect(projects.getByRole("button", { name: "Try again", exact: true })).toBeVisible();

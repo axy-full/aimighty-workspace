@@ -26,6 +26,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AtomikMark } from "@/components/AtomikMark";
 import { TRAIL } from "@/components/ParticlMark";
 import { Mark } from "@/components/ui/Mark";
+import { RequestAccessButton } from "@/components/RequestAccess";
 import { signInNotice } from "@/lib/authPages";
 import "./auth-mobile.css";
 
@@ -238,9 +239,7 @@ function SignInForm({ next, notice = null }: { next: string; notice?: string | n
             View plans
           </Link>{" "}
           ·{" "}
-          <Link href="/signup" className="text-lead hover:text-ink">
-            Create a workspace
-          </Link>
+          <RequestAccessButton className="text-[color:var(--graphite-accent-text)] hover:text-ink" label="Request access" />
           <br />
           <Link href="/reset" className="text-lead hover:text-ink">
             Forgot password?

@@ -22,7 +22,6 @@ import { labels as AUDIT_LABELS } from "@/components/management/WorkspaceAudit";
 import { leftFrom, type RateGroup, type WorkspaceReach } from "@/lib/mediaReach";
 import { RateCard, ReachPair, ReachTile, leftAt } from "@/components/commercial/MediaReach";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
-import { ConnectedAccountRow } from "./ConnectedAccountRow";
 import { ConnectRow } from "./ConnectRow";
 import { ManagementDashboard } from "./ManagementDashboard";
 
@@ -560,7 +559,6 @@ function Usage() {
 type Keys = { keys: { name: string; label: string; does: string; set: boolean }[] };
 function Engines() {
   const session = useSession();
-  const owner = session.role === "owner";
   /* Only the house workspace is handed a dollar table (lib/houseWorkspace.ts): it is never billed in credits. */
   const house = session.rates.unit === "usd";
   const { data, error } = useRead<Keys>("/api/workspaces/keys");
@@ -577,7 +575,7 @@ function Engines() {
           </div>
         ))}
       </div>
-      <ConnectedAccountRow owner={owner} />
+      {/* No "Earlier connected account" row: off for Release 1 with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts). */}
       <XaiEngineRow />
     </>
   );

@@ -31,7 +31,7 @@ export type ReachStatus = "built-in";
 export type ReachRow = { id: string; label: string; line: string; group: "particl"; status: ReachStatus; open?: ReachOpen };
 
 const AGENT: ReachOpen = { suite: "atomik", page: "agent", label: "Agent" };
-const GEN: ReachOpen = { gen: true, label: "Gen" };
+const GEN: ReachOpen = { gen: true, label: "Make" };
 const SOUND: ReachOpen = { suite: "studio", page: "edit", label: "Edit & Sound" };
 
 export const PARTICL_REACH: readonly Omit<ReachRow, "status" | "group">[] = Object.freeze([
@@ -39,7 +39,7 @@ export const PARTICL_REACH: readonly Omit<ReachRow, "status" | "group">[] = Obje
   { id: "thinking", label: "Thinking models", line: "The model Atomik plans with, and how hard it thinks", open: { suite: "atomik", page: "models", label: "Models" } },
   { id: "engines", label: "Particl engines", line: "Video, stills and sound on Particl’s own engines", open: GEN },
   { id: "sound", label: "Voice, sound & music", line: "Narration, effects and score for the cut", open: SOUND },
-  { id: "astra", label: "Astra 3D", line: "Block a scene in 3D before anything renders", open: { suite: "studio", page: "astra", label: "Astra" } },
+  { id: "astra", label: "3D blocking", line: "Block a scene in 3D before anything renders", open: { suite: "studio", page: "astra", label: "3D blocking" } },
   { id: "assistant", label: "Your own assistant", line: `Particl’s ${TOOLS.length} tools in Claude or ChatGPT, with a token you control`, open: { tab: "connect", label: "Claude & ChatGPT" } },
 ]);
 

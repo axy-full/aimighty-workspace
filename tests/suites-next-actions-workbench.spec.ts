@@ -53,8 +53,6 @@ const assets = async (page: Page, info: TestInfo) => {
   await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
 };
 const tile = (page: Page, id: string) => page.getByTestId("library").locator(`.gx-asset-thumb[data-ctx='asset:${id}']`);
-const deskTile = (page: Page, name: string) => page.getByTestId("takes-grid").getByTestId("take-tile").filter({ has: page.getByText(name, { exact: true }) });
-
 /**
  * The functional labels in `scope` that read dimmer than #7C7C84 as they land on the screen, not as they are written. A port
  * of the alpha-aware dimLabels in the phone chrome change, kept in this spec so the two don't collide: tests/phoneFloors.ts's
@@ -148,9 +146,9 @@ async function rowFloors(page: Page, info: TestInfo, row: ReturnType<Page["getBy
   if (process.env.NEXT_SHOTS_DIR) await page.screenshot({ path: `${process.env.NEXT_SHOTS_DIR}/next-${where.includes("inspector") ? "inspector" : "desk"}-${info.project.name.replace("workbench-", "")}.png` });
 }
 
-test("the Inspector's Next opens each take's own tool on it — Re-edit for a still, Edit for a clip, Edit & Sound for a sound — and nothing that could spend is sent", async ({ page }, info) => {
+test("the Inspector's Next opens each take's own place on the board — Shots for a still and a clip, Cut for a sound — and nothing that could spend is sent", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { sent, quotes, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards");
+  const { sent, quotes, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   await assets(page, info);
   await tile(page, "generation:gen_still").click();
   const inspector = page.getByTestId("inspector");
@@ -159,66 +157,41 @@ test("the Inspector's Next opens each take's own tool on it — Re-edit for a st
   await expect(next.getByRole("button")).toHaveText(["Re-edit ›", "Upscale", "Outpaint", "Animate"]);
   await expect(next).not.toContainText(/\d|credit/i);
   await rowFloors(page, info, next, '[data-testid="inspector"]');
+  /* The Takes page is deleted: the tool opens where the take is, on the board's Shots region, with that take selected. */
+  const onBoard = async (asset: string) => {
+    await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
+    await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region"), q.get("asset")]; }).toEqual(["board", "shots", asset]);
+  };
   await next.getByTestId("next-re-edit").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
-  await expect(page.getByTestId("takes-selected")).toContainText("Selected · Pier at dusk");
-  await expect(page.getByTestId("edit-image")).toBeInViewport();
-  await expect(page.getByTestId("edit-instruction")).toBeFocused();
-  /* The form's own priced button is the next step: nothing is priced until the change is written, and nothing was sent. */
-  await expect(page.getByTestId("edit-render")).toBeDisabled();
-  await expect(page.getByTestId("edit-blocked")).toHaveText("Write what should change.");
-  await expect.poll(() => new URL(page.url()).searchParams.get("asset")).toBe("generation:gen_still");
-  if (!WIDE.includes(info.project.name)) await expect(page.getByTestId("inspector")).toHaveCount(0);
+  await onBoard("generation:gen_still");
 
-  /* A clip, from the Library again: already on Takes, its Seedance Edit opens on it. */
+  /* A clip, from the Library again: its Seedance Edit opens on it, the same way. */
+  await page.goto("/suites?suite=atomik&page=agent&sp=agent");
   await assets(page, info);
   await tile(page, "generation:gen_clip").click();
   await expect(page.getByTestId("inspector").getByTestId("next-actions").getByRole("button")).toHaveText(["Edit ›", "Upscale", "Reframe", "Extend"]);
   await page.getByTestId("inspector").getByTestId("next-edit").click();
-  await expect(page.getByTestId("takes-selected")).toContainText("Selected · Ferry turning");
-  await expect(page.getByTestId("gen-edit")).toBeInViewport();
-  await expect(page.getByTestId("gen-edit-panel")).toBeVisible();
-  await expect.poll(() => new URL(page.url()).searchParams.get("asset")).toBe("generation:gen_clip");
+  await onBoard("generation:gen_clip");
 
-  /* A sound: Edit & Sound opens — the row says what opens, nothing more. */
+  /* A sound: Edit & Sound opens — the row says what opens, nothing more. It is the Cut region. */
+  await page.goto("/suites?suite=atomik&page=agent&sp=agent");
   await assets(page, info);
   await tile(page, "generation:gen_voice").click();
   /* What no engine here does for a sound is listed, not offered, and says why. */
   await expect(page.getByTestId("inspector").getByTestId("next-actions").getByRole("button")).toHaveText(["Edit & Sound ›", "Upscale", "Extend"]);
   await expect(page.getByTestId("inspector").getByTestId("next-not-offered")).toHaveText("Upscale and Extend are not offered: no engine Particl uses upscales or extends sound.");
   await page.getByTestId("inspector").getByTestId("next-edit-sound").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
+  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region")]; }).toEqual(["board", "cut"]);
   expect(sent, "nothing that could spend on the way to a tool").toEqual([]);
-  expect(quotes.every((path) => path === "/api/generate/quote" || path === "/api/audio/transcribe"), "only read-only quotes").toBe(true);
+  expect(quotes.every((path) => path === "/api/generate/quote" || path === "/api/audio/transcribe" || path === "/api/audio"), "only read-only quotes").toBe(true);
   expect(errors).toEqual([]);
 });
 
-test("the selected take in Takes carries the same row; a sound's opens Edit & Sound in place of the old link", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { sent, quotes, errors } = await open(page, "/suites?suite=studio&page=takes");
-  await deskTile(page, "Pier at dusk").getByTestId("edit-take").click();
-  const selected = page.getByTestId("takes-selected");
-  const next = selected.getByTestId("next-actions");
-  await expect(next.getByRole("button")).toHaveText(["Re-edit ›", "Upscale", "Outpaint", "Animate"]);
-  await rowFloors(page, info, next, '[data-testid="takes-selected"]');
-  await next.getByTestId("next-re-edit").click();
-  await expect(page.getByTestId("edit-instruction")).toBeFocused();
-  await expect(page.getByTestId("edit-image")).toBeInViewport();
-
-  await page.getByTestId("takes-kind").filter({ hasText: "Audio" }).click();
-  await deskTile(page, "Keeper's line").getByTestId("edit-take").click();
-  await expect(selected).toContainText("Selected · Keeper's line");
-  await expect(selected.getByRole("button", { name: "Open Edit & Sound ›" })).toHaveCount(0);
-  await selected.getByTestId("next-edit-sound").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
-  expect(sent, "nothing that could spend").toEqual([]);
-  expect(quotes.every((path) => path === "/api/generate/quote" || path === "/api/audio/transcribe"), "only read-only quotes").toBe(true);
-  expect(errors).toEqual([]);
-});
 
 test("a take that did not render, a file with nothing to edit, and an unsaved project: Next says why, or is not there", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone and one desktop");
-  const { sent, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards", false);
+  const { sent, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent", false);
   await assets(page, info);
   await tile(page, "generation:gen_failed").click();
   const next = page.getByTestId("inspector").getByTestId("next-actions");
@@ -228,7 +201,7 @@ test("a take that did not render, a file with nothing to edit, and an unsaved pr
   await assets(page, info);
   await tile(page, "generation:gen_still").click();
   await expect(page.getByTestId("inspector").getByTestId("next-re-edit")).toBeDisabled();
-  await expect(page.getByTestId("inspector").getByTestId("next-why")).toHaveText("Save the project first.");
+  await expect(page.getByTestId("inspector").getByTestId("next-why")).toHaveText("Saving this project…");
   if (!WIDE.includes(info.project.name)) await page.getByTestId("close-inspector").click();
   await assets(page, info);
   await tile(page, "upload:up_script").click();

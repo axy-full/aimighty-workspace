@@ -26,7 +26,7 @@ const SHOTS = process.env.VIRAL_SHOTS;
 const fixture = (): Project => ({ ...newProject("Harbour dusk study"), id: "ws-runs", productionProjectId: "prod-ws", shotMappings: {} });
 const MOTION = "higgsfield-genjutsu-motion-transfer", SWAP = "higgsfield-genjutsu-object-swap";
 const MIN = 60_000;
-const uploads = [upload({ id: "up_src", filename: "walk.mp4", mime: "video/mp4", kind: "video", durationS: 12 }), upload({ id: "up_ref", filename: "mira.png", mime: "image/png" }),
+const uploads = [upload({ id: "up_src", filename: "walk.mp4", mime: "video/mp4", kind: "video", durationS: 6 }), upload({ id: "up_ref", filename: "wren.png", mime: "image/png" }),
   ...Array.from({ length: 12 }, (_, i) => upload({ id: `up_r${i}`, filename: `still-${i}.png`, mime: "image/png" }))];
 const keyParams = (resolution = "720p", extra: Record<string, unknown> = {}) => ({
   resolution, rawPrompt: "", sourceUploadId: "up_src", workbenchProjectId: "ws-runs",
@@ -55,8 +55,10 @@ async function open(page: Page, sp: "motion" | "swap" | "history", generations: 
   page.on("request", (request) => { const path = new URL(request.url()).pathname; if (path.startsWith("/api/higgsfield/consumer/")) asked.push(`${request.method()} ${path}`); });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  /* History is the Social board's History drawer now (the Viral page is deleted); the quick tools are Make's. */
   await page.goto(`/suites?suite=subatomik&page=${sp}&sp=${sp}`);
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour dusk study");
+  if (sp === "history") await expect(page.getByTestId("history-view")).toBeVisible({ timeout: 60_000 });
+  else await expect(page.getByTestId("project-name")).toHaveText("Harbour dusk study");
   return { errors, asked, library };
 }
 /** Viral asks nothing of the connected account; the shell's own collector may list an owner's earlier connected jobs, to drain them. */
@@ -104,8 +106,9 @@ test("History lists the project's transform takes from the Library, each state i
   await shoot(page, info.project.name, "history");
 
   await done.nth(1).getByRole("button", { name: "Send to Edit" }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
-  await expect(page.getByTestId("edit-takes").locator('[data-testid="edit-take"][aria-checked="true"]')).toContainText("Swapped bottle");
+  /* Takes is the board's Shots region now: it opens there, with that take selected. */
+  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region")]; }).toEqual(["board", "shots"]);
+  await expect.poll(() => new URL(page.url()).searchParams.get("asset")).toMatch(/^(generation|upload):/);
   expect(viralAsked(asked), "Viral asks the connected account for nothing").toEqual([]);
   expect(errors).toEqual([]);
 });
@@ -169,7 +172,7 @@ test("Recreate from an earlier account run loads what the key carries and says w
   expect(cancels).toHaveLength(1);
   expect(cancels[0]).toContain("/api/generations/t_queue/cancel");
   /* Twelve stills on the account; this route takes eight. */
-  await page.getByTestId("history-result").getByRole("button", { name: "Recreate" }).click();
+  await page.getByTestId("history-result").getByRole("button", { name: "Open in Make" }).click();
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "swap");
   await expect(page.getByTestId("toast")).toContainText("Loaded the first 8 of 12 references; this route takes up to 8.");
   await expect(page.getByTestId("viral-source")).toContainText("walk.mp4");

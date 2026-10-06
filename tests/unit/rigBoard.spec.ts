@@ -83,14 +83,14 @@ test("snap: a card let go lands on the 20 px grid, Alt places it exactly, and it
 
 test("sections: every card sits in its kind's section, in board order, unless a person filed it under a section title", () => {
   const nodes = [
-    card("mira", "character", { assetId: "face" }), card("dunes", "element", { assetId: "plate" }), card("sphere", "element"), card("board", "media", { assetId: "frame" }),
+    card("wren", "character", { assetId: "face" }), card("dunes", "element", { assetId: "plate" }), card("sphere", "element"), card("board", "media", { assetId: "frame" }),
     card("look", "moodboard"), card("brief", "brief"), card("say", "note"), card("s1", "scene"), card("s2", "generate"), card("tone", "grade"),
     card("mix", "merge"), card("out", "output"), card("check", "verify" as NodeType), card("lamp", "media", { refKind: "element" }),
   ];
   expect(nodes.map((n) => boardGroupOf(n, assets))).toEqual(["cast", "environment", "element", "ref", "look", "direction", "direction", "shots", "shots", "finishing", "finishing", "output", "other", "element"]);
   const sections = boardSections(nodes, assets);
   expect(sections.map((s) => [s.title, ids(s.members)])).toEqual([
-    ["Cast", ["mira"]], ["Environment", ["dunes"]], ["Elements", ["sphere", "lamp"]], ["Refs", ["board"]], ["Looks", ["look"]], ["Direction", ["brief", "say"]],
+    ["Cast", ["wren"]], ["Environment", ["dunes"]], ["Elements", ["sphere", "lamp"]], ["Refs", ["board"]], ["Looks", ["look"]], ["Direction", ["brief", "say"]],
     ["Shots", ["s1", "s2"]], ["Finishing", ["tone", "mix"]], ["Review and output", ["out"]], ["Other cards", ["check"]],
   ]);
   /* A kind's section has one id everywhere (so it is made once), and no title card until a Tidy makes it. */
@@ -103,7 +103,7 @@ test("sections: every card sits in its kind's section, in board order, unless a 
 
   /* Titles on the board: a kind's (renamed by a person), and two a person made. A card filed under one sits there. */
   const board = [
-    ...nodes.filter((n) => ["mira", "board", "s1", "s2"].includes(n.id)),
+    ...nodes.filter((n) => ["wren", "board", "s1", "s2"].includes(n.id)),
     title(CAST, "Principal cast"), title("sec-1", "Scene 1 · Harbour"), title("sec-2", "Later"),
   ];
   board[3] = { ...board[3], section: "sec-1" };
@@ -111,7 +111,7 @@ test("sections: every card sits in its kind's section, in board order, unless a 
   board[0] = { ...board[0], section: "gone" };
   const filed = boardSections(board, assets);
   expect(filed.map((s) => [s.title, ids(s.members), s.card?.id ?? null])).toEqual([
-    ["Principal cast", ["mira"], CAST],
+    ["Principal cast", ["wren"], CAST],
     ["Refs", ["board"], null],
     ["Shots", ["s1"], null],
     /* A person's section sits just after the kind of card it holds... */
@@ -124,12 +124,12 @@ test("sections: every card sits in its kind's section, in board order, unless a 
 });
 
 test("a section title is a note in section mode: never wired, named a Section, and older releases read it as a note", () => {
-  const nodes = [title("sec", "Cast"), card("mira", "character"), card("s1", "scene"), card("say", "note")];
+  const nodes = [title("sec", "Cast"), card("wren", "character"), card("s1", "scene"), card("say", "note")];
   expect(isSectionNode(nodes[0])).toBe(true);
   expect(isSectionNode(card("say", "note"))).toBe(false);
   expect(isSectionNode(card("say", "note", { mode: "Image" }))).toBe(false);
   expect(canConnect(nodes, "sec", "s1")).toBe("Section titles group cards on the board. They do not connect to other cards.");
-  expect(canConnect(nodes, "mira", "sec")).toBe("Section titles group cards on the board. They do not connect to other cards.");
+  expect(canConnect(nodes, "wren", "sec")).toBe("Section titles group cards on the board. They do not connect to other cards.");
   expect(canConnect(nodes, "say", "s1")).toBeNull();
   expect(cardLabel(nodes[0], { assets: [] })).toBe("Section");
   expect(cardLabel(nodes[3], { assets: [] })).toBe("Direction");
@@ -144,7 +144,7 @@ test("a section title is a note in section mode: never wired, named a Section, a
 
 test("filing: a card let go under a section title joins it; its own kind's title clears the filing; anywhere else nothing changes", () => {
   const nodes = [
-    title(CAST, "Cast", { x: 60, y: 60 }), card("mira", "character", { x: 60, y: 140 }),
+    title(CAST, "Cast", { x: 60, y: 60 }), card("wren", "character", { x: 60, y: 140 }),
     title("sec-1", "Scene 1", { x: 420, y: 60 }), card("s2", "scene", { x: 420, y: 140, section: "sec-1" }),
     card("board", "media", { x: 1500, y: 1500 }), card("jonah", "character", { x: 1500, y: 2000, section: "sec-1" }),
   ];
@@ -160,7 +160,7 @@ test("filing: a card let go under a section title joins it; its own kind's title
   /* Above a title is not under it. */
   expect(filingAt(nodes, assets, "board", { x: 60, y: 20 })).toBeNull();
   /* A Cast card under Cast: its own kind's section, nothing to file. A Cast card filed elsewhere comes back to its kind. */
-  expect(filingAt(nodes, assets, "mira", { x: 60, y: 400 })).toBeNull();
+  expect(filingAt(nodes, assets, "wren", { x: 60, y: 400 })).toBeNull();
   expect(filingAt(nodes, assets, "jonah", { x: 60, y: 400 })).toEqual({ section: undefined });
   /* Already filed there: nothing changes. */
   expect(sectionAt(nodes, assets, "s2", { x: 420, y: 300 })?.id).toBe("sec-1");
@@ -175,7 +175,7 @@ test("filing: a card let go under a section title joins it; its own kind's title
 });
 
 test("dropCard: lands on the grid (or exactly, with Alt), files under the title it lands under, and refuses a locked or missing card", () => {
-  const p = project([title(CAST, "Cast", { x: 60, y: 60 }), card("mira", "character", { x: 60, y: 140 }), card("board", "media", { x: 1500, y: 1500 }), card("lock", "media", { x: 700, y: 700, locked: true })]);
+  const p = project([title(CAST, "Cast", { x: 60, y: 60 }), card("wren", "character", { x: 60, y: 140 }), card("board", "media", { x: 1500, y: 1500 }), card("lock", "media", { x: 700, y: 700, locked: true })]);
   const moved = dropCard(p, "board", { dx: -1438, dy: -1103 });
   expect(moved.nodes.find((n) => n.id === "board")).toMatchObject({ x: 60, y: 400, section: CAST });
   const free = dropCard(p, "board", { dx: -1438, dy: -1103 }, true);
@@ -184,8 +184,8 @@ test("dropCard: lands on the grid (or exactly, with Alt), files under the title 
   const out = dropCard(moved, "board", { dx: 1440, dy: 1100 });
   expect(out.nodes.find((n) => n.id === "board")).toMatchObject({ x: 1500, y: 1500, section: CAST });
   /* Under its own kind's title a card follows its kind: the filing goes. */
-  const back = dropCard({ ...moved, nodes: moved.nodes.map((n) => (n.id === "mira" ? { ...n, section: "elsewhere" } : n)) }, "mira", { dx: 0, dy: 20 });
-  expect("section" in back.nodes.find((n) => n.id === "mira")!).toBe(false);
+  const back = dropCard({ ...moved, nodes: moved.nodes.map((n) => (n.id === "wren" ? { ...n, section: "elsewhere" } : n)) }, "wren", { dx: 0, dy: 20 });
+  expect("section" in back.nodes.find((n) => n.id === "wren")!).toBe(false);
   /* Nothing moved and nothing filed: the same draft. */
   expect(dropCard(p, "board", { dx: 3, dy: -4 })).toBe(p);
   expect(() => dropCard(p, "lock", { dx: 100, dy: 0 })).toThrow("Unlock this card before moving it.");
@@ -232,9 +232,9 @@ test("a card says its state: a shot's as the shot list reads it, a reference's b
   ]);
   /* A failed take never claims what was billed: that is the Takes page's to say, from the provider's own outcome. */
   expect(cardStatus(shot, "failed", true).word).toBe("Failed");
-  expect(cardStatus(card("mira", "character"), undefined, true)).toEqual({ word: "Ready", tone: "gold", detail: "Costume stylist" });
-  expect(cardStatus(card("mira", "character"), undefined, false)).toEqual({ word: "No source yet", tone: "floor", detail: "Costume stylist" });
-  expect(cardStatus(card("mira", "character", { status: "approved" }), undefined, true).word).toBe("Approved");
+  expect(cardStatus(card("wren", "character"), undefined, true)).toEqual({ word: "Ready", tone: "gold", detail: "Costume stylist" });
+  expect(cardStatus(card("wren", "character"), undefined, false)).toEqual({ word: "No source yet", tone: "floor", detail: "Costume stylist" });
+  expect(cardStatus(card("wren", "character", { status: "approved" }), undefined, true).word).toBe("Approved");
   expect(cardStatus(card("say", "note", { role: "Director" }), undefined, false)).toEqual({ word: null, tone: "floor", detail: "Director" });
   expect(cardStatus(card("tone", "grade"), undefined, true)).toEqual({ word: null, tone: "blue", detail: "1 active tool" });
   expect(cardStatus(card("out", "output", { status: "review" }), undefined, true)).toEqual({ word: "In review", tone: "gold", detail: "Editor" });
@@ -347,15 +347,15 @@ const canvasOf = (nodes: CanvasNode[], extra: Partial<TeamCanvas> = {}): TeamCan
   ({ ...applyTeamPatch(emptyTeamCanvas(), { upsertNodes: nodes, removeNodes: [], upsertAssets: assets.assets, order: ids(nodes), at: 1, author: "ana" }), ...extra });
 
 test("the server's Tidy lays the team canvas out by sections, makes the titles it lacks as cards, and a second Tidy changes nothing", () => {
-  const canvas = canvasOf([card("mira", "character", { x: 700, y: 900 }), card("s1", "scene", { x: 900, y: 700 }), card("s2", "scene", { x: 100, y: 1200, linked: ["s1"] })]);
+  const canvas = canvasOf([card("wren", "character", { x: 700, y: 900 }), card("s1", "scene", { x: 900, y: 700 }), card("s2", "scene", { x: 100, y: 1200, linked: ["s1"] })]);
   const plan = planCanvasOps(canvas, [{ kind: "tidy" }], "ana");
-  expect(plan.outcomes).toEqual([{ kind: "create", nodeIds: [CAST, SHOTS] }, { kind: "tidy", nodeIds: ["mira", "s1", "s2"] }]);
+  expect(plan.outcomes).toEqual([{ kind: "create", nodeIds: [CAST, SHOTS] }, { kind: "tidy", nodeIds: ["wren", "s1", "s2"] }]);
   expect(plan.patch.made).toEqual([CAST, SHOTS]);
-  expect(plan.patch.fields).toEqual({ mira: ["x", "y"], s1: ["x", "y"], s2: ["x", "y"] });
+  expect(plan.patch.fields).toEqual({ wren: ["x", "y"], s1: ["x", "y"], s2: ["x", "y"] });
   const after = applyTeamPatch(canvas, { ...plan.patch, at: 5, author: "ana" });
-  expect([after.nodes.mira.x, after.nodes.mira.y, after.nodes.s1.x, after.nodes.s1.y]).toEqual([60, 140, 420, 140]);
+  expect([after.nodes.wren.x, after.nodes.wren.y, after.nodes.s1.x, after.nodes.s1.y]).toEqual([60, 140, 420, 140]);
   expect(after.nodes[CAST]).toMatchObject({ title: "Cast", type: "note", mode: "section", x: 60, y: 60, width: 260 });
-  expect(after.order).toEqual(["mira", "s1", "s2", CAST, SHOTS]);
+  expect(after.order).toEqual(["wren", "s1", "s2", CAST, SHOTS]);
   for (const n of Object.values(after.nodes)) expect(canvasNodeSchema.safeParse(n).success).toBe(true);
   expect(planCanvasOps(after, [{ kind: "tidy" }], "ana").changes).toEqual([]);
   /* A person renames and moves a title: the next Tidy keeps the name and puts the title back over its cards. */
@@ -444,13 +444,13 @@ test("a card's filing is declared in the node schema and kept by the draft save,
 /* ── The phone's flow ─────────────────────────────────────────────────── */
 
 test("the phone's flow reads section by section after the scene and its wires; a board with no titles reads as before", () => {
-  const plain = [card("m", "media"), card("s1", "scene", { linked: ["m"] }), card("mira", "character"), card("board", "media"), card("s2", "scene")];
+  const plain = [card("m", "media"), card("s1", "scene", { linked: ["m"] }), card("wren", "character"), card("board", "media"), card("s2", "scene")];
   expect(sectionedFlow(flowChain(plain, "s1"), plain, assets)).toEqual(flowChain(plain, "s1"));
   const nodes = [...plain, title("sec-1", "Scene 2"), title(REFS, "Refs")];
   nodes[4] = { ...nodes[4], section: "sec-1" };
   const flow = sectionedFlow(flowChain(nodes, "s1"), nodes, assets);
   /* The scene's input and the scene; then Cast (no title yet), Refs under its title, and Scene 2 under its own. */
-  expect(flow.map((s) => s.id)).toEqual(["m", "s1", "mira", REFS, "board", "sec-1", "s2"]);
+  expect(flow.map((s) => s.id)).toEqual(["m", "s1", "wren", REFS, "board", "sec-1", "s2"]);
   expect(flow.map((s) => s.wire)).toEqual(["blue", "grey", "grey", "grey", "grey", "grey", null]);
   expect(flow.filter((s) => s.scene).map((s) => s.id)).toEqual(["s1"]);
   expect(BOARD_GROUP_TITLES.ref).toBe("Refs");

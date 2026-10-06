@@ -406,8 +406,8 @@ test("the sha256 check tells a master whose render was replaced, or whose versio
     const { storeImageBytes } = await import("../../lib/storage");
     const { genId } = await sources();
     const render = asset("render", { uploadId: undefined, generationId: genId, url: `/api/media/${genId}` });
-    await store.patchTeamCanvas("prod-masters", { upsertNodes: [node("mira", { type: "character", assetId: "render" })], made: ["mira"], removeNodes: [], upsertAssets: [render], order: ["mira"] }, "ana");
-    const locked = await lockMaster({ canvas: { productionId: "prod-masters", nodeId: "mira" } }, ana);
+    await store.patchTeamCanvas("prod-masters", { upsertNodes: [node("wren", { type: "character", assetId: "render" })], made: ["wren"], removeNodes: [], upsertAssets: [render], order: ["wren"] }, "ana");
+    const locked = await lockMaster({ canvas: { productionId: "prod-masters", nodeId: "wren" } }, ana);
     expect(locked.element.kind).toBe("character");
     expect(locked.sha256).toBe(sha(PNG));
     expect(await masterCheck(locked.element.id)).toEqual({ state: "matches", changes: [] });

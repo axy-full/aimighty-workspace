@@ -9,17 +9,17 @@ import { newProject, type Asset, type CanvasNode, type Project } from "../../lib
  */
 export function featureProject(name = "Feature", { rig = true } = {}): Project {
   const places = ["EXT. FROZEN HARBOUR - DUSK", "INT. HARBOUR MASTER'S HUT - NIGHT", "EXT. LIGHTHOUSE ROAD - DAWN", "INT. CANNERY - DAY"];
-  const action = "Wind drives snow across the planks. MARA hauls a frozen line hand over hand, counting the knots under her breath, while the fox watches from the pilings and does not run. ";
-  const script = Array.from({ length: 180 }, (_, i) => `${places[i % 4]} ${i + 1}\n\n${action.repeat(8)}\n\nMARA\nNot tonight. Not scene ${i + 1}.\n`).join("\n");
+  const action = "Wind drives snow across the planks. KEEPER hauls a frozen line hand over hand, counting the knots under her breath, while the fox watches from the pilings and does not run. ";
+  const script = Array.from({ length: 180 }, (_, i) => `${places[i % 4]} ${i + 1}\n\n${action.repeat(8)}\n\nKEEPER\nNot tonight. Not scene ${i + 1}.\n`).join("\n");
   const at = new Date().toISOString();
-  const prompt = (n: string) => `Shot ${n}: a red fox crosses the frozen harbour at dusk; hold wide on the ice, the hut's lamp far off, snow driving left to right, Mara small at the pilings. `.repeat(4);
+  const prompt = (n: string) => `Shot ${n}: a red fox crosses the frozen harbour at dusk; hold wide on the ice, the hut's lamp far off, snow driving left to right, Keeper small at the pilings. `.repeat(4);
   const img = (id: string, label: string, category: string, extra: Partial<Asset> = {}): Asset => ({ id, name: label, kind: "image", category, url: `/api/media/${id}`, description: "", prompt: prompt(label), status: "Draft", locked: false, version: 1, refs: [], ...extra });
   const scenes = Array.from({ length: 180 }, (_, s) => ({
-    id: `scene-${s + 1}`, heading: `${places[s % 4]} ${s + 1}`, summary: `Mara and the fox, scene ${s + 1}: the line comes in, the ice holds, the lamp goes out.`,
+    id: `scene-${s + 1}`, heading: `${places[s % 4]} ${s + 1}`, summary: `Keeper and the fox, scene ${s + 1}: the line comes in, the ice holds, the lamp goes out.`,
     act: (s < 45 ? 1 : s < 135 ? 2 : 3) as 1 | 2 | 3,
-    beats: Array.from({ length: 3 }, (_, b) => ({ id: `beat-${s + 1}-${b + 1}`, text: `Beat ${b + 1}: Mara counts the knots; the fox does not run.` })),
+    beats: Array.from({ length: 3 }, (_, b) => ({ id: `beat-${s + 1}-${b + 1}`, text: `Beat ${b + 1}: Keeper counts the knots; the fox does not run.` })),
     shots: Array.from({ length: 5 }, (_, k) => ({ id: `shot-${s + 1}-${k + 1}`, description: `The fox on the ice, ${s + 1}.${k + 1}`, framing: "Wide", movement: "Slow push", lighting: "Dusk", sound: "Wind" })),
-    characters: ["Mara"], locations: ["Harbour"], props: ["Line"],
+    characters: ["Keeper"], locations: ["Harbour"], props: ["Line"],
   }));
   const shotIds = scenes.flatMap((scene) => scene.shots.map((shot) => shot.id));
   const assets: Asset[] = [];

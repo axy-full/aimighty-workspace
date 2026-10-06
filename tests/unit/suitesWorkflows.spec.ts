@@ -15,7 +15,7 @@ test("a tool says the one thing in its way, in order: project, owner, connection
   const cuts = WORKFLOW_SURFACES["studio:deliver"][0];
   const all = { voice: true, dubbing: true, analysis: false, reframe: true };
   const ok = { owner: true, connected: true, suspended: false };
-  expect(workflowReason(cuts, { hasProject: false, capability: ok, capabilities: all })).toBe("Save your project first.");
+  expect(workflowReason(cuts, { hasProject: false, capability: ok, capabilities: all })).toBe("Open a project first.");
   expect(workflowReason(cuts, { hasProject: true, capability: null, capabilities: null })).toBe("Reading the connected account…");
   expect(workflowReason(cuts, { hasProject: true, capability: { ...ok, owner: false }, capabilities: all })).toBe("The workspace owner uses the connected account.");
   expect(workflowReason(cuts, { hasProject: true, capability: { ...ok, connected: false }, capabilities: all })).toBe("Connect the owner’s account in Workspace › Engines.");

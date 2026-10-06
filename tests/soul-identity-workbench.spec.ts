@@ -16,7 +16,7 @@ async function fixture(page: Page, options: {realSoul?:boolean} = {}) {
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
   const headers = { 'X-Workbench-Scope': scope };
   const image = await readFile('public/campaign/character.webp');
-  const response = await page.request.post('/api/uploads', { headers, multipart: { file: { name:'Mira original.webp',mimeType:'image/webp',buffer:image } } });
+  const response = await page.request.post('/api/uploads', { headers, multipart: { file: { name:'Wren original.webp',mimeType:'image/webp',buffer:image } } });
   expect(response.ok(), await response.text()).toBe(true);
   const uploaded = await response.json();
   const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
@@ -27,13 +27,13 @@ async function fixture(page: Page, options: {realSoul?:boolean} = {}) {
   expect(tenantUrl).toMatch(/^file:/);
   const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
   const generationId = `gen_soul_fixture_${randomUUID()}`;
-  await tenant.execute({ sql:"INSERT INTO generations(id,model,prompt,params,status,stored_url,kind,title,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",args:[generationId,'gemini-3-pro-image','Mira generated portrait','{}','succeeded',`/api/media/${generationId}`,'image','Mira generated still',me.id,Date.now(),Date.now()] });
+  await tenant.execute({ sql:"INSERT INTO generations(id,model,prompt,params,status,stored_url,kind,title,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",args:[generationId,'gemini-3-pro-image','Wren generated portrait','{}','succeeded',`/api/media/${generationId}`,'image','Wren generated still',me.id,Date.now(),Date.now()] });
   tenant.close();
   await page.route(`**/api/media/${generationId}*`, route => route.fulfill({ contentType:'image/webp',body:image }));
   const project = newProject('Soul identity studio fixture');
   project.assets = [
-    {id:'original',name:'Mira original',kind:'image',category:'Character',url:uploaded.url,uploadId:uploaded.id,description:'Original portrait',prompt:'',status:'Draft',locked:false,version:1,refs:[]},
-    {id:'generated',name:'Mira generated still',kind:'image',category:'Reference',url:`/api/media/${generationId}`,generationId,description:'Generated portrait',prompt:'',status:'Draft',locked:false,version:1,refs:[]},
+    {id:'original',name:'Wren original',kind:'image',category:'Character',url:uploaded.url,uploadId:uploaded.id,description:'Original portrait',prompt:'',status:'Draft',locked:false,version:1,refs:[]},
+    {id:'generated',name:'Wren generated still',kind:'image',category:'Reference',url:`/api/media/${generationId}`,generationId,description:'Generated portrait',prompt:'',status:'Draft',locked:false,version:1,refs:[]},
   ];
   const saved = await page.request.put('/api/workbench/projects', { headers,data:{project,revision:0} });
   expect(saved.ok(), await saved.text()).toBe(true);
@@ -71,14 +71,14 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
   let panel=page.getByRole('dialog',{name:'Identity',exact:true});
   await expect(panel.getByText('No identities yet.',{exact:false})).toBeVisible();
   await expect(panel).toContainText('Props, products and worlds stay as ordinary image references.');
-  await panel.getByRole('textbox',{name:'Identity name',exact:true}).fill('Mira trained likeness');
+  await panel.getByRole('textbox',{name:'Identity name',exact:true}).fill('Wren trained likeness');
   await panel.getByRole('textbox',{name:'Identity continuity notes',exact:true}).fill('Consistent short dark bob and natural expression.');
-  await panel.getByRole('checkbox',{name:'Use portrait Mira original',exact:true}).check();
-  await panel.getByRole('checkbox',{name:'Use portrait Mira generated still',exact:true}).check();
+  await panel.getByRole('checkbox',{name:'Use portrait Wren original',exact:true}).check();
+  await panel.getByRole('checkbox',{name:'Use portrait Wren generated still',exact:true}).check();
   const finished=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/uploads/finish'&&response.request().method()==='POST');
-  await panel.getByLabel('Upload identity portraits',{exact:true}).setInputFiles({name:'Mira alternate.webp',mimeType:'image/webp',buffer:await sharp(f.image).modulate({brightness:0.95}).webp().toBuffer()});
+  await panel.getByLabel('Upload identity portraits',{exact:true}).setInputFiles({name:'Wren alternate.webp',mimeType:'image/webp',buffer:await sharp(f.image).modulate({brightness:0.95}).webp().toBuffer()});
   const alternate=await (await finished).json();
-  await expect(panel.getByRole('checkbox',{name:'Use portrait Mira alternate.webp',exact:true})).toBeChecked();
+  await expect(panel.getByRole('checkbox',{name:'Use portrait Wren alternate.webp',exact:true})).toBeChecked();
   const submit=panel.getByRole('button',{name:'Train identity · 250 credits',exact:true});
   await expect(submit).toBeDisabled();
   await panel.getByRole('checkbox',{name:/I have the rights and consent/}).check();
@@ -94,7 +94,7 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
   await goWorkbenchStage(page,'characters');
   await page.getByRole('button',{name:'Identity',exact:true}).click();
   panel=page.getByRole('dialog',{name:'Identity',exact:true});
-  await expect(panel.getByText('Mira trained likeness · 3 portraits · 250 credits',{exact:true})).toBeVisible();
+  await expect(panel.getByText('Wren trained likeness · 3 portraits · 250 credits',{exact:true})).toBeVisible();
   await panel.getByRole('button',{name:'Recover training request',exact:true}).click();
   await expect(panel.getByRole('button',{name:'Recover training request',exact:true})).toHaveCount(0);
   expect(f.requests()).toBe(2);
@@ -110,13 +110,13 @@ test('Soul ID training recovers the exact paid request and binds ready portraits
   await expect.poll(async()=> (await f.current()).assets.find(asset=>asset.soulIdentityId==='soul-local-browser'&&asset.category==='Character')).toMatchObject({url:f.uploaded.url,uploadId:f.uploaded.id,refs:[]});
   await page.reload();
   await goWorkbenchStage(page,'characters');
-  await expect(page.getByRole('article',{name:'Asset: Mira trained likeness',exact:true})).toBeVisible();
+  await expect(page.getByRole('article',{name:'Asset: Wren trained likeness',exact:true})).toBeVisible();
   await goWorkbenchStage(page,'elements');
   await page.getByRole('button',{name:'Element identity',exact:true}).click();
   panel=page.getByRole('dialog',{name:'Identity',exact:true});
   await panel.getByRole('button',{name:'Use in Elements',exact:true}).click();
   await expect(panel).toHaveCount(0);
-  const element=page.getByRole('region',{name:'Elements',exact:true}).getByRole('article',{name:'Asset: Mira trained likeness',exact:true});
+  const element=page.getByRole('region',{name:'Elements',exact:true}).getByRole('article',{name:'Asset: Wren trained likeness',exact:true});
   await element.getByRole('button',{name:'To canvas',exact:true}).click();
   await expect.poll(async()=>{const p=await f.current(); const bound=p.assets.find(asset=>asset.soulIdentityId==='soul-local-browser'&&asset.category==='Element'); return p.nodes.some(node=>node.type==='element'&&node.assetId===bound?.id);}).toBe(true);
   const draft=await page.request.get(`/api/workbench/projects?id=${f.project.id}`,{headers:{'X-Workbench-Scope':f.scope}}).then(response=>response.json());
@@ -168,7 +168,7 @@ test('Soul ID submits through the real mock backend and saves a usable local bin
   const panel=page.getByRole('dialog',{name:'Identity',exact:true});
   await expect(panel.getByText('No identities yet.',{exact:false})).toBeVisible();
   await panel.getByRole('textbox',{name:'Identity name',exact:true}).fill('Mock trained actor');
-  await panel.getByRole('checkbox',{name:'Use portrait Mira original',exact:true}).check();
+  await panel.getByRole('checkbox',{name:'Use portrait Wren original',exact:true}).check();
   await expect(panel).toContainText('Accepted training requests are billed even if training later fails.');
   await panel.getByRole('checkbox',{name:/I have the rights and consent/}).check();
   const accepted=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/soul/identities'&&response.request().method()==='POST');
@@ -234,7 +234,7 @@ test('Soul training limits copied metadata without changing the original asset',
   const f=await fixture(page);
   const headers={'X-Workbench-Scope':f.scope};
   const draft=await page.request.get(`/api/workbench/projects?id=${f.project.id}`,{headers}).then(response=>response.json());
-  const name='Mira '+ 'character study '.repeat(8).trim(),description='Keep the original detailed continuity notes. '.repeat(60);
+  const name='Wren '+ 'character study '.repeat(8).trim(),description='Keep the original detailed continuity notes. '.repeat(60);
   draft.project.assets[0].name=name;draft.project.assets[0].description=description;
   const saved=await page.request.put('/api/workbench/projects',{headers,data:{project:draft.project,revision:draft.revision}});
   expect(saved.ok(),await saved.text()).toBe(true);

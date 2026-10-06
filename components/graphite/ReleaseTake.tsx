@@ -75,7 +75,7 @@ export function ReleaseTake({ entry, onReleased, place }: { entry: LibraryEntry;
   };
   return (
     <div className="gx-release" data-place={place} data-testid="take-release-row">
-      <button type="button" className="gx-hbtn gx-release-btn" disabled={busy} aria-busy={busy} data-testid="take-release"
+      <button type="button" className="gx-hbtn gx-release-btn" disabled={busy} aria-busy={busy} data-testid="take-release" data-spend="priced"
         onClick={(event) => { event.stopPropagation(); void release(); }}>
         {/* The price stays whole: it may drop to a second line on a narrow tile, never be cut. */}
         {busy ? "Releasing…" : <>Release<span className="sr-only"> {take.name}</span> · {credits.toLocaleString("en-US")}{"\u00a0"}cr</>}

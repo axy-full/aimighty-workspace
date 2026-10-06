@@ -21,7 +21,7 @@ export const CUTOUT_MODEL = STILL_TOOLS.find((t) => t.id === "cutout")!.modelId;
 
 export const CUTOUT_COPY = {
   notReference: "Only a reference card can be cut out.",
-  kind: "Cut-outs are for Element cards: a product or a prop.",
+  kind: "Cut-outs are for a person, a product or a prop, not a place.",
   master: "This card is a locked master, so its source stays as it is. Cut a picture out before locking it; an admin can unlock it to change it.",
   noSource: "Attach a picture to this card first.",
   notStill: "Only a still can be cut out.",
@@ -37,7 +37,8 @@ const assetIn = (project: Sources, id: string | undefined) => (id ? (project.ass
 export function cutoutProblem(project: Sources, node: CanvasNode | undefined, masterLocked: boolean): string | null {
   if (!node) return CUTOUT_COPY.gone;
   if (!isReferenceNode(node)) return CUTOUT_COPY.notReference;
-  if (refKindOf(node, project) !== "element") return CUTOUT_COPY.kind;
+  const kind = refKindOf(node, project);
+  if (kind !== "element" && kind !== "cast") return CUTOUT_COPY.kind;
   if (masterLocked) return CUTOUT_COPY.master;
   const asset = assetIn(project, node.assetId);
   if (!asset) return CUTOUT_COPY.noSource;

@@ -4,6 +4,7 @@ import { SuiteAgentPanel } from "@/components/suites/SuiteAgentPanel";
 import ThreadsPanel from "@/components/atomik/threads/ThreadsPanel";
 import type { AtomikPage } from "@/components/suites/atomik-suite-data";
 import type { Project } from "@/lib/workbench/studio";
+import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
 
 /**
  * The existing Atomik suite bodies (components/suites/AtomikSuite.tsx) for
@@ -33,7 +34,7 @@ export default function AtomikTool({
             <ThreadsPanel key={`${project.id}:threads`} productionId={project.productionProjectId} />
           </>
         ) : (
-          <p className="pxw-spec-work-empty">Save this project in Studio to plan it with the agent.</p>
+          <p className="pxw-spec-work-empty">{SAVING_NOW} The agent opens once it is saved.</p>
         )}
       </div>
     );

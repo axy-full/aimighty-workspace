@@ -183,17 +183,18 @@ test("Workspace tabs are Graphite over the real routes and speak their vocabular
   expect(errors).toEqual([]);
 });
 
-test("Engines: nothing connects the Higgsfield account any more; a sign-in returning from before the retirement is told so", async ({ page }, info) => {
+test("Engines: nothing connects the Higgsfield account, and an old sign-in return link shows no row and no message", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   let asked = 0;
-  await page.route("**/api/higgsfield/consumer/connect", (route) => { asked++; return route.fallback(); });
-  await page.route("https://clerk.higgsfield.ai/**", (route) => { asked++; return route.abort(); });
+  page.on("request", (request) => { if (new URL(request.url()).pathname.startsWith("/api/higgsfield/consumer/") || request.url().startsWith("https://clerk.higgsfield.ai")) asked++; });
+  await page.route("https://clerk.higgsfield.ai/**", (route) => route.abort());
   const { errors } = await open(page, "/suites?view=workspace&tab=engines&higgsfield=retired");
-  await expect(page.getByTestId("connected-account-retired")).toHaveText("The connected account is no longer used. Past results stay in your Library.");
+  await expect(page.getByTestId("settings-view").or(page.getByTestId("workspace-view")).first()).toBeVisible();
+  await page.waitForLoadState("networkidle");
   /* The shell's own URL keeps only its params, so a reload does not repeat it. */
   await expect.poll(() => new URL(page.url()).searchParams.get("higgsfield")).toBeNull();
+  await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
   await expect(page.getByTestId("connected-account-connect")).toHaveCount(0);
-  await expect(page.getByTestId("engine-connected-account").getByRole("button", { name: /Connect|Reconnect/ })).toHaveCount(0);
   await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);
   expect(asked).toBe(0);
   expect(errors).toEqual([]);
@@ -237,7 +238,7 @@ test("General › Prompt rules: the team's rules edit here, the platform's switc
   expect(errors).toEqual([]);
 });
 
-test("a rename holds across tabs and reaches the header; Engines' Disconnect still revokes a grant Particl holds", async ({ page }, info) => {
+test("a rename holds across tabs and reaches the header; Engines has no connected-account row to disconnect", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   /* /api/me answers with the workspace's name as the platform now has it: the old one until the rename lands. */
   let saved: string | null = null;
@@ -268,20 +269,17 @@ test("a rename holds across tabs and reaches the header; Engines' Disconnect sti
   await expect(page.getByTestId("ws-name")).toHaveValue("Harbour Studio");
   await expect(page.getByTestId("ws-save")).toBeDisabled();
 
-  /* A grant Particl still holds: the retired row offers Disconnect only (no developer-API check), and Disconnect revokes it. */
-  let connected = true;
+  /* Even with a grant the connection route (mocked) would say is held, Engines has no connected-account row and asks nothing. */
   const posts: unknown[] = [];
   await page.route("**/api/higgsfield/consumer/connection", (route) => {
-    if (route.request().method() === "DELETE") { connected = false; return route.fulfill({ json: { connected: false, requiresReconnect: false } }); }
-    if (route.request().method() === "POST") { posts.push(route.request().postDataJSON()); return route.fulfill({ status: 410, json: { code: "retired", error: "The connected account is no longer used. Past results stay in your Library." } }); }
-    return route.fulfill({ json: { connected, requiresReconnect: false, capacity: { limit: 4, active: 0, mine: [] } } });
+    posts.push(route.request().method());
+    return route.fulfill({ json: { connected: true, requiresReconnect: false, capacity: { limit: 4, active: 0, mine: [] } } });
   });
   await tabs.getByRole("tab", { name: "Engines" }).click();
-  await expect(page.getByTestId("engine-connected-account")).toContainText("Sign-in retired");
-  await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);
-  await page.getByTestId("connected-account-disconnect").click();
-  await expect(page.getByTestId("connected-account-note")).toHaveText("Account disconnected. Particl no longer holds access to it.");
+  await expect(page.getByTestId("ws-engines")).toBeVisible();
+  await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
   await expect(page.getByTestId("connected-account-disconnect")).toHaveCount(0);
+  await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);
   expect(posts).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);

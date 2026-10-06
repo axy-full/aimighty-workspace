@@ -38,8 +38,12 @@ test("entry points: a workspace goes straight to Suites; a visitor signs in and 
   const moved = await page.request.get("/images", { maxRedirects: 0 });
   expect(moved.status()).toBe(307);
   const response = await page.goto("/workbench?stage=brief");
-  expect(response?.request().redirectedFrom()?.url()).toContain("/workbench?stage=brief");
-  await expect(page).toHaveURL(/\/suites\?suite=particl&page=brief/);
+  /* The chain is two 307s (/workbench → /suites?suite=particl&page=brief → the board), and Playwright's redirectedFrom() is one hop back: walk it to the request the person made. */
+  let first = response?.request();
+  for (let hop = first?.redirectedFrom(); hop; hop = first?.redirectedFrom()) first = hop;
+  expect(first?.url()).toContain("/workbench?stage=brief");
+  /* The Studio's Brief page is deleted: the old stage address ends on the board's Brief region (one more 307 inside /suites). */
+  await expect(page).toHaveURL(/\/suites\?(?=.*view=board)(?=.*region=brief)/);
   await page.goto("/");
   await expect(page).toHaveURL(/\/suites\?suite=particl/);
   await expect(page.getByTestId("switchover-note")).toHaveCount(0);
@@ -59,13 +63,14 @@ test("Suites Workspace › Engines links the token page; the platform desk is fo
 test("on a phone, the tokens row is the last card on Engines and ends above the tab bar", async ({ page }, info) => {
   test.skip(!["workbench-360x640", "workbench-390x844"].includes(info.project.name), "the phones with a pinned tab bar");
   await signInLocally(page.request);
-  /* The Higgsfield account's row reads its status once; with no grant and nothing running it shows nothing. */
-  const accountRead = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/higgsfield/consumer/connection");
+  /* The Higgsfield sign-in is off for Release 1: Engines has no connected-account row and never reads the account. */
+  const accountReads: string[] = [];
+  page.on("request", (request) => { if (new URL(request.url()).pathname.startsWith("/api/higgsfield/consumer/")) accountReads.push(request.url()); });
   await page.goto("/suites?view=workspace&tab=engines");
   /* Everything above it has loaded, so nothing moves it after the measure. */
   await expect(page.getByTestId("ws-engine").first()).toBeVisible();
-  await accountRead;
   await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
+  expect(accountReads).toEqual([]);
   /* The developer-API check went with the Higgsfield sign-in. */
   await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);
   await expect(page.getByTestId("workspace-connect-link")).toContainText(/token/);

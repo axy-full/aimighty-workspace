@@ -7,6 +7,7 @@ import { astraSceneDigest } from '@/lib/astra-blender/proposal';
 import { studioRequest } from '@/components/workbench/GenerationDialog';
 import { downloadFile } from '@/lib/workbench/studio-export';
 import styles from './astra-integration.module.css';
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 type Export = { scene: AstraScene; script: string; files: { assetId: string; filename: string; url: string }[] };
 async function sourceBytes(url: string, remaining: number, scope: string) {
@@ -29,7 +30,7 @@ export function AstraExportPanel({ project, scope, enabled, onSave }: { project:
   async function exportBlender() {
     setBusy(true); setError('');
     try {
-      if (!(await onSave())) throw new Error('Save your scene before exporting.');
+      if (!(await onSave())) throw new SaveFailedError();
       const manifest = await studioRequest<Export>('/api/workbench/astra-blender/export', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench-Scope': scope }, body: JSON.stringify({ projectId: project.id, sceneDigest: await astraSceneDigest(project.astraBlender ?? createAstraScene('product')) }) });
       const files: Record<string, Uint8Array> = { 'scene.astra.json': strToU8(JSON.stringify(manifest.scene, null, 2)), 'render.py': strToU8(manifest.script) };
       let remaining = 100 * 1024 * 1024;

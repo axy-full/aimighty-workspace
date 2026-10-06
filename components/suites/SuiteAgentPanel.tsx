@@ -16,6 +16,7 @@ import type { ThinkingModel } from '@/components/atomik/ModelPicker';
 import { MEMORY_KIND_LABEL, MEMORY_LIMITS, MONEY_REFUSAL, TEXT_KINDS, guessKind, mentionsMoney, parseMemoryCommand, type MemoryKind } from '@/lib/atomikMemoryText';
 import { useMemoryApi, type ForgetFind, type MemoryApi } from '@/lib/shell/use-memory';
 import styles from './suite-agent.module.css';
+import { saveMessage } from '@/lib/workbench/save-then-continue';
 
 type AgentState = { configured: boolean; models: ThinkingModel[]; jobs: AtomikJob[] };
 const subscribeDraft = (listener: () => void) => {
@@ -51,7 +52,7 @@ function useAgentState(scope: string | null | undefined, projectId: string, acti
     try {
       const response = await fetch(`/api/workbench/atomik?projectId=${encodeURIComponent(projectId)}`, { cache: 'no-store', headers: { 'X-Workbench-Scope': scope } });
       const value = await response.json();
-      if (!response.ok) throw new Error(value.error || 'Agent proposals could not be loaded.');
+      if (!response.ok) throw new Error(saveMessage(value.error || 'Agent proposals could not be loaded.'));
       if (sequence.current === own) setState({ key, data: value });
     } catch (error) { if (sequence.current === own) setState(previous => ({ key, data: previous?.key === key ? previous.data : undefined, error: error instanceof Error ? error.message : 'Agent proposals could not be loaded.' })); }
   }, [active, scope, projectId, key]);

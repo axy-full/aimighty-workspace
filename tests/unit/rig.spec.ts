@@ -135,14 +135,14 @@ test("nothing is inferred where the take did not say", () => {
    later. One that is wrong cannot be told from one that is right. */
 test("a mapping that is not positionally sound is thrown away whole", () => {
   // Sound: two names on the last two of three images.
-  expect(citedStills("@Image2 is Cass: a. @Image3 is Iver: b.", refs("mine", "up_a", "up_b")))
-    .toEqual([{ name: "Cass", uploadId: "up_a" }, { name: "Iver", uploadId: "up_b" }]);
+  expect(citedStills("@Image2 is Cass: a. @Image3 is Rowan: b.", refs("mine", "up_a", "up_b")))
+    .toEqual([{ name: "Cass", uploadId: "up_a" }, { name: "Rowan", uploadId: "up_b" }]);
   // A gap in the run: the text is not what the compiler wrote.
-  expect(citedStills("@Image1 is Cass: a. @Image3 is Iver: b.", refs("up_a", "mine", "up_b"))).toEqual([]);
+  expect(citedStills("@Image1 is Cass: a. @Image3 is Rowan: b.", refs("up_a", "mine", "up_b"))).toEqual([]);
   // Not ending at the last image: something was renumbered or dropped.
   expect(citedStills("@Image1 is Cass: a courier.", refs("up_a", "up_b"))).toEqual([]);
   // Descending, which the compiler never writes.
-  expect(citedStills("@Image2 is Cass: a. @Image1 is Iver: b.", refs("up_a", "up_b"))).toEqual([]);
+  expect(citedStills("@Image2 is Cass: a. @Image1 is Rowan: b.", refs("up_a", "up_b"))).toEqual([]);
   // A repeated name still resolves once, and the run is judged on what is left.
   expect(citedStills("@Image1 is Cass: a. @Image1 is Cass: a.", refs("up_a")))
     .toEqual([{ name: "Cass", uploadId: "up_a" }]);
@@ -153,7 +153,7 @@ test("version history comes out oldest first, with today's still last", () => {
     { compiled: "@Image1 is Cass: x.", refs: refs("coat"), createdAt: 100 },
     { compiled: "@Image1 is Cass: x.", refs: refs("coat"), createdAt: 200 },
     { compiled: "@Image1 is Cass: x.", refs: refs("overalls"), createdAt: 300 },
-    { compiled: "@Image1 is Iver: y.", refs: refs("someone-else"), createdAt: 400 },
+    { compiled: "@Image1 is Rowan: y.", refs: refs("someone-else"), createdAt: 400 },
   ];
   expect(versionsFromTakes("Cass", takes, "overalls")).toEqual(["coat", "overalls"]);
 

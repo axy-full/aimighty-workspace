@@ -27,7 +27,7 @@ import { assetUploadPurpose, TRAIN_PRICE_CHANGED, trainApproval, trainingPhotos,
  * the `rgba(5,6,8,.55)` scrim. The header (`16px 20px`, .08): `New asset`
  * at 600 17, `NAME · KIND · REFERENCES · THAT'S IT`, `FROM <where>` and the
  * 32px close. Row 1: the name (a 48px field on ground, .14, radius 10, 600
- * 20, under `NAME · YOU'LL TYPE IT AS @IVER`) and the kind (48px buttons,
+ * 20, under `NAME · YOU'LL TYPE IT AS @ROWAN`) and the kind (48px buttons,
  * radius 10, `0 14px`, 500 13.5). Row 2: the references well (dashed .22,
  * radius 12, 10px; 64px thumbs; `Drop more, or pick from` `Upload · A take
  * · Make · Canvas`). Row 3: `WHAT PARTICL READS FROM THESE` — one tile per
@@ -35,7 +35,7 @@ import { assetUploadPurpose, TRAIN_PRICE_CHANGED, trainApproval, trainingPhotos,
  * state dot and word; a line) with `READY / LATER / OPTIONAL`. Row 4: the
  * train switch (ground, .1, radius 12, `12px 14px`; a 36×20 switch) with
  * its price. The foot: the mono consequence line, `Cancel` (46px, .14,
- * radius 12), and the primary `Create Iver · 12 CR` (46px, radius 12).
+ * radius 12), and the primary `Create Rowan · 12 CR` (46px, radius 12).
  *
  * LEGACY trainer note (four-suites PR F): the train switch below still goes
  * through the older LoRA trainer at /api/identities. It is reachable from
@@ -56,7 +56,7 @@ import { assetUploadPurpose, TRAIN_PRICE_CHANGED, trainApproval, trainingPhotos,
  * references well (64px thumbs, `+ Add` opening Upload · A take · Make ·
  * Canvas as a sheet); `WHAT PARTICL READS FROM THESE` as two-up tiles
  * (`READY` in the accent, `LATER` muted, `OPTIONAL` body); the train row
- * with its 52×32 switch; and the pinned `Create Iver · 12 CR` under the
+ * with its 52×32 switch; and the pinned `Create Rowan · 12 CR` under the
  * consequence line. The dock is hidden behind it.
  */
 export type SheetFrom = "library" | "rig" | "take" | "canvas" | "prompt" | "atomik";
@@ -289,7 +289,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
         }>
         <label className="flex flex-col gap-[6px]">
           <Mono>Name · you&rsquo;ll type it as {tag}</Mono>
-          <input ref={nameField} disabled={!!paid.pending} value={name} onChange={(e) => setName(e.target.value)} placeholder="Iver" aria-label="Name"
+          <input ref={nameField} disabled={!!paid.pending} value={name} onChange={(e) => setName(e.target.value)} placeholder="Rowan" aria-label="Name"
             className="box-border flex h-[52px] items-center rounded-card border border-[color:var(--gx-hover-border)] bg-card px-[14px] text-[20px] font-semibold leading-none text-ink outline-0 placeholder:text-ink-muted" />
         </label>
         <div className="flex flex-col gap-[6px]">
@@ -358,7 +358,7 @@ function SheetBody({ onClose, from, initial, onCreated }: SheetProps) {
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-[16px] px-[20px] pt-[18px] max-md:grid-cols-1">
             <label className="flex flex-col gap-[7px]">
               <Mono>Name · you&rsquo;ll type it as {tag}</Mono>
-              <input ref={nameField} disabled={!!paid.pending} value={name} onChange={(e) => setName(e.target.value)} placeholder="Iver" aria-label="Name"
+              <input ref={nameField} disabled={!!paid.pending} value={name} onChange={(e) => setName(e.target.value)} placeholder="Rowan" aria-label="Name"
                 className="box-border h-[48px] rounded-tile border border-border-mid bg-ground px-[14px] text-[20px] font-semibold leading-none tracking-[-0.01em] text-ink outline-0 placeholder:text-ink-muted max-md:text-[16px]" />
             </label>
             <div className="flex flex-col gap-[7px]">

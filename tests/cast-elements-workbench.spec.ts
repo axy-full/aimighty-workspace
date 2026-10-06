@@ -17,27 +17,27 @@ async function fixture(page: Page) {
   const scope = `particl-active-${me.workspace.id}-${me.id}`;
   const headers = { 'X-Workbench-Scope': scope };
   const image = await readFile('public/campaign/character.webp');
-  const response = await page.request.post('/api/uploads', { headers, multipart: { file: { name: 'Mira original.webp', mimeType: 'image/webp', buffer: image } } });
+  const response = await page.request.post('/api/uploads', { headers, multipart: { file: { name: 'Wren original.webp', mimeType: 'image/webp', buffer: image } } });
   expect(response.ok(), await response.text()).toBe(true);
   const uploaded = await response.json();
   const project = newProject('Cast & Elements identity fixture');
   const still = { kind: 'image' as const, url: uploaded.url as string, uploadId: uploaded.id as string, prompt: '', status: 'Draft' as const, locked: false, version: 1, refs: [] };
   project.assets = [
-    { ...still, id: 'mira', name: 'Mira', category: 'Character', description: 'Lead', soulIdentityId: 'identity-ready' },
+    { ...still, id: 'wren', name: 'Wren', category: 'Character', description: 'Lead', soulIdentityId: 'identity-ready' },
     { ...still, id: 'ravi', name: 'Ravi', category: 'Character', description: 'Support', soulIdentityId: 'identity-training' },
     { ...still, id: 'noor', name: 'Noor', category: 'Character', description: 'No identity yet' },
     { ...still, id: 'lantern', name: 'Brass lantern', category: 'Element', description: 'Hero prop', soulIdentityId: 'identity-failed' },
   ];
   project.nodes = [
-    { id: 'mira-node', type: 'character', title: 'Mira on set', assetId: 'mira', x: 40, y: 40, width: 280, linked: [] },
-    { id: 'take-node', type: 'generate', title: 'Mira close-up', text: 'A close portrait with soft window light.', x: 390, y: 40, width: 344, linked: ['mira-node'] },
+    { id: 'wren-node', type: 'character', title: 'Wren on set', assetId: 'wren', x: 40, y: 40, width: 280, linked: [] },
+    { id: 'take-node', type: 'generate', title: 'Wren close-up', text: 'A close portrait with soft window light.', x: 390, y: 40, width: 344, linked: ['wren-node'] },
   ];
   const saved = await page.request.put('/api/workbench/projects', { headers, data: { project, revision: 0 } });
   expect(saved.ok(), await saved.text()).toBe(true);
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
   const base = { projectId: project.id, description: '', subjectType: 'character' as const, references: [{ uploadId: uploaded.id }], previewUrl: uploaded.url, createdAt: 1, updatedAt: 1, creditsBilled: 250, error: null };
   const identities: SoulIdentity[] = [
-    { ...base, id: 'identity-ready', name: 'Mira likeness', status: 'ready' },
+    { ...base, id: 'identity-ready', name: 'Wren likeness', status: 'ready' },
     { ...base, id: 'identity-training', name: 'Ravi likeness', status: 'training', creditsBilled: null },
     { ...base, id: 'identity-failed', name: 'Lantern identity', subjectType: 'element', status: 'failed', error: 'Training did not complete.' },
   ];
@@ -70,7 +70,7 @@ test('Cast & Elements cards show identity state and open the Identity panel from
   const cast = page.getByRole('region', { name: 'Cast', exact: true });
   const elements = page.getByRole('region', { name: 'Elements', exact: true });
   const card = (region: typeof cast, name: string) => region.getByRole('article', { name: `Asset: ${name}`, exact: true });
-  await expect(card(cast, 'Mira').getByRole('status', { name: 'Identity ready', exact: true })).toBeVisible();
+  await expect(card(cast, 'Wren').getByRole('status', { name: 'Identity ready', exact: true })).toBeVisible();
   await expect(card(cast, 'Ravi').getByRole('status', { name: 'Identity training', exact: true })).toBeVisible();
   await expect(card(cast, 'Noor').getByRole('status', { name: 'No identity', exact: true })).toBeVisible();
   await expect(card(elements, 'Brass lantern').getByRole('status', { name: 'Identity failed', exact: true })).toBeVisible();
@@ -81,11 +81,11 @@ test('Cast & Elements cards show identity state and open the Identity panel from
   await noOverflow(page);
   await page.screenshot({ path: info.outputPath('cast-elements-states.png') });
 
-  await card(cast, 'Mira').getByRole('button', { name: 'Identity for Mira', exact: true }).click();
+  await card(cast, 'Wren').getByRole('button', { name: 'Identity for Wren', exact: true }).click();
   let panel = page.getByRole('dialog', { name: 'Identity', exact: true });
-  await expect(panel).toContainText('Attach to Mira');
+  await expect(panel).toContainText('Attach to Wren');
   await expect(panel).toContainText('Identity rendering is not enabled yet.');
-  await expect(panel.getByRole('article', { name: 'Identity: Mira likeness', exact: true }).getByRole('button', { name: 'Attached', exact: true })).toBeDisabled();
+  await expect(panel.getByRole('article', { name: 'Identity: Wren likeness', exact: true }).getByRole('button', { name: 'Attached', exact: true })).toBeDisabled();
   await expect(panel.getByRole('article', { name: 'Identity: Ravi likeness', exact: true }).getByRole('status')).toContainText('Training');
   await expect(panel.getByRole('article', { name: 'Identity: Lantern identity', exact: true }).getByRole('status')).toContainText('Failed');
   expect(await panel.textContent()).not.toMatch(PROVIDER);
@@ -113,9 +113,9 @@ test('a ready identity is the pre-selected reference for its take while identity
   await goWorkbenchStage(page, 'canvas');
   if (page.viewportSize()!.width < 760) {
     await page.locator('.mobile-node-viewbar').getByRole('tab', { name: 'List', exact: true }).click();
-    await page.locator('.mobile-node-list button').filter({ hasText: 'Mira close-up' }).click();
+    await page.locator('.mobile-node-list button').filter({ hasText: 'Wren close-up' }).click();
   } else {
-    const node = page.getByRole('article', { name: 'Generate node: Mira close-up', exact: true });
+    const node = page.getByRole('article', { name: 'Generate node: Wren close-up', exact: true });
     await node.focus(); await node.press('Enter');
   }
   await page.getByRole('button', { name: 'Generate take', exact: true }).click();
@@ -123,7 +123,7 @@ test('a ready identity is the pre-selected reference for its take while identity
   await expect(generation.getByRole('combobox', { name: 'Generation engine', exact: true })).toHaveValue('gemini-3-pro-image');
   const references = generation.getByRole('list', { name: 'Bound references', exact: true });
   await expect(references.getByRole('listitem')).toHaveCount(1);
-  await expect(references.getByRole('listitem').first()).toHaveText('Mira · Identity');
+  await expect(references.getByRole('listitem').first()).toHaveText('Wren · Identity');
   await expect(references.getByRole('listitem').first()).toHaveAttribute('data-identity', 'ready');
   await expect(generation.getByRole('note')).toHaveText('Identity rendering is awaiting verification; this take uses the identity’s portrait as its reference.');
   await expect(generation.getByRole('combobox', { name: 'Identity', exact: true })).toHaveCount(0);

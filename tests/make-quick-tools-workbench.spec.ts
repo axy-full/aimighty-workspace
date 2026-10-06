@@ -17,7 +17,7 @@ const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "w
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const SHOTS = process.env.PR5B_SHOTS;
 const SHOT_SIZES: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844" };
-const CLIP = { url: "/fixtures/clip.mp4", name: "walk.mp4", type: "video/mp4" };
+const CLIP = { url: "/fixtures/clip-6s.mp4", name: "walk.mp4", type: "video/mp4" };
 const STILLS = [
   { url: "/campaign/character.webp", name: "cast.webp", type: "image/webp" },
   { url: "/campaign/environment.webp", name: "dunes.webp", type: "image/webp" },
@@ -85,7 +85,7 @@ test("Make's quick tools: the row opens Motion transfer and Object swap over the
   const panel = page.getByTestId("make-panel");
   await expect(panel).toHaveAttribute("data-tab", "video");
   const row = page.getByTestId("make-quick-tools");
-  await expect(row.getByRole("button")).toHaveText(["Motion transfer", "Object swap"]);
+  await expect(row.getByRole("button")).toHaveText(["Motion transfer", "Object swap", "Upscale"]);
   await floors(page, info.project.name, "make-quick-tools");
   if (SHOTS && SHOT_SIZES[info.project.name]) {
     mkdirSync(SHOTS, { recursive: true });
@@ -107,7 +107,7 @@ test("Make's quick tools: the row opens Motion transfer and Object swap over the
   await expect(page.getByTestId("viral-well")).toContainText("0 of 8");
   await expect(page.getByTestId("viral-engine").locator(".gx-model-name")).toHaveText("Motion transfer");
   await expect(page.getByTestId("viral-engine").locator(".gx-make-engine-part")).toHaveText(["720p"]);
-  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
+  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–8 s).");
   await expect(page.getByTestId("viral-generate")).toBeDisabled();
   await expect(page.getByTestId("viral-generate")).toHaveText("Transfer motion");
   await expect(page.getByRole("radiogroup", { name: "Resolution" }).getByRole("radio")).toHaveText(["480p", "720p", "1080p"]);
@@ -130,14 +130,14 @@ test("Make's quick tools: the row opens Motion transfer and Object swap over the
   }
   await expect(page.getByTestId("viral-well")).toContainText("References · 1 to 8");
   await page.goto("/suites?suite=viral&page=swap");
-  await expect(page.getByTestId("viral-well")).toContainText("The replacement");
+  await expect(page.getByTestId("viral-well")).toContainText("With");
   await expect(page.getByTestId("viral-source-card")).toContainText("The clip with the element to replace");
   await expect(page.getByTestId("viral-generate")).toHaveText("Swap object");
   await floors(page, info.project.name);
 
-  /* History is still Viral's page, and its way back to a tool is Make. */
+  /* History is the Social board's History drawer, and its way back to a tool is Make. */
   await page.goto("/suites?suite=subatomik&page=history&sp=history");
-  await expect(page.getByTestId("page-title")).toHaveText("History");
+  await expect(page.getByTestId("history-view")).toBeVisible();
   await expect(panel).toHaveCount(0);
   await expect(page.getByTestId("history-empty")).toBeVisible();
   await page.getByTestId("history-empty").getByRole("button", { name: "Motion Transfer" }).click();
@@ -145,7 +145,7 @@ test("Make's quick tools: the row opens Motion transfer and Object swap over the
   /* From the tool, Open History closes Make and goes there. */
   await page.getByTestId("viral-recent").getByRole("button", { name: "Open History" }).click();
   await expect(panel).toHaveCount(0);
-  await expect(page.getByTestId("page-title")).toHaveText("History");
+  await expect(page.getByTestId("history-view")).toBeVisible();
 
   expect(sends, "nothing is sent").toEqual([]);
   expect(errors).toEqual([]);
@@ -158,15 +158,20 @@ test("a source and references in each tool: the card, the four-across references
   for (const tool of ["motion", "swap"] as const) {
     await page.goto(`/suites?make=${tool}`);
     await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", tool);
+    /* No price yet, so the button names only what it does and waits (it never invents a figure). */
+    await expect(page.getByTestId("viral-generate")).toBeDisabled();
+    await expect(page.getByTestId("viral-generate")).toHaveText(tool === "motion" ? "Transfer motion" : "Swap object");
     await dropFiles(page, [CLIP, ...STILLS]);
-    await expect(page.getByTestId("viral-source")).toContainText("walk.mp4 · 10 s", { timeout: 60_000 });
+    await expect(page.getByTestId("viral-source")).toContainText("walk.mp4 · 6 s", { timeout: 60_000 });
     await expect(page.getByTestId("viral-reference")).toHaveCount(2, { timeout: 60_000 });
     await expect(page.getByTestId("viral-well")).toContainText("2 of 8");
     if (tool === "motion") {
       /* The mock engine's estimate, on the line and on the button alike. */
-      await expect(page.getByTestId("viral-generate")).toHaveText(/^Transfer motion · about \d[\d,]* cr$/, { timeout: 60_000 });
+      await expect(page.getByTestId("viral-generate")).toHaveText(/^Transfer motion · up to \d[\d,]* cr$/, { timeout: 60_000 });
       const price = (await page.getByTestId("make-engine-price").innerText()).trim();
       expect(await page.getByTestId("viral-generate").innerText()).toContain(price);
+      await expect(page.getByTestId("viral-generate")).toBeEnabled();
+      await expect(page.getByTestId("viral-generate")).toHaveAttribute("title", /^up to \$\d+\.\d\d$/);
     } else {
       /* This clip is under Object Swap's pixel floor: admission says so before any estimate, and the button waits. */
       await expect(page.getByTestId("viral-reason")).toContainText("409,600 pixels", { timeout: 60_000 });

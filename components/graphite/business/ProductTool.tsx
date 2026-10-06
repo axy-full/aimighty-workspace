@@ -7,6 +7,7 @@ import type { ProductExtraction } from "@/lib/workbench/product-extraction-types
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { OWN_LIMITS, chooseProduct, productLabel, unsavedProduct } from "@/lib/shell/business-own";
 import { CardHead, Field, PicturePicker, Said, SaveLine, adoptEntry, briefOf, changeBrief, importToDraft, refreshLibrary, uploadToDraft, useLatest, useWork, type OwnEditor } from "./own-kit";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 const BLANK: Partial<MoleculrBrief> = { activeProductId: undefined, productName: "", productUrl: "", productDescription: "", productBrand: "", productAssetIds: [], productSource: undefined };
 
@@ -17,15 +18,17 @@ const BLANK: Partial<MoleculrBrief> = { activeProductId: undefined, productName:
  * extract route: free, one page, nothing added until you choose). The profile
  * being edited is the one every brief is about.
  */
-export function ProductTool({ scope, editor, items }: { scope: string; editor: OwnEditor; items: LibraryEntry[] }) {
+export function ProductTool({ scope, editor, items, initial }: { scope: string; editor: OwnEditor; items: LibraryEntry[]; /** A read of the page already made (the Ads board's), opened for review. */ initial?: ProductExtraction | null }) {
   const p = editor.project!;
   const latest = useLatest(p);
   const brief = briefOf(p);
   const profiles = brief.products ?? [];
   const work = useWork();
-  const [extraction, setExtraction] = useState<ProductExtraction | null>(null);
-  const [reviewFor, setReviewFor] = useState("");
-  const [review, setReview] = useState({ name: "", brand: "", description: "" });
+  const [extraction, setExtraction] = useState<ProductExtraction | null>(initial ?? null);
+  const [reviewFor, setReviewFor] = useState(initial ? brief.productUrl.trim() : "");
+  const [review, setReview] = useState(() => (initial
+    ? { name: String(initial.product.name ?? "").slice(0, 200), brand: String(initial.product.brand ?? "").slice(0, 200), description: String(initial.product.description ?? "").slice(0, 4000) }
+    : { name: "", brand: "", description: "" }));
   const [imported, setImported] = useState<string[]>([]);
   const reading = useRef<AbortController | null>(null);
   const set = (patch: Partial<MoleculrBrief>) => changeBrief(editor, (b) => ({ ...b, ...patch }));
@@ -60,7 +63,7 @@ export function ProductTool({ scope, editor, items }: { scope: string; editor: O
     let url: URL;
     try { url = new URL(brief.productUrl.trim()); } catch { throw new Error("Enter the product page, starting with https://"); }
     if (!["https:", "http:"].includes(url.protocol)) throw new Error("Use a public http or https product page.");
-    if (!(await editor.ensureSaved())) throw new Error("Save this project before reading the product page.");
+    if (!(await editor.ensureSaved())) throw new SaveFailedError();
     reading.current?.abort();
     const abort = new AbortController();
     reading.current = abort;

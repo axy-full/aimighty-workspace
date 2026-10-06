@@ -31,7 +31,7 @@ The live shell is `/suites` (`app/suites/page.tsx` → `components/graphite/Suit
 | **`app/(app)/` — library and productions** | | | | | |
 | `/library` | `app/(app)/library/page.tsx` → `components/workbench/ProjectLibraryPage.tsx`, `components/make/GenAssetLibrary.tsx`, `UnfiledWall.tsx` | none yet — the shell's Library is a panel of the open project with no URL; closest page is `/suites?project=<id>&page=takes`. Missing: cross-production lens, References, Unfiled, `all` / `view` params | No | `project-library-workbench`, `project-first-workbench`, `audit-other-ui-workbench`, `paid-action`, `suite-navigation-workbench`, `desktop` +2 more | `app/(app)/library/mobile.css`, `components/studio/projects-library.css` |
 | `/all` | `app/(app)/all/page.tsx` → `redirect()` | none yet (follows `/library`) | To `/library?all=1&view=unfiled` only | none | — |
-| `/productions` | `app/(app)/productions/page.tsx` (page is the component) | none yet — projects are a popover in the project head; no productions list, totals or caps page | No | `desktop`, `mobile`, `no-vendor-dollars-workbench` | `components/studio/projects-library.css` |
+| `/productions` | `app/(app)/productions/page.tsx` (page is the component) | with the new interface on, Home `/suites?view=home` (projects as cards). Missing: the productions list's totals and caps page | No | `desktop`, `mobile`, `no-vendor-dollars-workbench` | `components/studio/projects-library.css` |
 | `/productions/[prod]/[project]/media` | `…/media/page.tsx` → `components/production/ProductionHeader.tsx`, `MediaTile.tsx` | none yet — closest `/suites?project=<id>&page=takes`. Missing: production and project ids are not mapped to the draft `project` id | No | `no-vendor-dollars-workbench`, `legacy-pages-sideways-workbench` | — |
 | `/productions/[prod]/[project]/shots` | `…/shots/page.tsx` → `components/production/ProductionHeader.tsx` | none yet — closest `/suites?project=<id>&page=brief&sp=beats`. Missing: id mapping as above; move between productions | No | `audit-other-ui-workbench`, `remaining-paths-lost-reply-workbench`, `no-vendor-dollars-workbench` | — |
 | `/projects/[id]` | `app/(app)/projects/[id]/page.tsx` → `components/ProductionNav.tsx`, `Analytics.tsx` | none yet — no per-project cost overview | No | `projects-legacy-pages-workbench`, `legacy-pages-sideways-workbench`, `no-vendor-dollars-workbench` | — |
@@ -75,13 +75,52 @@ Rows are appended by the PR that lands the replacement, in the same table, one p
 | Old screen (switch off) | Where it lives today | Replaced by (switch on) | Entry module | Routing module | Deleted in |
 |---|---|---|---|---|---|
 | Studio overview, and the phone's Home (`?suite=particl&page=brief&sp=stages`, `sp=home`) | `components/graphite/mobile/StudioHome.tsx`, `components/graphite/mobile/SuiteHome.tsx` | Home, `?view=home` | `components/graphite/home/HomeView.tsx` | `components/graphite/home/routes.ts` | the switch-flip PR |
-| Studio stages and the Rig (`?suite=particl&page=brief\|boards\|cast\|astra\|rig\|takes\|edit\|deliver`) | `components/graphite/production/*`, `components/workspace/rig/*`, the Library and Inspector columns | The board, `?view=board` and its regions | `components/graphite/board/BoardView.tsx` | `lib/board/routes.ts` | the switch-flip PR |
-| Business pages (`?suite=moleculr&page=marketing&sp=…`) and Viral History | `components/graphite/business/*`, `components/graphite/viral/*` | The Ads and Social boards, `?view=board&kind=ads\|social` | `components/graphite/board/BoardView.tsx` (by kind) | `lib/shell/ads-social.ts` | the switch-flip PR |
+| The production graph on `/workbench` | `components/workbench/production-graph.tsx` (still imported by `components/workbench/Studio.tsx`) | The board | `components/graphite/board/BoardView.tsx` | `lib/board/routes.ts` | with `/workbench`, in D1 |
+| Business pages (`?suite=moleculr&page=marketing&sp=setup\|brand\|product\|reference\|format\|hooks\|dtc\|design`) | `components/graphite/business/{BusinessSuite,BusinessView,BusinessOwnView,BrandTool,ProductTool,FormatTool,HooksTool,ReferenceTool,DesignTool,ParticlSetup,PresetPicker,own-kit,use-own-agent}`, `business.css`, `business-own.css`; the Business pages in `lib/shell/ia.ts`; specs `suites-business-workbench`, `suites-business-own-workbench`, `suites-business-own-agents-workbench`; units `businessOwn`, `suitesBusiness`, `businessStandalone`. Until the flip, the Ads board's Edit panels mount `BrandTool`, `ProductTool`, `ReferenceTool`, `HooksTool` and `FormatTool`, and its cards call `own-kit`'s helpers; the flip PR moves them into `components/graphite/board/ads/` before it deletes the pages | The Ads board, `?view=board&kind=ads` (Brand kit, Product facts, Reference ad, Hooks, Format briefs, the image-ad card, the poster Designer) | `components/graphite/board/ads/index.ts` | `lib/shell/ads-social.ts` | the switch-flip PR |
+| Viral › History page (`?suite=subatomik&page=history`) | `components/graphite/viral/ViralView.tsx` (`ViralView`; `HistoryView` is exported as `ViralHistory` for the Social board's drawer and stays until the flip) | The Social board's History drawer, and Make › Recent | `components/graphite/board/social/index.ts` | `lib/shell/ads-social.ts` | the switch-flip PR |
 | Atomik's Agent page (`?suite=atomik&page=agent`) | `components/workspace/pages/*` (Agent) | Atomik's panel, `&atomik=1`, over any screen | `components/graphite/atomik/panel/AtomikPanel.tsx` | `components/graphite/atomik/panel/routes.ts` | the switch-flip PR |
 | Atomik's Runs, Approvals, Memory and Skills pages | `components/workspace/pages/*`, `components/graphite/atomik/*` | The control room, at the same addresses | `components/graphite/control-room/ControlRoom.tsx` | `lib/control-room/routes.ts` | the switch-flip PR |
-| Workspace's seven tabs, Atomik's Budget, Models and Tools pages (`?view=workspace&tab=…`) | `components/graphite/WorkspaceView.tsx`, `components/management/*` | Settings in five sections, `?view=workspace&tab=team\|credits\|rules\|connections\|advanced` | `components/graphite/settings/SettingsView.tsx` | `lib/shell/settings.ts` | the switch-flip PR |
+| Workspace's seven tabs, Atomik's Budget, Models and Tools pages (`?view=workspace&tab=…`) | `components/graphite/WorkspaceView.tsx` (People, Security, Plans, Usage, General, Engines), `components/graphite/atomik/ToolsView.tsx` and `ToolsInspector`, `components/graphite/ConnectRow.tsx`, and `Budget` and `Models` in `components/suites/AtomikSuite.tsx`. `ManagementDashboard.tsx` stays until Activity (control room) lands | Settings in five sections, `?view=workspace&tab=team\|credits\|rules\|connections\|advanced` (`&open=` unfolds a fold) | `components/graphite/settings/SettingsView.tsx` | `lib/shell/settings.ts` | the switch-flip PR |
+| Settings options only the old `/settings` page has: file naming, delivery copies, lock new assets, training preference, notifications, which engines Atomik may propose, delete workspace | `app/(app)/settings/page.tsx` | none yet: needs a home before `/settings` retires | — | — | D1 (not built in the demo push) |
 | The phone's header, page strip and tab bar | `components/graphite/TabBar.tsx`, `phone.css`, the compact rows of `Header.tsx` and `StageStrip.tsx` | The phone's own screens, at compact widths or with `device=phone` | `components/graphite/phone/PhoneApp.tsx` | `components/graphite/phone/routes.ts` | the switch-flip PR |
+| Make's panel as it is today: `MakePanelToday` (Video · Images · Audio · Edit tabs, the controls under the composer, the Results grid), its engine sheet `components/graphite/ModelSheet.tsx` (used by nothing else), and the rules in `make.css` above its `.gx-mk` block | `components/graphite/MakePanel.tsx`, `ModelSheet.tsx`, `make.css` | Make as `design/particl-graphite/` draws it (README § 3.2), `components/graphite/make/*` | `components/graphite/MakePanel.tsx` | `lib/shell/make.ts` | the switch-flip PR, with the specs that drive today's panel |
+
+The Rig's data layer stays when these go: `components/workspace/rig/RigProvider.tsx`, `use-team-canvas.ts`, `use-cutouts.ts` and the `lib/workspace/rig-*` models are what the board reads. `RigImport.tsx` stays until the board shows an import.
+
+## Deleted by the board PR (6 Oct 2026)
+
+Owner decision 42 (5 Oct night): the canvas is the whole production. Studio, Ads and Social are one board for every workspace, switch on or off, and the ten Studio stage pages of `/suites` are gone: Brief, Beats, Storyboards, Environment, Cast, Astra 3D, Rig, Takes, Edit & Sound and Deliver. Each old address (the app's spelling, the design file's, and a take link copied before) opens the board's region for it: the table is `lib/shell/stage-redirects.ts`, held by `tests/unit/demo-board-stage-redirects.spec.ts` and `tests/demo-board-stage-redirects-workbench.spec.ts`. Studio's overview and the phone's "Where to?" stay as Home's until the switch flips (its stage cards open the board's regions).
+
+Gone with them: `StageView`, `BriefStage`, `BeatsStage`, `BeatGraph`, `StoryboardStage`, `EnvironmentStage`, `CastStage`, `EditStage`, `AstraOutputs`, the Rig library (`RigLibrary`), `VerifyBadge`, the Beats undo and node-graph logic, the Takes desk's list logic, the take hand-over letterbox, their rules in `production.css`, `shell.css`, `rig.css`, `rig-verify.css` and `phone.css`, and the browser specs that drove them.
+
+What the stage pages did that the board does not draw yet (each was a page-only control; its code is listed so a card can take it over):
+
+| Was on | Not on the board yet | Code left in the repo |
+|---|---|---|
+| Brief & Script | the script writer and its redraft, the Final Draft and PDF import, the script editor | `components/workbench/ScriptPanel.tsx`, `DevelopmentPanel.tsx`, `lib/production/notes.ts`, the screenplay readers in `lib/` |
+| Beats & Shots | the breakdown that writes the beat sheet from a script; the beat node graph | `lib/production/beats.ts` (the board edits the same sheet) |
+| Storyboards | line drawings, frame prompts and revisions | `lib/production/boards.ts` |
+| Takes | the Takes desk's own filters. Transcribe is on the board now: the Transcribe action on a video or audio reference card and on Social's source card, with its transcript panel (`components/graphite/board/transcribe/`) | `lib/workbench/transcription-request.ts` (the board's `use-transcribe.ts` sends through it) |
+| Cast and Environment | the Soul render of a character, plates chosen and added on a place | `lib/production/cast-render.ts`, `CastIdentities.tsx` (the cast card's Inspector hosts Build identity) |
+| Astra 3D | 3D blocking: no card hosts the tool | `components/astra-blender/*`, `components/workspace/spec/tools/AstraTool.tsx` (unmounted) |
+| Rig | the cut-out (priced), card lock and history on the old canvas, the Rig's own agent wiring | `components/workspace/rig/*` (the old `/workspace` shell still mounts the Rig page; the board reads `RigProvider` and the `lib/workspace/rig-*` models) |
+| Edit & Sound, Deliver | nothing: the Cut and Deliver cards open the existing editor and exporter over the board | `EditPage.tsx`, `MovieExport.tsx` stay |
+
+The old `/workspace` and `/workbench` shells keep their own page bodies (`components/workspace/pages/*`) until D1. Business's pages and Viral's History page are not shown to anyone either: their addresses open the Ads board and the Social board's History drawer (`lib/shell/ads-social.ts`); their components stay until the flip PR deletes them (`ViralHistory` is the History drawer's body). Crew's page is the same: `?view=crew` opens the board's Crew review (`lib/board/routes.ts`).
+
+## `/suites` pieces the new interface replaces
+
+With the new interface switched on, these `/suites` pieces are not shown; with it off, customers still use them. They are deleted in the switch-flip PR.
+
+### Atomik: ⌘K, the panel and "Ask Atomik how"
+
+| Piece (switch off) | Rendered by | Replacement (switch on) | Tests that go with it |
+|---|---|---|---|
+| ⌘K's suite index (Generate, suites, stage pages, Crew pages, Workspace tabs) and its "Ask Atomik: …" row, which hands the words to the Agent page | `components/graphite/Palette.tsx` › `PaletteDialog`, `lib/shell/palette.ts` › `paletteIndex`, `searchPalette` | ⌘K as search and Atomik in one box: `AtomikPalette` in the same file, `newPaletteIndex`, `searchNewPalette`, the cards in `components/graphite/atomik/panel/` | `tests/unit/suitesShell.spec.ts` (palette cases), `tests/suites-shell-workbench.spec.ts` (palette cases) |
+| Atomik › Agent `?suite=atomik&page=agent` | `components/workspace/spec/tools/AtomikTool.tsx` (agent branch) → `components/suites/SuiteAgentPanel.tsx`, `components/atomik/threads/ThreadsPanel.tsx`, `ThreadSwitcher.tsx`, `threads.module.css` | Atomik's panel `&atomik=1` (`components/graphite/atomik/panel/AtomikPanel.tsx`) on the same thread engine (`components/atomik/AtomikProvider.tsx`); the plan card on the board. `SuiteAgentPanel` stays while `AtomikSuite`, `SubatomikWorkspace` and `Studio` import it | `tests/atomik-threads-workbench.spec.ts` (Agent page cases), `tests/suite-agent-workbench.spec.ts` |
+| The page's Atomik plan sheet and its gate row under the stage strip | `components/graphite/AtomikSheet.tsx`, `AtomikGate.tsx`, `lib/shell/atomik-sheet.ts` | Waiting runs reach people through the control room's Approvals and Atomik's panel; the stage pages they sit on retire with the board | `tests/suites-atomik-gate-workbench.spec.ts`, parts of `tests/unit/atomikNoAccount.spec.ts` and `tests/unit/suitesShellAudit.spec.ts` |
 | Make's panel as it is today | `components/graphite/MakePanel.tsx` | Make re-laid out behind the switch (the switch-off panel stays as it is) | `components/graphite/MakePanel.tsx` | `lib/shell/make.ts` | the switch-flip PR |
+| The public site's homepage, `/` for a signed-out visitor (Guest Home off, the default) | `app/(marketing)/site/_pages/gen/index.tsx`, `components/marketing/HeroPrompt.tsx`, their `.mk-hero*` and `.mk-prompt*` rules in `components/marketing/marketing.css` | Guest Home, `/` signed out with the site-wide /admin "Guest Home" setting on (design README § 3.7) | `components/graphite/guest/GuestHome.tsx` | `app/(marketing)/site/[[...slug]]/page.tsx` (reads `lib/site/settings.server.ts`) | The PR after the owner turns Guest Home on for good: the homepage and its copy are deleted; /pricing stays its own page |
 
 ## Notes that change what D1 can delete
 
@@ -89,6 +128,14 @@ Rows are appended by the PR that lands the replacement, in the same table, one p
 - Four `/workbench` sheets are shared: `app/workbench/workbench.css`, `desk.css`, `graphite.css` and `editorial-graphite.css` reach `/suites` through `components/workspace/spec/tools/studio-css.ts`. `components/workspace/workspace.css` and `components/workspace/pages/assets.css` are shared the same way.
 - `WORKSPACE_TABS` in `lib/shell/ia.ts` still carries each tab's old `href` (`/settings`, `/team`, `/usage`, …). Those go when the routes do.
 - Specs that assert the old shell ask for it through `tests/helpers/legacyShell.ts`; the helper and its call sites go with the old shell.
+
+## Suites screens behind the new-interface switch
+
+Screens inside `/suites` that customers still see while the new interface is off, each with what replaces it when it is on. They stay until the switch is on for everyone, and are deleted in that PR.
+
+| Old screen (switch off) | Rendered by | Replacement (switch on) | Tests that go with it |
+|---|---|---|---|
+| Studio overview, `?suite=particl&page=brief&sp=stages` (the desktop's Home today; on a phone, the Studio stage grid) | `components/graphite/mobile/StudioHome.tsx`; `lib/shell/studio-home.ts` (`stageCards`, `upNext`, `recentTakes`, `runningTakes`, `startsEmpty`, `FIRST_RUN_STEPS`; Home uses `savedAt` and `recentProjects`, which move into `components/graphite/home/` first); the `.gx-home*`, `.gx-first*` and `.gx-recent*` rules in `components/graphite/shell.css` and `phone.css`. `components/graphite/FirstRun.tsx` stays while the stage pages use it | Desktop: Home `?view=home` (`components/graphite/home/HomeView.tsx`). Phone: the phone's Home and Record | `tests/unit/suitesStudioHome.spec.ts`, `tests/suites-phone-home-workbench.spec.ts`, and the Studio-home parts of `suites-shell-audit`, `suite-navigation`, `ui-floors-audit` and `hf-phone-chrome` |
 
 ## Before a route is retired
 
@@ -100,3 +147,34 @@ Rows are appended by the PR that lands the replacement, in the same table, one p
 - [ ] Its unshared stylesheets (last column) are deleted, and shared ones are left alone.
 - [ ] This file and `docs/workspace-switchover.md` are updated in the same PR.
 - [ ] Its row leaves `PENDING` in `lib/shell/ia.ts` (every route here is listed there, retired by D1; `tests/unit/shellRedirects.spec.ts` checks the two agree).
+
+## Suites screens behind the new-interface switch
+
+Screens customers still see while the switch is off. Each is deleted in the switch-flip PR, not before.
+
+| Old screen | Replaced by (switch on) | Its tests |
+|---|---|---|
+| The phone's Home, "Where to?" (`components/graphite/mobile/SuiteHome.tsx`; the `.gx-where*` block in `components/graphite/shell.css`; `suiteTiles` and `assetsRowLabel` in `lib/shell/studio-home.ts`) | The phone's Home (`components/graphite/phone/HomeScreen.tsx`): what needs you, then projects | `tests/suites-phone-home-workbench.spec.ts`; the suite-tile cases in `tests/unit/suitesStudioHome.spec.ts` |
+| The phone's Studio stage grid (`components/graphite/mobile/StudioHome.tsx` on a phone; the `.gx-home*` block in `components/graphite/shell.css`). On a desktop the same component is the Studio overview, which Home replaces | The phone's Home (projects) and the phone's Record; on a desktop, Home (`components/graphite/home/HomeView.tsx`) | `tests/suites-phone-home-workbench.spec.ts`; `tests/unit/suitesStudioHome.spec.ts` |
+| The phone's tab bar Home · Gen · Suites · Assets · More (`components/graphite/TabBar.tsx`) and the phone-only `home` and `stages` pages in `lib/shell/ia.ts` | The phone's tabs Home · Record · Make · Atomik (`components/graphite/phone/PhoneChrome.tsx`) | `tests/hf-phone-chrome-workbench.spec.ts` |
+| The old shell's compact phone chrome (`components/graphite/phone.css`) | The phone's own header, tabs and screens (`components/graphite/phone/phone-screens.css`) | `tests/hf-phone-chrome-workbench.spec.ts` |
+Old screens that customers still use while the switch is off. Each is deleted in the switch-flip PR, with its sheets and tests, once nothing else imports it.
+
+| Old screen | Files | Replaced by (switch on) | Notes |
+|---|---|---|---|
+| The production graph on `/workbench` | `components/workbench/production-graph.tsx` | The board | Still imported by `components/workbench/Studio.tsx` (the `/workbench` row above). |
+
+## `/suites` pages replaced behind the new interface
+
+With the new interface on (`lib/shell/new-interface.ts`), these pages render their replacement; with it off, customers keep the old page. Each old page is deleted in the switch-flip PR, with its components, sheets and tests, once no customer path uses it.
+
+| Old page (switch off) | Rendered by today | Replacement (switch on) | Not covered yet |
+|---|---|---|---|
+| `?suite=atomik&page=approvals` | `components/suites/AtomikSuite.tsx` (its approvals branch, per project) with `components/pipeline/PipelineRun.tsx` | Control room › Approvals: `components/graphite/control-room/` over `GET /api/control-room/approvals`, one queue across projects (held takes, Atomik's board builds and renders, a plan's next step) | Pipeline runs that need a decision are not in the new queue (lead decision 15). `AtomikSuite.tsx`, `atomik-suite.module.css` and `atomik-suite-data.ts` go only when Activity, Budget and Models are replaced too |
+| `?suite=atomik&page=runs` | `components/suites/AtomikSuite.tsx` (its runs branch, per project: pipeline runs) with `components/suites/SuiteAgentPanel.tsx`, `components/pipeline/PipelineBuilder.tsx`, `PipelineRun.tsx` | Control room › Activity: `components/graphite/control-room/ActivityView.tsx` over `GET /api/control-room/activity`, Atomik's threads and board runs with each step priced and settled, and what every project settled | Pipeline runs and Studio stage-agent runs are not listed (lead decision 15); building a new pipeline has no place in the new interface yet. `/pipelines` and `/rig/run/[runId]` point here once retired |
+| `?suite=atomik&page=agent&sp=saved-skills` | `components/graphite/atomik/SkillsView.tsx`, `skills-view.module.css` | Control room › Skills: `components/graphite/control-room/SkillsRoom.tsx` on the same skills routes (`lib/shell/use-skills.ts`) | Archive and Restore are not on the new page yet. The new page reuses `EditSkill` (exported from the old view) and `SaveSkillDialog`; both move or go with the old view at the flip |
+| `?suite=atomik&page=agent&sp=memory` | `components/graphite/atomik/MemoryView.tsx` | Control room › Memory: `components/graphite/control-room/MemoryRoom.tsx` on the same memory routes (`lib/shell/use-memory.ts`); Read with Atomik is today's paid read (`AtomikRead`, exported, with the new price words) | Import from another assistant, editing an entry and remembering a Library item (Reference, an identity) are not on the new page yet; the brand-kit block is today's card. `AtomikRead` and `BrandKitMemory` move or go with the old view at the flip |
+
+## Release 1: the Business specs now run on the Ads board
+
+`suites-business-workbench`, `suites-business-own-workbench`, `suites-business-own-agents-workbench` and their helper `tests/helpers/businessOwn.ts` open the Ads board at the card each old Business address is redirected to (`lib/shell/ads-social.ts`), and keep every price, spend and "nothing sent until a person presses" assertion there. Setup and the member page-shell checks have no page left; the Setup list is the Brand, Product and Reference cards. A phone draws no canvas, so the board's tests skip phone widths with that reason, and one phone test asserts that the old addresses open the Record. Two tests are `test.fixme` until the owner decides: the old Image ads page's build names (2.5 Flare) and its preset catalogue exist only in `BusinessView.tsx` (`ImageAdsView`, `PresetPicker`), which no address reaches; port them to the board's image-ad card, or accept the loss and delete both tests with those components.

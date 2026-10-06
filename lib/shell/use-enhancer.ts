@@ -27,6 +27,8 @@ export type EnhancerHost = {
   charged: number | null;
   error: string | null;
   enhance: () => void;
+  /** The same press, awaited: the enhanced words, or null when nothing came back (the error is then on `error`). Auto's press uses it. */
+  run: () => Promise<string | null>;
   dismiss: () => void;
 };
 
@@ -76,9 +78,9 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
   const live = useRef({ key, credits });
   useEffect(() => { live.current = { key, credits }; });
 
-  const enhance = useCallback(async () => {
+  const enhance = useCallback(async (): Promise<string | null> => {
     const approved = live.current;
-    if (approved.credits == null) return;
+    if (approved.credits == null) return null;
     setBusy(true);
     setError(null);
     try {
@@ -90,8 +92,10 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
       const json = await response.json().catch(() => null) as { prompt?: string; provider?: EnhancerProvider; error?: string } | null;
       if (!response.ok || !json?.prompt || !json.provider) throw new Error(json?.error ?? "The enhancer did not answer. Your prompt is unchanged.");
       setResult({ prompt: json.prompt, provider: json.provider, charged: approved.credits });
+      return json.prompt;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The enhancer did not answer. Your prompt is unchanged.");
+      return null;
     } finally {
       setBusy(false);
     }
@@ -102,6 +106,6 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
   return {
     auto, setAuto, credits, blocked, busy, error,
     enhanced: result?.prompt ?? null, provider: result?.provider ?? null, charged: result?.charged ?? null,
-    enhance: () => void enhance(), dismiss,
+    enhance: () => void enhance(), run: enhance, dismiss,
   };
 }

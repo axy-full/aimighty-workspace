@@ -252,7 +252,7 @@ export function MovieExport({
         {project.fps} fps · {project.aspect} · SDR{project.colorGrade && !project.colorGrade.bypassed ? " · Saved sequence look included" : ""}
       </p>
       <p className="movie-limit">
-        Rendered on this device, with no generation credits. Up to 3 minutes and
+        Encoded in your browser, with no generation credits. It is not the final render, which comes with server rendering. Up to 3 minutes and
         200 MB of sources and output. Straight cuts; stills hold. Sound mix uses
         its saved positions, gain, pan, fades, mute and solo settings. Keep this
         page open.{" "}

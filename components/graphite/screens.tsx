@@ -9,7 +9,7 @@ import type { Project } from "@/lib/workbench/studio";
 import type { CreateSeed } from "@/lib/shell/create-project";
 import type { Shell } from "@/lib/shell/state";
 import type { BoardKindId, ScreenId } from "@/lib/shell/screens";
-import type { ProjectActions } from "./FirstRun";
+import { FirstRun, type ProjectActions } from "./FirstRun";
 import { isControlRoomPage } from "./control-room/pages";
 
 /**
@@ -65,6 +65,14 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
     case "board":
     case "board-ads":
     case "board-social":
+      /* The board is for every workspace, so a workspace with no project yet gets Studio's first run here (New project, the starter) rather than a board that never opens. */
+      if (!project && data.status === "ready") {
+        return (
+          <Boundary what="The board" probe="board" resetKey={`board:none`} fallback={(f) => <ScreenFault fault={f} name="board" />}>
+            <div className="gx-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto" }} data-testid="board-no-project"><FirstRun stage="board" lead="Open or create a project to use the board." actions={ctx.projectActions} now={ctx.now} /></div>
+          </Boundary>
+        );
+      }
       return (
         <Boundary what="The board" probe="board" resetKey={`board:${project?.id ?? ""}:${shell.params.kind ?? ""}`} fallback={(f) => <ScreenFault fault={f} name="board" />}>
           <BoardEntry scope={scope} project={project} items={items} library={library} kind={boardKind(shell.params.kind)} frame={shell.params.frame ?? null} region={shell.params.region ?? null} />
@@ -112,7 +120,7 @@ export function PhoneMount({ ctx, page }: { ctx: ScreenContext; page: { title: s
   const { scope, account, project, items, library, data, projectActions } = ctx;
   return (
     <Boundary what="The phone" probe="phone" resetKey={`phone:${scope}`} fallback={(f) => <ScreenFault fault={f} name="phone" />}>
-      <PhoneEntry scope={scope} account={account} data={data} project={project} items={items} library={library} projectActions={projectActions} page={page} />
+      <PhoneEntry scope={scope} account={account} data={data} project={project} items={items} library={library} projectActions={projectActions} onCreate={ctx.onCreate} page={page} />
     </Boundary>
   );
 }

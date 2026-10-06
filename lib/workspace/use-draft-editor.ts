@@ -12,6 +12,7 @@ import {
   type DraftWriter,
 } from "@/lib/workbench/draft-request";
 import { useOptionalToast } from "@/lib/workspace/state";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 /**
  * An editable copy of one project draft for a workspace page that mounts a
@@ -354,7 +355,7 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
   const refresh = useCallback(async () => {
     const id = current.current?.id;
     if (!id) return null;
-    if (!(await ensureSaved())) throw new Error("Save this project before loading its saved outputs.");
+    if (!(await ensureSaved())) throw new SaveFailedError();
     /* Read in turn with the saves, so a save cannot land between the read and its use. */
     const step = chain.current.catch(() => false).then(async (): Promise<Project | null> => {
       const data = await read(id);

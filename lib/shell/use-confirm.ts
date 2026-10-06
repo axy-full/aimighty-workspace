@@ -44,7 +44,9 @@ export function useConfirm() {
 
 /** Where the person is, and whether the Library's assets are already on screen there. */
 function hereOf(shell: Shell): Here {
-  return { view: shell.view === "board" || shell.view === "home" ? "suite" : shell.view, suite: shell.suite.id, page: shell.page.id, make: shell.make !== null, library: shell.view === "suite" && (shell.wide || shell.libOpen) && shell.libTab === "assets" };
+  /* The Studio board's own address, so an Open to the place it is already at carries none. */
+  const board = shell.screen === "board" && (!shell.params.kind || shell.params.kind === "studio") ? `?view=board${shell.params.region ? `&region=${shell.params.region}` : ""}` : null;
+  return { view: shell.view === "board" || shell.view === "home" ? "suite" : shell.view, suite: shell.suite.id, page: shell.page.id, board, make: shell.make !== null, library: shell.view === "suite" && (shell.wide || shell.libOpen) && shell.libTab === "assets" };
 }
 
 /**

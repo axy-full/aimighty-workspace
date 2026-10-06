@@ -2,7 +2,7 @@
  * The prototype's glyphs (Particl Suites.dc.html › ic), as React. Stroke
  * icons at 1.8, 24-unit box; the suite glyphs carry their suite's colour.
  */
-export type GlyphName = "clap" | "tag" | "bolt" | "atom" | "crew" | "spark" | "search" | "panel" | "wrench" | "stack" | "chev" | "home" | "grid" | "info" | "key" | "video" | "swap";
+export type GlyphName = "clap" | "tag" | "bolt" | "atom" | "crew" | "spark" | "search" | "panel" | "wrench" | "stack" | "chev" | "home" | "grid" | "info" | "key" | "video" | "swap" | "upscale" | "doc";
 
 export function Glyph({ name, size = 16, color, className }: { name: GlyphName; size?: number; color?: string; className?: string }) {
   const p = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color ?? "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, className, "aria-hidden": true, style: { display: "block" as const } };
@@ -24,9 +24,12 @@ export function Glyph({ name, size = 16, color, className }: { name: GlyphName; 
     /* The phone's Home and Suites tabs (the tab bar). */
     case "home": return <svg {...p}><path d="M3 11l9-7 9 7" /><path d="M5 10v10h14V10" /><path d="M10 20v-6h4v6" /></svg>;
     case "grid": return <svg {...p}><rect x="3" y="3" width="7" height="7" rx="1.8" /><rect x="14" y="3" width="7" height="7" rx="1.8" /><rect x="3" y="14" width="7" height="7" rx="1.8" /><rect x="14" y="14" width="7" height="7" rx="1.8" /></svg>;
+    /* The phone's Record tab: the project's record, a page with its lines. */
+    case "doc": return <svg {...p}><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4M9 12h6M9 16h6" /></svg>;
     /* The owner's key: what runs only on the workspace owner's connected account (idea 19). */
     /* Make's quick tools (the master's Motion transfer and Object swap glyphs, on this 24-unit box). */
     case "video": return <svg {...p}><path d="M3 6h12v12H3zM15 10.5l6-3v9l-6-3" /></svg>;
+    case "upscale": return <svg {...p}><path d="M4.5 19.5V14M4.5 19.5H10M19.5 4.5V10M19.5 4.5H14M4.5 19.5l5.5-5.5M19.5 4.5L14 10" /></svg>;
     case "swap": return <svg {...p}><path d="M4.5 9h12l-3-3M19.5 15h-12l3 3" /></svg>;
     case "key": return <svg {...p}><circle cx="8" cy="15" r="4.5" /><path d="M11.2 11.8L20 3M16.5 6.5l2.5 2.5M14 9l2 2" /></svg>;
   }
@@ -54,11 +57,8 @@ export const SEGMENT_LOOK: Record<"home" | "make" | "atomik", { glyph: GlyphName
 export const DEPT_COLORS = ["#0A84FF", "#BF5AF2", "#FF9F0A", "#30D158", "#64D2FF", "#FF453A"];
 /** Kind dots on the asset filter chips; All has none of its own. */
 export const KIND_DOT: Record<string, string> = { Images: "#0A84FF", Video: "#30D158", Audio: "#BF5AF2", Uploads: "#FF9F0A", Cast: "#FF453A", Elements: "#64D2FF" };
-/** A project's poster swatch, the two stops of its tile: the sample palette for the sample names, a stable pick otherwise. */
+/** A project's poster swatch, the two stops of its tile: a stable pick from its name, neutral grey for no name. */
 export function posterOf(name: string): { from: string; to: string } {
-  const sample: Record<string, [string, string]> = { "dune studies": ["#7A5A34", "#1A120B"], northline: ["#2E4A6A", "#0B1420"] };
-  const known = sample[name.trim().toLowerCase()];
-  if (known) return { from: known[0], to: known[1] };
   if (!name.trim()) return { from: "#3A3A40", to: "#141416" };
   const hue = [...name].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 360, 7);
   return { from: `hsl(${hue} 38% 34%)`, to: `hsl(${hue} 30% 9%)` };

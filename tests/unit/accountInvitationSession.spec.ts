@@ -123,6 +123,12 @@ async function route(
     "@/lib/workspaceProvisioning":
       await import("../../lib/workspaceProvisioning"),
     "@/lib/policyAccept": await import("../../lib/policyAccept"),
+    /* These cases verify self-serve registrations, which only finish while the platform owner has sign-up open
+       (lead decision 36; refused while closed, tests/unit/demo-s15-signup-gate.spec.ts). */
+    "@/lib/site/settings": await import("../../lib/site/settings"),
+    "@/lib/site/settings.server": {
+      readSite: async () => ({ openSignup: true, guestHome: false, guestWorkspace: null }),
+    },
     // No mail on this deployment: an invitation link alone may make an account.
     "@/lib/mail": {
       mailConfigured: () => false,

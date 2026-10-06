@@ -6,6 +6,7 @@ import path from "node:path";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
+import { openAdvanced } from "./helpers/makeAdvanced";
 
 /**
  * Seedance 2.5 draft mode in Gen (lib/draftFinal.ts): "Draft first · 480p",
@@ -63,6 +64,7 @@ type Seeded = Awaited<ReturnType<typeof seeded>>;
 async function openGen(page: Page, project: Project) {
   await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 60_000 });
+  await openAdvanced(page);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 30_000 });
 }
 
@@ -270,14 +272,7 @@ test("Draft first, then the 1080p final: approved at the price on each button, c
   await floors(page, info, strip);
   await shot(page, info, strip, "draft-final");
 
-  /* Studio › Takes, the review desk, files the pair under their one shot (a final is filed on its draft's), each card
-     named as the final or the draft, newest first. */
-  await page.goto(`/suites?suite=studio&page=takes&project=${s.project.id}`);
-  const grid = page.getByTestId("takes-grid");
-  await expect(grid.getByTestId("take-pair")).toHaveText(["FINAL", "DRAFT"], { timeout: 60_000 });
-  await expect(grid.locator("[data-pair]")).toHaveCount(2);
-  await expect(grid.getByTestId("takes-shot")).toHaveCount(1);
-
+  /* (The Takes desk that filed the pair under its shot is deleted with the stage pages: the board's Shots region draws it.) */
   /* The Library's flat grid keeps the pair together, each card named as the draft or the final. */
   await openGen(page, s.project);
   if (await page.getByTestId("make-open-library").isVisible()) await page.getByTestId("make-open-library").click();
@@ -299,7 +294,7 @@ test("a draft is one take at its button's price: takes set before Draft first do
   await page.getByTestId("gen-prompt").fill(WORDS);
   const pill = page.getByTestId("workspace-credits");
   const go = page.getByTestId("gen-generate");
-  await page.getByRole("group", { name: "Takes per generate" }).getByRole("button", { name: "More" }).click();
+  await page.getByTestId("gen-takes-2").click();
   await expect(go).toHaveText(`Make 2 takes · ${(2 * price).toLocaleString("en-US")} cr`, { timeout: 60_000 });
   await expect(pill).toHaveAttribute("data-low", "true");
   /* Draft first: one take, at one take's price, and that is the last quote the pill measures the balance against. */

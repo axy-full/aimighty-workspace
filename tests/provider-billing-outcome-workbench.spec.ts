@@ -14,9 +14,7 @@ import type { TakeFailure } from "../lib/providerOutcome";
  * last one clears the phone's tab bar. Every reply is route-mocked; nothing
  * is paid.
  */
-const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
-const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
-const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
+const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const BASE = 1_790_000_000_000;
 
 const moderated: TakeFailure = { provider: "xai", stage: "run", code: "content_moderated", kind: "content_filter", message: null, billing: null, payer: "platform" };
@@ -110,25 +108,5 @@ test("Gen › Results: a failed take's charge is said only from a receipt, whole
   await expect(facts).toContainText("Change the prompt or reference");
   await expect(facts).not.toContainText("$");
   await noSideScroll(page);
-  expect(errors).toEqual([]);
-});
-
-test("Library › Assets and Studio › Takes carry the same charge line, whole", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?suite=studio&page=takes");
-  const takes = page.getByTestId("edit-takes");
-  await expect(takes.getByTestId("take-tile")).toHaveCount(CASES.length);
-  await expectCards(takes);
-  await noSideScroll(page);
-  await page.screenshot({ path: info.outputPath("studio-failed-takes.png") });
-
-  if (!WIDE.includes(info.project.name)) await page.getByTestId("toggle-library").click();
-  const library = page.getByTestId("library");
-  await library.getByRole("tab", { name: /Assets/ }).click();
-  const assets = page.getByTestId("library-assets");
-  await expect(assets.getByTestId("take-tile")).toHaveCount(CASES.length);
-  await expectCards(assets);
-  await noSideScroll(page);
-  await page.screenshot({ path: info.outputPath("library-failed-takes.png") });
   expect(errors).toEqual([]);
 });

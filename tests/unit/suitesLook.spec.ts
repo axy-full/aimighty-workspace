@@ -19,12 +19,13 @@ test("every header tab has a glyph (the project its swatch), and only Atomik a s
   expect(KIND_DOT).toEqual({ Images: "#0A84FF", Video: "#30D158", Audio: "#BF5AF2", Uploads: "#FF9F0A", Cast: "#FF453A", Elements: "#64D2FF" });
 });
 
-test("project posters: the sample palette for the sample names, a stable swatch otherwise", () => {
-  expect(posterOf("Dune Studies")).toEqual({ from: "#7A5A34", to: "#1A120B" });
-  expect(posterOf("Northline")).toEqual({ from: "#2E4A6A", to: "#0B1420" });
+test("project posters: a stable swatch from the name, neutral grey for no name, and no name has a swatch of its own", () => {
   expect(posterOf("")).toEqual({ from: "#3A3A40", to: "#141416" });
+  expect(posterOf("   ")).toEqual({ from: "#3A3A40", to: "#141416" });
   expect(posterOf("Coastal light study")).toEqual(posterOf("Coastal light study"));
-  expect(posterOf("Coastal light study")).not.toEqual(posterOf("Night market"));
+  expect(posterOf("Coastal light study")).not.toEqual(posterOf("Harbour market"));
+  /* Every name, whatever it is, is drawn from the same two-stop formula: nothing is hard-coded for a particular project. */
+  for (const name of ["Harbour film", "Granite", "Untitled film"]) expect(posterOf(name).from).toMatch(/^hsl\(\d+ 38% 34%\)$/);
 });
 
 test("the shell's sheets are flat: one token set and no layer over it, no blur, and a gradient only on a project swatch and an avatar", () => {

@@ -30,11 +30,11 @@ async function open(page: Page) {
     generations: [generation({ id: "gen_wide", title: "Wide on the water", prompt: "Wide on the water" })],
   });
   /* After mockMedia, so it answers first: the script is a real PDF, the room tone is sound. */
-  await page.route(/\/api\/uploads\/up_script(\?.*)?$/, (route) => route.fulfill({ body: screenplayPdf([["THE CROSSING", "", "EXT. FROZEN HARBOUR - DUSK", "A red fox crosses the ice."], ["INT. HUT - NIGHT", "Mara watches."]]), contentType: "application/octet-stream" }));
+  await page.route(/\/api\/uploads\/up_script(\?.*)?$/, (route) => route.fulfill({ body: screenplayPdf([["THE CROSSING", "", "EXT. FROZEN HARBOUR - DUSK", "A red fox crosses the ice."], ["INT. HUT - NIGHT", "Keeper watches."]]), contentType: "application/octet-stream" }));
   await page.route(/\/api\/uploads\/up_tone(\?.*)?$/, (route) => route.fulfill({ body: Buffer.alloc(64), contentType: "audio/mpeg" }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?suite=particl&page=boards&sp=boards");
+  await page.goto("/suites?suite=atomik&page=agent&sp=agent");
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
   return { errors };
 }
@@ -136,27 +136,6 @@ test("phone: a long-press on an asset previews it full screen, and the tap does 
   expect(errors).toEqual([]);
 });
 
-test("the Rig's shot thumbnails preview their take, and a video take shows its own frame (not a broken picture)", async ({ page }, info) => {
-  test.skip(!WIDE.includes(info.project.name), "desktops");
-  await signInLocally(page.request);
-  await forbidPaidWork(page);
-  await mockMedia(page);
-  const project: Project = {
-    ...fixture(),
-    assets: [{ id: "a-vid", generationId: "gen_take", name: "Take 1", kind: "video", category: "Take", url: "/api/media/gen_take", description: "", prompt: "", status: "Draft", version: 1, locked: false, refs: [] }],
-    nodes: [{ id: "n1", title: "Opening", type: "scene", x: 0, y: 0, width: 238, linked: [], role: "Director", status: "draft", mode: "Video", assetId: "a-vid", durationS: 5, ratio: "16:9", resolution: "720p" }],
-  } as Project;
-  await mockProjects(page, { current: project });
-  await mockLibrary(page, { uploads: [], generations: [generation({ id: "gen_take", title: "Take 1", prompt: "t", kind: "video" })] });
-  await page.goto("/suites?suite=studio&page=rig");
-  const thumb = page.locator(".pxw-rig-thumb[data-preview-url]").first();
-  await expect(thumb).toHaveAttribute("data-preview-url", "/api/media/gen_take");
-  await expect(thumb).toHaveAttribute("data-preview-kind", "video");
-  await expect(thumb.locator("img[src*='/api/workbench/preview/']")).toHaveCount(0);
-  await thumb.dblclick();
-  await expect(page.getByTestId("preview-dialog")).toHaveAttribute("data-kind", "video");
-  await expect(page.getByTestId("preview-video")).toHaveAttribute("src", "/api/media/gen_take");
-});
 
 /* ── Idea 26: the viewer walks the whole filtered list, from the shell's selection, and hands off through the shell ── */
 
@@ -202,7 +181,7 @@ async function openBig(page: Page, info: { project: { name: string } }) {
   page.on("request", (request) => { if (/\/api\/(generate|generations|jobs\/[^/]+\/retry)(\/|$|\?)/.test(new URL(request.url()).pathname) && request.method() !== "GET") sent.push(request.url()); });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?suite=particl&page=boards&sp=boards");
+  await page.goto("/suites?suite=atomik&page=agent&sp=agent");
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
   await openAssets(page, WIDE.includes(info.project.name));
   await expect(page.getByTestId("library").getByRole("tab", { name: /Assets/ })).toContainText(String(BIG + 2));
@@ -305,7 +284,7 @@ test("the Inspector's Preview starts at its take in the page's list; Recreate an
   await expect(page.getByTestId("preview-said")).toHaveText(/^Link copied/);
   const copied = new URL(await page.evaluate(() => navigator.clipboard.readText()));
   expect(copied.pathname).toBe("/suites");
-  expect(Object.fromEntries(copied.searchParams)).toMatchObject({ page: "takes", sp: "takes", production: "prod-ws", asset: "generation:gen_004" });
+  expect(Object.fromEntries(copied.searchParams)).toMatchObject({ view: "board", region: "shots", production: "prod-ws", asset: "generation:gen_004" });
   expect(copied.searchParams.get("ws")).toMatch(/^[A-Za-z0-9_-]+$/);
   expect(copied.searchParams.has("project")).toBe(false);
 
@@ -324,9 +303,9 @@ test("the Inspector's Preview starts at its take in the page's list; Recreate an
   await expect(page.getByTestId("preview-dialog")).toHaveCount(0);
   /* Make opens over the page the take was previewed from; the page stays put underneath. */
   await expect(page.getByTestId("make-panel")).toBeVisible();
-  await expect(page.getByTestId("page-title")).toHaveText("Storyboards");
+  await expect(page.getByTestId("page-title")).toHaveText("Agent");
   await expect(page.getByTestId("gen-recipe-name")).toHaveText(frameName(4));
-  await expect(page.getByTestId("toast")).toContainText(`${frameName(4)}’s recipe is in Gen.`);
+  await expect(page.getByTestId("toast")).toContainText(`${frameName(4)}’s recipe is in Make.`);
 
   /* Use as reference, from the Inspector's own list again. */
   await tile(page, "generation:gen_005").click();

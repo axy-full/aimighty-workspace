@@ -26,7 +26,7 @@ async function open(page: Page) {
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?suite=particl&page=boards&sp=boards");
+  await page.goto("/suites?suite=atomik&page=agent&sp=agent");
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
   await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
   /* Record, after the shell's own handler, whether it took each key from the browser. */
@@ -55,7 +55,7 @@ test("⌫ and ⌘D act on a tile clicked in the Library even when the browser le
   await page.keyboard.press("Backspace");
   await expect.poll(() => trashed).toEqual([{ trashed: true }]);
   /* The undo entry is pushed once the trash lands; its toast says so. */
-  await expect(page.getByTestId("toast")).toHaveText(/^Deleted Wide on the water · ⌘Z to undo/);
+  await expect(page.getByTestId("toast")).toHaveText(/^Moved Wide on the water to trash/);
   await page.keyboard.press(`${mod}+z`);
   await expect.poll(() => trashed).toEqual([{ trashed: true }, { trashed: false }]);
   await expect(page.getByTestId("toast")).toHaveText("Wide on the water restored");
@@ -66,7 +66,7 @@ test("⌫ and ⌘D act on a tile clicked in the Library even when the browser le
   expect(await onPage(page)).toBe("BODY");
   await page.keyboard.press("Backspace");
   await expect.poll(() => trashed).toHaveLength(3);
-  await expect(page.getByTestId("toast")).toHaveText(/^Deleted Wide on the water · ⌘Z to undo/);
+  await expect(page.getByTestId("toast")).toHaveText(/^Moved Wide on the water to trash/);
   await page.keyboard.press(`${mod}+z`);
   await expect.poll(() => trashed).toHaveLength(4);
 

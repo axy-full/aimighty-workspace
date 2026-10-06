@@ -13,6 +13,7 @@ import type { Project } from "@/lib/workbench/studio";
 import { soulIdentityAsset } from "@/lib/workbench/soul-identity";
 import { Kicker } from "../ui";
 import type { PageBodyProps } from "./registry";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 import "@/components/workspace/pages/assets.css";
 
 export const TONE: Record<CastTone, string> = {
@@ -176,7 +177,7 @@ export function CastPage({ project: shellProject, scope }: PageBodyProps) {
               const asset = soulIdentityAsset(p, identity, category, assetId);
               return { ...p, assets: assetId ? p.assets.map((a) => (a.id === assetId ? asset : a)) : [...p.assets, asset] };
             });
-            if (!(await draft.ensureSaved())) throw new Error("The identity is attached on screen. Save this project before leaving to retain the binding.");
+            if (!(await draft.ensureSaved())) throw new SaveFailedError();
             toast("Identity attached. Every shot citing it reuses the same reference set.");
           }}
         />

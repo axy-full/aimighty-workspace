@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useTransition, type CSSProperties, type Re
 import { TRAIL } from "@/components/ui/Mark";
 import { HEADER_SEGMENT } from "@/lib/shell/ia";
 import { signInHrefFor } from "@/lib/session";
-import { FIND_HREF, HOME_HREF, STUDIO_HREF, TAKES_HREF, faultMessage, faultPrimary, faultRef, faultReport, isStaleBuild, segmentHref } from "@/lib/shell/fault";
+import { FIND_HREF, HOME_HREF, STUDIO_HREF, SHOTS_HREF, faultMessage, faultPrimary, faultRef, faultReport, isStaleBuild, segmentHref } from "@/lib/shell/fault";
 import { Glyph, SEGMENT_LOOK } from "./icons";
 import { CopyDetails, FaultIcon } from "./PanelFault";
 import "@/components/graphite/shell.css";
@@ -158,7 +158,7 @@ function Missing({ member }: { member: boolean }) {
         <p className="gx-fault-sub">The link is old, or what it pointed at was archived.</p>
         <div className="gx-fault-actions">
           <a className="gx-primary" href={STUDIO_HREF} data-testid="missing-studio">Back to Studio</a>
-          <a className="gx-hbtn" href={TAKES_HREF} data-testid="missing-takes">Open Takes</a>
+          <a className="gx-hbtn" href={SHOTS_HREF} data-testid="missing-shots">Open Shots</a>
           <a className="gx-hbtn" href={FIND_HREF} aria-keyshortcuts="Meta+K" data-testid="missing-search">Search <span className="gx-fault-kbd">⌘K</span></a>
         </div>
       </>) : (<>

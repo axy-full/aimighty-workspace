@@ -33,6 +33,8 @@ export type ShellPage = {
   own?: boolean;
   /** Never a tab in the stage strip: the phone's Home, and the Studio home (the phone's stage grid; on a desktop, where the mark goes). */
   phoneOnly?: boolean;
+  /** Never a tab in the stage strip, though the address still resolves: Atomik's retired Agent, Budget, Models and Tools pages (the panel and Settings took them). */
+  stripHidden?: boolean;
 };
 
 export type ShellSuite = {
@@ -60,62 +62,53 @@ function build(id: ShellSuiteId, label: string, mark: string, name: string, lega
 }
 
 /**
- * The two screens outside the strip (design/particl-graphite/README.md › Phone): `home` is the phone's
- * suite picker — "Where to?" — that the Home tab and the phone's mark return
- * to; `stages` is the Studio home: the stage grid behind the phone's Studio
- * tile (with a Home back), and where the mark goes on a desktop. Both share
- * Brief's backing page.
+ * The Studio suite's two pages (design/particl-graphite/README.md › Phone). The ten stage pages it used to have
+ * (Brief, Beats, Storyboards, Environment, Cast, Astra, Rig, Takes, Edit & Sound, Deliver) are gone: the board is the
+ * whole production, and each old address opens its region (lib/shell/stage-redirects.ts). What is left is Home, drawn
+ * until the new interface's Home replaces it: `stages` is the Studio overview (on a desktop, where the mark goes) and
+ * `home` the phone's suite picker, "Where to?". Both share the state layer's Brief page as their backing page.
  */
-function withHome(suite: ShellSuite): ShellSuite {
-  const legacy = { suite: suite.legacy, page: suite.pages[0].legacy.page };
-  return { ...suite, pages: [...suite.pages,
-    { id: "home", n: "", label: "Home", title: "Where to?", hint: "Every suite, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },
-    { id: "stages", n: "", label: "Studio", title: "Studio", hint: "Every stage, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },
-  ] };
+function studioSuite(): ShellSuite {
+  const legacy = { suite: "particl" as Suite, page: "brief" as PageId };
+  return {
+    id: "studio", label: "Studio", mark: "STUDIO", name: "Studio", legacy: "particl",
+    pages: [
+      { id: "stages", n: "", label: "Studio", title: "Studio", hint: "Every stage, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },
+      { id: "home", n: "", label: "Home", title: "Where to?", hint: "Every suite, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },
+    ],
+  };
 }
 
 function own(suite: ShellSuite, only?: readonly string[]): ShellSuite {
   return { ...suite, pages: suite.pages.map((p) => (!only || only.includes(p.id) ? { ...p, own: true } : p)) };
 }
 
-/** Group starts: Studio after 03 and 07; Business after 01 and 02; Atomik after 01 and 04. */
+/** Only these pages are tabs of the suite's strip, with no numbers; every other page of the suite stays reachable by address but is not a tab. */
+function controlRoomOnly(suite: ShellSuite, tabs: readonly string[]): ShellSuite {
+  return { ...suite, pages: suite.pages.map((p) => (tabs.includes(p.id) ? { ...p, n: "" } : { ...p, n: "", stripHidden: true })) };
+}
+
+/** Group starts: Business after 01 and 02; Atomik after 01 and 04. */
 export const SHELL_SUITES: ShellSuite[] = [
-  /* Brief, Boards, Astra and Deliver are the shell's own stage views (over the existing tools); the phone home too. */
-  own(withHome(build("studio", "Studio", "STUDIO", "Particl Production Studio", "particl", [3, 7], [
-    ["brief", "Brief", "Brief & Script", "Find the story", "brief"],
-    /* Beats shares Brief's backing page; the shell renders its own view (production/BeatsStage). */
-    ["beats", "Beats", "Beats & Shots", "Break it into beats and shots", "brief"],
-    ["boards", "Storyboards", "Storyboards", "Every shot, framed", "boards"],
-    /* Owner, 24 September: where the world is built, before Cast & Elements. The shell renders its own
-       view (production/EnvironmentStage) and shares Storyboards' backing page, as Beats shares Brief's. */
-    ["environment", "Environment", "Environment", "Build the world", "boards"],
-    ["cast", "Cast", "Cast & Elements", "Characters that stay themselves", "cast"],
-    ["astra", "Astra", "Astra 3D", "Block before you render", "astra"],
-    ["rig", "Rig", "Rig", "Bring it all together", "rig"],
-    /* Owner's notes (23 September): Takes holds every take and edits them; Edit & Sound holds the cut and the sound.
-       Idea 6: Takes is the review desk every "Filed in Takes for review" points at. */
-    ["takes", "Takes", "Takes", "Review every take", "takes"],
-    ["edit", "Edit & Sound", "Edit & Sound", "Cut the takes, add the sound", "edit"],
-    ["deliver", "Deliver", "Deliver", "EDL · XML · the final movie", "deliver"],
-  ])), ["brief", "beats", "boards", "environment", "cast", "astra", "takes", "deliver"]),
+  studioSuite(),
   /* Business pages are the shell's own views (step 2); `marketing` remains the state page behind them.
      Image ads, then Setup, then Particl's own tools (lib/shell/business-own.ts). The suite opens on
      Image ads; the Ads page is gone (design/particl-graphite/README.md › What this design removes),
      and an old `sp=ads` link lands on Image ads (SHELL_PAGE_ALIASES). */
-  own(build("business", "Business", "BUSINESS", "Moleculr Business Suite", "moleculr", [1, 2], [
+  own(build("business", "Ads", "ADS", "Ads", "moleculr", [1, 2], [
     ["dtc", "Image ads", "Image ads", "Branded stills from your products and references", "marketing"],
     ["setup", "Setup", "Setup items", "Saved products, brand kit and reference ad", "marketing"],
     ["brand", "Brand", "Brand kit", "Read from your website, reviewed before it is used", "marketing"],
     ["product", "Product", "Product profiles", "Approved facts and original photographs", "marketing"],
-    ["format", "Format", "Creative briefs", "Eighteen briefs in six formats, made in Gen", "marketing"],
+    ["format", "Format", "Creative briefs", "Eighteen briefs in six formats, made in Make", "marketing"],
     ["hooks", "Hooks", "Hooks", "Up to twelve opening lines, written against the brief", "marketing"],
     ["reference", "Reference", "Reference ad", "A video you own, reviewed for what to adapt", "marketing"],
     ["design", "Design", "Poster designer", "Editable layers, exported as a full-size PNG", "marketing"],
   ])),
   /* Viral's History is the shell's own view (step 3). Motion Transfer and Object Swap, on Particl's API key through
-     /api/generate (Genjutsu on the key), are Make's quick tools now (`make=motion|swap`, lib/shell/make.ts); their old
+     /api/generate (Motion transfer and Object swap on the key), are Make's quick tools now (`make=motion|swap`, lib/shell/make.ts); their old
      pages' links open Make over the page on screen, and `goSuite("viral", "motion" | "swap")` does the same. */
-  own(build("viral", "Viral", "VIRAL", "Subatomik Viral Studio · Genjutsu", "subatomik", [], [
+  own(build("viral", "Social", "SOCIAL", "Social", "subatomik", [], [
     ["history", "History", "History", "Every result, retained as original bytes", "history"],
   ])),
   /* Tools & connections is the shell's own view (it replaced the step-5 pack list, whose packs now sit
@@ -126,16 +119,19 @@ export const SHELL_SUITES: ShellSuite[] = [
      Skills (saved runs, run again with new words) is the same kind of page, beside Memory; its id is
      `saved-skills` because `skills` has always meant Tools & connections. */
   /* Owner, 28 September 2026: "Just Atomik agent". */
-  own(build("atomik", "Atomik", "AGENT", "Atomik Agent", "atomik", [1, 4], [
+  /* The control room's four tabs come first, in the design's order and without numbers (Atomik frames g–j): Approvals, Activity,
+     Skills, Memory. Agent, Budget, Models and Tools are retired as pages (the panel and Settings took them; their addresses
+     redirect), so none is a tab. */
+  controlRoomOnly(own(build("atomik", "Atomik", "AGENT", "Atomik Agent", "atomik", [], [
+    ["approvals", "Approvals", "Approvals", "One queue across projects", "approvals"],
+    ["runs", "Activity", "Activity", "Runs and spend · settled cost per run and project", "runs"],
+    ["saved-skills", "Skills", "Skills", "Saved runs, run again with new words", "agent"],
+    ["memory", "Memory", "Memory", "Brand, audience, references and cast", "agent"],
     ["agent", "Agent", "Agent", "Plan, price, then run", "agent"],
-    ["runs", "Runs", "Runs", "Durable, recoverable, accounted", "runs"],
-    ["approvals", "Approvals", "Approvals", "Nothing paid without a gate", "approvals"],
     ["budget", "Budget", "Budget", "Settled accounting, not estimates", "budget"],
     ["models", "Models", "Models", "Thinking for planning, engines for output", "models"],
     ["skills", "Tools", "Tools & connections", "What Atomik reaches, and what reaches Particl", "skills"],
-    ["memory", "Memory", "Memory", "Brand, audience and references Atomik keeps in mind", "agent"],
-    ["saved-skills", "Skills", "Skills", "Saved runs, run again with new words", "agent"],
-  ]), ["skills", "memory", "saved-skills"]),
+  ]), ["skills", "memory", "saved-skills"]), ["approvals", "runs", "saved-skills", "memory"]),
 ];
 
 /**
@@ -214,7 +210,7 @@ export const ALL_SHELL_PAGES: { suite: ShellSuite; page: ShellPage }[] = SHELL_S
 /** Crew's own strip: 01 Room · 02 Members · 03 Sessions, with the prototype's titles and hints. */
 export type CrewPageId = "room" | "members" | "sessions";
 export const CREW_PAGES: { id: CrewPageId; n: string; label: string; title: string; hint: string }[] = [
-  { id: "room", n: "01", label: "Room", title: "Crew", hint: "A room of Grok agents, one per department. They propose, challenge each other, then the chair converges." },
+  { id: "room", n: "01", label: "Room", title: "Crew review", hint: "A room of Grok agents, one per department. They propose, challenge each other, then the chair converges." },
   { id: "members", n: "02", label: "Members", title: "Members", hint: "Role cards the room can seat. Each is one agent with its own stance and effort." },
   { id: "sessions", n: "03", label: "Sessions", title: "Sessions", hint: "Every room this project has run, with its solutions and settled cost." },
 ];

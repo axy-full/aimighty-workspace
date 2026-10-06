@@ -39,5 +39,5 @@ test("an unknown name is one word unless a known one is longer, and never an add
   expect(unknownMentions("Email studio@acme.com for the plates", [])).toEqual([]);
   expect(unknownMentions("@Coast road at dawn, @Cass waits", ["Coast road"])).toEqual(["Cass"]);
   expect(unknownMentions("Match @Image1 and @video2, voice @Audio1", [])).toEqual([]);
-  expect(unknownMentions("(@Iver) turns; @iver again", [])).toEqual(["Iver"]);
+  expect(unknownMentions("(@Rowan) turns; @rowan again", [])).toEqual(["Rowan"]);
 });

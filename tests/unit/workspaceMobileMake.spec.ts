@@ -305,8 +305,8 @@ test("all four sheets are registered on the one chrome, and nothing is pending",
 test("each sheet's own line is derived from the state it opens over", () => {
   const state = { ...INITIAL_STATE, page: "rig" as const, selKind: "take" as const };
   expect(MOBILE_SHEETS.inspector.sub?.({ project: null, state })).toBe("Asset");
-  expect(MOBILE_SHEETS.atomik.sub?.({ project: null, state })).toBe("Rig");
-  expect(MOBILE_SHEETS.library.sub?.({ project: null, state })).toBe("Rig");
+  expect(MOBILE_SHEETS.atomik.sub?.({ project: null, state })).toBe("Board");
+  expect(MOBILE_SHEETS.library.sub?.({ project: null, state })).toBe("Board");
   /* Only Atomik carries the ring in its header. */
   expect(MOBILE_SHEETS.atomik.ring).toBe(true);
   expect(MOBILE_SHEETS.inspector.ring).toBeUndefined();

@@ -318,12 +318,13 @@
 .gx-palette-group { flex: none; min-width: 74px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--gx-text-2); white-space: nowrap; }
 .gx-palette-label { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The hint gives way first: the label is what is read. */
-.gx-palette-hint { flex: 0 3 auto; min-width: 0; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+.gx-palette-hint { flex: 0 3 auto; min-width: 0; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
 /* A phone: the same dialog at the foot of the screen, 12px in from its sides and clear of the home indicator. */
 @media (max-width: 767px) {
   .gx .gx-veil.gx-palette-veil { padding: 12px 12px max(12px, env(safe-area-inset-bottom, 0px)); }
   .gx-palette { width: 100%; max-height: calc(100dvh - 24px); }
   .gx-palette-row { min-height: 44px; }
+  .gx-palette-hint { white-space: normal; text-align: right; max-width: 55%; }
 }
 
 /* ── Context menu ──────────────────────────────────────────────────────── */
@@ -344,6 +345,8 @@
    .25s. The dot is green for a confirmation that carries its Open or Undo (something was done), the quiet ink for the
    rest, which can be a refusal or an error. */
 .gx-toast { position: fixed; top: 66px; right: 16px; z-index: 90; width: max-content; max-width: min(480px, calc(100vw - 32px)); display: flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: var(--gx-r-pill); font-size: 12px; font-weight: 500; line-height: 18px; background: var(--gx-card); border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-toast); animation: gx-in var(--gx-t-toast) var(--gx-ease) both; }
+/* On a board the toast sits at the canvas's top right, beside the docked panel rather than over it (Gaps B, the Undo toast). */
+.gx[data-screen^="board"] .gx-toast { right: calc(16px + var(--board-dock, 0px)); }
 .gx-toast::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-text-2); }
 .gx-toast[data-open]::before { background: var(--gx-done); }
 
@@ -543,8 +546,6 @@
 }
 @media (prefers-reduced-motion: reduce) { .gx-fv-media[data-preview="loading"]::after, .gx-fv-hash { animation: none; } }
 .gx-insp-why { flex-basis: 100%; margin: 0; }
-.gx-model { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; border-radius: 6px; background: var(--gx-input); border: 1px solid var(--gx-hair); min-height: 48px; }
-.gx-model:hover { background: var(--gx-input-hover); }
 .gx-model-name { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gx-model-sub { display: block; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gx-well { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 64px; padding: 10px; border-radius: 6px; border: 1px dashed var(--gx-hair-strong); background: transparent; }
@@ -1083,7 +1084,6 @@
 
 /* Connected workflows on a Studio page (Deliver › Social cuts, Edit › Dub · Change voice, Astra › Draw to edit) and Gen › Analysis. */
 .gx-extras { display: flex; flex-direction: column; gap: 12px; padding: 16px 20px 0; }
-.gx-gen-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .gx-workflow-title { margin: 2px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
 .gx-workflow .pxw { background: transparent; }
 @media (max-width: 767px) { .gx-extras { padding: 12px 12px 0; } }
@@ -1098,41 +1098,10 @@
 .gx-gen-sound { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .gx-gen-sound .gx-stepper span { min-width: 52px; padding: 0 4px; white-space: nowrap; }
 
-/* ── Stage views: Brief & Script, Boards, Astra 3D, Deliver in the shell's idiom (the spec-card rules, Graphite framed groups), the existing tool beneath. ── */
-.gx-stage-host { display: flex; flex-direction: column; min-height: 100%; }
-.gx-stage-view { padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 14px; }
-.gx-stage-intro { margin: 0; max-width: 72ch; font-size: 14px; line-height: 1.5; color: var(--gx-text-2); }
-.gx-stage-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; padding: 12px 14px; border-radius: 10px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
-.gx-stage-facts > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.gx-stage-facts dt { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-text-2); }
-.gx-stage-facts dd { margin: 0; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gx-stage-group { border-radius: 10px; background: var(--gx-card); border: 1px solid var(--gx-card-border); overflow: hidden; }
-.gx-stage-group-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--gx-hair-soft); }
-.gx-stage-group-head::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--dept, var(--gx-accent)); flex: none; }
-.gx-stage-group-head > .gx-hint { flex: 1; min-width: 0; }
-.gx-stage-count { margin-left: auto; height: 18px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; background: var(--gx-hair); color: var(--gx-text-2); letter-spacing: 0; }
-.gx-stage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1px; background: var(--gx-hair-soft); }
-.gx-stage-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; text-align: left; background: var(--gx-card); min-height: 132px; }
-button.gx-stage-card:hover { background: var(--gx-input-hover); }
-button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx-accent); }
-.gx-stage-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.gx-stage-card-title { font-weight: 600; font-size: 14.5px; letter-spacing: -.01em; }
-.gx-stage-card-desc { font-size: 13px; line-height: 1.45; color: var(--gx-text-2); }
-.gx-stage-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.gx-chip--static { height: 22px; padding: 0 8px; font-size: 11.5px; cursor: default; }
-.gx-stage-card-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-2); }
-.gx-stage-card-foot[data-state="COMPLETE"] { color: var(--gx-done); }
-.gx-stage-card-foot[data-state="ACTIVE"] { color: var(--gx-accent-text); }
-.gx-stage-card-foot[data-state="WAITING"] { color: var(--gx-waiting); }
 .gx-home-dot[data-state="done"] { background: var(--gx-done); }
 .gx-home-dot[data-state="progress"] { background: var(--gx-accent); }
 .gx-home-dot[data-state="waiting"] { background: var(--gx-waiting); }
-.gx-stage-work { border-radius: 10px; border: 1px solid var(--gx-card-border); background: var(--gx-panel); overflow: hidden; }
-.gx-stage-work > .gx-stage-group-head { justify-content: space-between; }
-.gx-stage-work > .gx-stage-group-head::before { display: none; }
-.gx-stage-tool { padding: 12px 14px 18px; }
-@media (max-width: 767px) { .gx-stage-view { padding: 12px 12px 24px; } .gx-stage-grid { grid-template-columns: 1fr; } }
-@media (max-width: 767px), (pointer: coarse) { .gx-stage-facts dt { font-size: 12px; } .gx-chip--static { height: 24px; font-size: 12px; } }
+
 /* Gen's Output strip carries five tabs (Video · Images · Audio · Edit · Analysis): below 400px it wraps so every tab keeps the 44px floor. */
 @media (max-width: 400px) {
   .gx-gen .gx-seg--fill { grid-auto-flow: row; grid-template-columns: repeat(3, 1fr); height: auto; }
@@ -1321,7 +1290,9 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
   .gx-project-btn, .gx-project-btn > span:last-child { position: static; }
   .gx-project-meta { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; white-space: nowrap; }
   /* The tab bar: five 44px targets in a bar that floats 12px in from the sides, over the page. */
-  .gx .gx-tabbar { position: fixed; left: 12px; right: 12px; bottom: 22px; z-index: 30; height: 66px; display: grid; grid-template-columns: repeat(5, 1fr); flex: none; padding: 6px; border: 1px solid var(--gx-pop-border); border-radius: var(--gx-r-pill); background: var(--gx-card); box-shadow: var(--gx-shadow-pop); }
+  .gx .gx-tabbar { position: fixed; left: 12px; right: 12px; bottom: 22px; z-index: 30; height: 66px; display: grid; grid-template-columns: repeat(4, 1fr); flex: none; padding: 6px; border: 1px solid var(--gx-pop-border); border-radius: var(--gx-r-pill); background: var(--gx-card); box-shadow: var(--gx-shadow-pop); }
+  /* Hidden only over a full-screen review (the take previewer, mounted on the body) and a plan's approval (the Atomik sheet). */
+  body:has(.pv-veil) .gx .gx-tabbar, .gx:has([data-testid="atomik-veil"]) .gx-tabbar { display: none; }
   .gx-tabbar-btn { min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: var(--gx-r-pill); color: var(--gx-text-2); }
   .gx-tabbar-btn[aria-current="page"] { color: var(--gx-accent-text); background: var(--gx-tint); }
   .gx-tabbar-label { font-size: 12px; font-weight: 500; }

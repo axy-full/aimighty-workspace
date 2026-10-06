@@ -10,11 +10,12 @@ import {
   masterLocks, patchTeamCanvas, readTeamCanvas, requireProduction, teamCanvasRevision, teamPatchSchema, teamRoomFor, TeamCanvasError,
 } from "@/lib/workbench/team-canvas";
 import { latestServerChange } from "@/lib/workbench/canvas-ops-log";
+import { boardHistory } from "@/lib/board/history.server";
 import { applyCanvasOps } from "@/lib/workbench/canvas-ops";
 import { scheduleCanvasPush } from "@/lib/workbench/canvas-push";
 import {
-  approveRigAgent, askRigAgent, declineRigAgent, MAX_RUN_LIMIT, raiseRigAgentLimit, renderRigAgentStep, RigAgentError, rigAgentEnabled, rigAgentState,
-  skipRigAgentStep, stopRigAgent, undoRigAgent,
+  approveRigAgent, approveRigAgentPlan, askRigAgent, declineRigAgent, fixRigAgentShot, MAX_RUN_LIMIT, retryRigAgentStep, raiseRigAgentLimit, renderRigAgentStep, RigAgentError, rigAgentEnabled, rigAgentState,
+  newBoardAskTerms, skipRigAgentStep, stopRigAgent, undoRigAgent,
 } from "@/lib/workbench/rig-agent";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +43,9 @@ function failure(error: unknown) {
  * spent inside it, and its renders), and with `projectId` (the viewer's project) and no run in
  * progress, what asking would cost: the suggested limit, the per-job line, and planning's price.
  * `locks`: the elements its cards stand for that are locked, the masters (from the elements table).
+ * `agent=1&board=new` (no production): what asking would cost on a new, empty board, for Home's Start
+ * before its project exists. Prices only; nothing is reserved or written.
+ * `history=1` answers the board's History: the canvas's changes, newest first, with this workspace's names (no prices).
  */
 export const GET = withTenant(async (req: Request) => {
   const who = await caller(req, false);
@@ -49,11 +53,15 @@ export const GET = withTenant(async (req: Request) => {
   const url = new URL(req.url);
   const productionId = url.searchParams.get("productionId") ?? "";
   try {
+    if (url.searchParams.get("agent") === "1" && url.searchParams.get("board") === "new")
+      return Response.json({ agent: await newBoardAskTerms() }, { headers: NO_STORE });
     if (url.searchParams.get("agent") === "1") {
       const draftId = url.searchParams.get("projectId");
       return Response.json({ agent: await rigAgentState(productionId, who.userId!, draftId && /^[a-zA-Z0-9-]{1,100}$/.test(draftId) ? draftId : null) }, { headers: NO_STORE });
     }
     await requireProduction(productionId);
+    /* The board's History (stream 3; lead decision 26): this production's canvas changes and who made them, read only. */
+    if (url.searchParams.get("history") === "1") return Response.json({ history: await boardHistory(productionId) }, { headers: NO_STORE });
     /* Anything the live room has not taken yet goes out again, after this answer. */
     scheduleCanvasPush(productionId);
     const server = await latestServerChange(productionId);
@@ -122,6 +130,11 @@ const actionSchema = z.discriminatedUnion("action", [
   runAction("agent.render").extend({ seq: SEQ, fingerprint: FINGERPRINT.optional() }),
   runAction("agent.skip").extend({ seq: SEQ }),
   runAction("agent.limit").extend({ limit: LIMIT }),
+  /* The plan approved once at the server's quote (its fingerprint), and a fix drawn under that approval. */
+  runAction("agent.approvePlan").extend({ fingerprint: FINGERPRINT }),
+  runAction("agent.fix").extend({ seq: SEQ }),
+  /* A render that failed with nothing billed, again under the same approval at the same price (not a fix). */
+  runAction("agent.retry").extend({ seq: SEQ }),
 ]);
 
 /**
@@ -137,7 +150,9 @@ const actionSchema = z.discriminatedUnion("action", [
  *    board with the limit approved for the run (Atomik proposes the cards and
  *    wires; its planning is metered into that limit), approve the proposal as
  *    shown or set it aside, render a paid step at the price shown, skip one, or
- *    raise the limit (only the person who asked); stop a run or undo a build
+ *    raise the limit (only the person who asked); approve the plan once at the
+ *    server's quote, or draw a fix under that approval (only the person who
+ *    asked, a signed-in session: tokens are refused); stop a run or undo a build
  *    (anyone on the team). What a run spends is spent by its worker, inside
  *    the approved limit. Each answers Atomik's run card.
  */
@@ -166,6 +181,9 @@ export const POST = withTenant(async (req: Request) => {
       : action.action === "agent.render" ? await renderRigAgentStep({ productionId, runId: action.runId, seq: action.seq, fingerprint: action.fingerprint ?? null, userId })
       : action.action === "agent.skip" ? await skipRigAgentStep({ productionId, runId: action.runId, seq: action.seq, userId })
       : action.action === "agent.limit" ? await raiseRigAgentLimit({ productionId, runId: action.runId, limit: action.limit, userId })
+      : action.action === "agent.approvePlan" ? await approveRigAgentPlan({ productionId, runId: action.runId, fingerprint: action.fingerprint, userId })
+      : action.action === "agent.fix" ? await fixRigAgentShot({ productionId, runId: action.runId, seq: action.seq, userId })
+      : action.action === "agent.retry" ? await retryRigAgentStep({ productionId, runId: action.runId, seq: action.seq, userId })
       : await undoRigAgent({ productionId, runId: action.runId, userId });
     return Response.json({ agent: { enabled: rigAgentEnabled(), run, ask: null } }, { status: action.action === "agent.plan" ? 202 : 200, headers: NO_STORE });
   } catch (error) { return failure(error); }

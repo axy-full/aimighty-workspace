@@ -161,13 +161,14 @@ export default function SubatomikWorkspace({
   /** The connected-account form's quote input, when these pages ran on the account (retired with the Higgsfield sign-in; nothing sets it now). */
   onConnectedInput?: (input: ConsumerGenjutsuInput | null) => void;
 } = {}) {
-  usePageTitle(embedded ? null : "Subatomik Viral Studio");
+  usePageTitle(embedded ? null : "Social");
   const session = useSession(),
     query = useSearchParams(),
     captured = useSuiteProject();
   const projectId = query.get("project") || captured.projectId;
-  // Shorts ran only on the connected account; the other pages are Genjutsu variants.
-  const shorts = query.get("page") === "shorts";
+  // Shorts ran only on the connected account and is off for Release 1 (lib/higgsfield-consumer/retired.ts):
+  // /subatomik?page=shorts redirects, and an embed never shows it. The other pages are Genjutsu variants.
+  const shorts = false as boolean;
   const variant: GenjutsuVariant =
     requestedVariant ??
     (query.get("page") === "object-swap" ? "object-swap" : "motion-transfer");

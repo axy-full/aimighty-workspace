@@ -11,7 +11,7 @@ export const SUITES: {
 }[] = [
   {
     id: "particl",
-    name: "Particl Production Studio",
+    name: "Studio",
     description: "The production studio",
     color: "#D7D9DE",
   },
@@ -23,13 +23,13 @@ export const SUITES: {
   },
   {
     id: "moleculr",
-    name: "Moleculr Business Suite",
+    name: "Ads",
     description: "Build and grow your brand",
     color: "#5CC8B4",
   },
   {
     id: "subatomik",
-    name: "Subatomik Viral Studio",
+    name: "Social",
     description: "The viral studio",
     color: "#D48CF5",
   },
@@ -61,25 +61,25 @@ export const PAGES: Record<SuiteId, SuitePage[]> = {
     { id: "brief", label: "Brief & Script" },
     { id: "storyboard", label: "Boards" },
     { id: "characters", label: "Cast & Elements" },
-    { id: "astra-blender", label: "Astra" },
-    { id: "canvas", label: "Rig" },
+    { id: "astra-blender", label: "3D blocking" },
+    { id: "canvas", label: "Board" },
     { id: "assets", label: "Takes" },
     { id: "edit", label: "Edit & Sound" },
     { id: "export", label: "Deliver" },
   ],
   atomik: [
     { id: "runs", label: "Runs" },
-    { id: "generate", label: "Generate" },
+    { id: "generate", label: "Make" },
     { id: "recipes", label: "Recipes" },
     { id: "approvals", label: "Approvals" },
     { id: "budget", label: "Budget" },
     { id: "models", label: "Models" },
   ],
-  moleculr: [{ id: "marketing", label: "Marketing Studio" }],
+  moleculr: [{ id: "marketing", label: "Product image" }],
   subatomik: [
     { id: "motion-transfer", label: "Motion Transfer" },
     { id: "object-swap", label: "Object Swap" },
-    { id: "shorts", label: "Shorts" },
+    /* Shorts ran only on a signed-in Higgsfield account: off for Release 1 (lib/higgsfield-consumer/retired.ts). */
   ],
 };
 

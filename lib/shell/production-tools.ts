@@ -1,79 +1,22 @@
-/**
- * The Library's Tools for the Production suite's rebuilt stages (owner's brief,
- * 23 September: no button hanging in limbo). Each row is a real section of the
- * stage on screen; pressing it brings that section into view (and switches to
- * its tab), never a dead end.
- */
-import { smoothScrollIntoView } from "@/components/workspace/VirtualItems";
+/* The ten Studio stage pages and their Library tool rows are gone (the board is the whole production). */
 
-export type ProductionTool = { name: string; sub: string; section: string };
-export type ProductionToolGroup = { title: string; items: ProductionTool[] };
-const g = (title: string, items: [string, string, string][]): ProductionToolGroup => ({ title, items: items.map(([name, sub, section]) => ({ name, sub, section })) });
-
-export const PRODUCTION_TOOLS: Record<string, ProductionToolGroup[]> = {
-  brief: [
-    g("AGENT", [["Agent", "Claude · Grok · OpenAI", "agent"]]),
-    g("SCRIPT", [["Prompt", "Write the script", "prompt"], ["Review & redraft", "Drafts · Notes · Approve", "review"], ["Script editor", "Edit · Import a PDF", "editor"]]),
-  ],
-  beats: [
-    g("AGENT", [["Agent", "Claude · Grok · OpenAI", "agent"], ["Break it down", "Scenes · Beats · Shots", "breakdown"]]),
-    g("BEAT SHEET", [["Beat board", "Edit beats and shots", "board"], ["Redraft the script", "From these beats", "redraft"]]),
-  ],
-  boards: [
-    g("AGENT", [["Agent", "Claude · Grok · OpenAI", "agent"], ["Frame prompts", "One per shot", "prompts"]]),
-    g("FRAMES", [["Look", "Live action · Colour · B&W sketch", "look"], ["Line drawings", "Upload · Read · Convert", "drawings"], ["Frames", "Prompt · Agent prompt · Render", "frames"]]),
-  ],
-  environment: [
-    g("WORLD", [["The world", "Rules every place shares · Engine", "world"], ["Agent", "Claude · Grok · OpenAI · optional", "agent"]]),
-    g("PLACES", [["Places", "Plates · References · Render or upload", "places"]]),
-  ],
-  cast: [
-    g("AGENT", [["Agent", "Claude · Grok · OpenAI", "agent"], ["Cast list", "From the beat sheet or the agent", "list"]]),
-    g("IDENTITY", [["Cast & elements", "Prompt · Identity · Render", "entries"], ["Build identity", "Standard · 2 · Cinema", "soul"]]),
-  ],
-  takes: [
-    g("TAKES", [["Takes", "By shot · Search · Filter", "takes"], ["Needs review", "Pick · Approve · Request changes", "review"]]),
-    g("EDIT", [["Seedance Edit", "Video · 2.5 or 2.0", "video"], ["Re-edit a still", "Instruction · Nano Banana", "image"]]),
-  ],
-  astra: [
-    g("OUTPUTS", [["Renders & files", "Download · Send to Rig", "outputs"]]),
-  ],
-  rig: [
-    g("BUILD", [["Build from Storyboards", "One shot per frame", "rig-build"], ["Shots", "Select · Add a shot", "rig-list"]]),
-    g("SHOT", [["Prompt & notes", "20,000 characters", "prompt"], ["Inputs", "Upload · Library · Shots · Cast · First frame", "inputs"], ["Versions", "Takes · Build another rig", "versions"]]),
-  ],
-  edit: [
-    g("PICTURE", [["The cut", "Order · Length · Add takes", "cut"], ["Assembly", "Play the cut", "assembly"]]),
-    g("SOUND", [["Sound lanes", "Dialogue · Effects · Music (ElevenLabs)", "sound"], ["Upload a track", "Your own music or audio", "sound"]]),
-  ],
-};
-
-/** Studio pages the Production agent runs itself: their own priced actions replace the page head's "Run stage". */
-export const PRODUCTION_AGENT_PAGES = new Set(["brief", "beats", "boards", "environment", "cast", "takes"]);
-
+/** The Rig's Inspector listens for this to switch to a section's tab (components/workspace/rig/RigInspector.tsx). */
 export const SECTION_EVENT = "particl:production-section";
-/** Brings a stage's section into view; the stage listens for the event to switch tabs first. */
-export function focusSection(section: string) {
-  window.dispatchEvent(new CustomEvent(SECTION_EVENT, { detail: section }));
-  /* A long windowed list on the way (the Takes desk, the Rig's shots) holds its scroll corrections until the move is
-     over; one made on the way would stop the move short of the section (outside iOS). */
-  requestAnimationFrame(() => smoothScrollIntoView(document.querySelector(`[data-section="${section}"]`)));
-}
 
 /**
  * Where the Library has Tools at all. Make open over a page (`make`) is not a stage; the Business and
  * Viral composers keep every control on the page (their spec cards describe
- * the old bodies, so a row there would lead nowhere); the phone's Home and
- * Studio grid are pickers. There the Library is its Assets.
+ * the old bodies, so a row there would lead nowhere); Studio has only Home (the overview and the
+ * phone's picker), and the board carries its own Library drawer. There the Library is its Assets.
  */
-export function libraryHasTools(view: string, suite: string, page: string): boolean {
+export function libraryHasTools(view: string, suite: string): boolean {
   if (view === "make" || view === "gen") return false;
   if (suite === "business" || suite === "viral") return false;
-  return !(suite === "studio" && (page === "home" || page === "stages"));
+  return suite !== "studio";
 }
 
 /**
- * A Library row on a spec-card page (Deliver, the Atomik pages) opens its card
+ * A Library row on a spec-card page (the Atomik pages) opens its card
  * on the stage — the card's own button, which brings its tool into the working
  * area. False when the card has no tool (its action is the page's plan).
  */
