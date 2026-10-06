@@ -24,6 +24,8 @@ import {
   type ShotTakes, type ShotVersion,
 } from "./take-model";
 import { useJudge } from "./use-judge";
+import { ShotBlockingStrip } from "../../blocking/ShotBlockingStrip";
+import { STRIP_HEIGHT } from "../../blocking/shot-blocking";
 import "./take.css";
 
 /*
@@ -127,6 +129,7 @@ export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
         <div className="gx-take-name">{row.title}</div>
         <div className="gx-take-line">{row.line}</div>
         {v && hasStatus(v) ? <StatusLine version={v} ctx={ctx} /> : null}
+        {data.blocking ? <ShotBlockingStrip ctx={ctx} nodeId={row.nodeId} index={row.index} view={data.blocking} /> : null}
       </div>
     </article>
   );
@@ -237,7 +240,7 @@ const MORE = 36;
 
 export const takeDef = defineCard<TakeCardData>({
   kind: "take",
-  size: (data, at) => ({ w: 340, h: wellHeight(340, at.aspect) + FOOT + (hasStatus(data.row.shown) ? STATUS : 0) }),
+  size: (data, at) => ({ w: 340, h: wellHeight(340, at.aspect) + FOOT + (hasStatus(data.row.shown) ? STATUS : 0) + (data.blocking ? STRIP_HEIGHT : 0) }),
   Card: TakeCard,
   /* A Library file dropped on a shot becomes its reference. The board's plain take card had this; this definition replaces it, so it carries the rule. */
   accepts: shotReferenceDrop,

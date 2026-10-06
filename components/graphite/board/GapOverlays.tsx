@@ -1,4 +1,5 @@
 "use client";
+import { BlockingOverlay } from "./blocking/BlockingOverlay";
 import { TranscriptPanel } from "./transcribe/TranscriptPanel";
 import type { BoardCtx } from "./cards/types";
 
@@ -7,5 +8,5 @@ import type { BoardCtx } from "./cards/types";
  * its overlay. Mounted once, by BoardView, whatever the board's kind.
  */
 export function GapOverlays({ ctx }: { ctx: BoardCtx }) {
-  return <TranscriptPanel ctx={ctx} />;
+  return <><TranscriptPanel ctx={ctx} /><BlockingOverlay ctx={ctx} /></>;
 }

@@ -7,6 +7,7 @@ import { creditsText } from "@/lib/shell/price-words";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import type { Project } from "@/lib/workbench/studio";
 import { Price } from "../Price";
+import { BlockingSection } from "./BlockingSection";
 import { Eyebrow } from "./PhoneChrome";
 import { budgetView, briefSpec, decisionsLine, recordRows, type Budget } from "./record-model";
 import { reviewQueue, takeTitle } from "./phone-model";
@@ -88,6 +89,8 @@ export function RecordScreen({ scope, project, items, queue, now, onPlan, onRevi
         {project.brief.trim() ? <p className="ph-record-brief" data-testid="phone-record-brief">{project.brief}</p> : <p className="ph-row-line">No brief yet</p>}
         {spec ? <p className="ph-row-line" data-testid="phone-record-spec">{spec}</p> : null}
       </section>
+
+      <BlockingSection project={project} />
 
       <section className="ph-section" aria-label="Approvals">
         <Eyebrow aside="quoted → settled">Approvals</Eyebrow>
