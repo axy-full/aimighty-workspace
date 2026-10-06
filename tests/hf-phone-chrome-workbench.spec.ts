@@ -557,11 +557,7 @@ test("desktop: the chrome is the hairline grid — header, strip, the heads, wor
   const seen: Record<string, Record<string, number[] | null>> = {};
   for (const [id, path] of [["rig", "/suites?suite=studio&page=rig"], ["takes", "/suites?suite=particl&page=takes&sp=takes"], ["gen", "/suites?suite=studio&page=rig&make=video"]] as const) {
     await open(page, path);
-<<<<<<< HEAD
-    if (id !== "takes") await expect(page.getByTestId("primary-action")).toHaveText("Generate · 18 cr");
-=======
-    if (id === "rig") await expect(page.getByTestId("primary-action")).toHaveText("Make · 18 cr");
->>>>>>> d0/pr3b-overlays
+    if (id !== "takes") await expect(page.getByTestId("primary-action")).toHaveText("Make · 18 cr");
     if (id === "gen") await expect(page.getByTestId("gen-view")).toBeVisible();
     await settle(page);
     seen[id] = await desktopChrome(page);
