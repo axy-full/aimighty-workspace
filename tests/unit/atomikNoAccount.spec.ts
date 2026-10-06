@@ -290,6 +290,8 @@ async function route(file: string, fake: Record<string, unknown>): Promise<Recor
     },
     "@/lib/atomik": fake,
     "@/lib/atomikAccountStep": await import("../../lib/atomikAccountStep"),
+    /* The claim route is people-only (a signed-in person, never a token): the owner here is one. */
+    "@/lib/security/people-only": await import("../../lib/security/people-only"),
     /* The claim route also refuses a step of an archived thread (lib/atomikThreads.ts); an account step is refused first. */
     "@/lib/atomikThreads": { ARCHIVED_NOTE: (await import("../../lib/atomikThreadsText")).ARCHIVED_NOTE, threadArchived: (fake.threadArchived as (() => Promise<boolean>) | undefined) ?? (async () => false) },
   };
