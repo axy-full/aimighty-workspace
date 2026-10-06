@@ -152,9 +152,7 @@ function Security({ initiallyOpen }: { initiallyOpen: boolean }) {
       </Row>
       {session.owner ? (
         <Row name="Required on this workspace" line={policy.data?.unenrolled ? `${policy.data.unenrolled} of ${policy.data.members ?? "—"} people have not set it up` : "Everyone signs in with two steps when it is on"}
-          value={policy.error ? "—" : policy.data ? (policy.data.requiresMfa ? "on" : "off") : "Reading…"} testId="settings-workspace-two-step">
-          <LinkBtn href="/team" testId="settings-workspace-two-step-change">Change</LinkBtn>
-        </Row>
+          value={policy.error ? "—" : policy.data ? (policy.data.requiresMfa ? "on" : "off") : "Reading…"} testId="settings-workspace-two-step" />
       ) : null}
       <Row name="Signed in" line={sessions.slice(0, 4).map((s) => `${s.label} · since ${when(s.since)}`).join(" · ") || undefined}
         value={account.data ? `${sessions.length || 1} ${sessions.length === 1 || !sessions.length ? "session" : "sessions"}` : "Reading…"} testId="settings-sessions" />

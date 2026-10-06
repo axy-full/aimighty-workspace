@@ -49,12 +49,12 @@ test("entry points: a workspace goes straight to Suites; a visitor signs in and 
   await expect(page.getByTestId("switchover-note")).toHaveCount(0);
 });
 
-test("Suites Workspace › Engines links the token page; the platform desk is for the platform owner only", async ({ page }, info) => {
+test("Suites Workspace › Engines links Settings › Connections; the platform desk is for the platform owner only", async ({ page }, info) => {
   test.skip(info.project.name !== DESKTOP, "Links, once.");
   await signInLocally(page.request);
   await page.goto("/suites?view=workspace&tab=engines");
   const connect = page.getByTestId("workspace-connect-link");
-  await expect(connect).toHaveAttribute("href", "/connect");
+  await expect(connect).toHaveAttribute("href", "/suites?view=workspace&tab=connections");
   await expect(connect).toContainText("No tokens yet");
   await page.getByRole("tab", { name: "General" }).click();
   await expect(page.getByTestId("platform-desk")).toHaveCount(0);
