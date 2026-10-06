@@ -7,6 +7,7 @@ import { chargeSentence } from "@/lib/errors";
 import { isRunLimitAmount } from "@/lib/runLimit";
 import { buildLine, placedWords, planItemOf, raiseTarget, renderItemOf, renderPrice, RENDER_STATE, runOpen, AGENT_OFF } from "@/lib/shell/board-agent";
 import { creditsText, exact, FREE, priceWords, type PriceValue } from "@/lib/shell/price-words";
+import { spendAttrsOf } from "@/lib/spend";
 import { Price, usePriceTitle } from "../../Price";
 import type { BoardAgent } from "./use-board-agent";
 
@@ -26,7 +27,7 @@ function PriceButton({ label, price, primary, quiet, disabled, onClick, testId }
   const words = priceWords(price);
   const title = usePriceTitle(price);
   return (
-    <button type="button" className={`ag-btn${primary ? " ag-btn-primary" : ""}${quiet ? " ag-btn-quiet" : ""}`} disabled={disabled} title={title ?? undefined} onClick={onClick} data-testid={testId}>
+    <button type="button" className={`ag-btn${primary ? " ag-btn-primary" : ""}${quiet ? " ag-btn-quiet" : ""}`} disabled={disabled} title={title ?? undefined} onClick={onClick} data-testid={testId} {...spendAttrsOf(price)}>
       {words ? `${label} · ${words}` : label}
     </button>
   );

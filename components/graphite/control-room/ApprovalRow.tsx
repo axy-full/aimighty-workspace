@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { pressable, type QueueItem } from "@/lib/control-room/queue";
 import { exact } from "@/lib/shell/price-words";
+import { spendAttrsOf } from "@/lib/spend";
 import type { PressOutcome } from "@/lib/control-room/approve";
 import { Price, usePriceTitle } from "../Price";
 import { ThreadCheckpoint } from "./ThreadCheckpoint";
@@ -67,8 +68,9 @@ export function ApprovalRow({ item, onApprove, onDecline, onOpen, onTopUp }: {
             </button>
           ) : null}
           {approvable ? (
-            <button type="button" className="cr-btn cr-btn--approve" disabled={busy !== null} aria-expanded={thread ? checkpoint : undefined} title={dollars}
-              onClick={() => (thread ? setCheckpoint((open) => !open) : void press("approve"))} data-testid="approval-approve">
+            <button type="button" className="cr-btn cr-btn--approve" disabled={busy !== null} aria-expanded={thread ? checkpoint : undefined} aria-busy={busy === "approve" || undefined} title={dollars}
+              onClick={() => (thread ? setCheckpoint((open) => !open) : void press("approve"))} data-testid="approval-approve"
+              {...(thread ? {} : spendAttrsOf(item.price))}>
               {busy === "approve" ? "Approving…" : item.price ? <>Approve · <Price value={item.price} /></> : "Approve"}
             </button>
           ) : null}

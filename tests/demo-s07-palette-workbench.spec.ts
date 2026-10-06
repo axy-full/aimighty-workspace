@@ -137,6 +137,8 @@ test("approve everything under 10 cr: the list and its total; Enter only shows i
   await expect(card).toContainText("Only you approve spend. Enter shows this list; the button approves.");
   const confirm = card.getByTestId("palette-approve-confirm");
   await expect(confirm).toHaveText("Approve 2 items · up to 4 cr");
+  await expect(confirm).toHaveAttribute("data-spend", "priced");
+  await expect(confirm).toHaveAttribute("data-spend-price", "up to 4 cr");
   await expect(card.getByTestId("palette-approve-admin")).toHaveCount(0);
   await floors(page, "⌘K approve under 10");
   await shot(page, "palette-approve-10", info);
@@ -179,6 +181,8 @@ test("a question is free; a request shows what thinking may cost, from the serve
   const input = page.getByRole("textbox", { name: "Search" });
   await input.fill("plan a short film about the market at dawn");
   await expect(card.getByTestId("palette-ask")).toHaveText(/^Ask · up to \d+ cr$/, { timeout: 15_000 });
+  await expect(card.getByTestId("palette-ask")).toHaveAttribute("data-spend", "priced");
+  await expect(card.getByTestId("palette-ask")).toHaveAttribute("data-spend-price", /^up to \d+ cr$/);
   await expect(card.getByTestId("palette-thinking-line")).toHaveText(/^Atomik’s thinking may cost up to \d+ cr · it plans and prices first; nothing is spent without your approval$/);
   await noSideways(page);
   await shot(page, "palette-ask", info);
