@@ -20,6 +20,8 @@ import { composerButtonParts, EMPTY_PROMPT, READING_MODELS, shownTotal, type Com
 import { cleanSetup, composeForSend, recoverSetup, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { useComposer, type ComposerSent } from "@/lib/workspace/use-composer";
+/* Release 1: Cinema Studio is not offered in Make until its 3N hold is in (lib/shell/make-price.ts › MAKE_SHOWS_CINEMA). */
+import { hiddenInMake } from "@/lib/shell/make-price";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
@@ -87,7 +89,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     announceMade({ projectId: made.projectId, nodeId: made.nodeId, name: made.name });
     shell.closeMake();
   }, [ws, shell, surface]);
-  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent });
+  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent, hide: hiddenInMake });
   const { state, model, offered, settings, submitting } = composer;
   const dispatch = composer.dispatch;
   /* Back from where the words were left: only into an empty box, before anything else (a recipe, ⌘K's "make …") lands in it. */
