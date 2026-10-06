@@ -96,7 +96,7 @@ test("retired Particl stage IDs normalise to the stage that now holds their pane
 });
 
 test("Moleculr is one Marketing Studio page whose former pages are ordered in-page sections", () => {
-  expect(PAGES.moleculr).toEqual([{ id: "marketing", label: "Marketing Studio" }]);
+  expect(PAGES.moleculr).toEqual([{ id: "marketing", label: "Product image" }]);
   expect(MOLECULR_SECTIONS.map((section) => section.id)).toEqual([
     "product",
     "brand",

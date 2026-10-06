@@ -7,7 +7,7 @@ import ts from "typescript";
  * /api/higgsfield, soul_id) are never counted.
  */
 export const OLD_WORDS = [
-  ["Mole", "culr"], ["Sub", "atomik"], ["R", "ig"], ["Gen", "jutsu"], ["So", "ul"], ["Higgs", "field"], ["As", "tra"],
+  ["Mole", "culr"], ["Sub", "atomik"], ["R", "ig"], ["Gen", "jutsu"], ["So", "ul"], ["Higgs", "field"], ["Per", "sona"], ["As", "tra"],
 ].map((parts) => parts.join(""));
 
 /**
@@ -16,7 +16,7 @@ export const OLD_WORDS = [
  */
 export const OLD_PHRASES = [
   ["Five", " suites"], ["Four", " suites"], ["Production", " Studio"], ["Business", " Suite"], ["Viral", " Studio"],
-  ["Opens", " in Gen"], ["Open", " in Gen"],
+  ["Opens", " in Gen"], ["Open", " in Gen"], ["Marketing", " Studio"], ["marketing", " studio"],
 ].map((parts) => parts.join(""));
 
 const WORD_RE = new RegExp(`\\b(${OLD_WORDS.join("|")})(?:s|'s|’s)?\\b|\\b(${OLD_PHRASES.join("|")})\\b`, "g");
@@ -64,9 +64,16 @@ function isCodePosition(node: ts.Node): boolean {
 
 export type UiWord = { word: string; line: number; text: string };
 
-/** "Astra" is allowed only as Topaz's model name: the same string says Topaz ("Topaz Astra 2"). */
-function allowed(word: string, text: string): boolean {
-  return word === ASTRA && /topaz/i.test(text);
+/**
+ * "Astra" is allowed only as Topaz's model name, and only where it stands right after the word Topaz ("Topaz Astra 2"). A string
+ * that merely says Topaz somewhere else ("Topaz upscale or GPT-6 Astra") is not an allowance: GPT-6 Astra and the old 3D tool's name
+ * are both banned in anything a person reads.
+ */
+export function topazAstra(text: string, at: number): boolean {
+  return /\bTopaz\s+$/i.test(text.slice(Math.max(0, at - 12), at));
+}
+function allowed(word: string, text: string, at: number): boolean {
+  return word === ASTRA && topazAstra(text, at);
 }
 
 /** Finds the retired names in one string: the words of the strings a person reads. */
@@ -108,7 +115,7 @@ const oldNames: Matcher = (text) => {
   const words: string[] = [];
   for (const m of text.matchAll(WORD_RE)) {
     const word = m[1] ?? m[2];
-    if (!allowed(word, text)) words.push(word);
+    if (!allowed(word, text, m.index ?? 0)) words.push(word);
   }
   return words;
 };
@@ -138,7 +145,7 @@ function bannedNames(text: string, navigation: boolean, commandK: boolean): stri
   const words = oldNames(text);
   for (const m of text.matchAll(CAPS_RE)) {
     /* "RIG" in a string that says Topaz is Topaz's ASTRA; the allowance is the same as for the capitalised word. */
-    if (m[1] === ASTRA.toUpperCase() && /topaz/i.test(text)) continue;
+    if (m[1] === ASTRA.toUpperCase() && topazAstra(text, m.index ?? 0)) continue;
     words.push(m[1]);
   }
   /* "Open in Gen" is one old phrase already counted above: Gen inside a phrase is not a second name. */
@@ -170,7 +177,7 @@ export type BannedName = UiWord & { title: boolean };
 
 /**
  * Every banned name in the user-visible strings of one file: Moleculr, Subatomik, Rig, Genjutsu, Soul,
- * Higgsfield, Gen as a place, Astra unless the same string says Topaz, the old suite phrases, and the
+ * Higgsfield, Gen as a place, Astra unless it stands right after Topaz, the old suite phrases, and the
  * same words in capitals. `title` marks a hit inside a page title. `navigation` says the file is
  * navigation data (palette rows, tabs, the header), where a label that is only "Generate" is the old Gen page.
  * `commandK` says the file is the ⌘K palette: Business and Viral as suite names and a "01" stage number on a row are banned there too.

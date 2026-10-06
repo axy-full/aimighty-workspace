@@ -17,7 +17,7 @@ const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "w
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const SHOTS = process.env.PR5B_SHOTS;
 const SHOT_SIZES: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844" };
-const CLIP = { url: "/fixtures/clip.mp4", name: "walk.mp4", type: "video/mp4" };
+const CLIP = { url: "/fixtures/clip-6s.mp4", name: "walk.mp4", type: "video/mp4" };
 const STILLS = [
   { url: "/campaign/character.webp", name: "cast.webp", type: "image/webp" },
   { url: "/campaign/environment.webp", name: "dunes.webp", type: "image/webp" },
@@ -107,7 +107,7 @@ test("Make's quick tools: the row opens Motion transfer and Object swap over the
   await expect(page.getByTestId("viral-well")).toContainText("0 of 8");
   await expect(page.getByTestId("viral-engine").locator(".gx-model-name")).toHaveText("Motion transfer");
   await expect(page.getByTestId("viral-engine").locator(".gx-make-engine-part")).toHaveText(["720p"]);
-  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
+  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–8 s).");
   await expect(page.getByTestId("viral-generate")).toBeDisabled();
   await expect(page.getByTestId("viral-generate")).toHaveText("Transfer motion");
   await expect(page.getByRole("radiogroup", { name: "Resolution" }).getByRole("radio")).toHaveText(["480p", "720p", "1080p"]);
@@ -130,7 +130,7 @@ test("Make's quick tools: the row opens Motion transfer and Object swap over the
   }
   await expect(page.getByTestId("viral-well")).toContainText("References · 1 to 8");
   await page.goto("/suites?suite=viral&page=swap");
-  await expect(page.getByTestId("viral-well")).toContainText("The replacement");
+  await expect(page.getByTestId("viral-well")).toContainText("With");
   await expect(page.getByTestId("viral-source-card")).toContainText("The clip with the element to replace");
   await expect(page.getByTestId("viral-generate")).toHaveText("Swap object");
   await floors(page, info.project.name);
@@ -162,7 +162,7 @@ test("a source and references in each tool: the card, the four-across references
     await expect(page.getByTestId("viral-generate")).toBeDisabled();
     await expect(page.getByTestId("viral-generate")).toHaveText(tool === "motion" ? "Transfer motion" : "Swap object");
     await dropFiles(page, [CLIP, ...STILLS]);
-    await expect(page.getByTestId("viral-source")).toContainText("walk.mp4 · 10 s", { timeout: 60_000 });
+    await expect(page.getByTestId("viral-source")).toContainText("walk.mp4 · 6 s", { timeout: 60_000 });
     await expect(page.getByTestId("viral-reference")).toHaveCount(2, { timeout: 60_000 });
     await expect(page.getByTestId("viral-well")).toContainText("2 of 8");
     if (tool === "motion") {

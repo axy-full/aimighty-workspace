@@ -324,7 +324,7 @@ test("an enhancement of the words a Recreate replaced is cleared, and Generate s
   const prompt = page.getByTestId("gen-prompt");
   await prompt.fill("my own words");
   await page.getByRole("switch", { name: "Auto" }).click();
-  await expect(page.getByTestId("enhance")).toHaveText("Enhance · 1 cr");
+  await expect(page.getByTestId("enhance")).toHaveText("Enhance now · 1 cr");
   await page.getByTestId("enhance").click();
   await expect(page.getByTestId("enhanced-card")).toContainText("ENHANCED my own words");
 

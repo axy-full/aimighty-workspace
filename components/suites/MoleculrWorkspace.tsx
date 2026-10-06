@@ -159,7 +159,7 @@ export function MoleculrWorkspace({
             <i className="suite-dot" style={{ background: "var(--gx-suite-business)" }} />
             Moleculr Business Suite / {project.name}
           </span>
-          <h1>Your marketing studio.</h1>
+          <h1>Your ads, in one place.</h1>
           <p>
             Product, brand, cast, format, variants, design and publishing stay
             together on one page, connected to this project.
@@ -169,7 +169,7 @@ export function MoleculrWorkspace({
           Ask Atomik Agent <ArrowUpRight size={15} />
         </button>
       </header>
-      <nav className="moleculr-sections-nav" aria-label="Marketing Studio sections">
+      <nav className="moleculr-sections-nav" aria-label="Ads sections">
         {MOLECULR_SECTIONS.map((item) => (
           <a
             key={item.id}
@@ -606,7 +606,7 @@ export function MoleculrWorkspace({
                   }}
                 >
                   <option value="image">
-                    Campaign image · Marketing Studio
+                    Campaign image · Product image
                   </option>
                   <option value="video">
                     Campaign video · Particl engines

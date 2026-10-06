@@ -11,6 +11,7 @@ import { FrameInspector } from "./storyboard/FrameInspector";
 import { LOOK_WIDTH, type LookData } from "./looks/derive";
 import { FrameCard } from "./storyboard/FrameCard";
 import { frameTileHeight } from "./storyboard/FrameTile";
+import { frameCardHeight } from "./storyboard/FrameCard";
 import { defineCard, type CardSet } from "./types";
 
 /*
@@ -35,7 +36,7 @@ export const planCards: CardSet = {
     }),
     defineCard<FrameData>({
       kind: "frame",
-      size: (_data, at) => ({ w: FRAME_WIDTH, h: frameTileHeight(FRAME_WIDTH, at.aspect) }),
+      size: (data, at) => ({ w: FRAME_WIDTH, h: frameCardHeight(FRAME_WIDTH, at.aspect, data) }),
       Card: FrameCard,
       Inspector: FrameInspector,
     }),

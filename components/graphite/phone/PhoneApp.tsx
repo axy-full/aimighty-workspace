@@ -5,6 +5,7 @@ import type { QueueItem } from "@/lib/control-room/queue";
 import { useApprovals } from "@/lib/control-room/use-approvals";
 import { moving } from "@/lib/jobsTray";
 import { isMakeTool } from "@/lib/shell/make";
+import { openAtomikChat, type OpenChat } from "@/lib/shell/use-skills";
 import { useShell } from "@/lib/shell/state";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -92,6 +93,13 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
     if (item.project.draftId && item.project.draftId !== project?.id) projectActions.onPick(item.project.draftId);
     go({ screen: "plan", run: item.approve?.kind === "board-approve" ? item.approve.runId : null });
   };
+  /* An Atomik plan's step opens its thread in Atomik's sheet, on the project it belongs to (the desktop's Open does the same in the panel). */
+  const [pendingChat, setPendingChat] = useState<OpenChat | null>(null);
+  const openThread = (item: QueueItem) => {
+    if (item.project.draftId && item.project.draftId !== project?.id) projectActions.onPick(item.project.draftId);
+    if (item.open.kind === "thread") setPendingChat({ chatId: item.open.chatId, projectId: item.open.productionId });
+    openAtomik();
+  };
   const home = () => { if (page) shell.goSuite("studio", "home"); go({ screen: "home" }); };
   /* The screen under the Atomik sheet: the one the sheet was opened from (Home when it is the address itself). */
   const [under, setUnder] = useState<PhoneScreen>("home");
@@ -120,6 +128,9 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
   }, [shellAtomik]);
 
   const sheet = !page && route.screen === "atomik";
+  /* Said once the sheet is mounted, so its conversation is listening (components/atomik/skills/useSkillRunOpens.ts). */
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- One-shot hand-off: the chat id is said once the sheet is mounted, then cleared.
+  useEffect(() => { if (sheet && pendingChat) { openAtomikChat(pendingChat); setPendingChat(null); } }, [sheet, pendingChat]);
   /* Under the Atomik sheet the screen it was opened from still shows. */
   const screen = page ? null : sheet ? under : route.screen;
   /* The bar stays on every phone screen but the full-screen review and plan approval (SOW § 2); Change with words keeps it under its sheet. */
@@ -155,9 +166,10 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
             {page ? <div className="ph-page">{page.body}</div> : screen === "record" ? (
               <RecordScreen scope={scope} project={project} items={items} queue={approvals.items} now={now} onPlan={openPlan} onReview={() => go({ screen: "review" })} />
             ) : (
-              <HomeScreen scope={scope} approvals={approvals} projects={data.projects} project={project} items={items} online={online} now={now}
+              <HomeScreen scope={scope} approvals={approvals} projects={data.projects} projectsError={data.status === "error" ? data.error ?? "Projects could not be loaded." : null} onRetryProjects={data.retry} project={project} items={items} online={online} now={now}
                 onReview={() => go({ screen: "review" })}
                 onPlan={openPlan}
+                onThread={openThread}
                 onProject={(id) => { projectActions.onPick(id); if (DRAWN_SCREENS.has("record")) go({ screen: "record" }); }}
                 onTopUp={topUp} />
             )}

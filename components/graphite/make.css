@@ -292,3 +292,36 @@
 @media (max-width: 767px), (pointer: coarse) {
   .gx .up-select, .gx .up-row > .gx-hbtn, .gx .up-field .gx-seg-btn { min-height: 44px; }
 }
+
+/* Gaps B, Make details: Advanced as the frames draw it. A row is a name and its value; a static chip is something the brief set. */
+.gx-mk-row2 { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 32px; font-size: 13px; color: var(--gx-text); }
+.gx-mk-row2-name { color: var(--gx-text-2); }
+.gx-mk-row2-value { text-align: right; }
+.gx-chip[data-static] { cursor: default; }
+.gx .gx-mk-go-btn.gx-hbtn { min-height: 36px; padding: 6px 16px; }
+.gx .gx-mk-go-btn.gx-hbtn[aria-disabled="true"], .gx .gx-mk-go-btn.gx-hbtn[data-waits] { opacity: 1; color: var(--gx-text-2); }
+.gx-mk-result { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 0; border-top: 1px solid var(--gx-hair-soft); }
+.gx-mk-result-line { margin: 0; font-size: 13px; line-height: 1.45; color: var(--gx-waiting-text); }
+.gx .gx-mk-retry { height: auto; min-height: 36px; padding: 6px 16px; border-radius: 8px; font-size: 14px; }
+
+/* Gaps B, Motion transfer and Object swap: the sections as the frames draw them. */
+.gx .vr-ref-tile[draggable="true"] { cursor: grab; }
+.gx .vr-ref-tile[draggable="true"]:active { cursor: grabbing; }
+.vr-ref-num { position: absolute; left: 6px; top: 6px; min-width: 20px; height: 20px; padding: 0 5px; display: grid; place-items: center; border-radius: 10px; background: var(--gx-on-media); color: var(--gx-text); font: 600 12px/1 var(--gx-mono); }
+.vr-frames { display: flex; flex-direction: column; gap: 8px; }
+.vr-frame-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+.gx .vr-frame { position: relative; width: 84px; aspect-ratio: 1; padding: 0; border-radius: 8px; overflow: hidden; background: var(--gx-root); border: 1px dashed var(--gx-dashed); color: var(--gx-text); display: grid; place-items: center; cursor: pointer; }
+.gx .vr-frame[data-set] { border-style: solid; border-color: var(--gx-card-border); }
+.gx .vr-frame:disabled { cursor: default; }
+.vr-frame .gx-lazy, .vr-frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.vr-frame-add { font-size: 18px; line-height: 1; color: var(--gx-text-2); }
+.vr-frame-name { position: absolute; left: 6px; bottom: 5px; font-size: 12px; font-weight: 500; text-shadow: 0 1px 2px #000; }
+.gx .vr-download { align-self: center; }
+.vr-running { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--gx-hair-soft); }
+.vr-bar { position: relative; display: block; width: 100%; height: 3px; border-radius: 2px; background: var(--gx-hair-soft); overflow: hidden; }
+.vr-bar::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 30%; background: var(--gx-accent); animation: vr-slide 1.6s var(--gx-ease) infinite; }
+@keyframes vr-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .vr-bar::before { animation: none; width: 100%; opacity: .5; } }
+@media (max-width: 767px), (pointer: coarse) { .gx .vr-frame { width: 88px; min-height: 44px; } .gx .vr-ref-x { width: 32px; height: 32px; } }
+/* A disabled control in the panel still reads at the floor (55% white): the reason beside it says why it waits. */
+.gx .gx-make .gx-hbtn:disabled, .gx .gx-make .gx-hbtn[aria-disabled="true"], .gx .gx-make .gx-chip:disabled { color: var(--gx-text-2); opacity: 1; }

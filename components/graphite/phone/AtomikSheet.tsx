@@ -95,7 +95,7 @@ function Sheet({ productionId, query, online, places, onClose }: { productionId:
         setText("");
         return;
       case "memory":
-        setLines((all) => [...all, add("You", now.text), add("Atomik", "Keeping or forgetting a memory line is on Atomik’s Memory page, where you confirm it.", { label: "Open Memory", run: () => shell.goControlRoom("memory") })]);
+        setLines((all) => [...all, add("You", now.text), add("Atomik", "Memory isn’t on the phone, so nothing was kept or forgotten. Open Particl on a computer to keep or forget a line there.")]);
         setText("");
         return;
       case "ask":

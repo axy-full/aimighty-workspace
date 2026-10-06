@@ -1,4 +1,5 @@
 "use client";
+import type { ReactNode } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import "./storyboard.css";
 
@@ -11,7 +12,7 @@ import "./storyboard.css";
  * Selection, dragging and opening are the board's (its card wrapper), not this tile's.
  */
 export function FrameTile({
-  name, line, genId, aspect, rendering = false, empty = "No frame yet", badge, progress, play = false, testId,
+  name, line, genId, aspect, rendering = false, empty = "No frame yet", badge, progress, play = false, testId, children,
 }: {
   name: string;
   line: string;
@@ -28,6 +29,8 @@ export function FrameTile({
   progress?: number | null;
   play?: boolean;
   testId?: string;
+  /** What sits under the name and line: a card action. */
+  children?: ReactNode;
 }) {
   const ratio = ratioOf(aspect);
   return (
@@ -51,6 +54,7 @@ export function FrameTile({
       <div className="gx-frame-body">
         <div className="gx-frame-name">{name}</div>
         <div className="gx-frame-line">{line}</div>
+        {children}
       </div>
     </article>
   );

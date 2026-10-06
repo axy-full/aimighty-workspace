@@ -13,7 +13,7 @@ const COMPOSER_TILES: [string, string, string][] = [
   ["04 Settings", "Clamped to the engine", "Aspect, resolution, length by the second, audio on or off, one to four takes."],
   ["05 Results", "Progress rings", "Running jobs as rings, then finished takes, filtered All · Images · Video · Audio."],
   ["Edit", "Edit a finished clip", "A take or an upload, up to 8 image references and an edit direction."],
-  ["Finish", "Upscale in place", "Astra 2 for video and Topaz for stills. The original is kept; the upscale is a new take with its lineage."],
+  ["Finish", "Upscale in place", "Topaz Astra 2 for video and Topaz for stills. The original is kept; the upscale is a new take with its lineage."],
   ["Recover", "Nothing lost on reload", "Drafts, interrupted requests and lost responses come back as “Recover …”. Reusing a take loads its prompt; it never starts a job by itself."],
   ["Modes", "Video · Images · Audio", "One segment switches the composer. Every tool in every suite is a preset that opens it pre-configured."],
 ];

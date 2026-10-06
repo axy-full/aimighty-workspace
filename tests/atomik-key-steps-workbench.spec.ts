@@ -132,7 +132,7 @@ test("ask Atomik for a transform and a campaign still: both are proposed from th
   const rows = await planRows(page, surface);
   await expect(rows).toHaveCount(2, { timeout: 60_000 });
   const transform = rows.filter({ hasText: "Motion Transfer" });
-  const still = rows.filter({ hasText: "Marketing Studio Image" });
+  const still = rows.filter({ hasText: "Product image" });
   await expect(transform).toHaveAttribute("data-library-step", "transform");
   await expect(still).toHaveAttribute("data-library-step", "marketing");
   await expect(transform).toContainText(/\d+ cr/);

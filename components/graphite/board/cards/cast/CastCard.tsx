@@ -10,9 +10,12 @@ import { useConsents } from "@/lib/security/use-consents";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { useIdentities } from "@/lib/workspace/identities";
+import { useState } from "react";
 import type { BoardCard } from "@/lib/board/types";
 import { defineCard, type BoardCtx, type CardProps } from "../types";
 import { CastWell } from "./CastWell";
+import { CutoutAction } from "./CutoutAction";
+import { cutoutView } from "./cutout-model";
 import { CastBody } from "../../inspector/CastBody";
 import { VARIANT_LABEL, castLabel, castStatus, consentLine, identityOf, renderPreset, shotsWords, type CastCardData } from "./cast-model";
 import "./cast.css";
@@ -33,9 +36,12 @@ function Btn({ className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement>) {
 }
 
 const WELL = 173;
+/* A character's card holds the identity block (lane 5, Gaps A): its consent, its state and its actions. */
 export const CAST_SIZE = { cast: { w: 308, h: WELL + 320 }, environment: { w: 308, h: WELL + 173 }, element: { w: 308, h: WELL + 173 } } as const;
+/** The row the Cut-out action takes on a card with a still: its state line and its button, or Before and After. */
+export const CUTOUT_ROW = 72;
 
-export function CastCard({ card, data, ctx }: CardProps<CastCardData>) {
+export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>) {
   const shell = useShell();
   const { signedIn } = useSession();
   const { state } = useIdentities(ctx.scope, signedIn ? ctx.project.id : null);
@@ -56,9 +62,12 @@ export function CastCard({ card, data, ctx }: CardProps<CastCardData>) {
     if (refused) ctx.toast(refused);
   };
   const render = () => openGenOn(shell, { ...renderPreset(data), type: "image" });
+  const cut = data.cutout && act ? cutoutView(ctx.project, data.nodeId, data.master) : null;
+  const [showing, setShowing] = useState<"before" | "after">("after");
+  const picture = cut?.done && showing === "before" && cut.before ? cut.before : data.still;
   return (
     <article className="gx-cast" data-variant={data.variant} data-tone={status.tone} aria-label={castLabel(data) || VARIANT_LABEL[data.variant]} data-testid="cast-card">
-      <CastWell still={data.still} name={data.title} />
+      <CastWell still={picture} name={data.title} transparent={Boolean(cut?.done && showing === "after")} />
       <div className="gx-cast-body">
         <div className="gx-cast-kicker">{VARIANT_LABEL[data.variant]}{data.master ? " · master" : ""}</div>
         <div className="gx-cast-title" data-testid="cast-title">{data.title.trim() || VARIANT_LABEL[data.variant]}</div>
@@ -85,6 +94,7 @@ export function CastCard({ card, data, ctx }: CardProps<CastCardData>) {
             ) : null}
           </div>
         ) : null}
+        {cut && data.nodeId ? <CutoutAction ctx={ctx} nodeId={data.nodeId} view={cut} showing={showing} onShow={setShowing} primary={selected} /> : null}
       </div>
     </article>
   );
@@ -92,7 +102,7 @@ export function CastCard({ card, data, ctx }: CardProps<CastCardData>) {
 
 export const castDef = defineCard<CastCardData>({
   kind: "cast",
-  size: (data) => CAST_SIZE[data.variant],
+  size: (data) => { const base = CAST_SIZE[data.variant]; return data.cutout ? { w: base.w, h: base.h + CUTOUT_ROW } : base; },
   Card: CastCard,
   Inspector: CastBody,
   /* Double-click or Enter: the Inspector, where a character's identity is built. */

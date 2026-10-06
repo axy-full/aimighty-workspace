@@ -69,10 +69,10 @@ test("the guard knows the copy it replaced, and lets the replacements through", 
   /* What replaced them, and Particl's own tools, stay sayable. */
   for (const line of [
     "Standard video. Highest fidelity, native audio, up to 30 s and 30 reference images.",
-    "Astra 3D", "Templates", "Change voice", "Dub", "Upscale", "Marketing Studio", "Soul ID",
+    "Astra 3D", "Templates", "Change voice", "Dub", "Upscale", "Soul ID",
     "Ads presets for image variants, read live.",
     "Social accounts and posting providers are not connected; Publish leads to review and delivery.",
     "with interface, data, sign-in and generation models wired in",
-    "One source of 4 to 30 seconds, ordered references, 480p to 1080p.",
+    "One source of 4 to 8 seconds, ordered references, 480p to 1080p.",
   ]) expect(retiredFindings(line), line).toEqual([]);
 });
