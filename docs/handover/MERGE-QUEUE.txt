@@ -1,0 +1,10 @@
+fix/r1-ui-sweep 642d625b7fa31c15aeb67f59963f703e82ebe822
+build/r1-phone 62faf438c2fa0a4d8db96b23b9ea350d7d714740
+fix/r1-higgsfield-signin-off 93cada234aafd18bbf41bcce10880013bc4fc8e2 (REVIEWED PASS 557)
+fix/sample-no-spend 6a7844db583a22ab7b9c2647659ba9fe5e99797d (REVIEWED PASS 544 + owner yes)
+build/gaps-l2 de07896e013ec10b25596d6c3f8e0e7e348e0a7c HELD: 3D blocking (production.blocking) — needs fresh Opus review PASS + Turso branch-copy read-only check before release/1
+money/plan-approval 1b0f4a2ea6577ca7dd83279189a26f3dae06b610 (REVIEWED PASS 555c delta + owner yes) — REVIEWED, merge money/plan-approval at 1b0f4a2e
+fix/sample-no-spend-2 d5faa1166106c5da25405ae2d991bf9cd4f0a423 (REVIEWED PASS 544b + delta; owner yes on #544 scope) — REVIEWED, merge fix/sample-no-spend-2 at d5faa116
+build/gaps-l2-schema 03d5b4f8eaf8d09f6cb89838df362211ba5a7f65 (REVIEWED PASS blocking A; schema only) — REVIEWED, merge build/gaps-l2-schema at 03d5b4f8 — SUPERSEDED, wait for new A head + re-review
+build/gaps-l3 b14e8481b62d189c53966b236af34249e05cdc9b (UI; full unit 3735 pass; merged release/1 e87181d6)
+fix/r1-hide-cinema 9064ead2d54f1c48230bd3340dfff149a6560941 (hide only; unit 3720 pass; hides Cinema in R1 Make until #559)

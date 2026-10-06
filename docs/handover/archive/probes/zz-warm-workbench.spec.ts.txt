@@ -1,0 +1,13 @@
+import { test, expect } from "@playwright/test";
+import { signInLocally } from "./helpers/workbenchLocal";
+
+/* Harness only: one signed-in visit to the routes the specs open first, so a fresh dev server has compiled them. Not part of the suite. */
+test("warm the dev server", async ({ page }) => {
+  test.setTimeout(240_000);
+  await signInLocally(page.request);
+  for (const path of ["/suites", "/suites?make=video", "/suites?make=recent", "/suites?suite=studio&page=rig", "/suites?suite=particl&page=boards&sp=boards", "/suites?suite=atomik&page=agent", "/suites?make=motion", "/suites?view=workspace&tab=credits", "/library", "/workbench", "/pricing"]) {
+    await page.goto(path, { waitUntil: "load" }).catch(() => undefined);
+    await page.waitForTimeout(2500);
+  }
+  await expect(page).toHaveURL(/.*/);
+});

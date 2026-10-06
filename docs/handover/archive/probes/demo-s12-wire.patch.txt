@@ -1,0 +1,347 @@
+diff --git a/components/graphite/board/BoardView.tsx b/components/graphite/board/BoardView.tsx
+index 33f0acb7..9e45e4c8 100644
+--- a/components/graphite/board/BoardView.tsx
++++ b/components/graphite/board/BoardView.tsx
+@@ -44,6 +44,8 @@ import { PeerCursors, WhoIsHere } from "./Presence";
+ import { HistoryDrawer, LibraryDrawer } from "./drawers/Drawers";
+ import { addInput } from "@/lib/production/rig-build";
+ import { entryAsset } from "@/lib/production/sequence";
++import { useSampleBoard } from "@/lib/demo/use-sample";
++import { sampleGate } from "@/lib/demo/sample";
+ import "./board.css";
+ 
+ /*
+@@ -115,10 +117,14 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
+   const agentSeam = useBoardAgent();
+   const polled = usePlanRun({ scope: rig.scope, productionId: project?.productionProjectId ?? null, draftId: project?.id ?? null, joined: rig.team.mode !== "off", enabled: !agentSeam.run });
+   const agent = agentSeam.run ?? polled;
++  /* The explore-only sample (stream 12): its recorded prices, and the line every paid control carries. */
++  const { board: sampleBoard } = useSampleBoard();
++  const gate = useMemo(() => sampleGate(project, sampleBoard?.sample ?? null), [project, sampleBoard]);
++  const sample = gate.exploreOnly ? sampleBoard : null;
+ 
+   const src = useMemo<BoardSource | null>(() => (project ? {
+-    kind, project, shots: rig.shots, jobs: rig.jobs, library: items, masters: rig.masters, agent, now,
+-  } : null), [kind, project, rig.shots, rig.jobs, items, rig.masters, agent, now]);
++    kind, project, shots: rig.shots, jobs: rig.jobs, library: items, masters: rig.masters, agent, sample, now,
++  } : null), [kind, project, rig.shots, rig.jobs, items, rig.masters, agent, sample, now]);
+   /* What Make filed while this board was open (the "Made in Make" band; session only, never saved). */
+   const [madeNow, setMadeNow] = useState<{ projectId: string; nodeId: string }[]>([]);
+   const madeHere = useMemo<MadeEntry[]>(() => madeNow.filter((m) => m.projectId === project?.id).map((m) => ({ nodeId: m.nodeId })), [madeNow, project?.id]);
+@@ -390,14 +396,14 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
+   const [seams] = useState(() => new BoardSeams());
+   const [dockOpen, setDockOpen] = useState(false);
+   const ctx = useMemo<BoardCtx | null>(() => (project ? {
+-    kind, scope, project, productionId: project.productionProjectId ?? null, offline, selection, select, glide,
++    kind, scope, project, productionId: project.productionProjectId ?? null, offline, readOnly: gate.readOnly, exploreOnly: gate.exploreOnly, selection, select, glide,
+     openInspector: (id: string) => select(id),
+     openReview: (takeId?: string) => seams.call("review", takeId),
+     askAtomik: (words: string) => seams.call("atomik", words),
+     openMake: (type) => shell.openMake(type),
+     toast: (text, undo) => { if (undo) undoable(undo.label, undo.run); ws.toast(text); },
+     rig,
+-  } : null), [glide, kind, offline, project, rig, scope, seams, select, selection, shell, undoable, ws]);
++  } : null), [gate.exploreOnly, gate.readOnly, glide, kind, offline, project, rig, scope, seams, select, selection, shell, undoable, ws]);
+ 
+   const watchers = useMemo(() => {
+     const out = new Map<string, RoomPeer>();
+@@ -459,7 +465,10 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
+   if (compact) {
+     return (
+       <BoardInternalsProvider value={internals}>
+-        <div className="bd bd--compact" data-testid="board" data-board-kind={kind}><List ctx={ctx} cards={placed.cards} /></div>
++        <div className="bd bd--compact" data-testid="board" data-board-kind={kind} data-sample={gate.exploreOnly ? "1" : undefined}>
++          {gate.exploreOnly ? <p className="bd-sample bd-sample--list" role="status" data-testid="board-sample">{gate.exploreOnly}</p> : null}
++          <List ctx={ctx} cards={placed.cards} />
++        </div>
+       </BoardInternalsProvider>
+     );
+   }
+@@ -467,7 +476,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
+   const regionBoxes = board.rail.flatMap((entry) => { const box = placed.regions.get(entry.id); return box ? [box] : []; });
+   return (
+     <BoardInternalsProvider value={internals}>
+-      <div className="bd" style={style} data-testid="board" data-board-kind={kind} data-tool={tool} data-offline={offline || undefined}>
++      <div className="bd" style={style} data-testid="board" data-board-kind={kind} data-tool={tool} data-offline={offline || undefined} data-sample={gate.exploreOnly ? "1" : undefined}>
+         <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} />
+         <div className="bd-main" data-testid="board-canvas">
+           {list ? <List ctx={ctx} cards={placed.cards} /> : (
+@@ -487,6 +496,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
+           {list ? null : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
+           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} />
+           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}
++          {gate.exploreOnly ? <p className="bd-sample" role="status" data-testid="board-sample">{gate.exploreOnly}</p> : null}
+           {live ? <WhoIsHere peers={peers} /> : null}
+           <input ref={files} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} />
+         </div>
+diff --git a/components/graphite/board/board.css b/components/graphite/board/board.css
+index 5f19d748..0270de61 100644
+--- a/components/graphite/board/board.css
++++ b/components/graphite/board/board.css
+@@ -172,6 +172,15 @@
+   border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-toast); font-size: 12.5px; font-weight: 500; white-space: nowrap;
+ }
+ 
++/* The explore-only sample (stream 12): the same pill, top right, in the sample's own words. */
++.bd-sample {
++  position: absolute; right: 16px; top: 16px; z-index: 30; margin: 0; padding: 9px 16px; border-radius: 999px; background: var(--gx-card);
++  border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-toast); font-size: 12.5px; font-weight: 500; max-width: calc(100% - 32px);
++}
++.bd-offline ~ .bd-sample { top: 60px; }
++/* The compact list has no canvas to float over: the line is its first row. */
++.bd-sample--list { position: static; margin: 12px 16px 0; border-radius: 12px; white-space: normal; max-width: none; }
++
+ /* ── React Flow's attribution, at the reading floor ── */
+ .bd-flow .react-flow__attribution { background: var(--gx-root); padding: 2px 8px; font-size: 12px; }
+ .bd-flow .react-flow__attribution a { color: var(--gx-quiet); }
+diff --git a/components/graphite/board/cards/plan/derive.ts b/components/graphite/board/cards/plan/derive.ts
+index 4142b502..8a5bec1a 100644
+--- a/components/graphite/board/cards/plan/derive.ts
++++ b/components/graphite/board/cards/plan/derive.ts
+@@ -6,6 +6,7 @@ import { deriveLooks } from "../looks/derive";
+ import { pickedLook } from "../looks/model";
+ import { storyboard } from "../storyboard/model";
+ import type { PlanModel } from "./model";
++import { samplePlanCard, samplePlanModel } from "./sample";
+ import { planStepsOpen } from "./ui";
+ import { nextChoices, NEXT_GROUP_TITLE, showWhereNext } from "./next";
+ import { shotTakes, shotsTakeOver } from "../take/take-model";
+@@ -96,5 +97,11 @@ export function derivePlanCards(src: BoardSource): BoardCard[] {
+       data: { run, open: planStepsOpen(run.id) } satisfies PlanData,
+     });
+   }
++  /* The explore-only sample has no run: its plan is built from the ledger's recorded prices (stream 12), never seeded. */
++  if (!run && src.sample && src.sample.plan.steps.length) {
++    const inGroup = cards.some((c) => c.id === STUDIO_GROUP.storyboard);
++    const card = samplePlanCard(samplePlanModel(src.sample.plan.steps, src.sample.line), planStepsOpen("sample"));
++    cards.push(inGroup ? card : { ...card, region: "shots", order: -1, group: undefined });
++  }
+   return cards;
+ }
+diff --git a/components/graphite/board/cards/types.ts b/components/graphite/board/cards/types.ts
+index 7927d1fb..1cf90ad3 100644
+--- a/components/graphite/board/cards/types.ts
++++ b/components/graphite/board/cards/types.ts
+@@ -28,6 +28,10 @@ export type BoardCtx = {
+   productionId: string | null;
+   /** The board is read-only: no drags; a spending button reads "Needs a connection". */
+   offline: boolean;
++  /** Why nothing can be written (a production nothing may be written to), or null. Stream 12 supplies it; the sample leaves free edits alone. */
++  readOnly?: string | null;
++  /** The sample production's line: set on the explore-only sample, where every paid control is disabled with it (stream 12). */
++  exploreOnly?: string | null;
+   selection: BoardSelection;
+   select(id: string | null, opts?: { add?: boolean }): void;
+   /** Glides the board to a region, or to a card (.35 s, the design's easing). */
+diff --git a/lib/board/types.ts b/lib/board/types.ts
+index 3813990e..94da5ee1 100644
+--- a/lib/board/types.ts
++++ b/lib/board/types.ts
+@@ -3,6 +3,7 @@ import type { RigAgentRunView } from "@/lib/workbench/rig-agent-plan";
+ import type { Project } from "@/lib/workbench/studio";
+ import type { LibraryEntry } from "@/lib/workspace/library";
+ import type { RigShot } from "@/lib/workspace/shots";
++import type { SampleBoard } from "@/lib/demo/board";
+ 
+ /*
+  * The board's card interface (design/particl-graphite/README.md § 1.1, § 3.1):
+@@ -79,5 +80,7 @@ export type BoardSource = {
+   masters: ReadonlySet<string>;
+   /** Atomik's run on this production; null until stream 7 provides it. */
+   agent: BoardAgentView | null;
++  /** The explore-only sample production's recorded prices, cast and cut (stream 12, lib/demo); null on any other production. */
++  sample?: SampleBoard | null;
+   now: number;
+ };
+diff --git a/tests/demo-s12-sample-board-workbench.spec.ts b/tests/demo-s12-sample-board-workbench.spec.ts
+new file mode 100644
+index 00000000..74d67e7c
+--- /dev/null
++++ b/tests/demo-s12-sample-board-workbench.spec.ts
+@@ -0,0 +1,88 @@
++import { test, expect, type Page } from "@playwright/test";
++import { mkdirSync } from "node:fs";
++import { newProject } from "../lib/workbench/studio";
++import { signInLocally } from "./helpers/workbenchLocal";
++import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
++import { seedFinishedProduction, watchPaidRequests } from "./helpers/s12-sample";
++
++/*
++ * The explore-only sample on the board (lead decisions 12, 38 and 41), on a fixture production in a local ENGINE_MOCK
++ * workspace: the sample's board carries the line in a pill top right, its plan card is built from the ledger's recorded
++ * prices (43 + 43 + 7 = 93 cr, up to 186 cr of fixes), every paid control on it is disabled, and nothing leaves the
++ * page. A production that is not the sample is untouched. At each viewport: no sideways scroll, text at least 12 px.
++ */
++const LINE = "Sample production · nothing here spends credits";
++const SHOTS = process.env.S12_SHOTS || "/private/tmp/claude-s12-shots";
++const desktop = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1280;
++const overflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
++
++test("the sample's board: the pill, the recorded plan, every paid control disabled; another production is untouched", async ({ page }, info) => {
++  const paid = watchPaidRequests(page);
++  const made = await seedFinishedProduction(page);
++  const marked = await page.request.post("/api/demo/sample", { headers: made.headers, data: { action: "mark", draftId: made.project.id } });
++  expect(marked.status(), await marked.text()).toBe(200);
++  const opened = await (await page.request.post("/api/demo/sample", { headers: made.headers, data: { action: "open" } })).json() as { project: { id: string } };
++  await page.goto(`/suites?project=${opened.project.id}&view=board`);
++  await expect(page.getByTestId("board")).toBeVisible();
++  /* The shell settles the address once; the board is drawn again after it, so wait for it before touching anything. */
++  await expect.poll(() => page.url(), { message: "the address settles" }).toContain("page=brief");
++  await expect(page.getByTestId("board")).toBeVisible();
++  const pill = page.getByTestId("board-sample");
++  await expect(pill).toHaveText(LINE);
++  await expect(page.getByTestId("board")).toHaveAttribute("data-sample", "1");
++  /* In the viewport, top right, in the reading floor. */
++  const box = (await pill.boundingBox())!;
++  const view = page.viewportSize()!;
++  expect(box.x).toBeGreaterThanOrEqual(0);
++  expect(box.x + box.width).toBeLessThanOrEqual(view.width);
++  expect(await pill.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(12);
++  expect(await overflow(page)).toBeLessThanOrEqual(0);
++
++  mkdirSync(SHOTS, { recursive: true });
++  if (desktop(page)) {
++    const plan = page.locator('[data-card-id="plan:sample"]').getByTestId("board-plan");
++    await expect(plan).toBeVisible({ timeout: 20_000 });
++    await expect(plan).toContainText("Make 3 shots");
++    await expect(plan.getByTestId("board-plan-line")).toContainText("93 cr");
++    await expect(plan.getByTestId("board-plan-line")).toContainText("186 cr");
++    /* Every paid or approving control is disabled and the line is on the card. */
++    for (const id of ["board-plan-hold", "board-plan-change", "board-plan-primary"]) await expect(plan.getByTestId(id)).toBeDisabled();
++    await expect(plan).toContainText(LINE);
++    await plan.getByTestId("board-plan-toggle").click();
++    const steps = plan.getByTestId("board-plan-step");
++    await expect(steps).toHaveCount(3);
++    await expect(steps.nth(0)).toContainText("43 cr");
++    await expect(steps.nth(2)).toContainText("7 cr");
++    await expect(plan).not.toContainText(/SH\d|quoted|settled/i);
++    const small = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('[data-testid="board-plan"] *, [data-testid="board-sample"]')]
++      .filter((el) => el.childElementCount === 0 && (el.textContent ?? "").trim() && parseFloat(getComputedStyle(el).fontSize) < 12).map((el) => el.textContent));
++    expect(small).toEqual([]);
++    await page.getByTestId("board-rail").getByText("Storyboard", { exact: true }).click();
++    await page.waitForTimeout(600);
++  }
++  await page.screenshot({ path: `${SHOTS}/sample-board-${info.project.name.replace("workbench-", "")}.png` });
++
++  expect(paid).toEqual([]);
++});
++
++test("another production in a workspace that has a sample is untouched: no pill, no sample plan, paid controls as before", async ({ page }) => {
++  await signInLocally(page.request, "Other Film Tester");
++  await forbidPaidWork(page);
++  await mockMedia(page);
++  const other = { ...newProject("Another film"), id: "ws-other-film", productionProjectId: "prod-other-film", shotMappings: {} };
++  await mockProjects(page, { current: other });
++  await mockLibrary(page, { uploads: [], generations: [] });
++  /* The workspace's sample is a different production: its board data is served, and this project is not it. */
++  await page.route("**/api/demo/sample", (route) => route.fulfill({ json: { board: {
++    sample: { projectId: "prod-the-sample", name: "The sample", markedAt: 1 }, line: LINE,
++    plan: { steps: [{ title: "Shot 1", meta: "Seedance 2.5 · 5 s · 1080p", credits: 43, kind: "take" }], unpriced: [], recorded: { settled: 43, quoted: 0 } },
++    cast: [], cut: { shots: [], approved: 0, seconds: 0, approvedSeconds: 0, waiting: 0 },
++  } } }));
++  await page.addInitScript(() => { try { localStorage.setItem("last-project", "ws-other-film"); } catch { /* storage off */ } });
++  await page.goto("/suites?project=ws-other-film&view=board");
++  await expect(page.getByTestId("board")).toBeVisible();
++  await expect(page.getByTestId("board")).not.toHaveAttribute("data-sample", "1");
++  await expect(page.getByTestId("board-sample")).toHaveCount(0);
++  await expect(page.locator('[data-card-id="plan:sample"]')).toHaveCount(0);
++  expect(await overflow(page)).toBeLessThanOrEqual(0);
++});
+diff --git a/tests/helpers/s12-sample.ts b/tests/helpers/s12-sample.ts
+new file mode 100644
+index 00000000..53f47fb2
+--- /dev/null
++++ b/tests/helpers/s12-sample.ts
+@@ -0,0 +1,92 @@
++import { expect, type Page } from "@playwright/test";
++import { createClient, type Client } from "@libsql/client";
++import { signInLocally, localPlatformDbUrl } from "./workbenchLocal";
++import { newProject, type Project } from "../../lib/workbench/studio";
++
++/*
++ * Stream 12's browser specs share this: a signed-in local workspace (its person owns it) holding a FINISHED production,
++ * the way the owner's own film will be there: a saved draft with a cast and a cut, three shots with a take on each,
++ * and the ledger's record of what each take cost. The takes are rows in the local, disposable databases the spec's own
++ * ENGINE_MOCK server uses; nothing is generated and nothing is sent. Neutral names only.
++ */
++export const PRICES = [43, 43, 7] as const;
++const MODELS = ["dreamina-seedance-2-5-260628", "dreamina-seedance-2-5-260628", "fal-ai/kling-video/v3/standard"] as const;
++
++async function tenantDb(workspaceId: string): Promise<Client> {
++  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
++  try {
++    const row = (await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id = ?", args: [workspaceId] })).rows[0];
++    expect(row, "the signed-in workspace has a database").toBeTruthy();
++    const url = String(row.db_url);
++    if (!url.startsWith("file:")) throw new Error("Browser fixtures require a local workspace database.");
++    return createClient({ url, timeout: 10_000 });
++  } finally { platform.close(); }
++}
++
++export type FinishedProduction = {
++  workspaceId: string; userId: string; scope: string; headers: { "X-Workbench-Scope": string };
++  project: Project; productionId: string; takes: string[]; shotIds: string[];
++};
++
++/** `approve`: how many of the three takes are approved (the first ones); the rest wait for review. */
++export async function seedFinishedProduction(page: Page, options: { approve?: number; name?: string } = {}): Promise<FinishedProduction> {
++  const approve = options.approve ?? 2;
++  const { workspace } = await signInLocally(page.request, "Sample Builder");
++  const me = await (await page.request.get("/api/me")).json() as { id: string };
++  const scope = `particl-active-${workspace.id}-${me.id}`;
++  const headers = { "X-Workbench-Scope": scope } as const;
++  const base: Project = { ...newProject(options.name ?? "Fixture film"), id: `s12-${Date.now().toString(36)}`, aspect: "16:9", fps: 24, brief: "A short film about a walk to a sculpture." };
++  const first = await page.request.put("/api/workbench/projects", { headers, data: { project: base, revision: 0 } });
++  expect(first.ok(), await first.text()).toBe(true);
++  const { productionProjectId: productionId, revision } = await first.json() as { productionProjectId: string; revision: number };
++
++  /* The production's rows: three shots, a take on each, and what the ledger recorded for each take. */
++  const db = await tenantDb(workspace.id);
++  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
++  const takes: string[] = [], shotIds: string[] = [];
++  const at = Date.now() - 600_000;
++  try {
++    for (let i = 0; i < 3; i++) {
++      const shot = `shot_s12_${i}_${Date.now().toString(36)}`, take = `gen_s12_${i}_${Date.now().toString(36)}`;
++      await db.execute({
++        sql: `INSERT INTO shots (id,project_id,scene,code,title,description,status,position,created_by,created_at,updated_at,planned,setup,cast,kind,dirty)
++              VALUES (?,?,?,?,?,?,'open',?,?,?,?,5,'{}','[]','render',1)`,
++        args: [shot, productionId, "", `C${i + 1}`, `Shot ${i + 1}`, "", i, me.id, at, at],
++      });
++      await db.execute({
++        sql: `INSERT INTO generations (id,project_id,shot_id,kind,model,prompt,params,status,stored_url,cost_usd,created_by,created_at,updated_at,version,provider,task,review_state,review_by,reviewed_at,deleted)
++              VALUES (?,?,?,'video',?,?,?,'succeeded','/fixtures/clip.mp4',0,?,?,?,1,'byteplus','generate',?,?,?,0)`,
++        args: [take, productionId, shot, MODELS[i], `Take ${i + 1}`, JSON.stringify({ duration: 5, resolution: "1080p", ratio: "16:9" }), me.id, at + i, at + i,
++               i < approve ? "approved" : "", i < approve ? me.id : null, i < approve ? at + i + 1000 : null],
++      });
++      await platform.execute({
++        sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at)
++              VALUES (?,?,?,?,'video','byteplus',?,'succeeded',0.5,?,1,?,?,?)`,
++        args: [take, workspace.id, productionId, shot, MODELS[i], PRICES[i], me.id, at + i, at + i],
++      });
++      takes.push(take); shotIds.push(shot);
++    }
++  } finally { db.close(); platform.close(); }
++
++  /* The saved draft: the cast in the owner's words, and the cut over the three takes. */
++  const project: Project = {
++    ...base, productionProjectId: productionId,
++    assets: takes.map((take, i) => ({ id: `asset-${i}`, name: `Take ${i + 1}`, kind: "video" as const, category: "Shot", url: `/api/media/${take}`, description: "", prompt: "", status: i < approve ? "Selected" as const : "Draft" as const, locked: false, version: 1, refs: [], generationId: take, productionShotId: shotIds[i] })),
++    shots: takes.map((_, i) => ({ id: `cut-${i}`, name: `Shot ${i + 1}`, assetId: `asset-${i}`, duration: 120, sourceIn: 0, note: "" })),
++    production: { cast: { entries: [{ id: "cast-lead", name: "Lead", kind: "character" as const, description: "ivory suit, short dark bob", prompt: "", takes: [] }] } },
++  };
++  const saved = await page.request.put("/api/workbench/projects", { headers, data: { project, revision } });
++  expect(saved.ok(), await saved.text()).toBe(true);
++  await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: project.id });
++  return { workspaceId: workspace.id, userId: me.id, scope, headers, project, productionId, takes, shotIds };
++}
++
++/** Anything that would send paid work, from this page. Reads and the sample's own routes are fine. */
++export function watchPaidRequests(page: Page): string[] {
++  const paid: string[] = [];
++  page.on("request", (request) => {
++    const path = new URL(request.url()).pathname;
++    if (request.method() === "POST" && (path === "/api/generate" || path.startsWith("/api/generate/") || path === "/api/audio" || /\/release$/.test(path) || path.startsWith("/api/workbench/atomik") || path.startsWith("/api/atomik"))) paid.push(`${request.method()} ${path}`);
++  });
++  return paid;
++}

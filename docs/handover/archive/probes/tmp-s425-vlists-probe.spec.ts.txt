@@ -1,0 +1,72 @@
+import { test, expect, type Page } from "@playwright/test";
+import { createClient } from "@libsql/client";
+import { appendFileSync } from "node:fs";
+import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
+import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
+import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, type LibraryRoute } from "./helpers/workspaceFixtures";
+
+/* s425 scratch probe (never committed): the Rig's "Build from Storyboards" tool under a slow CPU, with a trace of
+   where the section and the scroller are while the smooth move and the list's measuring run. */
+const N = 1500;
+const RATE = Number(process.env.PROBE_CPU_RATE || 4);
+const OUT = process.env.PROBE_OUT || "/private/tmp/claude-s425-vlists-probe.jsonl";
+const shot = (i: number): CanvasNode => ({
+  id: `rig-${i}`, title: `Shot ${String(i + 1).padStart(4, "0")}`, type: "scene", x: 100, y: 100 + i * 10, width: 238, linked: [],
+  role: "Director", status: "draft", mode: "Video", engine: "dreamina-seedance-2-5-260628", durationS: 5, ratio: "16:9", resolution: "720p",
+});
+const project = (): Project => ({ ...newProject("Feature volume"), id: "ws-volume", productionProjectId: "prod-ws", shotMappings: {}, nodes: Array.from({ length: N }, (_, i) => shot(i)) });
+const library = (): LibraryRoute => ({
+  pageSize: N, uploads: [],
+  generations: Array.from({ length: N }, (_, i) => generation({ id: `gen_${i}`, title: `Take ${String(i + 1).padStart(4, "0")}`, createdAt: Date.UTC(2026, 8, 1) + (N - i) * 1000 })),
+});
+async function open(page: Page, url: string) {
+  const account = await signInLocally(page.request);
+  const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try { await db.execute({ sql: "UPDATE workspaces SET plan_id='studio' WHERE id=?", args: [account.workspace.id] }); } finally { db.close(); }
+  await forbidPaidWork(page);
+  await mockMedia(page);
+  await mockProjects(page, { current: project() });
+  await mockLibrary(page, library());
+  await page.goto(url);
+}
+
+test("probe: Build from Storyboards under a slow CPU", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one desktop");
+  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "platform", { get: () => "Linux x86_64", configurable: true }));
+  await open(page, "/suites?suite=studio&page=rig");
+  const list = page.getByRole("list", { name: "Shots" });
+  await expect(list).toHaveAttribute("data-virtual", "on");
+  const build = page.locator('[data-section="rig-build"]');
+  await expect(build).not.toBeInViewport();
+  const library = page.getByTestId("library");
+  await library.getByRole("tab", { name: /Tools/ }).click();
+  /* Record from the page: scroll events, scrollend, and every 50 ms where the section and the list's sizer are. */
+  await page.evaluate(() => {
+    const w = window as unknown as { __probe: unknown[]; __probeNode: Element | null };
+    w.__probe = []; w.__probeNode = document.querySelector('[data-section="rig-build"]');
+    const t0 = performance.now();
+    const sect = () => document.querySelector('[data-section="rig-build"]');
+    const scrollerOf = (el: Element | null) => { for (let n = el?.parentElement ?? null; n; n = n.parentElement) { const s = getComputedStyle(n).overflowY; if ((s === "auto" || s === "scroll") && n.scrollHeight > n.clientHeight + 1) return n; } return document.scrollingElement as HTMLElement; };
+    const sc = scrollerOf(sect());
+    const snap = (kind: string) => {
+      const el = sect(); const box = el?.getBoundingClientRect(); const view = sc.getBoundingClientRect();
+      const sizer = document.querySelector('[aria-label="Shots"] > div[style*="position: relative"]') as HTMLElement | null;
+      w.__probe.push({ t: Math.round(performance.now() - t0), kind, top: box ? Math.round(box.top - view.top) : null, viewH: Math.round(view.height),
+        scrollTop: Math.round(sc.scrollTop), scrollH: sc.scrollHeight, sizer: sizer ? Math.round(sizer.getBoundingClientRect().height) : null,
+        same: el === w.__probeNode, connected: w.__probeNode?.isConnected ?? null });
+    };
+    sc.addEventListener("scroll", () => snap("scroll"), { passive: true });
+    sc.addEventListener("scrollend", () => snap("scrollend"));
+    const timer = setInterval(() => snap("tick"), 50);
+    setTimeout(() => clearInterval(timer), 16000);
+  });
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: RATE });
+  await library.locator('[data-tool="Build from Storyboards"]').click();
+  let ok = true;
+  try { await expect(build).toBeInViewport({ timeout: 15_000 }); } catch { ok = false; }
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  const trace = await page.evaluate(() => (window as unknown as { __probe: unknown[] }).__probe);
+  appendFileSync(OUT, JSON.stringify({ run: info.repeatEachIndex, rate: RATE, ok, trace }) + "\n");
+  expect(ok, "Build from Storyboards reached the viewport").toBe(true);
+});

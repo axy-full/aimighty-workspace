@@ -1,0 +1,240 @@
+diff --git a/tests/unit/demo-gaps-l4-budget-gate.spec.ts b/tests/unit/demo-gaps-l4-budget-gate.spec.ts
+index a60a79c6..6a35eb4e 100644
+--- a/tests/unit/demo-gaps-l4-budget-gate.spec.ts
++++ b/tests/unit/demo-gaps-l4-budget-gate.spec.ts
+@@ -74,3 +74,139 @@ test("the workspace budget is enforced at the reservation gate, unlockable by an
+     expect(await job("g_cleared", "follows")).toBeNull();
+   });
+ });
++
++/* ── An Unlock is tied to the cap it was shown for (review of #556, round 2) ─────────────────────────── */
++
++/** A fresh funded workspace with room for many jobs at once (the gate's slot limit is not what these tests are about). */
++async function fresh(id: string): Promise<TenantWorkspace> {
++  const { platformDb, platformReady } = await import("../../lib/platform");
++  await platformReady();
++  await alignLedgerUnit();
++  const w: TenantWorkspace = { ...ws, id, slug: id, name: id, dbUrl: `file:${path.join(dir, `${id}.db`)}`, concurrency: 50, rendersPerHour: 500 };
++  await platformDb().execute({ sql: `INSERT INTO credit_grants(id,workspace_id,credits,kind,created_at) VALUES(?,?,5000,'manual',0)`, args: [`grant_${id}`, id] });
++  const { runInTenant } = await import("../../lib/tenant");
++  await runInTenant(w, async () => { await (await import("../../lib/db")).ready(); });
++  return w;
++}
++
++/** PATCH /api/projects/[id] and PATCH /api/settings as an admin's signed-in session (the people-only checks: demo-gaps-l4-people-only). */
++async function adminRoutes() {
++  const { readFileSync } = await import("node:fs");
++  const { createRequire } = await import("node:module");
++  const ts = (await import("typescript")).default;
++  const load = <T,>(file: string): T => {
++    const filename = path.resolve(file), req = createRequire(filename);
++    const compiled = ts.transpileModule(readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
++    const mod = { exports: {} };
++    new Function("require", "module", "exports", compiled)((name: string) => {
++      if (name === "@/lib/auth") return {
++        withTenant: (h: unknown) => h,
++        requireUser: async () => ({ user: { id: "owner", role: "admin" } }),
++        requireAdmin: async () => ({ user: { id: "owner", role: "admin" } }),
++      };
++      return name.startsWith("@/") ? req(path.resolve(name.slice(2))) : req(name);
++    }, mod, mod.exports);
++    return mod.exports as T;
++  };
++  const project = load<typeof import("../../app/api/projects/[id]/route")>("app/api/projects/[id]/route.ts");
++  const settings = load<typeof import("../../app/api/settings/route")>("app/api/settings/route.ts");
++  const body = (b: unknown) => ({ method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) });
++  return {
++    patch: (id: string, b: unknown) => project.PATCH(new Request(`http://localhost/api/projects/${id}`, body(b)), { params: Promise.resolve({ id }) } as never),
++    budget: (v: string) => settings.PATCH(new Request("http://localhost/api/settings", body({ productionBudgetCredits: v })), undefined as never),
++  };
++}
++
++test("one screen, two tabs, two admins: an Unlock lands only on the cap it was shown and only at it; a stale one is refused with the new figure and never lets spend past the new cap", async () => {
++  const { runInTenant } = await import("../../lib/tenant");
++  const { db } = await import("../../lib/db");
++  const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
++  const { billCredits } = await import("../../lib/creditTerms");
++  const { capChanged, NOT_AT_CAP } = await import("../../lib/caps");
++  const api = await adminRoutes();
++  const w = await fresh("ws_lfourstale");
++  await runInTenant(w, async () => {
++    await db().execute(`INSERT INTO projects(id,name,created_at,cap_credits) VALUES('stale','Stale unlock',0,NULL)`);
++    const usd = 0.5, c = billCredits(usd, SEEDANCE);
++    const job = (id: string) => reserveGenerationSpend({ id, kind: "video", engine: "byteplus", model: SEEDANCE, status: "running", engineCostUsd: usd, projectId: "stale", createdBy: "owner" }).then(() => null, (e: unknown) => e);
++    const unlocked = async () => Number((await db().execute("SELECT cap_unlocked FROM projects WHERE id='stale'")).rows[0].cap_unlocked);
++
++    /* The budget is one job, and the production has used it: at its cap, refused. Every screen shows c cr and Unlock. */
++    expect((await api.budget(String(c))).status).toBe(200);
++    expect(await job("s_1")).toBeNull();
++    expect(await job("s_2")).toBeInstanceOf(SpendReservationError);
++    const shown = c;
++
++    /* Not at its cap: nothing to unlock. (A second production, the same budget, nothing used.) */
++    await db().execute(`INSERT INTO projects(id,name,created_at,cap_credits) VALUES('room','Room left',0,NULL)`);
++    const early = await api.patch("room", { capUnlocked: true, forCap: shown });
++    expect(early.status).toBe(409);
++    expect((await early.json()).error).toBe(NOT_AT_CAP);
++
++    /* An Unlock that names no cap is refused: it cannot be tied to anything. */
++    expect((await api.patch("stale", { capUnlocked: true })).status).toBe(409);
++    expect(await unlocked()).toBe(0);
++
++    /* Two admins (or two tabs, or one screen whose list was not read again): the other raises the budget to two jobs.
++       The route writes it and re-locks in one transaction; the next job fits the new cap, then the new cap stops it. */
++    expect((await api.budget(String(2 * c))).status).toBe(200);
++    expect(await job("s_2b")).toBeNull();
++    expect(await job("s_3")).toBeInstanceOf(SpendReservationError);
++    /* The first admin's Unlock, for the cap they were shown: refused with the new figure, and nothing is written. */
++    const stale = await api.patch("stale", { capUnlocked: true, forCap: shown });
++    expect(stale.status).toBe(409);
++    expect((await stale.json()).error).toBe(capChanged(2 * c, "cr"));
++    expect(await unlocked()).toBe(0);
++    /* So spend never goes past the new cap on the old unlock. */
++    expect(await job("s_3b")).toBeInstanceOf(SpendReservationError);
++
++    /* Looked at again, the Unlock names the cap it is at now: it lands, and the gate lets the production past it. */
++    expect((await api.patch("stale", { capUnlocked: true, forCap: 2 * c })).status).toBe(200);
++    expect(await unlocked()).toBe(1);
++    expect(await job("s_4")).toBeNull();
++    /* Its own cap written later re-locks it in the same statement as the cap. */
++    expect((await api.patch("stale", { capCredits: 5 * c })).status).toBe(200);
++    expect(await unlocked()).toBe(0);
++    /* Lock again needs no figure. */
++    await db().execute("UPDATE projects SET cap_unlocked=1 WHERE id='stale'");
++    expect((await api.patch("stale", { capUnlocked: false })).status).toBe(200);
++    expect(await unlocked()).toBe(0);
++    expect((await api.budget("")).status).toBe(200);
++  });
++});
++
++test("Settings and the Record count what a production used as the gate does: a job the meter holds with no take (Atomik's planning) counts on every screen", async () => {
++  const { runInTenant } = await import("../../lib/tenant");
++  const { db } = await import("../../lib/db");
++  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
++  const { billCredits } = await import("../../lib/creditTerms");
++  const { projectCapSpent } = await import("../../lib/caps");
++  const { listProductions } = await import("../../lib/productions");
++  const { invalidate, PROJECTS_KEY } = await import("../../lib/cache");
++  const { readFileSync } = await import("node:fs");
++  const { createRequire } = await import("node:module");
++  const ts = (await import("typescript")).default;
++  const filename = path.resolve("app/api/projects/route.ts"), req = createRequire(filename);
++  const compiled = ts.transpileModule(readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
++  const mod = { exports: {} as { GET: (r: Request) => Promise<Response> } };
++  new Function("require", "module", "exports", compiled)((name: string) => {
++    if (name === "@/lib/auth") return { withTenant: (h: unknown) => h, requireUser: async () => ({ user: { id: "owner", role: "admin" } }) };
++    return name.startsWith("@/") ? req(path.resolve(name.slice(2))) : req(name);
++  }, mod, mod.exports);
++  const w = await fresh("ws_lfourmeter");
++  await runInTenant(w, async () => {
++    await db().execute(`INSERT INTO productions(id,name,client,status,created_at) VALUES('c_meter','Container','','active',0)`);
++    await db().execute(`INSERT INTO projects(id,name,created_at,production_id) VALUES('meter_only','Meter only',0,'c_meter')`);
++    const c = billCredits(0.5, SEEDANCE);
++    /* A paid job reserved on the production with no take row: what an Atomik planning job is. */
++    await reserveGenerationSpend({ id: "meter_job_1", kind: "video", engine: "byteplus", model: SEEDANCE, status: "running", engineCostUsd: 0.5, projectId: "meter_only", createdBy: "owner" });
++    expect((await db().execute("SELECT COUNT(*) AS n FROM generations WHERE project_id='meter_only'")).rows[0].n).toBe(0);
++    const gate = (await projectCapSpent("meter_only"))!.spent;
++    expect(gate).toBe(c);
++    invalidate(PROJECTS_KEY);
++    const list = await (await mod.exports.GET(new Request("http://localhost/api/projects"))).json() as { projects: { id: string; credits: number }[] };
++    expect(list.projects.find((p) => p.id === "meter_only")!.credits).toBe(gate);
++    const record = (await listProductions()).flatMap((p) => p.projects).find((p) => p.id === "meter_only")!;
++    expect(record.spentCredits).toBe(gate);
++  });
++});
+diff --git a/tests/unit/demo-gaps-l4-people-only.spec.ts b/tests/unit/demo-gaps-l4-people-only.spec.ts
+index 0a6e9f04..b877b8c8 100644
+--- a/tests/unit/demo-gaps-l4-people-only.spec.ts
++++ b/tests/unit/demo-gaps-l4-people-only.spec.ts
+@@ -132,7 +132,7 @@ test("setting the budget per production and the per-shot cap: a signed-in admin
+   expect(byPerson.status, await byPerson.clone().text()).toBe(200);
+   const rows = await read<{ key: string; value: string; updated_by: string }>("SELECT key,value,updated_by FROM settings WHERE key IN ('productionBudgetCredits','shotCapCredits','approvalRule') ORDER BY key");
+   expect(rows.map((r) => [r.key, r.value])).toEqual([["approvalRule", "cap"], ["productionBudgetCredits", "400"], ["shotCapCredits", "50"]]);
+-  /* Every change is logged with who made it: a person. */
++  /* The setting keeps who changed it last: a person. */
+   expect(new Set(rows.map((r) => r.updated_by))).toEqual(new Set(["boss"]));
+   /* Nonsense is refused before anything is written. */
+   const bad = await api.settings.PATCH(req("/api/settings", "PATCH", { productionBudgetCredits: "0" }), undefined as never);
+@@ -295,7 +295,8 @@ test("an unlock belongs to the cap it was given for: a new cap or a new budget r
+   const ctx = { params: Promise.resolve({ id: "prod-l4" }) };
+   mode = "session";
+   expect((await api.project.PATCH(req("/api/projects/prod-l4", "PATCH", { capCredits: 100 }), ctx as never)).status).toBe(200);
+-  expect((await api.project.PATCH(req("/api/projects/prod-l4", "PATCH", { capUnlocked: true }), ctx as never)).status).toBe(200);
++  /* Unlocked at the old cap (a direct write: the route's own Unlock is tied to the cap shown, demo-gaps-l4-budget-gate). */
++  await exec("UPDATE projects SET cap_unlocked=1 WHERE id='prod-l4'");
+   await exec("UPDATE projects SET cap_warned_at=1 WHERE id='prod-l4'");
+   /* A new cap: re-locked, the warning re-armed, and the ask at 800 of 1,000 cr stands. */
+   expect((await api.project.PATCH(req("/api/projects/prod-l4", "PATCH", { capCredits: 1000 }), ctx as never)).status).toBe(200);
+@@ -325,39 +326,54 @@ test("an unlock belongs to the cap it was given for: a new cap or a new budget r
+   expect((await api.settings.PATCH(req("/api/settings", "PATCH", { productionBudgetCredits: "" }), undefined as never)).status).toBe(200);
+ });
+ 
+-test("Ask an admin: only about a step that is over the cap, and once per person and step every ten minutes", async () => {
++test("Ask an admin judges a step as the gate does (what the shot holds plus this render; a step paused for an admin is over), counts every ask, refused or not, once per person and step every ten minutes", async () => {
+   const { runInTenant } = await import("../../lib/tenant");
+   const { setSetting } = await import("../../lib/settings");
+   const { db } = await import("../../lib/db");
++  const { billCreditsWith, marginFor } = await import("../../lib/creditTerms");
+   const lib = await import("../../lib/control-room/ask-admin");
+   const store = await import("../../lib/workbench/rig-agent-store");
++  const SEEDANCE = "dreamina-seedance-2-5-260628";
+   let now = 1_000_000_000;
+   const told: string[][] = [];
+-  let over = false;
+-  const deps = { admins: async () => [{ id: "boss" }], tell: async (ids: string[]) => { told.push(ids); }, over: async () => over, now: () => now };
++  /* The real over-cap check (lib/control-room/ask-admin.ts overCap): no stub. */
++  const deps = { admins: async () => [{ id: "boss" }], tell: async (ids: string[]) => { told.push(ids); }, now: () => now };
+   await runInTenant(WS, async () => {
+     await setSetting("approvalRule", "cap", "boss");
+     await store.rigAgentReady();
++    /* Shot A already holds one take; its credits are what the gate counts for it (lib/caps.ts spentBy). */
++    const held = billCreditsWith(1, marginFor(SEEDANCE), 0.10);
+     await db().batch([
+-      { sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,plan,created_at,updated_at) VALUES('rar_ask','prod-l4','d','mem','req-ask','g','auto','awaiting_approval',NULL,0,0)", args: [] },
+-      { sql: "INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,prepared,state,created_at,updated_at) VALUES('step_ask','rar_ask',1,'render','Shot 1','take','{}','proposed',0,0)", args: [] },
++      { sql: "INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,project_id,shot_id,cost_usd,created_by) VALUES('g_shot_a','" + SEEDANCE + "','a','{}','succeeded',0,0,'video','prod-l4','shot_a',1,'mem')", args: [] },
++      { sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,plan,created_at,updated_at) VALUES('rar_ask','prod-l4','d','mem','req-ask','g','auto','needs_you',NULL,0,0)", args: [] },
++      /* Step 1 the run paused for an admin at send time: over, whatever its own price. */
++      { sql: "INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,prepared,state,quote_credits,band,pause,created_at,updated_at) VALUES('step_paused','rar_ask',1,'render','Shot 1','take','{}','paused',20,1,'admin',0,0)", args: [] },
++      /* Step 2: priced at 20 cr for shot A. */
++      { sql: "INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,prepared,state,quote_credits,band,admission,created_at,updated_at) VALUES('step_quoted','rar_ask',2,'render','Shot 2','take','{}','waiting',20,1,'{\"request\":{\"shotId\":\"shot_a\"}}',0,0)", args: [] },
+     ], "write");
+-    const ask = { about: "step" as const, productionId: "prod-l4", runId: "rar_ask", seq: 1 };
+     const me = { id: "mem", name: "Studio member", admin: false };
+-    /* Not over the cap: no admin is needed, and nobody is told. */
+-    await expect(lib.askAdmin(me, ask, deps)).rejects.toMatchObject({ status: 409, message: lib.ASK_NOT_OVER });
+-    expect(told).toEqual([]);
+-    over = true;
+-    expect(await lib.askAdmin(me, ask, deps)).toMatchObject({ asked: 1 });
+-    /* Again within ten minutes: refused, nobody told twice. */
+-    now += 5 * 60_000;
+-    await expect(lib.askAdmin(me, ask, deps)).rejects.toMatchObject({ status: 429 });
++    const step = (seq: number) => ({ about: "step" as const, productionId: "prod-l4", runId: "rar_ask", seq });
++
++    /* Paused for an admin: over, though 20 cr alone is under the 50 cr cap. */
++    await setSetting("shotCapCredits", "50", "boss");
++    expect(await lib.askAdmin(me, step(1), deps)).toMatchObject({ asked: 1 });
++    /* What the shot holds plus this render exactly at the cap is not over it: refused, nobody told. */
++    await setSetting("shotCapCredits", String(held + 20), "boss");
++    await expect(lib.askAdmin(me, step(2), deps)).rejects.toMatchObject({ status: 409, message: lib.ASK_NOT_OVER });
+     expect(told).toHaveLength(1);
+-    /* Another person, or the same person after ten minutes: told again. */
+-    expect(await lib.askAdmin({ ...me, id: "mem2" }, ask, deps)).toMatchObject({ asked: 1 });
+-    now += 6 * 60_000;
+-    expect(await lib.askAdmin(me, ask, deps)).toMatchObject({ asked: 1 });
++    /* The refused ask counted: asked again at once, it is not judged again. */
++    await expect(lib.askAdmin(me, step(2), deps)).rejects.toMatchObject({ status: 429 });
++    /* A credit over the cap with what the shot holds (the render alone is far under it): over, told, after the window. */
++    await setSetting("shotCapCredits", String(held + 19), "boss");
++    now += 11 * 60_000;
++    expect(await lib.askAdmin(me, step(2), deps)).toMatchObject({ asked: 1 });
++    expect(told).toHaveLength(2);
++    /* Within ten minutes: refused, nobody told twice; another person is their own count. */
++    now += 5 * 60_000;
++    await expect(lib.askAdmin(me, step(2), deps)).rejects.toMatchObject({ status: 429 });
++    expect(await lib.askAdmin({ ...me, id: "mem2" }, step(2), deps)).toMatchObject({ asked: 1 });
+     expect(told).toHaveLength(3);
+     await setSetting("approvalRule", "anyone", "boss");
++    await setSetting("shotCapCredits", "50", "boss");
+   });
+ });
