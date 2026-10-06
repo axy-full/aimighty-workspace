@@ -46,7 +46,7 @@ const PRESET_ID = "8a3c1f2e-5b6d-4e7f-8a9b-0c1d2e3f4a5b";
 /* ── A library, as the planner is shown one ─────────────────────────── */
 
 const item = (handle: string, kind: "image" | "video", id: string, patch: Partial<LibraryItem> = {}): LibraryItem =>
-  ({ handle, kind, origin: "upload", id, name: `${id}.${kind === "video" ? "mp4" : "png"}`, seconds: kind === "video" ? 10 : null, width: kind === "video" ? 1280 : 1024, height: kind === "video" ? 720 : 1024, ...patch });
+  ({ handle, kind, origin: "upload", id, name: `${id}.${kind === "video" ? "mp4" : "png"}`, seconds: kind === "video" ? 6 : null, width: kind === "video" ? 1280 : 1024, height: kind === "video" ? 720 : 1024, ...patch });
 const LIBRARY: LibraryItem[] = [
   item("V1", "video", "clip_hd"),
   item("V2", "video", "clip_short", { seconds: 2 }),
@@ -110,7 +110,7 @@ test("a library step with incomplete inputs, or an engine not offered, is named 
     [{ model: MOTION, source: "V1", references: ["V3"] }, /references must be stills/],
     [{ model: MOTION, source: "V1", references: ["S99"] }, /cites media that is not in this project's library/],
     [{ model: MOTION, source: "V1", references: ["product"] }, /cites media that is not in this project's library/],
-    [{ model: MOTION, source: "V2", references: ["S1"] }, /source clip must run 4 to 30 seconds/],
+    [{ model: MOTION, source: "V2", references: ["S1"] }, /source clip must run 4 to 8 seconds/],
     [{ model: SWAP, source: "V3", references: ["S1"] }, /409,600 pixels per frame/],
     [{ model: MARKETING, references: ["S1"], preset: "P7" }, /preset that is not available/],
     [{ model: MARKETING, references: ["S1", "S2", "S3"], preset: "P1" }, /a preset needs one or two product stills/],
@@ -206,8 +206,8 @@ test("the planner reads the library as fenced data by handle, with the library s
   expect(keyStepsOffered(LIBRARY.filter((i) => i.kind === "image"))).toEqual({ transform: false, marketing: true });
   expect(keyStepsOffered(LIBRARY)).toEqual({ transform: true, marketing: true });
   const text = librarySection({ offered: { transform: true, marketing: true }, library: LIBRARY.slice(0, 5), presets: PRESETS });
-  expect(text).toContain("<<<LIBRARY\nV1 | video | 10 s | 1280x720 | clip_hd.mp4\n");
-  expect(text).toContain("V4 | video | 10 s | 720p 16:9 | take_clip.mp4");
+  expect(text).toContain("<<<LIBRARY\nV1 | video | 6 s | 1280x720 | clip_hd.mp4\n");
+  expect(text).toContain("V4 | video | 6 s | 720p 16:9 | take_clip.mp4");
   expect(text).toContain("S1 | still | 1024x1024 | product.png\nLIBRARY>>>");
   expect(text).toContain("<<<PRESETS\nP1 | Bold studio\nPRESETS>>>");
   expect(text).toContain("Motion Transfer and Object Swap");
@@ -229,7 +229,7 @@ test("the planner reads the library as fenced data by handle, with the library s
   expect(keyStepInputsLine({ model: SEEDANCE, params: {} })).toBeNull();
   expect(engineChoices([{ kind: "video", id: SEEDANCE }, { kind: "image", id: "x" }], { kind: "video", model: MOTION })).toEqual([]);
   expect(engineChoices([{ kind: "video", id: SEEDANCE }, { kind: "image", id: "x" }], { kind: "video", model: SEEDANCE })).toEqual([{ kind: "video", id: SEEDANCE }]);
-  expect([keyStepLabel(MOTION), keyStepLabel(SWAP), keyStepLabel(MARKETING), keyStepLabel(SEEDANCE)]).toEqual(["Motion Transfer", "Object Swap", "Marketing Studio Image", null]);
+  expect([keyStepLabel(MOTION), keyStepLabel(SWAP), keyStepLabel(MARKETING), keyStepLabel(SEEDANCE)]).toEqual(["Motion Transfer", "Object Swap", "Product image", null]);
 });
 
 /* ── A workspace with a library ──────────────────────────────────────── */
@@ -264,15 +264,15 @@ async function seeding(name: string, files: string[]) {
     saveDraft(owner, { ...newProject(`${id} draft`), id, productionProjectId, assets: assets.map((a) => ({ id: a.id, name: a.id, kind: "image" as const, category: "Reference", url: `/api/uploads/${a.uploadId}`, uploadId: a.uploadId, mime: "image/png", description: "", prompt: "", status: "Draft" as const, locked: false, version: 1, refs: [] })) }, 0);
   const file = (production: string | null, upload: string) => production
     ? database.db().execute({ sql: "INSERT INTO project_library_uploads(project_id,upload_id,created_by,created_at) VALUES(?,?,?,?)", args: [production, upload, actor.user.id, clock] }) : null;
-  /** An upload: the 10 s 640×360 fixture clip (stored as the original, under an id no other spec uses), or a still row; filed to a production's library, or loose. */
+  /** An upload: the 6 s 640×360 fixture clip (stored as the original, under an id no other spec uses), or a still row; filed to a production's library, or loose. */
   async function upload(id: string, kind: "video" | "image", production: string | null, meta: { width?: number; height?: number; seconds?: number } = {}) {
     const at = clock++;
     if (kind === "video") {
-      const bytes = readFileSync("public/fixtures/clip.mp4");
+      const bytes = readFileSync("public/fixtures/clip-6s.mp4");
       const stored = await storage.storeUpload(id, "mp4", bytes, "video/mp4");
       files.push(path.resolve(".data/uploads", `${id}.mp4`));
       await database.db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,width,height,duration_s,created_at) VALUES(?,?,'video/mp4','mp4',?,?,?,'video',?,?,?,?)",
-        args: [id, `${id}.mp4`, bytes.length, stored.sha256, stored.url, meta.width ?? 640, meta.height ?? 360, meta.seconds ?? 10, at] });
+        args: [id, `${id}.mp4`, bytes.length, stored.sha256, stored.url, meta.width ?? 640, meta.height ?? 360, meta.seconds ?? 6, at] });
     } else {
       await database.db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,width,height,created_at) VALUES(?,?,'image/png','png',128,'fixture-sha',?,'image',1024,1024,?)",
         args: [id, `${id}.png`, `/api/uploads/${id}`, at] });
@@ -367,7 +367,7 @@ test("the library the planner is shown is this workspace's and this project's ow
     expect(own.map((i) => [i.handle, i.id, i.origin])).toEqual([
       ["V1", "a_take_clip", "generation"], ["S1", "a_take_still", "generation"], ["S2", "a_still", "upload"], ["V2", "ks_scope_clip", "upload"],
     ]);
-    expect(own.find((i) => i.id === "ks_scope_clip")).toMatchObject({ seconds: 10, width: 640, height: 360, name: "ks_scope_clip.mp4" });
+    expect(own.find((i) => i.id === "ks_scope_clip")).toMatchObject({ seconds: 6, width: 640, height: 360, name: "ks_scope_clip.mp4" });
     expect(own.find((i) => i.id === "a_take_clip")).toMatchObject({ seconds: 6, width: null, size: "720p 16:9" });
     const linked = await plannerLibrary({ owner: actor.user.id, projectId: "prod_a", studioProjectId: "draft_a" });
     expect(linked.map((i) => i.id)).toEqual(["a_take_clip", "a_take_still", "a_draft_still", "a_still", "ks_scope_clip"]);
@@ -499,12 +499,12 @@ test("a library step nothing can price is not proposed, and says why; without a 
     await s.database.db().execute("UPDATE uploads SET duration_s=2 WHERE id='ks_unpriced_clip'");
     const short = await turn((body) => priceKeyStep(body, actor));
     expect(short.steps.map((step) => step.model)).toEqual([MARKETING]);
-    expect(short.message.text).toContain("Not proposed:\n- Mocked motion transfer — its source clip must run 4 to 30 seconds.");
+    expect(short.message.text).toContain("Not proposed:\n- Mocked motion transfer — its source clip must run 4 to 8 seconds.");
     /* Left out for its inputs and left out for its price: one list says both. */
     const both = await turn(async () => ({ error: "No estimate came back" }));
     expect(both.steps).toEqual([]);
     expect(both.message.text.split("Not proposed:")).toHaveLength(2);
-    expect(both.message.text).toMatch(/Not proposed:\n- Mocked motion transfer — its source clip must run 4 to 30 seconds\.\n- Mocked campaign still — no price: No estimate came back\.$/);
+    expect(both.message.text).toMatch(/Not proposed:\n- Mocked motion transfer — its source clip must run 4 to 8 seconds\.\n- Mocked campaign still — no price: No estimate came back\.$/);
   })));
 
 test("the quote's fingerprint binds an approval to the exact source, stills, settings and Studio project", async () =>

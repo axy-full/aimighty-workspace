@@ -199,7 +199,7 @@ test("Moleculr discovers real preset IDs, saves selection and quotes ordered ima
   const review = page.getByRole("dialog");
   await expect(review.getByRole("button", { name: "Generate · about 3 cr", exact: true })).toBeEnabled();
   expect(quotes.at(-1)).toMatchObject({ marketing: { variant: "flare", quality: "max", enhancePrompt: true, presetId } });
-  await expect(review.getByLabel("Marketing image quality")).toBeEnabled();
+  await expect(review.getByLabel("Product image quality")).toBeEnabled();
   await page.keyboard.press("Escape");
   expect(catalogScopes.every(Boolean)).toBe(true);
   expect(dispatched).toEqual([]);

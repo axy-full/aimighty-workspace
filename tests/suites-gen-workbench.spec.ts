@@ -59,7 +59,7 @@ test("Enhance wears its live price, approves exactly that, and the card offers U
   expect(enhance).toHaveLength(0);
 
   await page.getByTestId("gen-prompt").fill("@Image1 a fox crossing a frozen harbour");
-  await expect(button).toHaveText("Enhance · 1 cr");
+  await expect(button).toHaveText("Enhance now · 1 cr");
   expect(enhance.at(-1)).toMatchObject({ quoteOnly: true, mode: "video", prompt: "@Image1 a fox crossing a frozen harbour" });
   await button.click();
   const card = page.getByTestId("enhanced-card");
@@ -122,7 +122,7 @@ test("the Gen composer keeps the phone floors", async ({ page }, info) => {
   test.skip(WIDE.includes(info.project.name) || !SIZES.includes(info.project.name), "the three phone viewports");
   await open(page);
   await page.getByTestId("gen-prompt").fill("a fox crossing a frozen harbour");
-  await expect(page.getByTestId("enhance")).toHaveText("Enhance · 1 cr");
+  await expect(page.getByTestId("enhance")).toHaveText("Enhance now · 1 cr");
   await page.getByTestId("enhance").click();
   await expect(page.getByTestId("enhanced-card")).toBeVisible();
   await page.getByTestId("gen-view").evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));

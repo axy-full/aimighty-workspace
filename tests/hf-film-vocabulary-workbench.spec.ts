@@ -547,8 +547,7 @@ test("a batch of four takes carries the chips' setup in every take it prices and
   await sheet.locator("[data-option='move:push']").click();
   await expect(chip(page, "camera")).toHaveAttribute("aria-label", "Camera: Push in");
   await expect(page.getByTestId("gen-generate")).toHaveText("Make · 31 cr");
-  const stepper = page.getByRole("group", { name: "Takes per generate" });
-  for (let n = 1; n < 4; n++) await stepper.getByRole("button", { name: "More" }).click();
+  await page.getByTestId("gen-takes-4").click();
   await expect(page.getByTestId("gen-takes-count")).toHaveText("4");
   await expect(page.getByTestId("gen-generate")).toHaveText("Make 4 takes · 124 cr");
   await page.getByTestId("gen-generate").click();

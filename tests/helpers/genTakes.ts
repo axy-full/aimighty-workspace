@@ -14,6 +14,6 @@ export async function moreTakes(page: Page, presses: number) {
   await expect(go).toHaveText(/\d (connected )?cr/);
   /* Takes sit in Make's folded Advanced. */
   await openAdvanced(page);
-  const more = page.getByTestId("gen-takes").getByRole("button", { name: "More", exact: true });
-  for (let i = 0; i < presses; i++) await more.click();
+  /* The takes are chips, each with its total: ×1 to ×4 (Gaps B). */
+  if (presses > 0) await page.getByTestId(`gen-takes-${presses + 1}`).click();
 }

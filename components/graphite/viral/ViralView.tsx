@@ -11,8 +11,8 @@ import { useOpenTake } from "@/lib/shell/use-open-take";
 import { useKeyTake } from "@/lib/shell/use-key-take";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import {
-  INITIAL_VIRAL, PROMPT_MAX, REFERENCE_MAX, VARIANT_NAME, VIRAL_COPY, VIRAL_PAGES, VIRAL_RESOLUTIONS,
-  addMedia, canCancel, downloadHref, estimateReason, genjutsuInput, mirrorSeek, moveReference,
+  INITIAL_VIRAL, PROMPT_MAX, REFERENCE_MAX, SOURCE_SECONDS, VARIANT_NAME, VIRAL_COPY, VIRAL_PAGES, VIRAL_RESOLUTIONS,
+  addMedia, canCancel, downloadHref, estimateReason, genjutsuInput, mirrorSeek, moveReference, moveReferenceTo,
   takeDone, takeInFlight, takeRecipe, takeWords, viralBlock, viralMedia, viralRequest, viralTakes,
   type MirrorMark, type ViralMedia, type ViralPage, type ViralState, type ViralTake,
 } from "@/lib/shell/viral";
@@ -226,8 +226,27 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
   const seconds = s.source?.seconds != null ? `${Math.round(s.source.seconds)} s` : null;
   const library = () => shell.openLibrary("assets");
 
+  const swap = page === "swap";
+  const dragging = useRef<string | null>(null);
+  const [frames, setFrames] = useState<{ start?: ViralMedia; end?: ViralMedia }>({});
+  const reorder = (id: string, to: number) => set((prev) => moveReferenceTo(prev, id, to));
+
   return (
     <section className="gx-gen-card gx-make-compose vr-tool" aria-label={tool.name} data-testid="viral-view" data-page={page}>
+      {/* Running, on the panel: where it stands in words, and Cancel only while it still waits its turn at the provider. */}
+      {running ? (
+        <div className="vr-running" role="status" data-testid="viral-running">
+          <span className="gx-eyebrow" data-functional-label="">Running</span>
+          <span className="vr-bar" data-indeterminate="" aria-hidden="true" />
+          <span className="gx-gen-note">{running.held ? "Held · it starts when credits arrive." : runningTake ? takeWords(runningTake).label : "Queued"} · {priceWords(upTo(running.credits))}</span>
+          {runningTake && canCancel(runningTake, session) ? (
+            <span className="vr-done-actions">
+              <button type="button" className="gx-hbtn" disabled={take.cancelling === running.jobId} onClick={() => void take.cancel(running.jobId)} data-testid="viral-cancel">{take.cancelling === running.jobId ? "Cancelling…" : "Cancel"}</button>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="gx-make-label"><span className="gx-eyebrow" data-functional-label="">Source video</span><span className="gx-hint">one · {SOURCE_SECONDS.min}–{SOURCE_SECONDS.max} s</span></div>
       <div className="vr-src" data-over={over} {...drop} data-testid="viral-source-card">
         <div className="vr-src-media">
           {s.source?.url ? <LazyMedia url={s.source.url} kind="video" alt="" name={s.source.name} className="gx-lazy" /> : null}
@@ -244,6 +263,7 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
       </div>
 
       <div className="vr-words">
+        <div className="gx-make-label"><span className="gx-eyebrow" data-functional-label="">{swap ? "Replace" : "Direction"}</span><span className="gx-hint">{swap ? "one element" : "optional"}</span></div>
         <PromptAttach scope={scope} projectId={project?.id} onAttach={attachToViral} testId="viral-attach"><textarea className="gx-textarea gx-make-words" aria-label={copy.promptLabel} rows={3} maxLength={PROMPT_MAX} placeholder={copy.promptPlaceholder} value={s.prompt} onChange={(e) => set({ ...s, prompt: e.target.value })} data-testid="viral-prompt" /></PromptAttach>
         <div className="gx-seg gx-seg--sm vr-res" role="radiogroup" aria-label="Resolution">
           {VIRAL_RESOLUTIONS.map((r) => <button key={r} type="button" role="radio" className="gx-seg-btn" aria-checked={s.resolution === r} onClick={() => set({ ...s, resolution: r })}><span>{r}</span></button>)}
@@ -251,25 +271,34 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
       </div>
 
       <div className="vr-refs" data-over={over} {...drop} data-testid="viral-well">
-        <div className="gx-make-label"><span className="gx-eyebrow" data-functional-label="">{tool.refs}</span><span className="gx-hint">{s.references.length} of {REFERENCE_MAX}</span></div>
+        <div className="gx-make-label"><span className="gx-eyebrow" data-functional-label="">{swap ? "With" : tool.refs}</span><span className="gx-hint">{s.references.length} of {REFERENCE_MAX}{s.references.length > 1 ? " · drag to reorder" : ""}</span></div>
         <div className="vr-ref-grid">
-          {s.references.map((r) => (
-            <div className="vr-ref-tile" key={r.id} data-testid="viral-reference">
+          {s.references.map((r, i) => (
+            <div className="vr-ref-tile" key={r.id} data-testid="viral-reference" draggable data-index={i + 1}
+              onDragStart={(e) => { dragging.current = r.id; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", r.id); }}
+              onDragEnd={() => { dragging.current = null; }}
+              onDragOver={(e) => { if (dragging.current) { e.preventDefault(); e.stopPropagation(); } }}
+              onDrop={(e) => { if (!dragging.current) return; e.preventDefault(); e.stopPropagation(); reorder(dragging.current, i); dragging.current = null; }}>
               {r.url ? <LazyMedia url={r.url} kind="image" alt="" name={r.name} className="gx-lazy" /> : null}
+              <span className="vr-ref-num" aria-hidden="true">{i + 1}</span>
               <span className="vr-ref-name">{r.name}</span>
               <button type="button" className="vr-ref-x" aria-label={`Remove ${r.name}`} onClick={() => set({ ...s, references: s.references.filter((x) => x.id !== r.id) })}>×</button>
             </div>
           ))}
-          <button type="button" className="vr-ref-add" onClick={library}><span aria-hidden="true">+</span>Add</button>
+          {s.references.length < REFERENCE_MAX ? <button type="button" className="vr-ref-add" onClick={library}><span aria-hidden="true">+</span>Add</button> : null}
         </div>
         {note ? <p className="gx-gen-note" role="status" data-testid="viral-note">{note}</p> : null}
       </div>
+
+      {s.source && project ? <SourceTools scope={scope} projectId={project.id} source={s.source} full={s.references.length >= REFERENCE_MAX} frames={frames}
+        onFrame={(edge, frame) => { setFrames((now) => ({ ...now, [edge]: frame })); place([frame]); }} onNote={setNote} /> : null}
 
       <div className="gx-make-engine vr-engine" data-testid="viral-engine">
         <Glyph name="spark" size={16} className="gx-glyph" />
         <span className="gx-make-engine-line">
           <span className="gx-model-name">{tool.name}</span>
           <span className="gx-make-engine-part">{s.resolution}</span>
+          {seconds ? <span className="gx-make-engine-part">{seconds}</span> : null}
           {credits != null ? <span className="gx-make-engine-part gx-mono" data-testid="make-engine-price" title={figureTitle}><Price value={figure} /></span> : null}
         </span>
       </div>
@@ -293,16 +322,6 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
       {/* Below: what the drawn panel has no place for yet, as the Viral page had it. */}
       <div className="gx-make-more" data-testid="make-more">
         {credits != null ? <p className="gx-gen-foot" data-testid="viral-foot">An estimate from the live price · filed to this project’s takes</p> : null}
-        {running ? (
-          <div className="vr-done" role="status" data-testid="viral-running">
-            <span className="gx-gen-note">{running.held ? "Held · it starts when credits arrive." : runningTake ? takeWords(runningTake).label : "Queued"} · {priceWords(upTo(running.credits))}</span>
-            {runningTake && canCancel(runningTake, session) ? (
-              <span className="vr-done-actions">
-                <button type="button" className="gx-hbtn" disabled={take.cancelling === running.jobId} onClick={() => void take.cancel(running.jobId)} data-testid="viral-cancel">{take.cancelling === running.jobId ? "Cancelling…" : "Cancel"}</button>
-              </span>
-            ) : null}
-          </div>
-        ) : null}
         {run.phase === "done" ? (
           <div className="vr-done" role="status" data-testid="viral-done">
             <span className="gx-gen-note">Rendered.</span>
@@ -312,7 +331,6 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
             </span>
           </div>
         ) : null}
-        {s.source && project ? <SourceTools scope={scope} projectId={project.id} source={s.source} full={s.references.length >= REFERENCE_MAX} onFrame={(frame) => place([frame])} onNote={setNote} /> : null}
         {s.references.length > 1 ? (
           <div className="gx-gen-row vr-order" data-testid="viral-order">
             <span className="cw-dim">{s.references.length} of {REFERENCE_MAX} reference images · order is the order sent</span>
@@ -333,12 +351,11 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
 }
 
 /**
- * The source's own tools: its first or last frame saved to the project as a
- * full-size still (and placed as the next reference), and the original
- * downloaded. The frame is read from Particl's own copy in the browser; no
- * provider is asked and nothing is charged.
+ * Start and end frames (optional): the source's first or last frame saved to the project as a full-size still and placed as the
+ * next reference, and the original downloaded. The frame is read from Particl's own copy in the browser; no provider is asked and
+ * nothing is charged. A saved frame shows here as its picture.
  */
-function SourceTools({ scope, projectId, source, full, onFrame, onNote }: { scope: string; projectId: string; source: ViralMedia; full: boolean; onFrame: (frame: ViralMedia) => void; onNote: (note: string | null) => void }) {
+function SourceTools({ scope, projectId, source, full, frames, onFrame, onNote }: { scope: string; projectId: string; source: ViralMedia; full: boolean; frames: { start?: ViralMedia; end?: ViralMedia }; onFrame: (edge: VideoFrameEdge, frame: ViralMedia) => void; onNote: (note: string | null) => void }) {
   const [busy, setBusy] = useState<VideoFrameEdge | null>(null);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -356,7 +373,7 @@ function SourceTools({ scope, projectId, source, full, onFrame, onNote }: { scop
       if (!saved) { onNote(notes[0] ?? "The frame could not be saved."); return; }
       const still: ViralMedia = { id: `upload:${saved.id}`, sourceId: saved.id, origin: "upload", kind: "image", name: saved.filename, url: saved.url, seconds: null };
       if (full) onNote(`${edge === "start" ? "Start" : "End"} frame saved to this project · ${frame.width} × ${frame.height} PNG. The references are full.`);
-      else { onFrame(still); onNote(`${edge === "start" ? "Start" : "End"} frame saved to this project and added as a reference · ${frame.width} × ${frame.height} PNG.`); }
+      else { onFrame(edge, still); onNote(`${edge === "start" ? "Start" : "End"} frame saved to this project and added as a reference · ${frame.width} × ${frame.height} PNG.`); }
     } catch (error) {
       if (alive.current) onNote(error instanceof Error ? error.message : "The frame could not be saved.");
     } finally {
@@ -364,10 +381,18 @@ function SourceTools({ scope, projectId, source, full, onFrame, onNote }: { scop
     }
   };
   return (
-    <div className="vr-done-actions vr-source-tools" data-testid="viral-source-tools">
-      <button type="button" className="gx-hbtn" disabled={Boolean(busy)} onClick={() => void grab("start")} data-testid="viral-frame-start">{busy === "start" ? "Saving frame…" : "Start frame"}</button>
-      <button type="button" className="gx-hbtn" disabled={Boolean(busy)} onClick={() => void grab("end")} data-testid="viral-frame-end">{busy === "end" ? "Saving frame…" : "End frame"}</button>
-      <a className="gx-hbtn" href={downloadHref(source.origin, source.sourceId)} download data-testid="viral-source-download">Download source</a>
+    <div className="vr-frames" data-testid="viral-source-tools">
+      <div className="gx-make-label"><span className="gx-eyebrow" data-functional-label="">Start and end frames</span><span className="gx-hint">optional</span></div>
+      <div className="vr-frame-row">
+        {(["start", "end"] as const).map((edge) => (
+          <button key={edge} type="button" className="vr-frame" disabled={Boolean(busy)} data-set={frames[edge] ? "" : undefined} onClick={() => void grab(edge)} data-testid={`viral-frame-${edge}`}
+            aria-label={busy === edge ? "Saving frame…" : `${edge === "start" ? "Start" : "End"} frame${frames[edge] ? " (saved)" : ""}`}>
+            {frames[edge]?.url ? <LazyMedia url={frames[edge]!.url!} kind="image" alt="" name={frames[edge]!.name} className="gx-lazy" /> : <span className="vr-frame-add" aria-hidden="true">+</span>}
+            <span className="vr-frame-name">{busy === edge ? "Saving…" : edge === "start" ? "Start" : "End"}</span>
+          </button>
+        ))}
+        <a className="gx-hbtn vr-download" href={downloadHref(source.origin, source.sourceId)} download data-testid="viral-source-download">Download source</a>
+      </div>
     </div>
   );
 }

@@ -138,3 +138,14 @@ export async function bringIntoView(page: Page, locator: ReturnType<Page["locato
   await page.mouse.wheel(0, Math.round((box.y - top) * 2));
   await page.waitForTimeout(450);
 }
+
+/** A saved project the signed-in workspace opens on (its scope remembered in the browser), for what shows "from the brief". */
+export async function openProjectFor(page: Page, workspaceId: string, name = "Details fixture") {
+  const me = await (await page.request.get("/api/me")).json() as { id: string };
+  const scope = `particl-active-${workspaceId}-${me.id}`;
+  const project = newProject(name);
+  const saved = await page.request.put("/api/workbench/projects", { headers: { "X-Workbench-Scope": scope }, data: { project, revision: 0 } });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: project.id });
+  return { project, scope };
+}
