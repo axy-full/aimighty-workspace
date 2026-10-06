@@ -1,8 +1,24 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { totpAt } from "../lib/totp";
-import { legacyShell } from "./helpers/legacyShell";
 const password = "a local browser test passphrase 42";
+
+/**
+ * The workspace's two-step rule is set through the same route the old People page used (POST /api/workspaces/security: the
+ * owner's password and a fresh authenticator or recovery code). The page that drew it is gone (/team is Settings > Team, which
+ * shows the rule read-only), so the owner's side is driven at the route, with every check on its answer kept.
+ */
+async function setPolicy(page: Page, scope: string, requiresMfa: boolean, code: string) {
+  const response = await page.request.post("/api/workspaces/security", {
+    headers: { "X-Workbench-Scope": scope },
+    data: { requiresMfa, password, code },
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+  expect((await response.json()).requiresMfa).toBe(requiresMfa);
+  const read = await page.request.get("/api/workspaces/security", { headers: { "X-Workbench-Scope": scope } }).then((r) => r.json());
+  expect(read.requiresMfa).toBe(requiresMfa);
+  return read as { requiresMfa: boolean; members: number; unenrolled: number };
+}
 async function enrol(page: Page) {
   await page.getByLabel("Current password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Set up authenticator" }).click();
@@ -81,15 +97,10 @@ test("owner policy blocks existing member data and tokens, allows workspace swit
     });
     expect((await bearer.get("/api/jobs?sync=0")).status()).toBe(200);
     expect((await member.request.get("/api/jobs?sync=0")).status()).toBe(200);
-    await member.goto(await legacyShell(member, "/workbench"));
-    // The suite header keeps the account status visible on phone and desktop;
-    // it no longer uses the legacy mobile workspace drawer.
-    await expect(
-      member.getByRole("button", {
-        name: "Workspace credits and billing",
-        exact: true,
-      }),
-    ).toBeVisible();
+    await member.goto("/suites");
+    await expect(member).toHaveURL(/\/suites(\?|$)/);
+    /* The shell's header keeps the account status visible: the credits, on a desktop's header or the phone's own. */
+    await expect(member.locator('[data-testid="workspace-credits"], [data-testid="phone-credits"]').first()).toBeVisible();
     await page.goto("/account/security");
     const ownerCodes = await enrol(page);
     await page
@@ -100,8 +111,8 @@ test("owner policy blocks existing member data and tokens, allows workspace swit
     await expect(
       page.getByRole("button", { name: "I have saved my recovery codes" }),
     ).toHaveCount(0);
-    await page.goto("/team");
     if (testInfo.project.name === "customer-1440x900") {
+      /* The answer to the owner's POST is lost after the server committed it: the policy is read back, never guessed. */
       let lost = false;
       await page.route("**/api/workspaces/security", async (route) => {
         if (route.request().method() !== "POST" || lost)
@@ -112,41 +123,30 @@ test("owner policy blocks existing member data and tokens, allows workspace swit
         await route.abort("failed");
       });
     }
-    await expect(
-      page.getByText("Optional for members", { exact: true }),
-    ).toBeVisible();
-    await page.getByLabel("Owner password", { exact: true }).fill(password);
-    await page
-      .getByLabel("Fresh authenticator or recovery code", { exact: true })
-      .fill(ownerCodes[0]);
-    await page
-      .getByRole("button", { name: "Require two-step sign-in", exact: true })
-      .click();
-    await expect(
-      page.getByText("Required for all members", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByText("1 of 2 active members have enrolled.", { exact: false }),
-    ).toBeVisible();
-    await member.evaluate(() =>
-      document.dispatchEvent(new Event("visibilitychange")),
-    );
-    await expect(
-      member.getByRole("link", { name: "Set up sign-in", exact: true }),
-    ).toBeVisible();
-    await expect(member).toHaveURL(/\/workbench$/);
-    await page
-      .getByRole("heading", { name: "Workspace sign-in policy", exact: true })
-      .scrollIntoViewIfNeeded();
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth + 1,
-      ),
-    ).toBe(true);
-    await page.screenshot({
-      path: testInfo.outputPath("workspace-policy-owner.png"),
-      fullPage: false,
-    });
+    const before = await page.request.get("/api/workspaces/security", { headers: { "X-Workbench-Scope": ownerScope } }).then((r) => r.json());
+    expect(before.requiresMfa).toBe(false);
+    let policy;
+    if (testInfo.project.name === "customer-1440x900") {
+      /* page.request is not routed: drive the lost answer through the page's own fetch so the abort applies. */
+      const lostAnswer = await page.evaluate(async ({ scope, password: pw, code }) => {
+        try {
+          await fetch("/api/workspaces/security", { method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ requiresMfa: true, password: pw, code }) });
+          return "answered";
+        } catch {
+          return "lost";
+        }
+      }, { scope: ownerScope, password, code: ownerCodes[0] });
+      expect(lostAnswer).toBe("lost");
+      policy = await page.request.get("/api/workspaces/security", { headers: { "X-Workbench-Scope": ownerScope } }).then((r) => r.json());
+      expect(policy.requiresMfa).toBe(true);
+    } else {
+      policy = await setPolicy(page, ownerScope, true, ownerCodes[0]);
+    }
+    expect(policy.requiresMfa).toBe(true);
+    /* "1 of 2 active members have enrolled": the owner has, the member has not. */
+    expect(policy.members - policy.unenrolled).toBe(1);
+    expect(policy.members).toBe(2);
+    /* A member's open page learns of it on the next request: the API refuses (below), and the shell goes to sign-in setup. */
     for (const path of [
       "/api/jobs?sync=0",
       "/api/uploads/private-probe",
@@ -187,6 +187,7 @@ test("owner policy blocks existing member data and tokens, allows workspace swit
       ).ok(),
     ).toBe(true);
     for (const path of [
+      "/suites",
       "/workbench",
       "/workbench/movie",
       "/billing",
@@ -229,22 +230,11 @@ test("owner policy blocks existing member data and tokens, allows workspace swit
     await member
       .getByRole("link", { name: "Continue to workspace", exact: true })
       .click();
-    await expect(member).toHaveURL(/\/workbench$/);
+    await expect(member).toHaveURL(/\/suites(\?|$)/);
     expect((await member.request.get("/api/jobs?sync=0")).status()).toBe(200);
     expect((await bearer.get("/api/jobs?sync=0")).status()).toBe(200);
-    await page.getByLabel("Owner password", { exact: true }).fill(password);
-    await page
-      .getByLabel("Fresh authenticator or recovery code", { exact: true })
-      .fill(ownerCodes[1]);
-    await page
-      .getByRole("button", {
-        name: "Make two-step sign-in optional",
-        exact: true,
-      })
-      .click();
-    await expect(
-      page.getByText("Optional for members", { exact: true }),
-    ).toBeVisible();
+    /* The owner makes it optional again, with a second fresh code. */
+    expect((await setPolicy(page, ownerScope, false, ownerCodes[1])).requiresMfa).toBe(false);
   } finally {
     await bearer?.dispose();
     await memberContext.close();

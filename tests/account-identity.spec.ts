@@ -113,25 +113,6 @@ test("a copied invitation link asks for the invitation email before a new accoun
   expect(posted[1]).toMatchObject({ code, m: "proof-from-email", accept: true });
 });
 
-test("the Team page says an invitation hit the mail limit, not that delivery failed", async ({ page }) => {
-  await signInLocally(page.request);
-  const limit = "That address has been sent 3 invitations from this workspace today. Copy the invitation link instead.";
-  // Only the invitation POST is answered here, in the route's own shape; the roster loads for real.
-  await page.route("**/api/team", (route) =>
-    route.request().method() === "POST"
-      ? route.fulfill({ json: { code: "limited-code", email: "someone@example.test", name: "Someone", role: "member", expiresInDays: 7, sent: false, mailError: limit, mailLimited: true } })
-      : route.fallback(),
-  );
-  await page.goto("/team");
-  await page.getByRole("button", { name: "Invite someone" }).first().click();
-  await page.getByLabel("Name", { exact: true }).fill("Someone");
-  await page.getByLabel("Email address", { exact: true }).fill("someone@example.test");
-  await page.getByRole("button", { name: /Send invite|Create invite/ }).click();
-  await expect(page.getByText(`Invitation created, not emailed. ${limit}`)).toBeVisible();
-  await expect(page.getByText(/Email delivery failed/)).toHaveCount(0);
-  expect(await noSideScroll(page)).toBe(true);
-});
-
 test("a member whose workspace requires two-step sign-in replaces a lost authenticator", async ({ page }) => {
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());

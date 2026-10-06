@@ -1,10 +1,10 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Asset, type Project } from "../lib/workbench/studio";
-import { CLIP_WIDTHS, DESKTOP, PHONE, assertNoClipping, forbidPaidWork, mockLibrary, mockMedia, mockProjects, generation, type ProjectRoute } from "./helpers/workspaceFixtures";
+import { CLIP_WIDTHS, DESKTOP, assertNoClipping, forbidPaidWork, mockLibrary, mockMedia, mockProjects, generation, type ProjectRoute } from "./helpers/workspaceFixtures";
 
 /**
- * Edit & Sound (workspace redesign): the assembly from the real edit
+ * Edit & Sound (the editor the board's Cut card opens): the assembly from the real edit
  * sequence with the real TimelinePreview transport, stem rows from the
  * edit's audio lanes (dialogue, sfx, music — no invented ambience lane),
  * each opening the existing SoundGenerate door with the live credit quote
@@ -75,22 +75,15 @@ async function open(page: Page, store: ProjectRoute, audio: Audio) {
       return json(route, { error: "The audio estimate exceeds the approved credit amount. Review the price before submitting." }, 409, { "Idempotency-Status": "complete" });
     return json(route, { id: "job_sfx_1", status: "running", estimatedCredits: audio.price });
   });
-  await page.goto(`/workspace?project=${store.current.id}&suite=particl&page=edit`);
+  /* The old /workspace page is the board's Cut card now: Open Edit & Sound opens the same editor (components/workspace/pages/EditPage.tsx)
+     over the board. */
+  await page.goto(`/suites?project=${store.current.id}&view=board&region=cut`);
+  await page.getByTestId("cut-open-edit").click();
+  await expect(page.getByTestId("edit-sound")).toBeVisible();
   await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
 }
 
 const stem = (page: Page, id: string) => page.locator(`[data-stem="${id}"]`);
-
-test("phones render the phone shell for Edit & Sound", async ({ page }, info) => {
-  test.skip(!PHONE.includes(info.project.name), "phone viewports");
-  await signInLocally(page.request);
-  await mockProjects(page, { current: fixture() });
-  await page.goto(`/workspace?project=ws-edit&suite=particl&page=edit`);
-  /* The phone shell renders here now (wave M-A): /workspace is the phone's
-     surface below 768px, and the desktop studio row is not mounted. */
-  await expect(page.getByTestId("phone-shell")).toBeVisible();
-  await expect(page.getByTestId("studio-row")).toHaveCount(0);
-});
 
 test("Edit & Sound: assembly from the sequence, stems from the lanes, transport and mix", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
