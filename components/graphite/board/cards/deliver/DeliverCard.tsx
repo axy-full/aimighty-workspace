@@ -8,13 +8,15 @@ import { defineCard, type BoardCtx, type CardProps } from "../types";
 import { DeliverBody } from "../../inspector/DeliverBody";
 import { deliverRows, type CutCardData } from "../cut/cut-model";
 import { SpecRowView } from "./SpecRow";
+import { useLoudnessInput } from "../../edit/loudness-store";
 import "./deliver.css";
 
 /*
  * Frame i's Deliver card (README § 3.1): what the cut is delivered as, the checks, and Export the cut · free (the browser export, not the final render), which
  * opens the Inspector where the existing on-device renderer (with its progress and Download) lives. The checks read
  * "pending" until the cut is complete; a rate or a length is never ticked that nothing was checked against; loudness
- * is not measured here, so the row says so and offers no button. Nothing here is paid: the export runs in the browser.
+ * reads "Not checked" and the deliverable's target until Edit & Sound has measured the sound the cut holds now.
+ * Nothing here is paid: the export runs in the browser.
  */
 
 function Btn({ className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement>) {
@@ -26,7 +28,7 @@ export const DELIVER_SIZE = { w: 486, h: 330 } as const;
 export function DeliverCard({ card, data, ctx }: CardProps<CutCardData>) {
   const { signedIn } = useSession();
   const { cut } = data;
-  const rows = deliverRows(cut);
+  const rows = deliverRows(cut, useLoudnessInput(ctx.project));
   const act = signedIn && !ctx.offline;
   return (
     <article className="gx-deliver" aria-label="Deliver" data-testid="deliver-card" data-complete={cut.complete || undefined}>
