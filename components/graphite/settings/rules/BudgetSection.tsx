@@ -96,13 +96,16 @@ function BudgetPanel({ rules, onClose }: { rules: Rules; onClose: () => void }) 
     }
   }, [save]);
   const done = useCallback(() => { void flush().then(onClose); }, [flush, onClose]);
+  const doneRef = useRef(done);
+  useEffect(() => { doneRef.current = done; }, [done]);
+  /* Once, when it opens: focus its first field; Escape is Done (or Close). Saves still waiting go before it closes. */
   useEffect(() => {
     panel.current?.querySelector<HTMLElement>("input:not([disabled]), button")?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") done(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") doneRef.current(); };
     window.addEventListener("keydown", onKey);
     const all = timers.current;
     return () => { window.removeEventListener("keydown", onKey); for (const t of Object.values(all)) clearTimeout(t); };
-  }, [done]);
+  }, []);
 
   const undo = async () => {
     for (const t of Object.values(timers.current)) clearTimeout(t);

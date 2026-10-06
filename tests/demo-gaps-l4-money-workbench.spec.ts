@@ -45,7 +45,7 @@ async function grant(workspaceId: string, credits: number) {
   } finally { db.close(); }
 }
 
-type Seeded = { project: Project; productionId: string; scope: string; asks: Record<string, unknown>[]; posts: Record<string, unknown>[]; paid: string[] };
+type Seeded = { project: Project; productionId: string; shotIds: string[]; me: string; scope: string; asks: Record<string, unknown>[]; posts: Record<string, unknown>[]; paid: string[] };
 
 /** A board of three shots for whoever `api` is signed in as, its run answered by the browser. */
 async function board(page: Page, api: APIRequestContext, workspaceId: string, run: ReturnType<typeof runOf>, opts: { shot1Seconds?: number; noKey?: boolean; budget?: unknown } = {}): Promise<Seeded> {
@@ -59,7 +59,12 @@ async function board(page: Page, api: APIRequestContext, workspaceId: string, ru
   const saved = await api.put("/api/workbench/projects", { headers, data: { project, revision: 0 } });
   expect(saved.ok(), await saved.text()).toBe(true);
   const { productionProjectId: productionId } = await saved.json() as { productionProjectId: string };
-  for (const n of project.nodes) expect((await api.post("/api/workbench/projects", { headers, data: { projectId: project.id, action: "map-shot", nodeId: n.id } })).ok()).toBe(true);
+  const shotIds: string[] = [];
+  for (const n of project.nodes) {
+    const mapped = await api.post("/api/workbench/projects", { headers, data: { projectId: project.id, action: "map-shot", nodeId: n.id } });
+    expect(mapped.ok()).toBe(true);
+    shotIds.push((await mapped.json() as { shotId: string }).shotId);
+  }
   await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: project.id });
   const posts: Record<string, unknown>[] = [], asks: Record<string, unknown>[] = [], paid: string[] = [];
   await page.route(/\/api\/workbench\/team-canvas(\?|$)/, async (route) => {
@@ -90,7 +95,7 @@ async function board(page: Page, api: APIRequestContext, workspaceId: string, ru
     if (request.method() === "POST" && (path === "/api/generate" || /\/release$/.test(path) || path === "/api/workspaces/topups")) paid.push(path);
     if (request.method() === "POST" && path === "/api/workbench/ask-admin") asks.push(request.postDataJSON() as Record<string, unknown>);
   });
-  return { project, productionId, scope, asks, posts, paid };
+  return { project, productionId, shotIds, me: me.id, scope, asks, posts, paid };
 }
 
 const desktop = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1280;
@@ -212,14 +217,42 @@ test("a take failed: Nothing billed only where the provider's outcome says so; t
     step({ seq: 3, title: "Shot 3", state: "rendering", quote: 7 }),
   ]);
   const seeded = await board(page, page.request, workspace.id, run);
+  /* Shot 2's failed take, as the library route would list it: the provider's outcome says nothing was charged, and the
+     ledger agrees (settled at 0). The rest of the library is the server's own reply. */
+  const failedTake = {
+    id: "gen_l4failed", projectId: seeded.productionId, projectName: "A 15-second film", arkTaskId: null, kind: "video", reviewState: "", reviewBy: null, pickedBy: null, pickedAt: null,
+    approvedBy: null, approvedAt: null, model: SEED, prompt: "Shot 2: a quiet wide frame.", title: null,
+    params: { ratio: "16:9", resolution: "1080p", duration: 5, references: [] }, status: "failed", sourceUrl: null, storedUrl: null, totalTokens: null,
+    costUsd: null, creditsBilled: null, refineCostUsd: null, refineModel: null, refineInTokens: null, refineOutTokens: null, error: "The engine did not return a take.",
+    failure: { provider: "byteplus", stage: null, code: "provider_error", kind: "provider_error", message: "The engine did not return a take.", billing: { state: "not_charged", basis: "ark-success-only" }, payer: "platform", charge: { credits: 0, settled: true } },
+    createdBy: seeded.me, authorName: "Failed Tester", shotId: seeded.shotIds[1], shotCode: null, shotScene: null, shotTitle: "Shot 2", version: 1, durationMs: null, durationS: null,
+    provider: "byteplus", attempts: 1, task: "generate", sourceGenId: null, createdAt: Date.now() - 60_000, updatedAt: Date.now() - 30_000, settledAt: Date.now() - 30_000,
+  };
+  await page.route("**/api/workbench/library?**", async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() !== "GET" || url.searchParams.get("source") !== "generations") return route.continue();
+    const real = await route.fetch();
+    const body = await real.json() as { generations?: unknown[] };
+    return route.fulfill({ response: real, json: { ...body, generations: [failedTake, ...(body.generations ?? [])] } });
+  });
   if (!desktop(page)) return phoneFloors(page, seeded.project, seeded);
   await page.goto(`/suites?project=${seeded.project.id}&view=board`);
   const card = plan(page);
   await expect(card).toHaveAttribute("data-money", "failed", { timeout: 20_000 });
+  /* The take card: Nothing billed (confirmed), and Retry at the server's quote for the request it makes again. */
+  const take = page.locator('[data-testid="take-card"]').filter({ has: page.getByTestId("take-failed") }).first();
+  await expect(take.getByTestId("take-nothing-billed")).toHaveText("Nothing billed");
+  const retry = take.getByTestId("take-retry");
+  await expect(retry).toHaveText("Retry · 43 cr");
+  await expect(retry).toHaveAttribute("data-spend", "priced");
+  await expect(retry).toHaveAttribute("title", /^\$[\d.]+$/);
   await expect(card.getByTestId("board-plan-money")).toHaveText("Shot 2 failed · Nothing billed");
   await expect(card.getByTestId("board-plan-step").nth(1)).toContainText("Failed · nothing billed");
   expect(await smallText(page)).toEqual([]);
   await shoot(page, "money-failed", info.project.name);
+  /* Retry hands the recipe to Make, where a person presses Make at its price: nothing is sent from the card. */
+  await retry.click();
+  await expect(page).toHaveURL(/make=/);
   expect(seeded.posts).toEqual([]);
   expect(seeded.paid).toEqual([]);
 });
