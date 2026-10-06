@@ -8,6 +8,7 @@ import type { ApprovalRule } from "@/lib/approvalRule";
 import { Btn, Fold, Note, Problem, Row, Section } from "../parts";
 import { useRead, useWrite } from "../use-settings";
 import { useSpendingRules } from "./spending";
+import type { SettingsFold } from "@/lib/shell/settings";
 import { BudgetSection } from "./BudgetSection";
 import { capInput, productionLine, ruleValue, type ProductionBudget } from "./spending-words";
 
@@ -25,10 +26,10 @@ import { capInput, productionLine, ruleValue, type ProductionBudget } from "./sp
  *
  * Nothing here spends, approves or prices. People only: Atomik and outside agents never change these.
  */
-export function RulesSection() {
+export function RulesSection({ open = null }: { open?: SettingsFold | null } = {}) {
   const rules = useSpendingRules();
-  /* `&edit=rules` opens Budget and cap's panel (design Gaps B frame URLs). */
-  const [openAtStart] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("edit") === "rules");
+  /* `&open=budget` opens Budget and cap's panel (the design's `&edit=rules` frame). */
+  const openAtStart = open === "budget";
   const session = useSession();
   const write = useWrite();
   const { toast } = useWorkspace();

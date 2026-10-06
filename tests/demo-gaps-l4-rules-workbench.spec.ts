@@ -98,7 +98,7 @@ test("an admin edits the budget per production and the per-shot cap; each change
   expect(await overflow(page)).toBeLessThanOrEqual(0);
 
   /* The frame's URL opens the panel. */
-  await page.goto("/suites?view=workspace&ws=rules&edit=rules");
+  await page.goto("/suites?view=workspace&ws=rules&open=budget");
   await expect(page.getByTestId("settings-budget-panel")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("settings-budget-field")).toHaveValue("400");
   expect(errors).toEqual([]);
@@ -117,7 +117,7 @@ test("a member reads the budget and the cap, can't change them, and asks an admi
   expect(refused.status()).toBe(403);
   expect((await settingsOf(page.request)).productionBudgetCredits).toBe("400");
 
-  await page.goto("/suites?view=workspace&ws=rules&edit=rules&role=member");
+  await page.goto("/suites?view=workspace&ws=rules&open=budget");
   const panel = page.getByTestId("settings-budget-panel");
   await expect(panel).toBeVisible({ timeout: 20_000 });
   await expect(panel).toContainText("Only an admin can change these. Ask the owner or an admin.");

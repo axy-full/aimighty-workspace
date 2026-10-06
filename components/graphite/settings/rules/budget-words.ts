@@ -15,15 +15,14 @@ export type BudgetRules = { budget: number | null; warnPct: number | null; rule:
 
 /** "the 80 % pause asks at 320 cr", or what no budget means. */
 export function budgetLine(r: Pick<BudgetRules, "budget" | "warnPct">, cr: (n: number) => string): string {
-  if (r.budget == null) return "none · a production follows its own cap, if it has one";
-  const pause = budgetPause({ cap: r.budget, spent: 0, needs: 0, warnPct: r.warnPct ?? 80 });
-  return pause ? `the ${pause.pct} % pause asks at ${cr(pause.pauseAt)}` : "";
+  const pause = r.budget == null ? null : budgetPause({ cap: r.budget, spent: 0, needs: 0, warnPct: r.warnPct ?? 80 });
+  return pause ? `the ${pause.pct} % pause asks at ${cr(pause.pauseAt)}` : "none · a production follows its own cap, if it has one";
 }
 
 /** The help under the budget field. */
 export function budgetHelp(r: Pick<BudgetRules, "budget" | "warnPct">, cr: (n: number) => string): string {
-  if (r.budget == null) return "No budget: each production follows its own cap, if it has one.";
-  const pause = budgetPause({ cap: r.budget, spent: 0, needs: 0, warnPct: r.warnPct ?? 80 })!;
+  const pause = r.budget == null ? null : budgetPause({ cap: r.budget, spent: 0, needs: 0, warnPct: r.warnPct ?? 80 });
+  if (!pause) return "No budget: each production follows its own cap, if it has one.";
   return `Particl pauses at ${pause.pct} % (${cr(pause.pauseAt)}) and asks whether to continue.`;
 }
 

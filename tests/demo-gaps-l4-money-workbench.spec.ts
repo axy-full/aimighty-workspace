@@ -119,23 +119,31 @@ async function phoneFloors(page: Page, project: Project, seeded: Seeded) {
   expect(await overflow(page)).toBeLessThanOrEqual(0);
   expect(seeded.paid).toEqual([]);
 }
+/** The header's balance as a person reads it ("40 cr"): the smallest element in the header whose text is a credit figure. */
 async function headerBalance(page: Page): Promise<string> {
-  return (await page.locator("header").getByText(/^[\d,]+ cr$/).first().textContent())?.trim() ?? "";
+  return page.evaluate(() => {
+    const all = [...document.querySelectorAll<HTMLElement>("header *")].filter((el) => /^\s*[\d,]+\s*cr\s*$/.test(el.innerText ?? ""));
+    const leaf = all.find((el) => ![...el.children].some((c) => /^\s*[\d,]+\s*cr\s*$/.test((c as HTMLElement).innerText ?? "")));
+    return (leaf?.innerText ?? "").replace(/\s+/g, " ").trim();
+  });
 }
 
 test("short: Approve waits, Top up beside it opens Settings › Plan & credits, and the header's balance is the one the card counts", async ({ page }, info) => {
   const { workspace } = await signInLocally(page.request, "Short Tester");
+  /* The design's 40 cr: a fresh workspace's sign-up credits brought down to 40 on this local fixture database. */
+  const before = (await (await page.request.get("/api/workspaces/topups")).json() as { credits?: { balance?: number } }).credits?.balance ?? 0;
+  if (before !== 40) await grant(workspace.id, 40 - before);
   const seeded = await board(page, page.request, workspace.id, runOf("awaiting_approval", proposalSteps()));
   if (!desktop(page)) return phoneFloors(page, seeded.project, seeded);
   await page.goto(`/suites?project=${seeded.project.id}&view=board`);
   const card = plan(page);
   await expect(card).toBeVisible({ timeout: 20_000 });
   await expect(card.getByTestId("board-plan-line")).toContainText("93 cr for the 3 shots");
-  const balance = Number((await headerBalance(page)).replace(/[^\d]/g, ""));
-  test.skip(balance >= 93, `a fresh workspace here starts with ${balance} cr, not short of 93`);
+  /* The header's balance is the one the card counts: 40 cr, short by 53. */
+  await expect.poll(() => headerBalance(page)).toBe("40 cr");
+  const balance = 40;
   await expect(card.getByTestId("board-plan-money")).toHaveText(`Short by ${93 - balance} cr`);
   await expect(card).toHaveAttribute("data-money", "short");
-  await expect(card.getByTestId("board-plan-line")).toContainText(`Short by ${93 - balance} cr`);
   await expect(card.getByTestId("board-plan-primary")).toBeDisabled();
   await expect(card.getByTestId("board-plan-primary")).not.toHaveAttribute("data-spend", /.*/);
   const topUp = card.getByTestId("board-plan-topup");
@@ -249,7 +257,10 @@ test("a take failed: Nothing billed only where the provider's outcome says so; t
   await expect(card.getByTestId("board-plan-money")).toHaveText("Shot 2 failed · Nothing billed");
   await expect(card.getByTestId("board-plan-step").nth(1)).toContainText("Failed · nothing billed");
   expect(await smallText(page)).toEqual([]);
+  await expect(card.getByTestId("board-plan-step").nth(1)).toContainText("nothing billed");
   await shoot(page, "money-failed", info.project.name);
+  await page.getByTestId("board-rail").getByText("Shots", { exact: true }).click();
+  await shoot(page, "money-failed-take", info.project.name);
   /* Retry hands the recipe to Make, where a person presses Make at its price: nothing is sent from the card. */
   await retry.click();
   await expect(page).toHaveURL(/make=/);
