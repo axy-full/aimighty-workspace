@@ -2,7 +2,9 @@
  * Settings › Spending rules › Budget and cap, in words (design Gaps B: "?view=workspace&ws=rules&edit=rules"). Pure, so
  * the unit specs hold each line to the code:
  *  - the budget per production is `productionBudgetCredits` (lib/caps.ts projectCap: a production with no cap of its
- *    own follows it), and the pause asks at `capWarnPct` of it (lib/caps.ts budgetPause, rounded down);
+ *    own follows it), and Atomik's Auto runs ask at `capWarnPct` of it (lib/caps.ts budgetPause, rounded down; budgetAsk is
+ *    called only by the Auto gate). A person's own render past that share is warned and goes on to the budget;
+ *    House workspaces, not billed in credits, have no budget (`notEnforced`);
  *  - "Before an admin" is the cost approval rule's per-shot cap (lib/approvalRule.ts: rule "cap", 50 cr by default).
  *    Typing a figure there turns the rule to "cap"; clearing it turns it to "anyone". A "producer" rule is changed
  *    under Who may approve, not here.
@@ -16,14 +18,14 @@ export type BudgetRules = { budget: number | null; warnPct: number | null; rule:
 /** "the 80 % pause asks at 320 cr", or what no budget means. */
 export function budgetLine(r: Pick<BudgetRules, "budget" | "warnPct">, cr: (n: number) => string): string {
   const pause = r.budget == null ? null : budgetPause({ cap: r.budget, spent: 0, needs: 0, warnPct: r.warnPct ?? 80 });
-  return pause ? `the ${pause.pct} % pause asks at ${cr(pause.pauseAt)}` : "none · a production follows its own cap, if it has one";
+  return pause ? `Atomik’s Auto runs ask at ${cr(pause.pauseAt)} (${pause.pct} %)` : "none · a production follows its own cap, if it has one";
 }
 
 /** The help under the budget field. */
 export function budgetHelp(r: Pick<BudgetRules, "budget" | "warnPct">, cr: (n: number) => string): string {
   const pause = r.budget == null ? null : budgetPause({ cap: r.budget, spent: 0, needs: 0, warnPct: r.warnPct ?? 80 });
   if (!pause) return "No budget: each production follows its own cap, if it has one.";
-  return `Particl pauses at ${pause.pct} % (${cr(pause.pauseAt)}) and asks whether to continue.`;
+  return `Atomik’s Auto runs pause at ${pause.pct} % (${cr(pause.pauseAt)}) and ask whether to continue; a person’s own render is warned and goes on to the budget.`;
 }
 
 /** The "Before an admin" row: its value and line. */
@@ -59,3 +61,6 @@ export function fieldPatch(field: "budget" | "cap", text: string, rule: Approval
   if (t === "") return { patch: { approvalRule: "anyone" } };
   return ok ? { patch: { approvalRule: "cap", shotCapCredits: String(n) } } : { problem: "The cap is a whole number of credits, 1 or more, or empty for none." };
 }
+
+/** What the budget row says in a workspace not billed in credits, where nothing enforces it (lib/caps.ts projectCap). */
+export const NOT_ENFORCED = "This workspace is not billed in credits: no budget per production applies here.";

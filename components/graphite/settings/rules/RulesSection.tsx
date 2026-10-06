@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { useWorkspace } from "@/lib/workspace/state";
 import { creditRate, creditsText, creditsUsd } from "@/lib/shell/price-words";
@@ -156,11 +156,19 @@ function Productions({ canChange, budget: rulesBudget }: { canChange: boolean; b
     setBusy(p.id); setNote(null);
     const { error: refused } = await write(`/api/projects/${encodeURIComponent(p.id)}`, "PATCH", body);
     setBusy(null);
-    if (refused) { setNote({ ok: false, text: refused }); return; }
+    /* A refusal (say "The cap changed …: look again") reads the list again, so the row shows what the server holds. */
+    if (refused) { setNote({ ok: false, text: refused }); void read(); return; }
     setEdit(null);
     void read();
-    toast(said, { label: "Undo", kind: "undo", run: () => { void write(`/api/projects/${encodeURIComponent(p.id)}`, "PATCH", before).then(() => void read()); } });
+    toast(said, { label: "Undo", kind: "undo", run: () => { void write(`/api/projects/${encodeURIComponent(p.id)}`, "PATCH", before).then(({ error: no }) => { if (no) toast(no); void read(); }); } });
   };
+  /* A new budget (Budget and cap above) changes every production that follows it: read the list again. */
+  const firstBudget = useRef(rulesBudget);
+  useEffect(() => {
+    if (firstBudget.current === rulesBudget) return;
+    firstBudget.current = rulesBudget;
+    if (shown) void read();
+  }, [rulesBudget, shown, read]);
   const setCap = (p: ProductionBudget) => {
     const raw = (edit?.value ?? "").trim();
     const n = raw === "" ? null : capInput(raw, true);
@@ -182,10 +190,10 @@ function Productions({ canChange, budget: rulesBudget }: { canChange: boolean; b
               {canChange ? <Btn disabled={busy != null} pressed={editing} onClick={() => setEdit(editing ? null : { id: p.id, value: own == null ? "" : String(own) })} testId="settings-production-change">{own == null && p.capFrom === "workspace" ? "Set own cap" : "Change"}</Btn> : null}
               {/* Unlock wherever the gate can refuse at the cap, its own or the workspace budget; Lock again takes it back. */}
               {canChange && atItsCap(p) && !p.capUnlocked ? (
-                <Btn hot disabled={busy != null} onClick={() => void patch(p, { capUnlocked: true }, { capUnlocked: false }, `${p.name} is unlocked past its cap.`)} testId="settings-production-unlock">Unlock</Btn>
+                <Btn hot disabled={busy != null} onClick={() => void patch(p, { capUnlocked: true, forCap: p.capCredits }, { capUnlocked: false }, `${p.name} is unlocked past its cap of ${creditsText(p.capCredits!)}.`)} testId="settings-production-unlock">Unlock</Btn>
               ) : null}
               {canChange && p.capUnlocked ? (
-                <Btn disabled={busy != null} onClick={() => void patch(p, { capUnlocked: false }, { capUnlocked: true }, `${p.name} is locked at its cap again.`)} testId="settings-production-lock">Lock again</Btn>
+                <Btn disabled={busy != null} onClick={() => void patch(p, { capUnlocked: false }, { capUnlocked: true, forCap: p.capCredits }, `${p.name} is locked at its cap again.`)} testId="settings-production-lock">Lock again</Btn>
               ) : null}
             </Row>
             {editing ? (

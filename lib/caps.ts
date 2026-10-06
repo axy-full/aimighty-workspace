@@ -3,7 +3,7 @@ import { currentTenant } from "./tenant";
 import { creditsApply } from "./credits";
 import { billCreditsWith, marginFor, marginKeyOf } from "./creditTerms";
 import { creditsFor, type EstimateTerms } from "./billingTerms";
-import { getSetting } from "./settings";
+import { getSetting, invalidateSettings } from "./settings";
 import { workspaceAdmins, platformDb, platformReady } from "./platform";
 import { notify } from "./push";
 import { budgetPause, budgetPauseLine, cleanBudget, cleanWarnPct, type BudgetPause } from "./budgetPause";
@@ -207,11 +207,53 @@ export async function budgetAsk(projectId: string | null, needsCredits: number):
   return { pause, line: budgetPauseLine(pause) };
 }
 
+/* One write transaction on the workspace's database: a cap or budget and its re-lock land together, and an unlock is
+   checked against the cap and budget it reads in the same transaction (SQLite serialises writers). */
+async function inWrite<T>(fn: (tx: Awaited<ReturnType<ReturnType<typeof db>["transaction"]>>) => Promise<T>): Promise<T> {
+  await ready();
+  const tx = await db().transaction("write");
+  try { const value = await fn(tx); await tx.commit(); return value; }
+  catch (error) { await tx.rollback().catch(() => {}); throw error; }
+  finally { tx.close(); }
+}
+
 /**
- * An unlock (and the once-per-cap warning) belongs to the cap it was given for. When a production's own cap changes,
- * its row is re-locked and its warning re-armed; when the workspace's budget per production changes, every production
- * that follows it (no cap of its own) is. Never unlocks anything.
+ * An unlock (and the once-per-cap warning) belongs to the cap it was given for. A production's own cap is written
+ * with its re-lock in ONE statement, so a new cap never stands beside an old unlock: a changed cap re-locks the row
+ * and re-arms its warning; the same cap written again changes neither.
  */
+export async function setOwnCap(projectId: string, unit: CapUnit, value: number | null): Promise<void> {
+  const col = unit === "cr" ? "cap_credits" : "cap_usd";
+  await ready();
+  await db().execute({
+    sql: `UPDATE projects SET cap_unlocked = CASE WHEN ${col} IS ? THEN cap_unlocked ELSE 0 END, cap_warned_at = NULL, ${col} = ? WHERE id = ?`,
+    args: [value, value, projectId],
+  });
+}
+
+/**
+ * The workspace's budget per production, written with its re-lock in ONE transaction: when the budget changes, every
+ * production that follows it (no cap of its own) is re-locked and its warning re-armed. A workspace not billed in
+ * credits has no budget to enforce, so nothing there is re-locked. Returns whether the budget changed.
+ */
+export async function setWorkspaceBudget(value: string, userId: string, inCredits: boolean): Promise<boolean> {
+  const changed = await inWrite(async (tx) => {
+    const before = (await tx.execute({ sql: "SELECT value FROM settings WHERE key = 'productionBudgetCredits'", args: [] })).rows[0];
+    const was = cleanBudget(before?.value ?? ""), next = cleanBudget(value);
+    await tx.execute({
+      sql: `INSERT INTO settings (key, value, updated_by, updated_at) VALUES ('productionBudgetCredits',?,?,?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`,
+      args: [value, userId, now()],
+    });
+    if (was === next) return false;
+    if (inCredits) await tx.execute({ sql: "UPDATE projects SET cap_unlocked = 0, cap_warned_at = NULL WHERE cap_credits IS NULL", args: [] });
+    return true;
+  });
+  invalidateSettings();
+  return changed;
+}
+
+/** Re-locks a production (an admin's Lock again, or a test's set-up): never unlocks anything. */
 export async function resetCapLocks(scope: { projectId: string } | { budget: true }): Promise<void> {
   await ready();
   if ("projectId" in scope) {
@@ -219,6 +261,34 @@ export async function resetCapLocks(scope: { projectId: string } | { budget: tru
   } else {
     await db().execute("UPDATE projects SET cap_unlocked = 0, cap_warned_at = NULL WHERE cap_credits IS NULL");
   }
+}
+
+export const capChanged = (cap: number, unit: CapUnit) => `The cap changed to ${fmt(cap, unit)}: look again before unlocking.`;
+export const NOT_AT_CAP = "This production is not at its cap, so there is nothing to unlock. Look again.";
+export const NO_CAP = "This production has no cap to unlock.";
+
+/**
+ * An admin's Unlock, tied to the cap they were shown (`forCap`, in the workspace's unit): it lands only if that is still
+ * the production's cap (its own, or the workspace's budget, read in the same write transaction as the unlock) and the
+ * production is at it, as the gate counts spend. Otherwise it is refused with what changed, and nothing is written.
+ */
+export async function unlockAtCap(projectId: string, forCap: number): Promise<{ ok: true } | { ok: false; status: 404 | 409; error: string }> {
+  const inCredits = creditsApply(currentTenant()?.workspace);
+  const unit: CapUnit = inCredits ? "cr" : "$";
+  const spent = (await spentBy("project_id", [projectId])).get(projectId)!;
+  const used = inCredits ? spent.credits : spent.usd;
+  return inWrite(async (tx) => {
+    const row = (await tx.execute({ sql: "SELECT cap_credits, cap_usd FROM projects WHERE id = ?", args: [projectId] })).rows[0] as unknown as { cap_credits: unknown; cap_usd: unknown } | undefined;
+    if (!row) return { ok: false as const, status: 404 as const, error: "No such project." };
+    const budget = inCredits ? cleanBudget((await tx.execute({ sql: "SELECT value FROM settings WHERE key = 'productionBudgetCredits'", args: [] })).rows[0]?.value ?? "") : null;
+    const own = inCredits ? (row.cap_credits == null ? null : Number(row.cap_credits)) : (row.cap_usd == null ? null : Number(row.cap_usd));
+    const cap = own ?? budget;
+    if (cap == null) return { ok: false as const, status: 409 as const, error: NO_CAP };
+    if (Math.abs(cap - forCap) > 1e-9) return { ok: false as const, status: 409 as const, error: capChanged(cap, unit) };
+    if (used + 1e-9 < cap) return { ok: false as const, status: 409 as const, error: NOT_AT_CAP };
+    await tx.execute({ sql: "UPDATE projects SET cap_unlocked = 1 WHERE id = ?", args: [projectId] });
+    return { ok: true as const };
+  });
 }
 
 /**

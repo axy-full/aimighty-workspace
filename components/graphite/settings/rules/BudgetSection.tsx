@@ -6,7 +6,7 @@ import { creditRate, creditsText, creditsUsd } from "@/lib/shell/price-words";
 import { useWorkspace } from "@/lib/workspace/state";
 import { Row, Section } from "../parts";
 import { useWrite } from "../use-settings";
-import { budgetHelp, budgetLine, capHelp, capRow, digits, fieldPatch } from "./budget-words";
+import { NOT_ENFORCED, budgetHelp, budgetLine, capHelp, capRow, digits, fieldPatch } from "./budget-words";
 import type { SpendingLines, SpendingRules } from "./spending-words";
 
 /**
@@ -28,6 +28,8 @@ type Field = "budget" | "cap";
 export function BudgetSection({ rules, openAtStart }: { rules: Rules; openAtStart: boolean }) {
   const session = useSession();
   const rate = creditRate(session.rates.creditUsd);
+  /* The house workspace is not billed in credits: nothing enforces a budget there, so none is offered. */
+  const inCredits = session.rates.unit !== "usd";
   const [open, setOpen] = useState(openAtStart);
   const canChange = rules.canChange;
   const loaded = rules.loaded;
@@ -37,16 +39,18 @@ export function BudgetSection({ rules, openAtStart }: { rules: Rules; openAtStar
       action={loaded ? (
         <button type="button" className={canChange ? "gs-primary" : "gs-btn"} onClick={() => setOpen(true)} data-testid="settings-budget-open">{canChange ? "Edit" : "View"}</button>
       ) : null}>
-      <Row name="Budget per production" line={loaded ? budgetLine({ budget: rules.budget, warnPct: rules.capWarnPct }, creditsText) : undefined}
-        value={loaded ? (rules.budget != null ? creditsText(rules.budget) : "none") : "Reading…"} valueTitle={rules.budget != null ? creditsUsd(rules.budget, rate) : null} testId="settings-budget-value" />
+      {inCredits ? (
+        <Row name="Budget per production" line={loaded ? budgetLine({ budget: rules.budget, warnPct: rules.capWarnPct }, creditsText) : undefined}
+          value={loaded ? (rules.budget != null ? creditsText(rules.budget) : "none") : "Reading…"} valueTitle={rules.budget != null ? creditsUsd(rules.budget, rate) : null} testId="settings-budget-value" />
+      ) : <Row name="Budget per production" line={NOT_ENFORCED} value="—" testId="settings-budget-value" />}
       <Row name="Before an admin" line={loaded ? cap.line : undefined} value={loaded ? cap.value : "Reading…"}
         valueTitle={rules.rule === "cap" && rules.shotCap != null ? creditsUsd(rules.shotCap, rate) : null} testId="settings-cap-value" />
-      {open && loaded ? <BudgetPanel rules={rules} onClose={() => setOpen(false)} /> : null}
+      {open && loaded ? <BudgetPanel rules={rules} inCredits={inCredits} onClose={() => setOpen(false)} /> : null}
     </Section>
   );
 }
 
-function BudgetPanel({ rules, onClose }: { rules: Rules; onClose: () => void }) {
+function BudgetPanel({ rules, inCredits, onClose }: { rules: Rules; inCredits: boolean; onClose: () => void }) {
   const write = useWrite();
   const { toast } = useWorkspace();
   const canChange = rules.canChange;
@@ -136,12 +140,12 @@ function BudgetPanel({ rules, onClose }: { rules: Rules; onClose: () => void }) 
         <p className="gs-sheet-line">{canChange ? "Admins only. A field saves when you leave it or press Enter." : "Only an admin can change these. Ask the owner or an admin."}</p>
         <label className="gs-label"><span className="gs-eyebrow">Budget per production</span>
           <span className="gs-unit">
-            <input className="gs-field" inputMode="numeric" value={text.budget} placeholder="none" readOnly={!canChange} aria-readonly={!canChange || undefined}
+            <input className="gs-field" inputMode="numeric" value={text.budget} placeholder="none" readOnly={!canChange || !inCredits} aria-readonly={!canChange || !inCredits || undefined}
               onChange={(e) => type("budget", e.target.value)} onBlur={() => void commit("budget")}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void commit("budget"); } }} data-testid="settings-budget-field" />
             <span className="gs-unit-word">cr</span>
           </span>
-          <span className="gs-row-line">{budgetHelp(view, creditsText)}</span>
+          <span className="gs-row-line">{inCredits ? budgetHelp(view, creditsText) : NOT_ENFORCED}</span>
         </label>
         <label className="gs-label"><span className="gs-eyebrow">Before an admin</span>
           <span className="gs-unit">

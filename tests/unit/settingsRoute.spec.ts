@@ -35,7 +35,18 @@ function load(role: "admin" | "member" = "admin") {
       setSetting: async (key: string, value: string, by: string) => { writes.push([key, value, by]); },
       getSetting: async (key: string) => writes.filter(([k]) => k === key).at(-1)?.[1] ?? "",
     },
-    "@/lib/caps": { cleanBudget, resetCapLocks: async (scope: unknown) => { relocks.push(scope); } },
+    /* The budget and its re-lock go through one transactional writer (its own behaviour: tests/unit/demo-gaps-l4-people-only.spec.ts). */
+    "@/lib/caps": {
+      setWorkspaceBudget: async (value: string, by: string, inCredits: boolean) => {
+        const was = cleanBudget(writes.filter(([k]) => k === "productionBudgetCredits").at(-1)?.[1] ?? "");
+        writes.push(["productionBudgetCredits", value, by]);
+        const changed = was !== cleanBudget(value);
+        if (changed && inCredits) relocks.push({ budget: true });
+        return changed;
+      },
+    },
+    "@/lib/credits": { creditsApply: () => true },
+    "@/lib/tenant": { requireTenant: () => ({ id: "ws_settings" }) },
     "@/lib/cache": { invalidate: () => {}, PROJECTS_KEY: "projects" },
     "@/lib/platform": { getPlatformLayer: async () => ({ models: {} }) },
     "@/lib/platformLayer": {

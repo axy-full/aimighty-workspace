@@ -310,7 +310,7 @@ test("Spending rules: the rule, the platform line and Ask, read as the code has 
   await expect(page.getByTestId("settings-production")).toHaveCount(2);
   await expect(page.getByTestId("settings-production").first()).toContainText("200 of 200 cr");
   await page.getByTestId("settings-production-unlock").click();
-  await expect.poll(() => writes.find((w) => w.url === "/api/projects/pa")?.body).toEqual({ capUnlocked: true });
+  await expect.poll(() => writes.find((w) => w.url === "/api/projects/pa")?.body).toEqual({ capUnlocked: true, forCap: 200 });
   await page.getByTestId("settings-production").nth(1).getByTestId("settings-production-change").click();
   await page.getByTestId("settings-production-cap").fill("120");
   await page.getByTestId("settings-production-save").click();

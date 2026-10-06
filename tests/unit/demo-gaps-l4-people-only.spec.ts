@@ -132,7 +132,7 @@ test("setting the budget per production and the per-shot cap: a signed-in admin 
   expect(byPerson.status, await byPerson.clone().text()).toBe(200);
   const rows = await read<{ key: string; value: string; updated_by: string }>("SELECT key,value,updated_by FROM settings WHERE key IN ('productionBudgetCredits','shotCapCredits','approvalRule') ORDER BY key");
   expect(rows.map((r) => [r.key, r.value])).toEqual([["approvalRule", "cap"], ["productionBudgetCredits", "400"], ["shotCapCredits", "50"]]);
-  /* Every change is logged with who made it: a person. */
+  /* The setting keeps who changed it last: a person. */
   expect(new Set(rows.map((r) => r.updated_by))).toEqual(new Set(["boss"]));
   /* Nonsense is refused before anything is written. */
   const bad = await api.settings.PATCH(req("/api/settings", "PATCH", { productionBudgetCredits: "0" }), undefined as never);
@@ -295,7 +295,8 @@ test("an unlock belongs to the cap it was given for: a new cap or a new budget r
   const ctx = { params: Promise.resolve({ id: "prod-l4" }) };
   mode = "session";
   expect((await api.project.PATCH(req("/api/projects/prod-l4", "PATCH", { capCredits: 100 }), ctx as never)).status).toBe(200);
-  expect((await api.project.PATCH(req("/api/projects/prod-l4", "PATCH", { capUnlocked: true }), ctx as never)).status).toBe(200);
+  /* Unlocked at the old cap (a direct write: the route's own Unlock is tied to the cap shown, demo-gaps-l4-budget-gate). */
+  await exec("UPDATE projects SET cap_unlocked=1 WHERE id='prod-l4'");
   await exec("UPDATE projects SET cap_warned_at=1 WHERE id='prod-l4'");
   /* A new cap: re-locked, the warning re-armed, and the ask at 800 of 1,000 cr stands. */
   expect((await api.project.PATCH(req("/api/projects/prod-l4", "PATCH", { capCredits: 1000 }), ctx as never)).status).toBe(200);
@@ -325,39 +326,54 @@ test("an unlock belongs to the cap it was given for: a new cap or a new budget r
   expect((await api.settings.PATCH(req("/api/settings", "PATCH", { productionBudgetCredits: "" }), undefined as never)).status).toBe(200);
 });
 
-test("Ask an admin: only about a step that is over the cap, and once per person and step every ten minutes", async () => {
+test("Ask an admin judges a step as the gate does (what the shot holds plus this render; a step paused for an admin is over), counts every ask, refused or not, once per person and step every ten minutes", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { setSetting } = await import("../../lib/settings");
   const { db } = await import("../../lib/db");
+  const { billCreditsWith, marginFor } = await import("../../lib/creditTerms");
   const lib = await import("../../lib/control-room/ask-admin");
   const store = await import("../../lib/workbench/rig-agent-store");
+  const SEEDANCE = "dreamina-seedance-2-5-260628";
   let now = 1_000_000_000;
   const told: string[][] = [];
-  let over = false;
-  const deps = { admins: async () => [{ id: "boss" }], tell: async (ids: string[]) => { told.push(ids); }, over: async () => over, now: () => now };
+  /* The real over-cap check (lib/control-room/ask-admin.ts overCap): no stub. */
+  const deps = { admins: async () => [{ id: "boss" }], tell: async (ids: string[]) => { told.push(ids); }, now: () => now };
   await runInTenant(WS, async () => {
     await setSetting("approvalRule", "cap", "boss");
     await store.rigAgentReady();
+    /* Shot A already holds one take; its credits are what the gate counts for it (lib/caps.ts spentBy). */
+    const held = billCreditsWith(1, marginFor(SEEDANCE), 0.10);
     await db().batch([
-      { sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,plan,created_at,updated_at) VALUES('rar_ask','prod-l4','d','mem','req-ask','g','auto','awaiting_approval',NULL,0,0)", args: [] },
-      { sql: "INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,prepared,state,created_at,updated_at) VALUES('step_ask','rar_ask',1,'render','Shot 1','take','{}','proposed',0,0)", args: [] },
+      { sql: "INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,project_id,shot_id,cost_usd,created_by) VALUES('g_shot_a','" + SEEDANCE + "','a','{}','succeeded',0,0,'video','prod-l4','shot_a',1,'mem')", args: [] },
+      { sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,plan,created_at,updated_at) VALUES('rar_ask','prod-l4','d','mem','req-ask','g','auto','needs_you',NULL,0,0)", args: [] },
+      /* Step 1 the run paused for an admin at send time: over, whatever its own price. */
+      { sql: "INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,prepared,state,quote_credits,band,pause,created_at,updated_at) VALUES('step_paused','rar_ask',1,'render','Shot 1','take','{}','paused',20,1,'admin',0,0)", args: [] },
+      /* Step 2: priced at 20 cr for shot A. */
+      { sql: "INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,prepared,state,quote_credits,band,admission,created_at,updated_at) VALUES('step_quoted','rar_ask',2,'render','Shot 2','take','{}','waiting',20,1,'{\"request\":{\"shotId\":\"shot_a\"}}',0,0)", args: [] },
     ], "write");
-    const ask = { about: "step" as const, productionId: "prod-l4", runId: "rar_ask", seq: 1 };
     const me = { id: "mem", name: "Studio member", admin: false };
-    /* Not over the cap: no admin is needed, and nobody is told. */
-    await expect(lib.askAdmin(me, ask, deps)).rejects.toMatchObject({ status: 409, message: lib.ASK_NOT_OVER });
-    expect(told).toEqual([]);
-    over = true;
-    expect(await lib.askAdmin(me, ask, deps)).toMatchObject({ asked: 1 });
-    /* Again within ten minutes: refused, nobody told twice. */
-    now += 5 * 60_000;
-    await expect(lib.askAdmin(me, ask, deps)).rejects.toMatchObject({ status: 429 });
+    const step = (seq: number) => ({ about: "step" as const, productionId: "prod-l4", runId: "rar_ask", seq });
+
+    /* Paused for an admin: over, though 20 cr alone is under the 50 cr cap. */
+    await setSetting("shotCapCredits", "50", "boss");
+    expect(await lib.askAdmin(me, step(1), deps)).toMatchObject({ asked: 1 });
+    /* What the shot holds plus this render exactly at the cap is not over it: refused, nobody told. */
+    await setSetting("shotCapCredits", String(held + 20), "boss");
+    await expect(lib.askAdmin(me, step(2), deps)).rejects.toMatchObject({ status: 409, message: lib.ASK_NOT_OVER });
     expect(told).toHaveLength(1);
-    /* Another person, or the same person after ten minutes: told again. */
-    expect(await lib.askAdmin({ ...me, id: "mem2" }, ask, deps)).toMatchObject({ asked: 1 });
-    now += 6 * 60_000;
-    expect(await lib.askAdmin(me, ask, deps)).toMatchObject({ asked: 1 });
+    /* The refused ask counted: asked again at once, it is not judged again. */
+    await expect(lib.askAdmin(me, step(2), deps)).rejects.toMatchObject({ status: 429 });
+    /* A credit over the cap with what the shot holds (the render alone is far under it): over, told, after the window. */
+    await setSetting("shotCapCredits", String(held + 19), "boss");
+    now += 11 * 60_000;
+    expect(await lib.askAdmin(me, step(2), deps)).toMatchObject({ asked: 1 });
+    expect(told).toHaveLength(2);
+    /* Within ten minutes: refused, nobody told twice; another person is their own count. */
+    now += 5 * 60_000;
+    await expect(lib.askAdmin(me, step(2), deps)).rejects.toMatchObject({ status: 429 });
+    expect(await lib.askAdmin({ ...me, id: "mem2" }, step(2), deps)).toMatchObject({ asked: 1 });
     expect(told).toHaveLength(3);
     await setSetting("approvalRule", "anyone", "boss");
+    await setSetting("shotCapCredits", "50", "boss");
   });
 });

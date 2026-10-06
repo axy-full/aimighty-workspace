@@ -3,7 +3,7 @@ import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { archiveDeleteStatements, archiveTransaction, type ArchiveStep } from "@/lib/archive";
-import { effectiveCapRow, resetCapLocks, workspaceBudget } from "@/lib/caps";
+import { effectiveCapRow, setOwnCap, unlockAtCap, workspaceBudget } from "@/lib/caps";
 import { creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
 
@@ -53,23 +53,27 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   if ("capCredits" in body || "capUsd" in body || "capUnlocked" in body) {
     if (got.token) return NextResponse.json({ error: "A production's cap is set by a person, signed in. API tokens cannot change it." }, { status: 403 });
     if (got.user.role !== "admin") return NextResponse.json({ error: "An admin sets a production's cap." }, { status: 403 });
-    /* A new cap re-locks the production and re-arms its warning: an unlock belongs to the cap it was given for. */
-    const before = (await db().execute({ sql: `SELECT cap_credits, cap_usd FROM projects WHERE id = ?`, args: [id] })).rows[0] as unknown as { cap_credits: unknown; cap_usd: unknown } | undefined;
-    const num = (v: unknown) => (v == null ? null : Number(v));
+    /* A new cap re-locks the production and re-arms its warning, in the same statement (lib/caps.ts setOwnCap). */
     if ("capCredits" in body) {
       const n = body.capCredits == null || body.capCredits === "" ? null : Math.round(Number(body.capCredits));
       if (n != null && (!Number.isFinite(n) || n < 0)) return NextResponse.json({ error: "A cap is a whole number of credits, or none." }, { status: 400 });
-      await db().execute({ sql: `UPDATE projects SET cap_credits = ?, cap_warned_at = NULL WHERE id = ?`, args: [n, id] });
-      if (before && num(before.cap_credits) !== n) await resetCapLocks({ projectId: id });
+      await setOwnCap(id, "cr", n);
     }
     if ("capUsd" in body) {
       const n = body.capUsd == null || body.capUsd === "" ? null : Number(body.capUsd);
       if (n != null && (!Number.isFinite(n) || n < 0)) return NextResponse.json({ error: "A cap is an amount, or none." }, { status: 400 });
-      await db().execute({ sql: `UPDATE projects SET cap_usd = ?, cap_warned_at = NULL WHERE id = ?`, args: [n, id] });
-      if (before && num(before.cap_usd) !== n) await resetCapLocks({ projectId: id });
+      await setOwnCap(id, "$", n);
     }
     if ("capUnlocked" in body) {
-      await db().execute({ sql: `UPDATE projects SET cap_unlocked = ? WHERE id = ?`, args: [body.capUnlocked ? 1 : 0, id] });
+      if (body.capUnlocked) {
+        /* An Unlock names the cap the admin was shown: it lands only on that cap, and only at it. */
+        const forCap = Number(body.forCap);
+        if (body.forCap == null || !Number.isFinite(forCap)) return NextResponse.json({ error: "Unlock needs the cap you were shown. Look again." }, { status: 409 });
+        const done = await unlockAtCap(id, forCap);
+        if (!done.ok) { invalidate(PROJECTS_KEY); return NextResponse.json({ error: done.error }, { status: done.status }); }
+      } else {
+        await db().execute({ sql: `UPDATE projects SET cap_unlocked = 0 WHERE id = ?`, args: [id] });
+      }
     }
     invalidate(PROJECTS_KEY);
     if (body.name === undefined && body.description === undefined && body.code === undefined && body.category === undefined) {

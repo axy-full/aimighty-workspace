@@ -2,7 +2,7 @@ import { syncCreditReceipts } from "./creditReceipts";
 import { db, ready, id as newId, now } from "./db";
 import { billedCreditsSum } from "./creditSql";
 import { creditsApply } from "./credits";
-import { workspaceBudget } from "./caps";
+import { spentBy, workspaceBudget } from "./caps";
 import { currentTenant } from "./tenant";
 import { STEPS } from "@/components/ui/Stepper";
 
@@ -100,6 +100,8 @@ export async function listProductions(): Promise<ProductionRow[]> {
       ) g ON g.project_id = p.id
       ORDER BY p.created_at ASC`),
   ]);
+  /* What each project has used, as the reservation gate counts it (lib/caps.ts spentBy): one figure on every screen. */
+  const used = dollars ? null : await spentBy("project_id", (projs.rows as Row[]).map((r) => String(r.id)));
   const byProd = new Map<string, ProjectRow[]>();
   for (const r of projs.rows as Row[]) {
     const row: ProjectRow = {
@@ -108,7 +110,7 @@ export async function listProductions(): Promise<ProductionRow[]> {
       shots: Number(r.shots ?? 0), capCredits: r.cap_credits == null ? budget : Number(r.cap_credits),
       needYou: Number(r.need ?? 0), mediaCount: Number(r.media ?? 0),
       createdAt: Number(r.created_at ?? 0),
-      ...(dollars ? { capUsd: r.cap_usd == null ? null : Number(r.cap_usd), spentUsd: Number(r.spend ?? 0) } : { spentCredits: Number(r.credits ?? 0) }),
+      ...(dollars ? { capUsd: r.cap_usd == null ? null : Number(r.cap_usd), spentUsd: Number(r.spend ?? 0) } : { spentCredits: used?.get(String(r.id))?.credits ?? Number(r.credits ?? 0) }),
     };
     const list = byProd.get(row.productionId) ?? [];
     list.push(row); byProd.set(row.productionId, list);

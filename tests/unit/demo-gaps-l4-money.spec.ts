@@ -171,12 +171,13 @@ test("the budget per production is a whole number of credits or none; the per-sh
 });
 
 test("Budget and cap in words: the pause at 320 cr of 400, the cap per shot, and what a typed field saves", () => {
-  expect(budgetLine({ budget: 400, warnPct: 80 }, creditsText)).toBe("the 80 % pause asks at 320 cr");
+  /* Said as the code does it: Atomik's Auto runs ask at 80 %; a person's own render is warned and goes on to the budget. */
+  expect(budgetLine({ budget: 400, warnPct: 80 }, creditsText)).toBe("Atomik’s Auto runs ask at 320 cr (80 %)");
   expect(budgetLine({ budget: null, warnPct: 80 }, creditsText)).toBe("none · a production follows its own cap, if it has one");
   /* A figure typed on the way to another (0) is no budget, never a crash. */
   expect(budgetHelp({ budget: 0, warnPct: 80 }, creditsText)).toBe("No budget: each production follows its own cap, if it has one.");
   expect(budgetLine({ budget: 0, warnPct: 80 }, creditsText)).toBe("none · a production follows its own cap, if it has one");
-  expect(budgetHelp({ budget: 400, warnPct: 80 }, creditsText)).toBe("Particl pauses at 80 % (320 cr) and asks whether to continue.");
+  expect(budgetHelp({ budget: 400, warnPct: 80 }, creditsText)).toBe("Atomik’s Auto runs pause at 80 % (320 cr) and ask whether to continue; a person’s own render is warned and goes on to the budget.");
   expect(capRow({ rule: "cap", shotCap: 50 }, creditsText)).toEqual({ value: "50 cr", line: "per shot" });
   expect(capRow({ rule: "anyone", shotCap: 50 }, creditsText)).toEqual({ value: "off", line: "anyone on the team may approve a step" });
   expect(capRow({ rule: "producer", shotCap: 50 }, creditsText).value).toBe("producer");

@@ -2,7 +2,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
-import { joinLocallyAsMember, signInLocally } from "./helpers/workbenchLocal";
+import { createClient } from "@libsql/client";
+import { joinLocallyAsMember, localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 
 /*
  * Gap screens, lane 4 · Settings › Spending rules › Budget and cap (design Gaps B: ?view=workspace&ws=rules&edit=rules,
@@ -31,9 +32,9 @@ async function panelFloors(page: Page) {
     .filter((el) => el.childElementCount === 0 && (el.textContent ?? "").trim() && parseFloat(getComputedStyle(el).fontSize) < 12).map((el) => el.textContent));
   expect(small).toEqual([]);
   if (compact(page)) {
-    const tight = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('[data-testid="settings-budget-panel"] :is(button, input)')]
-      .map((el) => ({ el, r: el.getBoundingClientRect() })).filter(({ r }) => r.width > 0 && (r.height < 44 || r.width < 44)).map(({ el }) => el.textContent || el.getAttribute("data-testid")));
-    expect(tight).toEqual([]);
+    /* Measured once the sheet has settled (its phone styles and fonts applied on a cold server), not on its first frame. */
+    await expect.poll(() => page.evaluate(() => [...document.querySelectorAll<HTMLElement>('[data-testid="settings-budget-panel"] :is(button, input)')]
+      .map((el) => ({ el, r: el.getBoundingClientRect() })).filter(({ r }) => r.width > 0 && (r.height < 44 || r.width < 44)).map(({ el }) => el.textContent || el.getAttribute("data-testid"))), { timeout: 10_000 }).toEqual([]);
   }
   /* The panel is fully on screen: nothing cut at the edges. */
   const box = await page.getByTestId("settings-budget-panel").boundingBox();
@@ -71,13 +72,13 @@ test("an admin edits the budget per production and the per-shot cap; a field sav
   await page.getByTestId("settings-budget-field").press("Enter");
   await expect(page.getByTestId("settings-budget-state")).toHaveText("Saved · last changed by you");
   await expect.poll(async () => (await settingsOf(page.request)).productionBudgetCredits).toBe("400");
-  await expect(panel).toContainText("Particl pauses at 80 % (320 cr) and asks whether to continue.");
+  await expect(panel).toContainText("Atomik’s Auto runs pause at 80 % (320 cr) and ask whether to continue; a person’s own render is warned and goes on to the budget.");
   /* Leaving the field saves it. */
   await page.getByTestId("settings-cap-field").pressSequentially("50");
   await page.getByTestId("settings-budget-field").focus();
   await expect.poll(async () => { const s = await settingsOf(page.request); return [s.approvalRule, s.shotCapCredits]; }).toEqual(["cap", "50"]);
   await expect(panel).toContainText("A step over this needs an admin’s approval.");
-  await expect(page.getByTestId("settings-budget-value")).toContainText("the 80 % pause asks at 320 cr");
+  await expect(page.getByTestId("settings-budget-value")).toContainText("Atomik’s Auto runs ask at 320 cr (80 %)");
   await expect(page.getByTestId("settings-budget-value").locator(".gs-row-v")).toHaveText("400 cr");
   await expect(page.getByTestId("settings-cap-value").locator(".gs-row-v")).toHaveText("50 cr");
   /* A figure the route would refuse is said, and not saved. */
@@ -152,4 +153,65 @@ test("a member reads the budget and the cap, can't change them, and asks an admi
   await expect(page.getByTestId("settings-budget-open")).toHaveText("View");
   expect(await settingsOf(page.request)).toMatchObject({ productionBudgetCredits: "400", approvalRule: "cap", shotCapCredits: "50" });
   await owner.dispose();
+});
+
+/* ── An Unlock is tied to the cap it was shown for (review of #556, round 2): one screen, and two tabs ── */
+
+/** A production of this workspace that has used US$2 of takes (one take row written into this mock server's own workspace database; nothing rendered). */
+async function spentProduction(page: Page, workspaceId: string, scope: Record<string, string>, name: string) {
+  const made = await page.request.post("/api/projects", { headers: scope, data: { name } });
+  expect(made.ok(), await made.text()).toBe(true);
+  const id = ((await made.json()) as { id: string }).id;
+  const me = await (await page.request.get("/api/me")).json() as { id: string };
+  const platform = createClient({ url: localPlatformDbUrl() });
+  const dbUrl = String((await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id=?", args: [workspaceId] })).rows[0].db_url);
+  platform.close();
+  const tenant = createClient({ url: dbUrl });
+  await tenant.execute({ sql: "INSERT INTO generations(id,project_id,kind,model,status,cost_usd,created_at,updated_at,prompt,params,created_by) VALUES(?,?,'image','flux','succeeded',2,?,?,'x','{}',?)", args: [`gen_${id}`, id, Date.now(), Date.now(), me.id] });
+  tenant.close();
+  return id;
+}
+
+test("one screen: after a new budget, Each production reads again (the new cap, no Unlock); two tabs: a stale Unlock is refused with the new figure and the row reads again", async ({ page, context }, info) => {
+  const { workspace } = await signInLocally(page.request, "Unlock Admin");
+  const me = await (await page.request.get("/api/me")).json() as { id: string };
+  const scope = { "X-Workbench-Scope": `particl-active-${workspace.id}-${me.id}` };
+  const id = await spentProduction(page, workspace.id, scope, "Unlock film");
+  expect((await page.request.patch("/api/settings", { headers: scope, data: { productionBudgetCredits: "10" } })).ok()).toBe(true);
+  const projectOf = async () => (await (await page.request.get(`/api/projects/${id}`)).json() as { project: { capCredits: number; capUnlocked: boolean } }).project;
+
+  /* One screen: at the 10 cr budget, Unlock is offered. */
+  await page.goto("/suites?view=workspace&ws=rules");
+  await page.getByTestId("settings-fold-productions-toggle").click();
+  const row = page.getByTestId("settings-production").filter({ hasText: "Unlock film" });
+  await expect(row).toContainText("of 10 cr", { timeout: 20_000 });
+  await expect(row).toContainText("at the workspace budget");
+  await expect(row.getByTestId("settings-production-unlock")).toBeVisible();
+
+  /* A second tab, the same admin: it shows the same row and Unlock. */
+  const tab = await context.newPage();
+  await tab.goto("/suites?view=workspace&ws=rules");
+  await tab.getByTestId("settings-fold-productions-toggle").click();
+  const tabRow = tab.getByTestId("settings-production").filter({ hasText: "Unlock film" });
+  await expect(tabRow.getByTestId("settings-production-unlock")).toBeVisible({ timeout: 20_000 });
+
+  /* On the first screen the admin raises the budget in Budget and cap: Each production reads again. */
+  await page.getByTestId("settings-budget-open").click();
+  await page.getByTestId("settings-budget-field").fill("100000");
+  await page.getByTestId("settings-budget-field").press("Enter");
+  await expect(page.getByTestId("settings-budget-state")).toHaveText("Saved · last changed by you");
+  await page.getByTestId("settings-budget-done").click();
+  await expect(row).toContainText("of 100,000 cr");
+  await expect(row.getByTestId("settings-production-unlock")).toHaveCount(0);
+  expect(await projectOf()).toMatchObject({ capCredits: 100000, capUnlocked: false });
+
+  /* The second tab still shows 10 cr and Unlock. Pressed, it is refused with the new figure; nothing is unlocked; the row reads again. */
+  await tabRow.getByTestId("settings-production-unlock").click();
+  await expect(tab.getByTestId("settings-productions-note")).toContainText("The cap changed to 100,000 cr: look again before unlocking.");
+  await expect(tabRow).toContainText("of 100,000 cr");
+  await expect(tabRow.getByTestId("settings-production-unlock")).toHaveCount(0);
+  expect(await projectOf()).toMatchObject({ capCredits: 100000, capUnlocked: false });
+  if (info.project.name.includes("1440")) { mkdirSync(SHOTS, { recursive: true }); await tab.screenshot({ path: `${SHOTS}/l4-rules-stale-unlock-${size(info.project.name)}.png` }); }
+  await tab.close();
+  expect((await page.request.patch("/api/settings", { headers: scope, data: { productionBudgetCredits: "" } })).ok()).toBe(true);
 });

@@ -5,6 +5,7 @@ import { notify } from "../push";
 import { getSetting } from "../settings";
 import { requireTenant } from "../tenant";
 import { priceRender, stepTitle } from "../workbench/rig-agent-runs";
+import { shotCreditsSoFar } from "../shotCap";
 import { rigAgentExists, runOfProduction, stepsOf, type RunRow, type StepRow } from "../workbench/rig-agent-store";
 
 /*
@@ -38,23 +39,33 @@ export const ASK_NO_CAP = "This workspace has no per-shot cap: anyone on the tea
 export const ASK_NO_STEP = "That step is not on this board's plan.";
 export const ASK_NOT_OVER = "That step is not over the per-shot cap: it needs no admin.";
 export const ASK_AGAIN_MS = 10 * 60_000;
-export const askedRecently = (minutes: number) => `Already asked ${minutes <= 1 ? "a minute" : `${minutes} minutes`} ago. The owner and admins were told; ask again later.`;
+export const askedRecently = (minutes: number) => `You asked about this ${minutes <= 1 ? "a minute" : `${minutes} minutes`} ago. Ask again in a little while.`;
 
 /*
- * One ask per person and subject (a step, or the rules) every ten minutes. Kept on this server instance: asking
- * spends nothing and changes nothing, so a lost count only lets one more notice through.
+ * One ask per person and subject (a step, or the rules) every ten minutes, counted whether it was refused or not.
+ * Kept on this server instance: asking spends nothing and changes nothing, so a lost count only lets one more through.
  */
 const asked = new Map<string, number>();
 
 /**
- * Whether this render is over the workspace's per-shot cap, from the server's own price: the run's price for it when it
- * has one (its worst case), else a fresh, free pricing of the exact request the run will send (lib/workbench/
- * rig-agent-runs.ts priceRender), where admission's own refusal for a member over the cap also says so.
+ * Whether this render is over the workspace's per-shot cap, judged on the figure the gate and admission use
+ * (lib/shotCap.ts shotCapGate): what the shot already holds plus this render's price. A render the run paused for an
+ * admin is over by definition. The render's price is the run's own when it has one, else a fresh, free pricing of the
+ * exact request the run will send (lib/workbench/rig-agent-runs.ts priceRender), where admission's own refusal of a
+ * member over the cap also says so.
  */
-async function overCap(run: RunRow, step: StepRow, cap: number): Promise<boolean> {
-  if (step.quoteCredits != null) return step.quoteCredits * (step.band ?? 1) > cap;
-  const priced = await priceRender(run, step);
-  return priced.ok ? priced.quote * priced.band > cap : priced.pause === "admin";
+export async function overCap(run: RunRow, step: StepRow, cap: number): Promise<boolean> {
+  if (step.state === "paused" && step.pause === "admin") return true;
+  const shotOf = (a: { request?: Record<string, unknown> } | null | undefined) => (typeof a?.request?.shotId === "string" && a.request.shotId ? a.request.shotId : null);
+  let quote: number, shot: string | null;
+  if (step.quoteCredits != null) { quote = step.quoteCredits; shot = shotOf(step.admission); }
+  else {
+    const priced = await priceRender(run, step);
+    if (!priced.ok) return priced.pause === "admin";
+    quote = priced.quote; shot = shotOf(priced.admission);
+  }
+  const sofar = shot ? await shotCreditsSoFar(shot) : 0;
+  return sofar + quote > cap;
 }
 
 export type AskDeps = {
@@ -74,6 +85,8 @@ export async function askAdmin(actor: AskActor, ask: AskAbout, deps: AskDeps = {
   const key = [ws.id, actor.id, ask.about, ask.about === "step" ? `${ask.productionId}:${ask.runId}:${ask.seq}` : ""].join("|");
   const last = asked.get(key);
   if (last != null && at - last < ASK_AGAIN_MS) throw new AskAdminError(askedRecently(Math.max(1, Math.round((at - last) / 60_000))), 429);
+  /* Every ask counts, refused or not: the step is judged (and priced) at most once per person and subject in the window. */
+  asked.set(key, at);
   let title: string, body: string, url: string;
   if (ask.about === "step") {
     if (cleanRule(await getSetting("approvalRule")) !== "cap") throw new AskAdminError(ASK_NO_CAP, 409);
@@ -92,7 +105,6 @@ export async function askAdmin(actor: AskActor, ask: AskAbout, deps: AskDeps = {
   }
   const admins = (await (deps.admins ?? workspaceAdmins)(ws.id)).map((a) => a.id).filter((id) => id !== actor.id);
   if (admins.length) await (deps.tell ?? ((ids, payload) => notify("approvalNeeded", ids, payload)))(admins, { title, body, url });
-  asked.set(key, at);
   return { asked: admins.length, line: admins.length ? "Asked. The owner and admins were told; nothing was spent." : "No admin to ask in this workspace yet." };
 }
 
