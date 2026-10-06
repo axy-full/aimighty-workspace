@@ -99,7 +99,7 @@ test("a held take in this workspace is approved through its own route at the pri
   await expect(row.getByTestId("approval-approve")).toHaveText(new RegExp(`^Approve · ${credits.toLocaleString("en-US")} cr$`));
   /* The button that spends carries the marker and the very price it shows (docs/ui-checks.md). */
   await expect(row.getByTestId("approval-approve")).toHaveAttribute("data-spend", "priced");
-  await expect(row.getByTestId("approval-approve")).toHaveAttribute("data-spend-price", /^(up to )?[\\d.,]+ cr$/);
+  await expect(row.getByTestId("approval-approve")).toHaveAttribute("data-spend-price", /^(up to )?[\d.,]+ cr$/);
   await expect(row).toContainText("It starts when credits arrive; nothing is spent until then");
   await floors(page, info.project.use.isMobile === true);
   await shoot(page, info.project.name, "approvals-real");

@@ -1,4 +1,5 @@
 "use client";
+import { spendAttrsOf } from "@/lib/spend";
 import { useState } from "react";
 import { pressable, sortQueue, type QueueItem } from "@/lib/control-room/queue";
 import type { PressOutcome } from "@/lib/control-room/approve";
@@ -47,7 +48,7 @@ function Row({ item, now, onApprove, onOpen, onTopUp }: {
         {why ? <span className="gx-hm-wait-why" data-testid="home-waiting-why">{why}</span>
           : canPress ? (
             <button type="button" className="gx-hm-btn gx-hm-approve" onClick={() => void press()} disabled={busy || Boolean(short)} aria-busy={busy || undefined}
-              title={title ?? undefined} data-testid="home-waiting-approve">
+              title={title ?? undefined} data-testid="home-waiting-approve" {...spendAttrsOf(item.price)}>
               {busy ? "Approving…" : <span>Approve · <Price value={item.price} /></span>}
             </button>
           ) : null}

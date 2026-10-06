@@ -1,4 +1,5 @@
 "use client";
+import { spendAttrsOf } from "@/lib/spend";
 import { useState } from "react";
 import { DEFAULT_ENHANCER, ENHANCER_LABEL } from "@/lib/shell/enhancer";
 import { exact } from "@/lib/shell/price-words";
@@ -160,7 +161,7 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
           <button type="button" className="gx-toggle" role="switch" aria-checked={enhancer.auto} onClick={() => enhancer.setAuto(!enhancer.auto)} title="With an enhancement on the card, it is what Make sends." data-testid="enhance-auto">
             <span className="gx-toggle-dot" aria-hidden="true" /><span>Auto</span>
           </button>
-          <button type="button" className="gx-hbtn" disabled={Boolean(enhancer.blocked) || enhancer.busy} onClick={enhancer.enhance} data-testid="enhance">
+          <button type="button" className="gx-hbtn" disabled={Boolean(enhancer.blocked) || enhancer.busy} onClick={enhancer.enhance} aria-busy={enhancer.busy || undefined} data-testid="enhance" {...spendAttrsOf(exact(enhancer.credits))}>
             {enhancer.busy ? "Enhancing…" : enhancer.credits == null ? "Enhance" : <>Enhance · <Price value={exact(enhancer.credits)} /></>}
           </button>
         </div>
