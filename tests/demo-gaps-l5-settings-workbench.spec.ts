@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInWithNewInterface } from "./helpers/newInterface";
-import { SIZES, floors, shot, watchErrors, watchPaid } from "./helpers/l5";
+import { SIZES, desktop, floors, shot, watchErrors, watchPaid } from "./helpers/l5";
 
 /*
  * Lane 5 · Settings › Connections (MCP tokens) and Settings › Team (Team security), Gaps B. Real local ENGINE_MOCK=1
@@ -82,7 +82,8 @@ test("Connections: a token that prepares jobs, shown once; it can't approve, spe
   await floors(page, "Connections, prepared job");
   await shot(page, "token-prepared", info);
   await job.getByTestId("settings-prepared-open").click();
-  await expect(page.getByTestId("gen-prompt")).toHaveValue("A slow push on a quiet street at first light");
+  /* Desktop: Make's panel; a phone: its own Make screen. Either way the words are there and Make prices them. */
+  await expect(page.getByTestId(desktop(page) ? "gen-prompt" : "phone-make-prompt")).toHaveValue("A slow push on a quiet street at first light");
   await shot(page, "token-prepared-make", info);
   expect(paid).toEqual([]);
   expect(errors).toEqual([]);

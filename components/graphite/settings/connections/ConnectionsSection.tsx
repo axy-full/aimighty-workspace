@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { useShell } from "@/lib/shell/state";
+import { useCompact } from "@/lib/shell/use-compact";
+import { stashGenPreset } from "@/lib/shell/gen-preset";
 import { preparedModelId, preparedSpec, type PreparedJob } from "@/lib/security/prepared-words";
 import "@/components/graphite/security/security.css";
 import { useSession } from "@/lib/session";
@@ -176,6 +179,8 @@ function TokenDialog({ title, sub, onClose, testId, children }: { title: string;
  */
 function Prepared() {
   const shell = useShell();
+  const compact = useCompact();
+  const router = useRouter();
   const write = useWrite();
   const { toast } = useWorkspace();
   const { data, read } = useRead<{ jobs: PreparedJob[] }>("/api/prepared-jobs");
@@ -189,8 +194,11 @@ function Prepared() {
     if (refused) { toast(refused); return; }
     void read();
     if (state === "opened") {
-      shell.openMake({ prompt: job.prompt, type: "video", model: preparedModelId(job.model), note: `Prepared by ${job.tokenName ?? "an outside agent"}`,
-        picks: { duration: job.duration, resolution: job.resolution, ratio: job.ratio, generateAudio: job.audio } });
+      const preset = { prompt: job.prompt, type: "video" as const, model: preparedModelId(job.model), note: `Prepared by ${job.tokenName ?? "an outside agent"}`,
+        picks: { duration: job.duration, resolution: job.resolution, ratio: job.ratio, generateAudio: job.audio } };
+      /* A phone has its own Make screen (DECISIONS 11): the words wait for it, and it opens on them. */
+      if (compact) { stashGenPreset(preset); router.push("/suites?screen=make"); }
+      else shell.openMake(preset);
     } else toast("Dismissed · nothing was spent");
   };
   return (

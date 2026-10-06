@@ -158,6 +158,9 @@ test("Identity on the Cast card: consent not recorded, the consent step, consent
 test("The phone's consent step: a person records it, full screen, 44 px targets; nothing paid", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name) || !phone(page), "phones and the landscape phone; the board's dialog is above");
   const { project, paid } = await seed(page);
+  /* Warm-up: on a cold dev server the upload routes compile on first use and the dev client reloads the page mid-upload.
+     Asking each once first (refused: no file) keeps that reload out of the person's steps. */
+  for (const step of ["session", "chunk", "finish"]) await page.request.post(`/api/uploads/${step}`, { data: {} });
   const errors = watchErrors(page);
   await page.goto(`/suites?project=${project.id}&screen=consent&cast=${encodeURIComponent("cast:cast:cast-lead")}`);
   const screen = page.getByTestId("phone-consent");
