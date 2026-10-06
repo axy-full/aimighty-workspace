@@ -79,3 +79,15 @@ export function cinemaPriceDollars(credits: number, perCredit: number | null | u
   const ceiling = fromTenths(toTenths(credits) * STATED_CHARGE_BAND);
   return `about ${usd(credits * perCredit)}, at most ${usd(ceiling * perCredit)} (${usd(perCredit)} a credit)`;
 }
+
+/**
+ * What one meter row counts against the workspace's monthly allowance, in the engine's dollars: a take still running
+ * that holds its ceiling (`hold_band` > 1) at its hold — its estimate times its band, what it may settle at — and any
+ * other row, or a held take once settled, at its recorded figure.
+ */
+export function allowanceUsdOf(row: { readonly [column: string]: unknown }): number {
+  const usd = Number(row.engine_cost_usd ?? 0);
+  if (!Number.isFinite(usd)) return 0;
+  const band = Number(row.hold_band ?? 0);
+  return row.status === "running" && Number.isInteger(band) && band > 1 ? usd * band : usd;
+}

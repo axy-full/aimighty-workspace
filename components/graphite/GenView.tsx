@@ -16,7 +16,7 @@ import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
 import type { Project } from "@/lib/workbench/studio";
 import { AUDIO_SECONDS, COMPOSER_TYPES, READING_MODELS, TAKES_MAX, draftOffered, shownTotal, soundOffered, stepAudioSeconds, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
-import { cinemaPriceDollars } from "@/lib/cinemaHold";
+import { cinemaPriceDollars, cinemaPriceWords, holdBandOf } from "@/lib/cinemaHold";
 import { useSession } from "@/lib/session";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { ModelSheet } from "./ModelSheet";
@@ -59,11 +59,13 @@ const takeName = (job: ConnectedJob) => shortName(job.input.prompt, 60) || `${jo
 /** A sound Cinema Studio can take as a reference: a WAV uploaded to this workspace (the provider documents WAV; generated sounds are MP3). */
 const cinemaSound = (asset: Pick<GenInputAsset, "kind" | "origin" | "mime">) => asset.kind === "audio" && asset.origin === "upload" && isCinemaStudioAudioMime(asset.mime);
 const CINEMA_SOUND_ONLY = "Cinema Studio takes sound references as WAV files uploaded to this workspace.";
-/** What a batch's takes that went were approved at, in this workspace's credits. */
+/** What a batch's takes that went were approved at, in this workspace's credits: for a held engine (Cinema Studio),
+ *  "about N cr, at most 3N cr", as its button said it (lib/cinemaHold.ts). */
 const approvedTotal = (batch: BatchView) => {
   const went = batch.takes.filter((take) => take.state !== "refused" && take.state !== "not-sent");
   if (!went.length) return null;
-  return `${went.reduce((sum, take) => sum + take.credits, 0).toLocaleString("en-US")} cr`;
+  const total = went.reduce((sum, take) => sum + take.credits, 0);
+  return holdBandOf(batch.modelId) > 1 ? cinemaPriceWords(total) : `${total.toLocaleString("en-US")} cr`;
 };
 /** A landed batch's settled cost, when every take of it is billed in this workspace's credits. */
 const settledTotal = (entries: readonly LibraryEntry[]) =>

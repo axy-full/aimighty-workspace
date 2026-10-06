@@ -20,6 +20,7 @@ import { billingTransaction, syncBillingLedger, setCreditDebitTx, CreditBalanceE
 import { admitToPoolTx, providerPoolReady, sharedPoolOf } from "./providerPool";
 import { workbenchScopeProblem } from "./workbench/request-scope";
 import { runLimitVerdict, runTally, toTenths, type RunCharge, type RunSpend } from "./runLimit";
+import { allowanceUsdOf } from "./cinemaHold";
 
 export class SpendReservationError extends Error {
   /** `perJob`: the refusal is about this job alone (its cost, project, shot or token), not the whole workspace. */
@@ -451,7 +452,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
         tokenId: r.reservation_token == null ? prior?.tokenId ?? null : String(r.reservation_token),
         cost: Math.max(prior?.cost ?? 0, Number(r.engine_cost_usd ?? 0)), credits: Number(r.billed_credits ?? 0), createdAt: Number(r.created_at), status: String(r.status), deleted: prior?.deleted ?? false });
       if (!Number(r.paid_by_platform)) monthly.delete(String(r.id));
-      else if (Number(r.created_at) >= since) monthly.set(String(r.id), Math.max(monthly.get(String(r.id)) ?? 0, Number(r.engine_cost_usd ?? 0)));
+      /* A take still running at its hold counts at its hold, as this one does below (lib/cinemaHold.ts allowanceUsdOf). */
+      else if (Number(r.created_at) >= since) monthly.set(String(r.id), Math.max(monthly.get(String(r.id)) ?? 0, allowanceUsdOf(r)));
     }
     const gone = now() - TRANSCRIPTION_STALE_MS;
     const running = [...merged.values()].filter((r) => !r.deleted && (r.status === "running" || r.status === "queued")

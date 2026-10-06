@@ -109,6 +109,41 @@ test("the token ceilings read a held take at 3N", async () => {
   });
 });
 
+test("the monthly allowance reads a take still running at its hold: a second take that would pass it with the first held is refused", async () => {
+  /* The allowance covers one hold and a little (5× one estimate), not two (6×). */
+  const ws = await workspace("hold_ws_inflight", 100_000, USD * 5);
+  await inTenant(ws, async () => {
+    const { allowanceCheck } = await import("../../lib/allowance");
+    const { platformSpendSince } = await import("../../lib/platformSpend");
+    expect(await reserve(take("inflight_1", USD))).toBe("admitted");
+    /* Running, it counts at its hold, at admission (what the allowance check reads) and in the reservation. */
+    expect(await platformSpendSince(0)).toBeCloseTo(USD * 3, 10);
+    expect(await allowanceCheck("higgsfield" as never, USD, CINEMA, 3)).toMatchObject({ ok: false, status: 429 });
+    expect(await reserve(take("inflight_2", USD))).toBe("429");
+    expect(await row("inflight_2")).toBeNull();
+    /* Settled, it counts at what it settled at, and the room it held comes back. */
+    const { meter } = await import("../../lib/meter");
+    await meter({ ...take("inflight_1", USD), status: "succeeded" });
+    expect(await platformSpendSince(0)).toBeCloseTo(USD, 10);
+    expect((await allowanceCheck("higgsfield" as never, USD, CINEMA, 3)).ok).toBe(true);
+  });
+});
+
+test("an engine without a hold keeps band 1 under every cap: a take whose estimate fits is admitted at its estimate", async () => {
+  const ws = await workspace("hold_ws_band1", 100_000);
+  await inTenant(ws, async () => {
+    const { db } = await import("../../lib/db");
+    const other = (id: string, extra: Record<string, unknown> = {}) => ({ ...take(id, USD, extra), engine: "byteplus", model: "fixture-video" });
+    expect(await reserve(other("band1_n"), {})).toBe("admitted");
+    const first = (await row("band1_n"))!;
+    expect(first.band).toBeNull();
+    await db().execute({ sql: `INSERT INTO projects(id,name,created_at,cap_credits) VALUES('band1_p','band1_p',0,?)`, args: [first.billed * 2 + 1] });
+    await db().execute({ sql: `INSERT INTO settings(key,value,updated_at) VALUES('atCap','stop',0),('approvalRule','cap',0),('shotCapCredits',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, args: [String(first.billed)] });
+    expect(await reserve(other("band1_2", { projectId: "band1_p", shotId: "band1_s" }), { shotCapExempt: false })).toBe("admitted");
+    expect((await row("band1_2"))!.billed).toBe(first.billed);
+  });
+});
+
 test("two takes at once against a balance that covers one hold: one is admitted, the other refused, and the balance never goes below zero", async () => {
   const n = await learnN(await workspace("hold_ws_learn", 10_000), "race_learn");
   const ws = await workspace("hold_ws_race", Math.round(4.5 * n));
@@ -131,6 +166,10 @@ test("a second reservation of a running held take keeps its hold and band", asyn
     /* Re-reserved without the option: the hold stays as it was approved, and settlement stays capped. */
     expect(await reserve(take("again", USD), {})).toBe("admitted");
     expect(await row("again")).toMatchObject({ billed: first.billed, band: 3 });
+    /* And it still settles at no more than that hold, whatever the engine charged. */
+    const { meter } = await import("../../lib/meter");
+    await meter({ ...take("again", USD * 10), status: "succeeded" });
+    expect((await row("again"))!.billed).toBeLessThanOrEqual(first.billed);
   });
 });
 
