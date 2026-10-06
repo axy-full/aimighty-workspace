@@ -53,7 +53,7 @@ import type { PageId } from "../../lib/workspace/types";
 
 test("every page has a template, and the six of 05-mobile are the ones used", () => {
   for (const page of ALL_PAGES) expect(MOBILE_TEMPLATES[page.id], page.id).toBeTruthy();
-  /* `shorts` ran only on a signed-in Higgsfield account and left the page list in Release 1 (2e20cf2e); its template stays so an old address still draws. */
+  /* Shorts keeps its entry in the typed map but is no page for Release 1: it ran only on a signed-in Higgsfield account. */
   expect(Object.keys(MOBILE_TEMPLATES).filter((id) => id !== "shorts").sort()).toEqual(ALL_PAGES.map((p) => p.id).sort());
   const used = new Set<MobileTemplate>(Object.values(MOBILE_TEMPLATES));
   expect([...used].sort()).toEqual(["accordion", "cards", "edit", "form", "rows", "shots"]);

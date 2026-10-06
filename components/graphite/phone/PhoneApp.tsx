@@ -14,6 +14,7 @@ import type { WorkspaceAccount } from "@/lib/workspace/data";
 import type { LibraryEntry, ProjectLibrary } from "@/lib/workspace/library";
 import type { Project } from "@/lib/workbench/studio";
 import type { ProjectActions } from "../FirstRun";
+import type { CreateFromSeed, OpenBoard } from "../home/use-home-start";
 import { PhoneHeader, PhoneTabs, PhoneToast, type PhoneTab } from "./PhoneChrome";
 import { HomeScreen } from "./HomeScreen";
 import { ReviewScreen } from "./ReviewScreen";
@@ -22,7 +23,9 @@ import { RecordScreen } from "./RecordScreen";
 import { MakeScreen } from "./MakeScreen";
 import { AtomikSheet } from "./AtomikSheet";
 import { StatesScreen } from "./StatesScreen";
-import { DRAWN_SCREENS, phoneSearch, readPhone, reviewQueue, type PhoneRoute, type PhoneScreen } from "./phone-model";
+import { LargerScreen } from "./LargerScreen";
+import { StartBrief } from "./StartBrief";
+import { DRAWN_SCREENS, LARGER_TITLES, phoneSearch, readPhone, reviewQueue, type PhoneRoute, type PhoneScreen } from "./phone-model";
 import { useOnline, useQueuedJudgements } from "./use-online";
 
 export type PhoneAppProps = {
@@ -34,6 +37,8 @@ export type PhoneAppProps = {
   items: LibraryEntry[];
   library: ProjectLibrary;
   projectActions: ProjectActions;
+  /** Today's create path with a seed's fields set (SuitesShell › createFromSeed): what Home's templates and Start use, here too. */
+  onCreate: CreateFromSeed;
   /**
    * The shell's own page for an address the phone has no screen for (Settings, an old page): drawn under the
    * phone's header with a back to Home (DECISIONS 11). Null on the phone's own screens.
@@ -73,7 +78,7 @@ const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "P
  * their phone screens land; the Record and plan approval follow in their own PRs (phone-model.ts ›
  * DRAWN_SCREENS).
  */
-export function PhoneApp({ scope, account, data, project, items, projectActions, page = null }: PhoneAppProps) {
+export function PhoneApp({ scope, account, data, project, items, projectActions, onCreate, page = null }: PhoneAppProps) {
   const shell = useShell();
   const { toast } = useWorkspace();
   const [route, go] = useRoute();
@@ -126,6 +131,8 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- as above
   }, [shellAtomik]);
 
+  /* Activity, Memory and Skills have no phone screen until after the demo: a plain page that says so, with a way Home. */
+  const larger = !page && route.asked === "home" ? route.larger : null;
   const sheet = !page && route.screen === "atomik";
   /* Said once the sheet is mounted, so its conversation is listening (components/atomik/skills/useSkillRunOpens.ts). */
   // eslint-disable-next-line react-hooks/set-state-in-effect -- One-shot hand-off: the chat id is said once the sheet is mounted, then cleared.
@@ -135,8 +142,10 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
   /* The bar stays on every phone screen but the full-screen review and plan approval (SOW § 2); Change with words keeps it under its sheet. */
   const tabs = screen !== "review" && screen !== "plan";
   /* States is Home's own (the master lights Home there). */
-  const active: PhoneTab | null = page ? null : sheet ? "atomik" : screen === "record" ? "record" : screen === "make" ? "make" : screen === "home" || screen === "states" ? "home" : null;
+  const active: PhoneTab | null = page || larger ? null : sheet ? "atomik" : screen === "record" ? "record" : screen === "make" ? "make" : screen === "home" || screen === "states" ? "home" : null;
   const inReview = screen === "review" || screen === "fix";
+  /* A project is open (made on Home, or reused): the board is its Record on a phone. */
+  const opened: OpenBoard = () => go({ screen: "record" });
 
   return (
     <div className="ph-app" data-framed={route.framed || undefined} data-screen={screen ?? "page"} data-online={online ? undefined : "off"} data-testid="phone-app">
@@ -149,8 +158,10 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
           onQueue={judgements.add} onDone={() => go({ screen: "home" })} />
       ) : (
         <>
-          <PhoneHeader title={page ? page.title : screen === "record" && project ? project.name : screen === "states" ? `${project?.name ?? "Particl"} · states` : TITLES[screen ?? "home"] ?? "Particl"} account={account} onBack={page || screen !== "home" ? home : null} onTopUp={topUp} />
-          {screen === "make" && !page ? (
+          <PhoneHeader title={page ? page.title : larger ? LARGER_TITLES[larger] : screen === "record" && project ? project.name : screen === "states" ? `${project?.name ?? "Particl"} · states` : TITLES[screen ?? "home"] ?? "Particl"} account={account} onBack={page || larger || screen !== "home" ? home : null} onTopUp={topUp} />
+          {larger ? (
+            <LargerScreen page={larger} onHome={home} />
+          ) : screen === "make" && !page ? (
             <MakeScreen scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} balance={account?.credits?.balance ?? null}
               projects={data.status} onProject={(id) => projectActions.onPick(id)} online={online} onTopUp={topUp} />
           ) : screen === "states" ? (
@@ -168,7 +179,8 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
                 onPlan={openPlan}
                 onThread={openThread}
                 onProject={(id) => { projectActions.onPick(id); if (DRAWN_SCREENS.has("record")) go({ screen: "record" }); }}
-                onTopUp={topUp} />
+                onTopUp={topUp}
+                start={<StartBrief scope={scope} projects={data.projects} online={online} onPick={projectActions.onPick} onCreate={onCreate} onOpened={opened} />} />
             )}
           </main>
           )}
