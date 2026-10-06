@@ -3,6 +3,7 @@ import type { Client, InStatement, Transaction } from "@libsql/client";
 import { db, now, ready } from "@/lib/db";
 import type { PreparedAdmission } from "../admissionTypes";
 import type { CanvasOp, OpOutcome } from "./canvas-ops-model";
+import { PLAN_APPROVAL_GUARDS, PLAN_APPROVAL_SCHEMA } from "./plan-approval";
 import type { CompiledPlan, RigAgentMode, RigAgentState, RigAgentStepState, StepTool } from "./rig-agent-plan";
 
 /*
@@ -86,6 +87,10 @@ const SCHEMA = [
      updated_at INTEGER NOT NULL,
      UNIQUE(run_id, seq)
    )`,
+  /* A plan approved once (lib/workbench/plan-approval.ts): one row per run, written by a person only. */
+  PLAN_APPROVAL_SCHEMA,
+  /* Its person-only rule, also on a table made before the CHECK matched the function (additive triggers). */
+  ...PLAN_APPROVAL_GUARDS,
 ];
 
 /** Additive columns for paid work, on tables an earlier version may already have made. */
@@ -94,6 +99,8 @@ const COLUMNS: Record<string, [string, string][]> = {
   rig_agent_steps: [
     ["admission", "TEXT"], ["quote_credits", "REAL"], ["band", "INTEGER"], ["approved_at", "INTEGER"], ["approved_by", "TEXT"],
     ["approved_fingerprint", "TEXT"], ["reason", "TEXT"], ["pause", "TEXT"], ["settled_at", "INTEGER"], ["outcome", "TEXT"],
+    /* The plan approval that covered this render (null: a tap or Auto), and the shot's step a fix re-renders. */
+    ["approval_id", "TEXT"], ["fix_of", "INTEGER"],
   ],
 };
 const INDEXES = [
@@ -166,8 +173,12 @@ export type StepRow = {
   quoteCredits: number | null;
   band: number | null;
   approvedAt: number | null;
-  /** A user id (a tap), or `auto` (Auto mode, under the per-job line). */
+  /** A user id (a tap, or the person's plan approval), or `auto` (Auto mode, under the per-job line). */
   approvedBy: string | null;
+  /** The plan approval that covered it, when one did (no tap of its own). */
+  approvalId: string | null;
+  /** A fix: the step of the shot it renders again under the plan's approval. */
+  fixOf: number | null;
   /** The price the approval covers: the admission's quote fingerprint. */
   approvedFingerprint: string | null;
   reason: string | null;
@@ -203,6 +214,7 @@ function stepOf(r: Record<string, unknown>): StepRow {
     approvedAt: num(r.approved_at), approvedBy: str(r.approved_by), approvedFingerprint: str(r.approved_fingerprint),
     reason: str(r.reason), pause: (str(r.pause) as PauseKind | null), settledAt: num(r.settled_at),
     outcome: r.outcome === "not_billed" || r.outcome === "charged" || r.outcome === "unknown" ? r.outcome : null,
+    approvalId: str(r.approval_id), fixOf: num(r.fix_of),
   };
 }
 
@@ -259,7 +271,7 @@ export async function insertRun(tx: Transaction, run: {
 
 type RunPatch = Partial<{
   state: RigAgentState; reason: string | null; plan: CompiledPlan; plan_fingerprint: string; usage: PlanUsage; model: string;
-  planning_started_at: number; approved_at: number; approved_by: string; finished_at: number;
+  planning_started_at: number; approved_at: number; approved_by: string; finished_at: number | null;
   undone_at: number; undone_by: string; undo: UndoRecord; wake_at: number | null;
   cap_credits: number; limits: LimitRecord[]; plan_charge: PlanCharge;
 }>;
@@ -293,6 +305,15 @@ export async function insertSteps(tx: Transaction, runId: string, plan: Compiled
   }
 }
 
+/** A fix drawn under a plan's approval: one more render of the same shot, after the run's last step, priced when its turn comes. */
+export async function insertFixStep(tx: Transaction, runId: string, input: { seq: number; nodeId: string; label: string; fixOf: number; at: number }) {
+  await tx.execute({
+    sql: `INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,node_id,attempt,prepared,op_id,state,fix_of,created_at,updated_at)
+          VALUES(?,?,?,'render',?,'take',?,0,'[]',NULL,'next',?,?,?)`,
+    args: [`${runId}:${input.seq}`, runId, input.seq, input.label, input.nodeId, input.fixOf, input.at, input.at],
+  });
+}
+
 /** The op id a build step applies under: the same step applied again changes nothing (applyCanvasOps). */
 export const stepOpId = (runId: string, seq: number) => `rig-agent:${runId}:${seq}`;
 /** The op id of a run's undo. */
@@ -312,7 +333,7 @@ type StepPatch = Partial<{
   state: RigAgentStepState; attempt: number; request_key: string | null; job_id: string | null;
   credits_reserved: number | null; credits_settled: number | null; admission: PreparedAdmission | null; quote_credits: number | null;
   band: number | null; approved_at: number | null; approved_by: string | null; approved_fingerprint: string | null;
-  reason: string | null; pause: PauseKind | null; settled_at: number | null; outcome: StepRow["outcome"];
+  reason: string | null; pause: PauseKind | null; settled_at: number | null; outcome: StepRow["outcome"]; approval_id: string | null;
 }>;
 
 /**

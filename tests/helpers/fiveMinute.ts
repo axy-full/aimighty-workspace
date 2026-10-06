@@ -46,7 +46,7 @@ export function bannedNamesIn(text: string): string[] {
 export const visibleText = (page: Page) => page.evaluate(() => document.body.innerText);
 
 /** Requests that spend. A route is spending when a press of its button can bill (CLAUDE.md § Pricing). */
-export type SpendKind = "agent.plan" | "agent.render" | "generate" | "retry" | "audio" | "identity";
+export type SpendKind = "agent.plan" | "agent.render" | "agent.approvePlan" | "generate" | "retry" | "audio" | "identity";
 
 /**
  * The paid-route ledger. A paid request is allowed only while the step that a person presses has opened it
@@ -67,7 +67,8 @@ export function watchSpending(page: Page) {
     const path = new URL(request.url()).pathname;
     if (path === "/api/workbench/team-canvas") {
       const action = (request.postDataJSON() as { action?: string } | null)?.action;
-      if (action === "agent.plan" || action === "agent.render") note(action);
+      /* A plan's one approval spends too: its renders then go with no press of their own (CLAUDE.md rule 14). */
+      if (action === "agent.plan" || action === "agent.render" || action === "agent.approvePlan") note(action);
     } else if (path === "/api/generate" || (path.startsWith("/api/generate/") && !path.endsWith("/quote"))) note("generate");
     else if (/^\/api\/jobs\/[^/]+\/retry$/.test(path)) note("retry");
     else if (/^\/api\/audio(\/dub)?$/.test(path)) note("audio");
@@ -129,7 +130,14 @@ export async function scopeFor(api: APIRequestContext) {
 export async function runOf(api: APIRequestContext, headers: Record<string, string>, productionId: string, draftId: string) {
   const read = await api.get(`/api/workbench/team-canvas?productionId=${productionId}&agent=1&projectId=${draftId}`, { headers });
   expect(read.ok(), await read.text()).toBe(true);
-  const { agent } = (await read.json()) as { agent: { run: { id: string; state: string; proposal: { fingerprint: string } | null } | null; ask: { planning: number } | null } };
+  const { agent } = (await read.json()) as { agent: {
+    run: {
+      id: string; state: string; proposal: { fingerprint: string } | null;
+      plan?: { quote: { total: number; ceiling: number; fingerprint: string } | null } | null;
+      paid: { tool: string; state: string; charged: number | null }[];
+    } | null;
+    ask: { planning: number } | null;
+  } };
   return agent;
 }
 
