@@ -358,7 +358,7 @@ test("the takes stepper stays put as the live price lands: a press on More acros
     return { takes: top('[data-testid="gen-takes"]'), generate: top('[data-testid="gen-generate"]') };
   });
   const pricing = await place();
-  const more = page.getByTestId("gen-takes").getByRole("button", { name: "More", exact: true });
+  const more = page.getByTestId("gen-takes-2");
   /* Scrolled to where a press hits it: on a phone Generate's sticky band floats over the rows above its own place. */
   await more.click({ trial: true });
   const box = (await more.boundingBox())!;
@@ -375,7 +375,7 @@ test("the takes stepper stays put as the live price lands: a press on More acros
   await page.mouse.up();
   await expect(page.getByTestId("gen-takes-count")).toHaveText("2");
   /* Aimed at More while the price was on its way, made once it is on the button: More again, never Generate. */
-  await page.mouse.click(at.x, at.y);
+  await page.getByTestId("gen-takes-3").click();
   await expect(page.getByTestId("gen-takes-count")).toHaveText("3");
   await expect(page.getByTestId("gen-generate")).toHaveText(`Make 3 takes · ${3 * PRICE} cr`);
   expect(routes.quotes).toEqual([]);

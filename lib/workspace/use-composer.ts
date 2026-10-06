@@ -208,6 +208,8 @@ export type ComposerHost = {
   buttonParts: { action: string; price: string | null };
   blocked: string | null;
   submitting: boolean;
+  /** The last press did not go through (its reason is `state.notice`); cleared by the next press. */
+  failed: boolean;
   /** Which credits will be charged, said plainly. */
   wording: string;
   /** The audio setup, for the voice row. */
@@ -282,6 +284,9 @@ export function useComposer(options: {
   const [audio, setAudio] = useState<NodeAudioSetup | null>(null);
   const [quoteAnswer, setQuoteAnswer] = useState<{ scope: string; quote: ComposerQuote | null } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  /* The last press that did not go through, for the panel's Result. It says nothing about the charge: a refusal here can be a lost reply,
+     and "Nothing billed" is only ever said from a take's own ledger (components/graphite/board/cards/take). */
+  const [failed, setFailed] = useState(false);
   const [run, setRun] = useState<Run | null>(null);
   /** Every batch sent here, followed take by take until each settles; the latest read of each take's job. */
   const [batches, setBatches] = useState<BatchRun[]>([]);
@@ -486,6 +491,7 @@ export function useComposer(options: {
     busy.current = true;
     setSubmitting(true);
     dispatch({ type: "notice", value: null });
+    setFailed(false);
     void (async () => {
       try {
         const project = await ensureProject();
@@ -561,7 +567,7 @@ export function useComposer(options: {
             dispatch({ type: "notice", value: `${before}${outcome.reason}` });
             return;
           }
-          if (outcome.state === "refused") { batchShot.current = shotNow; dispatch({ type: "notice", value: `${before}${outcome.reason}` }); return; }
+          if (outcome.state === "refused") { batchShot.current = shotNow; dispatch({ type: "notice", value: `${before}${outcome.reason}` }); setFailed(true); return; }
           const unconfirmed = outcome.takes.filter((take) => take.state === "unconfirmed");
           if (unconfirmed.length)
             rememberWorkspaceBatch(window.localStorage, scope, {
@@ -674,7 +680,7 @@ export function useComposer(options: {
           dispatch({ type: "notice", value: `${before}${outcome.reason}` });
           return;
         }
-        if (outcome.state === "refused") { setRun(null); dispatch({ type: "notice", value: `${before}${outcome.reason}` }); return; }
+        if (outcome.state === "refused") { setRun(null); dispatch({ type: "notice", value: `${before}${outcome.reason}` }); setFailed(true); return; }
         /* Taken: the next Generate of this batch goes on from the take after it. */
         writeResume(scope, project.id, takeKey, take + 1 < end ? { kind: "workspace", projectId: project.id, take: take + 1, node: null } : null);
         setRun({ source: "workspace", name, meta: [name, model.label, formatCredits(outcome.credits)].join(" · "), jobId: outcome.jobId, projectId: project.id });
@@ -687,6 +693,7 @@ export function useComposer(options: {
       } catch (error) {
         setRun(null);
         dispatch({ type: "notice", value: neutralCopy(error instanceof Error ? error.message : "This generation could not be submitted.") });
+        setFailed(true);
       } finally {
         busy.current = false;
         setSubmitting(false);
@@ -811,7 +818,7 @@ export function useComposer(options: {
     state, dispatch, models, offered, model, quote, quoteKey, settings, credits,
     buttonLabel: composerButtonLabel({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft), verb: options.verb }),
     buttonParts: composerButtonParts({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft), verb: options.verb }),
-    blocked, submitting,
+    blocked, submitting, failed,
     wording: billingWording({ workspaceName: options.workspaceName }),
     audio, voices, voice, seconds, project: target, projectNotice, generate, retryEngines, scope,
     batches: batchViews,

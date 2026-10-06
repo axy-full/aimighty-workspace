@@ -100,7 +100,7 @@ test("a value changed in Advanced moves the price, and the fold never hides it",
   await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${PRICE + 10} cr`, { timeout: 30_000 });
   expect(reads.some((q) => q.get("resolution") === "1080p")).toBe(true);
   /* Two takes: Make carries both. Folded, the summary names what the fold holds, and the price still shows. */
-  await page.getByTestId("gen-takes").getByRole("button", { name: "More", exact: true }).click();
+  await page.getByTestId("gen-takes-2").click();
   await expect(page.getByTestId("gen-generate")).toHaveText(`Make 2 takes · ${(PRICE + 10) * 2} cr`, { timeout: 30_000 });
   await toggle.click();
   await expect(page.getByTestId("make-more")).toHaveCount(0);
