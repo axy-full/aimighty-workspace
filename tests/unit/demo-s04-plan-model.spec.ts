@@ -5,8 +5,9 @@ import {
 } from "../../components/graphite/board/cards/plan/model";
 
 /*
- * The plan card (design/particl-graphite/README.md § 3.1 e; lead decisions 27 and 28): Atomik's durable run,
- * approved by the person who asked; each render then asks at its price; the fix allowance is information only.
+ * The plan card (design/particl-graphite/README.md § 3.1 e; CLAUDE.md rule 14): Atomik's durable run. Before the
+ * build, Build · free; at the plan gate the server's total is the button and one approval covers the plan, fixes
+ * included, up to 2 × that total; outside it a render asks at its own price.
  */
 
 const FP = "a".repeat(64);
@@ -29,7 +30,7 @@ function run(over: Partial<RigAgentRunView> = {}): RigAgentRunView {
 const estimates = { 1: { credits: 43, approximate: false }, 3: { credits: 43, approximate: false }, 5: { credits: 7, approximate: false } };
 const base = (over: Partial<PlanInput> = {}): PlanInput => ({ run: run(), enabled: true, estimates, balance: 2000, rule: null, readOnly: null, ...over });
 
-test("the proposal lists every take at the server's price, the total as a line, the fix allowance and the balance after", () => {
+test("the proposal lists every take at the server's price, the total as a line, the most with fixes and the balance after", () => {
   const m = planModel(base())!;
   expect(m.phase).toBe("proposal");
   expect(m.title).toBe("Make 3 shots");
@@ -39,34 +40,78 @@ test("the proposal lists every take at the server's price, the total as a line, 
     ["Shot 3", { kind: "exact", credits: 7 }, "estimate"],
   ]);
   expect(m.total).toEqual({ kind: "exact", credits: 93 });
-  /* The button carries no figure: approving builds (free) and each render asks at its own price. The total is a line. */
-  expect(m.primary).toMatchObject({ kind: "approve", label: "Approve", price: null, fingerprint: FP, blocked: null });
+  /* The button carries no figure: building is free and approves no spending; the plan is approved once its shots are priced on the board. */
+  expect(m.primary).toMatchObject({ kind: "approve", label: "Build · free", price: null, raiseTo: null, fingerprint: FP, blocked: null });
   expect(m.totalLine).toBe("93 cr for the 3 shots");
-  /* 2 × the take prices, never added to the total (decision 28: 93 → 186). */
-  expect(m.fixAllowance).toBe(186);
-  expect(fixLine(m)).toBe("Fixes if needed: up to 2 per shot, at most 186 cr");
+  /* At most 2 × the total, fixes included (93 → 186). */
+  expect(m.ceiling).toBe(186);
+  expect(fixLine(m)).toBe("Fixes if needed: up to 2 per shot, within 186 cr");
   expect(balanceLine(m)).toBe("1,907 cr left after");
   /* Verify steps cost nothing today and are not on the card. */
   expect(m.steps).toHaveLength(3);
 });
 
-test("Approve raises the run's limit first when it is short of the takes' worst case", () => {
-  /* Limit 14, all spent on thinking: the takes need 93 more. */
-  const m = planModel(base())!;
-  expect(m.primary).toMatchObject({ kind: "approve", raiseTo: 107 });
-  /* A limit that already holds them is left alone. */
-  const roomy = planModel(base({ run: run({ money: { mode: "ask", limit: 200, jobCeiling: 200, spent: 14, inFlight: 0, left: 186, planning: { state: "settled", credits: 14 } } }) }))!;
-  expect(roomy.primary).toMatchObject({ kind: "approve", raiseTo: null });
+test("Build never raises the run's limit from the browser: the plan's one approval sets it on the server", () => {
+  /* Limit 14, all spent on thinking: still no raise. */
+  expect(planModel(base())!.primary).toMatchObject({ kind: "approve", raiseTo: null });
 });
 
-test("a keyframe still is priced and totalled but left out of the fix allowance (66 → 114)", () => {
+const GATE_FP = "b".repeat(64);
+/** The plan gate: built, every render priced by the server, the server's quote waiting for the one approval. */
+function gate(over: Partial<RigAgentRunView> = {}): RigAgentRunView {
+  return run({
+    state: "needs_you", reason: "Shot 1 is ready to render · about 43 cr.",
+    paid: [
+      step(1, "Shot 1", { state: "waiting", quote: 43, worst: 43, canRender: true, fingerprint: FP }), verify(2, "Shot 1"),
+      step(3, "Shot 2", { state: "waiting", quote: 43, worst: 43, canRender: true, fingerprint: FP }), verify(4, "Shot 2"),
+      step(5, "Shot 3", { state: "waiting", quote: 7, worst: 7, canRender: true, fingerprint: FP }), verify(6, "Shot 3"),
+    ],
+    plan: { quote: { total: 93, ceiling: 186, approximate: false, fingerprint: GATE_FP, covered: [1, 3, 5], asks: [] }, blocked: null, approval: null },
+    ...over,
+  });
+}
+
+test("the plan gate: the title and the button are the server's figures, Make 3 shots · 93 cr · at most 186 cr, and Approve · 93 cr sends its quote", () => {
+  /* The browser's own pre-quotes say otherwise: the card shows the server's quote, never its own sum. */
+  const m = planModel(base({ run: gate(), estimates: { 1: { credits: 1, approximate: false } } }))!;
+  expect(m.phase).toBe("proposal");
+  expect(m.title).toBe("Make 3 shots · 93 cr · at most 186 cr");
+  expect(m.total).toEqual({ kind: "exact", credits: 93 });
+  expect(m.ceiling).toBe(186);
+  expect(m.primary).toEqual({ kind: "plan", label: "Approve · 93 cr", price: { kind: "exact", credits: 93 }, fingerprint: GATE_FP, blocked: null });
+  expect(fixLine(m)).toBe("Fixes if needed: up to 2 per shot, within 186 cr");
+  expect(balanceLine(m)).toBe("1,907 cr left after");
+  expect(m.modeLine).toBe("One approval covers the shots and up to 2 fixes each; anything else asks.");
+  /* Short of the total: Approve waits. Someone else's plan: theirs. */
+  expect(planModel(base({ run: gate(), balance: 50 }))!.primary?.blocked).toBe(SHORT_LINE);
+  expect(planModel(base({ run: gate({ mine: false }) }))!.primary?.blocked).toBe(NOT_MINE);
+  /* An approximate engine: up to. A render over the per-job line asks on its own and is marked. */
+  const approx = planModel(base({ run: gate({ plan: { quote: { total: 179, ceiling: 358, approximate: true, fingerprint: GATE_FP, covered: [1, 3], asks: [5] }, blocked: null, approval: null } }) }))!;
+  expect(approx.title).toBe("Make 3 shots · up to 179 cr · at most 358 cr");
+  expect(approx.primary).toMatchObject({ kind: "plan", label: "Approve · up to 179 cr" });
+  expect(approx.steps.map((s) => s.asksAlone)).toEqual([null, null, "Asks on its own · over the per-render line"]);
+});
+
+test("after the plan's approval: what it has used of its ceiling, and a render outside it asks at its own price", () => {
+  const approval = { mine: true, at: 1, expiresAt: 2, total: 93, ceiling: 186, used: 43, fixes: {}, maxFixes: 2, open: true, closedReason: null };
+  const m = planModel(base({ run: gate({ state: "running", plan: { quote: null, blocked: null, approval } }) }))!;
+  expect(m.title).toBe("Making 3 shots");
+  expect(m.total).toEqual({ kind: "exact", credits: 93 });
+  expect(fixLine(m)).toBe("43 cr of 186 cr used · fixes up to 2 per shot");
+  expect(m.modeLine).toBe("Inside the approved plan nothing asks again; anything outside it asks at its price.");
+  expect(m.primary).toBeNull();
+  const asks = planModel(base({ run: gate({ state: "needs_you", plan: { quote: null, blocked: null, approval } }) }))!;
+  expect(asks.primary).toMatchObject({ kind: "render", label: "Render · 43 cr" });
+});
+
+test("a keyframe still is priced and totalled, and the most with fixes is twice the total (66 → 132)", () => {
   const m = planModel(base({
     run: run({ paid: [step(1, "Keyframes"), step(2, "Hero take"), step(3, "Draft takes")] }),
     estimates: { 1: { credits: 9, approximate: false }, 2: { credits: 43, approximate: false }, 3: { credits: 14, approximate: false } },
     stills: new Set([1]),
   }))!;
   expect(m.total).toEqual({ kind: "exact", credits: 66 });
-  expect(m.fixAllowance).toBe(114);
+  expect(m.ceiling).toBe(132);
   expect(m.steps[0].kind).toBe("still");
 });
 
@@ -74,18 +119,18 @@ test("an engine that settles on what the provider states reads up to its band, a
   expect(estimatePrice({ credits: 43, approximate: true })).toEqual({ kind: "up-to", credits: 129 });
   const m = planModel(base({ estimates: { ...estimates, 1: { credits: 43, approximate: true } } }))!;
   expect(m.total).toEqual({ kind: "up-to", credits: 179 });
-  expect(m.primary).toMatchObject({ label: "Approve" });
+  expect(m.primary).toMatchObject({ label: "Build · free" });
   expect(m.totalLine).toBe("up to 179 cr for the 3 shots");
-  expect(m.fixAllowance).toBe(358);
+  expect(m.ceiling).toBe(358);
 });
 
 test("a take with no price yet leaves the total, the allowance and the raise unknown: Approve carries no figure", () => {
   const m = planModel(base({ estimates: { 1: estimates[1], 3: estimates[3] } }))!;
   expect(m.steps[2].price).toBeNull();
   expect(m.total).toBeNull();
-  expect(m.fixAllowance).toBeNull();
+  expect(m.ceiling).toBeNull();
   expect(fixLine(m)).toBeNull();
-  expect(m.primary).toMatchObject({ kind: "approve", label: "Approve", raiseTo: null });
+  expect(m.primary).toMatchObject({ kind: "approve", label: "Build · free", raiseTo: null });
   expect(balanceLine(m)).toBeNull();
 });
 
@@ -102,17 +147,18 @@ test("the per-shot rule marks the steps over it, worded by role", () => {
   expect(planModel(base({ rule: { rule: "anyone", cap: 50, admin: false } }))!.ruleLine).toBeNull();
 });
 
-test("only the person who asked approves, never while switched off, read-only or short", () => {
+test("only the person who asked builds, never while switched off or read-only; a short balance is said before the plan is priced", () => {
   expect(planModel(base({ run: run({ mine: false }) }))!.primary?.blocked).toBe(NOT_MINE);
   expect(planModel(base({ enabled: false }))!.primary?.blocked).toBe(SWITCHED_OFF);
   expect(planModel(base({ readOnly: "Sample production · nothing you do here spends credits" }))!.primary?.blocked).toBe("Sample production · nothing you do here spends credits");
+  /* Building spends nothing, so it is not held back by the balance; the plan's Approve is (above). */
   const short = planModel(base({ balance: 50 }))!;
-  expect(short.primary?.blocked).toBe(SHORT_LINE);
+  expect(short.primary?.blocked).toBeNull();
   expect(short.balance?.short).toBe(43);
   expect(balanceLine(short)).toBe("Short by 43 cr");
 });
 
-test("after approval each render asks at its own price, in its own words", () => {
+test("a run with no plan approval (built before it, or a tap per render) still asks each render at its own price, in its own words", () => {
   const waiting = run({ state: "needs_you", reason: "Shot 1 is ready to render · about 43 cr.", paid: [
     step(1, "Shot 1", { state: "waiting", quote: 43, worst: 43, canRender: true, fingerprint: FP }), step(3, "Shot 2"), step(5, "Shot 3"),
   ] });
@@ -150,7 +196,7 @@ test("finished steps say what they settled at, or what the provider did with a f
 test("the thinking and the way renders ask are said plainly", () => {
   const m = planModel(base())!;
   expect(m.thinking).toBe("Thinking · 14 cr · billed when Atomik planned it");
-  expect(m.modeLine).toBe("Each shot asks at its price before it renders.");
+  expect(m.modeLine).toBe("One approval covers the shots and up to 2 fixes each; anything else asks.");
   const auto = planModel(base({ run: run({ money: { mode: "auto", limit: 300, jobCeiling: 200, spent: 14, inFlight: 0, left: 286, planning: { state: "released", credits: null } } }) }))!;
   expect(auto.modeLine).toBe("Drafts up to 200 cr each render without asking; anything else asks.");
   expect(auto.thinking).toBe("Thinking · not billed");
@@ -162,7 +208,7 @@ test("no run, no card; a build with no renders is free to approve", () => {
   expect(build.title).toBe("Three shots");
   expect(build.total).toEqual({ kind: "free" });
   expect(build.primary).toMatchObject({ label: "Approve · free" });
-  expect(build.fixAllowance).toBeNull();
+  expect(build.ceiling).toBeNull();
   expect(build.modeLine).toBeNull();
 });
 
@@ -172,28 +218,27 @@ test("no word on the card is the bare 'quoted' or 'about'", () => {
     expect(texts(m)).not.toMatch(/\bquoted\b|\babout\b/);
 });
 
-test("the explore-only sample's plan: the guest sample's three shots at 43, 43 and 7 cr come to 93 cr, fixes at most 186 cr, and nothing can be pressed", async () => {
+test("the explore-only sample's plan: the guest sample's three shots at 43, 43 and 7 cr, Make 3 shots · 93 cr · at most 186 cr, and nothing can be pressed", async () => {
   const { samplePlanModel, samplePlanCard } = await import("../../components/graphite/board/cards/plan/sample");
   const line = "Sample production · nothing you do here spends credits";
   const m = samplePlanModel([
     { title: "Shot 1", meta: "Seedance 2.5 · 5 s · 1080p", credits: 43 }, { title: "Shot 2", meta: "Seedance 2.5 · 5 s · 1080p", credits: 43 },
     { title: "Shot 3", meta: "Kling 3.0 Standard · 5 s", credits: 7 },
   ], line);
-  expect(m.title).toBe("Make 3 shots");
+  expect(m.title).toBe("Make 3 shots · 93 cr · at most 186 cr");
   expect(m.total).toEqual({ kind: "exact", credits: 93 });
   expect(m.totalLine).toBe("93 cr for the 3 shots");
-  /* Information only: 2 × the takes, never added to the total. */
-  expect(m.fixAllowance).toBe(186);
-  expect(fixLine(m)).toBe("Fixes if needed: up to 2 per shot, at most 186 cr");
+  expect(m.ceiling).toBe(186);
+  expect(fixLine(m)).toBe("Fixes if needed: up to 2 per shot, within 186 cr");
   expect(m.balance).toBeNull();
-  expect(m.primary).toMatchObject({ kind: "approve", label: "Approve", blocked: line });
+  expect(m.primary).toMatchObject({ kind: "plan", label: "Approve · 93 cr", blocked: line });
   /* Plain data, no style ids and no placeholder names in a row. */
   expect(JSON.stringify(m)).not.toMatch(/SH\d|Mira|Northline|Dune/);
   const card = samplePlanCard(m);
   expect(card).toMatchObject({ id: "plan:sample", kind: "plan", region: "storyboard", group: "group:storyboard" });
   expect(JSON.parse(JSON.stringify(card))).toEqual(card);
-  /* A keyframe still is priced but left out of the allowance (66 → 114). */
+  /* At most twice the total, stills included (66 → 132). */
   const stills = samplePlanModel([{ title: "Keyframes", meta: "", credits: 9, kind: "still" }, { title: "Hero", meta: "", credits: 43 }, { title: "Draft", meta: "", credits: 14 }], line);
-  expect([stills.total, stills.fixAllowance]).toEqual([{ kind: "exact", credits: 66 }, 114]);
+  expect([stills.total, stills.ceiling]).toEqual([{ kind: "exact", credits: 66 }, 132]);
   expect(samplePlanModel([], line).total).toEqual({ kind: "free" });
 });

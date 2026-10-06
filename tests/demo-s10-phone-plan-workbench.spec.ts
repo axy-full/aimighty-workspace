@@ -6,9 +6,10 @@ import { dimLabels, lastRowClearsPinned, smallTargets, smallText } from "./phone
 
 /**
  * Stream 10, PR 2: plan approval on the phone (design/particl-graphite/README.md § 3.6, frames B1–B3), behind the
- * new-interface switch. It reads stream 4's plan model on a run the browser answers (no planner, no engine), so the
- * three lines, the Total, the fix allowance and the balance are checked against the server's quote route. Approve is
- * the run's own approval (`agent.approve`, `agent.limit` first when short); Hold calls nothing; a short balance offers
+ * new-interface switch. It reads stream 4's plan model on a run the browser answers (no planner, no engine). Before
+ * the build: the three lines at the server's quote route's prices, the Total, the most with fixes, the balance, and
+ * Build · free (`agent.approve`). At the plan gate (CLAUDE.md rule 14) the price is the button: Approve · 93 cr sends
+ * `agent.approvePlan` with the server's quote fingerprint, never a limit. Hold calls nothing; a short balance offers
  * Top up and Approve waits. Nothing paid is ever sent. Neutral names only.
  */
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -40,6 +41,17 @@ const proposal = (limit: number, left: number) => ({
   money: { mode: "ask", limit, jobCeiling: 200, spent: 14, inFlight: 0, left, planning: { state: "settled", credits: 14 } },
   paid: [step(1, "Opening"), step(2, "The turn"), step(3, "Close")], at: Date.now(),
 });
+/** The plan gate as the server answers it: built, each render priced, the quote waiting for the one approval. */
+const QUOTE_FP = "c".repeat(64);
+const gate = (prices: [number, number, number]) => {
+  const total = prices.reduce((a, b) => a + b, 0);
+  const base = proposal(500, 486);
+  return {
+    ...base, state: "needs_you", reason: "Opening is ready to render · about 43 cr.",
+    paid: base.paid.map((p, i) => ({ ...p, state: "waiting", quote: prices[i], worst: prices[i], canRender: true, fingerprint: FP })),
+    plan: { quote: { total, ceiling: 2 * total, approximate: false, fingerprint: QUOTE_FP, covered: [1, 2, 3], asks: [] }, blocked: null, approval: null },
+  } as unknown as ReturnType<typeof proposal>;
+};
 const sceneNode = (id: string, title: string, boardShotId: string, engine: string, x: number): CanvasNode => ({
   id, title, type: "scene", x, y: 100, width: 238, linked: [], role: "Director", status: "draft", mode: "Video", engine, durationS: 5, ratio: "16:9", resolution: "1080p", boardShotId, text: `${title}.`,
 });
@@ -64,7 +76,7 @@ async function open(page: Page, run: ReturnType<typeof proposal>, prices: [numbe
   await page.route(/\/api\/workbench\/team-canvas(\?|$)/, async (route) => {
     const url = new URL(route.request().url());
     if (route.request().method() === "GET" && url.searchParams.get("agent") === "1")
-      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ agent: { enabled: true, run: posts.some((p) => p.action === "agent.approve") ? { ...run, state: "running" } : run, ask: null } }) });
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ agent: { enabled: true, run: posts.some((p) => p.action === "agent.approve" || p.action === "agent.approvePlan") ? { ...run, state: "running" } : run, ask: null } }) });
     if (route.request().method() === "POST") {
       const body = route.request().postDataJSON() as Record<string, unknown>;
       if (typeof body.action === "string" && body.action.startsWith("agent.")) {
@@ -100,7 +112,7 @@ async function floors(page: Page, where: string) {
   expect(await lastRowClearsPinned(page), `${where}: the last row clears the pinned actions`).toEqual([]);
 }
 
-test("the plan: the three lines at the server's prices, the Total, the fix allowance as information and the balance after", async ({ page }, info) => {
+test("the proposal: the three lines at the server's prices, the Total, the most with fixes and the balance after; Build is free", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "phone widths");
   const { posts, paid, errors } = await open(page, proposal(500, 486), [43, 43, 7]);
   await expect(page.getByTestId("phone-title")).toHaveText("Plan approval");
@@ -114,11 +126,11 @@ test("the plan: the three lines at the server's prices, the Total, the fix allow
   await expect(rows.nth(2).locator(".gx-price")).toHaveText("7 cr");
   await expect(rows.nth(0).locator(".gx-price")).toHaveAttribute("title", /^\$[\d.]+$/);
   await expect(page.getByTestId("phone-plan-total")).toContainText("93 cr");
-  /* The allowance is information, never part of the Total, and the button carries no figure. */
+  /* At most 2 × the Total with fixes; building approves no spending, so the button carries no figure. */
   await expect(page.getByTestId("phone-plan-fixes")).toContainText("up to 2 per shot");
   await expect(page.getByTestId("phone-plan-fixes")).toContainText("at most 186 cr");
   await expect(page.getByTestId("phone-plan-balance")).toContainText(/Balance after · [\d,]+ cr now/);
-  await expect(page.getByTestId("phone-plan-primary")).toHaveText("Approve");
+  await expect(page.getByTestId("phone-plan-primary")).toHaveText("Build · free");
   await expect(page.getByTestId("phone-plan-primary")).toBeEnabled();
   /* No SH-style ids anywhere on the screen (DECISIONS 39). */
   expect(await page.getByTestId("phone-plan").innerText()).not.toMatch(/\bSH\d\d\b|Keyframes/);
@@ -129,16 +141,39 @@ test("the plan: the three lines at the server's prices, the Total, the fix allow
   expect(errors).toEqual([]);
 });
 
-test("Approve sends the run's own approval and nothing paid, then Home says so; Hold and Change call nothing", async ({ page }, info) => {
+test("Build sends the run's own approval of the build and nothing paid, then Home says so", async ({ page }, info) => {
   test.skip(!PORTRAIT.includes(info.project.name), "portrait phones");
   const { posts, paid } = await open(page, proposal(500, 486), [43, 43, 7]);
   await expect(page.getByTestId("phone-plan-primary")).toBeEnabled({ timeout: 20_000 });
   await page.getByTestId("phone-plan-primary").click();
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]).toMatchObject({ action: "agent.approve", runId: RUN_ID, fingerprint: FP });
-  await expect(page.getByTestId("toast")).toContainText("approved · each shot asks at its price");
+  await expect(page.getByTestId("toast")).toContainText("Building the board · free");
   await expect(page.getByTestId("phone-home")).toBeVisible();
   expect(paid).toEqual([]);
+});
+
+test("the plan gate: Make 3 shots · 93 cr · at most 186 cr from the server, the price is the button, and one tap sends the plan's approval", async ({ page }, info) => {
+  test.skip(!PHONES.includes(info.project.name), "phone widths");
+  /* The browser's own quotes would say 1 cr each: the screen shows the server's plan quote. */
+  const { posts, paid, errors } = await open(page, gate([43, 43, 7]), [1, 1, 1]);
+  await expect(page.getByTestId("mobile-dock")).toHaveCount(0);
+  await expect(page.getByTestId("phone-plan-title")).toHaveText("Make 3 shots · 93 cr · at most 186 cr");
+  await expect(page.getByTestId("phone-plan-total")).toContainText("93 cr");
+  await expect(page.getByTestId("phone-plan-fixes")).toContainText("at most 186 cr");
+  await expect(page.getByTestId("phone-plan-primary")).toHaveText("Approve · 93 cr");
+  await floors(page, "Plan gate");
+  await shot(page, info.project.name, "plan-gate");
+  expect(posts).toEqual([]);
+  if (PORTRAIT.includes(info.project.name)) {
+    await page.getByTestId("phone-plan-primary").click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0]).toEqual({ productionId: expect.any(String), action: "agent.approvePlan", runId: RUN_ID, fingerprint: QUOTE_FP });
+    await expect(page.getByTestId("toast")).toContainText("Approved · 93 cr, at most 186 cr with fixes");
+    await expect(page.getByTestId("phone-home")).toBeVisible();
+  }
+  expect(paid).toEqual([]);
+  expect(errors).toEqual([]);
 });
 
 test("Hold goes Home and calls nothing", async ({ page }, info) => {
@@ -152,19 +187,9 @@ test("Hold goes Home and calls nothing", async ({ page }, info) => {
   expect(paid).toEqual([]);
 });
 
-test("the limit is raised first when it is short of the renders: agent.limit, then agent.approve", async ({ page }, info) => {
-  test.skip(!PORTRAIT.includes(info.project.name), "portrait phones");
-  const { posts } = await open(page, proposal(14, 0), [43, 43, 7]);
-  await expect(page.getByTestId("phone-plan-total")).toContainText("93 cr", { timeout: 20_000 });
-  await page.getByTestId("phone-plan-primary").click();
-  await expect.poll(() => posts.length).toBe(2);
-  expect(posts[0]).toMatchObject({ action: "agent.limit", runId: RUN_ID, limit: 107 });
-  expect(posts[1]).toMatchObject({ action: "agent.approve", fingerprint: FP });
-});
-
-test("a short balance: the card says by how much, offers Top up, and Approve waits", async ({ page }, info) => {
+test("a short balance at the plan gate: the card says by how much, offers Top up, and Approve waits", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "phone widths");
-  const { posts } = await open(page, proposal(500, 486), [120, 120, 120], "screen=plan&credits=short");
+  const { posts } = await open(page, gate([120, 120, 120]), [120, 120, 120], "screen=plan&credits=short");
   const card = page.getByTestId("phone-plan-short");
   await expect(card).toContainText(/Short by [\d.,]+ cr/, { timeout: 20_000 });
   await expect(card).toContainText("Top up, then approve. Nothing is spent until you do.");

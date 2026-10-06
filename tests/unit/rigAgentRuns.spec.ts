@@ -419,13 +419,15 @@ test("Ask: after the build each render is priced and waits for one tap by the pe
     const deps = await depsFor(ws, r);
     const runId = await approvedRun(deps, { limit: 500 });
     const afterPlan = await balance(ws);
-    /* The build lands, then the first render is priced and waits. */
+    /* The build lands, then every render is priced (so the plan can be approved once at its total) and the first waits. */
     expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
     let run = await view();
     expect(run.built).toEqual({ cards: 4, wires: 4 });
     expect(run.paid.map((p) => [p.tool, p.title, p.state])).toEqual([
-      ["render", "01 — Opening", "waiting"], ["verify", "01 — Opening", "next"], ["render", "02 — The turn", "next"], ["verify", "02 — The turn", "next"],
+      ["render", "01 — Opening", "waiting"], ["verify", "01 — Opening", "next"], ["render", "02 — The turn", "waiting"], ["verify", "02 — The turn", "next"],
     ]);
+    /* The plan's quote is there to approve once; this test takes the tap-per-render path, which still works outside a plan. */
+    expect(run.plan?.quote).toMatchObject({ total: (await credits(0.3)) + (await credits(0.45)) });
     const first = run.paid[0];
     expect(first).toMatchObject({ quote: await credits(0.3), canRender: true, pause: null });
     expect(first.fingerprint).toMatch(/^[a-f0-9]{64}$/);
