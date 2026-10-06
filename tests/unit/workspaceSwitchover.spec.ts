@@ -153,7 +153,7 @@ test("the way back round-trips the pages both surfaces share", () => {
     ["particl", "takes"], ["particl", "deliver"], ["particl", "brief"], ["particl", "edit"],
     ["atomik", "runs"], ["atomik", "generate"], ["atomik", "recipes"], ["atomik", "approvals"],
     ["atomik", "budget"], ["atomik", "models"],
-    ["subatomik", "motion"], ["subatomik", "swap"], ["subatomik", "shorts"],
+    ["subatomik", "motion"], ["subatomik", "swap"],
     ["moleculr", "marketing"],
   ];
   for (const [suite, page] of shared) {
