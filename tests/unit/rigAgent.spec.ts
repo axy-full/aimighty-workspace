@@ -345,7 +345,8 @@ test("a run: asked, planned to a proposal, approved as shown, built step by step
     const built = (await agent.rigAgentState("prod-1", "ana")).run!;
     expect(built).toMatchObject({ state: "needs_you", built: { cards: 4, wires: 4 }, held: [], canUndo: true, credits: proposed.credits });
     expect(built.steps.map((s) => s.state)).toEqual(["done", "done", "done", "done", "done"]);
-    expect(built.paid.map((p) => p.state)).toEqual(["waiting", "next", "next", "next"]);
+    /* Every render the plan names is priced once the build is done (the plan is approved once, at its total); checks wait. */
+    expect(built.paid.map((p) => p.state)).toEqual(["waiting", "next", "waiting", "next"]);
     const canvas = (await readTeamCanvas("prod-1"))!;
     const own = Object.entries(canvas.canvas.serverMade).filter(([, by]) => by === `agent:${asked.id}`).map(([id]) => id);
     expect(own.sort()).toEqual(["cast-1", "place-1", "shot-1", "shot-2"].map((key) => agentNodeId(asked.id, key)).sort());

@@ -57,7 +57,9 @@ async function open(page: Page, path: string, connection: Record<string, unknown
 test("Engines and Settings › Connections: no connected-account row even while a grant and running jobs would be held; the route is never asked", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, posts, started, disconnects, reads } = await open(page, "/suites?view=workspace&tab=engines");
-  await expect(page.getByTestId("ws-engines")).toBeVisible();
+  /* Engines is Settings › Advanced with the new interface on, or the Workspace tab with it off: either way, no row. */
+  await expect(page.getByTestId("settings-view").or(page.getByTestId("workspace-view")).first()).toBeVisible();
+  await page.waitForLoadState("networkidle");
   await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
   await page.goto("/suites?view=workspace&tab=connections");
   await expect(page.getByTestId("settings-publishing")).toBeVisible();

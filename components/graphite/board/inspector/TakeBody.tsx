@@ -8,6 +8,8 @@ import { SAY, referenceRole } from "@/lib/shell/assets";
 import { exact, upTo } from "@/lib/shell/price-words";
 import { useStageQuotes } from "@/lib/production/use-stage-quotes";
 import { sendReference } from "@/lib/shell/reference-inbox";
+import { copyAssetLink } from "@/lib/shell/copy-asset-link";
+import { useSession } from "@/lib/session";
 import { useShell } from "@/lib/shell/state";
 import { isVerifyCard } from "@/lib/workbench/verify";
 import type { BoardCtx } from "../cards/types";
@@ -31,6 +33,7 @@ import { onChangeAsked, takeChange } from "./change-intent";
 
 export function TakeBody({ row, ctx }: { row: ShotTakes; ctx: BoardCtx }) {
   const shell = useShell();
+  const session = useSession();
   const judge = useJudge(ctx.scope, ctx.project.id, ctx.toast);
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
@@ -86,6 +89,8 @@ export function TakeBody({ row, ctx }: { row: ShotTakes; ctx: BoardCtx }) {
     ctx.openMake(v.media === "video" ? "video" : "image");
     ctx.toast(SAY.referenced(v.entry.take.name, role));
   };
+  /* The link the old Inspector copied (lib/shell/asset-link.ts › assetLinkHref): this workspace, this production and this take; nothing private or signed. */
+  const copyLink = async () => ctx.toast(await copyAssetLink({ workspace: session.workspace?.id, production: ctx.project.productionProjectId, asset: v.id }));
   const copy = () => { void navigator.clipboard?.writeText(v.prompt).then(() => ctx.toast("Prompt copied"), () => ctx.toast("The prompt could not be copied.")); };
 
   return (
@@ -142,6 +147,7 @@ export function TakeBody({ row, ctx }: { row: ShotTakes; ctx: BoardCtx }) {
         ) : null}
         {role && judgeable(v) ? <button type="button" className="gx-insp-act" onClick={useAsReference} data-testid="insp-use-ref">Use as reference</button> : null}
         {judgeable(v) ? <a className="gx-insp-act" href={downloadHref(v.genId)} download data-testid="insp-download">Download</a> : null}
+        {ctx.project.productionProjectId ? <button type="button" className="gx-insp-act" title="A link to this take, for people in this workspace" onClick={() => void copyLink()} data-testid="insp-copy-link">Copy link</button> : null}
       </div>
 
       {history.length ? (
