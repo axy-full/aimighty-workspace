@@ -3,20 +3,25 @@ import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { workbenchScopeFor } from "../lib/workbench/request-scope";
+import { newProject } from "../lib/workbench/studio";
 
 /**
- * The Higgsfield sign-in is retired (lib/higgsfield-consumer/retired.ts), on
- * the real local server and its real routes, with the owner's account ledger
- * seeded as earlier work left it. Every request for new work on the account
- * is refused with one plain answer, whatever it carries. What the owner made
- * there still reads: the jobs still running hold their slots on Workspace ›
- * Engines, where a stuck one can be set aside; their approved quotes are in
- * Workspace › Usage and on the /usage Higgsfield tab. Nothing reaches the
- * account: this workspace holds no grant, and ENGINE_MOCK is on.
+ * Release 1 has no feature that needs a Higgsfield sign-in
+ * (lib/higgsfield-consumer/retired.ts › SIGN_IN_OFF), on the real local server
+ * and its real routes, for the workspace owner, with the owner's account
+ * ledger seeded as earlier work left it (jobs still open on a project).
+ *
+ * Every account route refuses, whatever it is asked, status reads, saved
+ * lists, the connection, Set aside, Disconnect and the credit history
+ * included; the old sign-in return address lands on Settings › Connections.
+ * No page asks the account anything: the shell's collector is off, Settings ›
+ * Connections and Engines have no connected-account row, /usage has no
+ * connected-account tab, and Shorts is no page. What the owner made earlier is
+ * history only: Workspace › Usage still lists it. ENGINE_MOCK is on and this
+ * workspace holds no grant.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
-const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-const RETIRED = "The connected account is no longer used. Past results stay in your Library.";
+const RETIRED = { code: "retired", error: "The connected account is no longer used. Past results stay in your Library." };
 const MIN = 60_000;
 
 async function tenantOf(workspaceId: string) {
@@ -25,102 +30,117 @@ async function tenantOf(workspaceId: string) {
   finally { platform.close(); }
 }
 
-/** The owner's ledger as earlier work left it: one job stuck unconfirmed (past its grace), one still rendering, one finished. */
-async function seedLedger(page: Page, workspaceId: string, userId: string) {
+/** The owner's ledger as earlier work left it, on the open project: one job unconfirmed, one still rendering, one finished. */
+async function seedLedger(page: Page, workspaceId: string, userId: string, draftId: string) {
   expect((await page.request.get("/api/usage?rows=connected")).ok()).toBe(true); // its table exists once read
   const tenant = createClient({ url: await tenantOf(workspaceId), timeout: 10_000 });
   const now = Date.now();
-  const jobs = { stuck: randomUUID(), open: randomUUID(), done: randomUUID() };
   try {
-    for (const [id, workflow, status, credits, age] of [[jobs.stuck, "generation", "uncertain", 12, 40 * MIN], [jobs.open, "genjutsu", "accepted", 40.5, 3 * MIN], [jobs.done, "generation", "completed", 75, 25 * MIN]] as const)
+    for (const [workflow, status, credits, age] of [["generation", "uncertain", 12, 40 * MIN], ["genjutsu", "accepted", 40.5, 3 * MIN], ["generation", "completed", 75, 25 * MIN]] as const) {
+      const id = randomUUID();
       await tenant.execute({
         sql: `INSERT INTO higgsfield_consumer_jobs(id,user_id,draft_id,connected_owner_id,connection_generation,workflow,idempotency_key,payload_json,payload_hash,immutable_hash,quote_credits,quote_expires_at,original_asset_ids,status,dispatch_claim_hash,created_at,updated_at)
               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        args: [id, userId, "draft-gone", userId, "gen", workflow, `k_${id}`, "{}", "h", "h", credits, now - age + 5 * MIN, "[]", status, "claim", now - age, now - age],
+        args: [id, userId, draftId, userId, "gen", workflow, `k_${id}`, "{}", "h", "h", credits, now - age + 5 * MIN, "[]", status, "claim", now - age, now - age],
       });
+    }
   } finally { tenant.close(); }
-  return jobs;
 }
-async function noSideScroll(page: Page) {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
+/** Settings' own sections (Connections) or the Workspace tabs (Engines, Usage), whichever the shell draws for the address. */
+const settingsOrWorkspace = (page: Page) => page.getByTestId("settings-view").or(page.getByTestId("workspace-view")).first();
+async function noSideScroll(page: Page, where: string) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), `${where}: no horizontal page scroll`).toBeLessThanOrEqual(1);
 }
 
-test("the owner's account history still reads on the real routes — running jobs on Engines (a stuck one set aside), their quotes in Usage and on /usage — while every new-work request is refused", async ({ page }, info) => {
+test("no feature needs a Higgsfield sign-in: every account route refuses, and no page offers, shows or asks the connected account", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const phone = PHONES.includes(info.project.name);
   const { workspace } = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json()) as { id: string; owner: boolean };
   expect(me.owner, "the owner's own workspace").toBe(true);
   const headers = { "X-Workbench-Scope": workbenchScopeFor(workspace.id, me.id) };
-  const jobs = await seedLedger(page, workspace.id, me.id);
+  const project = newProject("Harbour night shoot");
+  const saved = await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  await seedLedger(page, workspace.id, me.id, project.id);
+
+  /* Warm the shell once (a cold dev server compiles on first paint), then watch every request from here on. */
+  await page.goto("/suites");
+  await expect(page.locator("body")).toBeVisible();
+  const asked: string[] = [];
   const errors: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/higgsfield/consumer/") || url.hostname.endsWith("higgsfield.ai")) asked.push(`${request.method()} ${url.pathname}`);
+  });
   page.on("pageerror", (error) => errors.push(error.message));
 
-  /* New work is refused on the real server, whatever the body carries; nothing is priced, started or read from the account. */
-  const refusals: [string, Record<string, unknown>][] = [
-    ["generation", { action: "quote", draftId: "draft-1" }], ["generation", { action: "catalogue" }], ["generation", { action: "submit-batch" }],
-    ["generation", { action: "characters-create" }], ["generation", { action: "elements" }], ["genjutsu", { action: "submit" }],
-    ["video", { action: "setup" }], ["marketing-templates", { action: "catalogue" }], ["shorts", { action: "presets" }],
-    ["audio-tools", { action: "voices" }], ["connection", { action: "developer-probe" }],
+  /* The real routes refuse everything, on every method, whatever the body carries. */
+  const status = { draftId: project.id, id: randomUUID() };
+  const posts: [string, Record<string, unknown>][] = [
+    ["generation", { action: "status", ...status }], ["generation", { action: "check-batch", draftId: project.id, ids: [randomUUID()] }], ["generation", { action: "quote", draftId: project.id }],
+    ["genjutsu", { action: "status", ...status }], ["genjutsu", { action: "submit" }], ["video", { action: "status", ...status }], ["video", { action: "setup" }],
+    ["marketing-templates", { action: "status", ...status }], ["shorts", { action: "status", ...status }], ["audio-tools", { action: "status", ...status }],
+    ["connection", { action: "set-aside", id: randomUUID() }], ["connection", { action: "developer-probe" }],
+    ["connect", {}], ["capabilities", {}], ["qualification", {}], ["analysis-qualification", {}],
   ];
-  for (const [route, body] of refusals) {
+  for (const [route, body] of posts) {
     const response = await page.request.post(`/api/higgsfield/consumer/${route}`, { headers, data: body });
-    expect(response.status(), `${route} ${String(body.action)}`).toBe(410);
-    expect(await response.json()).toEqual({ code: "retired", error: RETIRED });
+    expect(response.status(), `POST ${route} ${String(body.action ?? "")}`).toBe(410);
+    expect(await response.json()).toEqual(RETIRED);
   }
-  for (const [method, path] of [["POST", "/api/higgsfield/consumer/connect"], ["GET", "/api/higgsfield/consumer/client"], ["POST", "/api/higgsfield/consumer/capabilities"], ["POST", "/api/higgsfield/consumer/qualification"]] as const) {
-    const response = method === "GET" ? await page.request.get(path, { headers }) : await page.request.post(path, { headers, data: {} });
-    expect(response.status(), path).toBe(410);
+  for (const route of ["generation", "genjutsu", "video", "marketing-templates", "shorts", "audio-tools", "connection", "activity", "client"]) {
+    const response = await page.request.get(`/api/higgsfield/consumer/${route}?draftId=${project.id}`, { headers });
+    expect(response.status(), `GET ${route}`).toBe(410);
+    expect(await response.json()).toEqual(RETIRED);
   }
-  /* A sign-in coming back from before the retirement is never finished: it is sent to Engines where the
-     deployment has its https origin, and answered with the plain refusal where it has none (this local server). */
+  const disconnect = await page.request.delete("/api/higgsfield/consumer/connection", { headers });
+  expect(disconnect.status(), "Disconnect").toBe(410);
+  /* An old sign-in return lands on Settings › Connections, with nothing in the address to say why. */
   const callback = await page.request.get("/api/higgsfield/consumer/callback?code=c&state=s", { maxRedirects: 0 });
-  if (callback.status() === 303) expect(callback.headers().location).toMatch(/\/suites\?view=workspace&tab=engines&higgsfield=retired$/);
-  else {
-    expect(callback.status()).toBe(410);
-    expect(await callback.json()).toEqual({ code: "retired", error: RETIRED });
+  expect(callback.status()).toBe(303);
+  expect(callback.headers().location).toMatch(/\/suites\?view=workspace&tab=connections$/);
+
+  /* The open project, with the owner's account jobs still open in the ledger: nothing lists or reads them. */
+  await page.goto(`/suites?project=${encodeURIComponent(project.id)}`);
+  await expect(page.locator("body")).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await noSideScroll(page, "the open project");
+
+  /* Settings › Connections and Workspace › Engines: no connected-account row. */
+  for (const tab of ["connections", "engines"]) {
+    await page.goto(`/suites?view=workspace&tab=${tab}`);
+    await expect(settingsOrWorkspace(page)).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("settings-earlier-account")).toHaveCount(0);
+    await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
+    await expect(page.getByTestId("connected-account-disconnect")).toHaveCount(0);
+    await expect(page.getByText(/Connect Higgsfield|Higgsfield account|Sign-in retired|Earlier connected account/i)).toHaveCount(0);
+    await noSideScroll(page, tab);
   }
+  /* The return address itself, followed: Settings › Connections, no message. */
+  await page.goto("/api/higgsfield/consumer/callback?code=c&state=s");
+  await expect.poll(() => new URL(page.url()).searchParams.get("tab")).toBe("connections");
+  await expect(settingsOrWorkspace(page)).toBeVisible();
+  await expect(page.getByText(/sign-in|connected account/i)).toHaveCount(0);
 
-  /* Engines: the two jobs still holding slots; the stuck one, past its grace, can be set aside. No grant is held, so no Disconnect. */
-  await page.goto("/suites?view=workspace&tab=engines");
-  const card = page.getByTestId("engine-connected-account");
-  await expect(card).toContainText("Sign-in retired");
-  await expect(page.getByTestId("connected-account-retired")).toHaveText("The connected account is no longer used. Past results stay in your Library.");
-  await expect(page.getByTestId("connected-account-disconnect")).toHaveCount(0);
-  await expect(card.getByRole("button", { name: /Connect|Reconnect/ })).toHaveCount(0);
-  await expect(page.getByTestId("connected-account-capacity")).toContainText("2 of 4 job slots in use");
-  const rows = page.getByTestId("connected-account-job");
-  await expect(rows).toHaveCount(2);
-  await expect(rows.nth(0)).toContainText("Generate · Untitled project");
-  await expect(rows.nth(0)).toContainText("unconfirmed");
-  await expect(rows.nth(1)).toContainText("Transform · Untitled project");
-  await expect(rows.nth(1).getByRole("button", { name: "Set aside" })).toHaveCount(0);
-  const aside = rows.nth(0).getByRole("button", { name: "Set aside" });
-  if (phone) expect(Math.round((await aside.boundingBox())!.height)).toBeGreaterThanOrEqual(44);
-  await noSideScroll(page);
-  await aside.click();
-  await expect(rows).toHaveCount(1);
-  await expect(page.getByTestId("connected-account-capacity")).toContainText("1 of 4 job slots in use");
-  /* Set aside in the ledger only: the job is still there, with its status and quote. */
-  const tenant = createClient({ url: await tenantOf(workspace.id), timeout: 10_000 });
-  try {
-    const row = (await tenant.execute({ sql: "SELECT status, quote_credits, released_at FROM higgsfield_consumer_jobs WHERE id=?", args: [jobs.stuck] })).rows[0];
-    expect(row).toMatchObject({ status: "uncertain", quote_credits: 12 });
-    expect(Number(row.released_at)).toBeGreaterThan(0);
-  } finally { tenant.close(); }
-
-  /* Usage: the owner's connected-account jobs, apart, in that provider's credits as quoted. */
+  /* History stays history: Workspace › Usage still lists what ran on the account, read from Particl's own ledger. */
   await page.goto("/suites?view=workspace&tab=usage");
-  const connected = page.getByTestId("ws-ledger-connected");
-  await expect(connected.getByTestId("ws-ledger-connected-row")).toHaveCount(3);
-  await expect(connected).toContainText("3 jobs · 127.5 connected cr quoted");
-  await noSideScroll(page);
+  await expect(page.getByTestId("ws-ledger-connected").getByTestId("ws-ledger-connected-row")).toHaveCount(3);
+  await noSideScroll(page, "usage");
 
-  /* The /usage Higgsfield tab: the approved quote commitments, from the same ledger. */
+  /* /usage: no connected-account tab. */
   await page.goto("/usage");
-  await page.getByRole("button", { name: "My connected-account activity", exact: true }).click();
-  const panel = page.getByRole("region", { name: "My connected-account activity", exact: true });
-  for (const [label, credits] of [["Completed", 75], ["Pending", 40.5], ["Uncertain", 12]] as const)
-    await expect(panel.locator(".management-stat").filter({ has: page.getByText(label, { exact: true }) })).toContainText(`${credits} connected credits`);
+  await expect(page.locator('[aria-label="Usage views"]')).toBeVisible();
+  await expect(page.getByRole("button", { name: /connected-account/i })).toHaveCount(0);
+  await noSideScroll(page, "/usage");
+
+  /* Shorts is no page: its old addresses open the suite's first page. */
+  await page.goto(`/subatomik?project=${encodeURIComponent(project.id)}&page=shorts&shell=legacy`);
+  await expect.poll(() => new URL(page.url()).searchParams.get("page")).not.toBe("shorts");
+  await expect(page.getByText(/Shorts is retired/)).toHaveCount(0);
+
+  /* Only this spec's own direct calls reached the account routes; no page asked anything. */
+  const own = new Set([...posts.map(([route]) => `POST /api/higgsfield/consumer/${route}`), "GET /api/higgsfield/consumer/callback"]);
+  expect(asked.filter((call) => !own.has(call))).toEqual([]);
   expect(errors).toEqual([]);
 });

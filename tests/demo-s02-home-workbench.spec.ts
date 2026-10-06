@@ -7,7 +7,7 @@ import { localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { signInWithNewInterface } from "./helpers/newInterface";
 import { forbidPaidWork, generation, mockMedia } from "./helpers/workspaceFixtures";
 import { screenplayPdf } from "./helpers/screenplayPdf";
-import { smallTargets, smallText } from "./phoneFloors";
+import { dimLabels, lastRowClearsPinned, smallTargets, smallText } from "./phoneFloors";
 import { newProject, type Project } from "../lib/workbench/studio";
 
 const S02_SHOTS = process.env.S02_SHOTS || join(tmpdir(), "claude-s02-shots");
@@ -23,8 +23,15 @@ mkdirSync(S02_SHOTS, { recursive: true });
  */
 const HOME = process.env.S02_HOME_URL || "/suites?view=home";
 const DESKTOP = "workbench-1440x900";
-const PHONE = "workbench-390x844";
 const COARSE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
+/**
+ * The viewports where the shell mounts the phone app instead of the desktop Home (lib/shell/use-compact.ts: narrower than 768 px, or a
+ * touch screen no taller than 500 px, so 844x390 is a phone). The phone's Home is "Needs you", then "Projects" (README § 3.6, SOW § 2.8):
+ * it draws no box, no chips, no templates, no "+ New project", no "Show all". Tests of those skip there and say what covers the phone.
+ */
+const COMPACT = COARSE;
+const isCompact = (info: { project: { name: string } }) => COMPACT.includes(info.project.name);
+const NO_BOX_ON_A_PHONE = "the phone's Home has no box, chips, templates or New project (it is Needs you, then Projects); what it does draw is held by 'phone Home as drawn' below and demo-s10-phone-workbench 'phone Home: what needs you first…'";
 
 /** A fresh local workspace. On Studio unless asked: the Invite plan holds one project (lib/plans.ts), and most tests need several. */
 async function account(page: Page, plan: "studio" | "invite" = "studio") {
@@ -95,6 +102,7 @@ async function noSideScroll(page: Page) {
 }
 
 test("Home as drawn: the box, its chips, the templates and the projects, every line from the workspace", async ({ page }, info) => {
+  test.skip(isCompact(info), `${NO_BOX_ON_A_PHONE}; the projects' cards are the twin's`);
   const { headers } = await account(page);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -139,7 +147,6 @@ test("Home as drawn: the box, its chips, the templates and the projects, every l
 
   await noSideScroll(page);
   expect(await smallText(page, ".gx-header, .gx-toast"), "text under 12px").toEqual([]);
-  if (COARSE.includes(info.project.name)) expect(await smallTargets(page, ".gx-hm"), "targets under 44×44").toEqual([]);
   /* The last card clears the bottom edge at full scroll. */
   const last = await page.evaluate(() => {
     const home = document.querySelector<HTMLElement>(".gx-hm")!;
@@ -156,7 +163,8 @@ test("Home as drawn: the box, its chips, the templates and the projects, every l
 });
 
 test("a template makes the project at once with what the box holds, then opens the board of its kind", async ({ page }, info) => {
-  test.skip(![DESKTOP, PHONE].includes(info.project.name), "one desktop, one phone");
+  test.skip(isCompact(info), NO_BOX_ON_A_PHONE);
+  test.skip(info.project.name !== DESKTOP, "one desktop");
   await account(page);
   await forbidPaidWork(page);
   await trayRendering(page, null);
@@ -213,7 +221,8 @@ test("the same template pressed again with an empty box reopens the project it m
 });
 
 test("+ New project makes an untitled Studio project", async ({ page }, info) => {
-  test.skip(![DESKTOP, PHONE].includes(info.project.name), "one desktop, one phone");
+  test.skip(isCompact(info), NO_BOX_ON_A_PHONE);
+  test.skip(info.project.name !== DESKTOP, "one desktop");
   const { headers } = await account(page);
   await forbidPaidWork(page);
   await trayRendering(page, null);
@@ -226,7 +235,8 @@ test("+ New project makes an untitled Studio project", async ({ page }, info) =>
 });
 
 test("a project the plan can't hold is refused under the templates, in the server's words, and the box keeps its words", async ({ page }, info) => {
-  test.skip(![DESKTOP, PHONE].includes(info.project.name), "one desktop, one phone");
+  test.skip(isCompact(info), NO_BOX_ON_A_PHONE);
+  test.skip(info.project.name !== DESKTOP, "one desktop");
   const { headers } = await account(page, "invite");
   await forbidPaidWork(page);
   await trayRendering(page, null);
@@ -241,7 +251,8 @@ test("a project the plan can't hold is refused under the templates, in the serve
 });
 
 test("Attach a brief reads a PDF or a text file on this device into the box; anything else is refused", async ({ page }, info) => {
-  test.skip(![DESKTOP, PHONE].includes(info.project.name), "one desktop, one phone");
+  test.skip(isCompact(info), NO_BOX_ON_A_PHONE);
+  test.skip(info.project.name !== DESKTOP, "one desktop");
   await account(page);
   await forbidPaidWork(page);
   await trayRendering(page, null);
@@ -298,7 +309,8 @@ test("references added on Home are filed into the project a template makes, befo
 });
 
 test("a card opens its project; with many projects the first nine show, then Show all", async ({ page }, info) => {
-  test.skip(![DESKTOP, PHONE].includes(info.project.name), "one desktop, one phone");
+  test.skip(isCompact(info), "the phone lists every project with no Show all; a card opening its project's Record is 'phone Home: every project is listed and a card opens its Record' below, and demo-s10-phone-record 'the board's address opens that project's Record on a phone, and a project card opens it too'");
+  test.skip(info.project.name !== DESKTOP, "one desktop");
   const { headers } = await account(page);
   await forbidPaidWork(page);
   await trayRendering(page, null);
@@ -319,7 +331,8 @@ test("a card opens its project; with many projects the first nine show, then Sho
 });
 
 test("a workspace with no projects shows the box and the templates; a list that fails to read says so with Try again", async ({ page }, info) => {
-  test.skip(![DESKTOP, PHONE].includes(info.project.name), "one desktop, one phone");
+  test.skip(isCompact(info), "the phone has no box or templates; its empty workspace and its failed read are 'phone Home: a workspace with no projects, and a list that fails to read' below");
+  test.skip(info.project.name !== DESKTOP, "one desktop");
   const { headers } = await account(page);
   await forbidPaidWork(page);
   await trayRendering(page, null);
@@ -369,4 +382,124 @@ test("the box's focus is drawn around the whole box, and every control is reacha
   await page.keyboard.press("Tab");
   await expect(page.locator('[data-testid="home-aspect"][data-value="16:9"]')).toBeFocused();
   await expect(page.locator('[data-testid="home-aspect"][data-value="16:9"]')).toHaveCSS("outline-style", "solid");
+});
+
+
+/* ── The phone's Home: the same workspace, drawn by the phone app (components/graphite/phone/HomeScreen.tsx) ───────────────────────
+   The desktop tests above skip at COMPACT widths; these run only there. They keep every line the phone draws from the workspace and
+   every floor; nothing here is priced or spent (the waiting items' prices are in demo-s02-waiting-workbench 'phone Home: …'). */
+
+async function openPhoneHome(page: Page) {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(HOME);
+  await expect(page.getByTestId("phone-home")).toBeVisible({ timeout: 60_000 });
+  return errors;
+}
+
+async function phoneFloors(page: Page, where: string) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${where}: the page scrolls sideways`).toBe(true);
+  expect(await smallText(page), `${where}: text under 12px`).toEqual([]);
+  expect(await smallTargets(page, ".ph-app"), `${where}: targets under 44×44`).toEqual([]);
+  expect(await dimLabels(page, ".ph-app"), `${where}: labels under the floor`).toEqual([]);
+  expect(await lastRowClearsPinned(page), `${where}: the last row clears the tabs`).toEqual([]);
+}
+
+test("phone Home as drawn: Needs you, then each project's card with what is happening in it, every line from the workspace", async ({ page }, info) => {
+  test.skip(!isCompact(info), "desktop widths draw the box and the templates: 'Home as drawn' above");
+  const { headers } = await account(page);
+  await forbidPaidWork(page);
+  await mockMedia(page);
+  await saveProject(page, headers, "Harbour light test");
+  const newer = await saveProject(page, headers, "Kitchen at dawn");
+  await trayRendering(page, newer.id);
+  await pictureFor(page, newer.id);
+  const errors = await openPhoneHome(page);
+
+  await expect(page.getByTestId("phone-title")).toHaveText("Particl");
+  await expect(page.getByRole("heading", { name: "Needs you" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
+  /* The take rendering is what needs a person's eye; with one row there, the quiet line is not drawn. */
+  await expect(page.getByTestId("phone-render-row")).toHaveCount(1);
+  await expect(page.getByTestId("phone-render-row")).toContainText("Shot 1");
+  await expect(page.getByTestId("phone-render-row").getByTestId("phone-notify")).toHaveText("Notify me");
+  await expect(page.getByTestId("phone-approval-row")).toHaveCount(0);
+  await expect(page.getByTestId("phone-nothing")).toHaveCount(0);
+
+  const cards = page.getByTestId("phone-project");
+  await expect(cards).toHaveCount(2);
+  await expect(cards.first()).toContainText("Kitchen at dawn");
+  await expect(cards.first()).toContainText("1 rendering");
+  /* A card's picture is read once the card nears the screen: the newest take for one, the swatch for the other. */
+  await cards.first().scrollIntoViewIfNeeded();
+  await expect(cards.first().locator(".ph-project-pic img")).toHaveCount(1);
+  await cards.nth(1).scrollIntoViewIfNeeded();
+  await expect(cards.nth(1)).toContainText("Harbour light test");
+  await expect(cards.nth(1).locator(".ph-project-pic img, .ph-project-pic video")).toHaveCount(0);
+  /* Once the shared queue is read, a project with nothing waiting says so. */
+  await expect(cards.nth(1)).toContainText("Nothing waiting");
+  await expect(page.getByText(/\bquoted\b/i)).toHaveCount(0);
+
+  await phoneFloors(page, "Home");
+  expect(errors).toEqual([]);
+  const size = info.project.name.replace("workbench-", "");
+  await page.screenshot({ path: `${S02_SHOTS}/phone-home-${size}.png`, animations: "disabled" });
+});
+
+test("phone Home: every project is listed and a card opens its Record", async ({ page }, info) => {
+  test.skip(!isCompact(info), "desktop widths show nine, then Show all: 'a card opens its project…' above");
+  const { headers } = await account(page);
+  await forbidPaidWork(page);
+  await trayRendering(page, null);
+  const made: Project[] = [];
+  for (let i = 1; i <= 11; i++) made.push(await saveProject(page, headers, `Project ${String(i).padStart(2, "0")}`));
+  const errors = await openPhoneHome(page);
+
+  /* The phone draws no Show all: every project is a card, newest first. */
+  const cards = page.getByTestId("phone-project");
+  await expect(cards).toHaveCount(11);
+  await expect(cards.first()).toContainText("Project 11");
+  await expect(page.getByTestId("home-show-all")).toHaveCount(0);
+
+  const target = made[0];
+  await cards.filter({ hasText: "Project 01" }).click();
+  await expect(page).toHaveURL(new RegExp(`project=${target.id}`));
+  await expect(page.getByTestId("phone-record")).toBeVisible();
+  await expect(page.getByTestId("phone-title")).toHaveText("Project 01");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "the page scrolls sideways").toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("phone Home: a workspace with no projects says nothing waits and draws no card", async ({ page }, info) => {
+  test.skip(!isCompact(info), "desktop widths draw the box and the templates: 'a workspace with no projects…' above");
+  await account(page);
+  await forbidPaidWork(page);
+  await trayRendering(page, null);
+  const errors = await openPhoneHome(page);
+  await expect(page.getByTestId("phone-nothing")).toHaveText("Nothing waiting");
+  await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
+  await expect(page.getByTestId("phone-project")).toHaveCount(0);
+  await phoneFloors(page, "Empty Home");
+  expect(errors).toEqual([]);
+});
+
+test("phone Home: a projects list that fails to read says so, in the server's words, with Try again", async ({ page }, info) => {
+  test.skip(!isCompact(info), "desktop widths: 'a workspace with no projects shows the box… Try again' above");
+  /* Product gap found by this twin, not an owner question: components/graphite/phone/HomeScreen.tsx draws no read failure for the
+     projects list (PhoneApp receives data.status and data.error but passes them only to Make), so a failed read looks like an empty
+     workspace. The fix is one row there (phone-projects-error, a Try again calling data.retry); until it lands this stays fixme. */
+  test.fixme(true, "product gap: the phone's Home shows no failure for a projects list that cannot be read (HomeScreen.tsx); needs phone-projects-error with Try again");
+  const { headers } = await account(page);
+  await forbidPaidWork(page);
+  await trayRendering(page, null);
+  await saveProject(page, headers, "Back again");
+  let fail = true;
+  await page.route((url) => url.pathname === "/api/workbench/projects", (route) =>
+    route.request().method() === "GET" && fail ? route.fulfill({ status: 500, json: { error: "Projects could not be loaded." } }) : route.fallback());
+  await openPhoneHome(page);
+  await expect(page.getByTestId("phone-projects-error")).toContainText("Projects could not be loaded.");
+  await expect(page.getByTestId("phone-projects-error-retry")).toHaveText("Try again");
+  fail = false;
+  await page.getByTestId("phone-projects-error-retry").click();
+  await expect(page.getByTestId("phone-project")).toHaveCount(1);
 });

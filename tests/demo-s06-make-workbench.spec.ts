@@ -4,16 +4,16 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
-import { smallTargets } from "./phoneFloors";
+import { isCompact } from "./helpers/shellMode";
 
 /**
  * Make with the new interface switched on (design/particl-graphite/README.md § 3.2; "Make frames.dc.html" 1–8): the
  * panel as drawn, Auto's type from the words, Change with the engines priced in "N cr" and dollars on hover, Advanced
  * folded, Recent's chips, and "Short by N cr · Top up" with Make still pressable. With the switch off, today's panel.
- * Against a local ENGINE_MOCK server; nothing is sent. `S06_SHOTS=<dir>` saves each state at 1440×900 and 390×844.
+ * Against a local ENGINE_MOCK server; nothing is sent. The panel is the desktop's: from compact widths (tests/helpers/shellMode.ts, 844x390
+ * included) the shell mounts the phone's own Make, covered by demo-s10-phone-make-workbench.spec.ts. `S06_SHOTS=<dir>` saves each state at 1440×900 and 390×844.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
-const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const SHOTS = process.env.S06_SHOTS;
 const SHOT_SIZES: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844" };
 
@@ -61,11 +61,12 @@ async function faintText(page: Page) {
   });
 }
 
-async function floors(page: Page, project: string) {
+async function floors(page: Page) {
+  /* The panel fades in over 0.2 s (make.css gx-in): measure the colours it settles on, not one frame of the fade. */
+  await page.getByTestId("make-panel").evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => undefined))));
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
   expect(await page.getByTestId("make-panel").evaluate((el) => el.scrollWidth - el.clientWidth), "nothing wider than the panel").toBeLessThanOrEqual(1);
   expect(await faintText(page), "the text floor").toEqual([]);
-  if (PHONES.includes(project)) expect(await smallTargets(page, '[data-testid="make-panel"]'), "44px targets").toEqual([]);
 }
 
 async function shot(page: Page, project: string, name: string) {
@@ -74,6 +75,9 @@ async function shot(page: Page, project: string, name: string) {
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: `${SHOTS}/${name}-${size}.png` });
 }
+
+/** Make keeps the words a person typed (lib/draft.ts): the warm-up's words would come back into the "empty" box after its reload, so they are let go first. */
+const forgetDrafts = (page: Page) => page.evaluate(() => { for (const key of Object.keys(localStorage)) if (key.startsWith("aw_draft:")) localStorage.removeItem(key); });
 
 /** The words, the way a person types them (the composer listens to input events). */
 async function say(page: Page, words: string) {
@@ -84,12 +88,15 @@ async function say(page: Page, words: string) {
 
 test("Make, new interface: the panel as drawn, the type inferred from the words, and Image and Audio", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(isCompact(info), "at compact widths the shell mounts the phone's own Make (phone-make-*), not this panel; the phone covers the same screen in demo-s10-phone-make-workbench (\"Make: the words, the type, the engine line with Change, References with Add, where it lands, and Make at its price\") and sends once, at the price on its button, in \"Make sends once, at the price on its button\"");
   test.setTimeout(180_000);
   const { errors, sends, name } = await seed(page, { credits: 5000 });
   /* A cold dev server reloads the page once while it first compiles Make's routes (Fast Refresh): warm them first. */
   await page.goto("/suites?make=1");
   await say(page, "make shot 2 at golden hour");
   await expect(page.getByTestId("gen-generate")).toHaveText(/cr$/, { timeout: 90_000 }).catch(() => undefined);
+  await page.waitForTimeout(1_000);
+  await forgetDrafts(page);
   await page.goto("/suites?make=1");
   const panel = page.getByTestId("make-panel");
   await expect(panel).toHaveAttribute("data-ui", "new");
@@ -117,7 +124,7 @@ test("Make, new interface: the panel as drawn, the type inferred from the words,
   await go.dispatchEvent("click");
   await expect(page.getByTestId("gen-blocked")).toHaveText("Say what to make.");
   await expect(page.getByTestId("gen-prompt")).toBeFocused();
-  await floors(page, info.project.name);
+  await floors(page);
 
   /* Words in: "from your words", and Make at the live price, in credits, with its dollars on hover. */
   await say(page, "make shot 2 at golden hour");
@@ -128,7 +135,7 @@ test("Make, new interface: the panel as drawn, the type inferred from the words,
   await expect(page.getByTestId("make-engine-price")).toHaveText(/^\d[\d,]* cr$/);
   await expect(page.getByTestId("make-engine-price")).toHaveAttribute("title", /^\$\d[\d,]*\.\d\d$/);
   expect(await panel.innerText()).not.toMatch(/\bquoted\b|\babout \d/i);
-  await floors(page, info.project.name);
+  await floors(page);
 
   /* Frame 7: a still, inferred from the words, and the address follows. */
   await say(page, "a still of the sphere at blue hour");
@@ -136,7 +143,7 @@ test("Make, new interface: the panel as drawn, the type inferred from the words,
   await expect.poll(() => param(page, "make")).toBe("image");
   await expect(page.getByTestId("make-type-note")).toHaveText("from your words");
   await expect(go).toHaveText(/^Make( \d takes)? · \d[\d,]* cr$|^Make$/, { timeout: 60_000 });
-  await floors(page, info.project.name);
+  await floors(page);
   await shot(page, info.project.name, "f2-make-image");
 
   /* A pick stands: the note goes, and words that sound like sound no longer move it. */
@@ -151,7 +158,7 @@ test("Make, new interface: the panel as drawn, the type inferred from the words,
   await expect.poll(() => param(page, "make")).toBe("audio");
   await expect(page.getByTestId("gen-well")).toHaveCount(0);
   await expect(page.getByTestId("make-engine-line")).not.toBeEmpty();
-  await floors(page, info.project.name);
+  await floors(page);
   await shot(page, info.project.name, "f3-make-audio");
 
   expect(sends, "nothing is sent").toEqual([]);
@@ -160,6 +167,7 @@ test("Make, new interface: the panel as drawn, the type inferred from the words,
 
 test("Change: the type's engines priced in cr with dollars on hover, the drawn lengths, and Advanced folded", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(isCompact(info), "at compact widths the shell mounts the phone's own Make; its engines priced in cr with dollars on hover are demo-s10-phone-make-workbench \"phone Make, Change: every engine row ends in its price in cr, with the dollars on hover\"");
   test.setTimeout(180_000);
   const { errors, sends } = await seed(page, { credits: 5000 });
   /* `make=change` opens Make with the list open. */
@@ -190,7 +198,7 @@ test("Change: the type's engines priced in cr with dollars on hover, the drawn l
     await expect(page.getByTestId("make-engine-line")).toContainText(seconds);
   }
   await expect(page.getByTestId("gen-generate")).toHaveText(/^Make · \d[\d,]* cr$/, { timeout: 60_000 });
-  await floors(page, info.project.name);
+  await floors(page);
   await shot(page, info.project.name, "f4-make-change");
 
   /* Advanced, folded: the settings the handoff does not draw. */
@@ -203,7 +211,7 @@ test("Change: the type's engines priced in cr with dollars on hover, the drawn l
   await advanced.getByRole("button", { name: "More" }).click();
   await expect(advanced.getByTestId("gen-takes-count")).toHaveText("2");
   await expect(page.getByTestId("gen-generate")).toHaveText(/^Make 2 takes · \d[\d,]* cr$/, { timeout: 60_000 });
-  await floors(page, info.project.name);
+  await floors(page);
   await advanced.scrollIntoViewIfNeeded();
   await shot(page, info.project.name, "f4-make-advanced");
 
@@ -221,6 +229,7 @@ test("Change: the type's engines priced in cr with dollars on hover, the drawn l
 
 test("a balance short of the price says by how much, with Top up, and Make stays pressable", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(isCompact(info), "at compact widths the shell mounts the phone's own Make; Short by N cr, Top up and Make still pressable are demo-s10-phone-make-workbench \"phone Make, a balance short of the price: Short by N cr \u00b7 Top up, Make still pressable, nothing sent\"");
   test.setTimeout(180_000);
   const { errors, sends } = await seed(page);
   await page.goto("/suites?make=video");
@@ -244,7 +253,7 @@ test("a balance short of the price says by how much, with Top up, and Make stays
   await expect(go).not.toHaveAttribute("aria-disabled", "true");
   await page.getByTestId("gen-model").click();
   await short.scrollIntoViewIfNeeded();
-  await floors(page, info.project.name);
+  await floors(page);
   await shot(page, info.project.name, "make-short-by");
   await page.getByTestId("make-top-up").click();
   await expect.poll(() => param(page, "tab")).toBe("credits");
@@ -254,6 +263,7 @@ test("a balance short of the price says by how much, with Top up, and Make stays
 
 test("Recent: the master's chips, and an empty project teaches by doing", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(isCompact(info), "Recent is not drawn on a phone in Release 1: the SOW draws it for the panel (§2.4) and lists only simple Make for the phone (§2.8), so ?make=recent shows Home there; no phone twin by design");
   test.setTimeout(120_000);
   const { errors, sends } = await seed(page, { credits: 5000 });
   await page.goto("/suites?make=recent");
@@ -264,7 +274,7 @@ test("Recent: the master's chips, and an empty project teaches by doing", async 
   await expect(page.getByRole("group", { name: "Show" }).getByRole("button")).toHaveText(["All", "Takes", "Unfiled", "Filed"]);
   await expect(page.getByTestId("make-recent-all")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-results-empty")).toContainText("Nothing made in this project yet.");
-  await floors(page, info.project.name);
+  await floors(page);
   await shot(page, info.project.name, "f6-make-recent");
   await page.getByTestId("make-recent-filed").click();
   await expect(page.getByTestId("make-recent-filed")).toHaveAttribute("aria-pressed", "true");
@@ -277,6 +287,7 @@ test("Recent: the master's chips, and an empty project teaches by doing", async 
 
 test("the quick tools open over the panel", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(isCompact(info), "at compact widths the shell mounts the phone app, which draws no quick tools yet (?make=motion|swap shows Home there): a product gap. The phone twin is demo-s10-phone-make-workbench (the quick tools on a phone), fixme until the phone draws them");
   test.setTimeout(120_000);
   const { errors, sends } = await seed(page, { credits: 5000 });
   await page.goto("/suites?make=video");
@@ -300,6 +311,7 @@ test("the quick tools open over the panel", async ({ page }, info) => {
 
 test("a press the server accepts: Make closes, the toast says rendering, and the board is told which card to light", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(isCompact(info), "at compact widths the shell mounts the phone's own Make; its one send at the price on the button is demo-s10-phone-make-workbench \"Make sends once, at the price on its button\"");
   test.setTimeout(180_000);
   const { errors, sends } = await seed(page, { credits: 5000 });
   /* The board's side is stream 3's; what it hears is the window event. */

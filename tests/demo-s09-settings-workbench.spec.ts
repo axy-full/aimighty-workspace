@@ -142,6 +142,9 @@ async function shot(page: Page, name: string) {
 
 const param = (page: Page, key: string) => new URL(page.url()).searchParams.get(key);
 const compact = (page: Page) => (page.viewportSize()?.width ?? 1440) < 768 || (page.viewportSize()?.height ?? 900) <= 500;
+/** The viewports where the shell mounts the phone app (lib/shell/use-compact.ts). Settings is a page under the phone header there, with no avatar menu. */
+const COMPACT = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
+const isCompact = (info: { project: { name: string } }) => COMPACT.includes(info.project.name);
 
 async function floors(page: Page, where: string) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${where}: no horizontal page scroll`).toBe(true);
@@ -387,8 +390,8 @@ test("Advanced: Models, Tools and Workspace in folds, from the routes that serve
   await expect(page.getByTestId("settings-engine")).toHaveCount(3);
   await expect(page.getByTestId("engine-xai")).toBeVisible();
   await page.getByTestId("settings-thinking-change").click();
-  /* Atomik's panel (stream 7) once it lands; until then its address opens the Agent page. */
-  await expect.poll(() => param(page, "atomik") === "1" || param(page, "page") === "agent").toBe(true);
+  /* Atomik's panel on a desktop (`atomik=1`); on a phone the sheet is its own screen (`screen=atomik`, components/graphite/phone/phone-model.ts). */
+  await expect.poll(() => param(page, "atomik") === "1" || param(page, "screen") === "atomik" || param(page, "page") === "agent").toBe(true);
   await page.goto("/suites?view=workspace&tab=advanced");
   await expect(page.getByTestId("settings-fold-models")).not.toHaveAttribute("data-open", "true");
   await page.getByTestId("settings-fold-tools-toggle").click();
@@ -438,6 +441,7 @@ test("a member reads Team, Plan & credits and Spending rules, and changes nothin
 
 test("the avatar menu opens the sections and opens itself once from settings=1", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(isCompact(info), "the phone has no avatar menu: its way to Settings is the credits in its header, and the sections are the page's own group: the twin 'phone: the credits open Settings…' below, and demo-s10-phone-workbench 'phone Home: a short balance offers Top up…'");
   const { errors } = await open(page, "/suites?settings=1");
   const menu = page.getByRole("menu", { name: "Settings" });
   await expect(menu).toBeVisible();
@@ -454,3 +458,29 @@ test("the avatar menu opens the sections and opens itself once from settings=1",
   expect(errors).toEqual([]);
 });
 
+
+test("phone: the credits open Settings under the phone header, whose section group reaches every section, and Back goes Home", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(!isCompact(info), "desktop widths: 'the avatar menu opens the sections…' above");
+  const { errors, writes } = await open(page, "/suites?view=home");
+  await expect(page.getByTestId("phone-home")).toBeVisible({ timeout: 60_000 });
+  /* No avatar menu on a phone; the balance in the header is the door (the same Top up request flow, Settings › Plan & credits). */
+  await expect(page.getByTestId("workspace-avatar")).toHaveCount(0);
+  await page.getByTestId("phone-credits").click();
+  await expect(page.getByTestId("phone-title")).toHaveText("Settings");
+  await expect(page.getByTestId("settings-title")).toHaveText("Plan & credits");
+  expect([param(page, "view"), param(page, "tab")]).toEqual(["workspace", "credits"]);
+  const group = page.getByRole("group", { name: "Settings sections" });
+  await expect(group.getByRole("button")).toHaveText(["Team", "Plan & credits", "Spending rules", "Connections", "Advanced"]);
+  for (const [label, tab] of [["Team", "team"], ["Spending rules", "rules"], ["Connections", "connections"], ["Advanced", "advanced"], ["Plan & credits", "credits"]] as const) {
+    await group.getByRole("button", { name: label }).click();
+    await expect(page.getByTestId("settings-title")).toHaveText(label);
+    expect(param(page, "tab")).toBe(tab);
+  }
+  await floors(page, "Settings on a phone");
+  await page.getByTestId("phone-back").click();
+  await expect(page.getByTestId("phone-home")).toBeVisible();
+  /* Reading and moving between sections wrote nothing. */
+  expect(writes).toEqual([]);
+  expect(errors).toEqual([]);
+});

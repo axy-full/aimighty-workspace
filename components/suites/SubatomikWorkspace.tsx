@@ -166,8 +166,9 @@ export default function SubatomikWorkspace({
     query = useSearchParams(),
     captured = useSuiteProject();
   const projectId = query.get("project") || captured.projectId;
-  // Shorts ran only on the connected account; the other pages are Genjutsu variants.
-  const shorts = query.get("page") === "shorts";
+  // Shorts ran only on the connected account and is off for Release 1 (lib/higgsfield-consumer/retired.ts):
+  // /subatomik?page=shorts redirects, and an embed never shows it. The other pages are Genjutsu variants.
+  const shorts = false as boolean;
   const variant: GenjutsuVariant =
     requestedVariant ??
     (query.get("page") === "object-swap" ? "object-swap" : "motion-transfer");

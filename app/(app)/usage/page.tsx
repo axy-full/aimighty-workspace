@@ -1,6 +1,5 @@
 "use client";
 import { useMemo, useState } from "react";
-import ConsumerCreditActivity from "@/components/management/ConsumerCreditActivity";
 import Link from "next/link";
 import {
   Activity,
@@ -287,14 +286,10 @@ function UsageContent() {
             Engine balances
           </button>
         )}
-        <button
-          aria-pressed={tab === "higgsfield"}
-          onClick={() => setTab("higgsfield")}
-        >
-          My connected-account activity
-        </button>
+        {/* No tab for the connected account's own credits: off for Release 1 with the
+            Higgsfield sign-in (lib/higgsfield-consumer/retired.ts). The
+            component stays in components/management, unmounted. */}
       </div>
-      {tab === "higgsfield" && <ConsumerCreditActivity />}
       {tab !== "higgsfield" && data && (
         <>
           <div className="management-grid four">
