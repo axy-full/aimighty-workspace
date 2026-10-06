@@ -164,6 +164,30 @@ test("the Atomik sheet: a how-to is answered free with an offer; \"make …\" fi
   expect(seen.errors).toEqual([]);
 });
 
+test("the Atomik sheet: \"remember …\" says plainly that Memory is not on the phone, offers no button, and writes nothing", async ({ page }, info) => {
+  test.skip(!PHONES.includes(info.project.name), "phone widths");
+  test.setTimeout(120_000);
+  const { seen } = await seed(page);
+  const writes: string[] = [];
+  page.on("request", (r) => { if (r.method() !== "GET" && /\/api\/atomik/.test(r.url())) writes.push(`${r.method()} ${new URL(r.url()).pathname}`); });
+  await page.goto("/suites?screen=home");
+  await page.getByTestId("phone-tab-atomik").click();
+  await expect(page.getByTestId("phone-atomik")).toBeVisible();
+  await page.getByTestId("phone-atomik-input").fill("remember that the hero always wears red");
+  await page.getByTestId("phone-atomik-send").click();
+  const lines = page.getByTestId("phone-atomik-line");
+  await expect(lines).toHaveCount(2);
+  await expect(lines.nth(1)).toContainText("Memory isn’t on the phone");
+  await expect(lines.nth(1)).toContainText("nothing was kept or forgotten");
+  /* No button that does nothing: no offer, and no Open Memory anywhere in the sheet. */
+  await expect(page.getByTestId("phone-atomik-offer")).toHaveCount(0);
+  await expect(page.getByTestId("phone-atomik").getByText("Open Memory")).toHaveCount(0);
+  expect(writes, "remembering on the phone wrote something").toEqual([]);
+  await floors(page, "Atomik sheet, remember");
+  expect(seen.generates).toEqual([]);
+  expect(seen.errors).toEqual([]);
+});
+
 test("the Atomik sheet closes back to the screen it opened over; Esc and the scrim close it", async ({ page }, info) => {
   test.skip(!PORTRAIT.includes(info.project.name), "portrait phones");
   await seed(page);
