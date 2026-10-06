@@ -391,7 +391,7 @@ test("Subatomik uses verified shared originals, reviews each quote, stores a res
   const f = await fixture(page);
   await page.goto(await legacyShell(page, "/subatomik?project=viral-draft&page=motion-transfer&account=particl"));
   await expect(
-    page.getByRole("heading", { name: "Social", exact: true }),
+    page.getByRole("heading", { name: "Subatomik Viral Studio", exact: true }),
   ).toBeVisible();
   await expect(
     page

@@ -208,7 +208,7 @@ test("Generate re-quotes, dispatches a mocked render, files a take, and still wo
   await expect(page.getByTestId("inspector-title")).toHaveText("Opening wide");
 
   /* The exact live quote is on the button. */
-  const header = page.locator('[data-row="page"]').getByRole("button", { name: /^Generate · \d[\d,]* cr$/ });
+  const header = page.locator('[data-row="page"]').getByRole("button", { name: /^Make · \d[\d,]* cr$/ });
   await expect(header).toBeEnabled();
   const credits = Number((await header.textContent())!.replace(/.*· /, "").replace(/\D/g, ""));
   await expect(page.getByRole("button", { name: `Generate take · ${credits.toLocaleString("en-US")} cr` })).toBeEnabled();
@@ -244,9 +244,9 @@ test("Generate re-quotes, dispatches a mocked render, files a take, and still wo
   const tabs = page.getByRole("navigation", { name: "Pages" });
   await tabs.getByRole("button", { name: /Takes/ }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Takes");
-  await tabs.getByRole("button", { name: /Board/ }).click();
+  await tabs.getByRole("button", { name: /Board$/ }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Board");
-  await expect(page.locator('[data-row="page"]').getByRole("button", { name: /^Generate · / })).toBeEnabled();
+  await expect(page.locator('[data-row="page"]').getByRole("button", { name: /^Make · / })).toBeEnabled();
   await page.locator("body").press("g");
   await expect.poll(() => sent.filter((s) => s.path === "/api/generate").length, { timeout: 30_000 }).toBe(2);
   await expect(page.locator(".pxw-gen")).toBeVisible();
@@ -277,7 +277,7 @@ test("graph view: the real graph, edges from real boxes, selection shared with t
   ]);
   await page.goto(rigUrl(project.id, "rig-b"));
   await expect(page.getByTestId("inspector-title")).toHaveText("The encounter");
-  await page.getByRole("group", { name: "Rig view" }).getByRole("button", { name: "Canvas" }).click();
+  await page.getByRole("group", { name: "Board view" }).getByRole("button", { name: "Canvas" }).click();
   await expect(page.locator(".pxw-crumbs .pxw-kicker")).toHaveText("NODE GRAPH");
   const graph = page.getByTestId("rig-graph");
   await expect(graph.locator(".pxw-graph-node")).toHaveCount(6);
@@ -334,7 +334,7 @@ test("graph view: the real graph, edges from real boxes, selection shared with t
   await expect.poll(async () => (await savedDraft(page, scope, project.id)).nodes.find((n) => n.id === "rig-c")!.linked).toEqual(["look"]);
 
   /* Back to the list: the same shot is selected. */
-  await page.getByRole("group", { name: "Rig view" }).getByRole("button", { name: "List" }).click();
+  await page.getByRole("group", { name: "Board view" }).getByRole("button", { name: "List" }).click();
   await expect(row(page, /Departure/)).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".pxw-crumbs .pxw-kicker")).toHaveText("STUDIO");
   expect(errors).toEqual([]);
@@ -349,7 +349,7 @@ test("a shot the composer named with its prompt renders as \"Your take\", never 
   const { project } = await seeded(page, (nodes) => [...nodes, shot("rig-p", title, prompt, 1300)]);
   await page.goto(rigUrl(project.id, "rig-p"));
   await expect(page.getByTestId("inspector-title")).toHaveText(title);
-  const header = page.locator('[data-row="page"]').getByRole("button", { name: /^Generate · \d[\d,]* cr$/ });
+  const header = page.locator('[data-row="page"]').getByRole("button", { name: /^Make · \d[\d,]* cr$/ });
   await expect(header).toBeEnabled();
   await header.click();
   /* The real (mocked) job finishes: the toast names the take the way Gen's does, not "…desk lamp in rendered". */
