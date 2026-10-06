@@ -216,7 +216,7 @@ test("Change: the type's engines priced in cr with dollars on hover, the drawn l
   const advanced = page.getByTestId("make-advanced");
   await expect(advanced.getByTestId("gen-takes")).toBeVisible();
   await expect(advanced.getByTestId("enhance")).toBeVisible();
-  await advanced.getByRole("button", { name: "More" }).click();
+  await advanced.getByTestId("gen-takes-2").click();
   await expect(advanced.getByTestId("gen-takes-count")).toHaveText("2");
   await expect(page.getByTestId("gen-generate")).toHaveText(/^Make 2 takes · \d[\d,]* cr$/, { timeout: 60_000 });
   await floors(page);
@@ -254,10 +254,11 @@ test("a balance short of the price says by how much, with Top up, and Make stays
   /* The largest size the engine renders, then four takes. */
   const sizes = advanced.getByRole("group", { name: "Resolution" }).getByRole("button");
   if (await sizes.count()) await sizes.last().click();
-  for (let i = 0; i < 3; i++) await advanced.getByRole("button", { name: "More" }).click();
+  await advanced.getByTestId("gen-takes-4").click();
   await expect(go).toHaveText(/^Make 4 takes · \d[\d,]* cr$/, { timeout: 60_000 });
   const short = page.getByTestId("make-short");
-  await expect(short).toHaveText(/^Short by \d[\d,.]* cr · Top up$/);
+  await expect(short).toHaveText(/^Balance [\d,]+ cr · short by [\d,.]+ cr$/);
+  await expect(page.getByTestId("make-top-up")).toHaveText("Top up");
   await expect(go).not.toHaveAttribute("aria-disabled", "true");
   await page.getByTestId("gen-model").click();
   await short.scrollIntoViewIfNeeded();

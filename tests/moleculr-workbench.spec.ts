@@ -435,8 +435,8 @@ test("retired stage IDs, the home project selector and the Marketing Studio sect
   await expect(page).toHaveURL(/suite=moleculr&page=marketing#brand$/);
   const moleculrDock = page.getByRole("navigation", { name: "Ads pages", exact: true });
   await expect(moleculrDock.getByRole("link")).toHaveCount(1);
-  await expect(moleculrDock.getByRole("link", { name: "Marketing Studio", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("navigation", { name: "Marketing Studio sections", exact: true }).getByRole("link")).toHaveText([
+  await expect(moleculrDock.getByRole("link", { name: "Product image", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("navigation", { name: "Ads sections", exact: true }).getByRole("link")).toHaveText([
     "Product",
     "Brand",
     "Cast",
@@ -453,7 +453,7 @@ test("retired stage IDs, the home project selector and the Marketing Studio sect
   await expect(expanded("brand")).toHaveAttribute("aria-expanded", "true");
   await expect(expanded("product")).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByRole("region", { name: "Brand kit", exact: true })).toBeVisible();
-  await page.getByRole("navigation", { name: "Marketing Studio sections", exact: true }).getByRole("link", { name: "Variants", exact: true }).click();
+  await page.getByRole("navigation", { name: "Ads sections", exact: true }).getByRole("link", { name: "Variants", exact: true }).click();
   await expect(page).toHaveURL(/suite=moleculr&page=marketing#variants$/);
   await expect(expanded("variants")).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByRole("region", { name: "Brand kit", exact: true })).toHaveCount(0);

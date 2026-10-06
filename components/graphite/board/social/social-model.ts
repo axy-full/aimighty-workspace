@@ -3,7 +3,7 @@ import { SOURCE_SECONDS, viralMedia, viralTakes, type ViralMedia } from "@/lib/s
 
 /*
  * The Social board's cards, from the project's Library alone (README § 3.3, "Ads and Social frames" S1 and S2). What exists
- * today: the source video, and Motion transfer and Object swap, which are Make's quick tools (a source video of 4 to 30 s).
+ * today: the source video, and Motion transfer and Object swap, which are Make's quick tools (a source video within SOURCE_SECONDS).
  * Clips, hook review, narrated video and posts have no engine here yet: each reads "Not in Particl yet", with no price and no
  * sample result. Pure and cheap.
  */
@@ -14,7 +14,7 @@ export const SIZES = { source: { w: CARD_W, h: 336 }, effects: { w: CARD_W, h: 2
 
 export type SourceData = {
   id: string; name: string; url: string | null; origin: "upload" | "generation"; seconds: number | null; media: ViralMedia;
-  /** The quick tools take one source of 4 to 30 s. */
+  /** The quick tools take one source within SOURCE_SECONDS (lib/shell/viral.ts, from GENJUTSU_LIMITS). */
   fits: boolean;
 };
 export type EffectsData = { sources: number };

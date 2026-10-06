@@ -8,6 +8,7 @@ import { CINEMA_BANK } from "@/lib/workspace/cinema-vocabulary";
 import type { ComposerType } from "@/lib/workspace/composer";
 import { useFilmTypeahead } from "../FilmVocabulary";
 import { Glyph, type GlyphName } from "../icons";
+import { priceWords } from "@/lib/shell/price-words";
 import { Price, usePriceTitle } from "../Price";
 import { toolName } from "../viral/ViralView";
 import { UPSCALE_NAME } from "./UpscaleTool";
@@ -18,6 +19,9 @@ const TYPES: { type: ComposerType; label: string }[] = [{ type: "video", label: 
 /* The quick tools under Make (the master's row): Motion transfer, Object swap, Upscale. */
 const QUICK_TOOLS: { tool: MakeTool; glyph: GlyphName }[] = [{ tool: "motion", glyph: "video" }, { tool: "swap", glyph: "swap" }, { tool: "upscale", glyph: "upscale" }];
 const SAY_WHAT = "Say what to make.";
+
+/** The words of a price, for the marker a button carries. */
+const priceLabelOf = (price: MakePrice) => price.about ?? priceWords(price.value);
 
 /** A price as Make shows it: through Price, or Cinema Studio's own approximate words. */
 export function MakePriceText({ price, testId }: { price: MakePrice | null; testId?: string }) {
@@ -130,15 +134,28 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
       </div>
 
       {make.notices.map((n) => <p key={n} className="gx-mk-line-note" role="status">{n}</p>)}
+      {make.result ? (
+        <div className="gx-mk-result" role="alert" data-testid="make-result">
+          <span className="gx-mk-eyebrow">Result</span>
+          <p className="gx-mk-result-line">{make.result}</p>
+          {/* Retry sends the same press again, at the figure on the button; whether anything was charged is not said here, only the ledger says that. */}
+          {make.go.price && !make.go.blocked ? (
+            <button type="button" className="gx-primary gx-mk-retry" data-spend="priced" data-spend-price={priceLabelOf(make.go.price) ?? undefined} onClick={make.go.press} data-testid="make-retry">
+              Retry · <MakePriceText price={make.go.price} />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {make.short ? (
         <p className="gx-mk-short" data-testid="make-short">
-          <span>{make.short}</span><span aria-hidden="true"> · </span>
-          <button type="button" className="gx-mk-link" onClick={() => shell.goWorkspace("credits")} data-testid="make-top-up">Top up</button>
+          {make.balance != null ? `Balance ${make.balance.toLocaleString("en-US")} cr · ${make.short.charAt(0).toLowerCase()}${make.short.slice(1)}` : make.short}
         </p>
       ) : null}
       <div className="gx-mk-go">
         <span className="gx-mk-dest" data-testid="make-dest">{make.dest}</span>
-        <button type="button" className="gx-primary gx-mk-go-btn" aria-disabled={waits || undefined} data-waits={waits ? "" : undefined} data-spend={make.go.price ? "priced" : "unpriced"}
+        {/* Short of credits: Top up is the button (a person asks for credits in Plan & credits; Make still waits, held, at its price). */}
+        {make.short ? <button type="button" className="gx-primary gx-mk-go-btn" onClick={() => shell.goWorkspace("credits")} data-testid="make-top-up">Top up</button> : null}
+        <button type="button" className={`${make.short || make.result ? "gx-hbtn" : "gx-primary"} gx-mk-go-btn`} aria-disabled={waits || undefined} data-waits={waits ? "" : undefined} data-spend={make.go.price ? "priced" : "unpriced"}
           aria-describedby={reason ? "gx-mk-reason" : undefined} title={(waits ? make.go.blocked : goTitle) ?? undefined} onClick={press} data-testid="gen-generate">
           <span>{make.go.action}</span>
           {make.go.price ? <><span className="gx-mk-go-sep"> · </span><MakePriceText price={make.go.price} /></> : null}

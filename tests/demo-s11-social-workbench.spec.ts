@@ -13,7 +13,7 @@ const shot = (page: Page, name: string) => {
   const size = page.viewportSize()!;
   return page.screenshot({ path: `${SHOTS}/${name}-${size.width}x${size.height}.png` });
 };
-const CLIP = () => ({ name: "walk.mp4", mimeType: "video/mp4", buffer: readFileSync("public/fixtures/clip.mp4") });
+const CLIP = () => ({ name: "walk.mp4", mimeType: "video/mp4", buffer: readFileSync("public/fixtures/clip-6s.mp4") });
 const url = (id: string, extra = "") => `/suites?project=${id}&view=board&kind=social${extra}`;
 
 test("an empty Social board takes the source video; the source opens Motion transfer in Make with it loaded", async ({ page }) => {
@@ -29,7 +29,7 @@ test("an empty Social board takes the source video; the source opens Motion tran
   await expect(source).toBeVisible({ timeout: 60_000 });
   await expect(source).toContainText("walk.mp4");
   await expect(source).toContainText("Upload · original kept");
-  await expect(source).toContainText("SOURCE · 0:10");
+  await expect(source).toContainText("SOURCE · 0:06");
   await expect(page.locator('[data-card-id="group:social-source"]')).toContainText("Source");
   /* What is not built says so, with no figure and no sample. */
   await expect(page.getByTestId("social-unavailable")).toHaveCount(4);

@@ -54,6 +54,8 @@ export type CastCardData = {
   prompt: string;
   /** Built earlier on an account that is no longer used: shown, never changed. */
   retired: string | null;
+  /** A still on a canvas card that the Cut-out action can take (a person or a thing, not a place): the card reserves a row for it. */
+  cutout?: boolean;
 };
 
 const norm = (s: string) => s.trim().toLowerCase();
@@ -171,6 +173,7 @@ function nodeCards(src: Pick<BoardSource, "project" | "masters">): { card: Board
       master, lockable: !master && lockProblem(node, project, false) === null, plates: 0, chosen: false,
       rendering: Boolean(entry?.pending?.length), prompt: (entry ? castStillPrompt(entry) : "") || asset?.prompt?.trim() || (asset?.description ?? "").trim() || node.title.trim(),
       retired: entry ? retiredModelOf(entry) : null,
+      cutout: variant !== "environment" && asset?.kind === "image" && Boolean(node.assetId),
     };
     return [{ key: `${variant}:${norm(node.title)}`, card: { id: node.id, kind: "cast", region: "cast" as const, order, group: CAST_GROUP, nodeId: node.id, state: cardState(data), data } }];
   });

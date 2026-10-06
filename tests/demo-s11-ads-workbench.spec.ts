@@ -124,7 +124,7 @@ test("the image-ad card: Marketing Studio Image 2.0 Alpha with the estimate on i
   await page.getByTestId("ads-panel-close").click();
   await page.getByTestId("board-rail").locator('[data-region="ads"]').click();
   const ad = page.getByTestId("ads-image-ad");
-  await expect(ad.getByTestId("ads-image-ad-engine")).toContainText("Marketing Studio Image · 2.0 Alpha · 1:1 · 2K");
+  await expect(ad.getByTestId("ads-image-ad-engine")).toContainText("Product image · 2.0 Alpha · 1:1 · 2K");
   /* The estimate, from the quote route; the button carries it as "N cr" once it is known. */
   await expect(ad.getByTestId("ads-image-ad-make")).toContainText(/Make the image ad · \d[\d.,]* cr/, { timeout: 30_000 });
   await expect(ad.getByTestId("ads-image-ad-make")).toHaveAttribute("data-spend", "priced");

@@ -11,7 +11,7 @@ import type { AppState, PageId, SelKind, Suite } from "./types";
 const SUITE_EXTRA: Record<Suite, { short: string; mark: string; blurb: (pages: number) => string }> = {
   particl: { short: "Studio", mark: "STUDIO", blurb: (n) => `The production studio. ${countWord(n)} stages from brief to delivery.` },
   atomik: { short: "Agent", mark: "AGENT", blurb: () => "The production agent. Plans, prices and runs the work." },
-  moleculr: { short: "Business", mark: "BUSINESS", blurb: () => "Build and grow your brand from one marketing studio." },
+  moleculr: { short: "Business", mark: "BUSINESS", blurb: () => "Build and grow your brand from one place." },
   subatomik: { short: "Viral", mark: "VIRAL", blurb: () => "Recast motion and swap elements in footage you own." },
 };
 
@@ -75,7 +75,7 @@ export const PAGES: Record<Suite, PageDef[]> = {
     page("atomik", "budget", "Budget", "Budget", lead("budget")),
   ],
   moleculr: [
-    page("moleculr", "marketing", "Marketing Studio", "Marketing Studio", lead("marketing")),
+    page("moleculr", "marketing", "Product image", "Product image", lead("marketing")),
   ],
   subatomik: [
     page("subatomik", "motion", "Motion Transfer", "Motion Transfer", lead("motion")),

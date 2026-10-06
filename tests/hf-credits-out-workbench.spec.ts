@@ -276,7 +276,7 @@ test("the credits pill turns amber when the balance is below the last price quot
   /* Two takes: the button's figure doubles from the quote already given — nothing is asked again — and the balance no longer covers it. */
   const asked = quotes.length;
   await openAdvanced(page);
-  await page.getByRole("group", { name: "Takes per generate" }).getByRole("button", { name: "More" }).click();
+  await page.getByTestId("gen-takes-2").click();
   await expect(generate).toHaveText(`Make 2 takes · ${(2 * price).toLocaleString("en-US")} cr`);
   await expect(pill).toHaveAttribute("data-low", "true");
   await expect(pill).toHaveAttribute("aria-label", `Credits: ${balance.toLocaleString("en-US")} cr, below the last price quoted, ${(2 * price).toLocaleString("en-US")} cr. Open Plans & credits`);

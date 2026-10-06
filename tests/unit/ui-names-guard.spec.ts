@@ -15,7 +15,7 @@ import { compare, expired, growth, lowered, onMain, past, readJson, shapeProblem
  * every string a person can read, in app/, components/ and lib/, and fails on any banned name:
  *
  *   Moleculr, Subatomik, Rig, Genjutsu, Soul, Higgsfield, "Gen" as the name of a place (and "Generate" as a
- *   navigation label), "Astra" unless the same string says Topaz, the old suite phrases, and the same words in capitals.
+ *   navigation label), "Astra" unless it stands right after "Topaz" ("Topaz Astra 2"; GPT-6 Astra is banned), the old suite phrases, and the same words in capitals.
  *
  * Exempt: code identifiers, comments, tests, design/particl-graphite/, docs/handoff-diff.md and
  * docs/handover-2026-10-05.md. Never read as UI: imports, comparisons, case labels, property keys, types, className/id/href/data-*.
@@ -93,6 +93,53 @@ test("the matcher leaves code alone: identifiers, comments, comparisons, keys, i
   expect(names(`const m = "Topaz ${ASTRA} 2";`)).toEqual([]);
   expect(names(`const m = "${ASTRA} 3D";`)).toEqual([ASTRA]);
   expect(names(`const m = "Choose a video for ${ASTRA} upscale";`)).toEqual([ASTRA]);
+  /* The allowance is only the two words together: GPT-6 and the old 3D tool's name are banned even in a string that says Topaz. */
+  expect(names(`const m = "Topaz ${ASTRA}";`)).toEqual([]);
+  expect(names(`const m = "GPT-6 ${ASTRA}";`)).toEqual([ASTRA]);
+  expect(names(`const m = "Topaz upscale or GPT-6 ${ASTRA}";`)).toEqual([ASTRA]);
+  expect(names(`const m = "Build with ${ASTRA} in Topaz";`)).toEqual([ASTRA]);
+  expect(names(`const m = "${ASTRA} render";`)).toEqual([ASTRA]);
+  expect(names(`const m = "Topaz ${ASTRA} 2 and ${ASTRA} 3D";`)).toEqual([ASTRA]);
+});
+
+const HIGGSFIELD = ["Higgs", "field"].join("");
+const PERSONA = ["Per", "sona"].join("");
+const MARKETING_STUDIO = ["Marketing", " Studio"].join("");
+
+test("Soul and Higgsfield are caught wherever a person reads them, and Topaz Astra 2 is still allowed", () => {
+  /* a button, a tooltip, a toast, a ledger line, a ⌘K row, a settings row, an error message */
+  expect(names(`const a = <button>Train ${SOUL} Character · 54 cr</button>;`)).toEqual([SOUL]);
+  expect(names(`const a = <p title="Powered by ${HIGGSFIELD}">x</p>;`)).toEqual([HIGGSFIELD]);
+  expect(names(`toast("${SOUL} identity training finished");`)).toEqual([SOUL]);
+  expect(names(`const row = { group: "MODEL", label: "${HIGGSFIELD} Cinema" };`)).toEqual([HIGGSFIELD]);
+  expect(names(`const e = new Error(\`Your ${HIGGSFIELD} credits ran out for \${n} ${SOUL} renders\`);`)).toEqual([HIGGSFIELD, SOUL]);
+  expect(names(`const g = "${SOUL.toUpperCase()} RENDERS";`)).toEqual([SOUL.toUpperCase()]);
+  expect(names(`const a = "${HIGGSFIELD}'s account";`)).toEqual([HIGGSFIELD]);
+  /* Persona (the old neutral name for an identity) and Marketing Studio (now Product image), in any spelling a person reads */
+  expect(names(`const a = <button>${PERSONA} still</button>;`)).toEqual([PERSONA]);
+  expect(names(`const a = <h2>${MARKETING_STUDIO}</h2>;`)).toEqual([MARKETING_STUDIO]);
+  expect(names(`const e = "Review a live ${MARKETING_STUDIO} quote";`)).toEqual([MARKETING_STUDIO]);
+  expect(names(`const e = "from one ${MARKETING_STUDIO.toLowerCase()}.";`)).toEqual([MARKETING_STUDIO.toLowerCase()]);
+  expect(names(`const m = "higgsfield/marketing-studio-image"; const k = "${PERSONA.toLowerCase()}";`)).toEqual([]);
+  /* a sample string that must fail the check is the proof the check can fail */
+  expect(bannedNamesIn("probe.tsx", `export const label = "${SOUL} renders";`).length).toBeGreaterThan(0);
+  /* code names stay: ids, routes, env names, class names, and the lower-case code spelling */
+  expect(names(`const id = "hf-${SOUL.toLowerCase()}-character"; const r = "/api/${HIGGSFIELD.toLowerCase()}/consumer"; const e = "HF_CREDENTIALS";`)).toEqual([]);
+  expect(names(`const m = "Topaz ${ASTRA} 2";`)).toEqual([]);
+});
+
+test("Soul, Higgsfield, Persona and Marketing Studio appear in no UI string anywhere (the ban list and one planner prompt are the only exceptions)", () => {
+  /* Not a ratchet and not dated: unlike the old page names, these two never come back. A string that must name them
+     (the list of banned vendor words, a prompt sent to a model) goes here with the reason. */
+  const NOT_SHOWN = new Set([
+    "lib/vendorNames.ts", /* the list of names that must never be shown, and the renames that scrub them from provider text */
+    "lib/workbench/development-plan.ts", /* a prompt sent to the planning model, never printed */
+  ]);
+  const s = scanned();
+  const all = [...Object.values(s.strict).flat(), ...Object.values(s.ratchet).flat()];
+  const never = [SOUL, SOUL.toUpperCase(), HIGGSFIELD, HIGGSFIELD.toUpperCase(), PERSONA, PERSONA.toUpperCase(), MARKETING_STUDIO, MARKETING_STUDIO.toLowerCase()];
+  const bad = all.filter((hit) => never.includes(hit.word) && !NOT_SHOWN.has(hit.path));
+  expect(list(bad), `"${SOUL}" and "${HIGGSFIELD}" must not be readable anywhere: use Identity, Product image, the model's own name, or "the engine"`).toEqual([]);
 });
 
 /* ---------------------------------------------------------------------------------------------- */

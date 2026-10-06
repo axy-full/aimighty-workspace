@@ -26,13 +26,21 @@ import { defineCard, type CardSet } from "./types";
 /* Sizes in board units: the design's widths (README § 3.1, the master). */
 /* A media card is its well plus the body: eyebrow, a title of up to two lines and the state line (about 104 px). */
 const BODY = 104;
-const SIZE = {
+export const NODE_SIZE = {
   take: { w: 340, h: 191 + BODY }, cast: { w: 308, h: 173 + BODY }, looks: { w: 462, h: 260 + BODY }, doc: { w: 220, h: 320 },
   tool: { w: 254, h: 132 }, media: { w: 220, h: 124 + BODY }, unknown: { w: 254, h: 132 }, note: { w: 254, h: 168 }, label: { h: 52 },
   /* The master's Made in Make card: a 308 px card, a 16:9 well, a title and one line. */
   made: { w: 308, h: 173 + 84 },
 } as const;
 const WELL = { take: 191, cast: 173, looks: 260, media: 124, made: 173 } as const;
+
+/** A video or audio original (a stored upload or take) a card can be transcribed from. */
+function transcribable(asset: Asset | undefined): { source?: NonNullable<NodeCardData["source"]> } {
+  if (!asset || (asset.kind !== "video" && asset.kind !== "audio")) return {};
+  if (asset.generationId) return { source: { genId: asset.generationId, media: asset.kind } };
+  if (asset.uploadId) return { source: { uploadId: asset.uploadId, media: asset.kind } };
+  return {};
+}
 
 function preview(asset: Asset | undefined): Preview | null {
   if (!asset) return null;
@@ -68,7 +76,7 @@ function nodeCard(node: CanvasNode, kind: string, region: RegionId | null, order
     : kind === "cast" || kind === "looks" ? (asset ? "done" : "empty")
     : kind === "doc" ? (text ? "done" : "empty")
     : kind === "tool" ? (node.status === "approved" ? "done" : "empty") : "empty";
-  const data: NodeCardData = { kicker, title: node.title, line, tone: status.tone, text, preview: preview(asset), well };
+  const data: NodeCardData = { kicker, title: node.title, line, tone: status.tone, text, preview: preview(asset), well, ...(kind === "media" ? transcribable(asset) : {}) };
   return { id: node.id, kind, region, order, nodeId: node.id, ...(region ? {} : { at: { x: node.x, y: node.y } }), state, data };
 }
 
@@ -128,7 +136,7 @@ export function madeCards(src: BoardSource, made: readonly MadeEntry[]): BoardCa
 
 const PLAIN = (kind: "take" | "made" | "cast" | "looks" | "doc" | "tool" | "media" | "unknown") =>
   defineCard<NodeCardData>({
-    kind, size: () => SIZE[kind], Card: NodeCard,
+    kind, size: () => NODE_SIZE[kind], Card: NodeCard,
     /* A still or a video dropped on a shot becomes its reference (rig-build's addInput, as the Rig's own library does). */
     ...(kind === "take" ? { accepts: shotReferenceDrop } : {}),
   });
@@ -137,8 +145,8 @@ export const boardCards: CardSet = {
   id: "board",
   defs: [
     PLAIN("take"), PLAIN("made"), PLAIN("cast"), PLAIN("looks"), PLAIN("doc"), PLAIN("tool"), PLAIN("media"), PLAIN("unknown"),
-    defineCard<NoteData>({ kind: "note", size: () => SIZE.note, Card: NoteCard }),
-    defineCard<LabelData>({ kind: "label", size: (data) => ({ w: cardWidth({ type: "note", mode: "section", width: Math.max(220, data.title.length * 9 + 48) }), h: SIZE.label.h }), Card: LabelCard }),
+    defineCard<NoteData>({ kind: "note", size: () => NODE_SIZE.note, Card: NoteCard }),
+    defineCard<LabelData>({ kind: "label", size: (data) => ({ w: cardWidth({ type: "note", mode: "section", width: Math.max(220, data.title.length * 9 + 48) }), h: NODE_SIZE.label.h }), Card: LabelCard }),
     defineCard<GroupData>({ kind: "group", size: () => ({ w: 240, h: 120 }), container: (data) => ({ columns: Number(data.columns) || 2, fill: true }), Card: GroupFrame }),
   ],
   derive,
