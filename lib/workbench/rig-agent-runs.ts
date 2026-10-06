@@ -16,9 +16,10 @@ import { isShotNode, rigShots } from "../workspace/shots";
 import { generationRequestBody, type GenerationReference } from "./generation-request";
 import { mediaReferenceIdentity } from "./media-reference-input";
 import { mapNodeShot, readDraft } from "./records";
+import { approvalClosed, coverage, planApprovalOf } from "./plan-approval";
 import { effectiveJobCeiling, rigJobCeiling } from "./rig-agent-limits";
 import { creditFigure, type RigAgentState, type RigAgentStepState } from "./rig-agent-plan";
-import { getRun, patchRun, patchStep, stepsOf, type PauseKind, type RunRow, type StepRow } from "./rig-agent-store";
+import { getRun, patchRun, patchStep, rigAgentReady, stepsOf, type PauseKind, type RunRow, type StepRow } from "./rig-agent-store";
 import { readTeamCanvas } from "./team-canvas";
 import { withTeamCanvas } from "./team-canvas-model";
 
@@ -35,7 +36,9 @@ import { withTeamCanvas } from "./team-canvas-model";
  *    Rig's own Generate sends: lib/workspace/rig-requests.ts), through the
  *    free, repeatable preparation (prepareGeneration). A draft where the
  *    engine has one; a job with no price is never run.
- *  - approved: by a tap from the person who asked (Ask, the default), or in
+ *  - approved: by the plan's one approval (lib/workbench/plan-approval.ts:
+ *    a listed render at exactly the price approved, or a fix drawn under it),
+ *    by a tap from the person who asked (Ask, the default), or in
  *    Auto when it is a draft priced at or under the per-job line
  *    (lib/workbench/rig-agent-limits.ts). Anything over the line asks, and so
  *    does a full-quality render (an engine with no draft). The run's limit is
@@ -175,6 +178,8 @@ async function needsYou(run: RunRow, reason: string): Promise<Moved> {
 
 async function pause(run: RunRow, step: StepRow, reason: string, kind: PauseKind, from: readonly RigAgentStepState[]): Promise<Moved> {
   if (!(await patchStep(db(), step.id, { state: "paused", reason, pause: kind }, from))) return CONTINUE;
+  /* Under the plan's approval, one that needs an admin waits on its own and the run carries on (owner decision L5). */
+  if (kind === "admin" && step.purpose === "take" && (await planApprovalOf(db(), run.id))) return CONTINUE;
   return needsYou(run, reason);
 }
 
@@ -219,7 +224,8 @@ function runSpend(run: RunRow, band: number, ctx: Pick<PaidContext, "enabled" | 
 
 /* ── Pricing a render: the body the Rig's own Generate sends ─────────── */
 
-type Priced = { ok: true; admission: PreparedAdmission; quote: number; band: number } | { ok: false; reason: string; pause: PauseKind };
+/** `shown`: for a render that needs an admin, its own price as an admin is quoted it: for the card and the queue only, never sent. */
+type Priced = { ok: true; admission: PreparedAdmission; quote: number; band: number } | { ok: false; reason: string; pause: PauseKind; shown?: { quote: number; band: number } };
 
 export async function priceRender(run: RunRow, step: StepRow, deps: PaidDeps = {}): Promise<Priced> {
   try { return await priceRenderOnce(run, step, deps); }
@@ -259,6 +265,19 @@ async function priceRenderOnce(run: RunRow, step: StepRow, deps: PaidDeps): Prom
   const prepared = await (deps.asOwner ?? defaultAsOwner)(run.owner, (actor) => (deps.prepare ?? defaultPrepare)(body, actor));
   if (!prepared.ok) {
     const said = typeof prepared.body.error === "string" && prepared.body.error ? prepared.body.error : "This shot could not be priced.";
+    if (prepared.status === 403 && prepared.body.needsAdmin === true) {
+      /* It needs an admin (owner decision L5): it asks on its own, with its own price, read the way an admin is quoted it.
+         A free read: nothing from it is stored that could be sent, and only an admin's own admission can send it. */
+      const shown = await (deps.asOwner ?? defaultAsOwner)(run.owner, (actor) => (deps.prepare ?? defaultPrepare)(body, { ...actor, user: { ...actor.user, role: "admin" } }))
+        .catch(() => null);
+      const credits = shown?.ok ? shown.value.quote.estimatedCredits : null;
+      const provider = shown?.ok ? String((shown.value.compiled.model as { provider?: unknown } | undefined)?.provider ?? "") : "";
+      return {
+        ok: false, reason: said, pause: "admin",
+        ...(shown?.ok && credits != null && Number.isFinite(credits) && credits > 0
+          ? { shown: { quote: credits, band: jobBand({ approximate: !!shown.value.quote.approximate, statesCharge: provider === "xai" }) } } : {}),
+      };
+    }
     return fail(said, prepared.status === 403 ? "admin" : "unpriced");
   }
   const quote = prepared.value.quote.estimatedCredits;
@@ -302,9 +321,25 @@ export async function advancePaidSteps(runId: string, ctx: PaidContext, deps: Pa
       return { state: "paused", more: false };
     }
     await ctx.renew();
-    const step = run.capCredits == null ? null : currentPaidStep(await stepsOf(db(), run.id));
+    const all = run.capCredits == null ? [] : await stepsOf(db(), run.id);
+    /* Under the plan's approval, a render that waits for an admin asks on its own and holds up nothing else (owner decision L5). */
+    await rigAgentReady();
+    const planned = all.length ? await planApprovalOf(db(), run.id) : null;
+    const forAdmin = planned ? all.filter((s) => s.purpose === "take" && s.state === "paused" && s.pause === "admin") : [];
+    const step = run.capCredits == null ? null : currentPaidStep(forAdmin.length ? all.filter((s) => !forAdmin.includes(s)) : all);
+    if (!step && forAdmin.length) {
+      return (await needsYou(run, `${forAdmin.map((s) => stepTitle(run, s)).join(", ")} ${forAdmin.length === 1 ? "waits" : "wait"} for an admin. The rest of the plan is done.`) as { kind: "stop"; tick: PaidTick }).tick;
+    }
     if (!step) {
-      const finished = await patchRun(db(), run.id, { state: "done", reason: null, finished_at: now(), wake_at: null }, ["running"]);
+      /* Done only if no render was added meanwhile (a Fix or a Retry pressed while this tick read the steps; review N2). */
+      const at = now();
+      /* (A run asked before limits never pays, so its renders stay as next steps: it simply ends.) */
+      const open = run.capCredits == null ? "" : ` AND NOT EXISTS (SELECT 1 FROM rig_agent_steps WHERE run_id=? AND purpose='take' AND state IN ('next','waiting','approved','sending','rendering'))`;
+      const finished = (await db().execute({
+        sql: `UPDATE rig_agent_runs SET state='done',reason=NULL,finished_at=?,wake_at=NULL,updated_at=? WHERE id=? AND state='running'${open}`,
+        args: run.capCredits == null ? [at, at, run.id] : [at, at, run.id, run.id],
+      })).rowsAffected > 0;
+      if (!finished && (await getRun(db(), run.id))?.state === "running") continue;
       return { state: finished ? "done" : (await getRun(db(), run.id))?.state ?? null, more: false };
     }
     const moved = await advanceStep(run, step, ctx, deps);
@@ -328,48 +363,113 @@ async function advanceStep(run: RunRow, step: StepRow, ctx: PaidContext, deps: P
   }
 }
 
+/** A render that needs an admin keeps its own price on its step (never an admission): the card and the queue show it. */
+async function holdForAdmin(step: StepRow, priced: Extract<Priced, { ok: false }>, from: readonly RigAgentStepState[]) {
+  if (priced.pause !== "admin" || !priced.shown) return;
+  await patchStep(db(), step.id, { quote_credits: priced.shown.quote, band: priced.shown.band, admission: null }, from);
+}
+
 async function price(run: RunRow, step: StepRow, deps: PaidDeps): Promise<Moved> {
   const priced = await priceRender(run, step, deps);
-  if (!priced.ok) return pause(run, step, priced.reason, priced.pause, ["next"]);
+  if (!priced.ok) {
+    await holdForAdmin(step, priced, ["next"]);
+    /* One that needs an admin does not hold up the plan's quote: the rest are priced now, as at any gate. */
+    if (priced.pause === "admin" && run.mode !== "auto" && step.fixOf == null && !(await planApprovalOf(db(), run.id))) await priceAhead(run, step, deps);
+    return pause(run, step, priced.reason, priced.pause, ["next"]);
+  }
   await patchStep(db(), step.id, {
     state: "waiting", admission: priced.admission, quote_credits: priced.quote, band: priced.band, reason: null, pause: null,
   }, ["next"]);
   return CONTINUE;
 }
 
-async function gate(run: RunRow, step: StepRow, deps: PaidDeps): Promise<Moved> {
-  const admission = step.admission;
-  if (!admission || step.quoteCredits == null) {
-    await patchStep(db(), step.id, { state: "next" }, ["waiting"]);
+async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Moved> {
+  if (!waiting.admission || waiting.quoteCredits == null) {
+    await patchStep(db(), waiting.id, { state: "next" }, ["waiting"]);
     return CONTINUE;
   }
+  /* Its turn: priced again from the board as it is now (review M1). A shot edited since it was priced (its prompt,
+     references or engine) is a new fingerprint, so no earlier tap or plan approval covers it: it asks again. */
+  const fresh = await priceRender(run, waiting, deps);
+  if (!fresh.ok) {
+    await holdForAdmin(waiting, fresh, ["waiting"]);
+    if (fresh.pause === "admin" && run.mode !== "auto" && waiting.fixOf == null && !(await planApprovalOf(db(), run.id))) await priceAhead(run, waiting, deps);
+    return pause(run, waiting, fresh.reason, fresh.pause, ["waiting"]);
+  }
+  let step = waiting;
+  if (fresh.admission.quote.fingerprint !== waiting.admission.quote.fingerprint) {
+    /* No earlier approval survives a moved price: neither the plan's nor a tap's (review N1). */
+    if (!(await patchStep(db(), waiting.id, {
+      admission: fresh.admission, quote_credits: fresh.quote, band: fresh.band, approval_id: null, approved_fingerprint: null, approved_by: null, approved_at: null,
+    }, ["waiting"]))) return CONTINUE;
+    step = { ...waiting, admission: fresh.admission, quoteCredits: fresh.quote, band: fresh.band, approvalId: null, approvedFingerprint: null, approvedBy: null, approvedAt: null };
+  }
+  const admission = fresh.admission;
+  const quoteCredits = fresh.quote;
+  const fingerprint = admission.quote.fingerprint;
+  /* The plan's one approval, when the person gave it (a plan is approved once). */
+  await rigAgentReady();
+  const approval = await planApprovalOf(db(), run.id);
+  /* A tap covers exactly this price. One the plan's approval gave holds only while that approval is open (review L2). */
+  const tapped = step.approvedFingerprint === fingerprint
+    && (!step.approvalId || (!!approval && approval.id === step.approvalId && !approvalClosed(approval, now())));
+  /* Before it: in Ask, every render the plan names is priced now (free), so the plan can be approved once at its total. */
+  if (!tapped && !approval && run.mode !== "auto" && step.fixOf == null) await priceAhead(run, step, deps);
   const band = step.band ?? 1;
-  const over = await limitProblem(run, step.quoteCredits, band);
+  const over = await limitProblem(run, quoteCredits, band);
   if (over) return pause(run, step, over, "limit", ["waiting"]);
   const short = await creditsProblem(admission);
   if (short) return pause(run, step, short, "credits", ["waiting"]);
-  const fingerprint = admission.quote.fingerprint;
   /* A tap already covers this exact price. */
-  if (step.approvedFingerprint === fingerprint) {
+  if (tapped) {
     await patchStep(db(), step.id, { state: "approved", reason: null }, ["waiting"]);
     return CONTINUE;
   }
   const line = effectiveJobCeiling(run.perJobCap, await (deps.ceiling ?? rigJobCeiling)());
   const title = stepTitle(run, step);
+  /* A take that holds its ceiling (Cinema Studio) is approved at its hold: "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
+  const heldPrice = admission.quote.ceilingCredits != null ? cinemaPriceWords(quoteCredits) : `about ${figure(quoteCredits)}`;
+  if (approval) {
+    const worst = quoteCredits * Math.max(1, band);
+    const cover = coverage(approval, { seq: step.seq, fixOf: step.fixOf, quote: quoteCredits, worst, fingerprint }, now(), line);
+    if (cover.ok) {
+      /* The person's plan approval is this render's approval: no new tap. The hold still checks the balance, the cap, the allowance and the limit. */
+      await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: approval.approvedBy, approved_fingerprint: fingerprint, approval_id: approval.id, reason: null }, ["waiting"]);
+      return CONTINUE;
+    }
+    const why = `${title} · ${heldPrice} · ${cover.reason}`;
+    await patchStep(db(), step.id, { reason: why }, ["waiting"]);
+    return needsYou(run, why);
+  }
   /* Auto spends without a tap only on drafts (plan §8): a shot whose engine has no draft renders at full quality, so it asks. */
   const draft = admission.request.draft === true;
-  if (run.mode === "auto" && draft && toTenths(step.quoteCredits) <= toTenths(line)) {
+  if (run.mode === "auto" && draft && toTenths(quoteCredits) <= toTenths(line)) {
     await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: "auto", approved_fingerprint: fingerprint, reason: null }, ["waiting"]);
     return CONTINUE;
   }
-  /* A take that holds its ceiling (Cinema Studio) is approved at its hold: "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
-  const ceiling = admission.quote.ceilingCredits;
-  const price = ceiling != null ? cinemaPriceWords(step.quoteCredits) : `about ${figure(step.quoteCredits)}`;
-  const why = run.mode !== "auto" ? `${title} is ready to render · ${price}.`
-    : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · ${price}. Render it, skip it, or stop.`
-    : `${title} is about ${figure(step.quoteCredits)}, over the ${figure(line)} a draft may cost without asking. Render it, skip it, or stop.`;
+  const why = run.mode !== "auto" ? `${title} is ready to render · ${heldPrice}.`
+    : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · ${heldPrice}. Render it, skip it, or stop.`
+    : `${title} is about ${figure(quoteCredits)}, over the ${figure(line)} a draft may cost without asking. Render it, skip it, or stop.`;
   await patchStep(db(), step.id, { reason: why }, ["waiting"]);
   return needsYou(run, why);
+}
+
+/**
+ * Prices every other render the plan names that has no price yet (free and repeatable: nothing is reserved or
+ * sent), so the plan card can show the server's total before the one approval. A render that cannot be priced
+ * pauses with its reason; the plan then cannot be approved until it is priced again or skipped.
+ */
+async function priceAhead(run: RunRow, current: StepRow, deps: PaidDeps): Promise<void> {
+  for (const other of await stepsOf(db(), run.id)) {
+    if (other.id === current.id || other.purpose !== "take" || other.fixOf != null || other.state !== "next") continue;
+    const priced = await priceRender(run, other, deps);
+    if (priced.ok) {
+      await patchStep(db(), other.id, { state: "waiting", admission: priced.admission, quote_credits: priced.quote, band: priced.band, reason: null, pause: null }, ["next"]);
+    } else {
+      await holdForAdmin(other, priced, ["next"]);
+      await patchStep(db(), other.id, { state: "paused", reason: priced.reason, pause: priced.pause }, ["next"]);
+    }
+  }
 }
 
 async function send(run: RunRow, step: StepRow, ctx: PaidContext, deps: PaidDeps): Promise<Moved> {
@@ -388,7 +488,8 @@ async function send(run: RunRow, step: StepRow, ctx: PaidContext, deps: PaidDeps
   if (attempt > MAX_SEND_ATTEMPTS)
     return pause(run, step, `Atomik tried to send ${stepTitle(run, step)} ${MAX_SEND_ATTEMPTS} times and it was not accepted. Nothing more is sent. Press Retry, skip it, or stop.`, "refused", ["approved"]);
   /* The durable key first, before anything is sent: a lost reply is asked about by it, and never replayed. */
-  const key = requestKeyFor(run.id, step.nodeId, attempt);
+  /* A fix renders the same shot again: its keys carry its own step, so they never meet the shot's own. */
+  const key = requestKeyFor(run.id, step.fixOf != null ? `${step.nodeId}.fix${step.seq}` : step.nodeId, attempt);
   if (!(await patchStep(db(), step.id, { state: "sending", attempt, request_key: key, reason: null, pause: null }, ["approved"]))) return CONTINUE;
   const sending: StepRow = { ...step, state: "sending", attempt, requestKey: key };
   /* A stop or the switch since this tick began: the key is set aside and nothing is sent. */
@@ -426,7 +527,11 @@ async function recordReply(run: RunRow, step: StepRow, reply: AdmissionReply): P
   if (body.pending === true || reply.status >= 500) return wakeIn(run, PENDING_CHECK_MS, { state: "running", more: false });
   /* The shot or its price moved since it was priced: priced again, and approved again. */
   if (body.quoteChanged === true) {
-    await patchStep(db(), step.id, { state: "next", admission: null, quote_credits: null, reason: "This shot changed since it was priced, so it is priced again." }, ["sending"]);
+    /* Priced again, and approved again: the earlier approval goes, so an expired plan approval is never read as a tap (review N1). */
+    await patchStep(db(), step.id, {
+      state: "next", admission: null, quote_credits: null, approval_id: null, approved_fingerprint: null, approved_by: null, approved_at: null,
+      reason: "This shot changed since it was priced, so it is priced again.",
+    }, ["sending"]);
     return CONTINUE;
   }
   if (body.runHold === "slots") {

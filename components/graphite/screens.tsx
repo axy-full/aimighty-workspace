@@ -120,7 +120,7 @@ export function PhoneMount({ ctx, page }: { ctx: ScreenContext; page: { title: s
   const { scope, account, project, items, library, data, projectActions } = ctx;
   return (
     <Boundary what="The phone" probe="phone" resetKey={`phone:${scope}`} fallback={(f) => <ScreenFault fault={f} name="phone" />}>
-      <PhoneEntry scope={scope} account={account} data={data} project={project} items={items} library={library} projectActions={projectActions} page={page} />
+      <PhoneEntry scope={scope} account={account} data={data} project={project} items={items} library={library} projectActions={projectActions} onCreate={ctx.onCreate} page={page} />
     </Boundary>
   );
 }
