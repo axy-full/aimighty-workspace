@@ -1,6 +1,5 @@
 import { chromium, type FullConfig } from "@playwright/test";
 import { mockInvitation, PASSPHRASE, scopeFor, startAtomikOnApi } from "./helpers/fiveMinute";
-import { setNewInterfaceEveryone } from "./helpers/newInterface";
 
 /**
  * Not timed, not asserted. One throwaway person walks the same path first, so a cold dev server has compiled the
@@ -13,7 +12,6 @@ export default async function warmUp(config: FullConfig) {
   if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(base)) throw new Error("The five-minute test runs only against a local server.");
   const health = await fetch(`${base}/api/health`).then((r) => r.json()).catch(() => null) as { mock?: boolean } | null;
   if (!health?.mock) throw new Error("The five-minute test needs a local server started with ENGINE_MOCK=1 (no real generation).");
-  await setNewInterfaceEveryone(true);
   const browser = await chromium.launch({ channel: use.channel, executablePath: use.launchOptions?.executablePath });
   try {
     for (const phone of [false, true]) {
@@ -21,11 +19,11 @@ export default async function warmUp(config: FullConfig) {
       const page = await context.newPage();
       const invite = await mockInvitation(base, "Warm Up");
       await page.goto(invite.link, { timeout: 120_000 });
-      await page.getByLabel(/workspace name/i).fill("Warm up");
-      await page.getByLabel(/^password/i).fill(PASSPHRASE);
-      await page.getByLabel(/^confirm password/i).fill(PASSPHRASE);
-      await page.getByRole("checkbox").check();
-      await page.getByRole("button", { name: /Create the workspace/ }).click();
+      await page.getByTestId("signup-workspace").fill("Warm up");
+      await page.getByTestId("signup-password").fill(PASSPHRASE);
+      await page.getByTestId("signup-confirm").fill(PASSPHRASE);
+      await page.getByTestId("signup-terms").check();
+      await page.getByTestId("signup-submit").click();
       await page.waitForURL((url) => !/signup/.test(url.pathname), { timeout: 120_000 });
       await page.goto("/suites?view=home", { timeout: 120_000 });
       await page.waitForTimeout(2500);

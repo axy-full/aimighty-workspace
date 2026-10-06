@@ -94,7 +94,8 @@ export const POST = recoveryRoute(async function POST(req: Request) {
             name: result.workspace.name,
             slug: result.workspace.slug,
           },
-          next: "/workbench?onboarding=1",
+          /* A new person lands on Home, "What are we making?" (the brief they kept from guest Home is already their first board). */
+          next: "/suites?view=home",
         });
       }
       return Response.json(
