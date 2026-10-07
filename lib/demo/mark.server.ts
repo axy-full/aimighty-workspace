@@ -133,6 +133,8 @@ export async function liftSampleMark(user: TenantUser, input: { runId?: unknown 
     if (runId) {
       const found = await liftRun(tx, runId);
       if (!found || found.owner !== user.id || !runStillGoing(found)) throw new SampleError("Lift it for one of your own runs that is still going, or for your next one.", 409);
+      /* One APPROVED run: never a run in Auto, whose drafts would go without a person's tap. */
+      if (found.mode !== "ask") throw new SampleError("That run spends without asking (Auto). Lift it for your next run instead.", 409);
       run = { id: runId, productionId: found.productionId };
     }
     return insertSampleLift(tx, { by: user.id, at: now(), run });

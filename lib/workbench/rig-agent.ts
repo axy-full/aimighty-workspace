@@ -327,6 +327,9 @@ export async function askRigAgent(input: { productionId: string; draftId: string
   /* The sample workspace refuses every ask (lib/demo/spend-guard.server.ts) save the one its mark is lifted for: the
      run this ask makes becomes the one run the lift covers, in this same write, or nothing is written. */
   const sampleMarked = (await sampleWorkspaceRefusal()) !== null;
+  /* The lift is for one APPROVED run (owner, 7 Oct): under it every render waits for a person's tap or the plan's one
+     Approve. Auto is never taken from the client there, whatever it sent. */
+  const runMode: RigAgentMode = sampleMarked ? "ask" : mode;
   const at = now();
   const run = await workbenchTransaction(async (tx) => {
     const again = await runByRequest(tx, input.userId, input.requestId);
@@ -345,7 +348,7 @@ export async function askRigAgent(input: { productionId: string; draftId: string
     const id = newRunId();
     await insertRun(tx, {
       id, productionId: input.productionId, draftId: input.draftId, owner: input.userId, requestId: input.requestId, goal: input.goal.trim(), model: input.model ?? "auto", at,
-      limit: { credits: input.limit, mode, jobCeiling },
+      limit: { credits: input.limit, mode: runMode, jobCeiling },
     });
     if (sampleMarked && !(await bindSampleLift(tx, { userId: input.userId, runId: id, productionId: input.productionId, at })))
       throw new RigAgentError(SAMPLE_LINE, 409);

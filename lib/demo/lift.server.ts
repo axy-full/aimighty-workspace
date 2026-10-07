@@ -84,13 +84,14 @@ function liftOf(r: Record<string, unknown>): LiftRow {
   };
 }
 
-type RunState = { state: string; owner: string; requestId: string; productionId: string; finishedAt: number | null; undoneAt: number | null };
+/** `mode`: "ask" (every render waits for a person or the plan's one Approve) or "auto". A lift covers an Ask run only. */
+type RunState = { state: string; mode: string; owner: string; requestId: string; productionId: string; finishedAt: number | null; undoneAt: number | null };
 
 /** The run a lift names, read fresh from the workspace's own runs, or null when it is not there. */
 export async function liftRun(ex: Executor, runId: string): Promise<RunState | null> {
   if (!(await tableExists(ex, "rig_agent_runs"))) return null;
-  const r = (await ex.execute({ sql: "SELECT state,owner,request_id,production_id,finished_at,undone_at FROM rig_agent_runs WHERE id=?", args: [runId] })).rows[0];
-  return r ? { state: String(r.state), owner: String(r.owner), requestId: String(r.request_id), productionId: String(r.production_id), finishedAt: num(r.finished_at), undoneAt: num(r.undone_at) } : null;
+  const r = (await ex.execute({ sql: "SELECT state,mode,owner,request_id,production_id,finished_at,undone_at FROM rig_agent_runs WHERE id=?", args: [runId] })).rows[0];
+  return r ? { state: String(r.state), mode: String(r.mode ?? "ask"), owner: String(r.owner), requestId: String(r.request_id), productionId: String(r.production_id), finishedAt: num(r.finished_at), undoneAt: num(r.undone_at) } : null;
 }
 
 /** States in which a run has ended: nothing more is sent for it. */
@@ -158,7 +159,10 @@ export async function liftLetsThrough(scope: LiftScope, ex: Executor = db()): Pr
     return !!run && run.owner === scope.ask.userId && run.requestId === scope.ask.requestId;
   }
   if (lift.runId == null || lift.runId !== scope.runId) return false;
-  return scope.userId == null || scope.userId === lift.liftedBy;
+  if (scope.userId != null && scope.userId !== lift.liftedBy) return false;
+  /* One APPROVED run: an Auto run never spends under a lift (askRigAgent makes a lifted run Ask; this holds it). */
+  const run = await liftRun(ex, lift.runId);
+  return !!run && run.mode === "ask";
 }
 
 /**
@@ -169,6 +173,9 @@ export async function bindSampleLift(tx: Transaction, input: { userId: string; r
   const lift = await liveSampleLift(tx);
   if (!lift || lift.liftedBy !== input.userId) return false;
   if (lift.runId) return lift.runId === input.runId;
+  /* Only a run whose every render waits for a person: never an Auto one. */
+  const run = await liftRun(tx, input.runId);
+  if (!run || run.mode !== "ask" || run.owner !== input.userId) return false;
   const res = await tx.execute({
     sql: "UPDATE sample_lifts SET run_id=?,production_id=?,bound_at=? WHERE id=? AND workspace_id=? AND run_id IS NULL AND ended_at IS NULL",
     args: [input.runId, input.productionId, input.at, lift.id, requireTenant().id],

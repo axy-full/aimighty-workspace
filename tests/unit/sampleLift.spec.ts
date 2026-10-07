@@ -401,6 +401,55 @@ test("another workspace is unaffected: a lift is its own workspace's, another sa
   }, { sample: false });
 });
 
+/* ── One APPROVED run: never Auto (review L1) ─────────────────────────── */
+
+test("an Auto ask under a lift becomes Ask: nothing renders before the person approves the plan, and an Auto run is never covered", async () => {
+  await inWorkspace("auto-ask", async (ws) => {
+    const mark = await import("../../lib/demo/mark.server");
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { db } = await import("../../lib/db");
+    await mark.liftSampleMark(userOf(OWNER));
+    /* The client asks for Auto; the server makes the lifted run Ask, whatever was sent. */
+    const asked = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: OWNER, requestId: rid(), goal: "The dunes at dawn, two shots.", limit: 500, mode: "auto" });
+    const modeOf = async (id: string) => String((await db().execute({ sql: "SELECT mode FROM rig_agent_runs WHERE id=?", args: [id] })).rows[0].mode);
+    expect(await modeOf(asked.id)).toBe("ask");
+    const r = renders(ws);
+    const deps = await depsFor(ws, r);
+    expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "awaiting_approval", more: false });
+    const proposal = (await agent.rigAgentState("prod-1", OWNER)).run!.proposal!.fingerprint;
+    await agent.approveRigAgent({ productionId: "prod-1", runId: asked.id, fingerprint: proposal, userId: OWNER });
+    /* Built and priced, it waits at the plan for the person: no render was sent, however often it is ticked. */
+    expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "needs_you", more: false });
+    await agent.advanceRigAgentRun(asked.id, deps);
+    expect(r.calls).toEqual([]);
+    expect((await db().execute({ sql: "SELECT COUNT(*) AS n FROM rig_agent_steps WHERE run_id=? AND purpose='take' AND approved_by IS NOT NULL", args: [asked.id] })).rows[0].n).toBe(0);
+    /* The person's one Approve: then, and only then, the renders go, under the run. */
+    const gate = (await agent.rigAgentState("prod-1", OWNER)).run!.plan!.quote!.fingerprint;
+    await agent.approveRigAgentPlan({ productionId: "prod-1", runId: asked.id, fingerprint: gate, userId: OWNER });
+    await agent.advanceRigAgentRun(asked.id, deps);
+    expect(r.calls.length).toBeGreaterThan(0);
+    expect(r.calls.every((c) => c.status === 202 && c.run?.id === asked.id)).toBe(true);
+    expect((await db().execute({ sql: "SELECT approved_by FROM rig_agent_steps WHERE run_id=? AND purpose='take' AND approved_by IS NOT NULL", args: [asked.id] })).rows.map((row) => row.approved_by))
+      .not.toContain("auto");
+    /* A run that is Auto all the same is never covered: the guard refuses it, and no lift is given for one. */
+    await db().execute({ sql: "UPDATE rig_agent_runs SET mode='auto' WHERE id=?", args: [asked.id] });
+    expect(await reserve(asked.id)).toBe(409);
+    await agent.stopRigAgent({ productionId: "prod-1", runId: asked.id, userId: OWNER });
+    await mark.liftSampleMark(userOf(OWNER));
+    const second = await ask();
+    await mark.putSampleMarkBack(userOf(OWNER));
+    await db().execute({ sql: "UPDATE rig_agent_runs SET mode='auto' WHERE id=?", args: [second.id] });
+    await expect(mark.liftSampleMark(userOf(OWNER), { runId: second.id })).rejects.toMatchObject({ status: 409 });
+  });
+  /* Outside the sample workspace an Auto ask stays Auto: the person's choice is untouched there. */
+  await inWorkspace("auto-ask-other", async () => {
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { db } = await import("../../lib/db");
+    const asked = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: OWNER, requestId: rid(), goal: "The dunes at dawn, two shots.", limit: 500, mode: "auto" });
+    expect(String((await db().execute({ sql: "SELECT mode FROM rig_agent_runs WHERE id=?", args: [asked.id] })).rows[0].mode)).toBe("auto");
+  }, { sample: false });
+});
+
 test("the board's words: the lift line is short and plain", () => {
   expect(LIFT_LINE).toBe("Lifted for one run · comes back on when it ends");
 });
