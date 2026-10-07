@@ -31,6 +31,18 @@ export function siteOrigin(env: Env = process.env): string | null {
   return production ? `https://${production.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}` : null;
 }
 
+/**
+ * The origin of a link handed back to the person who asked for it (a review
+ * link, a share link, the API description): APP_ORIGIN, else the request's own
+ * origin. Behind a proxy the request's own origin is the server's listen
+ * address, so a self-hosted deployment sets APP_ORIGIN; on Vercel the request's
+ * own origin is the host Vercel routed, as it always was. Request headers
+ * (Host, X-Forwarded-*) are never read.
+ */
+export function linkOrigin(req: Request, env: Env = process.env): string {
+  return configuredOrigin(env) ?? new URL(req.url).origin;
+}
+
 export const SITE_NAME = "Particl";
 export const SITE_TITLE = "Particl Studio";
 export const SITE_DESCRIPTION = "A production studio for generated film: brief, shots, takes and delivery.";

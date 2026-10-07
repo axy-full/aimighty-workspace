@@ -240,3 +240,23 @@ test("a link is limited per client: too many decisions from one place are refuse
   expect((await r.verdict.POST(from("198.51.100.7", `/api/review/${token}/verdict`, { genId: "g_review", verdict: "approved" }), ctx(token))).status).toBe(201);
   for (let i = 0; i < 50; i++) expect((await r.view.GET(new Request(`${ORIGIN}/api/review/${token}`), ctx(token))).status).toBe(200);
 });
+
+test("a client link and a share link are built on APP_ORIGIN when it is set (behind a proxy the request's own origin is the listen address), never on Host or X-Forwarded-Host", async () => {
+  await seed();
+  const who: Who = { mode: "session", ws: A, userId: "owner", name: "Owner Person", role: "owner", bearer: "" };
+  const r = await routes(who);
+  const spoof = { Host: "attacker.test", "X-Forwarded-Host": "attacker.test", "X-Forwarded-Proto": "https" };
+  const env = process.env as Record<string, string | undefined>;
+  const saved = env.APP_ORIGIN;
+  env.APP_ORIGIN = "https://app.example.test/";
+  try {
+    const client = await r.team.POST(scoped(who, "http://localhost:3000/api/review-links", { method: "POST", headers: spoof, body: JSON.stringify({ projectId: "prod_one" }) }), undefined as never);
+    expect(client.status).toBe(201);
+    expect((await client.json()).url).toMatch(/^https:\/\/app\.example\.test\/review\/rv_[A-Za-z0-9_-]{43}$/);
+    const share = await r.shares.POST(scoped(who, "http://localhost:3000/api/shares", { method: "POST", headers: spoof, body: JSON.stringify({ projectId: "prod_one" }) }), undefined as never);
+    expect(share.status).toBe(201);
+    expect((await share.json()).url).toMatch(/^https:\/\/app\.example\.test\/review\//);
+  } finally {
+    if (saved === undefined) delete env.APP_ORIGIN; else env.APP_ORIGIN = saved;
+  }
+});
