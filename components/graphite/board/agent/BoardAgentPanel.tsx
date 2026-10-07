@@ -54,7 +54,8 @@ export function BoardAgentPanel({ ctx, onCollapse }: { ctx: BoardCtx; onCollapse
   const moved = run ? `${run.id}:${run.state}:${run.paid.map((p) => p.state).join(",")}` : "";
   const { refresh: reread } = approvals;
   useEffect(() => { if (moved) void reread(); }, [moved, reread]);
-  const sample: string | null = null; // stream 12's sample flag: SAMPLE_LINE when the production is the sample
+  /* The sample's line on the sample production, or anywhere in the sample workspace (BoardView's gate): nothing here spends. */
+  const sample: string | null = ctx.exploreOnly ?? null;
   const ask = agentAsk({ read: agent.ready, enabled: answer?.enabled ?? false, run, planning: agent.terms?.planning ?? null, words, busy, sample: sample !== null, offline: ctx.offline });
   const title = usePriceTitle(ask.price);
   const send = async () => {
@@ -84,13 +85,13 @@ export function BoardAgentPanel({ ctx, onCollapse }: { ctx: BoardCtx; onCollapse
       <div className="ag-body">
         <AgentLines agent={agent} approvals={approvals} sample={sample} />
         {crew ? <CrewReview ctx={ctx} /> : null}
-        {showQuestions(ctx.project, run) ? <BoardQuestions readOnly={ctx.offline ? "Needs a connection" : null} /> : null}
-        <DrawStoryboard readOnly={ctx.offline ? "Needs a connection" : null} />
+        {showQuestions(ctx.project, run) ? <BoardQuestions readOnly={ctx.offline ? "Needs a connection" : null} exploreOnly={sample} /> : null}
+        <DrawStoryboard readOnly={ctx.offline ? "Needs a connection" : null} exploreOnly={sample} />
         {crew ? null : <button type="button" className="ag-link ag-crew-open" onClick={() => setCrew(true)} data-testid="crew-open">Ask the crew</button>}
       </div>)}
       {tab === "atomik" ? <div className="ag-compose">
         <div className="ag-box">
-          <textarea ref={box} aria-label="Ask Atomik" placeholder="Ask Atomik…" rows={2} value={words} maxLength={2000} onChange={(e) => { setWords(e.target.value); setSaid(null); }}
+          <textarea ref={box} aria-label="Ask Atomik" placeholder="Ask Atomik…" rows={2} value={words} maxLength={2000} disabled={sample !== null} onChange={(e) => { setWords(e.target.value); setSaid(null); }}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} data-testid="agent-input" />
           <button type="button" className="ag-btn ag-btn-primary ag-ask" disabled={ask.disabled} aria-busy={busy || undefined} title={title ?? undefined} onClick={() => void send()} data-testid="agent-ask" {...spendAttrsOf(ask.price)}>{ask.label}</button>
         </div>

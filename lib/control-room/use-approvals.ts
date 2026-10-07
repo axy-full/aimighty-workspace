@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
+import { CHECK_LINE } from "@/lib/demo/sample";
 import { APPROVALS_CHANGED, approvalsChanged, approveBatch, approveItem, declineItem, type BatchResult, type PressOutcome } from "./approve";
 import type { ApprovalsReply, DecidedItem, QueueItem } from "./queue";
 
@@ -38,6 +40,8 @@ export type ApprovalsState = {
 export function useApprovals(options: { enabled?: boolean } = {}): ApprovalsState {
   const enabled = options.enabled ?? true;
   const session = useSession();
+  /* The sample workspace spends nothing: every item reads as the sample's, so no approve button is offered for any of them. */
+  const spendOff = useSampleWorkspace();
   const scope = session.requestScope ?? null;
   const fetcher = useScopedFetch(scope);
   const [load, setLoad] = useState<{ scope: string | null; status: ApprovalsState["status"]; reply: ApprovalsReply | null; error: string | null }>({ scope, status: "loading", reply: null, error: null });
@@ -85,7 +89,7 @@ export function useApprovals(options: { enabled?: boolean } = {}): ApprovalsStat
     const current = load.scope === scope ? load : { status: "loading" as const, reply: null, error: null };
     return {
       status: current.status,
-      items: current.reply?.items ?? [],
+      items: spendOff ? (current.reply?.items ?? []).map((item) => (item.sample ? item : { ...item, sample: true, ...(spendOff === CHECK_LINE ? { unchecked: true } : {}) })) : current.reply?.items ?? [],
       decided: current.reply?.decided ?? [],
       inCredits: current.reply?.inCredits ?? true,
       error: current.error,
@@ -94,5 +98,5 @@ export function useApprovals(options: { enabled?: boolean } = {}): ApprovalsStat
       decline: (item) => settle(declineItem(item, fetcher)),
       approveBatch: (items, onStep) => settle(approveBatch(items, fetcher, onStep)),
     };
-  }, [load, scope, refresh, settle, fetcher]);
+  }, [load, scope, refresh, settle, fetcher, spendOff]);
 }

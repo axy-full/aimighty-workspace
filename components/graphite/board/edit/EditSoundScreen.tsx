@@ -196,7 +196,7 @@ function EditBody({ project, ctx, draft, onClose }: { project: Project; ctx: Boa
               {tool === "order" ? <TimelineCut project={project} items={library.items} onChange={draft.onChange} scope={scope} /> : null}
               {/* Always mounted: the mix plays the sound lanes against the transport even while it is folded away. */}
               <div hidden={tool !== "mix"} data-testid="es-mix"><SoundMix project={project} frame={frame} playing={playing} onChange={draft.onChange} onPause={() => setPlaying(false)} onUpload={() => audioPicker.current?.click()} /></div>
-              {composing ? (
+              {composing && !ctx.exploreOnly ? (
                 <div className="gx-es-compose" data-testid="es-compose">
                   <SoundGenerate key={`${project.id}:${composing}`} initialTask={composing} scope={scope} project={project} frame={frame} jobs={jobs.mediaJobs} enabled onChange={draft.onChange} onSave={() => draft.ensureSaved()} onQueued={() => void jobs.refresh()} />
                 </div>
@@ -241,12 +241,13 @@ function EditBody({ project, ctx, draft, onClose }: { project: Project; ctx: Boa
 
           <section className="gx-es-sec" data-testid="es-sound">
             <h3 className="gx-es-eyebrow">Sound</h3>
-            <div className="gx-es-stack">
+            {/* The sample spends nothing (the board says so once): a new voice line, music or effect is not offered there. */}
+            {ctx.exploreOnly ? null : <div className="gx-es-stack">
               <button type="button" className="gx-es-btn gx-es-btn--wide" aria-expanded={composing === "speech"} onClick={() => setComposing((c) => (c === "speech" ? null : "speech"))} data-testid="es-new-voice">New voice line</button>
               <button type="button" className="gx-es-btn gx-es-btn--wide" aria-expanded={composing === "music"} onClick={() => setComposing((c) => (c === "music" ? null : "music"))} data-testid="es-new-music">New music</button>
               <button type="button" className="gx-es-btn gx-es-btn--wide" aria-expanded={composing === "sound"} onClick={() => setComposing((c) => (c === "sound" ? null : "sound"))} data-testid="es-new-effect">New sound effect</button>
-            </div>
-            <p className="gx-es-quiet">Each one asks for its words first and shows its price before anything is made.</p>
+            </div>}
+            {ctx.exploreOnly ? null : <p className="gx-es-quiet">Each one asks for its words first and shows its price before anything is made.</p>}
             <label className="gx-es-toggle"><input type="checkbox" checked={project.clipAudio !== false} onChange={(e) => draft.onChange((p) => ({ ...p, clipAudio: e.target.checked }))} data-testid="es-clip-audio" /><span>Include the clips&apos; own sound</span></label>
           </section>
 

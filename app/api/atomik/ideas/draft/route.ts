@@ -8,6 +8,7 @@ import { requestEffort, resolveModel } from "@/lib/atomik";
 import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
 import { withGenerationRequest } from "@/lib/generationRequests";
 import { textRunCost } from "@/lib/textRunCost";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -57,6 +58,8 @@ export const POST = withTenant(async function POST(req: Request) {
   if (got.response) return got.response;
   const quoteOnly = (await req.clone().json().catch(() => ({}))).quoteOnly === true;
   if (quoteOnly) { const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure; }
+  /* The sample workspace spends nothing: answered before the request is claimed. A quote still answers. */
+  if (!quoteOnly) { const off = await sampleWorkspaceOff(); if (off) return off; }
   const run = async () => {
   try {
   const body = await req.json().catch(() => ({}));

@@ -7,6 +7,8 @@ import { creditsText } from "@/lib/shell/price-words";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import type { Project } from "@/lib/workbench/studio";
 import { Price } from "../Price";
+import { CheckAgain } from "../CheckAgain";
+import { CHECK_LINE, SAMPLE_LINE } from "@/lib/demo/sample";
 import { Eyebrow } from "./PhoneChrome";
 import { budgetView, briefSpec, decisionsLine, recordRows, type Budget } from "./record-model";
 import { reviewQueue, takeTitle } from "./phone-model";
@@ -44,11 +46,13 @@ function useProjectMoney(scope: string, productionId: string | null): { money: P
  * Left out because the code has no such thing (DECISIONS 9, 13): a "held" figure, and the pause at 80% (the bar marks
  * the line and says no pause is set). Pressing Open on a plan goes to the plan screen; Review goes to the review.
  */
-export function RecordScreen({ scope, project, items, queue, now, onPlan, onReview, onCut }: {
+export function RecordScreen({ scope, project, items, queue, spendOff = null, now, onPlan, onReview, onCut }: {
   scope: string;
   project: Project | null;
   items: readonly LibraryEntry[];
   queue: readonly QueueItem[];
+  /** The line when nothing here spends (the sample workspace, or one that could not be checked): a decision is shown, with no price and no Open to a plan to approve. */
+  spendOff?: string | null;
   now: number;
   onPlan: (item: QueueItem) => void;
   onReview: () => void;
@@ -124,15 +128,21 @@ export function RecordScreen({ scope, project, items, queue, now, onPlan, onRevi
 
       <section className="ph-section" aria-label="Open decisions">
         <Eyebrow aside={decisions ? decisionsLine(decisions) : null}>Open decisions</Eyebrow>
-        {open.map((item) => (
+        {open.map((item) => {
+          /* In the sample (or a workspace that could not be checked) a decision is read, not pressed: no price, no way into a plan's Approve. */
+          const off = Boolean(spendOff) || item.sample;
+          const unchecked = spendOff === CHECK_LINE || Boolean(item.unchecked);
+          return (
           <div key={item.id} className="ph-row" data-testid="phone-record-decision">
             <span className="ph-row-text">
-              <span className="ph-row-title">{item.title}{item.price ? <> · <Price value={item.price} /></> : null}</span>
-              <span className="ph-row-line">{item.needsAdmin && !item.canApprove ? "Needs an admin" : "Approve, change or hold"}</span>
+              <span className="ph-row-title">{item.title}{item.price && !off ? <> · <Price value={item.price} /></> : null}</span>
+              <span className="ph-row-line">{off ? (unchecked ? CHECK_LINE : SAMPLE_LINE) : item.needsAdmin && !item.canApprove ? "Needs an admin" : "Approve, change or hold"}</span>
             </span>
-            {item.approve?.kind === "board-approve" ? <button type="button" className="ph-btn" onClick={() => onPlan(item)} data-testid="phone-record-open">Open</button> : null}
+            {unchecked ? <CheckAgain className="ph-btn" /> : null}
+            {!off && item.approve?.kind === "board-approve" ? <button type="button" className="ph-btn" onClick={() => onPlan(item)} data-testid="phone-record-open">Open</button> : null}
           </div>
-        ))}
+          );
+        })}
         {review.length ? (
           <div className="ph-row" data-testid="phone-record-review">
             <span className="ph-row-text"><span className="ph-row-title">{takeTitle(review[0])}</span><span className="ph-row-line">{review.length === 1 ? "A take waits for review" : `${review.length} takes wait for review`}</span></span>

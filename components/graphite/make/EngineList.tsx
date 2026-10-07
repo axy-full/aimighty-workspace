@@ -147,7 +147,8 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
         </div>
       ) : null}
 
-      <div className="gx-mk-field" data-testid="make-enhance">
+      {/* The sample workspace spends nothing: Enhance is not offered there (the owner's switch). */}
+      {make.spendOff ? null : <div className="gx-mk-field" data-testid="make-enhance">
         <span className="gx-mk-eyebrow">Enhance</span>
         <Row name="Auto · enhance first" value={enhanceNote} testId="enhance-auto-state" />
         <div className="gx-mk-inline">
@@ -170,7 +171,7 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
             </div>
           </div>
         ) : null}
-      </div>
+      </div>}
 
       {audio ? (
         <div className="gx-mk-field" data-testid="make-voice">
@@ -240,7 +241,8 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
         <span className="gx-mk-eyebrow" id={`${id}-takes`}>{settings.draft ? "Takes · one draft at a time" : "Takes"}</span>
         <div className="gx-mk-chips" role="group" aria-labelledby={`${id}-takes`}>
           {choices.map((n) => {
-            const total = shownTotal(composer.quote, composer.quoteKey, n);
+            /* No totals in the sample workspace, where nothing is made. */
+            const total = make.spendOff ? null : shownTotal(composer.quote, composer.quoteKey, n);
             return (
               <button key={n} type="button" className="gx-chip" aria-pressed={takes === n} disabled={Boolean(settings.draft) || n > TAKES_MAX} onClick={() => set({ type: "count", value: n })} data-testid={`gen-takes-${n}`}>
                 {takes === n ? "✓ " : ""}×{n}{total != null ? <> · <Price value={exact(total)} /></> : null}

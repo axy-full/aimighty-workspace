@@ -12,6 +12,8 @@ import { spendAttrsOf } from "@/lib/spend";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { Project } from "@/lib/workbench/studio";
 import { NEEDS_CONNECTION } from "./HomeScreen";
+import { CheckAgain } from "../CheckAgain";
+import { CHECK_LINE } from "@/lib/demo/sample";
 
 /**
  * Plan approval on the phone (design/particl-graphite/README.md § 3.6, frames B1–B3): the plan Atomik proposed,
@@ -30,12 +32,14 @@ import { NEEDS_CONNECTION } from "./HomeScreen";
  */
 export const HELD_LINE = "Held · the plan is kept · nothing spent";
 
-export function PlanScreen({ scope, project, runId, online, onHome, onTopUp, onChange }: {
+export function PlanScreen({ scope, project, runId, online, spendOff = null, onHome, onTopUp, onChange }: {
   scope: string;
   project: Project | null;
   /** `run=` in the address: the run a push or a Home row opened. */
   runId: string | null;
   online: boolean;
+  /** The line when nothing here spends (the sample workspace, or one that could not be checked): the plan is read-only, with no priced Approve. */
+  spendOff?: string | null;
   onHome: () => void;
   onTopUp: () => void;
   onChange: () => void;
@@ -68,8 +72,8 @@ export function PlanScreen({ scope, project, runId, online, onHome, onTopUp, onC
   if (!model) return <PlanEmpty reading onHome={onHome} />;
   const other = runId && runId !== model.runId;
   const proposal = model.phase === "proposal";
-  const short = proposal && model.balance?.short != null;
-  const approve = model.primary;
+  const short = !spendOff && proposal && model.balance?.short != null;
+  const approve = spendOff ? null : model.primary;
   return (
     <>
       <main className="ph-scroll" data-testid="mobile-scroll">
@@ -116,6 +120,9 @@ export function PlanScreen({ scope, project, runId, online, onHome, onTopUp, onC
             <button type="button" className="ph-btn ph-btn--hot" onClick={onTopUp} data-testid="phone-plan-topup">Top up</button>
           </div>
         ) : null}
+        {spendOff ? (
+          <p className="ph-row-line ph-plan-why" role="status" data-testid="phone-plan-off">{spendOff}{spendOff === CHECK_LINE ? <> <CheckAgain className="ph-btn" /></> : null}</p>
+        ) : null}
         {approve ? (
           <Primary primary={approve} busy={plan.busy} online={online} onPress={() => {
             pressed.current = approve.kind === "approve" ? { kind: "approve" }
@@ -129,7 +136,7 @@ export function PlanScreen({ scope, project, runId, online, onHome, onTopUp, onC
         {plan.problem ? <p className="ph-row-line ph-row-line--warn ph-plan-why" role="alert">{plan.problem}</p> : null}
         {proposal ? (
           <div className="ph-pair">
-            <button type="button" className="ph-btn" onClick={onChange} data-testid="phone-plan-change">Change</button>
+            {spendOff ? null : <button type="button" className="ph-btn" onClick={onChange} data-testid="phone-plan-change">Change</button>}
             <button type="button" className="ph-btn" onClick={() => { toast(HELD_LINE); onHome(); }} data-testid="phone-plan-hold">Hold</button>
           </div>
         ) : <button type="button" className="ph-btn" onClick={onHome} data-testid="phone-plan-done">Done</button>}

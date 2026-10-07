@@ -6,6 +6,7 @@ import { TemplateRow } from "../home/TemplateRow";
 import { useHomeStart, type CreateFromSeed, type OpenBoard } from "../home/use-home-start";
 import "../home/home.css";
 import { NEEDS_CONNECTION } from "./HomeScreen";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 
 /**
  * "What are we making?" on the phone's Home: the brief, its aspect and length, **Start · up to N cr**, and the four
@@ -29,11 +30,13 @@ export function StartBrief({ scope, projects, online, onPick, onCreate, onOpened
 }) {
   const s = useHomeStart({ scope, projects, onPick, onCreate, openBoard: onOpened });
   const locked = s.pending !== null || !online;
+  /* The sample workspace spends nothing (the owner's switch): Start is not offered there. */
+  const spendOff = useSampleWorkspace();
   return (
     <section className="ph-section ph-start" aria-labelledby="ph-start-title" data-testid="phone-start">
       <h2 className="ph-start-title" id="ph-start-title" data-testid="phone-start-title">What are we making?</h2>
       <BriefBox draft={s.draft} onDraft={s.onDraft} refs={s.refs} onRefs={s.setRefs} briefFile={s.briefFile} onBriefFile={s.setBriefFile} busy={s.pending !== null}
-        footer={<StartFooter thinking={s.thinking} figure={s.figure} busy={s.pending === "start"} disabled={locked} onStart={() => void s.start()} onRetry={s.retryThinking} problem={s.startProblem} />} />
+        footer={<StartFooter thinking={s.thinking} figure={s.figure} busy={s.pending === "start"} disabled={locked} onStart={() => void s.start()} onRetry={s.retryThinking} problem={s.startProblem} off={spendOff} />} />
       <TemplateRow pending={s.pending === "sample" || s.pending === "start" ? null : s.pending} disabled={locked} onPick={(t) => void s.create(t)} />
       {!online ? <p className="ph-row-line" role="status" data-testid="phone-start-offline">{NEEDS_CONNECTION}</p> : null}
       {s.problem ? <p className="ph-row-line ph-row-line--warn" role="alert" data-testid="phone-start-problem">{s.problem}</p> : null}

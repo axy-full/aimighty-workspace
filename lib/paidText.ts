@@ -18,6 +18,7 @@ import {
   SpendReservationError,
 } from "./generationRequests";
 import type { TextRun } from "./engines/types";
+import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
 
 export class PaidTextError extends Error {
   constructor(
@@ -205,6 +206,9 @@ export async function runPaidText(
 ) {
 return await withRecoveryActivity('paid-text', async () => {
 
+  /* The sample workspace spends nothing (lib/demo/spend-guard.server.ts): refused before a job row, a reservation or a call. */
+  const sample = await sampleWorkspaceRefusal();
+  if (sample) throw new PaidTextError(sample, 409);
   const { model, estimate, requestBody } = await compilePaidText(input, overrides.model);
   requestMaxCredits(input.maxCredits, input.effort !== undefined);
   await paidTextReady();

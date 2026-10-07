@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
  * The explore-only sample on the board (lead decisions 12, 38 and 41), on a fixture production in a local ENGINE_MOCK
  * workspace: the sample's board carries the line in a pill top right, its plan card is built from the ledger's recorded
  * prices (43 + 43 + 7 = 93 cr, up to 186 cr of fixes), every paid control on it is disabled, and nothing leaves the
- * page. A production that is not the sample is untouched. At each viewport: no sideways scroll, text at least 12 px.
+ * page. Another production in the sample workspace carries the line too, without the sample's plan. At each viewport: no sideways scroll, text at least 12 px.
  */
 const LINE = "Sample production · nothing here spends credits";
 const SHOTS = process.env.S12_SHOTS || join(tmpdir(), "claude-s12-shots");
@@ -24,7 +24,7 @@ const overflow = (page: Page) => page.evaluate(() => document.documentElement.sc
    and its copy opens at every size with no paid request (demo-s12-sample-workbench). */
 const PHONE_APP = "the sample's board pill and plan card are the desktop board's; the phone twins are demo-s08-approvals (Sample take, disabled) and demo-s12-sample-workbench (opens at every size, no paid request)";
 
-test("the sample's board: the pill, the recorded plan, every paid control disabled; another production is untouched", async ({ page }, info) => {
+test("the sample's board: the pill, the recorded plan, every paid control disabled", async ({ page }, info) => {
   test.skip(isCompact(info), PHONE_APP);
   const paid = watchPaidRequests(page);
   const made = await seedFinishedProduction(page);
@@ -74,7 +74,7 @@ test("the sample's board: the pill, the recorded plan, every paid control disabl
   expect(paid).toEqual([]);
 });
 
-test("another production in a workspace that has a sample is untouched: no pill, no sample plan, paid controls as before", async ({ page }, info) => {
+test("another production in the sample workspace spends nothing either (the owner's switch, 6 Oct): the pill, but not the sample's plan", async ({ page }, info) => {
   test.skip(isCompact(info), PHONE_APP);
   await signInLocally(page.request, "Other Film Tester");
   await forbidPaidWork(page);
@@ -87,12 +87,14 @@ test("another production in a workspace that has a sample is untouched: no pill,
     sample: { projectId: "prod-the-sample", name: "The sample", markedAt: 1 }, line: LINE,
     plan: { steps: [{ title: "Shot 1", meta: "Seedance 2.5 · 5 s · 1080p", credits: 43, kind: "take" }], unpriced: [], recorded: { settled: 43, quoted: 0 } },
     cast: [], cut: { shots: [], approved: 0, seconds: 0, approvedSeconds: 0, waiting: 0 },
-  } } }));
+  }, sampleWorkspace: true } }));
   await page.addInitScript(() => { try { localStorage.setItem("last-project", "ws-other-film"); } catch { /* storage off */ } });
   await page.goto("/suites?project=ws-other-film&view=board");
   await expect(page.getByTestId("board")).toBeVisible();
-  await expect(page.getByTestId("board")).not.toHaveAttribute("data-sample", "1");
-  await expect(page.getByTestId("board-sample")).toHaveCount(0);
+  /* The whole workspace is the sample workspace: this board carries the line too, and its paid controls are off. */
+  await expect(page.getByTestId("board")).toHaveAttribute("data-sample", "1");
+  await expect(page.getByTestId("board-sample").first()).toHaveText(LINE);
+  /* The sample's recorded plan belongs to the sample alone. */
   await expect(page.locator('[data-card-id="plan:sample"]')).toHaveCount(0);
   expect(await overflow(page)).toBeLessThanOrEqual(0);
 });
