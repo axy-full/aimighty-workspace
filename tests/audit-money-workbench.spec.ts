@@ -1,11 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
-import { buildRateTable } from "../lib/rateTable.server";
-import { takeCost } from "../lib/breakdownCost";
 
-/* Money on two screens, at every size: the printable statement leads back to
-   where statements are listed, and drafted shots are priced in credits as
-   they will bill, never the vendor's dollars printed as credits. */
+/* Money, at every size: the printable statement leads back to where statements
+   are listed. (The drafted-shots pricing checks drove the old Atomik breakdown
+   page, which is gone; shot prices in credits are held by r1-port-credit-units.) */
 
 const overflow = (page: Page) => page.evaluate(() => ({
   scrollWidth: document.documentElement.scrollWidth,
@@ -41,103 +39,6 @@ test("a statement's back link opens Workspace › Plans & credits, and the page 
   expect(url.pathname).toBe("/suites");
   expect(url.searchParams.get("view")).toBe("workspace");
   expect(url.searchParams.get("tab")).toBe("credits");
-});
-
-test("drafted shots are priced in credits per take, as they bill", async ({ page }) => {
-  await signInLocally(page.request);
-  const made = await page.request.post("/api/projects", { data: { name: "Dawn ride" } });
-  expect(made.ok(), await made.text()).toBeTruthy();
-  const projectId = ((await made.json()) as { id: string }).id;
-  expect(projectId).toBeTruthy();
-  const saved = await page.request.put("/api/atomik/treatment", {
-    data: { projectId, title: "Dawn ride", logline: "A courier crosses a flooded city at dawn.", scenes: [{ n: 1, title: "Street", secs: 12, prose: "The street at dawn; a bicycle cuts through a flooded gutter." }] },
-  });
-  expect(saved.ok(), await saved.text()).toBeTruthy();
-  await page.addInitScript((id) => localStorage.setItem("aw_project", id), projectId!);
-  await page.goto("/atomik/breakdown");
-  /* A scene's action only asks for its quote once it is on screen, which on a
-     short landscape phone is below the fold. */
-  await page.getByRole("button", { name: /^Draft shots/ }).scrollIntoViewIfNeeded();
-  const draft = page.getByRole("button", { name: /^Draft shots · \d+ cr reserved$/ });
-  await draft.click();
-  const proposal = page.locator(".ak-proposal");
-  await expect(proposal).toBeVisible({ timeout: 60_000 });
-
-  const rates = buildRateTable("cr");
-  /* One take, as the ledger bills it: whole credits, rounded up per take. */
-  const take = (planned: number, engine: string) => Math.max(1, Math.ceil(takeCost(rates, planned, engine) - 1e-9));
-  const seedance = take(5, "seedance"), kling = take(4, "kling");
-  expect(seedance).toBeGreaterThan(0);
-  await expect(proposal.getByText(`5s · Seedance · ${seedance} cr`)).toBeVisible();
-  await expect(proposal.getByText(`4s · Kling · ${kling} cr`)).toBeVisible();
-  await expect(proposal).toContainText(`SCENE ≈ ${seedance + kling} cr AT ONE TAKE EACH · WRITING 1 cr`);
-  await expect(proposal).not.toContainText("$");
-  const width = await overflow(page);
-  expect(width.scrollWidth).toBe(width.clientWidth);
-});
-
-test("a scene's action scrolled into view is quoted, even when a busy page hands over what it saw all at once", async ({ page }) => {
-  await signInLocally(page.request);
-  const made = await page.request.post("/api/projects", { data: { name: "Harbour market" } });
-  expect(made.ok(), await made.text()).toBeTruthy();
-  const projectId = ((await made.json()) as { id: string }).id;
-  /* Enough scenes that the last one's action starts well below the fold at every size. */
-  const scenes = Array.from({ length: 12 }, (_, i) => ({ n: i + 1, title: `Stall ${i + 1}`, secs: 5, prose: `A vendor at stall ${i + 1} fans the coals as the lamps come on.` }));
-  const saved = await page.request.put("/api/atomik/treatment", { data: { projectId, title: "Harbour market", logline: "A market wakes as the city sleeps.", scenes } });
-  expect(saved.ok(), await saved.text()).toBeTruthy();
-  /* A quote is a read and goes through; anything that would run is refused and recorded. */
-  const quoted: number[] = [];
-  const ran: string[] = [];
-  await page.route(/\/api\/(generate|atomik\/(ideas|shots)\/draft|atomik\/treatment\/scene)(\?.*)?$/, (route) => {
-    const request = route.request();
-    if (request.method() !== "POST") return route.fallback();
-    const body = (request.postDataJSON() ?? {}) as { quoteOnly?: boolean; scene?: number };
-    if (body.quoteOnly === true && new URL(request.url()).pathname === "/api/atomik/shots/draft") { quoted.push(Number(body.scene)); return route.fallback(); }
-    ran.push(new URL(request.url()).pathname);
-    return route.abort();
-  });
-  /* A busy page (CI under load) delivers an observer's entries late and together, oldest first. A scene action's
-     observer here is handed nothing until the action is in view, then everything at once; the action carries what
-     is held (data-held) and each hand-over (data-looks). */
-  await page.addInitScript(() => {
-    const actions = new WeakSet<Element>();
-    const Native = window.IntersectionObserver;
-    window.IntersectionObserver = class extends Native {
-      constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
-        let held: IntersectionObserverEntry[] = [];
-        super((entries, observer) => {
-          const target = entries[0].target as HTMLElement;
-          if (!actions.has(target) || !entries.every((e) => e.target === target)) return callback(entries, observer);
-          held.push(...entries);
-          if (!entries.some((e) => e.isIntersecting)) { target.dataset.held = String(held.length); return; }
-          const all = held;
-          held = [];
-          delete target.dataset.held;
-          target.dataset.looks = JSON.stringify([...JSON.parse(target.dataset.looks ?? "[]"), all.map((e) => e.isIntersecting)]);
-          callback(all, observer);
-        }, options);
-      }
-      observe(target: Element) {
-        if (target.firstElementChild?.tagName === "BUTTON" && target.firstElementChild.textContent?.startsWith("Draft shots")) actions.add(target);
-        super.observe(target);
-      }
-    };
-  });
-  await page.addInitScript((id) => localStorage.setItem("aw_project", id), projectId);
-  await page.goto("/atomik/breakdown");
-  const drafts = page.getByRole("button", { name: /^Draft shots/ });
-  await expect(drafts).toHaveCount(scenes.length, { timeout: 60_000 });
-  const last = drafts.last();
-  const action = last.locator("..");
-  /* Below the fold, the last action's first look ("off screen") is held, so it is not quoted yet. */
-  await expect(action).toHaveAttribute("data-held", "1");
-  await expect(last).toHaveText("Draft shots");
-  await last.scrollIntoViewIfNeeded();
-  /* One hand-over, off screen then in view. The newest is where the action is: it asks for its quote. */
-  await expect(action).toHaveAttribute("data-looks", "[[false,true]]");
-  await expect(last).toHaveText(/^Draft shots · \d+ cr reserved$/, { timeout: 60_000 });
-  expect(quoted).toContain(scenes.length);
-  expect(ran).toEqual([]);
 });
 
 test("moving between Settings sections re-renders the shell, not the providers above it", async ({ page }) => {

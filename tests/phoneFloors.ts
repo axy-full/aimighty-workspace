@@ -10,9 +10,9 @@ import { expect, type Page } from "@playwright/test";
  *
  * Each phone spec used to carry its own copy of those checks, with its own
  * element list and its own exemptions — and that is exactly how a real failure
- * slipped through: the copy in tests/workspace-mobile-make-workbench.spec.ts
- * exempted only `.pxm-segment`, while the same control ships as `.pxm-seg` in
- * tests/workspace-mobile-pages-workbench.spec.ts, so a legitimately 40px-tall
+ * slipped through: the copy in the old phone Make spec
+ * exempted only `.pxm-segment`, while the same control shipped as `.pxm-seg` in
+ * the old phone pages spec, so a legitimately 40px-tall
  * segmented option inside a 44px control was reported as a broken target. One
  * helper, one exemption list, and every spec reads the same floor.
  *

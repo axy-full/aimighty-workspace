@@ -42,7 +42,7 @@
 .gx-seg-btn > span { position: relative; color: var(--gx-text-2); font-weight: 500; }
 .gx-seg-btn[aria-selected="true"] > span { color: var(--gx-text); font-weight: 600; }
 /* Counts, the search control's words and key hints are functional labels: --gx-text-2, since the .45 tertiary and .35
-   placeholder inks composite under the #7C7C84 label floor (tests/ui-floors-audit-workbench.spec.ts). */
+   placeholder inks composite under the #7C7C84 label floor (the label floor, tests/phoneFloors.ts). */
 .gx-seg-btn > .gx-seg-count { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); font-weight: 500; }
 .gx-search { flex: 0 1 460px; min-width: 120px; height: 32px; padding: 0 10px 0 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); color: var(--gx-text-2); box-shadow: var(--gx-shadow-search); }
 .gx-search:hover { background: var(--gx-input-hover); color: var(--gx-text); }
