@@ -4,15 +4,29 @@
  * robots.txt and the sitemap, so the three cannot disagree.
  */
 
-/** The origin links and link previews are built on: APP_ORIGIN, else the production deployment's. */
-export function siteOrigin(env: Record<string, string | undefined> = process.env): string | null {
-  const forced = env.APP_ORIGIN?.trim();
-  if (forced) {
-    try {
-      const url = new URL(forced);
-      if (url.protocol === "https:" || url.protocol === "http:") return url.origin;
-    } catch { /* not a URL: fall through */ }
+type Env = Record<string, string | undefined>;
+
+/**
+ * APP_ORIGIN, normalised to scheme://host[:port] (no path, no trailing slash);
+ * null when unset or not an http(s) URL. The one reading of APP_ORIGIN that
+ * links, link previews and the proxy origin check (lib/requestOrigin.ts) share.
+ */
+export function configuredOrigin(env: Env = process.env): string | null {
+  const raw = env.APP_ORIGIN?.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    /* Only http(s): any other scheme has the opaque origin "null", which a sandboxed frame would match. */
+    return url.protocol === "https:" || url.protocol === "http:" ? url.origin : null;
+  } catch {
+    return null;
   }
+}
+
+/** The origin links and link previews are built on: APP_ORIGIN, else the production deployment's. */
+export function siteOrigin(env: Env = process.env): string | null {
+  const forced = configuredOrigin(env);
+  if (forced) return forced;
   const production = env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
   return production ? `https://${production.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}` : null;
 }
