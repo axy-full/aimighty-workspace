@@ -23,6 +23,12 @@ import {
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
 
+/** A card as this workspace may read its lock record: the platform owner is "Particl support" outside the house (lib/platformOwnerPrivacy.ts). */
+type CardShown = { master?: { lockedBy?: string } & Record<string, unknown> };
+function shownLock<N extends CardShown>(shown: (value: string) => string, node: N): N {
+  return node.master?.lockedBy ? { ...node, master: { ...node.master, lockedBy: shown(node.master.lockedBy) } } : node;
+}
+
 async function caller(req: Request, write: boolean) {
   const auth = await requireSession();
   if (auth.response) return { response: auth.response };
@@ -72,8 +78,7 @@ export const GET = withTenant(async (req: Request) => {
     const saved = await readTeamCanvas(productionId);
     /* Who locked a master, as this workspace may read it: the platform owner is "Particl support" outside the house (lib/platformOwnerPrivacy.ts). */
     const shown = await storedActorMaskHere();
-    const nodes = saved ? Object.fromEntries(Object.entries(saved.canvas.nodes).map(([id, n]) =>
-      [id, n.master?.lockedBy ? { ...n, master: { ...n.master, lockedBy: shown(n.master.lockedBy) } } : n])) : {};
+    const nodes = saved ? Object.fromEntries(Object.entries(saved.canvas.nodes).map(([id, n]) => [id, shownLock(shown, n)])) : {};
     return Response.json({
       canvas: saved ? { nodes, assets: saved.canvas.assets, order: orderedIds(saved.canvas), removedIds: Object.keys(saved.canvas.removed), serverMade: saved.canvas.serverMade } : null,
       revision: saved?.revision ?? 0,
@@ -102,9 +107,10 @@ export const PATCH = withTenant(async (req: Request) => {
     if (saved.held.length) scheduleCanvasPush(productionId);
     /* Writes that would have changed a locked master did not land; the rest of the edit did. `held` says which,
        with the card (or asset) as the canvas holds it, so the window puts it back. */
+    const shown = saved.masterHolds.length ? await storedActorMaskHere() : null;
     const held = saved.masterHolds.map((h) => ({
       ...h,
-      ...(h.nodeId && saved.canvas.nodes[h.nodeId] ? { node: saved.canvas.nodes[h.nodeId] } : {}),
+      ...(h.nodeId && saved.canvas.nodes[h.nodeId] ? { node: shownLock(shown!, saved.canvas.nodes[h.nodeId]) } : {}),
       ...(h.assetId && saved.canvas.assets[h.assetId] ? { asset: saved.canvas.assets[h.assetId] } : {}),
     }));
     return Response.json({ revision: saved.revision, ...(held.length ? { held } : {}) }, { headers: NO_STORE });

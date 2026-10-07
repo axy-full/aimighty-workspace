@@ -5,7 +5,7 @@ import { requireTenant } from "@/lib/tenant";
 import { platformDb, platformReady, now, getPlatformLayer } from "@/lib/platform";
 import {accountTransaction,accountFailure,AccountError} from "@/lib/accountDb";
 import {repairPendingMemberships,ensureMemberSeat} from "@/lib/teamInvitations";
-import { publicActorName, resolveMemberId } from "@/lib/platformOwnerPrivacy";
+import { ownerMaskFor, publicActorName, resolveMemberId } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -36,6 +36,14 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   if(body.role===undefined&&body.disabled===undefined&&body.unlock!==true)return Response.json({error:"Choose a membership change."},{status:400});
   const target = await member(ws.id, id);
   if (!target) return NextResponse.json({ error: "No such member" }, { status: 404 });
+  /* The platform owner's support row: a client workspace may switch this
+     membership off and on, or remove it, and nothing else. Its standing and
+     its account — the sign-in lockout an unlock clears is the account's,
+     across the platform — are not this workspace's (lib/platformOwnerPrivacy.ts). */
+  const support = (await ownerMaskFor(ws)).hides(target);
+  if (support && (body.unlock === true || body.role !== undefined)) {
+    return NextResponse.json({ error: "Particl support's account belongs to the platform. This workspace can disable or remove it." }, { status: 403 });
+  }
   const owner = got.user.owner || (await isPlatformOwner(got.user));
 
   if (body.role !== undefined && !owner) {
@@ -64,7 +72,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
         await tx.execute({sql:'DELETE FROM p_sessions WHERE workspace_id=? AND account_id=?',args:[ws.id,id]});
       }
     }
-    if(body.unlock===true||body.disabled===false)await tx.execute({sql:"UPDATE accounts SET failed_count=0,locked_until=NULL WHERE id=?",args:[id]});
+    if(!support&&(body.unlock===true||body.disabled===false))await tx.execute({sql:"UPDATE accounts SET failed_count=0,locked_until=NULL WHERE id=?",args:[id]});
     await tx.execute(securityAuditStatement({workspaceId:ws.id,actorId:got.user.id,action:"member.updated",targetType:"member",targetId:id,details:{...(body.role!==undefined?{role:body.role}:{}),...(typeof body.disabled==="boolean"?{disabled:body.disabled}:{}),...(body.unlock===true?{unlocked:true}:{})}}));
     await tx.execute({sql:'INSERT INTO membership_mirrors(workspace_id,account_id,updated_at) VALUES(?,?,?) ON CONFLICT(workspace_id,account_id) DO UPDATE SET updated_at=excluded.updated_at',args:[ws.id,id,now()]});
   });}catch(error){return accountFailure(error);}

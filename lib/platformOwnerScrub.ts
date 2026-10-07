@@ -6,6 +6,9 @@ import {
   isOwnerAddress, isOwnerIdentity, platformOwnerIdentity, SUPPORT_ACTOR, SUPPORT_MIRROR_DOMAIN, type PlatformOwnerIdentity,
 } from "./platformOwnerPrivacy";
 import { currentTenant } from "./tenant";
+import { collabConfigured } from "./collab";
+import { canvasOpsReady, insertCanvasOp } from "./workbench/canvas-ops-log";
+import type { NodeChange } from "./workbench/canvas-ops-model";
 
 /**
  * Rewrites what a client workspace stored about the platform owner before
@@ -16,7 +19,8 @@ import { currentTenant } from "./tenant";
  * column by column, and the rewrite only when the platform owner confirms
  * that count. It touches only the workspace in scope — its own database, and
  * its own rows of the platform's share table — never another. And it runs
- * only on the production deployment or off Vercel (`scrubAllowedHere`): on a
+ * only on the production deployment, or off Vercel with an explicit opt-in
+ * (`scrubAllowedHere`, OWNER_PRIVACY_SCRUB_LOCAL=1): on a
  * preview or staging deployment a restored workspace row can name a
  * production database, so even the workspace in scope may not be its own.
  *
@@ -27,8 +31,9 @@ import { currentTenant } from "./tenant";
  * with another member is skipped and counted as ambiguous.
  */
 
-export type ScrubLine = { store: "workspace" | "platform"; table: string; column: string; matched: number; ambiguous: number };
-export type ScrubReport = { workspaceId: string; applied: boolean; lines: ScrubLine[]; total: number; ambiguous: number };
+/** `changed`: rows that changed between the read and the write, left as they are ("changed, run again"). */
+export type ScrubLine = { store: "workspace" | "platform"; table: string; column: string; matched: number; ambiguous: number; changed?: number };
+export type ScrubReport = { workspaceId: string; applied: boolean; lines: ScrubLine[]; total: number; ambiguous: number; changed?: number; note?: string };
 
 type Clause = { sql: string; args: (string | number)[] };
 type Row = Record<string, unknown>;
@@ -55,19 +60,24 @@ function namesIn(col: string, names: string[]): Clause | null {
 }
 
 /**
- * Where the rewrite may run: the production deployment, or off Vercel
- * altogether (local, CI, tests). Never a preview or staging deployment: a
- * workspace row restored there can name a production database, and a rewrite
- * would reach it.
+ * Where the rewrite may run: the production deployment; or off Vercel
+ * (local, CI, tests) only when OWNER_PRIVACY_SCRUB_LOCAL=1 says so, since a
+ * local machine can be pointed at production databases too. Never a preview
+ * or staging deployment: a workspace row restored there can name a
+ * production database, and a rewrite would reach it.
  */
 export function scrubAllowedHere(env: Record<string, string | undefined> = process.env): boolean {
   const onVercel = Boolean(env.VERCEL || env.VERCEL_ENV);
-  return !onVercel || env.VERCEL_ENV === "production";
+  return onVercel ? env.VERCEL_ENV === "production" : env.OWNER_PRIVACY_SCRUB_LOCAL === "1";
 }
-export const SCRUB_REFUSED = "This runs only on the production deployment: a preview or staging copy can hold workspace rows that point at production databases.";
+export const SCRUB_REFUSED = "This runs only on the production deployment (or locally with OWNER_PRIVACY_SCRUB_LOCAL=1): a preview or staging copy can hold workspace rows that point at production databases.";
 
 /** Dry run (apply: false) or rewrite (apply: true) for the workspace in scope. */
-export async function platformOwnerScrub(opts: { apply: boolean; identity?: PlatformOwnerIdentity }): Promise<ScrubReport> {
+export async function platformOwnerScrub(opts: {
+  apply: boolean; identity?: PlatformOwnerIdentity;
+  /** For tests: runs between the read and the write, as a teammate's save could. */
+  beforeWrite?: () => Promise<void>;
+}): Promise<ScrubReport> {
   const ws = currentTenant()?.workspace;
   if (!ws) throw new Error("No workspace in scope.");
   if (isHouseWorkspace(ws)) throw new Error("The house workspace keeps the platform owner's name.");
@@ -183,40 +193,78 @@ export async function platformOwnerScrub(opts: { apply: boolean; identity?: Plat
     return shared.includes(core.trim()) ? "ambiguous" : null;
   };
   const masked = (value: string) => (value.startsWith(ATOMIK_FOR) ? `${ATOMIK_FOR}${SUPPORT_ACTOR}` : SUPPORT_ACTOR);
+  /* Each JSON rewrite is optimistic: it lands only where the row is still
+     what was read (the canvas by its revision, a bible version by its body).
+     One that changed in between is reported, to run again. */
+  const checked: { index: number; line: ScrubLine }[] = [];
+  let canvasOps = false;
   async function jsonColumn(input: {
-    table: string; column: string; key: string; idCol: string; bump?: string;
-    rewrite: (body: Record<string, unknown>) => { owner: number; ambiguous: number };
+    table: string; column: string; key: string; idCol: string; revision?: boolean;
+    rewrite: (body: Record<string, unknown>) => { owner: number; ambiguous: number; changes?: NodeChange[] };
+    /** Statements to run after a landed rewrite (they check it landed themselves). */
+    then?: (row: { k: string | number; revision: number; written: string }, changes: NodeChange[]) => InStatement[];
   }) {
     try {
-      let matched = 0, ambiguous = 0;
-      const rs = await tenant.execute({ sql: `SELECT ${input.idCol} AS k, ${input.column} AS body FROM ${input.table} WHERE instr(${input.column}, ?) > 0`, args: [`"${input.key}"`] });
+      const line: ScrubLine = { store: "workspace", table: input.table, column: `${input.column}.${input.key}`, matched: 0, ambiguous: 0 };
+      const rs = await tenant.execute({
+        sql: `SELECT ${input.idCol} AS k, ${input.column} AS body${input.revision ? ", revision" : ""} FROM ${input.table} WHERE instr(${input.column}, ?) > 0`,
+        args: [`"${input.key}"`],
+      });
       for (const r of rs.rows as Row[]) {
+        const original = String(r.body ?? "null");
         let body: unknown;
-        try { body = JSON.parse(String(r.body ?? "null")); } catch { continue; }
+        try { body = JSON.parse(original); } catch { continue; }
         if (!body || typeof body !== "object") continue;
         const found = input.rewrite(body as Record<string, unknown>);
-        if (found.ambiguous) ambiguous += 1;
+        if (found.ambiguous) line.ambiguous += 1;
         if (!found.owner) continue;
-        matched += 1;
-        writes.push({ sql: `UPDATE ${input.table} SET ${input.column} = ?${input.bump ?? ""} WHERE ${input.idCol} = ?`, args: [JSON.stringify(body), r.k as string | number] });
+        line.matched += 1;
+        const k = r.k as string | number;
+        const revision = Number(r.revision ?? 0);
+        checked.push({ index: writes.length, line });
+        writes.push(input.revision
+          ? { sql: `UPDATE ${input.table} SET ${input.column} = ?, revision = revision + 1 WHERE ${input.idCol} = ? AND revision = ?`, args: [JSON.stringify(body), k, revision] }
+          : { sql: `UPDATE ${input.table} SET ${input.column} = ? WHERE ${input.idCol} = ? AND ${input.column} = ?`, args: [JSON.stringify(body), k, original] });
+        writes.push(...(input.then?.({ k, revision, written: JSON.stringify(body) }, found.changes ?? []) ?? []));
       }
-      lines.push({ store: "workspace", table: input.table, column: `${input.column}.${input.key}`, matched, ambiguous });
+      lines.push(line);
     } catch (error) {
       if (!missing(error)) throw error;
     }
   }
   await jsonColumn({
-    table: "workbench_team_canvas", column: "body", key: "lockedBy", idCol: "production_id",
     // A new revision, so open windows read the card again.
-    bump: ", revision = revision + 1",
+    table: "workbench_team_canvas", column: "body", key: "lockedBy", idCol: "production_id", revision: true,
     rewrite: (body) => {
       let owner = 0, ambiguous = 0;
-      for (const node of Object.values((body.nodes ?? {}) as Record<string, { master?: { lockedBy?: unknown } }>)) {
+      const changes: NodeChange[] = [];
+      for (const [id, node] of Object.entries((body.nodes ?? {}) as Record<string, { master?: Record<string, unknown> & { lockedBy?: unknown } }>)) {
         const v = verdict(node?.master?.lockedBy);
         if (v === "ambiguous") ambiguous += 1;
-        if (v === "owner") { owner += 1; node.master!.lockedBy = masked(String(node.master!.lockedBy)); }
+        if (v !== "owner") continue;
+        owner += 1;
+        const before = { master: { ...node.master } };
+        node.master!.lockedBy = masked(String(node.master!.lockedBy));
+        changes.push({ id, made: false, fields: ["master"], before, after: { ...node } as Record<string, unknown> });
       }
-      return { owner, ambiguous };
+      return { owner, ambiguous, changes };
+    },
+    /* The live room takes the rewritten cards like any server change (lib/workbench/canvas-push.ts): an outbox row,
+       written only if the rewrite landed, pushed on the next read of the canvas. Where the room's card has moved on,
+       writeRoom leaves it, and the room's next load from the server brings the new revision. */
+    then: ({ k, revision, written }, changes) => {
+      canvasOps = true;
+      const insert = insertCanvasOp({
+        productionId: String(k), opId: `owner-privacy:${revision + 1}`, what: "ops", author: "server", ops: [],
+        outcomes: [], changes, assets: [], focus: null, revision: revision + 1,
+        push: collabConfigured() ? "pending" : "none",
+      }) as { sql: string; args: (string | number | null)[] };
+      const args = [...insert.args];
+      args[10] = 0; // not a change the team is told about: nobody did anything to the board
+      return [{
+        sql: insert.sql.replace(/VALUES\s*\(([\s\S]*)\)\s*$/, "SELECT $1 WHERE EXISTS (SELECT 1 FROM workbench_team_canvas WHERE production_id = ? AND revision = ? AND body = ?)"),
+        args: [...args, String(k), revision + 1, written],
+      }];
     },
   });
   // workbench_bibles is keyed by (project_id, version): the rowid names one row.
@@ -229,8 +277,18 @@ export async function platformOwnerScrub(opts: { apply: boolean; identity?: Plat
     },
   });
 
+  let changed = 0;
   if (opts.apply) {
-    if (writes.length) await tenant.batch(writes, "write");
+    if (canvasOps) await canvasOpsReady();
+    await opts.beforeWrite?.();
+    if (writes.length) {
+      const results = await tenant.batch(writes, "write");
+      for (const c of checked) {
+        if (Number(results[c.index]?.rowsAffected ?? 0) > 0) continue;
+        c.line.changed = (c.line.changed ?? 0) + 1;
+        changed += 1;
+      }
+    }
     if (platformWrites.length) await platformDb().batch(platformWrites, "write");
   }
   return {
@@ -239,5 +297,6 @@ export async function platformOwnerScrub(opts: { apply: boolean; identity?: Plat
     lines,
     total: lines.reduce((n, l) => n + l.matched, 0),
     ambiguous: lines.reduce((n, l) => n + l.ambiguous, 0),
+    ...(changed ? { changed, note: "Some records changed while this ran and were left as they are: run it again." } : {}),
   };
 }
