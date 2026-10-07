@@ -23,7 +23,7 @@ export type CtxCommand =
   | "use-as-reference" | "open-in-inspector"
   | "bypass" | "unplug"
   | "move" | "retry" | "delete" | "undo"
-  | "generate-here" | "open-library" | "toggle-inspector";
+  | "generate-here" | "open-library";
 
 export type CtxItem =
   | { sep: true }
@@ -70,8 +70,8 @@ export function ctxItems(target: CtxTarget, caps: CtxCapabilities): CtxItem[] {
   if (target.kind === "asset") list.push(item("use-as-reference", "Use as reference"), item("open-in-inspector", "Open in Inspector"));
   if (target.kind === "node") list.push(item("bypass", "Bypass"), item("unplug", "Unplug all inputs"));
   list.push(item("move", "Move to…"), item("retry", "Retry", "⌘R"), { sep: true }, item("delete", "Delete", "⌫", true), item("undo", "Undo", "⌘Z"));
-  if (target.kind === "empty") list.push({ sep: true }, item("generate-here", "Generate here…"), item("open-library", "Open Library"), item("toggle-inspector", "Toggle Inspector", "⌘J"));
-  const ALWAYS: CtxCommand[] = ["generate-here", "open-library", "toggle-inspector"];
+  if (target.kind === "empty") list.push({ sep: true }, item("generate-here", "Generate here…"), item("open-library", "Open Library"));
+  const ALWAYS: CtxCommand[] = ["generate-here", "open-library"];
   const offered = target.kind === "node"
     ? tidy(list.filter((entry) => entry.sep || SHARED.includes(entry.command) || caps.can[entry.command] || caps.why[entry.command]))
     : list;

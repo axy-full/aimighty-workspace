@@ -537,7 +537,9 @@ test("with nothing running, what finished is news until it is seen; then the pil
   const tray: Tray = { reads: 0, reply: () => reply([]) };
   await open(page, tray);
   await expect.poll(() => tray.reads).toBeGreaterThan(0);
-  await expect(page.getByTestId("running-jobs")).toHaveCount(0);
+  /* The header always draws the pill (README § 1): idle, it says plain "Jobs". */
+  await expect(page.getByTestId("running-jobs")).toHaveAttribute("data-kind", "quiet");
+  await expect(page.getByTestId("running-jobs")).toHaveAttribute("aria-label", "Jobs");
   /* Two takes finish after the page opened. */
   const at = Date.now();
   const finished = [

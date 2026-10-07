@@ -152,7 +152,7 @@ test("the menu follows the README's order for each target", () => {
   /* A Rig node lists what the Rig carries out for it: nothing wired → only Paste and Undo; the rest once the Rig registers them. */
   expect(commands(ctxItems({ kind: "node", id: "n" }, caps()))).toEqual(["paste", "—", "undo"]);
   expect(commands(ctxItems({ kind: "node", id: "n" }, caps({ can: { bypass: true, unplug: true } })))).toEqual(["paste", "—", "bypass", "unplug", "—", "undo"]);
-  expect(commands(ctxItems({ kind: "empty" }, caps()))).toEqual([...head, ...tail, "—", "generate-here", "open-library", "toggle-inspector"]);
+  expect(commands(ctxItems({ kind: "empty" }, caps()))).toEqual([...head, ...tail, "—", "generate-here", "open-library"]);
 });
 
 test("a blocked item stays in the menu, disabled, with its reason", () => {
@@ -181,10 +181,10 @@ test("a Rig node leaves out commands the Rig does not carry out, and keeps a blo
   expect(ctxItems({ kind: "asset", id: "a" }, caps()).filter((i) => !i.sep)).toHaveLength(10);
 });
 
-test("empty space blocks selection commands but keeps its own three", () => {
+test("empty space blocks selection commands but keeps its own two", () => {
   const items = ctxItems({ kind: "empty" }, caps({ can: { copy: true } }));
   expect(find(items, "copy")).toMatchObject({ disabled: true, reason: "Select an asset or a node first." });
-  for (const c of ["generate-here", "open-library", "toggle-inspector"]) expect(find(items, c).disabled).toBeFalsy();
+  for (const c of ["generate-here", "open-library"]) expect(find(items, c).disabled).toBeFalsy();
 });
 
 test("the menu opens at the cursor, flips at an edge and never leaves the viewport", () => {
