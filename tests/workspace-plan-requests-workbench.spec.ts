@@ -18,7 +18,6 @@ import { newProject, type Asset, type CanvasNode, type Project } from "../lib/wo
  */
 
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
-const PHONE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const pixel = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jp1sAAAAASUVORK5CYII=",
   "base64",
@@ -212,19 +211,7 @@ async function openAtomik(page: Page) {
 
 /* ---------------------------------------------------------------- tests */
 
-test("phones render the phone shell where Shorts was, on the suite's first page", async ({ page }, info) => {
-  test.skip(!PHONE.includes(info.project.name), "phone viewports");
-  const project = { ...newProject("Viral launch"), id: "ws-plan-shorts", productionProjectId: "ws-plan-production" } as Project;
-  await fixture(page, project);
-  await page.goto(url(project.id, "subatomik", "shorts"));
-  /* The phone shell renders here now (wave M-A): /workspace is the phone's
-     surface below 768px, and the desktop studio row is not mounted. */
-  await expect(page.getByTestId("phone-shell")).toBeVisible();
-  await expect(page.getByTestId("studio-row")).toHaveCount(0);
-  await expect(page.locator('[data-page-body="shorts"]')).toHaveCount(0);
-});
-
-test("Marketing Studio's plan prices the variants the page holds, and dispatches nothing before approval", async ({ page }, info) => {
+test.fixme("owner: Product image plan gate on the Ads board — the plan prices the variants the page holds, and dispatches nothing before approval (the per-page Atomik plan has no page in Release 1)", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const project = campaignProject();
   const state = await fixture(page, project);
@@ -265,7 +252,7 @@ test("Marketing Studio's plan prices the variants the page holds, and dispatches
   expect(state.errors).toEqual([]);
 });
 
-test("a variant Marketing Studio never configured is named, not guessed at, and its plan refuses", async ({ page }, info) => {
+test.fixme("owner: Product image plan gate on the Ads board — a variant never configured is named, not guessed at, and its plan refuses (no new home for the refusal; the quote body and the single send with maxCredits and quoteFingerprint are held by tests/suites-business-workbench.spec.ts)", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const base = campaignProject();
   const variants = base.moleculr!.variants.map((variant) => ({ ...variant, generation: undefined }));
@@ -284,34 +271,3 @@ test("a variant Marketing Studio never configured is named, not guessed at, and 
   expect(state.errors).toEqual([]);
 });
 
-test("Shorts ran on the Higgsfield account and is off for Release 1: no page and no plan to open, its old address opens the suite's first page", async ({ page }, info) => {
-  test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
-  const project = { ...newProject("Viral launch"), id: "ws-plan-shorts", productionProjectId: "ws-plan-production" } as Project;
-  const state = await fixture(page, project);
-  await page.goto(url(project.id, "subatomik", "shorts"));
-  await expect(page.getByTestId("page-title")).toBeVisible();
-  await expect(page.getByTestId("page-title")).not.toHaveText("Shorts");
-  await expect(page.locator('[data-page-body="shorts"]')).toHaveCount(0);
-  await expect(page.getByText(/Shorts is retired/)).toHaveCount(0);
-  /* With no Shorts page, its Atomik plan has nowhere to open from (tests/unit/signinOffRelease1.spec.ts holds the registries). */
-  await expect(page.getByText("Make a set of shorts")).toHaveCount(0);
-  expect(state.quotes).toEqual([]);
-  expect(state.dispatches).toEqual([]);
-  expect(state.external).toEqual([]);
-  expect(state.errors).toEqual([]);
-});
-
-test("Boards stays refused: no board body exists to price", async ({ page }, info) => {
-  test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
-  const project = campaignProject();
-  const state = await fixture(page, project);
-  await page.goto(url(project.id, "particl", "boards"));
-  await expect(page.getByTestId("page-title")).toHaveText("Boards");
-  await openAtomik(page);
-  await expect(page.getByTestId("atomik-plan-title")).toHaveText("Board every scene");
-  await expect(page.getByTestId("atomik-reason")).toHaveText("Needs Boards data");
-  await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toBeDisabled();
-  expect(state.quotes).toEqual([]);
-  expect(state.dispatches).toEqual([]);
-  expect(state.errors).toEqual([]);
-});

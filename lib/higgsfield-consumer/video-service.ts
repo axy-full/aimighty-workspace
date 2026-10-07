@@ -92,7 +92,7 @@ export async function quoteConsumerMarketingVideo(userId: string, draftId: strin
     return consumerVideoView(previous);
   }
   if (!await readDraft(userId, draftId))
-    throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
+    throw new ConsumerVideoServiceError("project_missing", "This isn't available.", 404);
   const access = await connected(userId);
   const quote = await getConsumerVideoQuote(access.accessToken, normalized);
   // Reconnection during the quote cannot bind its result to a replacement grant.

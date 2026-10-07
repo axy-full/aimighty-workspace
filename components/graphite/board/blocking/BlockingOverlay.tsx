@@ -215,7 +215,7 @@ function Overlay({ ctx, nodeId }: { ctx: BoardCtx; nodeId: string }) {
               <button type="button" className="gx-bko-add" onClick={() => edit(addFigure(scene))} data-testid="blocking-add-figure">Figure</button>
               <button type="button" className="gx-bko-add" onClick={() => edit(addProp(scene))} data-testid="blocking-add-prop">Prop</button>
               {/* No price function and no provider are wired for this: it shows, disabled, with the words that say why. */}
-              <button type="button" className="gx-bko-add" disabled aria-disabled="true" data-spend="unpriced" title="This has no price yet" data-testid="blocking-add-photo">Prop from a photo · price pending</button>
+              {ctx.exploreOnly ? null : <button type="button" className="gx-bko-add" disabled aria-disabled="true" data-spend="unpriced" title="This has no price yet" data-testid="blocking-add-photo">Prop from a photo · price pending</button>}
             </div>
           </div>
         </aside>

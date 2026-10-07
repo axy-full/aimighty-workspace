@@ -3,6 +3,7 @@ import { requireTenant } from "@/lib/tenant";
 import { db, ready } from "@/lib/db";
 import { listShares, revokeShare, shareLive, SHARE_DAYS } from "@/lib/shares";
 import { clientResponses, mintReviewLink, reviewLinksReady, scopeOf } from "@/lib/security/review-link";
+import { linkOrigin } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -53,7 +54,7 @@ export const POST = withTenant(async (req: Request) => {
   const { share, token } = await mintReviewLink({ workspaceId: requireTenant().id, projectId, days: SHARE_DAYS, by: got.user.name, actorId: got.user.id });
   return Response.json({
     link: { id: share.id, live: true, createdAt: share.createdAt, expiresAt: share.expiresAt, revokedAt: null },
-    url: `${new URL(req.url).origin}/review/${token}`,
+    url: `${linkOrigin(req)}/review/${token}`,
   }, { status: 201, headers });
 }, { requireRequestScope: true });
 

@@ -46,7 +46,7 @@ export function PhoneTabs({ active, needs, onTab, drawn = () => true }: { active
   return (
     <nav className="ph-tabs" aria-label="Tabs" data-testid="mobile-dock">
       {TABS.map((t) => (
-        <button key={t.id} type="button" className="ph-tab" aria-current={active === t.id ? "page" : undefined} disabled={!drawn(t.id)} onClick={() => onTab(t.id)} data-testid={`phone-tab-${t.id}`}>
+        <button key={t.id} type="button" className="ph-tab" aria-current={active === t.id ? "page" : undefined} disabled={!drawn(t.id)} onClick={() => onTab(t.id)} data-destination={`tab:${t.id}`} data-testid={`phone-tab-${t.id}`}>
           <span className="ph-tab-glyph" aria-hidden="true">
             <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d={TAB_GLYPH[t.id]} /></svg>
             {t.id === "home" && needs > 0 ? <span className="ph-tab-badge" data-testid="phone-needs-badge">{needs > 99 ? "99+" : needs}</span> : null}

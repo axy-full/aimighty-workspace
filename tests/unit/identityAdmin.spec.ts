@@ -650,15 +650,11 @@ test("POST /api/team/invites/[code]/send: refused with 429 once an invitation ha
   }
 });
 
-test("the invitation page's route: a copied link asks for the email, and the emailed link makes the account", async () => {
+async function acceptRoute(mailer: ReturnType<typeof mailbox>["mock"]) {
   const { loadRoute } = await import("../helpers/routeModule");
   const platform = await import("../../lib/platform");
-  const { ws } = await workspace("Accept house");
-  const code = `accept-${tag}`;
-  await invite(ws.id, mail("joiner"), code);
-  const post = mailbox();
   const jar = { get: () => undefined, set: () => {} };
-  const route = loadRoute<{ GET: Handler; POST: Handler }>(
+  return loadRoute<{ GET: Handler; POST: Handler }>(
     "app/api/auth/accept/route.ts",
     {
       "@/lib/recovery": { recoveryRoute: (handler: Handler) => handler },
@@ -675,9 +671,18 @@ test("the invitation page's route: a copied link asks for the email, and the ema
       "@/lib/platformOwnerPrivacy": await import("../../lib/platformOwnerPrivacy"),
       "@/lib/policyAccept": await import("../../lib/policyAccept"),
       "@/lib/accountDb": await import("../../lib/accountDb"),
-      "@/lib/mail": post.mock,
+      "@/lib/mail": mailer,
     },
   );
+}
+
+test("the invitation page's route: a copied link asks for the email, and the emailed link makes the account", async () => {
+  const platform = await import("../../lib/platform");
+  const { ws } = await workspace("Accept house");
+  const code = `accept-${tag}`;
+  await invite(ws.id, mail("joiner"), code);
+  const post = mailbox();
+  const route = await acceptRoute(post.mock);
   const look = async (query: string) =>
     (await route.GET(new Request(`http://localhost/api/auth/accept?${query}`))).json();
   const send = (body: unknown) =>
@@ -700,6 +705,44 @@ test("the invitation page's route: a copied link asks for the email, and the ema
   const joined = await send({ code, m, password, accept: true });
   expect(joined.status, await joined.clone().text()).toBe(200);
   expect(await platform.findAccountByEmail(mail("joiner"))).toBeTruthy();
+});
+
+test("invitation mail on a self-hosted production server without APP_ORIGIN: the invitation is kept, nothing is mailed, no link is built from the request", async () => {
+  const { platformDb } = await import("../../lib/platform");
+  const real = await import("../../lib/mail");
+  const { user, ws } = await workspace("Unset origin house");
+  const post = mailbox();
+  /* The real link origin and refusal words; only the provider is stood in for. */
+  const mailer = { ...post.mock, inviteOrigin: real.inviteOrigin, MAIL_LINK_UNSET: real.MAIL_LINK_UNSET } as unknown as typeof post.mock;
+  const routes = await teamRoutes({ ...ws, planId: "studio" }, user.id, mailer);
+  const accept = await acceptRoute(mailer);
+  const env = process.env as Record<string, string | undefined>;
+  const saved = { APP_ORIGIN: env.APP_ORIGIN, VERCEL: env.VERCEL, NODE_ENV: env.NODE_ENV };
+  const quiet = console.error;
+  delete env.APP_ORIGIN; delete env.VERCEL; env.NODE_ENV = "production";
+  console.error = () => {};
+  try {
+    const made = await (await routes.invite(mail("unset"))).json();
+    expect(made).toMatchObject({ sent: false, mailLimited: false, mailError: real.MAIL_LINK_UNSET });
+    expect(made.code).toBeTruthy();
+    expect((await platformDb().execute({ sql: "SELECT 1 FROM workspace_invites WHERE code=?", args: [made.code] })).rows).toHaveLength(1);
+    const again = await routes.resend(made.code);
+    expect(again.status).toBe(503);
+    expect((await again.json()).error).toBe(real.MAIL_LINK_UNSET);
+    const asked = await accept.POST(new Request("http://localhost/api/auth/accept", {
+      method: "POST", headers: { "Content-Type": "application/json", Host: "attacker.test", "X-Forwarded-Host": "attacker.test" },
+      body: JSON.stringify({ code: made.code, emailLink: true }),
+    }));
+    expect(asked.status).toBe(503);
+    expect(post.sent).toHaveLength(0);
+    /* With APP_ORIGIN the same invitation is mailed on it. */
+    env.APP_ORIGIN = "https://app.example.test/";
+    expect((await routes.resend(made.code)).status).toBe(200);
+    expect(post.sent.map((s) => new URL(s.link).origin)).toEqual(["https://app.example.test"]);
+  } finally {
+    console.error = quiet;
+    for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete env[key]; else env[key] = value; }
+  }
 });
 
 test("a deleted workspace's top-up waits for a restore: approving is refused, declining still works", async () => {

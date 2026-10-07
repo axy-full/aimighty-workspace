@@ -191,7 +191,7 @@ export async function quoteConsumerGeneration(
     return consumerGenerationView(previous);
   }
   if (!(await readDraft(userId, draftId)))
-    throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
+    throw new ConsumerVideoServiceError("project_missing", "This isn't available.", 404);
   const model = await requireModel(userId, normalized);
   // Catalogue validation precedes source resolution, imports and pricing.
   consumerGenerationParams(model, normalized, normalized.medias.map((media) => ({ value: PLACEHOLDER_MEDIA, role: media.role })));
