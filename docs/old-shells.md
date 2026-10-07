@@ -223,3 +223,7 @@ With the new interface on (`lib/shell/new-interface.ts`), these pages render the
 - same file, "Brief opens the shell's own Atomik conversation, and only once the brief is saved": the old Brief tool's button is gone; the board's Brief has no such button.
 - same file, "the Rig's Estimate is the Generate button's own figure when references are bound": the Inspector's shot estimate is gone; the figure on Make's button, with references, is asserted by `make-prices-workbench` and `hf-gen-output-coverage-workbench`.
 - `tests/hf-viral-real-runs-workbench.spec.ts`: kept and retargeted. History is the Social board's History drawer (desktop only; a phone has no board), the real-route test now asserts the retired route answers 410 to every read and send.
+
+## Release 1: the recovery race runs on the Make panel (lane r1-stale-claim, 7 Oct)
+
+- `tests/recovery-race.spec.ts`, old parts deleted: the batch and audio races on `/make/images` and `/make/audio` (Make's Recover buttons, paused Web Lock) and the writing race on `/atomik/ideas`. The pages are gone. The money assertion (two tabs, one lost reply, exactly one paid request) now runs in the same file on the Make panel and the phone's Make (video, image batch, audio), along with a new take after settlement that still goes. The writing race is a `test.fixme` until the idea draft (`POST /api/atomik/ideas/draft`) has a caller again (owner question).
