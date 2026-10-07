@@ -440,7 +440,6 @@ test("an identity render the provider fails settles at zero, and its card says w
     const { getGeneration } = await import("../../lib/jobs");
     const { withLedgerCharges } = await import("../../lib/usageLedger");
     const { engineFor } = await import("../../lib/engines");
-    const { renderOutcome } = await import("../../lib/production/cast-render");
     await identity("soul_v2");
     const accepted = await gen.admitGeneration(value(await gen.prepareGeneration(body({ soulBatch: 1 }), actor)), actor, { requestKey: "soul-failed-render", defer: noInline });
     const genId = String(accepted.body.id);
@@ -454,52 +453,12 @@ test("an identity render the provider fails settles at zero, and its card says w
     expect(failed.creditsBilled).toBe(0);
     /* On the platform's key the provider's own billing stays private; the ledger speaks for the charge. */
     expect(failed.failure).toMatchObject({ provider: "higgsfield", kind: "content_filter", payer: "platform", billing: null });
-    /* Before the ledger is read the line claims nothing about the charge; the route (GET /api/jobs/:id) adds the ledger's word. */
-    expect(renderOutcome(failed)).toBe("Refused by the content filter · Change the prompt or reference");
     const [read] = await withLedgerCharges([failed]);
     expect(read.failure?.charge).toEqual({ credits: 0, settled: true });
-    expect(renderOutcome(read)).toBe("Refused by the content filter · Not billed · Change the prompt or reference");
   }));
 
-test("the Cast page's request and filing: a character, its own identity, its family's model; old entries read-only; an earlier account's identity is told apart", async () => {
-  const { castRenderInput, renderedStills, renderOutcome, renderableIdentity } = await import("../../lib/production/cast-render");
-  const { generationRequestBody } = await import("../../lib/workbench/generation-request");
+test("filing: an entry built with a retired stills model is read-only and named without the old family word; an earlier account's identity is told apart", async () => {
   const { newEntry, retiredModelOf, accountSoulIdOf } = await import("../../lib/production/cast");
-  const project = { id: "draft-1", productionProjectId: "prod-1" };
-  const soul = { id: "soul_a", status: "ready" as const, renderModel: "hf-soul-cinema", projectId: null, name: "Wren", description: "", subjectType: "character" as const,
-    references: [], previewUrl: null, createdAt: 0, updatedAt: 0, creditsBilled: 38, error: null };
-  const wren = { ...newEntry("character", "Wren", "", "Wren on the quay"), identityId: "soul_a", soulBatch: 4 as const, soulResolution: "1080p" as const, soulStrength: 0.8 };
-  const input = castRenderInput(project, wren, soul)!;
-  expect(generationRequestBody(input)).toEqual({ prompt: "Wren on the quay", model: "hf-soul-cinema", projectId: "prod-1", shotId: "", ratio: "3:4", resolution: "1080p", duration: 5,
-    refine: false, references: [], soulIdentityId: "soul_a", soulStrength: 0.8, workbenchProjectId: "draft-1", soulBatch: 4 });
-  expect(castRenderInput(project, { ...wren, prompt: " " }, soul)).toBeNull();
-  expect(castRenderInput(project, { ...wren, identityId: "soul_b" }, soul)).toBeNull();
-  expect(castRenderInput(project, { ...wren, kind: "element" }, soul)).toBeNull();
-  expect(castRenderInput({ id: "draft-1" }, wren, soul)).toBeNull();
-  for (const unusable of [{ status: "training" as const }, { renderModel: null }, { renderModel: "hf-soul-character" }]) {
-    expect(renderableIdentity({ ...soul, ...unusable })).toBe(false);
-    expect(castRenderInput(project, wren, { ...soul, ...unusable })).toBeNull();
-  }
-  expect(castRenderInput(project, { ...wren, soulStrength: 0.35 }, soul)!.soul!.soulStrength).toBe(1);
-  expect(renderedStills({ id: "gen_a", params: { soulBatchIds: ["gen_a", "gen_a-2", "gen_a-3", "gen_a-4"] } })).toEqual(["gen_a", "gen_a-2", "gen_a-3", "gen_a-4"]);
-  expect(renderedStills({ id: "gen_a", params: { soulBatchIds: ["gen_b"] } })).toEqual(["gen_a"]);
-  expect(renderedStills({ id: "gen_a", params: {} })).toEqual(["gen_a"]);
-  /* A failed render says what every other take says (lib/errors.ts failureLine): held while the reservation is open,
-     charged once settled, "Not billed" only when settled at nothing, the provider's own outcome on the workspace's key. */
-  const refused = { provider: "higgsfield", stage: "run", code: "nsfw", kind: "content_filter", message: null, billing: null, payer: "platform" } as const;
-  expect(renderOutcome({ status: "failed", failure: { ...refused, charge: { credits: 12, settled: false } } })).toBe("Refused by the content filter · 12 cr held · Change the prompt or reference");
-  expect(renderOutcome({ status: "failed", failure: { ...refused, charge: { credits: 12, settled: true } } })).toBe("Refused by the content filter · 12 cr charged · Change the prompt or reference");
-  expect(renderOutcome({ status: "failed", failure: { ...refused, charge: { credits: 0, settled: true } } })).toBe("Refused by the content filter · Not billed · Change the prompt or reference");
-  expect(renderOutcome({ status: "failed", failure: { ...refused, charge: { credits: 0, settled: false } } })).toBe("Refused by the content filter · Settling · Change the prompt or reference");
-  expect(renderOutcome({ status: "failed", error: "Refused by the content filter", failure: refused })).toBe("Refused by the content filter · Change the prompt or reference");
-  expect(renderOutcome({ status: "failed", failure: { ...refused, payer: "own", billing: { state: "refunded", amount: 12, unit: "higgsfield_credits", basis: "hf-refund" } } }))
-    .toBe("Refused by the content filter · The engine refunded 12 credits · Change the prompt or reference");
-  /* A held render discarded before it started: cancelled, and the receipt says nothing was kept. */
-  expect(renderOutcome({ status: "cancelled", failure: { provider: null, stage: null, code: "unknown", kind: "unknown", message: null, billing: null, payer: null, charge: { credits: 0, settled: true } } }))
-    .toBe("Cancelled · Not billed · Render again");
-  /* A record from before failures were kept: its reason, and no word on the charge. */
-  expect(renderOutcome({ status: "failed", error: "Stopped." })).toBe("Stopped.");
-  expect(renderOutcome({ status: "cancelled" })).toBe("The render was cancelled.");
   /* Built earlier with a stills model that made a place or a persona: read-only, named without the old family word. Never built, or the two character models: editable. */
   const built = { takes: [{ genId: "gen_hfc_1", at: "2026-09-24T00:00:00.000Z" }] };
   expect(retiredModelOf({ ...newEntry("element", "Harbour"), model: "soul_location", ...built })).toBe("Location still");

@@ -92,8 +92,6 @@ test("no mounted surface offers a sign-in feature or reads the connected account
   const callers = all.filter((file) => !own(file) && readFileSync(file, "utf8").includes("/api/higgsfield/consumer/")).sort();
   expect(callers).toEqual([
     "lib/shell/connected-capability.ts", // the route constants; the hook answers member for everyone and reads nothing
-    "lib/shell/use-business.ts", // unmounted (nothing calls useBusiness); its one call is a retired action
-    "lib/workspace/mobile-form.ts", // a comment
     "lib/workspace/plan-types.ts", // a comment
   ]);
 });

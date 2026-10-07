@@ -1,15 +1,5 @@
 {
   "ratchet": {
-    "components/Feed.tsx": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "UNOWNED: no frame draws this route"
-    },
-    "components/assets/NewAssetSheet.tsx": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "goes with the file: stream 3 (Library drawer) + stream 6 (Make > Recent)"
-    },
     "components/astra-blender/AstraAgentPanel.tsx": {
       "count": 1,
       "until": "2026-10-16",
@@ -54,16 +44,6 @@
       "count": 1,
       "until": "2026-10-16",
       "by": "stream 8 (Activity)"
-    },
-    "components/pipeline/PipelineWorkspace.tsx": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "stream 8 (Activity)"
-    },
-    "components/rig/PhoneBoard.tsx": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "stream 3 (board canvas)"
     },
     "components/suites/AtomikSuite.tsx": {
       "count": 1,
@@ -110,11 +90,6 @@
       "until": "2026-10-16",
       "by": "functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide)"
     },
-    "components/workbench/Studio.tsx": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "goes with the file: flip PR, then D1 retire /workbench (lead)"
-    },
     "components/workspace/GenerateComposer.tsx": {
       "count": 1,
       "until": "2026-10-16",
@@ -134,16 +109,6 @@
       "count": 1,
       "until": "2026-10-16",
       "by": "goes with the file: stream 5 (cards 2)"
-    },
-    "components/workspace/mobile/MakeComposer.tsx": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "stream 10 (phone) + D1 retire /workspace"
-    },
-    "components/workspace/mobile/pages/CardsPages.tsx": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "stream 10 (phone) + D1 retire /workspace"
     },
     "components/workspace/pages/CastPage.tsx": {
       "count": 1,

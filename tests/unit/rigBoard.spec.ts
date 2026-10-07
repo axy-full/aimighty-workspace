@@ -11,11 +11,10 @@ import { applyTeamPatch, diffForTeam, emptyTeamCanvas, parseTeamCanvas, withTeam
 import { planCanvasOps, type CanvasOp } from "../../lib/workbench/canvas-ops-model";
 import { undoOps } from "../../lib/workbench/rig-agent-plan";
 import { mergeDraft } from "../../lib/workbench/draft-merge";
-import { flowChain } from "../../lib/workspace/mobile-templates";
-import { cardHeight, cardWidth, CARD_HEIGHT, graphLayout, isSectionNode } from "../../lib/workspace/rig-graph";
+import { cardHeight, cardWidth, CARD_HEIGHT, isSectionNode } from "../../lib/workspace/rig-graph";
 import {
-  addBoardCard, BOARD_GRID, BOARD_GROUP_TITLES, boardGroupOf, boardSections, cardStatus, clampPosition, dragShown, dropCard, dropPlace,
-  filingAt, freeSpot, kindSectionId, sectionAt, sectionedFlow, sectionGroup, snapTo, TIDY, tidyBoard, withBoardText,
+  addBoardCard, BOARD_GRID, boardGroupOf, boardSections, cardStatus, clampPosition, dragShown, dropCard, dropPlace,
+  filingAt, freeSpot, kindSectionId, sectionAt, sectionGroup, snapTo, TIDY, tidyBoard, withBoardText,
 } from "../../lib/workspace/rig-board";
 
 /*
@@ -37,7 +36,7 @@ const asset = (id: string, category = "Reference"): Asset => ({ id, name: id, ki
 const assets = { assets: [asset("plate", "Environment"), asset("face", "Character"), asset("frame")] };
 const project = (nodes: CanvasNode[], extra: Partial<Project> = {}): Project => ({ ...newProject("Board"), id: "draft-board", productionProjectId: "prod-board", nodes, assets: assets.assets, ...extra });
 const ids = (nodes: readonly { id: string }[]) => nodes.map((n) => n.id);
-const CAST = kindSectionId("cast"), SHOTS = kindSectionId("shots"), REFS = kindSectionId("ref");
+const CAST = kindSectionId("cast"), SHOTS = kindSectionId("shots");
 
 /** Every card of a laid-out board, as the boxes the graph draws. */
 const boxes = (nodes: readonly CanvasNode[]) => nodes.map((n) => ({ id: n.id, x: n.x, y: n.y, w: cardWidth(n), h: cardHeight(n) }));
@@ -439,21 +438,4 @@ test("a card's filing is declared in the node schema and kept by the draft save,
   expect(diffForTeam(base, draft, 3)!.fields).toEqual({ s2: ["section"] });
   const theirs = { ...base, nodes: [base.nodes[0], { ...base.nodes[1], x: 640 }] };
   expect(mergeDraft(base, draft, theirs).nodes[1]).toMatchObject({ x: 640, section: "sec-1" });
-});
-
-/* ── The phone's flow ─────────────────────────────────────────────────── */
-
-test("the phone's flow reads section by section after the scene and its wires; a board with no titles reads as before", () => {
-  const plain = [card("m", "media"), card("s1", "scene", { linked: ["m"] }), card("wren", "character"), card("board", "media"), card("s2", "scene")];
-  expect(sectionedFlow(flowChain(plain, "s1"), plain, assets)).toEqual(flowChain(plain, "s1"));
-  const nodes = [...plain, title("sec-1", "Scene 2"), title(REFS, "Refs")];
-  nodes[4] = { ...nodes[4], section: "sec-1" };
-  const flow = sectionedFlow(flowChain(nodes, "s1"), nodes, assets);
-  /* The scene's input and the scene; then Cast (no title yet), Refs under its title, and Scene 2 under its own. */
-  expect(flow.map((s) => s.id)).toEqual(["m", "s1", "wren", REFS, "board", "sec-1", "s2"]);
-  expect(flow.map((s) => s.wire)).toEqual(["blue", "grey", "grey", "grey", "grey", "grey", null]);
-  expect(flow.filter((s) => s.scene).map((s) => s.id)).toEqual(["s1"]);
-  expect(BOARD_GROUP_TITLES.ref).toBe("Refs");
-  /* The graph draws every card, titles included, from the same positions. */
-  expect(graphLayout(nodes).cards.map((c) => c.id)).toEqual(ids(nodes));
 });

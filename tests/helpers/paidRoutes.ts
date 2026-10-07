@@ -80,8 +80,6 @@ export const NOT_SPENDING_FILES: Record<string, FileExcuse> = {
  */
 export const NOT_SPENDING_BUTTONS: Record<string, string> = {
   "components/graphite/control-room/ActivityView.tsx::Run again": "puts the run's request back in Atomik's box and opens Atomik; nothing is sent, and the Ask there shows its own price",
-  "components/make/UnfiledWall.tsx::Upscale video": "opens the upscale tool with this take as its source; the tool quotes, and its own button wears the price",
-  "components/make/UnfiledWall.tsx::Upscale image": "opens the upscale tool with this take as its source; the tool quotes, and its own button wears the price",
   "components/graphite/make/Recent.tsx::Make something": "switches the panel from Recent to its Make tab; nothing is made until Make is pressed there",
 };
 

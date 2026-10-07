@@ -294,11 +294,10 @@ test("L6: the 50-waiting cap holds under many prepared jobs at once", async () =
   expect(waiting).toHaveLength(jobs.WAITING_LIMIT);
 });
 
-test("L7: the older Tokens page and Atomik's Tools page call a prepare token what it is", async () => {
+test("L7: Atomik's Tools page calls a prepare token what it is", async () => {
   const { tokenFacts, scopeWords } = await import("../../lib/shell/tools-connections");
   expect(scopeWords("prepare")).toBe("Prepares jobs only");
   expect(tokenFacts({ id: "t", name: "x", scope: "prepare", lastUsed: null, createdAt: 0, spendThisMonth: 0, capCredits: null }, "credits")).toMatch(/^Prepares jobs only · /);
-  expect(readFileSync("components/Tokens.tsx", "utf8")).toContain("Prepares jobs only");
   expect(readFileSync("components/graphite/atomik/ToolsView.tsx", "utf8")).toMatch(/t\.scope === "render" \? "available"/);
 });
 
@@ -333,15 +332,6 @@ test("P4: a member reads every link's client responses on the team side; the lis
 });
 
 /* ── The second review's lows (L-A, L-C, L-D) ────────────────────────────────────────────────────────────────── */
-
-test("L-A: the New asset sheet starts no training (it has no consent record to cite) and points to the Cast card", () => {
-  const sheet = readFileSync("components/assets/NewAssetSheet.tsx", "utf8");
-  expect(sheet).not.toMatch(/\/api\/identities\/\$\{[^}]*\}\/train/);
-  expect(sheet).not.toContain("/api/identities/train");
-  expect(sheet).not.toContain('aria-label="Consent to train"');
-  expect(sheet).not.toMatch(/projectId: null/);
-  expect(sheet).toContain('"Train it from the Cast card, where its consent is recorded."');
-});
 
 test("L-C: a review link's client key is salted like the login source key, so it can't be reversed by trying every address", async () => {
   const { createHash } = await import("node:crypto");

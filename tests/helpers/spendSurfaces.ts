@@ -12,8 +12,7 @@ export type SpendSurface = { id: string; name: string; claims: (path: string) =>
 const is = (path: string, names: string[]) => names.includes(path);
 
 export const SPEND_SURFACES: SpendSurface[] = [
-  { id: "recent", name: "Make › Recent (take cards: Again, Use as reference, Release)", claims: (p) => is(p, ["components/graphite/TakeTile.tsx", "components/graphite/TakeStrip.tsx", "components/graphite/DraftFinal.tsx", "components/graphite/ReleaseTake.tsx", "components/make/UnfiledWall.tsx"]) },
-  { id: "model-sheet", name: "the model sheet", claims: (p) => p === "components/graphite/ModelSheet.tsx" },
+  { id: "recent", name: "Make › Recent (take cards: Again, Use as reference, Release)", claims: (p) => is(p, ["components/graphite/TakeTile.tsx", "components/graphite/TakeStrip.tsx", "components/graphite/DraftFinal.tsx", "components/graphite/ReleaseTake.tsx"]) },
   { id: "context-menu", name: "the right-click menu", claims: (p) => p === "components/graphite/ContextMenu.tsx" || p.startsWith("components/graphite/context/") },
   { id: "board", name: "the board's paid actions", claims: (p) => p.startsWith("components/graphite/board/") },
   {

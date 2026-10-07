@@ -72,13 +72,11 @@ test("without accepted settings only the mode moves, and another node is untouch
 });
 
 /**
- * The extraction itself: Marketing Studio's flow lives in one component, and
- * Studio no longer holds a copy of it. A future host mounts the component
- * rather than reaching back into Studio.
+ * The extraction itself: Marketing Studio's flow lives in one component that
+ * a host mounts rather than reaching back into a page.
  */
-test("the Marketing Studio flow is self-contained and Studio holds no copy of it", () => {
+test("the Marketing Studio flow is self-contained", () => {
   const flow = readFileSync("components/suites/MarketingStudioFlow.tsx", "utf8");
-  const studio = readFileSync("components/workbench/Studio.tsx", "utf8");
 
   /* The campaign actions and the dialog that prices them are in the flow. */
   for (const marker of [
@@ -94,24 +92,9 @@ test("the Marketing Studio flow is self-contained and Studio holds no copy of it
   ])
     expect(flow, marker).toContain(marker);
 
-  /* …and nowhere else. Studio mounts the flow and supplies a draft engine. */
-  for (const marker of [
-    "buildMoleculrStoryboard",
-    "prepareMoleculrVariants",
-    "bindMoleculrReferences",
-    "referenceAdBinding",
-    "moleculrVideoPrompt",
-    "MoleculrWorkspace",
-    "PosterDesigner",
-    "/api/workbench/moleculr/import-image",
-  ])
-    expect(studio, marker).not.toContain(marker);
-  expect(studio).toContain("<MarketingStudioFlow");
-
   /* One rule for an accepted generation, shared rather than copied. */
   expect(flow).toContain("applyAcceptedGeneration");
-  expect(studio).toContain("applyAcceptedGeneration");
-  for (const source of [flow, studio]) expect(source).not.toContain("kind==='audio'?'Audio'");
+  expect(flow).not.toContain("kind==='audio'?'Audio'");
 
   /* The flow takes its host through props only: no Studio import, no context. */
   expect(flow).not.toContain("workbench/Studio");

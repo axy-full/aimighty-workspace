@@ -7,7 +7,7 @@ import {
 import { buildRateTable } from "../../lib/rateTable.server";
 import { EMPTY_TABLE } from "../../lib/rateTable";
 import { pricePack } from "../../lib/packs";
-import { creditsCard, type MeRead } from "../../lib/workspace/settings-data";
+import { creditPriceLine, creditsWithUsd } from "../../components/graphite/settings/model";
 import { creditsLabel, creditsTitle } from "../../lib/workspace/format";
 import {
   formatProviderCreditQuote, providerCreditQuote, sumWithProviderCreditQuotes,
@@ -72,27 +72,24 @@ test("no surface types the rate as copy", () => {
 
 /* ── 2. The surfaces that state the rate ─────────────────────────────── */
 
-const ME: MeRead = { credits: { creditUsd: 0.10, granted: 2000, used: 760, balance: 1240 } };
-
 test("the Settings credits card states the rate, from the unit its dollars use", () => {
-  const card = creditsCard(ME, null, Date.UTC(2026, 8, 20))!;
-  expect(card.balance).toBe("1,240 CR");
+  const card = creditsWithUsd(1240, 0.10);
+  expect(card.text).toBe("1,240 cr");
   expect(card.usd).toBe("$124.00");
-  expect(card.rate).toBe("1 credit = $0.10");
+  const rate = creditPriceLine(0.10);
+  expect(rate).toBe("1 credit = $0.10");
   /* One short line, not a paragraph (CLAUDE.md ground rule 9). */
-  expect(card.rate!.length).toBeLessThan(40);
+  expect(rate!.length).toBeLessThan(40);
 });
 
 test("the credits card follows the workspace's own unit rather than the launch rate", () => {
-  const card = creditsCard({ credits: { ...ME.credits!, creditUsd: 0.25 } }, null, 0)!;
-  expect(card.rate).toBe("1 credit = $0.25");
-  expect(card.usd).toBe("$310.00");
+  expect(creditPriceLine(0.25)).toBe("1 credit = $0.25");
+  expect(creditsWithUsd(1240, 0.25).usd).toBe("$310.00");
 });
 
 test("a card with no unit drops the line instead of guessing ten cents", () => {
-  const card = creditsCard({ credits: { ...ME.credits!, creditUsd: Number.NaN } }, null, 0)!;
-  expect(card.usd).toBeNull();
-  expect(card.rate).toBeNull();
+  expect(creditsWithUsd(1240, Number.NaN).usd).toBeNull();
+  expect(creditPriceLine(Number.NaN)).toBeNull();
 });
 
 test("the credit figure's own tooltip carries the rate, on the phone and the desktop", () => {
@@ -142,8 +139,6 @@ test("no connected surface imports the credit rate, so none of them can apply it
   /* The rule stated as the only thing that can enforce it: a file that never
      sees creditUsd cannot multiply a provider's credits by ten cents. */
   const connected = [
-    "components/suites/ConsumerShorts.tsx",
-    "components/suites/ConsumerMarketingVideo.tsx",
     "components/suites/MarketingTemplates.tsx",
     "components/suites/SubatomikWorkspace.tsx",
     "components/suites/AtomikSuite.tsx",
@@ -209,8 +204,7 @@ test("changing CREDIT_USD moves every derived figure, the browser's rate table i
     expect(pricePack({ id: "starter", label: "Starter", credits: 500 }, creditUsd()).usd).toBe(125);
 
     /* The settings card and the tooltip, fed from that same table. */
-    expect(creditsCard({ credits: { creditUsd: moved.creditUsd, granted: 0, used: 0, balance: 100 } }, null, 0)!.rate)
-      .toBe("1 credit = $0.25");
+    expect(creditPriceLine(moved.creditUsd)).toBe("1 credit = $0.25");
     expect(creditsLabel(100, moved.unit, moved.creditUsd).title).toContain("$0.25");
   } finally {
     if (before === undefined) delete process.env.CREDIT_USD; else process.env.CREDIT_USD = before;
@@ -241,7 +235,6 @@ test("a displayed value of credits is vendor cost at no margin, not a refund rat
   expect(usdToCredits(10, "*")).toBeGreaterThan(creditsToUsd(1) === 0 ? 0 : 100);
   /* The card's dollar figure is balance × unit — the same margin-free rate the
      packs were sold at, which is why it cannot imply a better one. */
-  const card = creditsCard({ credits: { creditUsd: 0.10, granted: 0, used: 0, balance: 1000 } }, null, 0)!;
-  expect(card.usd).toBe("$100.00");
+  expect(creditsWithUsd(1000, 0.10).usd).toBe("$100.00");
   expect(pricePack({ id: "x", label: "X", credits: 1000 }, 0.10).usd).toBe(100);
 });
