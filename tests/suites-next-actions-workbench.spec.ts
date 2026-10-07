@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Idea 12, first slice: a Next row on every take — in the Inspector and on
@@ -45,7 +46,7 @@ async function open(page: Page, url: string, saved = true) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(url);
-  await expect(page.getByTestId("project-name")).toHaveText("Next steps");
+  await expect(projectName(page)).toHaveText("Next steps");
   return { sent, quotes, errors };
 }
 const assets = async (page: Page, info: TestInfo) => {

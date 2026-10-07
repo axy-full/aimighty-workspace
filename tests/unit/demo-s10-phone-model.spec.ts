@@ -34,9 +34,9 @@ test("addresses open the phone's screens; the board is its Record and Approvals 
   expect(readPhone("?screen=nonsense").asked).toBe("home");
 });
 
-test("every one of the design's eight phone screens is drawn; an address that is not one opens Home, never an empty screen", () => {
-  expect([...DRAWN_SCREENS].sort()).toEqual(["atomik", "fix", "home", "make", "plan", "record", "review", "states"]);
-  for (const screen of ["fix", "states"]) expect(readPhone(`?screen=${screen}`).screen).toBe(screen);
+test("every one of the design's phone screens is drawn (the eight and Gaps A's Cut); an address that is not one opens Home, never an empty screen", () => {
+  expect([...DRAWN_SCREENS].sort()).toEqual(["atomik", "cut", "fix", "home", "make", "plan", "record", "review", "states"]);
+  for (const screen of ["fix", "states", "cut"]) expect(readPhone(`?screen=${screen}`).screen).toBe(screen);
   expect(readPhone("?screen=nonsense").screen).toBe("home");
   /* Change with words keeps the take it was opened on. */
   expect(phoneSearch("?screen=review&take=gen_1", { screen: "fix" })).toBe("?screen=fix&take=gen_1");

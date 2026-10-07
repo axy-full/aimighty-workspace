@@ -36,7 +36,7 @@ test("a statement's back link opens Workspace › Plans & credits, and the page 
   /* A link from another page into the Suites keeps its view and tab: the
      shell used to read the page being left and open the Brief. A first visit
      to /suites compiles it on a dev server. */
-  await expect(page.getByTestId("ws-plans")).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByTestId("settings-plan")).toBeVisible({ timeout: 90_000 });
   const url = new URL(page.url());
   expect(url.pathname).toBe("/suites");
   expect(url.searchParams.get("view")).toBe("workspace");
@@ -140,7 +140,7 @@ test("a scene's action scrolled into view is quoted, even when a busy page hands
   expect(ran).toEqual([]);
 });
 
-test("moving between Workspace tabs re-renders the shell, not the providers above it", async ({ page }) => {
+test("moving between Settings sections re-renders the shell, not the providers above it", async ({ page }) => {
   /* The Suites root reads its opening URL once. Reading useSearchParams on
      every render handed the providers fresh props on every URL the shell
      wrote, so each tab re-rendered the whole tree from the root. A stand-in
@@ -176,17 +176,16 @@ test("moving between Workspace tabs re-renders the shell, not the providers abov
   });
   await signInLocally(page.request);
   await page.goto("/suites?view=workspace&tab=credits");
-  await expect(page.getByTestId("ws-plans")).toBeVisible({ timeout: 90_000 });
-  const tabs = page.getByRole("tablist", { name: "Workspace sections" });
+  await expect(page.getByTestId("settings-plan")).toBeVisible({ timeout: 90_000 });
   const seen = () => page.evaluate(() => ({ ...((window as unknown as { __providerPropChanges: Record<string, number> }).__providerPropChanges) }));
   expect(await page.evaluate(() => (window as unknown as { __providersSeen: () => string[] }).__providersSeen())).toEqual(["RigProvider", "ShellProvider", "WorkspaceProvider"]);
   const before = await seen();
-  await tabs.getByRole("tab", { name: "Usage" }).click();
-  await expect(page.getByTestId("ws-usage")).toBeVisible();
-  await tabs.getByRole("tab", { name: "People" }).click();
-  await expect(page.getByTestId("ws-people")).toBeVisible();
-  await tabs.getByRole("tab", { name: "Plans & credits" }).click();
-  await expect(page.getByTestId("ws-plans")).toBeVisible();
+  await page.getByTestId("settings-fold-usage-toggle").click();
+  await expect(page.getByTestId("settings-fold-usage")).toHaveAttribute("data-open", "true");
+  await page.getByTestId("settings-section-team").click();
+  await expect(page.getByTestId("settings-people")).toBeVisible();
+  await page.getByTestId("settings-section-credits").click();
+  await expect(page.getByTestId("settings-plan")).toBeVisible();
   expect(new URL(page.url()).searchParams.get("tab")).toBe("credits");
   expect(await seen()).toEqual(before);
 });

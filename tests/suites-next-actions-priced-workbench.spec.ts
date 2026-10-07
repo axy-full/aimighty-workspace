@@ -6,6 +6,7 @@ import type { Generation } from "../lib/jobs";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload, type LibraryRoute } from "./helpers/workspaceFixtures";
 import { labelsUnderFloor } from "./helpers/businessOwn";
 import { smallTargets } from "./phoneFloors";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Idea 12, second slice: priced Next actions on a take. A still is upscaled, outpainted or animated; a clip is upscaled,
@@ -129,7 +130,7 @@ async function open(page: Page, url: string, saved = true) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(url);
-  await expect(page.getByTestId("project-name")).toHaveText("Next steps");
+  await expect(projectName(page)).toHaveText("Next steps");
   return { server, library, errors };
 }
 const assets = async (page: Page, info: TestInfo) => {

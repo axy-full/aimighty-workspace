@@ -5,6 +5,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { PHONE, forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload, type LibraryRoute } from "./helpers/workspaceFixtures";
 import type { Generation } from "../lib/jobs";
 import { smallTargets } from "./phoneFloors";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Viral's Recent and History show real runs only (idea 17), read from the
@@ -58,7 +59,7 @@ async function open(page: Page, sp: "motion" | "swap" | "history", generations: 
   /* History is the Social board's History drawer now (the Viral page is deleted); the quick tools are Make's. */
   await page.goto(`/suites?suite=subatomik&page=${sp}&sp=${sp}`);
   if (sp === "history") await expect(page.getByTestId("history-view")).toBeVisible({ timeout: 60_000 });
-  else await expect(page.getByTestId("project-name")).toHaveText("Harbour dusk study");
+  else await expect(projectName(page)).toHaveText("Harbour dusk study");
   return { errors, asked, library };
 }
 /** Viral asks nothing of the connected account; the shell's own collector may list an owner's earlier connected jobs, to drain them. */

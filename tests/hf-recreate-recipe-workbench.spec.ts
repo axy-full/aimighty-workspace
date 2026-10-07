@@ -6,6 +6,11 @@ import { smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { composePrompt } from "../lib/studio";
 import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /**
  * Recreate (idea 7): a take's whole recipe — the words as typed, the model,
@@ -99,7 +104,7 @@ async function open(page: Page, options: Options = {}) {
   await page.goto(options.url ?? "/suites?make=video");
   if (!options.url) await expect(page.getByTestId("gen-view")).toBeVisible();
   if (!options.url) await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour recreate study");
+  await expect(projectName(page)).toHaveText("Harbour recreate study");
   return { errors, quotes, priced, release: () => release() };
 }
 
@@ -170,7 +175,7 @@ test("Recreate lands the whole recipe in a Gen that is already open, waits for i
   await expect(card).toBeVisible();
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Harbour dusk");
   await expect(prompt).toHaveValue(RAW);
-  await expect(page.getByTestId("gen-model")).toContainText("Seedance 2.0");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Seedance 2.0");
   await expect(page.getByRole("group", { name: "Aspect" }).getByRole("button", { name: "21:9" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-length")).toHaveValue("8");
@@ -230,7 +235,7 @@ test("Recreate lands the whole recipe in a Gen that is already open, waits for i
   await page.getByTestId("gen-recipe-undo").click();
   await expect(card).toHaveCount(0);
   await expect(prompt).toHaveValue("my own words");
-  await expect(page.getByTestId("gen-model")).toContainText("Seedance 2.5");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Seedance 2.5");
   await expect(page.getByTestId("gen-well")).not.toContainText("Plate still");
   await expect(page.getByTestId("gen-film-shot")).toHaveAttribute("aria-label", "Shot: Auto");
   await expect(page.getByTestId("gen-film-camera")).toHaveAttribute("aria-label", "Camera: Auto");
@@ -266,7 +271,7 @@ test("a model picked in the model sheet while the recipe is still read keeps its
   /* A model picked in the sheet hands Gen a model and no words: a change made here, not a new recipe. */
   await page.getByTestId("gen-model").click();
   await page.getByRole("dialog", { name: "Choose a model" }).getByRole("option", { name: /^Kling 3\.0 Pro/ }).first().click();
-  await expect(page.getByTestId("gen-model")).toContainText("Kling 3.0 Pro");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Kling 3.0 Pro");
   await expect(page.getByTestId("gen-prompt")).toHaveValue(RAW);
   await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']")).toHaveText("Seedance 2.0 → Kling 3.0 Pro");
   await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='model']")).toHaveText("Model Changed here");
@@ -280,7 +285,7 @@ test("a model picked in the model sheet while the recipe is still read keeps its
   /* Undo puts the composer back as it was before the recipe, the model picked since included. */
   await page.getByTestId("gen-recipe-undo").click();
   await expect(page.getByTestId("gen-recipe")).toHaveCount(0);
-  await expect(page.getByTestId("gen-model")).toContainText("Seedance 2.5");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Seedance 2.5");
   await expect(page.getByTestId("gen-well")).not.toContainText("Plate still");
   expect(priced).toEqual([]);
   expect(errors).toEqual([]);
@@ -357,7 +362,7 @@ test("Use settings only keeps the person's words; Copy prompt copies the take's 
   await expect(card).toHaveAttribute("data-settings-only", "true");
   await expect(card).toContainText("Settings from");
   await expect(prompt).toHaveValue("a lighthouse keeper at first light");
-  await expect(page.getByTestId("gen-model")).toContainText("Seedance 2.0");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Seedance 2.0");
   await expect(page.getByRole("group", { name: "Aspect" }).getByRole("button", { name: "21:9" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-length")).toHaveValue("8");
   await expect(page.getByTestId("gen-recipe-refs")).toHaveCount(0);
@@ -443,7 +448,7 @@ test(`${member ? "a member" : "the owner"} recreates a take made on the Higgsfie
   await expect(page.getByTestId("gen-generate")).toHaveText("Make · 31 cr");
   /* Dismissing the card leaves the engine choice where it was. */
   await page.getByTestId("gen-recipe-dismiss").click();
-  await expect(page.getByTestId("gen-model")).toContainText("Seedance 2.5");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Seedance 2.5");
   expect(await noOverflow(page)).toBe(true);
   expect(asked, "the account is never asked").toEqual([]);
   expect(errors).toEqual([]);
