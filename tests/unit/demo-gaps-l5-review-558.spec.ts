@@ -331,3 +331,71 @@ test("P4: a member reads every link's client responses on the team side; the lis
   expect(body.said.length).toBeGreaterThan(0);
   void B;
 });
+
+/* ── The second review's lows (L-A, L-C, L-D) ────────────────────────────────────────────────────────────────── */
+
+test("L-A: the New asset sheet starts no training (it has no consent record to cite) and points to the Cast card", () => {
+  const sheet = readFileSync("components/assets/NewAssetSheet.tsx", "utf8");
+  expect(sheet).not.toMatch(/\/api\/identities\/\$\{[^}]*\}\/train/);
+  expect(sheet).not.toContain("/api/identities/train");
+  expect(sheet).not.toContain('aria-label="Consent to train"');
+  expect(sheet).not.toMatch(/projectId: null/);
+  expect(sheet).toContain('"Train it from the Cast card, where its consent is recorded."');
+});
+
+test("L-C: a review link's client key is salted like the login source key, so it can't be reversed by trying every address", async () => {
+  const { createHash } = await import("node:crypto");
+  const link = await import("../../lib/security/review-link");
+  const req = { headers: new Headers({ "x-forwarded-for": "203.0.113.7, 10.0.0.1" }) };
+  const unsalted = createHash("sha256").update("shr_one:203.0.113.7").digest("hex").slice(0, 24);
+  const saved = { session: process.env.SESSION_SECRET, turso: process.env.TURSO_AUTH_TOKEN };
+  const put = (name: "SESSION_SECRET" | "TURSO_AUTH_TOKEN", value: string | undefined) => { if (value === undefined) delete process.env[name]; else process.env[name] = value; };
+  try {
+    put("SESSION_SECRET", "unit-salt-one");
+    const one = link.clientKey(req, "shr_one");
+    expect(one).not.toBe(unsalted);
+    expect(one).toBe(createHash("sha256").update("unit-salt-one:review-link:shr_one:203.0.113.7").digest("hex").slice(0, 24));
+    expect(link.clientKey(req, "shr_one")).toBe(one);
+    expect(link.clientKey(req, "shr_two")).not.toBe(one);
+    put("SESSION_SECRET", "unit-salt-two");
+    expect(link.clientKey(req, "shr_one")).not.toBe(one);
+    /* The same fallback as sourceKey: the database token, then a constant. */
+    put("SESSION_SECRET", undefined); put("TURSO_AUTH_TOKEN", "unit-turso");
+    expect(link.clientKey(req, "shr_one")).toBe(createHash("sha256").update("unit-turso:review-link:shr_one:203.0.113.7").digest("hex").slice(0, 24));
+    put("TURSO_AUTH_TOKEN", undefined);
+    expect(link.clientKey(req, "shr_one")).toBe(createHash("sha256").update("particl:review-link:shr_one:203.0.113.7").digest("hex").slice(0, 24));
+  } finally {
+    put("SESSION_SECRET", saved.session); put("TURSO_AUTH_TOKEN", saved.turso);
+  }
+});
+
+test("L-D: a chunked recording with no Content-Length is stopped at 4 MB as it arrives, never read in full", async () => {
+  const consent = await import("../../lib/security/consent");
+  const MB = 1024 * 1024;
+  const post = async (chunks: Uint8Array[]) => {
+    let reads = 0, cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) { const chunk = chunks[reads++]; if (chunk) controller.enqueue(chunk); else controller.close(); },
+      cancel() { cancelled = true; },
+    }, { highWaterMark: 0 });
+    const who = member();
+    const route = load<typeof import("../../app/api/identity-consents/recording/route")>("app/api/identity-consents/recording/route.ts", {
+      "@/lib/auth": await authAs(who), "@/lib/security/consent": consent,
+      "@/lib/security/consent-words": await import("../../lib/security/consent-words"), "@/lib/security/people-only": await import("../../lib/security/people-only"),
+      "@/lib/requestBody": await import("../../lib/requestBody"),
+    });
+    const req = scoped(who, `${ORIGIN}/api/identity-consents/recording`, { method: "POST", body: stream, headers: { "content-type": "audio/wav" }, duplex: "half" } as RequestInit);
+    expect(req.headers.get("content-length")).toBeNull();
+    const res = await route.POST(req, undefined as never);
+    return { res, reads, cancelled };
+  };
+  const over = await post(Array.from({ length: 12 }, () => new Uint8Array(MB)));
+  expect(over.res.status).toBe(413);
+  expect((await over.res.json()).error).toMatch(/under 4 MB/);
+  /* Four chunks are exactly the limit; the fifth crosses it and nothing after it is pulled. */
+  expect(over.reads).toBe(5);
+  expect(over.cancelled).toBe(true);
+  const fine = await post([new TextEncoder().encode("RIFF0000"), new TextEncoder().encode("WAVEfmt ")]);
+  expect(fine.res.status).toBe(201);
+  expect((await fine.res.json()).recording.id).toMatch(/\S/);
+});

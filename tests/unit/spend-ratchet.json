@@ -36,7 +36,7 @@
       "by": "orphan sweep (small PR, lead to assign)"
     },
     "components/assets/NewAssetSheet.tsx": {
-      "count": 2,
+      "count": 1,
       "until": "2026-10-08",
       "by": "goes with the file: stream 3 (Library drawer) + stream 6 (Make > Recent)"
     },

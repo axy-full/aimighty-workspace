@@ -135,31 +135,23 @@ test("Unfiled takes: File to shot files the take, Use prompt reaches Generate wi
   await expect(page.locator('[aria-label="Generation references"]').getByRole("button", { name: "First frame" })).toHaveCount(0);
 });
 
-test("New asset: training is priced in the workspace's unit, only uploaded stills count, and a voice clip uploads", async ({ page }, info) => {
+test("New asset: no training starts here (its consent lives on the Cast card), a take is a reference, and a voice clip uploads", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "one desktop");
   const { workspaceId, me } = await account(page);
   const take = `gen_audit_still_${randomUUID().replaceAll("-", "")}`;
   await takes(page, workspaceId, me.id, [{ id: take, kind: "image", prompt: "Rowan in profile against a white wall" }]);
-  let price: number | null = null, unit = "";
-  const identityBodies: Record<string, unknown>[] = [], trainBodies: Record<string, unknown>[] = [];
-  await page.route("**/api/identities**", async (route) => {
-    const r = route.request(), url = new URL(r.url());
-    if (url.pathname === "/api/identities" && r.method() === "GET") {
-      /* The real terms, in this workspace's unit, with a trainer connected. */
-      const real = await (await route.fetch()).json();
-      price = real.terms.trainCredits ?? real.terms.trainCostUsd;
-      unit = real.terms.trainCredits != null ? "cr" : "usd";
-      return route.fulfill({ json: { identities: [], terms: { ...real.terms, configured: true, minPhotos: 1 } } });
-    }
-    if (url.pathname === "/api/identities" && r.method() === "POST") {
-      identityBodies.push(r.postDataJSON());
-      return route.fulfill({ status: 201, json: { identity: { id: "idn_audit" } } });
-    }
-    if (url.pathname === "/api/identities/idn_audit/train") {
-      trainBodies.push(r.postDataJSON());
-      return route.fulfill({ status: 409, headers: { "Idempotency-Status": "complete" }, json: { error: "Stopped by the test." } });
-    }
+  /* Review of #558, L-A: every training cites a consent record, which this sheet can't make, so it never trains. */
+  const trainingCalls: string[] = [], elementBodies: Record<string, unknown>[] = [];
+  await page.route("**/api/identities**", (route) => {
+    const r = route.request();
+    if (r.method() !== "GET") trainingCalls.push(new URL(r.url()).pathname);
     return route.fallback();
+  });
+  await page.route("**/api/rig/elements", (route) => {
+    const r = route.request();
+    if (r.method() !== "POST") return route.fallback();
+    elementBodies.push(r.postDataJSON());
+    return route.fulfill({ status: 409, json: { error: "Stopped by the test." } });
   });
   await page.route("**/api/settings", (route) => route.request().method() === "GET" ? route.fulfill({ json: { settings: { trainOnCreate: "always" } } }) : route.fallback());
 
@@ -168,34 +160,29 @@ test("New asset: training is priced in the workspace's unit, only uploaded still
   const sheet = page.getByRole("dialog", { name: "New asset", exact: true });
   await expect(sheet).toBeVisible();
   await sheet.getByRole("textbox", { name: "Name", exact: true }).fill("Rowan");
+  await expect(sheet).toContainText("Train it from the Cast card, where its consent is recorded.");
+  await expect(sheet.getByRole("switch")).toHaveCount(0);
+  await expect(sheet.getByRole("checkbox", { name: "Consent to train" })).toHaveCount(0);
 
-  /* A take is a reference, not a training photo. */
+  /* A take is a reference. */
   await sheet.getByRole("button", { name: "A take", exact: true }).click();
   await page.getByRole("menuitem").filter({ hasText: "Rowan in profile" }).click();
   await expect(page.getByRole("menu")).toHaveCount(0);
-  await expect(sheet).toContainText("Needs 1 uploaded stills of the same person; 0 so far.");
-  await expect(sheet.getByRole("checkbox", { name: "Consent to train" })).toHaveCount(0);
 
   /* A voice clip goes up as a file and fills the VOICE port. */
   await sheet.locator("input[type=file]").setInputFiles({ name: "voice.wav", mimeType: "audio/wav", buffer: wav() });
   await expect(sheet.getByRole("listitem").filter({ hasText: "VOICE" })).toContainText("ready", { timeout: 30_000 });
   await expect(page.getByText("Unrecognised file")).toHaveCount(0);
 
-  /* An uploaded still counts; the price is the workspace's, never 0. */
+  /* An uploaded still is a reference too; creating is free and trains nothing. */
   await sheet.locator("input[type=file]").setInputFiles({ name: "face.png", mimeType: "image/png", buffer: await png("#8a6b52") });
-  await sheet.getByRole("checkbox", { name: "Consent to train" }).check({ timeout: 30_000 });
-  expect(price).not.toBeNull();
-  const shown = unit === "cr" ? `${price} cr` : `$${Number(price).toFixed(2)}`;
   const create = sheet.locator("[data-create]");
-  await expect(create).toContainText(shown, { ignoreCase: true });
-  await expect(create).not.toContainText(/\b0 cr\b/i);
-
+  await expect(create).toContainText(/\b0 cr\b|\$0\.00/i);
   await create.click();
   await expect(page.getByText("Stopped by the test.")).toBeVisible();
-  expect(identityBodies).toHaveLength(1);
-  expect(identityBodies[0]).toMatchObject({ name: "Rowan", reuseDraft: true });
-  expect((identityBodies[0].photos as string[])).toHaveLength(1);
-  expect(trainBodies[0]).toEqual(unit === "cr" ? { consent: true, maxCredits: price } : { consent: true, maxUsd: price });
+  expect(elementBodies).toHaveLength(1);
+  expect(elementBodies[0]).toMatchObject({ name: "Rowan", kind: "character", identityId: null });
+  expect(trainingCalls).toEqual([]);
 });
 
 test("Library filter menus close once a choice is made", async ({ page }, info) => {

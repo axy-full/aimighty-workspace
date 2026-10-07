@@ -46,7 +46,7 @@
       "by": "goes with the file; UNOWNED (§9): old app route with no replacement"
     },
     "components/assets/NewAssetSheet.tsx": {
-      "count": 6,
+      "count": 3,
       "until": "2026-10-08",
       "by": "goes with the file: stream 3 (Library drawer) + stream 6 (Make > Recent)"
     },

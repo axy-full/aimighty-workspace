@@ -77,10 +77,16 @@ export async function scopeOf(shareId: string): Promise<LinkScope> {
 export const WINDOW_MS = 10 * 60_000;
 export const LIMITS = { write: 30 } as const;
 
-/** A client, as a link sees them: a one-way digest of where they connect from, never stored in the clear. */
+/**
+ * A client, as a link sees them: a salted one-way digest of where they connect from, never stored in the clear.
+ * Salted with the same secret, and the same fallback, as `sourceKey` in lib/auth.ts (review of #558, L-C): unsalted,
+ * a digest of `share:ip` could be reversed by trying every IPv4 address. Rows counted under the older, unsalted key
+ * are simply never matched again and age out of the rate window, pruned as new windows fill (`underLimit`).
+ */
 export function clientKey(req: { headers: Headers }, shareId: string): string {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || req.headers.get("x-real-ip") || "unknown";
-  return createHash("sha256").update(`${shareId}:${ip}`).digest("hex").slice(0, 24);
+  const salt = process.env.SESSION_SECRET ?? process.env.TURSO_AUTH_TOKEN ?? "particl";
+  return createHash("sha256").update(`${salt}:review-link:${shareId}:${ip}`).digest("hex").slice(0, 24);
 }
 
 /** Counts one write by this client; false when they are over the limit for this window. */
