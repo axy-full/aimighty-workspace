@@ -381,10 +381,10 @@ Replacement: board Inspector, take card, review mode (stream 5). Deleting: strea
 |---|---|---|---|---|
 | `components/graphite/AssetInspector.tsx` | component | `components/graphite/Inspector.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/AssetLinkCard.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 5 (cards 2) | Thu 8 Oct |
-| `components/graphite/AssetNextActions.tsx` | component | `components/graphite/AssetInspector.tsx` | stream 5 (cards 2) | Thu 8 Oct |
+| `components/graphite/AssetNextActions.tsx` | component | `components/graphite/AssetInspector.tsx`, `components/graphite/board/inspector/TakeBody.tsx` | kept: the board Inspector mounts it (the priced Next row, SOW 1.2) | none |
 | `components/graphite/DraftFinal.tsx` | component | `components/graphite/AssetInspector.tsx`, `components/graphite/GenView.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/Inspector.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 5 (cards 2) | Thu 8 Oct |
-| `components/graphite/NextActionPanel.tsx` | component | `components/graphite/AssetNextActions.tsx` | stream 5 (cards 2) | Thu 8 Oct |
+| `components/graphite/NextActionPanel.tsx` | component | `components/graphite/AssetNextActions.tsx` | kept with it | none |
 | `components/graphite/ReleaseTake.tsx` | component | `components/graphite/AssetInspector.tsx`, `components/graphite/TakeTile.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/TakeStrip.tsx` | component | `components/graphite/DraftFinal.tsx`, `components/graphite/GenView.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/TakeTile.tsx` | component | `components/graphite/AssetInspector.tsx`, `components/graphite/GenView.tsx`, `components/graphite/Library.tsx` +4 | stream 5 (cards 2) | Thu 8 Oct |

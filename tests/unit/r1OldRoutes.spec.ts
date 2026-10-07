@@ -231,7 +231,9 @@ test("nothing draws the old Studio: /workbench only redirects, and a signed-in a
   /* /suites does not send that account anywhere, so there is no loop to guard. */
   const boot = readFileSync("lib/shell/bootstrap.server.ts", "utf8");
   expect(boot).toContain("none: true");
-  expect(boot).not.toContain("/workbench");
-  expect(readFileSync("lib/signIn.ts", "utf8")).not.toContain("/workbench");
+  /* No address of the old page (a quoted "/workbench" path): the lib/workbench/ imports are modules, not a place to send anyone. */
+  const toOldPage = /["'`]\/workbench(?:["'`?/#])/;
+  expect(boot).not.toMatch(toOldPage);
+  expect(readFileSync("lib/signIn.ts", "utf8")).not.toMatch(toOldPage);
   expect(readFileSync("app/suites/page.tsx", "utf8")).toContain('if ("none" in boot) return <NoWorkspace');
 });
