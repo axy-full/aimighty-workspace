@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { useWorkspace } from "@/lib/workspace/state";
 import { creditRate, creditsText, creditsUsd } from "@/lib/shell/price-words";
@@ -8,7 +8,9 @@ import type { ApprovalRule } from "@/lib/approvalRule";
 import { Btn, Fold, Note, Problem, Row, Section } from "../parts";
 import { useRead, useWrite } from "../use-settings";
 import { useSpendingRules } from "./spending";
-import { capInput, productionLine, ruleValue, type ProductionBudget } from "./spending-words";
+import type { SettingsFold } from "@/lib/shell/settings";
+import { BudgetSection } from "./BudgetSection";
+import { atItsCap, capInput, productionLine, ruleValue, type ProductionBudget } from "./spending-words";
 
 /**
  * Settings › Spending rules (README § 3.5, § 4 "Ask / Auto", "Spending rules"): the one place the workspace's
@@ -24,8 +26,10 @@ import { capInput, productionLine, ruleValue, type ProductionBudget } from "./sp
  *
  * Nothing here spends, approves or prices. People only: Atomik and outside agents never change these.
  */
-export function RulesSection() {
+export function RulesSection({ open = null }: { open?: SettingsFold | null } = {}) {
   const rules = useSpendingRules();
+  /* `&open=budget` opens Budget and cap's panel (the design's `&edit=rules` frame). */
+  const openAtStart = open === "budget";
   const session = useSession();
   const write = useWrite();
   const { toast } = useWorkspace();
@@ -73,6 +77,7 @@ export function RulesSection() {
 
   return (
     <>
+      <BudgetSection rules={rules} openAtStart={openAtStart} />
       <Section label="Who may approve" meta="people only · Atomik never approves" testId="settings-approve">
         {rules.error ? <Problem text={rules.error} onRetry={rules.retry} testId="settings-rules-error" /> : null}
         <Row name="Rule" line={loaded ? rules.ruleLine ?? undefined : undefined} value={ruleValueText} valueTitle={loaded && rules.rule === "cap" && rules.shotCap != null ? creditsUsd(rules.shotCap, rate) : null} testId="settings-rule">
@@ -99,16 +104,16 @@ export function RulesSection() {
         ) : null}
         <Row name="Platform line" line={rules.platformLineText ?? undefined} value={rules.platformLine != null ? creditsText(rules.platformLine) : "—"}
           valueTitle={rules.platformLine != null ? creditsUsd(rules.platformLine, rate) : null} testId="settings-platform-line" />
-        <Row name="Budget per production" line={loaded ? rules.budgetLine ?? undefined : undefined} testId="settings-budget">
+        <Row name="At a production’s budget" line={loaded ? rules.budgetLine ?? undefined : undefined} testId="settings-budget">
           {canChange && loaded ? <Btn pressed={editing === "budget"} onClick={() => setEditing(editing === "budget" ? null : "budget")} testId="settings-budget-change">Change</Btn> : null}
         </Row>
         {editing === "budget" && canChange ? (
           <div className="gs-edit" data-testid="settings-budget-edit">
-            <span className="gs-eyebrow">Warn at</span>
-            <div className="gs-choice gs-choice-wrap" role="radiogroup" aria-label="Warn at">
+            <span className="gs-eyebrow">Ask at</span>
+            <div className="gs-choice gs-choice-wrap" role="radiogroup" aria-label="Ask at">
               {[...CAP_WARN_OPTIONS, ...(rules.capWarnPct != null && !CAP_WARN_OPTIONS.some(([v]) => v === String(rules.capWarnPct)) ? [[String(rules.capWarnPct), `${rules.capWarnPct}% of the cap`] as const] : [])].map(([id, label]) => (
                 <button key={id} type="button" role="radio" aria-checked={String(rules.capWarnPct) === id} className="gs-btn" disabled={busy}
-                  onClick={() => { if (String(rules.capWarnPct) !== id) void save({ capWarnPct: id }, budgetBefore(), `Warning at ${id}% of a production’s cap.`); }} data-testid={`settings-warn-${id}`}>{label}</button>
+                  onClick={() => { if (String(rules.capWarnPct) !== id) void save({ capWarnPct: id }, budgetBefore(), `Auto drafts ask at ${id}% of a production’s budget.`); }} data-testid={`settings-warn-${id}`}>{label}</button>
               ))}
             </div>
             <span className="gs-eyebrow">At a production’s cap</span>
@@ -128,13 +133,13 @@ export function RulesSection() {
         <Row name="Every paid step waits for a person." line={rules.autoLine ?? undefined} value="Ask" accent testId="settings-mode" />
       </Section>
 
-      {inCredits ? <Productions canChange={canChange} /> : null}
+      {inCredits ? <Productions canChange={canChange} budget={rules.budget} /> : null}
     </>
   );
 }
 
 /** Each production's own cap, as Atomik › Budget had it: a number of credits, and the unlock past it. An admin's, on the same route. */
-function Productions({ canChange }: { canChange: boolean }) {
+function Productions({ canChange, budget: rulesBudget }: { canChange: boolean; budget: number | null }) {
   const session = useSession();
   const write = useWrite();
   const { toast } = useWorkspace();
@@ -151,16 +156,25 @@ function Productions({ canChange }: { canChange: boolean }) {
     setBusy(p.id); setNote(null);
     const { error: refused } = await write(`/api/projects/${encodeURIComponent(p.id)}`, "PATCH", body);
     setBusy(null);
-    if (refused) { setNote({ ok: false, text: refused }); return; }
+    /* A refusal (say "The cap changed …: look again") reads the list again, so the row shows what the server holds. */
+    if (refused) { setNote({ ok: false, text: refused }); void read(); return; }
     setEdit(null);
     void read();
-    toast(said, { label: "Undo", kind: "undo", run: () => { void write(`/api/projects/${encodeURIComponent(p.id)}`, "PATCH", before).then(() => void read()); } });
+    toast(said, { label: "Undo", kind: "undo", run: () => { void write(`/api/projects/${encodeURIComponent(p.id)}`, "PATCH", before).then(({ error: no }) => { if (no) toast(no); void read(); }); } });
   };
+  /* A new budget (Budget and cap above) changes every production that follows it: read the list again. */
+  const firstBudget = useRef(rulesBudget);
+  useEffect(() => {
+    if (firstBudget.current === rulesBudget) return;
+    firstBudget.current = rulesBudget;
+    if (shown) void read();
+  }, [rulesBudget, shown, read]);
   const setCap = (p: ProductionBudget) => {
     const raw = (edit?.value ?? "").trim();
     const n = raw === "" ? null : capInput(raw, true);
     if (raw !== "" && n === null) { setNote({ ok: false, text: "A cap is a whole number of credits, or none." }); return; }
-    void patch(p, { capCredits: n }, { capCredits: p.capCredits ?? null }, n === null ? `${p.name}: no cap.` : `${p.name}: capped at ${creditsText(n)}.`);
+    void patch(p, { capCredits: n }, { capCredits: p.ownCapCredits ?? (p.capFrom === "workspace" ? null : p.capCredits) ?? null },
+      n === null ? `${p.name}: no cap of its own${p.capFrom === "workspace" || rulesBudget != null ? "; it follows the workspace budget" : ""}.` : `${p.name}: capped at ${creditsText(n)}.`);
   };
 
   return (
@@ -169,18 +183,22 @@ function Productions({ canChange }: { canChange: boolean }) {
       {rows.map((p) => {
         const line = productionLine(p, creditsText);
         const editing = edit?.id === p.id;
-        const atCap = p.capCredits != null && (p.credits ?? 0) >= p.capCredits;
+        const own = p.ownCapCredits !== undefined ? p.ownCapCredits : p.capCredits;
         return (
           <div key={p.id} data-testid="settings-production">
             <Row name={p.name} line={line.sub} value={line.value} valueTitle={p.capCredits != null ? creditsUsd(p.capCredits, rate) : null}>
-              {canChange ? <Btn disabled={busy != null} pressed={editing} onClick={() => setEdit(editing ? null : { id: p.id, value: p.capCredits == null ? "" : String(p.capCredits) })} testId="settings-production-change">Change</Btn> : null}
-              {canChange && atCap && !p.capUnlocked ? (
-                <Btn hot disabled={busy != null} onClick={() => void patch(p, { capUnlocked: true }, { capUnlocked: false }, `${p.name} is unlocked past its cap.`)} testId="settings-production-unlock">Unlock</Btn>
+              {canChange ? <Btn disabled={busy != null} pressed={editing} onClick={() => setEdit(editing ? null : { id: p.id, value: own == null ? "" : String(own) })} testId="settings-production-change">{own == null && p.capFrom === "workspace" ? "Set own cap" : "Change"}</Btn> : null}
+              {/* Unlock wherever the gate can refuse at the cap, its own or the workspace budget; Lock again takes it back. */}
+              {canChange && atItsCap(p) && !p.capUnlocked ? (
+                <Btn hot disabled={busy != null} onClick={() => void patch(p, { capUnlocked: true, forCap: p.capCredits }, { capUnlocked: false }, `${p.name} is unlocked past its cap of ${creditsText(p.capCredits!)}.`)} testId="settings-production-unlock">Unlock</Btn>
+              ) : null}
+              {canChange && p.capUnlocked ? (
+                <Btn disabled={busy != null} onClick={() => void patch(p, { capUnlocked: false }, { capUnlocked: true, forCap: p.capCredits }, `${p.name} is locked at its cap again.`)} testId="settings-production-lock">Lock again</Btn>
               ) : null}
             </Row>
             {editing ? (
               <form className="gs-capform" onSubmit={(e) => { e.preventDefault(); setCap(p); }} data-testid="settings-production-edit">
-                <label className="gs-label"><span className="gs-eyebrow">Cap (cr), empty for none</span>
+                <label className="gs-label"><span className="gs-eyebrow">{rulesBudget != null ? "Own cap (cr), empty to follow the workspace budget" : "Cap (cr), empty for none"}</span>
                   <input className="gs-field" inputMode="numeric" value={edit.value} onChange={(e) => setEdit({ id: p.id, value: e.target.value.replace(/[^0-9]/g, "") })} data-testid="settings-production-cap" />
                 </label>
                 <button type="submit" className="gs-btn" data-hot disabled={busy != null} data-testid="settings-production-save">Save cap</button>

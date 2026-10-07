@@ -31,8 +31,8 @@ export const sectionLabel = (id: SettingsSectionId): string => SETTINGS_SECTIONS
 
 /** The fold a link unfolds: `?view=workspace&tab=team&open=security`. */
 export const SETTINGS_OPEN_PARAM = "open";
-export type SettingsFold = "security" | "packs" | "history" | "usage" | "statements" | "rates" | "models" | "tools" | "workspace" | "assistant" | "mcp" | "engines";
-export const SETTINGS_FOLDS: readonly SettingsFold[] = Object.freeze(["security", "packs", "history", "usage", "statements", "rates", "models", "tools", "workspace", "assistant", "mcp", "engines"]);
+export type SettingsFold = "security" | "packs" | "history" | "usage" | "statements" | "rates" | "models" | "tools" | "workspace" | "assistant" | "mcp" | "engines" | "budget";
+export const SETTINGS_FOLDS: readonly SettingsFold[] = Object.freeze(["security", "packs", "history", "usage", "statements", "rates", "models", "tools", "workspace", "assistant", "mcp", "engines", "budget"]);
 export const isSettingsFold = (value: unknown): value is SettingsFold => SETTINGS_FOLDS.includes(value as SettingsFold);
 
 /** The fold an address asks for, or null (missing, or not a fold Settings has). */

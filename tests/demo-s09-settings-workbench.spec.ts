@@ -273,7 +273,7 @@ test("Spending rules: the rule, the platform line and Ask, read as the code has 
   await expect(page.getByTestId("settings-rule")).toContainText("Members up to 50 cr a shot; an admin above it.");
   await expect(page.getByTestId("settings-rule").locator(".gs-row-v")).toHaveText("50 cr");
   await expect(page.getByTestId("settings-platform-line")).toContainText("Any job over 200 cr needs a person’s approval, even under Auto.");
-  await expect(page.getByTestId("settings-budget")).toContainText("Warn at 80% of a production’s cap · at the cap an admin unlocks it");
+  await expect(page.getByTestId("settings-budget")).toContainText("Auto drafts ask at 80% of a production’s budget · at the cap an admin unlocks it");
   /* Spend without asking is Ask, read-only: no Auto switch, no invented pause. */
   await expect(page.getByTestId("settings-auto")).toContainText("Every paid step waits for a person.");
   await expect(page.getByTestId("settings-auto")).toContainText("Auto is picked per Board run, for drafts at or under 200 cr.");
@@ -302,7 +302,7 @@ test("Spending rules: the rule, the platform line and Ask, read as the code has 
   await page.getByTestId("settings-warn-90").click();
   await expect.poll(() => writes.filter((w) => w.url === "/api/settings").at(-1)?.body).toEqual({ capWarnPct: "90" });
   await page.getByTestId("settings-atcap-stop").click();
-  await expect(page.getByTestId("settings-budget")).toContainText("Warn at 90% of a production’s cap · rendering stops at the cap");
+  await expect(page.getByTestId("settings-budget")).toContainText("Auto drafts ask at 90% of a production’s budget · rendering stops at the cap");
   await floors(page, "Spending rules, editing");
 
   /* Each production's cap, on the route Atomik › Budget used: a number of credits, and Unlock at the cap. */
@@ -310,7 +310,7 @@ test("Spending rules: the rule, the platform line and Ask, read as the code has 
   await expect(page.getByTestId("settings-production")).toHaveCount(2);
   await expect(page.getByTestId("settings-production").first()).toContainText("200 of 200 cr");
   await page.getByTestId("settings-production-unlock").click();
-  await expect.poll(() => writes.find((w) => w.url === "/api/projects/pa")?.body).toEqual({ capUnlocked: true });
+  await expect.poll(() => writes.find((w) => w.url === "/api/projects/pa")?.body).toEqual({ capUnlocked: true, forCap: 200 });
   await page.getByTestId("settings-production").nth(1).getByTestId("settings-production-change").click();
   await page.getByTestId("settings-production-cap").fill("120");
   await page.getByTestId("settings-production-save").click();

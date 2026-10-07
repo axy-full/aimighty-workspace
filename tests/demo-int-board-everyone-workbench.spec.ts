@@ -59,14 +59,10 @@ test("switch OFF: the old Studio stages, Crew and Ads pages open the one board, 
   expect(problems).toEqual([]);
 });
 
-test("switch OFF: Home and the rest stay today's; the project segment opens the board; Make opens beside the board's dock", async ({ page }, info) => {
+test("the project segment opens the board; Make opens beside the board's dock (the new-interface switch is gone)", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "the canvas is desktop only");
   test.setTimeout(300_000);
   const { project, problems } = await seed(page);
-  /* Home is behind the switch: a bare landing is today's Studio overview. */
-  await page.goto(`/suites?project=${project.id}`);
-  await expect(page.locator(".gx")).not.toHaveAttribute("data-screen", /.+/);
-  await expect.poll(() => here(page).view ?? "suite").toBe("suite");
   await page.goto(`/suites?project=${project.id}&view=board&make=video`);
   await expect(page.getByTestId("board-rail")).toBeVisible({ timeout: 60_000 });
   const panel = page.locator(".gx-make");

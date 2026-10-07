@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { usePlan } from "../board/cards/plan/use-plan";
+import { usePlanBudgetLine } from "../board/cards/plan/MoneyStates";
+import { planLineKey } from "../board/cards/plan/money-state";
 import { usePlanRun } from "../board/cards/plan/use-run";
 import { balanceLine, type PlanModel, type PlanPrimary } from "../board/cards/plan/model";
 import type { BoardCtx } from "../board/cards/types";
@@ -43,6 +45,8 @@ export function PlanScreen({ scope, project, runId, online, onHome, onTopUp, onC
   /* Only the fields the plan's own hook reads; the phone has no board around it. */
   const ctx = { scope, project, productionId: project?.productionProjectId ?? null } as unknown as BoardCtx;
   const plan = usePlan(ctx, project ? run : null, online ? null : NEEDS_CONNECTION);
+  /* Before Approve at the plan gate: where the plan's "at most" takes the production against its budget (the server's line). */
+  const budgetLine = usePlanBudgetLine(scope, project?.productionProjectId ?? null, run?.id ?? null, planLineKey(plan.model?.primary, run?.money));
   const model = plan.model;
   /* What was pressed, with the plan's figures as the server quoted them at the press (they are not re-read after it). */
   const pressed = useRef<{ kind: "approve" } | { kind: "plan"; words: string } | false>(false);
@@ -99,6 +103,7 @@ export function PlanScreen({ scope, project, runId, online, onHome, onTopUp, onC
               </div>
             ) : null}
           </div>
+          {budgetLine ? <p className="ph-row-line ph-row-line--warn ph-plan-note" role="note" data-testid="phone-plan-budget-line">{budgetLine}</p> : null}
           {model.modeLine ? <p className="ph-row-line ph-plan-note">{model.modeLine}</p> : null}
           {model.ruleLine ? <p className="ph-row-line ph-plan-note">{model.ruleLine}</p> : null}
           {model.note && model.primary?.kind !== "render" ? <p className="ph-row-line ph-plan-note">{model.note}</p> : null}

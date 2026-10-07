@@ -27,6 +27,12 @@
 .gx-plan-short {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: var(--gx-fs-body); color: var(--gx-waiting-text);
 }
+/* The money states (design Gaps B): an amber dot and the line; the budget's bar; a row's value at the right, never cut. */
+.gx-plan-state { display: flex; align-items: baseline; gap: 8px; font-size: var(--gx-fs-body); line-height: 1.45; color: var(--gx-waiting-text); }
+.gx-plan-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--gx-waiting); transform: translateY(-1px); }
+.gx-plan-bar { height: 4px; border-radius: 2px; background: var(--gx-hair-soft); overflow: hidden; }
+.gx-plan-bar > span { display: block; height: 100%; background: var(--gx-accent); }
+.gx-plan-step-value { text-align: right; color: var(--gx-text); }
 .gx-plan-toggle { align-self: flex-start; padding: 0; border: 0; background: transparent; font-size: 13px; font-weight: 600; color: var(--gx-accent-text); cursor: pointer; }
 .gx-plan-toggle[hidden] { display: none; }
 .gx-plan-steps { display: flex; flex-direction: column; }
