@@ -1,17 +1,17 @@
-# Self-hosted test address (Coolify on the build server)
+# Self-hosted staging address and cutover runbook (Coolify on the build server)
 
-Status: prepared 7 Oct 2026 on branch `ops/selfhost-test-address`. **Files only**: the image has not been built in Docker here (the preparing machine has none); the standalone Next build was built and run locally, and nothing in Vercel, Cloudflare, DNS, Turso, hPanel or Coolify has been touched. The owner runs every step below.
+Status: prepared 7 Oct 2026, updated the same night with the owner's answers (staging address, Cloudflare, build paths, proxy timeouts, cutover order). **Files only**: the image has not been built in Docker here (the preparing machine has none); the standalone Next build was built and run locally, and nothing in Vercel, Cloudflare, DNS, Turso, hPanel or the platform has been touched. The owner runs every step below. **Nothing in the cutover checklist happens without the owner's "go".**
 
-This is the first half of SOW Phase 3 step 3 ("P4 beside Vercel"): the same app, a build of `release/1` plus these files (branch `ops/selfhost-test-address`), running at a **test address** next to the live Vercel site. Coolify runs on the same server as the build tools, behind its Traefik proxy, and the test address is Coolify's free generated `sslip.io` address, so **there is no DNS or Cloudflare step at all**. It is not the cutover. Production DNS does not move.
+This is the first half of SOW Phase 3 step 3 ("P4 beside Vercel"): the same app, a build of `release/1` (which now carries these files), running at the **staging address `https://staging.particl.si`** next to the live Vercel site. Coolify runs on the same server as the build tools, behind its Traefik proxy. **Owner action:** the owner and his advisor create the Cloudflare DNS record for `staging.particl.si` and add the domain in Coolify. (`sslip.io`, Coolify's free generated address, was the earlier fallback and still works if the record is not ready.) Staging is not the cutover: production DNS does not move until the checklist in "Cutover order" is run.
 
-> **LOUD WARNING: databases.** The test address must point at **STAGING databases, never production.** The staging set the Vercel preview runs on (see below). The older runbook (handover Part C, step 11 of P4) said staging may share the live database; that is **not** what this test does. Reasons: the test host has different `CREDIT_USD` handling during the switchover, it can create workspace databases through the Turso API, and a mistake would write rows into live customer data. If you don't have the Preview staging values, stop at "Before you start".
+> **LOUD WARNING: databases.** The staging address must point at **STAGING databases, never production.** The staging set the Vercel preview runs on (see below). The older runbook (handover Part C, step 11 of P4) said staging may share the live database; that is **not** what this test does. Reasons: the test host has different `CREDIT_USD` handling during the switchover, it can create workspace databases through the Turso API, and a mistake would write rows into live customer data. If you don't have the Preview staging values, stop at "Before you start".
 
 > **LOUD WARNING: a platform copy names workspace databases.** The platform database stores each workspace's own database address (`workspaces.db_url`) and its sealed token. A plain copy of production's platform database therefore still points at the **production** workspace databases, and with production's `KEYRING_SECRET` the test host could open them. The scheduled `cron-sync` reconciles every workspace it finds, so it would write into live customer data.
 > - Use the **staging set the Vercel preview already runs on** (the Preview environment's database values), not a fresh copy of production.
 > - **Never put production's `KEYRING_SECRET` on the test host.** Use the Preview environment's value. If you are not sure the Preview keyring differs from production's, stop and ask: `scripts/ops/prepare-restore.mjs` repoints every workspace at new databases but re-seals with the **original** keyring, so it does not solve this on its own.
 > - Before turning on `cron-sync`, run the check in step 9b: every workspace address must be a staging host.
 
-> **LOUD WARNING: nothing may spend.** `ENGINE_MOCK=1` on the test address, always. Do not enter real engine keys there unless a later gate says so.
+> **LOUD WARNING: nothing may spend.** `ENGINE_MOCK=1` on the staging address, always. Do not enter real engine keys there unless a later gate says so. No live Stripe either.
 
 ## What is in the branch
 
@@ -34,12 +34,12 @@ The `postinstall` (`scripts/copy-pdf-worker.mjs`, `scripts/copy-ocr-worker.mjs`)
 These came from a real local standalone build (Turbopack, no secrets) started with `node .next/standalone/server.js`.
 
 1. **The build needs no secrets.** `next build` with only `ENGINE_MOCK=1 NEXT_TELEMETRY_DISABLED=1` succeeds. `release/1`'s `prebuild` (`scripts/ops/preview-seed.cjs`) runs inside `npm run build`; it needs **no secrets here**: it only acts on a Vercel preview build (`VERCEL_ENV=preview` plus `SUPER_ADMIN_EMAIL`) and otherwise prints `skipped (VERCEL_ENV is not set)` and touches no database. Never set `VERCEL_ENV` on this host.
-2. **Home page redirect loop: not reproduced (withdrawn 7 Oct).** An earlier local run reported signed-out `/` looping with 308s. A full retest found no loop on `main`, this branch or `release/1`: with `next start` and the standalone server, any bind, any `APP_ORIGIN`, and forwarded headers, signed-out `/`, `/pricing` and `/studio` answer 200 in one pass, and `/site/pricing` answers one 308. If the test address shows a loop, it comes from a layer in front of the app (Traefik, Cloudflare SSL mode or a domain rule): run `curl -sIv --max-redirs 0 https://<test address>/` and send Claude the `location`, `server` and `via` lines (never the hostname). The proposed patch is not needed.
+2. **Home page redirect loop: not reproduced (withdrawn 7 Oct).** An earlier local run reported signed-out `/` looping with 308s. A full retest found no loop on `main`, this branch or `release/1`: with `next start` and the standalone server, any bind, any `APP_ORIGIN`, and forwarded headers, signed-out `/`, `/pricing` and `/studio` answer 200 in one pass, and `/site/pricing` answers one 308. If the staging address shows a loop, it comes from a layer in front of the app (Traefik, Cloudflare SSL mode or a domain rule): run `curl -sIv --max-redirs 0 https://<staging address>/` and send Claude the `location`, `server` and `via` lines (never the hostname). The proposed patch is not needed.
 3. **Sign-in behind the proxy: fixed on `fix/r1-signin-behind-proxy` (Opus PASS).** Before the fix, every origin check compared the browser's `Origin` with the server's internal address, so sign-in and every form post answered 403. With the fix, the host sets `SELFHOST_BEHIND_PROXY=1` and the checks accept only `APP_ORIGIN` (exact match; Host and forwarded headers are never trusted; ignored on Vercel). Sign-in also needs **https**: the session cookie is Secure, and browsers drop it over plain http.
 4. **Health is 503 until storage is configured.** `/api/health` reports `storage: "missing"` in production unless `BLOB_READ_WRITE_TOKEN` or `STORAGE_BACKEND=r2` (+ R2 names) is set, even with a healthy database. The public answer carries no secrets (ok, mock, dispatch mode, database ok, storage ok), and no commit sha (that appears only to signed-in callers, as `VERCEL_GIT_COMMIT_SHA`, which is `local` on this host).
 5. **`HOSTNAME=0.0.0.0` is set in the image** so the container listens on all interfaces. Coolify does not need a port mapping; it proxies to 3000.
-6. **Dispatch.** With `DISPATCH_MODE` unset in production, background work is handed to `APP_ORIGIN/api/worker` (native mode), i.e. out through the public address and back. On the test address this is harmless under `ENGINE_MOCK=1`. Self-hosted Inngest comes in P4.
-7. **Workspace databases on disk.** If the Turso API variables are set, new workspaces create real Turso databases in the organisation. Do **not** set `TURSO_API_TOKEN` / `TURSO_ORG` on the test address unless they point at the staging organisation or group.
+6. **Dispatch.** With `DISPATCH_MODE` unset in production, background work is handed to `APP_ORIGIN/api/worker` (native mode), i.e. out through the public address and back. On the staging address this is harmless under `ENGINE_MOCK=1`. Self-hosted Inngest comes in P4.
+7. **Workspace databases on disk.** If the Turso API variables are set, new workspaces create real Turso databases in the organisation. Do **not** set `TURSO_API_TOKEN` / `TURSO_ORG` on the staging address unless they point at the staging organisation or group.
 
 ## Before you start (owner)
 
@@ -49,16 +49,30 @@ These came from a real local standalone build (Turbopack, no secrets) started wi
 - [ ] Vercel's staging/preview environment values open in another tab (you copy values yourself; they never go into chat, the repo or a note).
 - [ ] The Coolify project (one empty project) is open on this machine.
 
+## Build paths: Dockerfile or Railpack
+
+`main` was smoke-built with **Railpack** on the server and served 200; it is stopped until the hotfixes land. Both paths are valid; pick one per app and keep it.
+
+| | Dockerfile (`ops/selfhost/Dockerfile`, on `release/1`) | Railpack |
+|---|---|---|
+| Repo change needed | none | none |
+| Node version | Node 24, fixed in the Dockerfile | Railpack picks its own default unless told. The repo has no `engines`, `.nvmrc` or `.node-version`, so set the variable **`RAILPACK_NODE_VERSION=24`** (Railpack also reads `.node-version`, `.nvmrc` and `engines.node`; the older Nixpacks name was `NIXPACKS_NODE_VERSION`). Verify the name on the Railpack page for your version; only needed if the default Node is not 24 |
+| Output | standalone server, non-root, HEALTHCHECK in the image | `next build` then `next start` (no `NEXT_OUTPUT`); same port 3000 |
+| Scheduled task command | `node /app/cron-sync.mjs` | `node ops/selfhost/cron-sync.mjs` (the file is not copied to `/app`; check the working directory of the container) |
+| Build variables | `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_VAPID_PUBLIC_KEY` only | same; Railpack may also want the Node variable above at build time |
+
+Everything else in this file (variables, health check, volume, smoke test) is the same for both. Do not mix: if staging is on one path, build production the same way, so what was tested is what ships.
+
 ## Platform settings checklist
 
 | Setting | Value |
 |---|---|
-| Source | Public repository, URL `https://github.com/axy-full/aimighty-workspace`, branch **`ops/selfhost-test-address`** (release/1 plus these files; the Dockerfile works the same on main) |
-| Build pack | **Dockerfile** |
+| Source | Public repository, URL `https://github.com/axy-full/aimighty-workspace`, branch **`release/1`** (it carries the Dockerfile and these files; the same Dockerfile works on main once the hotfixes land). See "Build paths" below for Railpack as the alternative |
+| Build pack | **Dockerfile** (or Railpack, see "Build paths") |
 | Base directory | `/` (repo root, so the build context contains `package.json`) |
 | Dockerfile location | `/ops/selfhost/Dockerfile` |
 | Ports exposes | `3000` |
-| Domain | The free generated `sslip.io` address Coolify proposes (see step 4); no DNS record |
+| Domain | `https://staging.particl.si` (owner and advisor create the Cloudflare record, then add the domain in Coolify; see step 4) |
 | Health check | Enabled. Path `/api/health`, port `3000`, method GET, expected status `200`, start period 40 s. (The image also has its own HEALTHCHECK.) |
 | Persistent storage | One volume, destination `/app/.data` (see Storage) |
 | Resource limits | Memory `4g`, CPUs `2` (the build needs more than the runtime; this machine also runs the other lanes' builds, so deploy when it is quiet) |
@@ -68,9 +82,9 @@ These came from a real local standalone build (Turbopack, no secrets) started wi
 
 ## Scheduled jobs
 
-`vercel.json` defines exactly one cron, and the test address runs it.
+`vercel.json` defines exactly one cron, and the staging address runs it.
 
-| Vercel cron | Schedule | Purpose | Test address |
+| Vercel cron | Schedule | Purpose | Staging address |
 |---|---|---|---|
 | `GET /api/cron/sync` | `*/10 * * * *` | The platform heartbeat: reconciles every workspace (pending render sync, held jobs, training identities, storage sizes, deletion retries, expired upload reservations, pipeline and canvas wake-ups, recovery drain) and records its last-run heartbeat that `/api/health` (signed in) reports. | Runs every 10 minutes as a Coolify scheduled task, inside the app container, **only after the step 9b check passes**. Off until then. |
 
@@ -94,7 +108,7 @@ After the first run, open the task's execution log in Coolify and look for `cron
 
 ## Storage: what is written, and where
 
-| What writes | Where it goes | Persistent volume needed? | Test address |
+| What writes | Where it goes | Persistent volume needed? | Staging address |
 |---|---|---|---|
 | Media: renders, uploads, thumbnails, stills, audio, 3D files (`ws/<workspace>/...`), platform assets, pending upload chunks | Vercel Blob (`BLOB_READ_WRITE_TOKEN`, default), R2 (`STORAGE_BACKEND=r2` + `R2_*`), or local disk (`STORAGE_BACKEND=local`) | No on Blob or R2. **Yes on local** | **Staging Blob store.** Never the live store, nor the live R2 bucket |
 | Local generations `/app/.data/generations`, uploads `/app/.data/uploads`, chunks `/app/.data/chunks`, platform assets `/app/.data/platform` | Container disk | **Yes: volume at `/app/.data`** (only used on the local backend, and as scratch) | Mount the volume anyway: it costs nothing and a restart keeps scratch |
@@ -103,23 +117,23 @@ After the first run, open the task's execution log in Coolify and look for `cron
 | Next build output and caches | `/app/.next` inside the image | No (rebuilt on every deploy; image is read-only after build) | n/a |
 | Everything else (sessions, ledger, settings, heartbeat) | In the databases above | n/a | Staging Turso |
 
-Blob versus R2 for the test: keep the **staging Blob store** for this first test. One thing changes at a time (the host), nothing needs copying, and rollback is trivial. R2 comes with P3 (`docs/r2-migration.md`), needs its own **test** bucket and CORS for the test address, and should only be used here if P3 has passed its gate. Nothing is switched by this branch.
+Blob versus R2 for the test: keep the **staging Blob store** for this first test. One thing changes at a time (the host), nothing needs copying, and rollback is trivial. R2 comes with P3 (`docs/r2-migration.md`), needs its own **test** bucket and CORS for the staging address, and should only be used here if P3 has passed its gate. Nothing is switched by this branch.
 
 ## Environment variable names (one list)
 
 Names only; the owner copies values from Vercel's **staging/preview** environment into the app's Environment Variables in Coolify. Found by searching `process.env.` and `env.` across `app/`, `lib/`, `scripts/`, `mcp/`, `proxy.ts`, `instrumentation.ts`, `next.config.ts`; `vercel.json` sets none.
 
-Column **STAGING**: "YES" means the value must be a staging value on the test address; "set" means a fixed value for this test.
+Column **STAGING**: "YES" means the value must be a staging value on the staging address; "set" means a fixed value for this test.
 
 | Name | Required? | Purpose | STAGING / value |
 |---|---|---|---|
 | `ENGINE_MOCK` | Required | `1` makes every engine call a mock so nothing spends | set: `1` |
-| `APP_ORIGIN` | Required | Canonical origin for links and the worker hand-off; every emailed link (reset, invitation, sign-up, top-up) is built on it alone, and without it a production server sends none of those emails (logged `[mail] APP_ORIGIN is not set`) | set: the generated sslip.io address, in its **https://** form, exactly (no path) |
-| `SELFHOST_BEHIND_PROXY` | Required (self-hosted only) | `1` makes the origin checks accept exactly `APP_ORIGIN` behind the proxy, and makes every rate limit and sign-in lock (login, reset, sign-up, resend, review links, report, request access) count the address the proxy saw, never the client's own `X-Forwarded-For` entries (`lib/clientIp.ts`); unset, no forwarded header is trusted and every caller shares one allowance; **runtime variable, not a build variable; never set on Vercel** (ignored there) | set: `1` |
+| `APP_ORIGIN` | Required | Canonical origin for links and the worker hand-off; every emailed link (reset, invitation, sign-up, top-up) is built on it alone, and without it a production server sends none of those emails (logged `[mail] APP_ORIGIN is not set`) | set: `https://staging.particl.si` exactly (no path) |
+| `SELFHOST_BEHIND_PROXY` | Required (self-hosted only; set on staging and on production) | `1` makes the origin checks accept exactly `APP_ORIGIN` behind the proxy, and makes every rate limit and sign-in lock (login, reset, sign-up, resend, review links, report, request access) count the address the proxy saw, never the client's own `X-Forwarded-For` entries (`lib/clientIp.ts`); unset, no forwarded header is trusted and every caller shares one allowance; **runtime variable, not a build variable; never set on Vercel** (ignored there) | set: `1` |
 | `TRUSTED_PROXY_HOPS` | Optional (self-hosted only) | How many proxies we run in front of the app, counted from the right of `X-Forwarded-For` (whole number 1 to 5; unset means 1, Traefik's own view). Any other value is refused and every caller shares one allowance. Only takes effect with `SELFHOST_BEHIND_PROXY=1` | leave **unset** |
-| `TRUST_CF_CONNECTING_IP` | Optional (self-hosted, after the Cloudflare-only firewall) | `1` reads the client's address from Cloudflare's `CF-Connecting-IP` header instead (valid addresses only). Anyone can send that header, so set it **only once the server accepts connections from Cloudflare alone**. Only takes effect with `SELFHOST_BEHIND_PROXY=1` | leave **unset** on the test address |
-| `NEXT_PUBLIC_APP_URL` | Required | Same origin for the browser build (**build variable**) | set: the generated sslip.io address, in its **https://** form, exactly (no path) |
-| `APP_URL` | Required | Same origin, read by some server code | set: the generated sslip.io address, in its **https://** form, exactly (no path) |
+| `TRUST_CF_CONNECTING_IP` | Optional (self-hosted, **production only**, after the Cloudflare-only firewall) | `1` reads the client's address from Cloudflare's `CF-Connecting-IP` header instead (valid addresses only). Anyone can send that header, so set it **only once the server accepts connections from Cloudflare alone**. Only takes effect with `SELFHOST_BEHIND_PROXY=1` | leave **unset** on staging |
+| `NEXT_PUBLIC_APP_URL` | Required | Same origin for the browser build (**build variable**) | set: `https://staging.particl.si` exactly (no path) |
+| `APP_URL` | Required | Same origin, read by some server code | set: `https://staging.particl.si` exactly (no path) |
 | `PLATFORM_DATABASE_URL` | Required | Platform database | **YES: staging Turso** |
 | `PLATFORM_AUTH_TOKEN` | Required | Token for it | **YES: staging** |
 | `TURSO_DATABASE_URL` | Required | Fallback database URL some code reads | **YES: staging Turso** |
@@ -130,8 +144,9 @@ Column **STAGING**: "YES" means the value must be a staging value on the test ad
 | `SUPER_ADMIN_EMAIL` | Required | Who may use platform admin routes | same as Vercel |
 | `BLOB_READ_WRITE_TOKEN` | Required (on Blob) | Media storage token | **YES: staging Blob store** |
 | `STORAGE_BACKEND` | Optional | `blob`, `r2` or `local`; unset means Blob when the token is set | unset or `blob` |
+| `PARTICL_DEPLOYMENT` | Required once the lane adding it has merged (a lane is adding this flag; until it is on `release/1` the app ignores it) | Tells the app which deployment it is, replacing the `VERCEL_ENV` checks that are off on another host. Runtime variable | set: `staging` here; production will be `production` |
 | `CREDIT_USD` | Required | Dollar value of one credit, **must be `0.10`** on the new host | set: `0.10` |
-| `PAYMENT_PROVIDER` | Optional | Leave **unset** (means `manual`: requests are queued, no card is charged). Never `stripe` on the test address | set: unset or `manual` |
+| `PAYMENT_PROVIDER` | Optional | Leave **unset** (means `manual`: requests are queued, no card is charged). Never `stripe` on the staging address | set: unset or `manual` |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Do not set | Live payments must be off | **not set** |
 | `TURSO_API_TOKEN`, `TURSO_API_URL`, `TURSO_ORG`, `TURSO_GROUP` | Do not set | Would create real workspace databases | **not set** |
 | `RESEND_API_KEY`, `RESEND_BASE_URL`, `MAIL_FROM` | Optional | Email; leave unset so the test sends no mail | not set |
@@ -174,32 +189,32 @@ Menu names are for current Coolify v4 as best known; a label marked (unsure) may
 
 1. **Open the project.** Coolify, **Projects**, open the one empty project, then its environment (usually `production`).
 2. **New resource.** **+ New** (unsure: it may read "Add New Resource"), then **Public Repository** (the repo is public, so no GitHub App is needed). Repository URL: `https://github.com/axy-full/aimighty-workspace`. Click **Check repository**. Server: the localhost server (this machine). Continue.
-3. **Build settings.** Branch: `ops/selfhost-test-address`. **Build Pack: Dockerfile**. **Base Directory:** `/`. **Port (Ports Exposes):** `3000`. Continue (or Save). On the next page, in **Configuration, General**, set **Dockerfile Location:** `/ops/selfhost/Dockerfile`. Save. Do **not** deploy yet.
-4. **Domain.** In **Configuration, General, Domains**, Coolify has already generated an address of the form `http://<random>.<server-ip>.sslip.io`. Keep it (it is free and needs no DNS). Copy the exact text; this is the **test address**. If your version offers a "Generate Domain" button (unsure), use it. **Sign-in needs `https`:** the session cookie is Secure, so over plain `http://` it is never kept. Switch the domain to `https://` (Coolify gets a Let's Encrypt certificate for the sslip.io name through Traefik). Plain `http` is enough only for the read-only smoke test.
-5. **Environment variables.** **Configuration, Environment Variables**, **Developer view** (unsure: sometimes a toggle at the top). Add the names from the table above: every row marked Required, with values copied from Vercel's staging/preview environment where it says "same as Vercel" and **staging** values where it says STAGING. Set `ENGINE_MOCK=1`, `CREDIT_USD=0.10`, and set `APP_ORIGIN`, `APP_URL` and `NEXT_PUBLIC_APP_URL` to the test address from step 4. On `NEXT_PUBLIC_APP_URL` tick **Build Variable** (unsure: shown as a "Build Variable?" checkbox). Check: the databases and the Blob store are staging, `KEYRING_SECRET` is not blank, no `STRIPE_*`, no `TURSO_API_*`, no `VERCEL*`, no engine keys. Save. **Untick Build Variable on every variable except `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_VAPID_PUBLIC_KEY`** (check your version's default). `KEYRING_SECRET` and the database values come from the **Preview** environment, never Production. Add `SELFHOST_BEHIND_PROXY=1` (runtime only) and make `APP_ORIGIN`, `APP_URL` and `NEXT_PUBLIC_APP_URL` the exact **https** address from step 4. Deploy a build that includes the sign-in fix (the branch named in Findings 3, or `release/1` once it is merged there).
+3. **Build settings.** Branch: `release/1`. **Build Pack: Dockerfile** (or Railpack, see "Build paths"). **Base Directory:** `/`. **Port (Ports Exposes):** `3000`. Continue (or Save). On the next page, in **Configuration, General**, set **Dockerfile Location:** `/ops/selfhost/Dockerfile`. Save. Do **not** deploy yet.
+4. **Domain.** **Owner:** with the advisor, create the Cloudflare DNS record for `staging.particl.si` (an A record to `<server IPv4>`; proxied or DNS-only, either works for staging; if proxied, see SSL mode in the cutover checklist) and, in Coolify, **Configuration, General, Domains**, enter `https://staging.particl.si` (replace any generated address). Coolify gets a Let's Encrypt certificate through Traefik; that needs the record to be DNS-only or Cloudflare SSL mode **Full** while the certificate is issued. **Sign-in needs `https`:** the session cookie is Secure, so over plain `http://` it is never kept. Fallback if the record is not ready: Coolify's generated `http://<random>.<server-ip>.sslip.io` address (switch it to `https://`); plain `http` is enough only for the read-only smoke test.
+5. **Environment variables.** **Configuration, Environment Variables**, **Developer view** (unsure: sometimes a toggle at the top). Add the names from the table above: every row marked Required, with values copied from Vercel's staging/preview environment where it says "same as Vercel" and **staging** values where it says STAGING. Set `ENGINE_MOCK=1`, `CREDIT_USD=0.10`, and set `APP_ORIGIN`, `APP_URL` and `NEXT_PUBLIC_APP_URL` to the staging address from step 4. On `NEXT_PUBLIC_APP_URL` tick **Build Variable** (unsure: shown as a "Build Variable?" checkbox). Check: the databases and the Blob store are staging, `KEYRING_SECRET` is not blank, no `STRIPE_*`, no `TURSO_API_*`, no `VERCEL*`, no engine keys. Save. **Untick Build Variable on every variable except `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_VAPID_PUBLIC_KEY`** (check your version's default). `KEYRING_SECRET` and the database values come from the **Preview** environment, never Production. Add `SELFHOST_BEHIND_PROXY=1` and `PARTICL_DEPLOYMENT=staging` (runtime only) and make `APP_ORIGIN`, `APP_URL` and `NEXT_PUBLIC_APP_URL` exactly `https://staging.particl.si`. Use the **Preview** environment's staging databases and keyring, `ENGINE_MOCK=1`, and no live Stripe. Deploy `release/1` (it includes the sign-in fix).
 6. **Health check.** **Configuration, Healthcheck** (unsure): enable, path `/api/health`, port `3000`, method GET, return code `200`, start period 40 seconds. Save.
 7. **Storage and limits.** **Configuration, Persistent Storage, + Add**: volume mount, name `selfhost-data`, destination path `/app/.data`. Then **Resource Limits**: memory `4g`, CPUs `2`. Make sure **Auto Deploy** is off.
 8. **Deploy.** Click **Deploy**. Watch **Deployments, Logs**. The first build takes several minutes. The step "npm run build" prints `preview seed: skipped (VERCEL_ENV is not set)`; that is expected and touches no database. It passes when the log ends with the container started and the health check going green. If it fails, copy the last 30 lines to Claude (no variable values are printed by the build).
-9. **Smoke test.** From a shell on this machine, in the repo: `bash ops/selfhost/smoke.sh <test address from step 4>`. Expected: every check passes once storage is configured. If anything fails, send the output (without the hostname).
+9. **Smoke test.** From a shell on this machine, in the repo: `bash ops/selfhost/smoke.sh <staging address from step 4>`. Expected: every check passes once storage is configured. If anything fails, send the output (without the hostname).
 9b. **Check the workspace addresses before any scheduled task.** In the Turso dashboard, open the **staging** platform database's shell (read only) and run only this query: `SELECT id, db_url FROM workspaces;`. Every `db_url` host must belong to the staging group (or be empty for the house workspace). If any row names a production database, **stop**: do not add the scheduled task, and tell Claude only that a row failed (never paste the URLs). Don't paste the output anywhere.
 10. **Scheduled task (only after 9b passes; leave it disabled while the Vercel preview uses the same staging databases, unless the owner decides otherwise).** **Configuration, Scheduled Tasks, + Add**: name `cron-sync`, command `node /app/cron-sync.mjs`, frequency `*/10 * * * *`, save, then run it once by hand if the page has a run button (unsure), and read its log for `cron-sync: 200`.
 11. **Stop or roll back.** Nothing live is affected. Coolify, the app, **Stop** (or Delete in Danger Zone). To keep the settings and just pause the heartbeat: Scheduled Tasks, disable `cron-sync`. Vercel and particl.si are untouched throughout.
 
-## Before production leaves Vercel (not needed for the test address)
+## Before production leaves Vercel (not needed for the staging address)
 
 These work on Vercel without any setting and change on another host:
 - **AI Gateway** (`lib/gateway.ts`; Atomik drafts, memory read, prompt enhance): on Vercel it signs in with the deployment's own identity. Off Vercel it needs `AI_GATEWAY_API_KEY` (created on Vercel's AI Gateway page) until P4b moves models to their own APIs.
 - **Vercel Sandbox** (`lib/astra-blender/sandbox.ts`, the 3D render): needs `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID` off Vercel.
-- **Production-only guards keyed on `VERCEL_ENV === "production"`** are off on another host: the "no test Stripe key on production" check (`lib/billingConfig.ts`), deployment readiness (`lib/deploymentReadiness.ts`), and the owner-privacy scrub (`lib/platformOwnerScrub.ts`, which then needs `OWNER_PRIVACY_SCRUB_LOCAL=1`). Decide before cutover: set `VERCEL_ENV=production` on the production host only (never on the test address), or a small code change.
-- **Long requests:** routes declare `maxDuration` up to 800 s (uploads, media). Traefik v3's entrypoint `readTimeout` defaults to 60 s: raise `respondingTimeouts` on the entrypoint or long uploads will be cut.
-- **Sign-in behind the proxy** must be fixed first (branch `fix/r1-signin-behind-proxy`, in review). With it, the host sets `SELFHOST_BEHIND_PROXY=1` and `APP_ORIGIN` = the exact public `https` address; never set the flag on Vercel.
-- **Client address for rate limits and the sign-in lock** (`lib/clientIp.ts`). With `SELFHOST_BEHIND_PROXY=1` the app counts the last `X-Forwarded-For` entry, the one Traefik added, so a client cannot pick a fresh address per request by writing its own entries. On the bare test address leave `TRUST_CF_CONNECTING_IP` and `TRUSTED_PROXY_HOPS` unset (hops 1 = Traefik's view of the caller). Once Cloudflare is in front, Traefik sees Cloudflare's edge, so every visitor through one edge would share an allowance: **set `TRUST_CF_CONNECTING_IP=1` only once the Cloudflare-only firewall is in place** (P2); before that anyone could send the header straight to the server. In every case the app's own port must be reachable only through Traefik: a request that skips the proxy can write the last entry itself. So: **do not publish the app's port on the host** (no host port mapping; the container is reached only through the proxy), and **keep Traefik's default of appending to `X-Forwarded-For`** (never set `notAppendXForwardedFor`): without the append, the last entry is again whatever the client sent. If the app logs `[client-ip] … one shared bucket`, one of these settings is wrong.
+- **Production-only guards keyed on `VERCEL_ENV === "production"`** are off on another host: the "no test Stripe key on production" check (`lib/billingConfig.ts`), deployment readiness (`lib/deploymentReadiness.ts`), and the owner-privacy scrub (`lib/platformOwnerScrub.ts`, which then needs `OWNER_PRIVACY_SCRUB_LOCAL=1`). Decide before cutover: set `VERCEL_ENV=production` on the production host only (never on the staging address), or a small code change. **Superseded:** `PARTICL_DEPLOYMENT` (staging here, `production` on the production app) is the flag being added for this; never set `VERCEL_ENV` on this host.
+- **Long requests:** routes declare `maxDuration` up to 800 s (uploads, media) and Traefik v3's default `readTimeout` is 60 s. The exact lines to add are in "Proxy timeouts and forwarded headers" below; do it on staging first.
+- **Sign-in behind the proxy** is fixed on `release/1`. The host sets `SELFHOST_BEHIND_PROXY=1` and `APP_ORIGIN` = the exact public `https` address; never set the flag on Vercel.
+- **Client address for rate limits and the sign-in lock** (`lib/clientIp.ts`). With `SELFHOST_BEHIND_PROXY=1` the app counts the last `X-Forwarded-For` entry, the one Traefik added, so a client cannot pick a fresh address per request by writing its own entries. On the bare staging address leave `TRUST_CF_CONNECTING_IP` and `TRUSTED_PROXY_HOPS` unset (hops 1 = Traefik's view of the caller). Once Cloudflare is in front, Traefik sees Cloudflare's edge, so every visitor through one edge would share an allowance: **set `TRUST_CF_CONNECTING_IP=1` only once the Cloudflare-only firewall is in place** (P2); before that anyone could send the header straight to the server. In every case the app's own port must be reachable only through Traefik: a request that skips the proxy can write the last entry itself. So: **do not publish the app's port on the host** (no host port mapping; the container is reached only through the proxy), and **keep Traefik's default of appending to `X-Forwarded-For`** (never set `notAppendXForwardedFor`): without the append, the last entry is again whatever the client sent. If the app logs `[client-ip] … one shared bucket`, one of these settings is wrong.
 
-The test address itself is public plain HTTP until the P2 Cloudflare-only firewall exists: keep it short-lived (stop it after the check), or add Traefik basic auth. Its generated hostname contains the server's IP: don't paste it anywhere public.
+Staging at `https://staging.particl.si` is public until the Cloudflare-only firewall exists. It runs mock engines and staging data, but keep it stopped when not in use, or add Traefik basic auth. If the sslip.io fallback is used, its hostname contains the server's IP: don't paste it anywhere public.
 
 ## Domains at cutover: particl.si, www.particl.si, particl.app, www.particl.app
 
-Nothing here happens on the test address. These are cutover steps (P5), done only on the owner's "go".
+Nothing here happens on the staging address (it is the P5 steps in "Cutover order"). These are cutover steps (P5), done only on the owner's "go".
 
 **Today.** Vercel serves `particl.si`. It answers `particl.app` and `www.particl.app` with a 308 to `particl.si`. That redirect is a Vercel **domain setting**: nothing in the repo does it (`vercel.json` holds only the cron; no code matches the host). When the site leaves Vercel, the redirect goes too, unless something else takes it over. Before the move, check in Vercel, **Settings, Domains**:
 - that `particl.si` is the primary domain;
@@ -210,7 +225,7 @@ The steps below assume `particl.si` stays primary and every other name 308s to i
 
 ### Option A (recommended): a Cloudflare redirect rule
 The redirect happens at Cloudflare's edge, so it needs no app code, puts no load on the server, and keeps working if the app is down.
-1. All three hosts must be in Cloudflare zones with **proxied** (orange-cloud) records. A name that is not proxied never reaches the rule. If `particl.app` is not yet a Cloudflare zone, add it and move its nameservers first (a registrar step for the owner), well before the cutover. When `particl.app` becomes a Cloudflare zone, import its existing records and check every one (MX, SPF, DKIM, DMARC and any verification TXT included) against the current DNS host **before** switching nameservers.
+1. `particl.app` is **already on Cloudflare** (nameservers `alan` and `daphne` `.ns.cloudflare.com`), so no nameserver move is needed; only the redirect rule remains. Both `particl.app` and `www.particl.app` must have **proxied** (orange-cloud) records, or the request never reaches the rule. `particl.si` joins the same pattern at cutover (see the checklist).
 2. In the `particl.app` zone: **Rules, Redirect Rules, Create rule** (Single Redirect):
    - If: custom filter, hostname is in `particl.app`, `www.particl.app`.
    - Then: Dynamic, expression `concat("https://particl.si", http.request.uri.path)`, status **308**, **Preserve query string** ticked.
@@ -218,7 +233,7 @@ The redirect happens at Cloudflare's edge, so it needs no app code, puts no load
 4. The app on the server then only ever sees `particl.si`. In Coolify the app's **Domains** field lists only `https://particl.si`.
 
 ### Option B: the self-hosted app redirects
-Use this only if `particl.app` cannot be put on Cloudflare.
+Not needed, since `particl.app` is already on Cloudflare. Kept only as a fallback.
 1. In Coolify add every name to the app's **Domains** field (comma-separated) so Traefik answers for them and fetches a certificate for each. With Cloudflare proxying in Full (strict) mode, use the Cloudflare origin certificate (P2) for the `particl.si` names.
 2. The redirect then has to come from the server, in one of two ways:
    - a Traefik redirect-regex middleware added through the app's custom labels, which needs no code change;
@@ -240,16 +255,58 @@ Under option A the two `particl.app` records may point anywhere while proxied (t
 ### Keep, and don't touch
 - **Mail records** on both domains (MX, SPF/TXT, DKIM, DMARC, the mail sender's verification records) stay exactly as they are. Moving the website changes only the A, AAAA and CNAME rows above.
 - **CAA records**, if any: they must allow the certificate issuer in use (Cloudflare's for proxied names; Let's Encrypt only under option B).
-- **Rollback:** before the change, write down the four current records (Vercel's values), and lower their TTL a day ahead. Rolling back means restoring those four values **and their proxy status** (Vercel records are usually DNS-only, grey cloud; proxied records use Cloudflare's fixed Auto TTL) (SOW: rollback is one DNS change). Leave the Vercel domain settings in place until the two weeks of watching are over, so a rollback lands on a working redirect.
+- **Rollback (short form; the full order is step 11 of "Cutover order"):** before the change, write down the four current records (Vercel's values), and lower their TTL a day ahead. Rolling back means restoring those four values **and their proxy status** (Vercel records are usually DNS-only, grey cloud; proxied records use Cloudflare's fixed Auto TTL) (SOW: rollback is one DNS change). Leave the Vercel domain settings in place until the two weeks of watching are over, so a rollback lands on a working redirect.
 
 ### Checks after the change
 `curl -sI 'https://particl.app/pricing?x=1'` and the same for `www.particl.app` and `www.particl.si`: each must answer **308** with `location: https://particl.si/pricing?x=1`. `curl -sI https://particl.si/` answers 200. Then run `smoke.sh https://particl.si`.
+
+## Proxy timeouts and forwarded headers (owner, once, before production; staging first)
+
+**Why.** Routes declare `maxDuration` up to 800 s (uploads, media), and Traefik v3's default entrypoint `readTimeout` is 60 s, so a long upload or request would be cut by the proxy. Cloudflare's proxy also has its own limit (about 100 s with no answer bytes on non-Enterprise plans; it shows as a 524), so very long requests must send data or be chunked; that limit cannot be raised on the normal plans.
+
+**Where.** Coolify, **Servers**, the server, **Proxy**, **Configuration** (the proxy's docker-compose). In the Traefik service's `command:` list, add these lines next to the existing `--entrypoints.http.address=:80` and `--entrypoints.https.address=:443` lines. **Verify the entrypoint names in your proxy config:** Coolify's default names them `http` and `https`; if yours differ, use your names.
+
+```yaml
+      - '--entrypoints.http.transport.respondingTimeouts.readTimeout=900s'
+      - '--entrypoints.http.transport.respondingTimeouts.writeTimeout=900s'
+      - '--entrypoints.http.transport.respondingTimeouts.idleTimeout=180s'
+      - '--entrypoints.https.transport.respondingTimeouts.readTimeout=900s'
+      - '--entrypoints.https.transport.respondingTimeouts.writeTimeout=900s'
+      - '--entrypoints.https.transport.respondingTimeouts.idleTimeout=180s'
+```
+
+900 s is above the longest route (800 s); 180 s idle keeps connections from piling up. **Save, then restart the proxy** (the restart button on the same page). A proxy restart drops connections for a few seconds on every app on the server, so do it when quiet. Afterwards check the proxy is running and staging still answers 200.
+
+**Forwarded headers.**
+- Keep Traefik's default of **appending** to `X-Forwarded-For` (never set `notAppendXForwardedFor`), and do not publish the app's port on the host (see the client-address note above).
+- Recommended with Cloudflare: **leave `forwardedHeaders.trustedIPs` unset.** Traefik then ignores any incoming `X-Forwarded-*` and writes the address it saw (Cloudflare's edge); the app gets the real visitor from `TRUST_CF_CONNECTING_IP=1`, which is safe only once the firewall allows Cloudflare alone.
+- Alternative, if Traefik should trust Cloudflare: `- '--entrypoints.https.forwardedHeaders.trustedIPs=<Cloudflare ranges, comma separated, from https://www.cloudflare.com/ips/>'`. Traefik then keeps Cloudflare's `X-Forwarded-For` (client first) and appends the edge address. Then set the app's `TRUSTED_PROXY_HOPS=2` (the edge and Traefik) **or** `TRUST_CF_CONNECTING_IP=1`, per the variables table. The ranges change now and then and the list must be kept current, which is why the first option is simpler.
+
+## Cutover order (owner actions marked **OWNER**; nothing happens without the owner's "go")
+
+Steps 1 to 6 do not move live traffic. From step 7 the live site is affected. Do not start a step until the one above has passed.
+
+1. **Staging works end to end.** **OWNER:** staging DNS record and platform domain for `https://staging.particl.si` (with the advisor); staging values in the app (`PARTICL_DEPLOYMENT=staging`, `ENGINE_MOCK=1`, Preview databases and keyring, no live Stripe). **OWNER:** add the proxy timeout lines above and restart the proxy. Deploy, run `smoke.sh https://staging.particl.si`, and **sign in** in a browser. Passes when every check is green and sign-in sticks.
+2. **OWNER's "go": the hotfix PRs are merged to `main`** (the lead merges, on the owner's word). Rebuild staging from the merge and repeat step 1's checks.
+3. **Production app on the server, built from `main`, stopped until DNS.** Same build path as staging (Dockerfile or Railpack). A second app in the same project, with **production** values: production databases and keyring, `PARTICL_DEPLOYMENT=production`, `CREDIT_USD=0.10`, `ENGINE_MOCK` unset, `APP_ORIGIN` / `APP_URL` / `NEXT_PUBLIC_APP_URL` = `https://particl.si`, `SELFHOST_BEHIND_PROXY=1`, `TRUST_CF_CONNECTING_IP` unset for now, and **`AI_GATEWAY_API_KEY`** (**OWNER** creates it on Vercel's AI Gateway page; off Vercel the assistant features need it). Domain `https://particl.si`, no scheduled task yet. Leave it **stopped**: production workspaces must not be reconciled by two hosts.
+4. **Cloudflare, ahead of the switch (OWNER, with the advisor).**
+   - `particl.si` is a Cloudflare zone (add it and import every record, mail records included, if it is not).
+   - SSL/TLS mode **Full (strict)**; **Always Use HTTPS** on.
+   - **Certificate on the server's proxy for `particl.si` and `*.particl.si`.** Two ways: a **Cloudflare Origin Certificate** (SSL/TLS, Origin Server, Create Certificate; valid up to 15 years, nothing to renew, trusted only by Cloudflare), or Let's Encrypt through a DNS challenge (works with the firewall, but needs a Cloudflare API token on the server, and renewals). **Recommended: the Origin Certificate**: simplest, and nothing to break at renewal. Install: save the certificate and key as files in the proxy's certificate directory (Coolify: under `/data/coolify/proxy/`, mounted into Traefik) and point a Traefik dynamic-config file at them as the default certificate (verify the paths in your proxy compose). Never paste the private key into chat, the repo or this file.
+   - Lower the TTL of the records to be changed (step 7) **a day ahead**, and **write down the current Vercel records** (all four names: type, value, TTL, proxy status).
+5. **Firewall limited to Cloudflare (OWNER applies it).** Allow ports 80 and 443 only from Cloudflare's ranges (https://www.cloudflare.com/ips/, IPv4 and IPv6) in the host firewall (Hostinger's firewall in hPanel, or `ufw` on the server). Keep **SSH on 22 open to the owner's own addresses only**. Do this after the certificate is in place and before the switch; keep the platform dashboard reachable to the owner if it uses another port. Check: a direct request to the server's address on 443 times out while a proxied name still answers. (If the staging record is DNS-only, it stops answering the public once the firewall stands: proxy it too.)
+6. **App environment once the firewall stands (OWNER, in the platform):** set `TRUST_CF_CONNECTING_IP=1` on the production app (with `SELFHOST_BEHIND_PROXY=1`); confirm `PARTICL_DEPLOYMENT=production`, `CREDIT_USD=0.10` and `AI_GATEWAY_API_KEY` are set. Start the production app and check its health. Add the scheduled task `cron-sync` but keep it **disabled** until step 9.
+7. **Switch DNS (OWNER's "go", in Cloudflare).** Change all four names, **proxied** (orange cloud): `particl.si` A (+ AAAA) to `<server IPv4>` (`<server IPv6>`); `www.particl.si` CNAME to `particl.si`; `particl.app` and `www.particl.app` as in the table below, with the **redirect rule** from Option A (308 to `https://particl.si`, path and query kept). Mail records are not touched.
+8. **Checks (right after).** `curl -sI https://particl.si/` answers 200; the redirect checks in "Checks after the change"; `ops/selfhost/smoke.sh https://particl.si`; **sign in** in a browser; **a price shows** (a plan or Make price reads `N cr`); **no paid press**: do not click anything that starts a paid render. Check that a request sent straight to the server's address gets no answer.
+9. **Cron moves.** Enable `cron-sync` on the server and read its log for `cron-sync: 200` on at least two runs. **Only then OWNER disables the Vercel cron.** Never both running.
+10. **Watch window.** Two weeks. Watch health, the log line `[client-ip] ... one shared bucket` (a header setting is wrong), the cron heartbeat, and 5xx. The Vercel deployment stays in place for the whole window.
+11. **Rollback (any time before the window ends).** In Cloudflare, restore the four records and their **proxy status** to the values written down in step 4 (Vercel's are usually DNS-only, grey cloud). Disable `cron-sync` on the server and re-enable the Vercel cron; stop the production app. Leave the Vercel deployment and its domain settings untouched for two weeks so the old site is a working target. **Never use Instant Rollback to a Vercel deployment from before #524** (it predates the credit switchover and would bill the wrong price). After the window: retire the Vercel deployment and rotate exposed keys (see the gates below).
 
 ## Gates still ahead before any cutover (SOW section 4)
 
 1. **P2 finish:** Coolify keys saved, origin certificate, dashboard domain, GitHub App, Cloudflare-only firewall, real visitor addresses (the sign-in lockout depends on it), outside monitor, VPS snapshots.
 2. **P3 media:** R2 switched on (`/api/health` says r2-configured), media domain with signed links, thumbnails and posters; Blob downloads near zero.
-3. **P4 beside Vercel:** the fixes above (findings 2 and 3, plus the visitor-address header, `APP_ORIGIN` helper, 300-second cap, background work sent to the container's own address); self-hosted Inngest sized for 1,000 jobs with per-plan limits (Invite 2, Studio 5, Agency 15, Production 50); `staging.<domain>` with all 12 smoke checks (those include sign-in and a paid run, which need the fixes first). This test address is only the first, read-only part.
+3. **P4 beside Vercel:** the fixes above (findings 2 and 3, plus the visitor-address header, `APP_ORIGIN` helper, 300-second cap, background work sent to the container's own address); self-hosted Inngest sized for 1,000 jobs with per-plan limits (Invite 2, Studio 5, Agency 15, Production 50); `staging.<domain>` with all 12 smoke checks (those include sign-in and a paid run, which need the fixes first). This staging address is only the first, read-only part.
 4. **P5 cutover:** only after the 1,000-job load test passes on staging; `CREDIT_USD` is 0.10 on Coolify and the credit switchover is done on Vercel first; the already-converted database is the one copied; cron moved (Vercel's cron disabled once the VPS task has run clean); rollback is one DNS change; two weeks of watching; then Blob retired and exposed keys rotated.
 5. **P8 many clients:** worker container, legacy-path guard, load test, error tracking.
 
