@@ -105,13 +105,9 @@ test("Gen › Results: a failed take's charge is said only from a receipt, whole
   await noSideScroll(page);
   await page.screenshot({ path: info.outputPath("gen-failed-takes.png") });
 
-  /* The Inspector: the card's status and reason, then the next step; the charge stays the receipt's, never a vendor's dollars. */
-  await tile(results, "Charged take").locator(".gx-asset-thumb").click();
-  const facts = page.getByTestId("asset-facts");
-  await expect(facts).toContainText("Failed");
-  await expect(facts).toContainText("Refused by the content filter");
-  await expect(facts).toContainText("Change the prompt or reference");
-  await expect(facts).not.toContainText("$");
+  /* The charge stays the receipt's, never a vendor's dollars: no card carries a dollar figure. (The Inspector's facts list that also said
+     the next step is gone with the old Inspector: docs/old-shells.md.) */
+  await expect(results).not.toContainText("$");
   await noSideScroll(page);
   expect(errors).toEqual([]);
 });
