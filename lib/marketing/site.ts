@@ -1,5 +1,3 @@
-import { WORKSPACE_TABS } from "@/lib/shell/ia";
-
 /**
  * The public site's map: its tabs and the six places it describes. The ids
  * are the code's; every word a visitor reads uses the product's names
