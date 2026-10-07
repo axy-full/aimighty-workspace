@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import ts from "typescript";
+import { SIGN_IN_OFF } from "../../lib/higgsfield-consumer/retired";
 
 /**
  * Cinema Studio's time limit (owner's decision, 6 October 2026): a take with no
@@ -118,6 +119,7 @@ async function cron(failing: string | null) {
     "@/lib/uploadReservations": { cleanupExpiredUploads: step("expired_uploads", {}) },
     "@/lib/pipeline/executor": { drainPipelineWakeups: step("pipelines", { failed: 0 }) },
     "@/lib/higgsfield-consumer/sweep": { sweepConsumerJobs: step("connected_jobs", { deferred: false }) },
+    "@/lib/higgsfield-consumer/retired": { SIGN_IN_OFF },
     "@/lib/workbench/canvas-push": { drainCanvasPushes: step("canvas_pushes") },
     "@/lib/workbench/rig-agent": { drainRigAgentWakeups: step("rig_agents") },
     "@/lib/genjutsuVideo": { expireUnansweredCinemaTakes: step("cinema_unanswered", { expired: [] }) },
@@ -127,7 +129,8 @@ async function cron(failing: string | null) {
 }
 
 test("the cron sync runs the time limit as a stage of its own, before held takes, and every other stage still runs", async () => {
-  const all = ["generations", "pipelines", "training", "soul_training", "connected_jobs", "canvas_pushes", "rig_agents", "storage_sizes", "expired_uploads", "cinema_unanswered", "held_jobs"];
+  /* Connected-account jobs are swept only while the Higgsfield sign-in is on (off for Release 1). */
+  const all = ["generations", "pipelines", "training", "soul_training", ...(SIGN_IN_OFF ? [] : ["connected_jobs"]), "canvas_pushes", "rig_agents", "storage_sizes", "expired_uploads", "cinema_unanswered", "held_jobs"];
   const ok = await cron(null);
   expect(ok.ran).toEqual(all);
   expect(ok.status).toBe(200);
