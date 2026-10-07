@@ -9,6 +9,7 @@ import {
 } from "@/lib/workbench/team-canvas-model";
 import { mergePatches, sendFailure, TeamOutbox } from "@/lib/workspace/team-canvas-outbox";
 import { useWorkspace } from "@/lib/workspace/state";
+import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
 
 /*
  * The Rig's team canvas in the browser (owner, 2026-09-24: one shared canvas).
@@ -461,7 +462,7 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
 
   const tidy = useCallback(async (): Promise<TidyOutcome> => {
     const pid = joined.current;
-    if (!pid) return { ok: false, error: "Save this project first: the board is tidied for your whole team." };
+    if (!pid) return { ok: false, error: `${SAVING_NOW} The board is tidied for your whole team once it is saved.` };
     /* This window's waiting edits reach the canvas first, so the layout starts from them. */
     await send();
     let answer: unknown;

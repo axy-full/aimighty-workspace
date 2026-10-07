@@ -36,6 +36,9 @@ import { useTeamCanvas, type TeamCanvasApi } from "./use-team-canvas";
 import { useCutouts, type CutoutsApi } from "./use-cutouts";
 import { isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
 import { cinemaPriceWords } from "@/lib/cinemaHold";
+import { useBoardOpen } from "@/lib/board/active";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
+import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
 
 /**
  * The Rig's live state, shared by the shot list, the node graph, the
@@ -187,7 +190,9 @@ function useReferenceQuote(scope: string, query: string | null): Quote | null {
 export function RigProvider({ scope, children }: { scope: string; children: ReactNode }) {
   const ws = useWorkspace();
   const { state, dispatch, toast } = ws;
-  const projectId = state.view === "studio" ? state.projectId : null;
+  /* The board (components/graphite/board) is the Rig's page in the new interface: open, it is the Rig on screen. */
+  const boardOpen = useBoardOpen();
+  const projectId = state.view === "studio" || boardOpen ? state.projectId : null;
   /* The project the shell is on right now, on any page: an undo is only ever for it. */
   const shellProject = useRef(state.projectId);
   useEffect(() => { shellProject.current = state.projectId; }, [state.projectId]);
@@ -408,7 +413,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   /* Back on the Rig after another page of this tab saved the draft (a Studio stage, Marketing): it catches up before
      anything is built from it. */
-  const onRig = state.page === "rig";
+  const onRig = state.page === "rig" || boardOpen;
   const wasOnRig = useRef(onRig);
   useEffect(() => {
     const came = onRig && !wasOnRig.current;
@@ -449,7 +454,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   /* ── Jobs (the Studio's own poller; it also files finished takes) ──── */
   const [run, setRun] = useState<Run | null>(null);
   const empty = useMemo(() => newProject(""), []);
-  const jobsEnabled = !!project && (state.page === "rig" || run !== null);
+  const jobsEnabled = !!project && (onRig || run !== null);
   /* Takes the poller files are made from their job, the same in every window: noted as made. */
   const change = useCallback((fn: (p: Project) => Project) => make(fn), [make]);
   const jobs = useProductionJobs(project ?? empty, jobsEnabled, change, scope);
@@ -581,7 +586,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
         if (settled.state === "lost") earlier = settled.reason;
         /* Mapping, references and the request body are the shot's as it is now; the re-quote,
            the gate and the paid POST are the shared dispatch (generate-submit). */
-        if (!(await flush()) || draftRef.current?.project.id !== draftId) throw new Error("Save your latest work before generating.");
+        if (!(await flush()) || draftRef.current?.project.id !== draftId) throw new SaveFailedError();
         const mapping = await studioRequest<unknown>(`${API}/projects`, {
           method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
           body: JSON.stringify({ action: "map-shot", projectId: draftId, nodeId: shot.id }),
@@ -745,7 +750,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     const node = current?.project.nodes.find((n) => n.id === id);
     const productionId = current?.project.productionProjectId;
     if (!current || !node) return "That card is no longer on the canvas.";
-    if (!productionId) return "Save this project before locking a master.";
+    if (!productionId) return SAVING_NOW;
     const problem = lockProblem(node, current.project, !!node.elementId && mastersRef.current.has(node.elementId));
     if (problem) return problem;
     /* The card as this window shows it reaches the team canvas first: the lock reads it there. */
@@ -859,7 +864,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     window.addEventListener(RIG_INTENT_EVENT, waiting);
     return () => window.removeEventListener(RIG_INTENT_EVENT, waiting);
   }, []);
-  const openId = project?.id ?? null, onRigPage = state.page === "rig";
+  const openId = project?.id ?? null, onRigPage = onRig;
   useEffect(() => {
     if (!openId || !onRigPage) return;
     const asset = takeRigIntent(openId);

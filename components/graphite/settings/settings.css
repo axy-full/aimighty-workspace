@@ -1,0 +1,99 @@
+/* Settings (design/particl-graphite/README.md § 3.5; the master's settingsVals). Graphite tokens only (app/graphite.css).
+   One column, at most 880 px; hairline sections; rows of a name and its line, a mono value and outlined actions.
+   On a phone (the shell's COMPACT_QUERY, lib/shell/use-compact.ts: below 768 px, or a landscape phone) the value and actions move under the name, every control is
+   44 px tall, and the page ends clear of the tab bar and the home indicator. */
+
+.gs { flex: 1 1 auto; min-height: 0; overflow-y: auto; background: var(--gx-root, #000); color: var(--gx-text); }
+.gs-page { max-width: 880px; margin: 0 auto; padding: 40px 24px 64px; display: flex; flex-direction: column; gap: 24px; animation: gs-in .4s var(--gx-ease) both; }
+@keyframes gs-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .gs-page { animation: none; } }
+
+.gs-eyebrow { margin: 0; font-family: var(--gx-font); font-size: var(--gx-fs-eyebrow); font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-eyebrow); }
+.gs-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.gs-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.gs-title { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gs-h1 { margin: 0; font-size: var(--gx-fs-h1); font-weight: 600; letter-spacing: var(--gx-ls-h1); line-height: 1.1; }
+
+.gs-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: var(--gx-r-ctl); background: var(--gx-track); max-width: 100%; }
+.gs-seg-btn { height: 28px; padding: 0 12px; border: 0; border-radius: 4px; background: transparent; color: var(--gx-text-2); font-size: var(--gx-fs-control); font-weight: 500; white-space: nowrap; cursor: pointer; transition: background var(--gx-t), color var(--gx-t); }
+.gs-seg-btn:hover { color: var(--gx-text); }
+.gs-seg-btn[aria-current="page"] { background: var(--gx-seg-on); color: var(--gx-text); }
+
+.gs-sec { padding: 0 0 16px; border-bottom: 1px solid var(--gx-hair); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gs-sec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.gs-meta { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+.gs-rows { display: flex; flex-direction: column; min-width: 0; }
+.gs-sec-act { display: flex; justify-content: flex-end; padding-top: 8px; }
+
+.gs-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 14px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--gx-hair-soft); font-size: var(--gx-fs-body); }
+.gs-row-k { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.gs-row-name { font-weight: 500; overflow-wrap: anywhere; }
+.gs-row-line { font-size: var(--gx-fs-meta); color: var(--gx-text-2); overflow-wrap: anywhere; }
+/* A figure is one run: it moves whole, it is never cut. */
+.gs-row-v { font-family: var(--gx-mono); font-size: 13px; white-space: nowrap; color: var(--gx-text); }
+.gs-row-v[data-accent] { color: var(--gx-accent-text); }
+.gs-usd { color: var(--gx-accent-text); }
+.gs-row-acts { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+.gs-choice { display: inline-flex; gap: 6px; }
+.gs-choice-wrap { flex-wrap: wrap; }
+
+.gs-btn { height: 28px; padding: 0 12px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text); font-size: 13px; font-weight: 500; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; cursor: pointer; transition: background var(--gx-t), border-color var(--gx-t); }
+.gs-btn:hover { background: var(--gx-input-hover, rgba(255, 255, 255, 0.05)); }
+.gs-btn[data-hot] { border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
+.gs-btn[data-danger] { color: var(--gx-failed-text); }
+.gs-btn[aria-pressed="true"], .gs-btn[aria-checked="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
+.gs-btn:disabled { color: var(--gx-disabled); cursor: default; }
+.gs-primary { height: 32px; padding: 0 13px; border: 0; border-radius: var(--gx-r-ctl); background: var(--gx-accent); color: var(--gx-on-accent); font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background var(--gx-t); }
+.gs-primary:hover { background: var(--gx-accent-hover); }
+.gs-primary:disabled { opacity: .45; cursor: default; }
+.gs-fold { align-self: flex-start; border: 0; background: transparent; padding: 0; font-size: 13px; font-weight: 600; color: var(--gx-accent-text); cursor: pointer; }
+.gs :is(.gs-btn, .gs-primary, .gs-fold, .gs-seg-btn, .gs-field):focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+
+.gs-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 10px; align-items: end; padding: 12px 0; border-bottom: 1px solid var(--gx-hair-soft); }
+.gs-label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gs-field { height: 32px; padding: 0 10px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-input-border); background: var(--gx-input); color: var(--gx-text); font-size: 13px; width: 100%; min-width: 0; }
+.gs-field:focus { border-color: var(--gx-accent); }
+.gs-edit { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--gx-hair-soft); }
+.gs-capform { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 8px 0 0; }
+.gs-capform .gs-field { width: 140px; }
+.gs-mono { font-family: var(--gx-mono); font-size: 13px; }
+.gs-copy { display: flex; flex-direction: column; gap: 6px; width: 100%; min-width: 0; }
+.gs-copy-body { display: flex; gap: 8px; align-items: flex-start; min-width: 0; }
+.gs-pre { margin: 0; flex: 1 1 auto; min-width: 0; padding: 8px 10px; border-radius: var(--gx-r-ctl); background: var(--gx-input); border: 1px solid var(--gx-input-border); font-family: var(--gx-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--gx-text); }
+.gs-pre:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gs-sel { height: 28px; max-width: 100%; padding: 0 8px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-input-border); background: var(--gx-input); color: var(--gx-text); font-size: 13px; }
+.gs-sel:disabled { color: var(--gx-disabled); }
+.gs-rule { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--gx-hair-soft); }
+.gs-rule[data-on="true"] { opacity: 1; }
+.gs-rule:not([data-on]) { opacity: .7; }
+.gs-rule-text { flex: 1 1 220px; width: auto; }
+.gs-rule-words { flex: 1 1 220px; min-width: 0; font-size: var(--gx-fs-body); overflow-wrap: anywhere; }
+.gs-fresh { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--gx-hair-soft); }
+.gs-code { font-family: var(--gx-mono); font-size: 13px; overflow-wrap: anywhere; min-width: 0; flex: 1 1 260px; }
+
+.gs-problem, .gs-note { margin: 8px 0 0; font-size: 13px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.gs-problem { color: var(--gx-failed-text); }
+.gs-note { color: var(--gx-text-2); }
+.gs-foot { margin: 0; font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+.gs-embed { padding: 12px 0; min-width: 0; overflow-x: auto; }
+
+/* Phone: the value and actions under the name, 44 px controls, and the end clear of the tab bar. */
+@media (max-width: 767px), (min-width: 768px) and (max-height: 500px) and (pointer: coarse) {
+  .gs-page { padding: 24px 16px calc(120px + env(safe-area-inset-bottom, 0px)); gap: 20px; }
+  .gs-h1 { font-size: 17px; letter-spacing: -0.02em; }
+  .gs-seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .gs-seg-btn { height: 44px; white-space: normal; line-height: 1.2; }
+  .gs-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 8px; }
+  .gs-row-acts { grid-column: 1 / -1; justify-content: flex-start; }
+  .gs-btn, .gs-primary { min-height: 44px; border-radius: var(--gx-r-ctl-phone); padding: 0 14px; }
+  .gs-sec-act { justify-content: stretch; }
+  .gs-sec-act .gs-primary { width: 100%; }
+  .gs-fold { min-height: 44px; min-width: 44px; text-align: left; }
+  .gs-form { grid-template-columns: minmax(0, 1fr); }
+  .gs-sel { height: 44px; border-radius: var(--gx-r-ctl-phone); font-size: 16px; }
+  .gs-copy-body { flex-direction: column; }
+  .gs-field { height: 44px; border-radius: var(--gx-r-ctl-phone); font-size: 16px; }
+  /* What Settings embeds as it is (the usage ledger, the rate card) keeps the same 44 px floor here. */
+  .gs-embed :is(button, a[href], select, input) { min-height: 44px; min-width: 44px; }
+}

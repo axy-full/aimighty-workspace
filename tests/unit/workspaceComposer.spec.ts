@@ -406,7 +406,7 @@ test("the palette shows Generate… first on an empty query", () => {
   expect(rows[0]).toMatchObject({ id: "composer", label: "Generate…", group: "ACTION", hint: "G", action: { type: "composer" } });
   /* And it is findable by name, beside the Rig row, which no longer claims G. */
   const hits = filterPalette(paletteCommands({ shots: [{ id: "s1", name: "Opening" }] }), "generate");
-  expect(hits.map((row) => row.id)).toEqual(["composer", "page:generate", "plan:generate", "generate"]);
+  expect(hits.map((row) => row.id)).toEqual(["composer", "plan:generate", "generate"]);
   expect(hits.find((row) => row.id === "generate")?.hint).toBe("");
 });
 

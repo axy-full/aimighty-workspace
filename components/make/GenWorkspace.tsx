@@ -78,7 +78,7 @@ function Workspace({ initialKind }: { initialKind?: string }) {
     GEN_MODES.find(
       (item) => item.slug === (initialKind ?? search.get("mode")),
     ) ?? GEN_MODES[0];
-  usePageTitle(`Gen · ${mode.label}`);
+  usePageTitle(`Make · ${mode.label}`);
   const [query, setQuery] = useState("");
   const [mobileView, setMobileView] = useState<"create" | "takes">("create");
   const importContext = useRef<object | null>(null);

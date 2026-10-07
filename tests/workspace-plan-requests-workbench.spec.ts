@@ -212,7 +212,7 @@ async function openAtomik(page: Page) {
 
 /* ---------------------------------------------------------------- tests */
 
-test("phones render the phone shell on Shorts", async ({ page }, info) => {
+test("phones render the phone shell where Shorts was, on the suite's first page", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   const project = { ...newProject("Viral launch"), id: "ws-plan-shorts", productionProjectId: "ws-plan-production" } as Project;
   await fixture(page, project);
@@ -221,6 +221,7 @@ test("phones render the phone shell on Shorts", async ({ page }, info) => {
      surface below 768px, and the desktop studio row is not mounted. */
   await expect(page.getByTestId("phone-shell")).toBeVisible();
   await expect(page.getByTestId("studio-row")).toHaveCount(0);
+  await expect(page.locator('[data-page-body="shorts"]')).toHaveCount(0);
 });
 
 test("Marketing Studio's plan prices the variants the page holds, and dispatches nothing before approval", async ({ page }, info) => {
@@ -228,7 +229,7 @@ test("Marketing Studio's plan prices the variants the page holds, and dispatches
   const project = campaignProject();
   const state = await fixture(page, project);
   await page.goto(url(project.id, "moleculr", "marketing"));
-  await expect(page.getByTestId("page-title")).toHaveText("Marketing Studio");
+  await expect(page.getByTestId("page-title")).toHaveText("Product image");
   await expect(page.locator('[data-tool-body="marketing"]')).toBeVisible({ timeout: 30_000 });
 
   await openAtomik(page);
@@ -273,32 +274,27 @@ test("a variant Marketing Studio never configured is named, not guessed at, and 
   await page.goto(url(project.id, "moleculr", "marketing"));
   await page.locator('.pxw-spec-card[data-card="Variants"]').click();
   await expect(page.getByTestId("marketing-plan-gaps")).toContainText(
-    "Quiet mornings: no engine accepted yet — configure its generation in Marketing Studio once.",
+    "Quiet mornings: no engine accepted yet — configure its generation in Product image once.",
   );
   await openAtomik(page);
-  await expect(page.getByTestId("atomik-reason")).toHaveText("Needs Marketing Studio data");
+  await expect(page.getByTestId("atomik-reason")).toHaveText("Needs Product image data");
   await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toBeDisabled();
   expect(state.quotes).toEqual([]);
   expect(state.dispatches).toEqual([]);
   expect(state.errors).toEqual([]);
 });
 
-test("Shorts ran on the Higgsfield account: its page says the sign-in is retired, and its plan refuses without asking anything", async ({ page }, info) => {
+test("Shorts ran on the Higgsfield account and is off for Release 1: no page and no plan to open, its old address opens the suite's first page", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const project = { ...newProject("Viral launch"), id: "ws-plan-shorts", productionProjectId: "ws-plan-production" } as Project;
   const state = await fixture(page, project);
   await page.goto(url(project.id, "subatomik", "shorts"));
-  await expect(page.getByTestId("page-title")).toHaveText("Shorts");
-  await expect(page.locator('[data-page-body="shorts"]')).toContainText("Shorts is retired. The connected account is no longer used. Past results stay in your Library.");
-  await expect(page.getByRole("region", { name: "Shorts on the connected account", exact: true })).toHaveCount(0);
-
-  await openAtomik(page);
-  await expect(page.getByTestId("atomik-plan-title")).toHaveText("Make a set of shorts");
-  /* Atomik no longer runs anything on the account: no API-key engine makes a set of shorts, so nothing is quoted or sent. */
-  await expect(page.getByTestId("atomik-owner-run")).toHaveCount(0);
-  await expect(page.getByTestId("atomik-reason")).toContainText("no API-key engine makes a set of shorts");
-  await expect(page.getByTestId("atomik-panel").getByRole("button", { name: /Run this page/ })).toBeDisabled();
-  await expect(page.getByTestId("atomik-gate")).toHaveCount(0);
+  await expect(page.getByTestId("page-title")).toBeVisible();
+  await expect(page.getByTestId("page-title")).not.toHaveText("Shorts");
+  await expect(page.locator('[data-page-body="shorts"]')).toHaveCount(0);
+  await expect(page.getByText(/Shorts is retired/)).toHaveCount(0);
+  /* With no Shorts page, its Atomik plan has nowhere to open from (tests/unit/signinOffRelease1.spec.ts holds the registries). */
+  await expect(page.getByText("Make a set of shorts")).toHaveCount(0);
   expect(state.quotes).toEqual([]);
   expect(state.dispatches).toEqual([]);
   expect(state.external).toEqual([]);

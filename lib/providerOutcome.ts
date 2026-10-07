@@ -101,6 +101,11 @@ export function providerText(value: unknown, max = MESSAGE_MAX): string | null {
   let text = value
     .replace(/\p{Cc}/gu, " ")
     .replace(/https?:\/\/[^\s<>"'`]+/giu, "[link]")
+    /* The engine's own brand names never reach a person (owner, 6 Oct 2026): "Soul ID" and "Soul Character" read Identity, any other Soul too. */
+    .replace(/\bSoul[\s-]+(?:ID|Character)\b/gu, "Identity")
+    .replace(/\b(?:Soul|SOUL)\b/gu, "Identity")
+    .replace(/\b(the|your)\s+Higgsfield(?:'s|\u2019s)?(?:\s+(?:API|account|platform|service))?\b/giu, "$1 engine")
+    .replace(/\bHiggsfield(?:'s|\u2019s)?\b/giu, "the engine")
     /* An Authorization value: "Bearer …", "Key id:secret" — only a token with a digit, so "key reference" stays. */
     .replace(/\b(?:bearer|basic|key|token)\s+(?=[A-Za-z0-9._~+/=:-]*\d)[A-Za-z0-9._~+/=:-]{16,}/giu, "[redacted]")
     .replace(/\b(?:sk|xai)-[A-Za-z0-9_-]{16,}/gu, "[redacted]")

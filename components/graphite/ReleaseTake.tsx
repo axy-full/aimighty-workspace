@@ -77,7 +77,7 @@ export function ReleaseTake({ entry, onReleased, place }: { entry: LibraryEntry;
   };
   return (
     <div className="gx-release" data-place={place} data-testid="take-release-row">
-      <button type="button" className="gx-hbtn gx-release-btn" disabled={busy} aria-busy={busy} data-testid="take-release"
+      <button type="button" className="gx-hbtn gx-release-btn" disabled={busy} aria-busy={busy} data-testid="take-release" data-spend="priced"
         onClick={(event) => { event.stopPropagation(); void release(); }}>
         {/* The price stays whole: it may drop to a second line on a narrow tile, never be cut. */}
         {/* A held Cinema Studio take's Release approves its hold, said as every approval of it says it (lib/cinemaHold.ts). */}

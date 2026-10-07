@@ -27,7 +27,7 @@
 }
 .planHead { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .ring { display: inline-flex; flex: none; color: var(--gx-text); }
-.planLabel { font-family: "Kode Mono", monospace; font-size: 11px; letter-spacing: .14em; line-height: 1.5; color: var(--gx-accent-text); min-width: 0; }
+.planLabel { font-family: "Kode Mono", monospace; font-size: 12px; letter-spacing: .14em; line-height: 1.5; color: var(--gx-accent-text); min-width: 0; }
 .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .step {
   display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 12px; align-items: center;

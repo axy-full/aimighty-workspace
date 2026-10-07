@@ -199,7 +199,7 @@ test("Moleculr saves product and cast, configures video, preserves original refe
   await page.screenshot({ path: info.outputPath("moleculr-product.png") });
   await page.getByRole("link", { name: "Cast", exact: true }).click();
   await page
-    .getByRole("button", { name: "Mira / character study", exact: true })
+    .getByRole("button", { name: "Lead / character study", exact: true })
     .click();
   await page.getByRole("link", { name: "Format", exact: true }).click();
   await page
@@ -268,13 +268,13 @@ test("Moleculr saves product and cast, configures video, preserves original refe
     .click();
   await expect(page).toHaveURL(/stage=export/);
   await expect(
-    page.getByRole("navigation", { name: "Particl Production Studio pages" }),
+    page.getByRole("navigation", { name: "Studio pages" }),
   ).toBeVisible();
   await page.reload();
   await expect.poll(() => state.saves.length).toBeGreaterThan(0);
   await page
     .getByRole("navigation", { name: "Suites", exact: true })
-    .getByRole("link", { name: "Moleculr Business Suite", exact: true })
+    .getByRole("link", { name: "Ads", exact: true })
     .click();
   await page.getByRole("link", { name: "Product", exact: true }).click();
   await expect(page.getByLabel("Product name", { exact: true })).toHaveValue(
@@ -303,7 +303,7 @@ test("suite navigation waits for hydration and project initialization, then foll
     await route.fallback();
   });
   await page.goto(await legacyShell(page, "/workbench?project=suite-test&stage=export"), { waitUntil: "commit" });
-  const suite = page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Moleculr Business Suite", exact: true });
+  const suite = page.getByRole("navigation", { name: "Suites", exact: true }).getByRole("link", { name: "Ads", exact: true });
   const room = page.getByRole("navigation", { name: "Rooms", exact: true }).getByRole("link", { name: "Make", exact: true });
   await expect(suite).toBeDisabled();
   await expect(suite).not.toHaveAttribute("href");
@@ -329,17 +329,17 @@ test("suite navigation includes Astra in order, retains every prior stage and bl
   await fixture(page, true);
   await page.goto(await legacyShell(page, "/workbench?project=suite-test&stage=brief"));
   await expect(
-    page.getByRole("navigation", { name: "Particl Production Studio pages" }),
+    page.getByRole("navigation", { name: "Studio pages" }),
   ).toBeVisible();
   const links = page
-    .getByRole("navigation", { name: "Particl Production Studio pages" })
+    .getByRole("navigation", { name: "Studio pages" })
     .getByRole("link");
   const stages = [
     ["Brief & Script", "brief"],
     ["Boards", "storyboard"],
     ["Cast & Elements", "characters"],
-    ["Astra", "astra-blender"],
-    ["Rig", "canvas"],
+    ["3D blocking", "astra-blender"],
+    ["Board", "canvas"],
     ["Takes", "assets"],
     ["Edit & Sound", "edit"],
     ["Deliver", "export"],
@@ -357,7 +357,7 @@ test("suite navigation includes Astra in order, retains every prior stage and bl
     .fill("An unsaved brief.");
   await page
     .getByRole("navigation", { name: "Suites", exact: true })
-    .getByRole("link", { name: "Moleculr Business Suite", exact: true })
+    .getByRole("link", { name: "Ads", exact: true })
     .click();
   await expect(
     page
@@ -377,14 +377,14 @@ test("retired stage IDs, the home project selector and the Marketing Studio sect
   const state = await fixture(page);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const dock = page.getByRole("navigation", { name: "Particl Production Studio pages", exact: true });
+  const dock = page.getByRole("navigation", { name: "Studio pages", exact: true });
   await page.goto(await legacyShell(page, "/workbench?project=suite-test&stage=brief"));
   await expect(dock.getByRole("link")).toHaveText([
     /Brief & Script$/,
     /Boards$/,
     /Cast & Elements$/,
-    /Astra$/,
-    /Rig$/,
+    /3D blocking$/,
+    /Board$/,
     /Takes$/,
     /Edit & Sound$/,
     /Deliver$/,
@@ -433,10 +433,10 @@ test("retired stage IDs, the home project selector and the Marketing Studio sect
   ).toEqual([true, true]);
   await page.goto(await legacyShell(page, "/workbench?project=suite-test&suite=moleculr&page=brand"));
   await expect(page).toHaveURL(/suite=moleculr&page=marketing#brand$/);
-  const moleculrDock = page.getByRole("navigation", { name: "Moleculr Business Suite pages", exact: true });
+  const moleculrDock = page.getByRole("navigation", { name: "Ads pages", exact: true });
   await expect(moleculrDock.getByRole("link")).toHaveCount(1);
-  await expect(moleculrDock.getByRole("link", { name: "Marketing Studio", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("navigation", { name: "Marketing Studio sections", exact: true }).getByRole("link")).toHaveText([
+  await expect(moleculrDock.getByRole("link", { name: "Product image", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("navigation", { name: "Ads sections", exact: true }).getByRole("link")).toHaveText([
     "Product",
     "Brand",
     "Cast",
@@ -453,7 +453,7 @@ test("retired stage IDs, the home project selector and the Marketing Studio sect
   await expect(expanded("brand")).toHaveAttribute("aria-expanded", "true");
   await expect(expanded("product")).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByRole("region", { name: "Brand kit", exact: true })).toBeVisible();
-  await page.getByRole("navigation", { name: "Marketing Studio sections", exact: true }).getByRole("link", { name: "Variants", exact: true }).click();
+  await page.getByRole("navigation", { name: "Ads sections", exact: true }).getByRole("link", { name: "Variants", exact: true }).click();
   await expect(page).toHaveURL(/suite=moleculr&page=marketing#variants$/);
   await expect(expanded("variants")).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByRole("region", { name: "Brand kit", exact: true })).toHaveCount(0);
@@ -491,7 +491,7 @@ test("four-suite home and legacy Subatomic redirect preserve project without inf
     page.getByRole("navigation", { name: "Suites", exact: true }),
   ).toBeInViewport();
   await expect(
-    page.getByRole("navigation", { name: "Particl Production Studio pages" }),
+    page.getByRole("navigation", { name: "Studio pages" }),
   ).toBeInViewport();
   await page.goto(await legacyShell(page, "/subatomic?project=suite-test&page=trends"));
   await expect(page).toHaveURL(/\/subatomik\?project=suite-test&page=motion-transfer/);
@@ -501,7 +501,7 @@ test("four-suite home and legacy Subatomic redirect preserve project without inf
       .getByRole("link"),
   ).toHaveCount(4);
   await expect(
-    page.getByRole("navigation", { name: "Subatomik Viral Studio pages", exact: true }),
+    page.getByRole("navigation", { name: "Social pages", exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: info.outputPath("subatomik-redirect.png") });
   expect(state.mutations).toEqual([]);
@@ -796,7 +796,7 @@ test("Moleculr prepares quoted-later hook and cast drafts while single video can
     .click();
   await page.getByRole("link", { name: "Cast", exact: true }).click();
   await page
-    .getByRole("button", { name: "Mira / character study", exact: true })
+    .getByRole("button", { name: "Lead / character study", exact: true })
     .click();
   await page.getByRole("link", { name: "Format", exact: true }).click();
   await page

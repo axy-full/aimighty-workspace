@@ -441,7 +441,7 @@ export function traySummary(jobs: readonly TrayJob[], seen: ReadonlySet<string> 
   return { kind: "quiet", ...counts, text: "Jobs", short: "", tone: "idle" };
 }
 
-export const ACTION_LABEL: Record<TrayAction, string> = { open: "Open in Takes", release: "Release", recreate: "Recreate", gen: "Open Gen", viral: "Open Viral" };
+export const ACTION_LABEL: Record<TrayAction, string> = { open: "Open in Takes", release: "Release", recreate: "Recreate", gen: "Open Make", viral: "Open Social" };
 
 /** The ledger's own words for a figure: "13 cr", "$0.840"; a connected job's is the account's own credits, said so ("40 connected cr"). */
 export function priceLabel(price: TrayPrice | null): string | null {

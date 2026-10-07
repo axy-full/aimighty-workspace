@@ -141,6 +141,7 @@ import {
   STAGE_ALIASES,
   normalizeStage,
   seedProject,
+  SEED_PROJECT_ID,
   newProject,
   uid,
   timecode,
@@ -206,6 +207,7 @@ import {
   useMobileLayout,
   useMobileViewport,
 } from "./mobile-ui";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 const icons: Record<Stage, typeof Box> = { brief:NotebookPen, script:FileText, moodboard:Palette, characters:UserRound, elements:Box, 'astra-blender':Box, canvas:GitBranch, storyboard:Clapperboard, assets:Layers, edit:Scissors, export:Download };
 const nodeIcons = {
@@ -637,6 +639,8 @@ export default function Studio({
   }
   async function refreshAstraAssets(expectedId: string) {
     if (transitioningRef.current || pRef.current.id !== expectedId) throw new Error('Return to the render’s project to load its saved outputs.');
+    /* Not on the server yet: it saves itself first, then the outputs are read. */
+    if (!savedSnapshots.current.get(expectedId) && !(await ensureSaved(expectedId))) throw new SaveFailedError();
     transitioningRef.current = true; setTransitioning(true);
     try {
       // Finish already-sent writes, but do not send a stale revision merely to
@@ -644,7 +648,7 @@ export default function Studio({
       await saveChain.current;
       if (uncertainSave.current) throw new Error('Confirm the pending project save before loading render outputs.');
       const base = savedSnapshots.current.get(expectedId);
-      if (!base) throw new Error('Save this project before loading render outputs.');
+      if (!base) throw new SaveFailedError();
       const data = await draftRequest<{ project?: Project; revision: number }>(apiBase + '/projects?id=' + encodeURIComponent(expectedId), storageKey);
       if (!data.project || pRef.current.id !== expectedId || activeStorageKey.current !== storageKey) throw new Error('The active project changed. Your render is saved in its original library.');
       const next = mergeRegisteredAstraAssets(JSON.parse(base), pRef.current, data.project);
@@ -660,7 +664,7 @@ export default function Studio({
     const prior=await fetch(endpoint,{headers:{'X-Workbench-Scope':storageKey},cache:'no-store'});
     if(prior.ok){const found=await prior.json();if(found.version.label!==label.trim())throw Error('This request names another edit version.');return found.version;}
     if(prior.status!==404)throw Error((await prior.json()).error||'Could not check the saved version.');
-    if(!await ensureSaved(draftId))throw Error('Save the current project before naming this cut.');
+    if(!await ensureSaved(draftId))throw new SaveFailedError();
     const payload={draftId,id,label,revision:revisions.current.get(draftId)};
     try {
       const response=await fetch(apiBase+'/edit-versions',{method:'POST',headers:{'Content-Type':'application/json','X-Workbench-Scope':storageKey},body:JSON.stringify(payload)});
@@ -673,7 +677,7 @@ export default function Studio({
   }
   async function restoreNamedEdit(id:string){
     const draftId=pRef.current.id;
-    if(!await ensureSaved(draftId))throw Error('Save your current work before restoring a cut.');
+    if(!await ensureSaved(draftId))throw new SaveFailedError();
     const original=JSON.stringify(pRef.current);
     const response=await fetch(apiBase+'/edit-versions?draftId='+encodeURIComponent(draftId)+'&id='+encodeURIComponent(id),{headers:{'X-Workbench-Scope':storageKey},cache:'no-store'});
     const value=await response.json();if(!response.ok)throw Error(value.error||'Could not read edit version.');
@@ -743,7 +747,7 @@ export default function Studio({
   },[apiBase,beginTransition,drainSaves,adoptProject,endTransition,signedIn,storageKey]);
   useEffect(() => {
     // The shared async loader hydrates from the server after flushing any pending write.
-    let last='dune-studies';
+    let last=SEED_PROJECT_ID;
     try{last=new URLSearchParams(window.location.search).get('project')||localStorage.getItem(storageKey)||last;}catch{/* Hydrate the default draft when local storage is disabled. */}
     const params=new URLSearchParams(window.location.search);
     const requestedStage=params.get('stage');
@@ -781,7 +785,8 @@ export default function Studio({
     }
     pendingSave.current = p;
     setSaveState(failedSave.current ? "Not saved" : "Saving");
-    const timer = setTimeout(() => void flushSave(), 650);
+    /* A project the server does not hold yet is saved at once: Atomik and the other agents read it from there, so a new project never waits on the typing pause. */
+    const timer = setTimeout(() => void flushSave(), savedSnapshots.current.has(p.id) ? 650 : 0);
     return () => clearTimeout(timer);
   }, [p, ready, signedIn, transitioning, flushSave]);
   useEffect(()=>{
@@ -1053,7 +1058,7 @@ export default function Studio({
       if (pRef.current.id !== draftId || transitioningRef.current) throw new Error('The project changed. The original LUT remains in your workspace uploads.');
       const asset: Asset = { id:data.id, uploadId:data.id, name:file.name.slice(0,200), kind:'document', category:'LUT', url:data.url, mime:data.mime, description:'Original 3D color LUT', prompt:'', status:'Draft', version:1, locked:false, refs:[] };
       change(previous => ({ ...previous, assets:[...previous.assets,asset], colorGrade:{...defaultColorGrade,...previous.colorGrade,lutAssetId:asset.id,bypassed:false} }));
-      if (!(await ensureSaved(draftId))) throw new Error('The LUT uploaded. Save this project before leaving to retain its binding.');
+      if (!(await ensureSaved(draftId))) throw new SaveFailedError();
       toast.success('LUT imported and applied to the sequence.');
     } finally { uploadingRef.current--; setUploading(uploadingRef.current>0); }
   }
@@ -1432,7 +1437,7 @@ export default function Studio({
             <div>
               <span className="eyebrow">LOOK DEVELOPMENT</span>
               <h2>
-                {p.id === 'dune-studies'
+                {p.id === SEED_PROJECT_ID
                   ? 'Warm earth. Impossible reflections.'
                   : 'The visual world of ' + p.name}
               </h2>
@@ -3344,7 +3349,7 @@ export default function Studio({
           const category=soulTarget.subjectType==='character'?'Character':'Element';
           const alreadyAttached=!assetId&&pRef.current.assets.find(asset=>asset.soulIdentityId===identity.id&&asset.category===category);
           if(!alreadyAttached){const asset=soulIdentityAsset(pRef.current,identity,category,assetId);change(previous=>({...previous,assets:assetId?previous.assets.map(existing=>existing.id===assetId?asset:existing):[...previous.assets,asset]}));}
-          if(!await ensureSaved(soulTarget.draftId))throw new Error('The identity is attached on screen. Save this project before leaving to retain the binding.');
+          if(!await ensureSaved(soulTarget.draftId))throw new SaveFailedError();
           toast.success('Identity attached. Its original portrait is available on the canvas.');
         }}/>}
         {generationTarget&&generationTarget.draftId===p.id&&<GenerationDialog scope={storageKey} target={generationTarget} project={p} onClose={()=>setGenerationTarget(null)} onSave={()=>ensureSaved(generationTarget.draftId)} onAsset={(id,fields)=>{if(pRef.current.id===generationTarget.draftId)updateAsset(id,fields);}} onQueued={(_id,kind,accepted)=>{if(pRef.current.id!==generationTarget.draftId||activeStorageKey.current!==storageKey)return;change(old=>applyAcceptedGeneration(old,generationTarget.node.id,kind,accepted));void ensureSaved(generationTarget.draftId,true).then(saved=>{if(saved)void jobs.refresh();});setAtomOpen(true);setAtomTab('runs');toast.success('Generation submitted. Follow its progress in Activity.');}}/>}

@@ -112,7 +112,7 @@ function next<T extends { at: number; id: string }>(rows: T[], limit: number): {
 
 /** What a metered job was, in the ledger's words. */
 export function meteredEngine(kind: string, engine: string, model: string): string {
-  if (engine === "vercel-sandbox") return "Astra render";
+  if (engine === "vercel-sandbox") return "3D blocking render";
   if (model === GROK_STT_MODEL) return "Transcription";
   if (kind === "training") return "Identity training";
   if (kind === "text") return `Atomik · ${modelLabel(model)}`;

@@ -17,7 +17,7 @@ const BriefTool = dynamic(() => import("./tools/BriefTool"), { ssr: false, loadi
 const BoardsTool = dynamic(() => import("./tools/BoardsTool"), { ssr: false, loading: opening("the boards") });
 const AstraTool = dynamic(() => import("./tools/AstraTool"), { ssr: false, loading: opening("the 3D scene") });
 const DeliverTool = dynamic(() => import("./tools/DeliverTool"), { ssr: false, loading: opening("the delivery") });
-const MarketingTool = dynamic(() => import("./tools/MarketingTool"), { ssr: false, loading: opening("Marketing Studio") });
+const MarketingTool = dynamic(() => import("./tools/MarketingTool"), { ssr: false, loading: opening("Product image") });
 const AtomikTool = dynamic(() => import("./tools/AtomikTool"), { ssr: false, loading: opening("the agent") });
 const SubatomikTool = dynamic(() => import("./tools/SubatomikTool"), { ssr: false, loading: opening("the viral studio") });
 const Toaster = dynamic(() => import("@/components/workbench/ui/sonner").then((m) => m.Toaster), { ssr: false });

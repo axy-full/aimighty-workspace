@@ -35,7 +35,7 @@ test("an old workspace flag cannot authorize provider-wallet spending after migr
     expect(jobs.ok(), await jobs.text()).toBe(true);
     expect((await jobs.json()).jobs).toEqual([]);
     for (const data of [
-      { action: "characters-create", name: "Mira", type: "soul_2", sources: Array.from({ length: 5 }, (_, i) => ({ uploadId: `original-${i}` })) },
+      { action: "characters-create", name: "Wren", type: "soul_2", sources: Array.from({ length: 5 }, (_, i) => ({ uploadId: `original-${i}` })) },
       { action: "elements-create", name: "Harbour", category: "environment", sources: [{ uploadId: "original-0" }] },
     ]) {
       const build = await page.request.post("/api/higgsfield/consumer/generation", { headers, data });

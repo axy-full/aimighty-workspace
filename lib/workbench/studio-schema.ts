@@ -247,6 +247,14 @@ export const productionSchema = z.object({
       pending: z.array(z.object({ jobId: z.string().max(100), style: z.enum(['live', 'color-sketch', 'bw-sketch']), at: z.string().datetime() }).strict()).optional(),
     }).strict()).refine((value) => Object.keys(value).length <= 2000),
     promptsJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
+    /* The looks made before the storyboard, and the one picked (lib/production/looks.ts). Optional: drafts from before them parse as they did. */
+    looks: z.record(z.string().regex(/^[a-z0-9-]{1,40}$/), z.object({
+      name: z.string().max(80), prompt: z.string().max(8000),
+      takes: z.array(z.object({ genId: z.string().max(100), at: z.string().datetime() }).strict()).max(20),
+      selected: z.string().max(100).optional(),
+      pending: z.array(z.object({ jobId: z.string().max(100), at: z.string().datetime() }).strict()).max(4).optional(),
+    }).strict()).refine((value) => Object.keys(value).length <= 8).optional(),
+    look: z.string().regex(/^[a-z0-9-]{1,40}$/).optional(),
   }).strict().optional(),
   cast: z.object({
     entries: z.array(z.object({
@@ -341,6 +349,8 @@ export const projectSchema = z.object({
     .optional(),
   script: z.string().max(MAX_SCRIPT_CHARS).optional(),
   scriptFormat: z.enum(["screenplay", "adfilm"]).optional(),
+  /* The board a project opens on (lib/board/kind.ts; lead decision 26): set when a template makes it. Absent: read from its data. */
+  boardKind: z.enum(["studio", "ads", "social"]).optional(),
   scriptSource: z
     .object({
       assetId: z.string().max(100),

@@ -1,0 +1,22 @@
+/* The Cut card (README § 3.1 frame i; § 2 tokens). Tokens only: app/graphite.css. */
+.gx-cut { position: relative; width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 12px; overflow: hidden; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); color: var(--gx-text); font-family: var(--gx-font); }
+.gx-cut-strip { flex: none; display: flex; gap: 2px; height: 136px; overflow: hidden; border-radius: var(--gx-r-sm); }
+.gx-cut-thumb { position: relative; flex: 1 1 0; min-width: 0; margin: 0; overflow: hidden; background: var(--gx-root); }
+.gx-cut-pic { display: block; width: 100%; height: 100%; }
+.gx-cut-pic > span:first-child { display: block; width: 100%; height: 100%; }
+.gx-cut-pic img, .gx-cut-pic video { object-fit: cover; }
+.gx-cut-face { display: block; width: 100%; height: 100%; background: var(--gx-card); }
+.gx-cut-tag { position: absolute; left: 6px; bottom: 6px; max-width: calc(100% - 12px); padding: 2px 6px; border-radius: var(--gx-r-xs); background: var(--gx-on-media); font: 12px/1.45 var(--gx-mono); color: var(--gx-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-cut-line { flex: none; display: flex; gap: 2px; height: 26px; }
+.gx-cut-seg { flex: 1 1 0; min-width: 0; display: grid; place-items: center; border: 1px dashed var(--gx-dashed); border-radius: var(--gx-r-xs); font: 12px/1 var(--gx-mono); color: var(--gx-text-2); white-space: nowrap; overflow: hidden; }
+.gx-cut-seg[data-approved] { border: 1px solid var(--gx-tint-border); background: var(--gx-tint-12); color: var(--gx-text); }
+.gx-cut-empty { flex: none; display: grid; place-items: center; height: 168px; padding: 0 24px; text-align: center; border: 1px dashed var(--gx-dashed); border-radius: var(--gx-r-sm); font-size: var(--gx-fs-body); color: var(--gx-text-2); }
+.gx-cut-foot { flex: 1; min-height: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 4px 2px 0; }
+.gx-cut-words { min-width: 0; }
+.gx-cut-title { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: var(--gx-ls-h2); }
+.gx-cut-list, .gx-cut-wait { font-size: var(--gx-fs-body); line-height: 1.5; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.gx-cut-wait { color: var(--gx-waiting-text); }
+.gx-cut-btn { flex: none; height: 28px; padding: 0 10px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); white-space: nowrap; cursor: pointer; transition: border-color var(--gx-t) var(--gx-ease), background var(--gx-t) var(--gx-ease); }
+.gx-cut-btn:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx-cut-btn:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gx-cut-btn:disabled { color: var(--gx-disabled); cursor: default; }

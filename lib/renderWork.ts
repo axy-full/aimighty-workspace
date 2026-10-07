@@ -169,7 +169,7 @@ export async function loadJob(genId: string): Promise<Job | null> {
     : [];
   const hydrated = await hydrate(refs);
   if (row.model === MARKETING_IMAGE_MODEL_ID && hydrated.length !== refs.length)
-    throw new Error("A Marketing Studio source is no longer available. Restore the original source before resuming this request.");
+    throw new Error("A Product image source is no longer available. Restore the original source before resuming this request.");
   return {
     kind: "image",
     genId: row.id,

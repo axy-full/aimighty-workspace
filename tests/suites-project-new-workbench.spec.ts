@@ -13,7 +13,7 @@ const SIZES = ["workbench-1440x900", "workbench-390x844"];
 test("New project starts and opens in the Suites, without leaving for the older workbench", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "one desktop, one phone");
   await signInLocally(page.request);
-  await page.goto("/suites?suite=studio&page=brief");
+  await page.goto("/suites?suite=atomik&page=agent&sp=agent");
   await page.getByTestId("project-switcher").click();
   await page.getByTestId("project-new").click();
   const name = `Harbour ${Date.now().toString(36)}`;
@@ -33,7 +33,7 @@ test("a long result caption stays inside its card in Gen", async ({ page }, info
   await mockProjects(page, store);
   const long = "A red fox crossing a frozen harbour at dusk, a lit hut window far behind, wide shot, cinematic still, snow driving left to right";
   await mockLibrary(page, { uploads: [], generations: [generation({ id: "gen_a", title: long, prompt: long, projectId: "prod-captions" }), generation({ id: "gen_b", title: long, prompt: long, projectId: "prod-captions" })] });
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=recent");
   const cards = page.locator(".gx-gen-grid .gx-asset");
   await expect(cards).toHaveCount(2, { timeout: 30_000 });
   for (const card of await cards.all()) {

@@ -2,12 +2,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { Fault } from "@/components/Boundary";
-import LazyMedia from "@/components/LazyMedia";
 import { ACTION_LABEL, moving, priceLabel, trayWhen, type TrayJob } from "@/lib/jobsTray";
 import { Glyph } from "./icons";
 import { SAY } from "@/lib/shell/assets";
-import { sendGenPreset } from "@/lib/shell/gen-preset";
-import { handTakeToTakes } from "@/lib/shell/take-handover";
 import { useJobsTray, type JobsTrayState, type RowProblem } from "@/lib/shell/use-jobs-tray";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
@@ -21,8 +18,6 @@ import { cinemaPriceWords } from "@/lib/cinemaHold";
  * stage, how long it has been going or when it finished, the ledger's figure,
  * and the one thing to do about it.
  */
-const KIND_TAG: Record<TrayJob["kind"], string> = { video: "VID", image: "IMG", audio: "AUD", other: "•••" };
-
 export function JobsPill() {
   const tray = useJobsTray();
   const anchor = useRef<HTMLButtonElement>(null);
@@ -34,7 +29,8 @@ export function JobsPill() {
   const quiet = !summary || summary.kind === "quiet";
   return (
     <>
-      <button ref={anchor} type="button" className="gx-hbtn gx-jobs" data-tone={unread ? "red" : summary?.tone ?? "idle"} data-kind={summary?.kind ?? "quiet"}
+      {/* The dot (the master's): blue and pulsing while anything renders, amber while something waits on credits, red for a failure or a tray it could not read, grey otherwise. */}
+      <button ref={anchor} type="button" className="gx-hbtn gx-jobs" data-tone={unread ? "red" : summary?.tone ?? "idle"} data-kind={summary?.kind ?? "quiet"} data-live={summary && summary.rendering > 0 ? "" : undefined}
         aria-haspopup="dialog" aria-expanded={tray.open} aria-label={unread ? "Jobs could not be read. Open to try again." : quiet ? "Jobs" : `Jobs: ${summary.text}`}
         onClick={() => tray.setOpen(!tray.open)} data-testid="running-jobs">
         <span className="gx-jobs-dot" aria-hidden="true" />
@@ -103,7 +99,7 @@ function JobsTray({ tray, anchor }: { tray: JobsTrayState; anchor: RefObject<HTM
           <span className="gx-panel-title">Jobs</span>
           {head ? <span className="gx-jobs-count" data-testid="jobs-summary">{head}</span> : null}
           <span className="gx-spacer" />
-          <button type="button" className="gx-hbtn" onClick={close} data-testid="jobs-close">Close</button>
+          <button type="button" className="gx-hbtn gx-jobs-close" onClick={close} data-testid="jobs-close">Close</button>
         </div>
         <div className="gx-sheet-list gx-scroll gx-jobs-list" data-testid="jobs-list">
           {/* A failed read keeps the last rows (or says so over none) and is asked again on its own; Try again asks at once. Said first, above the rows it is about. */}
@@ -123,7 +119,7 @@ function JobsTray({ tray, anchor }: { tray: JobsTrayState; anchor: RefObject<HTM
           ) : (
             <div className="gx-empty gx-jobs-empty" data-testid="jobs-empty">
               <p>Nothing is rendering or waiting, and nothing finished in the last 6 hours.</p>
-              <button type="button" className="gx-hbtn gx-jobs-act--primary" onClick={() => { tray.setOpen(false); shell.goGen(); }} data-testid="jobs-generate">Generate</button>
+              <button type="button" className="gx-hbtn gx-jobs-act--primary" onClick={() => { tray.setOpen(false); shell.openMake(); }} data-testid="jobs-generate">Open Make</button>
             </div>
           )}
         </div>
@@ -153,18 +149,17 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
     switch (job.action) {
       case "open":
         toProject();
-        /* That take and no other: Takes opens on it, and says so while it is found. */
-        if (job.takeId) { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: job.takeId } }); handTakeToTakes(job.takeId); }
+        /* That take and no other: the board's Shots region opens on it. */
+        if (job.takeId) ws.dispatch({ type: "patch", patch: { selKind: "take", selId: job.takeId } });
         shell.goSuite("studio", "takes"); onDone(); return;
-      case "gen": toProject(); if (shell.view === "gen") shell.closePanels(); else shell.goGen(); onDone(); return;
+      case "gen": toProject(); shell.openMake(); onDone(); return;
       case "viral": toProject(); shell.goSuite("viral", "history"); onDone(); return;
       case "release": void tray.release(job); return;
       case "recreate": {
         if (!job.preset) return;
         /* Gen is handed the take's own recipe (lib/shell/recipe, as the Library's Recreate builds it); it is priced again before anything runs. */
         toProject();
-        sendGenPreset(job.preset);
-        if (shell.view === "gen") shell.closePanels(); else shell.goGen();
+        shell.openMake(job.preset);
         ws.toast(SAY.recreate(job.name));
         onDone();
       }
@@ -176,10 +171,9 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
   const releasePrice = releaseAt == null ? null : job.releaseBand ? cinemaPriceWords(releaseAt / job.releaseBand, releaseAt) : `${releaseAt.toLocaleString("en-US")}\u00a0cr`;
   const label = problem?.topUp ? "Top up" : releasePrice ? `Release · ${releasePrice}` : job.action ? ACTION_LABEL[job.action] : null;
   return (
-    <li className="gx-jobs-row" data-stage={job.stage} data-tone={job.tone} data-source={job.source} data-testid="jobs-row" data-job={job.id}>
-      <span className="gx-jobs-thumb" aria-hidden="true">
-        {job.mediaUrl && (job.kind === "image" || job.kind === "video") ? <LazyMedia url={job.mediaUrl} kind={job.kind} alt="" name={job.name} /> : <span className="gx-jobs-kind">{KIND_TAG[job.kind]}</span>}
-      </span>
+    <li className="gx-jobs-row" data-stage={job.stage} data-tone={job.tone} data-moving={moving(job) ? "" : undefined} data-source={job.source} data-testid="jobs-row" data-job={job.id}>
+      {/* The master's row: a dot in the job's tone · its name · the mono meta · the one action. */}
+      <span className="gx-jobs-rowdot" aria-hidden="true" data-testid="jobs-dot" />
       <span className="gx-jobs-body">
         <span className="gx-jobs-name" title={where ? `${job.name} · ${where}` : job.name}>{job.name}</span>
         {/* The stage, how long it has been going (or when it finished), and the figure — each whole: a figure is never cut short. */}

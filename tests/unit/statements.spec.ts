@@ -3,7 +3,7 @@ import { monthRange, monthOf, groupLines, statementCsv, type RawLine, type State
 
 const line = (o: Partial<RawLine>): RawLine => ({
   id: "g1", at: Date.UTC(2026, 8, 6), kind: "video", take: "v1", what: "Seedance 2.5 · 1080P · 5s", status: "succeeded", note: "", credits: 40, usd: 0,
-  projectId: "p1", projectName: "Northline", shotId: "s1", shotCode: "SH010", shotTitle: "Rooftop", ...o,
+  projectId: "p1", projectName: "Granite", shotId: "s1", shotCode: "SH010", shotTitle: "Rooftop", ...o,
 });
 
 test("a month is a UTC month", () => {
@@ -23,7 +23,7 @@ test("lines group by production and shot, Unfiled last, shots by code, takes in 
     line({ id: "d", at: 4, projectId: "p0", projectName: "Alpha", shotId: null, shotCode: "", credits: 3 }),
   ];
   const g = groupLines(rows);
-  expect(g.map((p) => p.name)).toEqual(["Alpha", "Northline", "Unfiled"]);
+  expect(g.map((p) => p.name)).toEqual(["Alpha", "Granite", "Unfiled"]);
   const n = g[1];
   expect(n.shots.map((s) => s.code)).toEqual(["SH010", "SH020"]);
   expect(n.credits).toBe(80);

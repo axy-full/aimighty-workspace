@@ -10,6 +10,8 @@ export type SoulIdentity = {
   creditsBilled: number | null; error: string | null;
   /** The model it renders with on the platform's key (lib/soulRenderTypes.ts); null when it cannot render (read-only). */
   renderModel?: string | null;
+  /** The training consent that exists: when it was confirmed and by whom (a display name). Read-only; the identities route fills it. */
+  consentAt?: number | null; consentBy?: string | null;
 };
 /** One family training is offered for, at its fixed price. A family with no price is not listed. */
 export type SoulTrainingVersion = { version: 'v1' | 'v2' | 'cinema'; trainingCredits: number | null; trainingCostUsd?: number | null };

@@ -101,6 +101,9 @@ export type SoulIdentity = {
   error: string | null;
   /** The model it renders with on the platform's key; null for an identity it cannot render (read-only). */
   renderModel: string | null;
+  /** The training consent that exists: when it was confirmed and by whom (a display name). Read-only. */
+  consentAt?: number | null;
+  consentBy?: string | null;
 };
 export class SoulIdentityError extends Error {
   constructor(
@@ -262,10 +265,23 @@ async function canRead(row: Row): Promise<boolean> {
     }
   });
 }
+/** The display names of the people who made these identities, from this workspace's own users (never an address). */
+async function personNames(ids: readonly string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return new Map();
+  const rows = await db().execute({
+    sql: `SELECT id,name FROM users WHERE id IN (${unique.map(() => "?").join(",")})`,
+    args: unique,
+  });
+  return new Map(rows.rows.map((r) => [String(r.id), String(r.name)]));
+}
 async function publicIdentity(
   row: Row,
   bills?: Map<string, number>,
+  names?: Map<string, string>,
 ): Promise<SoulIdentity> {
+  /* Who confirmed the training consent (the person who built it) and when: read-only, this workspace's own record. */
+  const consentBy = (names ?? (await personNames([String(row.owner)]))).get(String(row.owner)) ?? null;
   const refs = sources(row);
   const bill = bills
     ? bills.has(String(row.id))
@@ -301,6 +317,8 @@ async function publicIdentity(
         : null,
     error: row.error == null ? null : String(row.error),
     renderModel: renderModelOf(row),
+    consentAt: row.consent_at == null ? null : Number(row.consent_at),
+    consentBy,
   };
 }
 /** Training terms: the default family's price (as before), and every family that has one — only those are offered. */
@@ -361,7 +379,8 @@ export async function listSoulIdentities(
   const bills = new Map(
     meterRows.rows.map((row) => [String(row.id), Number(row.billed_credits)]),
   );
-  return Promise.all(rows.rows.map((row) => publicIdentity(row, bills)));
+  const names = await personNames(rows.rows.map((row) => String(row.owner)));
+  return Promise.all(rows.rows.map((row) => publicIdentity(row, bills, names)));
 }
 export type CreateSoulIdentityInput = {
   projectId?: string | null;

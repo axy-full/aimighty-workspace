@@ -38,7 +38,7 @@ async function account(page: Page) {
   const made = await page.request.post("/api/projects", { data: { name: `Lost reply canvas ${randomUUID().slice(0, 6)}` } });
   expect(made.ok(), await made.text()).toBe(true);
   const projectId = (await made.json()).id as string;
-  const shot = await page.request.post("/api/shots", { data: { projectId, code: "SH01", title: "Wide", kind: "shot", description: "Iver crosses the ice" } });
+  const shot = await page.request.post("/api/shots", { data: { projectId, code: "SH01", title: "Wide", kind: "shot", description: "Rowan crosses the ice" } });
   expect(shot.ok(), await shot.text()).toBe(true);
   const shotJson = await shot.json();
   const sent: Sent[] = [];
@@ -144,14 +144,14 @@ test("the phone board's Apply follows a take whose reply was lost, and never sen
   const f = await account(page);
   const at = Date.now();
   const version = (id: string, i: number) => ({ id, attributeId: "att_face", elementId: "el_iver", label: `v${i}`, uploadId: null, genId: null, identityId: null, status: "ready", createdAt: at + i });
-  const element = { id: "el_iver", projectId: f.projectId, castId: null, kind: "character", name: "Iver", description: "", locked: false, lockedBy: null, lockedAt: null, fromShotId: null, fromGenId: null, createdAt: at,
+  const element = { id: "el_iver", projectId: f.projectId, castId: null, kind: "character", name: "Rowan", description: "", locked: false, lockedBy: null, lockedAt: null, fromShotId: null, fromGenId: null, createdAt: at,
     attributes: [{ id: "att_face", elementId: "el_iver", kind: "face", label: "Face", currentId: "ver_1", locked: false, position: 0, versions: [version("ver_1", 1), version("ver_2", 2)] }] };
   const node = (id: string, kind: string, label: string, extra: Record<string, unknown> = {}) => ({ id, kind, label, x: 0, y: 0, ref: null, ports: [], inputs: [], output: null, settings: {}, state: "idle", credits: 0, staleSince: null, ...extra });
   const made = await page.request.post("/api/rig/boards", { data: { projectId: f.projectId, name: "Apply board" } });
   const board = (await made.json()).board as { id: string };
   expect((await page.request.put(`/api/rig/boards/${board.id}`, { data: {
     nodes: [
-      node("n_asset", "asset", "@Iver", { ref: { elementId: "el_iver" }, ports: [{ id: "face", label: "FACE", attributeId: "att_face", versionId: "ver_1", version: "v1" }] }),
+      node("n_asset", "asset", "@Rowan", { ref: { elementId: "el_iver" }, ports: [{ id: "face", label: "FACE", attributeId: "att_face", versionId: "ver_1", version: "v1" }] }),
       node("n_shot", "shot", "SH01", { ref: { shotId: f.shotId }, inputs: [{ id: "cast", label: "CAST" }], settings: { title: "Wide" } }),
       node("n_video", "video", "Seedance", { ref: { engine: ENGINE }, settings: { resolution: "1080p", seconds: 5 } }),
     ],
@@ -160,7 +160,7 @@ test("the phone board's Apply follows a take whose reply was lost, and never sen
   /* The slot sheet's reads: the element's versions, and the shot citing it (the shot itself is the server's). */
   await page.route((url) => url.pathname === "/api/rig/elements", (route) => route.fulfill({ json: { elements: [element] } }));
   await page.route((url) => url.pathname === "/api/shots" && url.searchParams.get("projectId") === f.projectId, (route) => route.fulfill({ json: { shots: [
-    { id: f.shotId, projectId: f.projectId, code: "SH01", title: "Wide", description: "Iver crosses the ice", cast: ["@Iver"], planned: 5, setup: {}, state: "draft", takes: 0, spend: 0 },
+    { id: f.shotId, projectId: f.projectId, code: "SH01", title: "Wide", description: "Rowan crosses the ice", cast: ["@Rowan"], planned: 5, setup: {}, state: "draft", takes: 0, spend: 0 },
   ] } }));
 
   await page.goto(`/rig/canvas/${board.id}`);
@@ -181,7 +181,7 @@ test("the phone board's Apply follows a take whose reply was lost, and never sen
   const mark = f.sent.length;
   await expect(apply).toBeEnabled();
   await apply.click();
-  await expect(page.getByRole("status").filter({ hasText: "rendering" })).toContainText(`Iver → v2 · 1 take rendering · ${price} cr`, { timeout: 60_000 });
+  await expect(page.getByRole("status").filter({ hasText: "rendering" })).toContainText(`Rowan → v2 · 1 take rendering · ${price} cr`, { timeout: 60_000 });
   const books = await settledLedger(f.tenantUrl, f.workspaceId, f.projectId, 1);
   expect({ sent: f.sent.slice(mark).map((s) => s.path), made: books.jobs.length, billed: books.charges })
     .toEqual({ sent: ["/api/generate/check"], made: 1, billed: [price] });

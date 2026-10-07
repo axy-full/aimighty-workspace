@@ -3,8 +3,8 @@ import { useEffect, useRef, useState, useTransition, type CSSProperties, type Re
 import { TRAIL } from "@/components/ui/Mark";
 import { HEADER_SEGMENT } from "@/lib/shell/ia";
 import { signInHrefFor } from "@/lib/session";
-import { FIND_HREF, HOME_HREF, STUDIO_HREF, TAKES_HREF, faultMessage, faultPrimary, faultRef, faultReport, isStaleBuild, segmentHref } from "@/lib/shell/fault";
-import { Glyph, SUITE_LOOK } from "./icons";
+import { FIND_HREF, HOME_HREF, STUDIO_HREF, SHOTS_HREF, faultMessage, faultPrimary, faultRef, faultReport, isStaleBuild, segmentHref } from "@/lib/shell/fault";
+import { Glyph, SEGMENT_LOOK } from "./icons";
 import { CopyDetails, FaultIcon } from "./PanelFault";
 import "@/components/graphite/shell.css";
 import "./fault.css";
@@ -12,7 +12,7 @@ import "./fault.css";
 /**
  * The Suites header without the live shell behind it (Header.tsx needs the
  * shell's providers, which are exactly what failed or never loaded): the
- * mark, the six segments and Search, each a plain link that loads a clean
+ * mark, Home · Project · Make · Atomik and Search, each a plain link that loads a clean
  * document. ⌘K works here too — it lands in the shell with search open.
  * A visitor (no session) gets the mark and Sign in: every suite link would
  * only lead to the sign-in page.
@@ -42,13 +42,17 @@ export function StaticHeader({ member = true }: { member?: boolean }) {
       </a>
       {member ? (<>
         <nav className="gx-seg" aria-label="Suites">
-          {HEADER_SEGMENT.map((s) => (
-            <a key={s.id} className="gx-seg-btn" href={segmentHref(s.id)} title={s.title} style={{ "--suite": SUITE_LOOK[s.id]?.color } as CSSProperties} data-suite-tab={s.id}>
-              <Glyph name={SUITE_LOOK[s.id]?.glyph ?? "spark"} size={15} className="gx-glyph" />
-              <span className="gx-seg-label">{s.label}</span>
-              <span className="gx-sig" aria-hidden="true" />
-            </a>
-          ))}
+          {HEADER_SEGMENT.map((s) => {
+            /* No project is open behind this page: the project segment says "Project", with a plain swatch. */
+            const look = s.id === "project" ? null : SEGMENT_LOOK[s.id];
+            return (
+              <a key={s.id} className="gx-seg-btn" href={segmentHref(s.id)} title={s.title} style={look?.color ? ({ "--suite": look.color } as CSSProperties) : undefined} data-suite-tab={s.id}>
+                {look ? <Glyph name={look.glyph} size={13} className="gx-glyph" /> : <span className="gx-seg-swatch" aria-hidden="true" />}
+                <span className="gx-seg-label">{s.label}</span>
+                {look?.color ? <span className="gx-sig" aria-hidden="true" /> : null}
+              </a>
+            );
+          })}
         </nav>
         <a className="gx-search" href={FIND_HREF} aria-label="Search" aria-keyshortcuts="Meta+K" data-testid="header-search">
           <Glyph name="search" size={14} className="gx-glyph" />
@@ -154,7 +158,7 @@ function Missing({ member }: { member: boolean }) {
         <p className="gx-fault-sub">The link is old, or what it pointed at was archived.</p>
         <div className="gx-fault-actions">
           <a className="gx-primary" href={STUDIO_HREF} data-testid="missing-studio">Back to Studio</a>
-          <a className="gx-hbtn" href={TAKES_HREF} data-testid="missing-takes">Open Takes</a>
+          <a className="gx-hbtn" href={SHOTS_HREF} data-testid="missing-shots">Open Shots</a>
           <a className="gx-hbtn" href={FIND_HREF} aria-keyshortcuts="Meta+K" data-testid="missing-search">Search <span className="gx-fault-kbd">⌘K</span></a>
         </div>
       </>) : (<>

@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { moreTakes } from "./helpers/genTakes";
+import { MAKE_SHOWS_CINEMA } from "../lib/shell/make-price";
 
 /**
  * Gen approves Cinema Studio's hold (owner's decision, 5 October 2026): the
@@ -92,6 +93,8 @@ async function shot(page: Page, info: TestInfo, name: string) {
 
 test("Gen approves Cinema Studio's hold: about N cr, at most 3N cr on the button, whole at every size, and the press sends 3N", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  /* Release 1: Gen is Make, which offers Cinema Studio only once MAKE_SHOWS_CINEMA is on (lib/shell/make-price.ts; #559). */
+  test.skip(!MAKE_SHOWS_CINEMA, "Make does not offer Cinema Studio 4.0 until #559");
   const { quotes, sent, errors } = await open(page);
   const go = page.getByTestId("gen-generate");
   await expect(go).toHaveText(`Generate · about ${N} cr, at most ${3 * N} cr`);
@@ -107,6 +110,8 @@ test("Gen approves Cinema Studio's hold: about N cr, at most 3N cr on the button
 
 test("a batch approves each take's hold: Generate 3 takes says about 3N cr, at most 9N cr, and every take goes at 3N", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  /* Release 1: Gen is Make, which offers Cinema Studio only once MAKE_SHOWS_CINEMA is on (lib/shell/make-price.ts; #559). */
+  test.skip(!MAKE_SHOWS_CINEMA, "Make does not offer Cinema Studio 4.0 until #559");
   const { sent, errors } = await open(page);
   await moreTakes(page, 2);
   const go = page.getByTestId("gen-generate");

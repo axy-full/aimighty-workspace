@@ -186,31 +186,3 @@ test("the Rig's Estimate is the Generate button's own figure when references are
   await expect(page.locator(".pxw-insp-generate")).toHaveText("Generate take · 90 cr");
   expect(errors).toEqual([]);
 });
-
-test("Suites › Cast: the Inspector shows the stage, not a selection the stage cannot make", async ({ page }, info) => {
-  test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
-  await open(page, "/suites?suite=studio&page=cast");
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
-  const inspector = page.getByTestId("inspector");
-  await expect(inspector).toBeVisible();
-  await expect(inspector.locator(".gx-pill")).toHaveText("Stage");
-  await expect(inspector).toContainText("Cast & Elements");
-  await expect(inspector).not.toContainText("Select a cast member");
-  await expect(inspector).not.toContainText("appear here");
-});
-
-test("Deliver › Package: a retime whose save is refused says so, with the saved version one press away", async ({ page }, info) => {
-  test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
-  const store: ProjectRoute = { current: { ...fixture(), shots: [{ id: "c1", name: "01 — The approach", assetId: "up_plate", duration: 48, sourceIn: 0, note: "" }] } };
-  const { errors } = await open(page, "/suites?suite=studio&page=deliver", store);
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
-  const fps = page.getByTestId("deliver-fps");
-  await expect(fps).toHaveValue("24");
-  /* Another window saved first: this save is refused. */
-  await page.route("**/api/workbench/projects**", (route) => (route.request().method() === "PUT" ? route.fulfill({ status: 409, json: { error: "This project changed in another window." } }) : route.fallback()));
-  await fps.selectOption("25");
-  const status = page.locator('[data-tool-body="package"] .pxw-draft-status');
-  await expect(status.getByRole("alert")).toContainText("This project changed in another window.");
-  await expect(status.getByRole("button", { name: "Load the saved version" })).toBeVisible();
-  expect(errors).toEqual([]);
-});

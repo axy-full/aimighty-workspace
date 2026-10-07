@@ -112,6 +112,7 @@ import { isBatchId } from "@/lib/variations";
 import { uploadSourceParams } from "@/lib/sourceClip";
 import { shotCapGate } from "@/lib/shotCap";
 import { approvedTakeOf } from "@/lib/shots";
+import { sampleSpendRefusal } from "@/lib/demo/spend-guard.server";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
 import { reasonNeeded, cleanReason, lockAsk } from "@/lib/approval";
 import {
@@ -419,6 +420,14 @@ export async function executeGenerationAdmission(
       if (!project.rows.length)
         return admissionReply({ error: "No such project." }, { status: 404 });
     }
+    /* The sample production spends nothing: refused before anything is held or reserved. A quote (no request claim) still answers. */
+    if (options.requestClaim) {
+      const sample = await sampleSpendRefusal(
+        body.projectId ? String(body.projectId) : null,
+        body.shotId ? String(body.shotId) : null,
+      );
+      if (sample) return admissionReply({ error: sample }, { status: 409 });
+    }
     if (body.shotId) {
       const shot = await getShot(String(body.shotId));
       if (!shot)
@@ -502,9 +511,9 @@ export async function executeGenerationAdmission(
     const cinemaControls = readCinemaControls(body.cinema);
     if (!cinemaControls.ok) return admissionReply({ error: cinemaControls.error }, { status: 400 });
     if (model.marketing && !options.checkpoint)
-      return admissionReply({ error: "Review a live Marketing Studio quote before submitting this take." }, { status: 400 });
+      return admissionReply({ error: "Review a live Product image quote before submitting this take." }, { status: 400 });
     if (!model.marketing && body.marketing != null)
-      return admissionReply({ error: "Marketing settings require the Marketing Studio Image engine." }, { status: 400 });
+      return admissionReply({ error: "Marketing settings require the Product image engine." }, { status: 400 });
     const marketing = model.marketing ? marketingSettings(body.marketing) : undefined;
     if (marketing && body.references != null && (!Array.isArray(body.references) || body.references.length > 16 || body.references.some((ref: unknown) => {
       if (!ref || typeof ref !== "object" || Array.isArray(ref)) return true;
@@ -1207,7 +1216,7 @@ export async function executeGenerationAdmission(
     /* THE CEILING IS COUNTED AFTER THE CAST, because the cast attaches too.
      References were validated at the point they arrived from the browser —
      which is before `expandCast` pushes a still for every cited name. So
-     attaching two images to a two-image model and then citing @Mara and
+     attaching two images to a two-image model and then citing @Courier and
      @Mule passed the check with two and left with four, and nothing said
      so. The still path already counts them (see the identical check on the
      image branch below, and its comment); the video path never did.
@@ -1252,7 +1261,7 @@ export async function executeGenerationAdmission(
     const rules = await effectiveRules().catch(() => layer.rules);
     if (model.kind === "image") {
       if (model.marketing && ((body.ratio != null && !model.ratios.includes(body.ratio)) || (body.resolution != null && !model.resolutions.includes(body.resolution))))
-        return admissionReply({ error: "Choose a supported Marketing Studio size and aspect." }, { status: 400 });
+        return admissionReply({ error: "Choose a supported Product image size and aspect." }, { status: 400 });
       if (soulRender && ((body.ratio != null && !model.ratios.includes(body.ratio)) || (body.resolution != null && !model.resolutions.includes(body.resolution))))
         return admissionReply({ error: "Choose 720p or 1080p and a supported aspect ratio." }, { status: 400 });
       const ratio = model.ratios.includes(body.ratio)
@@ -1576,7 +1585,7 @@ export async function executeGenerationAdmission(
       );
       if (stopped) return stopped;
       if (model.marketing && body.maxCredits == null)
-        return admissionReply({ error: "Approve the quoted credit ceiling before generating with Marketing Studio." }, { status: 400 });
+        return admissionReply({ error: "Approve the quoted credit ceiling before generating with Product image." }, { status: 400 });
       if (soulRender && body.maxCredits == null)
         return admissionReply({ error: "Approve the quoted credit ceiling before rendering with an identity." }, { status: 400 });
       /* An Atomik run never leaves a held take behind (it could start later by itself, outside the

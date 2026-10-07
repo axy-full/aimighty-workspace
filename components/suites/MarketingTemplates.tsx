@@ -15,6 +15,7 @@ import {
 } from "@/lib/higgsfield-consumer/marketing-templates";
 import { awaitingReconciliation, setAsideUnconfirmed, SET_ASIDE_LABEL } from "@/lib/higgsfield-consumer/job-state";
 import styles from "./marketing-templates.module.css";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 export const TEMPLATE_ASSET_CATEGORY = "Campaign template";
 const endpoint = "/api/higgsfield/consumer/marketing-templates";
@@ -178,7 +179,7 @@ export function MarketingTemplateBrowser({ project, scope, enabled, onPicked }: 
   const visible = (listing?.templates ?? []).filter((card) => (category === "all" || card.category === category) && (!needle || `${card.name} ${card.description} ${card.category}`.toLowerCase().includes(needle)));
   const categories = [...new Set(["all", ...MARKETING_TEMPLATE_CATEGORIES.filter((c) => c !== "all"), ...(listing?.categories ?? [])])];
   return <section className={`suite-panel ${styles.panel}`} aria-label="Template catalogue">
-    <div className="suite-section-heading"><div><h2>Template catalogue</h2><p>Browse the connected account’s Marketing Studio templates. Pick one here, then create with it in Variants at its exact connected-credit price.</p></div><span className="suite-badge">Connected account</span></div>
+    <div className="suite-section-heading"><div><h2>Template catalogue</h2><p>Browse the connected account’s ad templates. Pick one here, then create with it in Variants at its exact connected-credit price.</p></div><span className="suite-badge">Connected account</span></div>
     {!enabled ? <p className="suite-footnote">Open and save a project to continue.</p> : capability?.owner === false ? <p className="suite-footnote">The workspace owner can browse the connected account’s template catalogue. Particl’s native creative briefs above remain available.</p> : <>
       {capability && !capability.connected && <p className="suite-footnote">Connect or reconnect the owner’s account in <a href="/settings#engines">Workspace settings <ArrowUpRight size={12} /></a>.</p>}
       {selection && <p role="status" className={styles.selected}>Selected template · <strong>{selection.name}</strong> · {selection.category || "uncategorised"} · {selection.outputKind}{selection.credits !== null ? ` · ${selection.credits} connected credits` : ""}<button type="button" className="suite-text-button" onClick={() => select(null)}>Clear</button></p>}
@@ -288,7 +289,7 @@ export function MarketingTemplateCreator({ project, scope, enabled, onSave, onAs
     const token = lifecycle.current;
     pending.current = true; setBusy(action); setError(""); setNotice("");
     try {
-      if (action === "quote" && onSave && !(await onSave())) throw new Error("Save this project before requesting a template quote.");
+      if (action === "quote" && onSave && !(await onSave())) throw new SaveFailedError();
       if (!live.current || lifecycle.current !== token) return;
       if (action === "submit") {
         const next = [...new Set([...attemptIds.current, job!.id])].slice(-100);

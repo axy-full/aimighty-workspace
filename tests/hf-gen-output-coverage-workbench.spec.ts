@@ -5,6 +5,12 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { dimLabels, smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /**
  * Idea 23 — Gen's Audio output is whole: a line has a voice picker whose list
@@ -90,9 +96,10 @@ async function open(page: Page) {
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`/suites?view=gen&project=${DRAFT}`);
+  await page.goto(`/suites?make=video&project=${DRAFT}`);
   await expect(page.getByTestId("gen-view")).toBeVisible();
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour sound study");
+  await openAdvanced(page);
+  await expect(projectName(page)).toHaveText("Harbour sound study");
   return { quotes, charges, mismatched, errors, store };
 }
 
@@ -177,12 +184,14 @@ async function clearOfTabBar(page: Page) {
   const bar = page.locator(".gx-tabbar");
   if (!(await bar.isVisible())) return;
   const gap = await page.getByTestId("gen-view").evaluate(async (view) => {
-    let scroller: HTMLElement | null = view.parentElement;
+    /* Make's body is its own scroller. */
+    let scroller: HTMLElement | null = view as HTMLElement;
     while (scroller && !(scroller.scrollHeight > scroller.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
     (scroller ?? document.scrollingElement as HTMLElement).scrollTop = 1e9;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const last = Array.from(view.querySelectorAll<HTMLElement>("*")).filter((el) => el.getClientRects().length)
-      .reduce((a, b) => (b.getBoundingClientRect().bottom > a.getBoundingClientRect().bottom ? b : a), view);
+      /* Its contents, not the scroller's own box (Make's body runs on under the bar, its padding keeping them clear). */
+      .reduce((a, b) => (b.getBoundingClientRect().bottom > a.getBoundingClientRect().bottom ? b : a));
     return document.querySelector(".gx-tabbar")!.getBoundingClientRect().top - last.getBoundingClientRect().bottom;
   });
   expect(gap, "Gen's last element ends above the tab bar").toBeGreaterThanOrEqual(0);
@@ -202,7 +211,7 @@ test("a line: the voice list is the chosen model's own and swaps with it, each c
   const { quotes, charges, mismatched, errors } = await open(page);
   /* Gen makes video, images and sound: no 3D tab, whoever is signed in. Analysis ran through the signed-in
      account, which is retired, so it is gone for everyone. */
-  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab")).toHaveText(["Video", "Images", "Audio", "Edit"]);
+  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab")).toHaveText(["Video", "Images", "Audio"]);
   await page.getByRole("tab", { name: "Audio" }).click();
   await pickModel(page, /^Grok Voice$/);
   const line = "Not tonight. The ice will hold until morning.";
@@ -211,14 +220,14 @@ test("a line: the voice list is the chosen model's own and swaps with it, each c
   /* Grok Voice reads in xAI's own voices, the first chosen until the person picks: the line is priced in it. */
   expect(await optionLabels(page)).toEqual(["Eve", "Ara", "Rex"]);
   await expect(page.getByTestId("gen-voice")).toHaveValue("eve");
-  await expect(generateButton(page)).toHaveText("Generate · 2 cr");
+  await expect(generateButton(page)).toHaveText("Make · 2 cr");
   expect(quotes.at(-1)).toMatchObject({ task: "speech", modelId: "grok-tts", voiceId: "eve", text: line });
   await expect(page.getByTestId("gen-view").locator(".gx-gen-foot").first()).toHaveText("Eve · Saved to your takes");
 
   /* Another voice is another price: the old figure never stands beside the new voice. */
   let asked = quotes.length;
   await page.getByTestId("gen-voice").selectOption("ara");
-  await expect(generateButton(page)).toHaveText("Generate · 3 cr");
+  await expect(generateButton(page)).toHaveText("Make · 3 cr");
   expect(quotes.length).toBeGreaterThan(asked);
   expect(quotes.at(-1)).toMatchObject({ modelId: "grok-tts", voiceId: "ara" });
 
@@ -227,11 +236,11 @@ test("a line: the voice list is the chosen model's own and swaps with it, each c
   await pickModel(page, /^Eleven Multilingual v2$/);
   expect(await optionLabels(page)).toEqual(["Rachel", "Sarah"]);
   await expect(page.getByTestId("gen-voice")).toHaveValue(ELEVEN_VOICES[0].id);
-  await expect(generateButton(page)).toHaveText("Generate · 4 cr");
+  await expect(generateButton(page)).toHaveText("Make · 4 cr");
   expect(quotes.slice(asked).every((q) => q.modelId === "eleven_multilingual_v2" && q.voiceId === ELEVEN_VOICES[0].id)).toBe(true);
   await page.getByTestId("gen-voice").selectOption(ELEVEN_VOICES[1].id);
   await expect.poll(() => quotes.at(-1)?.voiceId).toBe(ELEVEN_VOICES[1].id);
-  await expect(generateButton(page)).toHaveText("Generate · 4 cr");
+  await expect(generateButton(page)).toHaveText("Make · 4 cr");
   /* No line was ever priced in the other vendor's voice. */
   expect(mismatched).toEqual([]);
   await floors(page, info);
@@ -269,7 +278,7 @@ test("effects and music: the length stepper and Instrumental each price the take
   const instrumental = page.getByTestId("gen-instrumental");
   const shorter = stepper.getByRole("button", { name: "Shorter" }), longer = stepper.getByRole("button", { name: "Longer" });
   await expect(value).toHaveText("10 s");
-  await expect(generateButton(page)).toHaveText("Generate · 3 cr");
+  await expect(generateButton(page)).toHaveText("Make · 3 cr");
   expect(quotes.at(-1)).toMatchObject({ task: "sound", durationSeconds: 10, text: cue });
   /* An effect has no vocals to switch, and runs one second at a time to thirty: every length is priced as it is sent. */
   await expect(instrumental).toHaveCount(0);
@@ -277,32 +286,32 @@ test("effects and music: the length stepper and Instrumental each price the take
   await expect(value).toHaveText("30 s");
   await expect(longer).toBeDisabled();
   await expect.poll(() => quotes.at(-1)?.durationSeconds).toBe(30);
-  await expect(generateButton(page)).toHaveText("Generate · 3 cr");
+  await expect(generateButton(page)).toHaveText("Make · 3 cr");
   await expect(page.getByTestId("gen-view").locator(".gx-gen-foot").first()).toHaveText("30 s · Saved to your takes");
 
   /* Music keeps the length while it is in range, and steps five seconds to its ten-second floor. */
   await pickModel(page, /^Eleven Music$/);
   await expect(value).toHaveText("30 s");
   await expect(instrumental).toHaveAttribute("aria-checked", "true");
-  await expect(generateButton(page)).toHaveText("Generate · 40 cr");
+  await expect(generateButton(page)).toHaveText("Make · 40 cr");
   expect(quotes.at(-1)).toMatchObject({ task: "music", lengthMs: 30_000, instrumental: true, text: cue });
   for (let i = 0; i < 4; i++) await shorter.click();
   await expect(value).toHaveText("10 s");
   await expect(shorter).toBeDisabled();
-  await expect(generateButton(page)).toHaveText("Generate · 20 cr");
+  await expect(generateButton(page)).toHaveText("Make · 20 cr");
   expect(quotes.at(-1)).toMatchObject({ lengthMs: 10_000, instrumental: true });
   /* Each press is a new length, and a new price before the button shows one. */
   await longer.click();
   await longer.click();
   await expect(value).toHaveText("20 s");
-  await expect(generateButton(page)).toHaveText("Generate · 30 cr");
+  await expect(generateButton(page)).toHaveText("Make · 30 cr");
   expect(quotes.at(-1)).toMatchObject({ lengthMs: 20_000, instrumental: true });
 
   /* Vocals are another take: priced again. */
   let asked = quotes.length;
   await instrumental.click();
   await expect(instrumental).toHaveAttribute("aria-checked", "false");
-  await expect(generateButton(page)).toHaveText("Generate · 35 cr");
+  await expect(generateButton(page)).toHaveText("Make · 35 cr");
   expect(quotes.length).toBeGreaterThan(asked);
   expect(quotes.at(-1)).toMatchObject({ lengthMs: 20_000, instrumental: false });
   await expect(page.getByTestId("gen-view").locator(".gx-gen-foot").first()).toHaveText("20 s · With vocals · Saved to your takes");

@@ -75,13 +75,13 @@ test("120-page source survives validation and builds every requested scene beyon
 test("scene continuity across pages preserves numbering suffixes and excludes title matter from scene count", () => {
   const extracted = assemblePages([
     "A FEATURE\nWritten by An Author\n\n12A INT./EXT. CAR - NIGHT 12A\n\nWe enter the vehicle.",
-    "The same scene continues.\n\n13 EXT. DOCK - DAWN 13\n\nMARA (V.O.)\nI can hear you.",
+    "The same scene continues.\n\n13 EXT. DOCK - DAWN 13\n\nKEEPER (V.O.)\nI can hear you.",
   ]);
   const scenes = parseScreenplay(extracted.text, extracted.pages);
   expect(scenes).toHaveLength(2);
   expect(scenes[0]).toMatchObject({ number: "12A", pageStart: 1, pageEnd: 2 });
   expect(scenes[0].body).toContain("same scene continues");
-  expect(scenes[1].characters).toEqual(["MARA"]);
+  expect(scenes[1].characters).toEqual(["KEEPER"]);
   expect(extracted.text).toContain("Written by");
 });
 test("empty and scanned pages are flagged and character/page limits fail without returning a partial result", () => {
@@ -105,13 +105,13 @@ test("positioned PDF text joins scene-number columns without scrambling line and
     item("7", 540, 700),
     item("7", 40, 700),
     item("EXT. PARK - DAY", 72, 700, 200),
-    item("MARA", 180, 630),
+    item("KEEPER", 180, 630),
   ]);
   expect(text.split("\n")[0]).toBe("7 EXT. PARK - DAY 7");
   expect(parseScreenplay(text)[0]).toMatchObject({
     number: "7",
     time: "DAY",
-    characters: ["MARA"],
+    characters: ["KEEPER"],
   });
 });
 test("canvas admission is atomic for capacity, stale source and oversized scene text", () => {

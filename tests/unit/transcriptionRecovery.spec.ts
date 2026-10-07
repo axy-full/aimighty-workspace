@@ -907,11 +907,11 @@ test("a completed refusal is final and lets go; one the server has not settled k
   const body = { sourceGenId: "gen_a", projectId: "prod", diarize: true, maxCredits: 3 };
   const answers: [Answer, unknown, boolean][] = [
     [{ status: 502, json: { error: "Grok could not transcribe this take (500). Nothing was charged for it.", charged: 0 }, headers: { "Idempotency-Status": "complete" } },
-      { state: "released", reason: "Grok could not transcribe this take (500). Nothing was charged for it.", failed: true }, false],
+      { state: "released", reason: "Grok could not transcribe this take (500). Nothing was charged for it.", failed: true, charged: 0 }, false],
     [{ status: 409, json: { error: "The transcription estimate exceeds the approved credit amount. Review the price before submitting.", estimatedCredits: 5 }, headers: { "Idempotency-Status": "complete" } },
       { state: "released", reason: "The transcription estimate exceeds the approved credit amount. Review the price before submitting.", failed: true, repriced: 5 }, false],
     [{ status: 402, json: { error: "Every job slot is reserved. Wait for an active job to finish, then try again.", charged: 0, estimatedCredits: 5 }, headers: { "Idempotency-Status": "complete" } },
-      { state: "released", reason: "Every job slot is reserved. Wait for an active job to finish, then try again.", failed: true }, false],
+      { state: "released", reason: "Every job slot is reserved. Wait for an active job to finish, then try again.", failed: true, charged: 0 }, false],
     [{ status: 409, json: { error: "This request is still being accepted. Retry with the same Idempotency-Key; it will not submit another generation.", pending: true } },
       { state: "unknown", reason: "Your last transcription has no answer yet and is being checked. Nothing new was sent.", waiting: true }, true],
     [{ status: 503, json: { error: "The request was interrupted. Retry with the same Idempotency-Key to recover its job; it will not be submitted twice." } },

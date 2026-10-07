@@ -5,6 +5,7 @@ import {studioRequest} from './GenerationDialog';
 import type {ThinkingModel} from '@/components/atomik/ModelPicker';
 import type {Project,Plan} from '@/lib/workbench/studio';
 import {activeMediaJob,recoverMediaAssets,type MediaJob} from '@/lib/workbench/job-recovery';
+import {isSavedProject,saveMessage} from '@/lib/workbench/save-then-continue';
 
 export type AtomikJob={id:string;status:string;model:string;effort?:string;request:string;role?:string;plan?:Plan|null;error?:string|null;credits?:number|null;estimateUsd?:number};
 type MediaPage={generations:MediaJob[];nextCursor:number|null};
@@ -26,8 +27,10 @@ export function useProductionJobs(project:Project,enabled:boolean,change:(fn:(p:
   const abort=new AbortController(),ticket=++epoch.current;
   const requestOptions={signal:abort.signal,...(requestScope?{headers:{'X-Workbench-Scope':requestScope}}:{})};
   const current=()=>ticket===epoch.current&&!abort.signal.aborted&&identity.current===requestScope&&scopeOf(ref.current,requestScope)===scope;
-  const report=(channel:'media'|'atomik',error?:unknown)=>{if(current())setErrors(old=>({...((old.scope===scope)?old:{scope}),[channel]:error?(error instanceof Error?error.message:'Could not refresh '+channel+' activity.'):undefined}));};
+  const report=(channel:'media'|'atomik',error?:unknown)=>{if(current())setErrors(old=>({...((old.scope===scope)?old:{scope}),[channel]:error?saveMessage(error instanceof Error?error.message:'Could not refresh '+channel+' activity.'):undefined}));};
   const atomTask=async()=>{
+   /* A project not saved yet has nothing on the server to read: it saves itself, and this reads once it has (productionProjectId arrives with that save). */
+   if(!isSavedProject(p)){if(current()){setAtomik({scope,jobs:[]});report('atomik');}return;}
    try{
     const result=await studioRequest<{models:ThinkingModel[];jobs:AtomikJob[]}>('/api/workbench/atomik?projectId='+encodeURIComponent(p.id),requestOptions);
     if(!current())return;

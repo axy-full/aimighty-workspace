@@ -28,6 +28,8 @@ import {
 import { settlePendingGeneration } from "@/lib/workspace/generate-submit";
 import { cinemaPriceDollars, cinemaPriceWords, heldCredits } from "@/lib/cinemaHold";
 import { useSession } from "@/lib/session";
+import { SaveFailedError, saveMessage } from '@/lib/workbench/save-then-continue';
+import { PRODUCT_IMAGE_NAME } from '@/lib/uiNames';
 
 type Model = {
   id: string;
@@ -72,7 +74,7 @@ export async function studioRequest<T>(
     .catch(() => ({ error: "Unable to read the server response." }));
   if (!res.ok)
     throw new StudioRequestError(
-      data.error || `Request failed (${res.status})`,
+      saveMessage(data.error || `Request failed (${res.status})`),
       res.status,
       data,
       res.headers.get("Idempotency-Status") === "complete",
@@ -270,7 +272,7 @@ function TakeDialog({
     if (!model?.marketing || pending || mapped) return;
     let active = true;
     void (async () => {
-      if (!(await callbacks.current.onSave())) throw new Error("Save this campaign before requesting its quote.");
+      if (!(await callbacks.current.onSave())) throw new SaveFailedError();
       if (!active) return;
       const value = await studioRequest<{ shotId: string; productionProjectId: string }>("/api/workbench/projects", {
         method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
@@ -341,7 +343,7 @@ function TakeDialog({
       /* Recover never spends. Let go, the node as it is now is priced afresh before anything can go. */
       if (pending) { onLetGo(settled.state === "lost" ? settled.reason : ""); return; }
       if (!(await onSave()))
-        throw new Error("Save your latest work before generating.");
+        throw new SaveFailedError();
       const mapping = await studioRequest<{
         shotId: string;
         productionProjectId: string;
@@ -483,17 +485,17 @@ function TakeDialog({
             {audioTask === "music" && <label><input type="checkbox" checked={instrumental} disabled={busy || !!pending} onChange={event => setInstrumental(event.target.checked)} />Instrumental</label>}
           </div>}
           {kind !== "audio" && model?.marketing && <div className="generation-options">
-            <label className="field-label">Build<select aria-label="Marketing Studio build" value={marketing.variant ?? "alpha"} disabled={busy || !!pending} onChange={event => {
+            <label className="field-label">Build<select aria-label="Product image build" value={marketing.variant ?? "alpha"} disabled={busy || !!pending} onChange={event => {
               const variant = event.target.value as MarketingBuild;
               setMarketing({ ...(variant === "alpha" ? {} : { variant }), quality: marketingQualityFor({ ...marketing, variant }),
                 enhancePrompt: marketing.enhancePrompt, ...(marketing.presetId ? { presetId: marketing.presetId } : {}) });
             }}>
               {MARKETING_BUILDS.map(build => <option key={build.id} value={build.id}>{build.label}</option>)}
             </select></label>
-            <label className="field-label">Image quality<select aria-label="Marketing image quality" value={marketing.quality} disabled={busy || !!pending || (marketing.enhancePrompt && (marketing.variant ?? "alpha") === "alpha")} onChange={event => setMarketing({ ...marketing, quality: event.target.value as MarketingQuality })}>
+            <label className="field-label">Image quality<select aria-label={`${PRODUCT_IMAGE_NAME} quality`} value={marketing.quality} disabled={busy || !!pending || (marketing.enhancePrompt && (marketing.variant ?? "alpha") === "alpha")} onChange={event => setMarketing({ ...marketing, quality: event.target.value as MarketingQuality })}>
               {marketingQualities(marketing.variant).map(quality => <option key={quality.id} value={quality.id}>{quality.label}</option>)}
             </select></label>
-            <p className="muted small-copy">{marketing.enhancePrompt ? `Preset enhancement · product first, optional cast second${(marketing.variant ?? "alpha") === "alpha" ? " · high quality" : ""}` : "Marketing Studio · direct creative direction"}. {(marketing.variant ?? "alpha") === "alpha" ? "Price is checked live before rendering." : "The price is approximate; the delivered image settles it."}</p>
+            <p className="muted small-copy">{marketing.enhancePrompt ? `Preset enhancement · product first, optional cast second${(marketing.variant ?? "alpha") === "alpha" ? " · high quality" : ""}` : "Product image · direct creative direction"}. {(marketing.variant ?? "alpha") === "alpha" ? "Price is checked live before rendering." : "The price is approximate; the delivered image settles it."}</p>
           </div>}
           {kind !== "audio" && model?.soulIdentity && (
             <div className="generation-options">

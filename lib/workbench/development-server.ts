@@ -604,8 +604,8 @@ function mockWriterReply(input: DevelopmentCall): DevelopmentReply {
     'EXT. FROZEN HARBOUR - DUSK', '',
     'Ice groans under a violet sky. A red FOX picks its way across the frozen harbour, breath smoking.', '',
     'INT. HARBOUR MASTER\'S HUT - CONTINUOUS', '',
-    'MARA (60s), wrapped in wool, watches through a frosted window.', '',
-    'MARA', '(to herself)', redraft ? 'You came back.' : 'Not tonight, little one.', '',
+    'KEEPER (60s), wrapped in wool, watches through a frosted window.', '',
+    'KEEPER', '(to herself)', redraft ? 'You came back.' : 'Not tonight, little one.', '',
     ...(redraft && note ? ['EXT. FROZEN HARBOUR - NIGHT', '', `The fox stops at the hut's lamp. ${note.slice(0, 200)}`, ''] : []),
     ...(request.beatSheet ? request.beatSheet.flatMap((scene) => [scene.heading.toUpperCase(), '', ...scene.beats.map((beat) => beat), '']) : []),
     'FADE OUT.',
@@ -625,7 +625,7 @@ function mockBoardReply(input: DevelopmentCall): DevelopmentReply {
 function mockCastReply(input: DevelopmentCall): DevelopmentReply {
   const request = JSON.parse(input.prompt) as { existingCast?: string[] };
   return { text: JSON.stringify({ entries: [
-    { name: 'Mara', kind: 'character', category: 'character', model: 'soul_cinematic', description: 'The harbour master; appears in every scene.', prompt: 'Mara, a woman in her sixties, weathered face, grey braid, heavy wool coat — mock cast prompt.' },
+    { name: 'Keeper', kind: 'character', category: 'character', model: 'soul_cinematic', description: 'The harbour master; appears in every scene.', prompt: 'Keeper, a woman in her sixties, weathered face, grey braid, heavy wool coat — mock cast prompt.' },
     { name: 'Mooring rope', kind: 'element', category: 'prop', model: 'soul_cinematic', description: 'The rope the fox steps over.', prompt: 'A frayed mooring rope, iced over, a clean plate — mock cast prompt.' },
   ].filter((e) => !(request.existingCast ?? []).includes(e.name)), critique: ['Mock review only; no provider was called.'], assumptions: [] }), inputTokens: 300, outputTokens: 300, costUsd: 0 };
 }

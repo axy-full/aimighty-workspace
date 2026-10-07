@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { newProject } from "../../lib/workbench/studio";
 import { shellPage } from "../../lib/shell/ia";
+import { isStageId, stageAddress } from "../../lib/shell/stage-redirects";
 import { FIRST_RUN_STEPS, recentProjects, runningTakes, savedAt, stageCards, startsEmpty } from "../../lib/shell/studio-home";
 import type { LibraryEntry } from "../../lib/workspace/library";
 
@@ -8,12 +9,13 @@ import type { LibraryEntry } from "../../lib/workspace/library";
 const take = (id: string, status: string, kind: "GEN" | "UPLOAD" = "GEN") =>
   ({ take: { id, sourceId: id, kind, name: id, version: "v1", meta: "", credits: null, usd: null, status, sha256: null, createdAt: 0 }, asset: {} as never, url: null, media: null }) as unknown as LibraryEntry;
 
-test("the four steps are Brief → Beats → Boards → Takes, each a real Studio stage", () => {
+test("the four steps are Brief → Beats → Boards → Takes, each opening the board's region for that stage", () => {
   expect(FIRST_RUN_STEPS.map((s) => s.label)).toEqual(["Brief", "Beats", "Boards", "Takes"]);
   for (const step of FIRST_RUN_STEPS) {
-    const page = shellPage("studio", step.id);
-    expect(page, step.id).toBeTruthy();
-    expect(page!.phoneOnly).toBeFalsy();
+    expect(isStageId(step.id), step.id).toBe(true);
+    expect(stageAddress(step.id)).toMatch(/^\?view=board/);
+    /* The stage pages are deleted: nothing is a page any more. */
+    expect(shellPage("studio", step.id), step.id).toBeNull();
   }
 });
 
@@ -47,7 +49,7 @@ test("a project with nothing in it yet starts at the brief", () => {
 
 test("the Cast card counts the stage's own entries as well as pictured cast", () => {
   const project = { ...newProject("Starter"), production: { cast: { entries: [
-    { id: "cast-01", name: "Mara", kind: "character" as const, description: "", prompt: "", takes: [] },
+    { id: "cast-01", name: "Courier", kind: "character" as const, description: "", prompt: "", takes: [] },
     { id: "cast-02", name: "Mule", kind: "element" as const, description: "", prompt: "", takes: [] },
   ] } } };
   expect(stageCards(project, []).find((c) => c.id === "cast")).toMatchObject({ meta: "1 identity · 1 element", status: "done" });

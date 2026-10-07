@@ -1,4 +1,6 @@
-import { ALL_SHELL_PAGES, CREW_PAGES, HEADER_SEGMENT, WORKSPACE_TABS, type CrewPageId, type ShellSuiteId, type WorkspaceTabId } from "./ia";
+import { STUDIO_RAIL } from "@/lib/board/regions";
+import type { MakeTool } from "./make";
+import { ALL_SHELL_PAGES, CREW_PAGES, SHELL_SUITES, WORKSPACE_TABS, type CrewPageId, type ShellSuiteId, type WorkspaceTabId } from "./ia";
 
 /**
  * ⌘K (README › Navigation): Generate, suites, every page, Workspace, models,
@@ -6,36 +8,30 @@ import { ALL_SHELL_PAGES, CREW_PAGES, HEADER_SEGMENT, WORKSPACE_TABS, type CrewP
  * component supplies models and assets from live data.
  */
 export type PaletteRun =
-  | { type: "gen" }
+  /** Make, or one of its quick tools (Motion transfer, Object swap). */
+  | { type: "gen"; tool?: MakeTool }
   | { type: "suite"; suite: ShellSuiteId }
   | { type: "page"; suite: ShellSuiteId; page: string }
   | { type: "workspace"; tab: WorkspaceTabId }
   | { type: "crew"; page: CrewPageId }
   | { type: "model"; id: string }
   | { type: "asset"; id: string }
-  | { type: "ask"; text: string };
+  | { type: "ask"; text: string }
+  /* The screens' places: README § 1.1. */
+  | { type: "home" }
+  | { type: "region"; region: string }
+  /* The Ads and Social boards. */
+  | { type: "board"; kind: "ads" | "social" }
+  | { type: "atomik" }
+  | { type: "control"; page: ControlPage }
+  | { type: "settings"; section: SettingsSection };
 
 export type PaletteRow = { group: string; label: string; hint: string; run: PaletteRun };
 
-export const PALETTE_ROWS = 9;
+/** At most twelve rows, as the master lists (the last is always "Ask Atomik: …" once something is typed). */
+export const PALETTE_ROWS = 12;
 
-export function paletteIndex(input: { models: { id: string; name: string; kind: string }[]; assets: { id: string; name: string; kind: string }[] }): PaletteRow[] {
-  return [
-    { group: "CREATE", label: "Generate", hint: "G", run: { type: "gen" } },
-    ...HEADER_SEGMENT.filter((s) => s.id !== "gen" && s.id !== "crew").map((s): PaletteRow => ({ group: "SUITE", label: s.label, hint: s.title, run: { type: "suite", suite: s.id as ShellSuiteId } })),
-    /* The phone's own Home and Studio grid have no desktop page to open. */
-    ...ALL_SHELL_PAGES.filter(({ page }) => !page.phoneOnly).map(({ suite, page }): PaletteRow => ({ group: suite.label.toUpperCase(), label: `${page.n} ${page.title}`, hint: page.hint, run: { type: "page", suite: suite.id, page: page.id } })),
-    ...CREW_PAGES.map((p): PaletteRow => ({ group: "CREW", label: `${p.n} ${p.label === "Room" ? "Crew room" : p.label}`, hint: p.title === "Crew" ? "Brainstorm with the crew" : p.title, run: { type: "crew", page: p.id } })),
-    ...WORKSPACE_TABS.map((t): PaletteRow => ({ group: "WORKSPACE", label: t.label, hint: "Workspace", run: { type: "workspace", tab: t.id } })),
-    ...input.models.map((m): PaletteRow => ({ group: "MODEL", label: m.name, hint: m.kind, run: { type: "model", id: m.id } })),
-    ...input.assets.map((a): PaletteRow => ({ group: "ASSET", label: a.name, hint: a.kind, run: { type: "asset", id: a.id } })),
-  ];
-}
-
-/** Every word of the query must appear; label matches rank above group/hint matches, prefixes first. */
-export function searchPalette(rows: PaletteRow[], query: string, limit = PALETTE_ROWS): PaletteRow[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return rows.slice(0, limit);
+function rankPalette(rows: PaletteRow[], q: string, limit: number): PaletteRow[] {
   const words = q.split(/\s+/);
   const scored: { row: PaletteRow; score: number; i: number }[] = [];
   rows.forEach((row, i) => {
@@ -47,7 +43,58 @@ export function searchPalette(rows: PaletteRow[], query: string, limit = PALETTE
     scored.push({ row, score, i });
   });
   scored.sort((a, b) => a.score - b.score || a.i - b.i);
-  const hits = scored.slice(0, limit - 1).map((s) => s.row);
-  /* Whatever was typed can always be handed to the agent. */
-  return [...hits, { group: "ATOMIK", label: `Ask Atomik: ${query.trim()}`, hint: "↵", run: { type: "ask", text: query.trim() } }];
+  return scored.slice(0, limit).map((s) => s.row);
+}
+
+/* ── ⌘K in the new interface (README § 3.4; Atomik frames a–e) ─────────────────────────────────── */
+
+/** The control room's four places (stream 8), by the shell's page ids. */
+export type ControlPage = "approvals" | "runs" | "saved-skills" | "memory";
+/** Settings' five sections (README § 3.5; stream 9's ids). */
+export type SettingsSection = "team" | "credits" | "rules" | "connections" | "advanced";
+
+export const CONTROL_PLACES: readonly { page: ControlPage; label: string }[] = [
+  { page: "approvals", label: "Approvals" }, { page: "runs", label: "Activity" }, { page: "saved-skills", label: "Skills" }, { page: "memory", label: "Memory" },
+];
+export const SETTINGS_SECTIONS: readonly { section: SettingsSection; label: string }[] = [
+  { section: "team", label: "Team" }, { section: "credits", label: "Plan & credits" }, { section: "rules", label: "Spending rules" },
+  { section: "connections", label: "Connections" }, { section: "advanced", label: "Advanced" },
+];
+
+/**
+ * The new interface's index, in the master's order: Home; the board's rail; Make; Atomik (with the control room's
+ * places); Settings' sections; then models and assets from live data. With nothing typed the first twelve show.
+ */
+export function newPaletteIndex(input: {
+  rail: readonly { id: string; label: string }[];
+  models: { id: string; name: string; kind: string }[];
+  assets: { id: string; name: string; kind: string }[];
+}): PaletteRow[] {
+  return [
+    { group: "Home", label: "Home", hint: "What needs you", run: { type: "home" } },
+    ...input.rail.map((r): PaletteRow => ({ group: "Board", label: r.label, hint: "", run: { type: "region", region: r.id } })),
+    { group: "Board", label: "Ads", hint: "", run: { type: "board", kind: "ads" } },
+    { group: "Board", label: "Social", hint: "", run: { type: "board", kind: "social" } },
+    { group: "Make", label: "Make", hint: "", run: { type: "gen" } },
+    { group: "Atomik", label: "Atomik", hint: CONTROL_PLACES.map((p) => p.label).join(" · "), run: { type: "atomik" } },
+    { group: "Make", label: "Motion transfer", hint: "One source video and references", run: { type: "gen", tool: "motion" } },
+    { group: "Make", label: "Object swap", hint: "One element replaced", run: { type: "gen", tool: "swap" } },
+    ...CONTROL_PLACES.map((p): PaletteRow => ({ group: "Atomik", label: p.label, hint: "Control room", run: { type: "control", page: p.page } })),
+    ...SETTINGS_SECTIONS.map((s): PaletteRow => ({ group: "Settings", label: s.label, hint: "", run: { type: "settings", section: s.section } })),
+    ...input.models.map((m): PaletteRow => ({ group: "Model", label: m.name, hint: m.kind, run: { type: "model", id: m.id } })),
+    ...input.assets.map((a): PaletteRow => ({ group: "Asset", label: a.name, hint: a.kind, run: { type: "asset", id: a.id } })),
+  ];
+}
+
+/**
+ * The new interface's hits: the same ranking, at most twelve, with no "Ask Atomik" row (Atomik answers in the card
+ * under the list). A "go to <place>" that names a rail entry puts "Go to <place>" first.
+ */
+export function searchNewPalette(rows: PaletteRow[], query: string, opts: { goTo?: { id: string; label: string } | null; board?: string } = {}): PaletteRow[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return rows.slice(0, PALETTE_ROWS);
+  const hits = rankPalette(rows, q, PALETTE_ROWS);
+  if (!opts.goTo) return hits;
+  const pinned: PaletteRow = { group: "Board", label: `Go to ${opts.goTo.label}`, hint: `On the ${opts.board ?? "Studio"} board`, run: { type: "region", region: opts.goTo.id } };
+  return [pinned, ...hits.filter((h) => !(h.run.type === "region" && h.run.region === opts.goTo!.id))].slice(0, PALETTE_ROWS);
 }
