@@ -1,4 +1,4 @@
-# Status now: 8 October 2026, 03:07 IST, Release 1 lead moved to "contabo"
+# Status now: 8 October 2026, 03:10 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -40,7 +40,7 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
   - browser: mostly specs still driving the old Gen composer, the old Workspace pane and the retired connected account; plus money specs (no vendor dollars, credit value on phone, batch takes, recovery race, spend buttons) that must be ported, never dropped.
 - Run 37615298051 on ac03f878: all 3 unit shards green (first green unit run on `release/1`); browser shards still running.
 - On "contabo", 3ca30197: typecheck clean; unit 3,950 passed, 3 failed (the same three), 7 skipped.
-- CI on 0ce3c338: 19 of 20 jobs green (all unit); one browser shard hung. Everything reviewed tonight is now in `release/1` (48193cc4); its CI run is going.
+- CI on 0ce3c338: 19 of 20 jobs green (all unit); one browser shard hung. Everything reviewed tonight is now in `release/1` (48193cc4); its CI run is going. A cancelled earlier run showed one new unit failure from the old-screen cut: `bundle.spec` expects the client price estimator in the browser bundle (it left with the old composer). Being checked: stale test, or a price path removed by mistake.
 - Fix lanes running since 16:20, one branch each, merged into `release/1` only after a fresh review (Opus where money, sign-in or tenancy):
   - `fix/r1-ci-make`: the Make composer specs (prices, batches, model picker).
   - `fix/r1-ci-settings`: Settings, credits, no vendor dollars, retired connected account.
