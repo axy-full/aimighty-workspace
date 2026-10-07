@@ -128,7 +128,10 @@ test("Make panel: every quick-tool destination opens a screen with a [data-spend
   for (const destination of destinations) {
     if (destination !== destinations[0]) await open(page, "/suites?make=1");
     await page.locator(`[data-destination="${destination}"]`).click();
-    await expect(page.locator("[data-spend]").first(), `${destination} opens a screen with a spend control`).toBeVisible({ timeout: 30_000 });
+    /* The tool's own go button, inside the Make panel: Home behind the panel draws priced buttons of its own (home-start). */
+    const go = destination === "make:upscale" ? "upscale-go" : "viral-generate";
+    await expect(page.getByTestId("gen-view").getByTestId(go), `${destination} opens its tool`).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("gen-view").getByTestId(go), `${destination}'s go button carries data-spend`).toHaveAttribute("data-spend", /^(priced|unpriced)$/);
     /* It left the Make panel's compose view: the quick-tools row is not what is being counted. */
     await expect(page.locator(`[data-destination="${destination}"]`)).toHaveCount(0);
   }
