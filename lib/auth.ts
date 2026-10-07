@@ -1,5 +1,6 @@
 import { recoveryRoute } from "./recovery";
 import { SESSION_COOKIE } from "./sessionCookie";
+import { crossOriginProblem } from "./requestOrigin";
 import { MediaSourceError } from "./mediaBindings";
 import { workbenchScopeFor } from "./workbench/request-scope";
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
@@ -235,8 +236,7 @@ export function withTenant<Req extends Request = Request, Ctx = unknown>(handler
     }
     if(!['GET','HEAD','OPTIONS'].includes(req.method)){
       if(store.token?.scope==='read'&&!(req.method==='POST'&&options.readOnlyPostTransport))return Response.json({error:'This token is read-only.'},{status:403});
-      const origin=req.headers.get('origin');
-      if(!store.token&&origin&&origin!==new URL(req.url).origin)return Response.json({error:'Invalid request origin.'},{status:403});
+      if(!store.token&&crossOriginProblem(req))return Response.json({error:'Invalid request origin.'},{status:403});
     }
     const capturedScope = req.headers.get("X-Workbench-Scope");
     const needsScope = options.requireRequestScope && store.user && !store.token && !["GET", "HEAD", "OPTIONS"].includes(req.method);

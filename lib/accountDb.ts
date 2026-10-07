@@ -2,6 +2,7 @@ import { now } from "./platform";
 import type { Transaction } from "@libsql/client";
 import { billingTransaction } from "./billingLedger";
 import { readBoundedText, RequestBodyError } from "./requestBody";
+import { crossOriginProblem } from "./requestOrigin";
 
 export class AccountError extends Error {
   constructor(
@@ -89,9 +90,9 @@ export async function accountJson(
   }
   throw new AccountError("Send a valid account form.");
 }
+/** lib/requestOrigin.ts holds the rule (and the one setting behind a reverse proxy). */
 export function sameOriginProblem(req: Request): boolean {
-  const origin = req.headers.get("origin");
-  return Boolean(origin && origin !== new URL(req.url).origin);
+  return crossOriginProblem(req);
 }
 export function accountFailure(error: unknown): Response {
   if (error instanceof AccountError)
