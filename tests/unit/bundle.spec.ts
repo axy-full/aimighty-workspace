@@ -11,8 +11,9 @@ import { IMAGE_OUT_USD } from "../../lib/vendorPricing";
  * browser is actually served rather than the imports we meant to write. Two
  * halves used to be in there and neither may reach a browser:
  *
- *   · the vendors' per-second rates (`withoutAudio:<rate>`), because the
- *     estimator is bundled so the composer can reprice without a round trip;
+ *   · the vendors' per-second rates (`withoutAudio:<rate>`), which the old
+ *     composer's client estimator once carried (every live price now comes
+ *     from the server's quote routes);
  *   · the margin table itself (`"<engine>":<margin>`), a literal in
  *     lib/creditTerms.ts, which the browser imported for the same reason.
  *
