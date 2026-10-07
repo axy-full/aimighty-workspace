@@ -873,7 +873,7 @@ async function addIndex(c: Client, stmt: string): Promise<void> {
  * per instance; a failure clears the memo so the next request tries again
  * rather than inheriting a rejected promise for the life of the container.
  */
-async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
+async function bootstrap(c: Client, opts: { legacy: boolean; workspaceId: string }): Promise<void> {
       await c.batch(SCHEMA, "write");
       const addColumn = await columnInstaller(c);
       /* Bindings: drop the old one-row-per-slot constraint.
@@ -1155,6 +1155,14 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         });
       } catch { /* the users table may not exist on the very first boot */ }
       }
+      /* The platform owner is seen only in the house workspace: a client
+         workspace's copy of their row reads "Particl support"
+         (lib/platformOwnerPrivacy.ts). A row written before the rule is
+         rewritten here, once per instance. */
+      try {
+        const { scrubOwnerFromWorkspaceDb } = await import("./platformOwnerPrivacy");
+        await scrubOwnerFromWorkspaceDb(c, { id: opts.workspaceId });
+      } catch { /* tried again on the next boot; mirrorUser writes the masked row meanwhile */ }
       if (opts.legacy) {
       /* The balances the team reported on 3 Sep 2026, written once into the
          ledger so each vendor's credit counts down from what was actually
@@ -1232,7 +1240,7 @@ export function ready(): Promise<void> {
   const key = clientKey(ws);
   let p = bootstrapped.get(key);
   if (!p) {
-    p = bootstrap(tenantClient(ws), { legacy: ws.legacy }).catch((e) => { bootstrapped.delete(key); throw e; });
+    p = bootstrap(tenantClient(ws), { legacy: ws.legacy, workspaceId: ws.id }).catch((e) => { bootstrapped.delete(key); throw e; });
     bootstrapped.set(key, p);
   }
   return p;

@@ -8,6 +8,7 @@ import { runInTenant } from "@/lib/tenant";
 import { accountScopeFor, workbenchScopeFor } from "@/lib/workbench/request-scope";
 import { shellEntryRedirect } from "@/lib/signIn";
 import { searchStringOf } from "@/lib/shell/raw-search";
+import { publicActorName } from "@/lib/platformOwnerPrivacy";
 
 /**
  * Who runs the connected Higgsfield account in this workspace, by name, for a
@@ -17,12 +18,14 @@ import { searchStringOf } from "@/lib/shell/raw-search";
 async function ownerNameOf(workspaceId: string): Promise<string | null> {
   await platformReady();
   const rs = await platformDb().execute({
-    sql: `SELECT a.name FROM memberships m JOIN accounts a ON a.id = m.account_id
+    sql: `SELECT a.id, a.email, a.name FROM memberships m JOIN accounts a ON a.id = m.account_id
           WHERE m.workspace_id = ? AND m.role = 'owner' AND m.disabled = 0 AND a.deleted_at IS NULL
           ORDER BY m.created_at LIMIT 1`,
     args: [workspaceId],
   });
-  const name = String((rs.rows[0] as { name?: unknown } | undefined)?.name ?? "").trim();
+  const row = rs.rows[0] as { id?: unknown; email?: unknown; name?: unknown } | undefined;
+  // Outside the house the platform owner is "Particl support" (lib/platformOwnerPrivacy.ts).
+  const name = row ? (await publicActorName({ id: workspaceId }, row)).trim() : "";
   return name ? name.slice(0, 80) : null;
 }
 

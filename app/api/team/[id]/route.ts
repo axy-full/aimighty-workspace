@@ -5,6 +5,7 @@ import { requireTenant } from "@/lib/tenant";
 import { platformDb, platformReady, now, getPlatformLayer } from "@/lib/platform";
 import {accountTransaction,accountFailure,AccountError} from "@/lib/accountDb";
 import {repairPendingMemberships,ensureMemberSeat} from "@/lib/teamInvitations";
+import { publicActorName } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -100,5 +101,5 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
     {sql:'UPDATE users SET disabled=1,deleted_at=? WHERE id=?',args:[now(),id]},
     {sql:'UPDATE api_tokens SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL',args:[now(),id]},
   ],'write').catch(()=>{});
-  return NextResponse.json({ ok: true, name: target.name });
+  return NextResponse.json({ ok: true, name: await publicActorName(ws, target) });
 }, { requireRequestScope: true });

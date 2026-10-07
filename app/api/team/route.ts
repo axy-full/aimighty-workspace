@@ -8,6 +8,7 @@ import { platformDb, platformReady } from "@/lib/platform";
 import { creditsApply } from "@/lib/credits";
 import { accountFailure, AccountError } from "@/lib/accountDb";
 import { createWorkspaceInvite, mailWorkspaceInvite } from "@/lib/teamInvitations";
+import { ownerMaskFor } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 const INVITE_DAYS = 7;
@@ -45,6 +46,8 @@ export const GET = withTenant(async function GET() {
     db().execute(`SELECT created_by AS id, COUNT(*) AS clips${inCredits ? "" : ", COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend"}
                   FROM generations GROUP BY created_by`),
   ]);
+  /* The platform owner is listed only in the house workspace (lib/platformOwnerPrivacy.ts). */
+  const mask = await ownerMaskFor(ws);
   const made = new Map((stats.rows as any[]).map((r) => [String(r.id), { clips: Number(r.clips), spend: Number(r.spend) }]));
 
   return NextResponse.json({
@@ -52,7 +55,7 @@ export const GET = withTenant(async function GET() {
     workspace: { id: ws.id, name: ws.name, slug: ws.slug },
     requests: [],
     canSeeRoles,
-    users: (members.rows as any[]).filter((r) => Number(r.m_disabled) === 0 || canSeeRoles).map((r) => ({
+    users: mask.members(members.rows as any[]).filter((r) => Number(r.m_disabled) === 0 || canSeeRoles).map((r) => ({
       id: r.id, email: r.email, name: r.name,
       ...(canSeeRoles ? { role: r.role === "owner" ? "admin" : r.role, standing: r.role, permanent: r.role === "owner" } : {}),
       disabled: Number(r.m_disabled) === 1 || Number(r.a_disabled) === 1,
@@ -63,7 +66,7 @@ export const GET = withTenant(async function GET() {
       clips: made.get(String(r.id))?.clips ?? 0,
       ...(!inCredits ? { spend: made.get(String(r.id))?.spend ?? 0 } : {}),
     })),
-    invites: (invites.rows as any[]).map((r) => ({
+    invites: mask.members(invites.rows as any[]).map((r) => ({
       code: r.code, email: r.email, name: r.name,
       ...(canSeeRoles ? { role: r.role } : {}),
       createdAt: Number(r.created_at), expiresAt: Number(r.expires_at),

@@ -2,6 +2,8 @@ import { getWorkspace, platformDb, platformReady } from "../platform";
 import { currentTenant, runInTenant, type TenantUser } from "../tenant";
 import type { AdmissionActor } from "../admissionTypes";
 import { PipelineError } from "./schema";
+import { isHouseWorkspace } from "../houseWorkspace";
+import { maskSessionUser, platformOwnerIdentity } from "../platformOwnerPrivacy";
 
 /** Restore the saved owner from authoritative membership immediately before an
  * executor admission. API handlers must still scope their run lookup to the
@@ -57,7 +59,7 @@ export async function withPipelineActor<T>(
       403,
       "pipeline_actor",
     );
-  const user: TenantUser = {
+  const person: TenantUser = {
     id: String(row.id),
     email: String(row.email),
     name: String(row.name),
@@ -67,5 +69,7 @@ export async function withPipelineActor<T>(
     createdAt: Number(row.created_at),
     lastSeen: row.last_seen == null ? null : Number(row.last_seen),
   };
+  // The same name a signed-in session carries: "Particl support" for the platform owner outside the house.
+  const user = isHouseWorkspace(workspace) ? person : maskSessionUser(person, workspace, await platformOwnerIdentity());
   return runInTenant(workspace, () => work({ user }), { user });
 }

@@ -19,6 +19,8 @@ import {
   currentTenant, runWithStore, runInTenant, NoTenantError,
   type TenantStore, type TenantUser, type TenantToken, type TenantWorkspace, type WorkspaceRole,
 } from "./tenant";
+import { isHouseWorkspace } from "./houseWorkspace";
+import { maskSessionUser, platformOwnerIdentity } from "./platformOwnerPrivacy";
 
 /**
  * Who is asking, and for which workspace.
@@ -122,7 +124,13 @@ export async function currentContext(): Promise<Context | null> {
   if (!pick) return { user: userFrom(found.account, "member"), workspace: null, role: null, workspaces };
   // A session pointing at a workspace the account has since left falls back to its first.
   if (found.workspaceId !== pick.workspace.id) pick = mine[0];
-  return { user: userFrom(found.account, pick.role), workspace: pick.workspace, role: pick.role, workspaces, mfaRequired: Boolean(pick.workspace.requiresMfa && !Number(found.account.mfa_enabled)) };
+  /* Outside the house the platform owner's name is "Particl support": names
+     written into records (picked by, review link by, push text, invite mail)
+     come from here (lib/platformOwnerPrivacy.ts). The address stays — the
+     platform checks read it, and it goes back only to its own holder. */
+  const person = userFrom(found.account, pick.role);
+  const user = isHouseWorkspace(pick.workspace) ? person : maskSessionUser(person, pick.workspace, await platformOwnerIdentity());
+  return { user, workspace: pick.workspace, role: pick.role, workspaces, mfaRequired: Boolean(pick.workspace.requiresMfa && !Number(found.account.mfa_enabled)) };
 }
 
 /** The signed-in user for this request, or null. */

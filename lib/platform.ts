@@ -665,13 +665,16 @@ export async function addMember(ws: TenantWorkspace, account: { id: string; emai
  */
 export async function mirrorUser(ws: TenantWorkspace, account: { id: string; email: string; name: string }, role: WorkspaceRole, disabled: boolean): Promise<void> {
   const { db, ready } = await import("./db");
+  const { mirrorIdentity, platformOwnerIdentity } = await import("./platformOwnerPrivacy");
+  // Outside the house the platform owner is stored as "Particl support", never by address or name.
+  const shown = isHouseWorkspace(ws) ? account : mirrorIdentity(ws, account, await platformOwnerIdentity());
   await runInTenant(ws, async () => {
     await ready();
     await db().execute({
       sql: `INSERT INTO users (id, email, name, password_hash, role, disabled, created_at)
             VALUES (?,?,?,'!',?,?,?)
             ON CONFLICT(id) DO UPDATE SET email = excluded.email, name = excluded.name, role = excluded.role, disabled = excluded.disabled, deleted_at = NULL`,
-      args: [account.id, account.email, account.name, role === "member" ? "member" : "admin", disabled ? 1 : 0, now()],
+      args: [account.id, shown.email, shown.name, role === "member" ? "member" : "admin", disabled ? 1 : 0, now()],
     });
   });
 }
