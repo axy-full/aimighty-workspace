@@ -140,10 +140,8 @@ test("older takes page in by the Library's own cursor, and Recent beside a compo
   await page.getByTestId("history-more").click();
   await expect(page.getByTestId("history-result")).toHaveCount(5);
   await expect(page.getByTestId("history-more")).toHaveCount(0);
-  /* Recent under Object swap (Make's quick tool, opened from ⌘K over History): its own takes only, each a way into Takes. */
-  await page.keyboard.press("ControlOrMeta+k");
-  await page.getByRole("dialog", { name: "Search" }).getByRole("combobox").or(page.getByRole("dialog", { name: "Search" }).getByRole("textbox")).first().fill("object swap");
-  await page.keyboard.press("Enter");
+  /* Recent under Object swap (Make's quick tool, opened from the board's own Object swap button): its own takes only, each a way into Takes. */
+  await page.getByRole("button", { name: "Object swap", exact: true }).first().click();
   await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "swap");
   const recent = page.getByTestId("viral-recent").getByTestId("viral-take");
   await expect(recent).toHaveCount(2);
