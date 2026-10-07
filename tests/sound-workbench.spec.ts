@@ -1,10 +1,8 @@
-import { goWorkbenchStage as stage, openWorkbenchInspector } from "./helpers/workbenchNavigation";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { seedProject, type Project } from "../lib/workbench/studio";
-import { legacyShell } from "./helpers/legacyShell";
 function sine() {
   const frames = 96000,
     b = Buffer.alloc(44 + frames * 2);
@@ -28,9 +26,25 @@ function sine() {
   return b;
 }
 
+/**
+ * Retargeted from the old Studio's edit stage (retired in Release 1) to Edit & Sound over the board: the Cut card's "Open
+ * Edit & Sound", then Mix, which is the same SoundMix. Two things the old stage had that the new one does not: the Studio's
+ * playhead slider (the transport's frame is set by clicking the picture lane) and the Studio-wide undo (⌘Z), so the undo
+ * assertion is gone with it.
+ */
+async function openMix(page: Page, projectId: string) {
+  await page.goto(`/suites?project=${projectId}&view=board&region=cut`);
+  await expect(page.getByTestId("cut-card")).toBeVisible();
+  await page.getByTestId("cut-open-edit").click();
+  await expect(page.getByTestId("es")).toBeVisible();
+  await page.getByTestId("es-tool-mix").click();
+  return page.getByRole("region", { name: "Sound mix" });
+}
+
 test("sound clips persist, mix at their timeline offsets with pan and fades, and deliver valid uncompressed stereo WAV", async ({
   page,
 }, info) => {
+  test.skip(!["workbench-1440x900", "workbench-1920x1080"].includes(info.project.name), "the board and its Edit & Sound are the desktop's");
   await signInLocally(page.request);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -150,15 +164,8 @@ test("sound clips persist, mix at their timeline offsets with pan and fades, and
       return original.apply(this, args);
     };
   });
-  await page.goto(await legacyShell(page, "/workbench"));
-  await page.evaluate(({ scope, id }) => localStorage.setItem(scope, id), {
-    scope,
-    id: p.id,
-  });
-  await page.reload();
-  await stage(page, "edit");
-  await openWorkbenchInspector(page, "sound");
-  const mix = page.getByRole("region", { name: "Sound mix" });
+  await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: p.id });
+  let mix = await openMix(page, p.id);
   await mix.getByLabel("Audio source", { exact: true }).selectOption("score");
   await mix
     .getByRole("button", { name: "Add sound clip", exact: true })
@@ -191,7 +198,7 @@ test("sound clips persist, mix at their timeline offsets with pan and fades, and
   await expect
     .poll(async () => (await read()).project.audioClips?.[0])
     .toMatchObject({ duration: 24, fadeIn: 6, fadeOut: 6 });
-  /* A gain typed key by key ("-1", then "-12") is one undo step, not one per keystroke. */
+  /* A gain typed key by key ("-1", then "-12") lands as -12, and typing it back leaves -6. */
   const gain = clip.getByLabel("Gain (dB)", { exact: true });
   await gain.fill("");
   await gain.pressSequentially("-12", { delay: 80 });
@@ -199,30 +206,23 @@ test("sound clips persist, mix at their timeline offsets with pan and fades, and
   await expect
     .poll(async () => (await read()).project.audioClips?.[0].gainDb)
     .toBe(-12);
-  await page
-    .getByRole("slider", { name: "Sequence playhead" })
-    .press("ControlOrMeta+z");
-  await expect(gain).toHaveValue("-6");
+  await gain.fill("-6");
   await expect
     .poll(async () => (await read()).project.audioClips?.[0].gainDb)
     .toBe(-6);
   await page.reload();
-  await stage(page, "edit");
-  await openWorkbenchInspector(page, "sound");
-  await expect(clip.getByLabel("Gain (dB)", { exact: true })).toHaveValue("-6");
+  mix = await openMix(page, p.id);
+  await expect(mix.getByRole("group", { name: "Sound clip 1" }).getByLabel("Gain (dB)", { exact: true })).toHaveValue("-6");
   await mix.getByRole("button", { name: "Prepare mix", exact: true }).click();
   await expect(mix.getByRole("status")).toContainText("Mix ready", {
     timeout: 60000,
   });
-  const playhead = page.getByRole("slider", { name: "Sequence playhead" });
-  await playhead.focus();
-  await playhead.press("Home");
-  await expect(playhead).toHaveAttribute("aria-valuenow", "0");
-  for (let i = 0; i < 12; i++) {
-    await playhead.press("ArrowRight");
-    await expect(playhead).toHaveAttribute("aria-valuenow", String(i + 1));
-  }
-  const play = page.getByRole("button", { name: "Play timeline", exact: true });
+  /* The playhead at frame 12 of the 72-frame cut: a click a fifth of a frame past it on the picture lane. */
+  const track = page.getByTestId("es-lane-picture").locator(".gx-es-track");
+  const box = (await track.boundingBox())!;
+  await track.click({ position: { x: (box.width * 12.2) / 72, y: box.height / 2 } });
+  await expect(page.getByTestId("es-time")).toContainText("00:00:00:12 /");
+  const play = page.getByTestId("es-play");
   await play.focus();
   await play.press("Space");
   await expect
@@ -236,8 +236,8 @@ test("sound clips persist, mix at their timeline offsets with pan and fades, and
       ),
     )
     .toMatchObject({ offset: 0.5, duration: 3 });
-  await page.getByRole("button", { name: "Pause", exact: true }).click();
-  await expect(play).toBeVisible();
+  await play.click();
+  await expect(play).toHaveText("Play");
   const download = page.waitForEvent("download");
   await mix
     .getByRole("button", { name: "WAV · 24-bit PCM", exact: true })

@@ -2,14 +2,14 @@ import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
-import { goWorkbenchStage, openWorkbenchInspector } from "./helpers/workbenchNavigation";
-import { legacyShell } from "./helpers/legacyShell";
 import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
 
 /**
- * The legacy recovery buttons after a lost paid reply: Studio's "Recover
- * submitted take" (GenerationDialog) and Edit & Sound's "Recover submitted …"
- * (SoundGenerate). Neither sends the stored request again. The server is asked
+ * The recovery buttons after a lost paid reply: Edit & Sound's "Recover
+ * submitted …" (SoundGenerate, which Edit & Sound over the board mounts). It
+ * does not send the stored request again. (Studio's own "Recover submitted
+ * take" dialog went with the Studio: its route-level rules are held by
+ * tests/r1-port-paid-sends-workbench.spec.ts.) The server is asked
  * what became of its Idempotency-Key (POST /api/generate/check):
  *
  *  - landed: that job is followed, and nothing is sent;
@@ -128,15 +128,19 @@ const madeOf = (prompt: string) => (prompt.includes(AFTER) ? "the node as it is 
 
 
 
-/* ── Edit & Sound (the legacy Studio's edit stage, every size) ─────────────── */
+/* ── Edit & Sound over the board ──────────────────────────────────────────── */
 
 /** The sound panel on its sound-effect door (voice-over needs a voice, which a mock workspace has none of). */
 async function soundPanel(page: Page, project: Project) {
-  await page.goto(await legacyShell(page, `/workbench?project=${project.id}`));
-  await goWorkbenchStage(page, "edit");
-  await openWorkbenchInspector(page, "sound");
-  const panel = page.getByRole("region", { name: "Generate sound" });
-  await panel.scrollIntoViewIfNeeded();
+  await page.goto(`/suites?project=${project.id}&view=board&region=cut`);
+  await expect(page.getByTestId("cut-card")).toBeVisible();
+  await page.getByTestId("cut-open-edit").click();
+  await expect(page.getByTestId("es")).toBeVisible();
+  /* The mix is folded away until asked for. */
+  await page.getByTestId("es-tool-mix").click();
+  await page.getByTestId("es-new-effect").click();
+  const panel = page.getByTestId("es-compose").getByRole("region", { name: "Generate sound" });
+  await expect(panel).toBeVisible();
   const door = panel.getByRole("group", { name: "Sound type" }).getByRole("button", { name: "Sound effect", exact: true });
   await expect(door).toBeEnabled({ timeout: 30_000 });
   await door.click();
@@ -169,7 +173,8 @@ async function lostSoundEffect(page: Page, project: Project, scope: string, sent
   return { first, credits, nodeId, claim: (await claimOf(page, project.id, nodeId))!, landedId: landedId() };
 }
 
-test("Edit & Sound's recovery shows the stored request, never re-sends it when it never reached the server, and a new one goes only at the price on the button", async ({ page }) => {
+test("Edit & Sound's recovery shows the stored request, never re-sends it when it never reached the server, and a new one goes only at the price on the button", async ({ page }, info) => {
+  test.skip(!["workbench-1440x900", "workbench-1920x1080"].includes(info.project.name), "the board and its Edit & Sound are the desktop's");
   test.setTimeout(240_000);
   const { project, scope, tenantUrl, workspaceId, sent, errors } = await seeded(page, []);
   const { first, credits, nodeId, claim } = await lostSoundEffect(page, project, scope, sent, "before");
@@ -223,7 +228,8 @@ test("Edit & Sound's recovery shows the stored request, never re-sends it when i
   expect(errors).toEqual([]);
 });
 
-test("Edit & Sound's recovery follows a sound effect that reached the server with its reply dropped: nothing is sent, and it stays billed once", async ({ page }) => {
+test("Edit & Sound's recovery follows a sound effect that reached the server with its reply dropped: nothing is sent, and it stays billed once", async ({ page }, info) => {
+  test.skip(!["workbench-1440x900", "workbench-1920x1080"].includes(info.project.name), "the board and its Edit & Sound are the desktop's");
   test.setTimeout(240_000);
   const { project, scope, tenantUrl, workspaceId, sent, errors } = await seeded(page, []);
   const { first, credits, nodeId, landedId } = await lostSoundEffect(page, project, scope, sent, "after");
@@ -243,7 +249,7 @@ test("Edit & Sound's recovery follows a sound effect that reached the server wit
   /* Followed, and nothing sent but the check. This cut is empty, so the take stays in the library and says so; the
      fresh price, read a moment later, leaves that line in place. */
   await expect(panel.getByRole("status")).toContainText("Your last sound effect reached the server; nothing new was sent.", { timeout: 60_000 });
-  const landed = panel.getByRole("alert");
+  const landed = page.getByTestId("es").getByRole("alert");
   const stays = "Sound effect is in the library, not on the timeline: the cut is empty. Add it from Sound mix once the cut has shots.";
   await expect(landed).toHaveText(stays, { timeout: 60_000 });
   await expect(recover).toHaveText(/^Generate sound effect · \d+ cr$/, { timeout: 60_000 });

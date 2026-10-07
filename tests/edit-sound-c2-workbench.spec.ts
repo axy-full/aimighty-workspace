@@ -1,16 +1,17 @@
-import { goWorkbenchStage as stage, openWorkbenchInspector } from "./helpers/workbenchNavigation";
 import { test, expect, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { seedProject, type Project } from "../lib/workbench/studio";
-import { legacyShell } from "./helpers/legacyShell";
 
 /**
  * Edit & Sound, PR C2: Change voice and Dub.
  *
  * The audio routes, the dub route, the job feed and the project save are
  * mocked at the browser (no paid call, no engine, no stored generation),
- * the way tests/edit-sound-workbench.spec.ts does. A voice change replaces
+ * the way tests/edit-sound-workbench.spec.ts does. Retargeted from the old
+ * Studio's edit stage (retired) to Edit & Sound over the board: the Cut card's
+ * "Open Edit & Sound", then New voice line (its Sound type group holds Change
+ * voice and Dub). A voice change replaces
  * the dialogue clip it was made from, in place; a dub shows its progress
  * row while the vendor works and lands on the dialogue lane at the
  * remembered playhead when the feed reports it succeeded. Quotes come from
@@ -18,18 +19,22 @@ import { legacyShell } from "./helpers/legacyShell";
  */
 type Submission = { path: string; key: string | undefined; body: Record<string, unknown> };
 
-async function movePlayhead(page: Page, to: number) {
-  const playhead = page.getByRole("slider", { name: "Sequence playhead" });
-  await playhead.focus();
-  await playhead.press("Home");
-  await expect(playhead).toHaveAttribute("aria-valuenow", "0");
-  for (let i = 0; i < to; i++) {
-    await playhead.press("ArrowRight");
-    await expect(playhead).toHaveAttribute("aria-valuenow", String(i + 1));
-  }
+const DESKTOPS = ["workbench-1440x900", "workbench-1920x1080"];
+
+/** Edit & Sound over the board, with the sound composer open. The picture lane's clips are the cut's two 72-frame shots. */
+async function openComposer(page: Page, projectId: string) {
+  await page.goto(`/suites?project=${projectId}&view=board&region=cut`);
+  await expect(page.getByTestId("cut-card")).toBeVisible();
+  await page.getByTestId("cut-open-edit").click();
+  await expect(page.getByTestId("es")).toBeVisible();
+  await page.getByTestId("es-new-voice").click();
+  const panel = page.getByTestId("es-compose").getByRole("region", { name: "Generate sound" });
+  await expect(panel).toBeVisible();
+  return panel;
 }
 
 test("Edit & Sound re-voices a dialogue clip in place and dubs a source onto the dialogue lane, quoted per minute", async ({ page }, info) => {
+  test.skip(!DESKTOPS.includes(info.project.name), "the board and its Edit & Sound are the desktop's");
   await signInLocally(page.request);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -120,11 +125,8 @@ test("Edit & Sound re-voices a dialogue clip in place and dubs a source onto the
   });
 
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
-  await page.goto(await legacyShell(page, "/workbench"));
-  await stage(page, "edit");
-  await openWorkbenchInspector(page, "sound");
-  const panel = page.getByRole("region", { name: "Generate sound" });
-  await panel.scrollIntoViewIfNeeded();
+  const panel = await openComposer(page, project.id);
+  await page.getByTestId("es-tool-mix").click();
   const types = panel.getByRole("group", { name: "Sound type" });
   await expect(types.getByRole("button", { name: "Voice-over", exact: true })).toHaveAttribute("aria-pressed", "true");
   const generate = panel.locator("[data-sound-generate]");
@@ -163,13 +165,13 @@ test("Edit & Sound re-voices a dialogue clip in place and dubs a source onto the
   expect(current().audioClips![0]).toMatchObject({ id: "clip-interview", lane: "dialogue", startFrame: 6, sourceIn: 0, duration: 48, gainDb: -3 });
   const vcAsset = current().assets.find((a) => a.id === "mock-c2-1");
   expect(vcAsset).toMatchObject({ kind: "audio", generationId: "mock-c2-1", nodeId: vcNode!.id, name: "Interview · voice changed (Avery)", seconds: 65, url: "/api/media/mock-c2-1" });
-  await expect(panel.getByRole("status")).toContainText("Change voice replaced its dialogue clip in place.");
+  await expect(page.getByTestId("es").getByRole("status").filter({ hasText: "Change voice replaced its dialogue clip in place." })).toBeVisible();
   await expect(panel.getByRole("list", { name: "Sound in progress" })).toHaveCount(0);
   const mix = page.getByRole("region", { name: "Sound mix" });
   await expect(mix.getByRole("group", { name: "Sound clip 1" })).toContainText("Interview · voice changed (Avery)");
 
   // Dub: audio and video originals offered; the mode and language are settings; the quote follows the mode.
-  await movePlayhead(page, 24);
+  await page.getByTestId("es-clip").nth(1).click();
   await types.getByRole("button", { name: "Dub", exact: true }).click();
   const dubSource = panel.getByLabel("Dub source", { exact: true });
   await expect(dubSource.locator("option")).toHaveText(["Interview.wav · 65 s", "Hero.mp4 · video · 12 s", "Interview · voice changed (Avery) · 65 s"]);
@@ -185,8 +187,8 @@ test("Edit & Sound re-voices a dialogue clip in place and dubs a source onto the
   await panel.getByLabel("Dub mode", { exact: true }).selectOption("v1");
   await expect(generate).toContainText("Dub · 15 cr");
   await generate.click();
-  await expect(panel.getByRole("status")).toContainText("Dub submitted. The dubbed track lands on the dialogue lane at 00:01 when the vendor has finished");
-  await expect(panel.getByRole("list", { name: "Sound in progress" })).toContainText("Dub · Dialogue lane at 00:01 · dubbing…");
+  await expect(panel.getByRole("status")).toContainText("Dub submitted. The dubbed track lands on the dialogue lane at 00:03 when the vendor has finished");
+  await expect(panel.getByRole("list", { name: "Sound in progress" })).toContainText("Dub · Dialogue lane at 00:03 · dubbing…");
   expect(submissions).toHaveLength(2);
   expect(submissions[1].path).toBe("/api/audio/dub");
   expect(submissions[1].body).toMatchObject({ sourceUploadId: "upload-src-1", sourceLang: "auto", targetLang: "es", mode: "v1", maxCredits: 15, projectId: "production-fixture" });
@@ -199,12 +201,12 @@ test("Edit & Sound re-voices a dialogue clip in place and dubs a source onto the
   finished = 2;
   await expect.poll(() => current().audioClips?.length ?? 0, { timeout: 45_000 }).toBe(2);
   // The dubbed track: on the dialogue lane at the remembered playhead, ending with the 6 s cut rather than running its 65 s past it.
-  expect(current().audioClips![1]).toMatchObject({ lane: "dialogue", startFrame: 24, sourceIn: 0, duration: cut - 24, gainDb: 0, pan: 0, fadeIn: 0, fadeOut: 0, muted: false, solo: false });
+  expect(current().audioClips![1]).toMatchObject({ lane: "dialogue", startFrame: 72, sourceIn: 0, duration: cut - 72, gainDb: 0, pan: 0, fadeIn: 0, fadeOut: 0, muted: false, solo: false });
   const dubAsset = current().assets.find((a) => a.id === current().audioClips![1].assetId);
   expect(dubAsset).toMatchObject({ kind: "audio", generationId: "mock-c2-2", nodeId: dubNode!.id, name: "Interview · dubbed (Spanish)", seconds: 65 });
-  await expect(panel.getByRole("status")).toContainText("Dub placed on the dialogue lane at 00:01.");
+  await expect(page.getByTestId("es").getByRole("status").filter({ hasText: "Dub placed on the dialogue lane at 00:03." })).toBeVisible();
   await expect(mix.getByRole("group", { name: "Sound clip 2" })).toContainText("Interview · dubbed (Spanish)");
-  await expect(mix.getByRole("group", { name: "Sound clip 2" }).getByLabel("Timeline start", { exact: true })).toHaveValue("24");
+  await expect(mix.getByRole("group", { name: "Sound clip 2" }).getByLabel("Timeline start", { exact: true })).toHaveValue("72");
 
   await panel.scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath("edit-sound-c2.png") });
