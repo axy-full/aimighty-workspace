@@ -13,7 +13,7 @@ import { newProject } from "../lib/workbench/studio";
  *
  * Release 1: the Productions list, a deliverable's Shots and Media pages, the project overview and the shot list are gone (their
  * addresses redirect: lib/shell/old-routes.ts). The same rule is asserted where spend is drawn now: Home's project card, the board's
- * Shots region, Settings > Spending rules (every project with its cap), Settings > Plan & credits (the ledger's month and its Usage
+ * Shots region, Settings > Spending rules (the budget and per-shot cap, in credits), Settings > Plan & credits (the ledger's month and its Usage
  * fold) and the month's printable statement with its CSV. The routes the old pages read are held to it in
  * tests/r1-port-credit-units-workbench.spec.ts. (A credit's own dollars, at the served rate, are the workspace's and are allowed:
  * the check is that no vendor amount and no dollar cap is printed.)
