@@ -4,6 +4,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { releaseHeldJobs } from "@/lib/held";
 import { mayRelease } from "@/lib/workspace/release";
 import { HOLD_NEEDS_A_PERSON, holdBandOf, isAgentApprover } from "@/lib/cinemaHold";
+import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,8 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   /* Releasing a held take at a stated price approves spending: a person's, signed in (CLAUDE.md rule 14). An API or
      MCP token, even one an admin made, never releases one; held takes still start on their own when credits arrive. */
   if (got.token) return NextResponse.json({ error: "A held take is released by a person, signed in. API tokens cannot release it." }, { status: 403 });
+  /* Nor does Atomik or a disabled account: people only (owner rule; lib/security/people-only.ts). */
+  if (!isPerson({ user: got.user, token: got.token })) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   /* The sample workspace spends nothing: a held take there stays held. */
   { const off = await sampleWorkspaceOff(); if (off) return off; }
   const { id } = await params;
