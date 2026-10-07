@@ -30,7 +30,7 @@ const FIVE_MINUTES = 5 * 60_000;
 /** Taps from the invitation link to the approved take (clicks and ticks; typing is not a tap). Set from the first green run; lower it when a PR removes a tap. */
 const TAP_BUDGET = { desktop: 9, phone: 9 };
 /* Phone stays at 9 until the owner decides whether it stays 9 or the product saves a tap. */
-/* Phone, 9 taps: terms, sign up, Start, the plan row, Build, the plan row again (Build returns Home), Approve, Review, Approve. The earlier 7 was set while Start was a fixture (not a tap) and
+/* Phone, 9 taps: terms, sign up, Start, Record's Open, Build, the plan row (Build returns Home), Approve, Review, Approve. The earlier 7 was set while Start was a fixture (not a tap) and
    before the plan path; one tap goes if Build stays on the plan screen at its price (proposed, not built: PlanScreen is money code). */
 const BRIEF = "A 15-second film about a courier crossing a rooftop at dawn, three shots.";
 const cr = /(\d[\d,]*(?:\.\d)?)\s*cr\b/i;
@@ -238,12 +238,13 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     const { page } = run;
     const primary = page.getByTestId("board-plan-primary");
     const quoted = (await runOf(page.request, (await scopeFor(page.request)).headers, run.productionId, run.draftId)).run?.plan?.quote?.fingerprint ?? null;
+    expect(quoted, "the priced plan has a quote fingerprint").toMatch(/^[a-f0-9]{64}$/);
     run.spend.allow("agent.approvePlan", await primary.innerText());
     await tap(run, primary);
     const card = page.getByTestId("board-plan");
     await expect(card).toContainText(/Rendered · [\d.,]+ cr settled/, { timeout: 120_000 });
     run.spend.close("agent.approvePlan");
-    if (quoted) expect(run.spend.spent.find((x) => x.kind === "agent.approvePlan")?.body?.fingerprint, "the approval carries the quoted fingerprint").toBe(quoted);
+    expect(run.spend.spent.find((x) => x.kind === "agent.approvePlan")?.body?.fingerprint, "the approval carries the quoted fingerprint").toBe(quoted);
     await expect(card).toContainText(/Making \d+ shots?/);
     run.rendered = Number(/Rendered · ([\d.,]+) cr settled/.exec(await card.innerText())?.[1].replace(/,/g, "") ?? NaN);
     expect(run.rendered).toBeGreaterThan(0);
@@ -430,10 +431,11 @@ test.describe("the five-minute test · phone 390x844", () => {
     const { page } = run;
     const primary = page.getByTestId("phone-plan-primary");
     const quoted = (await runOf(page.request, (await scopeFor(page.request)).headers, run.productionId, run.draftId)).run?.plan?.quote?.fingerprint ?? null;
+    expect(quoted, "the priced plan has a quote fingerprint").toMatch(/^[a-f0-9]{64}$/);
     run.spend.allow("agent.approvePlan", await primary.innerText());
     await tap(run, primary);
     await expect(page.getByTestId("phone-home")).toBeVisible({ timeout: 90_000 });
-    if (quoted) expect(run.spend.spent.find((x) => x.kind === "agent.approvePlan")?.body?.fingerprint, "the approval carries the quoted fingerprint").toBe(quoted);
+    expect(run.spend.spent.find((x) => x.kind === "agent.approvePlan")?.body?.fingerprint, "the approval carries the quoted fingerprint").toBe(quoted);
     expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan", "agent.approvePlan"]);
     await screenIsClean(run, ['[data-testid="phone-home"]']);
     mark(run, "plan approved");
