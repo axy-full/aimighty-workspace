@@ -4,7 +4,7 @@ import { refKindOf } from "../workbench/ref-kind";
 import { stableId } from "../workbench/stable-id";
 import type { CanvasNode, Project } from "../workbench/studio";
 import { RigBuildError } from "../production/rig-build";
-import { cardHeight, cardWidth, graphEdges, isSectionNode, SECTION_MODE, SECTION_WIDTH } from "./rig-graph";
+import { cardHeight, cardWidth, isSectionNode, SECTION_MODE, SECTION_WIDTH } from "./rig-graph";
 
 /*
  * The Rig board, laid out so a big board reads at a glance (owner, 28
