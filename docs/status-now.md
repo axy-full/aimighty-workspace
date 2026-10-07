@@ -1,4 +1,4 @@
-# Status now: 7 October 2026, 22:13 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 22:36 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -6,11 +6,13 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
 Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's AT RISK and WON'T MAKE IT items, with an estimate per item; (c) move prep for Coolify on a test address, files only. Then a proposed demo date and the `release/1` → main plan.
 
 **Lead:** the session on "contabo" took over from the "vps" session at about 15:50 IST. Deny rules checked: `git restore` and `docker ps` are both refused.
-**Integration preview:** `release/1` (draft #546) = 88133fee. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
+**Integration preview:** `release/1` (draft #546) = 38e67831. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
 
 ## In `release/1` since 15:00
 - 3D blocking part B (`build/gaps-l2` 44cda874, Opus PASS; owner yes to Q7: staging only, production only in a later train after a Turso backup branch).
 - `fix/r1-ci-worker-probe-env` (Opus PASS).
+- `chore/r1-dead-old-pages` (Opus FAIL, fixed, PASS): 155 unreachable old source files and 22 old specs deleted; ratchets only lowered.
+- `fix/r1-blocking-float` (PASS): the last CI failure.
 - `fix/r1-ci-make` (two fix rounds, delta PASS): Make composer specs ported; no price shows while a recipe's references load; Takes chips readable (Cinema's "at most 3N" whole); a draft's final runs to success in an API test.
 - `fix/r1-client-ip-behind-proxy` (PASS, delta PASS): behind the proxy, rate limits key on the address the proxy saw, never a visitor-set header; Vercel unchanged. Needs the Cloudflare-only firewall before cutover.
 - `admin/workspace-cap-field` (two mediums fixed, delta PASS): "Particl demo" cap set by the platform owner in /admin; every paid path refuses at the hold; desk shows engine dollars only. Main needs the owner's yes.
@@ -32,7 +34,7 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
   - browser: mostly specs still driving the old Gen composer, the old Workspace pane and the retired connected account; plus money specs (no vendor dollars, credit value on phone, batch takes, recovery race, spend buttons) that must be ported, never dropped.
 - Run 37615298051 on ac03f878: all 3 unit shards green (first green unit run on `release/1`); browser shards still running.
 - On "contabo", 3ca30197: typecheck clean; unit 3,950 passed, 3 failed (the same three), 7 skipped.
-- **CI on 88133fee (run 37649646956): 2 failing tests left, down from about 240 at 16:00.** Both are one 3D blocking test at 1440 and 1920: a camera position compared exactly comes back as -2.999999999999999 instead of -3 (float noise, not behaviour). Unit and core green. A small test fix is running; then a full green run.
+- CI on 88133fee: 2 failing tests (one 3D blocking test, float noise). Fixed; with the dead-code deletion, release/1 is now 38e67831. **CI run 37655599797 on 38e67831 running: expected fully green.**
 - Fix lanes running since 16:20, one branch each, merged into `release/1` only after a fresh review (Opus where money, sign-in or tenancy):
   - `fix/r1-ci-make`: the Make composer specs (prices, batches, model picker).
   - `fix/r1-ci-settings`: Settings, credits, no vendor dollars, retired connected account.
@@ -40,9 +42,8 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
 ## In flight
 | Branch | State |
 |---|---|
-| CI fixes on `release/1` | last one running (`fix/r1-blocking-float`) |
-| `chore/r1-dead-old-pages` @ e08da842 | 155 unreachable old files and 22 old specs deleted; Opus review running. Old Business/Crew/Inspector screens can still mount from the shell (addresses are rewritten to the board): a separate, careful cut |
-| `fix/r1-d0-check` | D0 screens checked screen by screen (right-click prices, Delete with Undo, header, ⌘K, phone bar); screenshots for the owner |
+| `fix/r1-d0-check` | D0 checked at five sizes (57 screenshots). Fixed: the Jobs pill vanished on an empty tray; right-click on Library-drawer takes opened an empty menu. Review: right-click shows a priced Recreate in the sample workspace (nothing can be charged, but the sample must show no price); being fixed |
+| Old Business/Crew/Inspector screens still mountable from the shell | Plan from the reviewer; a careful separate cut next |
 | Release 1 remaining list | sent: `docs/r1-remaining.md` (this branch). Owner: list B in, list C out |
 | image-ad variants and presets | No frame in the handoff (only one card, one Make at 3 cr). Nothing built. Brief for Claude Design: `docs/design-brief-image-ad-versions.md` (this branch). Logic already in code |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
@@ -67,5 +68,8 @@ Scope: list B in (image-ad variants; phone gets "Open this on a larger screen" n
 9. Make's words box takes no paste, drop or Attach (the 25 September rule says every prompt box takes media). Add it (recommended; no money), or exempt Make?
 10. A sent take no longer announces when it lands (Make closes on send). Bring the announcement back from the jobs tray (recommended, not blocking)?
 
+11. Right-click menu: write "free" on the free items? (The design doesn't; left as drawn.)
+12. The public site's nav says Studio · Ads · Social while the app calls them templates: change it?
+
 ## Machine
-GitHub rejected every push from about 20:33 to 20:47 IST ("fatal error in commit_refs", GitHub's side); nothing was lost. Load on "contabo" is high (our mock servers plus the owner's Coolify build); at most 5 agents.
+GitHub rejected every push from about 20:33 to 20:47 and again from about 22:20 to 22:30 IST ("fatal error in commit_refs", GitHub's side); nothing was lost.
