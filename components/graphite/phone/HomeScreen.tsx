@@ -131,7 +131,8 @@ function ApprovalRow({ item, approvals, online, now, onTopUp, onPlan, onThread }
   if (item.approve?.kind === "thread") action = (
     <button type="button" className="ph-btn" onClick={() => onThread(item)} aria-label={`Open the plan: ${item.title}`} data-testid="phone-row-open">Open</button>
   );
-  else if (item.sample) action = <button type="button" className="ph-btn ph-btn--price" disabled title={SAMPLE_LINE}><Price value={item.price} /></button>;
+  /* The sample spends nothing: its row says so in its line, and offers no priced button. */
+  else if (item.sample) action = null;
   else if (short && item.canApprove) action = <button type="button" className="ph-btn ph-btn--hot" onClick={onTopUp} data-testid="phone-row-topup">Top up</button>;
   else if (!item.canApprove || !item.approve) action = null;
   /* A plan is several steps priced together: it opens its approval screen rather than approving in place. */

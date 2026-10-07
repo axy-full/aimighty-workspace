@@ -280,9 +280,9 @@ test("phone Home: every kind of wait reads as the code has it, each priced row a
   /* Over the rule: no button, and who may press it. */
   await expect(row("Hero take")).toContainText("Needs an admin");
   await expect(row("Hero take").getByRole("button")).toHaveCount(0);
-  /* The sample spends nothing: its price is shown, never pressable. */
+  /* The sample spends nothing: its row says so and offers no priced button at all. */
   await expect(row("Sample take")).toContainText("Sample production · nothing here spends credits");
-  await expect(row("Sample take").getByRole("button")).toBeDisabled();
+  await expect(row("Sample take").getByRole("button")).toHaveCount(0);
   /* A short balance: by how much, and no way to approve it. */
   await expect(row("Long take")).toContainText("Short by 3 cr");
   await expect(row("Long take").getByTestId("phone-row-approve")).toHaveCount(0);

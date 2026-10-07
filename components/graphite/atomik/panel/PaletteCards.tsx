@@ -5,6 +5,7 @@ import { askButton, thinkingLine, type AtomikIntent } from "@/lib/shell/atomik-p
 import { spendAttrsOf } from "@/lib/spend";
 import { usePriceTitle } from "../../Price";
 import { usePlaces } from "./use-places";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import type { Project } from "@/lib/workbench/studio";
 
 /**
@@ -20,22 +21,27 @@ export function PaletteAskCard({ intent, project, onClose, enterRef }: {
 }) {
   const production = project?.productionProjectId ?? null;
   const places = usePlaces();
+  /* The sample workspace spends nothing: a request is not offered there (no quote, no priced button), a free line still is. */
+  const spendOff = useSampleWorkspace();
+  const priced = intent.kind === "ask" && !spendOff;
   /* The free quote of a new turn in this project's thread (the same route and body the panel's composer quotes). */
-  const { quote, loading, error } = useAtomikQuote("/api/atomik", intent.kind === "ask" ? { text: intent.text, model: "auto", effort: "auto", projectId: production } : null);
+  const { quote, loading, error } = useAtomikQuote("/api/atomik", priced ? { text: intent.text, model: "auto", effort: "auto", projectId: production } : null);
   const credits = quote?.estimateCredits ?? null;
   const button = askButton(intent, { credits, loading, error });
   const title = usePriceTitle(button.price);
   const press = () => { onClose(); places.ask(intent.text, { send: true, approved: intent.kind === "ask" ? credits : null }); };
   /* Enter answers a free line; a priced one goes to the panel unsent, where its button is pressed. */
-  useEffect(() => { enterRef.current = intent.kind === "ask" ? () => { onClose(); places.ask(intent.text); } : press; });
+  useEffect(() => { enterRef.current = spendOff && intent.kind === "ask" ? null : intent.kind === "ask" ? () => { onClose(); places.ask(intent.text); } : press; });
   return (
     <div className="ak-pcard" data-testid="palette-atomik-card" data-intent={intent.kind}>
       <span className="ak-eyebrow ak-accent">Atomik</span>
       <strong className="ak-pcard-title">Ask Atomik: {intent.text}</strong>
       <div className="ak-pcard-foot">
-        <span className="ak-pcard-note" data-testid="palette-thinking-line">{button.reason ?? thinkingLine(intent, credits)}</span>
-        <button type="button" className="ak-btn ak-btn-primary" disabled={button.disabled} title={title ?? (button.price?.kind === "free" ? "How-to answers are free" : undefined)}
-          onClick={press} data-testid="palette-ask" {...spendAttrsOf(button.price)}>{button.label}</button>
+        <span className="ak-pcard-note" data-testid="palette-thinking-line">{spendOff && intent.kind === "ask" ? spendOff : button.reason ?? thinkingLine(intent, credits)}</span>
+        {spendOff && intent.kind === "ask" ? null : (
+          <button type="button" className="ak-btn ak-btn-primary" disabled={button.disabled} title={title ?? (button.price?.kind === "free" ? "How-to answers are free" : undefined)}
+            onClick={press} data-testid="palette-ask" {...spendAttrsOf(button.price)}>{button.label}</button>
+        )}
       </div>
     </div>
   );

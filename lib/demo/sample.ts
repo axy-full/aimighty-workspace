@@ -84,3 +84,14 @@ export function sampleGate(project: SampleSubject | null | undefined, mark: Pick
 export function paidControlOnSample(gate: SampleGate): { disabled: boolean; title?: string } {
   return gate.exploreOnly ? { disabled: true, title: gate.exploreOnly } : { disabled: false };
 }
+
+/**
+ * What GET /api/demo/sample says about the workspace, read the way the server reads it: a workspace that cannot be
+ * checked is treated as the sample workspace (spend-guard.server.ts refuses its paid jobs too). `res` is null when the
+ * request itself failed. A failed, refused or unreadable answer is "sample", so the screens hide their priced controls
+ * rather than offering ones the server would refuse.
+ */
+export function sampleWorkspaceAnswer(res: { ok: boolean; body: unknown } | null): boolean {
+  if (!res || !res.ok || !res.body || typeof res.body !== "object") return true;
+  return Boolean((res.body as { sampleWorkspace?: unknown }).sampleWorkspace);
+}

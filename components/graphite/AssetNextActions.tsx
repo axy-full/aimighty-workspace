@@ -1,5 +1,6 @@
 "use client";
 import { useId, useState } from "react";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { nextActions, notOfferedLine, pricedActions, type NextActionId, type PricedActionId } from "@/lib/shell/next-actions";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { NextActionPanel } from "./NextActionPanel";
@@ -27,8 +28,10 @@ export function AssetNextActions({ entry, saved, onAction, scope, project, onOpe
 }) {
   const [open, setOpen] = useState<{ take: string; id: PricedActionId } | null>(null);
   const panelId = useId();
+  /* The sample workspace spends nothing: Upscale, Outpaint, Animate, Reframe and Extend (and their panel) are not offered. */
+  const spendOff = useSampleWorkspace();
   const actions = nextActions(entry, { saved });
-  const priced = scope && project ? pricedActions(entry, { saved }) : [];
+  const priced = scope && project && !spendOff ? pricedActions(entry, { saved }) : [];
   if (!actions.length && !priced.length) return null;
   const openId = open?.take === entry.take.id ? open.id : null;
   const current = openId ? priced.find((a) => a.id === openId && a.enabled) ?? null : null;

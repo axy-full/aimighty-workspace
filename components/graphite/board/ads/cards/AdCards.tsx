@@ -28,7 +28,9 @@ const SIZE_WORDS: Record<string, string> = { "1k": "1K", "2k": "2K", "4k": "4K" 
 
 /** One branded still from the product image, on Particl's Higgsfield API key: the estimate on the button, then one send at that figure. */
 export function ImageAdCard({ data }: CardProps<ImageAdData>) {
-  const { scope, project, rig } = useBoard();
+  const { scope, project, rig, exploreOnly } = useBoard();
+  /* The sample spends nothing (the board says so once): no estimate is read and no Make is offered. */
+  const spendOff = Boolean(exploreOnly);
   const [aspect, setAspect] = useState("1:1");
   const [resolution, setResolution] = useState("2k");
   const [open, setOpen] = useState(false);
@@ -49,15 +51,15 @@ export function ImageAdCard({ data }: CardProps<ImageAdData>) {
   const quote = take.quote, estimateKey = take.estimate?.key, expires = take.estimate?.expiresAt ?? 0, phase = take.run.phase;
   const busy = phase === "submitting" || phase === "running";
   useEffect(() => {
-    if (!request || busy) return;
+    if (!request || busy || spendOff) return;
     if (estimateKey === key && expires > now) return;
     const timer = setTimeout(() => void quote(request, key), 700);
     return () => clearTimeout(timer);
-  }, [request, key, quote, estimateKey, expires, now, busy]);
+  }, [request, key, quote, estimateKey, expires, now, busy, spendOff]);
   const reason = blocked ?? estimateReason(take.estimate, key, now);
-  const credits = !reason && take.estimate?.key === key ? take.estimate.credits : null;
+  const credits = !spendOff && !reason && take.estimate?.key === key ? take.estimate.credits : null;
   const price = exact(credits);
-  const failedEstimate = Boolean(!blocked && take.estimate?.key === key && take.estimate.error);
+  const failedEstimate = Boolean(!spendOff && !blocked && take.estimate?.key === key && take.estimate.error);
   const run = take.run;
   const running = run.phase === "running" ? run : null;
 
@@ -77,17 +79,17 @@ export function ImageAdCard({ data }: CardProps<ImageAdData>) {
           </span>
         ) : null}
         <textarea className="ab-prompt nodrag nopan nowheel" aria-label="Prompt" rows={5} maxLength={IMAGE_AD_PROMPT_MAX} value={prompt} onChange={(e) => setEdited(e.target.value)} data-testid="ads-image-ad-prompt" />
-        {reason && !failedEstimate ? <Note role="status">{reason}</Note> : null}
+        {reason && !failedEstimate && !spendOff ? <Note role="status">{reason}</Note> : null}
         {failedEstimate && request ? <Note tone="bad" role="alert">{reason} <button type="button" className="ab-link nodrag nopan" onClick={() => void take.quote(request, key)}>Try again</button></Note> : null}
         {run.phase === "failed" ? <Note tone="bad" role="alert">{run.error}</Note> : null}
         {take.note ? <Note role="status">{take.note}</Note> : null}
         {running ? <Note role="status">{running.held ? "Held · it starts when credits arrive" : running.generation?.status === "queued" ? "Queued" : "Rendering"} · <Price value={exact(running.credits)} /></Note> : null}
         {run.phase === "done" ? <Note role="status">Done · it is in Ads below.</Note> : null}
-        <Actions>
+        {spendOff ? null : <Actions>
           <Btn primary disabled={Boolean(reason) || busy || rig.status !== "ready"} aria-busy={busy || undefined} onClick={() => { if (request) void take.submit(request, key, credits); }} data-testid="ads-image-ad-make" {...spendAttrsOf(price)}>
             {phase === "submitting" ? "Submitting…" : running ? "Rendering…" : <>Make the image ad{price ? <> · <Price value={price} /></> : null}</>}
           </Btn>
-        </Actions>
+        </Actions>}
       </span>
     </article>
   );

@@ -5,7 +5,7 @@ import { useApi } from "../useApi";
 import { useSession } from "../session";
 import { useScopedFetch } from "../useScopedFetch";
 import type { SampleBoard } from "./board";
-import { sampleGate, type SampleGate, type SampleSubject, SAMPLE_LINE } from "./sample";
+import { sampleGate, sampleWorkspaceAnswer, type SampleGate, type SampleSubject, SAMPLE_LINE } from "./sample";
 
 /*
  * The browser's half of the sample production. One read of GET /api/demo/sample per mount (the mark and the board's
@@ -39,14 +39,21 @@ function readSampleWorkspace(scope: string | null): Promise<boolean> {
   const key = scope ?? "";
   const hit = shared.get(key);
   if (hit && Date.now() - hit.at < SHARED_MS) return hit.answer;
+  /* Fails closed, as the server does: a read that failed says "sample", and is not kept: the next ask reads again. */
+  let failed = false;
   const answer = fetch("/api/demo/sample", { cache: "no-store", ...(scope != null ? { headers: { "X-Workbench-Scope": scope } } : {}) })
-    .then(async (res) => (res.ok ? Boolean(((await res.json()) as { sampleWorkspace?: unknown }).sampleWorkspace) : false))
-    .catch(() => false);
+    .then(async (res) => {
+      const body = res.ok ? await res.json().catch(() => null) : null;
+      failed = !res.ok || body === null;
+      return sampleWorkspaceAnswer({ ok: res.ok, body });
+    })
+    .catch(() => { failed = true; return sampleWorkspaceAnswer(null); })
+    .finally(() => { if (failed && shared.get(key)?.answer === answer) shared.delete(key); });
   shared.set(key, { at: Date.now(), answer });
   return answer;
 }
 
-/** The sample's line when this workspace is the sample workspace (nothing here spends), else null. Null while it loads. */
+/** The sample's line when this workspace is the sample workspace (nothing here spends) or the read failed, else null. Null while it loads. */
 export function useSampleWorkspace(): string | null {
   const { requestScope, signedIn } = useSession();
   /* The answer is kept with the scope it was read for, so a signed-out or changed scope reads as "no" with no reset. */

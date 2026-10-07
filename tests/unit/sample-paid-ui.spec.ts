@@ -1,0 +1,61 @@
+import { test, expect } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { sampleWorkspaceAnswer } from "../../lib/demo/sample";
+
+/**
+ * The sample workspace offers no priced control (the review's M1) and the client's read fails closed (L5).
+ * The browser proof is tests/sample-paid-controls-workbench.spec.ts; this holds the two pure halves: what a read means,
+ * and that every surface the review named is still wired to the one hook (or, on a board, to the board's gate, which is
+ * that hook's answer), so a refactor cannot quietly bring a priced control back.
+ */
+
+test("the read fails closed: a failed, refused or unreadable answer is the sample; only a clear answer without the flag is not", () => {
+  expect(sampleWorkspaceAnswer(null)).toBe(true);
+  expect(sampleWorkspaceAnswer({ ok: false, body: null })).toBe(true);
+  expect(sampleWorkspaceAnswer({ ok: false, body: { sampleWorkspace: false } })).toBe(true);
+  expect(sampleWorkspaceAnswer({ ok: true, body: null })).toBe(true);
+  expect(sampleWorkspaceAnswer({ ok: true, body: "<html>" })).toBe(true);
+  expect(sampleWorkspaceAnswer({ ok: true, body: { board: null, sampleWorkspace: true } })).toBe(true);
+  expect(sampleWorkspaceAnswer({ ok: true, body: { board: null } })).toBe(false);
+  expect(sampleWorkspaceAnswer({ ok: true, body: { board: null, sampleWorkspace: false } })).toBe(false);
+});
+
+test("the hook reads through that answer, and a failed read is not kept", () => {
+  const source = readFileSync("lib/demo/use-sample.ts", "utf8");
+  expect(source).toMatch(/sampleWorkspaceAnswer\(\{ ok: res\.ok/);
+  expect(source).toMatch(/\.catch\(\(\) => \{ failed = true; return sampleWorkspaceAnswer\(null\); \}\)/);
+  expect(source).not.toMatch(/\.catch\(\(\) => false\)/);
+  expect(source).toMatch(/shared\.delete\(key\)/);
+});
+
+/** Each named surface: the file, and what must be in it for the sample (hook or the board's own gate), then the priced control it guards. */
+const SURFACES: { name: string; file: string; guard: RegExp; control: RegExp }[] = [
+  { name: "⌘K's Ask Atomik card: no priced Ask", file: "components/graphite/atomik/panel/PaletteCards.tsx", guard: /useSampleWorkspace\(\)/, control: /spendOff && intent\.kind === "ask" \? null/ },
+  { name: "⌘K's Approve under N cr card: no list, total or confirm", file: "components/graphite/atomik/panel/PaletteApprove.tsx", guard: /useSampleWorkspace\(\)/, control: /if \(spendOff\) return \(/ },
+  { name: "DraftFinalBar: not drawn (no quote, no Make the 1080p final)", file: "components/graphite/DraftFinal.tsx", guard: /useSampleWorkspace\(\)/, control: /spendOff \? null : <PricedDraftFinalBar/ },
+  { name: "Inspector: no Draft eyebrow over a bar that is not drawn", file: "components/graphite/AssetInspector.tsx", guard: /useSampleWorkspace\(\)/, control: /pair\?\.draft && generation && !spendOff/ },
+  { name: "Inspector: no priced Recreate", file: "components/graphite/AssetInspector.tsx", guard: /useSampleWorkspace\(\)/, control: /\{spendOff \? null : <button type="button" className="gx-primary"/ },
+  { name: "ReleaseTake: not drawn for a held take", file: "components/graphite/ReleaseTake.tsx", guard: /useSampleWorkspace\(\)/, control: /if \(spendOff \|\| !generation/ },
+  { name: "Control room ThreadCheckpoint: no checkpoint, no Continue", file: "components/graphite/control-room/ThreadCheckpoint.tsx", guard: /useSampleWorkspace\(\)/, control: /if \(spendOff\) return null/ },
+  { name: "Control room BatchApprove: not drawn", file: "components/graphite/control-room/BatchApprove.tsx", guard: /useSampleWorkspace\(\)/, control: /if \(spendOff\) return null/ },
+  { name: "Next row: no priced actions (so no NextActionPanel)", file: "components/graphite/AssetNextActions.tsx", guard: /useSampleWorkspace\(\)/, control: /scope && project && !spendOff \? pricedActions/ },
+  { name: "Approvals queue: every item reads as the sample's (no Approve anywhere it is drawn)", file: "lib/control-room/use-approvals.ts", guard: /useSampleWorkspace\(\)/, control: /spendOff \? \(current\.reply\?\.items \?\? \[\]\)\.map/ },
+  { name: "Phone Home rows: a sample item has no priced button", file: "components/graphite/phone/HomeScreen.tsx", guard: /item\.sample/, control: /else if \(item\.sample\) action = null/ },
+  { name: "Viral tool: no run button", file: "components/graphite/viral/ViralView.tsx", guard: /useSampleWorkspace\(\)/, control: /\{spendOff \? null : <button type="button" className="gx-primary gx-gen-go"/ },
+  { name: "Ads image-ad card: no Make", file: "components/graphite/board/ads/cards/AdCards.tsx", guard: /exploreOnly/, control: /\{spendOff \? null : <Actions>/ },
+  { name: "Edit & Sound: no New voice line, music or effect", file: "components/graphite/board/edit/EditSoundScreen.tsx", guard: /ctx\.exploreOnly/, control: /\{ctx\.exploreOnly \? null : <div className="gx-es-stack">/ },
+];
+
+for (const { name, file, guard, control } of SURFACES) {
+  test(`${name} (${file.split("/").pop()})`, () => {
+    const source = readFileSync(file, "utf8");
+    expect(source, "the sample check").toMatch(guard);
+    expect(source, "the guarded control").toMatch(control);
+  });
+}
+
+test("the board's gate is the hook's answer, so the board-level surfaces fail closed too", () => {
+  const source = readFileSync("components/graphite/board/BoardView.tsx", "utf8");
+  expect(source).toMatch(/const spendOff = useSampleWorkspace\(\)/);
+  expect(source).toMatch(/exploreOnly: onSample\.exploreOnly \?\? spendOff/);
+});
