@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { test, expect as baseExpect, type APIRequestContext, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -27,6 +27,9 @@ const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "w
 const PHONES = ["workbench-360x640", "workbench-390x844"];
 const TOUCH = [...PHONES, "workbench-844x390"];
 const MIN = 60_000;
+/* The platform desk reads every workspace on the deployment (/api/admin/invites takes seconds on a database that has seen many runs). */
+const expect = baseExpect;
+const slowExpect = baseExpect.configure({ timeout: 60_000 });
 const MARKETING = "higgsfield/marketing-studio-image";
 /* A key this server has never had: the one-way fingerprint of a key rotated away (no key is ever stored). */
 const GONE = createHash("sha256").update(`rotated-away:${randomBytes(8).toString("hex")}`).digest("hex");
@@ -245,6 +248,8 @@ async function signInAsPlatformOwner(api: APIRequestContext) {
 }
 
 test("the platform desk shows the shared key to its owner — the pool, takes on a changed key, request and correlation ids — and to nobody else", async ({ page, browser }, info) => {
+  test.setTimeout(240_000);
+  const expect = slowExpect;
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const touch = TOUCH.includes(info.project.name);
   const me = await signInAsPlatformOwner(page.request);
@@ -270,7 +275,7 @@ test("the platform desk shows the shared key to its owner — the pool, takes on
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto("/admin");
     const card = page.getByTestId("shared-key-card");
-    await expect(card).toBeVisible();
+    await expect(card).toBeVisible({ timeout: 60_000 });
     await card.scrollIntoViewIfNeeded();
     await expect(card.getByText("Shared provider key", { exact: true })).toBeVisible();
     /* This server runs the mock engine with no pool configured: the card says the pool is off, by its setting's name. */
