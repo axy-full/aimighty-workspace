@@ -6,6 +6,8 @@ import { useSession } from "@/lib/session";
 import { personLine, workspaceLine } from "@/lib/shell/person";
 import { signOut } from "@/lib/shell/sign-out";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { switchWorkspace, useSwitchState } from "@/lib/shell/switch-workspace";
+import { useOptionalToast } from "@/lib/workspace/state";
 import { useGoSettings } from "./settings/navigate";
 
 type Item = { id: string; label: string; run: () => void };
@@ -25,7 +27,16 @@ export function SettingsMenu({ anchor, onClose }: { anchor: RefObject<HTMLButton
   const session = useSession();
   const scopedFetch = useScopedFetch();
   const goSettings = useGoSettings();
-  const [busy, setBusy] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  /* A switch running, from this menu or one opened before it: the workspace being switched to, while the board's last
+     edit saves and the route answers. Sign out and every switch wait for it. */
+  const sw = useSwitchState();
+  const switching = sw.phase === "idle" ? null : sw.id;
+  const busy = signingOut || switching !== null;
+  /* A switch that did not happen after the menu was closed says why in the shell's toast instead. */
+  const toast = useOptionalToast();
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [problem, setProblem] = useState("");
   const [at, setAt] = useState<{ top: number; right: number } | null>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -43,18 +54,14 @@ export function SettingsMenu({ anchor, onClose }: { anchor: RefObject<HTMLButton
   const go = (run: () => void) => () => { onClose(); run(); };
   const current = session.workspace?.id ?? null;
   const others = (session.workspaces ?? []).filter((w) => w.id !== current);
-  /* Another of your workspaces: the route Workspace › General's switch uses, then the shell from the top. */
+  /* Another of your workspaces (lib/shell/switch-workspace.ts): the board's last edit saved first, then the route, then the shell from the top. */
   const switchTo = (id: string) => async () => {
     if (busy) return;
-    setBusy(true); setProblem("");
-    try {
-      const response = await scopedFetch("/api/workspaces/switch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
-      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Your account could not be changed. Please try again.");
-      window.location.assign("/suites");
-    } catch (cause) {
-      setProblem(cause instanceof Error && cause.message ? cause.message : "Your account could not be changed. Please try again.");
-      setBusy(false);
-    }
+    setProblem("");
+    const why = await switchWorkspace({ id, fetch: scopedFetch, go: () => window.location.assign("/suites") });
+    if (!why) return;
+    if (mounted.current) setProblem(why);
+    else toast?.(why);
   };
   const items: Item[] = [
     { id: "team", label: "Team", run: go(() => goSettings("team")) },
@@ -62,13 +69,13 @@ export function SettingsMenu({ anchor, onClose }: { anchor: RefObject<HTMLButton
     { id: "rules", label: "Spending rules", run: go(() => goSettings("rules")) },
     { id: "connections", label: "Connections", run: go(() => goSettings("connections")) },
     { id: "advanced", label: "Advanced", run: go(() => goSettings("advanced")) },
-    ...others.map((w) => ({ id: `switch-${w.id}`, label: `Switch to ${w.name}`, run: () => void switchTo(w.id)() })),
+    ...others.map((w) => ({ id: `switch-${w.id}`, label: switching === w.id ? `Switching to ${w.name}…` : `Switch to ${w.name}`, run: () => void switchTo(w.id)() })),
     ...(session.superAdmin ? [{ id: "platform-desk", label: "Platform desk", run: () => { onClose(); window.location.assign("/admin"); } }] : []),
     {
-      id: "sign-out", label: busy ? "Signing out…" : "Sign out", run: () => {
+      id: "sign-out", label: signingOut ? "Signing out…" : "Sign out", run: () => {
         if (busy) return;
-        setBusy(true); setProblem("");
-        void signOut(scopedFetch).then((why) => { if (why) { setProblem(why); setBusy(false); } });
+        setSigningOut(true); setProblem("");
+        void signOut(scopedFetch).then((why) => { if (why) { setProblem(why); setSigningOut(false); } });
       },
     },
   ];
@@ -94,7 +101,7 @@ export function SettingsMenu({ anchor, onClose }: { anchor: RefObject<HTMLButton
         </div>
         <div className="gx-settings-rule" role="separator" />
         {items.map((item) => (
-          <button key={item.id} type="button" role="menuitem" className="gx-settings-item" disabled={(item.id === "sign-out" || item.id.startsWith("switch-")) && busy} onClick={item.run} data-testid={`settings-${item.id}`}>
+          <button key={item.id} type="button" role="menuitem" className="gx-settings-item" disabled={(item.id === "sign-out" || item.id.startsWith("switch-")) && busy} aria-busy={item.id === `switch-${switching}` || undefined} onClick={item.run} data-testid={`settings-${item.id}`}>
             {item.label}
           </button>
         ))}

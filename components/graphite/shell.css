@@ -1494,3 +1494,7 @@
 @media (min-width: 768px) {
   .gx[data-screen^="board"] .gx-make { right: var(--board-dock, 0px); }
 }
+
+/* A workspace switch running (components/graphite/SwitchingVeil.tsx): nothing under it takes an edit until it lands or fails. */
+.gx-switching { position: fixed; inset: 0; z-index: 95; display: flex; align-items: flex-start; justify-content: center; padding-top: calc(72px + env(safe-area-inset-top, 0px)); background: var(--gx-scrim); cursor: progress; }
+.gx-switching-note { padding: 9px 16px; border-radius: var(--gx-r-pill); font-size: 13px; font-weight: 500; color: var(--gx-text); background: var(--gx-card); border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-toast); }
