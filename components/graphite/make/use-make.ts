@@ -22,7 +22,7 @@ import { cleanSetup, composeForSend, recoverSetup, withoutSetup, type FilmSetup 
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { useComposer, type ComposerSent } from "@/lib/workspace/use-composer";
 /* Release 1: Cinema Studio is not offered in Make until its 3N hold is in (lib/shell/make-price.ts › MAKE_SHOWS_CINEMA). */
-import { hiddenInMake } from "@/lib/shell/make-price";
+import { hiddenInMake, MAKE_MODEL_PREFERENCE, MAKE_PICKS, makeQuoteValue, rowSettings } from "@/lib/shell/make-price";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
@@ -90,7 +90,8 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     announceMade({ projectId: made.projectId, nodeId: made.nodeId, name: made.name });
     shell.closeMake();
   }, [ws, shell, surface]);
-  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent, hide: hiddenInMake });
+  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent, hide: hiddenInMake,
+    preference: MAKE_MODEL_PREFERENCE, initialPicks: MAKE_PICKS });
   const { state, model, offered, settings, submitting } = composer;
   const dispatch = composer.dispatch;
   /* Back from where the words were left: only into an empty box, before anything else (a recipe, ⌘K's "make …") lands in it. */
@@ -311,11 +312,14 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   }, [wantsRates, ratesKey, priceKey, scopedFetch]);
   const rates = sheetRates?.key === priceKey ? sheetRates : null;
   const readingRates = wantsRates && !rates;
-  /** One row's figure, as a price: exact where the server priced the row, none where it did not. */
-  const rowValue = useCallback((m: ComposerModel): { value: PriceValue | null; title: string } => {
+  /** One row's figure, as a price: exact where the server priced the row, none where it did not; with the size and length it is
+   *  at ("52 cr · 1080p · 6 s"), which are the settings this engine would render with here (an engine without the size picked
+   *  renders at its own, and its row says so). */
+  const rowValue = useCallback((m: ComposerModel): { value: PriceValue | null; title: string; detail: string | null } => {
     const row = rowPrice(m, null, priceAt, rates, readingRates);
     /* Cinema Studio's rows carry an approximate figure; its words are its own (PR #523), so the row shows none. */
-    return { value: row.kind === "rate" && row.credits != null && !row.approximate ? exact(row.credits) : null, title: row.kind === "none" ? "Priced on Make once the words are in" : row.title };
+    const value = row.kind === "rate" && row.credits != null && !row.approximate ? makeQuoteValue(row.credits, m.type) : null;
+    return { value, detail: value ? rowSettings(m, priceAt, row.detail) : null, title: row.kind === "none" ? "Priced on Make once the words are in" : row.title };
   }, [priceAt, rates, readingRates]);
 
   /* ── The words ───────────────────────────────────────────────────────── */
@@ -382,13 +386,14 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     ? [model?.label, model?.audioTask === "speech" ? composer.voice?.name : soundTask ? `${composer.seconds} s` : null]
     : state.type === "image" ? [model?.label, settings.resolution]
     : [model?.label, settings.resolution, model?.durations?.length ? `${settings.duration} s` : null]).filter((part): part is string => Boolean(part));
-  const linePrice: MakePrice | null = takeCredits == null ? null : approximate ? { value: null, about: aboutOneTake() } : { value: exact(takeCredits), about: null };
+  /* A sound is a live estimate: "up to N cr" (lib/shell/make-price.ts › makeQuoteValue); a still or a clip is its card figure. */
+  const linePrice: MakePrice | null = takeCredits == null ? null : approximate ? { value: null, about: aboutOneTake() } : { value: makeQuoteValue(takeCredits, state.type), about: null };
   /* Auto's enhancement is in the figure: the button reads take + enhancement, and waits (unpriced) while the enhancement is still being priced. */
   const goPrice: MakePrice | null = spendOff || total == null || (autoNeeds && enhanceCredits == null) ? null
-    : approximate ? { value: null, about: composer.buttonParts.price } : { value: exact(total + (enhanceCredits ?? 0)), about: null };
+    : approximate ? { value: null, about: composer.buttonParts.price } : { value: makeQuoteValue(total + (enhanceCredits ?? 0), state.type), about: null };
   const balanceNow = balance !== undefined ? balance : session.credits?.balance ?? null;
   /* Make stays pressable when the balance is short (the take waits, held, until credits arrive): the line only says so. */
-  const short = !spendOff && !approximate && total != null && !submitting ? shortByWords(balanceNow, exact(total + (enhanceCredits ?? 0))) : null;
+  const short = !spendOff && !approximate && total != null && !submitting ? shortByWords(balanceNow, makeQuoteValue(total + (enhanceCredits ?? 0), state.type)) : null;
 
   return {
     composer, state, model, settings, offered, tool, recent, submitting,

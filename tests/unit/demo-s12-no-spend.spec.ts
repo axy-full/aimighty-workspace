@@ -320,7 +320,7 @@ test("Transcribe on the sample is refused as a conflict (409) in the sample's wo
   })) as typeof fetch;
   try {
     const outcome = await sendTranscription({ scope: "particl-active-ws_unit-owner", slot: "transcribe-sample", body: { sourceUploadId: "up_line", projectId: "film", diarize: true, maxCredits: 3 }, credits: 3, storage, locks: null });
-    /* release/1 carries the server's `charged` through: nothing was billed. */
+    /* The server said nothing was charged, and the press keeps that figure. */
     expect(outcome).toEqual({ state: "released", reason: SAMPLE_LINE, failed: true, charged: 0 });
   } finally { globalThis.fetch = original; }
   /* The server's own words carry no top-up and no new price. */

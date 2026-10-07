@@ -173,7 +173,18 @@ export function shotWords(code: string | null | undefined): string | null {
 export function takeTitle(entry: LibraryEntry): string {
   const g = generationOf(entry);
   const shot = shotWords(g?.shotCode);
-  return shot ? `${shot} · v${g?.version ?? 1}` : entry.take.name;
+  if (shot) return `${shot} · v${g?.version ?? 1}`;
+  return readableTakeName(entry.take.name, g?.version);
+}
+
+/** A take id read as words ("tk-s1-v1" → "Shot 1 · v1"); a name that is only an id never reaches the screen. */
+export function readableTakeName(name: string, version?: number | null): string {
+  const trimmed = name.trim();
+  /* Only a name that is wholly an id is rewritten; a person's own name ("Take-off at dawn", "job-site.mp4") stays as written. */
+  const id = /^(?:take\s+)?tk-s(\d+)-v(\d+)$/i.exec(trimmed);
+  if (id) return `Shot ${Number(id[1])} · v${Number(id[2])}`;
+  if (!trimmed || /^(?:take\s+)?(?:tk|gen|job|asset)[-_][0-9a-f]{6,}$/i.test(trimmed)) return version ? `Take · v${version}` : "Take";
+  return name;
 }
 
 const seconds = (n: number) => `${Number.isInteger(n) ? n : Math.round(n * 10) / 10} s`;

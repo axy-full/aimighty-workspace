@@ -1,4 +1,6 @@
 import { readFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, type Page, type Route } from "@playwright/test";
 import { signInLocally } from "./workbenchLocal";
 import { newProject, type Asset, type CanvasNode, type Project } from "../../lib/workbench/studio";
@@ -8,7 +10,7 @@ import { newProject, type Asset, type CanvasNode, type Project } from "../../lib
  * share. A fresh signed-in workspace, a seeded project whose cut holds two approved takes with a third waiting, the library
  * answered from the spec (no engine runs, nothing is generated), and a watcher on every request that could spend. Neutral names.
  */
-export const SHOTS = process.env.L3_SHOTS || "/private/tmp/claude-l3-shots";
+export const SHOTS = process.env.L3_SHOTS || join(tmpdir(), "claude-l3-shots");
 export const desktop = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1280;
 export const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 export const PNG = readFileSync("public/icon-192.png");
