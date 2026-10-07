@@ -49,7 +49,7 @@ export default async function GenHome() {
         <Head eyebrow="Make · one composer" title="One composer for video, images and audio."
           lead="Every tool in every suite is a preset that opens it pre-configured; there is never a second interface." />
         <Cols col={420}>
-          <Window path="particl.app / gen" src={shot("gen-composer-blank")} alt="The Make composer" width={924} height={540} />
+          <Window path="particl.si / make" src={shot("make-panel")} alt="Make over the board, with the engine line and its price" width={924} height={540} />
           <Grid col={220}>
             <Stat figure="4–30 s" name="Length by the second" body="Any whole second a video engine accepts. Ratio, resolution and audio clamp when you switch engines." />
             <Stat figure="SHA-256" name="References stay byte-identical" body="No resize, no re-encode, no metadata stripping. The rail shows ✓ BYTE-IDENTICAL when the hash matches." />
