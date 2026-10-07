@@ -71,7 +71,8 @@ test("the old public addresses redirect for good, query kept, and the new ones a
   for (const [from, to] of [["/business", "/ads"], ["/viral", "/social"], ["/workspace", "/settings"]]) {
     const res = await page.request.get(`${from}?utm_source=mail`, { maxRedirects: 0 });
     expect(res.status(), from).toBe(308);
-    expect(new URL(res.headers().location).pathname + new URL(res.headers().location).search, from).toBe(`${to}?utm_source=mail`);
+    const at = new URL(res.headers().location, "http://localhost");
+    expect(at.pathname + at.search, from).toBe(`${to}?utm_source=mail`);
     const there = await page.goto(`${from}?utm_source=mail`);
     expect(new URL(page.url()).pathname, from).toBe(to);
     expect(there?.status(), to).toBe(200);
