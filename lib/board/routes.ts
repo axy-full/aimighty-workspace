@@ -18,6 +18,8 @@ export const BOARD_SCREEN: ScreenModule = {
     { from: "?view=crew&cp=room", to: "?view=board&frame=m" },
     { from: "?view=crew&cp=members", to: "?view=board&frame=m" },
     { from: "?view=crew&cp=sessions", to: "?view=board&frame=n" },
+    /* The bare Crew page, and a room the address misspelt, open the room too. */
+    { from: "?view=crew", to: "?view=board&frame=m" },
   ],
   /* The old pages are deleted, so nothing falls back to one. */
   fallback: [],

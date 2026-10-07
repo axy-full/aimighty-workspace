@@ -250,7 +250,7 @@ const SUITE_SPELLING: Readonly<Record<string, Suite>> = {
 };
 /** Design page ids that are shell pages over another backing page: [backing page, shell page]. Anything else the app reads as it is. */
 const DESIGN_PAGES: Readonly<Partial<Record<Suite, Readonly<Record<string, readonly [PageId, string]>>>>> = {
-  particl: { stages: ["brief", "stages"], beats: ["brief", "beats"], env: ["boards", "environment"], environment: ["boards", "environment"] },
+  particl: { stages: ["brief", "stages"], home: ["brief", "home"], beats: ["brief", "beats"], env: ["boards", "environment"], environment: ["boards", "environment"] },
   moleculr: Object.fromEntries(shellSuite("business").pages.map((p) => [p.id, ["marketing", p.id] as const])),
   atomik: { memory: ["agent", "memory"], "saved-skills": ["agent", "saved-skills"] },
 };
@@ -319,6 +319,7 @@ const N = (from: string, to: string): OldToNew => ({ from, to, ships: "D0-3" });
 /** The rows live today (README § 1.2, design form → app form). `normalize(from)` is `to` for each; tests/unit/shellRedirects.spec.ts holds it to that. */
 export const OLD_TO_NEW: readonly OldToNew[] = [
   N("?suite=studio&page=stages", "?suite=particl&page=brief&sp=stages"),
+  N("?suite=studio&page=home", "?suite=particl&page=brief&sp=home"),
   N("?suite=studio&page=brief", "?suite=particl&page=brief"),
   N("?suite=studio&page=beats", "?suite=particl&page=brief&sp=beats"),
   N("?suite=studio&page=boards", "?suite=particl&page=boards"),

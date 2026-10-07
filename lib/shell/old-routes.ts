@@ -1,4 +1,3 @@
-import { moleculrSection } from "@/lib/suites";
 import { resolvePageId, resolveSuite, suiteOfPage } from "@/lib/workspace/pages";
 import type { Suite } from "@/lib/workspace/types";
 import { route } from "./screens";
@@ -50,8 +49,8 @@ function carried(from: URLSearchParams, consumed: readonly string[]): [string, s
   return [...from].filter(([key]) => !consumed.includes(key) && !DROPPED.has(key));
 }
 
-/** The Business section a `?suite=moleculr&page=<section>` link named, as the Ads setup page that holds it (lib/shell/ia.ts). */
-const ADS_PAGE: Readonly<Record<string, string>> = { product: "product", brand: "brand", format: "format", design: "design" };
+/** The Business page a `?suite=moleculr&page=<page>` link named (the old sections, and the shell's own page ids), as the shell page that held it; the Ads board rows take it from there (lib/shell/ads-social.ts). */
+const ADS_PAGE: Readonly<Record<string, string>> = Object.fromEntries(["product", "brand", "format", "design", "dtc", "setup", "hooks", "reference"].map((id) => [id, id]));
 
 /** The pages of Atomik and of Social that still have an address (Shorts, Sources, Compare, Recipes and Builds have none: they open the suite's first). */
 const ATOMIK_PAGES: readonly string[] = ["approvals", "runs", "agent", "budget", "models", "skills"];
@@ -86,8 +85,7 @@ function entryAddress(entry: Entry, from: URLSearchParams): string {
     /* Business is the Ads board; the section a link named is the setup card that holds it. */
     to.set("suite", "moleculr");
     to.set("page", "marketing");
-    const section = moleculrSection(asked);
-    if (section && ADS_PAGE[section]) to.set("sp", ADS_PAGE[section]);
+    if (asked && Object.hasOwn(ADS_PAGE, asked)) to.set("sp", ADS_PAGE[asked]);
   } else if (suite === "atomik") {
     /* Atomik's own page is the panel (`atomik=1`); the control room's pages keep their addresses. */
     to.set("suite", "atomik");

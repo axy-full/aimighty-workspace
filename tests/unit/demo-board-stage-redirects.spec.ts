@@ -66,8 +66,8 @@ test("a copied take link never named its suite, and still opens the board's Shot
     expect(sameSearch(route(`${bare}&project=p1`), `${stage.to}&project=p1`), stage.id).toBe(true);
   }
   expect(params(route("?suite=particl&page=takes&sp=takes")).suite).toBeUndefined();
-  /* A page of another suite is not a stage: Atomik's Agent is `page=agent`, Business's is `page=marketing`. */
-  expect(params(route("?page=agent&sp=agent")).view).toBeUndefined();
+  /* A page of another suite is not a stage: Atomik's Agent is `page=agent` (its panel over Home), Business's is `page=marketing`. */
+  expect(params(route("?page=agent&sp=agent"))).toEqual({ atomik: "1", view: "home" });
   expect(params(route("?suite=moleculr&page=marketing&sp=hooks")).view).toBe("board");
 });
 
@@ -85,7 +85,7 @@ test("the design file's spellings of the stages open the same regions", () => {
 });
 
 test("every old Studio address the README, the redirect rows or the pending list ever named lands on the board, never on a page", () => {
-  const old = [...OLD_TO_NEW.map((r) => r.from), ...PENDING.map((p) => p.from)].filter((from) => from.startsWith("?") && /suite=(studio|particl)/.test(from) && !/sp=(stages|home)/.test(from) && !/page=stages/.test(from));
+  const old = [...OLD_TO_NEW.map((r) => r.from), ...PENDING.map((p) => p.from)].filter((from) => from.startsWith("?") && /suite=(studio|particl)/.test(from) && !/sp=(stages|home)/.test(from) && !/page=(stages|home)/.test(from));
   expect(old.length).toBeGreaterThanOrEqual(10);
   for (const from of old) for (const on of [false, true]) {
     const out = route(from);

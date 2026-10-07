@@ -145,8 +145,8 @@ test("Home: the Studio overview opens it once landed; a bare landing does too; b
   expect(sameSearch(route("?suite=particl&page=brief&sp=home", home), "?view=home")).toBe(true);
   expect(sameSearch(route("", home), "?view=home")).toBe(true);
   expect(sameSearch(route("?project=ws-1", home), "?view=home&project=ws-1")).toBe(true);
-  /* A page that is named is not a bare landing. */
-  expect(route("?suite=particl&page=brief", home)).toBe("?suite=particl&page=brief");
+  /* A Studio page no landed screen has a row for is not left to open (Release 1: no old page): it is Home too. */
+  expect(route("?suite=particl&page=brief", home)).toBe("?view=home");
   /* Make is a panel, not a place: an address that only opens Make is Make over Home. */
   expect(sameSearch(route("?make=image", home), "?view=home&make=image")).toBe(true);
   expect(route("?view=workspace&tab=credits", home)).toBe("?view=workspace&tab=credits");
