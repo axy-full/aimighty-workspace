@@ -123,9 +123,10 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
         <div className="gx-mk-engine-row">
           <Glyph name="spark" size={16} className="gx-mk-spark" />
           <span className="gx-mk-line" data-testid="make-engine-line">
-            {make.line.length ? make.line.map((part, i) => <span key={`${i}:${part}`} className="gx-mk-part">{part}</span>)
+            {/* One line, as the phone writes it: "Seedance 2.5 · 1080p · 5 s · 43 cr". The separators are text, so it reads the same aloud and copied. */}
+            {make.line.length ? make.line.map((part, i) => <span key={`${i}:${part}`} className="gx-mk-part">{i ? <span className="gx-mk-sep">{" · "}</span> : null}{part}</span>)
               : <span className="gx-mk-part">{make.readingModels ? "Reading the engines…" : "Choose an engine"}</span>}
-            {make.linePrice ? <span className="gx-mk-part"><MakePriceText price={make.linePrice} testId="make-engine-price" /></span> : null}
+            {make.linePrice ? <span className="gx-mk-part"><span className="gx-mk-sep">{" · "}</span><MakePriceText price={make.linePrice} testId="make-engine-price" /></span> : null}
           </span>
           <button type="button" className="gx-mk-change" aria-expanded={make.listOpen} aria-controls="gx-mk-engines"
             onClick={make.listOpen ? make.closeList : make.openList} data-testid="gen-model">{make.listOpen ? "Done" : "Change"}</button>

@@ -12,7 +12,9 @@ import { tmpdir } from "node:os";
 
 /* Release 1: below the compact line the shell mounts the phone's own Make (phone-make-*; demo-s10-phone-make-workbench: its engine line with Change, References, the type, and Make at its price); this spec is the desktop panel's short form. */
 const SIZES = ["workbench-1440x900", "workbench-1920x1080"];
+/* The mocked live price: 18 cr, and 10 more at 1080p, where Make opens (the handoff's default, lib/shell/make-price.ts › MAKE_PICKS). */
 const PRICE = 18;
+const OPENS_AT = PRICE + 10;
 const ENGINES = [
   { id: "dreamina-seedance-2-5-260628", kind: "video", resolutions: ["480p", "720p", "1080p"], ratios: ["16:9", "9:16", "1:1"], durations: [4, 5, 6, 7, 8, 9, 10, 11, 12], use: "Cinematic motion" },
 ];
@@ -53,9 +55,9 @@ test("the short form: the essentials, a priced Make, and one folded Advanced", a
   await expect(page.getByTestId("gen-prompt")).toBeVisible();
   await expect(page.getByTestId("make-add-reference")).toBeVisible();
   await expect(page.getByTestId("gen-model")).toBeVisible();
-  await expect(page.getByTestId("make-engine-price")).toHaveText(`${PRICE} cr`, { timeout: 30_000 });
+  await expect(page.getByTestId("make-engine-price")).toHaveText(`${OPENS_AT} cr`, { timeout: 30_000 });
   await page.getByTestId("gen-prompt").fill("a fox crossing a frozen harbour");
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${PRICE} cr`, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${OPENS_AT} cr`, { timeout: 30_000 });
   /* Advanced sits under Change and is folded: its controls are not on the screen. */
   await expect(page.getByTestId("make-advanced-toggle")).toHaveCount(0);
   await page.getByTestId("gen-model").click();
@@ -97,21 +99,22 @@ test("a value changed in Advanced moves the price, and the fold never hides it",
   test.skip(!SIZES.includes(info.project.name), "the desktop panel; the phone has its own Make");
   const { errors, reads } = await open(page);
   await page.getByTestId("gen-prompt").fill("a fox crossing a frozen harbour");
-  await expect(page.getByTestId("make-engine-price")).toHaveText(`${PRICE} cr`, { timeout: 30_000 });
+  await expect(page.getByTestId("make-engine-price")).toHaveText(`${OPENS_AT} cr`, { timeout: 30_000 });
+  expect(reads.some((q) => q.get("resolution") === "1080p")).toBe(true);
   await openAdvanced(page);
   const toggle = page.getByTestId("make-advanced-toggle");
-  await page.getByTestId("make-panel").getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p", exact: true }).click();
-  await expect(page.getByTestId("make-engine-price")).toHaveText(`${PRICE + 10} cr`, { timeout: 30_000 });
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${PRICE + 10} cr`, { timeout: 30_000 });
-  expect(reads.some((q) => q.get("resolution") === "1080p")).toBe(true);
+  await page.getByTestId("make-panel").getByRole("group", { name: "Resolution" }).getByRole("button", { name: "480p", exact: true }).click();
+  await expect(page.getByTestId("make-engine-price")).toHaveText(`${PRICE} cr`, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${PRICE} cr`, { timeout: 30_000 });
+  expect(reads.some((q) => q.get("resolution") === "480p")).toBe(true);
   /* Two takes: Make carries both. Folded, the summary names what the fold holds, and the price still shows. */
   await page.getByTestId("gen-takes-2").click();
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Make 2 takes · ${(PRICE + 10) * 2} cr`, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Make 2 takes · ${PRICE * 2} cr`, { timeout: 30_000 });
   await toggle.click();
   await expect(page.getByTestId("make-advanced")).toHaveCount(0);
   await expect(page.getByTestId("make-advanced-notes")).toHaveText("2 takes");
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Make 2 takes · ${(PRICE + 10) * 2} cr`);
-  await expect(page.getByTestId("make-engine-price")).toHaveText(`${PRICE + 10} cr`);
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Make 2 takes · ${PRICE * 2} cr`);
+  await expect(page.getByTestId("make-engine-price")).toHaveText(`${PRICE} cr`);
   expect(errors).toEqual([]);
 });
 
