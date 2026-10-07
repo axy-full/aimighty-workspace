@@ -270,7 +270,7 @@ const eventFor = (job: AtomikJob, owner: string, status: MeterEvent['status'], c
 });
 
 async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: AtomikDependencies) {
-  if (input.astraBlender && (input.suite || input.referenceAd || input.model !== ASTRA_BLENDER_MODEL || input.refs.length || input.videoFrames?.length)) throw new AtomikError('Astra uses GPT-6 Astra and the saved 3D scene. Start this request from Astra.', 422);
+  if (input.astraBlender && (input.suite || input.referenceAd || input.model !== ASTRA_BLENDER_MODEL || input.refs.length || input.videoFrames?.length)) throw new AtomikError('A 3D blocking request uses its own thinking model and the saved 3D scene. Start it from 3D blocking.', 422);
   if (input.referenceAd && input.suite) throw new AtomikError('Reference-ad analysis is a separate bounded review, not a suite-agent run.', 422);
   if (input.model !== 'auto' && isRetiredAtomikModel(input.model)) throw new AtomikError('That thinking model is no longer offered in Atomik, which now plans with Claude, OpenAI and Grok. Choose one of those, or Auto.', 422);
   if (input.model !== 'auto' && !isAtomikModel(input.model)) throw new AtomikError('That thinking model is not offered in Atomik. Choose a supported model.', 422);
@@ -280,7 +280,7 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   if (astraScene && createHash('sha256').update(serializeAstraScene(astraScene)).digest('hex') !== input.astraBlender!.sceneDigest) throw new AtomikError('The scene changed since this request was prepared. Close the quote and review a new request for the latest scene.', 422);
   if (input.astraBlender?.mode === 'native' && createHash('sha256').update(serializeAstraNative(project.astraNative)).digest('hex') !== input.astraBlender.nativeDigest) throw new AtomikError('The native 3D source changed. Review a new quote for the latest source.', 422);
   const referenceIds = input.astraBlender?.referenceIds ?? input.refs;
-  if (input.astraBlender && referenceIds.some(id => ![...project.assets, ...(project.sharedAssets ?? [])].some(asset => asset.id === id && asset.kind === 'image'))) throw new AtomikError('Choose project images or rendered previews as Astra visual references.', 422);
+  if (input.astraBlender && referenceIds.some(id => ![...project.assets, ...(project.sharedAssets ?? [])].some(asset => asset.id === id && asset.kind === 'image'))) throw new AtomikError('Choose project images or rendered previews as 3D blocking references.', 422);
   const references = await loadAtomikReferences(project, referenceIds, owner, input.videoFrames, {}, input.referenceAd);
   /* The team's memory for this production: read into planning and suite-agent runs, not into Astra's scene
      edits or a bounded reference-ad review. Read the same way for the quote and the run, so the estimate
@@ -354,7 +354,7 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
       assetIds: [...project.assets, ...(project.sharedAssets ?? [])].filter((asset, index, all) => (astraAssetKind(asset) || input.astraBlender?.mode === 'native' && isAstraBlendAsset(asset)) && all.findIndex(item => item.id === asset.id) === index)
         .filter((asset, index, all) => index >= all.length - 64 || astraScene.objects.some(object => object.assetId === asset.id) || project.astraNative?.assetIds.includes(asset.id) || project.astraNative?.baseBlendAssetId === asset.id)
         .map(({ id, kind, mime, name, description }) => ({ id, kind, mime, name: name.slice(0, 100), description: description.slice(0, 200) })) };
-    if (astraAgentInputTokens(envelope, astraAgentMessages(envelope)) > ASTRA_AGENT_INPUT_TOKENS || (model.contextWindow && ASTRA_AGENT_INPUT_TOKENS + maxTokens > model.contextWindow)) throw new AtomikError('This scene exceeds the reviewed Astra context budget. Simplify the scene before requesting a change.', 422);
+    if (astraAgentInputTokens(envelope, astraAgentMessages(envelope)) > ASTRA_AGENT_INPUT_TOKENS || (model.contextWindow && ASTRA_AGENT_INPUT_TOKENS + maxTokens > model.contextWindow)) throw new AtomikError('This scene is too large to change in one request. Simplify the scene before requesting a change.', 422);
     providerBody = JSON.stringify(envelope);
   }
   const estimateCredits = paidByPlatform(textVendor(model.id)) ? billCredits(estimateUsd, 'text') : 0;

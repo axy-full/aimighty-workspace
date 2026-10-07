@@ -140,3 +140,28 @@ test("Esc closes Edit & Sound and the board comes back; New voice line opens a c
   await expect(page.getByTestId("cut-card")).toBeVisible();
   expect(paid).toEqual([]);
 });
+
+/* Ported from the old Edit & Sound page's "a failed read of the edit" test (tests/workspace-honest-ui-workbench.spec.ts, deleted
+   with the old /workspace shell): a project that cannot be read is said so with Try again, never a loading line that will not change. */
+test("a failed read of the edit says so and offers Try again, never a loading line that will not change", async ({ page }) => {
+  test.skip(!desktop(page), NAMED_PHONE);
+  const seeded = await seedCut(page, "Edit Tester", {});
+  const errors = watchErrors(page);
+  await page.goto(`/suites?project=${seeded.project.id}&view=board`);
+  await expect(page.getByTestId("cut-card")).toBeVisible();
+  await page.locator('[data-region="cut"]').click();
+  await page.waitForTimeout(700);
+  /* From here on, reading the project fails until the connection comes back. */
+  let down = true;
+  await page.route(/\/api\/workbench\/projects\?id=/, (route) => (down && route.request().method() === "GET" ? route.fulfill({ status: 503, json: { error: "Studio could not load this project (503)." } }) : route.fallback()));
+  await page.getByTestId("cut-open-edit").click();
+  await expect(page.getByTestId("es-wait").getByRole("alert")).toContainText("could not load this project");
+  await expect(page.getByText("Loading the edit…")).toHaveCount(0);
+  /* "Try again", never "Retry": that word is a take's paid re-render. */
+  await expect(page.getByTestId("es-retry")).toHaveText("Try again");
+  down = false;
+  await page.getByTestId("es-retry").click();
+  await expect(page.getByTestId("es")).toBeVisible();
+  expect(seeded.paid, "reading is free: nothing paid").toEqual([]);
+  expect(errors).toEqual([]);
+});
