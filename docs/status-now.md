@@ -1,4 +1,4 @@
-# Status now: 7 October 2026, 19:55 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 20:31 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -6,11 +6,12 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
 Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's AT RISK and WON'T MAKE IT items, with an estimate per item; (c) move prep for Coolify on a test address, files only. Then a proposed demo date and the `release/1` → main plan.
 
 **Lead:** the session on "contabo" took over from the "vps" session at about 15:50 IST. Deny rules checked: `git restore` and `docker ps` are both refused.
-**Integration preview:** `release/1` (draft #546) = df5a551a. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
+**Integration preview:** `release/1` (draft #546) = c5422537. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
 
 ## In `release/1` since 15:00
 - 3D blocking part B (`build/gaps-l2` 44cda874, Opus PASS; owner yes to Q7: staging only, production only in a later train after a Turso backup branch).
 - `fix/r1-ci-worker-probe-env` (Opus PASS).
+- `money/r1-make-stale-claim` (Opus FAIL, reworked, delta PASS; owner yes): a tab that lost its reply checks that request first and sends nothing if it landed; changed words always send. Found by the CI lane: before this, video sent one extra paid request, image batches the whole batch again, audio one extra.
 - `fix/r1-signin-behind-proxy` (Opus PASS; owner yes: release/1 only): behind the proxy, `SELFHOST_BEHIND_PROXY=1` makes every origin check accept exactly APP_ORIGIN; Vercel unchanged. **The owner checks it on the test address next** (https; steps in `docs/selfhost-test.md`).
 - PR #561 `ops/selfhost-test-address` (Opus FAIL on the runbook: a plain platform copy names production workspace databases; fixed; delta PASS): Dockerfile, standalone output behind a flag, cron-sync, smoke test, runbook with the staging-set and keyring rules, a check of every workspace address before the scheduled task, Build Variable only on NEXT_PUBLIC_*, the particl.app redirect and DNS for all four names, and what changes when production leaves Vercel.
 - `fix/r1-ci-board` (Opus PASS): board, phone, Guest Home off, palette, sample workspace, spend buttons; phone fault buttons 44 px.
@@ -28,9 +29,6 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
 - Fix lanes running since 16:20, one branch each, merged into `release/1` only after a fresh review (Opus where money, sign-in or tenancy):
   - `fix/r1-ci-make`: the Make composer specs (prices, batches, model picker).
   - `fix/r1-ci-settings`: Settings, credits, no vendor dollars, retired connected account.
-
-## Money finding (CI lane, 17:30)
-In the new Make panel, a tab whose reply was lost can send a second paid request after another tab already settled the first, if the person presses Make again in the first tab. The old `recovery-race` spec forbade this. Confirmed on release/1 for video (1 extra paid request), image batches (the whole batch again) and audio. The owner said yes (17:40) to the fix. Fixed on `money/r1-make-stale-claim` @ e14ce236: each tab keeps its own copy of what it lost; a settled outcome leaves a 1-hour note; the next press checks first and sends nothing if it landed; changed words always send. The ported race test passes at all five sizes; unit 54/54. Opus review FAIL (one medium): if another tab has since left a newer lost request in the same slot, the stale tab checks that one instead of its own and can still send twice (reproduced in a unit test). Reworked at 4f15fcf2 (the tab settles its own lost request first; the reviewer's sequence now sends nothing; unit 93/93, race test at 1440 and 390). Delta review running.
 
 ## In flight
 | Branch | State |
@@ -62,4 +60,4 @@ Scope: list B in (image-ad variants; phone gets "Open this on a larger screen" n
 7. "Particl demo": the cap counts engine dollars, not billed credits, so the real 100 cr wall is a 100 cr credit grant (with the engine cap alongside). Keep the cap at $0 and raise it only on your "run"? "Cheap engines only" doesn't exist yet: a per-workspace engine list needs a platform database migration (your yes), about 1–1.5 days. Do Atomik's text models count too?
 
 ## Machine
-"contabo": 18 cores, 94 GB; agents capped at 12 cores and 64 GB. Up to 6 heavy jobs at once through `~/ops/heavy.sh` at low priority; full suites run in CI.
+"contabo" at 20:31: load about 16.5 of 18 cores for 15+ minutes (three mock dev servers, one at 17.5 GB, plus the owner's Coolify build). No new lanes until we are at 4 agents; oversized mock servers are being restarted.
