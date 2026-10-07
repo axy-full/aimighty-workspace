@@ -22,6 +22,9 @@ const releasedBefore = (gen: { status: string; params: Record<string, unknown> }
 export const POST = withTenant(async function POST(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
+  /* Releasing a held take at a stated price approves spending: a person's, signed in (CLAUDE.md rule 14). An API or
+     MCP token, even one an admin made, never releases one; held takes still start on their own when credits arrive. */
+  if (got.token) return NextResponse.json({ error: "A held take is released by a person, signed in. API tokens cannot release it." }, { status: 403 });
   const { id } = await params;
   const body = await req.json().catch(() => null) as { credits?: unknown } | null;
   const approved = Number(body?.credits ?? Number.NaN);

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AdmissionActor, AdmissionReply, PreparedAdmission, PrepareAdmissionResult } from "../admissionTypes";
 import { preparedClaimFingerprint } from "../admissionSupport";
+import { budgetAsk } from "../caps";
 import { creditState } from "../credits";
 import { db, now } from "../db";
 import { DRAFT_RESOLUTION } from "../draftFinal";
@@ -125,6 +126,8 @@ export type PaidDeps = {
   follow?: (jobId: string) => Promise<void>;
   /** The per-job line now (default: lib/workbench/rig-agent-limits.ts). */
   ceiling?: () => Promise<number>;
+  /** Whether this render reaches the pause at a share of the production's budget (default: lib/caps.ts budgetAsk). */
+  budget?: (productionId: string, credits: number) => Promise<{ line: string } | null>;
 };
 
 export type PaidContext = {
@@ -438,11 +441,16 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
   }
   /* Auto spends without a tap only on drafts (plan §8): a shot whose engine has no draft renders at full quality, so it asks. */
   const draft = admission.request.draft === true;
-  if (run.mode === "auto" && draft && toTenths(quoteCredits) <= toTenths(line)) {
+  /* At the share of the production's budget where paid work stops to ask (Settings › Spending rules), Auto asks too:
+     a person continues or stops. It only ever adds a tap; it never lets anything through. */
+  const budget = run.mode === "auto" && draft && toTenths(quoteCredits) <= toTenths(line)
+    ? await (deps.budget ?? budgetAsk)(run.productionId, quoteCredits) : null;
+  if (run.mode === "auto" && draft && toTenths(quoteCredits) <= toTenths(line) && !budget) {
     await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: "auto", approved_fingerprint: fingerprint, reason: null }, ["waiting"]);
     return CONTINUE;
   }
-  const why = run.mode !== "auto" ? `${title} is ready to render · about ${figure(quoteCredits)}.`
+  const why = budget ? `${budget.line} ${title} is next · about ${figure(quoteCredits)}.`
+    : run.mode !== "auto" ? `${title} is ready to render · about ${figure(quoteCredits)}.`
     : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · about ${figure(quoteCredits)}. Render it, skip it, or stop.`
     : `${title} is about ${figure(quoteCredits)}, over the ${figure(line)} a draft may cost without asking. Render it, skip it, or stop.`;
   await patchStep(db(), step.id, { reason: why }, ["waiting"]);

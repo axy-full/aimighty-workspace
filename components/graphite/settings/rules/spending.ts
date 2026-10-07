@@ -3,6 +3,7 @@ import { useSession } from "@/lib/session";
 import { cleanRule, cleanShotCap, jobApprovalLineCredits, type ApprovalRule } from "@/lib/approvalRule";
 import { creditRate, creditsText } from "@/lib/shell/price-words";
 import { useRead } from "../use-settings";
+import { cleanBudget } from "@/lib/budgetPause";
 import { spendingLines, type SpendingLines, type SpendingRules } from "./spending-words";
 
 export type { SpendingRules } from "./spending-words";
@@ -21,7 +22,7 @@ export type { SpendingRules } from "./spending-words";
  *
  * Read only: nothing here writes. `null` figures mean "not known yet", never zero.
  */
-export function useSpendingRules(): SpendingRules & SpendingLines & { error: string | null; retry: () => void } {
+export function useSpendingRules(): SpendingRules & SpendingLines & { budget: number | null; error: string | null; retry: () => void } {
   const session = useSession();
   const { data, error, read } = useRead<{ settings: Record<string, string>; defaults: Record<string, string> }>("/api/settings");
   const value = (key: string) => data?.settings[key] ?? data?.defaults[key];
@@ -40,5 +41,7 @@ export function useSpendingRules(): SpendingRules & SpendingLines & { error: str
     atCap: data ? (value("atCap") === "stop" || value("atCap") === "warn" ? (value("atCap") as "stop" | "warn") : "producer") : null,
     canChange: session.role === "admin" || session.role === "owner",
   };
-  return { ...rules, ...spendingLines(rules, creditsText), error, retry: () => void read() };
+  /* The budget per production (lib/caps.ts projectCap): none when blank. */
+  const budget = data ? cleanBudget(value("productionBudgetCredits")) : null;
+  return { ...rules, ...spendingLines(rules, creditsText), budget, error, retry: () => void read() };
 }
