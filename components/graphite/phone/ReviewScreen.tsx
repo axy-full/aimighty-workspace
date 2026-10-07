@@ -8,7 +8,7 @@ import { NEEDS_CONNECTION } from "./HomeScreen";
 import { fixBody, useFixQuote } from "./use-fix";
 import { reviewProjectTake, type LibraryEntry } from "@/lib/workspace/library";
 import type { ReviewState } from "@/lib/workspace/takes";
-import { useWorkspace } from "@/lib/workspace/state";
+import { ACTION_TOAST_MS, useWorkspace } from "@/lib/workspace/state";
 import type { Project } from "@/lib/workbench/studio";
 import { judgedLine, reviewQueue, swipeVerdict, takeSpec, takeTitle, versionsOf, type Judgement, type QueuedJudgement } from "./phone-model";
 
@@ -88,11 +88,16 @@ export function ReviewScreen({ scope, project, items, online, startTake, fixOpen
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   const finished = order.length > 0 && at >= order.length;
+  /* The latest callbacks, so a parent re-render never restarts the exit timer. */
+  const leave = useRef({ toast, onDone });
+  leave.current = { toast, onDone };
   useEffect(() => {
     if (!finished) return;
-    toast("Every take here is judged");
-    onDone();
-  }, [finished, toast, onDone]);
+    /* The last take's approval toast (with its Undo) is the app's one toast: keep it for its whole time, then say
+       the review is over and leave. Undo moves `at` back, which turns `finished` off and cancels this. */
+    const exit = setTimeout(() => { leave.current.toast("Every take here is judged"); leave.current.onDone(); }, ACTION_TOAST_MS + 150);
+    return () => clearTimeout(exit);
+  }, [finished]);
 
   const write = async (gen: string, state: ReviewState): Promise<string | null> => {
     if (!project) return "Open a project first.";
