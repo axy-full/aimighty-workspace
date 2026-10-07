@@ -47,8 +47,8 @@ import { PeerCursors, WhoIsHere } from "./Presence";
 import { HistoryDrawer, LibraryDrawer } from "./drawers/Drawers";
 import { addInput } from "@/lib/production/rig-build";
 import { entryAsset } from "@/lib/production/sequence";
-import { useSampleBoard, useSampleWorkspace } from "@/lib/demo/use-sample";
-import { CHECK_LINE } from "@/lib/demo/sample";
+import { useSampleBoard, useSampleLift, useSampleWorkspace } from "@/lib/demo/use-sample";
+import { CHECK_LINE, isSampleDraftId, LIFT_LINE } from "@/lib/demo/sample";
 import { CheckAgain } from "../CheckAgain";
 import { sampleGate } from "@/lib/demo/sample";
 import "./board.css";
@@ -125,7 +125,14 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const onSample = useMemo(() => sampleGate(project, sampleBoard?.sample ?? null), [project, sampleBoard]);
   /* In the sample workspace nothing spends on any board (the owner's switch): every paid control carries the line. */
   const spendOff = useSampleWorkspace();
-  const gate = useMemo(() => ({ exploreOnly: onSample.exploreOnly ?? spendOff, readOnly: onSample.readOnly }), [onSample, spendOff]);
+  /* Save where the viewer lifted the mark for one run (lib/demo/lift.server.ts): their board may ask Atomik and approve
+     that run's plan, on the run's own production. The server lets only that run through; everything else still refuses. */
+  const lift = useSampleLift();
+  const liftedHere = !!lift?.mine && !!project && !isSampleDraftId(project.id)
+    && (lift.productionId == null || lift.productionId === (project.productionProjectId ?? null));
+  const gate = useMemo(() => ({ exploreOnly: liftedHere ? null : onSample.exploreOnly ?? spendOff, readOnly: onSample.readOnly }), [liftedHere, onSample, spendOff]);
+  /* While it is lifted the board's line says so (for anyone else its paid controls stay closed in the sample's words). */
+  const pill = lift?.lifted && gate.exploreOnly !== CHECK_LINE ? LIFT_LINE : gate.exploreOnly;
   const sample = onSample.exploreOnly ? sampleBoard : null;
 
   /* An Ads or Social board's own session data (stream 11): pending site reads, the agent's runs. */
@@ -512,7 +519,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     return (
       <BoardInternalsProvider value={internals}>
         <div className="bd bd--compact" data-testid="board" data-board-kind={kind} data-sample={gate.exploreOnly ? "1" : undefined}>
-          {gate.exploreOnly ? <p className="bd-sample bd-sample--list" role="status" data-testid="board-sample">{gate.exploreOnly}{gate.exploreOnly === CHECK_LINE ? <> <CheckAgain className="bd-link" /></> : null}</p> : null}
+          {pill ? <p className="bd-sample bd-sample--list" role="status" data-testid="board-sample" data-lifted={pill === LIFT_LINE || undefined}>{pill}{pill === CHECK_LINE ? <> <CheckAgain className="bd-link" /></> : null}</p> : null}
           <List ctx={ctx} cards={placed.cards} />{drawerEl}
         </div>
       </BoardInternalsProvider>
@@ -542,7 +549,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           {list ? null : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} />
           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}
-          {gate.exploreOnly ? <p className="bd-sample" role="status" data-testid="board-sample">{gate.exploreOnly}{gate.exploreOnly === CHECK_LINE ? <> <CheckAgain className="bd-link" /></> : null}</p> : null}
+          {pill ? <p className="bd-sample" role="status" data-testid="board-sample" data-lifted={pill === LIFT_LINE || undefined}>{pill}{pill === CHECK_LINE ? <> <CheckAgain className="bd-link" /></> : null}</p> : null}
           {live ? <WhoIsHere peers={peers} /> : null}
           <input ref={files} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} />
         </div>

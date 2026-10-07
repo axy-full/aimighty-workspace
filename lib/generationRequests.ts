@@ -375,8 +375,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const paid = paidByPlatformEngine(event.engine);
   const holdBand = Number.isInteger(options.holdBand) && options.holdBand! > 1 ? options.holdBand! : 1;
   await ready();
-  /* The sample workspace spends nothing, for anyone, filed or not (lib/demo/spend-guard.server.ts). */
-  const sample = await sampleWorkspaceRefusal();
+  /* The sample workspace spends nothing, for anyone, filed or not, save the one run its mark is lifted for (lib/demo/spend-guard.server.ts). */
+  const sample = await sampleWorkspaceRefusal({ runId: options.run?.id });
   if (sample) throw new SpendReservationError(sample, 409, true);
   await reservationsReady();
   /* A still or video on the platform's shared provider key also takes a slot of its pool, in this same write. */

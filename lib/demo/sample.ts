@@ -103,3 +103,20 @@ export function sampleWorkspaceAnswer(res: { ok: boolean; body: unknown } | null
   if (!res || !res.ok || !res.body || typeof res.body !== "object") return "unknown";
   return (res.body as { sampleWorkspace?: unknown }).sampleWorkspace ? "sample" : "normal";
 }
+
+/*
+ * The one-run lift (owner, 7 Oct): an owner or admin lifts the sample mark for exactly one Atomik run, and it comes
+ * back on by itself when that run ends or the lift runs out (lib/demo/lift.server.ts). Everything else in the
+ * workspace still refuses meanwhile. These are the words and the shape the screens read.
+ */
+export const LIFT_LINE = "Lifted for one run · comes back on when it ends";
+
+/** What a signed-in member's board reads about the lift (GET /api/demo/sample/lift). `mine`: the viewer lifted it. */
+export type SampleLiftStatus = {
+  lifted: boolean;
+  mine: boolean;
+  /** The production its run is on, once Atomik was asked; null while it waits for the lifter's next ask. */
+  productionId: string | null;
+  runId: string | null;
+  expiresAt: number | null;
+};

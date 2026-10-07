@@ -10,6 +10,7 @@ import { useRead, useWrite } from "../use-settings";
 import { useSpendingRules } from "./spending";
 import type { SettingsFold } from "@/lib/shell/settings";
 import { BudgetSection } from "./BudgetSection";
+import { SampleLiftSection } from "./SampleLift";
 import { atItsCap, capInput, productionLine, ruleValue, type ProductionBudget } from "./spending-words";
 
 /**
@@ -77,6 +78,7 @@ export function RulesSection({ open = null }: { open?: SettingsFold | null } = {
 
   return (
     <>
+      <SampleLiftSection />
       <BudgetSection rules={rules} openAtStart={openAtStart} />
       <Section label="Who may approve" meta="people only · Atomik never approves" testId="settings-approve">
         {rules.error ? <Problem text={rules.error} onRetry={rules.retry} testId="settings-rules-error" /> : null}

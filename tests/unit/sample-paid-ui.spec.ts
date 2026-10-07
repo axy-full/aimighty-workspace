@@ -48,5 +48,7 @@ for (const { name, file, guard, control } of SURFACES) {
 test("the board's gate is the hook's answer, so the board-level surfaces fail closed too", () => {
   const source = readFileSync("components/graphite/board/BoardView.tsx", "utf8");
   expect(source).toMatch(/const spendOff = useSampleWorkspace\(\)/);
-  expect(source).toMatch(/exploreOnly: onSample\.exploreOnly \?\? spendOff/);
+  /* Save where the viewer lifted the mark for one run (lib/demo/lift.server.ts): only their own lift opens it, never on a sample copy. */
+  expect(source).toMatch(/exploreOnly: liftedHere \? null : onSample\.exploreOnly \?\? spendOff/);
+  expect(source).toMatch(/const liftedHere = !!lift\?\.mine && !!project && !isSampleDraftId\(project\.id\)/);
 });
