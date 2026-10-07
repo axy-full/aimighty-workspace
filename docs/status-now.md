@@ -1,4 +1,4 @@
-# Status now: 7 October 2026, 21:04 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 21:06 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -6,11 +6,12 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
 Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's AT RISK and WON'T MAKE IT items, with an estimate per item; (c) move prep for Coolify on a test address, files only. Then a proposed demo date and the `release/1` → main plan.
 
 **Lead:** the session on "contabo" took over from the "vps" session at about 15:50 IST. Deny rules checked: `git restore` and `docker ps` are both refused.
-**Integration preview:** `release/1` (draft #546) = 0fff12d3. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
+**Integration preview:** `release/1` (draft #546) = 25ccb3a9. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
 
 ## In `release/1` since 15:00
 - 3D blocking part B (`build/gaps-l2` 44cda874, Opus PASS; owner yes to Q7: staging only, production only in a later train after a Turso backup branch).
 - `fix/r1-ci-worker-probe-env` (Opus PASS).
+- `fix/r1-ci-settings` (Opus FAIL, fixed, delta PASS): Settings, credits and retired-account specs ported; no vendor dollars anywhere a customer looks; phone Home bar fits; workspace rename holds.
 - `fix/r1-review-lows` (Opus PASS after one fix): the sample hides "price pending"; the spend audit only skips marked navigation buttons and checks each tool's own priced button; the phone Make shows a failed press; landscape phones get 44 px targets; old "save first" messages reworded.
 - `fix/r1-public-origin-links` (Opus PASS): reset, invite, sign-up and top-up links are never built from request headers and fail closed on a self-hosted server without APP_ORIGIN; review, share, MCP and OpenAPI links use the public address. Vercel unchanged.
 - `money/r1-make-stale-claim` (Opus FAIL, reworked, delta PASS; owner yes): a tab that lost its reply checks that request first and sends nothing if it landed; changed words always send. Found by the CI lane: before this, video sent one extra paid request, image batches the whole batch again, audio one extra.
@@ -28,6 +29,7 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
   - browser: mostly specs still driving the old Gen composer, the old Workspace pane and the retired connected account; plus money specs (no vendor dollars, credit value on phone, batch takes, recovery race, spend buttons) that must be ported, never dropped.
 - Run 37615298051 on ac03f878: all 3 unit shards green (first green unit run on `release/1`); browser shards still running.
 - On "contabo", 3ca30197: typecheck clean; unit 3,950 passed, 3 failed (the same three), 7 skipped.
+- CI run on 25ccb3a9 (all fix lanes except Make) running; the next merges wait for it so it isn't cancelled.
 - Fix lanes running since 16:20, one branch each, merged into `release/1` only after a fresh review (Opus where money, sign-in or tenancy):
   - `fix/r1-ci-make`: the Make composer specs (prices, batches, model picker).
   - `fix/r1-ci-settings`: Settings, credits, no vendor dollars, retired connected account.
@@ -39,12 +41,10 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
 | Release 1 remaining list | sent: `docs/r1-remaining.md` (this branch). Owner: list B in, list C out |
 | image-ad variants and presets | No frame in the handoff (only one card, one Make at 3 cr). Nothing built. Brief for Claude Design: `docs/design-brief-image-ad-versions.md` (this branch). Logic already in code |
 | "Particl demo" cap field (`admin/workspace-cap-field` @ 32994932) | Up to date with release/1. The cap is enforced on the server at the hold for every paid path (new door-by-door spec). Review: every paid path reaches the cap and customers never see it; two mediums being fixed (the no-bypass test could not catch a bypass; the desk's "N CR" beside the cap understates billed credits by the margin). Owner question 7 |
-| `fix/r1-client-ip-behind-proxy` (Opus, gated) | Login and other rate limits trust a visitor-settable header behind a proxy (unlimited password guessing self-hosted; Vercel unaffected). Fix: trust only the proxy's own view, or Cloudflare's header once the Cloudflare-only firewall is on. Needed before production leaves Vercel |
+| `fix/r1-client-ip-behind-proxy` @ a1a3ab88 (Opus review running) | Login and other rate limits trust a visitor-settable header behind a proxy (unlimited password guessing self-hosted; Vercel unaffected). Fix: trust only the proxy's own view, or Cloudflare's header once the Cloudflare-only firewall is on. Needed before production leaves Vercel |
 | `fix/r1-ci-make` | Review FAIL: Make shows a price while a recipe's references are still being read (a figure that isn't the take's; nothing is charged); the lane's own layout change cut off prices on the Takes chips. Being fixed |
-| `fix/r1-ci-settings` @ 110e0489 | Review fixes done; delta review running |
-| `fix/r1-client-ip-behind-proxy` (Opus, gated) | Login and other rate limits trust a visitor-settable header behind a proxy (unlimited password guessing self-hosted; Vercel unaffected). Fix: trust only the proxy's own view, or Cloudflare's header once the Cloudflare-only firewall is on. Needed before production leaves Vercel |
+| `fix/r1-client-ip-behind-proxy` @ a1a3ab88 (Opus review running) | Login and other rate limits trust a visitor-settable header behind a proxy (unlimited password guessing self-hosted; Vercel unaffected). Fix: trust only the proxy's own view, or Cloudflare's header once the Cloudflare-only firewall is on. Needed before production leaves Vercel |
 | `fix/r1-ci-make` | Review FAIL: Make shows a price while a recipe's references are still being read (a figure that isn't the take's; nothing is charged); the lane's own layout change cut off prices on the Takes chips. Being fixed |
-| `fix/r1-ci-settings` @ 110e0489 | Review fixes done; delta review running |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
 
 ## Owner's answers (17:40)
