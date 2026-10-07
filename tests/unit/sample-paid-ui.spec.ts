@@ -43,6 +43,7 @@ for (const { name, file, guard, control } of SURFACES) {
     const source = readFileSync(file, "utf8");
     expect(source, "the sample check").toMatch(guard);
     expect(source, "the guarded control").toMatch(control);
+    if (file.endsWith("ShotBlockingStrip.tsx")) expect(source.match(/data-testid="blocking-remake"/g)?.length, "one Remake button, so the guard covers all of them").toBe(1);
   });
 }
 
