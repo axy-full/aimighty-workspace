@@ -1,4 +1,4 @@
-# Status now: 7 October 2026, 17:07 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 17:20 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. Thursday 8 Oct: merge train on the owner's "go". Friday 9 Oct: demo.
 
@@ -14,9 +14,10 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
 - Run 37604935678 on 3ca30197 finished red: 3 unit tests and about 240 browser tests (35 spec files).
   - unit: 3 tests in `platformOwnerPrivacy.spec.ts`. The follow-up's new "production only" guard refuses the tests' local run (they don't set the opt-in).
   - browser: mostly specs still driving the old Gen composer, the old Workspace pane and the retired connected account; plus money specs (no vendor dollars, credit value on phone, batch takes, recovery race, spend buttons) that must be ported, never dropped.
+- Run 37615298051 on ac03f878: all 3 unit shards green (first green unit run on `release/1`); browser shards still running.
 - On "contabo", 3ca30197: typecheck clean; unit 3,950 passed, 3 failed (the same three), 7 skipped.
 - Fix lanes running since 16:20, one branch each, merged into `release/1` only after a fresh review (Opus where money, sign-in or tenancy):
-  - `fix/r1-ci-worker-probe-env`: stops `workerProbe.spec.ts` leaking deployment settings into other specs.
+  - `fix/r1-ci-worker-probe-env` @ e5edf11b: Opus PASS; stops `workerProbe.spec.ts` leaking deployment settings into other specs. Merges with the next batch (so the running CI isn't cancelled).
   - `fix/r1-ci-make`: the Make composer specs (prices, batches, model picker).
   - `fix/r1-ci-settings`: Settings, credits, no vendor dollars, retired connected account.
   - `fix/r1-ci-board`: board, phone, Guest Home off, spend buttons, recovery race.
@@ -25,7 +26,8 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
 | Branch | State |
 |---|---|
 | 3D blocking B (`build/gaps-l2`) | Brought up to date: 44cda874 (3 import/ratchet conflicts; tsc clean; its unit specs 112 pass; browser spec passes at 1440 and 390). Opus delta review PASS at 44cda874 (one low: the sample shows Remake disabled with its price; follow-up after merge). Merges only after Q7 |
-| CI fixes on `release/1` | four lanes, above |
+| CI fixes on `release/1` | lanes above |
+| `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
 
 ## Waiting on the owner
 1. The signed-in price check on the preview: Motion transfer and Object swap at 6 s, 720p (about 62 cr).
