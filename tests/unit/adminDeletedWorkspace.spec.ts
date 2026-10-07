@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import ts from "typescript";
 import * as houseWorkspace from "../../lib/houseWorkspace";
+import * as allowanceDesk from "../../lib/allowanceDesk";
 
 /* The admin desk's PATCH, with its dependencies replaced by recorders. */
 function adminRoute(workspace: { deletedAt: number | null; legacy?: boolean; id?: string }) {
@@ -36,6 +37,7 @@ function adminRoute(workspace: { deletedAt: number | null; legacy?: boolean; id?
     "@/lib/shell/new-interface.server": { setWorkspaceNewInterface: async () => ({ everyone: false, workspaces: [] }) },
     /* The real rule: which workspace is the house is the behaviour under test. */
     "@/lib/houseWorkspace": houseWorkspace,
+    "@/lib/allowanceDesk": allowanceDesk,
   };
   const compiled = ts.transpileModule(
     readFileSync("app/api/admin/workspaces/[id]/route.ts", "utf8"),
