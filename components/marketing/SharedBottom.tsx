@@ -25,7 +25,7 @@ function SuitesStrip() {
       <Head
         eyebrow="Studio · Ads · Social · Make · Atomik"
         title="Every project is one board."
-        aside={<p className="mk-lead" style={{ fontSize: 15, maxWidth: "46ch" }}>Studio, Ads and Social are boards. Make and Atomik open over any of them.</p>}
+        aside={<p className="mk-lead" style={{ fontSize: 15, maxWidth: "46ch" }}>Studio, Ads and Social are boards. Make opens over any of them; Atomik sits beside.</p>}
       />
       <div className="mk-suites-grid">
         {SITE_SUITES.map((suite) => (
@@ -46,8 +46,8 @@ const SHELL_TILES: [string, string, string][] = [
   ["⌘K", "Search and Atomik", "Go to any part of the board, open Make, or ask Atomik. Enter runs the top result."],
   ["⌥M", "Make", "Video, images and audio over any screen. The engine line shows the price before you press."],
   ["Library", "A drawer on the board", "Every take and reference, ready to drag onto a shot. Download keeps the original file."],
-  ["⌘J", "Inspector", "Opens on whatever you select: the prompt, the engine, the price paid and every version."],
-  ["Right-click", "Menu everywhere", "Copy, duplicate, use as reference, or recreate at its price. Delete goes to trash, with Undo."],
+  ["⌘J", "Inspector", "Opens on whatever you select: the prompt, the engine and the price paid."],
+  ["Right-click", "Menu everywhere", "Copy, duplicate, use as reference, or recreate at its price. Delete has Undo."],
 ];
 
 function Shell() {
