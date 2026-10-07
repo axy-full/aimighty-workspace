@@ -1,4 +1,4 @@
-# Status now: 8 October 2026, 01:23 IST, Release 1 lead moved to "contabo"
+# Status now: 8 October 2026, 01:25 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -50,7 +50,7 @@ The `.dockerignore` fix is in `release/1`: staging can build from `release/1` ag
 |---|---|
 | Hotfix PRs to main (owner yes; merge only on "go") | **All five reviewed PASS, ready for the owner's go:** #563 sign-in behind the proxy → #564 public links (after #563) → #565 rate limits → #562 production flag. **#566 self-host build files** (Docker build fix included, PASS) |
 | Workspace switch (tenancy) | Found while porting customer test 3: the avatar menu's switch (and Workspace › General) doesn't wait for an unsaved board edit; the last edit is refused or lost (never written to the other workspace: the scope header stops it). Fix: wait for the board's save before switching. Opus fix next; release/1 only; main needs the owner's yes |
-| `chore/r1-old-shell-branches` @ 99b97e0b | Old Business/Crew/Inspector screens cut (~150 files); every old address proved by a pure routing table + sweep; three routing bugs fixed. Opus review running. Owner question 16 |
+| `chore/r1-old-shell-branches` | Review PASS on its changes (only already-unreachable code removed); merging release/1 and two small leftovers, then into release/1 |
 | `test/r1-five-minute-green` @ f8e2cee2 (review PASS) | **Passes:** a new invitee reaches an approved first render in 92 s (desktop) and 112 s (phone), one paid request per person's tap. Its phone flake is a real bug: approving the last take hides the Undo toast after 0.26 s. Fix running (`fix/r1-phone-review-undo`). Owner question 13 |
 | Release 1 remaining list | sent: `docs/r1-remaining.md` (this branch). Owner: list B in, list C out |
 | image-ad variants and presets | No frame in the handoff (only one card, one Make at 3 cr). Nothing built. Brief for Claude Design: `docs/design-brief-image-ad-versions.md` (this branch). Logic already in code |
@@ -91,6 +91,8 @@ Scope: list B in (image-ad variants; phone gets "Open this on a larger screen" n
 17. Workspace switch: fix it to wait for the unsaved edit (recommended; tenancy, reviewed), then port customer test 3's checks onto it and delete the old test on your "go"?
 
 18. (Update: no code change needed: `INNGEST_STREAMING=true` on production keeps long steps alive through Cloudflare; verify on the first long run after cutover.) Background steps longer than Cloudflare's ~100 s (Astra render finish up to 165 s, dubbing polls, still/audio render, Atomik steps) would be cut (524) and retried once particl.si is behind Cloudflare: try Inngest's streaming mode (small reviewed PR, tested on staging; recommended), Cloudflare Enterprise, or an unproxied Inngest address (conflicts with the firewall)?
+
+19. **3D (Astra) renders in Release 1 (High):** release/1 has had no screen to start or follow a render since 5 Oct (old `page=astra` addresses redirect to the board, decision 42); production (main) still has the panel and renders are in active use. Server side (quote, approval, paid route, tests) is intact. Recommended: bring the render panel back alone in a board drawer (restored from git; no "GPT-6 Astra"), with the two "3D blocking → Open" links pointing at it. The handoff has no frame for it: build it as described, or have it drawn in Claude Design first?
 
 ## Machine
 GitHub rejected every push from about 20:33 to 20:47 and again from about 22:20 to 22:30 IST ("fatal error in commit_refs", GitHub's side); nothing was lost.
