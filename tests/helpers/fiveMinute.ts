@@ -102,6 +102,8 @@ export async function unpricedSpendButtons(page: Page, root: string): Promise<st
       for (const el of buttons) {
         const box = (el as HTMLElement).getBoundingClientRect();
         if (!box.width || !box.height || (el as HTMLButtonElement).disabled) continue;
+        /* A template only makes the project (free; the figure is on Start, in the row above them): "Start from a script" matches the verb by name alone. */
+        if (el.closest('[data-testid="home-templates"]') && !el.hasAttribute("data-spend")) continue;
         const text = ((el as HTMLElement).innerText || el.textContent || "").replace(/\s+/g, " ").trim();
         if ((SPENDS.test(text) || el.hasAttribute("data-spend")) && !PRICED.test(text)) out.push(text);
       }

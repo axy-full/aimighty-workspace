@@ -1,6 +1,6 @@
 import { test, expect, request as playwrightRequest, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import {
-  balanceCr, bannedNamesIn, mockInvitation, noSidewaysScroll, PASSPHRASE, runOf, scopeFor, startAtomikOnApi, unpricedSpendButtons, visibleText,
+  balanceCr, bannedNamesIn, mockInvitation, noSidewaysScroll, PASSPHRASE, runOf, scopeFor, unpricedSpendButtons, visibleText,
   watchSpending, type SpendLedger,
 } from "./helpers/fiveMinute";
 import { expectFloors } from "./phoneFloors";
@@ -28,7 +28,9 @@ import { expectFloors } from "./phoneFloors";
  */
 const FIVE_MINUTES = 5 * 60_000;
 /** Taps from the invitation link to the approved take (clicks and ticks; typing is not a tap). Set from the first green run; lower it when a PR removes a tap. */
-const TAP_BUDGET = { desktop: 9, phone: 7 };
+const TAP_BUDGET = { desktop: 9, phone: 9 };
+/* Phone, 9 taps: terms, sign up, Start, the plan row, Build, the plan row again (Build returns Home), Approve, Review, Approve. The earlier 7 was set while Start was a fixture (not a tap) and
+   before the plan path; one tap goes if Build stays on the plan screen at its price (proposed, not built: PlanScreen is money code). */
 const BRIEF = "A 15-second film about a courier crossing a rooftop at dawn, three shots.";
 const cr = /(\d[\d,]*(?:\.\d)?)\s*cr\b/i;
 
@@ -330,24 +332,40 @@ test.describe("the five-minute test · phone 390x844", () => {
     mark(run, "home");
   });
 
-  test.fixme("5 · Home takes the brief: 'What are we making?' and Start · up to N cr", async () => {
-    /* FIXME: the phone's Home is 'Needs you' and Projects only; it has no brief box, no templates and no Start (README § 3.6: the phone judges rather than makes). */
-    await expect(run.page.getByRole("textbox", { name: "What are we making?" })).toBeVisible();
-    await expect(run.page.getByRole("button", { name: /^Start · up to \d[\d,]* cr$/ })).toBeVisible();
+  test("5 · Home takes the brief: 'What are we making?' and Start · up to N cr", async () => {
+    const { page } = run;
+    const brief = page.getByRole("textbox", { name: "What are we making?" });
+    await expect(brief).toBeVisible();
+    await brief.fill(BRIEF);
+    const start = page.getByRole("button", { name: /^Start · up to \d[\d,]* cr$/ });
+    await expect(start).toBeVisible({ timeout: 30_000 });
+    await expect(start).toBeEnabled();
+    /* The figure is the server's own: the quote route's answer for a new board, never a number kept in the app. */
+    const { headers } = await scopeFor(page.request);
+    const quote = await page.request.get("/api/workbench/team-canvas?agent=1&board=new", { headers });
+    expect(quote.ok(), await quote.text()).toBe(true);
+    const planning = ((await quote.json()) as { agent?: { ask?: { planning?: number } | null } }).agent?.ask?.planning;
+    expect(planning, "the quote route prices Atomik's thinking").toBeGreaterThan(0);
+    expect(Number(/(\d[\d,]*)/.exec(await start.innerText())?.[1].replace(/,/g, "")), "Start shows the server's figure").toBe(planning);
+    /* The Start row, as on the laptop's Home: the template buttons beside it only make a project (free); "Start from a script" matches the spending verb by name alone. */
+    await screenIsClean(run, ['[data-testid="home-start-row"]']);
+    expect(run.spend.spent, "typing the brief spends nothing").toEqual([]);
+    mark(run, "brief typed");
   });
 
-  test("6 · the brief reaches Atomik, which plans; the plan waits in Needs you", async () => {
+  test("6 · the person presses Start at its price; Atomik plans; the plan waits in Needs you", async () => {
     const { page } = run;
-    /* Step 5 is not built, so this sends what Home's Start sends (the same routes, the same thinking figure as the limit) as the person's own session. It is the person's press, recorded as one. */
-    run.spend.allow("agent.plan", "Start (fixture: the phone has no Start)");
-    const started = await startAtomikOnApi(page.request, BRIEF);
-    run.spend.record("agent.plan", "Start (fixture: the phone has no Start)");
+    run.spend.allow("agent.plan", "Start · up to N cr");
+    await tap(run, page.getByRole("button", { name: /^Start · up to \d[\d,]* cr$/ }));
+    await expect.poll(() => new URL(page.url()).searchParams.get("project"), { timeout: 90_000 }).toBeTruthy();
+    run.draftId = new URL(page.url()).searchParams.get("project")!;
+    const { headers } = await scopeFor(page.request);
+    const saved = await page.request.get(`/api/workbench/projects?id=${run.draftId}`, { headers });
+    run.productionId = String(((await saved.json()) as { project?: { productionProjectId?: string } }).project?.productionProjectId ?? "");
+    expect(run.productionId, "the project has its production").not.toBe("");
+    await expect.poll(async () => (await runOf(page.request, headers, run.productionId, run.draftId)).run?.state, { message: "Atomik has answered the brief with a plan", timeout: 90_000 }).toBe("awaiting_approval");
     run.spend.close("agent.plan");
-    run.draftId = started.draftId;
-    run.productionId = started.productionId;
-    const { scope } = await scopeFor(page.request);
-    await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: started.draftId });
-    await page.goto(`/suites?project=${started.draftId}&view=home`, { timeout: 120_000 });
+    await page.goto(`/suites?project=${run.draftId}&view=home`, { timeout: 120_000 });
     await expect(page.getByTestId("phone-row-plan")).toBeVisible({ timeout: 90_000 });
     await expect(page.getByTestId("phone-approval-row")).toContainText(/\d+-shot board/);
     await expect(page.getByTestId("phone-row-plan")).toHaveText(/free|\d[\d,]* cr/);
