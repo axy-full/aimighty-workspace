@@ -96,7 +96,19 @@ test("Make opens on Seedance 2.5 · 1080p · 5 s, Nano Banana Pro for a still an
   await make.change.click();
   const rows = make.rowPrice.filter({ hasText: / cr/ });
   await expect(rows.first()).toBeVisible({ timeout: 60_000 });
-  for (const row of await rows.all()) await expect(row).toHaveText(/^\d[\d,]* cr · (\d+p|\d+K|\d+) · \d+ s$/);
+  /* Every row but Cinema Studio's is exact; Cinema Studio's keeps its own words: "about N cr, at most 3N cr" (decision 18). */
+  const engineRows = page.getByTestId(phone ? "phone-make-engine-row" : "make-engine-row");
+  let cinemaRows = 0;
+  for (const engine of await engineRows.all()) {
+    const cell = engine.getByTestId(phone ? "phone-make-engine-row-price" : "make-engine-row-price");
+    if ((await engine.textContent())!.includes("Cinema Studio")) {
+      cinemaRows += 1;
+      await expect(cell).toHaveText(/^about \d[\d,]* cr, at most \d[\d,]* cr$/);
+      const [about, most] = (await cell.textContent())!.match(/\d[\d,]*/g)!.map((n) => Number(n.replace(/,/g, "")));
+      expect(most, "Cinema Studio holds three times what it is about").toBe(3 * about);
+    } else await expect(cell).toHaveText(/^\d[\d,]* cr · (\d+p|\d+K|\d+) · \d+ s$/);
+  }
+  expect(cinemaRows, "Release 1 offers Cinema Studio in Make").toBe(1);
   const ticked = page.locator(phone ? '[data-testid="phone-make-engine-row"][aria-pressed="true"]' : '[data-testid="make-engine-row"][aria-pressed="true"]');
   await expect(ticked.getByTestId(phone ? "phone-make-engine-row-price" : "make-engine-row-price")).toHaveText(`${video} cr · 1080p · 5 s`);
   if (phone) await page.getByTestId("phone-sheet-close").click();
