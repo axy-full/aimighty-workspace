@@ -23,6 +23,7 @@ import { RecordScreen } from "./RecordScreen";
 import { MakeScreen } from "./MakeScreen";
 import { AtomikSheet } from "./AtomikSheet";
 import { StatesScreen } from "./StatesScreen";
+import { PhoneCutScreen } from "./PhoneCutScreen";
 import { LargerScreen } from "./LargerScreen";
 import { StartBrief } from "./StartBrief";
 import { DRAWN_SCREENS, LARGER_TITLES, phoneSearch, readPhone, reviewQueue, type PhoneRoute, type PhoneScreen } from "./phone-model";
@@ -63,7 +64,7 @@ function useRoute(): [PhoneRoute, (patch: Parameters<typeof phoneSearch>[1], mod
   return [route, go];
 }
 
-const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "Plan approval", make: "Make", fix: "Review" };
+const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "Plan approval", make: "Make", fix: "Review", cut: "Cut" };
 
 /**
  * The phone (design/particl-graphite/README.md § 3.6; "Phone frames.dc.html"): it judges rather than makes.
@@ -164,6 +165,8 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
           ) : screen === "make" && !page ? (
             <MakeScreen scope={scope} project={project} items={items} workspaceName={account?.workspace?.name ?? null} balance={account?.credits?.balance ?? null}
               projects={data.status} onProject={(id) => projectActions.onPick(id)} online={online} onTopUp={topUp} />
+          ) : screen === "cut" && !page ? (
+            <main className="ph-scroll" data-testid="mobile-scroll"><PhoneCutScreen scope={scope} project={project} items={items} online={online} /></main>
           ) : screen === "states" ? (
             <StatesScreen scope={scope} project={project} items={items} online={online} now={now} balance={account?.credits?.balance ?? null} onTopUp={topUp} onQueue={judgements.add} />
           ) : screen === "plan" ? (
@@ -172,7 +175,7 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
           ) : (
           <main className="ph-scroll" data-testid="mobile-scroll">
             {page ? <div className="ph-page">{page.body}</div> : screen === "record" ? (
-              <RecordScreen scope={scope} project={project} items={items} queue={approvals.items} now={now} onPlan={openPlan} onReview={() => go({ screen: "review" })} />
+              <RecordScreen scope={scope} project={project} items={items} queue={approvals.items} now={now} onPlan={openPlan} onReview={() => go({ screen: "review" })} onCut={() => go({ screen: "cut" })} />
             ) : (
               <HomeScreen scope={scope} approvals={approvals} projects={data.projects} projectsError={data.status === "error" ? data.error ?? "Projects could not be loaded." : null} onRetryProjects={data.retry} project={project} items={items} online={online} now={now}
                 onReview={() => go({ screen: "review" })}

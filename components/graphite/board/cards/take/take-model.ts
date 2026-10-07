@@ -355,7 +355,7 @@ export function verifyNote(list: readonly TakeVerification[] | null | undefined,
   return { text: `${line.charAt(0).toUpperCase()}${line.slice(1)}${/[.!?…]$/.test(line) ? "" : "."}`, at: v.createdAt };
 }
 
-export type TakeNote = { author: string; text: string; at: number };
+export type TakeNote = { author: string; text: string; at: number; /** Said by a client through a review link, not by the team. */ guest?: boolean };
 export type HistoryRow = { key: string; text: string; at: number };
 
 const quote = (words: string) => {

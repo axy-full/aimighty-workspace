@@ -8,6 +8,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, upload } from "./he
 import { smallTargets } from "./phoneFloors";
 import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 import { legacyShell } from "./helpers/legacyShell";
+import { projectName } from "./helpers/projectName";
 
 /**
  * The owner's UI floors, held where the floors audit of the Suites pages
@@ -69,7 +70,7 @@ async function open(page: Page, path: string, ready: string) {
   await page.goto(`${path}&project=${project.id}`);
   await expect(page.getByTestId(ready).first()).toBeVisible();
   /* Workspace has no project head of its own. */
-  if (!path.includes("view=workspace")) await expect(page.getByTestId("project-name").first()).toHaveText("Mirrored Dunes");
+  if (!path.includes("view=workspace")) await expect(projectName(page)).toHaveText("Mirrored Dunes");
   return { errors, project };
 }
 

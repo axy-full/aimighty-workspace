@@ -4,6 +4,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { dimLabels, smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { closeSuitesMenu, goViaSearch, openSuitesMenu, tapSuiteTab } from "./helpers/suitesMenu";
+import { projectName } from "./helpers/projectName";
 
 /**
  * The Suites shell, build step 1 (design/particl-graphite/README.md): one
@@ -37,7 +38,7 @@ async function open(page: Page, path = "/suites", named = true) {
   page.on("console", (message) => { if (message.type() === "error" && /hydrat|did not match/i.test(message.text())) errors.push(message.text()); });
   await page.goto(path);
   /* The board has no project head (its header carries the project): an address that opens it names no project here. */
-  if (named) await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  if (named) await expect(projectName(page)).toHaveText("Coastal light study");
   return errors;
 }
 

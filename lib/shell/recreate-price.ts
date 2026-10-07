@@ -1,4 +1,5 @@
 import { audioSeconds, activeModel, chosenKey, composerSettings, composerVoices, workspaceModels, type EngineRow } from "@/lib/workspace/composer";
+import { hiddenInMake } from "./make-price";
 import { nodeAudioBody, speechVoiceFor, type NodeAudioSetup } from "@/lib/workbench/generation-audio";
 import type { CtxPrice } from "./context-menu";
 import { recipePrompt, recreateBlock, recreatePreset, type RecipeSource } from "./recipe";
@@ -51,7 +52,8 @@ export async function quoteRecreate(source: RecipeSource, read: QuoteReader, pro
       return n == null ? { state: "unavailable", reason: "Sound cannot be priced with these settings." } : { state: "ready", credits: n, approximate: false };
     }
     const list = (await read("/api/workbench/engines")) as { models?: EngineRow[] };
-    const models = workspaceModels(Array.isArray(list?.models) ? list.models : [], null);
+    /* The engines Make offers: one it hides (lib/shell/make-price.ts › hiddenInMake) is not priced here, as Make lands on its own default. */
+    const models = workspaceModels(Array.isArray(list?.models) ? list.models : [], null).filter((m) => !hiddenInMake(m.id));
     const model = activeModel({ type, chosen: preset.model ? { [chosenKey(type)]: preset.model } : {} }, models);
     if (!model) return { state: "unavailable", reason: "No engine is offered for this take right now." };
     const settings = composerSettings(model, project?.aspect, preset.picks ?? {});

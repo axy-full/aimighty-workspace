@@ -7,6 +7,7 @@ import type { BoardCtx } from "../cards/types";
 import { spendAttrsOf } from "@/lib/spend";
 import { usePriceTitle } from "../../Price";
 import { PriceWords } from "./PriceWords";
+import { CrewTakeReview } from "../review/CrewTakeReview";
 
 /*
  * Crew review in the docked panel (design/particl-graphite/README.md § 3.1 m; lead decision 21): "Ask the crew" on
@@ -43,6 +44,8 @@ export function CrewReview({ ctx }: { ctx: BoardCtx }) {
 
   return (
     <div className="ag-msg" ref={here} data-testid="crew-review">
+      {/* The take under review: its notes, Approve and Reject with a reason (gap screens, Crew review). The client link follows at the foot. */}
+      <CrewTakeReview ctx={ctx} />
       <span className="ag-eyebrow">Atomik</span>
       <div className="ag-text">The crew reads the board. Open a note in Make or add it to the brief; dismiss the rest.</div>
       <span className="ag-title" id="crew-ask">Ask the crew</span>

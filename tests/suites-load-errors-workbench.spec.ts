@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, mockMedia } from "./helpers/workspaceFixtures";
+import { projectName } from "./helpers/projectName";
 
 /**
  * A failed read is said, with Try again — never "No project" (which sent people
@@ -38,7 +39,7 @@ test("the project list and the library say they failed and recover on Try again"
   await expect(page.getByTestId("brief-no-project")).toHaveCount(0);
   projectsFail = false;
   await page.getByTestId("projects-error").getByRole("button", { name: "Try again" }).click();
-  await expect(page.getByTestId("project-name")).toHaveText(project.name);
+  await expect(projectName(page)).toHaveText(project.name);
   await expect(page.getByTestId("projects-error")).toHaveCount(0);
 
   /* The library answered 500 for this project: said in the Library, with Try again. */

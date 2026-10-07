@@ -4,6 +4,11 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { dimLabels, smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /**
  * Suites › Make (design/particl-graphite/README.md § 3.2; it was Gen): the
@@ -41,7 +46,7 @@ async function open(page: Page) {
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await expect(projectName(page)).toHaveText("Coastal light study");
   return { errors, enhance };
 }
 
@@ -171,7 +176,7 @@ test("one take lands: its card says Complete with the ring held still, and the t
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await expect(projectName(page)).toHaveText("Coastal light study");
 
   await page.getByTestId("gen-prompt").fill(LONG);
   /* The first live price can wait on a cold compile. */

@@ -52,7 +52,7 @@ function services() {
 const noInline = () => { throw new Error("Durable dispatch acknowledged; inline work must not run"); };
 
 /** A workspace of its own database, with `credits` (0 means none: the wall that parks a render as held) and a sample or not. */
-async function scope(name: string, opts: { credits?: number; sample?: boolean | "hidden" }, fn: (loaded: ReturnType<typeof services>) => Promise<void>, actor: AdmissionActor = OWNER) {
+async function scope(name: string, opts: { credits?: number; sample?: boolean | "hidden"; rawMark?: string }, fn: (loaded: ReturnType<typeof services>) => Promise<void>, actor: AdmissionActor = OWNER) {
   const { platformReady, platformDb, rowToWorkspace, grantCredits } = await import("../../lib/platform");
   const { runInTenant } = await import("../../lib/tenant");
   const { ready, db } = await import("../../lib/db");
@@ -78,6 +78,9 @@ async function scope(name: string, opts: { credits?: number; sample?: boolean | 
         const mark = { version: 1, projectId: "film", name: "Film", draftOwner: "owner", draftId: "d1", markedBy: "owner", markedAt: 1, ...(opts.sample === "hidden" ? { hiddenAt: 2 } : {}) };
         await db().execute({ sql: "INSERT INTO settings(key,value,updated_by,updated_at) VALUES(?,?,?,?)", args: [SAMPLE_SETTING_KEY, JSON.stringify(mark), "owner", 1] });
       }
+      /* A stored mark exactly as given, readable or not. */
+      if (opts.rawMark !== undefined)
+        await db().execute({ sql: "INSERT INTO settings(key,value,updated_by,updated_at) VALUES(?,?,?,?)", args: [SAMPLE_SETTING_KEY, opts.rawMark, "owner", 1] });
       await fn(services());
     }, actor);
   } finally { globalThis.fetch = original; }
@@ -130,7 +133,7 @@ test("by a shot alone, by a shot under the sample that names another project, an
       expect(refused.status, who).toBe(409);
       expect((await refused.json()).error).toBe(SAMPLE_LINE);
       const mixed = await route("generation", service, actor).POST(request("generation", video({ projectId: "other", shotId: "shot_film" }), "request-mixed"));
-      expect(mixed.status).toBeGreaterThanOrEqual(400);
+      expect([mixed.status, (await mixed.json()).error]).toEqual([409, SAMPLE_LINE]);
       const audio = await route("audio", service, actor).POST(request("audio", sound({ shotId: "shot_film" }), "request-audio-shot"));
       expect(audio.status).toBe(409);
       expect((await audio.json()).error).toBe(SAMPLE_LINE);
@@ -211,4 +214,117 @@ test("nothing is refused where there is no sample: none marked, the mark undone,
     const ok = await route("generation", service, OWNER).POST(request("generation", video({}), "request-unfiled"));
     expect(ok.status).toBeLessThan(300);
   });
+});
+
+test("a mark that is present but cannot be read fails closed: never read as no sample", async () => {
+  const { sampleSpendRefusal } = await import("../../lib/demo/spend-guard.server");
+  const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
+  const event = (id: string, extra: Record<string, unknown>) => ({ id, kind: "text" as const, engine: "vercel", model: "m", status: "running" as const, engineCostUsd: 0.01, createdBy: "owner", ...extra });
+  /* Unreadable, or naming no production: nobody can tell which production is the sample, so no paid job is admitted, filed or not. */
+  for (const raw of ["{not json", "null", "[]", "\"film\"", JSON.stringify({ version: 1 }), JSON.stringify({ version: 1, projectId: 7, draftOwner: "owner", draftId: "d1" })])
+    await scope(name("unreadable"), { rawMark: raw }, async (service) => {
+      for (const [projectId, shotId] of [["film", null], ["other", null], [null, "shot_other"], [null, null]] as const)
+        expect(await sampleSpendRefusal(projectId, shotId), `${raw} ${projectId} ${shotId}`).toBe(SAMPLE_LINE);
+      for (const projectId of ["film", "other"]) {
+        const refused = await route("generation", service, OWNER).POST(request("generation", video({ projectId }), `request-unreadable-${projectId}`));
+        expect(refused.status, raw).toBe(409);
+        expect((await refused.json()).error).toBe(SAMPLE_LINE);
+      }
+      const error = await reserveGenerationSpend(event("unreadable", { projectId: "other" })).then(() => null, (e) => e);
+      expect(error, raw).toBeInstanceOf(SpendReservationError);
+      expect(error).toMatchObject({ status: 409, message: SAMPLE_LINE });
+      expect(await rows()).toHaveLength(0);
+      expect(await meters()).toHaveLength(0);
+      expect(dispatched).toEqual([]);
+    });
+  /* The wrong shape (another version, fields missing) that still names its production: that production is the sample. */
+  for (const mark of [
+    { version: 2, projectId: "film", name: "Film", draftOwner: "owner", draftId: "d1", markedBy: "owner", markedAt: 1 },
+    { version: 1, projectId: "film" },
+  ])
+    await scope(name("misshapen"), { rawMark: JSON.stringify(mark) }, async (service) => {
+      expect(await sampleSpendRefusal("film")).toBe(SAMPLE_LINE);
+      expect(await sampleSpendRefusal(null, "shot_film")).toBe(SAMPLE_LINE);
+      const refused = await route("generation", service, OWNER).POST(request("generation", video({ projectId: "film" }), "request-misshapen"));
+      expect(refused.status).toBe(409);
+      expect((await refused.json()).error).toBe(SAMPLE_LINE);
+      expect(await rows()).toHaveLength(0);
+      const other = await route("generation", service, OWNER).POST(request("generation", video({ projectId: "other" }), "request-misshapen-other"));
+      expect(other.status, await other.clone().text()).toBeLessThan(300);
+    });
+  /* An undone mark, whatever else its shape, is no sample: it spends as before. */
+  await scope(name("misshapen-hidden"), { rawMark: JSON.stringify({ version: 2, projectId: "film", hiddenAt: 5 }) }, async (service) => {
+    expect(await sampleSpendRefusal("film")).toBeNull();
+    const ok = await route("generation", service, OWNER).POST(request("generation", video({ projectId: "film" }), "request-misshapen-hidden"));
+    expect(ok.status).toBeLessThan(300);
+  });
+});
+
+/** Transcribe as its route composes it (the claim, then the transcription inside it), with a provider that must never be reached. */
+async function transcribeOnSample(body: Record<string, unknown>, key: string) {
+  const { db } = await import("../../lib/db");
+  await db().execute({
+    sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,duration_s,created_at) VALUES(?,?,?,?,?,?,?,?,?,0) ON CONFLICT(id) DO NOTHING",
+    args: ["up_line", "line.wav", "audio/wav", "wav", 1000, "sha", "/api/uploads/up_line", "audio", 30],
+  });
+  const { withGenerationRequest } = await import("../../lib/generationRequests");
+  const { transcribe } = await import("../../lib/transcription");
+  const calls = { n: 0 };
+  const deps = { readSource: async () => Buffer.from("audio"), provider: async (): Promise<never> => { calls.n++; throw new Error("The provider must not be reached"); } };
+  const req = new Request("http://localhost/api/audio/transcribe", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(body) });
+  const reply = await withGenerationRequest(req, "owner", async (claim) => {
+    const answered = await transcribe(body, "owner", { claim, deps });
+    return Response.json(answered.body, { status: answered.status });
+  });
+  return { reply, calls };
+}
+
+test("Transcribe on the sample is refused as a conflict (409) in the sample's words, never 402; the press shows that line, with nothing to top up", async () => {
+  let answer: { status: number; body: string; complete: string | null } | null = null;
+  await scope(name("transcribe"), { sample: true }, async () => {
+    const { reply, calls } = await transcribeOnSample({ sourceUploadId: "up_line", projectId: "film", diarize: true, maxCredits: 100000 }, "request-transcribe-sample");
+    /* The quote still answers. */
+    const { transcribe } = await import("../../lib/transcription");
+    const quote = await transcribe({ sourceUploadId: "up_line", projectId: "film", diarize: true, quoteOnly: true }, "owner");
+    expect(quote.status).toBe(200);
+    expect(reply.status).toBe(409);
+    expect(await reply.clone().json()).toEqual({ error: SAMPLE_LINE, charged: 0 });
+    expect(calls.n).toBe(0);
+    expect(await meters()).toHaveLength(0);
+    answer = { status: reply.status, body: await reply.text(), complete: reply.headers.get("Idempotency-Status") };
+  });
+  /* The browser's press, answered exactly so: the sample's line, final, with no new price to approve. */
+  const { sendTranscription } = await import("../../lib/workbench/transcription-request");
+  const items = new Map<string, string>();
+  const storage = { getItem: (k: string) => items.get(k) ?? null, setItem: (k: string, v: string) => void items.set(k, v), removeItem: (k: string) => void items.delete(k) };
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(answer!.body, {
+    status: answer!.status, headers: { "Content-Type": "application/json", ...(answer!.complete ? { "Idempotency-Status": answer!.complete } : {}) },
+  })) as typeof fetch;
+  try {
+    const outcome = await sendTranscription({ scope: "particl-active-ws_unit-owner", slot: "transcribe-sample", body: { sourceUploadId: "up_line", projectId: "film", diarize: true, maxCredits: 3 }, credits: 3, storage, locks: null });
+    /* The server said nothing was charged, and the press keeps that figure. */
+    expect(outcome).toEqual({ state: "released", reason: SAMPLE_LINE, failed: true, charged: 0 });
+  } finally { globalThis.fetch = original; }
+  /* The server's own words carry no top-up and no new price. */
+  expect(answer!.body).not.toMatch(/top.?up/i);
+  expect(JSON.parse(answer!.body)).not.toHaveProperty("estimatedCredits");
+});
+
+test("Transcribe on the sample is refused in the sample's words before the balance or the price shown is asked: with no credits, and with a price that moved", async () => {
+  for (const [what, credits, maxCredits] of [["no-credits", 0, 100000], ["moved-price", 10000, 0]] as const)
+    await scope(name(`transcribe-${what}`), { sample: true, credits }, async () => {
+      const { reply, calls } = await transcribeOnSample({ sourceUploadId: "up_line", projectId: "film", diarize: true, maxCredits }, `request-transcribe-${what}`);
+      const text = await reply.text();
+      expect(reply.status, `${what}: ${text}`).toBe(409);
+      expect(JSON.parse(text), what).toEqual({ error: SAMPLE_LINE, charged: 0 });
+      expect(text, what).not.toMatch(/top.?up/i);
+      expect(JSON.parse(text), what).not.toHaveProperty("estimatedCredits");
+      expect(calls.n).toBe(0);
+      expect(await meters()).toHaveLength(0);
+      /* The same press on another production is answered as before: short of credits, or the new price to approve. */
+      const { reply: other } = await transcribeOnSample({ sourceUploadId: "up_line", projectId: "other", diarize: true, maxCredits }, `request-transcribe-${what}-other`);
+      expect(other.status, what).toBe(what === "no-credits" ? 402 : 409);
+      expect(JSON.parse(await other.text()).error, what).not.toBe(SAMPLE_LINE);
+    });
 });

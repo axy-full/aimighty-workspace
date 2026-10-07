@@ -2,6 +2,7 @@ import { test, expect, type Page, type Request } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { projectName } from "./helpers/projectName";
 
 /**
  * The Suites shell's Atomik gate. "+ Run stage" and the Inspector's plan button
@@ -150,7 +151,7 @@ test("⌘K before any project is open: the words wait, and land in Agent once th
   const retry = page.getByTestId("projects-error").getByRole("button", { name: "Try again" });
   await expect(async () => {
     if (await retry.isVisible()) await retry.click({ timeout: 2_000 });
-    await expect(page.getByTestId("project-name")).toHaveText("Coastal light study", { timeout: 2_000 });
+    await expect(projectName(page)).toHaveText("Coastal light study", { timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
   await expect(page.locator("[data-tool-body=\"agent\"] textarea").first()).toHaveValue("zz a teaser for the launch");
   expect(mock.dispatches).toEqual([]);
@@ -166,7 +167,7 @@ test("⌘K before any project is open: the words land when the list loads on its
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("page-title")).toHaveText("Agent");
   await expect(page.getByTestId("toast")).toHaveText("Your request goes into Agent once a project is open.");
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await expect(projectName(page)).toHaveText("Coastal light study");
   await expect(page.locator("[data-tool-body=\"agent\"] textarea").first()).toHaveValue("zz a teaser for the launch");
   expect(mock.dispatches).toEqual([]);
   expect(errors).toEqual([]);

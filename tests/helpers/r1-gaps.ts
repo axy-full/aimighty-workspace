@@ -6,6 +6,8 @@ import { OLD_WORDS } from "./uiStrings";
 import { localPlatformDbUrl, signInLocally } from "./workbenchLocal";
 import { smallTargets, smallText } from "../phoneFloors";
 import { newProject, type Project } from "../../lib/workbench/studio";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 /**
  * Release 1, the three screens that were not built (control room tabs, phone fix and states, Make's Upscale):
@@ -15,7 +17,7 @@ import { newProject, type Project } from "../../lib/workbench/studio";
 export const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 /** The shell treats 844x390 as a phone (lib/shell/use-compact.ts). */
 export const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-export const SHOTS = process.env.R1_GAP_SHOTS || "/private/tmp/claude-r1-gap-shots";
+export const SHOTS = process.env.R1_GAP_SHOTS || join(tmpdir(), "claude-r1-gap-shots");
 
 /** Sign in a fresh local workspace with credits to spend, and visit Home once so the shell is warm. */
 export async function signedInWarm(page: Page, name = "Gap Tester") {
