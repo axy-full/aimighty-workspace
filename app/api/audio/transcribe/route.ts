@@ -1,3 +1,4 @@
+import { crossOriginProblem } from "@/lib/requestOrigin";
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { withGenerationRequest, type GenerationRequest } from "@/lib/generationRequests";
@@ -20,8 +21,7 @@ export const maxDuration = 300;
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireRender();
   if (got.response) return got.response;
-  const origin = req.headers.get("origin");
-  if (origin && origin !== new URL(req.url).origin) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
+  if (crossOriginProblem(req)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   const body = await req.clone().json().catch(() => ({}));
   const perform = async (claim?: GenerationRequest) => {
     const reply = await transcribe(body, got.user.id, { claim });

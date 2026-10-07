@@ -1,5 +1,6 @@
 import { recoveryRoute } from "./recovery";
 import { SESSION_COOKIE } from "./sessionCookie";
+import { crossOriginProblem } from "./requestOrigin";
 import { MediaSourceError } from "./mediaBindings";
 import { workbenchScopeFor } from "./workbench/request-scope";
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
@@ -247,8 +248,7 @@ export function withTenant<Req extends Request = Request, Ctx = unknown>(handler
       if(store.token?.scope==='read'&&!(req.method==='POST'&&options.readOnlyPostTransport))return Response.json({error:'This token is read-only.'},{status:403});
       /* A prepare token writes nothing but a prepared job (and speaks MCP over POST): every other write is refused here, before any handler runs. */
       if(store.token?.scope==='prepare'&&!(req.method==='POST'&&(options.mcpTransport||options.preparedJobs)))return Response.json({error:'This token prepares jobs; a person approves each in Particl.'},{status:403});
-      const origin=req.headers.get('origin');
-      if(!store.token&&origin&&origin!==new URL(req.url).origin)return Response.json({error:'Invalid request origin.'},{status:403});
+      if(!store.token&&crossOriginProblem(req))return Response.json({error:'Invalid request origin.'},{status:403});
     }
     const capturedScope = req.headers.get("X-Workbench-Scope");
     const needsScope = options.requireRequestScope && store.user && !store.token && !["GET", "HEAD", "OPTIONS"].includes(req.method);

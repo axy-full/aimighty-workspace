@@ -5,6 +5,7 @@ import path from "node:path";
 import ts from "typescript";
 import type { TenantStore, TenantUser } from "../../lib/tenant";
 import { GENJUTSU_MODELS } from "../../lib/genjutsuTypes";
+import { crossOriginProblem } from "../../lib/requestOrigin";
 
 const directory = mkdtempSync(path.join(tmpdir(), "particl-genjutsu-cancel-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
@@ -42,8 +43,8 @@ async function fixture(name: string) {
   const statement = source.statements.find(s => ts.isFunctionDeclaration(s) && s.name?.text === "withTenant")!;
   const compile = (text: string) => ts.transpileModule(text, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const wrapper = {} as Pick<typeof auth, "withTenant">;
-  new Function("exports", "resolveStore", "runWithStore", "NoTenantError", "MediaSourceError", "workbenchScopeFor", "recoveryRoute", compile(statement.getText(source)))(
-    wrapper, async () => store, tenant.runWithStore, tenant.NoTenantError, MediaSourceError, scope.workbenchScopeFor, (handler: unknown) => handler,
+  new Function("exports", "resolveStore", "runWithStore", "NoTenantError", "MediaSourceError", "workbenchScopeFor", "recoveryRoute", "crossOriginProblem", compile(statement.getText(source)))(
+    wrapper, async () => store, tenant.runWithStore, tenant.NoTenantError, MediaSourceError, scope.workbenchScopeFor, (handler: unknown) => handler, crossOriginProblem,
   );
   const calls: { id: string; workspaceId: string; userId: string; tokenScope?: string }[] = [];
   let result: { status: string } = { status: "requested" }, failure: unknown;
