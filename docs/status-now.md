@@ -1,6 +1,8 @@
-# Status now: 7 October 2026, 18:41 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 19:02 IST, Release 1 lead moved to "contabo"
 
-Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Demo postponed (owner, about 17:30 IST); no date yet. The Thursday merge train is cancelled. Nothing merges to main and nothing deploys to production without the owner's "go".**
+Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. Two defects block the live code off Vercel (signed-out home loop; sign-in 403 behind the proxy); both fixes are being built so they apply to main too, and merge to main only on the owner's go.
+
+**Demo postponed (owner, about 17:30 IST); no date yet. The Thursday merge train is cancelled. Nothing merges to main and nothing deploys to production without the owner's "go".**
 Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's AT RISK and WON'T MAKE IT items, with an estimate per item; (c) move prep for Coolify on a test address, files only. Then a proposed demo date and the `release/1` → main plan.
 
 **Lead:** the session on "contabo" took over from the "vps" session at about 15:50 IST. Deny rules checked: `git restore` and `docker ps` are both refused.
@@ -26,7 +28,7 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
   - `fix/r1-ci-board`: board, phone, Guest Home off, spend buttons.
 
 ## Money finding (CI lane, 17:30)
-In the new Make panel, a tab whose reply was lost can send a second paid request after another tab already settled the first, if the person presses Make again in the first tab. The old `recovery-race` spec forbade this. Confirmed on release/1 for video (1 extra paid request), image batches (the whole batch again) and audio. The owner said yes (17:40) to the fix. Fixed on `money/r1-make-stale-claim` @ e14ce236: each tab keeps its own copy of what it lost; a settled outcome leaves a 1-hour note; the next press checks first and sends nothing if it landed; changed words always send. The ported race test passes at all five sizes; unit 54/54. Opus review running.
+In the new Make panel, a tab whose reply was lost can send a second paid request after another tab already settled the first, if the person presses Make again in the first tab. The old `recovery-race` spec forbade this. Confirmed on release/1 for video (1 extra paid request), image batches (the whole batch again) and audio. The owner said yes (17:40) to the fix. Fixed on `money/r1-make-stale-claim` @ e14ce236: each tab keeps its own copy of what it lost; a settled outcome leaves a 1-hour note; the next press checks first and sends nothing if it landed; changed words always send. The ported race test passes at all five sizes; unit 54/54. Opus review FAIL (one medium): if another tab has since left a newer lost request in the same slot, the stale tab checks that one instead of its own and can still send twice (reproduced in a unit test). Rework next: check the tab's own lost request first.
 
 ## In flight
 | Branch | State |
@@ -37,8 +39,10 @@ In the new Make panel, a tab whose reply was lost can send a second paid request
 | image-ad variants and presets | No frame in the handoff (only one card, one Make at 3 cr). Nothing built. Brief for Claude Design: `docs/design-brief-image-ad-versions.md` (this branch). Logic already in code |
 | "Particl demo" cap field (`admin/workspace-cap-field`) | Opus lane: bring up to date, check, 100 cr cap; propose how "cheap engines only" is enforced |
 | `ops/selfhost-test-address`, PR #561 @ 47bd3754 | Runbook now also covers keeping the particl.app and www redirects after the move (Cloudflare redirect rule recommended) and the DNS records for all four names. Opus review queued |
+| `fix/selfhost-home-loop` (from main) | home-loop fix running; draft PR to main, also merges into release/1 |
 | self-host fixes (owner yes, 18:15) | home-page loop (proxy) and sign-in behind the proxy (Opus author and Opus review; release/1 only; the owner checks it on the test address first). Sign-in lane (Opus) running; home-loop lane and #561's review start as slots free |
 | `ops/selfhost-test-address`, PR #561 @ 47bd3754 | Runbook now also covers keeping the particl.app and www redirects after the move (Cloudflare redirect rule recommended) and the DNS records for all four names. Opus review queued |
+| `fix/selfhost-home-loop` (from main) | home-loop fix running; draft PR to main, also merges into release/1 |
 | self-host fixes (owner yes, 18:15) | home-page loop (proxy) and sign-in behind the proxy (Opus author and Opus review; release/1 only; the owner checks it on the test address first). Sign-in lane (Opus) running; home-loop lane and #561's review start as slots free |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
 
