@@ -988,6 +988,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 .scard-h > span:last-child { font: 400 12.5px/1.4 var(--font-display); color: var(--color-dim); }
 .steam { display: grid; grid-template-columns: minmax(0, 1.2fr) 140px minmax(0, 1.6fr) 90px; gap: 16px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--color-hair); font: 400 12.5px/1.3 var(--font-display); color: var(--color-ink); }
 .steam.is-head { padding: 8px 0; border-bottom: 1px solid var(--color-line); font: 500 10px/1 var(--font-kode); letter-spacing: .12em; color: var(--color-dim); }
+/* /admin's workspace rows: six cells. */
+.steam.admin-ws { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 170px 150px 170px 230px; }
+.admin-cap-k { display: none; font: 500 12px/1 var(--font-kode); letter-spacing: .12em; color: var(--color-lead); margin-bottom: 3px; }
 
 /* ══════════════════════════════════════════════════════════════════════
    MOBILE · below 1024px wide or 520px tall.
@@ -1100,6 +1103,18 @@ html, body { overflow-x: clip; }
   .steam > :nth-child(2) { grid-area: role; }
   .steam > :nth-child(3) { grid-area: can; font-size: 11.5px; }
   .steam > :nth-child(4) { display: none; }
+  /* /admin's workspace rows: six cells, stacked two to a line, every lever kept (the shared row above hides its 4th cell). */
+  .steam.admin-ws { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: none; gap: 10px 12px; }
+  .steam.admin-ws.is-head { display: none; }
+  .steam.admin-ws > * { grid-area: auto; font-size: inherit; }
+  .steam.admin-ws > :nth-child(4) { display: block; }
+  .steam.admin-ws > :nth-child(1), .steam.admin-ws > :nth-child(6) { grid-column: 1 / -1; }
+  .steam.admin-ws > :nth-child(6) { align-items: flex-start; }
+  .steam.admin-ws > :nth-child(6) > .flex-wrap { justify-content: flex-start; }
+  .admin-cap-k { display: block; }
+  /* Its engine cap is set from a phone too: 44 px targets. */
+  .steam.admin-ws button.admin-cap { min-height: 44px; }
+  .steam.admin-ws .admin-cap .ctl, .steam.admin-ws .admin-cap .btn-primary, .steam.admin-ws .admin-cap .ak-act { height: 44px !important; min-width: 44px; }
 
   /* Welcome stays a readable hero followed by the complete sign-in form. */
   .wl { display: flex; flex-direction: column; min-height: 100dvh; gap: 1px; }

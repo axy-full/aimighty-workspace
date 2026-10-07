@@ -36,6 +36,19 @@ export function allowanceUsd(): number | null {
 }
 
 /**
+ * The cap a stored `allowance_usd` means for the current workspace, read afresh (the reservation reads it inside
+ * its own write, so a cap lowered on /admin a moment ago applies to the next job): its own figure, 0 included,
+ * else the deployment's default. The house workspace has none.
+ */
+export function allowanceUsdOfStored(stored: unknown): number | null {
+  const ws = currentTenant()?.workspace;
+  if (!ws || isHouseWorkspace(ws)) return null;
+  if (stored == null) return defaultAllowanceUsd();
+  const n = Number(stored);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+/**
  * Cycle-to-date spend that the platform paid for this workspace.
  *
  * The window comes from `lib/cycle.ts` rather than being walked back to the

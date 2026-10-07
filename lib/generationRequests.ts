@@ -5,7 +5,7 @@ import { db, ready, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
 import { platformDb, platformReady } from "./platform";
 import { paidByPlatformEngine, platformSpendRecordsSince } from "./platformSpend";
-import { allowanceUsd } from "./allowance";
+import { allowanceUsd, allowanceUsdOfStored } from "./allowance";
 import { cycleBounds } from "./cycle";
 import { billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
 import { creditsApply } from "./credits";
@@ -409,10 +409,14 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   if (stopped) throw new SpendReservationError(stopped, 409, true);
   await billingTransaction(async (tx, ts) => {
     await acceptRecoveryJobTx(tx, ws.id, event.id, event.kind);
-    const standing = await tx.execute({ sql: `SELECT deleted_at,suspended_at FROM workspaces WHERE id=?`, args: [ws.id] });
+    const standing = await tx.execute({ sql: `SELECT deleted_at,suspended_at,allowance_usd FROM workspaces WHERE id=?`, args: [ws.id] });
     // Old internal/mock records may predate the workspace registry; a known deleted/suspended workspace never spends from a stale request scope.
     if (standing.rows[0]?.deleted_at != null) throw new SpendReservationError("This workspace has been deleted.", 410);
     if (standing.rows[0]?.suspended_at != null) throw new SpendReservationError("This workspace is suspended.", 403);
+    /* The monthly cap as it stands at this write, not as the request found it: a cap lowered on /admin while this
+       request was on its way applies to it. A cap that appeared since (none when the request began) counts the meter's
+       rows only; the pre-meter product records it would add hold nothing from this month. */
+    const capNow = !paid ? null : standing.rows[0] ? allowanceUsdOfStored(standing.rows[0].allowance_usd) : monthlyCap;
     await syncBillingLedger(tx, ws.id, ts);
     const own = await tx.execute({ sql: `SELECT workspace_id,status,paid_by_platform,engine,kind,model,credit_usd,credit_margin,hold_band FROM meter_events WHERE id=?`, args: [event.id] });
     if (own.rows[0] && own.rows[0].workspace_id !== ws.id) throw new SpendReservationError("This job belongs to another workspace.", 409, true);
@@ -469,7 +473,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const shotCredits = [...merged.values()].filter((r) => r.shotId === event.shotId).reduce((sum, r) => sum + r.credits, 0);
       if (shotCredits + charge(cost) * band > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
     }
-    if (monthlyCap != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost * band > monthlyCap + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
+    if (capNow != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost * band > capNow + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
     if (cap) {
       const spent = [...merged.values()].filter((r) => r.projectId === projectId).reduce((sum, r) => sum + (cap.unit === "cr" ? r.credits : r.cost), 0);
       const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? charge(cost + (baseline.get(event.id)?.cost ?? 0)) * band : (cost + (baseline.get(event.id)?.cost ?? 0)) * band,

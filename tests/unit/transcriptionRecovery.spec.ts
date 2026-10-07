@@ -1011,3 +1011,68 @@ test("a press where Web Locks are missing or refused is still claimed, stamped a
     });
   }
 });
+
+/* The workspace's monthly engine cap on Transcribe (lib/allowance.ts): a refusal at the cap answers 429 in the cap's own
+   words, never 402 "not enough credits" with a top-up to offer; a genuine credit shortfall still answers 402. */
+async function capped(ws: TenantWorkspace, capUsd: number) {
+  const { platformDb } = await import("../../lib/platform");
+  await platformDb().execute({
+    sql: "INSERT INTO workspaces(id,slug,name,db_url,owner_id,created_at,updated_at,uses_platform_keys,allowance_usd) VALUES(?,?,?,?,?,0,0,1,?)",
+    args: [ws.id, ws.slug, ws.name, ws.dbUrl, USER, capUsd],
+  });
+}
+
+test("an own $0 cap on Transcribe answers 429 with the wall's sentence; nothing is reserved or sent", async () => {
+  const base = await setup("cap-zero", 60);
+  const ws = { ...base, allowanceUsd: 0 };
+  await capped(ws, 0);
+  const { runInTenant } = await import("../../lib/tenant");
+  const { ALLOWANCE_REACHED } = await import("../../lib/allowance");
+  await runInTenant(ws, async () => {
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: await estimate(60) };
+    const { deps, calls } = await provider(60);
+    const refused = await send(body, "stt-cap-zero-01", deps);
+    expect(refused.status).toBe(429);
+    expect((await refused.json()).error).toBe(ALLOWANCE_REACHED);
+    expect(calls.n).toBe(0);
+    expect(await meterRows(ws.id)).toEqual([]);
+  });
+});
+
+test("a cap lowered to $0 after the request began is refused at the reservation as 429 in the cap's words, never as 402", async () => {
+  /* The request's workspace was read with no cap; the platform owner set $0 before it reserved (the reservation reads it afresh). */
+  const ws = await setup("cap-lowered", 60);
+  await capped(ws, 0);
+  const { runInTenant } = await import("../../lib/tenant");
+  await runInTenant(ws, async () => {
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: await estimate(60) };
+    const { deps, calls } = await provider(60);
+    const refused = await send(body, "stt-cap-lowered-01", deps);
+    expect(refused.status).toBe(429);
+    const answer = await refused.json();
+    expect(answer).toMatchObject({ error: "This job and the reserved jobs would exceed the workspace's monthly spending cap.", charged: 0 });
+    expect(calls.n).toBe(0);
+    expect((await meterRows(ws.id)).filter((r) => r.status === "running" || r.credits > 0)).toEqual([]);
+  });
+});
+
+test("a genuine credit shortfall at the reservation still answers 402, with nothing sent or charged", async () => {
+  const ws = await setup("short", 60);
+  const { runInTenant } = await import("../../lib/tenant");
+  const { platformDb } = await import("../../lib/platform");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  await runInTenant(ws, async () => {
+    const body = { sourceUploadId: "up_line", diarize: true, maxCredits: await estimate(60) };
+    const { deps, calls } = await provider(60);
+    /* The balance is spent elsewhere between the check and the reservation: the real reservation is short. */
+    const reserve: typeof reserveGenerationSpend = async (event, options) => {
+      await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,?,?,?)", args: [`drain_${ws.id}`, ws.id, -5000, "Spent elsewhere", 0] });
+      return reserveGenerationSpend(event, options);
+    };
+    const refused = await send(body, "stt-short-01", { ...deps, reserve });
+    expect(refused.status).toBe(402);
+    expect((await refused.json()).charged).toBe(0);
+    expect(calls.n).toBe(0);
+    expect((await meterRows(ws.id)).filter((r) => r.status === "running" || r.credits > 0)).toEqual([]);
+  });
+});

@@ -2,6 +2,7 @@ import { billCreditsWith, marginFor, creditUsd, margins } from "./creditTerms";
 import { capVerdict, type CapRule, type CapUnit } from "./caps";
 import { shotCapVerdict, ruleLine, type ApprovalRule } from "./approvalRule";
 import { heldMessage } from "./held";
+import { ALLOWANCE_REACHED } from "./allowance";
 
 /**
  * The quote engine (brief 3): what a thing costs, resolved before the button
@@ -246,7 +247,8 @@ export function verdictOf(q: Quote, c: Context): Verdict {
          a workspace billed in credits. */
       return {
         allow: false, gate: "allowance", notice: "",
-        line: "This workspace has reached its monthly cap on the platform's engines. An admin can add a vendor key or raise it.",
+        /* The same words as the wall (lib/allowance.ts ALLOWANCE_REACHED): only the platform raises this cap. */
+        line: ALLOWANCE_REACHED,
       };
     }
   }
