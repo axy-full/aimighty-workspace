@@ -1,4 +1,4 @@
-# Status now: 8 October 2026, 01:15 IST, Release 1 lead moved to "contabo"
+# Status now: 8 October 2026, 01:21 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -6,7 +6,7 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
 Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's AT RISK and WON'T MAKE IT items, with an estimate per item; (c) move prep for Coolify on a test address, files only. Then a proposed demo date and the `release/1` → main plan.
 
 **Lead:** the session on "contabo" took over from the "vps" session at about 15:50 IST. Deny rules checked: `git restore` and `docker ps` are both refused.
-**Integration preview:** `release/1` (draft #546) = 0e7bbe5c. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
+**Integration preview:** `release/1` (draft #546) = 239513bd. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
 
 ## In `release/1` since 15:00
 - 3D blocking part B (`build/gaps-l2` 44cda874, Opus PASS; owner yes to Q7: staging only, production only in a later train after a Turso backup branch).
@@ -42,13 +42,13 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
   - `fix/r1-ci-make`: the Make composer specs (prices, batches, model picker).
   - `fix/r1-ci-settings`: Settings, credits, no vendor dollars, retired connected account.
 
-## Staging build: hold
-`release/1`'s Docker build fails at `npm run build` until `fix/r1-dockerignore-tests` (one line: stop excluding `tests/`) merges; confirmation running. Until then, build staging from branch `fix/r1-dockerignore-tests`.
+## Staging build
+The `.dockerignore` fix is in `release/1`: staging can build from `release/1` again.
 
 ## In flight
 | Branch | State |
 |---|---|
-| Hotfix PRs to main (owner yes; merge only on "go") | **Reviewed PASS, ready for the owner's go:** #563 sign-in behind the proxy → #564 public links (after #563) → #565 rate limits → #562 production flag. **#566 self-host build files:** review found the Docker build would fail (`.dockerignore` excluded `tests/`, which a script imports); fixed in b22a78d5, confirmation running |
+| Hotfix PRs to main (owner yes; merge only on "go") | **All five reviewed PASS, ready for the owner's go:** #563 sign-in behind the proxy → #564 public links (after #563) → #565 rate limits → #562 production flag. **#566 self-host build files** (Docker build fix included, PASS) |
 | Workspace switch (tenancy) | Found while porting customer test 3: the avatar menu's switch (and Workspace › General) doesn't wait for an unsaved board edit; the last edit is refused or lost (never written to the other workspace: the scope header stops it). Fix: wait for the board's save before switching. Opus fix next; release/1 only; main needs the owner's yes |
 | `chore/r1-old-shell-branches` @ 99b97e0b | Old Business/Crew/Inspector screens cut (~150 files); every old address proved by a pure routing table + sweep; three routing bugs fixed. Opus review running. Owner question 16 |
 | `test/r1-five-minute-green` @ f8e2cee2 (review PASS) | **Passes:** a new invitee reaches an approved first render in 92 s (desktop) and 112 s (phone), one paid request per person's tap. Its phone flake is a real bug: approving the last take hides the Undo toast after 0.26 s. Fix running (`fix/r1-phone-review-undo`). Owner question 13 |
