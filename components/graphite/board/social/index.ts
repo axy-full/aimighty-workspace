@@ -4,6 +4,7 @@ import { EffectsCard, SocialUnavailableCard, SourceCard } from "./cards";
 import { SocialHistoryDrawer } from "./HistoryDrawer";
 import { SIZES, socialCards, type EffectsData, type SourceData, type UnavailableData } from "./social-model";
 import { StartSource } from "./StartSource";
+import { PostCard, type PostCardData } from "./posts/PostCard";
 import { TRANSCRIBE_ROW } from "../transcribe/TranscribeAction";
 
 /*
@@ -14,6 +15,7 @@ import { TRANSCRIBE_ROW } from "../transcribe/TranscribeAction";
 const defs = [
   defineCard<SourceData>({ kind: "social-source", size: () => ({ ...SIZES.source, h: SIZES.source.h + TRANSCRIBE_ROW }), Card: SourceCard }),
   defineCard<EffectsData>({ kind: "social-effects", size: () => SIZES.effects, Card: EffectsCard }),
+  defineCard<PostCardData>({ kind: "social-post", size: () => SIZES.post, Card: PostCard }),
   defineCard<UnavailableData>({ kind: "social-unavailable", size: () => SIZES.unavailable, Card: SocialUnavailableCard }),
 ];
 

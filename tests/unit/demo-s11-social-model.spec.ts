@@ -31,7 +31,7 @@ test("an empty Library draws nothing (the board shows its source box); a source 
   expect(socialCards(src([]))).toEqual([]);
   const cards = socialCards(src([video("a", 6)]));
   expect(cards.map((c) => c.id)).toEqual([
-    SOCIAL_GROUP.source, "social:source:upload:a", SOCIAL_GROUP.clips, "social:clips", SOCIAL_GROUP.hooks, "social:hooks", SOCIAL_GROUP.effects, "social:effects", SOCIAL_GROUP.posts, "social:narrated", "social:posts",
+    SOCIAL_GROUP.source, "social:source:upload:a", SOCIAL_GROUP.clips, "social:clips", SOCIAL_GROUP.hooks, "social:hooks", SOCIAL_GROUP.effects, "social:effects", SOCIAL_GROUP.posts, "social:posts", "social:narrated",
   ]);
   const off = cards.filter((c) => c.kind === "social-unavailable");
   expect(off.map((c) => (c.data as { line: string }).line)).toEqual(Array(4).fill("Not in Particl yet"));

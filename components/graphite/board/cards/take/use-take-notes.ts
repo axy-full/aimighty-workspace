@@ -26,7 +26,7 @@ function read(scope: string, genId: string): Promise<void> {
       const json = await response.json().catch(() => null) as { notes?: Row[] } | null;
       if (!response.ok || !Array.isArray(json?.notes)) throw new Error("not read");
       const notes = json.notes.flatMap((n): TakeNote[] => typeof n.text === "string" && typeof n.createdAt === "number"
-        ? [{ author: typeof n.author === "string" && n.author ? n.author : "Someone", text: n.text, at: n.createdAt }] : []);
+        ? [{ author: typeof n.author === "string" && n.author ? n.author : "Someone", text: n.text, at: n.createdAt, ...(n.guest === true ? { guest: true } : {}) }] : []);
       store.set(key, { notes, at: Date.now() });
     })
     /* A read that failed keeps what was read before: the history just shows no notes yet. */

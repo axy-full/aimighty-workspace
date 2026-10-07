@@ -4,6 +4,11 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /**
  * Owner, 25 September: "all forms of media uploads from device in every
@@ -54,7 +59,7 @@ test("Gen: a pasted picture becomes a reference; a sound file is kept in the Lib
   const { project, errors } = await setup(page);
   await page.goto(`/suites?make=video&project=${project.id}`);
   /* The composer settles on the project first (it starts that project's own composer state). */
-  await expect(page.getByTestId("project-name")).toHaveText(project.name);
+  await expect(projectName(page)).toHaveText(project.name);
   const box = page.getByTestId("gen-attach");
   await pasteFile(box.getByRole("textbox", { name: "Direction" }), "look.png", "image/png", await png("#2b6a4a"));
   await expect(page.getByTestId("gen-well")).toContainText("look.png", { timeout: 30_000 });

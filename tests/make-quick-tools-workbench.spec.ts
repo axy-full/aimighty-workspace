@@ -5,6 +5,10 @@ import { mkdirSync } from "node:fs";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws no quick tool today (?make=motion|swap shows Home); that gap is recorded as a fixme twin in demo-s10-phone-make-workbench 'the quick tools on a phone', and the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws no quick tool today (?make=motion|swap shows Home); that gap is recorded as a fixme twin in demo-s10-phone-make-workbench 'the quick tools on a phone', and the desktop keeps every assertion here"); });
 
 /**
  * Make's quick tools (design/particl-graphite/README.md § 1.1, § 1.2, § 3.2): Motion transfer and Object swap are

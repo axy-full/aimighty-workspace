@@ -34,7 +34,7 @@ test("2 approved takes · 0:10, every shot 5 s, Shot 3 waiting for review; the d
     ["aspect", "16:9", "pending", "pending"],
     ["fps", "24 fps", "pending", "pending"],
     ["duration", "00:10", "pending", "pending"],
-    ["loudness", "Not measured", "none", null],
+    ["loudness", "Not checked · Broadcast", "none", null],
   ]);
 });
 

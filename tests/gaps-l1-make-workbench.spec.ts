@@ -4,6 +4,8 @@ import { everySpendButtonPriced, noBannedNames, PHONES, signedInWarm, watchError
 import { openProjectFor, textReadsAtFloor } from "./helpers/gaps-l1";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { smallText } from "./phoneFloors";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 /*
  * Gaps, lane 1 · Make details (design/particl-graphite "Gaps B frames": Make details, audio, insufficient credits, failed).
@@ -14,7 +16,7 @@ import { smallText } from "./phoneFloors";
  * every paid route is answered in the browser, nothing real is sent, and nothing is sent before a person presses.
  */
 const PHONE = "the phone's Make is the simple one (tests/demo-s10-phone-make-workbench.spec.ts); the panel's Advanced is desktop";
-const SHOTS = process.env.GAPS_L1_SHOTS || "/private/tmp/claude-gaps-l1-shots";
+const SHOTS = process.env.GAPS_L1_SHOTS || join(tmpdir(), "claude-gaps-l1-shots");
 const shoot = (page: Page, name: string, project: string) => { mkdirSync(SHOTS, { recursive: true }); return page.screenshot({ path: `${SHOTS}/l1-${name}-${project.replace("workbench-", "")}.png`, animations: "disabled" }); };
 const priceOf = async (page: Page) => Number(((await page.getByTestId("gen-generate").innerText()).match(/([\d,]+(?:\.\d+)?) cr/)?.[1] ?? "NaN").replace(/,/g, ""));
 

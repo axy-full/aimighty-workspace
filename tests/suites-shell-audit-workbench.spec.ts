@@ -3,6 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { openSuitesMenu } from "./helpers/suitesMenu";
+import { projectName } from "./helpers/projectName";
 
 /**
  * The Suites shell, audited (September 2026): a Recreate pressed on Gen lands
@@ -36,7 +37,7 @@ async function open(page: Page, path: string, store = { current: fixture() }) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(path);
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await expect(projectName(page)).toHaveText("Coastal light study");
   return errors;
 }
 
