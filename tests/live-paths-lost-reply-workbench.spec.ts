@@ -1,16 +1,15 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { password, signupInvite } from "./helpers/identityAdmin";
 
 /**
- * The paid sends that still went with no Idempotency-Key and no ceiling, after
- * #401: the Shots grid's Render, the platform desk's preview renders, and the
- * MCP render_shot tool. Each now carries the price it showed (or, for MCP, the
- * price it was just quoted) as maxCredits, under a key claimed before it is
- * sent; a second press after a lost reply asks the server what became of the
- * first (POST /api/generate/check) and follows it, never sending it twice.
+ * Paid sends that must never run twice, held at live surfaces: the platform desk's preview renders and the MCP render_shot
+ * tool. Each carries the price it showed (or, for MCP, the price it was just quoted) as maxCredits, under a key claimed
+ * before it is sent; a second press after a lost reply asks the server what became of the first (POST /api/generate/check)
+ * and follows it, never sending it twice. (The Shots grid's Render, the old page this file's first test drove, is gone with
+ * the page, Q15.)
  *
  * And the one route that was only suspected: PATCH /api/atomik/steps/:id
  * records a step's state; it cannot start, approve or bill anything.
@@ -74,55 +73,6 @@ async function loseNextReply(page: Page) {
   });
   return () => landed[0] ?? "";
 }
-
-/** The figure in a button's own cost slot (its mono price), in credits. */
-const creditsOn = async (button: Locator) => Number(/(\d[\d,]*) cr/.exec((await button.locator(".ui-mono-cost").first().textContent()) ?? "")?.[1]?.replace(/,/g, "") ?? NaN);
-
-test("the Shots grid's Render sends the price on its button as the ceiling, and a second press after a lost reply follows the take instead of rendering it twice", async ({ page }) => {
-  test.setTimeout(240_000);
-  const signed = await signInLocally(page.request);
-  const tenantUrl = await grant(signed.workspace.id);
-  const { sent, errors } = watch(page);
-  const made = await page.request.post("/api/projects", { data: { name: `Lost reply shots ${randomUUID().slice(0, 6)}` } });
-  expect(made.ok(), await made.text()).toBe(true);
-  const projectId = (await made.json()).id as string;
-  const shot = await page.request.post("/api/shots", { data: { projectId, code: "SH01", title: "Wide", kind: "shot", description: "Rowan crosses the ice at dawn" } });
-  expect(shot.ok(), await shot.text()).toBe(true);
-  const shotId = String((await shot.json()).id ?? (await shot.json()).shot?.id);
-  const list = await page.request.get("/api/productions").then((r) => r.json()) as { productions: { id: string; projects: { id: string }[] }[] };
-  const prod = list.productions.find((p) => p.projects.some((j) => j.id === projectId))!;
-  await page.goto(`/productions/${prod.id}/${projectId}/shots`);
-
-  /* The one primary: the header button on a desktop, the pinned one on a phone. */
-  const render = page.getByRole("button", { name: /^Render/ }).filter({ visible: true }).first();
-  await expect(render).toContainText(/Render SH01[\s\S]*\d+ cr/, { timeout: 60_000 });
-  await expect(render).toBeEnabled();
-  const price = await creditsOn(render);
-  const landedId = await loseNextReply(page);
-  await render.click();
-  await expect.poll(() => sent.filter((s) => s.path === "/api/generate").length, { timeout: 60_000 }).toBe(1);
-  await expect.poll(landedId, { timeout: 60_000 }).toBeTruthy();
-  const first = sent.find((s) => s.path === "/api/generate")!;
-
-  /* The shot, chosen again, and Render pressed again: what left the browser, and what the server made and billed. */
-  /* (The header button keeps its busy label in the DOM, hidden, and says busy with aria-busy; the pinned one swaps its label.) */
-  await expect(render).not.toHaveAttribute("aria-busy", "true", { timeout: 30_000 });
-  if (page.viewportSize()!.width < 768) await expect(render).not.toContainText("Rendering", { timeout: 30_000 });
-  await page.locator(`[data-shot="${shotId}"]`).click();
-  await expect(render).toContainText(/Render SH01[\s\S]*\d+ cr/, { timeout: 30_000 });
-  await expect(render).toBeEnabled();
-  const mark = sent.length;
-  await render.click();
-  await expect.poll(() => sent.length - mark, { timeout: 60_000 }).toBeGreaterThan(0);
-  await expect(page.getByText(/1 take rendering/).first()).toBeVisible({ timeout: 60_000 });
-  const books = await ledger(tenantUrl, signed.workspace.id, { sql: "shot_id=?", args: [shotId] });
-  expect({ ceiling: first.body.maxCredits ?? null, sent: sent.slice(mark).map((s) => s.path), made: books.jobs.length, billed: books.charges })
-    .toEqual({ ceiling: price, sent: ["/api/generate/check"], made: 1, billed: [price] });
-  expect(books.jobs).toEqual([landedId()]);
-  expect(first.key).toBeTruthy();
-  expect(sent[mark].body.key).toBe(first.key);
-  expect(errors).toEqual([]);
-});
 
 test("the platform desk's preview renders carry the per-clip price as their ceiling, and a second press after a lost reply follows the clip instead of rendering it twice", async ({ page }, info) => {
   test.skip(!DESKS.includes(info.project.name), "the platform desk is a desktop console");

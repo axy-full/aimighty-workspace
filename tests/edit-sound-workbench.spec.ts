@@ -13,7 +13,7 @@ import { seedProject, type Project } from "../lib/workbench/studio";
  *
  * The audio routes, the job feed and the project save are mocked at the
  * browser (no paid call, no engine, no stored generation to validate), the
- * way tests/project-generation-workbench.spec.ts does for node audio. A
+ * way the old Gen node-audio spec did. A
  * finished generation arrives as a succeeded job under the lane node's shot,
  * which the production job recovery turns into a project asset; the panel
  * then places it, and the placement shows up in the next project save.
