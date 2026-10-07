@@ -4,6 +4,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { openSuitesMenu } from "./helpers/suitesMenu";
 import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
 
 /**
  * The Suites shell's address handling and ⌘K (design/particl-graphite/README.md): old links are sent to the new screens, ⌘K finds a board
@@ -42,6 +43,7 @@ const param = (page: Page, key: string) => new URL(page.url()).searchParams.get(
 
 test("an old link in the design file's spelling is sent, with a 307, to the app's page; its other params ride along", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(isCompact(info), "the phone app draws no header or desktop Make; the phone screens are covered by demo-s10-phone-* and r1-phone-*");
   const errors = await open(page);
   const sent = await page.request.get("/suites?suite=business&page=hooks&project=ws-suites", { maxRedirects: 0 });
   expect(sent.status()).toBe(307);
@@ -54,7 +56,7 @@ test("an old link in the design file's spelling is sent, with a 307, to the app'
   await expect(page.getByTestId("page-title")).toHaveText("Memory");
   await expect(page.getByRole("dialog", { name: "Search" })).toBeVisible();
   for (const gone of ["palette", "lib", "find"]) expect(param(page, gone), gone).toBeNull();
-  /* The app's own links to a page that is a board's card are sent to it (one 307); one to a page that is still a page is served where it is. */
+  /* The app's own links to a page that is a board's card are sent to it (one 307). */
   expect((await page.request.get("/suites?suite=moleculr&page=marketing&sp=hooks", { maxRedirects: 0 })).status()).toBe(307);
   expect((await page.request.get("/suites?suite=subatomik&page=history&sp=history", { maxRedirects: 0 })).status()).toBe(307);
   /* An old Gen or Viral tool link in the design file's spelling reaches Make in the same one 307: never a chain. */
@@ -68,6 +70,7 @@ test("an old link in the design file's spelling is sent, with a 307, to the app'
 
 test("⌘K finds a board region, runs the top hit on Enter and closes on Escape", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(isCompact(info), "the phone app draws no header or desktop Make; the phone screens are covered by demo-s10-phone-* and r1-phone-*");
   await open(page);
   await openSuitesMenu(page);
   await page.getByTestId("header-search").click();
@@ -90,6 +93,7 @@ test("⌘K finds a board region, runs the top hit on Enter and closes on Escape"
 
 test("an old Gen link lands on the page it names with Make open on its type, server and client, and no link breaks", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(isCompact(info), "the phone app draws no header or desktop Make; the phone screens are covered by demo-s10-phone-* and r1-phone-*");
   /* Server: the redirect happens before anything renders, and keeps the rest of the query. */
   const errors = await open(page, "/suites?suite=particl&page=rig&sp=rig&view=gen&mode=images&sheet=1", false);
   await expect(page.getByTestId("make-panel")).toBeVisible();
