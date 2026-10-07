@@ -15,7 +15,8 @@ playwright*.config.ts
 docs
 design
 brand
-ops
+ops/selfhost/proposed
+ops/selfhost/smoke.sh
 mcp
 **/*.md
 .DS_Store

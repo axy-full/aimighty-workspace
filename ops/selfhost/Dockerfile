@@ -41,6 +41,8 @@ RUN groupadd --system --gid 1001 app && useradd --system --uid 1001 --gid app --
 COPY --from=build --chown=app:app /app/.next/standalone ./
 COPY --from=build --chown=app:app /app/.next/static ./.next/static
 COPY --from=build --chown=app:app /app/public ./public
+# Scheduled task script (see docs/selfhost-test.md): node:slim has no curl, so it uses node's fetch.
+COPY --chown=app:app ops/selfhost/cron-sync.mjs ./cron-sync.mjs
 USER app
 EXPOSE 3000
 # /api/health answers 200 {"ok":true,...} when the database is reachable; 503 otherwise.
