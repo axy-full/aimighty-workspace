@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { VENDOR_RATES } from "../../lib/vendorRates";
 import { DEFAULT_MARGINS } from "../../lib/creditTerms";
+import { IMAGE_OUT_USD } from "../../lib/vendorPricing";
 
 /**
  * §2: the margin is never shown.
@@ -82,25 +83,45 @@ test("no margin reaches the browser", () => {
   expect(found, `margins in the client bundle:\n${found.join("\n")}`).toEqual([]);
 });
 
-test("the browser still has the estimator, just nothing to divide", () => {
+test("the browser asks the server for its prices, and holds no rate to divide", () => {
   const files = chunks();
   test.skip(files.length === 0, "no build in .next — run `next build` first");
 
   /* A guard on the guards. The two tests above would also pass if the
-     composer had simply stopped pricing — no rates, no leak, no prices — and
+     browser had simply stopped pricing — no rates, no leak, no prices — and
      a green tick for that would be the worst outcome of the three.
-     
-     What it checks is the ESTIMATOR, not a number: `withoutAudio` appears in
-     the bundle as a property the estimator reads, and measured on the built
-     output it appears with no digits after it anywhere. The figures
-     themselves now arrive at runtime in the session, which is better than
-     this change set set out to do — the browser holds the arithmetic and the
-     server holds the numbers. */
-  const any = files.some((f) => readFileSync(f, "utf8").includes("withoutAudio"));
-  expect(any, "the estimator is gone from the bundle — the composer cannot price").toBe(true);
 
-  /* And no digits after it, in any chunk: that is the leak, stated the other
-     way round. */
-  const withNumbers = files.filter((f) => /withoutAudio:\s*\.?\d/.test(readFileSync(f, "utf8")));
-  expect(withNumbers, "a rate literal is back in the bundle").toEqual([]);
+     This used to prove pricing by finding the client ESTIMATOR in the bundle
+     (`withoutAudio`, a property lib/rateTable.ts reads). The estimator left the
+     client with the old composer (docs/old-shells.md): Release 1 prices every
+     figure on the server — Make's button and line from POST
+     /api/generate/quote, the engine list's rows from GET
+     /api/workbench/engines?<settings> (components/graphite/make/use-make.ts,
+     lib/workspace/use-composer.ts) — and lib/rateTable.ts's arithmetic runs
+     only in server code. So what proves the browser still prices is that it
+     asks those routes. */
+  const text = files.map((f) => readFileSync(f, "utf8"));
+  for (const route of ["/api/generate/quote", "/api/workbench/engines"]) {
+    expect(text.some((t) => t.includes(route)), `no client chunk asks ${route} — the browser cannot price`).toBe(true);
+  }
+
+  /* And no rate literal, in any chunk: the leak, stated by its shape rather
+     than by today's figures, so a rate added tomorrow is caught too. Any
+     vendor or table rate key with a number after it — as minified
+     (`withoutAudio:.084`) or as JSON (`"withoutAudio":0.084`, how a bundler
+     inlines a large object literal). */
+  const RATE = /\b(withoutAudio|withAudio|withoutVideo|withVideo|imageRefInUsd|imageRefIn|usdPerMinute|usdPerMinuteMin|usdPerMinuteMax)\\?"?\s*:\s*-?\.?\d/;
+  const withNumbers = files.flatMap((f, i) => {
+    const hit = text[i].match(RATE);
+    return hit ? [`${f.split("/").pop()}: ${hit[0]}`] : [];
+  });
+  expect(withNumbers, `a rate literal is in the bundle:\n${withNumbers.join("\n")}`).toEqual([]);
+
+  /* The fallback image prices (lib/vendorPricing.ts), by size beside value. */
+  const sizes = Object.entries(IMAGE_OUT_USD).flatMap(([size, usd]) => {
+    const bare = String(usd), minified = bare.startsWith("0.") ? bare.slice(1) : bare;
+    return [`${size}:${minified}`, `"${size}":${minified}`, `${size}:${bare}`, `"${size}":${bare}`];
+  });
+  const imagePrices = files.filter((_, i) => sizes.some((p) => text[i].includes(p)));
+  expect(imagePrices, "the vendor's image prices are in the bundle").toEqual([]);
 });
