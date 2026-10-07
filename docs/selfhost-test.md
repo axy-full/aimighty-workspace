@@ -175,6 +175,54 @@ Menu names are for current Coolify v4 as best known; a label marked (unsure) may
 10. **Scheduled task.** **Configuration, Scheduled Tasks, + Add**: name `cron-sync`, command `node /app/cron-sync.mjs`, frequency `*/10 * * * *`, save, then run it once by hand if the page has a run button (unsure), and read its log for `cron-sync: 200`.
 11. **Stop or roll back.** Nothing live is affected. Coolify, the app, **Stop** (or Delete in Danger Zone). To keep the settings and just pause the heartbeat: Scheduled Tasks, disable `cron-sync`. Vercel and particl.si are untouched throughout.
 
+## Domains at cutover: particl.si, www.particl.si, particl.app, www.particl.app
+
+Nothing here happens on the test address. These are cutover steps (P5), done only on the owner's "go".
+
+**Today.** Vercel serves `particl.si`. It answers `particl.app` and `www.particl.app` with a 308 to `particl.si`. That redirect is a Vercel **domain setting**: nothing in the repo does it (`vercel.json` holds only the cron; no code matches the host). When the site leaves Vercel, the redirect goes too, unless something else takes it over. Before the move, check in Vercel, **Settings, Domains**:
+- that `particl.si` is the primary domain;
+- what `www.particl.si` does today (a redirect to `particl.si`, or serving directly);
+- that the 308 keeps the path and query (for example, `https://particl.app/pricing?x=1` lands on `https://particl.si/pricing?x=1`).
+
+The steps below assume `particl.si` stays primary and every other name 308s to it, path and query kept.
+
+### Option A (recommended): a Cloudflare redirect rule
+The redirect happens at Cloudflare's edge, so it needs no app code, puts no load on the server, and keeps working if the app is down.
+1. All three hosts must be in Cloudflare zones with **proxied** (orange-cloud) records. A name that is not proxied never reaches the rule. If `particl.app` is not yet a Cloudflare zone, add it and move its nameservers first (a registrar step for the owner), well before the cutover.
+2. In the `particl.app` zone: **Rules, Redirect Rules, Create rule** (Single Redirect):
+   - If: custom filter, hostname is in `particl.app`, `www.particl.app`.
+   - Then: Dynamic, expression `concat("https://particl.si", http.request.uri.path)`, status **308**, **Preserve query string** ticked.
+3. In the `particl.si` zone, the same pattern for `www.particl.si`, if `www` should redirect to the bare name: hostname equals `www.particl.si`, the same expression and options.
+4. The app on the server then only ever sees `particl.si`. In Coolify the app's **Domains** field lists only `https://particl.si`.
+
+### Option B: the self-hosted app redirects
+Use this only if `particl.app` cannot be put on Cloudflare.
+1. In Coolify add every name to the app's **Domains** field (comma-separated) so Traefik answers for them and fetches a certificate for each. With Cloudflare proxying in Full (strict) mode, use the Cloudflare origin certificate (P2) for the `particl.si` names.
+2. The redirect then has to come from the server, in one of two ways:
+   - a Traefik redirect-regex middleware added through the app's custom labels, which needs no code change;
+   - a host check at the top of `proxy.ts` that 308s any host other than `particl.si` to `https://particl.si` plus the path and query. That is product code: its own PR, reviewed, tested against the Vercel preview so nothing changes there.
+3. Downsides: a certificate per name, renewals, and the redirect stops whenever the app or Traefik is down.
+
+### DNS records (all four names)
+`<server IPv4>` (and `<server IPv6>`, if the server has one) is this server's public address. Every record below is **proxied** through Cloudflare.
+
+| Name | Type | Value | With option A | With option B |
+|---|---|---|---|---|
+| `particl.si` | A (+ AAAA) | `<server IPv4>` (`<server IPv6>`) | serves the site | serves the site |
+| `www.particl.si` | CNAME | `particl.si` | redirect rule answers | Traefik answers, redirects |
+| `particl.app` | A (+ AAAA) | `<server IPv4>` (`<server IPv6>`) | redirect rule answers; traffic never reaches the server | Traefik answers, redirects |
+| `www.particl.app` | CNAME | `particl.app` | redirect rule answers | Traefik answers, redirects |
+
+Under option A the two `particl.app` records may point anywhere while proxied (the redirect rule answers first). Pointing them at the server keeps option B open.
+
+### Keep, and don't touch
+- **Mail records** on both domains (MX, SPF/TXT, DKIM, DMARC, the mail sender's verification records) stay exactly as they are. Moving the website changes only the A, AAAA and CNAME rows above.
+- **CAA records**, if any: they must allow the certificate issuer in use (Cloudflare's for proxied names; Let's Encrypt only under option B).
+- **Rollback:** before the change, write down the four current records (Vercel's values), and lower their TTL a day ahead. Rolling back means restoring those four values (SOW: rollback is one DNS change). Leave the Vercel domain settings in place until the two weeks of watching are over, so a rollback lands on a working redirect.
+
+### Checks after the change
+`curl -sI https://particl.app/pricing?x=1` and the same for `www.particl.app` and `www.particl.si`: each must answer **308** with `location: https://particl.si/pricing?x=1`. `curl -sI https://particl.si/` answers 200. Then run `smoke.sh https://particl.si`.
+
 ## Gates still ahead before any cutover (SOW section 4)
 
 1. **P2 finish:** Coolify keys saved, origin certificate, dashboard domain, GitHub App, Cloudflare-only firewall, real visitor addresses (the sign-in lockout depends on it), outside monitor, VPS snapshots.
