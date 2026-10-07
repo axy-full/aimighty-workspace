@@ -43,6 +43,24 @@ export function linkOrigin(req: Request, env: Env = process.env): string {
   return configuredOrigin(env) ?? new URL(req.url).origin;
 }
 
+/**
+ * The origin of a link sent by email (password reset, invitation, sign-up
+ * verification, the top-up desk), where a wrong host hands a one-time secret
+ * to whoever owns it. Never built from request headers:
+ * - APP_ORIGIN when it is set (production sets it);
+ * - on Vercel without it, the request's own origin: Vercel only routes this
+ *   project's own domains to the function, so it is one of ours;
+ * - outside production (next dev, tests), the request's own origin;
+ * - otherwise (a self-hosted production server without APP_ORIGIN) null, and
+ *   the caller sends nothing rather than a link to its listen address.
+ */
+export function mailLinkOrigin(req: Request, env: Env = process.env): string | null {
+  const forced = configuredOrigin(env);
+  if (forced) return forced;
+  if (env.VERCEL || env.NODE_ENV !== "production") return new URL(req.url).origin;
+  return null;
+}
+
 export const SITE_NAME = "Particl";
 export const SITE_TITLE = "Particl Production Studio";
 export const SITE_DESCRIPTION = "A production studio for generated film: brief, shots, takes and delivery.";
