@@ -2,6 +2,8 @@ import { test, expect, request as playwrightRequest, type Page } from "@playwrig
 import { createClient } from "@libsql/client";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { desktop, seedBoard } from "./helpers/s03-board";
+import { randomUUID } from "node:crypto";
+import { seedProject } from "../lib/workbench/studio";
 import { assetLinkHref } from "../lib/shell/asset-link";
 
 /*
@@ -21,6 +23,8 @@ import { assetLinkHref } from "../lib/shell/asset-link";
 const FIRST = "First edit before the workspace switch";
 const FINAL = "Final edit before the workspace switch";
 const AFTER = "Still editable after the refused switch";
+/* Edit & Sound's "Include the clips' own sound" turned off, as its save carries it. */
+const CLIP_AUDIO_OFF = "clip audio off";
 const MARKERS = [FIRST, FINAL, AFTER, "Edit that could not be saved", "Edit saved on the second try"];
 
 type Person = { userId: string; workspaceId: string; other: { id: string; name: string } };
@@ -68,7 +72,7 @@ async function watch(page: Page) {
     const request = route.request();
     if (request.method() !== "PUT") return route.fallback();
     const body = request.postData() ?? "";
-    const edit = MARKERS.find((marker) => body.includes(marker)) ?? "other";
+    const edit = MARKERS.find((marker) => body.includes(marker)) ?? (body.includes('"clipAudio":false') ? CLIP_AUDIO_OFF : "other");
     if (state.hold) {
       state.hold = false;
       state.held = true;
@@ -243,6 +247,57 @@ test("an edit tried while the route answers is blocked: nothing is sent after th
   expect(state.events.filter((e) => /:409$/.test(e)), "never a refused save").toEqual([]);
   expect(state.events).toContain("switched:200");
   expect(paid).toEqual([]);
+});
+
+test("Edit & Sound's own pending save goes out before the switch is asked: no refused save, nothing lost", async ({ page }) => {
+  test.skip(!desktop(page), "Edit & Sound over the board is desktop only");
+  /* A real project with a cut, saved in this workspace; Edit & Sound keeps its own copy of it (lib/workspace/draft-editor.ts). */
+  const { workspace } = await signInLocally(page.request, "Edit Switch Tester");
+  const me = await (await page.request.get("/api/me")).json() as { id: string };
+  const scope = `particl-active-${workspace.id}-${me.id}`;
+  const project = { ...seedProject(), id: `edit-switch-${randomUUID().slice(0, 8)}`, name: "Edit & Sound switch" };
+  const saved = await page.request.put("/api/workbench/projects", { headers: { "X-Workbench-Scope": scope }, data: { project, revision: 0 } });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: project.id });
+  const person = await secondWorkspace(page, workspace.id);
+  const state = await watch(page);
+
+  await page.goto(`/suites?project=${project.id}&view=board&region=cut`);
+  await expect(page.getByTestId("cut-card")).toBeVisible({ timeout: 60_000 });
+  /* The press can land before the page is hydrated (a dev server that has just compiled it): press again until it opens. */
+  await expect(async () => {
+    await page.getByTestId("cut-open-edit").click({ timeout: 3_000 });
+    await expect(page.getByTestId("edit-sound")).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 40_000 });
+  const clipAudio = page.getByTestId("es-clip-audio");
+  await expect(clipAudio).toBeChecked();
+
+  /* The edit's save is held at the server's door; Switch is pressed while it is out. */
+  state.hold = true;
+  await clipAudio.uncheck();
+  await expect.poll(() => state.held).toBe(true);
+  await openSettings(page);
+  await settingsMenu(page).getByRole("menuitem", { name: `Switch to ${person.other.name}`, exact: true }).click();
+  await expect(page.getByTestId("switching-veil")).toBeVisible();
+  await page.waitForTimeout(1500);
+  expect(state.events.filter((e) => e === "switch"), "no switch request while Edit & Sound's save is held").toEqual([]);
+
+  state.release();
+  await expect.poll(() => state.events.includes("switch"), { timeout: 30_000 }).toBe(true);
+  const before = state.events.slice(0, state.events.indexOf("switch"));
+  expect(before, "Edit & Sound's edit saved, and answered, before the switch was asked").toContain(`save:${CLIP_AUDIO_OFF}:200`);
+  await expect.poll(async () => ((await (await page.request.get("/api/me")).json()) as { workspace: { id: string } }).workspace.id, { timeout: 30_000 }).toBe(person.other.id);
+  await page.waitForTimeout(1500);
+  const after = state.events.slice(state.events.indexOf("switch") + 1);
+  expect(after.filter((e) => e.startsWith("save:") || e.startsWith("failed:")), "no save after the switch request").toEqual([]);
+  expect(state.events.filter((e) => /:409$/.test(e)), "never a refused save").toEqual([]);
+
+  /* Saved in the workspace it was made in. */
+  const back = await page.request.post("/api/workspaces/switch", { data: { id: workspace.id } });
+  expect(back.ok(), await back.text()).toBe(true);
+  const read = await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers: { "X-Workbench-Scope": scope } });
+  expect(read.ok(), await read.text()).toBe(true);
+  expect(((await read.json()) as { project: { clipAudio?: boolean } }).project.clipAudio).toBe(false);
 });
 
 test("a link to another of your workspaces, on a phone too: its switch goes through the same path, a refusal keeps the page, then the switch lands", async ({ page }) => {
