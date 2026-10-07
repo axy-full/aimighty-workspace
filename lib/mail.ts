@@ -13,6 +13,7 @@ import { recoveryFetch as fetch } from "./recovery";
  */
 
 import { db, now } from "./db";
+import { mailLinkOrigin } from "./site";
 
 /** Overridable so a local stand-in can catch the request during rehearsal. */
 const RESEND_URL = () =>
@@ -136,13 +137,19 @@ The link works once, until ${until}. If it wasn't you, nothing has changed — y
   return { subject, text, html };
 }
 
-/** The public origin invitations should point at: the request's own host. */
-export function inviteOrigin(req: Request): string {
-  const forced = process.env.APP_ORIGIN?.replace(/\/$/, "");
-  if (forced) return forced;
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? new URL(req.url).host;
-  const proto = req.headers.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
+/** What a person is told when an email link cannot be built: the same words as mail not being set up. */
+export const MAIL_LINK_UNSET = "Email isn't set up on this deployment yet, so nothing was sent.";
+
+/**
+ * The origin every emailed link (reset, invitation, sign-up, top-up) is built
+ * on: lib/site.ts › mailLinkOrigin, never the request's Host or X-Forwarded-*
+ * headers. Null on a production server without APP_ORIGIN: the caller sends
+ * nothing, and the reason is logged here for whoever runs the server.
+ */
+export function inviteOrigin(req: Request): string | null {
+  const origin = mailLinkOrigin(req);
+  if (origin === null) console.error("[mail] APP_ORIGIN is not set: no email link is built from the request, so nothing was sent.");
+  return origin;
 }
 
 /** Send (or re-send) one invitation, and remember that it went. */
@@ -150,6 +157,7 @@ export async function emailInvite(opts: {
   code: string; email: string; name: string; role: string; expiresAt: number; inviter: string; req: Request;
 }): Promise<void> {
   const origin = inviteOrigin(opts.req);
+  if (origin === null) throw new Error(MAIL_LINK_UNSET);
   const link = `${origin}/invite/${opts.code}`;
   const mail = inviteEmail({ name: opts.name, inviter: opts.inviter, link, role: opts.role, expiresAt: opts.expiresAt, origin });
   await sendMail({ to: opts.email, ...mail });

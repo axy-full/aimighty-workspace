@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
-import { mailConfigured, mailFrom, sendMail, inviteEmail, inviteOrigin } from "@/lib/mail";
+import { mailConfigured, mailFrom, sendMail, inviteEmail, inviteOrigin, MAIL_LINK_UNSET } from "@/lib/mail";
 import { db, ready, now } from "@/lib/db";
 import { requireAdmin, withTenant, isPlatformOwner } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
@@ -113,6 +113,7 @@ export const POST = withTenant(async function POST(req: Request) {
   if (mailing) {
     try {
       const origin = inviteOrigin(req);
+      if (origin === null) throw new Error(MAIL_LINK_UNSET);
       await mailWorkspaceInvite({ ws, code, origin, deliver: (to, link) => sendMail({ to, ...inviteEmail({ name, inviter: `${got.user.name} (${ws.name})`, link, role, expiresAt, origin }) }) });
       sent = true;
     } catch (e) {

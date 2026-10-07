@@ -24,20 +24,14 @@
  * `new URL(req.url).origin`, exactly as before.
  */
 
+import { configuredOrigin } from "./site";
+
 type Env = Record<string, string | undefined>;
 
 /** The configured public origin behind a proxy, normalised (scheme, host, port); null when not opted in or not usable. */
 export function proxiedPublicOrigin(env: Env = process.env): string | null {
   if (env.SELFHOST_BEHIND_PROXY !== "1" || env.VERCEL) return null;
-  const raw = env.APP_ORIGIN?.trim();
-  if (!raw) return null;
-  try {
-    const url = new URL(raw);
-    /* Only http(s): any other scheme has the opaque origin "null", which a sandboxed frame would match. */
-    return url.protocol === "https:" || url.protocol === "http:" ? url.origin : null;
-  } catch {
-    return null;
-  }
+  return configuredOrigin(env);
 }
 
 /** The origin a browser request to this server must carry. */

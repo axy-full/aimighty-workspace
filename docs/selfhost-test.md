@@ -114,7 +114,7 @@ Column **STAGING**: "YES" means the value must be a staging value on the test ad
 | Name | Required? | Purpose | STAGING / value |
 |---|---|---|---|
 | `ENGINE_MOCK` | Required | `1` makes every engine call a mock so nothing spends | set: `1` |
-| `APP_ORIGIN` | Required | Canonical origin for links and the worker hand-off | set: the generated sslip.io address, in its **https://** form, exactly (no path) |
+| `APP_ORIGIN` | Required | Canonical origin for links and the worker hand-off; every emailed link (reset, invitation, sign-up, top-up) is built on it alone, and without it a production server sends none of those emails (logged `[mail] APP_ORIGIN is not set`) | set: the generated sslip.io address, in its **https://** form, exactly (no path) |
 | `SELFHOST_BEHIND_PROXY` | Required (self-hosted only) | `1` makes the origin checks accept exactly `APP_ORIGIN` behind the proxy; **runtime variable, not a build variable; never set on Vercel** | set: `1` |
 | `NEXT_PUBLIC_APP_URL` | Required | Same origin for the browser build (**build variable**) | set: the generated sslip.io address, in its **https://** form, exactly (no path) |
 | `APP_URL` | Required | Same origin, read by some server code | set: the generated sslip.io address, in its **https://** form, exactly (no path) |
