@@ -23,7 +23,6 @@ test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app 
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
 /* The two sizes the review looks at; PICKER_SHOTS=all captures every size. */
 const SHOTS = process.env.PICKER_SHOTS === "all" ? SIZES : ["workbench-390x844", "workbench-1440x900"];
 

@@ -1,8 +1,7 @@
-import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
-import { smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { composePrompt } from "../lib/studio";
 import { openAdvanced } from "./helpers/makeAdvanced";
@@ -25,11 +24,6 @@ test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app 
  * test that presses Generate stops at the price check.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
-const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-/* Portrait phones: the sticky Generate band and the tab bar sit over the page's lower third. */
-const PORTRAIT = ["workbench-360x640", "workbench-390x844"];
-/* RECREATE_SHOTS=<dir> saves the finished card at the sizes the review looks at. */
-const SHOTS = ["workbench-360x640", "workbench-390x844", "workbench-1440x900"];
 
 /* Test fixtures only. */
 const fixture = (): Project => ({ ...newProject("Harbour recreate study"), id: "ws-recreate", productionProjectId: "prod-ws", shotMappings: {} });
@@ -130,45 +124,6 @@ async function recreate(page: Page, id: string) {
 const reference = (page: Page, tag: string, name: string) => page.getByTestId("make-reference").and(page.locator(`[title="${tag} · ${name}"]`));
 
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
-
-/**
- * Every row of the card is really visible: at the left, middle and right of each row, the topmost
- * element is the card's own (not the sticky Generate band, the tab bar or anything else), and the
- * row lies inside the viewport. toBeInViewport would pass for a row painted over by the band.
- */
-async function hiddenRows(page: Page) {
-  return page.getByTestId("gen-recipe").evaluate((card) => {
-    const out: string[] = [];
-    for (const row of Array.from(card.children) as HTMLElement[]) {
-      const rect = row.getBoundingClientRect();
-      if (!rect.height) continue;
-      const y = rect.top + rect.height / 2;
-      if (rect.top < 0 || rect.bottom > innerHeight) { out.push(`${row.className}: ${Math.round(rect.top)}–${Math.round(rect.bottom)} outside 0–${innerHeight}`); continue; }
-      for (const x of [rect.left + 6, rect.left + rect.width / 2, rect.right - 6]) {
-        const hit = document.elementFromPoint(x, y);
-        if (!hit || !card.contains(hit)) { out.push(`${row.className} at ${Math.round(x)},${Math.round(y)} is under ${hit ? `${hit.tagName}.${hit.className}` : "nothing"}`); break; }
-      }
-    }
-    return out;
-  });
-}
-
-/** The card lands clear of the band: every row. */
-async function landsClear(page: Page) {
-  /* The confirmation toast is centred at the page's foot for a moment (at 844×390 over the card's lower rows): it has to time
-     out, and the card is judged against what stays — the sticky Generate band, the tab bar. */
-  await expect(page.getByTestId("toast")).toHaveCount(0, { timeout: 10_000 });
-  expect(await hiddenRows(page), "card rows hidden").toEqual([]);
-}
-
-async function shot(page: Page, info: TestInfo, name: string) {
-  const dir = process.env.RECREATE_SHOTS;
-  if (!dir || !SHOTS.includes(info.project.name)) return;
-  await page.getByTestId("gen-view").evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).filter((a) => a.effect && Number(a.effect.getTiming().iterations) !== Infinity).map((a) => a.finished)));
-  /* Two frames: a card the test has just scrolled into view is painted before it is captured. */
-  await page.evaluate(() => new Promise((painted) => requestAnimationFrame(() => requestAnimationFrame(() => painted(null)))));
-  await page.screenshot({ path: `${dir}/${name}-${info.project.name.replace("workbench-", "")}.png`, animations: "disabled" });
-}
 
 /** Advanced under Change, retried: Make redraws as a recipe's references are read, and a fold opened in that moment is closed with it. */
 const advanced = (page: Page) => expect(async () => { await openAdvanced(page); }).toPass({ timeout: 20_000 });

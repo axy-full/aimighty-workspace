@@ -231,6 +231,9 @@ test("Draft first: approved at the price on the button, one 480p take, charged o
   await expect(page.getByTestId("make-panel")).toHaveCount(0);
 
   /* The books: one job, one charge, at the price on the button; one paid request, at that figure as its ceiling. */
+  const first = await settled(s, 1);
+  /* The job's own status read (as a card makes it) lets the mocked engine finish it and write its watermark. */
+  await expect.poll(async () => (await page.request.get(`/api/jobs/${first.jobs[0].id}`, { headers: { "X-Workbench-Scope": s.scope } }).then((r) => r.json())).generation?.status, { timeout: 90_000, intervals: [1_000] }).toBe("succeeded");
   const { jobs, charges } = await settled(s, 1);
   const [draft] = jobs;
   expect(draft.params).toMatchObject({ draft: true, resolution: "480p", watermark: true });

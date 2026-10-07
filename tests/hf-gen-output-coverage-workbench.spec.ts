@@ -23,7 +23,6 @@ test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app 
  * charge; nothing is priced or spent. Screenshots are opt-in: GEN_COVERAGE_SHOTS=<dir>.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
-const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const SHOTS = process.env.GEN_COVERAGE_SHOTS;
 const DRAFT = "ws-sound";
 const fixture = (): Project => ({ ...newProject("Harbour sound study"), id: DRAFT, productionProjectId: "prod-ws", shotMappings: {} });
@@ -237,7 +236,7 @@ test("effects and music: the length and Instrumental each price the take again, 
   const stepper = page.getByTestId("gen-seconds");
   const value = page.getByTestId("gen-seconds-value");
   const instrumental = page.getByTestId("gen-instrumental");
-  const shorter = stepper.getByRole("button", { name: "Shorter" }), longer = stepper.getByRole("button", { name: "Longer" });
+  const longer = stepper.getByRole("button", { name: "Longer" });
   await expect(value).toHaveText("10 s");
   await expect(generateButton(page)).toHaveText(makeAt(3));
   expect(quotes.at(-1)).toMatchObject({ task: "sound", durationSeconds: 10, text: cue });

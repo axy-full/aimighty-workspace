@@ -151,7 +151,6 @@ test("one take is sent once, at the price on the button: Make closes and says wh
   await page.route("**/api/prompt/enhance", (route) => route.fulfill({ json: { model: "m", effort: "auto", estimateCredits: 1 } }));
   await page.route(/\/api\/workbench\/engines(\?.*)?$/, (route) =>
     route.fulfill({ json: { models: ENGINES, audio: null, credits: new URL(route.request().url()).searchParams.has("model") ? PRICE : null } }));
-  const status = "running";
   let charges = 0;
   const ceilings: number[] = [];
   await page.route("**/api/generate/quote", (route) => route.fulfill({ json: { estimatedCredits: PRICE, fingerprint: "f".repeat(64), unit: "cr" } }));
@@ -162,7 +161,7 @@ test("one take is sent once, at the price on the button: Make closes and says wh
     return route.fulfill({ json: { id: "gen_lamp", status: "running" }, headers: { "Idempotency-Status": "complete" } });
   });
   await page.route(/\/api\/jobs\/gen_lamp(\?.*)?$/, (route) =>
-    route.fulfill({ json: { generation: generation({ id: "gen_lamp", kind: "video", status, prompt: LONG, creditsBilled: status === "succeeded" ? PRICE : null }) } }));
+    route.fulfill({ json: { generation: generation({ id: "gen_lamp", kind: "video", status: "running", prompt: LONG }) } }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.clock.install();

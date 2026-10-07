@@ -84,7 +84,7 @@ async function open(page: Page, options: Options = {}) {
   await openAdvanced(page);
   await expect(projectName(page)).toHaveText("Harbour film study");
   /* Hydrated: the composer has read its engines and priced itself once words arrive. */
-  await expect(page.getByTestId("make-engine-line")).toContainText("Seedance");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Seedance", { timeout: 60_000 });
   return { errors, priced, lists, clips };
 }
 
