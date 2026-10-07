@@ -9,7 +9,8 @@ import { approvedWelcomeCredits } from "@/lib/workspaceProvisioning";
 import { asPlanId, DEFAULT_PLANS } from "@/lib/plans";
 import { peakByEngine, peakOverall } from "@/lib/concurrency";
 import { defaultAllowanceUsd } from "@/lib/allowance";
-import { mailConfigured, sendMail, inviteOrigin, signupInviteEmail } from "@/lib/mail";
+import { mailConfigured, sendMail, inviteOrigin, signupInviteEmail, MAIL_LINK_UNSET } from "@/lib/mail";
+import { linkOrigin } from "@/lib/site";
 import { provisioningConfigured } from "@/lib/provision";
 import { keyringConfigured } from "@/lib/keyring";
 import { meterByWorkspace, meterSummary, marginUsd, engineSpansSince } from "@/lib/meter";
@@ -108,9 +109,12 @@ export const POST = recoveryRoute(async function POST(req: Request) {
     args: [code, email, name, note, got.user.id, ts, expiresAt],
   });
   if (body.requestId) await p.execute({ sql: `UPDATE access_requests SET handled_at = ? WHERE id = ?`, args: [ts, String(body.requestId)] });
-  const link = `${inviteOrigin(req)}/signup?invite=${code}`;
-  let sent = false; let mailError: string | null = null;
-  if (mailConfigured() && body.send !== false) {
+  /* The emailed link is built only on the configured origin (never the request's headers); the copy shown to this admin matches it. */
+  const mailing = mailConfigured() && body.send !== false;
+  const mailOrigin = mailing ? inviteOrigin(req) : null;
+  const link = `${mailOrigin ?? linkOrigin(req)}/signup?invite=${code}`;
+  let sent = false; let mailError: string | null = mailing && mailOrigin === null ? MAIL_LINK_UNSET : null;
+  if (mailOrigin !== null) {
     try {
       // From the platform: the inviter reads "Particl", never the person at the desk.
       await sendMail({ to: email, ...signupInviteEmail({ name, link, days: INVITE_DAYS }) });

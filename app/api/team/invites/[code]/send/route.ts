@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { platformDb, platformReady } from "@/lib/platform";
-import { mailConfigured, sendMail, inviteEmail, inviteOrigin } from "@/lib/mail";
+import { mailConfigured, sendMail, inviteEmail, inviteOrigin, MAIL_LINK_UNSET } from "@/lib/mail";
 import { accountFailure, AccountError } from "@/lib/accountDb";
 import { mailWorkspaceInvite } from "@/lib/teamInvitations";
 
@@ -20,8 +20,9 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const iv = (await platformDb().execute({ sql: `SELECT * FROM workspace_invites WHERE code = ? AND workspace_id = ? LIMIT 1`, args: [code, ws.id] })).rows[0] as any;
   if (!iv || iv.used_at) return NextResponse.json({ error: "No such invitation." }, { status: 404 });
+  const origin = inviteOrigin(req);
+  if (origin === null) return NextResponse.json({ error: MAIL_LINK_UNSET }, { status: 503 });
   try {
-    const origin = inviteOrigin(req);
     // The seat, the per-invitation cap and the mail limits come first; a failed send gives its slot back.
     await mailWorkspaceInvite({ ws, code, origin, checkSeat: true, deliver: (to, link) => sendMail({ to, ...inviteEmail({ name: String(iv.name), inviter: `${got.user.name} (${ws.name})`, link, role: String(iv.role), expiresAt: Number(iv.expires_at), origin }) }) });
     return NextResponse.json({ ok: true, sent: true });
