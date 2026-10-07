@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The wall, grouped by shot — from the pipeline handoff.
+ * The wall, grouped by shot.
  *
  * A render is a TAKE of a shot, and the wall reads that way: one group per
  * shot, its takes as cards, and a state on every card — draft, picked,
@@ -38,6 +38,7 @@ import { estimateVideo } from "@/lib/rateTable";
 import { estimateTokens, costUsd } from "@/lib/models";
 import Compare from "@/components/Compare";
 import { canCompare } from "@/lib/compare";
+import { cinemaPriceWords, holdBandOf } from "@/lib/cinemaHold";
 
 /** Kept for the callers that still speak it; the wall itself shows one kind. */
 export type FeedFilter = "all" | "video" | "image" | "audio";
@@ -426,6 +427,7 @@ export function HeldActions({ gen, onChanged }: { gen: Gen; onChanged?: () => vo
   const [err, setErr] = useState<string | null>(null);
   const held = (gen.params as { held?: { needs?: number; why?: string } }).held;
   const needs = Number(held?.needs ?? 0);
+  const band = holdBandOf(gen.model);
   const slots = held?.why === "slots";
   const balance = credits?.balance ?? null;
   // The server decides who may release; here only whether the balance covers it.
@@ -450,7 +452,8 @@ export function HeldActions({ gen, onChanged }: { gen: Gen; onChanged?: () => vo
   }
   return (
     <div className="take-acts take-held">
-      <span className="text-[12.5px] text-mute">Needs {needs} cr{balance != null ? ` · ${Math.max(0, Math.floor(balance))} left` : ""}</span>
+      {/* A held Cinema Studio take's Release approves its hold, said as every approval of it says it (lib/cinemaHold.ts). */}
+      <span className="text-[12.5px] text-mute">Needs {band > 1 ? cinemaPriceWords(needs / band, needs) : `${needs} cr`}{balance != null ? ` · ${Math.max(0, Math.floor(balance))} left` : ""}</span>
       {covered
         ? <button type="button" className="btn-secondary !py-1 !text-[12.5px]" disabled={busy} onClick={release}>{busy ? "Releasing…" : "Release"}</button>
         : <Link href="/settings#credits" className="btn-secondary !py-1 !text-[12.5px]">Top up</Link>}

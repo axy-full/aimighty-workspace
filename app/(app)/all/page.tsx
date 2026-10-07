@@ -1,6 +1,10 @@
-import { redirect } from "next/navigation";
+import { followOldRoute, type RawSearch } from "@/lib/shell/old-routes.server";
 
-/** The Library's Unfiled lens is where every unfiled take lives now (§11). */
-export default function Moved() {
-  redirect("/library?all=1&view=unfiled");
+/**
+ * Old address of the unfiled lens of the library wall.
+ * Redirected, never drawn (docs/old-shells.md): lib/shell/old-routes.ts holds where it goes.
+ */
+export const dynamic = "force-dynamic";
+export default async function Moved({ searchParams }: { searchParams: Promise<RawSearch> }) {
+  await followOldRoute("/all", await searchParams);
 }

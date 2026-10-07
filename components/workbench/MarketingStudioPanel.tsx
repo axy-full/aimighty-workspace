@@ -94,12 +94,12 @@ export function MarketingStudioPanel({
     value: MarketingBrief[K],
   ) => onBriefChange({ ...brief, [key]: value });
   return (
-    <section className={styles.panel} aria-label="Marketing Studio">
+    <section className={styles.panel} aria-label="Product image">
       <header className={styles.intro}>
         <span className={styles.icon}>
           <Megaphone size={19} />
         </span>
-        <h2>Marketing Studio</h2>
+        <h2>Product image</h2>
         <p>Turn your project into a campaign.</p>
         <small>{project.name} · Brief, script and selected references</small>
       </header>

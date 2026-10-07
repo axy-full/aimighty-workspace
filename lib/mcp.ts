@@ -56,6 +56,26 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "prepare_shot",
+    description:
+      "Prepare a video render for a person to approve in Particl. Nothing is rendered or spent: the shot waits in " +
+      "Particl until a person opens it, sees its price and approves it, or dismisses it. Use this with a token made " +
+      "to prepare jobs; it takes the same fields as render_shot.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "The shot: subject, action, setting, camera, light, mood." },
+        project: { type: "string", description: "Project name to suggest filing it under. Optional." },
+        model: { type: "string", description: "'2.5' (default) or '2.0'." },
+        duration: { type: "number", description: "Seconds, 1 to 30. Default 5." },
+        resolution: { type: "string", description: "480p | 720p | 1080p. Default 1080p." },
+        ratio: { type: "string", description: "16:9 (default), 9:16, 1:1, 4:3, 3:4, 21:9." },
+        audio: { type: "boolean", description: "Native audio track. Default false." },
+      },
+      required: ["prompt"],
+    },
+  },
+  {
     name: "wait_for_render",
     description:
       "Wait for a render to finish and report what it cost. Returns as soon as it succeeds or " +
@@ -206,6 +226,14 @@ export async function runTool(
   name: string, args: Args, call: Call, origin: string, options: { credits?: boolean } = {}
 ): Promise<string> {
   switch (name) {
+    case "prepare_shot": {
+      /* Files the job for a person (POST /api/prepared-jobs, a prepare token only); nothing is priced or sent. */
+      const out = (await call("/api/prepared-jobs", { method: "POST", body: {
+        prompt: args.prompt, project: args.project, model: args.model, duration: args.duration,
+        resolution: args.resolution, ratio: args.ratio, audio: args.audio,
+      } })) as { job: { id: string } };
+      return `Prepared ${out.job.id}. It waits in Particl › Settings › Connections until a person opens it in Make, sees its price and approves it, or dismisses it. Nothing was rendered or spent.`;
+    }
     case "render_shot": {
       const project = await resolveProject(call, args.project as string | undefined, "spend");
       const model = String(args.model ?? "2.5").includes("2.0")

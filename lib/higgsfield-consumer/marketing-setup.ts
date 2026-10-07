@@ -9,7 +9,7 @@ import { PRESET_SETUP_TYPES, particlSetup, refuseForeignSetup, type ParticlSetup
 export const SETUP_TYPE_IDS = SETUP_TYPES.map((t) => t[0]) as [SetupType, ...SetupType[]];
 
 /**
- * Marketing Studio setup items (FINAL_SPEC §2.3): avatars, products, brand
+ * Marketing Studio setup items: avatars, products, brand
  * kits, ad references, hooks, settings and ad styles — read from the connected
  * account's `show_marketing_studio` tool, which its own
  * `marketing_studio_video` schema points at. The tool is read only when the

@@ -93,6 +93,20 @@ The link is yours alone and works until ${until}.
   return { subject, text, html };
 }
 
+/**
+ * The platform's sign-up invitation. It comes from the platform, so the
+ * inviter is always "Particl", never the person at the desk
+ * (lib/platformOwnerPrivacy.ts). Everything the desk typed is escaped.
+ */
+export function signupInviteEmail(opts: { name: string; link: string; days: number }): { subject: string; text: string; html: string } {
+  const inviter = "Particl";
+  const hi = opts.name || "there";
+  const subject = `${inviter} invited you to particl studio`;
+  const text = `Hi ${hi},\n\n${inviter} has invited you to particl studio — a room for making shots, and for knowing what they cost. Create your account and your own workspace here:\n${opts.link}\n\nThe link is yours alone and works for ${opts.days} days.\n\n— particl studio`;
+  const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;color:#15171C;line-height:1.5;background:#FCFCFD"><p style="font-size:17px;margin:0 0 12px">Hi ${esc(hi)},</p><p style="font-size:15px;color:#666A72;margin:0 0 20px"><strong style="color:#15171C">${esc(inviter)}</strong> has invited you to particl studio — a room for making shots, and for knowing what they cost. Create your account and your own workspace:</p><p style="margin:0 0 22px"><a href="${esc(opts.link)}" style="display:inline-block;background:#15171C;color:#F5F6F8;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:8px">Create your workspace</a></p><p style="font-size:13.5px;color:#666A72;margin:0 0 18px">The link is yours alone and works for ${opts.days} days.</p><p style="font-size:12px;color:#8A8E96;margin:0;word-break:break-all">If the button doesn't work: ${esc(opts.link)}</p></div>`;
+  return { subject, text, html };
+}
+
 /** The reset email: one link, one hour, and what to do if it wasn't you. */
 export function resetEmail(opts: { name: string; link: string; expiresAt: number; origin?: string }): { subject: string; text: string; html: string } {
   const lockup = opts.origin ? `${opts.origin}/brand/particl-lockup-horizontal-on-light@4x.png` : null;

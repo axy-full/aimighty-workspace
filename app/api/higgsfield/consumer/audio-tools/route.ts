@@ -22,7 +22,7 @@ import {
   submitConsumerVoiceToolJob,
   pollConsumerVoiceTool,
 } from "@/lib/higgsfield-consumer/voice-tool-service";
-import { asksRetired, retiredResponse } from "@/lib/higgsfield-consumer/retired";
+import { asksRetired, retiredResponse, signInOff } from "@/lib/higgsfield-consumer/retired";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -94,7 +94,7 @@ const capabilities = () => ({
   priceSources: ["get_cost"] as const,
   cancel: false,
 });
-export const GET = withTenant(async (req: Request) => {
+const keptGET = withTenant(async (req: Request) => {
   const owner = await requireOwner();
   if (owner.response) return owner.response;
   const draftId = new URL(req.url).searchParams.get("draftId") ?? "";
@@ -110,7 +110,7 @@ export const GET = withTenant(async (req: Request) => {
     return problem(error);
   }
 }, { requireRequestScope: true });
-export const POST = withTenant(async (req: Request) => {
+const keptPOST = withTenant(async (req: Request) => {
   const owner = await requireOwner();
   if (owner.response) return owner.response;
   try {
@@ -147,3 +147,7 @@ export const POST = withTenant(async (req: Request) => {
     return problem(error);
   }
 }, { requireRequestScope: true });
+
+/* Off for Release 1 with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts › signInOff): every method answers 410 and never reads a stored grant. */
+export const GET = signInOff(keptGET);
+export const POST = signInOff(keptPOST);

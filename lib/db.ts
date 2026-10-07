@@ -292,6 +292,8 @@ const SCHEMA = [
      revoked_at  INTEGER
    )`,
   `CREATE INDEX IF NOT EXISTS idx_tokens_user ON api_tokens(user_id)`,
+  /* A token's grant beyond its stored scope (lib/security/token-grants.ts): a prepare token is stored "read". */
+  `CREATE TABLE IF NOT EXISTS api_token_grants (token_id TEXT PRIMARY KEY, kind TEXT NOT NULL, created_at INTEGER NOT NULL)`,
   /* Shots — the production unit a project is actually organised by.
      A shot is asked for once and rendered many times; every render is a
      VERSION of it. This is what makes "revisions per shot" a real number,
@@ -973,7 +975,7 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
                          // What kind of job this is — the axis R2 calls
                          // genre/category-level performance.
                          `category TEXT NOT NULL DEFAULT ''`,
-        /* The pipeline handoff: a production has a kind ("30s car spot"), a
+        /* A production has a kind ("30s car spot"), a
            runtime target in seconds, a cap the producer owns, and a stage.
            The cap is what the header reads `$57.20 OF $250 CAP` against. */
         `kind TEXT`,

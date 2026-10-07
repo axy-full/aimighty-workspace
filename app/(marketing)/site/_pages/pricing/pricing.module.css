@@ -1,4 +1,4 @@
-/* The pricing page (design/particl-graphite, Pricing.dc.html): plans,
+/* The pricing page: plans,
    packs and the rate card. Everything else comes from components/marketing/marketing.css. */
 
 /* ── Plans ─────────────────────────────────────────────────────────────── */
@@ -14,13 +14,13 @@ section.plans { background: var(--gx-root); }
 .seg button { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: var(--gx-text); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--gx-thumb); box-shadow: none; }
 .seg button:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
-.off { font-family: "Kode Mono", monospace; font-size: 10.5px; letter-spacing: .08em; color: var(--gx-accent-text); }
+.off { font-family: "Kode Mono", monospace; font-size: 12px; letter-spacing: .08em; color: var(--gx-accent-text); }
 
 .plans .plan { gap: 14px; padding: 22px; border-radius: 12px; }
 .plans .planHl { border-color: var(--gx-tint-border-50); box-shadow: 0 0 0 4px var(--gx-tint-10); }
 /* Every card's top row is the badge's height, so the four prices line up. */
 .planTop { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
-.badge { font-family: "Kode Mono", monospace; font-size: 10px; line-height: 14px; letter-spacing: .1em; text-transform: uppercase; padding: 3px 7px; border-radius: 4px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); color: var(--gx-accent-text); white-space: nowrap; }
+.badge { font-family: "Kode Mono", monospace; font-size: 12px; line-height: 14px; letter-spacing: .1em; text-transform: uppercase; padding: 3px 7px; border-radius: 4px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); color: var(--gx-accent-text); white-space: nowrap; }
 .price { font-family: Outfit, sans-serif; font-weight: 600; font-size: 40px; letter-spacing: -.03em; line-height: 1; }
 .price small { font-size: 15px; font-weight: 500; color: var(--gx-text-2); letter-spacing: 0; }
 .billing { font-size: 12.5px; color: var(--gx-text-2); margin-top: 6px; min-height: 18px; }
@@ -64,7 +64,7 @@ section.plans { background: var(--gx-root); }
 
 .rates .table { padding: 0; gap: 0; border-radius: 12px; overflow: hidden; }
 .table table { width: 100%; border-collapse: collapse; }
-.table th { padding: 12px 18px; border-bottom: 1px solid var(--gx-hair); font: 500 10.5px "Kode Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-text-2); text-align: left; }
+.table th { padding: 12px 18px; border-bottom: 1px solid var(--gx-hair); font: 500 12px "Kode Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-text-2); text-align: left; }
 .table td { padding: 11px 18px; border-bottom: 1px solid var(--gx-hair-soft); font-size: 14px; vertical-align: baseline; }
 .table th:first-child, .table td:first-child { padding-right: 8px; }
 .table th:last-child, .table td:last-child { padding-left: 8px; text-align: right; white-space: nowrap; }

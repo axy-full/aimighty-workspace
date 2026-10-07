@@ -12,6 +12,7 @@ import { studioRequest } from './GenerationDialog';
 import { agentPrice } from '@/components/graphite/production/agent-price';
 import { useMoney } from '@/lib/price';
 import styles from './development-panel.module.css';
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 type ApplyChoice = { idea: number } | { scenes: string[] };
 const endpoint = '/api/workbench/development';
@@ -73,7 +74,8 @@ export function DevelopmentPanel({ project, kind, scope, enabled, models: connec
     let cancelled = false;
     const requestHeaders = { 'X-Workbench-Scope': scope };
     async function refresh() {
-      if (!enabled || pollBusy.current) return;
+      /* A project the server does not hold yet has no runs to read; it saves itself, and the read follows (productionProjectId arrives with that save). */
+      if (!enabled || !project.productionProjectId || pollBusy.current) return;
       pollBusy.current = true;
       try {
         const epoch = requestEpoch.current;
@@ -103,14 +105,14 @@ export function DevelopmentPanel({ project, kind, scope, enabled, models: connec
     void refresh();
     const timer = setInterval(() => void refresh(), 6000);
     return () => { cancelled = true; active.current = false; clearInterval(timer); };
-  }, [enabled, project.id, scope, kind]);
+  }, [enabled, project.id, project.productionProjectId, scope, kind]);
 
   async function review() {
     if (busy || !sourceHash || !model || !completeSource || pending || running) return;
     setBusy('Estimating…'); setError(''); setQuote(null);
     try {
       const snapshot = canonical;
-      if (!(await callbacks.current.onSave())) throw new Error('Save this project before requesting a development estimate.');
+      if (!(await callbacks.current.onSave())) throw new SaveFailedError();
       if (currentCanonical.current !== snapshot) throw new Error('The source changed while saving. Review the estimate again.');
       const input: DevelopmentRequest = { projectId: project.id, requestId: crypto.randomUUID(), kind, model, effort, instructions, ...attach.input };
       const value = await studioRequest<DevelopmentQuote>(endpoint, { method: 'POST', headers, body: JSON.stringify({ ...input, quoteOnly: true }) });

@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { SAY, referenceRole } from "@/lib/shell/assets";
-import { recipePrompt, recreateBlock } from "@/lib/shell/recipe";
+import { recipePrompt, recreateBlock, type RecipeSource } from "@/lib/shell/recipe";
+import { priceWords } from "@/lib/shell/recreate-price";
+import { useRecreatePrice } from "@/lib/shell/use-recreate-price";
 import { useShell } from "@/lib/shell/state";
 import { formatProviderCreditQuote, providerCreditQuote } from "@/lib/providerCreditQuote";
 import { settledFact } from "@/lib/usageLedgerTerms";
@@ -21,14 +23,16 @@ import { openPreview } from "@/components/PreviewLayer";
 import { INSPECTOR_SURFACE } from "@/lib/shell/preview-bridge";
 import { copyAssetLink } from "@/lib/shell/copy-asset-link";
 import { useSession } from "@/lib/session";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { LoadBanner } from "./TakeTile";
 import { ReleaseTake } from "./ReleaseTake";
-import { AssetNextActions, revealNext } from "./AssetNextActions";
+import { AssetNextActions } from "./AssetNextActions";
 import { madeFrom as toolSource, type NextActionId } from "@/lib/shell/next-actions";
 import { RememberAsset } from "./atomik/MemoryView";
+import { overHoldMark } from "@/lib/cinemaHold";
 
 /**
- * The Inspector for an asset (FINAL_SPEC §1 step 1, §6 › Inspector): a fixed
+ * The Inspector for an asset: a fixed
  * 180px preview card, provenance — where it came from, what it cost, what it
  * is — and the actions the right-click menu offers, as buttons. Every action
  * is the shell's own (the context-menu command path), so the two never drift.
@@ -47,6 +51,9 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const made = entry?.asset.origin === "generation" ? entry.asset.value : null;
   const quote = made ? providerCreditQuote(made.providerCreditQuote) : null;
   const settled = useLedgerEntry(made && !quote ? made.id : null, entry?.take.status);
+  /* Recreate spends once Make is pressed: its price is Make's own, read from the server's quote (lib/shell/recreate-price.ts). */
+  const recreatable = made && !recreateBlock(made) ? (made as RecipeSource) : null;
+  const recreatePrice = useRecreatePrice(scope, recreatable ? id : null, recreatable, project?.aspect);
   /* A take older than the loaded pages (a link, the desk's search) is asked for by id once the library has read; an answer
      for another project or take than the one shown now is dropped. */
   const projectId = project?.id ?? null;
@@ -54,6 +61,8 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const [looked, setLooked] = useState<string | null>(null);
   /* "Remember" (Atomik memory) is open for this asset only: picking another closes it. */
   const [remembering, setRemembering] = useState<string | null>(null);
+  /* The sample workspace spends nothing: the draft's final, Release and Recreate are not offered there. */
+  const spendOff = useSampleWorkspace();
   const lookKey = projectId ? `${projectId}\u0000${id}` : null;
   useEffect(() => {
     if (entry || !ready || !projectId || !lookKey || looked === lookKey) return;
@@ -92,6 +101,8 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
     /* A take held at zero has reserved nothing: the ledger has no row for it until Release charges it at admission (then "Held · N cr"). */
     ...(generation ? [["Engine", displayModelName(generation.model)] as [string, string], ["Prompt", generation.prompt ? generation.prompt.slice(0, 160) : "—"] as [string, string], ["Made", when(generation.createdAt)] as [string, string], ["Settled", take.status === "held" ? "Nothing charged yet" : settledFact(settled.page, quote ? formatProviderCreditQuote(quote) : null, settled.failed)] as [string, string]] : []),
     ...(upload ? [["File", upload.filename] as [string, string], ["Type", upload.mime] as [string, string], ["Size", bytesLabel(upload.bytes)] as [string, string], ...(upload.width && upload.height ? [["Pixels", `${upload.width}×${upload.height}`] as [string, string]] : []), ["Uploaded", when(upload.createdAt)] as [string, string], ["Integrity", upload.sha256 ? "sha256 ✓" : "—"] as [string, string]] : []),
+    /* Its engine charged past the hold approved for it: charged the hold, nothing above it (lib/cinemaHold.ts). */
+    ...(generation && overHoldMark(generation.params) ? [["Charge", overHoldMark(generation.params)!] as [string, string]] : []),
     ...(generation && typeof generation.params.enhancedPrompt === "string" && generation.params.enhancedPrompt ? [["Enhanced", `${generation.params.enhancedPrompt.slice(0, 160)} · on the account`] as [string, string]] : []),
     ...(take.meta ? [["Detail", take.meta] as [string, string]] : []),
     ["Status", takeStatusWord(take)],
@@ -112,15 +123,12 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   /* Preview walks the page's list from this take (lib/shell/preview-bridge); a link names the workspace, the production and the take. */
   const preview = entryPreview(entry);
   const copyLink = async () => toast(await copyAssetLink({ workspace: session.workspace?.id, production: project?.productionProjectId, asset: take.id }));
-  /* Next opens the tool on this take: the take is selected first, so Takes opens on it (a page change is the history entry;
-     already on Takes, opening it is). Nothing is quoted or sent here. */
+  /* Next opens the tool on this take: the take is selected first, and the board opens on the region that holds the tool
+     (Edit & Sound is the Cut region, every other tool the Shots region). Nothing is quoted or sent here. */
   const openNext = (next: NextActionId) => {
     if (next === "edit-sound") { shell.goSuite("studio", "edit"); return; }
-    const onTakes = shell.view === "suite" && shell.suite.id === "studio" && shell.page.id === "takes";
-    shell.selectAsset(take.id, { reason: onTakes ? "open" : "pick" });
-    if (!onTakes) shell.goSuite("studio", "takes");
-    else if (!shell.wide) shell.closePanels();
-    revealNext(next);
+    shell.selectAsset(take.id, { reason: "pick" });
+    shell.goSuite("studio", "takes");
   };
   return (
     <div className="gx-insp-asset" data-testid="asset-inspector">
@@ -133,7 +141,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
         {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd title={v}>{v}</dd></div>)}
       </dl>
       {settled.failed ? <button type="button" className="gx-hbtn" style={{ alignSelf: "flex-start" }} onClick={settled.retry} data-testid="inspector-settled-retry">Try again</button> : null}
-      {pair?.draft && generation ? (
+      {pair?.draft && generation && !spendOff ? (
         <>
           <span className="gx-eyebrow">Draft</span>
           <DraftFinalBar key={generation.id} scope={scope} projectId={project?.id ?? null} draft={generation} finals={finals} />
@@ -145,8 +153,12 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
       {take.status === "held" ? <div className="gx-insp-actions" data-testid="inspector-release"><ReleaseTake key={take.id} entry={entry} onReleased={library.refresh} place="inspector" /></div> : null}
       {generation ? (
         <div className="gx-insp-actions" data-testid="inspector-recipe">
-          <button type="button" className="gx-primary" disabled={Boolean(noRecreate)} onClick={() => command("retry")} data-testid="inspector-recreate">Recreate</button>
-          <button type="button" className="gx-hbtn" disabled={Boolean(noRecreate)} title="The model and its settings; the prompt in Gen stays" onClick={() => recreate(entry, true)} data-testid="inspector-settings-only">Use settings only</button>
+          {spendOff ? null : <button type="button" className="gx-primary" disabled={Boolean(noRecreate) || recreatePrice?.state !== "ready"} onClick={() => command("retry")} data-testid="inspector-recreate"
+            title={recreatePrice?.state === "unavailable" ? recreatePrice.reason : recreatePrice?.state === "reading" ? "Reading the price…" : undefined}
+            data-spend={recreatePrice?.state === "ready" ? "priced" : "unpriced"} data-spend-price={recreatePrice?.state === "ready" ? priceWords(recreatePrice) : undefined}>
+            Recreate{recreatePrice?.state === "ready" ? ` · ${priceWords(recreatePrice)}` : ""}
+          </button>}
+          <button type="button" className="gx-hbtn" disabled={Boolean(noRecreate)} title="The model and its settings; the prompt in Make stays" onClick={() => recreate(entry, true)} data-testid="inspector-settings-only">Use settings only</button>
           <button type="button" className="gx-hbtn" disabled={!words} onClick={() => void copyPrompt()} data-testid="inspector-copy-prompt">Copy prompt</button>
           {noRecreate ? <p className="gx-reason gx-insp-why" data-testid="inspector-recreate-why">{noRecreate}</p> : null}
         </div>

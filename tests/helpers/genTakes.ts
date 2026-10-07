@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { openAdvanced } from "./makeAdvanced";
 
 /**
  * Gen's takes stepper, pressed `presses` times once Generate is priced and ready. Until then the line above the
@@ -11,6 +12,8 @@ export async function moreTakes(page: Page, presses: number) {
   const go = page.getByTestId("gen-generate");
   await expect(go).toBeEnabled({ timeout: 60_000 });
   await expect(go).toHaveText(/\d (connected )?cr/);
-  const more = page.getByTestId("gen-takes").getByRole("button", { name: "More", exact: true });
-  for (let i = 0; i < presses; i++) await more.click();
+  /* Takes sit in Make's folded Advanced. */
+  await openAdvanced(page);
+  /* The takes are chips, each with its total: ×1 to ×4 (Gaps B). */
+  if (presses > 0) await page.getByTestId(`gen-takes-${presses + 1}`).click();
 }

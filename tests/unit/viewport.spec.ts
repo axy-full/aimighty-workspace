@@ -85,11 +85,11 @@ test("the remembered view round-trips per board per user and rejects junk", () =
     getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = v; }, removeItem: (k: string) => { delete store[k]; },
     clear: () => { for (const k of Object.keys(store)) delete store[k]; }, key: () => null, length: 0,
   } as Storage;
-  const key = viewKey("mara@studio", "brd_1");
-  expect(key).toBe("aw_rigview:mara@studio:brd_1");
+  const key = viewKey("keeper@studio", "brd_1");
+  expect(key).toBe("aw_rigview:keeper@studio:brd_1");
   saveView(key, { pan: { x: 12.6, y: -3.2 }, zoom: 1.5 });
   expect(loadView(key)).toEqual({ pan: { x: 13, y: -3 }, zoom: 1.5 });
-  expect(loadView(viewKey("mara@studio", "brd_2"))).toBeNull();
+  expect(loadView(viewKey("keeper@studio", "brd_2"))).toBeNull();
   store[key] = "{\"zoom\":\"big\"}";
   expect(loadView(key)).toBeNull();
   store[key] = "{\"zoom\":9,\"pan\":{\"x\":0,\"y\":0}}";

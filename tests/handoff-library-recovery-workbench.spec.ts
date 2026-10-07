@@ -3,6 +3,11 @@ import { newProject } from "../lib/workbench/studio";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 const project = { ...newProject("Harbour recovery"), id: "ws-recovery", productionProjectId: "prod-ws", shotMappings: {} };
 const OFFLINE = "The library is unavailable right now.";
@@ -46,7 +51,7 @@ test("Gen waits for the project list to recover before creating or generating an
     return route.fulfill({ json: { id: "gen_recovered", status: "succeeded" }, headers: { "Idempotency-Status": "complete" } });
   });
   await page.route(/\/api\/jobs\/gen_recovered(\?.*)?$/, (route) => route.fulfill({ json: { generation: generation({ id: "gen_recovered", projectId: project.productionProjectId }) } }));
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=video");
   const banner = page.getByTestId("projects-error");
   await expect(banner).toContainText("Projects are unavailable right now.");
   await page.getByTestId("gen-prompt").fill("A lighthouse above calm water");
@@ -65,10 +70,10 @@ test("Gen waits for the project list to recover before creating or generating an
   expect(sends).toEqual([]);
   mode = "ready";
   release();
-  await expect(page.getByTestId("project-name")).toHaveText(project.name);
+  await expect(projectName(page)).toHaveText(project.name);
   await expect(banner).toHaveCount(0);
   await expect(generate).toBeEnabled();
-  await expect(generate).toHaveText("Generate · 3 cr");
+  await expect(generate).toHaveText("Make · 3 cr");
   expect(writes).toEqual([]);
   expect(sends).toEqual([]);
   await generate.click();
@@ -92,7 +97,7 @@ test("an automatic Library retry keeps the same failure banner until its read su
     await gate;
     return route.fallback();
   });
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=recent");
   const banner = page.getByTestId("gen-results-error");
   await expect(banner).toContainText(OFFLINE);
   await banner.evaluate((el) => el.setAttribute("data-same-banner", "true"));
@@ -105,7 +110,7 @@ test("an automatic Library retry keeps the same failure banner until its read su
   await expect(banner.getByRole("button", { name: "Trying…" })).toBeDisabled();
   /* Trying… is the read's status, not a spent control: undimmed, it keeps the #7C7C84 label floor. */
   expect(await banner.getByRole("button", { name: "Trying…" }).evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
-  await expect(page.getByRole("region", { name: "Results" }).getByTestId("take-skeleton")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Recent" }).getByTestId("take-skeleton")).toHaveCount(0);
   await expect(page.getByTestId("gen-results-empty")).toHaveCount(0);
   if (info.project.name.includes("360x640") || info.project.name.includes("390x844") || info.project.name.includes("844x390")) {
     expect(await smallTargets(page, '[data-testid="gen-results-error"]')).toEqual([]);

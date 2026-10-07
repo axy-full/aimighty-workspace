@@ -188,3 +188,34 @@ test("the platform desk sets a workspace's monthly engine cap, $0 included, and 
     expect(removed.ok(), await removed.text()).toBe(true);
   }
 });
+
+/* The credit-unit conversion (lib/creditConversion.ts) is the platform owner's alone, and a dry run by default. */
+test("the credit-unit route: anonymous 401, a member 403, the owner's dry run writes nothing", async ({ page, playwright }, testInfo) => {
+  test.skip(testInfo.project.name !== "customer-1440x900", "an API check: one size");
+  const base = process.env.PW_BASE_URL || "http://localhost:4551";
+  const anonymous = await playwright.request.newContext({ baseURL: base });
+  expect((await anonymous.get("/api/admin/credit-unit")).status()).toBe(401);
+  expect((await anonymous.post("/api/admin/credit-unit", { data: { action: "convert", fromUnitUsd: 0.8, cutoverAt: "2026-10-03T14:39:00Z" } })).status()).toBe(401);
+  const member = await playwright.request.newContext({ baseURL: base });
+  const email = `member-${randomBytes(4).toString("hex")}@example.test`;
+  const code = await signupInvite(email);
+  const signup = await member.post("/api/auth/signup", { data: { code, name: "Member", email, workspace: "Member studio", password, accept: true } });
+  expect(signup.ok(), await signup.text()).toBe(true);
+  expect((await member.get("/api/admin/credit-unit")).status()).toBe(403);
+  expect((await member.post("/api/admin/credit-unit", { data: { action: "convert", fromUnitUsd: 0.8, cutoverAt: "2026-10-03T14:39:00Z", dryRun: false } })).status()).toBe(403);
+  await platformOwner(page);
+  const state = await page.request.get("/api/admin/credit-unit").then((r) => r.json());
+  expect(state.creditUsd).toBe(0.1);
+  // No zone on cutoverAt is refused rather than read in the server's.
+  expect((await page.request.post("/api/admin/credit-unit", { data: { action: "convert", fromUnitUsd: 0.8, cutoverAt: "2026-10-03T14:39:00" } })).status()).toBe(400);
+  const dry = await page.request.post("/api/admin/credit-unit", { data: { action: "convert", fromUnitUsd: 0.8, cutoverAt: "2026-10-03T14:39:00Z" } });
+  expect(dry.ok(), await dry.text()).toBe(true);
+  const body = await dry.json();
+  expect(body).toMatchObject({ dryRun: true, fromUnitUsd: 0.8, toUnitUsd: 0.1, factor: 8 });
+  const after = await page.request.get("/api/admin/credit-unit").then((r) => r.json());
+  expect(after.conversions.length).toBe(state.conversions.length);
+  // A real run on a deployment whose ledger already counts in $0.10 converts nothing.
+  const real = await page.request.post("/api/admin/credit-unit", { data: { action: "convert", fromUnitUsd: 0.8, cutoverAt: "2026-10-03T14:39:00Z", dryRun: false } });
+  if (real.ok()) expect((await real.json()).results).toEqual([]);
+  await anonymous.dispose(); await member.dispose();
+});

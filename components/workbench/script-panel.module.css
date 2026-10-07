@@ -363,7 +363,7 @@
 .formats button:disabled { opacity:.5; cursor:default; }
 @media(max-width:759px) { .formats { padding:0 12px 14px; grid-template-columns:1fr; } }
 
-/* Phone handoff: screenplay, review and agent tools retain their real controls. */
+/* On a phone: screenplay, review and agent tools retain their real controls. */
 @media (max-width: 759px) {
   :global(.ps .studio-redesign) .panel { background: var(--graphite-ground); }
   .header { gap: 14px; padding: 0 0 16px; }

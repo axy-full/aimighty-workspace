@@ -156,6 +156,23 @@ export function toSearch(state: Pick<AppState, "projectId" | "suite" | "page" | 
   return "?" + query.toString();
 }
 
+/**
+ * Params no screen reads but an old link may carry, which the Suites shell's
+ * URL writes keep rather than drop: Subatomik's connected-account override
+ * (`account=particl`), so the address still says what the link said.
+ */
+export const CARRIED_PARAMS = ["account"] as const;
+
+/** A written query (`toSearch`) with each `keep` param the current one has laid over it. */
+export function withKept(search: string, current: string, keep: readonly string[]): string {
+  if (!keep.length) return search;
+  const next = new URLSearchParams(search);
+  const now = new URLSearchParams(current);
+  for (const key of keep) { const v = now.get(key); if (v != null) next.set(key, v); }
+  const text = next.toString();
+  return text ? "?" + text : "";
+}
+
 export function toHref(state: Parameters<typeof toSearch>[0]) {
   return WORKSPACE_PATH + toSearch(state);
 }
@@ -243,7 +260,7 @@ export function generateAvailability(
   state: Pick<AppState, "page" | "selKind" | "selId" | "lists">,
   connected: boolean,
 ): Availability {
-  if (state.page !== "rig") return { enabled: false, reason: "Generate works on a shot in Rig." };
+  if (state.page !== "rig") return { enabled: false, reason: "Make works on a shot on the Board." };
   const shots = state.lists.shots;
   if (shots !== null && shots.length === 0) return { enabled: false, reason: "Add a shot before generating." };
   if (state.selKind !== "shot" || !state.selId || (shots !== null && !shots.some((s) => s.id === state.selId)))

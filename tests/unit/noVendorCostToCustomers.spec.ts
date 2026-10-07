@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { alignLedgerUnit } from "../helpers/ledgerUnit";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -23,6 +24,8 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "tenant.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.CREDIT_USD = "0.10";
 process.env.ENGINE_MOCK = "1";
+/* Before any fixture row: a fresh platform database counts in today's price (lib/ledgerUnit.ts). */
+test.beforeAll(async () => { await alignLedgerUnit(); });
 
 /** What the vendors charged, each ending in a sixth decimal of 1 so every sum of them is recognisable. */
 const COST = {
@@ -105,7 +108,7 @@ async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
               VALUES('ast_margin','ach_margin','amsg_margin',0,'video','Harbour wide','A harbour at dawn',?,?,'proposed',?,?,?)`,
         args: [DEFAULT_MODEL_ID, JSON.stringify({ seconds: 5, ratio: "16:9", resolution: "1080p" }), cost.stepEstimate, at, at] },
       { sql: `INSERT INTO identities(id,project_id,name,status,provider,steps,cost_usd,created_by,created_at,updated_at,trained_at,lora_url)
-              VALUES('id_margin','p_margin','Mara','ready','fal',1500,?,'u_owner',?,?,?,'https://example.invalid/lora.safetensors')`, args: [cost.still, at, at, at] },
+              VALUES('id_margin','p_margin','Keeper','ready','fal',1500,?,'u_owner',?,?,?,'https://example.invalid/lora.safetensors')`, args: [cost.still, at, at, at] },
       /* A room per person (rooms are their owner's), each with a round the vendor charged for. */
       ...Object.values(ACTORS).map((u) => ({
         sql: `INSERT INTO crew_sessions(id,owner,project_id,goal,context,model,rounds_run,spend_cr,spend_usd,created_by,created_at)

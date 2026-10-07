@@ -56,13 +56,13 @@ test("each family's request builder: the documented path and body, strength abov
     expect(model).toMatchObject({ provider: "higgsfield", kind: "image", soulIdentity: true, hidden: true, maxReferenceImages: 0, resolutions: ["720p", "1080p"] });
     expect(isSoulIdentityModel(id) && isHiggsfieldImageModel(id)).toBe(true);
     for (const batch of [1, 4]) {
-      expect(soulRenderInput(id, { prompt: "Mira at the harbour", referenceId, strength: 0.8, batch, resolution: "1080p", ratio: "3:4" })).toEqual({
-        prompt: "Mira at the harbour", custom_reference_id: referenceId, custom_reference_strength: 0.8, batch_size: batch,
+      expect(soulRenderInput(id, { prompt: "Wren at the harbour", referenceId, strength: 0.8, batch, resolution: "1080p", ratio: "3:4" })).toEqual({
+        prompt: "Wren at the harbour", custom_reference_id: referenceId, custom_reference_strength: 0.8, batch_size: batch,
         resolution: "1080p", aspect_ratio: "3:4", enhance_prompt: false,
       });
     }
   }
-  const good = { prompt: "Mira", referenceId, strength: 1, batch: 1, resolution: "720p", ratio: "1:1" };
+  const good = { prompt: "Wren", referenceId, strength: 1, batch: 1, resolution: "720p", ratio: "1:1" };
   for (const bad of [{ strength: 0 }, { strength: 1.2 }, { strength: NaN }, { batch: 2 }, { batch: 8 }, { resolution: "4k" }, { ratio: "21:9" }, { referenceId: "soul_local" }, { prompt: "   " }]) {
     expect(() => soulRenderInput("hf-soul-2", { ...good, ...bad })).toThrow(SoulRenderError);
   }
@@ -77,17 +77,17 @@ test("the worker prices the exact body again and sends it once to the family's p
   for (const version of ["v1", "v2", "cinema"] as const) {
     for (const batch of [1, 4]) {
       const calls = live((url) => url.includes("/estimate/") ? Response.json({ credits: 5 * batch, usd: 0.25 * batch }) : Response.json({ request_id: requestId, status: "queued", status_url: statusUrl }));
-      const req: StillRenderRequest = { kind: "image", genId: "gen_soul_key", model: getModel(SOUL_RENDER_MODELS[version]), prompt: "Mira at the harbour", ratio: "3:4", size: "1080p", references: [],
+      const req: StillRenderRequest = { kind: "image", genId: "gen_soul_key", model: getModel(SOUL_RENDER_MODELS[version]), prompt: "Wren at the harbour", ratio: "3:4", size: "1080p", references: [],
         soulReferenceId: referenceId, soulCredentialFingerprint: higgsfieldCredentialFingerprint(), soulStrength: 0.6, soulBatch: batch, soulVendorCostUsd: 0.25 * batch };
       const out = await higgsfield.render(req);
       expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([`POST https://api.higgsfield.ai/estimate/${PATHS[version]}`, `POST https://api.higgsfield.ai/${PATHS[version]}`]);
-      const body = { prompt: "Mira at the harbour", custom_reference_id: referenceId, custom_reference_strength: 0.6, batch_size: batch, resolution: "1080p", aspect_ratio: "3:4", enhance_prompt: false };
+      const body = { prompt: "Wren at the harbour", custom_reference_id: referenceId, custom_reference_strength: 0.6, batch_size: batch, resolution: "1080p", aspect_ratio: "3:4", enhance_prompt: false };
       expect(calls[0].body).toEqual(body);
       expect(calls[1].body).toEqual(body);
       expect(out).toMatchObject({ handle: { ref: requestId, endpoint: statusUrl, model: SOUL_RENDER_MODELS[version] } });
     }
   }
-  const req = (): StillRenderRequest => ({ kind: "image", genId: "gen_soul_key", model: getModel("hf-soul-2"), prompt: "Mira", ratio: "3:4", size: "720p", references: [],
+  const req = (): StillRenderRequest => ({ kind: "image", genId: "gen_soul_key", model: getModel("hf-soul-2"), prompt: "Wren", ratio: "3:4", size: "720p", references: [],
     soulReferenceId: referenceId, soulCredentialFingerprint: higgsfieldCredentialFingerprint(), soulStrength: 1, soulBatch: 1, soulVendorCostUsd: 0.25 });
   /* A changed price, a price in words, a refusal: each is answered fresh (a cloned body cannot be cancelled on its own). */
   for (const reply of [() => Response.json({ credits: 9, usd: 0.3 }), () => Response.json({ type: "description", pricing_description: "per image" }), () => new Response("{}", { status: 422 })]) {
@@ -99,7 +99,7 @@ test("the worker prices the exact body again and sends it once to the family's p
 
 test("a live estimate is a positive number (or numeric text); anything else is no price, and the render is refused", async () => {
   const { estimateSoulRender, soulRenderInput, SoulRenderError } = await import("../../lib/soulRender");
-  const body = soulRenderInput("hf-soul-cinema", { prompt: "Mira", referenceId, strength: 1, batch: 4, resolution: "1080p", ratio: "3:4" });
+  const body = soulRenderInput("hf-soul-cinema", { prompt: "Wren", referenceId, strength: 1, batch: 4, resolution: "1080p", ratio: "3:4" });
   for (const [reply, usd] of [[{ credits: 20, usd: 1.25 }, 1.25], [{ usd: "1.25" }, 1.25]] as const) {
     const calls = live(() => Response.json(reply));
     expect(await estimateSoulRender("hf-soul-cinema", body)).toBe(usd);
@@ -141,12 +141,12 @@ test("training sends the chosen family as model_version, and no other version is
   const { createSoulReference } = await import("../../lib/higgsfield");
   for (const version of ["v1", "v2", "cinema"] as const) {
     const calls = live(() => Response.json({ id: referenceId, status: "queued" }));
-    expect(await createSoulReference("Mira", ["https://files.example/mira-1.png"], { modelVersion: version })).toEqual({ id: referenceId, status: "queued" });
+    expect(await createSoulReference("Wren", ["https://files.example/wren-1.png"], { modelVersion: version })).toEqual({ id: referenceId, status: "queued" });
     expect(calls).toEqual([{ url: "https://api.higgsfield.ai/v1/custom-references", method: "POST",
-      body: { name: "Mira", model_version: version, input_images: [{ type: "image_url", image_url: "https://files.example/mira-1.png" }] } }]);
+      body: { name: "Wren", model_version: version, input_images: [{ type: "image_url", image_url: "https://files.example/wren-1.png" }] } }]);
   }
   const calls = live(() => Response.json({ id: referenceId, status: "queued" }));
-  await expect(createSoulReference("Mira", ["https://files.example/a.png"], { modelVersion: "v3" as never })).rejects.toThrow(/supported identity version/);
+  await expect(createSoulReference("Wren", ["https://files.example/a.png"], { modelVersion: "v3" as never })).rejects.toThrow(/supported identity version/);
   expect(calls).toEqual([]);
 });
 
@@ -218,7 +218,7 @@ async function counts() {
     meters: Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM meter_events WHERE workspace_id=?", args: [requireTenant().id] })).rows[0].n),
   };
 }
-const body = (patch: Record<string, unknown> = {}) => ({ model: "hf-soul-2", prompt: "Mira on the quay at dusk", projectId: "project", ratio: "3:4", resolution: "1080p",
+const body = (patch: Record<string, unknown> = {}) => ({ model: "hf-soul-2", prompt: "Wren on the quay at dusk", projectId: "project", ratio: "3:4", resolution: "1080p",
   soulIdentityId: "soul_v2", soulStrength: 0.8, soulBatch: 4, refine: false, ...patch });
 
 test("training: v1 keeps its price; Soul 2 and Soul Cinema are offered only at a privately configured price, charged that cost with the markup, and refused while unset", async () => {
@@ -255,7 +255,7 @@ test("training: v1 keeps its price; Soul 2 and Soul Cinema are offered only at a
       await db().execute("INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at) VALUES('face','Face','image/png','png',100,'hash','/api/uploads/face',0)");
       const draft = newProject("Identity production");
       await saveDraft(actor.user.id, draft, 0);
-      const input = (version: string | undefined, maxCredits: number, name = `Mira ${version}`): CreateSoulIdentityInput => ({ projectId: draft.id, name, description: "", subjectType: "character",
+      const input = (version: string | undefined, maxCredits: number, name = `Wren ${version}`): CreateSoulIdentityInput => ({ projectId: draft.id, name, description: "", subjectType: "character",
         references: [{ uploadId: "face" }], consent: true, maxCredits, modelVersion: version as CreateSoulIdentityInput["modelVersion"] });
       const seen: unknown[] = [];
       const train = (value: CreateSoulIdentityInput, key: string) => withGenerationRequestData({ userId: actor.user.id, key, fingerprint: generationFingerprint(value) }, async (claim) => {
@@ -305,7 +305,7 @@ test("training: v1 keeps its price; Soul 2 and Soul Cinema are offered only at a
       expect(Number(settled.engine_cost_usd)).toBe(CINEMA);
       expect(ready?.creditsBilled).toBe(credits(CINEMA));
       /* No version named: v1, at its price, as before. */
-      const v1 = await (await train(input(undefined, credits(SOUL_TRAINING_USD), "Mira default"), "train-default")).json();
+      const v1 = await (await train(input(undefined, credits(SOUL_TRAINING_USD), "Wren default"), "train-default")).json();
       expect(v1.identity.renderModel).toBe("hf-soul-standard");
       expect(Number((await platformDb().execute({ sql: "SELECT engine_cost_usd FROM meter_events WHERE id=?", args: [v1.identity.id] })).rows[0].engine_cost_usd)).toBe(SOUL_TRAINING_USD);
     });
@@ -466,21 +466,21 @@ test("the Cast page's request and filing: a character, its own identity, its fam
   const { generationRequestBody } = await import("../../lib/workbench/generation-request");
   const { newEntry, retiredModelOf, accountSoulIdOf } = await import("../../lib/production/cast");
   const project = { id: "draft-1", productionProjectId: "prod-1" };
-  const soul = { id: "soul_a", status: "ready" as const, renderModel: "hf-soul-cinema", projectId: null, name: "Mira", description: "", subjectType: "character" as const,
+  const soul = { id: "soul_a", status: "ready" as const, renderModel: "hf-soul-cinema", projectId: null, name: "Wren", description: "", subjectType: "character" as const,
     references: [], previewUrl: null, createdAt: 0, updatedAt: 0, creditsBilled: 38, error: null };
-  const mira = { ...newEntry("character", "Mira", "", "Mira on the quay"), identityId: "soul_a", soulBatch: 4 as const, soulResolution: "1080p" as const, soulStrength: 0.8 };
-  const input = castRenderInput(project, mira, soul)!;
-  expect(generationRequestBody(input)).toEqual({ prompt: "Mira on the quay", model: "hf-soul-cinema", projectId: "prod-1", shotId: "", ratio: "3:4", resolution: "1080p", duration: 5,
+  const wren = { ...newEntry("character", "Wren", "", "Wren on the quay"), identityId: "soul_a", soulBatch: 4 as const, soulResolution: "1080p" as const, soulStrength: 0.8 };
+  const input = castRenderInput(project, wren, soul)!;
+  expect(generationRequestBody(input)).toEqual({ prompt: "Wren on the quay", model: "hf-soul-cinema", projectId: "prod-1", shotId: "", ratio: "3:4", resolution: "1080p", duration: 5,
     refine: false, references: [], soulIdentityId: "soul_a", soulStrength: 0.8, workbenchProjectId: "draft-1", soulBatch: 4 });
-  expect(castRenderInput(project, { ...mira, prompt: " " }, soul)).toBeNull();
-  expect(castRenderInput(project, { ...mira, identityId: "soul_b" }, soul)).toBeNull();
-  expect(castRenderInput(project, { ...mira, kind: "element" }, soul)).toBeNull();
-  expect(castRenderInput({ id: "draft-1" }, mira, soul)).toBeNull();
+  expect(castRenderInput(project, { ...wren, prompt: " " }, soul)).toBeNull();
+  expect(castRenderInput(project, { ...wren, identityId: "soul_b" }, soul)).toBeNull();
+  expect(castRenderInput(project, { ...wren, kind: "element" }, soul)).toBeNull();
+  expect(castRenderInput({ id: "draft-1" }, wren, soul)).toBeNull();
   for (const unusable of [{ status: "training" as const }, { renderModel: null }, { renderModel: "hf-soul-character" }]) {
     expect(renderableIdentity({ ...soul, ...unusable })).toBe(false);
-    expect(castRenderInput(project, mira, { ...soul, ...unusable })).toBeNull();
+    expect(castRenderInput(project, wren, { ...soul, ...unusable })).toBeNull();
   }
-  expect(castRenderInput(project, { ...mira, soulStrength: 0.35 }, soul)!.soul!.soulStrength).toBe(1);
+  expect(castRenderInput(project, { ...wren, soulStrength: 0.35 }, soul)!.soul!.soulStrength).toBe(1);
   expect(renderedStills({ id: "gen_a", params: { soulBatchIds: ["gen_a", "gen_a-2", "gen_a-3", "gen_a-4"] } })).toEqual(["gen_a", "gen_a-2", "gen_a-3", "gen_a-4"]);
   expect(renderedStills({ id: "gen_a", params: { soulBatchIds: ["gen_b"] } })).toEqual(["gen_a"]);
   expect(renderedStills({ id: "gen_a", params: {} })).toEqual(["gen_a"]);
@@ -503,19 +503,19 @@ test("the Cast page's request and filing: a character, its own identity, its fam
   /* Built earlier with a stills model that made a place or a persona: read-only, named without the old family word. Never built, or the two character models: editable. */
   const built = { takes: [{ genId: "gen_hfc_1", at: "2026-09-24T00:00:00.000Z" }] };
   expect(retiredModelOf({ ...newEntry("element", "Harbour"), model: "soul_location", ...built })).toBe("Location still");
-  expect(retiredModelOf({ ...newEntry("character", "Nova"), model: "soul_cast", elementId: "el_1" })).toBe("Persona still");
+  expect(retiredModelOf({ ...newEntry("character", "Nova"), model: "soul_cast", elementId: "el_1" })).toBe("Identity still");
   expect(retiredModelOf({ ...newEntry("element", "Harbour"), model: "soul_location" })).toBeNull();
-  expect(retiredModelOf({ ...newEntry("character", "Mira"), model: "soul_cinematic", ...built })).toBeNull();
-  expect(retiredModelOf({ ...newEntry("character", "Mira"), model: "soul_2", ...built })).toBeNull();
-  expect(retiredModelOf({ ...newEntry("character", "Mira"), model: "soul_future_model", ...built })).toBe("an earlier engine");
-  expect(accountSoulIdOf({ ...newEntry("character", "Mira"), soulId: "acct-soul-1" })).toBe("acct-soul-1");
-  expect(accountSoulIdOf({ ...newEntry("character", "Mira"), soulId: "acct-soul-1", identityId: "soul_a" })).toBeNull();
+  expect(retiredModelOf({ ...newEntry("character", "Wren"), model: "soul_cinematic", ...built })).toBeNull();
+  expect(retiredModelOf({ ...newEntry("character", "Wren"), model: "soul_2", ...built })).toBeNull();
+  expect(retiredModelOf({ ...newEntry("character", "Wren"), model: "soul_future_model", ...built })).toBe("an earlier engine");
+  expect(accountSoulIdOf({ ...newEntry("character", "Wren"), soulId: "acct-soul-1" })).toBe("acct-soul-1");
+  expect(accountSoulIdOf({ ...newEntry("character", "Wren"), soulId: "acct-soul-1", identityId: "soul_a" })).toBeNull();
   expect(accountSoulIdOf({ ...newEntry("element", "Lamp"), soulId: "acct-soul-1" })).toBeNull();
 });
 
 test("old projects keep loading: every saved soul_* model and the account fields still validate, beside the key's new fields", async () => {
   const { productionSchema } = await import("../../lib/workbench/studio-schema");
-  const entry = (patch: Record<string, unknown>) => ({ id: "cast-1", name: "Mira", kind: "character", description: "", prompt: "", takes: [], ...patch });
+  const entry = (patch: Record<string, unknown>) => ({ id: "cast-1", name: "Wren", kind: "character", description: "", prompt: "", takes: [], ...patch });
   for (const model of ["soul_cinematic", "soul_2", "soul_location", "soul_cast", "soul_future_model"])
     expect(productionSchema.safeParse({ cast: { entries: [entry({ model, soulId: "acct-soul", quality: "2k", budget: 50, elementId: "el_1", job: { id: requestId, status: "submitted" } })] } }).success, model).toBe(true);
   expect(productionSchema.safeParse({ cast: { entries: [entry({ identityId: "soul_a", soulBatch: 4, soulResolution: "1080p", soulStrength: 0.6,

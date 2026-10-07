@@ -1,35 +1,51 @@
-import { goWorkbenchStage as stage, openWorkbenchInspector } from "./helpers/workbenchNavigation";
 import { test, expect, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { seedProject, type Project } from "../lib/workbench/studio";
-import { legacyShell } from "./helpers/legacyShell";
 
 /**
  * Edit & Sound: quote → generate → clip on the right lane at the playhead.
  *
+ * Retargeted from the old Studio's edit stage (retired in Release 1) to Edit & Sound over the board: the Cut card's "Open
+ * Edit & Sound", then New voice line / New sound effect / New music, which mount the same SoundGenerate panel and its quote
+ * → ceiling → key → placement rules. The playhead is the transport's frame: a click on a picture clip moves it to that clip's
+ * start. The board and its Edit & Sound are the desktop's (the phone's Cut is watch-and-approve only).
+ *
  * The audio routes, the job feed and the project save are mocked at the
  * browser (no paid call, no engine, no stored generation to validate), the
- * way tests/project-generation-workbench.spec.ts does for node audio. A
+ * way the old Gen node-audio spec did. A
  * finished generation arrives as a succeeded job under the lane node's shot,
  * which the production job recovery turns into a project asset; the panel
  * then places it, and the placement shows up in the next project save.
  */
 type Submission = { key: string | undefined; body: Record<string, unknown> };
+const DESKTOPS = ["workbench-1440x900", "workbench-1920x1080"];
 const SCRIPT = "An isolated voice-over line for the edit.";
 
-async function movePlayhead(page: Page, to: number) {
-  const playhead = page.getByRole("slider", { name: "Sequence playhead" });
-  await playhead.focus();
-  await playhead.press("Home");
-  await expect(playhead).toHaveAttribute("aria-valuenow", "0");
-  for (let i = 0; i < to; i++) {
-    await playhead.press("ArrowRight");
-    await expect(playhead).toHaveAttribute("aria-valuenow", String(i + 1));
-  }
+/** Edit & Sound over the board, on one of its three new-sound doors. The picture lane's clips are the cut's two 72-frame shots. */
+async function openComposer(page: Page, projectId: string, door: "es-new-voice" | "es-new-effect" | "es-new-music") {
+  await page.goto(`/suites?project=${projectId}&view=board&region=cut`);
+  await expect(page.getByTestId("cut-card")).toBeVisible();
+  /* The press can land before the page is hydrated (a dev server that has just compiled it): press again until it opens. */
+  await expect(async () => {
+    await page.getByTestId("cut-open-edit").click({ timeout: 3_000 });
+    await expect(page.getByTestId("edit-sound")).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 40_000 });
+  await expect(page.getByTestId("es")).toBeVisible();
+  const opener = page.getByTestId(door);
+  if ((await opener.getAttribute("aria-expanded")) !== "true") await opener.click();
+  const panel = page.getByTestId("es-compose").getByRole("region", { name: "Generate sound" });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+/** The playhead at a picture clip's start (frame 0 for the first, 72 for the second). */
+async function playheadAt(page: Page, clip: 0 | 1) {
+  await page.getByTestId("es-clip").nth(clip).click();
 }
 
 test("Edit & Sound quotes, generates and places voice-over, sound effect and music on their lanes at the playhead", async ({ page }, info) => {
+  test.skip(!DESKTOPS.includes(info.project.name), "the board and its Edit & Sound are the desktop's");
   await signInLocally(page.request);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -115,11 +131,9 @@ test("Edit & Sound quotes, generates and places voice-over, sound effect and mus
   });
 
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
-  await page.goto(await legacyShell(page, "/workbench"));
-  await stage(page, "edit");
-  await openWorkbenchInspector(page, "sound");
-  const panel = page.getByRole("region", { name: "Generate sound" });
-  await panel.scrollIntoViewIfNeeded();
+  const panel = await openComposer(page, project.id, "es-new-voice");
+  /* The mix is folded away until asked for; its clip rows are read below. */
+  await page.getByTestId("es-tool-mix").click();
   await expect(panel.getByRole("group", { name: "Sound type" }).getByRole("button", { name: "Voice-over", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(panel.getByLabel("Voice", { exact: true })).toHaveValue("mockvoice01");
   await expect(panel.getByLabel("Speech model", { exact: true })).toHaveValue("mock-speech");
@@ -127,16 +141,16 @@ test("Edit & Sound quotes, generates and places voice-over, sound effect and mus
   const generate = panel.locator("[data-sound-generate]");
   await expect(generate).toBeDisabled();
 
-  // Voice-over at frame 12 on the dialogue lane.
-  await movePlayhead(page, 12);
-  await expect(panel).toContainText("frame 12");
+  // Voice-over at frame 72 (the second shot's start) on the dialogue lane.
+  await playheadAt(page, 1);
+  await expect(panel).toContainText("frame 72");
   await panel.getByLabel("Voice", { exact: true }).selectOption("mockvoice02");
   await panel.getByLabel("Script", { exact: true }).fill(SCRIPT);
   await expect(generate).toContainText("Generate voice-over · 14 cr");
   await expect(generate).toBeEnabled();
   await generate.click();
   await expect(panel.getByRole("status")).toContainText("Voice-over submitted");
-  await expect(panel.getByRole("list", { name: "Sound in progress" })).toContainText("Voice-over · Dialogue lane at 00:00");
+  await expect(panel.getByRole("list", { name: "Sound in progress" })).toContainText(/Voice-over · Dialogue lane at 00:0\d/);
   expect(submissions).toHaveLength(1);
   expect(submissions[0].key).toBeTruthy();
   expect(submissions[0].body).toMatchObject({ task: "speech", text: SCRIPT, voiceId: "mockvoice02", modelId: "mock-speech", maxCredits: 14, projectId: "production-fixture" });
@@ -150,7 +164,7 @@ test("Edit & Sound quotes, generates and places voice-over, sound effect and mus
   await expect.poll(() => current().audioClips?.length ?? 0, { timeout: 45_000 }).toBe(1);
   expect(current().audioClips![0]).toMatchObject({
     lane: "dialogue",
-    startFrame: 12,
+    startFrame: 72,
     sourceIn: 0,
     duration: Math.ceil(SCRIPT.length / 15) * fps,
     gainDb: 0,
@@ -166,23 +180,8 @@ test("Edit & Sound quotes, generates and places voice-over, sound effect and mus
   const clip1 = mix.getByRole("group", { name: "Sound clip 1" });
   await expect(clip1).toContainText("Voice-over · v1");
   await expect(clip1.getByLabel("Sound lane", { exact: true })).toHaveValue("dialogue");
-  await expect(clip1.getByLabel("Timeline start", { exact: true })).toHaveValue("12");
-  if (page.viewportSize()!.width < 760) {
-    /* The phone floor: 12px text and 44px targets in the mixer, Mute / Solo / Remove clip included. */
-    const floor = await mix.evaluate((root) => {
-      const shown = (el: Element) => (el as HTMLElement).offsetParent !== null;
-      const small = Array.from(root.querySelectorAll("*"))
-        .filter((el) => shown(el) && Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim()))
-        .filter((el) => Number.parseFloat(getComputedStyle(el).fontSize) < 12)
-        .map((el) => `${getComputedStyle(el).fontSize}: ${el.textContent?.trim().slice(0, 30)}`);
-      const short = Array.from(root.querySelectorAll("button, label"))
-        .filter((el) => shown(el) && Math.round(el.getBoundingClientRect().height * 100) / 100 < 44)
-        .map((el) => `${Math.round(el.getBoundingClientRect().height)}px: ${el.textContent?.trim().slice(0, 30)}`);
-      return { small, short };
-    });
-    expect(floor).toEqual({ small: [], short: [] });
-  }
-  await expect(panel.getByRole("status")).toContainText("Voice-over placed on the dialogue lane at 00:00");
+  await expect(clip1.getByLabel("Timeline start", { exact: true })).toHaveValue("72");
+  await expect(page.getByTestId("es").getByRole("status").filter({ hasText: "Voice-over placed on the dialogue lane at" })).toBeVisible();
   await expect(panel.getByRole("list", { name: "Sound in progress" })).toHaveCount(0);
 
   // Sound effect: three seconds at the same playhead, on the SFX lane.
@@ -198,10 +197,10 @@ test("Edit & Sound quotes, generates and places voice-over, sound effect and mus
   expect(submissions[1].body.shotId).not.toBe(submissions[0].body.shotId);
   finished = 2;
   await expect.poll(() => current().audioClips?.length ?? 0, { timeout: 45_000 }).toBe(2);
-  expect(current().audioClips![1]).toMatchObject({ lane: "sfx", startFrame: 12, duration: 3 * fps });
+  expect(current().audioClips![1]).toMatchObject({ lane: "sfx", startFrame: 72, duration: 3 * fps });
 
   // Music: ten seconds, instrumental, on the music lane, from a moved playhead.
-  await movePlayhead(page, 30);
+  await playheadAt(page, 0);
   await panel.getByRole("group", { name: "Sound type" }).getByRole("button", { name: "Music", exact: true }).click();
   await expect(panel.getByLabel("Sound lane", { exact: true })).toHaveValue("music");
   await panel.getByLabel("Describe the music", { exact: true }).fill("Slow piano, warm room tone.");
@@ -215,10 +214,10 @@ test("Edit & Sound quotes, generates and places voice-over, sound effect and mus
   finished = 3;
   await expect.poll(() => current().audioClips?.length ?? 0, { timeout: 45_000 }).toBe(3);
   // Ten seconds asked for, but the 6 s cut ends first: the clip ends with the cut so the mix and render still work.
-  expect(current().audioClips![2]).toMatchObject({ lane: "music", startFrame: 30, duration: 2 * 72 - 30 });
+  expect(current().audioClips![2]).toMatchObject({ lane: "music", startFrame: 0, duration: 2 * 72 });
   const clip3 = mix.getByRole("group", { name: "Sound clip 3" });
   await expect(clip3).toContainText("Music · v1");
-  await expect(clip3.getByLabel("Timeline start", { exact: true })).toHaveValue("30");
+  await expect(clip3.getByLabel("Timeline start", { exact: true })).toHaveValue("0");
 
   // Three lane nodes, one per task; every generation's idempotency key is its own; the edit still validates.
   expect(current().nodes.filter((n) => n.type === "audio" && n.role?.startsWith("sound-lane:")).map((n) => n.title).sort()).toEqual(["Music", "Sound effects", "Voice-over"]);
@@ -290,10 +289,7 @@ test("a sound request still mapping its lane when another project opens leaves t
   });
 
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: first.id });
-  await page.goto(await legacyShell(page, "/workbench"));
-  await stage(page, "edit");
-  await openWorkbenchInspector(page, "sound");
-  const panel = page.getByRole("region", { name: "Generate sound" });
+  const panel = await openComposer(page, first.id, "es-new-voice");
   await expect(panel.getByLabel("Voice", { exact: true })).toHaveValue("mockvoice01");
   await panel.getByLabel("Script", { exact: true }).fill(SCRIPT);
   const generate = panel.locator("[data-sound-generate]");
@@ -302,9 +298,9 @@ test("a sound request still mapping its lane when another project opens leaves t
   await expect.poll(() => mapping).not.toBe("");
 
   /* The second project opens while the first one's lane is still being mapped. */
-  await page.locator(".project-switch").click();
-  await page.getByRole("menuitem", { name: "Second edit" }).click();
-  await expect(page.locator(".project-switch")).toContainText("Second edit");
+  await page.locator('[data-suite-tab="home"]').click();
+  await page.locator(`[data-testid="home-project"][data-project="${second.id}"]`).click();
+  await expect(page.locator('[data-suite-tab="project"] .gx-seg-label')).toHaveText("Second edit");
   release();
   /* The first project's request carries on to its own submission… */
   await expect.poll(() => submissions.length).toBe(1);

@@ -3,7 +3,7 @@ import { parseScreenplay } from "@/lib/workbench/screenplay";
 import type { PageId } from "./types";
 
 /**
- * The spec-card template's content (03-pages.md, "Spec-card template").
+ * The spec-card template's content.
  *
  * Copy is carried from the prototype's CARDS constant, with two kinds of
  * change: vendor names are neutral (brief decision 5), and every count the
@@ -248,7 +248,7 @@ export const SPEC_PAGES: Partial<Record<PageId, SpecPage>> = {
         { name: "Version history", desc: "Every export keeps its inputs, so a delivery can be reproduced exactly.", chips: ["manifest"], owner: "Post super", tool: "package" },
       ] },
       { title: "PACKAGE", note: "", cards: [
-        { name: "Master", desc: "MP4 or WebM at 720p or 1080p, rendered from the approved takes on this device.", chips: ["MP4", "WebM"], owner: "Finishing", tool: "movie" },
+        { name: "Master", desc: "MP4 or WebM at 720p or 1080p, encoded from the approved takes in your browser.", chips: ["MP4", "WebM"], owner: "Finishing", tool: "movie" },
         { name: "Social cuts", desc: "9:16 and 1:1 reframes from the same master.", chips: ["9:16", "1:1"], owner: "Editor" },
         { name: "Handoff", desc: "Originals, stems and the edit list as one package.", chips: ["originals", "stems"], owner: "Post super", plan: true, tool: "package" },
       ] },

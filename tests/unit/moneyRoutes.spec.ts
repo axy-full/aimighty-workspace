@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { alignLedgerUnit } from "../helpers/ledgerUnit";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -16,6 +17,8 @@ let priorCreditValue: string | undefined;
 test.beforeEach(() => { priorCreditValue = process.env.CREDIT_USD; process.env.CREDIT_USD = "0.10"; });
 test.afterEach(() => { if (priorCreditValue === undefined) delete process.env.CREDIT_USD; else process.env.CREDIT_USD = priorCreditValue; });
 process.env.ENGINE_MOCK = "1";
+/* Before any fixture row: a fresh platform database counts in today's price (lib/ledgerUnit.ts). */
+test.beforeAll(async () => { await alignLedgerUnit(); });
 
 function workspace(id: string, credits: boolean): TenantWorkspace {
   return {
@@ -143,6 +146,7 @@ async function writerRoutes(ws: TenantWorkspace, text: string) {
     "@/lib/credits": await import("../../lib/credits"),
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/paidText": paid,
+    "@/lib/demo/spend-guard.server": { sampleWorkspaceOff: async () => null },
     "@/lib/generationRequests": { withGenerationRequest: (_req: Request, _user: string, run: () => Promise<Response>) => run() },
   };
   return {

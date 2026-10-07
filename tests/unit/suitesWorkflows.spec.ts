@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { WORKFLOW_SURFACES, workflowReason } from "../../lib/shell/workflows";
 import { VOICE_TOOL_NAMES } from "../../lib/higgsfield-consumer/voice-tools";
 
-/** FINAL_SPEC §4 › Workflows: the surfaces the brief names, each on an advertised tool, and the one reason a tool cannot run. */
+/** Workflows: the surfaces the brief names, each on an advertised tool, and the one reason a tool cannot run. */
 test("the surfaces are the brief's: Deliver › Social cuts = reframe, Edit › Dub · Change voice, Gen › Analysis; nothing without a tool behind it", () => {
   expect(WORKFLOW_SURFACES["studio:deliver"].map((s) => s.tool)).toEqual(["reframe"]);
   expect(WORKFLOW_SURFACES["studio:edit"].map((s) => s.tool)).toEqual(["dubbing", "voice_change"]);
@@ -15,7 +15,7 @@ test("a tool says the one thing in its way, in order: project, owner, connection
   const cuts = WORKFLOW_SURFACES["studio:deliver"][0];
   const all = { voice: true, dubbing: true, analysis: false, reframe: true };
   const ok = { owner: true, connected: true, suspended: false };
-  expect(workflowReason(cuts, { hasProject: false, capability: ok, capabilities: all })).toBe("Save your project first.");
+  expect(workflowReason(cuts, { hasProject: false, capability: ok, capabilities: all })).toBe("Open a project first.");
   expect(workflowReason(cuts, { hasProject: true, capability: null, capabilities: null })).toBe("Reading the connected account…");
   expect(workflowReason(cuts, { hasProject: true, capability: { ...ok, owner: false }, capabilities: all })).toBe("The workspace owner uses the connected account.");
   expect(workflowReason(cuts, { hasProject: true, capability: { ...ok, connected: false }, capabilities: all })).toBe("Connect the owner’s account in Workspace › Engines.");

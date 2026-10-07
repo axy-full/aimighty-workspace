@@ -34,7 +34,7 @@ export type StarterCast = { name: string; kind: "character" | "location" | "prop
 export type StarterProduction = { name: string; code: string; description: string; shots: StarterShot[]; cast: StarterCast[] };
 
 export const STARTER_CAST: StarterCast = {
-  name: "Mara",
+  name: "Courier",
   kind: "character",
   description: "A courier in her thirties. Cropped dark hair, a weathered orange jacket, a canvas bag across the chest. Always mid-errand, never posed.",
 };
@@ -49,7 +49,7 @@ export const STARTER_PRODUCTION: StarterProduction = {
       description: "An establishing shot: a quiet street at dawn, wet from the night, the first light along the rooftops.",
       setup: { shot: "evs", time: "dawn" }, cast: [] },
     { code: "SH020", title: "The courier", planned: 5,
-      description: "@Mara crosses the street with the bag held close, the camera pushing in as she passes.",
+      description: "@Courier crosses the street with the bag held close, the camera pushing in as she passes.",
       setup: { shot: "ms", move: "push" }, cast: [STARTER_CAST.name] },
     { code: "SH030", title: "The hand-off", planned: 5,
       description: "A close-up: the package changes hands on a doorstep, soft light, nothing said.",

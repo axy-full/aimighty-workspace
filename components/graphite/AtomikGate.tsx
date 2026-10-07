@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useAtomik } from "@/lib/workspace/atomik-host";
-import { formatCredits } from "@/lib/workspace/run-engine";
+import { quotePrice } from "@/lib/workspace/run-engine";
 import { useWorkspace } from "@/lib/workspace/state";
 
 /**
@@ -23,7 +23,7 @@ export function AtomikGate() {
   if (sheetOpen) return null;
 
   if (run?.status === "waiting") {
-    const price = run.quote ? formatCredits(run.quote.credits, run.quote.unit) : null;
+    const price = run.quote ? quotePrice(run.quote) : null;
     return (
       <div className="gx-gate" role="group" aria-label="Approval required" data-testid="suites-atomik-gate">
         <div className="gx-gate-text">

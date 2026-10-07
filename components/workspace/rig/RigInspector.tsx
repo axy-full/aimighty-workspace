@@ -3,6 +3,8 @@ import { rigUndoSink } from "@/lib/shell/rig-commands";
 import { assetPreview, previewAttrs } from "@/lib/preview";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatCredits, formatTokens } from "@/lib/workspace/cost";
+import { isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
+import { cinemaPriceWords } from "@/lib/cinemaHold";
 import { engineLabel, shotEngine, shotEngines } from "@/lib/workspace/engines";
 import { mediaBands } from "@/lib/workspace/format";
 import { shotInputs, shotPreviewAsset, shotVersions, stepDuration } from "@/lib/workspace/rig";
@@ -231,7 +233,9 @@ function Controls({ shot, locked }: { shot: RigShot; locked: boolean }) {
   const edit = (patch: Parameters<typeof rig.patchShot>[1]) => setError(rig.patchShot(shot.id, patch));
   /* Notes are the notes alone; the shot's prompt has its own box above. */
   const notes = rig.selectedNode ? shotNotesOnly(rig.selectedNode) : shot.note;
-  const quote = rig.quote?.state === "ready" && rig.quote.credits !== null ? formatCredits(rig.quote.credits) : null;
+  /* A Cinema Studio shot holds "about N cr, at most 3N cr", what its Generate approves (lib/cinemaHold.ts). */
+  const quote = rig.quote?.state === "ready" && rig.quote.credits !== null
+    ? isCinemaStudioModel(shot.engine) ? cinemaPriceWords(rig.quote.credits) : formatCredits(rig.quote.credits) : null;
   /* The Estimate is the Generate button's own figure. With references bound that is the
      reference-inclusive live quote; the settings-only estimate would read lower than the button. */
   const live = rig.selected?.id === shot.id ? rig.quote : null;

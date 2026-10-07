@@ -3,7 +3,6 @@ import { gunzipSync } from "node:zlib";
 import sharp from "sharp";
 import { signInLocally } from "./workbenchLocal";
 import { forbidPaidWork, mockLibrary, mockMedia, upload } from "./workspaceFixtures";
-import { smallTargets, smallText } from "../phoneFloors";
 import { newProject, type Asset, type Project } from "../../lib/workbench/studio";
 import { saveSchema } from "../../lib/workbench/studio-schema";
 
@@ -17,7 +16,7 @@ export const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x
 export const png = (background = "#2b4f6e", width = 640, height = 480) => sharp({ create: { width, height, channels: 3, background } }).png().toBuffer();
 
 export const still = (id: string, fields: Partial<Asset> = {}): Asset => ({ id, uploadId: id, url: `/api/uploads/${id}`, kind: "image", category: "Product", name: `${id}.webp`, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [], ...fields });
-export const fixture = (fields: Partial<Project> = {}): Project => ({ ...newProject("Northline launch"), id: "ws-northline", productionProjectId: "prod-northline", shotMappings: {}, ...fields });
+export const fixture = (fields: Partial<Project> = {}): Project => ({ ...newProject("Granite launch"), id: "ws-granite", productionProjectId: "prod-granite", shotMappings: {}, ...fields });
 
 export type Store = { project: Project; revision: number; saves: number; refused: string[] };
 /** The project store as the route keeps it: every save checked against the real schema, revision by revision. */
@@ -44,11 +43,41 @@ export async function projectStore(page: Page, start: Project): Promise<Store> {
 }
 
 export type Seen = { errors: string[]; account: string[]; paid: string[]; reads: Record<string, unknown>[]; store: Store };
+
 /**
- * Business at `sp`, on `start`, signed in locally (an owner, unless the page is already a member's). Records page
- * errors, any POST to a connected-account route, and every paid POST (a render or an agent run).
+ * Where each old Business page lives on the Ads board (lib/shell/ads-social.ts rows: `?suite=moleculr&page=marketing&sp=<sp>`
+ * is redirected to these for every workspace), and the Edit panel (`ads-panel`, `data-panel`) the address opens on that card.
+ * Setup has no page of its own now: its address opens frame 1, the cards Brand kit, Product facts and Reference ad.
  */
-export async function openBusiness(page: Page, sp: string, start: Project, options: { member?: boolean; routes?: () => Promise<unknown> } = {}): Promise<Seen> {
+export const ADS_ADDRESS = {
+  brand: { frame: "1", card: "brand", panel: "brand" },
+  product: { frame: "1", card: "product", panel: "product" },
+  reference: { frame: "1", card: "reference", panel: "reference" },
+  format: { frame: "2", card: "formats", panel: "formats" },
+  hooks: { frame: "2", card: "hooks", panel: "hooks" },
+  dtc: { frame: "2", card: "image-ad", panel: null },
+  design: { frame: "3", card: null, panel: null },
+  setup: { frame: "1", card: null, panel: null },
+} as const;
+export type AdsPage = keyof typeof ADS_ADDRESS;
+/** The Ads board's address for an old Business page, on the project `id`. */
+export const adsBoardAddress = (sp: AdsPage, id: string) => {
+  const at = ADS_ADDRESS[sp];
+  return `/suites?project=${id}&view=board&kind=ads&frame=${at.frame}${at.card ? `&card=${at.card}` : ""}`;
+};
+/** The address of an old Business page; the shell redirects it to `adsBoardAddress`. */
+export const oldBusinessAddress = (sp: string, id?: string) => `/suites?suite=moleculr&page=marketing&sp=${sp}${id ? `&project=${id}` : ""}`;
+
+/** A phone draws no canvas: the Ads board's address opens the project's Record (tests/demo-s10-phone-record-workbench.spec.ts). */
+export const onPhone = (project: string) => PHONES.includes(project);
+export const NO_PHONE_BOARD = "a phone draws no Ads board: its address opens the project's Record (covered by suites-business-workbench 'on a phone', demo-s11-ads 'at every size' and demo-s10-phone-record)";
+
+/**
+ * The Ads board at the card of the old Business page `sp`, on `start`, signed in locally (an owner, unless the page is already a member's).
+ * Waits for the board and the Edit panel that card opens. Records page errors, any POST to a connected-account route, and every
+ * paid POST (a render or an agent run).
+ */
+export async function openBusiness(page: Page, sp: AdsPage, start: Project, options: { member?: boolean; routes?: () => Promise<unknown> } = {}): Promise<Seen> {
   if (!options.member) await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -66,15 +95,18 @@ export async function openBusiness(page: Page, sp: string, start: Project, optio
       if (!body?.quoteOnly) seen.paid.push(path);
     }
   });
-  await page.goto(`/suites?suite=moleculr&page=marketing&sp=${sp}&project=${start.id}`);
-  await expect(page.getByTestId("project-name")).toHaveText(start.name);
+  await page.goto(adsBoardAddress(sp, start.id));
+  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
+  const at = ADS_ADDRESS[sp];
+  if (at.panel) await expect(page.getByTestId("ads-panel")).toHaveAttribute("data-panel", at.panel, { timeout: 30_000 });
+  if (sp === "design") await expect(page.getByTestId("ads-designer")).toBeVisible({ timeout: 30_000 });
   return seen;
 }
 
 /**
  * The functional labels in `scope` dimmer than #7C7C84 as they land on screen: the colour's alpha and any opacity
  * composited over the ground above it. The measure of tests/phoneFloors.ts › dimLabels, one step stricter, as in
- * tests/suites-next-actions-workbench.spec.ts: a layer painted by a gradient, an image or a translucent fill counts as black
+ * the spec it was written for (since removed with the old Studio pages): a layer painted by a gradient, an image or a translucent fill counts as black
  * beneath it, the darkest ground there is, so the estimate is never brighter than the screen (the translucent cards
  * these pages sit on are gradients).
  */
@@ -121,22 +153,13 @@ export async function labelsUnderFloor(page: Page, scope: string): Promise<strin
 }
 
 /**
- * The floors at every size: nothing scrolls sideways, labels read at #7C7C84; on a phone every target in the tool is
- * 44px, no text is under 12px, and at the end of the page `last` sits above the floating tab bar.
+ * The floors on the canvas (a phone draws none, see NO_PHONE_BOARD): nothing scrolls sideways, the tool fits its panel and its
+ * functional labels read at #7C7C84.
  */
-export async function expectBusinessFloors(page: Page, project: string, tool: string, last: string) {
+export async function expectBusinessFloors(page: Page, tool: string) {
   const root = `[data-testid="${tool}"]`;
   await page.locator(root).evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => null))));
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal scroll").toBe(true);
   expect(await page.locator(root).evaluate((el) => el.scrollWidth <= el.clientWidth + 1), `${tool} fits its width`).toBe(true);
   expect(await labelsUnderFloor(page, root), `${tool}: labels under #7C7C84`).toEqual([]);
-  if (!PHONES.includes(project)) return;
-  expect(await smallTargets(page, root), `${tool}: targets under 44×44`).toEqual([]);
-  expect(await smallText(page, ".gx-legacy"), "text under 12px").toEqual([]);
-  const lastRow = page.getByTestId(last);
-  await lastRow.scrollIntoViewIfNeeded();
-  await page.getByTestId("content").evaluate((el) => { el.scrollTop = el.scrollHeight; });
-  const bar = await page.locator(".gx-tabbar").boundingBox();
-  const row = await lastRow.boundingBox();
-  if (bar && row) expect(row.y + row.height, "the last row clears the tab bar").toBeLessThanOrEqual(bar.y + 1);
 }

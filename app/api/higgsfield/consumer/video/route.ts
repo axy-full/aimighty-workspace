@@ -16,7 +16,7 @@ import {
   consumerMarketingJobs, quoteConsumerMarketingVideo, submitConsumerMarketingVideo,
   pollConsumerMarketingVideo,
 } from "@/lib/higgsfield-consumer/video-service";
-import { asksRetired, retiredResponse } from "@/lib/higgsfield-consumer/retired";
+import { asksRetired, retiredResponse, signInOff } from "@/lib/higgsfield-consumer/retired";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,7 +27,7 @@ const quote = z.object({ action: z.literal("quote"), draftId: id, input: consume
 const rehearse = z.object({ action: z.literal("quote-rehearsal"), idempotencyKey: z.uuid() }).strict();
 const submit = z.object({ action: z.literal("submit"), draftId: id, id: z.uuid(), workspaceId: z.uuid(), credits: z.number().nonnegative().max(100000) }).strict();
 const poll = z.object({ action: z.literal("status"), draftId: id, id: z.uuid() }).strict();
-/** FINAL_SPEC §2.3: the account's setup items, by type; read-only, never billed. */
+/** The account's setup items, by type; read-only, never billed. */
 const setup = z.object({ action: z.literal("setup"), types: z.array(z.enum(SETUP_TYPE_IDS)).min(1).max(SETUP_TYPE_IDS.length).optional() }).strict();
 const requestSchema = z.discriminatedUnion("action", [quote, rehearse, submit, poll, setup]);
 /** Retired with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts): pricing, rehearsing and starting a marketing video, and reading the account's setup lists. `status` and the saved jobs (GET) stay. */
@@ -54,7 +54,7 @@ function problem(error: unknown) {
     return Response.json({ error: "Send a valid JSON marketing request." }, { status: 400, headers });
   return Response.json({ error: "The connected account could not complete this request. Check the saved job before trying again." }, { status: 503, headers });
 }
-export const GET = withTenant(async (req: Request) => {
+const keptGET = withTenant(async (req: Request) => {
   const owner = await requireOwner(); if (owner.response) return owner.response;
   const draftId = new URL(req.url).searchParams.get("draftId") ?? undefined;
   if (draftId !== undefined && !id.safeParse(draftId).success)
@@ -62,7 +62,7 @@ export const GET = withTenant(async (req: Request) => {
   try { return Response.json({ jobs: await consumerMarketingJobs(owner.user.id, draftId) }, { headers }); }
   catch (error) { return problem(error); }
 }, { requireRequestScope: true });
-export const POST = withTenant(async (req: Request) => {
+const keptPOST = withTenant(async (req: Request) => {
   const owner = await requireOwner(); if (owner.response) return owner.response;
   try {
     const raw = JSON.parse(await readBoundedText(req, 24000));
@@ -82,3 +82,7 @@ export const POST = withTenant(async (req: Request) => {
     return Response.json({ job: await quoteConsumerMarketingVideo(owner.user.id, draftId, input, body.idempotencyKey) }, { headers });
   } catch (error) { return problem(error); }
 }, { requireRequestScope: true });
+
+/* Off for Release 1 with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts › signInOff): every method answers 410 and never reads a stored grant. */
+export const GET = signInOff(keptGET);
+export const POST = signInOff(keptPOST);

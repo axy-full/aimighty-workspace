@@ -10,4 +10,8 @@ export type AstraViewportActions = {
   frameSelection: () => void;
   downloadPng: () => void;
   getCamera: () => AstraScene['camera'];
+  /** Puts the viewport's camera at this pose now, without touching the scene (a move being played or scrubbed). */
+  setCamera: (camera: AstraScene['camera']) => void;
+  /** The view as it is now, as a PNG with no grid, axes or gizmo; null when the browser cannot export it. */
+  capturePng: () => Promise<Blob | null>;
 };

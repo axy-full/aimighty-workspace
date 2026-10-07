@@ -23,6 +23,7 @@ import { referenceAdBinding, validateReferenceAdBinding, type ReferenceAdBinding
 import { uid, type Asset, type Project, type Stage } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
 import { stableId } from "@/lib/workbench/stable-id";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 /**
  * Marketing Studio's whole flow, in one place: the four sections
@@ -114,7 +115,7 @@ export default function MarketingStudioFlow({
     if (!draft.live()) throw new Error("Open a saved project first.");
     const draftId = draft.latest().id;
     if (draft.latest().assets.length >= PROJECT_LIMITS.assets) throw new Error(`This project has reached its ${limitText(PROJECT_LIMITS.assets)}-asset limit.`);
-    if (!(await draft.ensureSaved(draftId))) throw new Error("Save this project before importing a product image.");
+    if (!(await draft.ensureSaved(draftId))) throw new SaveFailedError();
     if (!draft.owns(draftId)) throw new Error("The workspace changed. Return to this project before importing.");
     draft.beginUpload();
     try {

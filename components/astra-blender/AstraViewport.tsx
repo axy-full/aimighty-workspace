@@ -22,6 +22,8 @@ type Props = {
   onSelect: (id: string | null) => void;
   onTransform: (id: string, transform: AstraTransform) => void;
   onReady: (actions: AstraViewportActions | null) => void;
+  /** The viewport alone, for a host that draws its own labels: no corner text, notices at the reading size. */
+  quiet?: boolean;
 };
 
 function disposeTree(root: THREE.Object3D) {
@@ -115,6 +117,7 @@ export default function AstraViewport(props: Props) {
   const callbacks = useRef({ onSelect: props.onSelect, onTransform: props.onTransform, onReady: props.onReady });
   const [error, setError] = useState('');
   const [assetError, setAssetError] = useState('');
+  const quiet = Boolean(props.quiet);
   useEffect(() => { callbacks.current = { onSelect: props.onSelect, onTransform: props.onTransform, onReady: props.onReady }; }, [props.onSelect, props.onTransform, props.onReady]);
 
   useEffect(() => {
@@ -124,7 +127,7 @@ export default function AstraViewport(props: Props) {
     let renderer: THREE.WebGLRenderer;
     try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); }
     catch {
-      queueMicrotask(() => { if (!disposed) setError('3D preview needs WebGL. Scene controls, saving, and Blender exports remain available.'); });
+      queueMicrotask(() => { if (!disposed) setError(quiet ? 'The 3D view needs WebGL, which this browser does not have, so a frame cannot be saved from here.' : '3D preview needs WebGL. Scene controls, saving, and Blender exports remain available.'); });
       return () => { disposed = true; };
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -298,7 +301,7 @@ export default function AstraViewport(props: Props) {
     transform.addEventListener('objectChange', onChange);
     transform.addEventListener('change', invalidate);
     transform.addEventListener('mouseUp', onTransformEnd);
-    const onContextLost = (event: Event) => { event.preventDefault(); contextLost = true; cancelFrame(); setError('The browser lost its graphics connection. Reload the workspace to restore the viewport. Your scene is saved.'); };
+    const onContextLost = (event: Event) => { event.preventDefault(); contextLost = true; cancelFrame(); setError(quiet ? 'The browser lost its graphics connection. Close 3D blocking and open it again to restore the view. Changes not yet saved to the shot are lost.' : 'The browser lost its graphics connection. Reload the workspace to restore the viewport. Your scene is saved.'); };
     renderer.domElement.addEventListener('webglcontextlost', onContextLost);
 
     runtime.current = {
@@ -462,6 +465,25 @@ export default function AstraViewport(props: Props) {
         invalidate();
       },
       getCamera: () => ({ position: camera.position.toArray() as AstraVector3, target: orbit.target.toArray() as AstraVector3, focalLength: camera.getFocalLength() }),
+      setCamera: (next) => {
+        camera.position.fromArray(next.position);
+        camera.setFocalLength(next.focalLength);
+        orbit.target.fromArray(next.target);
+        orbit.update();
+        invalidate();
+      },
+      capturePng: () => new Promise<Blob | null>((resolve) => {
+        const shown = [grid.visible, axes.visible, box.visible, gizmo.visible];
+        grid.visible = axes.visible = box.visible = gizmo.visible = false;
+        try {
+          renderer.render(stage, camera);
+          renderer.domElement.toBlob((blob) => resolve(blob), 'image/png');
+        } catch { resolve(null); }
+        finally {
+          [grid.visible, axes.visible, box.visible, gizmo.visible] = shown;
+          invalidate();
+        }
+      }),
       downloadPng: () => {
         const shown = [grid.visible, axes.visible, box.visible, gizmo.visible];
         grid.visible = axes.visible = box.visible = gizmo.visible = false;
@@ -485,7 +507,7 @@ export default function AstraViewport(props: Props) {
   useEffect(() => { runtime.current?.setSelection(props.selectedId, props.playing); }, [props.selectedId, props.playing]);
   useEffect(() => { runtime.current?.setMode(props.mode); }, [props.mode]);
   useEffect(() => { runtime.current?.setGrid(props.grid); }, [props.grid]);
-  return <div className={styles.viewportRoot}>
+  return <div className={styles.viewportRoot} data-quiet={props.quiet || undefined}>
     <div className={styles.canvasHost} ref={host} />
     {error && <div className={styles.viewportError} role="status">{error}</div>}
     {assetError && <div className={styles.assetNotice} role="status">{assetError}</div>}

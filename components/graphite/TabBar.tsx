@@ -2,31 +2,38 @@
 import { useShell } from "@/lib/shell/state";
 import { Glyph, type GlyphName } from "./icons";
 
-type TabId = "home" | "gen" | "suites" | "assets" | "more";
+type TabId = "home" | "record" | "make" | "atomik";
 const TABS: { id: TabId; label: string; glyph: GlyphName }[] = [
   { id: "home", label: "Home", glyph: "home" },
-  { id: "gen", label: "Gen", glyph: "spark" },
-  { id: "suites", label: "Suites", glyph: "grid" },
-  { id: "assets", label: "Assets", glyph: "stack" },
-  { id: "more", label: "More", glyph: "panel" },
+  { id: "record", label: "Record", glyph: "doc" },
+  { id: "make", label: "Make", glyph: "spark" },
+  { id: "atomik", label: "Atomik", glyph: "atom" },
 ];
 
 /**
- * The phone's floating tab bar, shown below 768px only. Every tab is a route the shell already has: Home is the suite picker
- * ("Where to?"), Gen its composer, Suites the last non-Studio suite
- * (Business until one is chosen), Assets the Library's Assets tab, More the
- * Workspace. Studio lives behind the Home tile, so the Studio pages keep
- * Home lit. The header's suite tablist stays the one place a suite is picked.
+ * The phone's floating tab bar, below 768px, on every phone screen: Home · Record · Make · Atomik, as the design's phone
+ * frames draw it (design/particl-graphite/README.md § 3.6). It hides only over a full-screen review (the take previewer) and
+ * a plan's approval (the Atomik sheet): components/graphite/shell.css.
+ *
+ * Every tab is a place the shell already has. Home is the phone's "Where to?"; Record is the open project's own page, today's
+ * nearest to the design's project record — the Studio overview (its stages, what is running, its latest takes), until the
+ * record itself ships; Make is its panel; Atomik is Atomik's suite. Settings sit behind the avatar, and the Library behind the page
+ * head's Library button, so neither is a tab. A page that is not one of the four keeps the tab it belongs to lit: every other
+ * Studio page, Business, Viral and Crew are the project's.
  */
 export function TabBar() {
   const shell = useShell();
-  const active: TabId = shell.libOpen ? "assets" : shell.view === "gen" ? "gen" : shell.view === "workspace" ? "more" : shell.view === "crew" || shell.suite.id !== "studio" ? "suites" : "home";
+  const onHome = shell.view === "suite" && shell.suite.id === "studio" && shell.page.id === "home";
+  const active: TabId | null = shell.make ? "make"
+    : shell.view === "workspace" ? null
+    : shell.view === "crew" ? "record"
+    : shell.suite.id === "atomik" ? "atomik"
+    : onHome ? "home" : "record";
   const go = (id: TabId) => {
     if (id === "home") shell.goSuite("studio", "home");
-    else if (id === "gen") shell.goGen();
-    else if (id === "suites") shell.goSuite(shell.view === "suite" && shell.suite.id !== "studio" ? shell.suite.id : "business");
-    else if (id === "assets") shell.openLibrary("assets");
-    else shell.goWorkspace();
+    else if (id === "record") shell.goSuite("studio", "stages");
+    else if (id === "make") shell.openMake();
+    else shell.goSuite("atomik");
   };
   return (
     <nav className="gx-tabbar" aria-label="Tabs" data-testid="tabbar">

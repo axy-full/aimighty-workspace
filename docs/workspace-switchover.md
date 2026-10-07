@@ -1,5 +1,7 @@
 # The workspace switch-over
 
+**Retired for Release 1.** There is no way back to the old shell: `?shell=legacy`, its cookie, `WORKSPACE_IS_DEFAULT`, the device gate and `lib/workspace/switchover.ts` are gone. Old addresses redirect in one hop (`lib/shell/old-routes.ts`; see `docs/old-shells.md`, "Release 1"). What follows is the history of the mechanism.
+
 **Status (22 September 2026): the target is the Particl Suites shell at `/suites`, on every device.**
 
 Since 22 September the four old entry points (`/`, `/workbench`, `/atomik`,
@@ -193,7 +195,7 @@ the ones marked **menu** are linked from the new account menu.
 | Sequence colour, Edit versions | old shell only |
 | Studio guide, redesign source download | old shell only |
 | Welcome / first-run flow, Explore sample | old shell; visitors are never switched |
-| Mobile handoff (phone header, stage pager, phone dock) | by design — phones stay on `/workbench` |
+| Phone layout (phone header, stage pager, phone dock) | by design — phones stay on `/workbench` |
 
 Closed as part of this change, because the new surface is now the default one:
 the account menu itself (settings, team, usage, workspace switch, create

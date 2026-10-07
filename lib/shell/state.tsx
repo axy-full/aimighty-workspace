@@ -1,34 +1,57 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "@/lib/workspace/state";
-import { isCrewPage, pageAlias, pageOfLegacy, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
+import { isCrewPage, pageAlias, pageOfLegacy, redirectFor, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
+import { isSettingsSection } from "./settings";
+import { isStageId, stageAddress } from "./stage-redirects";
+import { SCREENS, atomikAt, isLanded, phoneAt, route, sameSearch, screenOf, screenParams, type BoardKindId, type ScreenId } from "./screens";
+import { useCompact } from "./use-compact";
 import { canUndo, popUndo, pushUndo, undoneLabel, type UndoEntry } from "./undo";
 import { libraryHasTools } from "./production-tools";
 import { findRequested, withoutFind } from "./fault";
 import type { CtxCommand, CtxTarget } from "./context-menu";
 import { useSession } from "@/lib/session";
 import { projectChanged } from "@/lib/workspace/data";
-import { pageKind } from "@/lib/workspace/pages";
+import { pageKind, resolveSuite } from "@/lib/workspace/pages";
 import { validAssetId } from "@/lib/preview";
 import { ASSET_PARAM, LINK_PARAMS, assetParam, readAssetLink, selectHistory, withAsset, withoutLink, type AssetLink, type SelectReason } from "./asset-link";
 import { useConnectedCollector } from "./use-connected-collector";
 import { IMPORT_PARAM } from "@/lib/workspace/rig-import";
+import { CARRIED_PARAMS } from "@/lib/workspace/navigation";
+import type { ComposerType } from "@/lib/workspace/composer";
+import { MAKE_PARAM, fromMakeLink, isMakeTool, makeType, readMake, viralTool, type MakeTab } from "./make";
+import { sendGenPreset } from "./gen-preset";
+import type { GenPreset } from "./recipe";
+import type { CreateSeed } from "./create-project";
 
 /**
  * The Suites shell's own state (README › State), layered over the workspace
  * state layer rather than beside it: suite, page, project, selection and lists
- * stay in lib/workspace/state.tsx — the shell adds what is new (the Gen and
- * Workspace views, each suite's remembered page, the Library tab and the
- * overlay panels, the palette, the context menu, the clipboard and undo).
+ * stay in lib/workspace/state.tsx — the shell adds what is new (the Workspace
+ * and Crew views, the Make panel over any of them, each suite's remembered
+ * page, the Library tab and the overlay panels, the palette, the context menu,
+ * the clipboard and undo).
  *
  * The shell owns its search params at its route — `view`, `tab`, `sp`, `cp`,
+ * `make` (the Make panel and its quick tools, lib/shell/make.ts),
  * `room`, the selected take (`asset`), a link's own `ws` and `production`
  * (lib/shell/asset-link.ts), and an old board the Rig is bringing across
  * (`import`, lib/workspace/rig-import.ts) — and the workspace provider carries
  * them across its own URL writes.
  */
 export const SUITES_PATH = "/suites";
-export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", ASSET_PARAM, ...LINK_PARAMS, IMPORT_PARAM] as const;
+/* …and an old link's `account` (lib/workspace/navigation.ts › CARRIED_PARAMS), which nothing here reads but the address keeps. */
+export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", MAKE_PARAM, ASSET_PARAM, ...LINK_PARAMS, IMPORT_PARAM, ...CARRIED_PARAMS] as const;
+/**
+ * What the shell keeps across its own address writes: today's list, plus (new interface only) the params the new
+ * screens own, from the screen registry (lib/shell/screens.ts): kind, frame, list, region, drawer, review, card,
+ * atomik, q, screen, device, from, run, take and Settings' open.
+ */
+export function shellParams(): readonly string[] {
+  return [...SHELL_PARAMS, ...screenParams(SCREENS).filter((key) => !(SHELL_PARAMS as readonly string[]).includes(key))];
+}
+/** The params an overlay carries from one screen to the next (Atomik's panel, like Make, stays open over a move). */
+const CARRIED_OVER = ["atomik"] as const;
 /** Three columns from here up; overlays below (README › Responsive). */
 export const WIDE_FROM = 1280;
 
@@ -40,7 +63,10 @@ export type Shell = {
   view: ShellView;
   suite: ShellSuite;
   page: ShellPage;
+  /** Workspace's old tab, or (new interface) one of Settings' five sections. */
   wsTab: WorkspaceTabId;
+  /** Settings' `open` fold (`&open=models`), or null. */
+  wsOpen: string | null;
   crewPage: CrewPageId;
   wide: boolean;
   libTab: LibTab;
@@ -53,10 +79,64 @@ export type Shell = {
   ctx: CtxState | null;
   clip: Clip | null;
   canUndo: boolean;
-  goSuite: (suite: ShellSuiteId, page?: string) => void;
+  /** `closeMake`: the page is where the person is going from Make (Viral History from a quick tool), so Make closes. */
+  goSuite: (suite: ShellSuiteId, page?: string, opts?: { closeMake?: boolean }) => void;
+  /** The header's project segment: the board. */
+  goProject: () => void;
+  /** Make's panel as the address carries it (`make=`): its type, Recent or a quick tool, or null while it is closed. */
+  make: MakeTab | null;
+  /** The type Make opened on last (`make=1`, and an Open with no type). */
+  lastMake: ComposerType;
+  /**
+   * Opens Make over whatever is on screen: on a type, on Recent, on a quick tool (Motion transfer, Object swap), or
+   * with a preset handed over (its type, when it names one; the words, engine and settings go through Gen's letterbox,
+   * lib/shell/gen-preset.ts). With nothing, where it is (a quick tool stays one), else on the last type.
+   */
+  openMake: (preset?: MakeTab | GenPreset) => void;
+  closeMake: () => void;
+  /** Make's own tab or type changed inside the panel: the address follows, in the same history entry. */
+  setMake: (tab: MakeTab) => void;
+  /** Gen is Make's panel now: kept for the header, which calls it until it calls openMake. It opens Make. */
   goGen: () => void;
   goCrew: (page?: CrewPageId) => void;
-  goWorkspace: (tab?: WorkspaceTabId) => void;
+  goWorkspace: (tab?: WorkspaceTabId, opts?: { open?: string }) => void;
+  /* ── The new interface (lib/shell/screens.ts). Each helper falls back to today's page when the switch is off or the
+     screen has not landed, so a caller never has to ask. ── */
+  /** `&settings=1` opened the page: the header opens the avatar menu once, and the address has already dropped it. */
+  settingsRequested: boolean;
+  /** The header has opened the menu: the request is spent, so a header drawn again does not reopen it. */
+  consumeSettingsRequest: () => void;
+  /** The new screen the address mounts, or null while it is one of today's pages. */
+  screen: ScreenId | null;
+  /** The screens' own params as the address carries them (kind, frame, list, region, drawer, review, card, screen…), switch on only. */
+  params: Readonly<Record<string, string>>;
+  /** Atomik's panel (`&atomik=1`) or its "Ask Atomik how" (`&atomik=how`), over any screen; null while closed. */
+  atomik: "panel" | "how" | null;
+  /** The words handed to Atomik's panel (`&q=`), or null. */
+  atomikQuery: string | null;
+  /** The phone's own screens: at compact widths, or `device=phone` at any width in a centred 390 px frame. */
+  phone: { on: boolean; framed: boolean };
+  /** Home: `?view=home`, or today's Studio overview. */
+  goHome: () => void;
+  /** The board: `?view=board`, with the kind, a region, the List view or a start. */
+  goBoard: (opts?: { kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" }) => void;
+  /** One of the control room's four pages (approvals, runs, memory, saved-skills): the same addresses as ever. */
+  goControlRoom: (page: "approvals" | "runs" | "memory" | "saved-skills") => void;
+  /** Opens Atomik's panel (or "how"), with the words handed over; today's Atomik Agent page when the panel has not landed. */
+  openAtomik: (mode?: "panel" | "how", query?: string) => void;
+  closeAtomik: () => void;
+  /** Writes a screen's own params (null removes one), in the same history entry. Only params some screen declared are written. */
+  setScreenParams: (patch: Readonly<Record<string, string | null>>, mode?: "push" | "replace") => void;
+  /** The board reports the width of its right dock (340 open, 56 closed, 0 none): the shell sets `--board-dock`, so Make sits beside it. */
+  setDockRight: (px: number) => void;
+  /** The board's right dock as it reported it (0 when there is none). */
+  dockRight: number;
+  /**
+   * Makes a project the way Home's templates and ⌘K's "new …" do: today's create path with the seed's fields set, answering
+   * the new project's id or why it could not be made. Null until the shell has registered it (SuitesShell does, on mount).
+   */
+  createProject: ((name: string, seed?: CreateSeed) => Promise<{ id: string; productionId?: string | null } | { error: string }>) | null;
+  setCreateProject: (run: Shell["createProject"]) => void;
   setLibTab: (tab: LibTab) => void;
   toggleLibrary: () => void;
   toggleInspector: () => void;
@@ -97,17 +177,34 @@ export function useShell(): Shell {
   return value;
 }
 
-type Params = { view: ShellView; tab: WorkspaceTabId; sp: string | null; cp: CrewPageId; asset: string | null };
-function readParams(search: string): Params {
-  const q = new URLSearchParams(search);
+type Params = {
+  view: ShellView; tab: WorkspaceTabId; sp: string | null; cp: CrewPageId; make: MakeTab | null; asset: string | null;
+  /** The screens' own params present in the address (kind, region, atomik…). */
+  extra: Readonly<Record<string, string>>;
+};
+const screenKeys = screenParams(SCREENS);
+const EMPTY: Readonly<Record<string, string>> = Object.freeze({});
+/** Settings' fold, `&open=models`: it belongs to Workspace's view and goes when the view does. */
+const OPEN = "open";
+
+/** The old Gen page (`view=gen`) and Viral's two tools read as Make open over a page (lib/shell/make.ts › fromMakeLink). */
+function readParams(search: string, last: ComposerType = "video"): Params {
+  const q = new URLSearchParams(fromMakeLink(search) ?? search);
   const view = q.get("view");
   const tab = q.get("tab");
+  const make = readMake(q);
+  /* `home` and `board` are views: before their screen has landed the address reads as today's shell reads it. */
+  const mounted = screenOf({ view, kind: q.get("kind"), controlRoom: false });
+  const extra: Record<string, string> = {};
+  for (const key of screenKeys) { const value = q.get(key); if (value !== null) extra[key] = value; }
   return {
-    view: view === "gen" || view === "workspace" || view === "crew" ? view : "suite",
-    tab: WORKSPACE_TABS.some((t) => t.id === tab) ? (tab as WorkspaceTabId) : "general",
+    view: view === "workspace" || view === "crew" ? view : mounted === "home" ? "home" : mounted?.startsWith("board") ? "board" : "suite",
+    tab: WORKSPACE_TABS.some((t) => t.id === tab) || isSettingsSection(tab) ? (tab as WorkspaceTabId) : "general",
     sp: q.get("sp"),
     cp: isCrewPage(q.get("cp")) ? (q.get("cp") as CrewPageId) : "room",
+    make: make === "last" ? last : make,
     asset: assetParam(q),
+    extra,
   };
 }
 function writeParams(params: Params, mode: "push" | "replace") {
@@ -116,8 +213,12 @@ function writeParams(params: Params, mode: "push" | "replace") {
   if (params.view === "workspace") q.set("tab", params.tab); else q.delete("tab");
   if (params.sp) q.set("sp", params.sp); else q.delete("sp");
   if (params.view === "crew") q.set("cp", params.cp); else q.delete("cp");
+  if (params.make) q.set(MAKE_PARAM, params.make); else q.delete(MAKE_PARAM);
   const asset = validAssetId(params.asset);
   if (asset) q.set(ASSET_PARAM, asset); else q.delete(ASSET_PARAM);
+  /* The screens' params: exactly what `extra` holds. Settings' `open` belongs to its view and goes with it. */
+  for (const key of screenKeys) q.delete(key);
+  for (const [key, value] of Object.entries(params.extra)) if (key !== OPEN || params.view === "workspace") q.set(key, value);
   const text = q.toString();
   const url = window.location.pathname + (text ? "?" + text : "") + window.location.hash;
   if (url === window.location.pathname + window.location.search + window.location.hash) return;
@@ -131,11 +232,27 @@ function writeSearch(search: string, mode: "push" | "replace") {
   if (mode === "push") window.history.pushState(null, "", url); else window.history.replaceState(null, "", url);
 }
 
+/** What an overlay carries from one screen to the next (null with the switch off, when the shell reads no such params). */
+const carry = (extra: Readonly<Record<string, string>>): Readonly<Record<string, string>> =>
+  Object.fromEntries(CARRIED_OVER.filter((key) => key in extra).map((key) => [key, extra[key]]));
+
+/** Make over a page someone moves to: kept, except on a phone, where the panel is the whole screen. */
+const stayMake = (make: MakeTab | null) => (make && typeof window !== "undefined" && window.innerWidth < PHONE_BELOW ? null : make);
+/** Below this, Make is full width (components/graphite/make.css). */
+export const PHONE_BELOW = 768;
+
 export function ShellProvider({ children, initialSearch }: { children: ReactNode; initialSearch?: string }) {
   const ws = useWorkspace();
-  const [params, setParams] = useState<Params>(() => readParams(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)));
+  const compact = useCompact();
+  const [params, setParams] = useState<Params>(() => readParams(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search), "video"));
   const [memory, setMemory] = useState<Partial<Record<ShellSuiteId, string>>>({});
   const [wide, setWide] = useState(() => (typeof window === "undefined" ? true : window.innerWidth >= WIDE_FROM));
+  /* The type Make was last on (`make=1` reopens it), followed from the address whenever Make is on a type. */
+  const [lastMake, setLastMake] = useState<ComposerType>(() => makeType(params.make) ?? "video");
+  const lastMakeRef = useRef(lastMake);
+  const madeType = makeType(params.make);
+  if (madeType && madeType !== lastMake) { setLastMake(madeType); }
+  useEffect(() => { lastMakeRef.current = lastMake; }, [lastMake]);
   const [libTab, setLibTab] = useState<LibTab>("tools");
   const [libOpen, setLibOpen] = useState(false);
   const [inspOpen, setInspOpen] = useState(false);
@@ -145,6 +262,11 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const [clip, setClip] = useState<Clip | null>(null);
   const [undoStack, setUndoState] = useState<UndoEntry[]>([]);
   const runRef = useRef<((command: CtxCommand, target: CtxTarget) => void) | null>(null);
+  const createRef = useRef<Shell["createProject"]>(null);
+  /* `settings=1`: the avatar menu opens once on landing (Header). Read from the opening URL, like the params above. */
+  const [settingsRequested, setSettingsRequested] = useState(() => new URLSearchParams(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)).get("settings") === "1");
+  /* The board's right dock (340 open, 56 closed): Make sits beside it (components/graphite/shell.css › --board-dock). */
+  const [dock, setDock] = useState(0);
   /* The stack as of the last change, written with the state so two quick ⌘Z presses never pop one step twice. */
   const undoRef = useRef(undoStack);
   const setUndoStack = useCallback((next: (stack: UndoEntry[]) => UndoEntry[]) => {
@@ -156,6 +278,9 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   useEffect(() => { projectRef.current = ws.state.projectId; }, [ws.state.projectId]);
   const liveRef = useRef<Shell | null>(null);
   const live = useCallback(() => liveRef.current!, []);
+
+  /* A link to a take (lib/shell/asset-link.ts), read once from the URL the page opened with. */
+  const [link, setLink] = useState<AssetLink | null>(() => readAssetLink(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)));
 
   /* The selected take, as the URL carries it: the Workspace selection is the one source, `asset` (and `sel`) follow it. */
   const take = ws.state.selKind === "take" ? validAssetId(ws.state.selId) : null;
@@ -172,17 +297,30 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     /* Exactly this take, or none: a malformed or repeated `asset` is rewritten too, never left in the address bar. */
     const named = new URLSearchParams(window.location.search).getAll(ASSET_PARAM);
     if (take ? named.length === 1 && named[0] === take : named.length === 0) return;
+    /* A link to a take still being checked holds its `asset` in the address: nothing is selected until it resolves, and a reload (Switch
+       workspace) must still carry it. The link's own end (endLink) removes it, or selectAsset writes it as the selection. */
+    if (!take && link && named.length === 1 && named[0] === link.asset) return;
     writeSearch(withAsset(window.location.search, take), mode);
     /* The state layer's own `sel` follows in the same entry, so the two never disagree. */
     latestWs.current.syncUrl();
-  }, [take]);
-
-  /* A link to a take (lib/shell/asset-link.ts), read once from the URL the page opened with. */
-  const [link, setLink] = useState<AssetLink | null>(() => readAssetLink(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)));
+  }, [take, link]);
 
   useEffect(() => {
     const onResize = () => setWide(window.innerWidth >= WIDE_FROM);
-    const onPop = () => setParams(readParams(window.location.search));
+    const onPop = () => {
+      /* An entry with an old Gen or Viral tool address reads as Make, and says so; a Viral tool over the page on screen. */
+      const moved = fromMakeLink(window.location.search);
+      if (moved !== null) {
+        const q = new URLSearchParams(moved);
+        const now = latestWs.current.latest(), at = liveRef.current, tool = viralTool(window.location.search);
+        if (tool && q.get(MAKE_PARAM) === tool && now.view === "studio" && at?.view === "suite") {
+          q.set("suite", now.suite); q.set("page", now.page); q.set("sp", at.page.id);
+        }
+        const text = q.toString();
+        window.history.replaceState(null, "", window.location.pathname + (text ? "?" + text : "") + window.location.hash);
+      }
+      setParams(readParams(window.location.search, lastMakeRef.current));
+    };
     window.addEventListener("resize", onResize);
     window.addEventListener("popstate", onPop);
     return () => { window.removeEventListener("resize", onResize); window.removeEventListener("popstate", onPop); };
@@ -200,8 +338,33 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     setParams(withTake); writeParams(withTake, mode);
   }, []);
 
-  const goSuite = useCallback((id: ShellSuiteId, pageId?: string) => {
+  /* An address (`?view=board…`, today's `?suite=…&page=…`, Settings' `?view=workspace&tab=…`) as a move: see `navigate` below. */
+  const navigateRef = useRef<((search: string, opts?: { closeMake?: boolean }) => void) | null>(null);
+
+  const openMake = useCallback((preset?: MakeTab | GenPreset) => {
+    if (preset && typeof preset === "object") sendGenPreset(preset);
+    const asked = typeof preset === "string" ? preset : preset?.type;
+    /* A preset is for the composer: from a quick tool it goes to the type Make was last on. */
+    const tab: MakeTab = asked ?? (preset ? makeType(params.make) ?? lastMakeRef.current : params.make && params.make !== "recent" ? params.make : lastMakeRef.current);
+    setLibOpen(false); setInspOpen(false); setPaletteOpen(false);
+    if (params.make === tab) return;
+    apply({ ...params, make: tab }, params.make ? "replace" : "push");
+  }, [params, apply]);
+
+  const goSuite = useCallback((id: ShellSuiteId, pageId?: string, opts?: { closeMake?: boolean }) => {
+    /* Motion Transfer and Object Swap are Make's quick tools (README § 1.2): they open over the page on screen. The
+       suite on its own opened on Motion Transfer, and still does until History is the page it remembers. */
+    const tool = id !== "viral" ? null : pageId !== undefined ? (isMakeTool(pageId) ? pageId : null) : memory.viral ? null : "motion";
+    if (tool) { openMake(tool); return; }
+    /* The ten Studio stage pages are gone: an old stage id (a card's, a link's, a toast's Open) is the board's region for it. */
+    if (id === "studio" && isStageId(pageId)) { navigateRef.current?.(stageAddress(pageId), opts); return; }
     const target = pageId ? restorePage(id, pageId) : restorePage(id, memory[id]);
+    /* An old page whose screen has landed opens that screen (lib/shell/screens.ts), however it is asked for. */
+    {
+      const old = `?suite=${target.legacy.suite}&page=${target.legacy.page}&sp=${target.id}`;
+      const routed = route(old);
+      if (!sameSearch(routed, old)) { navigateRef.current?.(routed, opts); return; }
+    }
     setMemory((m) => ({ ...m, [id]: target.id }));
     setLibOpen(false); setInspOpen(false); setPaletteOpen(false); setCtx(null);
     const before = window.location.pathname + window.location.search;
@@ -209,19 +372,102 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     const pushed = before !== window.location.pathname + window.location.search;
     /* The state layer pushed the entry when its own page changed; when two shell
        pages share one backing page it did not, and the shell pushes instead. */
-    apply({ view: "suite", tab: "general", sp: target.id, cp: "room" }, pushed ? "replace" : "push");
-  }, [ws, memory, apply]);
+    /* Make stays open over the page it moved to; on a phone, where it is the whole screen, going somewhere closes it. */
+    apply({ view: "suite", tab: "general", sp: target.id, cp: "room", make: opts?.closeMake ? null : stayMake(params.make), extra: carry(params.extra) }, pushed ? "replace" : "push");
+  }, [ws, memory, apply, params.make, params.extra, openMake]);
+
+  /**
+   * Moves to an address, after the screen registry has had its say (`route`): a new screen's address sets the view and
+   * the screens' own params; one of today's pages goes through goSuite, Workspace and Crew as ever. The one way the new
+   * screens' helpers move, so a screen that has not landed falls back to today's page by the registry's rows, not by
+   * a check in each caller.
+   */
+  const navigate = useCallback((search: string, opts?: { closeMake?: boolean }) => {
+    const routed = route(search);
+    const q = new URLSearchParams(routed);
+    const view = q.get("view");
+    if (!view && q.get("suite")) {
+      const legacy = resolveSuite(q.get("suite"));
+      const wanted = q.get("sp") ?? q.get("page") ?? undefined;
+      if (legacy) { goSuite(suiteOfLegacy(legacy), wanted, opts); return; }
+    }
+    const next = readParams(routed, lastMakeRef.current);
+    setLibOpen(false); setInspOpen(false); setPaletteOpen(false); setCtx(null);
+    apply({ ...next, make: opts?.closeMake ? null : stayMake(params.make), extra: { ...carry(params.extra), ...next.extra } }, "push");
+  }, [apply, goSuite, params.make, params.extra]);
+  useEffect(() => { navigateRef.current = navigate; }, [navigate]);
+
+  /* The project segment opens the board (it draws its kind from the project itself): the board is the whole production. */
+  const goProject = useCallback(() => { navigate("?view=board"); }, [navigate]);
+
+  const goHome = useCallback(() => {
+    /* Before Home has landed: the Studio overview on a desktop, the phone's "Where to?" on a phone. */
+    if (!isLanded("home")) { goSuite("studio", window.innerWidth >= WIDE_FROM ? "stages" : "home"); return; }
+    navigate("?view=home");
+  }, [goSuite, navigate]);
+
+  const goBoard = useCallback((opts: { kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" } = {}) => {
+    const q = new URLSearchParams({ view: "board" });
+    if (opts.kind) q.set("kind", opts.kind);
+    if (opts.region) q.set("region", opts.region);
+    if (opts.list) q.set("list", "1");
+    if (opts.start) q.set("start", opts.start);
+    /* The board opens with its Library drawer out (`drawer=`: the board reads it as it mounts). */
+    if (opts.drawer) q.set("drawer", opts.drawer);
+    /* Atomik's panel opens with the board in the same move: a second write right after this one would read the address as it was before it. */
+    if (opts.atomik && isLanded("atomik")) q.set("atomik", "1");
+    navigate(`?${q}`);
+  }, [navigate]);
+
+  const setScreenParams = useCallback((patch: Readonly<Record<string, string | null>>, mode: "push" | "replace" = "replace") => {
+    const extra: Record<string, string> = { ...params.extra };
+    let changed = false;
+    for (const [key, value] of Object.entries(patch)) {
+      if (!screenKeys.includes(key)) continue;
+      if (value === null) { if (key in extra) { delete extra[key]; changed = true; } } else if (extra[key] !== value) { extra[key] = value; changed = true; }
+    }
+    if (changed) apply({ ...params, extra }, mode);
+  }, [apply, params]);
+
+  const openAtomik = useCallback((mode: "panel" | "how" = "panel", query?: string) => {
+    if (!isLanded("atomik")) { goSuite("atomik", "agent"); return; }
+    setPaletteOpen(false); setCtx(null);
+    setScreenParams({ atomik: mode === "how" ? "how" : "1", q: query ? query.slice(0, 500) : null }, params.extra?.atomik ? "replace" : "push");
+  }, [goSuite, setScreenParams, params.extra]);
 
   /* A page the new IA has no tab for (an old deep link) opens its suite's first page. */
   const landed = useRef(false);
   useEffect(() => {
     if (landed.current) return;
     landed.current = true;
+    /* An old link in the design file's spelling (lib/shell/ia.ts › normalize): the server already rewrote it on the
+       way in, so this only meets one the client reached by itself. The address names the app's form from here on;
+       the providers above were handed that form too (components/graphite/SuitesApp.tsx). */
+    const fixed = redirectFor(window.location.pathname, window.location.search);
+    if (fixed) window.history.replaceState(null, "", fixed + window.location.hash);
+    /* The old Gen page's address (`view=gen`, `mode=`, `sheet=1`) and Viral's two tools become Make's own before anything else writes it. */
+    const moved = fromMakeLink(window.location.search);
+    if (moved !== null) window.history.replaceState(null, "", window.location.pathname + (moved ? "?" + moved : "") + window.location.hash);
+    /* `make=1` names the type it opened on from here on. */
+    else if (readMake(window.location.search) === "last") writeParams(params, "replace");
+    /* The screen registry's rows and each screen's own spellings (lib/shell/screens.ts), and the one-shot `settings=1` that
+       opens the avatar menu (Header) and leaves the address. The server did this already for a signed-in request, so this
+       only meets an address the client reached by itself. */
+    {
+      const routed = route(window.location.search);
+      if (!sameSearch(routed, window.location.search)) window.history.replaceState(null, "", window.location.pathname + routed + window.location.hash);
+    }
+    if (new URLSearchParams(window.location.search).get("settings") === "1") {
+      const q = new URLSearchParams(window.location.search);
+      q.delete("settings");
+      window.history.replaceState(null, "", window.location.pathname + (q.toString() ? "?" + q : "") + window.location.hash);
+    }
     if (ws.state.view !== "studio" || !mapped) {
       const target = mapped ?? suite.pages[0];
       /* The landing replaces the entry URL: Back leaves /suites instead of re-opening the same page. */
       ws.go(target.legacy.suite, target.legacy.page, { replace: true });
-      writeParams({ ...params, sp: target.id }, "replace");
+      /* Home and the board are not a page of Studio: the address names no `sp`. */
+      writeParams({ ...params, sp: params.view === "home" || params.view === "board" ? params.sp : target.id }, "replace");
     } else if (pageAlias(suiteId, params.sp)) {
       /* An old link to a page that left the strip (Business › Ads): the address names the page it landed on, from here on. */
       const renamed = { ...params, sp: mapped.id };
@@ -239,7 +485,8 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
      editor that is not a stage (the Rig) has saved: the collector lists the project's jobs, and the
      shell's copy of the project is read again. */
   const session = useSession();
-  const place = `${params.view}:${page.id}`;
+  /* Make counts as a place of its own: closing it is leaving the composer, as leaving Gen was. */
+  const place = `${params.view}:${page.id}${params.make ? ":make" : ""}`;
   const strip = ws.state.gen;
   useConnectedCollector({
     scope: session.requestScope ?? null, owner: session.owner, projectId: ws.state.projectId, place, toast: ws.toast,
@@ -252,15 +499,51 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     projectChanged(ws.state.projectId);
   }, [place, ws.state.projectId]);
 
+  /* The new screen this place mounts (lib/shell/screens.ts), or null for one of today's pages. */
+  const controlRoom = suiteId === "atomik" && params.view === "suite" && ["approvals", "runs", "memory", "saved-skills"].includes(page.id);
+  const screen = screenOf({ view: params.view, kind: params.extra?.kind ?? null, controlRoom });
+  const phone = useMemo(() => phoneAt(params.extra, compact), [params.extra, compact]);
+
   const value = useMemo<Shell>(() => ({
-    /* Where a page has no tools of its own (Gen, the Business and Viral composers, the phone's
+    /* Where a page has no tools of its own (Make open over it, the Business and Viral composers, the phone's
        Home) the Library is what you can drag in, however you arrived (tab, palette or a link). */
-    view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: libraryHasTools(params.view, suite.id, page.id) ? libTab : "assets", libOpen, inspOpen,
+    view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: libraryHasTools(params.make ? "make" : params.view, suite.id) ? libTab : "assets", libOpen, inspOpen,
     inspector: ws.state.inspector, palette, ctx, clip, canUndo: canUndo(undoStack, ws.state.projectId),
     goSuite,
-    goGen: () => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "gen" }, "push"); },
-    goCrew: (page) => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "crew", cp: page ?? params.cp }, "push"); },
-    goWorkspace: (tab) => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "workspace", tab: tab ?? params.tab }, "push"); },
+    goProject,
+    make: params.make,
+    lastMake,
+    openMake,
+    closeMake: () => { if (params.make) apply({ ...params, make: null }, "push"); },
+    setMake: (tab) => { if (params.make && params.make !== tab) apply({ ...params, make: tab }, "replace"); },
+    goGen: () => openMake(),
+    /* Crew is the board's Crew review and Project record (lib/board/routes.ts rows). */
+    goCrew: (page) => navigate(`?view=crew&cp=${page ?? params.cp}`),
+    goWorkspace: (tab, opts) => {
+      const wanted = tab ?? params.tab;
+      /* One of Settings' five sections: its screen, or (switch off, or not landed) the page that holds it today (settings rows). */
+      if (isSettingsSection(wanted)) { navigate(`?view=workspace&tab=${wanted}${opts?.open ? `&open=${encodeURIComponent(opts.open)}` : ""}`); return; }
+      setLibOpen(false); setInspOpen(false); setPaletteOpen(false);
+      apply({ ...params, view: "workspace", tab: wanted, make: stayMake(params.make), extra: { ...carry(params.extra), ...(opts?.open ? { [OPEN]: opts.open } : {}) } }, "push");
+    },
+    wsOpen: params.view === "workspace" ? params.extra?.[OPEN] ?? null : null,
+    settingsRequested,
+    consumeSettingsRequest: () => setSettingsRequested(false),
+    screen,
+    params: params.extra ?? EMPTY,
+    atomik: atomikAt(params.extra),
+    atomikQuery: params.extra?.q ?? null,
+    phone,
+    goHome,
+    goBoard,
+    goControlRoom: (page) => goSuite("atomik", page),
+    openAtomik,
+    closeAtomik: () => setScreenParams({ atomik: null, q: null }, "push"),
+    setScreenParams,
+    setDockRight: setDock,
+    dockRight: dock,
+    createProject: (name, seed) => (createRef.current ? createRef.current(name, seed) : Promise.resolve({ error: "Projects are still loading. Try again." })),
+    setCreateProject: (run) => { createRef.current = run; },
     setLibTab,
     toggleLibrary: () => { setLibOpen((v) => !v); setInspOpen(false); },
     toggleInspector: () => {
@@ -324,7 +607,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       }
     },
     live,
-  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, apply, ws, setUndoStack, live, link, take]);
+  }), [params, lastMake, openMake, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, goProject, apply, ws, setUndoStack, live, link, take, screen, phone, navigate, goHome, goBoard, setScreenParams, openAtomik, dock, settingsRequested]);
   useEffect(() => { liveRef.current = value; }, [value]);
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;

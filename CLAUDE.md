@@ -2,7 +2,7 @@
 
 # Ground rules
 
-Copied verbatim from docs/particl-sow.md, section 3. The scope of work is the source of truth; read it in full before touching code, and update it when a change makes it wrong (SOW §13.4).
+Copied verbatim from docs/particl-sow-v1.md, section 3. The scope of work is the source of truth; read it in full before touching code, and update it when a change makes it wrong (SOW §13.4).
 
 1. **Other people's money.** Every render bills a customer workspace in credits they paid for. Never trigger a generation, training run or upscale against a customer workspace. Development uses mocked engine responses; if a test needs a real call it runs in a dedicated internal workspace, and you state the cost and wait for a yes.
 2. **Tenant isolation is the floor.** Every table carries `workspace_id`; every query filters on it; every Blob path is prefixed by it; every signed URL is scoped to it. Identities, cast, masters, prompts, costs and rules never cross a boundary. If you can't point at where a query is scoped, it's a bug.
@@ -27,7 +27,7 @@ Copied verbatim from docs/particl-sow.md, section 3. The scope of work is the so
     - Prices read `N cr`, `up to N cr` (a live estimate) or `free`. Never the bare word "quoted". Hovering a price shows its dollar value at the public price of a credit. Prices come only from the rate card (CLAUDE.md § Pricing, through the server's price path); every price in a design is a sample.
     - Only a person approves spending. Atomik and outside agents can prepare, price and explain an approval, never grant one; an approval written by `agent:*` or an MCP caller is refused. When a person tells Atomik in words to approve ("approve everything under 10 cr"), Atomik lists exactly what that covers and its total, and the person confirms with one tap.
     - A plan is approved once: one tap approves its listed steps at their listed prices, up to its total, including a stated fix allowance (at most two fixes per shot). Anything outside it (a new shot, a fix past the allowance, another engine) asks again. A plan's approval follows the workspace's rule in `lib/approvalRule.ts`: a step over the rule's cap needs an admin, and the plan card says which steps need whom.
-    - Outside a plan, every paid step asks, unless the workspace allows spending without asking. Today's Ask and Auto modes (`lib/workbench/rig-agent-limits.ts`) become that setting: Ask is the default; in Auto, a draft priced at or under the per-job line runs without a tap. A job above guardrail 4 (`JOB_APPROVAL_LINE_USD`, US$20: 25 cr at $0.80) never runs without a tap. Only an admin changes the setting or the budget ceiling.
+    - Outside a plan, every paid step asks, unless the workspace allows spending without asking. Today's Ask and Auto modes (`lib/workbench/rig-agent-limits.ts`) become that setting: Ask is the default; in Auto, a draft priced at or under the per-job line runs without a tap. A job above guardrail 4 (`JOB_APPROVAL_LINE_USD`, US$20: 200 cr at $0.10) never runs without a tap. Only an admin changes the setting or the budget ceiling.
     - Atomik's own thinking (questions, the plan, review notes) is billed as the planning turn is today in `lib/workbench/rig-agent.ts`: reserved against a limit the person approves when asking, settled at what it used, and not billed when nothing came back. Decision 7 in the 4 October 2026 amendment's §10 may change this.
     - The balance is checked against a plan's total before it starts, with Top up offered then, never halfway through.
     - A failed step that cost nothing says "Nothing billed" and offers Retry, which re-runs it under the same approval; a failed step that was charged says what it cost.
@@ -37,7 +37,7 @@ Copied verbatim from docs/particl-sow.md, section 3. The scope of work is the so
 
 # Pricing
 
-Copied verbatim from docs/particl-sow.md, section 7A. Decided for launch. Anything that spends real money stops and asks first (SOW §13.8); a change to what customers see (plans, packs, the rate card) changes this document too.
+Copied verbatim from docs/particl-sow-v1.md, section 7A. Decided for launch. Anything that spends real money stops and asks first (SOW §13.8); a change to what customers see (plans, packs, the rate card) changes this document too.
 
 Pricing policy (multipliers, margins, floor guard, volume phases) is kept privately by the owner; it is not in this repo. What follows is what customers see and what the code must guarantee. Anything that changes what a workspace is charged needs the owner's approval.
 

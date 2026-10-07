@@ -7,12 +7,13 @@ import type { LibraryEntry } from "../../lib/workspace/library";
 const take = (id: string, kind: "GEN" | "UPLOAD" = "GEN"): LibraryEntry =>
   ({ take: { id, sourceId: id, kind, name: id, version: "v1", meta: "", credits: null, usd: null, status: "review", sha256: null, createdAt: 0 }, asset: {} as LibraryEntry["asset"], url: null, media: null });
 
-/** Particl Mobile.dc.html › STUDIO HOME: one card per stage (ten with Beats and Environment, owner 23–24 September), every line from the project. */
+/** Studio home: one card per stage (ten with Beats and Environment, owner 23–24 September), every line from the project. */
 test("the home is a Studio page outside the strip; the cards are the stages in order", () => {
   const home = shellSuite("studio").pages.find((p) => p.id === "home");
   expect(home).toMatchObject({ own: true, phoneOnly: true, n: "" });
   expect(home?.legacy).toEqual({ suite: "particl", page: "brief" });
-  expect(shellSuite("studio").pages[0].id).toBe("brief");
+  /* The ten stage pages are deleted: Studio's pages are the overview and the phone's Home, and the cards are the stages in order. */
+  expect(shellSuite("studio").pages.map((p) => p.id)).toEqual(["stages", "home"]);
   expect(studioStages().map((p) => p.id)).toEqual(["brief", "beats", "boards", "environment", "cast", "astra", "rig", "takes", "edit", "deliver"]);
 });
 
@@ -29,7 +30,7 @@ test("every card's line and dot come from the project and the library", () => {
     ...empty,
     brief: "A fox crosses a frozen harbour at dusk",
     shots: [{ id: "s1", name: "The crossing", assetId: "", duration: 5, sourceIn: 0, note: "" }, { id: "s2", name: "The turn", assetId: "gen_1", duration: 5, sourceIn: 0, note: "" }],
-    assets: [{ id: "a1", category: "Character", name: "Mira" }, { id: "a2", category: "Storyboard", name: "Frame 1" }] as unknown as typeof empty.assets,
+    assets: [{ id: "a1", category: "Character", name: "Wren" }, { id: "a2", category: "Storyboard", name: "Frame 1" }] as unknown as typeof empty.assets,
   };
   const live = stageCards(busy, [take("gen_1"), take("up_1", "UPLOAD")]);
   expect(live.find((c) => c.id === "brief")).toMatchObject({ meta: "8 words", status: "done" });
@@ -45,19 +46,19 @@ test("every card's line and dot come from the project and the library", () => {
 
 /* design/particl-graphite/README.md › Phone, Home: six tiles in order, the lines verbatim, the facts from the figures given. */
 test("the Home tiles carry the prototype's lines and live facts; the Assets row counts the project", () => {
-  const cards = stageCards({ ...newProject("Dune Studies"), brief: "A fox crosses a frozen harbour at dusk" }, []);
+  const cards = stageCards({ ...newProject("Harbour film"), brief: "A fox crosses a frozen harbour at dusk" }, []);
   const facts = { rendering: 0, videoEngine: "Seedance 2.5", viralResolution: "720p", awaiting: 2, seats: 7 };
   const tiles = suiteTiles(cards, facts);
   expect(tiles.map((t) => t.id)).toEqual(["studio", "gen", "business", "viral", "atomik", "crew"]);
   expect(tiles.map((t) => t.line)).toEqual([
     "Brief to delivery, ten stages.", "Video, images, audio — one composer.", "Image ads, brand kit, product, briefs.",
-    "Genjutsu: motion transfer, object swap.", "Plans, prices, waits for your word.", "One Grok agent per department.",
+    "Motion transfer, object swap.", "Plans, prices, waits for your word.", "One Grok agent per department.",
   ]);
   /* The Gen fact is the workspace's default engine, not an unchecked "ready". */
   expect(tiles.map((t) => t.fact)).toEqual(["1 of 10 done", "Seedance 2.5 · default", "Opens on Image ads", "720p · quoted on the source", "2 awaiting approval", "7 seats"]);
   expect(tiles.map((t) => t.color)).toEqual(["#0A84FF", "#BF5AF2", "#FF9F0A", "#FF453A", "#30D158", "#BF5AF2"]);
   expect(suiteTiles(cards, { ...facts, rendering: 2, seats: 1 }).map((t) => t.fact)).toEqual(expect.arrayContaining(["2 rendering", "1 seat"]));
   expect(suiteTiles(cards, { ...facts, seats: null })[5].fact).toBe("seats loading");
-  expect(assetsRowLabel([], "Dune Studies")).toBe("0 in Dune Studies");
+  expect(assetsRowLabel([], "Harbour film")).toBe("0 in Harbour film");
   expect(assetsRowLabel([{} as never, {} as never], null)).toBe("2 in this project");
 });

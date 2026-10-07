@@ -12,8 +12,8 @@ import { FirstRun, RecentProjects, type ProjectActions } from "../FirstRun";
 import { Glyph } from "../icons";
 
 /**
- * Studio home (Particl Mobile.dc.html › STUDIO HOME): the project's name in
- * the gradient, *Up next* (the first shot without a render, one tap into Rig),
+ * Studio home: the project's name in
+ * the gradient, *Up next* (the first shot without a render, one tap into the Board),
  * the eight stages as cards with a live line and a status dot, and the recent
  * takes. Every card routes to its page; every figure is the project's own.
  *
@@ -62,7 +62,7 @@ export function StudioHome({ project: loaded, items, actions, loading = false, n
             <span className="gx-home-next-title">Up next · Shot {String(next.index).padStart(2, "0")}</span>
             <span className="gx-home-next-meta">{next.name} · quoted when you open it</span>
           </span>
-          <button type="button" className="gx-primary" onClick={() => shell.goSuite("studio", "rig")} data-testid="home-generate-next">Open in Rig</button>
+          <button type="button" className="gx-primary" onClick={() => shell.goSuite("studio", "rig")} data-testid="home-generate-next">Open the Board</button>
         </div>
       ) : startsEmpty(project) ? (
         <div className="gx-home-next" data-testid="home-up-next">

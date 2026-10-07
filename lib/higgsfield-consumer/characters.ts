@@ -1,6 +1,6 @@
 /**
- * Trained characters (Soul IDs) on the connected account (FINAL_SPEC §4 ›
- * Soul ID): read from `show_characters`, the tool the planner already reads,
+ * Trained characters (Soul IDs) on the connected account: read from
+ * `show_characters`, the tool the planner already reads,
  * so a Soul model in Gen can carry `soul_id`. Training a new one is Studio ›
  * Cast › Build identity. The list is provider data: bounded, text-only, and
  * never an instruction.

@@ -40,7 +40,7 @@ export const GET = withTenant(async (req: Request) => {
   try {
     const model = configured.find(item => item.id === q.get('model'));
     if (!model) throw new MediaQuoteError('This generation engine is unavailable. Choose a configured engine.');
-    if (model.marketing) throw new MediaQuoteError("Marketing Studio needs a live quote for the complete prompt and settings. Request POST /api/generate/quote.", 409);
+    if (model.marketing) throw new MediaQuoteError("Product image needs a live quote for the complete prompt and settings. Request POST /api/generate/quote.", 409);
     if (model.soulIdentity) {
       const identityId = q.get('soulIdentityId');
       if (!identityId) throw new MediaQuoteError('Attach a ready identity from Cast & Elements to this node.');

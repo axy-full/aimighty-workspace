@@ -11,7 +11,7 @@ import type { AppState, PageId, SelKind, Suite } from "./types";
 const SUITE_EXTRA: Record<Suite, { short: string; mark: string; blurb: (pages: number) => string }> = {
   particl: { short: "Studio", mark: "STUDIO", blurb: (n) => `The production studio. ${countWord(n)} stages from brief to delivery.` },
   atomik: { short: "Agent", mark: "AGENT", blurb: () => "The production agent. Plans, prices and runs the work." },
-  moleculr: { short: "Business", mark: "BUSINESS", blurb: () => "Build and grow your brand from one marketing studio." },
+  moleculr: { short: "Business", mark: "BUSINESS", blurb: () => "Build and grow your brand from one place." },
   subatomik: { short: "Viral", mark: "VIRAL", blurb: () => "Recast motion and swap elements in footage you own." },
 };
 
@@ -30,7 +30,7 @@ export type ViewOption = { id: string; label: string };
 
 /** What the blue primary button in the page header does. */
 export type PrimaryAction =
-  | { kind: "generate"; label: "Generate"; key: "G" }
+  | { kind: "generate"; label: "Make"; key: "G" }
   | { kind: "upload"; label: "+ Upload"; key: null }
   | { kind: "add-cast"; label: "+ Add cast"; key: null }
   | { kind: "run-stage"; label: "+ Run stage"; key: "A" };
@@ -57,8 +57,8 @@ export const PAGES: Record<Suite, PageDef[]> = {
     page("particl", "brief", "Brief", "Brief & Script", lead("brief")),
     page("particl", "boards", "Boards", "Boards", lead("boards")),
     page("particl", "cast", "Cast", "Cast & Elements", "Groups references, builds each identity and binds it to the shots that cite it."),
-    page("particl", "astra", "Astra", "Astra 3D", lead("astra")),
-    page("particl", "rig", "Rig", "Rig", "Resolves references, quotes each shot and dispatches it to a video engine."),
+    page("particl", "astra", "3D blocking", "3D blocking", lead("astra")),
+    page("particl", "rig", "Board", "Board", "Resolves references, quotes each shot and dispatches it to a video engine."),
     page("particl", "takes", "Takes", "Takes", "Compares versions against the director’s note and marks what is worth cutting with."),
     page("particl", "edit", "Edit", "Edit & Sound", "Assembles the approved takes, then writes dialogue, effects and music against the cut."),
     page("particl", "deliver", "Deliver", "Deliver", lead("deliver")),
@@ -66,7 +66,7 @@ export const PAGES: Record<Suite, PageDef[]> = {
   atomik: [
     page("atomik", "agent", "Agent", "Agent", lead("agent")),
     page("atomik", "runs", "Runs", "Runs", lead("runs")),
-    page("atomik", "generate", "Generate", "Generate", "Single generations run in Gen, on Particl’s own engines."),
+    page("atomik", "generate", "Make", "Make", "Single generations run in Make, on Particl’s own engines."),
     page("atomik", "recipes", "Recipes", "Recipes", lead("recipes")),
     page("atomik", "builds", "Builds", "Builds", lead("builds")),
     page("atomik", "skills", "Skills", "Skills", lead("skills")),
@@ -75,12 +75,12 @@ export const PAGES: Record<Suite, PageDef[]> = {
     page("atomik", "budget", "Budget", "Budget", lead("budget")),
   ],
   moleculr: [
-    page("moleculr", "marketing", "Marketing Studio", "Marketing Studio", lead("marketing")),
+    page("moleculr", "marketing", "Product image", "Product image", lead("marketing")),
   ],
   subatomik: [
     page("subatomik", "motion", "Motion Transfer", "Motion Transfer", lead("motion")),
     page("subatomik", "swap", "Object Swap", "Object Swap", lead("swap")),
-    page("subatomik", "shorts", "Shorts", "Shorts", "Restyle one video into a set of short clips; one quote covers the whole set."),
+    /* Shorts ran only on a signed-in Higgsfield account: off for Release 1 (lib/higgsfield-consumer/retired.ts); its id resolves to no page. */
     page("subatomik", "sources", "Sources", "Sources", lead("sources")),
     page("subatomik", "compare", "Compare", "Compare", lead("compare")),
     page("subatomik", "history", "History", "History", lead("history")),
@@ -161,7 +161,7 @@ export function pageKind(id: PageId): SelKind {
 }
 
 export function primaryAction(id: PageId): PrimaryAction {
-  if (id === "rig") return { kind: "generate", label: "Generate", key: "G" };
+  if (id === "rig") return { kind: "generate", label: "Make", key: "G" };
   if (id === "takes") return { kind: "upload", label: "+ Upload", key: null };
   if (id === "cast") return { kind: "add-cast", label: "+ Add cast", key: null };
   return { kind: "run-stage", label: "+ Run stage", key: "A" };
@@ -195,7 +195,7 @@ const g = (title: string, items: [string, string][]): LibraryGroup =>
 export const LIBRARY: Partial<Record<PageId, LibraryGroup[]>> = {
   rig: [
     g("REFERENCES", [["Brief", "Write · Annotate"], ["Look board", "Collect · Grade"], ["Character", "Identity · Wardrobe"], ["World & element", "Reference · Transform"], ["Media", "Import · Preview"]]),
-    g("CREATE", [["Scene", "Compose · Direct"], ["Generate", "Prompt · References"]]),
+    g("CREATE", [["Scene", "Compose · Direct"], ["Make", "Prompt · References"]]),
     g("FINISH", [["Composite", "Blend · Mask"], ["Colour", "Grade · Compare"], ["Transform", "Scale · Rotate"], ["Sound", "Listen · Gain"]]),
     g("FLOW", [["Switch", "Route · Compare"], ["Version", "Branch · Pin"], ["Approve", "Price · Gate"], ["Export", "Package · Send"]]),
   ],
