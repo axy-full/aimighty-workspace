@@ -38,7 +38,7 @@ export function TabBar() {
   return (
     <nav className="gx-tabbar" aria-label="Tabs" data-testid="tabbar">
       {TABS.map((t) => (
-        <button key={t.id} type="button" className="gx-tabbar-btn" aria-current={active === t.id ? "page" : undefined} onClick={() => go(t.id)} data-testid={`tabbar-${t.id}`}>
+        <button key={t.id} type="button" className="gx-tabbar-btn" aria-current={active === t.id ? "page" : undefined} onClick={() => go(t.id)} data-destination={`tab:${t.id}`} data-testid={`tabbar-${t.id}`}>
           <Glyph name={t.glyph} size={22} className="gx-glyph" />
           <span className="gx-tabbar-label">{t.label}</span>
         </button>

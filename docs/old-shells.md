@@ -221,7 +221,7 @@ With the new interface on (`lib/shell/new-interface.ts`), these pages render the
 - same file, "Edit & Sound: a failed read of the edit says so and offers Try again": PORTED to the board's Edit & Sound as a new test in `tests/demo-gaps-l3-edit-workbench.spec.ts` (desktop).
 - same file, "phone Edit & Sound: a failed read of the edit...": the phone has no Edit & Sound editor now (its Cut is watch and approve only, `PhoneCutScreen`); nothing to retry there.
 - same file, "Brief opens the shell's own Atomik conversation, and only once the brief is saved": the old Brief tool's button is gone; the board's Brief has no such button.
-- same file, "the Rig's Estimate is the Generate button's own figure when references are bound": the Inspector's shot estimate is gone; the figure on Make's button, with references, is asserted by `make-prices-workbench` and `hf-gen-output-coverage-workbench`.
+- same file, "the Rig's Estimate is the Generate button's own figure when references are bound": the Inspector's shot estimate is gone; the figure on Make's button, with references, is asserted by `tests/cinema-controls-workbench.spec.ts` (lines 283-312 and 326-350: the Make button's figure with a sound reference bound, and again after Again). The Workspace "G" shortcut is unreachable now (no route mounts WorkspaceShell), so nothing is left to guard.
 - `tests/hf-viral-real-runs-workbench.spec.ts`: kept and retargeted. History is the Social board's History drawer (desktop only; a phone has no board), the real-route test now asserts the retired route answers 410 to every read and send.
 
 ## Release 1: the recovery race runs on the Make panel (lane r1-stale-claim, 7 Oct)

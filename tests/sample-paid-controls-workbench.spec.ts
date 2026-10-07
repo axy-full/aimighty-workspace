@@ -6,6 +6,10 @@ import { PHONES, seedPhoneStates, signedInWarm, watchErrors } from "./helpers/r1
 import { isCompact } from "./helpers/shellMode";
 import { adsUrl, desktop, mockReads, seedAds } from "./helpers/s11-board";
 import { seedCut } from "./helpers/gaps-l3";
+import { emptyLibrary, gotoBoard, seedBoard } from "./helpers/gaps-l2";
+import type { CanvasNode, Project } from "../lib/workbench/studio";
+import type { BeatSheet } from "../lib/production/beats";
+import { sceneFromShot } from "../lib/production/blocking";
 import { CHECK_LINE, SAMPLE_LINE } from "../lib/demo/sample";
 
 /** What a screen says in each mode where nothing spends: the sample's line, or the neutral one when the check failed. */
@@ -239,6 +243,50 @@ test("Edit & Sound: no New voice line, music or sound effect in the sample (the 
     /* What is free stays: the browser export, and the sound lanes' toggle. */
     await expect(es.getByTestId("es-export")).toHaveText("Export the cut · free");
     await expect(es.getByTestId("es-clip-audio")).toBeVisible();
+  }
+  expect(sent).toEqual([]);
+});
+
+/** One shot with a saved 3D blocking scene, so the take card carries its strip. */
+const BLOCKING_BEATS: BeatSheet = {
+  scriptSha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", updatedAt: "2026-10-06T10:00:00.000Z",
+  scenes: [{ id: "scene-a", heading: "EXT. HILLSIDE - DAWN", summary: "", beats: [], characters: ["Runner"], locations: ["Hillside"], props: ["Lantern"],
+    shots: [{ id: "shot-a1", description: "A runner crests the hill.", framing: "Close-up", movement: "Slow push · 85mm", lighting: "", sound: "", duration: 5 }] }],
+};
+const withBlocking = (p: Project): Project => {
+  const node = { id: "node-shot0001", title: "Close on the runner", type: "scene", x: 0, y: 0, width: 344, linked: [], boardShotId: "shot-a1" } as CanvasNode;
+  const base = { ...p, nodes: [node], production: { beats: BLOCKING_BEATS } } as Project;
+  const made = sceneFromShot(base, "node-shot0001");
+  return { ...base, production: { ...base.production, blocking: { "node-shot0001": { scene: made.scene, move: made.move, savedAt: "2026-10-06T10:20:00.000Z" } } } } as Project;
+};
+
+test("3D blocking: no Remake on the shot's strip and no Prop from a photo in the overlay in the sample (the free Open stays); another workspace keeps Remake priced", async ({ page }) => {
+  test.skip(!desktop(page), "the canvas is the desktop's");
+  test.setTimeout(240_000);
+  const state = { mode: "other" as Mode };
+  const sent = watchPaid(page);
+  const workspaceId = await signedInWarm(page, "Blocking Sample");
+  const { project } = await seedBoard(page, workspaceId, withBlocking);
+  await emptyLibrary(page);
+  await answerSample(page, state);
+  for (const mode of MODES) {
+    state.mode = mode;
+    await gotoBoard(page, project.id);
+    await page.locator('[data-region="shots"]').click();
+    await page.waitForTimeout(700);
+    const strip = page.locator('[data-card-id="node-shot0001"]').getByTestId("shot-blocking");
+    await expect(strip).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("board-sample").first()).toHaveCount(mode === "other" ? 0 : 1);
+    await offered(strip.getByTestId("blocking-remake"), mode);
+    if (mode === "other") await expect(strip.getByTestId("blocking-remake")).toHaveAttribute("data-spend", "priced", { timeout: 20_000 });
+    else await expect(strip.locator('[data-spend="priced"]')).toHaveCount(0);
+    await strip.getByTestId("blocking-reopen").click();
+    const overlay = page.getByTestId("blocking-overlay");
+    await expect(overlay).toBeVisible();
+    await offered(overlay.getByTestId("blocking-add-photo"), mode);
+    /* The free tools stay in every mode. */
+    await expect(overlay.getByTestId("blocking-add-figure")).toBeVisible();
+    if (mode !== "other") await expect(overlay.locator('[data-spend="priced"]')).toHaveCount(0);
   }
   expect(sent).toEqual([]);
 });
