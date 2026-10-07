@@ -194,7 +194,8 @@ test("Atomik never offers an account approval, the owner's included: its panel n
   await page.goto(`/suites?project=${film.id}&atomik=1`);
   await expect(page.getByTestId("atomik-input").or(page.getByTestId("phone-atomik-input")).first()).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("atomik-owner-run")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /^Approve/ })).toHaveCount(0);
+  /* The how-to hint "Approve everything under N cr" is Atomik's own free question, not a plan approval. */
+  await expect(page.getByRole("button", { name: /^Approve(?! everything under)/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /connected account|sign in|connect/i })).toHaveCount(0);
   await noAccountWords(page);
   expect(writes).toEqual([]);
