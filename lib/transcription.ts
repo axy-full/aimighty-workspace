@@ -238,7 +238,8 @@ async function transcription(input: TranscriptionInput, userId: string, options:
   try { await (options.deps?.reserve ?? reserveGenerationSpend)({ ...event, status: "running", engineCostUsd: estimateUsd }, { token: currentTenant()?.token }); }
   catch (error) {
     /* The backstop for the sample production (refused above): a conflict with the project (409), never "not enough credits". */
-    if (error instanceof SpendReservationError) return { status: error.message === LEDGER_UNIT_PAUSED ? 503 : error.message === SAMPLE_LINE ? 409 : 402, body: { error: error.message, charged: 0 } };
+    /* A cap (the workspace's monthly engine cap, a token's ceiling, the hourly limit) stays 429: it is not "not enough credits". */
+    if (error instanceof SpendReservationError) return { status: error.message === LEDGER_UNIT_PAUSED ? 503 : error.message === SAMPLE_LINE ? 409 : error.status === 429 ? 429 : 402, body: { error: error.message, charged: 0 } };
     /* Not a refusal: the write may have landed with its acknowledgement lost. Nothing was sent, so a hold it
        left is released — found by the event's own id — before anything is said; one that cannot be is answered from the meter. */
     if ((await meteredCharge(event.id))?.status === "running") await meter({ ...event, status: "failed", engineCostUsd: 0 }, { critical: true });
