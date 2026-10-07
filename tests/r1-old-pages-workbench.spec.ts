@@ -274,11 +274,27 @@ test("sign-in follows a next that is a path on this site and nothing else", asyn
   /* A path on this site is followed. */
   const visitor = await browser.newPage();
   try {
+    await visitor.addInitScript(() => {
+      const w = window as unknown as { __addresses: string[] };
+      w.__addresses = [];
+      for (const method of ["pushState", "replaceState"] as const) {
+        const original = history[method].bind(history);
+        history[method] = (data: unknown, unused: string, url?: string | URL | null) => {
+          if (url) w.__addresses.push(new URL(String(url), location.href).pathname + new URL(String(url), location.href).search);
+          original(data, unused, url);
+        };
+      }
+    });
     await visitor.goto(`/login?next=${encodeURIComponent("/suites?make=video&view=home")}`);
     await visitor.getByLabel("EMAIL", { exact: true }).fill(me.email);
     await visitor.getByLabel("PASSWORD", { exact: true }).fill(PASSWORD);
+    /* The sign-in redirect itself follows next on every size: the router's first address after sign-in is /suites?make=video…, before any phone rewrite. */
+    const followed = () => visitor.evaluate(() => (window as unknown as { __addresses: string[] }).__addresses.some((address) => /^\/suites\?(?=.*make=video)/.test(address)));
     await visitor.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(visitor).toHaveURL(/\/suites\?(?=.*make=video)/);
+    await expect.poll(followed, { message: "the redirect went to next" }).toBe(true);
+    /* Desktop keeps the address; the phone app then writes its own address for Make (components/graphite/phone/phone-model.ts › phoneSearch). */
+    const phone = (visitor.viewportSize()?.width ?? 1440) < 768;
+    await expect(visitor).toHaveURL(phone ? /\/suites\?(?=.*screen=make)/ : /\/suites\?(?=.*make=video)/);
   } finally {
     await visitor.close();
   }
