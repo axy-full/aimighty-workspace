@@ -82,6 +82,11 @@
 .ab-start-box h2 { margin: 0; font-size: 32px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; }
 .ab-start-box p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--gx-text-2); }
 .ab-start-box .ab-input { height: 44px; text-align: left; font-size: 15px; padding: 0 14px; border-radius: 10px; }
+.ab-start-box .ab-start-line { font-size: 13px; line-height: 1.45; }
+.ab-start-templates { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.ab-start-templates .ab-btn { height: 36px; }
+.ab-start-drop { width: 100%; box-sizing: border-box; min-height: 120px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 18px; border: 1px dashed var(--gx-dashed); border-radius: var(--gx-r-card); background: var(--gx-input); color: var(--gx-text-2); font-size: 15px; }
+.ab-start-drop[data-over] { border-color: var(--gx-accent); background: var(--gx-tint-08); color: var(--gx-text); }
 .ab-start-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .ab-start-actions .ab-btn { height: 40px; }
 

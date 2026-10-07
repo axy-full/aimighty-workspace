@@ -79,3 +79,19 @@
 .ag-note-card { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); }
 .ag-crew-open { align-self: flex-start; }
 @media (pointer: coarse) { .ag-chip { min-height: 44px; } }
+
+/* ── Crew review: the take under review (board/review/CrewTakeReview.tsx) ── */
+.ag-crew-take { padding-bottom: 14px; border-bottom: 1px solid var(--gx-hair-soft); }
+.ag-chip-who { display: inline-flex; align-items: center; height: 28px; gap: 6px; }
+.ag-chip-who::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--gx-done); }
+.ag-chip-who[data-client]::before { background: var(--gx-accent); }
+.ag-notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.ag-note-row { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-top: 1px solid var(--gx-hair-soft); }
+.ag-note-who { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 600; color: var(--gx-text-2); }
+.ag-note-row[data-client] .ag-note-who { color: var(--gx-accent-text); }
+.ag-note-who time { font-family: var(--gx-mono); font-weight: 500; }
+.ag-note-text { font-size: var(--gx-fs-body); line-height: 1.5; overflow-wrap: anywhere; }
+.ag-note-form { display: flex; flex-direction: column; gap: 6px; }
+.ag-note-form textarea { resize: none; border: 1px solid var(--gx-input-border); border-radius: var(--gx-r-ctl); background: var(--gx-input); color: var(--gx-text); font: inherit; font-size: var(--gx-fs-body); padding: 8px 10px; }
+.ag-note-form textarea::placeholder { color: var(--gx-placeholder); }
+.ag-note-form .ag-btn { align-self: flex-end; }

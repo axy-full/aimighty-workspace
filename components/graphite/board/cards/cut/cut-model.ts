@@ -4,7 +4,7 @@ import { validateSequence, type Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { assetStill, type CastStill } from "../cast/cast-model";
 import { clock, shotListState, shotTakes, type ShotTakes } from "../take/take-model";
-import { specRows, type SpecRow } from "../deliver/spec-check";
+import { specRows, type LoudnessInput, type SpecRow } from "../deliver/spec-check";
 
 /*
  * The Cut and Deliver region (README § 3.1 frame i), derived from today's data and nothing else. Pure: no React.
@@ -85,7 +85,7 @@ export function cutMeta(cut: Pick<CutData, "approved" | "seconds">): string {
 }
 
 /** The delivery rows for this cut (see spec-check.ts). */
-export const deliverRows = (cut: CutData): SpecRow[] => specRows({ aspect: cut.aspect, fps: cut.fps, seconds: cut.seconds, complete: cut.complete, empty: cut.clips.length === 0 });
+export const deliverRows = (cut: CutData, loudness?: LoudnessInput): SpecRow[] => specRows({ aspect: cut.aspect, fps: cut.fps, seconds: cut.seconds, complete: cut.complete, empty: cut.clips.length === 0, loudness });
 
 export const CUT_GROUP = STUDIO_GROUP.cut;
 export const CUT_CARD = "cut:the-cut";

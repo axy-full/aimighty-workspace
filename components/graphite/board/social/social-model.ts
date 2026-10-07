@@ -1,5 +1,6 @@
 import type { BoardCard, BoardSource, GroupData } from "@/lib/board/types";
 import { SOURCE_SECONDS, viralMedia, viralTakes, type ViralMedia } from "@/lib/shell/viral";
+import { postIds } from "./posts/posts-store";
 
 /*
  * The Social board's cards, from the project's Library alone (README § 3.3, "Ads and Social frames" S1 and S2). What exists
@@ -10,7 +11,7 @@ import { SOURCE_SECONDS, viralMedia, viralTakes, type ViralMedia } from "@/lib/s
 export const SOCIAL_GROUP = { source: "group:social-source", clips: "group:social-clips", hooks: "group:social-hooks", effects: "group:social-effects", posts: "group:social-posts" } as const;
 
 export const CARD_W = 308;
-export const SIZES = { source: { w: CARD_W, h: 336 }, effects: { w: CARD_W, h: 290 }, unavailable: { w: CARD_W, h: 92 } } as const;
+export const SIZES = { source: { w: CARD_W, h: 336 }, effects: { w: CARD_W, h: 290 }, unavailable: { w: CARD_W, h: 92 }, post: { w: CARD_W, h: 330 } } as const;
 
 export type SourceData = {
   id: string; name: string; url: string | null; origin: "upload" | "generation"; seconds: number | null; media: ViralMedia;
@@ -39,11 +40,18 @@ const off = (id: string, region: BoardCard["region"], group: string, order: numb
   id, kind: "social-unavailable", region, order, group, state: "empty", summary: "Not in Particl yet", data: { title, line: "Not in Particl yet" } satisfies UnavailableData,
 });
 
+/** The Posts section: "Not in Particl yet" until there are posts (a build with posting, or a development preview, lib/social/posts.ts › postsPreview), then one card per post. */
+function postCards(): BoardCard[] {
+  const ids = postIds();
+  if (!ids.length) return [off("social:posts", "posts", SOCIAL_GROUP.posts, 32, "Posts")];
+  return ids.map((id, i): BoardCard => ({ id: `social:post:${id}`, kind: "social-post", region: "posts", order: 32 + i, group: SOCIAL_GROUP.posts, state: "empty", summary: "Post", data: { id } }));
+}
+
 export function socialCards(src: BoardSource): BoardCard[] {
   const list = sources(src.library);
-  if (!list.length) return [];
+  if (!list.length && !postIds().length) return [];
   const cards: BoardCard[] = [
-    group(SOCIAL_GROUP.source, "source", "Source", list.length === 1 ? "a long video in" : `${list.length} videos`, 3, 0),
+    ...(list.length ? [group(SOCIAL_GROUP.source, "source", "Source", list.length === 1 ? "a long video in" : `${list.length} videos`, 3, 0)] : []),
     ...list.map((s, i): BoardCard => ({ id: `social:source:${s.id}`, kind: "social-source", region: "source", order: 1 + i, group: SOCIAL_GROUP.source, state: "done", summary: `${s.name}${s.seconds ? ` · ${clock(s.seconds)}` : ""}`, data: s })),
     group(SOCIAL_GROUP.clips, "clips", "Clips", "", 1, 10),
     off("social:clips", "clips", SOCIAL_GROUP.clips, 11, "Find clips"),
@@ -51,9 +59,9 @@ export function socialCards(src: BoardSource): BoardCard[] {
     off("social:hooks", "hooks", SOCIAL_GROUP.hooks, 21, "Hook review"),
     group(SOCIAL_GROUP.effects, "effects", "Effects", "quick tools, in Make", 1, 22),
     { id: "social:effects", kind: "social-effects", region: "effects", order: 23, group: SOCIAL_GROUP.effects, state: "empty", summary: "Motion transfer · Object swap", data: { sources: list.filter((s) => s.fits).length } satisfies EffectsData },
-    group(SOCIAL_GROUP.posts, "posts", "Posts", "", 2, 30),
-    off("social:narrated", "posts", SOCIAL_GROUP.posts, 31, "Narrated video"),
-    off("social:posts", "posts", SOCIAL_GROUP.posts, 32, "Posts"),
+    group(SOCIAL_GROUP.posts, "posts", "Posts", postIds().length ? "every post is approved by a person" : "", postIds().length ? 3 : 2, 30),
+    ...postCards(),
+    off("social:narrated", "posts", SOCIAL_GROUP.posts, 40, "Narrated video"),
   ];
   return cards;
 }
