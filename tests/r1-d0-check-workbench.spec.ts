@@ -10,9 +10,9 @@ import { noBannedNames } from "./helpers/r1-gaps";
  * header B, the avatar menu, ⌘K, the right-click menu (prices and Delete to trash with Undo), the phone bar on every
  * phone screen, and the public pricing page and sign-in. Real local ENGINE_MOCK=1 server; the library is mocked in the
  * browser (tests/helpers/gaps-l1.ts), the take's price is the server's own quote. Nothing paid is ever sent. A screenshot of
- * each item at 1440 and 390 goes to D0_CHECK_SHOTS (default /tmp/particl-suites/r1-d0-check/shots) for the owner.
+ * each item at 1440 and 390 goes to SHELL_CHECK_SHOTS (default /tmp/r1-shell-check/shots) for the owner.
  */
-const SHOTS = process.env.D0_CHECK_SHOTS || "/tmp/particl-suites/r1-d0-check/shots";
+const SHOTS = process.env.SHELL_CHECK_SHOTS || "/tmp/r1-shell-check/shots";
 const shot = async (page: Page, item: string, info: { project: { name: string } }) => {
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: join(SHOTS, `${item}-${info.project.name.replace("workbench-", "")}.png`), animations: "disabled" });
