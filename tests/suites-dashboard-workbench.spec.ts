@@ -15,7 +15,7 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
  */
 const SIZES = ["workbench-1440x900", "workbench-390x844"];
 
-test("Workspace › Dashboard: totals, by project and person, stalls, a project filter and a CSV export", async ({ page }, info) => {
+test("Analytics: totals, by project and person (email masked), by model, a project filter — in credits, never a vendor dollar; its old tab opens Activity", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "one desktop, one phone");
   test.setTimeout(180_000);
   const account = await signInLocally(page.request);
@@ -39,48 +39,38 @@ test("Workspace › Dashboard: totals, by project and person, stalls, a project 
     await expect.poll(async () => (await page.request.get(`/api/jobs/${id}`, { headers }).then((r) => r.json())).generation?.status, { timeout: 60_000 }).toBe("succeeded");
   }
 
+  /*
+   * Release 1: Workspace > Dashboard (tables by project, person and model, a CSV) is not drawn by any page: its tab address opens Control
+   * room > Activity (lib/shell/settings.ts › OLD_TAB_TO_SECTION). What the dashboard read is /api/analytics, so the money and privacy
+   * assertions are held on that route: credits only, no vendor dollar, the person's email mostly hidden, a project filter. Activity
+   * (desktop; a phone has no Activity screen) lists what each project settled, in credits.
+   */
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?view=workspace&tab=dashboard");
-  const dash = page.getByTestId("ws-dashboard");
-  await expect(dash).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute("aria-selected", "true");
-  await expect(dash.getByTestId("dash-generations")).toHaveText("2", { timeout: 30_000 });
-  await expect(dash.getByTestId("dash-credits")).toHaveText(/^\d[\d,]* cr$/);
-  await expect(dash.getByTestId("dash-cost")).toHaveCount(0);
-  await expect(dash.getByTestId("dash-models")).not.toContainText("$");
-  /* The route itself carries no vendor dollars for this workspace. */
   const analytics = await page.request.get("/api/analytics", { headers }).then((r) => r.json());
+  expect(analytics.totals.generations).toBe(2);
   expect(analytics.totals.credits).toBeGreaterThan(0);
-  expect(JSON.stringify(analytics)).not.toMatch(/"spend"|"promptSpend"|"credit":/);
-  await expect(dash.getByTestId("dash-projects")).toContainText(project.name);
-  await expect(dash.getByTestId("dash-people")).toContainText(String(me.name ?? ""));
-  /* Two people can share a name: each row carries the email, mostly hidden, and never the full address. */
+  expect(JSON.stringify(analytics)).not.toMatch(/"spend"|"promptSpend"|"credit":|"cost/i);
+  expect(analytics.byProject.map((r: { name: string }) => r.name)).toContain(project.name);
   const email = String(me.email ?? "");
-  await expect(dash.getByTestId("dash-people")).toContainText(`${email[0]}•••@`);
-  await expect(dash.getByTestId("dash-people")).not.toContainText(email);
-  await expect(dash.getByTestId("dash-models")).toContainText("Nano Banana 2");
-  await expect(dash.getByTestId("dash-stuck")).toContainText("1K");
-  await expect(dash.getByTestId("dash-iteration")).toContainText("Prompt length");
+  const person = analytics.byPerson.find((r: { id: string }) => r.id === me.id);
+  expect(person.name).toBe(String(me.name ?? person.name));
+  /* Two people can share a name: each row carries the email, mostly hidden, and never the full address. */
+  expect(person.email).toContain(`${email[0]}•••@`);
+  expect(JSON.stringify(analytics)).not.toContain(email);
+  expect(analytics.byModel.map((r: { model?: string; label?: string }) => r.label ?? r.model).join(" ")).toContain("Nano Banana 2");
+  /* A project filter re-reads that project alone. */
+  const only = await page.request.get(`/api/analytics?projectId=${production}`, { headers }).then((r) => r.json());
+  expect(only.totals.generations).toBe(2);
+  expect(JSON.stringify(only)).not.toMatch(/"spend"|"promptSpend"|"credit":/);
 
-  /* A project row focuses the dashboard on that project; the period filter re-reads. */
-  await dash.getByTestId("dash-projects").getByText(project.name).click();
-  await expect(dash.getByTestId("dash-project")).toHaveValue(production);
-  await expect(dash.getByTestId("dash-projects")).toHaveCount(0);
-  await dash.getByRole("radio", { name: "7 days" }).click();
-  await expect(dash.getByTestId("dash-generations")).toHaveText("2");
+  if (info.project.name === "workbench-1440x900") {
+    await page.goto("/suites?view=workspace&tab=dashboard");
+    await expect(page.getByTestId("control-room")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("control-room")).toContainText(/\bcr\b/, { timeout: 60_000 });
+    expect(await page.getByTestId("control-room").innerText()).not.toMatch(/\$\s?\d|Cost \(USD\)/);
+    expect(await page.evaluate(() => document.body.innerText)).not.toContain(email);
+  }
 
-  /* CSV export. */
-  const download = page.waitForEvent("download");
-  await dash.getByTestId("dash-export").click();
-  const file = await download;
-  expect(file.suggestedFilename()).toMatch(/^particl-dashboard-.+\.csv$/);
-  const text = (await import("node:fs")).readFileSync((await file.path())!, "utf8");
-  expect(text).toContain("Credits");
-  expect(text).not.toContain("Cost (USD)");
-
-  /* On a phone the tables scroll inside the card, never the page. */
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  if (info.project.name === "workbench-1440x900") await dash.screenshot({ path: info.outputPath("dashboard-1440.png") });
   expect(errors).toEqual([]);
 });

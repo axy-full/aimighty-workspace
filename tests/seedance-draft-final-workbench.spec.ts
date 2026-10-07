@@ -402,6 +402,7 @@ test("API: a draft's final runs to success at the 1080p quote: two charges, the 
   const [draft, final] = jobs;
   expect(draft.id).toBe(draftId);
   expect(final.params).toMatchObject({ finalOf: draftId, resolution: "1080p", watermark: false });
+  expect(draft.params.finalGenId).toBe(final.id);
   expect(charges.map((c) => [c.id, c.status, c.credits])).toEqual([[draftId, "succeeded", draftPrice], [final.id, "succeeded", finalPrice]]);
 });
 

@@ -246,9 +246,9 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
         <div className="gx-mk-chips" role="group" aria-labelledby={`${id}-takes`} style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
           {choices.map((n) => {
             /* No totals in the sample workspace, where nothing is made. */
-            const total = make.spendOff ? null : shownTotal(composer.quote, composer.quoteKey, n);
+            const total = make.spendOff || make.priceHeld ? null : shownTotal(composer.quote, composer.quoteKey, n);
             return (
-              <button key={n} type="button" className="gx-chip" style={{ height: "auto", minHeight: 28, whiteSpace: "normal", paddingBlock: 4 }} aria-pressed={takes === n} disabled={Boolean(settings.draft) || n > TAKES_MAX} onClick={() => set({ type: "count", value: n })} data-testid={`gen-takes-${n}`}>
+              <button key={n} type="button" className="gx-chip" style={{ height: "auto", minHeight: 48, whiteSpace: "normal", paddingBlock: 4 }} aria-pressed={takes === n} disabled={Boolean(settings.draft) || n > TAKES_MAX} onClick={() => set({ type: "count", value: n })} data-testid={`gen-takes-${n}`}>
                 {takes === n ? "✓ " : ""}×{n}{total == null ? null
                   /* Cinema Studio's figure is approximate and held at 3N: said as every approval of it is (lib/cinemaHold.ts). */
                   : composer.quote?.approximate ? <> · <span className="gx-price" data-price="about">{cinemaPriceWords(total)}</span></>

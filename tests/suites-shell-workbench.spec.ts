@@ -76,10 +76,11 @@ test("⌘K finds a board region, runs the top hit on Enter and closes on Escape"
   await page.getByTestId("header-search").click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("combobox").or(dialog.getByRole("textbox")).first().fill("deliver");
-  /* The stage pages are the board's regions: Deliver is a place on it. */
-  await expect(dialog.getByRole("option").first()).toContainText("Deliver");
-  await expect(dialog.getByRole("option").last()).toContainText("Ask Atomik: deliver");
+  await dialog.getByRole("combobox").or(dialog.getByRole("textbox")).first().fill("go to deliver");
+  /* The stage pages are the board's regions: Deliver is a place on it, and "go to" names it first (a bare word is a question for Atomik, whose card answers below the list). */
+  await expect(dialog.getByRole("option").first()).toContainText("Go to Deliver");
+  /* The new interface's hits carry no "Ask Atomik" row (lib/shell/palette.ts): Atomik answers in its own card. */
+  await expect(dialog.getByRole("option").filter({ hasText: /Ask Atomik/ })).toHaveCount(0);
   await page.keyboard.press("Enter");
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
@@ -97,13 +98,13 @@ test("an old Gen link lands on the page it names with Make open on its type, ser
   /* Server: the redirect happens before anything renders, and keeps the rest of the query. */
   const errors = await open(page, "/suites?suite=particl&page=rig&sp=rig&view=gen&mode=images&sheet=1", false);
   await expect(page.getByTestId("make-panel")).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Images" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("make-type-image")).toHaveAttribute("aria-checked", "true");
   /* The Rig page is the board: the old address keeps its Make panel over it. */
   await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
   expect([param(page, "view"), param(page, "mode"), param(page, "sheet"), param(page, "make")]).toEqual(["board", null, null, "image"]);
 
   /* Make's type and tab are its address: a switch rewrites it, Recent included. */
-  await page.getByRole("tab", { name: "Audio" }).click();
+  await page.getByTestId("make-type-audio").click();
   await expect.poll(() => param(page, "make")).toBe("audio");
   await page.getByTestId("make-tab-recent").click();
   await expect.poll(() => param(page, "make")).toBe("recent");
@@ -113,7 +114,7 @@ test("an old Gen link lands on the page it names with Make open on its type, ser
 
   /* Client: an entry with the old address (history, a pasted URL inside the app) reads as Make too. */
   await page.evaluate(() => { history.pushState(null, "", "/suites?view=gen&mode=video"); dispatchEvent(new PopStateEvent("popstate")); });
-  await expect(page.getByRole("tab", { name: "Video" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("make-type-video")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("make-panel")).toBeVisible();
   await expect.poll(() => [param(page, "mode"), param(page, "make")]).toEqual([null, "video"]);
 

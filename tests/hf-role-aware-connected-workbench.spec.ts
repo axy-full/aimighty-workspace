@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { joinLocallyAsMember, signInLocally } from "./helpers/workbenchLocal";
-import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
+import { isCompact } from "./helpers/shellMode";
 
 /**
  * The Higgsfield sign-in is retired (lib/higgsfield-consumer/retired.ts), in
@@ -22,12 +22,9 @@ import { forbidPaidWork } from "./helpers/workspaceFixtures";
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const PORTRAIT = ["workbench-360x640", "workbench-390x844"];
-const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
 const SHOT_AT: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844" };
 const SHOTS = process.env.CONNECTED_ROLE_SHOTS;
 const CONSUMER = /\/api\/higgsfield\/consumer\//;
-/** The shell's collector lists the owner's saved jobs (a ledger read, never the account): the one account route still called. */
-const COLLECTOR_LIST = "GET /api/higgsfield/consumer/generation";
 test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
 
 async function settle(page: Page) {
@@ -84,140 +81,108 @@ async function asMember(page: Page, playwright: PlaywrightWorkerArgs["playwright
   expect(me.owner, "the page holds a member's session").toBe(false);
   return { ownerName, project, ...watch(page) };
 }
-/** No suite carries the old "Owner" badge or its note. */
-async function noBadges(page: Page) {
-  /* A phone keeps the Suites behind its context badge (components/graphite/phone.css), one tap away. */
-  await openSuitesMenu(page);
-  await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
-  for (const suite of ["business", "viral", "studio", "gen", "atomik", "crew"]) await expect(page.getByTestId(`owner-badge-${suite}`)).toHaveCount(0);
-  for (const tab of await page.locator("[data-suite-tab]").all()) expect(await tab.getAttribute("aria-describedby")).toBeNull();
-  await closeSuitesMenu(page);
-}
-
-/** An old link to Business › Ads: the Ads board (Business's pages are the board's cards, for everyone), and nothing of the removed page or the retired card. */
-async function oldAdsLink(page: Page, projectId: string) {
-  await page.goto(`/suites?suite=moleculr&page=ads&sp=ads&project=${projectId}`);
-  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads", { timeout: 60_000 });
-  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
-  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("kind")]; }).toEqual(["board", "ads"]);
-  for (const gone of ["ads-view", "owner-run-business"]) await expect(page.getByTestId(gone)).toHaveCount(0);
-  await expect(page.getByText(/Connect the account|Reconnect the account|Only the workspace owner|Higgsfield/)).toHaveCount(0);
-}
-/** Business › Setup: the Ads board's brand and product cards, and nothing of the connected account. */
-async function setupIsParticls(page: Page, projectId: string) {
+/** Business › Setup: the Ads board's brand and product cards (a phone: its Record), and nothing of the connected account. */
+async function setupIsParticls(page: Page, projectId: string, info: { project: { name: string } }) {
   await page.goto(`/suites?suite=moleculr&page=setup&sp=setup&project=${projectId}`);
+  if (PHONES.includes(info.project.name)) { await expect(page.getByTestId("phone-app")).toBeVisible({ timeout: 60_000 }); return; }
   await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads", { timeout: 60_000 });
   await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
-  for (const gone of ["owner-run-business", "setup-view", "setup-connect"]) await expect(page.getByTestId(gone)).toHaveCount(0);
   await expect(page.getByTestId("board")).not.toContainText(/Higgsfield|Open Ads|Use in Ads|run by/i);
 }
 
-test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's own list, Gen offers Studio engines only; Viral and Image ads run on the API key, Cast on the platform's key", async ({ page }, info) => {
+/** The retired account leaves no word and no badge on a page: no "Owner" badge, no card that says who runs a page, no vendor name. */
+async function noAccountWords(page: Page, within = page.locator("body")) {
+  for (const suite of ["business", "viral", "studio", "gen", "atomik", "crew"]) await expect(page.getByTestId(`owner-badge-${suite}`)).toHaveCount(0);
+  await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
+  await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
+  expect(await within.innerText()).not.toMatch(/Higgsfield|Connect the account|Reconnect the account|Only the workspace owner|Run by|Owner only/i);
+}
+
+/** An old link to Business › Ads or Setup: the Ads board on a desktop (cards for everyone), the project's Record on a phone, and nothing of the removed page or the retired card. */
+async function oldBusinessLinks(page: Page, projectId: string, info: { project: { name: string } }) {
+  const phone = PHONES.includes(info.project.name);
+  for (const where of ["ads&sp=ads", "setup&sp=setup", "dtc&sp=dtc"]) {
+    await page.goto(`/suites?suite=moleculr&page=${where}&project=${projectId}`);
+    if (phone) await expect(page.getByTestId("phone-app")).toBeVisible({ timeout: 60_000 });
+    else {
+      await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads", { timeout: 60_000 });
+      await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
+      for (const gone of ["ads-view", "owner-run-business", "setup-view", "setup-connect"]) await expect(page.getByTestId(gone)).toHaveCount(0);
+    }
+    await noAccountWords(page);
+    await noSideScroll(page);
+  }
+}
+
+/** Motion transfer runs on Particl's API key for everyone: Make's quick tool (the old Viral page's link lands on it), its composer and its button; nothing says an account runs it. A phone draws no quick tool yet (a fixme twin is in demo-s10-phone-make-workbench). */
+async function motionOnTheKey(page: Page, projectId: string, info: { project: { name: string } }) {
+  if (isCompact(info)) return;
+  await page.goto(`/suites?suite=subatomik&page=motion&sp=motion&project=${projectId}`);
+  await expect(page.getByTestId("viral-view")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
+  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–8 s).", { timeout: 60_000 });
+  await expect(page.getByTestId("viral-generate")).toBeVisible();
+  await expect(page.getByTestId("spec-plan-owner")).toHaveCount(0);
+  await noAccountWords(page);
+  await noSideScroll(page);
+}
+
+test("an old Business link opens the Ads board for the owner, Setup is Particl's own, Make offers Studio engines only; Motion transfer runs on the API key; nothing asks the account", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.setTimeout(240_000);
   const project = info.project.name;
   const { project: film, consumer, errors } = await asOwner(page);
 
-  /* Business › Ads is removed: the old link is Image ads, on the first paint. */
-  await oldAdsLink(page, film.id);
-  await noBadges(page);
-  await noSideScroll(page);
+  await oldBusinessLinks(page, film.id, info);
   await shot(page, "business-owner", project);
-
-  /* Setup is the board's brand and product cards: what Particl made in the project. */
-  await setupIsParticls(page, film.id);
-  await noSideScroll(page);
-  /* Image ads is the board's ads group (Particl's API key): a card, never an account's. */
-  await page.goto(`/suites?suite=moleculr&page=dtc&sp=dtc&project=${film.id}`);
-  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads", { timeout: 60_000 });
-  await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
-  await noSideScroll(page);
-  await shot(page, "image-ads-owner", project);
-
-  /* Gen on Images: Studio engines only — no Higgsfield catalogue, no Analysis, for the owner too. */
-  await page.goto(`/suites?make=video&project=${film.id}`);
-  await expect(page.getByTestId("gen-view")).toBeVisible();
-  const output = page.getByRole("tablist", { name: "Output" });
-  await output.getByRole("tab", { name: "Images" }).click();
-  await expect(output.getByRole("tab", { name: "Images" })).toHaveAttribute("aria-selected", "true");
-  await expect(output.getByRole("tab")).toHaveText(["Video", "Images", "Audio"]);
-  await expect(page.getByTestId("gen-tab-analysis")).toHaveCount(0);
-  await page.getByTestId("gen-model").click();
-  const sheet = page.getByRole("dialog", { name: "Choose a model" });
-  await expect(sheet).toBeVisible();
-  await expect(sheet.getByRole("tab", { name: "Higgsfield catalogue" })).toHaveCount(0);
-  await expect(sheet.getByTestId("gen-sheet-catalogue")).toHaveText("Studio engines");
-  await expect(page.getByTestId("gen-model")).toHaveAttribute("title", "Studio engine · Change");
-  await noSideScroll(page);
-  await shot(page, "gen-owner-sheet", project);
-  await sheet.getByRole("button", { name: "Close" }).click();
-  await expect(sheet).toHaveCount(0);
-  /* Four tabs keep one row, each a whole target. */
-  const tabs = await output.getByRole("tab").all();
-  const tops = await Promise.all(tabs.map(async (tab) => (await tab.boundingBox())!.y));
-  expect(new Set(tops.map((y) => Math.round(y))).size, "one row of tabs").toBe(1);
-  if (PHONES.includes(project)) for (const tab of tabs) expect((await tab.boundingBox())!.width).toBeGreaterThanOrEqual(44);
-
-  /* Viral runs on Particl's API key: Motion transfer is Make's quick tool (the old page's link lands on it), the composer
-     with its button; nothing says the account runs it. */
-  await page.goto(`/suites?suite=subatomik&page=motion&sp=motion&project=${film.id}`);
-  await expect(page.getByTestId("viral-view")).toBeVisible();
-  await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
-  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–8 s).");
-  await expect(page.getByTestId("viral-generate")).toBeVisible();
-  await expect(page.getByTestId("spec-plan-owner")).toHaveCount(0);
-  await noSideScroll(page);
+  await setupIsParticls(page, film.id, info);
+  await motionOnTheKey(page, film.id, info);
   await shot(page, "viral-owner", project);
 
-  /* Cast (a stage page until the board replaced it) is the board's Cast region now; its card has its own specs (tests/demo-s05-cast-workbench.spec.ts). */
+  /* Make: Studio engines only — no connected catalogue, no Analysis type, for the owner too. A phone draws its own simple Make (demo-s10-phone-make-workbench). */
+  if (!isCompact(info)) {
+    await page.goto(`/suites?make=video&project=${film.id}`);
+    await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole("radiogroup", { name: "Type" }).getByRole("radio")).toHaveText(["Video", "Image", "Audio"]);
+    await expect(page.getByTestId("gen-tab-analysis")).toHaveCount(0);
+    await page.getByTestId("gen-model").click();
+    await expect(page.getByTestId("make-engines")).toBeVisible();
+    await expect(page.getByTestId("make-engines")).not.toContainText(/Higgsfield|catalogue|connected/i);
+    await noSideScroll(page);
+    await shot(page, "gen-owner-sheet", project);
+  }
 
-  /* The phone's Home: no suite ran on the account as a whole any more (Viral is on the key), so none says retired or who
-     runs it; Business names the page it opens on. */
+  /* The phone's Home: no suite runs on the account, so nothing says retired or who runs it. */
   if (PORTRAIT.includes(project)) {
-    await page.getByTestId("tabbar-home").click();
-    await expect(page.getByTestId("suite-home")).toBeVisible();
-    await expect(page.getByTestId("home-fact-business")).toHaveText("Opens on Image ads");
-    for (const suite of ["business", "viral", "studio"]) {
-      await expect(page.getByTestId(`home-fact-${suite}`)).not.toContainText(/Run by|retired/);
-      await expect(page.getByTestId(`home-suite-${suite}`)).not.toHaveAttribute("data-retired", "true");
-    }
+    await page.goto("/suites");
+    await expect(page.getByTestId("phone-home")).toBeVisible({ timeout: 60_000 });
+    await noAccountWords(page);
+    await expect(page.getByTestId("phone-home")).not.toContainText(/retired/i);
     await noSideScroll(page);
     await shot(page, "home-owner", project);
   }
 
-  /* Nothing new was asked of the account on the way: the only account route called is the collector's list of saved jobs. */
-  expect(consumer.filter((request) => request !== COLLECTOR_LIST), "no new work, and no read of the account").toEqual([]);
+  /* Nothing was asked of the account on the way, not even the saved-job list (the collector is off with the sign-in). */
+  expect(consumer, "no account route at all").toEqual([]);
   expect(errors).toEqual([]);
 });
 
-test("an old sp=ads link shows image-ads-view for a member too, Setup names no one, Viral and Image ads run on the workspace's credits, and nothing of the account is read", async ({ page, playwright }, info) => {
+test("an old Business link opens the Ads board for a member too, Setup names no one, Motion transfer runs on the workspace's credits, and nothing of the account is read", async ({ page, playwright }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.setTimeout(240_000);
   const { ownerName, project: film, consumer, errors } = await asMember(page, playwright);
-  await oldAdsLink(page, film.id);
-  await noBadges(page);
-  await noSideScroll(page);
-  await setupIsParticls(page, film.id);
-  await expect(page.getByTestId("board")).not.toContainText(ownerName);
-  await noBadges(page);
-  await noSideScroll(page);
+  await oldBusinessLinks(page, film.id, info);
+  await setupIsParticls(page, film.id, info);
+  if (!PHONES.includes(info.project.name)) await expect(page.getByTestId("board")).not.toContainText(ownerName);
+  else expect(await page.evaluate(() => document.body.innerText)).not.toContain(ownerName);
   await shot(page, "business-member", info.project.name);
-  /* Image ads and Viral run on Particl's API key for a member as for anyone: the composers, not a card. */
-  await page.goto(`/suites?suite=moleculr&page=dtc&sp=dtc&project=${film.id}`);
-  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads", { timeout: 60_000 });
-  await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
-  await noSideScroll(page);
-  await page.goto(`/suites?suite=subatomik&page=motion&sp=motion&project=${film.id}`);
-  await expect(page.getByTestId("viral-view")).toBeVisible();
-  await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
-  await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–8 s).");
-  await expect(page.getByTestId("viral-generate")).toBeVisible();
-  await noBadges(page);
-  await noSideScroll(page);
+  await motionOnTheKey(page, film.id, info);
   await shot(page, "viral-member", info.project.name);
   expect(consumer, "no account route at all for a member").toEqual([]);
   expect(errors).toEqual([]);
 });
 
-test("the previous workspace Atomik panel never offers an account approval, the owner's included: Motion Transfer's plan runs on the API-key engine and waits for the page's request", async ({ page }, info) => {
+test("Atomik never offers an account approval, the owner's included: its panel names no account and nothing is written to one", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { project: film } = await asOwner(page);
   const writes: string[] = [];
@@ -225,14 +190,14 @@ test("the previous workspace Atomik panel never offers an account approval, the 
     if (route.request().method() !== "GET") writes.push(route.request().url());
     return route.fallback();
   });
-  await page.goto(`/workspace?suite=subatomik&page=motion&project=${film.id}`);
-  if (WIDE.includes(info.project.name)) await page.getByTestId("atomik-button").click();
-  else await page.getByTestId("mobile-ask-atomik").click();
-  /* Atomik no longer runs anything on the account, so the plan is no account's to refuse. */
+  /* Release 1: the per-page plan (Motion Transfer's "Run this page") is gone with the page; Atomik opens from the header or the phone's tab. */
+  await page.goto(`/suites?project=${film.id}&atomik=1`);
+  await expect(page.getByTestId("atomik-input").or(page.getByTestId("phone-atomik-input")).first()).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("atomik-owner-run")).toHaveCount(0);
-  await expect(page.getByTestId("atomik-reason").or(page.getByTestId("mobile-atomik-reason")).first()).toHaveText("Needs Motion Transfer data");
-  await expect(page.getByRole("button", { name: /^Approve/ })).toHaveCount(0);
-  for (const run of await page.getByRole("button", { name: /Run this page/ }).all()) await expect(run).toBeDisabled();
+  /* The how-to hint "Approve everything under N cr" is Atomik's own free question, not a plan approval. */
+  await expect(page.getByRole("button", { name: /^Approve(?! everything under)/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /connected account|sign in|connect/i })).toHaveCount(0);
+  await noAccountWords(page);
   expect(writes).toEqual([]);
   await noSideScroll(page);
 });

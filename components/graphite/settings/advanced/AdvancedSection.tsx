@@ -7,6 +7,7 @@ import { requestAccountRefresh } from "@/lib/workspace/data";
 import { useSession } from "@/lib/session";
 import { useShell } from "@/lib/shell/state";
 import { useWorkspace } from "@/lib/workspace/state";
+import type { WorkspaceAccount } from "@/lib/workspace/data";
 import type { SettingsFold } from "@/lib/shell/settings";
 import { XaiEngineRow } from "../../crew/XaiEngineRow";
 import { Btn, Folded, Note, Problem, Row } from "../parts";
@@ -28,12 +29,12 @@ import { PromptRules } from "./PromptRules";
 type Settings = { settings: Record<string, string>; defaults: Record<string, string> };
 type Keys = { keys: { name: string; label: string; does: string; set: boolean }[] };
 
-export function AdvancedSection({ open }: { open: SettingsFold | null }) {
+export function AdvancedSection({ account, open }: { account: WorkspaceAccount | null; open: SettingsFold | null }) {
   return (
     <>
       <Models open={open} />
       <Tools open={open} />
-      <Workspace open={open} />
+      <Workspace account={account} open={open} />
     </>
   );
 }
@@ -138,14 +139,15 @@ function Tools({ open }: { open: SettingsFold | null }) {
   );
 }
 
-function Workspace({ open }: { open: SettingsFold | null }) {
+function Workspace({ account, open }: { account: WorkspaceAccount | null; open: SettingsFold | null }) {
   const session = useSession();
   const write = useWrite();
   const admin = session.role === "admin" || session.role === "owner";
   const owner = session.owner;
   const settings = useRead<Settings>("/api/settings");
   const { save, busy, note } = useSave(() => void settings.read());
-  const name = session.workspace?.name ?? "";
+  /* The account is re-read after a rename (requestAccountRefresh); the session is the page's first paint and stays the old name. */
+  const name = (account?.workspace && account.workspace.id === session.workspace?.id ? account.workspace.name : null) ?? session.workspace?.name ?? "";
   const [title, setTitle] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [renameNote, setRenameNote] = useState<{ ok: boolean; text: string } | null>(null);

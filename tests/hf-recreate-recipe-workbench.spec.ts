@@ -164,6 +164,12 @@ test("Again lands the whole recipe in a Make that is already open, waits for its
   await page.waitForTimeout(600);
   /* The only figure on hand is the quote without the references (17 cr): not what this take costs, so none shows, on the button or the line. */
   expect(quotes.some((q) => !q.has("genId"))).toBe(true);
+  /* The Takes chips hold no totals either (they would be the without-references 17 cr x N). */
+  await expect(async () => {
+    await openAdvanced(page);
+    await expect(page.getByTestId("gen-takes-1")).not.toContainText("cr", { timeout: 3_000 });
+    await expect(page.getByTestId("gen-takes-2")).not.toContainText("cr", { timeout: 3_000 });
+  }).toPass({ timeout: 20_000 });
   await expect(go).toHaveAttribute("aria-disabled", "true");
   await expect(go).toHaveText("Make");
   await expect(go).toHaveAttribute("data-spend", "unpriced");
