@@ -596,7 +596,9 @@ export async function grantCredits(workspaceId: string, credits: number, note: s
  * naming it is refused whole, before anything is written.
  */
 export async function grantCreditsBatch(
-  rows: { workspaceId: string; credits: number; note: string; by: string | null; kind: GrantKind }[],
+  /* `id` names a grant that must exist at most once (the preview seed's test
+     credits): a second write with the same id is ignored, never doubled. */
+  rows: { workspaceId: string; credits: number; note: string; by: string | null; kind: GrantKind; id?: string }[],
 ): Promise<void> {
   if (!rows.length) return;
   if (rows.some((r) => isHouseWorkspace({ id: r.workspaceId }))) throw new Error(HOUSE_NOT_BILLED);
@@ -607,8 +609,8 @@ export async function grantCreditsBatch(
     // an old, non-expiring grant. Its clock starts when management grants it.
     for(const workspaceId of workspaces)await syncBillingLedger(tx,workspaceId,ts);
     for(const r of rows)await tx.execute({
-      sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,?)`,
-      args: [newId("cg"), r.workspaceId, r.credits, r.note.slice(0, 200), r.kind, r.by, ts],
+      sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,?)${r.id ? " ON CONFLICT(id) DO NOTHING" : ""}`,
+      args: [r.id ?? newId("cg"), r.workspaceId, r.credits, r.note.slice(0, 200), r.kind, r.by, ts],
     });
     for(const workspaceId of workspaces)await syncBillingLedger(tx,workspaceId,ts);
   });
