@@ -148,10 +148,10 @@ test("duration steps through the engine's listed seconds", () => {
 
 test("the dispatch gate sends only the price that was shown", () => {
   expect(dispatchGate(18, 18)).toEqual({ ok: true });
-  expect(dispatchGate(18, 22)).toEqual({ ok: false, credits: 22, reason: "The price is now 22 cr. Press Generate again to approve it." });
+  expect(dispatchGate(18, 22)).toEqual({ ok: false, credits: 22, reason: "The price is now 22 cr. Press it again to approve it." });
   expect(dispatchGate(18, 12)).toMatchObject({ ok: false, credits: 12 });
   expect(dispatchGate(null, 12)).toMatchObject({ ok: false, credits: 12 });
-  expect(dispatchGate(1200, 1500)).toMatchObject({ reason: "The price is now 1,500 cr. Press Generate again to approve it." });
+  expect(dispatchGate(1200, 1500)).toMatchObject({ reason: "The price is now 1,500 cr. Press it again to approve it." });
 });
 
 test("engine labels in messages become neutral names; other vendor names fall back", () => {

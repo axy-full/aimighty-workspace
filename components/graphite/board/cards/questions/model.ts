@@ -73,6 +73,11 @@ export function lookWords(answers: Answers): string {
   return [direction, ...typed].filter(Boolean).join(" ").slice(0, 2000);
 }
 
+/** The @names in the words, once each in the order typed: the part of the words that can change a price (the server turns them into cast references). */
+export function castTokens(words: string): string {
+  return [...new Set(words.match(/@[A-Za-z][A-Za-z0-9_]{0,31}/g) ?? [])].join(" ");
+}
+
 /** The answers with one chip chosen (choosing it again clears it). */
 export function withChip(answers: Answers, id: QuestionId, chip: string): Answers {
   const chips = { ...answers.chips };
@@ -110,6 +115,8 @@ export function looksButton({ words, pricing, blocked, busy }: {
   if (busy) return { label: "Sending looks…", disabled: true, why: null };
   const label = words ? `Show me looks · ${words}` : "Show me looks";
   if (blocked) return { label, disabled: true, why: blocked };
-  if (!words) return { label, disabled: true, why: pricing === "loading" ? "Getting the price…" : "There is no price for the looks yet." };
+  /* The last price read stays on it while the next is read, but it cannot be pressed: it may be the old figure. */
+  if (pricing === "loading") return { label, disabled: true, why: "Getting the price…" };
+  if (!words) return { label, disabled: true, why: "There is no price for the looks yet." };
   return { label, disabled: false, why: null };
 }

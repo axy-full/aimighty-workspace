@@ -8,7 +8,7 @@ import { CINEMA_BANK } from "@/lib/workspace/cinema-vocabulary";
 import { AUDIO_SECONDS, TAKES_MAX, draftOffered, shownTotal, soundOffered, stepAudioSeconds } from "@/lib/workspace/composer";
 import { FilmChips } from "../FilmVocabulary";
 import { Price } from "../Price";
-import { MakePriceText } from "./Compose";
+import { MakePriceText } from "./price";
 import type { MakeModel } from "./use-make";
 
 /* The lengths the Change frame draws as chips; an engine's other lengths are in Advanced. */

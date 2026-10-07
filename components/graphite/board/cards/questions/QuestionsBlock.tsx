@@ -32,7 +32,8 @@ export function QuestionsBlock({ project, answers, onAnswers, showLooks, readOnl
   const questions = questionsFor(project);
   const title = usePriceTitle(showLooks.price);
   const words = showLooks.price ? priceWords(showLooks.price) : null;
-  const button = looksButton({ words, pricing: showLooks.pricing, blocked: readOnly ?? showLooks.blocked, busy: showLooks.busy });
+  const blocked = readOnly ?? showLooks.blocked;
+  const button = looksButton({ words, pricing: showLooks.pricing, blocked, busy: showLooks.busy });
   return (
     <div className="gx-q" data-testid={testId}>
       {questions.map((q) => (
@@ -63,7 +64,7 @@ export function QuestionsBlock({ project, answers, onAnswers, showLooks, readOnl
         <button type="button" className="gx-q-secondary" disabled={Boolean(readOnly)} onClick={() => onAnswers(judgement(project))} data-testid={`${testId}-judgement`}>
           Use your judgement
         </button>
-        {button.why && showLooks.pricing !== "error" ? <span className="gx-q-why" role="status" data-testid={`${testId}-why`}>{button.why}</span> : null}
+        {button.why && (blocked || showLooks.pricing !== "error") ? <span className="gx-q-why" role="status" data-testid={`${testId}-why`}>{button.why}</span> : null}
         {showLooks.pricing === "error" ? <span className="gx-q-why" role="status">The price could not be read.</span> : null}
       </div>
     </div>

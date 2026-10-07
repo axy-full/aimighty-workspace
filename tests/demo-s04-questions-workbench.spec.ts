@@ -142,9 +142,9 @@ test("Show me looks keeps its price in the outline style while Make is open, and
   await page.addInitScript(() => { try { sessionStorage.setItem("s04q", "1"); } catch { /* storage off */ } });
   await page.goto(`/suites?project=${project.id}&view=board&make=video`);
   await expect(page.getByTestId("make-panel")).toBeVisible({ timeout: 30_000 });
+  /* The questions are in the docked panel on this branch: they must mount, or this fails. */
   const block = page.getByTestId("board-questions");
-  const mounted = await block.waitFor({ state: "visible", timeout: 20_000 }).then(() => true, () => false);
-  test.skip(!mounted, "the docked Atomik panel does not mount the questions on this branch");
+  await expect(block).toBeVisible({ timeout: 30_000 });
   const looks = block.getByTestId("board-questions-looks");
 
   /* At no moment is it enabled without a price; while the price is read it waits with its reason beside it. */
