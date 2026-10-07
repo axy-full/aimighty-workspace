@@ -175,34 +175,53 @@ test("the jobs tray says what a take on the shared key is doing: Queued — star
     await mockLibrary(page, { uploads: [], generations: [] });
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    await page.goto("/suites?suite=atomik&page=agent&sp=agent");
-    await expect(projectName(page)).toHaveText("Bottle launch");
-    const pill = page.getByTestId("running-jobs");
-    await expect(pill).toBeVisible();
-    await pill.click();
-    const panel = page.getByRole("dialog", { name: "Jobs" });
-    await expect(panel).toBeVisible();
-    const named = (title: string) => panel.getByTestId("jobs-row").filter({ hasText: title });
-    await expect(named("Bottle on the plinth").getByTestId("jobs-stage")).toHaveText("Queued");
-    await expect(named("Bottle on the plinth").getByTestId("jobs-reason")).toHaveText("Starts when a slot frees");
-    await expect(named("Bottle on the plinth").getByTestId("jobs-price")).toHaveText(`${NEEDS} cr`);
-    await expect(named("Bottle on the plinth").getByTestId("jobs-action")).toHaveCount(0);
-    await expect(named("Bottle in the rain").getByTestId("jobs-reason")).toHaveText("Waiting for a free slot");
-    await expect(named("Bottle at dusk").getByTestId("jobs-stage")).toHaveText("Checking");
-    await expect(named("Bottle at dusk").getByTestId("jobs-reason")).toHaveText("The provider key changed; checking with the provider");
-    await expect(named("Bottle at dusk").getByTestId("jobs-action")).toHaveCount(0);
-    await expect(named("Bottle at dusk")).toHaveAttribute("data-tone", "amber");
-    /* The phone floors hold: targets, contrast, nothing sideways, the last row above the tab bar. */
-    /* The sheet rises and the popover pops in: measured once it has arrived. */
-    await page.getByTestId("jobs-veil").evaluate((veil) =>
-      Promise.all(veil.getAnimations({ subtree: true }).filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished)));
-    if (touch) expect(await smallTargets(page, ".gx-jobs-tray"), "targets under 44×44").toEqual([]);
-    expect(await dimText(page, ".gx-jobs-tray"), "text dimmer than #7C7C84").toEqual([]);
-    expect(await fits(page, ".gx-jobs-tray"), "the tray").toEqual([]);
-    if (phone) expect(await lastRowAboveTabBar(page), "the last row and the tab bar").toEqual([]);
-    await noOverflow(page);
-    await shoot(page, info.project.name, "tray");
-    expect(errors).toEqual([]);
+    if (touch) {
+      /* Release 1: a phone has no jobs tray; its Home lists what is in flight as render rows (components/graphite/phone/HomeScreen.tsx):
+         the take's name and the tray's own label ("Queued", "Checking"). The reason and the price stay the tray route's, asserted above. */
+      await page.goto("/suites");
+      const home = page.getByTestId("phone-home");
+      await expect(home).toBeVisible({ timeout: 60_000 });
+      const render = (title: string) => home.getByTestId("phone-render-row").filter({ hasText: title });
+      await expect(render("Bottle on the plinth")).toContainText("Queued", { timeout: 60_000 });
+      await expect(render("Bottle in the rain")).toContainText("Queued");
+      await expect(render("Bottle at dusk")).toContainText("Checking");
+      await expect(home).not.toContainText(/failed|retry/i);
+      expect(await smallTargets(page, '[data-testid="phone-home"]'), "targets under 44×44").toEqual([]);
+      expect(await dimText(page, '[data-testid="phone-home"]'), "text dimmer than #7C7C84").toEqual([]);
+      expect(await fits(page, '[data-testid="phone-home"]'), "the phone's Home").toEqual([]);
+      await noOverflow(page);
+      await shoot(page, info.project.name, "tray");
+      expect(errors).toEqual([]);
+    } else {
+      await page.goto("/suites?suite=atomik&page=agent&sp=agent");
+      await expect(projectName(page)).toHaveText("Bottle launch");
+      const pill = page.getByTestId("running-jobs");
+      await expect(pill).toBeVisible();
+      await pill.click();
+      const panel = page.getByRole("dialog", { name: "Jobs" });
+      await expect(panel).toBeVisible();
+      const named = (title: string) => panel.getByTestId("jobs-row").filter({ hasText: title });
+      await expect(named("Bottle on the plinth").getByTestId("jobs-stage")).toHaveText("Queued");
+      await expect(named("Bottle on the plinth").getByTestId("jobs-reason")).toHaveText("Starts when a slot frees");
+      await expect(named("Bottle on the plinth").getByTestId("jobs-price")).toHaveText(`${NEEDS} cr`);
+      await expect(named("Bottle on the plinth").getByTestId("jobs-action")).toHaveCount(0);
+      await expect(named("Bottle in the rain").getByTestId("jobs-reason")).toHaveText("Waiting for a free slot");
+      await expect(named("Bottle at dusk").getByTestId("jobs-stage")).toHaveText("Checking");
+      await expect(named("Bottle at dusk").getByTestId("jobs-reason")).toHaveText("The provider key changed; checking with the provider");
+      await expect(named("Bottle at dusk").getByTestId("jobs-action")).toHaveCount(0);
+      await expect(named("Bottle at dusk")).toHaveAttribute("data-tone", "amber");
+      /* The phone floors hold: targets, contrast, nothing sideways, the last row above the tab bar. */
+      /* The sheet rises and the popover pops in: measured once it has arrived. */
+      await page.getByTestId("jobs-veil").evaluate((veil) =>
+        Promise.all(veil.getAnimations({ subtree: true }).filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished)));
+      if (touch) expect(await smallTargets(page, ".gx-jobs-tray"), "targets under 44×44").toEqual([]);
+      expect(await dimText(page, ".gx-jobs-tray"), "text dimmer than #7C7C84").toEqual([]);
+      expect(await fits(page, ".gx-jobs-tray"), "the tray").toEqual([]);
+      if (phone) expect(await lastRowAboveTabBar(page), "the last row and the tab bar").toEqual([]);
+      await noOverflow(page);
+      await shoot(page, info.project.name, "tray");
+      expect(errors).toEqual([]);
+    }
     /* Still waiting, never failed or charged: nothing was asked of the provider for it. */
     const still = (await tenant.execute({ sql: "SELECT status,cost_usd FROM generations WHERE id IN (?,?) ORDER BY id", args: [changed, pooled] })).rows.map((r) => ({ ...r }));
     expect(still).toEqual([{ status: "running", cost_usd: null }, { status: "held", cost_usd: null }]);
