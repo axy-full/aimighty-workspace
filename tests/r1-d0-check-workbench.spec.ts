@@ -1,8 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { signInWithNewInterface } from "./helpers/newInterface";
-import { seedShots, take } from "./helpers/gaps-l1";
+import { seedShots } from "./helpers/gaps-l1";
 import { isCompact } from "./helpers/shellMode";
 import { noBannedNames } from "./helpers/r1-gaps";
 
@@ -137,7 +136,7 @@ test("right-click a take: Recreate carries the server's quote in credits, nothin
   if (!(await tile.isVisible().catch(() => false))) await page.getByRole("button", { name: /Library/ }).first().click();
   await expect(tile).toBeVisible();
   /* The price the menu shows is the server's own quote for this take's engine (GET /api/workbench/engines?model=…, the one Make's price line reads). */
-  const quote = page.waitForResponse((r) => /\/api\/workbench\/engines\?.*model=/.test(r.url()) && r.request().method() === "GET");
+  const quote = page.waitForResponse((r) => /\/api\/workbench\/engines\?.*model=gemini-3-pro-image/.test(r.url()) && r.request().method() === "GET");
   await tile.click({ button: "right" });
   const menu = page.getByTestId("context-menu");
   await expect(menu).toBeVisible();
@@ -179,7 +178,6 @@ test("right-click a take: Recreate carries the server's quote in credits, nothin
   await expect(tile).toBeVisible();
   expect(deletes, "nothing is hard-deleted").toEqual([]);
   expect(seeded.paid).toEqual([]);
-  void take;
 });
 
 test("right-click in Make's Recent: the same menu, the same quoted price, Delete with Undo", async ({ page }, info) => {
@@ -192,7 +190,7 @@ test("right-click in Make's Recent: the same menu, the same quoted price, Delete
   await page.getByRole("tablist", { name: "Make or Recent" }).getByRole("tab", { name: "Recent" }).click();
   const tile = page.getByTestId("make-recent-card").locator("[data-ctx]").first();
   await expect(tile).toBeVisible({ timeout: 30_000 });
-  const quote = page.waitForResponse((r) => /\/api\/workbench\/engines\?.*model=/.test(r.url()) && r.request().method() === "GET");
+  const quote = page.waitForResponse((r) => /\/api\/workbench\/engines\?.*model=gemini-3-pro-image/.test(r.url()) && r.request().method() === "GET");
   await tile.click({ button: "right" });
   const menu = page.getByTestId("context-menu");
   await expect(menu).toBeVisible();
@@ -234,7 +232,10 @@ for (const { screen, tab, bar } of PHONE_SCREENS) {
       const box = (await dock.boundingBox())!;
       const view = page.viewportSize()!;
       expect(box.y + box.height, "the bar sits at the bottom").toBeGreaterThanOrEqual(view.height - 2);
-      expect(box.width).toBeGreaterThanOrEqual(view.width - 2);
+      /* A phone on its side keeps the phone's own column (frame 390 wide); the bar spans that column. */
+      const column = (await page.getByTestId("phone-app").boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(column.width - 2);
+      expect(box.x).toBeLessThanOrEqual(column.x + 2);
     }
     await shot(page, `05-phone-${screen}`, info);
     await noSideways(page);
