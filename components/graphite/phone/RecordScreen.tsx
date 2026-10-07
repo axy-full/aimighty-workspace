@@ -83,7 +83,7 @@ export function RecordScreen({ scope, project, items, queue, now, onPlan, onRevi
             ) : null}
             <p className="ph-row-line">{budget.cap ? `80% of the budget is ${creditsText(budget.at80!)}. Nothing pauses there.` : "No budget set"}</p>
           </>
-        ) : <p className="ph-row-line" role="status" data-testid="phone-record-budget-none">{failed ? "The budget could not be read. Try again later." : read ? "No spend yet" : "Reading the budget…"}</p>}
+        ) : <p className="ph-row-line" role="status" data-testid="phone-record-budget-none">{failed ? "The budget could not be read. Try again later." : read ? "Spend isn't shown here." : "Reading the budget…"}</p>}
       </section>
 
       <section className="ph-section" aria-label="Brief">

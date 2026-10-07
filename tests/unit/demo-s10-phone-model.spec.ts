@@ -133,4 +133,6 @@ test("a take's id never reaches the phone: tk-s1-v1 reads Shot 1 · v1, any othe
   expect(readableTakeName("gen_9f8a7b6c5d", 2)).toBe("Take · v2");
   expect(readableTakeName("")).toBe("Take");
   expect(readableTakeName("Shot 2 · The sphere")).toBe("Shot 2 · The sphere");
+  /* A person's own names are never taken for ids. */
+  for (const name of ["Take-off at dawn", "Job-site walkthrough", "Asset-light hero", "Take_final_v2", "take-3-final.mov", "job-site.mp4"]) expect(readableTakeName(name)).toBe(name);
 });
