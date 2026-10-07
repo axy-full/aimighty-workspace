@@ -6,6 +6,7 @@ import {
   isOwnerAddress, isOwnerIdentity, platformOwnerIdentity, SUPPORT_ACTOR, SUPPORT_MIRROR_DOMAIN, type PlatformOwnerIdentity,
 } from "./platformOwnerPrivacy";
 import { currentTenant } from "./tenant";
+import { deploymentSetting, onVercel } from "./deployment";
 import { collabConfigured } from "./collab";
 import { canvasOpsReady, insertCanvasOp } from "./workbench/canvas-ops-log";
 import type { NodeChange } from "./workbench/canvas-ops-model";
@@ -19,8 +20,9 @@ import type { NodeChange } from "./workbench/canvas-ops-model";
  * column by column, and the rewrite only when the platform owner confirms
  * that count. It touches only the workspace in scope — its own database, and
  * its own rows of the platform's share table — never another. And it runs
- * only on the production deployment, or off Vercel with an explicit opt-in
- * (`scrubAllowedHere`, OWNER_PRIVACY_SCRUB_LOCAL=1): on a
+ * only on the production deployment (Vercel production, or a self-hosted
+ * server with PARTICL_DEPLOYMENT=production), or on a development machine
+ * with an explicit opt-in (`scrubAllowedHere`, OWNER_PRIVACY_SCRUB_LOCAL=1): on a
  * preview or staging deployment a restored workspace row can name a
  * production database, so even the workspace in scope may not be its own.
  *
@@ -60,15 +62,28 @@ function namesIn(col: string, names: string[]): Clause | null {
 }
 
 /**
- * Where the rewrite may run: the production deployment; or off Vercel
- * (local, CI, tests) only when OWNER_PRIVACY_SCRUB_LOCAL=1 says so, since a
- * local machine can be pointed at production databases too. Never a preview
- * or staging deployment: a workspace row restored there can name a
+ * Where the rewrite may run: the production deployment; or a development
+ * machine (local, CI, tests) only when OWNER_PRIVACY_SCRUB_LOCAL=1 says so,
+ * since a local machine can be pointed at production databases too. Never a
+ * preview or staging deployment: a workspace row restored there can name a
  * production database, and a rewrite would reach it.
+ *
+ *   where (lib/deployment.ts)                     OWNER_PRIVACY_SCRUB_LOCAL  allowed
+ *   Vercel, VERCEL_ENV=production                 any                        yes
+ *   Vercel, VERCEL_ENV=preview/development/unset  any                        no
+ *   off Vercel, PARTICL_DEPLOYMENT=production     any                        yes
+ *   off Vercel, PARTICL_DEPLOYMENT=staging        any                        no
+ *   off Vercel, PARTICL_DEPLOYMENT unrecognised   any                        no
+ *   off Vercel, PARTICL_DEPLOYMENT=development    "1"                        yes
+ *   off Vercel, PARTICL_DEPLOYMENT unset          "1"                        yes
+ *   off Vercel, development or unset              anything but "1"           no
  */
 export function scrubAllowedHere(env: Record<string, string | undefined> = process.env): boolean {
-  const onVercel = Boolean(env.VERCEL || env.VERCEL_ENV);
-  return onVercel ? env.VERCEL_ENV === "production" : env.OWNER_PRIVACY_SCRUB_LOCAL === "1";
+  if (onVercel(env)) return env.VERCEL_ENV === "production";
+  const setting = deploymentSetting(env);
+  if (setting === "production") return true;
+  if (setting === "staging" || setting === "invalid") return false;
+  return env.OWNER_PRIVACY_SCRUB_LOCAL === "1";
 }
 export const SCRUB_REFUSED = "This runs only on the production deployment (or locally with OWNER_PRIVACY_SCRUB_LOCAL=1): a preview or staging copy can hold workspace rows that point at production databases.";
 

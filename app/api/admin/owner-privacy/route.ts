@@ -14,8 +14,9 @@ const headers = { "Cache-Control": "private, no-store" };
  * inside the one workspace their session is in.
  *
  * Both refuse unless this is the production deployment (VERCEL_ENV
- * "production"), or off Vercel (local, CI, tests) with
- * OWNER_PRIVACY_SCRUB_LOCAL=1. On a preview or staging deployment a restored
+ * "production" on Vercel, PARTICL_DEPLOYMENT=production off it), or a
+ * development machine (local, CI, tests) with OWNER_PRIVACY_SCRUB_LOCAL=1
+ * (`scrubAllowedHere`). On a preview or staging deployment a restored
  * workspace row can name a production database, so even the dry run would
  * read production data from there.
  */
