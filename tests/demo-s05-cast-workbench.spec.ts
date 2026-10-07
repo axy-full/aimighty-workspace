@@ -89,15 +89,17 @@ test("the Cast region draws a character, a place and an element: their words, st
   await expect(lead).toHaveAccessibleName("Lead · ivory suit, short dark bob");
   await expect(lead.getByTestId("cast-status")).toHaveText("Identity ready · Lead v2");
   await expect(lead.getByTestId("cast-shots")).toHaveText("Shots 1 · 2 · 3");
-  await expect(lead.getByTestId("cast-consent")).toContainText("Training consent confirmed 12 Sep 2026 by Tester");
-  await expect(lead.getByTestId("cast-build")).toHaveCount(0);
+  await expect(lead.getByTestId("identity-consent")).toContainText("Training consent confirmed 12 Sep 2026 by Tester");
+  await expect(lead.getByTestId("identity-train")).toHaveCount(0);
   await expect(lead.getByTestId("cast-render")).toHaveText("Render a still");
 
   /* The one with no identity says so, shows the fixed training price, and has no consent on record. */
   const second = card(page, "grey coat");
-  await expect(second.getByTestId("cast-status")).toHaveText("No identity yet");
-  await expect(second.getByTestId("cast-consent")).toContainText("None recorded yet");
-  await expect(second.getByTestId("cast-build")).toHaveText("Build identity · 54 cr");
+  /* Lane 5 (Gaps A): a character with no identity asks for a person's consent record first; training waits for it. */
+  await expect(second.getByTestId("cast-status")).toHaveText("Consent not recorded");
+  await expect(second.getByTestId("identity-consent")).toContainText("Not recorded yet");
+  await expect(second.getByTestId("identity-train")).toHaveText("Train Identity · 54 cr");
+  await expect(second.getByTestId("identity-train")).toBeDisabled();
 
   await expect(card(page, "Stall row").getByTestId("cast-status")).toHaveText("No plate yet");
   await expect(card(page, "Stall row").getByTestId("cast-render")).toHaveText("Render a plate");
@@ -133,12 +135,12 @@ test("a character's Inspector holds the consent and, until an identity is ready,
   await expect(insp.getByTestId("insp-cast-consent")).toHaveText("Training consent confirmed 12 Sep 2026 by Tester");
   await expect(insp.getByTestId("insp-build")).toHaveCount(0);
 
-  /* Build identity opens the same Inspector on the character that has none, with the existing form. */
-  await card(page, "grey coat").getByTestId("cast-build").click();
+  /* The character that has none: its Inspector asks for a person's consent record before the build form (lane 5, Gaps A). */
+  await card(page, "grey coat").getByTestId("cast-title").click();
   await expect(insp.getByTestId("insp-cast")).toContainText("Second");
-  await expect(insp.getByTestId("insp-build")).toBeVisible();
-  await expect(insp.getByTestId("soul-card")).toBeVisible();
-  await expect(insp.getByTestId("insp-cast-consent")).toContainText("None recorded yet");
+  await expect(insp.getByTestId("insp-consent-needed")).toBeVisible();
+  await expect(insp.getByTestId("insp-build")).toHaveCount(0);
+  await expect(insp.getByTestId("insp-cast-consent")).toContainText("Not recorded yet");
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: `${SHOTS}/cast-inspector-${info.project.name.replace("workbench-", "")}.png` });
   await page.keyboard.press("Escape");

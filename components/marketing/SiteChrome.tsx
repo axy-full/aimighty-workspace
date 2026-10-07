@@ -25,7 +25,7 @@ export function SiteHeader({ active, member }: { active: SiteSuiteId | "pricing"
     <header className="mk-header">
       <div className="mk-header-in">
         <Brand />
-        <nav className="mk-nav" aria-label="Suites">
+        <nav className="mk-nav" aria-label="Main">
           {NAV_SUITES.map((suite) => (
             <Link key={suite.id} href={suite.href} className="mk-tab" aria-current={active === suite.id ? "page" : undefined}>
               {suite.tab}
@@ -59,9 +59,9 @@ export function SiteFooter({ member }: { member: boolean }) {
             <p className="mk-footer-blurb">One board per production. Every price shown; a person approves the spend.</p>
           </div>
           <div className="mk-footer-cols">
-            <nav className="mk-footer-col" aria-label="Suites">
+            <nav className="mk-footer-col" aria-label="Particl">
               <span className="mk-tag mk-tag--muted">Particl</span>
-              {(["studio", "business", "viral", "gen", "atomik"] as const).map((id) => (
+              {(["studio", "ads", "social", "gen", "atomik"] as const).map((id) => (
                 <Link key={id} href={suite(id).href}>{suite(id).tab}</Link>
               ))}
             </nav>
@@ -77,8 +77,8 @@ export function SiteFooter({ member }: { member: boolean }) {
             </nav>
             <nav className="mk-footer-col" aria-label="Settings">
               <span className="mk-tag mk-tag--muted">Settings</span>
-              <Link href={suite("workspace").href}>Team · Plan &amp; credits</Link>
-              <Link href={suite("workspace").href}>Advanced · Security</Link>
+              <Link href={suite("settings").href}>Team · Plan &amp; credits</Link>
+              <Link href={suite("settings").href}>Spending rules · Advanced</Link>
             </nav>
           </div>
         </div>

@@ -3,6 +3,7 @@
 import "./review.css";
 import { use, useCallback, useEffect, useState } from "react";
 import { posterSrc } from "@/lib/format";
+import { ClientReview, type ClientReviewData } from "@/components/graphite/security/ClientReview";
 
 /**
  * A client review page (brief 2.6).
@@ -18,7 +19,7 @@ type Review = { workspace: { name: string; logo: string | null }; production: { 
 
 export default function ReviewPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
-  const [data, setData] = useState<Review | null>(null);
+  const [data, setData] = useState<Review | ClientReviewData | null>(null);
   const [gone, setGone] = useState<string | null>(null);
   /* The name a client last used, read once when the page mounts. */
   const [name, setName] = useState(() => { try { return localStorage.getItem("aw_review_name") ?? ""; } catch { return ""; } });
@@ -32,7 +33,7 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
       .then(async (r) => ({ ok: r.ok, body: await r.json().catch(() => ({})) }))
       .then(({ ok, body }) => {
         if (!live) return;
-        if (ok) setData(body as Review);
+        if (ok) setData(body as Review | ClientReviewData);
         else setGone((body as { error?: string }).error ?? "This review link is not available.");
       })
       .catch(() => { if (live) setGone("This review could not be opened."); });
@@ -41,24 +42,27 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
 
   if (gone) return <main className="rv"><p className="rv-gone">{gone}</p></main>;
   if (!data) return <main className="rv"><p className="rv-gone">Opening the review…</p></main>;
+  /* A Crew review link opens the review set, where the client approves or asks for changes (Gaps A). */
+  if ("kind" in data && data.kind === "review") return <ClientReview token={token} data={data} onChanged={load} />;
+  const approved = data as Review;
 
   return (
     <main className="rv">
       <header className="rv-head">
-        {data.workspace.logo
+        {approved.workspace.logo
           /* eslint-disable-next-line @next/next/no-img-element */
-          ? <img src={data.workspace.logo} alt={data.workspace.name} className="rv-logo" />
-          : <span className="rv-name">{data.workspace.name}</span>}
+          ? <img src={approved.workspace.logo} alt={approved.workspace.name} className="rv-logo" />
+          : <span className="rv-name">{approved.workspace.name}</span>}
         <div className="rv-title">
-          <h1>{data.production.name}</h1>
-          <p>{data.takes.length} approved take{data.takes.length === 1 ? "" : "s"}{data.production.description ? ` · ${data.production.description}` : ""}</p>
+          <h1>{approved.production.name}</h1>
+          <p>{approved.takes.length} approved take{approved.takes.length === 1 ? "" : "s"}{approved.production.description ? ` · ${approved.production.description}` : ""}</p>
         </div>
       </header>
 
-      {data.takes.length === 0 && <p className="rv-gone">Nothing has been approved yet.</p>}
+      {approved.takes.length === 0 && <p className="rv-gone">Nothing has been approved yet.</p>}
 
       <ol className="rv-list">
-        {data.takes.map((t) => (
+        {approved.takes.map((t) => (
           <li key={t.id} className="rv-take">
             <div className={t.kind === "audio" || t.kind === "model" ? "rv-media is-flat" : "rv-media"}>
               {t.kind === "image"
@@ -90,8 +94,8 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
       </ol>
 
       <footer className="rv-foot">
-        <span>{data.workspace.name}</span>
-        <span>This link expires on {new Date(data.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}.</span>
+        <span>{approved.workspace.name}</span>
+        <span>This link expires on {new Date(approved.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}.</span>
       </footer>
     </main>
   );

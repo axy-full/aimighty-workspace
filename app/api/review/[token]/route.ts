@@ -4,6 +4,7 @@ import { resolveShare } from "@/lib/shares";
 import { db, ready } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { originalKindOf } from "@/lib/originalMedia";
+import { reviewSet } from "@/lib/security/review-link";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ token: string }> };
@@ -22,6 +23,14 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
 
   const out = await runInTenant(workspace, async () => {
     await ready();
+    /* A Crew review link (lib/security/review-link.ts) opens its production's review set; an older link, the
+       Approved takes below, exactly as before. Reading is never limited. */
+    if (found.review) {
+      const set = await reviewSet(token, share.id, share.projectId);
+      if (!set) return null;
+      const logo = (await getSetting("brandLogoUploadId")) || null;
+      return { kind: "review" as const, workspace: { name: workspace.name, logo: logo ? `/api/review/${token}/logo` : null }, production: set.production, takes: set.takes, expiresAt: share.expiresAt };
+    }
     const project = await db().execute({ sql: `SELECT id, name, description FROM projects WHERE id = ? LIMIT 1`, args: [share.projectId] });
     if (!project.rows.length) return null;
     const takes = await db().execute({

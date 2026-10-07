@@ -9,23 +9,21 @@ export const metadata: Metadata = {
   description: "Recast motion and swap elements in footage you own: one 4–8 s source, ordered references, 480p to 1080p.",
 };
 
-/* Copy and limits from lib/workspace/spec-cards.ts, lib/shell/viral.ts,
-   lib/genjutsuTypes.ts and components/suites/subatomik-directions.ts. No
-   reference count is stated while Viral moves to the API's one to eight
-   (docs/subatomik-genjutsu.md). The public site states no prices. */
+/* Limits from lib/shell/viral.ts (SOURCE_SECONDS, from GENJUTSU_LIMITS) and
+   lib/genjutsuTypes.ts (resolutions). What each tile says is what the Social
+   board holds today (components/graphite/board/social): the source card, the
+   two quick tools and the History drawer. The public site states no prices. */
 const DIRECTIONS = ["Style", "Wardrobe", "Setting", "Product", "Recast"];
 
 const TILES: { tag: string; name: string; body: string }[] = [
-  { tag: "01 Motion Transfer", name: "Recast the motion",
-    body: `Take the motion from a source video and recast it with your own cast, location and product. Anything you do not describe stays exactly as filmed. Five creative directions to start from: ${DIRECTIONS.join(", ")}.` },
-  { tag: "02 Object Swap", name: "Swap one element",
+  { tag: "01 Source", name: "Your own footage",
+    body: "Upload a video or use one made in Particl. The original is kept, and you can pull its start or end frame as a PNG." },
+  { tag: "02 Motion transfer", name: "Recast the motion",
+    body: `Take the motion from a source video and recast it with your own cast, location and product. Anything you do not describe stays as filmed. Five directions to start from: ${DIRECTIONS.join(", ")}.` },
+  { tag: "03 Object swap", name: "Swap one element",
     body: "A product, a garment, an object. Name what to replace; motion, lighting and framing stay as filmed." },
-  { tag: "03 Sources", name: "Your own originals",
-    body: "Nothing is fetched from a URL at generation time and nothing is re-encoded on the way in. Header bytes are read; pixels are never touched. Pull the start or end frame as a PNG." },
-  { tag: "04 Compare", name: "Split or wipe, one clock",
-    body: "Original and result side by side, locked to the same clock. Seek and speed apply to both sides; download the original bytes." },
-  { tag: "05 History", name: "Every result, kept",
-    body: "Copied into private storage on completion. Recreate any take with the same inputs, or hand it to Edit & Sound or to upscale." },
+  { tag: "04 History", name: "Every result, kept",
+    body: "Recreate a take with the same inputs, compare it with the original, send it to the edit or download it." },
 ];
 
 const FACTS: [string, string][] = [
@@ -34,16 +32,16 @@ const FACTS: [string, string][] = [
   ["Resolution", "480p · 720p · 1080p"],
 ];
 
-const viral = SITE_SUITES.find((suite) => suite.id === "viral")!;
+const social = SITE_SUITES.find((suite) => suite.id === "social")!;
 
-export default function ViralPage() {
+export default function SocialPage() {
   return (
-    <SitePage active="viral">
+    <SitePage active="social">
       <SuiteHeader
-        eyebrow="04 · Social"
+        eyebrow="03 · Social"
         title="Recast motion and swap elements in footage you own."
-        lead="Take the motion from a source video and recast it with your own cast, location and product, or swap one element and leave the rest exactly as filmed. One source of 4 to 8 seconds, ordered references, 480p to 1080p."
-        pages={viral.pages}
+        lead="Take the motion from a source video and recast it with your own cast, location and product, or swap one element and leave the rest as filmed."
+        pages={social.pages}
         cta={(
           <>
             <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>
@@ -52,8 +50,8 @@ export default function ViralPage() {
         )}
       />
 
-      {/* The suite header already draws the hairline above this section. */}
-      <Section id="viral-studio" panel label="Social" style={{ borderTop: 0 }}>
+      {/* The header already draws the hairline above this section. */}
+      <Section id="social-board" panel label="Social" style={{ borderTop: 0 }}>
         <Cols col={420} style={{ gap: "clamp(32px, 5vw, 72px)" }}>
           <Grid col={200}>
             {TILES.map(({ tag, name, body }) => (
