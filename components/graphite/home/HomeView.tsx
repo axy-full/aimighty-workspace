@@ -2,6 +2,7 @@
 import { useMemo } from "react";
 import { countsByDraft } from "@/lib/control-room/queue";
 import { useApprovals } from "@/lib/control-room/use-approvals";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { throwIfArmed } from "@/lib/shell/fault";
 import type { ProjectSummary } from "@/lib/workspace/data";
 import { BriefBox } from "./BriefBox";
@@ -45,6 +46,8 @@ export function HomeView({ scope, projects, status, error, onRetry, onPick, onCr
   const { draft, onDraft, refs, setRefs, briefFile, setBriefFile, pending, problem, startProblem, thinking, retryThinking, figure, create, start, open, openSample } =
     useHomeStart({ scope, projects, onPick, onCreate, onStarter, openBoard: nav.openBoard });
   const approvals = useApprovals();
+  /* The sample workspace spends nothing (the owner's switch): Start is not offered there. */
+  const spendOff = useSampleWorkspace();
   const approvalsByDraft = useMemo(() => (approvals.status === "ready" ? countsByDraft(approvals.items) : null), [approvals.status, approvals.items]);
 
   return (
@@ -53,7 +56,7 @@ export function HomeView({ scope, projects, status, error, onRetry, onPick, onCr
         <section className="gx-hm-make" aria-labelledby="gx-hm-title">
           <h1 className="gx-hm-title" id="gx-hm-title" data-testid="page-title">What are we making?</h1>
           <BriefBox draft={draft} onDraft={onDraft} refs={refs} onRefs={setRefs} briefFile={briefFile} onBriefFile={setBriefFile} busy={pending !== null}
-            footer={<StartFooter thinking={thinking} figure={figure} busy={pending === "start"} disabled={pending !== null} onStart={() => void start()} onRetry={retryThinking} problem={startProblem} />} />
+            footer={<StartFooter thinking={thinking} figure={figure} busy={pending === "start"} disabled={pending !== null} onStart={() => void start()} onRetry={retryThinking} problem={startProblem} off={spendOff} />} />
         </section>
         <div className="gx-hm-starts">
           <TemplateRow pending={pending === "sample" || pending === "start" ? null : pending} disabled={pending !== null} onPick={(t) => void create(t)} />

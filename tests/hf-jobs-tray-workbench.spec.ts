@@ -9,6 +9,11 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from
 import { smallTargets } from "./phoneFloors";
 import type { TrayJob, TrayReply } from "../lib/jobsTray";
 import type { Generation } from "../lib/jobs";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app has no header jobs pill or tray; what is rendering is Home's rows with Notify me and the price as the button (demo-s10-phone-workbench, suites-phone-home) */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app has no header jobs pill or tray; what is rendering is Home's rows with Notify me and the price as the button (demo-s10-phone-workbench, suites-phone-home)"); });
 
 /**
  * The header's jobs tray. The pill counts every take this person has in
@@ -68,8 +73,8 @@ async function open(page: Page, tray: Tray, options: { url?: string; generations
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(options.url ?? "/suites?suite=atomik&page=agent&sp=agent");
-  await expect(page.getByTestId("project-name").first()).toHaveText("Harbour launch spot");
+  await page.goto(options.url ?? "/suites?view=home");
+  await expect(projectName(page)).toHaveText("Harbour launch spot");
   return errors;
 }
 const reply = (jobs: TrayJob[], pollAfterSeconds = 10): { json: TrayReply } => ({ json: { jobs, pollAfterSeconds } });
@@ -569,7 +574,7 @@ test("with nothing running, what finished is news until it is seen; then the pil
   await shoot(page, info.project.name, "jobs-pill-quiet");
   const beforeReload = tray.reads;
   await page.reload();
-  await expect(page.getByTestId("project-name").first()).toHaveText("Harbour launch spot");
+  await expect(projectName(page)).toHaveText("Harbour launch spot");
   await expect.poll(() => tray.reads).toBeGreaterThan(beforeReload);
   await expect(pill).toHaveAccessibleName("Jobs");
   await pill.click();

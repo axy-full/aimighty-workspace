@@ -16,6 +16,7 @@ import { consentForTraining, linkConsentIdentity, projectKeysFor } from "@/lib/s
 import { ConsentError } from "@/lib/security/consent-words";
 import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 import { higgsfieldConfigured } from "@/lib/higgsfield";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 const headers = { "Cache-Control": "private, no-store" };
@@ -61,6 +62,8 @@ export const POST = withTenant(
        an API or MCP token, of any scope, and Atomik's agent identities are refused (lib/security/people-only.ts). */
     if (!isPerson({ user: got.user, token: got.token }))
       return Response.json({ error: PEOPLE_ONLY }, { status: 403, headers });
+    /* The sample workspace spends nothing: answered before the request is claimed. */
+    { const off = await sampleWorkspaceOff(); if (off) return off; }
     /* Every training cites a live consent record (review of #558, M1): for the production the request names, the same
        cast member, allowing identity training. Checked, and refused in words, before anything is claimed or sent. */
     const peek = (await request.clone().json().catch(() => null)) as (CreateSoulIdentityInput & { consentId?: unknown; subjectKey?: unknown }) | null;

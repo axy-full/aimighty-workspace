@@ -53,6 +53,9 @@
 .ak-btn-primary { border-color: var(--gx-accent); background: var(--gx-accent); color: var(--gx-on-accent); font-weight: 600; }
 .ak-btn-primary:hover:not(:disabled) { background: var(--gx-accent-hover); border-color: var(--gx-accent-hover); }
 .ak-btn-primary:disabled { background: var(--gx-seg-on); border-color: var(--gx-seg-on); color: var(--gx-disabled); }
+/* One filled button per screen: while Make is open it holds the main action, so the dock's filled buttons step down. */
+.gx:has(.gx-make) :is(.bd-dock, .ak-panel) .ak-btn-primary:not(:disabled) { background: transparent; color: var(--gx-text); border-color: var(--gx-btn-border); }
+.gx:has(.gx-make) :is(.bd-dock, .ak-panel) .ak-btn-primary:hover:not(:disabled) { background: transparent; border-color: var(--gx-hover-border); }
 .ak-btn-offer { border-color: var(--gx-accent); color: var(--gx-accent-text); font-weight: 600; }
 .ak-link { border: 0; background: transparent; padding: 0; color: var(--gx-accent-text); font-weight: 600; font-size: inherit; }
 .ak-btn:focus-visible, .ak-hint:focus-visible, .ak-link:focus-visible, .ak-link-btn:focus-visible, .ak-close:focus-visible, .ak-chip:focus-visible {

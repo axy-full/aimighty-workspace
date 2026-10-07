@@ -5,6 +5,7 @@ import type { QueueItem } from "../lib/control-room/queue";
 import type { ActivityReply, ActivityRun } from "../lib/control-room/activity";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { dimLabels, lastRowClearsPinned, smallTargets, smallText } from "./phoneFloors";
+import { CHECK_LINE, SAMPLE_LINE } from "../lib/demo/sample";
 
 /**
  * Stream 10, PR 4: the Record on the phone (design/particl-graphite/README.md § 3.6, frame E1), behind the
@@ -128,3 +129,20 @@ test("device=phone frames the Record at 390 px on a desktop, with no overflow", 
   await floors(page, "Framed Record");
   await shot(page, info.project.name, "framed-record");
 });
+
+/** The sample workspace spends nothing, and a workspace whose check failed is held back the same way (it says so in its own words). */
+for (const [mode, line] of [["sample", SAMPLE_LINE], ["failed", CHECK_LINE]] as const) {
+  test(`Record in ${mode === "sample" ? "the sample workspace" : "a workspace that could not be checked"}: the decision is shown with no price and no way into a priced Approve`, async ({ page }, info) => {
+    test.skip(!PORTRAIT.includes(info.project.name), "portrait phones");
+    await page.route("**/api/demo/sample", (route) => route.request().method() !== "GET" ? route.fallback()
+      : mode === "failed" ? route.fulfill({ status: 500, json: { error: "unavailable" } }) : route.fulfill({ json: { board: null, sampleWorkspace: true } }));
+    const seen = await open(page, 200);
+    const decision = page.getByTestId("phone-record-decision");
+    await expect(decision).toContainText("Plan the next takes");
+    await expect(decision).toContainText(line);
+    await expect(decision).not.toContainText(/\d+ cr/);
+    await expect(page.getByTestId("phone-record-open")).toHaveCount(0);
+    await expect(decision.getByTestId("sample-check-retry")).toHaveCount(mode === "failed" ? 1 : 0);
+    expect(seen.paid).toEqual([]);
+  });
+}

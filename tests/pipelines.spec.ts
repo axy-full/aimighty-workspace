@@ -4,6 +4,18 @@ import { randomUUID } from "node:crypto";
 import { newProject } from "../lib/workbench/studio";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import type { PublicPipelineRun } from "../lib/pipeline/service";
+import { buildPipelineSpec, effectivePipelineDraft, emptyPipelineDraft, type PipelineCatalog } from "../lib/pipeline/editor";
+
+/**
+ * A production's pipeline, through its routes: published context -> a private run -> each stage quoted, approved at its quote
+ * (a replay of the approval recovers the same attempts), a paused run starts nothing it was not told to, one attempt per stage,
+ * every take is the person's own and in their workspace, and a stale scope or another account's session sees nothing.
+ *
+ * The /pipelines page that built and drove the run is gone in Release 1 (its address opens the control room's Activity), so the
+ * page steps are made through the same routes the page called, with the body the page built (lib/pipeline/editor.ts): the
+ * rules a browser showed are held where they live. The movie hand-off ("Render final movie" -> /workbench/movie) went with the
+ * page; the run keeps its assembled timeline, which is what is asserted.
+ */
 
 test("published production â†’ individually approved image/video/audio stages â†’ selected timeline and movie handoff", async ({
   page,
@@ -62,41 +74,24 @@ test("published production â†’ individually approved image/video/audio stages â†
   expect(videoModel).toBeTruthy();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(`/pipelines?projectId=${savedBody.productionProjectId}`);
-  await expect(
-    page.getByRole("heading", { name: "Build a pipeline" }),
-  ).toBeVisible();
-  await page.getByLabel("Pipeline name").fill("Morning production");
-  await page
-    .getByLabel("Image engine", { exact: true })
-    .selectOption(imageModel.id);
-  await page
-    .getByLabel("Video engine", { exact: true })
-    .selectOption(videoModel.id);
-  await page
-    .getByRole("combobox", { name: "Image options", exact: true })
-    .selectOption("1");
-  await page
-    .getByRole("combobox", { name: "Audio stage", exact: true })
-    .selectOption("sound");
-  await page.getByLabel("Audio duration (seconds)").fill("5");
-  await page.screenshot({
-    path: info.outputPath("pipeline-builder.png"),
-    fullPage: true,
-  });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBeTruthy();
-  const created = page.waitForResponse(
-    (r) =>
-      r.url().endsWith("/api/pipelines") && r.request().method() === "POST",
+  /* The body the builder sent: two keyframe options become one, a sound stage of five seconds, the engines chosen above. */
+  const draft = effectivePipelineDraft(
+    {
+      ...emptyPipelineDraft,
+      name: "Morning production",
+      output: "video",
+      imageModel: imageModel.id,
+      videoModel: videoModel.id,
+      variants: 1,
+      audio: "sound",
+      audioSeconds: 5,
+    },
+    catalog as PipelineCatalog,
   );
-  await page.getByRole("button", { name: "Create private run" }).click();
-  const response = await created;
-  expect(response.ok(), await response.text()).toBeTruthy();
-  let run = (await response.json()).run as PublicPipelineRun;
+  const spec = buildPipelineSpec(draft, (catalog as PipelineCatalog).publications[0], catalog as PipelineCatalog);
+  const created = await page.request.post("/api/pipelines", { headers, data: { spec, expectedVersion: 0 } });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  let run = (await created.json()).run as PublicPipelineRun;
   const current = async () =>
     (
       await page.request
@@ -128,27 +123,18 @@ test("published production â†’ individually approved image/video/audio stages â†
     });
     expect(stale.status()).toBe(409);
   }
-  const imageStage = page.getByRole("article", {
-    name: "Keyframe options",
-    exact: true,
-  });
-  await imageStage
-    .getByRole("button", { name: "Quote stage", exact: true })
-    .click();
-  await expect(
-    imageStage.getByRole("button", { name: /^Approve stage/ }),
-  ).toBeVisible();
-  run = await current();
+  /* A quote prices the stage and starts nothing; nothing is made until it is approved. */
+  run = await action({ action: "quote", revision: run.revision, stageId: "images" });
+  expect(run.attempts).toHaveLength(0);
   const quote = run.quotes.at(-1)!;
-  await imageStage.getByRole("button", { name: /^Approve stage/ }).click();
-  // Replaying the exact approved quote after a lost response must recover the same IDs.
-  run = await action({
-    action: "approve",
-    revision: quote.baseRevision,
-    quoteId: quote.id,
-    fingerprint: quote.fingerprint,
-  });
+  /* Approved at that quote. */
+  const approve = { action: "approve", revision: quote.baseRevision, quoteId: quote.id, fingerprint: quote.fingerprint };
+  run = await action(approve);
   const originalAttempt = run.attempts[0].id;
+  // Replaying the exact approved quote after a lost response must recover the same IDs.
+  run = await action(approve);
+  expect(run.attempts.filter((a) => a.stageId === "images")).toHaveLength(1);
+  expect(run.attempts[0].id).toBe(originalAttempt);
   const settle = async (stageId: string) => {
     await expect
       .poll(
@@ -167,45 +153,29 @@ test("published production â†’ individually approved image/video/audio stages â†
   await settle("images");
   expect(run.attempts.filter((a) => a.stageId === "images")).toHaveLength(1);
   expect(run.attempts[0].id).toBe(originalAttempt);
-  await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Morning production", exact: true }),
-  ).toBeVisible();
-  await page
-    .getByRole("article", { name: "Choose a keyframe", exact: true })
-    .getByRole("button", { name: "Select take 1" })
-    .click();
-  await page.getByRole("button", { name: "Pause", exact: true }).click();
-  const motionStage = page.getByRole("article", {
-    name: "Motion",
-    exact: true,
+  /* The person chooses the keyframe; then the run is paused. */
+  const keyframe = run.attempts.find((a) => a.stageId === "images")!;
+  run = await action({
+    action: "select",
+    revision: run.revision,
+    stageId: "selected",
+    candidate: { stageId: "images", unit: 0 },
+    generationId: keyframe.generationId,
   });
-  await motionStage
-    .getByRole("button", { name: "Quote stage", exact: true })
-    .click();
-  // A click completes before its async POST. Observe the committed approval
-  // before reading the paused run and asserting its unstarted paid attempt.
-  const motionApproved = page.waitForResponse((response) =>
-    new URL(response.url()).pathname === `/api/pipelines/${run.id}` &&
-    response.request().method() === "POST" &&
-    response.request().postDataJSON()?.action === "approve",
-  );
-  await motionStage.getByRole("button", { name: /^Approve stage/ }).click();
-  const approvedResponse = await motionApproved;
-  expect(approvedResponse.ok(), await approvedResponse.text()).toBeTruthy();
+  run = await action({ action: "pause", revision: run.revision });
+  expect(run.state).toBe("paused");
+  run = await action({ action: "quote", revision: run.revision, stageId: "motion" });
+  const motionQuote = run.quotes.at(-1)!;
+  run = await action({ action: "approve", revision: motionQuote.baseRevision, quoteId: motionQuote.id, fingerprint: motionQuote.fingerprint });
+  /* Approved while paused: its paid attempt waits, unstarted, until the run is resumed. */
   run = await current();
   expect(run.state).toBe("paused");
-  expect(run.attempts.find((a) => a.stageId === "motion")?.state).toBe(
-    "queued",
-  );
-  await page.getByRole("button", { name: "Resume approved work" }).click();
+  expect(run.attempts.find((a) => a.stageId === "motion")?.state).toBe("queued");
+  run = await action({ action: "resume", revision: run.revision });
   await settle("motion");
-  await page.reload();
-  const audioStage = page.getByRole("article", { name: "Sound", exact: true });
-  await audioStage
-    .getByRole("button", { name: "Quote stage", exact: true })
-    .click();
-  await audioStage.getByRole("button", { name: /^Approve stage/ }).click();
+  run = await action({ action: "quote", revision: run.revision, stageId: "audio" });
+  const audioQuote = run.quotes.at(-1)!;
+  run = await action({ action: "approve", revision: audioQuote.baseRevision, quoteId: audioQuote.id, fingerprint: audioQuote.fingerprint });
   await settle("audio");
   await expect
     .poll(
@@ -300,27 +270,8 @@ test("published production â†’ individually approved image/video/audio stages â†
     .get(`/api/jobs?projectId=${savedBody.productionProjectId}`)
     .then((r) => r.json());
   expect(jobs.generations).toHaveLength(3);
-  await page.reload();
-  const delivery = page.getByRole("article", {
-    name: "Delivery edit",
-    exact: true,
-  });
-  await expect(
-    delivery.getByRole("button", { name: "Render final movie" }),
-  ).toBeVisible();
-  await page.screenshot({
-    path: info.outputPath("pipeline-completed.png"),
-    fullPage: true,
-  });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBeTruthy();
-  await delivery.getByRole("button", { name: "Render final movie" }).click();
-  await expect(page).toHaveURL(/\/workbench\/movie\?snapshot=/);
-  await expect(
-    page.getByRole("heading", { name: /final movie/i }),
-  ).toBeVisible();
+  /* The run ends with its delivery edit assembled from the chosen takes. */
+  run = await current();
+  expect(Object.keys(run.assemblies)).toEqual(["edit"]);
   expect(errors).toEqual([]);
 });

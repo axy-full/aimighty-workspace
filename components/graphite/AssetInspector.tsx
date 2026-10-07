@@ -23,6 +23,7 @@ import { openPreview } from "@/components/PreviewLayer";
 import { INSPECTOR_SURFACE } from "@/lib/shell/preview-bridge";
 import { copyAssetLink } from "@/lib/shell/copy-asset-link";
 import { useSession } from "@/lib/session";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { LoadBanner } from "./TakeTile";
 import { ReleaseTake } from "./ReleaseTake";
 import { AssetNextActions } from "./AssetNextActions";
@@ -59,6 +60,8 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   const [looked, setLooked] = useState<string | null>(null);
   /* "Remember" (Atomik memory) is open for this asset only: picking another closes it. */
   const [remembering, setRemembering] = useState<string | null>(null);
+  /* The sample workspace spends nothing: the draft's final, Release and Recreate are not offered there. */
+  const spendOff = useSampleWorkspace();
   const lookKey = projectId ? `${projectId}\u0000${id}` : null;
   useEffect(() => {
     if (entry || !ready || !projectId || !lookKey || looked === lookKey) return;
@@ -135,7 +138,7 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
         {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd title={v}>{v}</dd></div>)}
       </dl>
       {settled.failed ? <button type="button" className="gx-hbtn" style={{ alignSelf: "flex-start" }} onClick={settled.retry} data-testid="inspector-settled-retry">Try again</button> : null}
-      {pair?.draft && generation ? (
+      {pair?.draft && generation && !spendOff ? (
         <>
           <span className="gx-eyebrow">Draft</span>
           <DraftFinalBar key={generation.id} scope={scope} projectId={project?.id ?? null} draft={generation} finals={finals} />
@@ -147,11 +150,11 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
       {take.status === "held" ? <div className="gx-insp-actions" data-testid="inspector-release"><ReleaseTake key={take.id} entry={entry} onReleased={library.refresh} place="inspector" /></div> : null}
       {generation ? (
         <div className="gx-insp-actions" data-testid="inspector-recipe">
-          <button type="button" className="gx-primary" disabled={Boolean(noRecreate) || recreatePrice?.state !== "ready"} onClick={() => command("retry")} data-testid="inspector-recreate"
+          {spendOff ? null : <button type="button" className="gx-primary" disabled={Boolean(noRecreate) || recreatePrice?.state !== "ready"} onClick={() => command("retry")} data-testid="inspector-recreate"
             title={recreatePrice?.state === "unavailable" ? recreatePrice.reason : recreatePrice?.state === "reading" ? "Reading the price…" : undefined}
             data-spend={recreatePrice?.state === "ready" ? "priced" : "unpriced"} data-spend-price={recreatePrice?.state === "ready" ? priceWords(recreatePrice) : undefined}>
             Recreate{recreatePrice?.state === "ready" ? ` · ${priceWords(recreatePrice)}` : ""}
-          </button>
+          </button>}
           <button type="button" className="gx-hbtn" disabled={Boolean(noRecreate)} title="The model and its settings; the prompt in Make stays" onClick={() => recreate(entry, true)} data-testid="inspector-settings-only">Use settings only</button>
           <button type="button" className="gx-hbtn" disabled={!words} onClick={() => void copyPrompt()} data-testid="inspector-copy-prompt">Copy prompt</button>
           {noRecreate ? <p className="gx-reason gx-insp-why" data-testid="inspector-recreate-why">{noRecreate}</p> : null}

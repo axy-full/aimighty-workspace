@@ -12,6 +12,7 @@ import { trainApprovalProblem } from "@/lib/identityTraining";
 import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 
 import { withGenerationRequest, SpendReservationError } from "@/lib/generationRequests";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -43,6 +44,8 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   if (got.response) return got.response;
   /* `consent: true` below is recorded as the person's consent (consent_by): people only, never a token or an agent. */
   if (!isPerson({ user: got.user, token: got.token })) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
+  /* The sample workspace spends nothing: answered before the request is claimed. */
+  { const off = await sampleWorkspaceOff(); if (off) return off; }
   /* Every training cites a live consent record for this identity's production and cast member, allowing identity
      training (review of #558, M1): checked, and refused in words, before anything is claimed or sent. */
   {

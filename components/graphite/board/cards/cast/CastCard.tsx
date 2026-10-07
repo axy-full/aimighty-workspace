@@ -80,7 +80,7 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
           /* Identity and its consent (Gaps A): recorded by a person, then trained from the Inspector's form. */
           <IdentityBlock scope={ctx.scope} projectKey={consentKey} subjectKey={card.id} subjectLabel={data.title.trim()}
             view={idView} consents={consents.state} trainingCredits={training} canAct={act}
-            onTrain={() => ctx.openInspector(card.id)} />
+            spendOff={ctx.exploreOnly ?? null} onTrain={() => ctx.openInspector(card.id)} />
         ) : null}
         {act ? (
           <div className="gx-cast-acts">

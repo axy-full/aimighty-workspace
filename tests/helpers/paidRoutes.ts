@@ -71,7 +71,7 @@ export const NOT_SPENDING_FILES: Record<string, FileExcuse> = {
   "components/graphite/board/cards/cast/CastCard.tsx": { why: "reads the identity list (a GET) and shows the training price; 'Build identity' opens the Inspector and 'Lock as master' is free" },
   "components/graphite/board/inspector/CastBody.tsx": { why: "reads the identity list (a GET); its buttons copy, lock the master (free) or open Make; nothing here starts training" },
   "components/graphite/board/cards/plan/NextCard.tsx": { why: "reads one quote (quote-only) for the stills card and opens Make filled; Make shows its own price and a person presses it" },
-  "components/graphite/board/cards/take/TakeCard.tsx": { why: "reads the project's checks (a GET); Retry hands the recipe to Make to be priced again, and Release is ReleaseTake's own priced, marked button" },
+  "components/graphite/board/cards/take/TakeCard.tsx": { why: "reads the project's checks (a GET); Retry is RetryTake's own button (priced from a quote, marked), which hands the recipe to Make to be priced again, and Release is ReleaseTake's own priced, marked button", priced: ["components/graphite/board/cards/take/RetryTake.tsx"] },
   "components/graphite/board/inspector/TakeBody.tsx": { why: "reads the project's checks (a GET) and one quote; 'Change with words · N cr' opens Make, where the press that spends is priced" },
 };
 

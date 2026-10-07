@@ -181,7 +181,7 @@ export default function AccountSecurity({
               ? "Your authenticator is ready. Save your recovery codes before continuing."
               : `${requiredBy} requires two-step sign-in. Set up your authenticator to open this workspace.`}
             {state?.enabled && !codes.length && (
-              <a href="/workbench" className="management-button primary">
+              <a href="/suites" className="management-button primary">
                 Continue to workspace
               </a>
             )}

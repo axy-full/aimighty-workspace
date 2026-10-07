@@ -12,6 +12,7 @@ import { meter } from "@/lib/meter";
 import { withGenerationRequest, claimBinding, reserveGenerationSpend, SpendReservationError } from "@/lib/generationRequests";
 import type { InStatement } from "@libsql/client";
 import { currentTenant, runWithStore } from "@/lib/tenant";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -24,6 +25,8 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = withTenant(async function POST(req: Request, { params }: Ctx) {
   const got = await requireRender();
   if (got.response) return got.response;
+  /* The sample workspace spends nothing: answered before the request is claimed or a row is written. */
+  { const off = await sampleWorkspaceOff(); if (off) return off; }
   await ready();
   return withGenerationRequest(req, got.user.id, async (requestClaim) => {
   const { id } = await params;

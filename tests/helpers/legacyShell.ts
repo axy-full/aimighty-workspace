@@ -1,35 +1,26 @@
-import type { Page } from "@playwright/test";
-import { LEGACY_SHELL, SHELL_COOKIE } from "../../lib/workspace/switchover";
+import { test, type Page } from "@playwright/test";
 
 /**
- * The redesigned workspace is the default surface on desktop now
- * (docs/workspace-switchover.md), so a spec that asserts the OLD shell asks
- * for it. This sets the `particl_shell=legacy` cookie the switch-over reads
- * and returns the URL unchanged, so these specs keep navigating to exactly
- * the URLs they always did and every assertion — including exact `toHaveURL`
- * ones, and links clicked inside the old shell — stays as written.
+ * The old shell is not reachable in Release 1: /, /workbench, /atomik and
+ * /subatomik always go to /suites, and ?shell=legacy and its cookie are gone
+ * (docs/old-shells.md). A spec that still asks for the old shell has nothing to
+ * drive, so it is skipped here, with the reason, instead of failing in a place
+ * that no longer exists. Rewrite it against /suites, or delete it with the old
+ * screen it covers.
  *
- * Idempotent: calling it again overwrites the same cookie.
- *
- * Pass the page whose context is about to navigate. A spec driving a second
- * browser context has to seed THAT context — `legacyShell(page, …)` in front
- * of `other.goto(…)` sets the cookie on the wrong jar, which is how CI run
- * 35489550908 found `tests/workspace-security.spec.ts`.
- *
- * When the old shell is retired, this helper and its call sites go with it.
+ * The helper keeps its name and signature so the specs that call it still
+ * compile; it returns the URL unchanged.
  */
+export const OLD_SHELL_RETIRED = "The old shell is retired in Release 1 (no ?shell=legacy): rewrite against /suites or delete with the old screen.";
+
 export async function legacyShell(page: Page, href: string): Promise<string> {
-  await askForLegacyShell(page);
+  void page;
+  test.skip(true, OLD_SHELL_RETIRED);
   return href;
 }
 
-/** The cookie on its own, for a spec that reaches an old surface by clicking. */
+/** For a spec that reached an old surface by clicking: skipped for the same reason. */
 export async function askForLegacyShell(page: Page): Promise<void> {
-  await page.context().addCookies([
-    {
-      name: SHELL_COOKIE,
-      value: LEGACY_SHELL,
-      url: process.env.PW_BASE_URL || "http://localhost:4551",
-    },
-  ]);
+  void page;
+  test.skip(true, OLD_SHELL_RETIRED);
 }

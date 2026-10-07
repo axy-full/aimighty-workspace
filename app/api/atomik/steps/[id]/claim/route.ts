@@ -4,6 +4,7 @@ import { claimStep, getStep, reconcileRunningSteps, stepForBrowser } from "@/lib
 import { ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
 import { ARCHIVED_NOTE, threadArchived } from "@/lib/atomikThreads";
 import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,8 @@ export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) 
   if (got.response) return got.response;
   /* Claiming a step is approving its spend: a person's press, never a token's (owner rule; lib/security/people-only.ts). */
   if (!isPerson({ user: got.user, token: got.token })) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
+  /* The sample workspace spends nothing: no step is taken there. */
+  { const off = await sampleWorkspaceOff(); if (off) return off; }
   const { id } = await ctx.params;
 
   /* A step planned on the connected account is never claimed: nothing here

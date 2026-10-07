@@ -137,8 +137,7 @@ test("the Make composer swaps to Grok Voice's voices, and a Grok-only workspace 
 });
 
 test("Edit & Sound on Grok Voice alone: voice-over speaks, and the ElevenLabs doors say they are not connected", async ({ page }, info) => {
-  /* Phones (844x390 included) get the phone shell's Edit & Sound, whose doors are a
-     read-only list with no voice picker and no quote (workspace-edit-workbench.spec). */
+  /* Phones (844x390 included) get the phone shell's Cut, which watches and approves and has no Edit & Sound. */
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   await signInLocally(page.request);
   await forbidPaidWork(page);
@@ -161,10 +160,16 @@ test("Edit & Sound on Grok Voice alone: voice-over speaks, and the ElevenLabs do
     quotes.push(body);
     return route.fulfill({ json: { estimatedCredits: 2, price: 2, unit: "cr" } });
   });
-  await page.goto(`/workspace?project=${project.id}&suite=particl&page=edit`);
-  await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
-  await page.locator('[data-stem="sfx"]').getByRole("button", { name: "Generate" }).click();
-  const composer = page.getByTestId("composer-sfx");
+  /* Edit & Sound over the board (the old /workspace page's stem rows became its New voice line / sound effect / music doors). */
+  await page.goto(`/suites?project=${project.id}&view=board&region=cut`);
+  await expect(page.getByTestId("cut-card")).toBeVisible();
+  await expect(async () => {
+    await page.getByTestId("cut-open-edit").click({ timeout: 3_000 });
+    await expect(page.getByTestId("edit-sound")).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 40_000 });
+  await expect(page.getByTestId("es")).toBeVisible();
+  await page.getByTestId("es-new-effect").click();
+  const composer = page.getByTestId("es-compose");
   const kinds = composer.getByRole("group", { name: "Sound type" });
   for (const name of ["Sound effect", "Music", "Change voice", "Dub"]) await expect(kinds.getByRole("button", { name, exact: true })).toBeDisabled();
   await expect(composer.getByRole("alert")).toHaveText("Sound effect is not connected for this workspace.");

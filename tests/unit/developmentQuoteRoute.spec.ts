@@ -24,6 +24,7 @@ async function route(quote: Record<string, unknown>): Promise<Record<string, Han
       requireUser: async () => ({ user: { id: "owner" } }),
       requireRender: async () => ({ user: { id: "owner" } }),
     },
+    "@/lib/demo/spend-guard.server": { sampleWorkspaceOff: async () => null },
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/db": { db: () => { throw new Error("A quote reads no rows here."); } },
     "@/lib/credits": await import("../../lib/credits"),

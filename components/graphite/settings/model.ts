@@ -60,6 +60,33 @@ export function peopleMeta(team: Team | null): string {
   return [`${n} on this workspace`, waiting ? `${waiting} invited` : null].filter(Boolean).join(" · ");
 }
 
+/** GET /api/workspaces/security (the owner's only): lib/accountSecurity.ts readWorkspaceSecurity. */
+export type WorkspacePolicy = { requiresMfa?: boolean; ownerEnrolled?: boolean; members?: number; unenrolled?: number };
+export type TwoStepRule = { value: string; line: string; action: "turn-on" | "turn-off" | "enrol-first" | null };
+
+/**
+ * The workspace's two-step rule, as Settings › Team draws it. The owner reads the policy route and may change it; the
+ * server lets only an owner who has two-step on change it, so until then the owner is sent to set theirs up first.
+ * Anyone else reads it off their own account (GET /api/account/security lists the workspaces that require it) and
+ * cannot change it.
+ */
+export function workspaceTwoStep(input: {
+  owner: boolean;
+  workspaceId: string | null;
+  policy: WorkspacePolicy | null;
+  policyFailed: boolean;
+  required: readonly { id: string }[] | null | undefined;
+}): TwoStepRule {
+  if (!input.owner) {
+    const value = input.required == null ? "Reading…" : input.required.some((w) => w.id === input.workspaceId) ? "on" : "off";
+    return { value, line: "Set by the workspace owner", action: null };
+  }
+  const p = input.policy;
+  const line = p?.unenrolled ? `${p.unenrolled} of ${p.members ?? "—"} people have not set it up` : "Everyone signs in with two steps when it is on";
+  if (!p || typeof p.requiresMfa !== "boolean") return { value: input.policyFailed ? "—" : "Reading…", line, action: null };
+  return { value: p.requiresMfa ? "on" : "off", line, action: !p.ownerEnrolled ? "enrol-first" : p.requiresMfa ? "turn-off" : "turn-on" };
+}
+
 /* ── Plan & credits ─────────────────────────────────────────────────── */
 
 /** What one credit costs, worded by the one helper that words it (lib/creditTerms.ts), from the server's rate; null while it is unknown. */

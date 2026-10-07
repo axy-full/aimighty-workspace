@@ -8,6 +8,7 @@ import { spendAttrsOf } from "@/lib/spend";
 import { usePriceTitle } from "../../Price";
 import { PriceWords } from "./PriceWords";
 import { ClientLink } from "@/components/graphite/security/ClientLink";
+import { CrewTakeReview } from "../review/CrewTakeReview";
 
 /*
  * Crew review in the docked panel (design/particl-graphite/README.md § 3.1 m; lead decision 21): "Ask the crew" on
@@ -29,10 +30,12 @@ export function CrewReview({ ctx }: { ctx: BoardCtx }) {
   const { goal, setGoal } = room;
   /* The crew reads the board: the goal is that review, unless the person wrote another in the room. */
   useEffect(() => { if (!goal.trim()) setGoal(GOAL); }, [goal, setGoal]);
-  const price = room.credits == null ? null : upTo(room.credits);
+  /* The sample's line where nothing spends (the sample workspace): no round is offered, and no price is shown. */
+  const off = ctx.exploreOnly ?? null;
+  const price = room.credits == null || off ? null : upTo(room.credits);
   const title = usePriceTitle(price);
   const open = room.solutions.filter((s) => s.status === "open");
-  const reason = room.running ? null : room.blocked;
+  const reason = room.running ? null : off ?? room.blocked;
 
   const brief = async (id: string) => { setProblem(null); const out = await room.routeSolution(id, "brief"); if (out) ctx.toast("Added to the brief"); else setProblem("That couldn’t be added to the brief."); };
   const make = async (id: string) => {
@@ -44,6 +47,8 @@ export function CrewReview({ ctx }: { ctx: BoardCtx }) {
 
   return (
     <div className="ag-msg" ref={here} data-testid="crew-review">
+      {/* The take under review: its notes, Approve and Reject with a reason (gap screens, Crew review). The client link follows at the foot. */}
+      <CrewTakeReview ctx={ctx} />
       <span className="ag-eyebrow">Atomik</span>
       <div className="ag-text">The crew reads the board. Open a note in Make or add it to the brief; dismiss the rest.</div>
       <span className="ag-title" id="crew-ask">Ask the crew</span>
@@ -53,7 +58,7 @@ export function CrewReview({ ctx }: { ctx: BoardCtx }) {
         ))}
       </div>
       <div className="ag-actions">
-        <button type="button" className="ag-btn ag-btn-primary" disabled={room.blocked !== null || room.running} aria-busy={room.running || undefined} title={title ?? undefined} onClick={() => void room.runRound()} data-testid="crew-ask" {...spendAttrsOf(price)}>
+        <button type="button" className="ag-btn ag-btn-primary" disabled={off !== null || room.blocked !== null || room.running} aria-busy={room.running || undefined} title={off ?? title ?? undefined} onClick={() => void room.runRound()} data-testid="crew-ask" {...spendAttrsOf(price)}>
           {room.running ? "The crew is reading…" : <>Ask the crew{price ? <> · <PriceWords value={price} /></> : null}</>}
         </button>
       </div>

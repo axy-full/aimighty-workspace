@@ -60,7 +60,7 @@ export function Make({ scope, project, items, library, projects = "ready", proje
         {projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={onRetry ?? (() => undefined)} testId="projects-error" /> : null}
         {make.tool === "upscale" ? <UpscaleTool key="upscale" scope={scope} project={project} items={items} />
           : make.tool ? <ViralTool key={make.tool} scope={scope} page={make.tool} project={project} items={items} />
-          : make.recent ? <Recent project={project} items={items} library={library} projects={projects} make={make} />
+          : make.recent ? <Recent scope={scope} project={project} items={items} library={library} projects={projects} make={make} />
           : <Compose make={make} scope={scope} />}
       </div>
     </aside>

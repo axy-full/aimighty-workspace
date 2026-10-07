@@ -64,6 +64,11 @@ const TOMBSTONES = [
   "public/marketing/screens/studio-cast.jpg",
   "public/marketing/screens/studio-takes.jpg",
   "public/marketing/screens/workspace-general-enhancer.jpg",
+  /* Old-design site screenshots, replaced by Release 1 captures (7 Oct). */
+  "public/marketing/screens/gen-composer-blank.jpg",
+  "public/marketing/screens/studio-rig-canvas.jpg",
+  "public/marketing/screens/viral-history.jpg",
+  "public/marketing/screens/workspace-plans-credits.jpg",
   /* The three renamed sheets, under their old names. */
   "app/workbench/mobile-hand" + "off.css",
   "app/workbench/mobile-hand" + "off-stages.css",
@@ -83,6 +88,30 @@ const TOMBSTONES = [
   "lib/production/beats-undo.ts",
   "lib/workspace/takes-desk.ts",
   "lib/shell/take-handover.ts",
+  /* The orphan sweep (7 Oct): old components and lists that nothing imported and no route reached. */
+  "lib/nav.ts",
+  "lib/shortcuts.ts",
+  "components/Canvas.tsx",
+  "components/Cast.tsx",
+  "components/CreditStrip.tsx",
+  "components/ElementSheet.tsx",
+  "components/GenGrid.tsx",
+  "components/ModeSwitch.tsx",
+  "components/Panel.tsx",
+  "components/Review.tsx",
+  "components/Runway.tsx",
+  "components/SectionNav.tsx",
+  "components/Studio.tsx",
+  "components/Theatre.tsx",
+  "components/TopBar.tsx",
+  "components/WorkspaceSettings.tsx",
+  "components/graphite/DeveloperApiRow.tsx",
+  "components/management/ConsumerVideoVerification.tsx",
+  "components/management/HiggsfieldConsumerConnection.tsx",
+  "components/shell/AccountMenu.tsx",
+  "components/shell/AtomikButton.tsx",
+  "components/studio/ProjectStudioHeader.tsx",
+  "components/workspace/mobile/pages/FormPage.tsx",
 ];
 
 test("(a) nothing the clean slate deleted comes back, and design/ holds one design", () => {

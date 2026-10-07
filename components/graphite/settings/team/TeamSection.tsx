@@ -6,14 +6,16 @@ import { auditEntries, sessionRows, twoStepLine, type SecurityBody } from "@/lib
 import { labels as AUDIT_LABELS } from "@/components/management/WorkspaceAudit";
 import type { SettingsFold } from "@/lib/shell/settings";
 import { Btn, Fold, LinkBtn, Note, Problem, Row, Section } from "../parts";
-import { ROLES, inviteLine, memberLine, peopleMeta, roleChangeable, roleCounts, roleOf, type Team } from "../model";
-import { useRead, useWrite } from "../use-settings";
+import { ROLES, inviteLine, memberLine, peopleMeta, roleChangeable, roleCounts, roleOf, workspaceTwoStep, type Team, type WorkspacePolicy } from "../model";
+import { lostConnection, useRead, useWrite } from "../use-settings";
 
 /**
  * Settings › Team (README § 3.5; Workspace's People and Security tabs, § 1.2). People, their roles and
  * the one-time invite links, on the routes Workspace › People uses (GET /api/team and its writes, the
- * owner's and admins' only). Security is read-only here: two-step sign-in and passwords change on the
- * account's own security page, the one place a password is typed (DECISIONS 4).
+ * owner's and admins' only). A person's own two-step sign-in and password change on the account's own
+ * security page (DECISIONS 4). The one write here is the owner's workspace rule, on the route the old People
+ * page used (POST /api/workspaces/security): the server asks for the owner's password and a fresh code to
+ * confirm it, so those two are typed here, never kept, and cleared after every answer.
  */
 const when = (ms: number | null | undefined) => (ms ? new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "never");
 
@@ -132,8 +134,6 @@ function People() {
   );
 }
 
-type WorkspacePolicy = { requiresMfa?: boolean; members?: number; unenrolled?: number };
-
 function Security({ initiallyOpen }: { initiallyOpen: boolean }) {
   const session = useSession();
   const admin = session.role === "admin" || session.role === "owner";
@@ -145,18 +145,16 @@ function Security({ initiallyOpen }: { initiallyOpen: boolean }) {
   const sessions = sessionRows(account.data);
   const twoStep = twoStepLine(account.data);
   const events = auditEntries(audit.data, AUDIT_LABELS);
+  const rule = workspaceTwoStep({ owner: session.owner, workspaceId: session.workspace?.id ?? null, policy: policy.data, policyFailed: Boolean(policy.error), required: account.data?.requiredWorkspaces ?? (account.data ? [] : null) });
   return (
     <Fold label="Security" meta="sign-in, sessions and access" open={open} onToggle={() => setOpen((v) => !v)} testId="settings-security">
       {account.error ? <Problem text={account.error} onRetry={() => void account.read()} /> : null}
       <Row name="Your two-factor sign-in" line="An authenticator app, for every workspace you are on" value={twoStep ?? (account.data ? "Not reported" : "Reading…")} testId="settings-two-step">
         <LinkBtn href="/account/security" testId="settings-two-step-change">Change</LinkBtn>
       </Row>
-      {session.owner ? (
-        <Row name="Two-factor on this workspace" line={policy.data?.unenrolled ? `Required for everyone when on · ${policy.data.unenrolled} of ${policy.data.members ?? "—"} people have not set it up` : "Required for everyone on this workspace when it is on"}
-          value={policy.error ? "—" : policy.data ? (policy.data.requiresMfa ? "on" : "off") : "Reading…"} testId="settings-workspace-two-step">
-          <LinkBtn href="/team" testId="settings-workspace-two-step-change">Change</LinkBtn>
-        </Row>
-      ) : null}
+      {session.owner ? <WorkspaceRule rule={rule} error={policy.error} reread={policy.read} /> : (
+        <Row name="Two-factor on this workspace" line={rule.line} value={rule.value} testId="settings-workspace-two-step" />
+      )}
       <Row name="Signed in" line={sessions.slice(0, 4).map((s) => `${s.label} · since ${when(s.since)}`).join(" · ") || undefined}
         value={account.data ? `${sessions.length || 1} ${sessions.length === 1 || !sessions.length ? "session" : "sessions"}` : "Reading…"} testId="settings-sessions" />
       <Row name="Media access" line="Originals are served signed, per workspace, never public" />
@@ -181,5 +179,66 @@ function Roles() {
     <Section label="Roles" meta="what each role may do" testId="settings-roles">
       {ROLES.map((r) => <Row key={r.id} name={r.name} line={r.line} value={counts ? String(counts[r.id]) : undefined} testId="settings-role" />)}
     </Section>
+  );
+}
+
+/**
+ * The owner's on/off for the workspace's two-step rule, with the body the old People page sent
+ * (components/management/WorkspaceSecurity.tsx): { requiresMfa, password, code }, under the captured scope. The server
+ * decides everything (owner only, their own two-step on, a fresh code, never the last recovery code); its refusal is
+ * shown as it says it, and the rule is read again after every answer, so a lost answer never leaves a guess on screen.
+ */
+function WorkspaceRule({ rule, error, reread }: { rule: ReturnType<typeof workspaceTwoStep>; error: string | null; reread: () => Promise<void> }) {
+  const write = useWrite();
+  const { toast } = useWorkspace();
+  const [confirming, setConfirming] = useState(false);
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const on = rule.action === "turn-on";
+  const save = async () => {
+    if (busy || !password || !code || (rule.action !== "turn-on" && rule.action !== "turn-off")) return;
+    setBusy(true); setNote(null);
+    const { json, error: refused } = await write<{ requiresMfa?: boolean }>("/api/workspaces/security", "POST", { requiresMfa: on, password, code });
+    setPassword(""); setCode("");
+    await reread();
+    setBusy(false);
+    if (refused) {
+      /* A dropped answer may have been saved: the form closes on the rule as read back, never on a guess. */
+      if (lostConnection(refused)) { setConfirming(false); setNote("The connection dropped before the answer came back. The rule shown is the one saved."); }
+      else setNote(refused);
+      return;
+    }
+    setConfirming(false);
+    toast(json?.requiresMfa ? "Two-step sign-in is now required on this workspace." : "Two-step sign-in is now each person’s choice.");
+  };
+  return (
+    <>
+      <Row name="Two-factor on this workspace" line={rule.line} value={rule.value} testId="settings-workspace-two-step">
+        {rule.action === "enrol-first" ? <LinkBtn href="/account/security" testId="settings-workspace-two-step-enrol">Set up yours first</LinkBtn> : null}
+        {rule.action === "turn-on" || rule.action === "turn-off" ? (
+          <button type="button" className="gs-btn" aria-expanded={confirming} disabled={busy} data-testid="settings-workspace-two-step-toggle"
+            onClick={() => { setConfirming((v) => !v); setNote(null); setPassword(""); setCode(""); }}>
+            {confirming ? "Cancel" : on ? "Turn on" : "Turn off"}
+          </button>
+        ) : null}
+      </Row>
+      {error ? <Problem text={error} onRetry={() => void reread()} testId="settings-workspace-two-step-problem" /> : null}
+      {confirming && rule.action !== "enrol-first" && rule.action !== null ? (
+        <form className="gs-form" onSubmit={(e) => { e.preventDefault(); void save(); }} data-testid="settings-workspace-two-step-form">
+          <label className="gs-label"><span className="gs-eyebrow">Your password</span>
+            <input className="gs-field" type="password" autoComplete="current-password" value={password} disabled={busy} onChange={(e) => setPassword(e.target.value)} />
+          </label>
+          <label className="gs-label"><span className="gs-eyebrow">Authenticator or recovery code</span>
+            <input className="gs-field" autoComplete="one-time-code" maxLength={24} value={code} disabled={busy} onChange={(e) => setCode(e.target.value)} />
+          </label>
+          <button type="submit" className="gs-btn" data-hot disabled={busy || !password || !code} data-testid="settings-workspace-two-step-confirm">
+            {busy ? "Saving…" : on ? "Require it" : "Make it optional"}
+          </button>
+        </form>
+      ) : null}
+      {note ? <Note ok={false} text={note} testId="settings-workspace-two-step-note" /> : null}
+    </>
   );
 }

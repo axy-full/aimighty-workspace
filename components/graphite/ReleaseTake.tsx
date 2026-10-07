@@ -4,6 +4,7 @@ import { useSession } from "@/lib/session";
 import { revealClear } from "@/lib/shell/reveal";
 import { useShell } from "@/lib/shell/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { requestAccountRefresh } from "@/lib/workspace/data";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { mayRelease } from "@/lib/workspace/release";
@@ -27,6 +28,8 @@ export function ReleaseTake({ entry, onReleased, place }: { entry: LibraryEntry;
   const shell = useShell();
   const scoped = useScopedFetch();
   const toast = useOptionalToast();
+  /* The sample workspace spends nothing: a held take is not released there. */
+  const spendOff = useSampleWorkspace();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<Note | null>(null);
   /* The price the route named when it moved: the next press approves that figure, never the old one. */
@@ -37,7 +40,7 @@ export function ReleaseTake({ entry, onReleased, place }: { entry: LibraryEntry;
   useEffect(() => { if (note) revealClear(noteRef.current); }, [note]);
   const { take, asset } = entry;
   const generation = asset.origin === "generation" ? asset.value : null;
-  if (!generation || take.status !== "held") return null;
+  if (spendOff || !generation || take.status !== "held") return null;
   const credits = repriced ?? take.needs ?? null;
   if (credits == null || !mayRelease({ id: session.userId, role: session.role }, generation.createdBy)) return null;
   const admin = session.role === "owner" || session.role === "admin";

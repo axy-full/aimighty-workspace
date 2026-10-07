@@ -14,17 +14,17 @@ import type { ReviewState } from "@/lib/workspace/takes";
 const ID = /^[A-Za-z0-9_-]{1,100}$/;
 
 /** The design's phone screens (README § 1.1). */
-export const PHONE_SCREENS = ["home", "plan", "review", "fix", "record", "make", "atomik", "states", "consent"] as const;
+export const PHONE_SCREENS = ["home", "plan", "review", "fix", "record", "make", "atomik", "states", "cut", "consent"] as const;
 export type PhoneScreen = (typeof PHONE_SCREENS)[number];
 
 /** The URL params the phone owns (the shell keeps them, with the switch on only). */
 export const PHONE_PARAMS = ["screen", "device", "from", "run", "take", "cast"] as const;
 
 /**
- * The screens this build draws: the design's eight, and the consent step (Gaps A). An address for one this build does not draw opens Home,
- * never an empty screen.
+ * The screens this build draws: all nine of the design's (Cut is Gaps A's), and the consent step (Gaps A). An address
+ * for one this build does not draw opens Home, never an empty screen.
  */
-export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "plan", "review", "fix", "record", "make", "atomik", "states", "consent"]);
+export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "plan", "review", "fix", "record", "make", "atomik", "states", "cut", "consent"]);
 
 export const isPhoneScreen = (value: unknown): value is PhoneScreen => PHONE_SCREENS.includes(value as PhoneScreen);
 
@@ -177,7 +177,18 @@ export function shotWords(code: string | null | undefined): string | null {
 export function takeTitle(entry: LibraryEntry): string {
   const g = generationOf(entry);
   const shot = shotWords(g?.shotCode);
-  return shot ? `${shot} · v${g?.version ?? 1}` : entry.take.name;
+  if (shot) return `${shot} · v${g?.version ?? 1}`;
+  return readableTakeName(entry.take.name, g?.version);
+}
+
+/** A take id read as words ("tk-s1-v1" → "Shot 1 · v1"); a name that is only an id never reaches the screen. */
+export function readableTakeName(name: string, version?: number | null): string {
+  const trimmed = name.trim();
+  /* Only a name that is wholly an id is rewritten; a person's own name ("Take-off at dawn", "job-site.mp4") stays as written. */
+  const id = /^(?:take\s+)?tk-s(\d+)-v(\d+)$/i.exec(trimmed);
+  if (id) return `Shot ${Number(id[1])} · v${Number(id[2])}`;
+  if (!trimmed || /^(?:take\s+)?(?:tk|gen|job|asset)[-_][0-9a-f]{6,}$/i.test(trimmed)) return version ? `Take · v${version}` : "Take";
+  return name;
 }
 
 const seconds = (n: number) => `${Number.isInteger(n) ? n : Math.round(n * 10) / 10} s`;

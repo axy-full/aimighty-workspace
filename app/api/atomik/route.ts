@@ -11,6 +11,7 @@ import { paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure } fro
 import { menuFor, type CatalogModel } from "@/lib/catalog";
 import { plannerMemoryText } from "@/lib/atomikMemory";
 import { plannerInputs, plannerPresetsStale, refreshPlannerPresets } from "@/lib/atomikLibrary";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 
@@ -96,6 +97,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
       library: inputs.library, presets: inputs.presets,
       userMessage: { text, attachments: cleanAttachments(body.attachments) } }));
   }
+  /* The sample workspace has no Atomik chat: its turns would spend. A quote still answers. */
+  { const off = await sampleWorkspaceOff(); if (off) return off; }
   const id = await createChat({
     userId: got.user.id,
     projectId: typeof body.projectId === "string" ? body.projectId : null,

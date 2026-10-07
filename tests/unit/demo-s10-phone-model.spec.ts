@@ -4,6 +4,7 @@ import { libraryEntries } from "../../lib/workspace/library";
 import {
   DRAWN_SCREENS, PHONE_PARAMS, SWIPE_MIN, judgedLine, phoneSearch, queueJudgement, readPhone, readQueued, reviewCountLine,
   reviewQueue, shotWords, swipeVerdict, takeSpec, takeTitle, versionsOf,
+  readableTakeName,
 } from "../../components/graphite/phone/phone-model";
 import { PHONE_SCREEN } from "../../components/graphite/phone/routes";
 import { generation } from "../helpers/workspaceFixtures";
@@ -34,13 +35,13 @@ test("addresses open the phone's screens; the board is its Record and Approvals 
   expect(readPhone("?screen=nonsense").asked).toBe("home");
 });
 
-test("every one of the design's phone screens is drawn; an address that is not one opens Home, never an empty screen", () => {
-  expect([...DRAWN_SCREENS].sort()).toEqual(["atomik", "consent", "fix", "home", "make", "plan", "record", "review", "states"]);
+test("every one of the design's phone screens is drawn (the eight, Gaps A's Cut and its consent step); an address that is not one opens Home, never an empty screen", () => {
+  expect([...DRAWN_SCREENS].sort()).toEqual(["atomik", "consent", "cut", "fix", "home", "make", "plan", "record", "review", "states"]);
   /* The consent step (Gaps A) carries the cast member it records for; a malformed one is never carried, and leaving drops it. */
   expect(readPhone("?screen=consent&cast=cast:cast:lead").cast).toBe("cast:cast:lead");
   expect(readPhone("?screen=consent&cast=../x").cast).toBeNull();
   expect(phoneSearch("?screen=consent&cast=n1&project=p1", { screen: "home" })).toBe("?project=p1");
-  for (const screen of ["fix", "states"]) expect(readPhone(`?screen=${screen}`).screen).toBe(screen);
+  for (const screen of ["fix", "states", "cut"]) expect(readPhone(`?screen=${screen}`).screen).toBe(screen);
   expect(readPhone("?screen=nonsense").screen).toBe("home");
   /* Change with words keeps the take it was opened on. */
   expect(phoneSearch("?screen=review&take=gen_1", { screen: "fix" })).toBe("?screen=fix&take=gen_1");
@@ -128,4 +129,14 @@ test("a shot code is said in words, never shown as the code", () => {
   expect(shotWords("sh12")).toBe("Shot 12");
   expect(shotWords("A1")).toBeNull();
   expect(shotWords(null)).toBeNull();
+});
+
+test("a take's id never reaches the phone: tk-s1-v1 reads Shot 1 · v1, any other id reads Take", () => {
+  expect(readableTakeName("Take tk-s1-v1")).toBe("Shot 1 · v1");
+  expect(readableTakeName("tk-s12-v3")).toBe("Shot 12 · v3");
+  expect(readableTakeName("gen_9f8a7b6c5d", 2)).toBe("Take · v2");
+  expect(readableTakeName("")).toBe("Take");
+  expect(readableTakeName("Shot 2 · The sphere")).toBe("Shot 2 · The sphere");
+  /* A person's own names are never taken for ids. */
+  for (const name of ["Take-off at dawn", "Job-site walkthrough", "Asset-light hero", "Take_final_v2", "take-3-final.mov", "job-site.mp4"]) expect(readableTakeName(name)).toBe(name);
 });

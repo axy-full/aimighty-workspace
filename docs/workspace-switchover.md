@@ -1,5 +1,7 @@
 # The workspace switch-over
 
+**Retired for Release 1.** There is no way back to the old shell: `?shell=legacy`, its cookie, `WORKSPACE_IS_DEFAULT`, the device gate and `lib/workspace/switchover.ts` are gone. Old addresses redirect in one hop (`lib/shell/old-routes.ts`; see `docs/old-shells.md`, "Release 1"). What follows is the history of the mechanism.
+
 **Status (22 September 2026): the target is the Particl Suites shell at `/suites`, on every device.**
 
 Since 22 September the four old entry points (`/`, `/workbench`, `/atomik`,

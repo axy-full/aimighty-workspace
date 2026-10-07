@@ -25,6 +25,9 @@ import { useWorkspace } from "@/lib/workspace/state";
 import { useClock } from "../ResumedJobs";
 import { Glyph } from "../icons";
 import { Price, usePriceTitle } from "../Price";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
+import { CHECK_LINE } from "@/lib/demo/sample";
+import { CheckAgain } from "../CheckAgain";
 import { priceWords, upTo } from "@/lib/shell/price-words";
 
 /**
@@ -145,6 +148,8 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
   const variant = VIRAL_PAGES[page];
   const sendToTakes = useSendToTakes(scope, project);
   const take = useKeyTake(scope, project?.id ?? null, `viral:${variant}`);
+  /* The sample workspace spends nothing: no estimate is read and no run button is offered; the sample's line says so once. */
+  const spendOff = useSampleWorkspace();
   /* Recreate hands over the finished take's own inputs, already resolved against the Library. */
   const [s, set] = useState<ViralState>(() => takePreset(page) ?? INITIAL_VIRAL);
   useEffect(() => {
@@ -169,12 +174,12 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
   const quote = take.quote, estimateKey = take.estimate?.key, estimateExpires = take.estimate?.expiresAt ?? 0, runPhase = take.run.phase;
   const busy = runPhase === "submitting" || runPhase === "running";
   useEffect(() => {
-    if (!request || busy) return;
+    if (!request || busy || spendOff) return;
     if (estimateKey === key && estimateExpires > now) return;
     const timer = setTimeout(() => void quote(request, key), 600);
     return () => clearTimeout(timer);
-  }, [request, key, quote, estimateKey, estimateExpires, now, busy]);
-  const reason = blocked ?? estimateReason(take.estimate, key, now);
+  }, [request, key, quote, estimateKey, estimateExpires, now, busy, spendOff]);
+  const reason = spendOff ?? blocked ?? estimateReason(take.estimate, key, now);
   const credits = !reason && take.estimate?.key === key ? take.estimate.credits : null;
 
   /* Several at once apply in order, each against the state the last one left. */
@@ -220,7 +225,7 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
   const priced = run.phase !== "submitting" && run.phase !== "running" && figure != null;
   const label = run.phase === "submitting" ? "Submitting…" : run.phase === "running" ? "Rendering…" : null;
   const buttonName = label ?? (priced ? `${copy.verb} · ${priceWords(figure)}` : copy.verb);
-  const estimateFailed = Boolean(!blocked && take.estimate?.key === key && take.estimate.error);
+  const estimateFailed = Boolean(!spendOff && !blocked && take.estimate?.key === key && take.estimate.error);
   const running = run.phase === "running" ? run : null;
   const runningTake = running ? viralTakes(items, variant).find((t) => t.id === running.jobId) ?? null : null;
   const seconds = s.source?.seconds != null ? `${Math.round(s.source.seconds)} s` : null;
@@ -306,6 +311,7 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
       {reason ? (
         <div className="vr-reason-row">
           <p className="gx-reason" id="vr-reason" data-testid="viral-reason">{reason}</p>
+          {reason === CHECK_LINE ? <CheckAgain className="gx-hbtn" /> : null}
           {estimateFailed && request ? <button type="button" className="gx-hbtn" onClick={() => void take.quote(request, key)} data-testid="viral-reason-retry">Try again</button> : null}
         </div>
       ) : null}
@@ -313,10 +319,10 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
       {take.note ? <p className="gx-gen-note" role="status" data-testid="viral-take-note">{take.note}</p> : null}
       <div className="gx-gen-cta gx-make-go">
         <span className="gx-make-dest" data-testid="make-dest">{project ? `To ${project.name} · Library` : null}</span>
-        <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(reason) || busy || credits == null} aria-describedby={reason ? "vr-reason" : undefined} aria-label={buttonName} title={priced ? figureTitle : undefined} data-priced={priced ? "" : undefined} data-spend={priced ? "priced" : "unpriced"}
+        {spendOff ? null : <button type="button" className="gx-primary gx-gen-go" disabled={Boolean(reason) || busy || credits == null} aria-describedby={reason ? "vr-reason" : undefined} aria-label={buttonName} title={priced ? figureTitle : undefined} data-priced={priced ? "" : undefined} data-spend={priced ? "priced" : "unpriced"}
           onClick={() => { if (request) void take.submit(request, key, credits); }} data-testid="viral-generate">
           {label ?? (<><span className="gx-go-act">{copy.verb}</span>{priced ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span><Price value={figure} /></span> : null}</>)}
-        </button>
+        </button>}
       </div>
 
       {/* Below: what the drawn panel has no place for yet, as the Viral page had it. */}

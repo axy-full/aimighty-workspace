@@ -12,25 +12,30 @@ import "./storyboard.css";
  * first refusal or price that moved). The button says nothing it cannot back: no price while one is unread, and
  * "Try again" when a quote could not be read.
  */
-export function DrawStoryboard({ readOnly = null, onDrawn }: { readOnly?: string | null; onDrawn?: (count: number) => void }) {
+export function DrawStoryboard({ readOnly = null, exploreOnly = null, onDrawn }: {
+  readOnly?: string | null;
+  /** The sample's line where nothing spends (the sample workspace): the button is disabled and shows no price. */
+  exploreOnly?: string | null;
+  onDrawn?: (count: number) => void;
+}) {
   const rig = useRig();
-  const draw = useStoryboardDraw({ scope: rig.scope, project: rig.project, apply: rig.apply, save: rig.save }, readOnly);
-  const title = usePriceTitle(draw.price);
+  const draw = useStoryboardDraw({ scope: rig.scope, project: rig.project, apply: rig.apply, save: rig.save }, readOnly ?? exploreOnly);
+  const title = usePriceTitle(exploreOnly ? null : draw.price);
   if (!rig.project || !draw.count) return null;
-  const words = draw.price ? priceWords(draw.price) : null;
-  const blocked = readOnly ?? draw.blocked;
+  const words = draw.price && !exploreOnly ? priceWords(draw.price) : null;
+  const blocked = readOnly ?? exploreOnly ?? draw.blocked;
   return (
     <div className="gx-draw" data-testid="board-draw">
-      {draw.pricing === "error" ? (
+      {draw.pricing === "error" && !exploreOnly ? (
         <button type="button" className="gx-draw-btn" data-quiet="" onClick={draw.tryAgain} data-testid="board-draw-try-again">Try again</button>
       ) : (
         <button type="button" className="gx-draw-btn" title={title ?? undefined} disabled={Boolean(blocked) || !words || draw.busy} aria-busy={draw.busy || undefined}
-          onClick={() => { void draw.draw().then((n) => { if (n) onDrawn?.(n); }); }} data-testid="board-draw-button" {...spendAttrsOf(draw.price)}>
+          onClick={() => { void draw.draw().then((n) => { if (n) onDrawn?.(n); }); }} data-testid="board-draw-button" {...spendAttrsOf(exploreOnly ? null : draw.price)}>
           {draw.busy ? "Sending frames…" : words ? `Draw the storyboard · ${words}` : "Draw the storyboard"}
         </button>
       )}
       {draw.problem ? <span className="gx-draw-why" role="alert">{draw.problem}</span> : blocked && !draw.busy ? <span className="gx-draw-why" role="status">{blocked}</span> : null}
-      {draw.pricing === "error" ? <span className="gx-draw-why" role="status">The price could not be read.</span> : null}
+      {draw.pricing === "error" && !exploreOnly ? <span className="gx-draw-why" role="status">The price could not be read.</span> : null}
     </div>
   );
 }

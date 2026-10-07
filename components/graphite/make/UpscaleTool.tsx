@@ -4,7 +4,7 @@ import LazyMedia from "@/components/LazyMedia";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useBodyQuote, quotePrice } from "@/lib/shell/use-quote";
-import { DEFAULT_ASTRA } from "@/lib/astra";
+import { ASTRA_MODEL, DEFAULT_ASTRA } from "@/lib/astra";
 import { DEFAULT_TOPAZ_IMAGE } from "@/lib/topaz";
 import { FRAME_RATES, IMAGE_SCALES, imageUpscaleBody, upscaleModel, upscaleSources, upscaleSurface, videoUpscaleBody, type UpscaleSource } from "@/lib/shell/upscale";
 import { priceLabel, type SpendPrice } from "@/lib/spend";
@@ -86,7 +86,11 @@ export function UpscaleTool({ scope, project, items }: { scope: string; project:
   const price: SpendPrice = recovering ? (typeof saved?.maxCredits === "number" ? { upTo: saved.maxCredits } : null) : quotePrice(ready?.quote);
   const reason = recovering ? null : !project ? "Open a project first." : !production ? "Saving this project…" : !source ? CHOOSE : quote.state === "error" ? quote.reason : !ready ? "Reading the price…" : null;
   const waits = busy || (!recovering && !ready);
-  const kind = source?.kind ?? "video";
+  /* An unsettled request is what is shown, as it was saved: its kind and its setting, not the tool's defaults after a reload. */
+  const savedKind = saved ? (saved.model === ASTRA_MODEL ? "video" : "image") : null;
+  const kind = source?.kind ?? savedKind ?? "video";
+  const shownFps = savedKind === "video" ? ((saved?.astra as { fps?: number } | undefined)?.fps === 60 ? 60 : 30) : fps;
+  const shownScale = savedKind === "image" ? ((saved?.topaz as { factor?: number } | undefined)?.factor === 4 ? 4 : 2) : scale;
   const figure = price && typeof price === "object" ? (typeof price.upTo === "number" ? upTo(price.upTo) : typeof price.cr === "number" ? exact(price.cr) : null) : null;
 
   const press = async () => {
@@ -136,11 +140,11 @@ export function UpscaleTool({ scope, project, items }: { scope: string; project:
         <div className="up-field"><span className="gx-eyebrow" data-functional-label="">Target</span>
           {kind === "video" ? (
             <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label="Frame rate">
-              {FRAME_RATES.map((r) => <button key={r} type="button" role="radio" className="gx-seg-btn" aria-checked={fps === r} disabled={recovering} onClick={() => setFps(r)}><span>4K · {r} fps</span></button>)}
+              {FRAME_RATES.map((r) => <button key={r} type="button" role="radio" className="gx-seg-btn" aria-checked={shownFps === r} disabled={recovering} onClick={() => setFps(r)}><span>4K · {r} fps</span></button>)}
             </div>
           ) : (
             <div className="gx-seg gx-seg--sm" role="radiogroup" aria-label="Scale">
-              {IMAGE_SCALES.map((r) => <button key={r} type="button" role="radio" className="gx-seg-btn" aria-checked={scale === r} disabled={recovering} onClick={() => setScale(r)}><span>{r}× larger</span></button>)}
+              {IMAGE_SCALES.map((r) => <button key={r} type="button" role="radio" className="gx-seg-btn" aria-checked={shownScale === r} disabled={recovering} onClick={() => setScale(r)}><span>{r}× larger</span></button>)}
             </div>
           )}
         </div>
@@ -151,7 +155,7 @@ export function UpscaleTool({ scope, project, items }: { scope: string; project:
         <Glyph name="upscale" size={16} className="gx-glyph" />
         <span className="gx-make-engine-line">
           <span className="gx-model-name">{upscaleModel(kind)}</span>
-          <span className="gx-make-engine-part">{kind === "video" ? `4K · ${fps} fps` : `${scale}×`}</span>
+          <span className="gx-make-engine-part">{kind === "video" ? `4K · ${shownFps} fps` : `${shownScale}×`}</span>
           {figure ? <span className="gx-make-engine-part gx-mono" data-testid="upscale-price"><Price value={figure} /></span> : null}
         </span>
       </div>

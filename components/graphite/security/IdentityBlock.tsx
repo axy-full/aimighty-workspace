@@ -21,7 +21,7 @@ import "./security.css";
  *   "Retry · N cr" back to the same form.
  * The price is the server's (`terms.trainingCredits`, the rate card's identity training). Nothing here spends.
  */
-export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, view, consents, trainingCredits, canAct, onTrain }: {
+export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, view, consents, trainingCredits, canAct, spendOff, onTrain }: {
   scope: string; projectKey: string; subjectKey: string; subjectLabel: string;
   /** The card's identity and consent, worked out once by the card (lib/security/identity-card.ts). */
   view: IdentityCardView;
@@ -29,6 +29,8 @@ export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, vie
   trainingCredits: number | null;
   /** A signed-in person on a board that can be written to. */
   canAct: boolean;
+  /** Why nothing spends here (the sample workspace): training is shown disabled, with this reason and no price. */
+  spendOff?: string | null;
   /** Opens the build form (the Inspector), armed with the live consent. */
   onTrain: () => void;
 }) {
@@ -40,6 +42,8 @@ export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, vie
   const consentLine = state.status === "error" ? (state.error ?? "Consent records could not be read.") : reading ? "Reading…" : view.consent;
 
   const train = (label: string, testId: string, primary: boolean) => {
+    /* Nothing spends here (the sample): no identity is trained, and no price is shown. */
+    if (spendOff) return <button type="button" className="gsec-btn nodrag nopan" disabled title={spendOff} data-testid={testId}>{label}</button>;
     const off = !view.consentId || !price;
     return (
       <button type="button" className={`gsec-btn nodrag nopan${primary && !off ? " gsec-primary" : ""}`} disabled={off}

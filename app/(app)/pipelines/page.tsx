@@ -1,10 +1,10 @@
-import { Suspense } from "react";
-import PipelineWorkspace from "@/components/pipeline/PipelineWorkspace";
-export const metadata = { title: "Pipelines · Particl" };
-export default function PipelinesPage() {
-  return (
-    <Suspense fallback={<p role="status">Loading production pipelines…</p>}>
-      <PipelineWorkspace />
-    </Suspense>
-  );
+import { followOldRoute, type RawSearch } from "@/lib/shell/old-routes.server";
+
+/**
+ * Pipelines and their runs: Control room > Activity.
+ * Redirected, never drawn (docs/old-shells.md): lib/shell/old-routes.ts holds where it goes.
+ */
+export const dynamic = "force-dynamic";
+export default async function Moved({ searchParams }: { searchParams: Promise<RawSearch> }) {
+  await followOldRoute("/pipelines", await searchParams);
 }

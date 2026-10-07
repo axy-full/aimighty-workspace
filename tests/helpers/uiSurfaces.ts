@@ -56,7 +56,7 @@ export const SURFACES: Surface[] = [
   },
   {
     id: "labels", name: "tab, page and header labels (lib/shell and the old suite and page tables)", navigation: true,
-    claims: (path) => path.startsWith("lib/shell/") || is(path, ["lib/suites.ts", "lib/nav.ts", "lib/workspace/pages.ts", "lib/workspace/navigation.ts"]),
+    claims: (path) => path.startsWith("lib/shell/") || is(path, ["lib/suites.ts", "lib/workspace/pages.ts", "lib/workspace/navigation.ts"]),
   },
   {
     /* Not navigation data as a whole: the hero's "Generate" is a button there. Its tab and menu labels are Gen-checked all the same. */

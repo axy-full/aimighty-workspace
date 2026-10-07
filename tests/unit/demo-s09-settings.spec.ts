@@ -7,7 +7,7 @@ import {
 } from "../../lib/shell/settings";
 import {
   creditPriceLine, creditsWithUsd, inviteLine, memberLine, monthKey, monthLine, monthTotalsOf, peopleMeta, planView, roleChangeable, roleOf,
-  topUpLabel, topUpPack,
+  topUpLabel, topUpPack, workspaceTwoStep,
 } from "../../components/graphite/settings/model";
 import { capInput, productionLine, ruleValue, spendingLines, type SpendingRules } from "../../components/graphite/settings/rules/spending-words";
 import { RIG_AGENT_JOB_CEILING_CREDITS } from "../../lib/workbench/rig-agent-limits";
@@ -99,6 +99,20 @@ test.describe("Team, as the code has it", () => {
     expect(peopleMeta({ canSeeRoles: true, users: [owner, member, { ...member, id: "u3", disabled: true }], invites: [{ code: "c", email: "r@example.test", name: "Riley", expiresAt: 1 }] }))
       .toBe("2 on this workspace · 1 invited");
   });
+
+  test("the workspace's two-step rule: the owner turns it on or off once their own is on; anyone else only reads it", () => {
+    const owner = (policy: Parameters<typeof workspaceTwoStep>[0]["policy"], policyFailed = false) =>
+      workspaceTwoStep({ owner: true, workspaceId: "w1", policy, policyFailed, required: null });
+    expect(owner(null)).toEqual({ value: "Reading…", line: "Everyone signs in with two steps when it is on", action: null });
+    expect(owner(null, true)).toMatchObject({ value: "—", action: null });
+    expect(owner({ requiresMfa: false, ownerEnrolled: false, members: 2, unenrolled: 2 })).toEqual({ value: "off", line: "2 of 2 people have not set it up", action: "enrol-first" });
+    expect(owner({ requiresMfa: false, ownerEnrolled: true, members: 2, unenrolled: 1 })).toMatchObject({ value: "off", action: "turn-on" });
+    expect(owner({ requiresMfa: true, ownerEnrolled: true, members: 2, unenrolled: 0 })).toEqual({ value: "on", line: "Everyone signs in with two steps when it is on", action: "turn-off" });
+    const member = (required: { id: string }[] | null) => workspaceTwoStep({ owner: false, workspaceId: "w1", policy: { requiresMfa: false, ownerEnrolled: true }, policyFailed: false, required });
+    expect(member(null)).toEqual({ value: "Reading…", line: "Set by the workspace owner", action: null });
+    expect(member([{ id: "w2" }])).toMatchObject({ value: "off", action: null });
+    expect(member([{ id: "w2" }, { id: "w1" }])).toMatchObject({ value: "on", action: null });
+  });
 });
 
 test.describe("Plan & credits, as the code has it", () => {
@@ -143,7 +157,7 @@ test.describe("the spending rules, read-only (DECISIONS 1, 10)", () => {
     expect(l.platformLineText).toBe("Any job over 200 cr needs a person’s approval, even under Auto.");
     expect(l.modeLine).toBe("Every paid step waits for a person.");
     expect(l.autoLine).toBe("Auto is picked per Board run, for drafts at or under 200 cr.");
-    expect(l.budgetLine).toBe("Warn at 80% of a production’s cap · at the cap an admin unlocks it");
+    expect(l.budgetLine).toBe("Auto drafts ask at 80% of a production’s budget · at the cap an admin unlocks it");
     expect(spendingLines({ ...base, rule: "anyone" }, creditsText).ruleLine).toBe("Members render freely.");
     expect(spendingLines({ ...base, rule: "producer" }, creditsText).ruleLine).toBe("A producer signs off on every take.");
     expect(spendingLines({ ...base, platformLine: null, perJobLine: null }, creditsText)).toMatchObject({ platformLineText: null, autoLine: null });
@@ -176,9 +190,9 @@ test.describe("changing the rules (9.2)", () => {
     expect(settingProblem("approvalRule", "always")).not.toBeNull();
   });
   test("each production reads as spent against its cap, in credits", () => {
-    expect(productionLine({ id: "p", name: "A", credits: 40, capCredits: 200 }, creditsText)).toEqual({ value: "40 of 200 cr", sub: "160 cr left" });
-    expect(productionLine({ id: "p", name: "A", credits: 200, capCredits: 200 }, creditsText)).toEqual({ value: "200 of 200 cr", sub: "at the cap" });
-    expect(productionLine({ id: "p", name: "A", credits: 210, capCredits: 200, capUnlocked: true }, creditsText).sub).toBe("unlocked past the cap");
+    expect(productionLine({ id: "p", name: "A", credits: 40, capCredits: 200 }, creditsText)).toEqual({ value: "40 of 200 cr", sub: "160 cr left of its own cap" });
+    expect(productionLine({ id: "p", name: "A", credits: 200, capCredits: 200 }, creditsText)).toEqual({ value: "200 of 200 cr", sub: "at its own cap" });
+    expect(productionLine({ id: "p", name: "A", credits: 210, capCredits: 200, capUnlocked: true }, creditsText).sub).toBe("unlocked past its own cap by an admin");
     expect(productionLine({ id: "p", name: "A", credits: 12, capCredits: null }, creditsText).value).toBe("12 cr");
   });
 });

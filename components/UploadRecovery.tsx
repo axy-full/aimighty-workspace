@@ -7,6 +7,7 @@ import {
   type UploadEnvelope,
 } from "@/lib/uploadRecovery";
 import { checkUpload, dismissUpload, resumeUpload } from "@/lib/uploadClient";
+import { fileRecoveredUpload } from "@/lib/workspace/library";
 import styles from "./upload-recovery.module.css";
 
 const serverSnapshot = () => "{}";
@@ -83,7 +84,7 @@ function UploadRow({ entry }: { entry: UploadEnvelope }) {
           <>
             <button
               disabled={busy}
-              onClick={() => void action(() => resumeUpload(entry))}
+              onClick={() => void action(() => resumeUpload(entry).then(() => fileRecoveredUpload(entry)))}
             >
               Resume upload
             </button>
@@ -95,7 +96,9 @@ function UploadRow({ entry }: { entry: UploadEnvelope }) {
               onClick={() =>
                 void action(async () => {
                   const result = await checkUpload(entry);
-                  if (result.state !== "committed")
+                  /* Found stored after all: it goes where it was dropped, as a resume would have put it. */
+                  if (result.state === "committed") await fileRecoveredUpload(entry);
+                  else
                     setMessage(
                       result.retryAfterMs > 0
                         ? "Storage is still finishing. Check again shortly."
@@ -114,7 +117,7 @@ function UploadRow({ entry }: { entry: UploadEnvelope }) {
               onChange={(event) => {
                 const selected = event.target.files?.[0];
                 event.target.value = "";
-                if (selected) void action(() => resumeUpload(entry, selected));
+                if (selected) void action(() => resumeUpload(entry, selected).then(() => fileRecoveredUpload(entry)));
               }}
             />
           </>

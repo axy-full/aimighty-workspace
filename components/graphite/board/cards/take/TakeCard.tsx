@@ -24,6 +24,7 @@ import {
   type ShotTakes, type ShotVersion,
 } from "./take-model";
 import { useJudge } from "./use-judge";
+import { RetryTake } from "./RetryTake";
 import "./take.css";
 
 /*
@@ -92,7 +93,7 @@ function StatusLine({ version, ctx }: { version: ShotVersion; ctx: BoardCtx }) {
         {version.nothingBilled
           ? <span className="gx-take-charge" data-testid="take-nothing-billed">Nothing billed</span>
           : version.charge ? <span className="gx-take-charge" data-testid="take-charge">{version.charge}</span> : null}
-        {version.retry && !ctx.offline ? <Btn onClick={(e) => { e.stopPropagation(); recreate(version.entry); }} data-testid="take-retry">Retry</Btn> : null}
+        {version.retry && !ctx.offline ? <RetryTake entry={version.entry} scope={ctx.scope} className="gx-take-btn" onRetry={() => recreate(version.entry)} /> : null}
       </div>
     );
   }
