@@ -4,6 +4,7 @@ import { newProject } from "../lib/workbench/studio";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { seedFinishedProduction, watchPaidRequests } from "./helpers/s12-sample";
+import { isCompact } from "./helpers/shellMode";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -18,7 +19,13 @@ const SHOTS = process.env.S12_SHOTS || join(tmpdir(), "claude-s12-shots");
 const desktop = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1280;
 const overflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
+/* Release 1: below the compact line the shell mounts the phone app, which draws no board (so no pill and no plan card). What a phone owes the sample:
+   its Home row says the line and its price button is disabled (demo-s08-approvals-workbench › "phone Home: every kind of wait", "Sample take"),
+   and its copy opens at every size with no paid request (demo-s12-sample-workbench). */
+const PHONE_APP = "the sample's board pill and plan card are the desktop board's; the phone twins are demo-s08-approvals (Sample take, disabled) and demo-s12-sample-workbench (opens at every size, no paid request)";
+
 test("the sample's board: the pill, the recorded plan, every paid control disabled; another production is untouched", async ({ page }, info) => {
+  test.skip(isCompact(info), PHONE_APP);
   const paid = watchPaidRequests(page);
   const made = await seedFinishedProduction(page);
   const marked = await page.request.post("/api/demo/sample", { headers: made.headers, data: { action: "mark", draftId: made.project.id } });
@@ -67,7 +74,8 @@ test("the sample's board: the pill, the recorded plan, every paid control disabl
   expect(paid).toEqual([]);
 });
 
-test("another production in a workspace that has a sample is untouched: no pill, no sample plan, paid controls as before", async ({ page }) => {
+test("another production in a workspace that has a sample is untouched: no pill, no sample plan, paid controls as before", async ({ page }, info) => {
+  test.skip(isCompact(info), PHONE_APP);
   await signInLocally(page.request, "Other Film Tester");
   await forbidPaidWork(page);
   await mockMedia(page);

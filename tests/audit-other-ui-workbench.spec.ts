@@ -252,12 +252,19 @@ test("Prompt attach keeps the files that arrived when one fails, and the compose
 
   await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(projectName(page)).toHaveText(project.name);
-  await page.getByTestId("gen-attach-file").setInputFiles([
-    { name: "look.png", mimeType: "image/png", buffer: await png("#2b6a4a") },
-    { name: "broken.png", mimeType: "image/png", buffer: await png("#6a2b2b") },
-  ]);
-  await expect(page.getByTestId("gen-well")).toContainText("look.png", { timeout: 30_000 });
-  await expect(page.getByTestId("gen-attach-note")).toContainText("broken.png could not be uploaded (The store refused this file)");
+  /* Release 1: the old Gen composer's attach button is gone; Make's References well takes device files by drop (components/graphite/make/Compose.tsx
+     > dropOnWell > dropToIds > the same uploadFilesToProject), so the files arrive as a drop on the well. */
+  const files = [
+    { name: "look.png", mime: "image/png", data: (await png("#2b6a4a")).toString("base64") },
+    { name: "broken.png", mime: "image/png", data: (await png("#6a2b2b")).toString("base64") },
+  ];
+  await page.getByTestId("gen-well").evaluate((well, list) => {
+    const transfer = new DataTransfer();
+    for (const f of list) transfer.items.add(new File([Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0))], f.name, { type: f.mime }));
+    well.dispatchEvent(new DragEvent("drop", { dataTransfer: transfer, bubbles: true, cancelable: true }));
+  }, files);
+  await expect(page.getByTestId("gen-well").getByTestId("make-reference")).toContainText("look.png", { timeout: 30_000 });
+  await expect(page.getByTestId("gen-well").getByRole("alert")).toContainText("broken.png could not be uploaded (The store refused this file)");
 
   /* The Generate composer's project library: references, yes; an edit or upscale button with nothing behind it, no. */
   await page.goto(`/workspace?project=${project.id}&suite=particl&page=rig`);
