@@ -2,27 +2,70 @@ import { test, expect, type Locator, type Page, type TestInfo } from "@playwrigh
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
-import { moreTakes } from "./helpers/genTakes";
-import { MAKE_SHOWS_CINEMA } from "../lib/shell/make-price";
 
 /**
- * Gen approves Cinema Studio's hold (owner's decision, 5 October 2026): the
- * button says "about N cr, at most 3N cr", whole and on screen at every size,
- * and a press sends the hold, 3N, as each take's approval (`maxCredits`), the
- * figure admission reserves. A take admission holds for credits says so with
- * Top up. Every paid route here is a mock that records what it was sent;
- * nothing is billed.
+ * Make approves Cinema Studio's hold (owner's decision, 5 October 2026): the
+ * engine row and the button say "about N cr, at most 3N cr", whole and on
+ * screen at every size (Make's panel on a desktop, the phone's Make screen on a
+ * phone), and a press sends the hold, 3N, as each take's approval
+ * (`maxCredits`), the figure admission reserves. Every paid route here is a
+ * mock that records what it was sent; nothing is billed.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
+const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const SHOTS = ["workbench-390x844", "workbench-1440x900"];
 const CINEMA = "higgsfield-cinema-studio-4.0";
 const N = 31;
 const DRAFT = "ws-hold";
 const WORDS = "a lighthouse keeper climbs the spiral stairs";
 
+/** Make's Advanced: folded under Change (the engine list); opened here, and again after a pick closes the list. */
+async function openAdvanced(page: Page) {
+  const list = page.getByTestId("make-engines");
+  if (!(await list.isVisible())) {
+    const change = page.getByTestId("gen-model");
+    await change.scrollIntoViewIfNeeded();
+    await change.click();
+  }
+  await expect(list).toBeVisible();
+  const toggle = page.getByTestId("make-advanced-toggle");
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await expect(page.getByTestId("make-advanced")).toBeVisible();
+}
+
+/** A number of takes, from Make's Advanced, once the button is priced; each chip says what that many would hold. */
+async function pickTakes(page: Page, takes: number) {
+  await expect(page.getByTestId("gen-generate")).toHaveText(/\d cr/, { timeout: 60_000 });
+  await openAdvanced(page);
+  const chip = page.getByTestId(`gen-takes-${takes}`);
+  await expect(chip).toHaveText(`×${takes} · about ${takes * N} cr, at most ${3 * takes * N} cr`);
+  await chip.click();
+}
+
+/**
+ * Opens `url` once the page is done loading, on a cold dev server too. Its first visit compiles the route, and the dev
+ * server may then reload the page while a test is already driving it. So: visit, wait for the page's load event and
+ * the screen's first control, and visit again, which loads the compiled page whole. The second visit is the one the
+ * test drives. Never `networkidle`: the shell keeps polling (jobs, quotes), so a quiet network may never come (review
+ * L5). Nothing here is a longer timeout for a step of the test.
+ */
+async function openSettled(page: Page, url: string, ready: string) {
+  for (const visit of ["warm-up", "test"]) {
+    await page.goto(url, { waitUntil: "load", timeout: 120_000 });
+    await expect(page.getByTestId(ready), visit).toBeVisible({ timeout: 120_000 });
+  }
+}
+
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
 
-async function open(page: Page, admit: (take: number) => "running" | "held" = () => "running") {
+const HELD = /^about \d[\d,.]* cr, at most \d[\d,.]* cr$/;
+/** A held figure's two numbers: the ceiling is three times the estimate. */
+function heldPair(words: string) {
+  const [, about, most] = words.trim().match(/^about (\d[\d,.]*) cr, at most (\d[\d,.]*) cr$/) ?? [];
+  return { about: Number(about?.replace(/,/g, "")), most: Number(most?.replace(/,/g, "")) };
+}
+
+async function open(page: Page, info: TestInfo, admit: (take: number) => "running" | "held" = () => "running") {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -56,27 +99,45 @@ async function open(page: Page, admit: (take: number) => "running" | "held" = ()
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`/suites?view=gen&project=${DRAFT}`);
-  await expect(page.getByTestId("gen-view")).toBeVisible();
-  await expect(page.getByTestId("project-name")).toHaveText("Lighthouse hold");
-  /* Cinema Studio, from the engine sheet. */
-  const model = page.getByTestId("gen-model");
-  await model.scrollIntoViewIfNeeded();
-  await model.click();
-  const sheet = page.getByRole("dialog", { name: "Choose a model" });
-  await expect(sheet).toBeVisible();
-  await sheet.getByRole("option", { name: /^Cinema Studio 4\.0/ }).click();
-  await expect(sheet).toHaveCount(0);
-  await expect(model).toContainText("Cinema Studio 4.0");
+  if (PHONES.includes(info.project.name)) {
+    /* The phone's Make: Change opens the engines, each priced; Cinema Studio's row says what approving it holds. */
+    await openSettled(page, "/suites?screen=make", "phone-make-prompt");
+    await page.getByTestId("phone-make-change").click();
+    const row = page.getByTestId("phone-make-engine-row").filter({ hasText: "Cinema Studio 4.0" });
+    await expect(row.getByTestId("phone-make-engine-row-price")).toHaveText(HELD, { timeout: 60_000 });
+    const pair = heldPair((await row.getByTestId("phone-make-engine-row-price").textContent())!);
+    expect(pair.most).toBeCloseTo(3 * pair.about, 1);
+    await shot(page, info, "make-engines-hold");
+    await row.click();
+    await expect(page.getByTestId("phone-make-engines")).toHaveCount(0);
+    await expect(page.getByTestId("phone-make-engine-line")).toContainText("Cinema Studio 4.0");
+    await page.getByTestId("phone-make-prompt").fill(WORDS);
+    return { quotes, sent, errors, go: page.getByTestId("phone-make-go") };
+  }
+  await openSettled(page, "/suites?make=video", "gen-view");
+  /* Make names the project its take lands in. */
+  await expect(page.getByTestId("make-dest")).toContainText("To Lighthouse hold · Library");
+  /* Cinema Studio, from Make's engine list: its row says what approving it holds. */
+  const change = page.getByTestId("gen-model");
+  await change.scrollIntoViewIfNeeded();
+  await change.click();
+  const row = page.locator(`[data-testid="make-engine-row"][data-engine="${CINEMA}"]`);
+  await expect(row.getByTestId("make-engine-row-price")).toHaveText(HELD, { timeout: 60_000 });
+  const pair = heldPair((await row.getByTestId("make-engine-row-price").textContent())!);
+  expect(pair.most).toBeCloseTo(3 * pair.about, 1);
+  await expect(row).not.toContainText(/quoted/);
+  await shot(page, info, "make-engines-hold");
+  await row.click();
+  await expect(page.getByTestId("make-engine-line")).toContainText("Cinema Studio 4.0");
   await page.getByTestId("gen-prompt").fill(WORDS);
-  return { quotes, sent, errors };
+  return { quotes, sent, errors, go: page.getByTestId("gen-generate") };
 }
 
 /** The button's price on screen, whole, never cut, and legible. */
 async function priceFits(page: Page, go: Locator) {
   await go.scrollIntoViewIfNeeded();
   const fit = await go.evaluate((el) => {
-    const price = el.querySelector(".gx-go-price")!;
+    const price = el.querySelector(".gx-price")!;
     const box = el.getBoundingClientRect(), p = price.getBoundingClientRect();
     const px = parseFloat(getComputedStyle(price).fontSize);
     return { inside: box.left >= 0 && box.right <= innerWidth + 1, uncut: el.scrollWidth <= el.clientWidth + 1 && p.left >= box.left - 1 && p.right <= box.right + 1,
@@ -91,15 +152,15 @@ async function shot(page: Page, info: TestInfo, name: string) {
   await page.screenshot({ path: info.outputPath(`${name}-${info.project.name.replace("workbench-", "")}.png`), animations: "disabled" });
 }
 
-test("Gen approves Cinema Studio's hold: about N cr, at most 3N cr on the button, whole at every size, and the press sends 3N", async ({ page }, info) => {
+test("Make approves Cinema Studio's hold: about N cr, at most 3N cr on its row and its button, whole at every size, and the press sends 3N", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  /* Release 1: Gen is Make, which offers Cinema Studio only once MAKE_SHOWS_CINEMA is on (lib/shell/make-price.ts; #559). */
-  test.skip(!MAKE_SHOWS_CINEMA, "Make does not offer Cinema Studio 4.0 until #559");
-  const { quotes, sent, errors } = await open(page);
-  const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText(`Generate · about ${N} cr, at most ${3 * N} cr`);
+  test.setTimeout(180_000);
+  const { quotes, sent, errors, go } = await open(page, info);
+  await expect(go).toHaveText(`Make · about ${N} cr, at most ${3 * N} cr`, { timeout: 60_000 });
   await priceFits(page, go);
-  await shot(page, info, "gen-hold");
+  /* Its hover says both figures in dollars, at the price of a credit (review L1). */
+  await expect(go).toHaveAttribute("title", /^about US\$\d[\d,]*\.\d\d, at most US\$\d[\d,]*\.\d\d \(US\$\d+\.\d\d a credit\)$/);
+  await shot(page, info, "make-hold");
   await go.click();
   await expect.poll(() => sent.length).toBe(1);
   /* The approval sent is the hold the server quoted: what admission reserves, never the estimate. */
@@ -108,16 +169,15 @@ test("Gen approves Cinema Studio's hold: about N cr, at most 3N cr on the button
   expect(errors).toEqual([]);
 });
 
-test("a batch approves each take's hold: Generate 3 takes says about 3N cr, at most 9N cr, and every take goes at 3N", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  /* Release 1: Gen is Make, which offers Cinema Studio only once MAKE_SHOWS_CINEMA is on (lib/shell/make-price.ts; #559). */
-  test.skip(!MAKE_SHOWS_CINEMA, "Make does not offer Cinema Studio 4.0 until #559");
-  const { sent, errors } = await open(page);
-  await moreTakes(page, 2);
-  const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText(`Generate 3 takes · about ${3 * N} cr, at most ${9 * N} cr`);
+test("a batch approves each take's hold: Make 3 takes says about 3N cr, at most 9N cr, and every take goes at 3N", async ({ page }, info) => {
+  /* Takes are in Make's Advanced on a desktop; the phone's Make sends one take. */
+  test.skip(!SIZES.includes(info.project.name) || PHONES.includes(info.project.name), "Make's panel, every desktop viewport");
+  test.setTimeout(180_000);
+  const { sent, errors, go } = await open(page, info);
+  await pickTakes(page, 3);
+  await expect(go).toHaveText(`Make 3 takes · about ${3 * N} cr, at most ${9 * N} cr`);
   await priceFits(page, go);
-  await shot(page, info, "gen-hold-batch");
+  await shot(page, info, "make-hold-batch");
   await go.click();
   await expect.poll(() => sent.length).toBe(3);
   for (const body of sent) expect(body).toMatchObject({ model: CINEMA, maxCredits: 3 * N });
@@ -125,7 +185,8 @@ test("a batch approves each take's hold: Generate 3 takes says about 3N cr, at m
 });
 
 test("the Jobs tray: a held Cinema Studio take's Release says about N cr, at most 3N cr, whole, and a take past its hold says so in words", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  /* The Jobs tray is the desktop's; a phone has its own States screen. */
+  test.skip(!SIZES.includes(info.project.name) || PHONES.includes(info.project.name), "the desktop's Jobs tray, every desktop viewport");
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
@@ -143,10 +204,10 @@ test("the Jobs tray: a held Cinema Studio take's Release says about N cr, at mos
   await page.route(/\/api\/jobs\?view=tray/, (route) => route.fulfill({ json: { jobs, pollAfterSeconds: 60 } }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`/suites?suite=studio&page=rig&project=${DRAFT}`);
-  await expect(page.getByTestId("project-name").first()).toHaveText("Lighthouse hold");
+  /* The header's Jobs pill, on any desktop screen: Make's here. */
+  await openSettled(page, "/suites?make=video", "gen-view");
   const pill = page.getByTestId("running-jobs");
-  await expect(pill).toHaveAccessibleName(/1 held/);
+  await expect(pill).toHaveAccessibleName(/1 held/, { timeout: 30_000 });
   await pill.click();
   const panel = page.getByRole("dialog", { name: "Jobs" });
   await expect(panel).toBeVisible();

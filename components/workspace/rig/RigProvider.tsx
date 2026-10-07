@@ -34,11 +34,11 @@ import type { ShellSeams } from "../WorkspaceShell";
 import { videoReferenceProblem } from "@/lib/generationReferences";
 import { useTeamCanvas, type TeamCanvasApi } from "./use-team-canvas";
 import { useCutouts, type CutoutsApi } from "./use-cutouts";
-import { isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
-import { cinemaPriceWords } from "@/lib/cinemaHold";
 import { useBoardOpen } from "@/lib/board/active";
 import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
+import { isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
+import { cinemaPriceWords } from "@/lib/cinemaHold";
 
 /**
  * The Rig's live state, shared by the shot list, the node graph, the

@@ -9,7 +9,8 @@ import type { ComposerType } from "@/lib/workspace/composer";
 import { useFilmTypeahead } from "../FilmVocabulary";
 import { Glyph, type GlyphName } from "../icons";
 import { priceWords } from "@/lib/shell/price-words";
-import { Price, usePriceTitle } from "../Price";
+import { cinemaPriceDollars } from "@/lib/cinemaHold";
+import { Price, useCreditUsd, usePriceTitle } from "../Price";
 import { CheckAgain } from "../CheckAgain";
 import { CHECK_LINE } from "@/lib/demo/sample";
 import { toolName } from "../viral/ViralView";
@@ -25,11 +26,23 @@ const SAY_WHAT = "Say what to make.";
 /** The words of a price, for the marker a button carries. */
 const priceLabelOf = (price: MakePrice) => price.about ?? priceWords(price.value);
 
-/** A price as Make shows it: through Price, or Cinema Studio's own approximate words. */
+/**
+ * A Make price's hover, in dollars: an exact one's, or Cinema Studio's for both its figures, at the price of a credit
+ * (lib/cinemaHold.ts › cinemaPriceDollars). Null for "free" or an unknown rate.
+ */
+export function useMakePriceTitle(price: MakePrice | null | undefined): string | null {
+  const exactTitle = usePriceTitle(price?.value ?? null);
+  const creditUsd = useCreditUsd();
+  if (price?.value) return exactTitle;
+  return price?.about && typeof price.credits === "number" ? cinemaPriceDollars(price.credits, creditUsd) : null;
+}
+
+/** A price as Make shows it: through Price, or Cinema Studio's own approximate words (dollars on hover). */
 export function MakePriceText({ price, testId }: { price: MakePrice | null; testId?: string }) {
+  const title = useMakePriceTitle(price);
   if (!price) return null;
   if (price.value) return <Price value={price.value} testId={testId} />;
-  return price.about ? <span className="gx-price" data-price="about" data-testid={testId} style={{ whiteSpace: "nowrap" }}>{price.about}</span> : null;
+  return price.about ? <span className="gx-price" data-price="about" data-testid={testId} title={title ?? undefined} style={{ whiteSpace: "nowrap" }}>{price.about}</span> : null;
 }
 
 /**
@@ -49,7 +62,7 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
   const [over, setOver] = useState(false);
   /* Pressed while it waits: the reason shows (the words' own wait shows only then; any other at once). */
   const [said, setSaid] = useState(false);
-  const goTitle = usePriceTitle(make.go.price?.value ?? null);
+  const goTitle = useMakePriceTitle(make.go.price);
   const waits = Boolean(make.go.blocked);
   const reason = make.go.blocked && (make.go.blocked !== SAY_WHAT || said) ? make.go.blocked : null;
   const press = () => {

@@ -26,9 +26,9 @@ import {
   type PendingGeneration,
 } from "@/lib/workbench/pending-generation";
 import { settlePendingGeneration } from "@/lib/workspace/generate-submit";
+import { SaveFailedError, saveMessage } from '@/lib/workbench/save-then-continue';
 import { cinemaPriceDollars, cinemaPriceWords, heldCredits } from "@/lib/cinemaHold";
 import { useSession } from "@/lib/session";
-import { SaveFailedError, saveMessage } from '@/lib/workbench/save-then-continue';
 import { PRODUCT_IMAGE_NAME } from '@/lib/uiNames';
 
 type Model = {

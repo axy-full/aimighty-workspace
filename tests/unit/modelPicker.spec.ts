@@ -61,7 +61,7 @@ test("every row carries its chips in one order: size, length, references, sound"
   expect(sd20.untestedResolutions).toEqual(["4k"]);
 });
 
-test("a Studio row is priced where the composer stands, never a guess: a row with no figure reads quoted, and so does Cinema Studio 4.0", () => {
+test("a Studio row is priced where the composer stands, never a guess: a row with no figure reads quoted; Cinema Studio 4.0 reads what it holds", () => {
   const [video, image, pro] = workspaceModels([seedance, stills, kling], null);
   /* The untouched composer: the list's own rate is at exactly those settings. */
   expect(rowPrice(video, {})).toMatchObject({ credits: 8, unit: "cr", detail: "5 s · 480p", kind: "rate", perTake: false });
@@ -104,11 +104,16 @@ test("a Studio row is priced where the composer stands, never a guess: a row wit
   /* Several takes: the row is one take, the button multiplies. */
   expect(rowPrice(video, {}, { ...UNTOUCHED, takes: 3 })).toMatchObject({ credits: 8, perTake: true });
 
-  /* Cinema Studio 4.0 reads "quoted" whatever rate the list or the sheet carries for it: its figure is on Generate. */
+  /* Cinema Studio 4.0 is priced like any row, in its own words: "about N cr, at most 3N cr", what approving it holds (never "quoted"). */
   const cinema: ComposerModel = { id: CINEMA_STUDIO_MODEL_ID, label: "Cinema Studio 4.0", type: "video", ratios: ["16:9"], resolutions: ["720p"], durations: [5],
     rate: { credits: 31, resolution: "720p", ratio: "16:9", duration: 5, approximate: true } };
-  expect(rowPrice(cinema, {})).toMatchObject({ credits: null, kind: "none", detail: "quoted", perTake: false });
-  expect(rowPrice(cinema, {}, UNTOUCHED, sheetRatesFrom(rateQuery(UNTOUCHED), { models: [{ id: cinema.id, rate: cinema.rate }] }), true)).toMatchObject({ credits: null, kind: "none", detail: "quoted" });
+  expect(rowPrice(cinema, {})).toMatchObject({ credits: 31, kind: "rate", detail: "5 s · 720p", approximate: true, perTake: false });
+  expect(rowPrice(cinema, {}).title).toBe("About 31 cr, at most 93 cr per take at 5 s · 720p · 16:9, no references");
+  expect(rowPrice(cinema, {}, UNTOUCHED, sheetRatesFrom(rateQuery(UNTOUCHED), { models: [{ id: cinema.id, rate: cinema.rate }] }), true)).toMatchObject({ credits: 31, kind: "rate", approximate: true });
+  /* Even a rate the list did not mark approximate is Cinema Studio's held figure. */
+  expect(rowPrice({ ...cinema, rate: { ...cinema.rate!, approximate: undefined } }, {})).toMatchObject({ credits: 31, approximate: true });
+  /* Touched, with no figure at those settings yet: it waits like any row. */
+  expect(rowPrice({ ...cinema, durations: [5, 10] }, {}, { ...UNTOUCHED, picks: { duration: 10 } })).toMatchObject({ credits: null, kind: "none", detail: "quoted" });
   /* What a browser kept of a signed-in account's last quotes (the old second argument) prices nothing. */
   expect(rowPrice(pro, { [pro.id]: { credits: 43, at: 1, detail: "6 s" } })).toMatchObject({ credits: null, kind: "none", detail: "quoted" });
 
@@ -132,8 +137,8 @@ test("the sheet asks the route for prices only when the list's own rates do not 
   expect(needsPricedRead(models, { ...UNTOUCHED, takes: 4 })).toBe(false);
   const ref: ComposerReference = { key: "r", id: "g-1", origin: "generation", kind: "image", name: "still.png", url: "/api/media/g-1" };
   expect(needsPricedRead(models, { ...UNTOUCHED, references: [ref] })).toBe(true);
-  /* Cinema Studio's row shows no figure, so it never asks the route for one. */
-  expect(needsPricedRead([{ id: CINEMA_STUDIO_MODEL_ID, label: "Cinema Studio 4.0", type: "video", ratios: ["16:9"], resolutions: ["720p"], durations: [5, 10] }], { ...UNTOUCHED, picks: { duration: 10 } })).toBe(false);
+  /* Cinema Studio's row is priced, so it asks the route when the list's rate does not fit. */
+  expect(needsPricedRead([{ id: CINEMA_STUDIO_MODEL_ID, label: "Cinema Studio 4.0", type: "video", ratios: ["16:9"], resolutions: ["720p"], durations: [5, 10] }], { ...UNTOUCHED, picks: { duration: 10 } })).toBe(true);
   /* The query carries the picks, the aspect, the sound length and the references as the composer's quote cites them. */
   const query = new URLSearchParams(rateQuery({ aspect: "21:9", picks: { ratio: "1:1", resolution: "1080p", duration: 10 }, references: [ref, { ...ref, key: "u", id: "up-2", origin: "upload", kind: "video" }], seconds: 10, takes: 2 }));
   expect(Object.fromEntries([...query.keys()].map((k) => [k, query.getAll(k)]))).toEqual({

@@ -3,6 +3,8 @@ import { hiddenInMake, MAKE_MODEL_PREFERENCE } from "./make-price";
 import { nodeAudioBody, speechVoiceFor, type NodeAudioSetup } from "@/lib/workbench/generation-audio";
 import type { CtxPrice } from "./context-menu";
 import { recipePrompt, recreateBlock, recreatePreset, type RecipeSource } from "./recipe";
+import { isCinemaStudioModel } from "../cinemaStudioTypes";
+import { cinemaPriceDollars, cinemaPriceWords } from "../cinemaHold";
 
 /**
  * What "Recreate" costs, for the right-click menu (design/particl-graphite/README.md § 4, § 5: every control that spends shows its
@@ -14,8 +16,9 @@ import { recipePrompt, recreateBlock, recreatePreset, type RecipeSource } from "
  */
 export type RecreatePrice =
   | { state: "reading" }
-  /** `estimate`: a sound, priced by a live estimate ("up to N cr", as Make's own button says it). */
-  | { state: "ready"; credits: number; approximate: boolean; estimate?: true }
+  /* `held`: Cinema Studio, whose approval holds 3N and is said "about N cr, at most 3N cr" (lib/cinemaHold.ts).
+     `estimate`: a sound, priced by a live estimate ("up to N cr", as Make's own button says it). */
+  | { state: "ready"; credits: number; approximate: boolean; held?: true; estimate?: true }
   | { state: "unavailable"; reason: string };
 
 /** How a request is read: the caller's own scoped fetch. Rejects with an Error whose message is the server's reason. */
@@ -77,14 +80,15 @@ export async function quoteRecreate(source: RecipeSource, read: QuoteReader, pro
       withoutRefs = true;
       result = await ask(false);
     }
-    return result.credits == null ? { state: "unavailable", reason: "This engine cannot be priced with these settings." } : { state: "ready", credits: result.credits, approximate: result.approximate || withoutRefs };
+    return result.credits == null ? { state: "unavailable", reason: "This engine cannot be priced with these settings." } : { state: "ready", credits: result.credits, approximate: result.approximate || withoutRefs, ...(isCinemaStudioModel(model.id) ? { held: true as const } : {}) };
   } catch (error) {
     return { state: "unavailable", reason: reasonOf(error) };
   }
 }
 
-/** "43 cr", "about 43 cr" where the engine settles on what it delivers (the composer's own wording), or "up to 1 cr" for a sound's estimate. */
+/** "43 cr", "about 43 cr" where the engine settles on what it delivers, Cinema Studio's "about N cr, at most 3N cr", or "up to 1 cr" for a sound's estimate (the composer's own wording). */
 export function priceWords(price: Extract<RecreatePrice, { state: "ready" }>): string {
+  if (price.held) return cinemaPriceWords(price.credits);
   return `${price.approximate ? "about " : price.estimate ? "up to " : ""}${price.credits.toLocaleString("en-US")} cr`;
 }
 
@@ -92,6 +96,8 @@ export function priceWords(price: Extract<RecreatePrice, { state: "ready" }>): s
 export function ctxPrice(price: RecreatePrice, creditUsd: number | undefined): CtxPrice {
   if (price.state === "reading") return { state: "reading" };
   if (price.state === "unavailable") return { state: "unavailable", reason: price.reason };
-  const hover = typeof creditUsd === "number" && creditUsd > 0 ? `${price.approximate ? "About " : price.estimate ? "Up to " : ""}US$${(price.credits * creditUsd).toFixed(2)}` : undefined;
+  const hover = typeof creditUsd === "number" && creditUsd > 0
+    ? price.held ? cinemaPriceDollars(price.credits, creditUsd) ?? undefined : `${price.approximate ? "About " : price.estimate ? "Up to " : ""}US$${(price.credits * creditUsd).toFixed(2)}`
+    : undefined;
   return { state: "ready", text: priceWords(price), ...(hover ? { hover } : {}) };
 }

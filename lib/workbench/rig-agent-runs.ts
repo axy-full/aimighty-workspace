@@ -431,7 +431,7 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
   const line = effectiveJobCeiling(run.perJobCap, await (deps.ceiling ?? rigJobCeiling)());
   const title = stepTitle(run, step);
   /* A take that holds its ceiling (Cinema Studio) is approved at its hold: "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
-  const price = admission.quote.ceilingCredits != null ? cinemaPriceWords(quoteCredits) : `about ${figure(quoteCredits)}`;
+  const heldPrice = admission.quote.ceilingCredits != null ? cinemaPriceWords(quoteCredits) : `about ${figure(quoteCredits)}`;
   if (approval) {
     const worst = quoteCredits * Math.max(1, band);
     const cover = coverage(approval, { seq: step.seq, fixOf: step.fixOf, quote: quoteCredits, worst, fingerprint }, now(), line);
@@ -440,7 +440,7 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
       await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: approval.approvedBy, approved_fingerprint: fingerprint, approval_id: approval.id, reason: null }, ["waiting"]);
       return CONTINUE;
     }
-    const why = `${title} · ${price} · ${cover.reason}`;
+    const why = `${title} · ${heldPrice} · ${cover.reason}`;
     await patchStep(db(), step.id, { reason: why }, ["waiting"]);
     return needsYou(run, why);
   }
@@ -454,9 +454,9 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
     await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: "auto", approved_fingerprint: fingerprint, reason: null }, ["waiting"]);
     return CONTINUE;
   }
-  const why = budget ? `${budget.line} ${title} is next · ${price}.`
-    : run.mode !== "auto" ? `${title} is ready to render · ${price}.`
-    : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · ${price}. Render it, skip it, or stop.`
+  const why = budget ? `${budget.line} ${title} is next · ${heldPrice}.`
+    : run.mode !== "auto" ? `${title} is ready to render · ${heldPrice}.`
+    : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · ${heldPrice}. Render it, skip it, or stop.`
     : `${title} is about ${figure(quoteCredits)}, over the ${figure(line)} a draft may cost without asking. Render it, skip it, or stop.`;
   await patchStep(db(), step.id, { reason: why }, ["waiting"]);
   return needsYou(run, why);
