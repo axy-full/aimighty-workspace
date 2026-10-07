@@ -9,9 +9,12 @@ import { SETTINGS_SECTIONS, type SettingsSectionId } from "./settings";
  * bodies are reused rather than rebuilt; the map narrows as later build steps
  * give Business and Viral their own composers.
  */
-export type ShellSuiteId = "studio" | "business" | "viral" | "atomik";
-/** `home` and `board` are the new interface's own views (lib/shell/screens.ts); they are read only with the switch on. */
-export type ShellView = "suite" | "gen" | "workspace" | "crew" | "home" | "board";
+export type ShellSuiteId = "studio" | "atomik";
+/**
+ * The shell's views: Home, the board and Settings are screens (lib/shell/screens.ts); `suite` is Atomik's control room. Crew, Business,
+ * Viral, the Studio overview and the old Gen view are gone (owner decision 21): their addresses are rewritten by `route`.
+ */
+export type ShellView = "suite" | "workspace" | "home" | "board";
 /** Workspace's seven old tabs, and Settings' five sections (lib/shell/settings.ts), which the new Settings screen reads as `tab`. */
 export type OldWorkspaceTabId = "general" | "people" | "credits" | "usage" | "dashboard" | "engines" | "security";
 export type WorkspaceTabId = OldWorkspaceTabId | SettingsSectionId;
@@ -62,19 +65,17 @@ function build(id: ShellSuiteId, label: string, mark: string, name: string, lega
 }
 
 /**
- * The Studio suite's two pages (design/particl-graphite/README.md › Phone). The ten stage pages it used to have
- * (Brief, Beats, Storyboards, Environment, Cast, Astra, Rig, Takes, Edit & Sound, Deliver) are gone: the board is the
- * whole production, and each old address opens its region (lib/shell/stage-redirects.ts). What is left is Home, drawn
- * until the new interface's Home replaces it: `stages` is the Studio overview (on a desktop, where the mark goes) and
- * `home` the phone's suite picker, "Where to?". Both share the state layer's Brief page as their backing page.
+ * The Studio suite's one page, which nothing draws. The ten stage pages, the Studio overview (`stages`) and the phone's "Where to?"
+ * (`home`) are gone: the board is the whole production (each old address opens its region, lib/shell/stage-redirects.ts) and Home,
+ * the board and Settings are screens of their own. What is left is the state layer's backing for them: a suite and a page for the
+ * address to name, which is Brief behind a page that is not a tab.
  */
 function studioSuite(): ShellSuite {
   const legacy = { suite: "particl" as Suite, page: "brief" as PageId };
   return {
     id: "studio", label: "Studio", mark: "STUDIO", name: "Studio", legacy: "particl",
     pages: [
-      { id: "stages", n: "", label: "Studio", title: "Studio", hint: "Every stage, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },
-      { id: "home", n: "", label: "Home", title: "Where to?", hint: "Every suite, one screen", legacy, gapBefore: false, own: true, phoneOnly: true },
+      { id: "board", n: "", label: "Board", title: "Board", hint: "The whole production, one screen", legacy, gapBefore: false, phoneOnly: true },
     ],
   };
 }
@@ -88,29 +89,9 @@ function controlRoomOnly(suite: ShellSuite, tabs: readonly string[]): ShellSuite
   return { ...suite, pages: suite.pages.map((p) => (tabs.includes(p.id) ? { ...p, n: "" } : { ...p, n: "", stripHidden: true })) };
 }
 
-/** Group starts: Business after 01 and 02; Atomik after 01 and 04. */
+/** Group starts: Atomik after 01 and 04. */
 export const SHELL_SUITES: ShellSuite[] = [
   studioSuite(),
-  /* Business pages are the shell's own views (step 2); `marketing` remains the state page behind them.
-     Image ads, then Setup, then Particl's own tools (lib/shell/business-own.ts). The suite opens on
-     Image ads; the Ads page is gone (design/particl-graphite/README.md › What this design removes),
-     and an old `sp=ads` link lands on Image ads (SHELL_PAGE_ALIASES). */
-  own(build("business", "Ads", "ADS", "Ads", "moleculr", [1, 2], [
-    ["dtc", "Image ads", "Image ads", "Branded stills from your products and references", "marketing"],
-    ["setup", "Setup", "Setup items", "Saved products, brand kit and reference ad", "marketing"],
-    ["brand", "Brand", "Brand kit", "Read from your website, reviewed before it is used", "marketing"],
-    ["product", "Product", "Product profiles", "Approved facts and original photographs", "marketing"],
-    ["format", "Format", "Creative briefs", "Eighteen briefs in six formats, made in Make", "marketing"],
-    ["hooks", "Hooks", "Hooks", "Up to twelve opening lines, written against the brief", "marketing"],
-    ["reference", "Reference", "Reference ad", "A video you own, reviewed for what to adapt", "marketing"],
-    ["design", "Design", "Poster designer", "Editable layers, exported as a full-size PNG", "marketing"],
-  ])),
-  /* Viral's History is the shell's own view (step 3). Motion Transfer and Object Swap, on Particl's API key through
-     /api/generate (Motion transfer and Object swap on the key), are Make's quick tools now (`make=motion|swap`, lib/shell/make.ts); their old
-     pages' links open Make over the page on screen, and `goSuite("viral", "motion" | "swap")` does the same. */
-  own(build("viral", "Social", "SOCIAL", "Social", "subatomik", [], [
-    ["history", "History", "History", "Every result, retained as original bytes", "history"],
-  ])),
   /* Tools & connections is the shell's own view (it replaced the step-5 pack list, whose packs now sit
      under its Claude & ChatGPT tab): what Atomik can reach, with live status, and Particl's own MCP
      server and tokens. The page id stays `skills`, so every old link still lands here.
@@ -167,19 +148,8 @@ export function isShellSuite(value: unknown): value is ShellSuiteId {
 export function shellSuite(id: ShellSuiteId): ShellSuite {
   return SHELL_SUITES.find((s) => s.id === id)!;
 }
-/**
- * Page ids that left the strip, and the page an old link (`sp=<id>`) or a remembered page lands on instead.
- * Business › Ads was removed; Business opens on Image ads.
- */
-export const SHELL_PAGE_ALIASES: Readonly<Partial<Record<ShellSuiteId, Readonly<Record<string, string>>>>> = { business: { ads: "dtc" } };
-/** The page id a retired id stands for in this suite, or null when the id is not a retired one. */
-export function pageAlias(suite: ShellSuiteId, page: string | null | undefined): string | null {
-  const aliases = SHELL_PAGE_ALIASES[suite];
-  return page && aliases && Object.hasOwn(aliases, page) ? aliases[page] : null;
-}
 export function shellPage(suite: ShellSuiteId, page: string | null | undefined): ShellPage | null {
-  const id = pageAlias(suite, page) ?? page;
-  return shellSuite(suite).pages.find((p) => p.id === id) ?? null;
+  return shellSuite(suite).pages.find((p) => p.id === page) ?? null;
 }
 export function firstShellPage(suite: ShellSuiteId): ShellPage {
   return shellSuite(suite).pages[0];
@@ -188,35 +158,24 @@ export function firstShellPage(suite: ShellSuiteId): ShellPage {
 export function restorePage(suite: ShellSuiteId, remembered: string | null | undefined): ShellPage {
   return shellPage(suite, remembered) ?? firstShellPage(suite);
 }
-/** The shell suite that fronts one of the state layer's suites. */
+/**
+ * The shell suite that fronts one of the state layer's suites: Atomik's control room is the only suite with pages; every other
+ * state suite (Studio's, and the retired Business and Viral backing) is the Studio suite, which nothing draws.
+ */
 export function suiteOfLegacy(legacy: Suite): ShellSuiteId {
-  return SHELL_SUITES.find((s) => s.legacy === legacy)!.id;
+  return legacy === "atomik" ? "atomik" : "studio";
 }
 /**
- * The shell page showing a given state-layer page. Several Business pages share
- * one backing page until step 5, so a hint (the page the shell last showed in
- * that suite) decides between them.
+ * The shell page showing a given state-layer page. Memory and Skills share Agent's backing page, so a hint (the page the shell
+ * last showed in that suite) decides between them. Null for a page the Studio suite backs (it has no page of a stage's).
  */
 export function pageOfLegacy(legacy: Suite, page: PageId, hint?: string | null): ShellPage | null {
   const suite = shellSuite(suiteOfLegacy(legacy));
-  const matches = suite.pages.filter((p) => p.legacy.page === page);
-  /* A retired id in the hint (an old `sp=ads` link) is the page that replaced it. */
-  const wanted = pageAlias(suite.id, hint) ?? hint;
-  /* With no hint, the stage named like its backing page wins (Storyboards over Environment, Brief over Beats). */
-  return matches.find((p) => p.id === wanted) ?? matches.find((p) => p.id === page) ?? matches[0] ?? null;
+  const matches = suite.pages.filter((p) => p.legacy.suite === legacy && p.legacy.page === page);
+  /* With no hint, the page named like its backing page wins (Agent over Memory). */
+  return matches.find((p) => p.id === hint) ?? matches.find((p) => p.id === page) ?? matches[0] ?? null;
 }
 export const ALL_SHELL_PAGES: { suite: ShellSuite; page: ShellPage }[] = SHELL_SUITES.flatMap((suite) => suite.pages.map((page) => ({ suite, page })));
-
-/** Crew's own strip: 01 Room · 02 Members · 03 Sessions, with the prototype's titles and hints. */
-export type CrewPageId = "room" | "members" | "sessions";
-export const CREW_PAGES: { id: CrewPageId; n: string; label: string; title: string; hint: string }[] = [
-  { id: "room", n: "01", label: "Room", title: "Crew review", hint: "A room of Grok agents, one per department. They propose, challenge each other, then the chair converges." },
-  { id: "members", n: "02", label: "Members", title: "Members", hint: "Role cards the room can seat. Each is one agent with its own stance and effort." },
-  { id: "sessions", n: "03", label: "Sessions", title: "Sessions", hint: "Every room this project has run, with its solutions and settled cost." },
-];
-export function isCrewPage(value: unknown): value is CrewPageId {
-  return CREW_PAGES.some((p) => p.id === value);
-}
 
 /* ── Old links → new (README § 1.2) ─────────────────────────────────────────
    Every old page and deep link either lands somewhere new (OLD_TO_NEW) or is
@@ -248,14 +207,16 @@ export const SHELL_PATH = "/suites";
 const SUITE_SPELLING: Readonly<Record<string, Suite>> = {
   studio: "particl", business: "moleculr", ads: "moleculr", viral: "subatomik", social: "subatomik", subatomic: "subatomik", agent: "atomik",
 };
+/** The pages Business had (the Ads page is the board now): their design spellings are still read, for the Ads board's rows (lib/shell/ads-social.ts). */
+const BUSINESS_PAGES = ["dtc", "setup", "brand", "product", "format", "hooks", "reference", "design"] as const;
 /** Design page ids that are shell pages over another backing page: [backing page, shell page]. Anything else the app reads as it is. */
 const DESIGN_PAGES: Readonly<Partial<Record<Suite, Readonly<Record<string, readonly [PageId, string]>>>>> = {
   particl: { stages: ["brief", "stages"], home: ["brief", "home"], beats: ["brief", "beats"], env: ["boards", "environment"], environment: ["boards", "environment"] },
-  moleculr: Object.fromEntries(shellSuite("business").pages.map((p) => [p.id, ["marketing", p.id] as const])),
+  moleculr: Object.fromEntries(BUSINESS_PAGES.map((id) => [id, ["marketing", id] as const])),
   atomik: { memory: ["agent", "memory"], "saved-skills": ["agent", "saved-skills"] },
 };
 /** The design file's view names for today's views. */
-const VIEW_SPELLING: Readonly<Record<string, ShellView>> = { make: "gen" };
+const VIEW_SPELLING: Readonly<Record<string, string>> = { make: "gen" };
 /** Params the design file sets that no screen reads any more: the Library and Inspector columns are not toggled by URL. */
 const DROPPED_PARAMS = ["lib", "insp"] as const;
 const OLD_WORKSPACE_TAB_IDS: readonly string[] = ["general", "people", "credits", "usage", "dashboard", "engines", "security"] satisfies OldWorkspaceTabId[];
@@ -275,11 +236,12 @@ function rewrite(search: string): { q: URLSearchParams; changed: boolean } {
 
   const view = q.get("view");
   if (view && Object.hasOwn(VIEW_SPELLING, view)) set("view", VIEW_SPELLING[view]);
-  /* Crew's page is `cp`; the design file says `crew`. */
+  /* Crew's page is `cp`; the design file says `crew`. The Crew page is gone (the board's Crew review took it): the spelling is still
+     rewritten so the board's rows (lib/board/routes.ts) see one. */
   if (q.get("view") === "crew" && q.has("crew")) {
     const page = q.get("crew");
     drop("crew");
-    if (isCrewPage(page)) set("cp", page);
+    if (page === "room" || page === "members" || page === "sessions") set("cp", page);
   }
   /* Workspace's section is `tab`. The design file says `ws`, which the shell keeps for the workspace a link was copied in
      (lib/shell/asset-link.ts): only an old section name on the Workspace view, with no take linked, is a section. */
@@ -328,7 +290,7 @@ export const OLD_TO_NEW: readonly OldToNew[] = [
   ...["cast", "astra", "rig", "takes", "edit", "deliver"].map((p) => N(`?suite=studio&page=${p}`, `?suite=particl&page=${p}`)),
   N("?suite=studio&page=rig&rig=list", "?suite=particl&page=rig&rig=list"),
   N("?suite=studio&page=beats&beats=graph", "?suite=particl&page=brief&beats=graph&sp=beats"),
-  ...["dtc", "setup", "brand", "product", "reference", "format", "hooks", "design"].map((p) => N(`?suite=business&page=${p}`, `?suite=moleculr&page=marketing&sp=${p}`)),
+  ...BUSINESS_PAGES.map((p) => N(`?suite=business&page=${p}`, `?suite=moleculr&page=marketing&sp=${p}`)),
   ...["motion", "swap", "history"].map((p) => N(`?suite=viral&page=${p}`, `?suite=subatomik&page=${p}`)),
   ...["memory", "saved-skills"].map((p) => N(`?suite=atomik&page=${p}`, `?suite=atomik&page=agent&sp=${p}`)),
   ...["room", "members", "sessions"].map((p) => N(`?view=crew&crew=${p}`, `?view=crew&cp=${p}`)),

@@ -39,9 +39,8 @@ export function usePlaces(): Places {
       /* Settings' five sections: the screen, or the page that holds a section today (lib/shell/settings.ts rows). */
       settings: (section) => shell.goWorkspace(section),
       /* The Library is the board's rail drawer: a board on screen opens it; Home, the control room and Settings have none, so the
-         project's board opens with it out. Only a page of the old layout (no screen of its own) still holds the Library column. */
+         project's board opens with it out. */
       library: () => {
-        if (!shell.screen) { shell.openLibrary("assets"); return; }
         if (!runBoardCommand({ name: "library" })) shell.goBoard({ drawer: "library" });
       },
       make: (opts = {}) => {

@@ -26,7 +26,8 @@ export function NextCard({ data, ctx }: CardProps<NextData>) {
   const quotes = useStageQuotes(ctx.scope, request);
   const credits = quotes.quotes.still?.credits;
   const open = () => {
-    if (data.id === "crew") { shell.goCrew(); return; }
+    /* Crew review is the board's own panel (frame m). */
+    if (data.id === "crew") { shell.goBoard({ frame: "m" }); return; }
     const p = nextPreset(data.id, aspect);
     shell.openMake({ prompt: "", type: p.type, note: p.note, picks: p.picks });
   };

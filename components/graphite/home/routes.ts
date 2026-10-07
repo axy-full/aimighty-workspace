@@ -13,6 +13,6 @@ export const HOME_SCREEN: ScreenModule = {
     { from: "?suite=particl&page=brief&sp=stages", to: "?view=home" },
     { from: "?suite=particl&page=brief&sp=home", to: "?view=home" },
   ],
-  /* New → today's page. */
-  fallback: [{ from: "?view=home", to: "?suite=particl&page=brief&sp=stages" }],
+  /* The old pages are deleted, so nothing falls back to one. */
+  fallback: [],
 };

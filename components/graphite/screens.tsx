@@ -79,8 +79,8 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
         </Boundary>
       );
     case "control-room": {
-      const page = shell.page.id;
-      if (!isControlRoomPage(page)) return null;
+      /* A hidden Atomik page (Agent, Budget, Models, Tools: their addresses are Settings' and the panel's) is never an empty body: Approvals. */
+      const page = isControlRoomPage(shell.page.id) ? shell.page.id : "approvals";
       return (
         <Boundary what="The control room" probe="control-room" resetKey={`control-room:${page}:${project?.id ?? ""}`} fallback={(f) => <ScreenFault fault={f} name="control-room" />}>
           <ControlRoomEntry page={page} project={project} />

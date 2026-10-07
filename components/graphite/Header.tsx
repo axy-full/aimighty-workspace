@@ -34,25 +34,19 @@ export function Header({ account, project = null, bar = null }: { account: Works
   /* Amber when the balance cannot pay for the last price a Generate showed here; it reads that quote, never asks for one. */
   const lastQuote = useLastQuote(requestScope);
   const low = rates.unit !== "usd" && lowBalance(balance, lastQuote);
-  const studioPage = shell.view === "suite" && shell.suite.id === "studio" ? shell.page.id : null;
-  /* Home is the Studio overview on a desktop and Home's "Where to?" on a phone, where the overview is the project's stage grid. */
-  const onHome = studioPage === "home" || (studioPage === "stages" && shell.wide);
-  /* What each segment is lit for (the master's rules): the project for every suite page but Atomik's, and for Crew. */
-  /* The new interface's screens (lib/shell/screens.ts) light their segment: Home, the board (the project), Atomik's panel or control room. */
+  /* The screens (lib/shell/screens.ts) light their segment: Home, the board (the project), Atomik's panel or control room. */
   const board = shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
   const lit: Record<HeaderSegmentId, boolean> = {
-    home: onHome || shell.screen === "home",
-    project: (shell.view === "suite" && shell.suite.id !== "atomik" && !onHome) || shell.view === "crew" || board,
+    home: shell.screen === "home",
+    project: board,
     /* Make is a panel over the page on screen (README § 3.2): lit while it is open, beside whatever else is. */
     make: shell.make !== null,
     atomik: (shell.view === "suite" && shell.suite.id === "atomik") || shell.atomik !== null,
   };
-  /* The suite pill names where you are: HOME, an old page's own mark, MAKE, CREW, SETTINGS; the phone's Library reads ASSETS. */
+  /* The suite pill names where you are: HOME, the board, ADS, SOCIAL, ATOMIK or SETTINGS. */
   const screenMark = shell.screen === "home" ? "HOME" : shell.screen === "board" ? "BOARD" : shell.screen === "board-ads" ? "ADS" : shell.screen === "board-social" ? "SOCIAL" : shell.screen === "control-room" ? "ATOMIK" : null;
-  const mark = screenMark ?? (shell.view === "workspace" ? "SETTINGS" : shell.view === "gen" ? "MAKE" : shell.view === "crew" ? "CREW REVIEW" : !shell.wide && shell.libOpen ? "ASSETS" : onHome ? "HOME" : shell.suite.mark);
+  const mark = screenMark ?? (shell.view === "workspace" ? "SETTINGS" : shell.suite.mark);
   const who = readableName(account?.workspace?.name) ?? readableName(name) ?? "Workspace";
-  /* The phone's back button: a stage returns to the stage grid (‹ Studio); the grid returns to Home (‹ Home). */
-  const back = studioPage === "stages" ? { label: "Home", page: "home" } : studioPage && studioPage !== "home" ? { label: "Studio", page: "stages" } : null;
   /* The phone's menu: a tap outside it, Escape, a pick or going anywhere else closes it (it is open only where it was opened). */
   const here = `${shell.view}:${shell.suite.id}:${shell.page.id}:${shell.wsTab}`;
   const [openAt, setOpenAt] = useState<string | null>(null);
@@ -91,9 +85,6 @@ export function Header({ account, project = null, bar = null }: { account: Works
   const badge = <span className="gx-brand-mark" data-testid="suite-mark">{mark}</span>;
   return (
     <header className="gx-header" data-row="header" data-menu={menu ? "open" : undefined} ref={box}>
-      {back ? (
-        <button type="button" className="gx-back" onClick={() => shell.goSuite("studio", back.page)} data-testid="phone-back"><span aria-hidden="true">‹</span> <span className="gx-back-label">{back.label}</span></button>
-      ) : null}
       {/* The mark goes Home, as the Home segment does. */}
       <button type="button" className="gx-brand" onClick={() => goTo("home")} aria-label="particl home" data-testid="brand-home">
         <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">

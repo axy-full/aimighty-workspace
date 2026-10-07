@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Glyph } from "./icons";
 import { newPaletteIndex, searchNewPalette, type PaletteRow, type PaletteRun } from "@/lib/shell/palette";
 import { useShell } from "@/lib/shell/state";
-import { useWorkspace } from "@/lib/workspace/state";
 import { STUDIO_RAIL } from "@/lib/board/regions";
 import { atomikIntent, matchPlace, takePaletteQuery } from "@/lib/shell/atomik-panel";
 import type { LibraryEntry } from "@/lib/workspace/library";
@@ -28,7 +27,6 @@ export function Palette(props: { items: LibraryEntry[]; onAsk: (text: string) =>
 
 function AtomikPalette({ items, project }: { items: LibraryEntry[]; project: Project | null }) {
   const shell = useShell();
-  const { dispatch } = useWorkspace();
   const places = usePlaces();
   const [query, setQuery] = useState(takePaletteQuery);
   /* The words came in the address (`&q=`): they leave it, so a reload does not type them again. */
@@ -61,7 +59,7 @@ function AtomikPalette({ items, project }: { items: LibraryEntry[]; project: Pro
       case "control": places.control(r.page); return;
       case "settings": places.settings(r.section); return;
       case "gen": shell.openMake(r.tool); return;
-      case "asset": dispatch({ type: "patch", patch: { selKind: "take", selId: r.id } }); shell.openInspector(); return;
+      case "asset": shell.selectAsset(r.id, { reason: "pick" }); shell.goBoard({ region: "shots" }); return;
       default: return;
     }
   };

@@ -110,7 +110,7 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
     if (item.open.kind === "thread") setPendingChat({ chatId: item.open.chatId, projectId: item.open.productionId });
     openAtomik();
   };
-  const home = () => { if (page) shell.goSuite("studio", "home"); go({ screen: "home" }); };
+  const home = () => { if (page) shell.goHome(); go({ screen: "home" }); };
   /* The screen under the Atomik sheet: the one the sheet was opened from (Home when it is the address itself). */
   const [under, setUnder] = useState<PhoneScreen>("home");
   if (!page && route.screen !== "atomik" && under !== route.screen) setUnder(route.screen);
@@ -118,7 +118,7 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
   const [handed, setHanded] = useState<string | null>(null);
   const openAtomik = (words: string | null = null) => { setHanded(words); go({ screen: "atomik" }); };
   const onTab = (tab: PhoneTab) => {
-    if (page) shell.goSuite("studio", "home");
+    if (page) shell.goHome();
     if (tab === "atomik") { openAtomik(); return; }
     go({ screen: tab });
   };

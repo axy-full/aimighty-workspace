@@ -292,8 +292,8 @@ export function BrandKitMemory({ api, project, projectId, entries, ready, onSave
       </div>
       {!picks.length ? (
         <div className="am-none" data-testid="memory-brandkit-none">
-          <p className="tc-note">{project ? "This project has no brand kit yet. Set one up in Business › Brand, then pick what Atomik should remember from it." : "Open a project to pick from its brand kit."}</p>
-          {project ? <button type="button" className="gx-hbtn" onClick={() => shell.goSuite("business", "brand")} data-testid="memory-brandkit-go">Open Business › Brand</button> : null}
+          <p className="tc-note">{project ? "This project has no brand kit yet. Set one up on the Ads board, then pick what Atomik should remember from it." : "Open a project to pick from its brand kit."}</p>
+          {project ? <button type="button" className="gx-hbtn" onClick={() => shell.goBoard({ kind: "ads" })} data-testid="memory-brandkit-go">Open the Ads board</button> : null}
         </div>
       ) : open ? (
         <div className="am-form">

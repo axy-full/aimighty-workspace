@@ -43,7 +43,8 @@ export function Recent({ scope, project, items, library, projects, make }: {
   const view = libraryView(project ? library.state : null, items.length ? 1 : 0, projects);
   /* The take Make just sent, until the Library carries it. */
   const running = ws.state.gen && !ws.state.gen.id.startsWith("batch:") && !items.some((entry) => entry.take.sourceId === ws.state.gen?.id) ? ws.state.gen : null;
-  const open = (entry: LibraryEntry) => { ws.dispatch({ type: "patch", patch: { selKind: "take", selId: entry.take.id } }); shell.openInspector(); };
+  /* A take opens on the board's Shots, in the board's own Inspector. */
+  const open = (entry: LibraryEntry) => { shell.selectAsset(entry.take.id, { reason: "pick" }); shell.goBoard({ region: "shots" }); };
   const reference = (entry: LibraryEntry) => {
     const role = referenceRole(entry.media);
     if (!role) { ws.toast("References are images and videos."); return; }

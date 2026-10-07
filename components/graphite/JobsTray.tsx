@@ -153,7 +153,7 @@ function JobRow({ job, tray, problem, onDone }: { job: TrayJob; tray: JobsTraySt
         if (job.takeId) ws.dispatch({ type: "patch", patch: { selKind: "take", selId: job.takeId } });
         shell.goSuite("studio", "takes"); onDone(); return;
       case "gen": toProject(); shell.openMake(); onDone(); return;
-      case "viral": toProject(); shell.goSuite("viral", "history"); onDone(); return;
+      case "viral": toProject(); shell.goBoard({ kind: "social", drawer: "history" }); onDone(); return;
       case "release": void tray.release(job); return;
       case "recreate": {
         if (!job.preset) return;

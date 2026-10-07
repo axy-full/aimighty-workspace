@@ -35,7 +35,7 @@ export function boardPlace(d: Extract<Destination, { to: "page" }>): string | nu
  * already on screen. On the Studio board, `board` is the address the board is at (`?view=board&region=cast`), so a toast whose Open is
  * the place the person is looking at carries none.
  */
-export type Here = { view: "suite" | "gen" | "workspace" | "crew"; suite: ShellSuiteId; page: string; make?: boolean; library: boolean; board?: string | null };
+export type Here = { view: "suite" | "workspace"; suite: ShellSuiteId; page: string; make?: boolean; library: boolean; board?: string | null };
 
 /** A toast shown where its result already is carries no Open. */
 export function isHere(d: Destination, here: Here): boolean {
@@ -50,22 +50,6 @@ export function isHere(d: Destination, here: Here): boolean {
 const page = (suite: ShellSuiteId, id: string, select?: { kind: "shot" | "take"; id: string }): Destination => ({ to: "page", suite, page: id, ...(select ? { select } : {}) });
 
 export const CONFIRM = {
-  /** Crew › → Brief appends the solution to the saved Brief. */
-  crewBrief: (): Confirmation => ({ text: "Added to the Brief", open: page("studio", "brief") }),
-  /** Crew › → Board writes a draft scene node on the board (not a Storyboard frame, which comes from the beat sheet). */
-  crewRig: (title: string, nodeId?: string): Confirmation => ({ text: `Added to the Board · ${title}`, open: page("studio", "rig", nodeId ? { kind: "shot", id: nodeId } : undefined) }),
-  /** Crew › Open in Gen puts the solution in Gen's prompt; nothing is copied or written. */
-  crewGen: (): Confirmation => ({ text: "The solution is Make’s prompt", open: { to: "gen" } }),
-  /** Crew › File minutes: the markdown is stored in this project's Library. */
-  minutesFiled: (): Confirmation => ({ text: "Minutes filed in the Library", open: { to: "library" } }),
-  /** Business › a finished take opens in Shots, selected. */
+  /** A finished take opens in Shots (the board's region), selected. */
   take: (generationId: string): Destination => page("studio", "takes", { kind: "take", id: `generation:${generationId}` }),
 };
-
-/** A Crew solution's line once it has gone somewhere — where it went, in the destination's own name. */
-export function solutionStatusLabel(status: "open" | "sent_to_brief" | "boarded" | "generated"): string | null {
-  if (status === "sent_to_brief") return `Added to the ${destinationName(page("studio", "brief"))}`;
-  if (status === "boarded") return `Added to the ${destinationName(page("studio", "rig"))}`;
-  if (status === "generated") return `Opened in ${destinationName({ to: "gen" })}`;
-  return null;
-}
