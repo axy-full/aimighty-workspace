@@ -1,4 +1,4 @@
-# Status now: 8 October 2026, 01:25 IST, Release 1 lead moved to "contabo"
+# Status now: 8 October 2026, 01:33 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -49,9 +49,9 @@ The `.dockerignore` fix is in `release/1`: staging can build from `release/1` ag
 | Branch | State |
 |---|---|
 | Hotfix PRs to main (owner yes; merge only on "go") | **All five reviewed PASS, ready for the owner's go:** #563 sign-in behind the proxy → #564 public links (after #563) → #565 rate limits → #562 production flag. **#566 self-host build files** (Docker build fix included, PASS) |
-| Workspace switch (tenancy) | Found while porting customer test 3: the avatar menu's switch (and Workspace › General) doesn't wait for an unsaved board edit; the last edit is refused or lost (never written to the other workspace: the scope header stops it). Fix: wait for the board's save before switching. Opus fix next; release/1 only; main needs the owner's yes |
-| `chore/r1-old-shell-branches` | Review PASS on its changes (only already-unreachable code removed); merging release/1 and two small leftovers, then into release/1 |
-| `test/r1-five-minute-green` @ f8e2cee2 (review PASS) | **Passes:** a new invitee reaches an approved first render in 92 s (desktop) and 112 s (phone), one paid request per person's tap. Its phone flake is a real bug: approving the last take hides the Undo toast after 0.26 s. Fix running (`fix/r1-phone-review-undo`). Owner question 13 |
+| Workspace switch (tenancy) `fix/r1-workspace-switch-drains-save` @ 2ae06e8c | Built: switching saves the pending board edit first and only switches once it saved; a failed save switches nothing and says so. Opus review running; release/1 only; main needs the owner's yes |
+| `chore/r1-old-shell-branches` @ b809cd4d | Reviewed PASS; merges after the current CI run |
+| `test/r1-five-minute-green` + `fix/r1-phone-review-undo` @ bb8e85fa (both PASS) | **Passes:** a new invitee reaches an approved first render in 92 s (desktop) and 112 s (phone), one paid request per person's tap. Phone review now keeps Undo on the last take (the five-minute flake's cause). Merges after the current CI run. Owner question 13 |
 | Release 1 remaining list | sent: `docs/r1-remaining.md` (this branch). Owner: list B in, list C out |
 | image-ad variants and presets | No frame in the handoff (only one card, one Make at 3 cr). Nothing built. Brief for Claude Design: `docs/design-brief-image-ad-versions.md` (this branch). Logic already in code |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
