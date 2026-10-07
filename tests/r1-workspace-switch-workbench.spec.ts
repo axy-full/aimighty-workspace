@@ -48,13 +48,21 @@ async function secondWorkspace(page: Page, workspaceId: string): Promise<Person>
 }
 
 /**
- * The board's draft saves, in the order the server answered them (`save:<edit>`), and every switch request
- * (`switch`), in one list. `hold` keeps the next save from the server until `release`; `fail` answers saves 503.
+ * The board's draft saves, in the order the server answered them (`save:<edit>:<status>`), and every switch request
+ * (`switch`) and its answer (`switched:<status>`), in one list. `hold` keeps the next save from the server until `release`; `fail` answers saves 503.
  */
 async function watch(page: Page) {
-  const state = { events: [] as string[], hold: false, held: false, fail: false, release: () => {} };
+  const state = { events: [] as string[], hold: false, held: false, fail: false, release: () => {}, holdSwitch: false, releaseSwitch: () => {} };
   page.on("request", (request) => {
     if (new URL(request.url()).pathname === "/api/workspaces/switch") state.events.push("switch");
+  });
+  page.on("response", (response) => {
+    if (new URL(response.url()).pathname === "/api/workspaces/switch") state.events.push(`switched:${response.status()}`);
+  });
+  /* `holdSwitch` keeps the switch request from the server until `releaseSwitch`: the time the route takes to answer. */
+  await page.route((url) => url.pathname === "/api/workspaces/switch", async (route) => {
+    if (state.holdSwitch) await new Promise<void>((resolve) => { state.releaseSwitch = resolve; });
+    await route.continue();
   });
   await page.route((url) => url.pathname === "/api/workbench/projects", async (route) => {
     const request = route.request();
@@ -115,11 +123,17 @@ test("the switch waits for the board's pending save, and a refused switch keeps 
   await openSettings(page);
   const item = settingsMenu(page).getByRole("menuitem", { name: `Switch to ${person.other.name}`, exact: true });
   await item.click();
-  const busy = settingsMenu(page).getByRole("menuitem", { name: `Switching to ${person.other.name}…`, exact: true });
+  /* Busy, and nothing under the veil takes a press or a key while it runs (the shell is inert): the menu stays open. */
+  await expect(page.getByTestId("switching-veil")).toHaveText("Switching…");
+  const busy = page.getByTestId(`settings-switch-${person.other.id}`);
+  await expect(busy).toHaveText(`Switching to ${person.other.name}…`);
   await expect(busy).toBeDisabled();
   await expect(busy).toHaveAttribute("aria-busy", "true");
+  await expect(page.getByTestId("settings-sign-out")).toBeDisabled();
   /* A second press while it saves does nothing of its own. */
   await busy.click({ force: true });
+  await page.keyboard.press("Escape");
+  await expect(settingsMenu(page)).toBeVisible();
   await page.waitForTimeout(1500);
   expect(state.events, "no switch request while the board's save is held").toEqual([]);
 
@@ -133,6 +147,7 @@ test("the switch waits for the board's pending save, and a refused switch keeps 
   expect(saves.every((e) => e.endsWith(":200"))).toBe(true);
   await page.waitForTimeout(500);
   expect(state.events.filter((e) => e === "switch"), "one press, one switch request").toHaveLength(1);
+  await expect(page.getByTestId("switching-veil")).toHaveCount(0);
 
   /* Refused: it says the route's reason, nothing switched, the menu is not busy any more, and the board is still this
      workspace's and editable. (The account read every 30 s may already have dropped the workspace from the menu.) */
@@ -172,6 +187,10 @@ test("a board save that fails: no switch is asked, it says so, and the board sta
   await item.click();
   await expect(settingsMenu(page).getByRole("alert")).toHaveText("Your last edit could not be saved. Try again before switching.");
   await expect(item).toBeEnabled();
+  /* Failing again, it says what to do rather than "try again". */
+  await item.click();
+  await expect(settingsMenu(page).getByRole("alert")).toHaveText("Your last edit could not be saved. Copy it somewhere safe, then reload.");
+  await expect(item).toBeEnabled();
   expect(state.events.filter((e) => e === "switch"), "no switch request after a failed save").toEqual([]);
   expect(((await (await page.request.get("/api/me")).json()) as { workspace: { id: string } }).workspace.id).toBe(person.workspaceId);
 
@@ -186,6 +205,43 @@ test("a board save that fails: no switch is asked, it says so, and the board sta
   const switchAt = state.events.indexOf("switch");
   expect(state.events.slice(0, switchAt).at(-1)).toBe("save:Edit saved on the second try:200");
   await expect.poll(async () => ((await (await page.request.get("/api/me")).json()) as { workspace: { id: string } }).workspace.id, { timeout: 30_000 }).toBe(person.other.id);
+  expect(paid).toEqual([]);
+});
+
+test("an edit tried while the route answers is blocked: nothing is sent after the switch request, never a refused save", async ({ page }) => {
+  test.skip(!desktop(page), "the board's canvas and the avatar menu are desktop only; the phone's switch is the last test's");
+  const { project, paid } = await seedBoard(page, [], { beats: true });
+  const me = await (await page.request.get("/api/me")).json() as { workspace: { id: string } };
+  const person = await secondWorkspace(page, me.workspace.id);
+  const state = await watch(page);
+  const action = await openBoardList(page, project.id);
+
+  /* An edit still waiting for its save, then Switch with the route slow to answer. */
+  await action.fill(FINAL);
+  state.holdSwitch = true;
+  await openSettings(page);
+  await settingsMenu(page).getByRole("menuitem", { name: `Switch to ${person.other.name}`, exact: true }).click();
+  await expect.poll(() => state.events.includes("switch")).toBe(true);
+  expect(state.events.slice(0, state.events.indexOf("switch")).at(-1), "the waiting edit was saved before the switch was asked").toBe(`save:${FINAL}:200`);
+
+  /* While the route answers: no press reaches the board, the field cannot be focused or typed into, no shortcut runs. */
+  await expect(page.getByTestId("switching-veil")).toBeVisible();
+  expect(await action.click({ timeout: 1500 }).then(() => "pressed", () => "blocked")).toBe("blocked");
+  await action.focus().catch(() => {});
+  await page.keyboard.type(" typed during the switch");
+  await page.keyboard.press("Delete");
+  await expect(action).toHaveValue(FINAL);
+  await page.waitForTimeout(1200);
+
+  /* The route agrees: the page leaves for the other workspace, and nothing was sent to the old one after the switch request. */
+  state.releaseSwitch();
+  await expect.poll(async () => ((await (await page.request.get("/api/me")).json()) as { workspace: { id: string } }).workspace.id, { timeout: 30_000 }).toBe(person.other.id);
+  await expect(page).toHaveURL(/\/suites/);
+  await page.waitForTimeout(1500);
+  const after = state.events.slice(state.events.indexOf("switch") + 1);
+  expect(after.filter((e) => e.startsWith("save:") || e.startsWith("failed:")), "no save after the switch request").toEqual([]);
+  expect(state.events.filter((e) => /:409$/.test(e)), "never a refused save").toEqual([]);
+  expect(state.events).toContain("switched:200");
   expect(paid).toEqual([]);
 });
 
@@ -208,7 +264,7 @@ test("a link to another of your workspaces, on a phone too: its switch goes thro
   await expect(page.getByTestId("link-error").or(page.getByTestId("link-lead").filter({ hasText: "This link is for a workspace you are not in." }))).toBeVisible();
   if (await page.getByTestId("link-error").isVisible()) await expect(page.getByTestId("link-error")).toHaveText("Not a workspace of yours.");
   await expect(page.getByText("Switching…")).toHaveCount(0);
-  expect(state.events).toEqual(["switch"]);
+  expect(state.events.filter((e) => e === "switch")).toEqual(["switch"]);
   expect(((await (await page.request.get("/api/me")).json()) as { workspace: { id: string } }).workspace.id).toBe(person.workspaceId);
 
   await addMember(person.other.id, person.userId);
@@ -216,5 +272,5 @@ test("a link to another of your workspaces, on a phone too: its switch goes thro
   await expect(page.getByTestId("link-card")).toHaveAttribute("data-phase", "workspace", { timeout: 60_000 });
   await button.click();
   await expect.poll(async () => ((await (await page.request.get("/api/me")).json()) as { workspace: { id: string } }).workspace.id, { timeout: 30_000 }).toBe(person.other.id);
-  expect(state.events).toEqual(["switch", "switch"]);
+  expect(state.events.filter((e) => e === "switch")).toEqual(["switch", "switch"]);
 });
