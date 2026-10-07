@@ -339,7 +339,7 @@ test("an overrun end to end: the finished take is shown, charged the hold, marke
   } finally { engine.render = render; engine.poll = poll; await unlink(path.resolve(".data/generations", `${id}.mp4`)).catch(() => {}); }
 }));
 
-test("a sent take its provider failed with no cost: charged nothing, its hold back, and on the admin desk with the provider's words, or as no answer when it gave none (review N1)", async () => fixture("hold_poll_failed", 10_000, async (f) => {
+test("a sent take its provider failed with no cost: charged nothing, its hold back, and on the admin desk in the provider's words, or as ended without a word on the charge when they cannot be read (review N1)", async () => fixture("hold_poll_failed", 10_000, async (f) => {
   const { db, now } = await import("../../lib/db");
   const { getModel } = await import("../../lib/models");
   const { getTask } = await import("../../lib/tasks");
@@ -356,10 +356,10 @@ test("a sent take its provider failed with no cost: charged nothing, its hold ba
   const params = { ...settings, higgsfieldCredentialFingerprint: higgsfieldCredentialFingerprint(), higgsfieldVendorCostUsd: usd };
   const engine = engineFor("higgsfield"), render = engine.render, poll = engine.poll;
   try {
-    /* Its provider says "failed" (an outcome), or answers with nothing the outcome reader knows: neither reports a cost. */
+    /* Its provider says "failed" in words the outcome reader knows, or in none it knows: neither reports a cost. */
     const cases = [
       { id: "gen_poll_said", requestId: "6d2e5f2b-3c4d-4e6f-9a01-b2c3d4e5f6a8", raw: { status: "failed", error: "Render failed upstream." }, desk: { message: "Render failed upstream." } },
-      { id: "gen_poll_bare", requestId: "7e3f6a3c-4d5e-4f70-8b12-c3d4e5f6a7b9", raw: {}, desk: { kind: "no_answer" } },
+      { id: "gen_poll_bare", requestId: "7e3f6a3c-4d5e-4f70-8b12-c3d4e5f6a7b9", raw: {}, desk: { code: "failed", message: "The provider ended the take." } },
     ];
     for (const { id, requestId, raw, desk } of cases) {
       await db().execute({ sql: "INSERT INTO generations(id,kind,model,prompt,params,status,provider,task,created_by,created_at,updated_at) VALUES(?,'video',?,'A harbour at dawn',?,'queued','higgsfield','generate','owner',?,?)",
@@ -367,7 +367,7 @@ test("a sent take its provider failed with no cost: charged nothing, its hold ba
       const before = await f.balance();
       await reserveGenerationSpend({ id, kind: "video", engine: "higgsfield", model: CINEMA, status: "running", engineCostUsd: usd }, { holdBand: 3 });
       engine.render = async (req) => ({ handle: { provider: "higgsfield", model: req.kind === "video" ? req.model.id : "", ref: requestId, endpoint: `https://api.higgsfield.ai/requests/${requestId}/status`, credentialFingerprint: req.kind === "video" ? req.params.higgsfieldCredentialFingerprint : undefined } });
-      engine.poll = async () => ({ status: "failed", videoUrl: null, totalTokens: null, error: "failed", vendorStartedAt: null, vendorEndedAt: null, raw });
+      engine.poll = async () => ({ status: "failed", videoUrl: null, totalTokens: null, error: "The provider ended the take.", vendorStartedAt: null, vendorEndedAt: null, raw });
       const job: VideoJob = { genId: id, model: getModel(CINEMA), task: getTask("generate"), prompt: "A harbour at dawn", params, source: null, references: [], ts: now() };
       expect((await submitVideoJob(job)).ok, id).toBe(true);
       await reconcileGenjutsuVideo(id);
