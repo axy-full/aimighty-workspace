@@ -87,7 +87,8 @@ test("an own $0 cap is a wall, never 'no cap': it outranks the deployment defaul
   // The admission and reservation walls compare against the cap itself, never its truthiness.
   const allowance = readFileSync("lib/allowance.ts", "utf8");
   expect(allowance).toContain("if (cap == null) return { ok: true };");
-  expect(allowance).toContain("if (spent >= cap || spent + Math.max(0, estUsd) > cap)");
+  /* A take that holds its ceiling (Cinema Studio) counts at its band; every other job at 1. */
+  expect(allowance).toContain("if (spent >= cap || spent + Math.max(0, estUsd) * (Number.isInteger(band) && band > 1 ? band : 1) > cap)");
   expect(allowance).toContain("return ws.allowanceUsd ?? defaultAllowanceUsd();");
   expect(readFileSync("lib/generationRequests.ts", "utf8")).toContain("if (monthlyCap != null && ");
 });
