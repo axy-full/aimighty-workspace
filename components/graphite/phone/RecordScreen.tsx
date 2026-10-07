@@ -15,7 +15,7 @@ import { reviewQueue, takeTitle } from "./phone-model";
 type ProjectMoney = { cap: number | null; spent: number | null };
 
 /** The project's cap and settled spend: the production row of this project (the same read the old Productions page makes). */
-function useProjectMoney(scope: string, productionId: string | null): { money: ProjectMoney | null; failed: boolean } {
+function useProjectMoney(scope: string, productionId: string | null): { money: ProjectMoney | null; failed: boolean; read: boolean } {
   const fetcher = useScopedFetch(scope);
   const [state, setState] = useState<{ id: string; money: ProjectMoney | null; failed: boolean } | null>(null);
   useEffect(() => {
@@ -32,7 +32,8 @@ function useProjectMoney(scope: string, productionId: string | null): { money: P
     return () => { alive = false; };
   }, [fetcher, productionId]);
   const mine = state && state.id === productionId ? state : null;
-  return { money: mine?.money ?? null, failed: Boolean(mine?.failed) };
+  /* Read: the answer came back (a row, no row, or a failure), or there is no production to read. Never a forever "Reading…". */
+  return { money: mine?.money ?? null, failed: Boolean(mine?.failed), read: !productionId || Boolean(mine) };
 }
 
 /**
@@ -56,7 +57,7 @@ export function RecordScreen({ scope, project, items, queue, now, onPlan, onRevi
 }) {
   const productionId = project?.productionProjectId ?? null;
   const activity = useActivity(productionId, { enabled: Boolean(productionId) });
-  const { money, failed } = useProjectMoney(scope, productionId);
+  const { money, failed, read } = useProjectMoney(scope, productionId);
   const budget: Budget | null = useMemo(() => budgetView(money?.spent, money?.cap), [money]);
   const rows = useMemo(() => recordRows(activity.reply?.runs ?? [], now), [activity.reply, now]);
   const open = useMemo(() => queue.filter((q) => q.project.draftId === project?.id), [queue, project?.id]);
@@ -82,7 +83,7 @@ export function RecordScreen({ scope, project, items, queue, now, onPlan, onRevi
             ) : null}
             <p className="ph-row-line">{budget.cap ? `80% of the budget is ${creditsText(budget.at80!)}. Nothing pauses there.` : "No budget set"}</p>
           </>
-        ) : <p className="ph-row-line" role="status">{failed ? "The budget could not be read. Try again later." : "Reading the budget…"}</p>}
+        ) : <p className="ph-row-line" role="status" data-testid="phone-record-budget-none">{failed ? "The budget could not be read. Try again later." : read ? "No spend yet" : "Reading the budget…"}</p>}
       </section>
 
       <section className="ph-section" aria-label="Brief">
@@ -110,8 +111,8 @@ export function RecordScreen({ scope, project, items, queue, now, onPlan, onRevi
             </span>
           </div>
         ))}
-        {!rows.length && activity.status === "ready" ? <p className="ph-quiet" data-testid="phone-record-empty">Atomik has not worked on this project yet.</p> : null}
-        {!rows.length && activity.status === "loading" ? <p className="ph-quiet" role="status">Reading the record…</p> : null}
+        {!rows.length && (activity.status === "ready" || !productionId) ? <p className="ph-quiet" data-testid="phone-record-empty">Atomik has not worked on this project yet.</p> : null}
+        {!rows.length && activity.status === "loading" && productionId ? <p className="ph-quiet" role="status">Reading the record…</p> : null}
       </section>
 
       {onCut && project.shots.length ? (

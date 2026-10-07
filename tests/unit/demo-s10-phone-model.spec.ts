@@ -4,6 +4,7 @@ import { libraryEntries } from "../../lib/workspace/library";
 import {
   DRAWN_SCREENS, PHONE_PARAMS, SWIPE_MIN, judgedLine, phoneSearch, queueJudgement, readPhone, readQueued, reviewCountLine,
   reviewQueue, shotWords, swipeVerdict, takeSpec, takeTitle, versionsOf,
+  readableTakeName,
 } from "../../components/graphite/phone/phone-model";
 import { PHONE_SCREEN } from "../../components/graphite/phone/routes";
 import { generation } from "../helpers/workspaceFixtures";
@@ -124,4 +125,12 @@ test("a shot code is said in words, never shown as the code", () => {
   expect(shotWords("sh12")).toBe("Shot 12");
   expect(shotWords("A1")).toBeNull();
   expect(shotWords(null)).toBeNull();
+});
+
+test("a take's id never reaches the phone: tk-s1-v1 reads Shot 1 · v1, any other id reads Take", () => {
+  expect(readableTakeName("Take tk-s1-v1")).toBe("Shot 1 · v1");
+  expect(readableTakeName("tk-s12-v3")).toBe("Shot 12 · v3");
+  expect(readableTakeName("gen_9f8a7b6c5d", 2)).toBe("Take · v2");
+  expect(readableTakeName("")).toBe("Take");
+  expect(readableTakeName("Shot 2 · The sphere")).toBe("Shot 2 · The sphere");
 });

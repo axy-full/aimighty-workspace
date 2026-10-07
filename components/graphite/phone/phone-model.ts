@@ -173,7 +173,16 @@ export function shotWords(code: string | null | undefined): string | null {
 export function takeTitle(entry: LibraryEntry): string {
   const g = generationOf(entry);
   const shot = shotWords(g?.shotCode);
-  return shot ? `${shot} · v${g?.version ?? 1}` : entry.take.name;
+  if (shot) return `${shot} · v${g?.version ?? 1}`;
+  return readableTakeName(entry.take.name, g?.version);
+}
+
+/** A take id read as words ("tk-s1-v1" → "Shot 1 · v1"); a name that is only an id never reaches the screen. */
+export function readableTakeName(name: string, version?: number | null): string {
+  const id = /\btk-s(\d+)-v(\d+)\b/i.exec(name);
+  if (id) return `Shot ${Number(id[1])} · v${Number(id[2])}`;
+  if (/\b(?:tk|take|gen|job|asset)[-_][a-z0-9][a-z0-9_-]{2,}\b/i.test(name) || !name.trim()) return version ? `Take · v${version}` : "Take";
+  return name;
 }
 
 const seconds = (n: number) => `${Number.isInteger(n) ? n : Math.round(n * 10) / 10} s`;
