@@ -80,7 +80,8 @@ type HeldRow = { readonly [column: string]: unknown };
  *  - finished, it settles at its figure up to the quote times its band (the hold), and at the quote itself when it
  *    reports no figure;
  *  - failed, it settles at the figure its provider reported, up to the quote (N, never the hold), and at nothing
- *    when its provider reported none (owner's decision, 6 October 2026); `unreported` says so, for the admin;
+ *    when its provider reported none (owner's decision, 6 October 2026); `unreported` (no figure at all) says so,
+ *    for the admin;
  * so its bill is never past the hold, never in debt, and the rest of the hold is released at once. Once settled, a
  * later figure may lower its charge, never raise it; and while it runs, nothing moves its hold. Any other job is
  * charged at its figure, unchanged.
@@ -92,9 +93,11 @@ export function heldSettlement(row: HeldRow | undefined, status: MeterStatus, fi
   if (status === "running") return { cost: null, overrunUsd: null };
   const running = row.status === "running";
   if (status === "failed" && running) {
-    /* Nothing reported (no figure, or 0): charged nothing, and flagged so that, when no provider outcome came with it
-       (its read failed, or there was none), the admin desk still counts the take (meter() writes a no-answer outcome). */
-    if (figure == null || !(figure > 0)) return { cost: 0, overrunUsd: null, unreported: true };
+    /* No figure from its provider: charged nothing, and flagged so that, when no provider outcome came with it, the
+       admin desk still counts the take (meter() writes a no-answer outcome). A figure of 0 is a take that cost nothing
+       (one discarded or never sent, or one its provider charged nothing for): charged nothing, and not flagged (review N1). */
+    if (figure == null) return { cost: 0, overrunUsd: null, unreported: true };
+    if (!(figure > 0)) return { cost: 0, overrunUsd: null };
     return figure > basis ? { cost: basis, overrunUsd: figure - basis } : { cost: figure, overrunUsd: null };
   }
   const cap = running ? basis * band : basis;

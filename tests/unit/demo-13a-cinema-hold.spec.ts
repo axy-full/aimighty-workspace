@@ -136,7 +136,8 @@ test("the settlement rule: finished, its cost up to the hold and the quote with 
   expect(heldSettlement(running, "succeeded", null)).toEqual({ cost: 2, overrunUsd: null });
   /* Failed (owner's decision, 6 October 2026): nothing with no figure, flagged for the admin; a reported cost up to N. */
   expect(heldSettlement(running, "failed", null)).toEqual({ cost: 0, overrunUsd: null, unreported: true });
-  expect(heldSettlement(running, "failed", 0)).toEqual({ cost: 0, overrunUsd: null, unreported: true });
+  /* A figure of 0 is a take that cost nothing (discarded, never sent): nothing, and no flag for the admin (review N1). */
+  expect(heldSettlement(running, "failed", 0)).toEqual({ cost: 0, overrunUsd: null });
   expect(heldSettlement(running, "failed", 1.5)).toEqual({ cost: 1.5, overrunUsd: null });
   expect(heldSettlement(running, "failed", 5)).toEqual({ cost: 2, overrunUsd: 3 });
   expect(heldSettlement(running, "running", 2)).toEqual({ cost: null, overrunUsd: null });
@@ -238,12 +239,13 @@ test("a take settles at its actual cost and the rest of the hold comes back at o
   const { providerFailuresSince } = await import("../../lib/meter");
   const desk = await providerFailuresSince(0, 100);
   expect(desk.recent.find((r) => r.id === "hold_failed_silent")).toMatchObject({ engine: "higgsfield", kind: "no_answer", message: expect.stringContaining("nothing was charged") });
-  /* Failed at 0 with no outcome (the collector's read of its provider's outcome failed): still nothing, and still on the desk. */
-  before = await take("hold_failed_unread");
-  await end("hold_failed_unread", "failed", 0);
+  /* Failed at 0 with no outcome (a take discarded, never sent, or stopped by a credential change before it went):
+     still nothing, and NOT on the desk as "provider gave no answer" (review N1). */
+  before = await take("hold_failed_unsent");
+  await end("hold_failed_unsent", "failed", 0);
   expect(await f.balance()).toBe(before);
-  expect(await f.meterRow("hold_failed_unread")).toMatchObject({ status: "failed", billed_credits: 0 });
-  expect((await providerFailuresSince(0, 100)).recent.find((r) => r.id === "hold_failed_unread")).toMatchObject({ engine: "higgsfield", kind: "no_answer" });
+  expect(await f.meterRow("hold_failed_unsent")).toMatchObject({ status: "failed", billed_credits: 0 });
+  expect((await providerFailuresSince(0, 100)).recent.find((r) => r.id === "hold_failed_unsent")).toBeUndefined();
   /* A provider outcome that did come is the one recorded, never replaced by "no answer". */
   before = await take("hold_failed_said");
   await meter({ id: "hold_failed_said", kind: "video", engine: "higgsfield", model: CINEMA, status: "failed", engineCostUsd: 0,
@@ -335,6 +337,46 @@ test("an overrun end to end: the finished take is shown, charged the hold, marke
     expect(desk?.takes).toBeGreaterThanOrEqual(1);
     expect(desk!.absorbedUsd).toBeGreaterThanOrEqual(usd * 2 - 1e-9);
   } finally { engine.render = render; engine.poll = poll; await unlink(path.resolve(".data/generations", `${id}.mp4`)).catch(() => {}); }
+}));
+
+test("a sent take its provider failed with no cost: charged nothing, its hold back, and on the admin desk with the provider's words, or as no answer when it gave none (review N1)", async () => fixture("hold_poll_failed", 10_000, async (f) => {
+  const { db, now } = await import("../../lib/db");
+  const { getModel } = await import("../../lib/models");
+  const { getTask } = await import("../../lib/tasks");
+  const { higgsfieldCredentialFingerprint } = await import("../../lib/higgsfield");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { engineFor } = await import("../../lib/engines");
+  const { submitVideoJob } = await import("../../lib/submitVideo");
+  const { reconcileGenjutsuVideo } = await import("../../lib/genjutsuVideo");
+  const { getGeneration } = await import("../../lib/jobs");
+  const { providerFailuresSince } = await import("../../lib/meter");
+  const { cinemaStudioQuoteUsd } = await import("../../lib/cinemaStudio");
+  const settings = { ratio: "16:9", resolution: "720p", duration: 5, watermark: false, generateAudio: false, hasVideoInput: false };
+  const usd = cinemaStudioQuoteUsd(settings)!;
+  const params = { ...settings, higgsfieldCredentialFingerprint: higgsfieldCredentialFingerprint(), higgsfieldVendorCostUsd: usd };
+  const engine = engineFor("higgsfield"), render = engine.render, poll = engine.poll;
+  try {
+    /* Its provider says "failed" (an outcome), or answers with nothing the outcome reader knows: neither reports a cost. */
+    const cases = [
+      { id: "gen_poll_said", requestId: "6d2e5f2b-3c4d-4e6f-9a01-b2c3d4e5f6a8", raw: { status: "failed", error: "Render failed upstream." }, desk: { message: "Render failed upstream." } },
+      { id: "gen_poll_bare", requestId: "7e3f6a3c-4d5e-4f70-8b12-c3d4e5f6a7b9", raw: {}, desk: { kind: "no_answer" } },
+    ];
+    for (const { id, requestId, raw, desk } of cases) {
+      await db().execute({ sql: "INSERT INTO generations(id,kind,model,prompt,params,status,provider,task,created_by,created_at,updated_at) VALUES(?,'video',?,'A harbour at dawn',?,'queued','higgsfield','generate','owner',?,?)",
+        args: [id, CINEMA, JSON.stringify(params), now(), now()] });
+      const before = await f.balance();
+      await reserveGenerationSpend({ id, kind: "video", engine: "higgsfield", model: CINEMA, status: "running", engineCostUsd: usd }, { holdBand: 3 });
+      engine.render = async (req) => ({ handle: { provider: "higgsfield", model: req.kind === "video" ? req.model.id : "", ref: requestId, endpoint: `https://api.higgsfield.ai/requests/${requestId}/status`, credentialFingerprint: req.kind === "video" ? req.params.higgsfieldCredentialFingerprint : undefined } });
+      engine.poll = async () => ({ status: "failed", videoUrl: null, totalTokens: null, error: "failed", vendorStartedAt: null, vendorEndedAt: null, raw });
+      const job: VideoJob = { genId: id, model: getModel(CINEMA), task: getTask("generate"), prompt: "A harbour at dawn", params, source: null, references: [], ts: now() };
+      expect((await submitVideoJob(job)).ok, id).toBe(true);
+      await reconcileGenjutsuVideo(id);
+      expect((await getGeneration(id))!.status, id).toBe("failed");
+      expect(await f.balance(), id).toBe(before);
+      expect(await f.meterRow(id), id).toMatchObject({ status: "failed", billed_credits: 0 });
+      expect((await providerFailuresSince(0, 100)).recent.find((r) => r.id === id), id).toMatchObject({ engine: "higgsfield", ...desk });
+    }
+  } finally { engine.render = render; engine.poll = poll; }
 }));
 
 test("only a person approves the hold: an API token (an MCP client) or an Atomik run's own id may price it, never approve it", async () => {
