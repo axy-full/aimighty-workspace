@@ -7,7 +7,12 @@ import { prepareGeneration } from "../generationAdmission";
 import { prepareAudio } from "../audioAdmission";
 import { MODELS } from "../models";
 import { SPEECH_MODELS, SFX_MODEL, MUSIC_MODEL } from "../elevenlabs";
-import { PipelineError, type CompiledStage } from "./schema";
+import {
+  PipelineError,
+  pipelineOffersModel,
+  refuseHeldModel,
+  type CompiledStage,
+} from "./schema";
 import {
   latestAttempt,
   stageOf,
@@ -19,6 +24,18 @@ type Prepare = (
   input: Record<string, unknown>,
   actor: AdmissionActor,
 ) => Promise<PrepareAdmissionResult>;
+/** The image and video models a pipeline stage may pick. Never a held model (Cinema Studio): a stage approves its quote, not its hold. */
+export function pipelineStageModels() {
+  return MODELS.filter(
+    (m) =>
+      ["image", "video"].includes(m.kind) &&
+      !m.hidden &&
+      pipelineOffersModel(m.id) &&
+      !m.stillTask &&
+      (!m.supportsTasks || m.supportsTasks.includes("generate")) &&
+      m.ratios.includes("16:9"),
+  );
+}
 /** Construct requests exclusively from the immutable compiled publication and
  * current resolved output identities. A browser cannot submit a prepared body. */
 export function stageRequest(
@@ -139,6 +156,7 @@ export async function quotePipelineStage(
     d = stage.definition;
   if (!("units" in d))
     throw new PipelineError("This stage does not need a paid quote.");
+  refuseHeldModel(d.model); // Before any admission is prepared.
   const inputs = await store.stageInputs(actor.user.id, runId, stageId);
   const chosen =
     retryUnits ??
