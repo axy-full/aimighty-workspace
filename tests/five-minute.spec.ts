@@ -1,6 +1,6 @@
 import { test, expect, request as playwrightRequest, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import {
-  balanceCr, bannedNamesIn, mockInvitation, noSidewaysScroll, PASSPHRASE, runOf, scopeFor, startAtomikOnApi, unpricedSpendButtons, visibleText,
+  balanceCr, bannedNamesIn, mockInvitation, noSidewaysScroll, PASSPHRASE, runOf, scopeFor, unpricedSpendButtons, visibleText,
   watchSpending, type SpendLedger,
 } from "./helpers/fiveMinute";
 import { expectFloors } from "./phoneFloors";
@@ -28,7 +28,10 @@ import { expectFloors } from "./phoneFloors";
  */
 const FIVE_MINUTES = 5 * 60_000;
 /** Taps from the invitation link to the approved take (clicks and ticks; typing is not a tap). Set from the first green run; lower it when a PR removes a tap. */
-const TAP_BUDGET = { desktop: 9, phone: 7 };
+const TAP_BUDGET = { desktop: 9, phone: 9 };
+/* Phone stays at 9 until the owner decides whether it stays 9 or the product saves a tap. */
+/* Phone, 9 taps: terms, sign up, Start, Record's Open, Build, the plan row (Build returns Home), Approve, Review, Approve. The earlier 7 was set while Start was a fixture (not a tap) and
+   before the plan path; one tap goes if Build stays on the plan screen at its price (proposed, not built: PlanScreen is money code). */
 const BRIEF = "A 15-second film about a courier crossing a rooftop at dawn, three shots.";
 const cr = /(\d[\d,]*(?:\.\d)?)\s*cr\b/i;
 
@@ -48,7 +51,17 @@ type Run = {
   rendered: number | null;
   /** The most the approved plan may spend, fixes included (2 × its total), as the card said it. */
   ceiling: number | null;
+  /** The N on Start, as the screen showed it. */
+  startFigure: number | null;
 };
+
+/** The takes of the project the Library holds as approved: a lasting state, read from the server (not a toast that comes and goes). */
+async function approvedTakes(run: Run): Promise<number> {
+  const { headers } = await scopeFor(run.page.request);
+  const reply = await run.page.request.get(`/api/workbench/library?projectId=${encodeURIComponent(run.draftId)}&source=generations&limit=60`, { headers });
+  const json = await reply.json().catch(() => null) as { generations?: { reviewState?: string }[] } | null;
+  return (json?.generations ?? []).filter((g) => g.reviewState === "approved").length;
+}
 
 async function open(browser: Browser, viewport: { width: number; height: number }, phone: boolean): Promise<Run> {
   const base = process.env.PW_BASE_URL || "http://localhost:4551";
@@ -59,7 +72,7 @@ async function open(browser: Browser, viewport: { width: number; height: number 
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  return { page, context, spend: watchSpending(page), errors, started: 0, taps: 0, marks: {}, email: "", draftId: "", productionId: "", balanceAtStart: null, thinking: null, rendered: null, ceiling: null };
+  return { page, context, spend: watchSpending(page), errors, started: 0, taps: 0, marks: {}, email: "", draftId: "", productionId: "", balanceAtStart: null, thinking: null, rendered: null, ceiling: null, startFigure: null };
 }
 
 const elapsed = (run: Run) => (run.started ? Date.now() - run.started : 0);
@@ -177,6 +190,7 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     const params = new URL(page.url()).searchParams;
     run.draftId = params.get("project") ?? "";
     expect(run.draftId, "the board is the new project's").not.toBe("");
+    expect(params.get("view"), "the template lands on the board, not Home").not.toBe("home");
     const { headers } = await scopeFor(page.request);
     const saved = await page.request.get(`/api/workbench/projects?id=${run.draftId}`, { headers });
     run.productionId = String(((await saved.json()) as { project?: { productionProjectId?: string } }).project?.productionProjectId ?? "");
@@ -199,6 +213,7 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     run.spend.close("agent.plan");
     await expect(page.getByTestId("board-plan")).toContainText(/Make \d+ shots?/);
     expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan"]);
+    expect(run.spend.spent[0].body?.limit, "the ask's limit is the figure on its button").toBe(planning);
     await screenIsClean(run, ['[data-testid="board-agent-panel"]']);
     mark(run, "plan card");
   });
@@ -230,11 +245,14 @@ test.describe("the five-minute test · laptop 1440x900", () => {
   test("9 · a person approves the plan once, at its price; the first render goes with no tap of its own", async () => {
     const { page } = run;
     const primary = page.getByTestId("board-plan-primary");
+    const quoted = (await runOf(page.request, (await scopeFor(page.request)).headers, run.productionId, run.draftId)).run?.plan?.quote?.fingerprint ?? null;
+    expect(quoted, "the priced plan has a quote fingerprint").toMatch(/^[a-f0-9]{64}$/);
     run.spend.allow("agent.approvePlan", await primary.innerText());
     await tap(run, primary);
     const card = page.getByTestId("board-plan");
     await expect(card).toContainText(/Rendered · [\d.,]+ cr settled/, { timeout: 120_000 });
     run.spend.close("agent.approvePlan");
+    expect(run.spend.spent.find((x) => x.kind === "agent.approvePlan")?.body?.fingerprint, "the approval carries the quoted fingerprint").toBe(quoted);
     await expect(card).toContainText(/Making \d+ shots?/);
     run.rendered = Number(/Rendered · ([\d.,]+) cr settled/.exec(await card.innerText())?.[1].replace(/,/g, "") ?? NaN);
     expect(run.rendered).toBeGreaterThan(0);
@@ -268,6 +286,7 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     expect(await unpricedSpendButtons(page, '[data-testid="board-inspector"]'), "inspector buttons that spend carry their price").toEqual([]);
     await tap(run, approve);
     await expect(page.getByTestId("board-group").filter({ hasText: /Shots · 1 of \d+ approved/ })).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => approvedTakes(run), { message: "the Library holds the take as approved", timeout: 30_000 }).toBeGreaterThanOrEqual(1);
     mark(run, "first take approved");
     expect(run.spend.spent.map((s) => s.kind), "approving a take spends nothing").toEqual(["agent.plan", "agent.approvePlan"]);
     expect(bannedNamesIn(await visibleText(page)), "retired names on screen").toEqual([]);
@@ -330,36 +349,53 @@ test.describe("the five-minute test · phone 390x844", () => {
     mark(run, "home");
   });
 
-  test.fixme("5 · Home takes the brief: 'What are we making?' and Start · up to N cr", async () => {
-    /* FIXME: the phone's Home is 'Needs you' and Projects only; it has no brief box, no templates and no Start (README § 3.6: the phone judges rather than makes). */
-    await expect(run.page.getByRole("textbox", { name: "What are we making?" })).toBeVisible();
-    await expect(run.page.getByRole("button", { name: /^Start · up to \d[\d,]* cr$/ })).toBeVisible();
+  test("5 · Home takes the brief: 'What are we making?' and Start · up to N cr", async () => {
+    const { page } = run;
+    const brief = page.getByRole("textbox", { name: "What are we making?" });
+    await expect(brief).toBeVisible();
+    await brief.fill(BRIEF);
+    const start = page.getByRole("button", { name: /^Start · up to \d[\d,]* cr$/ });
+    await expect(start).toBeVisible({ timeout: 30_000 });
+    await expect(start).toBeEnabled();
+    /* The figure is the server's own: the quote route's answer for a new board, never a number kept in the app. */
+    const { headers } = await scopeFor(page.request);
+    const quote = await page.request.get("/api/workbench/team-canvas?agent=1&board=new", { headers });
+    expect(quote.ok(), await quote.text()).toBe(true);
+    const planning = ((await quote.json()) as { agent?: { ask?: { planning?: number } | null } }).agent?.ask?.planning;
+    expect(planning, "the quote route prices Atomik's thinking").toBeGreaterThan(0);
+    run.startFigure = Number(/(\d[\d,]*)/.exec(await start.innerText())?.[1].replace(/,/g, ""));
+    expect(run.startFigure, "Start shows the server's figure").toBe(planning);
+    /* The Start row, as on the laptop's Home: the template buttons beside it only make a project (free); "Start from a script" matches the spending verb by name alone. */
+    await screenIsClean(run, ['[data-testid="home-start-row"]']);
+    expect(run.spend.spent, "typing the brief spends nothing").toEqual([]);
+    mark(run, "brief typed");
   });
 
-  test("6 · the brief reaches Atomik, which plans; the plan waits in Needs you", async () => {
+  test("6 · the person presses Start at its price; Atomik plans; the plan waits in Needs you", async () => {
     const { page } = run;
-    /* Step 5 is not built, so this sends what Home's Start sends (the same routes, the same thinking figure as the limit) as the person's own session. It is the person's press, recorded as one. */
-    run.spend.allow("agent.plan", "Start (fixture: the phone has no Start)");
-    const started = await startAtomikOnApi(page.request, BRIEF);
-    run.spend.record("agent.plan", "Start (fixture: the phone has no Start)");
+    run.spend.allow("agent.plan", "Start · up to N cr");
+    await tap(run, page.getByRole("button", { name: /^Start · up to \d[\d,]* cr$/ }));
+    await expect.poll(() => new URL(page.url()).searchParams.get("project"), { timeout: 90_000 }).toBeTruthy();
+    run.draftId = new URL(page.url()).searchParams.get("project")!;
+    const { headers } = await scopeFor(page.request);
+    const saved = await page.request.get(`/api/workbench/projects?id=${run.draftId}`, { headers });
+    run.productionId = String(((await saved.json()) as { project?: { productionProjectId?: string } }).project?.productionProjectId ?? "");
+    expect(run.productionId, "the project has its production").not.toBe("");
+    await expect.poll(async () => (await runOf(page.request, headers, run.productionId, run.draftId)).run?.state, { message: "Atomik has answered the brief with a plan", timeout: 90_000 }).toBe("awaiting_approval");
     run.spend.close("agent.plan");
-    run.draftId = started.draftId;
-    run.productionId = started.productionId;
-    const { scope } = await scopeFor(page.request);
-    await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: started.draftId });
-    await page.goto(`/suites?project=${started.draftId}&view=home`, { timeout: 120_000 });
-    await expect(page.getByTestId("phone-row-plan")).toBeVisible({ timeout: 90_000 });
-    await expect(page.getByTestId("phone-approval-row")).toContainText(/\d+-shot board/);
-    await expect(page.getByTestId("phone-row-plan")).toHaveText(/free|\d[\d,]* cr/);
-    expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan"]);
-    await screenIsClean(run, ['[data-testid="phone-home"]']);
-    await expectFloors(page, "phone Home with the plan", { scope: ".ph-app" });
-    mark(run, "plan waits");
+    const planRequest = run.spend.spent.find((x) => x.kind === "agent.plan");
+    expect(planRequest?.body?.limit, "the ask's limit is the figure on Start").toBe(run.startFigure);
+    /* Start lands on the project's Record, where the plan waits with its Open; nothing is reloaded or addressed by hand. */
+    await expect(page.getByTestId("phone-record")).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByTestId("phone-record-open")).toBeVisible({ timeout: 90_000 });
+    expect(run.spend.spent.map((x) => x.kind)).toEqual(["agent.plan"]);
+    await screenIsClean(run, ['[data-testid="phone-record"]']);
+    mark(run, "plan waits on Record");
   });
 
   test("7 · the plan opens on its own screen: the steps, the Total, Build · free, Change, Hold", async () => {
     const { page } = run;
-    await tap(run, page.getByTestId("phone-row-plan"));
+    await tap(run, page.getByTestId("phone-record-open"));
     await expect(page.getByTestId("phone-plan")).toBeVisible({ timeout: 60_000 });
     await expect(page.getByTestId("phone-plan-title")).toHaveText(/Make \d+ shots?/);
     await expect(page.getByTestId("phone-plan-total")).toBeVisible();
@@ -377,7 +413,10 @@ test.describe("the five-minute test · phone 390x844", () => {
     await expect(page.getByTestId("phone-home")).toBeVisible({ timeout: 90_000 });
     const row = page.getByTestId("phone-row-plan");
     await expect(row).toHaveText(cr, { timeout: 90_000 });
+    await expect(page.getByTestId("phone-approval-row")).toContainText(/\d+-shot board/);
     expect(run.spend.spent.map((s) => s.kind), "building billed nothing").toEqual(["agent.plan"]);
+    await screenIsClean(run, ['[data-testid="phone-home"]']);
+    await expectFloors(page, "phone Home with the plan", { scope: ".ph-app" });
     await tap(run, row);
     await expect(page.getByTestId("phone-plan-primary")).toHaveText(/^Approve · (up to )?\d[\d,]*(\.\d)? cr$/, { timeout: 60_000 });
     await expect(page.getByTestId("phone-plan-title")).toHaveText(/Make \d+ shots? · (up to )?\d[\d,]*(\.\d)? cr · at most \d[\d,]*(\.\d)? cr/);
@@ -400,9 +439,12 @@ test.describe("the five-minute test · phone 390x844", () => {
   test("10 · a person approves the plan once, at its price, and goes Home", async () => {
     const { page } = run;
     const primary = page.getByTestId("phone-plan-primary");
+    const quoted = (await runOf(page.request, (await scopeFor(page.request)).headers, run.productionId, run.draftId)).run?.plan?.quote?.fingerprint ?? null;
+    expect(quoted, "the priced plan has a quote fingerprint").toMatch(/^[a-f0-9]{64}$/);
     run.spend.allow("agent.approvePlan", await primary.innerText());
     await tap(run, primary);
     await expect(page.getByTestId("phone-home")).toBeVisible({ timeout: 90_000 });
+    expect(run.spend.spent.find((x) => x.kind === "agent.approvePlan")?.body?.fingerprint, "the approval carries the quoted fingerprint").toBe(quoted);
     expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan", "agent.approvePlan"]);
     await screenIsClean(run, ['[data-testid="phone-home"]']);
     mark(run, "plan approved");
@@ -415,15 +457,6 @@ test.describe("the five-minute test · phone 390x844", () => {
     await expect.poll(async () => (await runOf(page.request, headers, run.productionId, run.draftId)).run?.paid.find((p) => p.tool === "render")?.charged ?? null, { timeout: 120_000 }).not.toBeNull();
     run.spend.close("agent.approvePlan");
     run.rendered = (await runOf(page.request, headers, run.productionId, run.draftId)).run!.paid.find((p) => p.tool === "render")!.charged!;
-    if (!(await page.getByTestId("phone-open-review").waitFor({ state: "visible", timeout: 8_000 }).then(() => true, () => false))) {
-      /* As on the laptop: the project's Library is not read again after Atomik's render, so Home offers the take for review only once the app is opened again. */
-      test.info().annotations.push({ type: "issue", description: "After an Atomik render the phone's Home offers the take for review only after the app is reloaded (the project's Library is not re-read)." });
-      await page.reload();
-      await expect(page.getByTestId("phone-app")).toBeVisible({ timeout: 60_000 });
-      /* The app opens on the project's Record; Home is one tap away. */
-      await tap(run, page.getByTestId("phone-tab-home"));
-      await expect(page.getByTestId("phone-home")).toBeVisible({ timeout: 30_000 });
-    }
     await expect(page.getByTestId("phone-open-review")).toBeVisible({ timeout: 60_000 });
     mark(run, "first render ready");
     expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan", "agent.approvePlan"]);
@@ -440,8 +473,11 @@ test.describe("the five-minute test · phone 390x844", () => {
     await expect(page.getByTestId("phone-approve")).toBeEnabled();
     await expectFloors(page, "phone review", { scope: ".ph-app", scroller: false });
     expect(bannedNamesIn(await visibleText(page)), "retired names on screen").toEqual([]);
+    /* The toast comes and goes; its wording is checked when it first appears, and the lasting state is read from the Library. */
+    const toastShown = page.getByText(/approved · nothing spent/).first().waitFor({ state: "visible", timeout: 15_000 });
     await tap(run, page.getByTestId("phone-approve"));
-    await expect(page.getByText(/approved · nothing spent/)).toBeVisible({ timeout: 15_000 });
+    await toastShown;
+    await expect.poll(() => approvedTakes(run), { message: "the Library holds the take as approved", timeout: 30_000 }).toBeGreaterThanOrEqual(1);
     mark(run, "first take approved");
     expect(run.spend.spent.map((s) => s.kind), "approving a take spends nothing").toEqual(["agent.plan", "agent.approvePlan"]);
   });
@@ -469,6 +505,8 @@ test.describe("the five-minute test · its checks bite", () => {
 
     await page.setContent('<main id="m"><button>Render</button><button>Render · 8 cr</button><button disabled>Start</button><button>Build · free</button><button>Ask the crew</button></main>');
     expect(await unpricedSpendButtons(page, "#m"), "only the enabled spending button with no figure is found").toEqual(["Render"]);
+    await page.setContent('<main id="m"><div data-testid="home-templates"><button data-spend>Start from a script</button><button>Start from a script</button></div></main>');
+    expect(await unpricedSpendButtons(page, "#m"), "a template is skipped unless it marks itself as spending").toEqual(["Start from a script"]);
 
     /* The ledger: a paid request is a violation unless a person's press has opened it. The request is answered here and never reaches the server. */
     const base = process.env.PW_BASE_URL || "http://localhost:4551";

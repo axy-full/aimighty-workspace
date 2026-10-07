@@ -95,7 +95,7 @@ export type ToastAction = {
   live?: () => boolean;
 };
 const TOAST_MS = 2600;
-const ACTION_TOAST_MS = 6000;
+export const ACTION_TOAST_MS = 6000;
 
 const NO_KEEP: readonly string[] = [];
 const WorkspaceContext = createContext<Workspace | null>(null);
