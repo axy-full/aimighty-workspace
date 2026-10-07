@@ -187,10 +187,11 @@ test("signed out, the public pages work and an old app address asks for sign-in 
       await expect(visitor.locator("h1").first(), path).toHaveText(heading);
       await noHorizontalOverflow(visitor);
     }
-    /* The September workspace address, bare, is the public site's page too. */
+    /* The September workspace address, bare, moved to the public Settings page (308, proxy.ts). */
     const workspace = await visitor.goto("/workspace");
     expect(workspace?.status()).toBe(200);
-    expect(new URL(visitor.url()).pathname).toBe("/workspace");
+    expect(new URL(visitor.url()).pathname).toBe("/settings");
+    expect(workspace?.request().redirectedFrom()?.url()).toMatch(/\/workspace$/);
 
     /* An old app address with a project asks a visitor to sign in, and comes back to the final address. A fresh server with
        no account at all sends everyone to /setup, so one person exists first (in a context of their own). */
@@ -199,7 +200,6 @@ test("signed out, the public pages work and an old app address asks for sign-in 
     for (const [from, next] of [
       ["/workbench?project=p1&stage=cast", "/suites?project=p1&view=board&region=cast"],
       ["/generate?mode=images", "/suites?make=image&view=home"],
-      ["/settings", "/suites?view=workspace&tab=advanced&open=workspace"],
       ["/workbench?project=p1&shell=legacy", "/suites?project=p1&view=home"],
     ]) {
       await visitor.goto(from);

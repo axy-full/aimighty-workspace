@@ -12,10 +12,10 @@ import { openAdvanced } from "./helpers/makeAdvanced";
  * the take itself.
  */
 
-/* Each path and its current tab; Settings (/workspace) has no tab of its own. */
+/* Each path and its current tab; Settings (/settings) has no tab of its own. */
 const PAGES: [string, string | null][] = [
-  ["/", "Make"], ["/studio", "Studio"], ["/business", "Ads"], ["/viral", "Social"],
-  ["/atomik", "Atomik"], ["/workspace", null], ["/pricing", "Pricing"],
+  ["/", "Make"], ["/studio", "Studio"], ["/ads", "Ads"], ["/social", "Social"],
+  ["/atomik", "Atomik"], ["/settings", null], ["/pricing", "Pricing"],
 ];
 const TABS = ["Studio", "Ads", "Social", "Make", "Atomik", "Pricing"];
 const DESKTOP = "workbench-1440x900";
@@ -39,7 +39,7 @@ for (const [path, tab] of PAGES) {
     page.on("pageerror", (error) => errors.push(error.message));
     const res = await page.goto(path);
     expect(res?.status()).toBe(200);
-    const nav = page.getByRole("navigation", { name: "Suites" }).first();
+    const nav = page.getByRole("navigation", { name: "Main" }).first();
     await expect(nav.getByRole("link")).toHaveText(TABS);
     if (tab) await expect(nav.getByRole("link", { name: tab, exact: true })).toHaveAttribute("aria-current", "page");
     else await expect(nav.locator('[aria-current="page"]')).toHaveCount(0);
@@ -65,6 +65,18 @@ for (const [path, tab] of PAGES) {
     expect(errors).toEqual([]);
   });
 }
+
+test("the old public addresses redirect for good, query kept, and the new ones answer", async ({ page }, info) => {
+  test.skip(info.project.name !== DESKTOP, "routing, once");
+  for (const [from, to] of [["/business", "/ads"], ["/viral", "/social"], ["/workspace", "/settings"]]) {
+    const res = await page.request.get(`${from}?utm_source=mail`, { maxRedirects: 0 });
+    expect(res.status(), from).toBe(308);
+    expect(new URL(res.headers().location).pathname + new URL(res.headers().location).search, from).toBe(`${to}?utm_source=mail`);
+    const there = await page.goto(`${from}?utm_source=mail`);
+    expect(new URL(page.url()).pathname, from).toBe(to);
+    expect(there?.status(), to).toBe(200);
+  }
+});
 
 test("the internal /site path redirects to the public one", async ({ page }, info) => {
   test.skip(info.project.name !== DESKTOP, "routing, once");
