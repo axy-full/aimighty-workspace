@@ -72,10 +72,8 @@ export function useAssetLink(input: {
   selectProject: (id: string, opts?: { replace?: boolean }) => void;
   /** A fetch that carries the page's workspace scope (lib/useScopedFetch). */
   fetch: Fetch;
-  /** Saves what the board still has to save here, before a switch (RigProvider › drain); true once nothing is left unsaved. */
-  drain?: (() => Promise<boolean>) | null;
 }): LinkControl {
-  const { scope, workspace, workspaces, projectId, selectProject, fetch, drain = null } = input;
+  const { scope, workspace, workspaces, projectId, selectProject, fetch } = input;
   const { link, live } = useShell();
   const [resolved, setResolved] = useState<Resolved | null>(null);
   const [acting, setActing] = useState<Acting>({ busy: false, error: null });
@@ -148,11 +146,11 @@ export function useAssetLink(input: {
     if (!switchTo || acting.busy) return;
     setActing({ busy: true, error: null });
     const why = await switchWorkspace({
-      id: switchTo.id, fetch, drain, fallback: "The workspace could not be switched. Try again.",
+      id: switchTo.id, fetch, fallback: "The workspace could not be switched. Try again.",
       go: () => window.location.assign(window.location.pathname + window.location.search),
     });
     if (why) setActing({ busy: false, error: why });
-  }, [switchTo, acting.busy, fetch, drain]);
+  }, [switchTo, acting.busy, fetch]);
 
   /* How project resolution is held: nothing opens while the link is checked or cannot open; exactly its draft once known. */
   const hold: ProjectHold = !link ? null

@@ -52,7 +52,7 @@ import { StageStrip } from "./StageStrip";
 import { useCompact } from "@/lib/shell/use-compact";
 import { StudioHome } from "./mobile/StudioHome";
 import { SuiteHome } from "./mobile/SuiteHome";
-import { useRig, useRigDrain } from "@/components/workspace/rig/RigProvider";
+import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { SwitchingVeil } from "./SwitchingVeil";
 import { WorkspaceView } from "./WorkspaceView";
@@ -88,8 +88,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const account = useAccount(initialAccount);
   /* A link to a take holds project resolution until it can open in a project of this person's (lib/shell/use-asset-link.ts). */
   const scopedFetch = useScopedFetch();
-  const drain = useRigDrain();
-  const linkControl = useAssetLink({ scope, workspace: session.workspace, workspaces: session.workspaces, projectId: state.projectId, selectProject, fetch: scopedFetch, drain });
+  const linkControl = useAssetLink({ scope, workspace: session.workspace, workspaces: session.workspaces, projectId: state.projectId, selectProject, fetch: scopedFetch });
   const data = useProjects(scope, state.projectId, (id) => selectProject(id, { replace: true }), linkControl.hold);
   const linkView = useLinkView(linkControl, data);
   const linkCard = linkView.phase === "none" ? null : <AssetLinkCard link={linkControl} view={linkView} />;

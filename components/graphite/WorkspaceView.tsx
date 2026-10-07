@@ -10,7 +10,6 @@ import { revealClear } from "@/lib/shell/reveal";
 import { useShell } from "@/lib/shell/state";
 import { signOut } from "@/lib/shell/sign-out";
 import { switchWorkspace, useSwitchState } from "@/lib/shell/switch-workspace";
-import { useRigDrain } from "@/components/workspace/rig/RigProvider";
 import {
   auditEntries, checkoutUrl, grantRow, packLine, packRequestLabel, planLine, requestLine, requestRows, sessionRows, statementCsvHref, statementHref, statementMonthsOf, twoStepLine, usageRows,
   type BillingPlan, type BillingSubscription, type SecurityBody, type Topups, type UsageBody,
@@ -70,7 +69,6 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
   const shell = useShell();
   const session = useSession();
   const scopedFetch = useScopedFetch();
-  const drain = useRigDrain();
   const [signingOut, setSigningOut] = useState(false);
   /* A switch running, from here or the avatar menu: the workspace being switched to, while the board's last edit saves and the route answers. */
   const sw = useSwitchState();
@@ -89,7 +87,7 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
     }
     if (!id) return;
     /* The board's last edit saved first, then the route, then the shell from the top (lib/shell/switch-workspace.ts). */
-    const why = await switchWorkspace({ id, fetch: scopedFetch, drain, go: () => window.location.assign("/suites") });
+    const why = await switchWorkspace({ id, fetch: scopedFetch, go: () => window.location.assign("/suites") });
     if (why) setError(why);
   };
   const current = account?.workspace?.id ?? session.workspace?.id ?? null;

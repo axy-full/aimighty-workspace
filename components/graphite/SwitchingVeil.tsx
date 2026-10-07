@@ -1,13 +1,13 @@
 "use client";
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
-import { useSwitchState } from "@/lib/shell/switch-workspace";
+import { pressedControl, switchState, useSwitchState } from "@/lib/shell/switch-workspace";
 
 /**
  * While a workspace switch runs (lib/shell/switch-workspace.ts), the page takes no edits: every save goes to the
  * workspace being left, and one that reached the server after the switch would be refused and lost. A veil over the
  * whole screen takes the pointer, the shell goes inert (nothing in it can be focused or typed into), and the board's
- * keyboard shortcuts, pastes and drops wait. If the switch does not happen, it all comes back as it was.
+ * keyboard shortcuts, pastes and drops wait. If the switch does not happen, it all comes back as it was, focus included.
  */
 export function SwitchingVeil() {
   const { phase } = useSwitchState();
@@ -23,6 +23,9 @@ export function SwitchingVeil() {
     return () => {
       shell?.removeAttribute("inert");
       for (const kind of kinds) window.removeEventListener(kind, hold, true);
+      /* It did not happen: focus back on the control that was pressed (the menu item, the row, the link's button). */
+      const back = pressedControl();
+      if (switchState().phase === "idle" && back instanceof HTMLElement && back.isConnected) back.focus();
     };
   }, [on]);
   if (!on) return null;

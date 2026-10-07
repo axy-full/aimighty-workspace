@@ -39,7 +39,7 @@ import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
 import { isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
 import { cinemaPriceWords } from "@/lib/cinemaHold";
-import { editsFrozen, sendsAllowed, subscribeSwitch } from "@/lib/shell/switch-workspace";
+import { createHeldEdits, editsFrozen, registerDrain, sendsAllowed, subscribeSwitch, whileSwitching } from "@/lib/shell/switch-workspace";
 
 /**
  * The Rig's live state, shared by the shot list, the node graph, the
@@ -122,12 +122,6 @@ export type RigContext = {
   apply: (fn: (project: Project) => Project | { project: Project; id?: string }, select?: boolean) => string | null;
   /** Saves pending edits; true once saved (an agent step reads the saved project). */
   save: () => Promise<boolean>;
-  /**
-   * Before this window leaves the workspace (lib/shell/switch-workspace.ts): everything it still has to save there is
-   * saved. True once nothing is left unsaved (or there was nothing); false when something could not be saved, which
-   * stays here, unsaved and editable, as any refused save does.
-   */
-  drain: () => Promise<boolean>;
   /** Deletes a shot (with the inputs only it used); returns the refusal, or null. ⌘Z brings it back in the Suites. */
   removeShot: (id: string) => string | null;
   /** The production's shared canvas: who else is here, presence to show them, and the server's own changes (Tidy). */
@@ -154,11 +148,6 @@ export function useRig(): RigContext {
   const value = useContext(Context);
   if (!value) throw new Error("useRig must be used inside <RigProvider>.");
   return value;
-}
-
-/** The Rig's drain where one is mounted; null outside it, where no board has anything to save. */
-export function useRigDrain(): RigContext["drain"] | null {
-  return useContext(Context)?.drain ?? null;
 }
 
 const API = "/api/workbench";
@@ -293,7 +282,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   }, [scope, setDraft, toast]);
   useEffect(() => { flushRef.current = () => flush(); }, [flush]);
 
-  const heldWrites = useRef<{ fn: (p: Project) => Project; publish: boolean; made: boolean }[]>([]);
+  const [heldWrites] = useState(() => createHeldEdits<{ fn: (p: Project) => Project; publish: boolean; made: boolean }>());
   /* The masters this window knows of (set once the team canvas hook exists below): its own edits never change one. */
   const mastersRef = useRef<ReadonlySet<string>>(new Set());
   /** `made`: the change builds records (shots from boards, inputs, a filed take) — noted as made, for the merge. */
@@ -301,7 +290,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     /* A workspace switch is running: the edit waits (the page takes none of its own then; this is the app's, say a take
        filed or a teammate's change). If the switch does not happen it is made then, and saved as usual; if it does, it
        is never sent to the workspace being left (a take is filed again from its job wherever the project opens next). */
-    if (editsFrozen()) { heldWrites.current.push({ fn, publish, made }); return; }
+    if (editsFrozen()) { heldWrites.hold({ fn, publish, made }); return; }
     const current = draftRef.current;
     if (!current) return;
     let changed = fn(current.project);
@@ -326,13 +315,12 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     setSaveState("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => void flush(), SAVE_DEBOUNCE_MS);
-  }, [setDraft, flush, toast]);
+  }, [setDraft, flush, toast, heldWrites]);
   /* A switch that did not happen: what waited during it is made now, in order, and saved as usual. */
   useEffect(() => subscribeSwitch(() => {
-    if (editsFrozen() || !heldWrites.current.length) return;
-    const held = heldWrites.current.splice(0);
-    for (const w of held) write(w.fn, w.publish, w.made);
-  }), [write]);
+    if (editsFrozen() || !heldWrites.size) return;
+    for (const w of heldWrites.release()) write(w.fn, w.publish, w.made);
+  }), [write, heldWrites]);
   const update = useCallback((fn: (p: Project) => Project) => write(fn, true), [write]);
   /** A build (lib/production/rig-build) or a filed take: what it made is noted, as made. */
   const make = useCallback((fn: (p: Project) => Project) => write(fn, true, true), [write]);
@@ -347,6 +335,11 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     const name = draft.project.name || "the last project";
     void (async () => {
       for (let attempt = 0; !entry.stop; attempt++) {
+        /* A workspace switch has asked its route: nothing more goes to this workspace (if it does not happen, this goes on). */
+        if (!sendsAllowed()) {
+          await new Promise<void>((resolve) => { entry.wake = resolve; setTimeout(resolve, RETRY_MS); });
+          continue;
+        }
         const step = writeMergedDraft(API, scope, { base: draft.base, mine: draft.project, revision: draft.revision, writer: draft.writer, ancestors: draft.ancestors, made: draft.made })
           .catch((err: unknown) => {
             if (!(err instanceof DraftRequestError && (err.retryable || err.uncertain))) {
@@ -715,7 +708,11 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     setNotice(null);
   }, [dispatch, ws, setNotice]);
 
+  /* The calls below work out the new project from the draft as it is now, so while a workspace switch runs they change
+     nothing and say so (whileSwitching): a project held from then would undo whatever the drain's save merged in. */
   const patchShot = useCallback((id: string, patch: ShotPatch): string | null => {
+    const switching = whileSwitching();
+    if (switching) return switching;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     try {
@@ -729,6 +726,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   }, [update]);
 
   const addShot = useCallback(() => {
+    const switching = whileSwitching();
+    if (switching) { setNotice(switching); return; }
     const current = draftRef.current;
     if (!current) return;
     try {
@@ -742,6 +741,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   }, [update, select, setNotice]);
 
   const setRefKind = useCallback((id: string, kind: RefKind): string | null => {
+    const switching = whileSwitching();
+    if (switching) return switching;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     const card = current.project.nodes.find((n) => n.id === id);
@@ -820,6 +821,13 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const fileCutoutOn = useCallback((id: string, sourceAssetId: string, jobId: string): string | null => {
     const current = draftRef.current;
     if (!current) return "Open a project first.";
+    /* A cut-out that finished while a workspace switch runs (the app's own edit): held as an update of the draft as it
+       will be then, and filed if the switch does not happen. */
+    if (editsFrozen()) {
+      const at = new Date().toISOString();
+      update((p) => { const filed = fileCutout(p, id, sourceAssetId, jobId, at); return typeof filed === "string" ? p : filed; });
+      return null;
+    }
     const next = fileCutout(current.project, id, sourceAssetId, jobId, new Date().toISOString());
     if (typeof next === "string") return next;
     /* An edit like any other: the new version and the card's source to the team canvas, then the draft save. */
@@ -829,6 +837,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const cut = useCutouts({ scope, draftId: project?.id ?? null, current: readDraft, file: fileCutoutOn, toast });
 
   const connect = useCallback((source: string, target: string): string | null => {
+    const switching = whileSwitching();
+    if (switching) return switching;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     const result = connectNodes(current.project, source, target);
@@ -840,6 +850,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const planRequests = useMemo(() => (project ? rigPlanRequests(project, shots) : []), [project, shots]);
 
   const apply = useCallback((fn: (project: Project) => Project | { project: Project; id?: string }, pick?: boolean): string | null => {
+    const switching = whileSwitching();
+    if (switching) return switching;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     try {
@@ -880,7 +892,11 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     }
     return false;
   }, [flush, scope]);
+  /* Registered with every workspace switch, whichever control starts it. */
+  useEffect(() => registerDrain(drain), [drain]);
   const removeShot = useCallback((id: string): string | null => {
+    const switching = whileSwitching();
+    if (switching) return switching;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     let out: ReturnType<typeof removeShots>;
@@ -930,9 +946,9 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const masters = team.locks;
   const value = useMemo<RigContext>(() => ({
     status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, saveError, selected, selectedNode, selectedCard,
-    select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, drain, removeShot, team: teamView,
+    select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, team: teamView,
     masters, canUnlock, lockMaster, unlockMaster, cutouts: cut.cutouts, quoteCutout: cut.quote, startCutout: cut.start,
-  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, selectedCard, select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, drain, removeShot, teamView, masters, canUnlock, lockMaster, unlockMaster, cut.cutouts, cut.quote, cut.start]);
+  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, selectedCard, select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, teamView, masters, canUnlock, lockMaster, unlockMaster, cut.cutouts, cut.quote, cut.start]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

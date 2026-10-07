@@ -13,6 +13,7 @@ import {
 } from "@/lib/workbench/draft-request";
 import { useOptionalToast } from "@/lib/workspace/state";
 import { SaveFailedError } from '@/lib/workbench/save-then-continue';
+import { createHeldEdits, editsFrozen, registerDrain, sendsAllowed, subscribeSwitch } from "@/lib/shell/switch-workspace";
 
 /**
  * An editable copy of one project draft for a workspace page that mounts a
@@ -100,6 +101,11 @@ function park(scope: string, entry: Omit<Parked, "stop" | "wake" | "saved">) {
     for (let attempt = 0; ; attempt++) {
       await held.inflight.catch(() => undefined);
       if (held.stop || settled(held.current, held.base, !!held.writer.unconfirmed)) break;
+      /* A workspace switch has asked its route: nothing more goes to this workspace (if it does not happen, this goes on). */
+      if (!sendsAllowed()) {
+        await new Promise<void>((resolve) => { held.wake = resolve; setTimeout(resolve, RETRY_MS); });
+        continue;
+      }
       const snapshot = held.current;
       const step = writeMergedDraft(API, scope, { base: held.base, mine: snapshot, revision: held.revision, writer: held.writer, made: held.made })
         .then((saved) => {
@@ -125,6 +131,37 @@ function park(scope: string, entry: Omit<Parked, "stop" | "wake" | "saved">) {
     if (parked.get(key) === held && settled(held.current, held.base, !!held.writer.unconfirmed)) parked.delete(key);
   })();
 }
+
+const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+/**
+ * Before a workspace switch: drafts pages left with edits not saved yet, saved — one still saving on its own tries now
+ * and is waited for; one refused is tried once more. True once none is left. Registered for as long as the module is:
+ * a parked draft has no page to register it.
+ */
+async function drainParked(): Promise<boolean> {
+  for (const [key, held] of [...parked]) {
+    if (held.stop) {
+      const [scope] = JSON.parse(key) as [string, string];
+      const snapshot = held.current;
+      const saved = await writeMergedDraft(API, scope, { base: held.base, mine: snapshot, revision: held.revision, writer: held.writer, made: held.made }).catch(() => null);
+      if (saved) {
+        held.base = saved.project;
+        held.revision = saved.revision;
+        held.current = rebaseProject(snapshot, held.current, saved.project);
+        held.saved = true;
+        if (parked.get(key) === held && settled(held.current, held.base, !!held.writer.unconfirmed)) parked.delete(key);
+      }
+    } else {
+      held.wake();
+      await tick();
+      await held.inflight.catch(() => undefined);
+    }
+  }
+  await tick();
+  await tick();
+  return parked.size === 0;
+}
+if (typeof window !== "undefined") registerDrain(drainParked);
 
 export function useDraftEditor(scope: string | null, projectId: string | null): DraftEditor {
   const [project, setProject] = useState<Project | null>(null);
@@ -268,6 +305,11 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
       if (failed.current) return false;
       /* Back to what the server held — unless a save is unconfirmed: then the server may hold that save, and this is an edit. */
       if (sameJson(snapshot, from) && !writer.current.unconfirmed) return true;
+      /* A workspace switch has asked its route: nothing more goes to this workspace; if it does not happen, this goes then. */
+      if (!sendsAllowed()) {
+        if (alive.current && !timer.current) timer.current = setTimeout(() => retry.current(), RETRY_MS);
+        return false;
+      }
       if (alive.current) setSaveState("Saving");
       try {
         const saved = await writeMergedDraft(API, scope, { base: from, mine: snapshot, revision: revision.current, writer: by, made: made.current });
@@ -323,8 +365,12 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
   }, [scope]);
   useEffect(() => { retry.current = () => void flush(); }, [flush]);
 
+  /* Changes that came while a workspace switch ran (the app's own; the page under the veil takes none): run, in order, on
+     the draft as it is once the switch did not happen (lib/shell/switch-workspace.ts). */
+  const [held] = useState(() => createHeldEdits<(previous: Project) => Project>());
   const change = useCallback(
     (fn: (previous: Project) => Project) => {
+      if (editsFrozen()) { held.hold(fn); return; }
       const previous = current.current;
       if (!previous) return;
       const changed = fn(previous);
@@ -340,8 +386,12 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => void flush(), SAVE_DELAY_MS);
     },
-    [flush],
+    [flush, held],
   );
+  useEffect(() => subscribeSwitch(() => {
+    if (editsFrozen() || !held.size) return;
+    for (const fn of held.release()) change(fn);
+  }), [change, held]);
 
   const ensureSaved = useCallback(async () => {
     /* Edits made during the write are saved by the next flush. */
@@ -351,6 +401,15 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
     }
     return settled(current.current, base.current, !!writer.current.unconfirmed);
   }, [flush]);
+  /* Registered with every workspace switch while this page holds the draft: its edits saved (a refused save tried once
+     more); nothing loaded, nothing to save. Edits left when it closes are parked, and drainParked has them. */
+  const ensureSavedRef = useRef(ensureSaved);
+  useEffect(() => { ensureSavedRef.current = ensureSaved; }, [ensureSaved]);
+  useEffect(() => registerDrain(async () => {
+    if (!current.current || !base.current) return true;
+    failed.current = false;
+    return ensureSavedRef.current();
+  }), []);
 
   const refresh = useCallback(async () => {
     const id = current.current?.id;
