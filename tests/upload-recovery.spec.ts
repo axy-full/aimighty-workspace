@@ -56,7 +56,16 @@ test("a lost upload finish response recovers the same stored upload after reload
   const projectId = await savedProject(page, scope);
   let finishes = 0,
     chunks = 0,
+    filings = 0,
     original = "";
+  /* The drop that lost its answer never filed the upload; the resume files it into this project, once. */
+  await page.route("**/api/workbench/library", async (route) => {
+    if (route.request().method() === "POST") {
+      filings++;
+      expect(route.request().postDataJSON()).toEqual({ projectId, uploadId: original });
+    }
+    await route.continue();
+  });
   await page.route("**/api/uploads/chunk", async (route) => {
     if (route.request().method() === "POST") chunks++;
     await route.continue();
@@ -93,6 +102,8 @@ test("a lost upload finish response recovers the same stored upload after reload
   await expect.poll(() => finishes).toBe(1);
   const pending = (await uploadEntries(page))[0];
   expect(pending.scope).toBe(scope);
+  expect(pending.projectId).toBe(projectId);
+  expect(filings).toBe(0);
   expect(pending.identity).toMatch(/^[a-f0-9]{64}$/);
   expect(JSON.stringify(pending).length).toBeLessThan(2000);
   await page.reload();
@@ -109,6 +120,11 @@ test("a lost upload finish response recovers the same stored upload after reload
   ).toHaveAttribute("href", `/api/uploads/${original}`);
   expect(finishes).toBe(1);
   expect(chunks).toBe(1);
+  await expect.poll(() => filings).toBe(1);
+  await expect.poll(async () => typeof (await uploadEntries(page))[0].filedAt).toBe("number");
+  const library = await page.request.get(`/api/workbench/library?projectId=${encodeURIComponent(projectId)}&source=uploads&limit=60`, { headers: { "X-Workbench-Scope": scope } });
+  expect(library.ok(), await library.text()).toBe(true);
+  expect((await library.json()).uploads.map((u: { id: string }) => u.id)).toEqual([original]);
   // Retry only a transport reset on this read; never repeat a write or HTTP failure.
   const listed = await page.request.get("/api/uploads", { maxRetries: 1 });
   expect(listed.ok(), await listed.text()).toBeTruthy();

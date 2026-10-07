@@ -183,11 +183,13 @@ test("Team: people and invites on the team routes, a role changed in place, a on
   await page.getByTestId("settings-invite-row").getByTestId("settings-invite-revoke").click();
   await expect.poll(() => writes.some((w) => w.url === "/api/team/invites/inv_old" && w.method === "DELETE")).toBe(true);
 
-  /* Security opens read-only: two-step and the workspace rule change on their own pages. */
+  /* Security: a person's own two-step changes on their account page; the workspace rule is the owner's to turn on here
+     (tests/workspace-security.spec.ts drives it against the real route). No password field until the owner asks to. */
   await page.getByTestId("settings-security-toggle").click();
   await expect(page.getByTestId("settings-two-step")).toContainText("On");
   await expect(page.getByTestId("settings-two-step-change")).toHaveAttribute("href", "/account/security");
   await expect(page.getByTestId("settings-workspace-two-step")).toContainText("off");
+  await expect(page.getByTestId("settings-workspace-two-step-toggle")).toHaveText("Turn on");
   await expect(page.getByTestId("settings-sessions")).toContainText("2 sessions");
   await expect(page.getByTestId("settings-security")).not.toContainText(/password/i);
   await floors(page, "Team › Security");
