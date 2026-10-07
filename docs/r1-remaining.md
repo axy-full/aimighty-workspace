@@ -1,4 +1,4 @@
-# Release 1: what is left (7 October 2026, 18:00 IST)
+# Release 1: what is left (7 October 2026, updated 23:59 IST)
 
 Base: `release/1` @ ac03f878 plus open branches. Estimates are agent-hours (build + review); calendar assumes about 4 parallel lanes. Confidence is low where a screen has never been shot. Nothing merges to main without the owner's "go".
 
@@ -24,12 +24,12 @@ Base: `release/1` @ ac03f878 plus open branches. Estimates are agent-hours (buil
 
 | # | Item | State | What is left | Blocked on | Estimate |
 |---|---|---|---|---|---|
-| 14 | Image-ad variants and presets | Ad card and preset catalogue exist; variants not ported | Port to the board card, Product image naming, prices, five sizes | No variants frame found: may need Claude Design | 8–12 h, 1.5 days |
+| ~~14~~ | ~~Image-ad variants and presets~~ (owner, 23:55: dropped from Release 1; after-release list) | Ad card and preset catalogue exist; variants not ported | Port to the board card, Product image naming, prices, five sizes | No variants frame found: may need Claude Design | 8–12 h, 1.5 days |
 | 15 | Phone Make quick tools and Recent | Phone Make is the simple one; no phone frame for these | Draw in Claude Design, then build | Design | 6–10 h after frames |
 | 16 | Phone Activity, Memory, Skills | "Open this on a larger screen" today | Draw three phone frames, then build | Design | 8–12 h after frames |
 | 17 | Captions in the browser (Cut, "Use as captions") | Not built, hidden; frames in Gaps A | Browser caption layer and browser export | Owner scope | 12–20 h, 2 days |
 
-## C. Not Release 1 by the scope (recommend leaving out)
+## C. After-release list (owner: out of Release 1)
 
 | # | Item | Why later | Estimate |
 |---|---|---|---|
@@ -42,3 +42,14 @@ Base: `release/1` @ ac03f878 plus open branches. Estimates are agent-hours (buil
 - A (ship-blocking): about 75–125 agent-hours, about 3–4 calendar days with 4 lanes, plus the owner's answers and preview review.
 - B (if in scope): about 35–55 h, about 1.5 days after design frames.
 - C: 2–4 weeks plus infrastructure and accounts.
+
+## Progress since 18:00 (23:59 IST)
+- A1 CI: about 240 failing tests at 16:00 → 2 test-side expectations left on release/1 ef7beb21 (being fixed).
+- A2 stale-tab double payment: fixed, reviewed, in release/1.
+- A4 five-minute test: passes on desktop (86–103 s) and phone (72–112 s); a phone review bug it found (Undo toast lost on the last take) is being fixed; phone tap budget is owner question 13.
+- A5 3D blocking B: in release/1.
+- A6 D0 shell: checked at five sizes, two bugs fixed, in release/1.
+- A10 "Particl demo" cap: reviewed, in release/1 (owner: $0 cap, 100 cr grant on "run"; Atomik text counts).
+- A12 old pages: 155 unreachable files deleted (in release/1); the still-mountable old Business/Crew/Inspector screens are being cut.
+- After-release list now also holds: image-ad variants and presets; Atomik's idea draft; IPv6 /64 rate-limit buckets; a per-email sign-in slow-down; the guard and wording lows from tonight's reviews.
+
