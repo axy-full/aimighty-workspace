@@ -907,6 +907,7 @@ test("a completed refusal is final and lets go; one the server has not settled k
   const body = { sourceGenId: "gen_a", projectId: "prod", diarize: true, maxCredits: 3 };
   const answers: [Answer, unknown, boolean][] = [
     [{ status: 502, json: { error: "Grok could not transcribe this take (500). Nothing was charged for it.", charged: 0 }, headers: { "Idempotency-Status": "complete" } },
+      /* The server's own `charged` figure comes through, so a card may say Nothing billed only when it is 0. */
       { state: "released", reason: "Grok could not transcribe this take (500). Nothing was charged for it.", failed: true, charged: 0 }, false],
     [{ status: 409, json: { error: "The transcription estimate exceeds the approved credit amount. Review the price before submitting.", estimatedCredits: 5 }, headers: { "Idempotency-Status": "complete" } },
       { state: "released", reason: "The transcription estimate exceeds the approved credit amount. Review the price before submitting.", failed: true, repriced: 5 }, false],

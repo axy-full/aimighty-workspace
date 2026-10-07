@@ -98,3 +98,15 @@ export async function emptyLibrary(page: Page) {
     return json(route, source === "generations" ? { generations: [], nextPageCursor: null } : { uploads: [], nextCursor: null });
   });
 }
+
+/**
+ * Opens a project's board. The first visit after the dev server compiled a route can land on Home while the project list is still
+ * being read; the project is there, so the address is asked for once more before the spec decides the board is missing.
+ */
+export async function gotoBoard(page: Page, projectId: string) {
+  const url = `/suites?project=${projectId}&view=board`;
+  await page.goto(url);
+  const shown = await page.getByTestId("board").waitFor({ state: "visible", timeout: 25_000 }).then(() => true, () => false);
+  if (!shown) await page.goto(url);
+  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
+}

@@ -1,0 +1,12 @@
+/* Earlier scripts (owner decision 11): a quiet list under the script's controls. Tokens only: app/graphite.css. */
+.gx-es { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.gx-es-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 8px 0; border: 0; border-top: 1px solid var(--gx-hair-soft); background: transparent; color: var(--gx-text); font: 600 13px/1.4 var(--gx-font); cursor: pointer; text-align: left; }
+.gx-es-head:focus-visible, .gx-es-btn:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gx-es-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.gx-es-row { display: flex; flex-direction: column; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--gx-hair-soft); }
+.gx-es-meta { font: 12px/1.4 var(--gx-mono); color: var(--gx-text-2); }
+.gx-es-gist { font-size: var(--gx-fs-body); line-height: 1.45; color: var(--gx-text); overflow-wrap: anywhere; }
+.gx-es-btn { align-self: flex-start; height: 28px; padding: 0 10px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); white-space: nowrap; cursor: pointer; }
+.gx-es-btn:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx-es-btn:disabled { color: var(--gx-disabled); cursor: default; }
+@media (max-width: 767px) { .gx-es-btn, .gx-es-head { min-height: 44px; } }
