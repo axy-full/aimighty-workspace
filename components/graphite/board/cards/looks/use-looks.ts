@@ -41,14 +41,17 @@ export function useShowMeLooks(seam: DraftSeam, answers: Answers, readOnly: stri
   const priced = useMemo(() => (project && aspect && project.aspect !== aspect ? { ...project, aspect } : project), [project, aspect]);
   const toMake = useMemo(() => (priced ? looks(priced).toMake : []), [priced]);
   const extra = lookWords(answers);
+  /* What a still costs is its model, size and references, not the typed words: the price is read for the looks as the
+     answers shape them (aspect, cast picture) without the words, so typing in a field never takes the price away.
+     What is sent carries the words, at this price or refused as moved (dispatchGeneration). */
+  const reference = useMemo(() => (priced ? castReference(priced, answers) : null), [priced, answers]);
   const requests = useMemo(() => {
     if (!priced) return {};
-    const reference = castReference(priced, answers);
     return Object.fromEntries(toMake.flatMap((preset) => {
-      const input = lookRequest(priced, { prompt: lookPrompt(priced, preset, extra) }, reference);
+      const input = lookRequest(priced, { prompt: lookPrompt(priced, preset) }, reference);
       return input ? [[preset.id, { body: generationRequestBody(input) }]] : [];
     }));
-  }, [priced, toMake, extra, answers]);
+  }, [priced, toMake, reference]);
   const pricing = useStageQuotes(scope, requests);
   const ids = Object.keys(requests);
   const credits = ids.map((id) => pricing.quotes[id]?.credits);

@@ -2,7 +2,7 @@
 import { usePriceTitle } from "@/components/graphite/Price";
 import { priceWords, type PriceValue } from "@/lib/shell/price-words";
 import type { Project } from "@/lib/workbench/studio";
-import { judgement, questionsFor, withChip, withWords, type Answers } from "./model";
+import { judgement, looksButton, questionsFor, withChip, withWords, type Answers } from "./model";
 import "./questions.css";
 
 /** "Show me looks · N cr": its price from the server, and what pressing it does (the looks' own path). */
@@ -32,7 +32,7 @@ export function QuestionsBlock({ project, answers, onAnswers, showLooks, readOnl
   const questions = questionsFor(project);
   const title = usePriceTitle(showLooks.price);
   const words = showLooks.price ? priceWords(showLooks.price) : null;
-  const blocked = readOnly ?? showLooks.blocked;
+  const button = looksButton({ words, pricing: showLooks.pricing, blocked: readOnly ?? showLooks.blocked, busy: showLooks.busy });
   return (
     <div className="gx-q" data-testid={testId}>
       {questions.map((q) => (
@@ -55,15 +55,15 @@ export function QuestionsBlock({ project, answers, onAnswers, showLooks, readOnl
         {showLooks.pricing === "error" ? (
           <button type="button" className="gx-q-secondary" onClick={showLooks.onTryAgain} data-testid={`${testId}-try-again`}>Try again</button>
         ) : (
-          <button type="button" className="gx-q-primary" title={title ?? undefined} disabled={Boolean(blocked) || !words || showLooks.busy}
+          <button type="button" className="gx-q-primary" title={title ?? undefined} disabled={button.disabled}
             onClick={showLooks.onPress} data-testid={`${testId}-looks`}>
-            {showLooks.busy ? "Sending looks…" : words ? `Show me looks · ${words}` : "Show me looks"}
+            {button.label}
           </button>
         )}
         <button type="button" className="gx-q-secondary" disabled={Boolean(readOnly)} onClick={() => onAnswers(judgement(project))} data-testid={`${testId}-judgement`}>
           Use your judgement
         </button>
-        {blocked && !showLooks.busy ? <span className="gx-q-why" role="status">{blocked}</span> : null}
+        {button.why && showLooks.pricing !== "error" ? <span className="gx-q-why" role="status" data-testid={`${testId}-why`}>{button.why}</span> : null}
         {showLooks.pricing === "error" ? <span className="gx-q-why" role="status">The price could not be read.</span> : null}
       </div>
     </div>

@@ -94,3 +94,22 @@ export function showQuestions(project: Pick<Project, "brief" | "production">, ru
   if (Object.keys(project.production?.boards?.looks ?? {}).length) return false;
   return !run || ["done", "stopped", "failed"].includes(run.state);
 }
+
+/**
+ * What "Show me looks" says and whether it can be pressed. A spend control is never enabled without its price: it reads
+ * "Show me looks · N cr" once the server has priced the looks, and until then it is disabled with the reason beside it
+ * ("Getting the price…", or why there is no price to get). `words` is the price as words ("43 cr", "up to 69 cr");
+ * `blocked` is what already stops it (read-only, sending, nothing left to make). Pure.
+ */
+export function looksButton({ words, pricing, blocked, busy }: {
+  words: string | null;
+  pricing: "none" | "loading" | "ready" | "error";
+  blocked: string | null;
+  busy: boolean;
+}): { label: string; disabled: boolean; why: string | null } {
+  if (busy) return { label: "Sending looks…", disabled: true, why: null };
+  const label = words ? `Show me looks · ${words}` : "Show me looks";
+  if (blocked) return { label, disabled: true, why: blocked };
+  if (!words) return { label, disabled: true, why: pricing === "loading" ? "Getting the price…" : "There is no price for the looks yet." };
+  return { label, disabled: false, why: null };
+}

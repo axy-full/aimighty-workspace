@@ -135,3 +135,49 @@ test("Draw the storyboard: every shot without a frame is priced by the server an
   await page.screenshot({ path: `${SHOTS}/storyboard-drawn-${info.project.name.replace("workbench-", "")}.png` });
   expect(await overflow(page)).toBeLessThanOrEqual(0);
 });
+
+test("Show me looks keeps its price in the outline style while Make is open, and never stands enabled without one", async ({ page }) => {
+  test.skip(!desktop(page), "the canvas and the docked panel are desktop only");
+  const { project } = await seed(page);
+  await page.addInitScript(() => { try { sessionStorage.setItem("s04q", "1"); } catch { /* storage off */ } });
+  await page.goto(`/suites?project=${project.id}&view=board&make=video`);
+  await expect(page.getByTestId("make-panel")).toBeVisible({ timeout: 30_000 });
+  const block = page.getByTestId("board-questions");
+  const mounted = await block.waitFor({ state: "visible", timeout: 20_000 }).then(() => true, () => false);
+  test.skip(!mounted, "the docked Atomik panel does not mount the questions on this branch");
+  const looks = block.getByTestId("board-questions-looks");
+
+  /* At no moment is it enabled without a price; while the price is read it waits with its reason beside it. */
+  await page.evaluate(() => {
+    const w = window as unknown as { __unpriced?: number };
+    w.__unpriced = 0;
+    new MutationObserver(() => {
+      const b = document.querySelector<HTMLButtonElement>('[data-testid="board-questions-looks"]');
+      if (b && !b.disabled && !/ · .+ cr$|free$/.test(b.textContent ?? "")) w.__unpriced = (w.__unpriced ?? 0) + 1;
+    }).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+  });
+  await expect(looks).toHaveText(/^Show me looks · [\d.,]+ cr$/, { timeout: 30_000 });
+  await expect(looks).toBeEnabled();
+  expect(await page.evaluate(() => (window as unknown as { __unpriced: number }).__unpriced)).toBe(0);
+
+  /* The outline style: transparent, bordered, and the price readable (at least 12 px, at least 55 % white). */
+  const style = await looks.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { bg: s.backgroundColor, border: s.borderTopWidth, size: parseFloat(s.fontSize), color: s.color, opacity: s.opacity };
+  });
+  expect(style.bg).toBe("rgba(0, 0, 0, 0)");
+  expect(style.border).toBe("1px");
+  expect(style.size).toBeGreaterThanOrEqual(12);
+  expect(Number(style.opacity)).toBe(1);
+  expect(Number(/rgba?\([^)]*?,\s*([\d.]+)\)$/.exec(style.color)?.[1] ?? 1)).toBeGreaterThanOrEqual(0.55);
+
+  /* Typing in a field does not take the price away (it is read for the looks, not for the words). */
+  await block.getByLabel(/Format: in your words/).fill("Square, for a feed");
+  await expect(looks).toHaveText(/^Show me looks · [\d.,]+ cr$/);
+  /* A change that does move the price waits with its reason, then reads it again. */
+  await block.getByRole("group").nth(0).getByRole("button", { name: /^9:16/ }).click();
+  await expect(looks).toHaveText(/^Show me looks · [\d.,]+ cr$/, { timeout: 30_000 });
+  await expect(looks).toBeEnabled();
+  expect(await page.evaluate(() => (window as unknown as { __unpriced: number }).__unpriced)).toBe(0);
+  expect(await overflow(page)).toBeLessThanOrEqual(0);
+});
