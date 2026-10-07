@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
-  editsFrozen, resetSwitchForTests, sendsAllowed, subscribeSwitch, switchState, switchWorkspace,
-  SWITCH_FAILED, SWITCH_TOO_LONG, UNSAVED_AGAIN, UNSAVED_BEFORE_SWITCH, type SwitchPhase,
+  createHeldEdits, editsFrozen, registerDrain, resetSwitchForTests, sendsAllowed, subscribeSwitch, switchState, switchWorkspace, whileSwitching,
+  SWITCH_FAILED, SWITCH_TOO_LONG, SWITCHING, UNSAVED_AGAIN, UNSAVED_BEFORE_SWITCH, type Drain, type SwitchPhase,
 } from "../../lib/shell/switch-workspace";
 
 /**
@@ -41,10 +41,16 @@ function heldDrain(events: string[], later = true) {
 
 const flushed = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+/** A switch with `drain` registered as the only editor (null: no editor registered at all, a page with no board). */
+function withDrain(drain: Drain | null, request: Parameters<typeof switchWorkspace>[0]) {
+  const off = drain ? registerDrain(drain) : () => {};
+  return switchWorkspace(request).finally(off);
+}
+
 test("the pending save goes out first, then once more; the switch is asked only once it saved, then the page leaves", async () => {
   const h = harness();
   const held = heldDrain(h.events);
-  const result = switchWorkspace({ id: "ws-b", fetch: h.fetch, go: h.go, drain: held.drain });
+  const result = withDrain(held.drain, { id: "ws-b", fetch: h.fetch, go: h.go });
   await flushed();
   expect(h.events, "nothing is asked while the save is out").toEqual(["drain(draining, frozen=true, sends=true)"]);
   held.release(true);
@@ -71,7 +77,7 @@ test("the phases in order, for whoever watches (the veil, the board, every switc
   const seen: SwitchPhase[] = [];
   const stop = subscribeSwitch(() => seen.push(switchState().phase));
   const h = harness(() => Response.json({ error: "Not a workspace of yours." }, { status: 403 }));
-  await switchWorkspace({ id: "ws-b", fetch: h.fetch, go: h.go, drain: async () => true });
+  await withDrain(async () => true, { id: "ws-b", fetch: h.fetch, go: h.go });
   stop();
   expect(seen).toEqual(["draining", "posting", "idle"]);
   expect(editsFrozen()).toBe(false);
@@ -81,7 +87,7 @@ test("the phases in order, for whoever watches (the veil, the board, every switc
 test("a save that failed: no switch is asked, the page stays and unfreezes, and it says so plainly; failing again, it says what to do", async () => {
   const h = harness();
   const held = heldDrain(h.events);
-  const result = switchWorkspace({ id: "ws-b", fetch: h.fetch, go: h.go, drain: held.drain });
+  const result = withDrain(held.drain, { id: "ws-b", fetch: h.fetch, go: h.go });
   await flushed();
   held.release(false);
   expect(await result).toBe(UNSAVED_BEFORE_SWITCH);
@@ -90,19 +96,19 @@ test("a save that failed: no switch is asked, the page stays and unfreezes, and 
   expect(switchState().phase).toBe("idle");
   expect(editsFrozen()).toBe(false);
 
-  expect(await switchWorkspace({ id: "ws-b", fetch: h.fetch, go: h.go, drain: async () => false })).toBe(UNSAVED_AGAIN);
+  expect(await withDrain(async () => false, { id: "ws-b", fetch: h.fetch, go: h.go })).toBe(UNSAVED_AGAIN);
   expect(UNSAVED_AGAIN).toBe("Your last edit could not be saved. Copy it somewhere safe, then reload.");
   /* Once a save goes through, the count starts again. */
   const ok = harness(() => Response.json({ error: "Not a workspace of yours." }, { status: 403 }));
-  await switchWorkspace({ id: "ws-b", fetch: ok.fetch, go: ok.go, drain: async () => true });
-  expect(await switchWorkspace({ id: "ws-b", fetch: h.fetch, go: h.go, drain: async () => false })).toBe(UNSAVED_BEFORE_SWITCH);
+  await withDrain(async () => true, { id: "ws-b", fetch: ok.fetch, go: ok.go });
+  expect(await withDrain(async () => false, { id: "ws-b", fetch: h.fetch, go: h.go })).toBe(UNSAVED_BEFORE_SWITCH);
   expect(h.events.filter((e) => e.startsWith("switch"))).toEqual([]);
 });
 
 test("the second save, just before the route, failing: no switch is asked", async () => {
   const h = harness();
   const held = heldDrain(h.events, false);
-  const result = switchWorkspace({ id: "ws-b", fetch: h.fetch, go: h.go, drain: held.drain });
+  const result = withDrain(held.drain, { id: "ws-b", fetch: h.fetch, go: h.go });
   await flushed();
   held.release(true);
   expect(await result).toBe(UNSAVED_BEFORE_SWITCH);
@@ -111,14 +117,14 @@ test("the second save, just before the route, failing: no switch is asked", asyn
 
 test("a save that threw counts as not saved: no switch is asked", async () => {
   const h = harness();
-  const result = await switchWorkspace({ id: "ws-b", fetch: h.fetch, go: h.go, drain: () => Promise.reject(new Error("offline")) });
+  const result = await withDrain(() => Promise.reject(new Error("offline")), { id: "ws-b", fetch: h.fetch, go: h.go });
   expect(result).toBe(UNSAVED_BEFORE_SWITCH);
   expect(h.events).toEqual([]);
 });
 
 test("a refused switch: the route's own sentence, and the page stays, unfrozen", async () => {
   const h = harness(() => Response.json({ error: "Not a workspace of yours." }, { status: 403 }));
-  const result = await switchWorkspace({ id: "ws-x", fetch: h.fetch, go: h.go, drain: async () => true });
+  const result = await withDrain(async () => true, { id: "ws-x", fetch: h.fetch, go: h.go });
   expect(result).toBe("Not a workspace of yours.");
   expect(h.events).toEqual(["switch(posting)"]);
   expect(switchState()).toEqual({ phase: "idle", id: null });
@@ -142,14 +148,14 @@ test("a dropped connection: its message, and the page stays", async () => {
 
 test("where nothing is ever pending (no board), the switch is asked at once", async () => {
   const h = harness();
-  expect(await switchWorkspace({ id: "ws-b", fetch: h.fetch, go: h.go, drain: null })).toBeNull();
+  expect(await withDrain(null, { id: "ws-b", fetch: h.fetch, go: h.go })).toBeNull();
   expect(h.events).toEqual(["switch(posting)", "go(leaving)"]);
 });
 
 test("too long while saving: it says so, unfreezes, and the route is never asked, even when the save lands later", async () => {
   const h = harness();
   const held = heldDrain(h.events);
-  const result = await switchWorkspace({ id: "ws-b", fetch: h.fetch, go: h.go, drain: held.drain, timeoutMs: 30 });
+  const result = await withDrain(held.drain, { id: "ws-b", fetch: h.fetch, go: h.go, timeoutMs: 30 });
   expect(result).toBe(SWITCH_TOO_LONG);
   expect(switchState().phase).toBe("idle");
   held.release(true);
@@ -164,9 +170,11 @@ test("too long while the route answers: the request is cancelled, it says so, an
   const h = harness((init) => new Promise<Response>((_, reject) => {
     init?.signal?.addEventListener("abort", () => { aborted = true; reject(new DOMException("aborted", "AbortError")); });
   }));
-  const result = await switchWorkspace({ id: "ws-b", fetch: h.fetch, go: h.go, drain: async () => true, timeoutMs: 30 });
+  const asked: string[] = [];
+  const result = await withDrain(async () => true, { id: "ws-b", fetch: h.fetch, go: h.go, timeoutMs: 30, whoami: async () => { asked.push(switchState().phase); return "ws-a"; } });
   expect(result).toBe(SWITCH_TOO_LONG);
   expect(aborted).toBe(true);
+  expect(asked, "who this session is now was asked, still frozen").toEqual(["posting"]);
   await flushed();
   expect(h.events).toEqual(["switch(posting)"]);
   expect(switchState().phase).toBe("idle");
@@ -175,8 +183,8 @@ test("too long while the route answers: the request is cancelled, it says so, an
 test("a second press while one runs starts nothing of its own and gets the same answer", async () => {
   const h = harness();
   const held = heldDrain(h.events);
-  const first = switchWorkspace({ id: "ws-b", fetch: h.fetch, go: h.go, drain: held.drain });
-  const second = switchWorkspace({ id: "ws-c", fetch: h.fetch, go: h.go, drain: held.drain });
+  const first = withDrain(held.drain, { id: "ws-b", fetch: h.fetch, go: h.go });
+  const second = withDrain(held.drain, { id: "ws-c", fetch: h.fetch, go: h.go });
   await flushed();
   held.release(true);
   expect(await first).toBeNull();
@@ -191,4 +199,54 @@ test("once a refused switch has ended, a new press is its own switch again", asy
   const ok = harness();
   expect(await switchWorkspace({ id: "ws-c", fetch: ok.fetch, go: ok.go })).toBeNull();
   expect([...refused.events, ...ok.events]).toEqual(["switch(posting)", "switch(posting)", "go(leaving)"]);
+});
+
+test("too long while the route answers, but the switch landed all the same: the page leaves", async () => {
+  const h = harness(() => new Promise<Response>(() => {}));
+  const result = await withDrain(async () => true, { id: "ws-b", fetch: h.fetch, go: h.go, timeoutMs: 30, whoami: async () => "ws-b" });
+  expect(result).toBeNull();
+  expect(h.events).toEqual(["switch(posting)", "go(leaving)"]);
+  expect(switchState().phase).toBe("leaving");
+});
+
+test("every registered editor is drained, in turn, twice, before the route; one that left is not; one that fails stops it", async () => {
+  const events: string[] = [];
+  const board = registerDrain(async () => { events.push("board"); return true; });
+  const store = registerDrain(async () => { events.push("store"); return true; });
+  const gone = registerDrain(async () => { events.push("gone"); return true; });
+  gone();
+  const h = harness(() => Response.json({ error: "Not a workspace of yours." }, { status: 403 }));
+  await switchWorkspace({ id: "ws-b", fetch: async (url, init) => { events.push("switch"); return h.fetch(url, init); }, go: h.go });
+  expect(events).toEqual(["board", "store", "board", "store", "switch"]);
+  events.length = 0;
+  const failing = registerDrain(async () => { events.push("edit & sound"); return false; });
+  expect(await switchWorkspace({ id: "ws-b", fetch: async () => { events.push("switch"); return Response.json({ ok: true }); }, go: h.go })).toBe(UNSAVED_BEFORE_SWITCH);
+  expect(events).toEqual(["board", "store", "edit & sound"]);
+  board(); store(); failing();
+});
+
+test("an editing call while a switch runs is refused with \"Switching…\", in every phase but idle", async () => {
+  expect(whileSwitching()).toBeNull();
+  const seen: (string | null)[] = [];
+  const stop = subscribeSwitch(() => seen.push(`${switchState().phase}:${whileSwitching()}`));
+  const h = harness(() => Response.json({ error: "Not a workspace of yours." }, { status: 403 }));
+  await withDrain(async () => true, { id: "ws-b", fetch: h.fetch, go: h.go });
+  stop();
+  expect(seen).toEqual([`draining:${SWITCHING}`, `posting:${SWITCHING}`, "idle:null"]);
+  expect(SWITCHING).toBe("Switching…");
+});
+
+test("held edits replay as updaters onto the draft as it is then, never as a project computed before (stale replay)", () => {
+  type Draft = { nodes: string[]; title: string };
+  const held = createHeldEdits<(d: Draft) => Draft>();
+  let draft: Draft = { nodes: ["shot-1"], title: "Before" };
+  /* While the switch ran: the app retitled the draft, held. */
+  held.hold((d) => ({ ...d, title: "Filed take" }));
+  /* Meanwhile the drain's save merged in another window's new shot. */
+  draft = { ...draft, nodes: [...draft.nodes, "shot-from-another-window"] };
+  /* The switch did not happen: the held edit runs now, on the draft as it is. */
+  expect(held.size).toBe(1);
+  for (const edit of held.release()) draft = edit(draft);
+  expect(draft).toEqual({ nodes: ["shot-1", "shot-from-another-window"], title: "Filed take" });
+  expect(held.size).toBe(0);
 });
