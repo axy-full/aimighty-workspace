@@ -62,7 +62,6 @@ function door(dirName: string, actor: AdmissionActor = OWNER): Handler {
 }
 
 /** One request per paid door: a body each door would accept far enough to spend, with the id its path needs. */
-const RUN = "rar_0123456789abcdef01234567";
 const DIGEST = "a".repeat(64);
 const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
   { dir: "generate", body: { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5 } },
@@ -259,5 +258,38 @@ test("a workspace whose settings cannot be read spends nothing on that request (
       expect(off?.status).toBe(503);
       expect(await off?.json()).toMatchObject({ charged: 0 });
     } finally { await db().execute("ALTER TABLE settings_away RENAME TO settings"); }
+  });
+});
+
+/** A take that waited (held) before the workspace became the sample: the doors that start it are not routes of their own. */
+async function heldTake(id: string) {
+  const { db } = await import("../../lib/db");
+  await db().execute({
+    sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,billed_to,task)
+          VALUES(?,'video','byteplus','dreamina-seedance-2-0-260128','test',?,'held','owner',?,?,'byteplus','generate')`,
+    args: [id, JSON.stringify({ ratio: "16:9", resolution: "720p", duration: 5, watermark: false, held: { estUsd: 1, needs: 15, at: 1, why: "slots" } }), Date.now(), Date.now()],
+  });
+}
+async function heldStatus(id: string) {
+  const { db } = await import("../../lib/db");
+  return String((await db().execute({ sql: "SELECT status FROM generations WHERE id=?", args: [id] })).rows[0]?.status);
+}
+
+test("a take held before the workspace was marked starts nothing: neither a person's release nor the server's own pass sends or meters it", async () => {
+  const { releaseHeldJobs } = await import("../../lib/held");
+  await scope(name("held"), { sample: true }, async () => {
+    await heldTake("gen_held_a");
+    const own = await releaseHeldJobs({ only: "gen_held_a" });
+    expect(own.released).toEqual([]);
+    expect(own.refused).toMatchObject({ status: 409, error: SAMPLE_LINE });
+    expect((await releaseHeldJobs()).released).toEqual([]);
+    expect(await heldStatus("gen_held_a")).toBe("held");
+    expect(await traces()).toMatchObject({ meters: 0, reservations: 0, provider: 0 });
+  });
+  /* Another workspace's held take is not refused in the sample's words. */
+  await scope(name("held-other"), {}, async () => {
+    await heldTake("gen_held_b");
+    const out = await releaseHeldJobs({ only: "gen_held_b" });
+    expect(out.refused?.error ?? "").not.toBe(SAMPLE_LINE);
   });
 });

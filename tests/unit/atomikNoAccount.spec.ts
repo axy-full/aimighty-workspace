@@ -288,6 +288,8 @@ async function route(file: string, fake: Record<string, unknown>): Promise<Recor
       requireUser: async () => ({ user: { id: "owner", owner: true } }),
       requireRender: async () => ({ user: { id: "owner", owner: true } }),
     },
+    /* Not the sample workspace: the claim route's own check answers null. */
+    "@/lib/demo/spend-guard.server": { sampleWorkspaceOff: async () => null },
     "@/lib/atomik": fake,
     "@/lib/atomikAccountStep": await import("../../lib/atomikAccountStep"),
     /* The claim route also refuses a step of an archived thread (lib/atomikThreads.ts); an account step is refused first. */

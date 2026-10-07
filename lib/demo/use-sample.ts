@@ -49,13 +49,16 @@ function readSampleWorkspace(scope: string | null): Promise<boolean> {
 /** The sample's line when this workspace is the sample workspace (nothing here spends), else null. Null while it loads. */
 export function useSampleWorkspace(): string | null {
   const { requestScope, signedIn } = useSession();
-  const [off, setOff] = useState(false);
+  /* The answer is kept with the scope it was read for, so a signed-out or changed scope reads as "no" with no reset. */
+  const [answer, setAnswer] = useState<{ scope: string; on: boolean } | null>(null);
+  const scope = requestScope ?? "";
   useEffect(() => {
-    if (!signedIn) { setOff(false); return; }
+    if (!signedIn) return;
     let live = true;
-    void readSampleWorkspace(requestScope ?? null).then((on) => { if (live) setOff(on); });
+    void readSampleWorkspace(requestScope ?? null).then((on) => { if (live) setAnswer({ scope, on }); });
     return () => { live = false; };
-  }, [requestScope, signedIn]);
+  }, [requestScope, scope, signedIn]);
+  const off = signedIn && answer?.scope === scope && answer.on;
   return off ? SAMPLE_LINE : null;
 }
 
