@@ -644,3 +644,32 @@ export async function openOriginalStream(
     size: range ? range.end - range.start + 1 : st.size,
   };
 }
+
+/* ── Consent recordings (lib/security/consent.ts) ──────────────────────────
+   A person's recorded agreement to an identity of their face or voice. Kept
+   apart from uploads on purpose: its own path, never listed in the library,
+   never a reference an engine can be sent, and read only through the consent
+   route, which lets the recorder, an owner or an admin hear it, by session. */
+export const consentRecordingPath = (id: string, ext: string) => `${prefix()}consents/${id}.${ext}`;
+const CONSENT_DIR = path.join(process.cwd(), ".data", "consents");
+const localConsentFile = (id: string, ext: string) => path.join(CONSENT_DIR, prefix().replace(/\//g, "_"), `${id}.${ext}`);
+
+export async function storeConsentRecordingBytes(id: string, ext: string, buf: Buffer, contentType: string): Promise<string> {
+  return await withRecoveryActivity("storage", async () => {
+    if (!/^[A-Za-z0-9_-]+$/.test(id) || !/^[a-z0-9]{1,5}$/.test(ext)) throw new Error("bad recording id");
+    if (usingCloud()) {
+      await cloudBackend().put(consentRecordingPath(id, ext), buf, { contentType, overwrite: true });
+      return consentRecordingPath(id, ext);
+    }
+    const file = localConsentFile(id, ext);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, buf);
+    return consentRecordingPath(id, ext);
+  });
+}
+
+export async function readConsentRecordingBytes(id: string, ext: string): Promise<Buffer> {
+  if (!/^[A-Za-z0-9_-]+$/.test(id) || !/^[a-z0-9]{1,5}$/.test(ext)) throw new Error("bad recording id");
+  if (usingCloud()) return readCloud(consentRecordingPath(id, ext));
+  return readFile(localConsentFile(id, ext));
+}

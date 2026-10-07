@@ -9,6 +9,7 @@ import { requestAccountRefresh } from "@/lib/workspace/data";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { mayRelease } from "@/lib/workspace/release";
 import { useOptionalToast } from "@/lib/workspace/state";
+import { cinemaPriceWords, holdBandOf } from "@/lib/cinemaHold";
 
 /**
  * Release, on a take held for credits (TakeStatus "held"): the exact credits
@@ -42,6 +43,7 @@ export function ReleaseTake({ entry, onReleased, place }: { entry: LibraryEntry;
   const generation = asset.origin === "generation" ? asset.value : null;
   if (spendOff || !generation || take.status !== "held") return null;
   const credits = repriced ?? take.needs ?? null;
+  const band = holdBandOf(generation.model);
   if (credits == null || !mayRelease({ id: session.userId, role: session.role }, generation.createdBy)) return null;
   const admin = session.role === "owner" || session.role === "admin";
   const release = async () => {
@@ -81,7 +83,8 @@ export function ReleaseTake({ entry, onReleased, place }: { entry: LibraryEntry;
       <button type="button" className="gx-hbtn gx-release-btn" disabled={busy} aria-busy={busy} data-testid="take-release" data-spend="priced"
         onClick={(event) => { event.stopPropagation(); void release(); }}>
         {/* The price stays whole: it may drop to a second line on a narrow tile, never be cut. */}
-        {busy ? "Releasing…" : <>Release<span className="sr-only"> {take.name}</span> · {credits.toLocaleString("en-US")}{"\u00a0"}cr</>}
+        {/* A held Cinema Studio take's Release approves its hold, said as every approval of it says it (lib/cinemaHold.ts). */}
+        {busy ? "Releasing…" : <>Release<span className="sr-only"> {take.name}</span> · {band > 1 ? cinemaPriceWords(credits / band, credits) : <>{credits.toLocaleString("en-US")}{"\u00a0"}cr</>}</>}
       </button>
       {note ? (
         <p ref={noteRef} className="gx-release-note" data-tone={note.tone} role={note.tone === "short" ? "status" : "alert"} data-testid="take-release-note">

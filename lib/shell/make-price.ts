@@ -1,4 +1,5 @@
 import { isCinemaStudioModel } from "../cinemaStudioTypes";
+import { cinemaPriceParts } from "../cinemaHold";
 import type { ComposerModel, ComposerPicks, ComposerQuote, ComposerType, ModelPreference } from "../workspace/composer";
 import { composerSettings, DEFAULT_MODEL_PREFERENCE, shownTotal } from "../workspace/composer";
 import { exact, priceWords, upTo, type PriceValue } from "./price-words";
@@ -9,20 +10,16 @@ import { exact, priceWords, upTo, type PriceValue } from "./price-words";
  * (the composer's live quote, the engines route's priced list) or nothing.
  *
  * Cinema Studio is the one engine whose quote is approximate, and it has its own wording (decision 18):
- * "about N cr, at most 3N cr", from #523's `cinemaPriceParts` in lib/cinemaHold.ts. That file is not on
- * this branch, so the wording sits behind `cinemaParts` below: it says what main says today
- * ("about N cr"). When #523 is merged, `cinemaParts` returns `cinemaPriceParts(credits)` and every
- * screen below (button, engine line, sheet row, Again) follows; nothing else changes.
+ * "about N cr, at most 3N cr", from `cinemaPriceParts` in lib/cinemaHold.ts, the one wording every screen
+ * that approves a Cinema Studio take uses (button, engine line, sheet row, Again).
  */
 
 /**
- * THE FLAG: whether Make offers Cinema Studio 4.0 at all. Off until #523 (Cinema Studio holds 3N) is merged and money-reviewed:
- * Make may say "about N cr, at most 3N cr" only when that bound is real, and it is real only once the hold is. While it is
- * off, Make's engine list, sheet, default, recipes and Again do not include the engine (a take recreated from a Cinema take
- * lands on Make's own default engine, and says so). To turn it on: set this to true AND swap `cinemaParts` below to
- * `cinemaPriceParts(credits)` in the same change.
+ * THE FLAG: whether Make offers Cinema Studio 4.0 at all. On: its 3N hold is in (lib/cinemaHold.ts; admission holds 3N,
+ * every cap reads the hold, settlement never passes it), so "about N cr, at most 3N cr" is a real bound. Off, Make's
+ * engine list, sheet, default, recipes and Again would not include the engine.
  */
-export const MAKE_SHOWS_CINEMA = false;
+export const MAKE_SHOWS_CINEMA = true;
 
 /** The engines Make does not offer (passed to the composer as `hide`). */
 export const hiddenInMake = (modelId: string): boolean => !MAKE_SHOWS_CINEMA && isCinemaStudioModel(modelId);
@@ -60,8 +57,7 @@ export const makeQuoteValue = (credits: number | null | undefined, type: Compose
 
 /** Cinema Studio's price as its runs of words; a screen that wraps it breaks only between runs, never inside a figure. */
 export function cinemaParts(credits: number): string[] {
-  /* TODO(#523): `return cinemaPriceParts(credits);` from "../cinemaHold" once that PR is on this branch. */
-  return [`about ${credits.toLocaleString("en-US")} cr`];
+  return cinemaPriceParts(credits);
 }
 
 /** A figure as Make draws it: an exact one (Price draws it, dollars on hover), or Cinema Studio's approximate one. */

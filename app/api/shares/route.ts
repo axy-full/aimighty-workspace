@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser, withTenant } from "@/lib/auth";
+import { requireSession, requireUser, withTenant } from "@/lib/auth";
 import { currentTenant } from "@/lib/tenant";
 import { mintShare, listShares, revokeShare, shareLive, SHARE_DAYS, MAX_SHARE_DAYS } from "@/lib/shares";
 
@@ -16,8 +16,10 @@ export const GET = withTenant(async function GET(req: Request) {
   return NextResponse.json({ shares: shares.map((s) => ({ ...s, live: shareLive(s) })), days: SHARE_DAYS, maxDays: MAX_SHARE_DAYS });
 });
 
+/* Making or withdrawing a link that opens a production to someone outside the workspace is a person's act:
+   an API or MCP token, even an admin's, is refused (requireSession). */
 export const POST = withTenant(async function POST(req: Request) {
-  const got = await requireUser();
+  const got = await requireSession();
   if (got.response) return got.response;
   if (got.user.role !== "admin") return NextResponse.json({ error: "An admin makes a review link." }, { status: 403 });
   const ws = currentTenant()?.workspace;
@@ -29,7 +31,7 @@ export const POST = withTenant(async function POST(req: Request) {
 });
 
 export const DELETE = withTenant(async function DELETE(req: Request) {
-  const got = await requireUser();
+  const got = await requireSession();
   if (got.response) return got.response;
   if (got.user.role !== "admin") return NextResponse.json({ error: "An admin revokes a review link." }, { status: 403 });
   const ws = currentTenant()?.workspace;

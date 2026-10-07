@@ -57,16 +57,18 @@ export const ALLOWANCE_REACHED = "This workspace has reached its monthly cap on 
  * estimate is counted at, or the exact terms the job's reservation will charge
  * (currentBillingTerms), so the wall asks for what will be reserved.
  */
-export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0, engine?: EstimateTerms): Promise<
+export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0, engine?: EstimateTerms, band = 1): Promise<
   { ok: true } | { ok: false; status: number; error: string }
 > {
-  const credit = await creditCheck(vendor, estUsd, engine);
+  /* `band`: a take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts) needs the balance to cover its hold. */
+  const credit = await creditCheck(vendor, estUsd, engine, band);
   if (!credit.ok) return credit;
   if (!paidByPlatform(vendor)) return { ok: true };
   const cap = allowanceUsd();
   if (cap == null) return { ok: true };
   const spent = await platformSpendThisMonth();
-  if (spent >= cap || spent + Math.max(0, estUsd) > cap) {
+  /* A take that holds its ceiling counts at its hold's dollars: what it may settle at. */
+  if (spent >= cap || spent + Math.max(0, estUsd) * (Number.isInteger(band) && band > 1 ? band : 1) > cap) {
     /* No figures. The cap and what counts against it are the vendors'
        dollars, and the workspace hearing this is billed in credits. */
     return { ok: false, status: 429, error: ALLOWANCE_REACHED };

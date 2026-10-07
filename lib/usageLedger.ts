@@ -314,14 +314,17 @@ export async function withLedgerCharges<G extends Pick<Generation, "id" | "statu
     await platformReady();
     const ids = [...new Set(failed.map((g) => g.id))].slice(0, 500);
     const rs = await platformDb().execute({
-      sql: `SELECT id,status,paid_by_platform,${CHARGE} AS credits FROM meter_events WHERE workspace_id=? AND id IN (${ids.map(() => "?").join(",")})`,
+      sql: `SELECT id,status,paid_by_platform,hold_band,${CHARGE} AS credits FROM meter_events WHERE workspace_id=? AND id IN (${ids.map(() => "?").join(",")})`,
       args: [ws.id, ...ids],
     });
     const byId = new Map(rs.rows.map((r) => [String(r.id), r]));
     return generations.map((g) => {
       const row = g.failure ? byId.get(g.id) : undefined;
       if (!row || Number(row.paid_by_platform) !== 1) return g;
-      return { ...g, failure: { ...g.failure!, charge: { credits: Number(row.credits ?? 0), settled: String(row.status) !== "running" } } };
+      const credits = Number(row.credits ?? 0), settled = String(row.status) !== "running";
+      /* A held take (Cinema Studio) that ended charging nothing had its hold released: it says "not charged". */
+      const released = settled && credits <= 0 && Number(row.hold_band) > 1;
+      return { ...g, failure: { ...g.failure!, charge: { credits, settled, ...(released ? { released: true as const } : {}) } } };
     });
   } catch {
     /* The take still shows why it failed; its charge line waits for the ledger. */

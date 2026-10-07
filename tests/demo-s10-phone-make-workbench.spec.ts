@@ -275,12 +275,20 @@ test("phone Make, Change: every engine row ends in its price in cr, with the dol
   await expect(rows.first()).toBeVisible();
   /* The engine in use is the pressed row. */
   await expect(list.locator('[data-testid="phone-make-engine-row"][aria-pressed="true"]')).toHaveCount(1);
-  /* Every figure is "N cr" with its dollars on hover, or "free"; an engine with no figure draws none (never a guess). */
+  /* Every figure is "N cr" with its dollars on hover, or "free"; an engine with no figure draws none (never a guess).
+     Cinema Studio's is what approving it holds, "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
   await expect(list.locator(".gx-price").first()).toHaveText(/^\d[\d,]*(\.\d)? cr$/, { timeout: 60_000 });
   const prices = list.locator(".gx-price");
   expect(await prices.count(), "at least one engine is priced").toBeGreaterThan(0);
-  for (const price of await prices.all()) {
+  for (const row of await rows.all()) {
+    const price = row.locator(".gx-price");
+    if (!(await price.count())) continue;
     const words = (await price.innerText()).trim();
+    if ((await row.innerText()).includes("Cinema Studio 4.0")) {
+      const [, about, most] = words.match(/^about (\d[\d,.]*) cr, at most (\d[\d,.]*) cr$/) ?? [];
+      expect(Number(most?.replace(/,/g, "")), words).toBeCloseTo(3 * Number(about?.replace(/,/g, "")), 1);
+      continue;
+    }
     expect(words).toMatch(/^\d[\d,]*(\.\d)? cr$|^free$/);
     if (words !== "free") await expect(price).toHaveAttribute("title", /^\$\d[\d,]*\.\d\d?$/);
   }
@@ -291,7 +299,9 @@ test("phone Make, Change: every engine row ends in its price in cr, with the dol
     const [r, p] = [await row.boundingBox(), await price.boundingBox()];
     expect(p!.x + p!.width, "a price is never cut by its row").toBeLessThanOrEqual(r!.x + r!.width + 1);
   }
-  expect(await list.innerText()).not.toMatch(/\bquoted\b|\babout \d/i);
+  /* Never "quoted"; "about" only on Cinema Studio's held figure. */
+  expect(await list.innerText()).not.toMatch(/\bquoted\b/i);
+  for (const row of await rows.all()) if (!(await row.innerText()).includes("Cinema Studio 4.0")) expect(await row.innerText()).not.toMatch(/\babout \d/i);
   await floors(page, "Make, engines priced");
   /* Choosing a row prices Make's button at that engine, in the same units. */
   await rows.first().click();

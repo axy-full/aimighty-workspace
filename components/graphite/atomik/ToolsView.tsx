@@ -274,7 +274,7 @@ function Tokens({ onFresh }: { onFresh: (token: string) => void }) {
         const share = ceilingShare(t, data.unit);
         return (
           <div className="tc-row" key={t.id} data-testid="token-row" data-id={t.id}>
-            <span className="tc-dot" data-status={t.scope === "read" ? "built-in" : "available"} aria-hidden="true" />
+            <span className="tc-dot" data-status={t.scope === "render" ? "available" : "built-in"} aria-hidden="true" />
             <span className="tc-text">
               <span className="tc-name">{t.name}</span>
               <span className="cw-dim" data-testid="token-facts">{tokenFacts(t, data.unit)}</span>

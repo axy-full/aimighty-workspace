@@ -459,7 +459,7 @@ export type TakeFailure = {
   charge?: TakeCharge | null;
 };
 /** Particl's own ledger for a failed take: the credits it holds, and whether that is settled. */
-export type TakeCharge = { credits: number; settled: boolean };
+export type TakeCharge = { credits: number; settled: boolean; /** A held take's hold came back whole: it says "not charged". */ released?: true };
 
 /**
  * The failure a viewer may read. `credits`: the workspace pays Particl in
@@ -501,7 +501,7 @@ export function parseTakeFailure(value: unknown): TakeFailure | null {
       })()
     : null;
   const charge = record(value.charge) && amountOf(value.charge.credits) != null && typeof value.charge.settled === "boolean"
-    ? { credits: amountOf(value.charge.credits)!, settled: value.charge.settled }
+    ? { credits: amountOf(value.charge.credits)!, settled: value.charge.settled, ...(value.charge.released === true ? { released: true as const } : {}) }
     : null;
   return {
     provider: OUTCOME_PROVIDERS.includes(value.provider as OutcomeProvider) ? (value.provider as OutcomeProvider) : null,

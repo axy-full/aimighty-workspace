@@ -21,6 +21,7 @@ import { admitToPoolTx, providerPoolReady, sharedPoolOf } from "./providerPool";
 import { workbenchScopeProblem } from "./workbench/request-scope";
 import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
 import { runLimitVerdict, runTally, toTenths, type RunCharge, type RunSpend } from "./runLimit";
+import { allowanceUsdOf } from "./cinemaHold";
 
 export class SpendReservationError extends Error {
   /** `perJob`: the refusal is about this job alone (its cost, project, shot or token), not the whole workspace. */
@@ -349,6 +350,14 @@ type ReservationOptions = {
    * on the reservation, so every paid action of the run carries its id.
    */
   run?: RunSpend;
+  /**
+   * The take holds its ceiling, not its estimate: its bill at the quote times this band (a Cinema Studio
+   * take, lib/cinemaHold.ts). The hold is what the balance must cover, what is reserved, and it is recorded
+   * on the meter row (`hold_band`), so the take settles at its actual cost and never past the hold, and at
+   * its quote when it has no figure (lib/meter.ts). Being the take's worst case already, a run counts it
+   * once, at band 1.
+   */
+  holdBand?: number;
 };
 export async function reserveGenerationSpend(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   // Local libsql clients share a connection; never interleave transactions on it.
@@ -364,6 +373,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const cost = Number(event.engineCostUsd);
   if (!Number.isFinite(cost) || cost < 0) throw new SpendReservationError("This job has no valid cost estimate.", 400, true);
   const paid = paidByPlatformEngine(event.engine);
+  const holdBand = Number.isInteger(options.holdBand) && options.holdBand! > 1 ? options.holdBand! : 1;
   await ready();
   /* The sample workspace spends nothing, for anyone, filed or not (lib/demo/spend-guard.server.ts). */
   const sample = await sampleWorkspaceRefusal();
@@ -404,7 +414,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     if (standing.rows[0]?.deleted_at != null) throw new SpendReservationError("This workspace has been deleted.", 410);
     if (standing.rows[0]?.suspended_at != null) throw new SpendReservationError("This workspace is suspended.", 403);
     await syncBillingLedger(tx, ws.id, ts);
-    const own = await tx.execute({ sql: `SELECT workspace_id,status,paid_by_platform,engine,kind,model,credit_usd,credit_margin FROM meter_events WHERE id=?`, args: [event.id] });
+    const own = await tx.execute({ sql: `SELECT workspace_id,status,paid_by_platform,engine,kind,model,credit_usd,credit_margin,hold_band FROM meter_events WHERE id=?`, args: [event.id] });
     if (own.rows[0] && own.rows[0].workspace_id !== ws.id) throw new SpendReservationError("This job belongs to another workspace.", 409, true);
     if (own.rows[0] && own.rows[0].status !== "running") throw new SpendReservationError("This job has already completed.", 409, true);
     const prior = own.rows[0];
@@ -425,7 +435,16 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     const charge = (usd: number) => creditsAtTerms(usd, terms) * restate;
     const billed = paid ? charge(cost) : 0;
     const existing = await tx.execute({ sql: `SELECT m.*, r.token_id AS reservation_token FROM meter_events m LEFT JOIN generation_reservations r ON r.id=m.id WHERE m.workspace_id=? AND m.id<>?`, args: [ws.id, event.id] });
-    try { await setCreditDebitTx(tx, ws.id, event.id, billed, ts); }
+    /* What this job reserves, and the balance must cover: its bill, or for a take held at its ceiling, the
+       bill times its band (Cinema Studio's "at most 3N cr"). Short of it, nothing is reserved (402). */
+    /* A running take reserved again keeps the hold it was approved at, asked for or not: a hold only ever stays. */
+    const keptBand = Math.max(holdBand, Number(prior?.hold_band) > 1 ? Number(prior!.hold_band) : 1);
+    const held = billed * keptBand;
+    const heldAtCeiling = paid && keptBand > 1;
+    /* Every cap below reads a take that holds its ceiling at its hold (credits: the hold; dollars: its cost times
+       the band), as the balance does, since that is what it may settle at; any other job at its estimate. */
+    const band = heldAtCeiling ? keptBand : 1;
+    try { await setCreditDebitTx(tx, ws.id, event.id, held, ts); }
     catch (error) { if (error instanceof CreditBalanceError) throw new SpendReservationError(error.message, 402); throw error; }
     const merged = new Map(baseline);
     merged.delete(event.id);
@@ -437,7 +456,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
         tokenId: r.reservation_token == null ? prior?.tokenId ?? null : String(r.reservation_token),
         cost: Math.max(prior?.cost ?? 0, Number(r.engine_cost_usd ?? 0)), credits: Number(r.billed_credits ?? 0), createdAt: Number(r.created_at), status: String(r.status), deleted: prior?.deleted ?? false });
       if (!Number(r.paid_by_platform)) monthly.delete(String(r.id));
-      else if (Number(r.created_at) >= since) monthly.set(String(r.id), Math.max(monthly.get(String(r.id)) ?? 0, Number(r.engine_cost_usd ?? 0)));
+      /* A take still running at its hold counts at its hold, as this one does below (lib/cinemaHold.ts allowanceUsdOf). */
+      else if (Number(r.created_at) >= since) monthly.set(String(r.id), Math.max(monthly.get(String(r.id)) ?? 0, allowanceUsdOf(r)));
     }
     const gone = now() - TRANSCRIPTION_STALE_MS;
     const running = [...merged.values()].filter((r) => !r.deleted && (r.status === "running" || r.status === "queued")
@@ -447,18 +467,18 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     if (running >= limits.concurrency) throw new SpendReservationError("Every job slot is reserved. Wait for an active job to finish, then try again.", 409);
     if (shotCap != null) {
       const shotCredits = [...merged.values()].filter((r) => r.shotId === event.shotId).reduce((sum, r) => sum + r.credits, 0);
-      if (shotCredits + charge(cost) > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
+      if (shotCredits + charge(cost) * band > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
     }
-    if (monthlyCap != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost > monthlyCap + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
+    if (monthlyCap != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost * band > monthlyCap + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
     if (cap) {
       const spent = [...merged.values()].filter((r) => r.projectId === projectId).reduce((sum, r) => sum + (cap.unit === "cr" ? r.credits : r.cost), 0);
-      const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? charge(cost + (baseline.get(event.id)?.cost ?? 0)) : cost + (baseline.get(event.id)?.cost ?? 0),
+      const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? charge(cost + (baseline.get(event.id)?.cost ?? 0)) * band : (cost + (baseline.get(event.id)?.cost ?? 0)) * band,
         rule, unlocked: cap.unlocked, warnPct: 80, unit: cap.unit });
       if (!verdict.allow) throw new SpendReservationError(verdict.error!, 409, true);
     }
     if (legacyCap?.cap_credits == null && legacyCap?.cap_usd != null) {
       const spent = [...merged.values()].filter((r) => r.projectId === projectId).reduce((sum, r) => sum + r.cost, 0);
-      const verdict = capVerdict({ cap: Number(legacyCap.cap_usd), spent, needs: cost + (baseline.get(event.id)?.cost ?? 0), rule,
+      const verdict = capVerdict({ cap: Number(legacyCap.cap_usd), spent, needs: (cost + (baseline.get(event.id)?.cost ?? 0)) * band, rule,
         unlocked: Boolean(legacyCap.cap_unlocked), warnPct: 80, unit: "$" });
       if (!verdict.allow) throw new SpendReservationError("This job exceeds the project's saved spending cap. Ask an admin to review its credit cap.", 409, true);
     }
@@ -469,26 +489,27 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const mine = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since);
       const job = cost + (baseline.get(event.id)?.cost ?? 0);
       const spending = creditsApply(ws)
-        ? (mine.reduce((sum, r) => sum + r.credits, 0) + charge(job)) * creditUsd()
-        : mine.reduce((sum, r) => sum + r.cost, 0) + job;
+        ? (mine.reduce((sum, r) => sum + r.credits, 0) + charge(job) * band) * creditUsd()
+        : mine.reduce((sum, r) => sum + r.cost, 0) + job * band;
       if (spending > options.token.capUsd + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed this token's monthly spending ceiling.", 429, true);
     }
     /* The same wall in credits, reckoned like the production cap above: what the
        token's jobs this month billed or reserved, plus this job at the engine's margin. */
     if (options.token?.capCredits != null) {
       const spent = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since).reduce((sum, r) => sum + r.credits, 0);
-      const needs = charge(cost + (baseline.get(event.id)?.cost ?? 0));
+      const needs = charge(cost + (baseline.get(event.id)?.cost ?? 0)) * band;
       if (spent + needs > options.token.capCredits) throw new SpendReservationError(`This job and the reserved jobs would pass this token's ${options.token.capCredits.toLocaleString("en-US")} cr monthly ceiling.`, 429, true);
     }
     /* An Atomik run's approved limit, in whole tenths, under this same write lock: what the run's
        jobs have settled, what its jobs in flight could still settle at, and this job at its worst. */
     if (options.run) {
-      const job = runCredits({ paid, billed, costUsd: cost });
+      const job = runCredits({ paid, billed: held, costUsd: cost });
       const verdict = runLimitVerdict({
         limitTenths: toTenths(options.run.limitCredits),
         tally: runTally(await runCharges(options.run.id, { except: event.id, workspaceId: ws.id, platform: tx })),
         jobTenths: toTenths(job),
-        band: options.run.band,
+        /* A take held at its ceiling reserved its worst case already: counted once, never again at its band. */
+        band: heldAtCeiling ? 1 : options.run.band,
       });
       if (!verdict.ok) throw new SpendReservationError(RUN_LIMIT_REACHED, 409, true);
     }
@@ -498,10 +519,11 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const verdict = await admitToPoolTx(tx, pool, { id: event.id, workspaceId: ws.id, at: ts });
       if (!verdict.admit) throw new ProviderPoolBusyError(pool, verdict.why);
     }
-    await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin)`,
-      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, billed, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin] });
+    /* The hold is recorded on the take's row (`hold_band`): its settlement charges what it cost, never past the hold. */
+    await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin,hold_band)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin),hold_band=COALESCE(excluded.hold_band,meter_events.hold_band)`,
+      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, held, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin, heldAtCeiling ? keptBand : null] });
     await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id,run_id,run_band) VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
-      args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? Math.max(1, Math.round(options.run.band)) : null] });
+      args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? (heldAtCeiling ? 1 : Math.max(1, Math.round(options.run.band))) : null] });
   });
 }
