@@ -1,4 +1,4 @@
-# Status now: 7 October 2026, 20:31 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 20:43 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
