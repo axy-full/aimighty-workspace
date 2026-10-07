@@ -5,13 +5,15 @@
  * what the ENGINES charge the platform for this workspace's jobs (their cost,
  * not the credits the workspace is billed for them), enforced by
  * lib/allowance.ts (`allowanceCheck`), lib/quote.ts and
- * `reserveGenerationSpend`. The desk shows it in those dollars, with the same
- * figure in credits at the server's credit price (`creditUsd()`, sent with the
- * desk's data) beside it, so nothing here invents a rate.
+ * `reserveGenerationSpend`. The desk shows it in those dollars and nothing
+ * else: no figure in credits beside it.
  *
- * Because billed credits are priced above engine cost, a cap of N dollars lets
- * a workspace be billed MORE than N dollars' worth of credits. To hold a
- * workspace to a number of billed credits, its credit balance is the wall.
+ * Why no credits: billing adds each engine's margin and rounds every job up
+ * (lib/creditTerms.ts), so N dollars of engine cost is billed as more than
+ * N / credit price credits, by an amount that depends on which engines ran.
+ * A "$10 · 100 CR" label would read as a 100-credit cap and let the workspace
+ * be billed well past it. To hold a workspace to a number of billed credits,
+ * its credit balance is the wall; the cap stops the platform's engine spend.
  *
  * What the stored value means, and what the desk must keep apart:
  * - a number, 0 included, is this workspace's own cap. 0 is a wall: no job
@@ -27,11 +29,6 @@
 
 /** The most the admin route accepts, in dollars a month. */
 export const CAP_MAX_USD = 100_000;
-
-/** Dollars → credits at the credit price, to a tenth so float noise never shows. */
-export function capCredits(usd: number, creditUsd: number): number {
-  return Math.round((usd / creditUsd) * 10) / 10;
-}
 
 /**
  * What an admin typed, as the dollars to send: 0 or more, to the cent.
@@ -53,33 +50,28 @@ export type CapView =
   /** No cap of its own, and the deployment sets none. */
   | { kind: "none" }
   /** No cap of its own; the deployment's default applies. */
-  | { kind: "default"; usd: number; credits: number }
+  | { kind: "default"; usd: number }
   /** Its own cap. usd 0 is a wall. */
-  | { kind: "own"; usd: number; credits: number };
+  | { kind: "own"; usd: number };
 
-export function capView(
-  w: { allowanceUsd: number | null; house?: boolean },
-  defaultUsd: number | null,
-  creditUsd: number,
-): CapView {
+export function capView(w: { allowanceUsd: number | null; house?: boolean }, defaultUsd: number | null): CapView {
   if (w.house) return { kind: "house" };
-  if (w.allowanceUsd != null) return { kind: "own", usd: w.allowanceUsd, credits: capCredits(w.allowanceUsd, creditUsd) };
-  if (defaultUsd != null) return { kind: "default", usd: defaultUsd, credits: capCredits(defaultUsd, creditUsd) };
+  if (w.allowanceUsd != null) return { kind: "own", usd: w.allowanceUsd };
+  if (defaultUsd != null) return { kind: "default", usd: defaultUsd };
   return { kind: "none" };
 }
 
 const usdText = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-/**
- * The cell's two lines: the cap in engine dollars with its credits beside,
- * and what it means; `title` says what it caps, and what it does not.
- */
-export function capLabel(v: CapView, creditUsd: number): { main: string; sub: string; title: string } {
-  const what = `Caps what the engines charge the platform for this workspace each month (their cost, from the 1st). Credits shown at ${usdText(creditUsd)} each. It is not a cap on the credits the workspace is billed: its credit balance is that wall.`;
+/** What every cap's title says: what it caps, and what it does not. */
+export const CAP_MEANS = "Caps what the engines charge the platform for this workspace each month (their cost, from the 1st). It is not a cap on the credits the workspace is billed, which carry each engine's margin: its credit balance is that wall.";
+
+/** The cell's two lines: the cap in engine dollars, and what it means. */
+export function capLabel(v: CapView): { main: string; sub: string; title: string } {
   switch (v.kind) {
     case "house": return { main: "—", sub: "Never billed", title: "The house workspace is never billed in credits and takes no cap." };
-    case "none": return { main: "NO CAP", sub: "Deployment sets none", title: what };
-    case "default": return { main: `${usdText(v.usd)} · ${v.credits.toLocaleString("en-US")} CR`, sub: v.usd === 0 ? "Default · nothing can spend" : "Deployment default", title: what };
-    case "own": return { main: `${usdText(v.usd)} · ${v.credits.toLocaleString("en-US")} CR`, sub: v.usd === 0 ? "Nothing can spend" : "Engine cost a month", title: what };
+    case "none": return { main: "NO CAP", sub: "Deployment sets none", title: CAP_MEANS };
+    case "default": return { main: usdText(v.usd), sub: v.usd === 0 ? "Default · nothing can spend" : "Deployment default · engine cost", title: CAP_MEANS };
+    case "own": return { main: usdText(v.usd), sub: v.usd === 0 ? "Nothing can spend" : "Engine cost a month", title: CAP_MEANS };
   }
 }

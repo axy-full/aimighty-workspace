@@ -110,7 +110,7 @@ test("the platform desk reads the house workspace as never billed: no balance, n
   expect(await noSideScroll(page)).toBe(true);
 });
 
-/* The engine cap (lib/allowanceDesk.ts) on a workspace row: read in dollars with credits at the server's credit price beside,
+/* The engine cap (lib/allowanceDesk.ts) on a workspace row: read in engine dollars only (no credits figure: billed credits carry the margin),
    set through the existing admin route, $0 included, and removed only by its own button. At the desk's desktop size and
    at the narrow layout (below 1024 px wide). */
 test("the platform desk sets a workspace's monthly engine cap, $0 included, and removes it on purpose", async ({ page }, testInfo) => {
@@ -123,12 +123,11 @@ test("the platform desk sets a workspace's monthly engine cap, $0 included, and 
   });
   expect(created.ok(), await created.text()).toBe(true);
   const ws = (await created.json()).workspace as { id: string };
-  type Desk = { creditUsd: number; defaultAllowanceUsd: number | null; workspaces: { id: string; allowanceUsd: number | null }[] };
+  type Desk = { defaultAllowanceUsd: number | null; workspaces: { id: string; allowanceUsd: number | null }[] };
   const desk = async () => (await page.request.get("/api/admin/invites").then((r) => r.json())) as Desk;
   const capOf = async () => (await desk()).workspaces.find((w) => w.id === ws.id)?.allowanceUsd;
-  const { creditUsd, defaultAllowanceUsd } = await desk();
+  const { defaultAllowanceUsd } = await desk();
   expect(defaultAllowanceUsd, "this spec reads a deployment with no default cap").toBeNull();
-  const crAt = (usd: number) => `${(Math.round((usd / creditUsd) * 10) / 10).toLocaleString("en-US")} CR`;
   try {
     await page.goto("/admin");
     const row = page.locator(".steam").filter({ hasText: name });
@@ -152,7 +151,9 @@ test("the platform desk sets a workspace's monthly engine cap, $0 included, and 
     // $0 saves as 0, and reads as a wall.
     await box.fill("0");
     await row.getByRole("button", { name: "Save" }).click();
-    await expect(cap).toContainText(`$0.00 · ${crAt(0)}`);
+    await expect(cap).toContainText("$0.00");
+    /* Engine dollars only: no credits figure that would read as a cap on billed credits. */
+    await expect(cap).not.toContainText(/\bCR\b/);
     await expect(cap).toContainText("Nothing can spend");
     expect(await capOf()).toBe(0);
     expect(await noSideScroll(page)).toBe(true);
@@ -162,7 +163,8 @@ test("the platform desk sets a workspace's monthly engine cap, $0 included, and 
     await cap.click();
     await box.fill("21.80");
     await box.press("Enter");
-    await expect(cap).toContainText(`$21.80 · ${crAt(21.8)}`);
+    await expect(cap).toContainText("$21.80");
+    await expect(cap).not.toContainText(/\bCR\b/);
     await expect(cap).toContainText("Engine cost a month");
     expect(await capOf()).toBe(21.8);
 

@@ -165,7 +165,7 @@ export default function AdminPage() {
             <PreviewsCard />
 
             <section className="scard">
-              <div className="scard-h"><span>Workspaces</span><span>{live} on this deployment{deleted ? `, ${deleted} deleted` : ""}. Every organisation uses Particl credits. Approved invitations start with {data.welcomeCredits ?? "—"} credits; self-serve sign-ups start with 0. Click a balance to add credits. The engine cap limits what the engines may charge the platform for a workspace each month; $0 stops every paid job. The house workspace is never billed in credits; its spend reads at cost.</span></div>
+              <div className="scard-h"><span>Workspaces</span><span>{live} on this deployment{deleted ? `, ${deleted} deleted` : ""}. Every organisation uses Particl credits. Approved invitations start with {data.welcomeCredits ?? "—"} credits; self-serve sign-ups start with 0. Click a balance to add credits. The engine cap limits what the engines may charge the platform for a workspace each month; $0 stops every paid job. It caps engine cost, not billed credits: the balance is that wall. The house workspace is never billed in credits; its spend reads at cost.</span></div>
               <div className="flex flex-col">
                 <div className="steam is-head admin-ws !text-[12px] !text-lead"><span>WORKSPACE</span><span>OWNER</span><span>30 DAYS</span><span>KEYS</span><span title="What the engines charge the platform for this workspace a month">ENGINE CAP / MO</span><span className="text-right">STATE</span></div>
                 {data.workspaces.map((w) => (
@@ -174,7 +174,7 @@ export default function AdminPage() {
                     <span className="flex flex-col gap-0.5"><span>{w.owner?.name ?? "—"}</span><span className="text-[12px] text-lead">{w.owner?.email ?? ""}</span></span>
                     <SpendCell s={w.spend30} grants={w.grants} />
                     <CreditsCell w={w} onChanged={refresh} />
-                    <CapCell w={w} defaultUsd={data.defaultAllowanceUsd} creditUsd={data.creditUsd} onChanged={refresh} />
+                    <CapCell w={w} defaultUsd={data.defaultAllowanceUsd} onChanged={refresh} />
                     <StateCell w={w} plans={data.plans ?? DEFAULT_PLANS} onChanged={refresh} />
                   </div>
                 ))}
@@ -238,16 +238,16 @@ function CreditsCell({ w, onChanged }: {
  * other lever on this row. $0 is a wall; "no cap" is its own button, so an
  * empty box can never open or close a workspace by accident.
  */
-function CapCell({ w, defaultUsd, creditUsd, onChanged }: {
+function CapCell({ w, defaultUsd, onChanged }: {
   w: Pick<Ws, "id" | "name" | "allowanceUsd" | "house" | "deletedAt">;
-  defaultUsd: number | null; creditUsd: number; onChanged: () => void;
+  defaultUsd: number | null; onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const view = capView(w, defaultUsd, creditUsd);
-  const label = capLabel(view, creditUsd);
+  const view = capView(w, defaultUsd);
+  const label = capLabel(view);
   const shown = (
     <span className="flex flex-col gap-0.5">
       <span className="admin-cap-k">ENGINE CAP / MO</span>
