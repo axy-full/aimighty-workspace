@@ -57,8 +57,8 @@ export function ShotBlockingStrip({ ctx, nodeId, index, view }: { ctx: BoardCtx;
         <span className="gx-bk-strip-meta" style={{ display: "block" }}>Reference{view.savedAt ? ` · saved ${savedTime(view.savedAt)}` : ""} · free</span>
       </span>
       <span className="gx-bk-strip-acts">
-        <button type="button" className="gx-bk-btn" title={title ?? blocked ?? undefined} {...spendAttrsOf(price)} disabled={Boolean(blocked) || !price}
-          onClick={(e) => { e.stopPropagation(); remake(); }} data-testid="blocking-remake">{words ? `Remake Shot ${index} · ${words}` : `Remake Shot ${index}`}</button>
+        {ctx.exploreOnly ? null : <button type="button" className="gx-bk-btn" title={title ?? blocked ?? undefined} {...spendAttrsOf(price)} disabled={Boolean(blocked) || !price}
+            onClick={(e) => { e.stopPropagation(); remake(); }} data-testid="blocking-remake">{words ? `Remake Shot ${index} · ${words}` : `Remake Shot ${index}`}</button>}
         <button type="button" className="gx-bk-btn" onClick={(e) => { e.stopPropagation(); openBlocking(nodeId); }} data-testid="blocking-reopen">Open 3D blocking</button>
       </span>
     </div>

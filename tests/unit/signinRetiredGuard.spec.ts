@@ -8,6 +8,7 @@ import { workbenchScopeFor } from "../../lib/workbench/request-scope";
 import { AccountError } from "../../lib/accountDb";
 import * as retired from "../../lib/higgsfield-consumer/retired";
 import { PLANS } from "../../lib/workspace/plans";
+import { crossOriginProblem } from "../../lib/requestOrigin";
 
 /**
  * The guard for the retired Higgsfield sign-in (lib/higgsfield-consumer/retired.ts):
@@ -90,8 +91,8 @@ async function withTenantFor(store: () => tenant.TenantStore) {
   const ast = ts.createSourceFile("auth.ts", readFileSync("lib/auth.ts", "utf8"), ts.ScriptTarget.Latest, true);
   const declaration = ast.statements.find((statement) => ts.isFunctionDeclaration(statement) && statement.name?.text === "withTenant")!;
   const wrapped = {} as Pick<typeof auth, "withTenant">;
-  new Function("exports", "resolveStore", "runWithStore", "NoTenantError", "MediaSourceError", "workbenchScopeFor", "recoveryRoute", compile(declaration.getText(ast)))(
-    wrapped, async () => store(), tenant.runWithStore, tenant.NoTenantError, MediaSourceError, workbenchScopeFor, (handler: unknown) => handler,
+  new Function("exports", "resolveStore", "runWithStore", "NoTenantError", "MediaSourceError", "workbenchScopeFor", "recoveryRoute", "crossOriginProblem", compile(declaration.getText(ast)))(
+    wrapped, async () => store(), tenant.runWithStore, tenant.NoTenantError, MediaSourceError, workbenchScopeFor, (handler: unknown) => handler, crossOriginProblem,
   );
   return { ...auth, withTenant: wrapped.withTenant };
 }

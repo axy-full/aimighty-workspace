@@ -1,3 +1,4 @@
+import { crossOriginProblem } from '@/lib/requestOrigin';
 import { requireSession, withTenant } from '@/lib/auth';
 import { requireTenant } from '@/lib/tenant';
 import { workbenchScopeProblem } from '@/lib/workbench/request-scope';
@@ -22,7 +23,7 @@ async function changeFiling(req:Request,remove:boolean) {
   const auth = await requireSession(); if (auth.response) return auth.response;
   const problem = workbenchScopeProblem(req,requireTenant().id,auth.user.id,true);
   if (problem) return Response.json({error:problem},{status:409,headers});
-  if (req.headers.get('origin') && req.headers.get('origin') !== new URL(req.url).origin)
+  if (crossOriginProblem(req))
     return Response.json({error:'Invalid request origin.'},{status:403,headers});
   const body = await req.json().catch(()=>null);
   if (!body || typeof body.projectId !== 'string' || typeof body.uploadId !== 'string' || Object.keys(body).some(key=>!['projectId','uploadId'].includes(key)))

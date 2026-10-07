@@ -83,7 +83,13 @@ test("Guest Home off (the default): a visitor at / sees today's site", async ({ 
   await setSite({});
   await page.goto("/");
   await expect(page.getByTestId("guest-home")).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "Suites" }).first()).toBeVisible();
+  /* Today's public site: its header (brand, Request access) and its Main navigation, not the app's Suites bar. The site's tabs
+     fold into a menu on a phone, so the navigation is only required to be there; the header and the way in are seen. */
+  await expect(page.locator(".mk-header")).toBeVisible();
+  await expect(page.locator(".mk-header").getByRole("link", { name: "Request access" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Suites" })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/$/);
 });
 
 test("Guest Home on: Home signed out, and every action that thinks or spends opens the sheet", async ({ page }, info) => {

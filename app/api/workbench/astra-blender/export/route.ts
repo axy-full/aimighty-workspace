@@ -1,3 +1,4 @@
+import { crossOriginProblem } from '@/lib/requestOrigin';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { findWorkbenchMedia } from '@/lib/workbench/media-records';
@@ -18,7 +19,7 @@ export const POST = withTenant(async (request: Request) => {
   if (auth.response) return auth.response;
   const problem = workbenchScopeProblem(request, requireTenant().id, auth.user.id, !auth.token);
   if (problem) return Response.json({ error: problem }, { status: 409 });
-  if (request.headers.get('origin') && request.headers.get('origin') !== new URL(request.url).origin) return Response.json({ error: 'Invalid request origin.' }, { status: 403 });
+  if (crossOriginProblem(request)) return Response.json({ error: 'Invalid request origin.' }, { status: 403 });
   try {
     const input = inputSchema.parse(JSON.parse(await readBoundedText(request, 2000)));
     const project = await getAtomikProject(auth.user.id, input.projectId);
