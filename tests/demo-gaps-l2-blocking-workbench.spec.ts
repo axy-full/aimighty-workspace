@@ -110,14 +110,16 @@ test("Add from the shot builds the scene from the beat sheet; the camera, lens a
   await expect(remake).toHaveAttribute("data-spend", "priced");
   await shoot(page, info.project.name, "l2-blocking-saved");
   expect(paid, "saving is free: nothing was sent to a paid route").toEqual([]);
+  /* The 3D view round-trip drifts the saved start by float error (-3 comes back as -2.999999999999999): compare it to 6 decimals, everything else exactly. */
+  const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
   /* It is on the project: the scene, the move, and a frame filed as the shot's input. */
   await expect.poll(async () => {
     const r = await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers: { "X-Workbench-Scope": scope } });
     const body = (await r.json()) as { project: Project };
     const entry = body.project.production?.blocking?.["node-shot0001"];
     const input = body.project.nodes.find((n) => n.id === "node-shot0001")?.linked.length ?? 0;
-    return entry ? { lens: entry.scene.camera.focalLength, move: entry.move.kind, objects: entry.scene.objects.length, frame: Boolean(entry.frameAssetId), input, start: entry.scene.camera.position } : null;
-  }, { timeout: 20_000 }).toMatchObject({ lens: 85, move: "push", frame: true, input: 1, start: sceneFromShot(build({ ...newProject("x") }), "node-shot0001").scene.camera.position });
+    return entry ? { lens: entry.scene.camera.focalLength, move: entry.move.kind, objects: entry.scene.objects.length, frame: Boolean(entry.frameAssetId), input, start: entry.scene.camera.position.map(r6) } : null;
+  }, { timeout: 20_000 }).toMatchObject({ lens: 85, move: "push", frame: true, input: 1, start: sceneFromShot(build({ ...newProject("x") }), "node-shot0001").scene.camera.position.map(r6) });
   /* A reload keeps it, and the overlay opens on what was saved. */
   await page.reload();
   await expect(page.getByTestId("board")).toBeVisible();
