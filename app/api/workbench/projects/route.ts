@@ -9,6 +9,7 @@ import { workbenchReady, readDraft, mapNodeShot, saveDraft, publishBible, checkD
 import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
+import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -39,7 +40,12 @@ export const GET=withTenant(async(req:Request)=>{
   let shared=null;
   if(draft?.project.productionProjectId){
     const row=(await db().execute({sql:'SELECT body,version,owner FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[draft.project.productionProjectId]})).rows[0];
-    if(row)shared={...JSON.parse(String(row.body)),version:Number(row.version)};
+    if(row){
+      const body=JSON.parse(String(row.body));
+      /* Who published, as this workspace may read it (lib/platformOwnerPrivacy.ts). */
+      if(typeof body.publishedBy==='string')body.publishedBy=(await storedActorMaskHere())(body.publishedBy);
+      shared={...body,version:Number(row.version)};
+    }
   }
   return projectResponse(req,{projects:list.rows,productions:productions.rows,project:draft?.project||null,revision:draft?.revision||0,shared});
 });

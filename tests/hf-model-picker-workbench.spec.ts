@@ -8,6 +8,11 @@ import { moreTakes } from "./helpers/genTakes";
 import { CINEMA_STUDIO_MODEL_ID } from "../lib/cinemaStudioTypes";
 import { MAKE_SHOWS_CINEMA } from "../lib/shell/make-price";
 import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /**
  * Gen's model sheet: a search field, a Recent group, spec chips and a price on
@@ -65,7 +70,7 @@ async function open(page: Page, options: Options = {}) {
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour picker study");
+  await expect(projectName(page)).toHaveText("Harbour picker study");
   return { errors, quotes, consumer, priced };
 }
 
@@ -105,7 +110,7 @@ async function shot(page: Page, info: TestInfo, name: string) {
   await page.screenshot({ path: info.outputPath(`${name}-${info.project.name.replace("workbench-", "")}.png`), animations: "disabled" });
 }
 
-test("every Studio engine wears spec chips and a price — Cinema Studio 4.0 reads quoted; the picked row's price is the figure Generate shows", async ({ page }, info) => {
+test("every Studio engine wears spec chips and a price — Cinema Studio 4.0 reads about N, at most 3N; the picked row's price is the figure Generate shows", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, consumer } = await open(page);
   const sheet = await openSheet(page);
@@ -124,11 +129,12 @@ test("every Studio engine wears spec chips and a price — Cinema Studio 4.0 rea
     await expect(row.locator('[data-spec="length"]')).toHaveText(/^\d+(–|\/)\d+ s$/);
     await expect(row.locator('[data-spec="refs"]')).toHaveText(/refs$|^Prompt only$/);
   }
-  /* Cinema Studio 4.0 stays in the sheet and reads "quoted": no figure on its row (its price is Generate's), and no vendor's name. */
+  /* Cinema Studio 4.0 is in the sheet at what approving it holds, "about N cr, at most 3N cr", never "quoted", and no vendor's name. */
   const cinema = sheet.getByRole("option", { name: /^Cinema Studio 4\.0/ });
   if (MAKE_SHOWS_CINEMA) {
-    await expect(cinema.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "none");
-    await expect(cinema.getByTestId("gen-sheet-price")).toHaveText("quoted");
+    await expect(cinema.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "rate");
+    await expect(cinema.getByTestId("gen-sheet-price").locator("b")).toHaveText(/^about \d+ cr, at most \d+ cr$/);
+    await expect(cinema.getByTestId("gen-sheet-price")).not.toContainText("quoted");
     await expect(cinema).not.toContainText(/Higgsfield/i);
   } else {
     /* Not offered in Make until #523's hold is merged (lib/shell/make-price.ts › MAKE_SHOWS_CINEMA). */

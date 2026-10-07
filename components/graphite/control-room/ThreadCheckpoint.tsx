@@ -5,6 +5,7 @@ import type { Step } from "@/lib/atomik";
 import { ProjectProvider, useProject } from "@/lib/projectContext";
 import { AtomikProvider, useAtomik } from "@/components/atomik/AtomikProvider";
 import { openAtomikChat } from "@/lib/shell/use-skills";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { approvalsChanged } from "@/lib/control-room/approve";
 import { exact, upTo } from "@/lib/shell/price-words";
 import { Price, usePriceTitle } from "../Price";
@@ -18,6 +19,9 @@ import { Price, usePriceTitle } from "../Price";
  * the one thread the row names.
  */
 export function ThreadCheckpoint({ chatId, productionId }: { chatId: string; productionId: string | null }) {
+  /* The sample workspace spends nothing: no step is continued there, so no checkpoint is opened. */
+  const spendOff = useSampleWorkspace();
+  if (spendOff) return null;
   return (
     <ProjectProvider>
       <AtomikProvider>

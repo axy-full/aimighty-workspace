@@ -183,11 +183,13 @@ test("Team: people and invites on the team routes, a role changed in place, a on
   await page.getByTestId("settings-invite-row").getByTestId("settings-invite-revoke").click();
   await expect.poll(() => writes.some((w) => w.url === "/api/team/invites/inv_old" && w.method === "DELETE")).toBe(true);
 
-  /* Security opens read-only: two-step and the workspace rule change on their own pages. */
+  /* Security: a person's own two-step changes on their account page; the workspace rule is the owner's to turn on here
+     (tests/workspace-security.spec.ts drives it against the real route). No password field until the owner asks to. */
   await page.getByTestId("settings-security-toggle").click();
   await expect(page.getByTestId("settings-two-step")).toContainText("On");
   await expect(page.getByTestId("settings-two-step-change")).toHaveAttribute("href", "/account/security");
   await expect(page.getByTestId("settings-workspace-two-step")).toContainText("off");
+  await expect(page.getByTestId("settings-workspace-two-step-toggle")).toHaveText("Turn on");
   await expect(page.getByTestId("settings-sessions")).toContainText("2 sessions");
   await expect(page.getByTestId("settings-security")).not.toContainText(/password/i);
   await floors(page, "Team › Security");
@@ -273,7 +275,7 @@ test("Spending rules: the rule, the platform line and Ask, read as the code has 
   await expect(page.getByTestId("settings-rule")).toContainText("Members up to 50 cr a shot; an admin above it.");
   await expect(page.getByTestId("settings-rule").locator(".gs-row-v")).toHaveText("50 cr");
   await expect(page.getByTestId("settings-platform-line")).toContainText("Any job over 200 cr needs a person’s approval, even under Auto.");
-  await expect(page.getByTestId("settings-budget")).toContainText("Warn at 80% of a production’s cap · at the cap an admin unlocks it");
+  await expect(page.getByTestId("settings-budget")).toContainText("Auto drafts ask at 80% of a production’s budget · at the cap an admin unlocks it");
   /* Spend without asking is Ask, read-only: no Auto switch, no invented pause. */
   await expect(page.getByTestId("settings-auto")).toContainText("Every paid step waits for a person.");
   await expect(page.getByTestId("settings-auto")).toContainText("Auto is picked per Board run, for drafts at or under 200 cr.");
@@ -302,7 +304,7 @@ test("Spending rules: the rule, the platform line and Ask, read as the code has 
   await page.getByTestId("settings-warn-90").click();
   await expect.poll(() => writes.filter((w) => w.url === "/api/settings").at(-1)?.body).toEqual({ capWarnPct: "90" });
   await page.getByTestId("settings-atcap-stop").click();
-  await expect(page.getByTestId("settings-budget")).toContainText("Warn at 90% of a production’s cap · rendering stops at the cap");
+  await expect(page.getByTestId("settings-budget")).toContainText("Auto drafts ask at 90% of a production’s budget · rendering stops at the cap");
   await floors(page, "Spending rules, editing");
 
   /* Each production's cap, on the route Atomik › Budget used: a number of credits, and Unlock at the cap. */
@@ -310,7 +312,7 @@ test("Spending rules: the rule, the platform line and Ask, read as the code has 
   await expect(page.getByTestId("settings-production")).toHaveCount(2);
   await expect(page.getByTestId("settings-production").first()).toContainText("200 of 200 cr");
   await page.getByTestId("settings-production-unlock").click();
-  await expect.poll(() => writes.find((w) => w.url === "/api/projects/pa")?.body).toEqual({ capUnlocked: true });
+  await expect.poll(() => writes.find((w) => w.url === "/api/projects/pa")?.body).toEqual({ capUnlocked: true, forCap: 200 });
   await page.getByTestId("settings-production").nth(1).getByTestId("settings-production-change").click();
   await page.getByTestId("settings-production-cap").fill("120");
   await page.getByTestId("settings-production-save").click();
@@ -331,7 +333,7 @@ test("Connections: tokens as the code has them, made and shown once, revoked in 
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("Can generate · 120 cr of 500 cr this month · used 2h ago");
   await expect(rows.nth(1)).toContainText("Read-only · never used");
-  await expect(page.getByTestId("settings-tokens")).not.toContainText(/prepare jobs|approves each/i);
+  /* Older tokens say what they do; a new one reads or prepares jobs a person approves (Gaps B, lane 5). */
   await expect(page.getByTestId("settings-publishing-row")).toHaveCount(3);
   await expect(page.getByTestId("settings-publishing")).toContainText("Not connected");
   await expect(page.getByTestId("settings-publishing").getByRole("button")).toHaveCount(0);
@@ -341,12 +343,12 @@ test("Connections: tokens as the code has them, made and shown once, revoked in 
 
   await page.getByTestId("settings-token-make").click();
   await page.getByTestId("settings-token-name").fill("Studio assistant");
-  await expect(page.getByTestId("settings-token-ceiling")).toHaveValue("500");
-  await page.getByTestId("settings-token-ceiling").fill("120");
+  await expect(page.getByTestId("settings-token-scope-prepare")).toHaveAttribute("aria-checked", "true");
   await page.getByTestId("settings-token-create").click();
   await expect(page.getByTestId("settings-token-secret")).toHaveText("pk_secret_once_123");
-  expect(writes.find((w) => w.url === "/api/tokens")?.body).toEqual({ name: "Studio assistant", scope: "render", capCredits: 120 });
+  expect(writes.find((w) => w.url === "/api/tokens")?.body).toEqual({ name: "Studio assistant", scope: "prepare" });
   await expect(page.getByTestId("settings-token")).toHaveCount(3);
+  await page.getByTestId("settings-token-done").click();
   await floors(page, "Connections, fresh token");
   await shot(page, "connections-token");
   /* The secret fills the setup, which is one fold away. */
@@ -355,7 +357,7 @@ test("Connections: tokens as the code has them, made and shown once, revoked in 
   await page.getByTestId("settings-client-mcp").click();
   await expect(page.getByTestId("settings-setup-step").nth(1)).toContainText("Bearer pk_secret_once_123");
   await page.getByTestId("settings-fold-mcp-toggle").click();
-  await expect(page.getByTestId("settings-mcp-tool")).toHaveCount(7);
+  await expect(page.getByTestId("settings-mcp-tool")).toHaveCount(8);
   await expect(page.getByTestId("settings-mcp-tool").filter({ hasText: "render_shot" })).toContainText("Can generate");
   await floors(page, "Connections, folds open");
   await page.getByTestId("settings-fold-mcp").scrollIntoViewIfNeeded();

@@ -11,7 +11,11 @@ import { isRawPrompt, type EnhanceMode, type EnhancerProvider } from "./enhancer
  * so a price that moved refuses instead of charging more. Nothing here knows
  * a price of its own.
  */
-export type EnhancerInput = { prompt: string; mode: EnhanceMode; model: string | null; anchored: boolean; editing: boolean };
+export type EnhancerInput = {
+  prompt: string; mode: EnhanceMode; model: string | null; anchored: boolean; editing: boolean;
+  /** The sample's line in the sample workspace: Enhance is off there (nothing quoted, nothing sent, Auto stays off). */
+  off?: string | null;
+};
 
 export type EnhancerHost = {
   auto: boolean;
@@ -46,7 +50,8 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
   const words = input.prompt.trim();
   const raw = isRawPrompt(input.prompt);
   const key = JSON.stringify(bodyOf(input));
-  const quotable = Boolean(words) && !raw;
+  const off = input.off ?? null;
+  const quotable = Boolean(words) && !raw && !off;
 
   /* The quote follows the words, debounced; a stale answer is dropped by key. */
   useEffect(() => {
@@ -69,7 +74,8 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
 
   const current = quote && quote.key === key ? quote : null;
   const credits = quotable ? current?.credits ?? null : null;
-  const blocked = !words ? "Write a few words first."
+  const blocked = off ? off
+    : !words ? "Write a few words first."
     : raw ? "raw: is sent as written."
     : current?.reason ? current.reason
     : credits == null ? "Pricing…"
@@ -80,7 +86,7 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
 
   const enhance = useCallback(async (): Promise<string | null> => {
     const approved = live.current;
-    if (approved.credits == null) return null;
+    if (approved.credits == null || off) return null;
     setBusy(true);
     setError(null);
     try {
@@ -99,12 +105,12 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
     } finally {
       setBusy(false);
     }
-  }, [scoped]);
+  }, [scoped, off]);
 
   const dismiss = useCallback(() => { setResult(null); setError(null); }, []);
 
   return {
-    auto, setAuto, credits, blocked, busy, error,
+    auto: auto && !off, setAuto, credits, blocked, busy, error,
     enhanced: result?.prompt ?? null, provider: result?.provider ?? null, charged: result?.charged ?? null,
     enhance: () => void enhance(), run: enhance, dismiss,
   };

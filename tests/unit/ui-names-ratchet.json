@@ -1,388 +1,353 @@
 {
   "ratchet": {
-    "app/(app)/library/page.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "stream 3 (Library drawer) + stream 6 (Make > Recent)"
-    },
-    "app/(app)/productions/[prod]/[project]/shots/page.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "goes with the file: stream 2 (Home: projects) + stream 3 (board)"
-    },
-    "app/(app)/productions/page.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "goes with the file: stream 2 (Home: projects) + stream 3 (board)"
-    },
-    "app/(app)/rig/canvas/[boardId]/page.tsx": {
-      "count": 8,
-      "until": "2026-10-08",
-      "by": "goes with the file: stream 3 (board canvas)"
-    },
-    "app/(app)/rig/recipes/[projectId]/page.tsx": {
-      "count": 1,
-      "until": "2026-10-08",
-      "by": "goes with the file: stream 3 (board canvas)"
-    },
     "app/api/crew/solutions/[id]/route/route.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "components/ElementScreen.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file; UNOWNED (§9): old app route with no replacement"
     },
     "components/ProductionNav.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file; UNOWNED (§9): old app route with no replacement"
     },
     "components/ShotBindings.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file; UNOWNED (§9): old app route with no replacement"
     },
     "components/assets/NewAssetSheet.tsx": {
-      "count": 6,
-      "until": "2026-10-08",
+      "count": 3,
+      "until": "2026-10-16",
       "by": "goes with the file: stream 3 (Library drawer) + stream 6 (Make > Recent)"
     },
     "components/astra-blender/AstraAgentPanel.tsx": {
       "count": 14,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file; UNOWNED (§9): Astra Blender workspace (3D)"
     },
     "components/astra-blender/AstraBlenderWorkspace.tsx": {
       "count": 7,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file; UNOWNED (§9): Astra Blender workspace (3D)"
     },
     "components/astra-blender/AstraExportPanel.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "Astra Blender workspace (3D): UNOWNED: 3D blocking tool"
     },
     "components/astra-blender/AstraStudio.tsx": {
       "count": 3,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file; UNOWNED (§9): Astra Blender workspace (3D)"
     },
     "components/atomik/MarketingStudioEntry.tsx": {
       "count": 3,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 11 (Ads and Social)"
     },
     "components/graphite/business/FormatTool.tsx": {
       "count": 5,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 11 (Ads and Social)"
     },
     "components/graphite/crew/CrewView.tsx": {
       "count": 4,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 7 (Atomik: Crew review, frame m)"
     },
     "components/graphite/production/TimelineCut.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 5 (cards 2)"
     },
     "components/make/AstraUpscale.tsx": {
       "count": 10,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 6 (Make): say \"Topaz upscale\"; the file is the Topaz Astra upscale form"
     },
     "components/make/GenLoading.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 6 (Make)"
     },
     "components/make/GenWorkspace.tsx": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 6 (Make)"
     },
     "components/management/OpenAIConnection.tsx": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 9 (Settings > Advanced): the model-catalogue note"
     },
     "components/rig/RigBar.tsx": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 3 (board canvas)"
-    },
-    "components/studio/ProjectStudioHeader.tsx": {
-      "count": 1,
-      "until": "2026-10-06",
-      "by": "orphan sweep (small PR, lead to assign)"
     },
     "components/studio/StudioNavigation.tsx": {
       "count": 3,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "flip PR, then D1 retire app shell (lead)"
     },
     "components/suites/AtomikSuite.tsx": {
       "count": 3,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 8 (control room)"
     },
     "components/suites/CreativeTemplateBrowser.tsx": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 11 (Ads and Social)"
     },
     "components/suites/MarketingPresets.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 11 (Ads and Social)"
     },
     "components/suites/MarketingStudioFlow.tsx": {
       "count": 4,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 11 (Ads and Social)"
     },
     "components/suites/MoleculrWorkspace.tsx": {
       "count": 3,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 11 (Ads and Social)"
     },
     "components/suites/SubatomikWorkspace.tsx": {
       "count": 7,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 11 (Social) + stream 6 (Make quick tools)"
     },
     "components/suites/SuiteAgentPanel.tsx": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 7 (Atomik)"
     },
     "components/suites/SuiteHome.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 2 (Home)"
     },
     "components/workbench/AtomikRunDialog.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "UNOWNED: \"Build with Astra\" (3D blocking tool)"
     },
     "components/workbench/Studio.tsx": {
       "count": 9,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: flip PR, then D1 retire /workbench (lead)"
     },
     "components/workspace/AccountMenu.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "flip PR, then D1 retire /workspace (lead)"
     },
     "components/workspace/inspector/CastInspector.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 5 (cards 2)"
     },
     "components/workspace/pages/registry.tsx": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 5 (cards 2)"
     },
     "components/workspace/rig/RigProvider.tsx": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 3 (the board's data layer stays; two toasts reword)"
     },
     "components/workspace/rig/use-team-canvas.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 3 (one message rewords)"
     },
     "components/workspace/spec/tools/AstraTool.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file; UNOWNED (§9): Astra 3D stage tool"
     },
     "lib/astra-blender/agent.ts": {
       "count": 7,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/astra-blender/blender-export.ts": {
       "count": 6,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/astra-blender/proposal.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/astra-blender/render-storage.ts": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/astra-blender/scene.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/astra.ts": {
       "count": 3,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/crew/context.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/crew/room.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/falVideo.ts": {
       "count": 3,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/generationAdmission.ts": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/higgsfield-consumer/reach.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/mediaBindings.ts": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/models.ts": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/production/boards.ts": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/production/rig-build.ts": {
       "count": 3,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/shortcuts.ts": {
-      "count": 2,
-      "until": "2026-10-06",
-      "by": "orphan sweep"
     },
     "lib/studio.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/submitVideo.ts": {
       "count": 4,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/usageLedgerTerms.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/vendorKeys.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/vendorNames.ts": {
       "count": 5,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/videoMetadata.server.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workbench/board-import.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workbench/development-plan.ts": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workbench/development-server.ts": {
       "count": 4,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workbench/draft-merge.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workbench/moleculr-graph.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workbench/rig-agent-planner.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workbench/rig-agent-runs.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workbench/rig-agent.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workbench/verify-server.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workers.ts": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workspace/plans.ts": {
       "count": 9,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workspace/rig-import.ts": {
       "count": 7,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workspace/spec-cards.ts": {
       "count": 13,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workspace/takes.ts": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     }
   },

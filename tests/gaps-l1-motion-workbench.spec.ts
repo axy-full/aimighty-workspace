@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import { everySpendButtonPriced, noBannedNames, PHONES, signedInWarm, watchErrors } from "./helpers/r1-gaps";
 import { openProjectFor, take, textReadsAtFloor } from "./helpers/gaps-l1";
 import { smallTargets, smallText } from "./phoneFloors";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 /*
  * Gaps, lane 1 · Motion transfer and Object swap details (design/particl-graphite "Gaps B frames"): the source video, the
@@ -10,7 +12,7 @@ import { smallTargets, smallText } from "./phoneFloors";
  * and a run with Cancel where the existing cancel route offers it. A source clip is 4 to 8 s for now; 720p is the default and
  * 1080p is allowed. Against a local ENGINE_MOCK server; every send is answered in the browser, nothing real is sent.
  */
-const SHOTS = process.env.GAPS_L1_SHOTS || "/private/tmp/claude-gaps-l1-shots";
+const SHOTS = process.env.GAPS_L1_SHOTS || join(tmpdir(), "claude-gaps-l1-shots");
 const shoot = (page: Page, name: string, project: string) => { mkdirSync(SHOTS, { recursive: true }); return page.screenshot({ path: `${SHOTS}/l1-${name}-${project.replace("workbench-", "")}.png`, animations: "disabled" }); };
 const CLIP = { url: "/fixtures/clip-6s.mp4", name: "walk.mp4", type: "video/mp4" };
 const LONG = { url: "/fixtures/clip.mp4", name: "long.mp4", type: "video/mp4" };

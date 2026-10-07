@@ -13,8 +13,7 @@ import { grokTranscriptionUsd } from "../lib/xaiVoice";
  * is let go with nothing charged, and the price on the button goes again under
  * a new key; a check that cannot be answered offers Try again; a press refused
  * because the estimate moved shows the new price for a new press. The paid route
- * and the check are a page-level stand-in for the server's claim rules (as
- * tests/helpers/claimsServer.ts is for renders), at every configured size.
+ * and the check are a page-level stand-in for the server's claim rules, at every configured size.
  * The last case runs the real local routes on the ENGINE_MOCK server: a key
  * answered once, replayed and checked, a key set aside before it arrives.
  * Nothing is billed for real.

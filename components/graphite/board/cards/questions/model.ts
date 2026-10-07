@@ -73,6 +73,11 @@ export function lookWords(answers: Answers): string {
   return [direction, ...typed].filter(Boolean).join(" ").slice(0, 2000);
 }
 
+/** The @names in the words, once each in the order typed: the part of the words that can change a price (the server turns them into cast references). */
+export function castTokens(words: string): string {
+  return [...new Set(words.match(/@[A-Za-z][A-Za-z0-9_]{0,31}/g) ?? [])].join(" ");
+}
+
 /** The answers with one chip chosen (choosing it again clears it). */
 export function withChip(answers: Answers, id: QuestionId, chip: string): Answers {
   const chips = { ...answers.chips };
@@ -93,4 +98,25 @@ export function showQuestions(project: Pick<Project, "brief" | "production">, ru
   if (!project.brief.trim()) return false;
   if (Object.keys(project.production?.boards?.looks ?? {}).length) return false;
   return !run || ["done", "stopped", "failed"].includes(run.state);
+}
+
+/**
+ * What "Show me looks" says and whether it can be pressed. A spend control is never enabled without its price: it reads
+ * "Show me looks · N cr" once the server has priced the looks, and until then it is disabled with the reason beside it
+ * ("Getting the price…", or why there is no price to get). `words` is the price as words ("43 cr", "up to 69 cr");
+ * `blocked` is what already stops it (read-only, sending, nothing left to make). Pure.
+ */
+export function looksButton({ words, pricing, blocked, busy }: {
+  words: string | null;
+  pricing: "none" | "loading" | "ready" | "error";
+  blocked: string | null;
+  busy: boolean;
+}): { label: string; disabled: boolean; why: string | null } {
+  if (busy) return { label: "Sending looks…", disabled: true, why: null };
+  const label = words ? `Show me looks · ${words}` : "Show me looks";
+  if (blocked) return { label, disabled: true, why: blocked };
+  /* The last price read stays on it while the next is read, but it cannot be pressed: it may be the old figure. */
+  if (pricing === "loading") return { label, disabled: true, why: "Getting the price…" };
+  if (!words) return { label, disabled: true, why: "There is no price for the looks yet." };
+  return { label, disabled: false, why: null };
 }

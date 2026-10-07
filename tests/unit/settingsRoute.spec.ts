@@ -5,6 +5,7 @@ import path from "node:path";
 import ts from "typescript";
 import * as enhancer from "../../lib/shell/enhancer";
 import * as settingValues from "../../lib/settingValues";
+import { cleanBudget } from "../../lib/budgetPause";
 
 /*
  * PATCH /api/settings refuses a value its readers do not understand, and
@@ -14,10 +15,11 @@ import * as settingValues from "../../lib/settingValues";
  * auth stubbed, so deleting the check (or writing before it) fails a test.
  */
 
-const DEFAULTS = { approvalRule: "anyone", shotCapCredits: "50", capWarnPct: "80", atCap: "producer", defaultVideoModel: "", defaultImageModel: "", editOutputFormat: "mp4", promptWriter: "claude", promptEnhancer: "higgsfield" };
+const DEFAULTS = { approvalRule: "anyone", shotCapCredits: "50", capWarnPct: "80", atCap: "producer", defaultVideoModel: "", defaultImageModel: "", editOutputFormat: "mp4", promptWriter: "claude", promptEnhancer: "higgsfield", productionBudgetCredits: "" };
 
 function load(role: "admin" | "member" = "admin") {
   const writes: [string, string, string][] = [];
+  const relocks: unknown[] = [];
   const mocks: Record<string, unknown> = {
     "next/server": createRequire(path.resolve("package.json"))("next/server"),
     "@/lib/shell/enhancer": enhancer,
@@ -31,7 +33,21 @@ function load(role: "admin" | "member" = "admin") {
       DEFAULTS,
       allSettings: async () => Object.fromEntries(writes.map(([k, v]) => [k, v])),
       setSetting: async (key: string, value: string, by: string) => { writes.push([key, value, by]); },
+      getSetting: async (key: string) => writes.filter(([k]) => k === key).at(-1)?.[1] ?? "",
     },
+    /* The budget and its re-lock go through one transactional writer (its own behaviour: tests/unit/demo-gaps-l4-people-only.spec.ts). */
+    "@/lib/caps": {
+      setWorkspaceBudget: async (value: string, by: string, inCredits: boolean) => {
+        const was = cleanBudget(writes.filter(([k]) => k === "productionBudgetCredits").at(-1)?.[1] ?? "");
+        writes.push(["productionBudgetCredits", value, by]);
+        const changed = was !== cleanBudget(value);
+        if (changed && inCredits) relocks.push({ budget: true });
+        return changed;
+      },
+    },
+    "@/lib/credits": { creditsApply: () => true },
+    "@/lib/tenant": { requireTenant: () => ({ id: "ws_settings" }) },
+    "@/lib/cache": { invalidate: () => {}, PROJECTS_KEY: "projects" },
     "@/lib/platform": { getPlatformLayer: async () => ({ models: {} }) },
     "@/lib/platformLayer": {
       resolveModels: () => ({}),
@@ -47,7 +63,7 @@ function load(role: "admin" | "member" = "admin") {
     return mocks[name];
   }, mod, mod.exports);
   const patch = (body: unknown) => mod.exports.PATCH(new Request("http://localhost/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
-  return { writes, patch };
+  return { writes, patch, relocks };
 }
 
 test("an unknown approval rule is refused with a 400, and nothing in the same save is written", async () => {
@@ -82,4 +98,16 @@ test("a member cannot change workspace settings", async () => {
   const { writes, patch } = load("member");
   expect((await patch({ approvalRule: "producer" })).status).toBe(403);
   expect(writes).toEqual([]);
+});
+
+test("a new budget per production re-locks every production that follows it; the same budget again does not", async () => {
+  const { patch, relocks } = load();
+  expect((await patch({ productionBudgetCredits: "400" })).status).toBe(200);
+  expect(relocks).toEqual([{ budget: true }]);
+  expect((await patch({ productionBudgetCredits: "400" })).status).toBe(200);
+  expect(relocks).toHaveLength(1);
+  expect((await patch({ capWarnPct: "90" })).status).toBe(200);
+  expect(relocks).toHaveLength(1);
+  expect((await patch({ productionBudgetCredits: "" })).status).toBe(200);
+  expect(relocks).toHaveLength(2);
 });

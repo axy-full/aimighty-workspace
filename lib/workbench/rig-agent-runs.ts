@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
 import type { AdmissionActor, AdmissionReply, PreparedAdmission, PrepareAdmissionResult } from "../admissionTypes";
 import { preparedClaimFingerprint } from "../admissionSupport";
+import { budgetAsk } from "../caps";
 import { creditState } from "../credits";
 import { db, now } from "../db";
 import { DRAFT_RESOLUTION } from "../draftFinal";
 import { checkGenerationRequest, runCharges, RUN_LIMIT_REACHED } from "../generationRequests";
 import { platformDb, platformReady } from "../platform";
 import { fromTenths, jobBand, runLimitVerdict, runTally, toTenths, type RunSpend } from "../runLimit";
+import { cinemaPriceWords } from "../cinemaHold";
 import { requireTenant } from "../tenant";
 import { shotEngine } from "../workspace/engines";
 import { shotReferenceAssets, shotReferenceRole } from "../workspace/rig";
@@ -125,6 +127,8 @@ export type PaidDeps = {
   follow?: (jobId: string) => Promise<void>;
   /** The per-job line now (default: lib/workbench/rig-agent-limits.ts). */
   ceiling?: () => Promise<number>;
+  /** Whether this render reaches the pause at a share of the production's budget (default: lib/caps.ts budgetAsk). */
+  budget?: (productionId: string, credits: number) => Promise<{ line: string } | null>;
 };
 
 export type PaidContext = {
@@ -203,8 +207,10 @@ export async function limitProblem(run: Pick<RunRow, "id" | "capCredits">, quote
 async function creditsProblem(admission: PreparedAdmission): Promise<string | null> {
   if (admission.quote.unit !== "cr") return null;
   const state = await creditState();
-  if (!state || state.balance >= admission.quote.estimatedCredits) return null;
-  return `Not enough credits: the next render is about ${figure(admission.quote.estimatedCredits)} and ${figure(Math.max(0, state.balance))} are left. Top up, then press Retry.`;
+  /* A take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts) needs the balance to cover its hold. */
+  const ceiling = admission.quote.ceilingCredits;
+  if (!state || state.balance >= (ceiling ?? admission.quote.estimatedCredits)) return null;
+  return `Not enough credits: the next render is ${ceiling != null ? `${cinemaPriceWords(admission.quote.estimatedCredits)},` : `about ${figure(admission.quote.estimatedCredits)}`} and ${figure(Math.max(0, state.balance))} are left. Top up, then press Retry.`;
 }
 
 /** What a reservation needs to count a render toward this run: refused when the run was stopped or switched off meanwhile. */
@@ -424,6 +430,8 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
   }
   const line = effectiveJobCeiling(run.perJobCap, await (deps.ceiling ?? rigJobCeiling)());
   const title = stepTitle(run, step);
+  /* A take that holds its ceiling (Cinema Studio) is approved at its hold: "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
+  const heldPrice = admission.quote.ceilingCredits != null ? cinemaPriceWords(quoteCredits) : `about ${figure(quoteCredits)}`;
   if (approval) {
     const worst = quoteCredits * Math.max(1, band);
     const cover = coverage(approval, { seq: step.seq, fixOf: step.fixOf, quote: quoteCredits, worst, fingerprint }, now(), line);
@@ -432,18 +440,23 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
       await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: approval.approvedBy, approved_fingerprint: fingerprint, approval_id: approval.id, reason: null }, ["waiting"]);
       return CONTINUE;
     }
-    const why = `${title} · about ${figure(quoteCredits)} · ${cover.reason}`;
+    const why = `${title} · ${heldPrice} · ${cover.reason}`;
     await patchStep(db(), step.id, { reason: why }, ["waiting"]);
     return needsYou(run, why);
   }
   /* Auto spends without a tap only on drafts (plan §8): a shot whose engine has no draft renders at full quality, so it asks. */
   const draft = admission.request.draft === true;
-  if (run.mode === "auto" && draft && toTenths(quoteCredits) <= toTenths(line)) {
+  /* At the share of the production's budget where paid work stops to ask (Settings › Spending rules), Auto asks too:
+     a person continues or stops. It only ever adds a tap; it never lets anything through. */
+  const budget = run.mode === "auto" && draft && toTenths(quoteCredits) <= toTenths(line)
+    ? await (deps.budget ?? budgetAsk)(run.productionId, quoteCredits) : null;
+  if (run.mode === "auto" && draft && toTenths(quoteCredits) <= toTenths(line) && !budget) {
     await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: "auto", approved_fingerprint: fingerprint, reason: null }, ["waiting"]);
     return CONTINUE;
   }
-  const why = run.mode !== "auto" ? `${title} is ready to render · about ${figure(quoteCredits)}.`
-    : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · about ${figure(quoteCredits)}. Render it, skip it, or stop.`
+  const why = budget ? `${budget.line} ${title} is next · ${heldPrice}.`
+    : run.mode !== "auto" ? `${title} is ready to render · ${heldPrice}.`
+    : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · ${heldPrice}. Render it, skip it, or stop.`
     : `${title} is about ${figure(quoteCredits)}, over the ${figure(line)} a draft may cost without asking. Render it, skip it, or stop.`;
   await patchStep(db(), step.id, { reason: why }, ["waiting"]);
   return needsYou(run, why);

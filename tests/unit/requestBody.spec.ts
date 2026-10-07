@@ -144,6 +144,7 @@ function route(file: string) {
       sourceLocked: blocked("rate-limit"),
       findByEmail: blocked("account-lookup"),
     },
+    "@/lib/demo/spend-guard.server": { sampleWorkspaceOff: blocked("sample-check") },
     "@/lib/recovery": {
       recoveryRoute: (handler: unknown) => handler,
       reserveRecoveryContinuation: blocked("continuation"),

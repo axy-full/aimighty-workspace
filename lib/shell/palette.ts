@@ -1,5 +1,5 @@
 import { STUDIO_RAIL } from "@/lib/board/regions";
-import type { MakeTool } from "./make";
+import type { MakeTab } from "./make";
 import { ALL_SHELL_PAGES, CREW_PAGES, SHELL_SUITES, WORKSPACE_TABS, type CrewPageId, type ShellSuiteId, type WorkspaceTabId } from "./ia";
 
 /**
@@ -8,8 +8,8 @@ import { ALL_SHELL_PAGES, CREW_PAGES, SHELL_SUITES, WORKSPACE_TABS, type CrewPag
  * component supplies models and assets from live data.
  */
 export type PaletteRun =
-  /** Make, or one of its quick tools (Motion transfer, Object swap). */
-  | { type: "gen"; tool?: MakeTool }
+  /** Make, on one of its types (Video, Image, Audio) or quick tools (Motion transfer, Object swap). */
+  | { type: "gen"; tool?: Exclude<MakeTab, "recent"> }
   | { type: "suite"; suite: ShellSuiteId }
   | { type: "page"; suite: ShellSuiteId; page: string }
   | { type: "workspace"; tab: WorkspaceTabId }
@@ -75,10 +75,12 @@ export function newPaletteIndex(input: {
     ...input.rail.map((r): PaletteRow => ({ group: "Board", label: r.label, hint: "", run: { type: "region", region: r.id } })),
     { group: "Board", label: "Ads", hint: "", run: { type: "board", kind: "ads" } },
     { group: "Board", label: "Social", hint: "", run: { type: "board", kind: "social" } },
-    { group: "Make", label: "Make", hint: "", run: { type: "gen" } },
-    { group: "Atomik", label: "Atomik", hint: CONTROL_PLACES.map((p) => p.label).join(" · "), run: { type: "atomik" } },
+    { group: "Make", label: "Video", hint: "Make", run: { type: "gen", tool: "video" } },
+    { group: "Make", label: "Image", hint: "Make", run: { type: "gen", tool: "image" } },
+    { group: "Make", label: "Audio", hint: "Make", run: { type: "gen", tool: "audio" } },
     { group: "Make", label: "Motion transfer", hint: "One source video and references", run: { type: "gen", tool: "motion" } },
     { group: "Make", label: "Object swap", hint: "One element replaced", run: { type: "gen", tool: "swap" } },
+    { group: "Atomik", label: "Atomik", hint: CONTROL_PLACES.map((p) => p.label).join(" · "), run: { type: "atomik" } },
     ...CONTROL_PLACES.map((p): PaletteRow => ({ group: "Atomik", label: p.label, hint: "Control room", run: { type: "control", page: p.page } })),
     ...SETTINGS_SECTIONS.map((s): PaletteRow => ({ group: "Settings", label: s.label, hint: "", run: { type: "settings", section: s.section } })),
     ...input.models.map((m): PaletteRow => ({ group: "Model", label: m.name, hint: m.kind, run: { type: "model", id: m.id } })),
@@ -92,7 +94,8 @@ export function newPaletteIndex(input: {
  */
 export function searchNewPalette(rows: PaletteRow[], query: string, opts: { goTo?: { id: string; label: string } | null; board?: string } = {}): PaletteRow[] {
   const q = query.trim().toLowerCase();
-  if (!q) return rows.slice(0, PALETTE_ROWS);
+  /* With nothing typed: every place the design lists (Home, the board, Make's types and tools, Atomik, Settings), never models or assets. */
+  if (!q) return rows.filter((r) => r.run.type !== "model" && r.run.type !== "asset" && r.run.type !== "control");
   const hits = rankPalette(rows, q, PALETTE_ROWS);
   if (!opts.goTo) return hits;
   const pinned: PaletteRow = { group: "Board", label: `Go to ${opts.goTo.label}`, hint: `On the ${opts.board ?? "Studio"} board`, run: { type: "region", region: opts.goTo.id } };

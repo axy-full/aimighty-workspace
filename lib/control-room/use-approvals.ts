@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { useSampleLift, useSampleWorkspace } from "@/lib/demo/use-sample";
+import { CHECK_LINE } from "@/lib/demo/sample";
 import { APPROVALS_CHANGED, approvalsChanged, approveBatch, approveItem, declineItem, type BatchResult, type PressOutcome } from "./approve";
 import type { ApprovalsReply, DecidedItem, QueueItem } from "./queue";
 
@@ -38,6 +40,11 @@ export type ApprovalsState = {
 export function useApprovals(options: { enabled?: boolean } = {}): ApprovalsState {
   const enabled = options.enabled ?? true;
   const session = useSession();
+  /* The sample workspace spends nothing: every item reads as the sample's, so no approve button is offered for any of them. */
+  const spendOff = useSampleWorkspace();
+  /* Save the one run the viewer lifted the mark for (lib/demo/lift.server.ts): its own items stay pressable; the server lets only that run through. */
+  const lift = useSampleLift();
+  const liftedRun = lift?.mine ? lift.runId : null;
   const scope = session.requestScope ?? null;
   const fetcher = useScopedFetch(scope);
   const [load, setLoad] = useState<{ scope: string | null; status: ApprovalsState["status"]; reply: ApprovalsReply | null; error: string | null }>({ scope, status: "loading", reply: null, error: null });
@@ -85,7 +92,7 @@ export function useApprovals(options: { enabled?: boolean } = {}): ApprovalsStat
     const current = load.scope === scope ? load : { status: "loading" as const, reply: null, error: null };
     return {
       status: current.status,
-      items: current.reply?.items ?? [],
+      items: spendOff ? (current.reply?.items ?? []).map((item) => (item.sample || ofRun(item, liftedRun) ? item : { ...item, sample: true, ...(spendOff === CHECK_LINE ? { unchecked: true } : {}) })) : current.reply?.items ?? [],
       decided: current.reply?.decided ?? [],
       inCredits: current.reply?.inCredits ?? true,
       error: current.error,
@@ -94,5 +101,10 @@ export function useApprovals(options: { enabled?: boolean } = {}): ApprovalsStat
       decline: (item) => settle(declineItem(item, fetcher)),
       approveBatch: (items, onStep) => settle(approveBatch(items, fetcher, onStep)),
     };
-  }, [load, scope, refresh, settle, fetcher]);
+  }, [load, scope, refresh, settle, fetcher, spendOff, liftedRun]);
+}
+
+/** Whether an item is a step of this run (a board run's build, plan or render). */
+function ofRun(item: QueueItem, runId: string | null): boolean {
+  return runId != null && !!item.approve && "runId" in item.approve && item.approve.runId === runId;
 }

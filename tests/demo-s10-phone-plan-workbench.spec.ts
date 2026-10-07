@@ -3,6 +3,7 @@ import { signInWithNewInterface } from "./helpers/newInterface";
 import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
 import type { BeatSheet } from "../lib/production/beats";
 import { dimLabels, lastRowClearsPinned, smallTargets, smallText } from "./phoneFloors";
+import { CHECK_LINE, SAMPLE_LINE } from "../lib/demo/sample";
 
 /**
  * Stream 10, PR 2: plan approval on the phone (design/particl-graphite/README.md § 3.6, frames B1–B3), behind the
@@ -165,6 +166,25 @@ test("Build sends the run's own approval of the build and nothing paid, then Hom
   await expect(page.getByTestId("phone-home")).toBeVisible();
   expect(paid).toEqual([]);
 });
+
+for (const [mode, line] of [["sample", SAMPLE_LINE], ["failed", CHECK_LINE]] as const) {
+  test(`the plan gate in ${mode === "sample" ? "the sample workspace" : "a workspace that could not be checked"}: the plan is read, with no priced Approve, no Build and no Change`, async ({ page }, info) => {
+    test.skip(!PORTRAIT.includes(info.project.name), "portrait phones");
+    await page.route("**/api/demo/sample", (route) => route.request().method() !== "GET" ? route.fallback()
+      : mode === "failed" ? route.fulfill({ status: 500, json: { error: "unavailable" } }) : route.fulfill({ json: { board: null, sampleWorkspace: true } }));
+    const { posts, paid, errors } = await open(page, gate([43, 43, 7]), [1, 1, 1]);
+    await expect(page.getByTestId("phone-plan-title")).toHaveText("Make 3 shots · 93 cr · at most 186 cr");
+    await expect(page.getByTestId("phone-plan-off")).toContainText(line);
+    await expect(page.getByTestId("phone-plan-primary")).toHaveCount(0);
+    await expect(page.getByTestId("phone-plan-change")).toHaveCount(0);
+    await expect(page.getByTestId("phone-plan-topup")).toHaveCount(0);
+    await expect(page.getByTestId("mobile-actions").getByRole("button", { name: /Approve|Build|Render/ })).toHaveCount(0);
+    await expect(page.getByTestId("sample-check-retry")).toHaveCount(mode === "failed" ? 1 : 0);
+    expect(posts).toEqual([]);
+    expect(paid).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+}
 
 test("the plan gate: Make 3 shots · 93 cr · at most 186 cr from the server, the price is the button, and one tap sends the plan's approval", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "phone widths");

@@ -181,9 +181,6 @@
 /* The compact list has no canvas to float over: the line is its first row. */
 .bd-sample--list { position: static; margin: 12px 16px 0; border-radius: 12px; white-space: normal; max-width: none; }
 
-/* ── React Flow's attribution, at the reading floor ── */
-.bd-flow .react-flow__attribution { background: var(--gx-root); padding: 2px 8px; font-size: 12px; }
-.bd-flow .react-flow__attribution a { color: var(--gx-quiet); }
 
 /* ── The List view: the same board as an ordered shot list ── */
 .bd-list { position: absolute; inset: 0; overflow: auto; padding: 28px 32px 120px; }

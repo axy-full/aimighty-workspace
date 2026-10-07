@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { Price } from "@/components/graphite/Price";
+import { AssetNextActions } from "@/components/graphite/AssetNextActions";
 import { SeedanceEditHost } from "@/components/graphite/tools/SeedanceEditHost";
 import { useVerifications } from "@/components/workspace/rig/use-verifications";
 import { SAY, referenceRole } from "@/lib/shell/assets";
@@ -149,6 +150,12 @@ export function TakeBody({ row, ctx }: { row: ShotTakes; ctx: BoardCtx }) {
         {judgeable(v) ? <a className="gx-insp-act" href={downloadHref(v.genId)} download data-testid="insp-download">Download</a> : null}
         {ctx.project.productionProjectId ? <button type="button" className="gx-insp-act" title="A link to this take, for people in this workspace" onClick={() => void copyLink()} data-testid="insp-copy-link">Copy link</button> : null}
       </div>
+
+      {/* The priced Next row (SOW 1.2 post tools: Upscale, Outpaint, Animate for a still; Upscale, Reframe, Extend for a clip): each prices its own request before it sends, and files a new take under this shot. */}
+      {judgeable(v) && v.entry.asset.origin === "generation" && !ctx.offline && !ctx.exploreOnly && !ctx.readOnly ? (
+        <AssetNextActions entry={v.entry} saved={Boolean(ctx.project.productionProjectId)} scope={ctx.scope} project={ctx.project}
+          onOpened={() => setPickedId(v.genId)} onOpenTake={(id) => setPickedId(id.replace(/^generation:/, ""))} />
+      ) : null}
 
       {history.length ? (
         <section>

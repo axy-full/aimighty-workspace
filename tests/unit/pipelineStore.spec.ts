@@ -745,3 +745,110 @@ test("same-key uncertain replay survives a new worker and the persisted poll can
     "succeeded",
   );
 });
+
+const CINEMA = "higgsfield-cinema-studio-4.0";
+const FROM_MAKE = "Cinema Studio runs from Make, where its full price is shown.";
+const held = () => {
+  const input = specification();
+  return { ...input, stages: [{ ...input.stages[0], model: CINEMA }] };
+};
+const count = async (f: Awaited<ReturnType<typeof fixture>>, table: string) =>
+  Number(
+    (await f.client.execute(`SELECT COUNT(*) AS n FROM ${table}`)).rows[0].n,
+  );
+
+test("a held model (Cinema Studio) is refused at create and update, with nothing saved", async () => {
+  await expect(fixture(false, held())).rejects.toMatchObject({
+    status: 409,
+    code: "pipeline_held_model",
+    message: FROM_MAKE,
+  });
+  const f = await fixture();
+  await expect(
+    f.store.saveVersion(owner, held(), 1, f.version.id, at + 1),
+  ).rejects.toMatchObject({ status: 409, message: FROM_MAKE });
+  expect(await count(f, "pipeline_versions")).toBe(1);
+  /* Every other model saves as before. */
+  expect(
+    (
+      await f.store.saveVersion(
+        owner,
+        { ...specification(), name: "Changed" },
+        1,
+        f.version.id,
+        at + 2,
+      )
+    ).version,
+  ).toBe(2);
+});
+
+test("a held model is refused at quote and approve; nothing is queued or approved", async () => {
+  const f = await fixture();
+  const cinema = {
+    ...f.prepared(),
+    request: { ...f.prepared().request, model: CINEMA },
+  };
+  await expect(
+    f.store.quoteStage(
+      owner,
+      f.run.id,
+      f.run.revision,
+      "image",
+      (await f.store.stageInputs(owner, f.run.id, "image")).inputHash,
+      [{ unit: 0, prepared: cinema }],
+      at + 10,
+    ),
+  ).rejects.toMatchObject({ status: 409, message: FROM_MAKE });
+  expect(await count(f, "pipeline_quotes")).toBe(0);
+  /* A pipeline saved before held models were refused: its stage names Cinema Studio. */
+  const q = await f.quote(f.run);
+  await f.client.execute({
+    sql: "UPDATE pipeline_versions SET body=REPLACE(body,'image-model',?)",
+    args: [CINEMA],
+  });
+  await expect(
+    f.store.approveQuote(
+      owner,
+      f.run.id,
+      q.baseRevision,
+      q.id,
+      q.fingerprint,
+      at + 20,
+    ),
+  ).rejects.toMatchObject({ status: 409, message: FROM_MAKE });
+  expect(await count(f, "pipeline_attempts")).toBe(0);
+  expect(
+    (await f.client.execute("SELECT approved_at FROM pipeline_quotes")).rows[0]
+      .approved_at,
+  ).toBeNull();
+});
+
+test("an attempt approved on a held model before the refusal is refused, never sent", async () => {
+  const f = await fixture(),
+    q = await f.quote(f.run);
+  const approved = await f.store.approveQuote(
+    owner,
+    f.run.id,
+    q.baseRevision,
+    q.id,
+    q.fingerprint,
+    at + 20,
+  );
+  await f.client.execute({
+    sql: "UPDATE pipeline_attempts SET prepared=REPLACE(prepared,'\"model\":\"model\"',?) WHERE id=?",
+    args: [`"model":"${CINEMA}"`, approved.attempts[0].id],
+  });
+  const lease = (await f.store.claimRun(f.run.id, at + 30, 1000))!;
+  expect(
+    await f.store.beginAttempt(lease, approved.attempts[0].id, at + 31),
+  ).toBeNull();
+  /* The other unit, on an ordinary model, is sent as before. */
+  expect(
+    (await f.store.beginAttempt(lease, approved.attempts[1].id, at + 32))
+      ?.state,
+  ).toBe("submitting");
+  const after = await f.store.getRun(owner, f.run.id);
+  expect(
+    after.attempts.find((a) => a.id === approved.attempts[0].id),
+  ).toMatchObject({ state: "refused", error: FROM_MAKE, generationId: null });
+});

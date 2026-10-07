@@ -18,6 +18,9 @@ import { fromTenths, isRunLimitAmount, runTally, toTenths, type RunCharge } from
 import { applyCanvasOps } from "./canvas-ops";
 import type { OpOutcome } from "./canvas-ops-model";
 import { readDraft, workbenchTransaction } from "./records";
+import { bindSampleLift } from "@/lib/demo/lift.server";
+import { SAMPLE_LINE } from "@/lib/demo/sample";
+import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 import {
   ACTIVE_STATES, PLAN_LIMITS, RIG_AGENT_MODES, boardSnapshot, compilePlan, creditFigure, planFingerprintText, proposalView, undoOps, wiresOf,
   type BoardSnapshot, type RigAgentMode, type RigAgentMoneyView, type RigAgentPaidStepView, type RigAgentPlanView, type RigAgentRunView, type RigAgentState,
@@ -218,6 +221,19 @@ async function viewOf(runId: string, viewer: string): Promise<RigAgentRunView> {
   return runView(run, await stepsOf(db(), runId), viewer, await ledgerOf(run), await planApprovalOf(db(), runId));
 }
 
+/**
+ * The plan gate's quote for a run on this production, exactly as the plan card shows it (its total and its "at most"),
+ * or null when the run is not at the gate. Read-only: the budget read sets it against the production's budget.
+ */
+export async function planGateQuote(productionId: string, runId: string): Promise<{ total: number; ceiling: number } | null> {
+  if (!(await rigAgentExists())) return null;
+  const run = await runOfProduction(db(), productionId, runId);
+  if (!run) return null;
+  const ledger = await ledgerOf(run);
+  const view = planView(run, await stepsOf(db(), run.id), "", ledger, await planApprovalOf(db(), run.id), effectiveJobCeiling(run.perJobCap, ledger.ceiling ?? run.perJobCap ?? 0));
+  return view?.quote ? { total: view.quote.total, ceiling: view.quote.ceiling } : null;
+}
+
 /** What asking costs, for the ask form: the suggested limit, the per-job line, and the planning turn's approximate ceiling. */
 export type RigAgentAskTerms = { limit: number; jobCeiling: number; planning: number | null };
 
@@ -308,6 +324,12 @@ export async function askRigAgent(input: { productionId: string; draftId: string
   await rigAgentReady();
   /* The per-job line in force as the limit is approved: Auto never goes above it (nor above the line of the day). */
   const jobCeiling = await rigJobCeiling();
+  /* The sample workspace refuses every ask (lib/demo/spend-guard.server.ts) save the one its mark is lifted for: the
+     run this ask makes becomes the one run the lift covers, in this same write, or nothing is written. */
+  const sampleMarked = (await sampleWorkspaceRefusal()) !== null;
+  /* The lift is for one APPROVED run (owner, 7 Oct): under it every render waits for a person's tap or the plan's one
+     Approve. Auto is never taken from the client there, whatever it sent. */
+  const runMode: RigAgentMode = sampleMarked ? "ask" : mode;
   const at = now();
   const run = await workbenchTransaction(async (tx) => {
     const again = await runByRequest(tx, input.userId, input.requestId);
@@ -326,8 +348,10 @@ export async function askRigAgent(input: { productionId: string; draftId: string
     const id = newRunId();
     await insertRun(tx, {
       id, productionId: input.productionId, draftId: input.draftId, owner: input.userId, requestId: input.requestId, goal: input.goal.trim(), model: input.model ?? "auto", at,
-      limit: { credits: input.limit, mode, jobCeiling },
+      limit: { credits: input.limit, mode: runMode, jobCeiling },
     });
+    if (sampleMarked && !(await bindSampleLift(tx, { userId: input.userId, runId: id, productionId: input.productionId, at })))
+      throw new RigAgentError(SAMPLE_LINE, 409);
     return (await getRun(tx, id))!;
   });
   if (run.state === "planning") await dispatchRigAgent(run, "plan");

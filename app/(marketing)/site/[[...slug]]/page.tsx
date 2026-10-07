@@ -3,10 +3,10 @@ import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import Gen, { metadata as gen } from "../_pages/gen";
 import Studio, { metadata as studio } from "../_pages/studio";
-import Business, { metadata as business } from "../_pages/business";
-import Viral, { metadata as viral } from "../_pages/viral";
+import Ads, { metadata as ads } from "../_pages/ads";
+import Social, { metadata as social } from "../_pages/social";
 import Atomik, { metadata as atomik } from "../_pages/atomik";
-import Workspace, { metadata as workspace } from "../_pages/workspace";
+import Settings, { metadata as settings } from "../_pages/settings";
 import Pricing, { metadata as pricing } from "../_pages/pricing";
 import { GuestHome } from "@/components/graphite/guest/GuestHome";
 import { readSite } from "@/lib/site/settings.server";
@@ -26,10 +26,10 @@ type Entry = { Page: () => ReactNode | Promise<ReactNode>; metadata: Metadata };
 const PAGES: Record<string, Entry> = {
   "": { Page: Gen, metadata: gen },
   studio: { Page: Studio, metadata: studio },
-  business: { Page: Business, metadata: business },
-  viral: { Page: Viral, metadata: viral },
+  ads: { Page: Ads, metadata: ads },
+  social: { Page: Social, metadata: social },
   atomik: { Page: Atomik, metadata: atomik },
-  workspace: { Page: Workspace, metadata: workspace },
+  settings: { Page: Settings, metadata: settings },
   pricing: { Page: Pricing, metadata: pricing },
 };
 

@@ -59,10 +59,10 @@ Read-only inventory of the workbench `canvas` stage ("Rig": `components/workbenc
 
 ## Coverage gaps and diagnostics
 
-- `tests/canvas-selection.spec.ts` runs only under `playwright.canvas.config.ts` (not in the default workbench suite); its drag/undo/delete test is desktop-only (`width < 1000` skip) and the PNG test is 1440-only. No test covers `arrangeGraph`, pinch/wheel zoom, wire drag/drop, `canConnect` type gaps, version caps, bypass, or `switch.activeInput`. The 190/60 px exact-integer drag assertions (`:249-253`) will flake if `fit()` zoom changes.
-- The /rig board's only test (`tests/desktop.spec.ts:370`) skips when signed out and runs no node.
+- `tests/canvas-selection.spec.ts` and `playwright.canvas.config.ts` are deleted (Q15, 7 Oct; the spec was skipped behind the retired old shell). When it ran it was outside the default workbench suite; its drag/undo/delete test is desktop-only (`width < 1000` skip) and the PNG test is 1440-only. No test covers `arrangeGraph`, pinch/wheel zoom, wire drag/drop, `canConnect` type gaps, version caps, bypass, or `switch.activeInput`. The 190/60 px exact-integer drag assertions (`:249-253`) will flake if `fit()` zoom changes.
+- The /rig board had one test (`tests/desktop.spec.ts`), deleted with the old screens on 7 October (Q15).
 - No `console.error`/`warn` anywhere in the canvas code; failures are toasts or inline text only. /rig discards errors with `.catch(() => {})` at `page.tsx:134, 93, 97, 270, 273, 306`.
-- `docs/particl-sow.md` § 9, "Known geometry trade-off", records the ~162 px right-side overflow of the desktop asset layer (1440×900) with the chat panel open.
+- `docs/particl-sow-v1.md` § 9, "Known geometry trade-off", records the ~162 px right-side overflow of the desktop asset layer (1440×900) with the chat panel open.
 
 ## PR E plan
 

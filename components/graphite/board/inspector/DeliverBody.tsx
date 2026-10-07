@@ -11,6 +11,7 @@ import { makeEDL, safeName } from "@/lib/workbench/studio";
 import { useSession } from "@/lib/session";
 import { deliverRows, type CutCardData } from "../cards/cut/cut-model";
 import { SpecRowView } from "../cards/deliver/SpecRow";
+import { useLoudnessInput } from "../edit/loudness-store";
 import type { CardProps } from "../cards/types";
 
 /*
@@ -31,6 +32,7 @@ export function DeliverBody({ data, ctx }: CardProps<CutCardData>) {
   const [advanced, setAdvanced] = useState(false);
   const [note, setNote] = useState<{ error: boolean; text: string } | null>(null);
   const act = signedIn && !ctx.offline;
+  const loudness = useLoudnessInput(ctx.project);
   const project = ctx.project;
   const run = async (label: string, work: () => Promise<void> | void) => {
     setNote(null);
@@ -43,7 +45,7 @@ export function DeliverBody({ data, ctx }: CardProps<CutCardData>) {
         <div className="gx-insp-title">Deliver</div>
         <div className="gx-insp-meta">{cut.aspect} · {cut.fps} fps</div>
       </div>
-      <div className="gx-insp-rows-plain">{deliverRows(cut).map((r) => <SpecRowView key={r.key} row={r} />)}</div>
+      <div className="gx-insp-rows-plain">{deliverRows(cut, loudness).map((r) => <SpecRowView key={r.key} row={r} />)}</div>
       {act ? (
         <section data-testid="insp-render">
           <div className="gx-insp-eyebrow-row"><span className="gx-insp-eyebrow">Export the cut</span><Price value={FREE} /></div>

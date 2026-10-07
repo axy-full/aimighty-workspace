@@ -47,7 +47,7 @@ async function floors(page: Page, where: string) {
   if (phone(page)) expect(await smallTargets(page, ".gx-palette"), `${where}: targets under 44 px`).toEqual([]);
 }
 
-test("⌘K opened by a link lists Home, the board's places, Make and Atomik", async ({ page }, info) => {
+test("⌘K opened by a link lists Home, the board's places, Make's types and tools, Atomik and Settings", async ({ page }, info) => {
   const { project } = await setUp(page);
   await page.goto(`/suites?project=${project.id}&palette=1`);
   const palette = page.getByTestId("atomik-palette");
@@ -55,8 +55,10 @@ test("⌘K opened by a link lists Home, the board's places, Make and Atomik", as
   await expect(palette.getByRole("textbox", { name: "Search" })).toHaveAttribute("placeholder", "Search, or tell Atomik what to do");
   const rows = palette.getByTestId("palette-row");
   await expect(rows.first()).toContainText("Home");
-  for (const label of ["Brief", "Looks", "Storyboard", "Shots", "Cast", "Cut", "Deliver", "Make", "Atomik"]) await expect(palette.getByRole("option", { name: new RegExp(label) }).first()).toBeVisible();
-  await expect(rows).toHaveCount(12);
+  for (const label of ["Brief", "Looks", "Storyboard", "Shots", "Cast", "Cut", "Deliver", "Video", "Image", "Audio", "Motion transfer", "Object swap", "Atomik"]) await expect(palette.getByRole("option", { name: new RegExp(label) }).first()).toBeVisible();
+  /* Settings' five sections are in the list too, below the fold of the scrolling list. */
+  for (const label of ["Team", "Plan & credits", "Spending rules", "Connections", "Advanced"]) await expect(palette.getByRole("option", { name: new RegExp(label) }).first()).toBeAttached();
+  await expect(rows).toHaveCount(21);
   await noSideways(page);
   await floors(page, "⌘K empty");
   await shot(page, "palette-empty", info);

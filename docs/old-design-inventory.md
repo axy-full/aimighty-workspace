@@ -237,7 +237,7 @@ Marketing copy that the scanner cannot see: the five marketing screenshots carry
 
 ## 4. Old shells: routes
 
-**The old homepage (owner, decision 41; dated Thu 8 Oct).** `/` signed out today is the Gen page (`app/(marketing)/site/_pages/gen/index.tsx`), its hero prompt (`components/marketing/HeroPrompt.tsx`), its copy, its `.mk-hero*` and `.mk-prompt*` rules in `components/marketing/marketing.css` and its screenshot `public/marketing/screens/gen-composer-blank.jpg`. All of it is deleted in the same step as turning Guest Home on: stream 15's follow-up PR `site/guest-home-on` (stacked on `site/guest-home`) deletes them and makes Guest Home the only `/` for a signed-out visitor; it merges when the owner turns Guest Home on. /pricing and the other `/site/*` pages stay. Target: Thu 8 Oct.
+**The old homepage (owner, decision 41; dated Thu 8 Oct).** `/` signed out today is the Gen page (`app/(marketing)/site/_pages/gen/index.tsx`), its hero prompt (`components/marketing/HeroPrompt.tsx`), its copy, its `.mk-hero*` and `.mk-prompt*` rules in `components/marketing/marketing.css` and its screenshot `public/marketing/screens/make-panel.jpg` (a Release 1 capture since 7 Oct). All of it is deleted in the same step as turning Guest Home on: stream 15's follow-up PR `site/guest-home-on` (stacked on `site/guest-home`) deletes them and makes Guest Home the only `/` for a signed-out visitor; it merges when the owner turns Guest Home on. /pricing and the other `/site/*` pages stay. Target: Thu 8 Oct.
 
 From `docs/old-shells.md`, which this inventory supersedes as the deletion list. Three shells still serve routes: `/workspace`, `/workbench` and the pages under `app/(app)/`; the live `/suites` shell is the 3 October build (`components/graphite/`) that the D0 PRs and stream 1 rebuild. "Imported by" for a route is the Next.js router; the components a route renders are in §6.
 
@@ -305,8 +305,6 @@ Code that encodes the old information architecture, as opposed to data logic the
 | `lib/shell/workflows.ts` | Generate workflows model (feature retired 28 Sep) | `components/graphite/tools/WorkflowHost.tsx`, `tests/unit/suitesWorkflows.spec.ts` | orphan sweep | Tue 6 Oct |
 | `lib/shell/use-connected-job.ts` | retired sign-in feature hook | `tests/unit/pollBackoff.spec.ts`, `tests/unit/suitesShellAudit.spec.ts` | orphan sweep | Tue 6 Oct |
 | `lib/suites.ts` | old suite registry (Gen, Studio, Business, Viral, Atomik) | `app/(app)/subatomic/page.tsx`, `components/atomik/MarketingStudioEntry.tsx`, `components/graphite/PageHead.tsx` +29 | stream 1 | Thu 8 Oct |
-| `lib/nav.ts` | old top-bar navigation, no importer | none | orphan sweep | Tue 6 Oct |
-| `lib/shortcuts.ts` | old shortcut list, no importer | none | orphan sweep | Tue 6 Oct |
 | `lib/genRoute.ts` | `/generate?mode=` links | `app/(app)/audio/page.tsx`, `app/(app)/images/page.tsx`, `app/(app)/make/[kind]/page.tsx` | stream 6 | Thu 8 Oct |
 | `lib/workspace/switchover.ts` | old-shell redirects | `components/switchover/DeviceProbe.tsx`, `components/switchover/SwitchoverGate.tsx`, `components/workspace/AccountMenu.tsx` +7 | flip PR / D1 | Thu 8 Oct |
 | `lib/workspace/switchover.server.ts` | old-shell redirects | `app/(app)/atomik/page.tsx`, `app/(app)/page.tsx`, `app/(app)/subatomik/page.tsx` +1 | flip PR / D1 | Thu 8 Oct |
@@ -318,37 +316,16 @@ Every component and route file under `components/` and `app/` (API routes exclud
 
 ### 6a. To delete
 
-#### ORPHAN: dead code from an older design (26)
+#### ORPHAN: dead code from an older design (5 left)
 
-Replacement: none: nothing imports it and no route reaches it. Deleting: orphan sweep (small PR, lead to assign). Target: Tue 6 Oct.
+Replacement: none: nothing imports it and no route reaches it. The orphan sweep (`fix/r1-orphan-sweep`, 7 Oct) deleted 21 of these and `lib/nav.ts` and `lib/shortcuts.ts`; the guard's tombstones keep them gone. The five left here are imported only by unit specs or by each other, so they go with the owner's answer on old tests (Q15). Target: Thu 8 Oct.
 
 | Path | Kind | Imported by | Deleting PR or stream | Target |
 |---|---|---|---|---|
-| `components/Canvas.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/Cast.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/CreditStrip.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/ElementSheet.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/GenGrid.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/ModeSwitch.tsx` | component | `components/TopBar.tsx` | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/Panel.tsx` | component | `components/WorkspaceSettings.tsx` | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/Review.tsx` | component | `components/Theatre.tsx` | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/Runway.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/SectionNav.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/Studio.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/Theatre.tsx` | component | `components/GenGrid.tsx` | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/TopBar.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/WorkspaceSettings.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/graphite/DeveloperApiRow.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
 | `components/graphite/tools/WorkflowHost.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/management/ConsumerVideoVerification.tsx` | component | `components/management/HiggsfieldConsumerConnection.tsx` | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/management/HiggsfieldConsumerConnection.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/shell/AccountMenu.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/shell/AtomikButton.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/studio/ProjectStudioHeader.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
 | `components/suites/AtomikVoiceTools.tsx` | component | `components/graphite/tools/WorkflowHost.tsx` | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
 | `components/suites/ConsumerMarketingVideo.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
 | `components/suites/ConsumerShorts.tsx` | component | `components/workspace/pages/ShortsPage.tsx` | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
-| `components/workspace/mobile/pages/FormPage.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
 | `components/workspace/pages/ShortsPage.tsx` | component | none | orphan sweep (small PR, lead to assign) | Tue 6 Oct |
 
 #### S_STRIP: 46 px page strip, gone in README 1 (4)
@@ -404,10 +381,10 @@ Replacement: board Inspector, take card, review mode (stream 5). Deleting: strea
 |---|---|---|---|---|
 | `components/graphite/AssetInspector.tsx` | component | `components/graphite/Inspector.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/AssetLinkCard.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 5 (cards 2) | Thu 8 Oct |
-| `components/graphite/AssetNextActions.tsx` | component | `components/graphite/AssetInspector.tsx` | stream 5 (cards 2) | Thu 8 Oct |
+| `components/graphite/AssetNextActions.tsx` | component | `components/graphite/AssetInspector.tsx`, `components/graphite/board/inspector/TakeBody.tsx` | kept: the board Inspector mounts it (the priced Next row, SOW 1.2) | none |
 | `components/graphite/DraftFinal.tsx` | component | `components/graphite/AssetInspector.tsx`, `components/graphite/GenView.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/Inspector.tsx` | component | `components/graphite/SuitesShell.tsx` | stream 5 (cards 2) | Thu 8 Oct |
-| `components/graphite/NextActionPanel.tsx` | component | `components/graphite/AssetNextActions.tsx` | stream 5 (cards 2) | Thu 8 Oct |
+| `components/graphite/NextActionPanel.tsx` | component | `components/graphite/AssetNextActions.tsx` | kept with it | none |
 | `components/graphite/ReleaseTake.tsx` | component | `components/graphite/AssetInspector.tsx`, `components/graphite/TakeTile.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/TakeStrip.tsx` | component | `components/graphite/DraftFinal.tsx`, `components/graphite/GenView.tsx` | stream 5 (cards 2) | Thu 8 Oct |
 | `components/graphite/TakeTile.tsx` | component | `components/graphite/AssetInspector.tsx`, `components/graphite/GenView.tsx`, `components/graphite/Library.tsx` +4 | stream 5 (cards 2) | Thu 8 Oct |
@@ -1097,7 +1074,7 @@ These stay past the clean slate. Each has a reason and the date it is reviewed a
 | `components/astra-blender/AstraRenderPanel.tsx` | source | `components/astra-blender/AstraStudio.tsx` | Astra Blender workspace (3D): UNOWNED: 3D blocking tool | Thu 8 Oct |
 | `components/astra-blender/AstraStudio.tsx` | source | `components/workbench/Studio.tsx`, `components/workspace/spec/tools/AstraTool.tsx` | Astra Blender workspace (3D): UNOWNED: 3D blocking tool | Thu 8 Oct |
 | `components/astra-blender/AstraViewport.tsx` | source | `components/astra-blender/AstraBlenderWorkspace.tsx` | Astra Blender workspace (3D): UNOWNED: 3D blocking tool | Thu 8 Oct |
-| `components/astra-blender/astra-render-recovery.ts` | source | `components/astra-blender/AstraRenderPanel.tsx`, `tests/astra-render-workbench.spec.ts`, `tests/unit/astraRenderRecovery.spec.ts` | Astra Blender workspace (3D): UNOWNED: 3D blocking tool | Thu 8 Oct |
+| `components/astra-blender/astra-render-recovery.ts` | source | `components/astra-blender/AstraRenderPanel.tsx`, `tests/unit/astraRenderRecovery.spec.ts` | Astra Blender workspace (3D): UNOWNED: 3D blocking tool | Thu 8 Oct |
 | `components/astra-blender/types.ts` | source | `components/astra-blender/AstraBlenderWorkspace.tsx`, `components/astra-blender/AstraViewport.tsx` | Astra Blender workspace (3D): UNOWNED: 3D blocking tool | Thu 8 Oct |
 | `components/astra-blender/astra-blender.module.css` | sheet | `components/astra-blender/AstraBlenderWorkspace.tsx`, `components/astra-blender/AstraViewport.tsx` | Astra Blender workspace (3D): UNOWNED: 3D blocking tool | Thu 8 Oct |
 | `components/astra-blender/astra-integration.module.css` | sheet | `components/astra-blender/AstraAgentPanel.tsx`, `components/astra-blender/AstraExportPanel.tsx`, `components/astra-blender/AstraNativeSourcePanel.tsx`, `components/astra-blender/AstraStudio.tsx` | Astra Blender workspace (3D): UNOWNED: 3D blocking tool | Thu 8 Oct |
@@ -1114,11 +1091,6 @@ These stay past the clean slate. Each has a reason and the date it is reviewed a
 
 | Path | Kind | Imported by | Deleting PR or stream | Target |
 |---|---|---|---|---|
-| `public/marketing/screens/gen-composer-blank.jpg` | export: screenshot of the Gen composer | `app/(marketing)/site/_pages/gen/index.tsx` | stream 15: deleted with the homepage by `site/guest-home-on` (decision 41); was: stream 15 step 2 (landing page, after the owner's frames) retakes it from the Make panel | after the new screens merge; owner to confirm date (§9) |
-| `public/marketing/screens/studio-rig-canvas.jpg` | export: screenshot of the Rig canvas (path label "particl.app / dune-studies / rig": a placeholder name too) | `app/(marketing)/site/_pages/studio/index.tsx` | stream 15 step 2: retake from the board | after the new screens merge; owner to confirm date (§9) |
-| `public/marketing/screens/viral-history.jpg` | export: screenshot of Viral History | `app/(marketing)/site/_pages/viral/index.tsx` | stream 15 step 2: retake from the Social board | after the new screens merge; owner to confirm date (§9) |
-| `public/marketing/screens/workspace-plans-credits.jpg` | export: screenshot of Workspace > Plans & credits | `app/(marketing)/site/_pages/workspace/index.tsx` | stream 15 step 2: retake from Settings > Plan & credits | after the new screens merge; owner to confirm date (§9) |
-| `public/marketing/screens/palette-cmd-k.jpg` | export: screenshot of the old ⌘K palette | `components/marketing/SharedBottom.tsx` | stream 15 step 2: retake from #513's palette | after the new screens merge; owner to confirm date (§9) |
 
 The marketing pictures are old-design exports that depend on the new screens existing, so they cannot go before the demo. Until they are retaken the marketing pages name the old interface inside the picture; stream 15 can drop the five `<Window>` blocks instead if the owner prefers no picture to an old one.
 
@@ -1133,7 +1105,7 @@ Items no stream plan covers. Each needs a name from the lead or an answer from t
 3. **Primitive sets.** `components/ui/*` (16 files, built from the 3 October README) and `components/workspace/ui/*` (10) are two old component sets; no plan builds a replacement, so the new screens either reuse them or each ship their own. Decide before the flip PR.
 4. **Old app pages no frame draws:** `/projects/[id]` and its canvas and element pages, `/takes/[id]`, `/shots/[id]`, `/elements/[id]`, `/studio/shot`, `/atomik/ideas|treatment|breakdown|shots`, `/rig/recipes`, `/workbench/movie` (the `?snapshot=` hand-off from pipeline runs). They retire only if the owner accepts losing them, or Claude Design draws them.
 5. **Pages the handoff does not draw and that stay:** `/statements`, `/admin`, `/platform`, `/report`, `/policy`, `/privacy`, `/terms`, `/review/[token]`, the sign-in and billing pages. Listed in §7; they need a restyle onto tokens or a frame. The brief names #515 (the reading floor) for this.
-6. **Orphan sweep.** 26 source files and 2 sheets that nothing imports and no route reaches: a one-PR deletion with no behaviour change. Assign it; this inventory proposes Tue 6 Oct. Same PR: four stale docs and one stale line in `brand/atomik/README.md` (§1b).
+6. **Orphan sweep.** Done in part on 7 Oct (`fix/r1-orphan-sweep`): 23 files deleted with no behaviour change. Left: `lib/shell/workflows.ts`, `lib/shell/use-connected-job.ts`, `components/graphite/tools/WorkflowHost.tsx`, the three `components/suites` consumer files, `components/workspace/pages/ShortsPage.tsx` and 2 sheets, because unit specs import them; they go with the owner's answer on old tests (Q15). Same PR: four stale docs and one stale line in `brand/atomik/README.md` (§1b).
 7. **`lib/` outside `lib/shell/`** holds 117 more retired-name strings in 44 files (`lib/workspace`, `lib/workbench`, `lib/astra-blender`, `lib/suites.ts`, `lib/vendorNames.ts`, …). The guard scans `lib/shell/` only, as briefed. Widening the scan is a one-line change plus a baseline, if the lead wants it.
 8. **`docs/particl-sow.md` and `docs/particl-sow-2026-10-04.md`** carry the old suite names and IA; only the owner amends them.
 9. **The marketing pictures** (§8) wait for the new screens; the date is the owner's.

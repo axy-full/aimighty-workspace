@@ -160,7 +160,7 @@ test("with nothing claimed, a Generate is quoted, held to the price on the butto
   await withServer({ "/api/generate/quote": quote, "/api/generate": () => ({ status: 202, json: { id: "gen_new" } }) }, async (calls) => {
     const storage = memory();
     expect(await dispatchGeneration({ scope: SCOPE, storageId: STORAGE_ID, shown: 20, storage, request: { endpoint: "/api/generate", input: edited() } }))
-      .toEqual({ state: "repriced", credits: 21, reason: "The price is now 21 cr. Press Generate again to approve it." });
+      .toEqual({ state: "repriced", credits: 21, reason: "The price is now 21 cr. Press it again to approve it." });
     expect(calls.map((c) => c.path)).toEqual(["/api/generate/quote"]);
     expect(await dispatchGeneration({ scope: SCOPE, storageId: STORAGE_ID, shown: 21, storage, request: { endpoint: "/api/generate", input: edited() } }))
       .toEqual({ state: "queued", jobId: "gen_new", credits: 21 });

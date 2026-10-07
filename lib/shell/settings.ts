@@ -25,14 +25,20 @@ export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string 
 /** The sections this build draws. The rest still open the page that holds them today (SETTINGS_INTERIM). */
 export const SETTINGS_BUILT: readonly SettingsSectionId[] = Object.freeze(["team", "credits", "rules", "connections", "advanced"]);
 
+/**
+ * The app address of Settings › Plan & credits, for a link sent outside the app (a push, an email). Never `/settings`:
+ * that is the public Settings page for someone who is not signed in (proxy.ts).
+ */
+export const SETTINGS_CREDITS = "/suites?view=workspace&tab=credits";
+
 export const isSettingsSection = (value: unknown): value is SettingsSectionId => SETTINGS_SECTIONS.some((s) => s.id === value);
 export const isBuiltSection = (value: unknown): value is SettingsSectionId => isSettingsSection(value) && SETTINGS_BUILT.includes(value);
 export const sectionLabel = (id: SettingsSectionId): string => SETTINGS_SECTIONS.find((s) => s.id === id)!.label;
 
 /** The fold a link unfolds: `?view=workspace&tab=team&open=security`. */
 export const SETTINGS_OPEN_PARAM = "open";
-export type SettingsFold = "security" | "packs" | "history" | "usage" | "statements" | "rates" | "models" | "tools" | "workspace" | "assistant" | "mcp" | "engines";
-export const SETTINGS_FOLDS: readonly SettingsFold[] = Object.freeze(["security", "packs", "history", "usage", "statements", "rates", "models", "tools", "workspace", "assistant", "mcp", "engines"]);
+export type SettingsFold = "security" | "packs" | "history" | "usage" | "statements" | "rates" | "models" | "tools" | "workspace" | "assistant" | "mcp" | "engines" | "budget";
+export const SETTINGS_FOLDS: readonly SettingsFold[] = Object.freeze(["security", "packs", "history", "usage", "statements", "rates", "models", "tools", "workspace", "assistant", "mcp", "engines", "budget"]);
 export const isSettingsFold = (value: unknown): value is SettingsFold => SETTINGS_FOLDS.includes(value as SettingsFold);
 
 /** The fold an address asks for, or null (missing, or not a fold Settings has). */

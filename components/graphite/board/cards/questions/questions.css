@@ -33,6 +33,14 @@
 .gx-q-secondary:hover:not(:disabled) { border-color: var(--gx-hover-border); }
 .gx-q-secondary:disabled { color: var(--gx-disabled); cursor: default; }
 .gx-q-why { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+/* One filled button per screen (README § 0, rule 1): while Make or one of its quick tools is open, that panel holds the
+   main action, so Show me looks steps down to the outline style (the dock's own buttons do the same, in agent.css and panel.css). */
+.gx:has(.gx-make) .gx-q-primary:not(.gx-make *) { background: transparent; color: var(--gx-text); border: 1px solid var(--gx-btn-border); }
+.gx:has(.gx-make) .gx-q-primary:not(.gx-make *):hover:not(:disabled) { background: transparent; border-color: var(--gx-hover-border); }
+/* Its price stays on it and stays readable (at least 12px, at least 55% white): a waiting button keeps its ink and its
+   border at the read floor rather than fading to the disabled tier, and the reason it waits is beside it. */
+.gx:has(.gx-make) .gx-q-primary:not(.gx-make *) { font-size: 13px; }
+.gx:has(.gx-make) .gx-q-primary:not(.gx-make *):disabled { opacity: 1; color: var(--gx-text-half); border-color: var(--gx-btn-border); }
 @media (max-width: 767px) {
   .gx-q-chip, .gx-q-field, .gx-q-primary, .gx-q-secondary { min-height: 44px; }
   .gx-q-field { font-size: 16px; }

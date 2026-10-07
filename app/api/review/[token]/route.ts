@@ -4,6 +4,8 @@ import { resolveShare } from "@/lib/shares";
 import { db, ready } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { originalKindOf } from "@/lib/originalMedia";
+import { reviewSet } from "@/lib/security/review-link";
+import { storedActorMaskHere } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ token: string }> };
@@ -22,6 +24,14 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
 
   const out = await runInTenant(workspace, async () => {
     await ready();
+    /* A Crew review link (lib/security/review-link.ts) opens its production's review set; an older link, the
+       Approved takes below, exactly as before. Reading is never limited. */
+    if (found.review) {
+      const set = await reviewSet(token, share.id, share.projectId);
+      if (!set) return null;
+      const logo = (await getSetting("brandLogoUploadId")) || null;
+      return { kind: "review" as const, workspace: { name: workspace.name, logo: logo ? `/api/review/${token}/logo` : null }, production: set.production, takes: set.takes, expiresAt: share.expiresAt };
+    }
     const project = await db().execute({ sql: `SELECT id, name, description FROM projects WHERE id = ? LIMIT 1`, args: [share.projectId] });
     if (!project.rows.length) return null;
     const takes = await db().execute({
@@ -50,6 +60,8 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
       const k = String(n.gen_id);
       (byGen.get(k) ?? byGen.set(k, []).get(k)!).push({ text: String(n.text), author: String(n.author ?? "the studio"), guest: Number(n.guest) === 1, at: Number(n.created_at) });
     }
+    /* Who approved, as a guest may read it: the platform owner reads "Particl support" outside the house (lib/platformOwnerPrivacy.ts). */
+    const shown = await storedActorMaskHere();
     const logo = (await getSetting("brandLogoUploadId")) || null;
     const p = project.rows[0] as any;
     return {
@@ -62,7 +74,7 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
           shot: r.shot_code ? String(r.shot_code) : null, title: r.shot_title ? String(r.shot_title) : null,
           version: Number(r.version ?? 1),
           prompt: String((params.rawPrompt as string | undefined) ?? r.prompt ?? "").split(/\n\s*\n/)[0],
-          approvedBy: r.review_by ? String(r.review_by) : null,
+          approvedBy: r.review_by ? shown(String(r.review_by)) : null,
           media: `/api/review/${token}/media/${r.id}`,
           notes: byGen.get(String(r.id)) ?? [],
         };

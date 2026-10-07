@@ -4,6 +4,11 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from
 import { smallTargets } from "./phoneFloors";
 import { newProject } from "../lib/workbench/studio";
 import type { TakeFailure } from "../lib/providerOutcome";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /**
  * A failed take on the shared card (TakeTile) says what happened and — only
@@ -46,7 +51,7 @@ async function open(page: Page, url: string) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(url);
-  await expect(page.getByTestId("project-name")).toHaveText("Outcome review");
+  await expect(projectName(page)).toHaveText("Outcome review");
   return errors;
 }
 
@@ -77,7 +82,7 @@ async function noSideScroll(page: Page) {
 test("Gen › Results: a failed take's charge is said only from a receipt, whole, and clears the tab bar", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const errors = await open(page, "/suites?make=recent");
-  const results = page.getByRole("region", { name: "Results" });
+  const results = page.getByRole("region", { name: "Recent" });
   await expect(results.getByTestId("take-tile")).toHaveCount(CASES.length);
   await expectCards(results);
   /* The screen reader hears the take and its status, not a claim about its charge. */

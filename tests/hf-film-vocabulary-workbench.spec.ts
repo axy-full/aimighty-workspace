@@ -7,6 +7,11 @@ import { smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { composePrompt, craftModules } from "../lib/studio";
 import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /**
  * Gen's film vocabulary (idea 13): under Direction, six chips — Shot · Angle ·
@@ -77,9 +82,9 @@ async function open(page: Page, options: Options = {}) {
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour film study");
+  await expect(projectName(page)).toHaveText("Harbour film study");
   /* Hydrated: the composer has read its engines and priced itself once words arrive. */
-  await expect(page.getByTestId("gen-model")).toContainText("Seedance");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Seedance");
   return { errors, priced, lists, clips };
 }
 

@@ -6,6 +6,7 @@ import { readProjectBody } from "@/lib/workbench/request-body";
 import { orderedIds } from "@/lib/workbench/team-canvas-model";
 import { collabConfigured } from "@/lib/collab";
 import { db } from "@/lib/db";
+import { storedActorMaskHere } from "@/lib/platformOwnerPrivacy";
 import {
   masterLocks, patchTeamCanvas, readTeamCanvas, requireProduction, teamCanvasRevision, teamPatchSchema, teamRoomFor, TeamCanvasError,
 } from "@/lib/workbench/team-canvas";
@@ -13,6 +14,7 @@ import { latestServerChange } from "@/lib/workbench/canvas-ops-log";
 import { boardHistory } from "@/lib/board/history.server";
 import { applyCanvasOps } from "@/lib/workbench/canvas-ops";
 import { scheduleCanvasPush } from "@/lib/workbench/canvas-push";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 import {
   approveRigAgent, approveRigAgentPlan, askRigAgent, declineRigAgent, fixRigAgentShot, MAX_RUN_LIMIT, retryRigAgentStep, raiseRigAgentLimit, renderRigAgentStep, RigAgentError, rigAgentEnabled, rigAgentState,
   newBoardAskTerms, skipRigAgentStep, stopRigAgent, undoRigAgent,
@@ -20,6 +22,12 @@ import {
 
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
+
+/** A card as this workspace may read its lock record: the platform owner is "Particl support" outside the house (lib/platformOwnerPrivacy.ts). */
+type CardShown = { master?: { lockedBy?: string } & Record<string, unknown> };
+function shownLock<N extends CardShown>(shown: (value: string) => string, node: N): N {
+  return node.master?.lockedBy ? { ...node, master: { ...node.master, lockedBy: shown(node.master.lockedBy) } } : node;
+}
 
 async function caller(req: Request, write: boolean) {
   const auth = await requireSession();
@@ -68,8 +76,11 @@ export const GET = withTenant(async (req: Request) => {
     if (url.searchParams.get("head") === "1")
       return Response.json({ head: true, revision: await teamCanvasRevision(productionId), server }, { headers: NO_STORE });
     const saved = await readTeamCanvas(productionId);
+    /* Who locked a master, as this workspace may read it: the platform owner is "Particl support" outside the house (lib/platformOwnerPrivacy.ts). */
+    const shown = await storedActorMaskHere();
+    const nodes = saved ? Object.fromEntries(Object.entries(saved.canvas.nodes).map(([id, n]) => [id, shownLock(shown, n)])) : {};
     return Response.json({
-      canvas: saved ? { nodes: saved.canvas.nodes, assets: saved.canvas.assets, order: orderedIds(saved.canvas), removedIds: Object.keys(saved.canvas.removed), serverMade: saved.canvas.serverMade } : null,
+      canvas: saved ? { nodes, assets: saved.canvas.assets, order: orderedIds(saved.canvas), removedIds: Object.keys(saved.canvas.removed), serverMade: saved.canvas.serverMade } : null,
       revision: saved?.revision ?? 0,
       room: collabConfigured() ? teamRoomFor(requireTenant().id, productionId) : null,
       server,
@@ -96,9 +107,10 @@ export const PATCH = withTenant(async (req: Request) => {
     if (saved.held.length) scheduleCanvasPush(productionId);
     /* Writes that would have changed a locked master did not land; the rest of the edit did. `held` says which,
        with the card (or asset) as the canvas holds it, so the window puts it back. */
+    const shown = saved.masterHolds.length ? await storedActorMaskHere() : null;
     const held = saved.masterHolds.map((h) => ({
       ...h,
-      ...(h.nodeId && saved.canvas.nodes[h.nodeId] ? { node: saved.canvas.nodes[h.nodeId] } : {}),
+      ...(h.nodeId && saved.canvas.nodes[h.nodeId] ? { node: shownLock(shown!, saved.canvas.nodes[h.nodeId]) } : {}),
       ...(h.assetId && saved.canvas.assets[h.assetId] ? { asset: saved.canvas.assets[h.assetId] } : {}),
     }));
     return Response.json({ revision: saved.revision, ...(held.length ? { held } : {}) }, { headers: NO_STORE });
@@ -156,6 +168,9 @@ const actionSchema = z.discriminatedUnion("action", [
  *    (anyone on the team). What a run spends is spent by its worker, inside
  *    the approved limit. Each answers Atomik's run card.
  */
+/** The board agent's actions that can lead to a paid call (a planning turn, a render, a raised limit). */
+const SPENDING_AGENT_ACTIONS = new Set(["agent.plan", "agent.approve", "agent.render", "agent.limit", "agent.approvePlan", "agent.fix", "agent.retry"]);
+
 export const POST = withTenant(async (req: Request) => {
   const who = await caller(req, true);
   if (who.response) return who.response;
@@ -171,6 +186,14 @@ export const POST = withTenant(async (req: Request) => {
       const result = await applyCanvasOps(action.productionId, { opId: `tidy:${userId}:${action.opId}`, ops: [{ kind: "tidy" }], author: userId, what: "tidy" });
       const count = (kind: string) => result.outcomes.filter((o) => o.kind === kind).flatMap((o) => o.nodeIds).length;
       return Response.json({ revision: result.revision, moved: count("tidy"), sections: count("create"), live: result.live, credits: 0 }, { headers: NO_STORE });
+    }
+    /* The sample workspace spends nothing: Atomik on its boards plans, approves, renders and retries nothing.
+       Declining, stopping, skipping and undoing stay free. While an owner or admin has lifted the mark for one run
+       (lib/demo/lift.server.ts), their own ask that makes it, and their own presses on that run, pass. */
+    if (SPENDING_AGENT_ACTIONS.has(action.action)) {
+      const scope = action.action === "agent.plan" ? { ask: { userId, requestId: action.requestId } } : "runId" in action ? { runId: action.runId, userId } : {};
+      const off = await sampleWorkspaceOff(scope);
+      if (off) return off;
     }
     const { productionId } = action;
     const run =

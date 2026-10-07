@@ -33,6 +33,15 @@ test("an approximate engine says about; the dollars follow the workspace's credi
   expect(ctxPrice({ state: "ready", credits: 43, approximate: false }, undefined)).toEqual({ state: "ready", text: "43 cr" });
 });
 
+test("a Cinema Studio take's Again says what approving it holds: about N cr, at most 3N cr", async () => {
+  const cinema = "higgsfield-cinema-studio-4.0";
+  const list = { models: [{ id: cinema, kind: "video", resolutions: ["720p"], ratios: ["16:9"], durations: [5] }] };
+  const price = await quoteRecreate(take({ model: cinema, provider: "higgsfield", params: { resolution: "720p", duration: 5 } }), reader([], { "/api/workbench/engines?": { credits: 31, approximate: true }, "/api/workbench/engines": list }));
+  expect(price).toEqual({ state: "ready", credits: 31, approximate: true, held: true });
+  expect(priceWords(price as never)).toBe("about 31 cr, at most 93 cr");
+  expect(ctxPrice(price, 0.1)).toEqual({ state: "ready", text: "about 31 cr, at most 93 cr", hover: "about US$3.10, at most US$9.30 (US$0.10 a credit)" });
+});
+
 test("no price is never a figure: the server's refusal, a missing engine and a read failure each say why", async () => {
   const refused = await quoteRecreate(take({ params: {} }), reader([], { "/api/workbench/engines?": new Error("No confirmed price for this setting yet."), "/api/workbench/engines": engines }));
   expect(refused).toEqual({ state: "unavailable", reason: "No confirmed price for this setting yet." });
@@ -74,4 +83,16 @@ test("the menu shows the price after Recreate; with none the item is disabled wi
   expect(retry(caps({ retry: { state: "reading" } }))).toMatchObject({ disabled: true, reason: "Reading the price…" });
   expect(retry(caps({ retry: { state: "unavailable", reason: "No confirmed price for this setting yet." } }))).toMatchObject({ disabled: true, reason: "No confirmed price for this setting yet." });
   expect(items(caps({ retry: { state: "ready", text: "43 cr" } })).filter((i) => i.price).map((i) => i.command)).toEqual(["retry"]);
+});
+
+test("Again on a Cinema Studio take quotes the engine Make will land on while Make hides Cinema Studio (Release 1, until its hold is in)", async () => {
+  const { MAKE_SHOWS_CINEMA } = await import("../../lib/shell/make-price");
+  const cinema = "higgsfield-cinema-studio-4.0";
+  const list = { models: [{ id: cinema, kind: "video", resolutions: ["720p"], ratios: ["16:9"], durations: [5] }, ...engines.models] };
+  const log: string[] = [];
+  const price = await quoteRecreate(take({ model: cinema, provider: "higgsfield", params: { resolution: "720p", duration: 5 } }), reader(log, { "/api/workbench/engines?": { credits: 12 }, "/api/workbench/engines": list }));
+  expect(price).toMatchObject({ state: "ready", credits: 12 });
+  /* Hidden: the quote is for Make's own engine, never Cinema Studio's. On: Cinema Studio's own. */
+  expect(log.at(-1)).toContain(MAKE_SHOWS_CINEMA ? `model=${cinema}` : "model=seedance_2_5");
+  if (!MAKE_SHOWS_CINEMA) expect(log.join("\n")).not.toContain(`model=${cinema}`);
 });

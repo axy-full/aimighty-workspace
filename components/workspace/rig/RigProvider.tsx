@@ -37,6 +37,8 @@ import { useCutouts, type CutoutsApi } from "./use-cutouts";
 import { useBoardOpen } from "@/lib/board/active";
 import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
+import { isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
+import { cinemaPriceWords } from "@/lib/cinemaHold";
 
 /**
  * The Rig's live state, shared by the shot list, the node graph, the
@@ -884,10 +886,13 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
 /** The shell's Generate seams, fed by the Rig. */
 export function RigSeams({ children }: { children: (seams: ShellSeams) => ReactNode }) {
-  const { generate, quote: live, blocked, notice } = useRig();
+  const { generate, quote: live, blocked, notice, selected } = useRig();
   const { state, dispatch } = useWorkspace();
   /* G, ← / → and Space are the shell's one keymap (#233); the Rig only feeds its seams. */
   const onTogglePlay = useCallback(() => dispatch({ type: "patch", patch: { playing: !state.playing } }), [dispatch, state.playing]);
-  const quote = live?.state === "ready" && live.credits !== null ? formatCredits(live.credits) : null;
+  /* A Cinema Studio shot holds "about N cr, at most 3N cr", the whole of what Generate approves (lib/cinemaHold.ts). */
+  const quote = live?.state === "ready" && live.credits !== null
+    ? selected?.engine && isCinemaStudioModel(selected.engine) ? cinemaPriceWords(live.credits) : formatCredits(live.credits)
+    : null;
   return <>{children({ onGenerate: generate, onTogglePlay, generate: { quote, blocked, notice } })}</>;
 }

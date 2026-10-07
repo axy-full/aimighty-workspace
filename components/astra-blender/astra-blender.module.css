@@ -206,7 +206,7 @@
   .outlinerFooter { padding: 24px 16px 0; }
 }
 /* A touch screen at any width, and every phone: each control is a 44px target and no text is under 12px (the owner's
-   phone floors, tests/astra-phone-floors-workbench.spec.ts). The timeline's scrubber is a 44px strip, its keyframe
+   phone floors, tests/phoneFloors.ts). The timeline's scrubber is a 44px strip, its keyframe
    markers a row of 44px targets under it; the rest keeps its layout. */
 @media (max-width: 767px), (pointer: coarse) {
   .brand p, .templatePicker, .addSelect, .panelHeading > span, .subheading, .sceneItem small, .outlinerFooter, .hint, .emptyHint, .propertyHeading p, .field, .numberField, .vector legend, .colorField, .colorField code, .checkbox, .sceneSettings summary, .propertySection h3 span, .playback label, .fps, .keyButton, .keyButton span, .timelineLabels, .viewportLabel, .viewportLabel > span:last-child, .viewportHelp, .assetNotice, .segment button, .mobileTabs button, .inspectorTabs button, .assistantButton, .objectActions button, .secondaryButton, .exportActions button, .keyListRow button, .error { font-size: 12px; }

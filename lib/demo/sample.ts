@@ -84,3 +84,39 @@ export function sampleGate(project: SampleSubject | null | undefined, mark: Pick
 export function paidControlOnSample(gate: SampleGate): { disabled: boolean; title?: string } {
   return gate.exploreOnly ? { disabled: true, title: gate.exploreOnly } : { disabled: false };
 }
+
+/** What the screens say when the workspace could not be checked: neutral, because it is not the sample's line. A free "Try again" sits beside it. */
+export const CHECK_LINE = "Couldn't check this workspace.";
+/** The waits between automatic re-reads of a failed check, then it stops until the person presses Try again. */
+export const CHECK_BACKOFF_MS: readonly number[] = [2_000, 5_000, 15_000];
+
+/** "sample": the server says nothing here spends. "normal": it says so plainly. "unknown": the check failed. */
+export type SampleCheck = "sample" | "normal" | "unknown";
+
+/**
+ * What GET /api/demo/sample says about the workspace. A workspace that cannot be checked is "unknown", which the
+ * screens treat like the sample for spending (priced controls stay hidden, as spend-guard.server.ts refuses its paid
+ * jobs too) but do not call the sample. `res` is null when the request itself failed. A failed, refused (401, 5xx) or
+ * unreadable answer is "unknown"; only a clear answer decides.
+ */
+export function sampleWorkspaceAnswer(res: { ok: boolean; body: unknown } | null): SampleCheck {
+  if (!res || !res.ok || !res.body || typeof res.body !== "object") return "unknown";
+  return (res.body as { sampleWorkspace?: unknown }).sampleWorkspace ? "sample" : "normal";
+}
+
+/*
+ * The one-run lift (owner, 7 Oct): an owner or admin lifts the sample mark for exactly one Atomik run, and it comes
+ * back on by itself when that run ends or the lift runs out (lib/demo/lift.server.ts). Everything else in the
+ * workspace still refuses meanwhile. These are the words and the shape the screens read.
+ */
+export const LIFT_LINE = "Lifted for one run · comes back on when it ends";
+
+/** What a signed-in member's board reads about the lift (GET /api/demo/sample/lift). `mine`: the viewer lifted it. */
+export type SampleLiftStatus = {
+  lifted: boolean;
+  mine: boolean;
+  /** The production its run is on, once Atomik was asked; null while it waits for the lifter's next ask. */
+  productionId: string | null;
+  runId: string | null;
+  expiresAt: number | null;
+};

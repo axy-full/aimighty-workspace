@@ -1,14 +1,14 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useMake, type MakeModel } from "../make/use-make";
-import { MakePriceText } from "../make/Compose";
-import { Price, usePriceTitle } from "../Price";
+import { MakePriceText, useMakePriceTitle } from "../make/price";
 import type { ComposerType } from "@/lib/workspace/composer";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import type { Project } from "@/lib/workbench/studio";
 import { Eyebrow } from "./PhoneChrome";
 import { NEEDS_CONNECTION } from "./HomeScreen";
 import { PhoneSheet } from "./PhoneSheet";
+import { readableTakeName } from "./phone-model";
 
 const TYPES: { type: ComposerType; label: string }[] = [{ type: "video", label: "Video" }, { type: "image", label: "Image" }, { type: "audio", label: "Audio" }];
 const SAY_WHAT = "Say what to make.";
@@ -38,7 +38,7 @@ export function MakeScreen({ scope, project, items, workspaceName, balance, proj
   const make = useMake({ scope, project, projects, workspaceName, onProject, balance, onBoard: true });
   const [adding, setAdding] = useState(false);
   const [said, setSaid] = useState(false);
-  const goTitle = usePriceTitle(make.go.price?.value ?? null);
+  const goTitle = useMakePriceTitle(make.go.price);
   const { state } = make;
   const waits = Boolean(make.go.blocked) || !online;
   const reason = !online ? NEEDS_CONNECTION : make.go.blocked && (make.go.blocked !== SAY_WHAT || said) ? make.go.blocked : null;
@@ -133,7 +133,7 @@ function EngineSheet({ make }: { make: MakeModel }) {
                   <span className="ph-row-title">{m.label}</span>
                   {m.description ? <span className="ph-row-line">{m.description}</span> : null}
                 </span>
-                <span className="ph-row-line" title={row.value ? undefined : row.title}><Price value={row.value} /></span>
+                <span className="ph-row-line" title={row.value ? undefined : row.title} data-testid="phone-make-engine-row-price"><MakePriceText price={row} />{row.detail ? ` · ${row.detail}` : null}</span>
               </button>
             );
           })}
@@ -160,7 +160,7 @@ function ReferenceSheet({ items, taken, onPick, onClose }: { items: readonly Lib
           {list.map((e) => (
             <button key={e.take.id} type="button" className="ph-make-pick-tile" onClick={() => onPick(e.take.id)} data-testid="phone-make-pick">
               {e.media === "image" ? <img src={e.url!} alt="" loading="lazy" /> : <video src={e.url!} muted playsInline preload="metadata" />}
-              <span className="ph-make-ref-name">{e.take.name}</span>
+              <span className="ph-make-ref-name">{readableTakeName(e.take.name)}</span>
             </button>
           ))}
         </div>

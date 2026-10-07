@@ -2,7 +2,11 @@
 import type { ButtonHTMLAttributes } from "react";
 import { Price } from "@/components/graphite/Price";
 import { openGenOn } from "@/components/graphite/OwnerRunCard";
-import { exact, FREE } from "@/lib/shell/price-words";
+import { FREE } from "@/lib/shell/price-words";
+import { IdentityBlock } from "@/components/graphite/security/IdentityBlock";
+import { consentProjectKey } from "@/lib/security/consent-words";
+import { identityCardView } from "@/lib/security/identity-card";
+import { useConsents } from "@/lib/security/use-consents";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { useIdentities } from "@/lib/workspace/identities";
@@ -20,8 +24,8 @@ import "./cast.css";
  * Frame h's three cards: a character (Cast), a place (Environment) and an element, in "Cast, environment and
  * elements" (README § 3.1). Each shows its picture, its own words, its state in one line, and the shots it is in.
  *
- * - A character shows its identity's state and the training consent that exists (who confirmed it, when). Build
- *   identity (its fixed training price) opens the Inspector, where the existing form with its consent box lives.
+ * - A character shows its identity's state and its consent (components/graphite/security/IdentityBlock.tsx): a person
+ *   records consent first, then Train Identity (its fixed training price) opens the Inspector's form, armed with it.
  * - Render a still and Render a plate hand the words to Make, which quotes the price before anything is sent.
  * - Lock as master is free and anyone's: the Rig's own lock (RigContext.lockMaster).
  * - Nothing here is shown or sent without a signed-in person, and an offline board is read-only.
@@ -32,7 +36,8 @@ function Btn({ className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement>) {
 }
 
 const WELL = 173;
-export const CAST_SIZE = { cast: { w: 308, h: WELL + 245 }, environment: { w: 308, h: WELL + 173 }, element: { w: 308, h: WELL + 173 } } as const;
+/* A character's card holds the identity block (lane 5, Gaps A): its consent, its state and its actions. */
+export const CAST_SIZE = { cast: { w: 308, h: WELL + 320 }, environment: { w: 308, h: WELL + 173 }, element: { w: 308, h: WELL + 173 } } as const;
 /** The row the Cut-out action takes on a card with a still: its state line and its button, or Before and After. */
 export const CUTOUT_ROW = 72;
 
@@ -41,13 +46,16 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
   const { signedIn } = useSession();
   const { state } = useIdentities(ctx.scope, signedIn ? ctx.project.id : null);
   const identities = state.data?.identities ?? null;
-  const status = castStatus(data, identities);
   const identity = identityOf(data, identities);
   const consent = data.variant === "cast" ? consentLine(identity, signedIn) : null;
+  /* A character's state is its identity and consent together (Gaps A); a place's and an element's are as before. */
+  const consentKey = consentProjectKey(ctx.project);
+  const consents = useConsents(signedIn && data.variant === "cast" ? ctx.scope : null, consentKey);
+  const idView = identityCardView({ consents: consents.state.consents, subjectKey: card.id, bound: identity, identities, earlier: consent });
+  const status = data.variant === "cast" && !data.retired && !data.rendering && signedIn ? { text: idView.text, tone: idView.tone } : castStatus(data, identities);
   const shots = shotsWords(data.shots);
   const act = signedIn && !ctx.offline && !data.retired;
   const training = state.data?.terms.trainingCredits ?? null;
-  const ready = identity?.status === "ready";
   const lock = async () => {
     if (!data.nodeId) return;
     const refused = await ctx.rig.lockMaster(data.nodeId);
@@ -69,16 +77,13 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
           {shots ? <span className="gx-cast-shots" data-testid="cast-shots">{shots}</span> : null}
         </div>
         {data.variant === "cast" ? (
-          <div className="gx-cast-consent" data-testid="cast-consent">
-            <span className="gx-cast-label">Consent</span>
-            <span>{consent ?? "None recorded yet. Building an identity asks for it."}</span>
-          </div>
+          /* Identity and its consent (Gaps A): recorded by a person, then trained from the Inspector's form. */
+          <IdentityBlock scope={ctx.scope} projectKey={consentKey} subjectKey={card.id} subjectLabel={data.title.trim()}
+            view={idView} consents={consents.state} trainingCredits={training} canAct={act}
+            spendOff={ctx.exploreOnly ?? null} onTrain={() => ctx.openInspector(card.id)} />
         ) : null}
         {act ? (
           <div className="gx-cast-acts">
-            {data.variant === "cast" && !ready ? (
-              <Btn onClick={(e) => { e.stopPropagation(); ctx.openInspector(card.id); }} data-testid="cast-build">Build identity{training != null ? <> · <Price value={exact(training)} /></> : null}</Btn>
-            ) : null}
             {data.variant === "element" && data.lockable ? (
               <Btn onClick={(e) => { e.stopPropagation(); void lock(); }} data-testid="cast-lock">Lock as master · <Price value={FREE} /></Btn>
             ) : null}

@@ -28,6 +28,7 @@ import { TRAIL } from "@/components/ParticlMark";
 import { Mark } from "@/components/ui/Mark";
 import { RequestAccessButton } from "@/components/RequestAccess";
 import { signInNotice } from "@/lib/authPages";
+import { safeNext } from "@/lib/safeNext";
 import "./auth-mobile.css";
 
 export default function WelcomeSignIn() {
@@ -84,7 +85,7 @@ export default function WelcomeSignIn() {
 
 function SignIn() {
   const params = useSearchParams();
-  return <SignInForm next={safeNext(params.get("next"))} notice={signInNotice(params)} />;
+  return <SignInForm next={safeNext(params.get("next"), typeof window === "undefined" ? null : window.location.origin)} notice={signInNotice(params)} />;
 }
 
 function SignInForm({ next, notice = null }: { next: string; notice?: string | null }) {
@@ -251,25 +252,4 @@ function SignInForm({ next, notice = null }: { next: string; notice?: string | n
       </div>
     </form>
   );
-}
-
-/**
- * A `next` that provably resolves to this origin, or "/". The obvious
- * check — starts with "/" and not "//" — is not enough: browsers normalise
- * a backslash to a slash, and the URL parser strips control characters
- * before resolving, so the test is a resolution, not a string shape.
- */
-function safeNext(raw: string | null): string {
-  if (!raw) return "/";
-  if (/[\u0000-\u001F\u007F]/.test(raw)) return "/";
-  if (typeof window === "undefined")
-    return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
-  try {
-    const here = window.location.origin;
-    const u = new URL(raw, here);
-    if (u.origin !== here) return "/";
-    return u.pathname + u.search + u.hash;
-  } catch {
-    return "/";
-  }
 }

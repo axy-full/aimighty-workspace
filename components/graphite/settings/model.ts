@@ -6,12 +6,12 @@
 import type { BillingPlan, BillingSubscription, TopupPack } from "@/lib/shell/workspace-view";
 import { creditsText, creditsUsd } from "@/lib/shell/price-words";
 import { creditRateLine } from "@/lib/creditTerms";
-import { tokenFacts, PARTICL_REACH, type ApiToken, type TokenUnit } from "@/lib/shell/tools-connections";
+import { scopeWords, tokenFacts, PARTICL_REACH, type ApiToken, type TokenUnit } from "@/lib/shell/tools-connections";
 
 /* ── Team ───────────────────────────────────────────────────────────── */
 
 /** GET /api/team (owner and admins): lib/team.ts listTeam. */
-export type Member = { id: string; email: string; name: string; role?: string; standing?: string; permanent?: boolean; disabled: boolean; locked: boolean; lastSeen: number | null; clips: number };
+export type Member = { id: string; email: string; name: string; role?: string; standing?: string; permanent?: boolean; disabled: boolean; locked: boolean; lastSeen: number | null; clips: number; /** An authenticator is on for their account (GET /api/team). */ twoStep?: boolean };
 export type Invite = { code: string; email: string; name: string; role?: string; expiresAt: number; sendCount?: number };
 export type Team = { canSeeRoles: boolean; mail?: { configured: boolean }; users: Member[]; invites: Invite[] };
 
@@ -27,16 +27,64 @@ export function roleChangeable(m: Pick<Member, "role" | "standing" | "permanent"
 }
 /** "jordan@example.test · last seen Oct 4 · locked": the email, when they were last seen, and what stops them. */
 export function memberLine(m: Member): string {
-  return [m.email, `last seen ${day(m.lastSeen) ?? "never"}`, m.disabled ? "disabled" : null, m.locked ? "locked" : null].filter(Boolean).join(" · ");
+  return [m.email, twoFactorWords(m), `last seen ${day(m.lastSeen) ?? "never"}`, m.disabled ? "disabled" : null, m.locked ? "locked" : null].filter(Boolean).join(" · ");
+}
+/** "two-factor on" or "two-factor off", as the account has it; nothing when the route did not say. */
+export function twoFactorWords(m: Pick<Member, "twoStep">): string | null {
+  return m.twoStep === true ? "two-factor on" : m.twoStep === false ? "two-factor off" : null;
+}
+
+/* ── Roles (Team security, Gaps B; owner correction 7) ─────────────── */
+
+/** The code's three roles and only these: no other role, and no limit set per role. What each may do, as the routes allow it. */
+export const ROLES = [
+  { id: "owner", name: "Owner", line: "Everything, including billing, keys, roles and the sign-in rule" },
+  { id: "admin", name: "Admin", line: "The team, spending rules and approvals over the per-shot cap" },
+  { id: "member", name: "Member", line: "Makes and reviews; a shot over the cap waits for an admin" },
+] as const;
+export type RoleId = (typeof ROLES)[number]["id"];
+/** How many people hold each role, from the owner's roster (null when the viewer may not see roles). */
+export function roleCounts(team: Team | null): Record<RoleId, number> | null {
+  if (!team?.canSeeRoles) return null;
+  const counts: Record<RoleId, number> = { owner: 0, admin: 0, member: 0 };
+  for (const u of team.users) if (!u.disabled) counts[roleOf(u) as RoleId] = (counts[roleOf(u) as RoleId] ?? 0) + 1;
+  return counts;
 }
 export function inviteLine(i: Invite): string {
-  return [i.email, "invited", `expires ${day(i.expiresAt) ?? "—"}`].join(" · ");
+  return [i.email, "invited", `expires ${day(i.expiresAt) ?? "—"}`].filter(Boolean).join(" · ");
 }
 export function peopleMeta(team: Team | null): string {
   if (!team) return "";
   const n = team.users.filter((u) => !u.disabled).length;
   const waiting = team.invites.length;
   return [`${n} on this workspace`, waiting ? `${waiting} invited` : null].filter(Boolean).join(" · ");
+}
+
+/** GET /api/workspaces/security (the owner's only): lib/accountSecurity.ts readWorkspaceSecurity. */
+export type WorkspacePolicy = { requiresMfa?: boolean; ownerEnrolled?: boolean; members?: number; unenrolled?: number };
+export type TwoStepRule = { value: string; line: string; action: "turn-on" | "turn-off" | "enrol-first" | null };
+
+/**
+ * The workspace's two-step rule, as Settings › Team draws it. The owner reads the policy route and may change it; the
+ * server lets only an owner who has two-step on change it, so until then the owner is sent to set theirs up first.
+ * Anyone else reads it off their own account (GET /api/account/security lists the workspaces that require it) and
+ * cannot change it.
+ */
+export function workspaceTwoStep(input: {
+  owner: boolean;
+  workspaceId: string | null;
+  policy: WorkspacePolicy | null;
+  policyFailed: boolean;
+  required: readonly { id: string }[] | null | undefined;
+}): TwoStepRule {
+  if (!input.owner) {
+    const value = input.required == null ? "Reading…" : input.required.some((w) => w.id === input.workspaceId) ? "on" : "off";
+    return { value, line: "Set by the workspace owner", action: null };
+  }
+  const p = input.policy;
+  const line = p?.unenrolled ? `${p.unenrolled} of ${p.members ?? "—"} people have not set it up` : "Everyone signs in with two steps when it is on";
+  if (!p || typeof p.requiresMfa !== "boolean") return { value: input.policyFailed ? "—" : "Reading…", line, action: null };
+  return { value: p.requiresMfa ? "on" : "off", line, action: !p.ownerEnrolled ? "enrol-first" : p.requiresMfa ? "turn-off" : "turn-on" };
 }
 
 /* ── Plan & credits ─────────────────────────────────────────────────── */
@@ -99,7 +147,7 @@ export function topUpPack<P extends Pick<TopupPack, "usd">>(packs: readonly P[])
 export const PUBLISHING_ACCOUNTS: readonly string[] = Object.freeze(["Instagram", "TikTok", "YouTube"]);
 
 /** The value a token row shows: what it may do. */
-export const tokenValue = (t: Pick<ApiToken, "scope">): string => (t.scope === "read" ? "read" : "generate");
+export const tokenValue = (t: Pick<ApiToken, "scope">): string => (t.scope === "read" ? "read" : t.scope === "prepare" ? "prepare" : "generate");
 
 const agoWords = (at: number, now: number): string => {
   const m = Math.floor(Math.max(0, now - at) / 60_000);
@@ -112,7 +160,7 @@ const agoWords = (at: number, now: number): string => {
  */
 export function tokenLine(t: ApiToken, unit: TokenUnit, now = Date.now()): string {
   if (unit === "credits") return tokenFacts(t, unit, now);
-  return [t.scope === "read" ? "Read-only" : "Can generate", t.lastUsed ? `used ${agoWords(t.lastUsed, now)}` : "never used"].join(" · ");
+  return [scopeWords(t.scope), t.scope === "prepare" ? "a person approves each" : null, t.lastUsed ? `used ${agoWords(t.lastUsed, now)}` : "never used"].filter(Boolean).join(" · ");
 }
 
 /* ── Advanced › Tools ───────────────────────────────────────────────── */

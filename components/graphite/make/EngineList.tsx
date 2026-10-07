@@ -2,11 +2,13 @@
 import { useState } from "react";
 import { DEFAULT_ENHANCER, ENHANCER_LABEL } from "@/lib/shell/enhancer";
 import { exact } from "@/lib/shell/price-words";
+import { cinemaPriceWords } from "@/lib/cinemaHold";
 import { spendAttrsOf } from "@/lib/spend";
 import { CINEMA_BANK } from "@/lib/workspace/cinema-vocabulary";
 import { AUDIO_SECONDS, TAKES_MAX, draftOffered, shownTotal, soundOffered, stepAudioSeconds } from "@/lib/workspace/composer";
 import { FilmChips } from "../FilmVocabulary";
 import { Price } from "../Price";
+import { MakePriceText } from "./price";
 import type { MakeModel } from "./use-make";
 
 /* The lengths the Change frame draws as chips; an engine's other lengths are in Advanced. */
@@ -43,7 +45,7 @@ export function EngineList({ make, id, scope }: { make: MakeModel; id: string; s
                   <span className="gx-mk-row-name">{m.label}</span>
                   {m.description ? <span className="gx-mk-row-sub">{m.description}</span> : null}
                 </span>
-                <span className="gx-mk-row-price" title={row.value ? undefined : row.title}><Price value={row.value} /></span>
+                <span className="gx-mk-row-price" title={row.value ? undefined : row.title} data-testid="make-engine-row-price"><MakePriceText price={row} />{row.detail ? <span className="gx-mk-row-at">{` · ${row.detail}`}</span> : null}</span>
               </button>
             );
           })}
@@ -147,7 +149,8 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
         </div>
       ) : null}
 
-      <div className="gx-mk-field" data-testid="make-enhance">
+      {/* The sample workspace spends nothing: Enhance is not offered there (the owner's switch). */}
+      {make.spendOff ? null : <div className="gx-mk-field" data-testid="make-enhance">
         <span className="gx-mk-eyebrow">Enhance</span>
         <Row name="Auto · enhance first" value={enhanceNote} testId="enhance-auto-state" />
         <div className="gx-mk-inline">
@@ -170,7 +173,7 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
             </div>
           </div>
         ) : null}
-      </div>
+      </div>}
 
       {audio ? (
         <div className="gx-mk-field" data-testid="make-voice">
@@ -240,10 +243,14 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
         <span className="gx-mk-eyebrow" id={`${id}-takes`}>{settings.draft ? "Takes · one draft at a time" : "Takes"}</span>
         <div className="gx-mk-chips" role="group" aria-labelledby={`${id}-takes`}>
           {choices.map((n) => {
-            const total = shownTotal(composer.quote, composer.quoteKey, n);
+            /* No totals in the sample workspace, where nothing is made. */
+            const total = make.spendOff ? null : shownTotal(composer.quote, composer.quoteKey, n);
             return (
               <button key={n} type="button" className="gx-chip" aria-pressed={takes === n} disabled={Boolean(settings.draft) || n > TAKES_MAX} onClick={() => set({ type: "count", value: n })} data-testid={`gen-takes-${n}`}>
-                {takes === n ? "✓ " : ""}×{n}{total != null ? <> · <Price value={exact(total)} /></> : null}
+                {takes === n ? "✓ " : ""}×{n}{total == null ? null
+                  /* Cinema Studio's figure is approximate and held at 3N: said as every approval of it is (lib/cinemaHold.ts). */
+                  : composer.quote?.approximate ? <> · <span className="gx-price" data-price="about">{cinemaPriceWords(total)}</span></>
+                  : <> · <Price value={exact(total)} /></>}
               </button>
             );
           })}

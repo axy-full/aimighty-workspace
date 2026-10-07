@@ -4,6 +4,7 @@ import { billedTo, type ProviderId } from "./providers";
 import type { VendorKeyName } from "./vendorKeys";
 import { platformDb, platformReady } from './platform';
 import { isHouseWorkspace } from "./houseWorkspace";
+import { allowanceUsdOf } from "./cinemaHold";
 
 /**
  * What the platform has paid for a workspace.
@@ -102,10 +103,11 @@ export async function platformSpendSince(sinceMs: number): Promise<number> {
   if(!workspaceId)return 0;
   const records=await platformSpendRecordsSince(sinceMs);
   await platformReady();
-  const rows=await platformDb().execute({sql:'SELECT id,paid_by_platform,engine_cost_usd FROM meter_events WHERE workspace_id=? AND created_at>=?',args:[workspaceId,sinceMs]});
+  const rows=await platformDb().execute({sql:'SELECT id,paid_by_platform,engine_cost_usd,status,hold_band FROM meter_events WHERE workspace_id=? AND created_at>=?',args:[workspaceId,sinceMs]});
   for(const row of rows.rows){
     if(!Number(row.paid_by_platform))records.delete(String(row.id));
-    else if(row.engine_cost_usd!=null)records.set(String(row.id),Number(row.engine_cost_usd));
+    /* A take still running at its hold counts at its hold (lib/cinemaHold.ts allowanceUsdOf); settled rows at what they settled. */
+    else if(row.engine_cost_usd!=null)records.set(String(row.id),allowanceUsdOf(row));
   }
   return [...records.values()].reduce((sum,cost)=>sum+cost,0);
 }

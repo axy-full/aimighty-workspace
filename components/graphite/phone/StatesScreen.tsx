@@ -2,6 +2,8 @@
 import { useMemo } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { ReleaseTake } from "@/components/graphite/ReleaseTake";
+import { heldCredits } from "@/lib/cinemaHold";
+import { CINEMA_STUDIO_MODEL_ID } from "@/lib/cinemaStudioTypes";
 import { creditsText } from "@/lib/shell/price-words";
 import type { RecipeSource } from "@/lib/shell/recipe";
 import { useRecreate } from "@/lib/shell/use-asset-actions";
@@ -141,7 +143,8 @@ function StateCard({ scope, project, row, online, now, balance, onTopUp }: { sco
 function RetryButton({ scope, project, v, online }: { scope: string; project: Project; v: ShotVersion; online: boolean }) {
   const recreate = useRecreate();
   const read = useRecreatePrice(scope, v.entry.take.id, v.entry.asset.origin === "generation" ? (v.entry.asset.value as RecipeSource) : null, project.aspect);
-  const price: SpendPrice = read?.state === "ready" ? (read.approximate ? { upTo: read.credits } : { cr: read.credits }) : null;
+  /* Cinema Studio holds 3N: "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
+  const price: SpendPrice = read?.state === "ready" ? (read.held ? { cr: read.credits, atMost: heldCredits(read.credits, CINEMA_STUDIO_MODEL_ID) } : read.approximate ? { upTo: read.credits } : { cr: read.credits }) : null;
   return (
     <SpendButton className="ph-btn ph-btn--hot" label="Retry" price={price} disabled={!online} title={!online ? NEEDS_CONNECTION : read?.state === "unavailable" ? read.reason : undefined}
       onClick={() => recreate(v.entry)} data-testid="phone-state-retry" />

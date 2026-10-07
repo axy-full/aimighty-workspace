@@ -9,10 +9,12 @@ import type { ComposerType } from "@/lib/workspace/composer";
 import { useFilmTypeahead } from "../FilmVocabulary";
 import { Glyph, type GlyphName } from "../icons";
 import { priceWords } from "@/lib/shell/price-words";
-import { Price, usePriceTitle } from "../Price";
+import { CheckAgain } from "../CheckAgain";
+import { CHECK_LINE } from "@/lib/demo/sample";
 import { toolName } from "../viral/ViralView";
 import { UPSCALE_NAME } from "./UpscaleTool";
 import { EngineList } from "./EngineList";
+import { MakePriceText, useMakePriceTitle } from "./price";
 import type { MakeModel, MakePrice } from "./use-make";
 
 const TYPES: { type: ComposerType; label: string }[] = [{ type: "video", label: "Video" }, { type: "image", label: "Image" }, { type: "audio", label: "Audio" }];
@@ -22,13 +24,6 @@ const SAY_WHAT = "Say what to make.";
 
 /** The words of a price, for the marker a button carries. */
 const priceLabelOf = (price: MakePrice) => price.about ?? priceWords(price.value);
-
-/** A price as Make shows it: through Price, or Cinema Studio's own approximate words. */
-export function MakePriceText({ price, testId }: { price: MakePrice | null; testId?: string }) {
-  if (!price) return null;
-  if (price.value) return <Price value={price.value} testId={testId} />;
-  return price.about ? <span className="gx-price" data-price="about" data-testid={testId} style={{ whiteSpace: "nowrap" }}>{price.about}</span> : null;
-}
 
 /**
  * Make's composer, as "Make frames.dc.html" 1, 3 and 7 draw it: the words with the type switch inside their box
@@ -47,7 +42,7 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
   const [over, setOver] = useState(false);
   /* Pressed while it waits: the reason shows (the words' own wait shows only then; any other at once). */
   const [said, setSaid] = useState(false);
-  const goTitle = usePriceTitle(make.go.price?.value ?? null);
+  const goTitle = useMakePriceTitle(make.go.price);
   const waits = Boolean(make.go.blocked);
   const reason = make.go.blocked && (make.go.blocked !== SAY_WHAT || said) ? make.go.blocked : null;
   const press = () => {
@@ -123,9 +118,10 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
         <div className="gx-mk-engine-row">
           <Glyph name="spark" size={16} className="gx-mk-spark" />
           <span className="gx-mk-line" data-testid="make-engine-line">
-            {make.line.length ? make.line.map((part, i) => <span key={`${i}:${part}`} className="gx-mk-part">{part}</span>)
+            {/* One line, as the phone writes it: "Seedance 2.5 · 1080p · 5 s · 43 cr". The separators are text, so it reads the same aloud and copied. */}
+            {make.line.length ? make.line.map((part, i) => <span key={`${i}:${part}`} className="gx-mk-part">{i ? <span className="gx-mk-sep">{" · "}</span> : null}{part}</span>)
               : <span className="gx-mk-part">{make.readingModels ? "Reading the engines…" : "Choose an engine"}</span>}
-            {make.linePrice ? <span className="gx-mk-part"><MakePriceText price={make.linePrice} testId="make-engine-price" /></span> : null}
+            {make.linePrice ? <span className="gx-mk-part"><span className="gx-mk-sep">{" · "}</span><MakePriceText price={make.linePrice} testId="make-engine-price" /></span> : null}
           </span>
           <button type="button" className="gx-mk-change" aria-expanded={make.listOpen} aria-controls="gx-mk-engines"
             onClick={make.listOpen ? make.closeList : make.openList} data-testid="gen-model">{make.listOpen ? "Done" : "Change"}</button>
@@ -161,7 +157,7 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
           {make.go.price ? <><span className="gx-mk-go-sep"> · </span><MakePriceText price={make.go.price} /></> : null}
         </button>
       </div>
-      {reason ? <p className="gx-mk-reason" id="gx-mk-reason" role="status" data-testid="gen-blocked">{reason}</p> : null}
+      {reason ? <p className="gx-mk-reason" id="gx-mk-reason" role="status" data-testid="gen-blocked">{reason}{reason === CHECK_LINE ? <> <CheckAgain className="gx-hbtn" /></> : null}</p> : null}
 
       <div className="gx-mk-tools" data-testid="make-quick-tools">
         <span className="gx-mk-eyebrow">Quick tools</span>

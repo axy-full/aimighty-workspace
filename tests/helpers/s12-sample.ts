@@ -81,12 +81,15 @@ export async function seedFinishedProduction(page: Page, options: { approve?: nu
   return { workspaceId: workspace.id, userId: me.id, scope, headers, project, productionId, takes, shotIds };
 }
 
-/** Anything that would send paid work, from this page. Reads and the sample's own routes are fine. */
+/** Anything that would send paid work, from this page. Reads and the sample's own routes are fine, and so is the price read
+ *  `/api/generate/quote` (it validates and prices a request and stops before any reservation: app/api/generate/quote/route.ts), which the board's
+ *  Make and Atomik buttons call to show their price in credits. A real generation is `/api/generate` itself, any other `/api/generate/...`, and
+ *  every audio, release and Atomik send, so those still fail the test. */
 export function watchPaidRequests(page: Page): string[] {
   const paid: string[] = [];
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname;
-    if (request.method() === "POST" && (path === "/api/generate" || path.startsWith("/api/generate/") || path === "/api/audio" || /\/release$/.test(path) || path.startsWith("/api/workbench/atomik") || path.startsWith("/api/atomik"))) paid.push(`${request.method()} ${path}`);
+    if (request.method() === "POST" && (path === "/api/generate" || (path.startsWith("/api/generate/") && path !== "/api/generate/quote") || path === "/api/audio" || /\/release$/.test(path) || path.startsWith("/api/workbench/atomik") || path.startsWith("/api/atomik"))) paid.push(`${request.method()} ${path}`);
   });
   return paid;
 }

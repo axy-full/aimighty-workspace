@@ -95,6 +95,8 @@ function read(page: Page): Promise<Found> {
       if (el.closest("[data-spend]")) return false;
       /* A tab switches what is shown ("Make" | "Recent"); it never starts anything. */
       if (el.getAttribute("role") === "tab") return false;
+      /* Neither does a destination in a navigation bar (the phone's Home · Record · Make · Atomik): it goes somewhere. */
+      if (el.closest("nav")) return false;
       const label = (el.getAttribute("aria-label") || el.textContent || "").replace(/\s+/g, " ").trim();
       return verbRe.test(label);
     }).map(name);

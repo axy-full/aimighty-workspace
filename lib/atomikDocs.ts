@@ -1,3 +1,4 @@
+import { storedActorMaskHere } from "./platformOwnerPrivacy";
 import { db, ready, now, id as newId } from "@/lib/db";
 import { unionNotes } from "@/lib/treatmentMerge";
 
@@ -174,7 +175,9 @@ export async function upsertTreatment(input: {
 export async function listTreatmentVersions(projectId: string): Promise<TreatmentVersion[]> {
   await ready();
   const rs = await db().execute({ sql: `SELECT version, by, created_at FROM treatment_versions WHERE project_id = ? ORDER BY version DESC`, args: [projectId] });
-  return (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({ version: Number(r.version), by: String(r.by ?? ""), at: Number(r.created_at ?? 0) }));
+  // Outside the house the platform owner reads "Particl support" (lib/platformOwnerPrivacy.ts).
+  const shown = await storedActorMaskHere();
+  return (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({ version: Number(r.version), by: String(shown(String(r.by ?? ""))), at: Number(r.created_at ?? 0) }));
 }
 
 /** One earlier draft, as the document it was. */
@@ -183,9 +186,10 @@ export async function getTreatmentVersion(projectId: string, version: number): P
   const rs = await db().execute({ sql: `SELECT * FROM treatment_versions WHERE project_id = ? AND version = ? ORDER BY created_at DESC LIMIT 1`, args: [projectId, version] });
   if (!rs.rows.length) return null;
   const r = rs.rows[0] as Record<string, unknown>;
+  const shown = await storedActorMaskHere();
   return {
     projectId, draft: Number(r.version), title: String(r.title ?? ""), logline: String(r.logline ?? ""), setup: json<Record<string, string>>(r.setup, {}),
-    scenes: json<Scene[]>(r.scenes, []), notes: json<Note[]>(r.notes, []), updatedBy: String(r.by ?? ""), updatedAt: Number(r.created_at ?? 0), at: Number(r.created_at ?? 0),
+    scenes: json<Scene[]>(r.scenes, []), notes: json<Note[]>(r.notes, []), updatedBy: String(shown(String(r.by ?? ""))), updatedAt: Number(r.created_at ?? 0), at: Number(r.created_at ?? 0),
   };
 }
 
