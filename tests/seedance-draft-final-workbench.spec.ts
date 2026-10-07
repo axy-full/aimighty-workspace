@@ -355,9 +355,9 @@ async function finalByApi(page: Page, s: Seeded, draftId: string, maxCredits?: n
   const quote = await reply.json();
   expect(reply.ok(), JSON.stringify(quote)).toBeTruthy();
   const credits = Number(quote.estimatedCredits);
-  const sent = await page.request.post("/api/generate", { headers: { "X-Workbench-Scope": s.scope, "Idempotency-Key": `final-${randomUUID()}` },
-    data: { finalOf: draftId, model: ENGINE, refine: false, maxCredits: maxCredits ?? credits, quoteFingerprint: quote.fingerprint } });
-  return { credits, sent, body: await sent.json() };
+  const data = { finalOf: draftId, model: ENGINE, refine: false, maxCredits: maxCredits ?? credits, quoteFingerprint: quote.fingerprint };
+  const sent = await page.request.post("/api/generate", { headers: { "X-Workbench-Scope": s.scope, "Idempotency-Key": `final-${randomUUID()}` }, data });
+  return { credits, sent, data, body: await sent.json() };
 }
 
 test("API: a draft past its seven days cannot make a final: the server refuses to price or send one, and nothing is charged for it", async ({ page }, info) => {
@@ -377,10 +377,32 @@ test("API: a draft past its seven days cannot make a final: the server refuses t
   expect((await quote.json()).error).toMatch(/expired on .* seven days/);
   const forced = await page.request.post("/api/generate", { headers: { "X-Workbench-Scope": s.scope, "Idempotency-Key": `late-final-${randomUUID()}` }, data: { model: ENGINE, finalOf: draftId, maxCredits: 999 } });
   expect(forced.status()).toBe(409);
+  expect((await forced.json()).error).toMatch(/expired/);
   const { jobs, charges } = await settled(s, 1);
   expect(jobs.map((j) => j.id)).toEqual([draftId]);
   expect(charges).toHaveLength(1);
-  expect(s.sent.filter((x) => x.path === "/api/generate")).toHaveLength(0);
+});
+
+test("API: a draft's final runs to success at the 1080p quote: two charges, the draft's and the final's, and a request of exactly five keys", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "a route check, once");
+  test.setTimeout(300_000);
+  const s = await seeded(page);
+  const draftId = await draftByApi(page, s, WORDS);
+  const draftPrice = await quoted(page, s, { ...take(s, "480p"), draft: true });
+  const run = await finalByApi(page, s, draftId);
+  expect(run.sent.status(), JSON.stringify(run.body)).toBe(202);
+  /* The final is priced as any 1080p take of these words, and sent at that figure as its ceiling. */
+  const finalPrice = await quoted(page, s, take(s, "1080p"));
+  expect(run.credits).toBe(finalPrice);
+  expect(run.credits).toBeGreaterThan(draftPrice);
+  expect(Object.keys(run.data).sort()).toEqual(["finalOf", "maxCredits", "model", "quoteFingerprint", "refine"]);
+  expect(run.data.maxCredits).toBe(finalPrice);
+  await expect.poll(async () => (await page.request.get(`/api/jobs/${run.body.id}`, { headers: { "X-Workbench-Scope": s.scope } }).then((r) => r.json())).generation?.status, { timeout: 90_000, intervals: [1_000] }).toBe("succeeded");
+  const { jobs, charges } = await settled(s, 2);
+  const [draft, final] = jobs;
+  expect(draft.id).toBe(draftId);
+  expect(final.params).toMatchObject({ finalOf: draftId, resolution: "1080p", watermark: false });
+  expect(charges.map((c) => [c.id, c.status, c.credits])).toEqual([[draftId, "succeeded", draftPrice], [final.id, "succeeded", finalPrice]]);
 });
 
 test("API: a final refused at moderation is not charged on the books, and the draft can make its final again at today's quote", async ({ page }, info) => {

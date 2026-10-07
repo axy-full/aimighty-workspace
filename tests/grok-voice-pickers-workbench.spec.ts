@@ -92,7 +92,7 @@ test("the Make composer swaps to Grok Voice's voices, and a Grok-only workspace 
   await expect(page.getByTestId("gen-generate")).toHaveText(/^Make · (up to )?2 cr$/);
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
-  await fixture(page, "grokOnly");
+  const f2 = await fixture(page, "grokOnly");
   await page.reload();
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
@@ -102,6 +102,9 @@ test("the Make composer swaps to Grok Voice's voices, and a Grok-only workspace 
   await expect(page.getByTestId("make-sound-sound")).toHaveCount(0);
   await expect(page.getByTestId("make-sound-music")).toHaveCount(0);
   await expect(page.getByTestId("make-voice-name")).toHaveText("VoiceEve");
+  /* ...and what it asks to be priced is Grok's voice, never an ElevenLabs one. */
+  await page.getByTestId("gen-prompt").fill("Not tonight. The ice will hold.");
+  await expect.poll(() => f2.quotes.at(-1)).toMatchObject({ task: "speech", modelId: "grok-tts", voiceId: "eve" });
   await noSideScroll(page);
   await page.screenshot({ path: info.outputPath("make-grok-only.png") });
 });
