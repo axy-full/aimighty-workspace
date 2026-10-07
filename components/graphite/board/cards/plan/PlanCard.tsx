@@ -9,7 +9,7 @@ import type { PlanData } from "./derive";
 import { publishPlanModel, setPlanStepsOpen } from "./ui";
 import { balanceLine, fixLine, type PlanModel, type PlanPrimary } from "./model";
 import { usePlan } from "./use-plan";
-import { planMoneyState } from "./money-state";
+import { planLineKey, planMoneyState } from "./money-state";
 import { MoneyActions, MoneyLine, PausedBody, useMoveOffer, usePlanBudget, usePlanBudgetLine, useTopUpLabel } from "./MoneyStates";
 import "./plan.css";
 
@@ -33,7 +33,7 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   const topUp = useTopUpLabel(ctx.scope, live && model?.phase === "proposal" && model.balance?.short != null);
   const budget = usePlanBudget(ctx.scope, ctx.productionId, live && model?.phase === "needs-you");
   const move = useMoveOffer(ctx, live ? data.run : null, live ? model : null);
-  const budgetLine = usePlanBudgetLine(ctx.scope, ctx.productionId, live ? data.run?.id ?? null : null, live && model?.primary?.kind === "plan");
+  const budgetLine = usePlanBudgetLine(ctx.scope, ctx.productionId, live ? data.run?.id ?? null : null, live ? planLineKey(model?.primary, data.run?.money) : null);
   const money = live && model ? planMoneyState({ model, admin: plan.admin, shotCap: plan.rule?.rule === "cap" ? plan.rule.cap : null, budget, topUp, move }) : null;
   /* The Inspector shows the same steps from this model: the server is asked for each price once. */
   useEffect(() => { publishPlanModel(runId, model); }, [runId, model]);

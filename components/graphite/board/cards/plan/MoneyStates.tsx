@@ -64,19 +64,20 @@ export function usePlanBudget(scope: string, productionId: string | null, wanted
  * At the plan gate, before Approve: where the plan's "at most" (its server quote) would take the production against its
  * cap or budget, in the server's one line (GET /api/workbench/budget with the run; lib/budgetPause.ts planBudgetLine).
  * An approved plan runs to the cap without asking; this is said before the person approves it. Null when nothing to say.
+ * `gate` is ./money-state.ts planLineKey (null off the gate): a re-priced plan or spend that moved reads the line again.
  */
-export function usePlanBudgetLine(scope: string, productionId: string | null, runId: string | null, atGate: boolean): string | null {
+export function usePlanBudgetLine(scope: string, productionId: string | null, runId: string | null, gate: string | null): string | null {
   const [line, setLine] = useState<{ key: string; text: string | null } | null>(null);
-  const key = `${productionId}|${runId}`;
+  const key = `${productionId}|${runId}|${gate}`;
   useEffect(() => {
-    if (!atGate || !productionId || !runId) return;
+    if (!gate || !productionId || !runId) return;
     let alive = true;
     void draftRequest<{ plan?: { line: string | null } | null }>(`/api/workbench/budget?productionId=${encodeURIComponent(productionId)}&runId=${encodeURIComponent(runId)}`, scope)
       .then((r) => { if (alive) setLine({ key, text: r?.plan?.line ?? null }); })
       .catch(() => { /* no line: Approve keeps its price, and the gate holds at the cap */ });
     return () => { alive = false; };
-  }, [scope, productionId, runId, atGate, key]);
-  return atGate && line?.key === key ? line.text : null;
+  }, [scope, productionId, runId, gate, key]);
+  return gate && line?.key === key ? line.text : null;
 }
 
 /**

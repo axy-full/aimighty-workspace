@@ -14,7 +14,8 @@ const NO_STORE = { "Cache-Control": "private, no-store" };
  * workspace's budget per production), what it has used against it, and where paid work stops to ask (the workspace's
  * `capWarnPct` share). Credits workspaces only; read-only; this workspace only. The board's plan card reads it to show
  * "Paused at 80 % of the budget"; the gate decides on its own. With `runId` (a plan at its gate), also where the plan's
- * "at most" (the server's own quote) would take the production: one line for the card before Approve, or null.
+ * "at most" (the server's own quote) would take the production: one line for the card before Approve, or null. A token
+ * caller (requireUser lets read-only API and MCP tokens through) gets the budget only, never the plan's figures.
  */
 export const GET = withTenant(async (req: Request) => {
   const got = await requireUser();
@@ -31,11 +32,12 @@ export const GET = withTenant(async (req: Request) => {
   const pause = budgetPause({ cap: row.cap, spent: row.spent, needs: 0, warnPct });
   const runId = new URL(req.url).searchParams.get("runId");
   let plan: { atMost: number; line: string | null } | null = null;
-  if (runId && /^[a-zA-Z0-9_-]{1,100}$/.test(runId) && row.cap != null) {
+  /* The plan's figures are the board's (its team-canvas read takes a browser session): a token caller gets none. */
+  if (runId && !got.token && /^[a-zA-Z0-9_-]{1,100}$/.test(runId) && row.cap != null) {
     const quote = await planGateQuote(productionId, runId).catch(() => null);
     const atCapRaw = await getSetting("atCap");
     const atCap = atCapRaw === "stop" || atCapRaw === "warn" ? atCapRaw : "producer";
-    if (quote) plan = { atMost: quote.ceiling, line: planBudgetLine({ name: row.name, atMost: quote.ceiling, cap: row.cap, used: row.spent, warnPct, unlocked: row.unlocked, atCap }) };
+    if (quote) plan = { atMost: quote.ceiling, line: planBudgetLine({ name: row.name, total: quote.total, atMost: quote.ceiling, cap: row.cap, used: row.spent, warnPct, unlocked: row.unlocked, atCap }) };
   }
   return Response.json({
     plan,

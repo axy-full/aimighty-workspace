@@ -1,5 +1,6 @@
+import { isBudgetPauseReason } from "@/lib/budgetPause";
 import { creditsText, exact, priceSum, priceWords, type PriceValue } from "@/lib/shell/price-words";
-import type { PlanModel, PlanStep } from "./model";
+import type { PlanModel, PlanPrimary, PlanStep } from "./model";
 
 /*
  * The plan card's money states (design Gaps B, "Money states on the board", with the owner's corrections of 6 Oct),
@@ -14,9 +15,11 @@ import type { PlanModel, PlanStep } from "./model";
  *                 another engine of the plan prices it (the server's quote, free to move), or approve the rest.
  *  - failed:      a render of the run failed. "Nothing billed" only where the ledger says the provider billed
  *                 nothing; otherwise what it charged, or that it isn't known yet. The take's own card carries Retry.
- *  - paused:      the next render reaches the pause at a share of the production's budget (Settings › Spending
- *                 rules: 80 % unless an admin changed it). An admin's unlock lets it past the cap, never past the ask. "Continue · N cr" is that render's own tap at its price,
- *                 or Stop.
+ *  - paused:      the next render waits on the budget's ask (its own reason is the gate's "Paused at 80 % of the
+ *                 budget…", Settings › Spending rules: 80 % unless an admin changed it) and reaches the pause. A render
+ *                 that waits for any other reason (a price that moved, an approved plan running on to the cap) is not
+ *                 shown as paused. An admin's unlock lets it past the cap, never past the ask. "Continue · N cr" is
+ *                 that render's own tap at its price, or Stop.
  *
  * Every figure is the server's (the plan model's prices, the budget read, the pack list); this only adds them up
  * through price-words and words them. On release/1 Approve is the run's approval and each render then asks at its
@@ -97,7 +100,8 @@ export function planMoneyState(input: MoneyInput): MoneyState | null {
     const price = model.primary.price;
     const next = model.steps.find((s) => s.seq === (model.primary as { seq: number }).seq);
     const needs = price.kind === "free" ? 0 : Math.ceil(price.credits - 1e-9);
-    if (b.pauseAt != null && b.used + needs >= b.pauseAt) {
+    /* Only the gate's own budget ask is the 80 % pause: the render's reason says why it waits. */
+    if (b.pauseAt != null && b.used + needs >= b.pauseAt && isBudgetPauseReason(next?.reason)) {
       const words = priceWords(price)!;
       return {
         kind: "paused", title: `Paused at ${b.warnPct} % of the budget`, sub: `${b.used.toLocaleString("en-US", { maximumFractionDigits: 1 })} of ${creditsText(b.cap)} used`,
@@ -130,6 +134,15 @@ export function planMoneyState(input: MoneyInput): MoneyState | null {
 function approve(label: string, price: PriceValue | null, priced = false): string {
   const words = priced && price ? priceWords(price) : null;
   return words ? `${label} · ${words}` : label;
+}
+
+/**
+ * What the plan gate's budget line (GET /api/workbench/budget with the run) is read again for: the plan's quote (its
+ * fingerprint, so a re-priced plan) and what the run has used and holds (so spend that moved). Null off the gate.
+ */
+export function planLineKey(primary: PlanPrimary | null | undefined, money: { spent: number; inFlight: number } | null | undefined): string | null {
+  if (primary?.kind !== "plan") return null;
+  return `${primary.fingerprint}|${money ? `${money.spent}+${money.inFlight}` : "-"}`;
 }
 
 /** The figure a quote gives a move: the server's credits, exact. */

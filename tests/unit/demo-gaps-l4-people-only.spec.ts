@@ -410,12 +410,25 @@ test("before Approve at the plan gate, the server says where the plan's at most 
   /* 200 cr left: the plan fits, and takes it past the 80 % ask. */
   await set("productionBudgetCredits", String(used + 200));
   expect((await read()).plan!.line).toBe(`This plan can take A 15-second film past 80 % of its budget (${(used + 186).toLocaleString("en-US")} of ${(used + 200).toLocaleString("en-US")} cr).`);
-  /* 150 cr left: more than it has left; it will stop at the cap (or go past with a warning, where the rule only warns). */
+  /* 150 cr left: its 93 cr of renders fit, its fixes would not; it stops at the cap only if it uses them all. */
   await set("productionBudgetCredits", String(used + 150));
-  expect((await read()).plan!.line).toBe("This plan’s at most 186 cr is more than A 15-second film has left (150 cr); it will stop at the cap.");
+  expect((await read()).plan!.line).toBe("This plan’s at most 186 cr is more than A 15-second film has left (150 cr). If it uses all its fixes, it stops at the cap.");
   await set("atCap", "warn");
-  expect((await read()).plan!.line).toBe("This plan’s at most 186 cr is more than A 15-second film has left (150 cr); it goes past the cap with a warning.");
+  expect((await read()).plan!.line).toBe("This plan’s at most 186 cr is more than A 15-second film has left (150 cr). If it uses all its fixes, it goes past the cap with a warning.");
   await set("atCap", "producer");
+  /* 80 cr left: less than its renders without fixes; it will stop at the cap (or go past with a warning, where the rule only warns). */
+  await set("productionBudgetCredits", String(used + 80));
+  expect((await read()).plan!.line).toBe("This plan’s at most 186 cr is more than A 15-second film has left (80 cr); it will stop at the cap.");
+  await set("atCap", "warn");
+  expect((await read()).plan!.line).toBe("This plan’s at most 186 cr is more than A 15-second film has left (80 cr); it goes past the cap with a warning.");
+  await set("atCap", "producer");
+  /* An API or MCP token (requireUser lets one read) gets the budget, never the plan's figures; the person does. */
+  mode = "token";
+  const byToken = await (await api.budget.GET(req("/api/workbench/budget?productionId=prod-l4&runId=rar_gate", "GET"), undefined as never)).json() as { budget: { cap: number } | null; plan: unknown };
+  expect(byToken.plan).toBeNull();
+  expect(byToken.budget).toMatchObject({ cap: used + 80 });
+  mode = "session";
+  expect((await read()).plan).toMatchObject({ atMost: 186 });
   /* Unlocked past its cap by an admin: nothing to say. No budget: nothing to say. No run named: no plan figure. */
   await exec("UPDATE projects SET cap_unlocked=1 WHERE id='prod-l4'");
   expect((await read()).plan!.line).toBeNull();

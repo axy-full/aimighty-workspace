@@ -20,7 +20,7 @@ const SEED = "dreamina-seedance-2-5-260628", KLING = "fal-ai/kling-video/v3/stan
 const FP = "c".repeat(64);
 const RUN = "rar_000000000000000000000004";
 
-type Step = { seq: number; title: string; state?: string; quote?: number | null; outcome?: string | null; charge?: { credits: number; settled: boolean } | null; canRender?: boolean; fingerprint?: string | null; pause?: string | null };
+type Step = { seq: number; title: string; state?: string; quote?: number | null; outcome?: string | null; charge?: { credits: number; settled: boolean } | null; canRender?: boolean; fingerprint?: string | null; pause?: string | null; reason?: string | null };
 const step = (s: Step) => ({
   tool: "render", state: "next", quote: null, worst: null, pause: null, charged: null, outcome: null, charge: null, reason: null, canRender: false, fingerprint: null, ...s,
 });
@@ -287,7 +287,7 @@ test("paused at 80 % of the budget: 320 of 400 cr used; Continue · 7 cr is the 
   const run = runOf("needs_you", [
     step({ seq: 1, title: "Shot 1", state: "done", quote: 43 }),
     step({ seq: 2, title: "Shot 2", state: "done", quote: 43 }),
-    step({ seq: 3, title: "Shot 3", state: "waiting", quote: 7, canRender: true, fingerprint: FP }),
+    step({ seq: 3, title: "Shot 3", state: "waiting", quote: 7, canRender: true, fingerprint: FP, reason: "Paused at 80 % of the budget: 320 of 400 cr used. Continue or stop. Shot 3 is next · about 7 cr." }),
   ], { reason: "Paused at 80 % of the budget: 320 of 400 cr used. Continue or stop. Shot 3 is next · about 7 cr." });
   const seeded = await board(page, page.request, workspace.id, run, { budget: { cap: 400, used: 320, warnPct: 80, pauseAt: 320, unlocked: false, from: "workspace" } });
   if (!desktop(page)) return phoneFloors(page, seeded.project, seeded);

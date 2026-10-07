@@ -1,8 +1,8 @@
 import { test, expect } from "@playwright/test";
 import type { RigAgentPaidStepView, RigAgentRunView } from "../../lib/workbench/rig-agent-plan";
 import { planModel, type PlanInput } from "../../components/graphite/board/cards/plan/model";
-import { planMoneyState, type BudgetRead } from "../../components/graphite/board/cards/plan/money-state";
-import { budgetPause, budgetPauseLine, cleanBudget, cleanWarnPct, planBudgetLine } from "../../lib/budgetPause";
+import { planLineKey, planMoneyState, type BudgetRead } from "../../components/graphite/board/cards/plan/money-state";
+import { budgetPause, budgetPauseLine, cleanBudget, cleanWarnPct, isBudgetPauseReason, planBudgetLine } from "../../lib/budgetPause";
 import { settingProblem } from "../../lib/settingValues";
 import { DEFAULTS } from "../../lib/settings";
 import { cleanShotCap } from "../../lib/approvalRule";
@@ -129,9 +129,10 @@ test("failed: Nothing billed only where the ledger says the provider billed noth
 
 /* ── Paused at 80 % of the budget ──────────────────────────────────────── */
 
-const waitingRun = (quote = 7) => run({
-  state: "needs_you", proposal: null, reason: "Shot 3 is ready to render · about 7 cr.",
-  paid: [step(1, "Shot 1", { state: "done", charged: 43 }), step(2, "Shot 2", { state: "done", charged: 43 }), step(3, "Shot 3", { state: "waiting", quote, canRender: true, fingerprint: FP })],
+const ASK = "Paused at 80 % of the budget: 320 of 400 cr used. Continue or stop. Shot 3 is next · about 7 cr.";
+const waitingRun = (quote = 7, reason: string | null = ASK) => run({
+  state: "needs_you", proposal: null, reason,
+  paid: [step(1, "Shot 1", { state: "done", charged: 43 }), step(2, "Shot 2", { state: "done", charged: 43 }), step(3, "Shot 3", { state: "waiting", quote, canRender: true, fingerprint: FP, reason })],
 });
 const budget = (over: Partial<BudgetRead> = {}): BudgetRead => ({ cap: 400, used: 320, warnPct: 80, pauseAt: 320, unlocked: false, ...over });
 
@@ -156,6 +157,41 @@ test("paused: 320 of a 400 cr budget used; the next render waits; Continue is it
   expect(money(plan, { budget: budget({ unlocked: true }) })).toMatchObject({ kind: "paused" });
   expect(money(plan, { budget: budget({ unlocked: true, used: 400 }) })).toBeNull();
   expect(money(plan, { budget: null })).toBeNull();
+});
+
+test("paused only for the budget's own ask: a render waiting for another reason (a price that moved, an approved plan running on to the cap) is not shown as an 80 % pause", () => {
+  /* The gate's reason is the budget line (lib/budgetPause.ts budgetPauseLine), then the render. */
+  expect(isBudgetPauseReason(ASK)).toBe(true);
+  expect(isBudgetPauseReason(`${budgetPauseLine({ pct: 75, spent: 1234, cap: 2000 })} Shot 3 is next · about 7 cr.`)).toBe(true);
+  for (const other of ["Shot 3 is ready to render · about 7 cr.", "The plan's prices changed. Look at it again before approving.", "", null, undefined])
+    expect(isBudgetPauseReason(other)).toBe(false);
+  /* Used + price reaches the pause, but the render waits for another reason: no paused state; its own tap stays the card's primary at its price. */
+  for (const reason of ["Shot 3 is ready to render · about 7 cr.", "Shot 3's price moved · about 7 cr. Render it, skip it, or stop.", null]) {
+    const plan = input({ run: waitingRun(7, reason) });
+    expect(money(plan, { budget: budget() })).toBeNull();
+    expect(planModel(plan)!.primary).toMatchObject({ kind: "render", seq: 3, label: "Render · 7 cr" });
+  }
+  /* The run's own reason alone is not the render's: the step's reason decides. */
+  const runOnly = run({ ...waitingRun(7, null), reason: ASK });
+  expect(money(input({ run: runOnly }), { budget: budget() })).toBeNull();
+  /* The budget's ask: paused, Continue at the render's price. */
+  expect(money(input({ run: waitingRun() }), { budget: budget() })).toMatchObject({ kind: "paused", continueLabel: "Continue · 7 cr", seq: 3 });
+});
+
+test("the plan gate's budget line is read again when the plan is re-priced or the run's spend moves; off the gate there is nothing to read", () => {
+  const gate = planModel(input({ run: atGate([43, 43, 7]) }))!;
+  const key = planLineKey(gate.primary, { spent: 9, inFlight: 0 });
+  expect(key).not.toBeNull();
+  /* Re-priced: a new fingerprint is a new key. */
+  const repriced = planModel(input({ run: run({ ...atGate([43, 43, 7]), plan: { ...atGate([43, 43, 7]).plan!, quote: { ...atGate([43, 43, 7]).plan!.quote!, fingerprint: "e".repeat(64) } } }) }))!;
+  expect(planLineKey(repriced.primary, { spent: 9, inFlight: 0 })).not.toBe(key);
+  /* Spend moved (settled or held): a new key. The same figures: the same key. */
+  expect(planLineKey(gate.primary, { spent: 52, inFlight: 0 })).not.toBe(key);
+  expect(planLineKey(gate.primary, { spent: 9, inFlight: 43 })).not.toBe(key);
+  expect(planLineKey(gate.primary, { spent: 9, inFlight: 0 })).toBe(key);
+  /* Off the gate (a render's tap, or no model): null, and the hook reads nothing. */
+  expect(planLineKey(planModel(input({ run: waitingRun() }))!.primary, { spent: 9, inFlight: 0 })).toBeNull();
+  expect(planLineKey(null, null)).toBeNull();
 });
 
 test("the pause's arithmetic: 80 % of 400 cr is 320 cr, rounded down, so it never asks later than the share; the run's sentence", () => {
@@ -239,16 +275,30 @@ test("Retry's price is the quote of the request Retry makes again; a take Make c
 });
 
 test("the plan's at most against the budget, in one line: past the 80 % ask, more than is left (stops at the cap, or warns), or nothing", () => {
-  const line = (o: Partial<Parameters<typeof planBudgetLine>[0]>) => planBudgetLine({ name: "A 15-second film", atMost: 186, cap: 400, used: 0, warnPct: 80, unlocked: false, atCap: "producer", ...o });
+  const line = (o: Partial<Parameters<typeof planBudgetLine>[0]>) => planBudgetLine({ name: "A 15-second film", total: 93, atMost: 186, cap: 400, used: 0, warnPct: 80, unlocked: false, atCap: "producer", ...o });
   expect(line({})).toBeNull();
   expect(line({ used: 134 })).toBe("This plan can take A 15-second film past 80 % of its budget (320 of 400 cr).");
   expect(line({ used: 133 })).toBeNull();
-  expect(line({ used: 300 })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (100 cr); it will stop at the cap.");
-  expect(line({ used: 300, atCap: "stop" })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (100 cr); it will stop at the cap.");
-  expect(line({ used: 300, atCap: "warn" })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (100 cr); it goes past the cap with a warning.");
+  /* Less left than its renders without fixes (T = 93 cr): it will stop at the cap. */
+  expect(line({ used: 320 })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (80 cr); it will stop at the cap.");
+  expect(line({ used: 320, atCap: "stop" })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (80 cr); it will stop at the cap.");
+  expect(line({ used: 320, atCap: "warn" })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (80 cr); it goes past the cap with a warning.");
   expect(line({ used: 500 })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (0 cr); it will stop at the cap.");
   expect(line({ used: 300, unlocked: true })).toBeNull();
+  expect(line({ used: 320, unlocked: true })).toBeNull();
   expect(line({ cap: null })).toBeNull();
   expect(line({ atMost: 0 })).toBeNull();
   expect(line({ used: 134, name: " " })).toBe("This plan can take this production past 80 % of its budget (320 of 400 cr).");
+});
+
+test("the plan's renders fit but its fixes would not (T ≤ left < 2T): it stops at the cap only if it uses all its fixes", () => {
+  const line = (o: Partial<Parameters<typeof planBudgetLine>[0]>) => planBudgetLine({ name: "A 15-second film", total: 93, atMost: 186, cap: 400, used: 0, warnPct: 80, unlocked: false, atCap: "producer", ...o });
+  expect(line({ used: 300 })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (100 cr). If it uses all its fixes, it stops at the cap.");
+  expect(line({ used: 300, atCap: "stop" })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (100 cr). If it uses all its fixes, it stops at the cap.");
+  expect(line({ used: 300, atCap: "warn" })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (100 cr). If it uses all its fixes, it goes past the cap with a warning.");
+  /* Exactly T left: its renders fit. One credit under T: they don't. Exactly 2T left: it all fits (the 80 % line, not the cap). */
+  expect(line({ used: 307 })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (93 cr). If it uses all its fixes, it stops at the cap.");
+  expect(line({ used: 308 })).toBe("This plan’s at most 186 cr is more than A 15-second film has left (92 cr); it will stop at the cap.");
+  expect(line({ used: 214 })).toBe("This plan can take A 15-second film past 80 % of its budget (400 of 400 cr).");
+  expect(line({ used: 300, unlocked: true })).toBeNull();
 });

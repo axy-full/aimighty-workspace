@@ -43,20 +43,35 @@ export function budgetPauseLine(p: Pick<BudgetPause, "pct" | "spent" | "cap">): 
 }
 
 /**
+ * Whether a render's own reason is the budget's ask: the run's gate (lib/workbench/rig-agent-runs.ts) writes it
+ * starting with `budgetPauseLine`. Any other reason (a price that moved, a render that asks in Ask mode) is not.
+ */
+export function isBudgetPauseReason(reason: string | null | undefined): boolean {
+  return /^Paused at \d{1,3} % of the budget: [\d,.]+ of [\d,]+ cr used\. Continue or stop\./.test(reason ?? "");
+}
+
+/**
  * Where a plan's "at most" (its ceiling, the server's quote) would take a production against its cap or budget, said
  * before the plan is approved (the plan card at the gate). An approved plan runs without a tap up to the production's
- * cap (lib/workbench/plan-approval.ts); Atomik's 80 % ask is for Auto drafts only. So the card says, in one line:
- *  - "This plan's at most N cr is more than <name> has left (M cr); it will stop at the cap." when it cannot all fit
- *    (or "… it goes past the cap with a warning." when the workspace's rule at the cap only warns);
+ * cap (lib/workbench/plan-approval.ts); Atomik's 80 % ask is for Auto drafts only. `total` is the plan's renders
+ * without fixes (T); `atMost` is its ceiling with every fix (2T). So the card says, in one line:
+ *  - "This plan's at most N cr is more than <name> has left (M cr); it will stop at the cap." when even its renders
+ *    without fixes don't fit (or "… it goes past the cap with a warning." when the workspace's rule at the cap only warns);
+ *  - "… (M cr). If it uses all its fixes, it stops at the cap." (or "… it goes past the cap with a warning.") when its
+ *    renders fit and only the fixes would not;
  *  - "This plan can take <name> past 80 % of its budget (N of M cr)." when it would reach the share;
  *  - nothing otherwise, or when an admin unlocked the production past its cap. Pure; nothing here spends.
  */
-export function planBudgetLine(o: { name: string; atMost: number; cap: number | null; used: number; warnPct: number; unlocked: boolean; atCap: "producer" | "stop" | "warn" }): string | null {
+export function planBudgetLine(o: { name: string; total: number; atMost: number; cap: number | null; used: number; warnPct: number; unlocked: boolean; atCap: "producer" | "stop" | "warn" }): string | null {
   if (o.cap == null || !(o.cap > 0) || o.unlocked || !(o.atMost > 0)) return null;
   const name = o.name.trim() || "this production";
   const left = Math.max(0, o.cap - o.used);
   if (o.atMost > left + 1e-9) {
-    return `This plan’s at most ${whole(o.atMost)} cr is more than ${name} has left (${whole(left)} cr); ${o.atCap === "warn" ? "it goes past the cap with a warning." : "it will stop at the cap."}`;
+    const over = `This plan’s at most ${whole(o.atMost)} cr is more than ${name} has left (${whole(left)} cr)`;
+    const atCap = o.atCap === "warn" ? "goes past the cap with a warning." : "stops at the cap.";
+    /* Its renders fit; only the fixes would take it to the cap. */
+    if (o.total <= left + 1e-9) return `${over}. If it uses all its fixes, it ${atCap}`;
+    return `${over}; ${o.atCap === "warn" ? "it goes past the cap with a warning." : "it will stop at the cap."}`;
   }
   const pause = budgetPause({ cap: o.cap, spent: o.used, needs: o.atMost, warnPct: o.warnPct })!;
   if (pause.reached) return `This plan can take ${name} past ${pause.pct} % of its budget (${whole(o.used + o.atMost)} of ${whole(o.cap)} cr).`;
