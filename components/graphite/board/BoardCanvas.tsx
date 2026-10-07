@@ -25,6 +25,8 @@ import type { PlacedBoard } from "./layout-cards";
  */
 const NODE_TYPES = { card: BoardNode };
 const NO_EDGES: never[] = [];
+/** The owner asked for no attribution badge in the canvas corner (React Flow is MIT; hiding it is allowed). */
+const PRO_OPTIONS = { hideAttribution: true } as const;
 /** Above this many cards only those in view render (a 4,000-card canvas stays smooth). */
 const VISIBLE_ONLY_FROM = 150;
 
@@ -159,6 +161,7 @@ export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly
       className="bd-flow"
       nodes={nodes}
       edges={NO_EDGES}
+      proOptions={PRO_OPTIONS}
       nodeTypes={NODE_TYPES}
       onNodesChange={onNodesChange}
       onNodeDragStop={onNodeDragStop}
