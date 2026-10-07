@@ -75,3 +75,15 @@ test("the menu shows the price after Recreate; with none the item is disabled wi
   expect(retry(caps({ retry: { state: "unavailable", reason: "No confirmed price for this setting yet." } }))).toMatchObject({ disabled: true, reason: "No confirmed price for this setting yet." });
   expect(items(caps({ retry: { state: "ready", text: "43 cr" } })).filter((i) => i.price).map((i) => i.command)).toEqual(["retry"]);
 });
+
+test("Again on a Cinema Studio take quotes the engine Make will land on while Make hides Cinema Studio (Release 1, until its hold is in)", async () => {
+  const { MAKE_SHOWS_CINEMA } = await import("../../lib/shell/make-price");
+  const cinema = "higgsfield-cinema-studio-4.0";
+  const list = { models: [{ id: cinema, kind: "video", resolutions: ["720p"], ratios: ["16:9"], durations: [5] }, ...engines.models] };
+  const log: string[] = [];
+  const price = await quoteRecreate(take({ model: cinema, provider: "higgsfield", params: { resolution: "720p", duration: 5 } }), reader(log, { "/api/workbench/engines?": { credits: 12 }, "/api/workbench/engines": list }));
+  expect(price).toMatchObject({ state: "ready", credits: 12 });
+  /* Hidden: the quote is for Make's own engine, never Cinema Studio's. On: Cinema Studio's own. */
+  expect(log.at(-1)).toContain(MAKE_SHOWS_CINEMA ? `model=${cinema}` : "model=seedance_2_5");
+  if (!MAKE_SHOWS_CINEMA) expect(log.join("\n")).not.toContain(`model=${cinema}`);
+});
