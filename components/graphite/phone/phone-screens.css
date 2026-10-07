@@ -60,7 +60,7 @@
 .ph-bar { display: block; position: relative; margin-top: 6px; height: 3px; border-radius: 2px; background: var(--gx-hair); overflow: hidden; }
 .ph-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--gx-accent); }
 .ph-bar-fill--busy { width: 30%; animation: ph-busy 1.4s var(--gx-ease) infinite; }
-@keyframes ph-busy { from { left: -30%; } to { left: 100%; } }
+@keyframes ph-busy { from { left: -30%; } to { left: 70%; } }
 
 /* ── Buttons: outlined on black, 44 px, radius 10; the price is one unbroken run ── */
 .ph-btn { flex: none; min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: var(--gx-r-ctl-phone); border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text); font: inherit; font-size: 14px; font-weight: 500; white-space: nowrap; cursor: pointer; }
