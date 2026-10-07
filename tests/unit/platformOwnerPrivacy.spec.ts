@@ -32,14 +32,15 @@ const MEMBER = { email: `mia-${run}@example.com`, name: "Mia Member" };
 const CLIENT = { email: `cleo-${run}@example.com`, name: "Cleo Client" };
 const SUPPORT = "Particl support";
 
-const before = process.env.SUPER_ADMIN_EMAIL;
+const before = { SUPER_ADMIN_EMAIL: process.env.SUPER_ADMIN_EMAIL, OWNER_PRIVACY_SCRUB_LOCAL: process.env.OWNER_PRIVACY_SCRUB_LOCAL };
 test.beforeEach(async () => {
   process.env.SUPER_ADMIN_EMAIL = OWNER.email;
+  // Off Vercel the rewrite runs only when asked for explicitly; these tests ask.
+  process.env.OWNER_PRIVACY_SCRUB_LOCAL = "1";
   (await import("../../lib/platformOwnerPrivacy")).resetPlatformOwnerIdentity();
 });
 test.afterAll(async () => {
-  if (before === undefined) delete process.env.SUPER_ADMIN_EMAIL;
-  else process.env.SUPER_ADMIN_EMAIL = before;
+  for (const [k, v] of Object.entries(before)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   (await import("../../lib/platformOwnerPrivacy")).resetPlatformOwnerIdentity();
 });
 const password = "Unique-studio-password-43";
@@ -200,9 +201,28 @@ test("Team: the client can disable and remove the support row by its own id", as
   const { PATCH, DELETE } = await route("app/api/team/[id]/route.ts", viewer);
   const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
   const membership = async () => (await platformDb().execute({ sql: "SELECT disabled FROM memberships WHERE workspace_id=? AND account_id=?", args: [ws.id, owner.id] })).rows[0];
+  const patch = (id: string, body: unknown) => inTenant(ws, () => PATCH(new Request("http://x", { method: "PATCH", body: JSON.stringify(body) }), ctx(id)));
+  const lockout = async () => (await platformDb().execute({ sql: "SELECT failed_count, locked_until FROM accounts WHERE id=?", args: [owner.id] })).rows[0];
   // An id that is no one's finds no one.
-  expect((await inTenant(ws, () => PATCH(new Request("http://x", { method: "PATCH", body: JSON.stringify({ disabled: true }) }), ctx("support_000000000000000000000000")))).status).toBe(404);
-  expect((await inTenant(ws, () => PATCH(new Request("http://x", { method: "PATCH", body: JSON.stringify({ disabled: true }) }), ctx(support.id)))).status).toBe(200);
+  expect((await patch("support_000000000000000000000000", { disabled: true })).status).toBe(404);
+  // The account is the platform's: no unlock (it would clear a platform-wide sign-in lockout), no standing.
+  const lockedUntil = Date.now() + 3_600_000;
+  await platformDb().execute({ sql: "UPDATE accounts SET failed_count=8, locked_until=? WHERE id=?", args: [lockedUntil, owner.id] });
+  try {
+    const unlock = await patch(support.id, { unlock: true });
+    expect(unlock.status).toBe(403);
+    expect((await unlock.json()).error).not.toContain(OWNER.email);
+    expect((await patch(support.id, { role: "member" })).status).toBe(403);
+    // This workspace's own membership switch works, and leaves the account's lockout alone both ways.
+    expect((await patch(support.id, { disabled: true })).status).toBe(200);
+    expect(Number((await membership()).disabled)).toBe(1);
+    expect((await patch(support.id, { disabled: false })).status).toBe(200);
+    expect(Number((await membership()).disabled)).toBe(0);
+    expect(await lockout()).toMatchObject({ failed_count: 8, locked_until: lockedUntil });
+  } finally {
+    await platformDb().execute({ sql: "UPDATE accounts SET failed_count=0, locked_until=NULL WHERE id=?", args: [owner.id] });
+  }
+  expect((await patch(support.id, { disabled: true })).status).toBe(200);
   expect(Number((await membership()).disabled)).toBe(1);
   const removed = await inTenant(ws, () => DELETE(new Request("http://x", { method: "DELETE" }), ctx(support.id)));
   expect(removed.status).toBe(200);
@@ -364,24 +384,80 @@ test("read time: a lock stored under the owner's address reads Particl support, 
 test("the rewrite refuses on a preview or staging deployment", async () => {
   const { owner } = await fixture();
   const { scrubAllowedHere } = await import("../../lib/platformOwnerScrub");
-  expect(scrubAllowedHere({})).toBe(true);
+  // Off Vercel only with the explicit opt-in; on Vercel only in production, opt-in or not.
+  expect(scrubAllowedHere({})).toBe(false);
+  expect(scrubAllowedHere({ OWNER_PRIVACY_SCRUB_LOCAL: "1" })).toBe(true);
+  expect(scrubAllowedHere({ OWNER_PRIVACY_SCRUB_LOCAL: "true" })).toBe(false);
   expect(scrubAllowedHere({ VERCEL: "1", VERCEL_ENV: "production" })).toBe(true);
   expect(scrubAllowedHere({ VERCEL: "1", VERCEL_ENV: "preview" })).toBe(false);
+  expect(scrubAllowedHere({ VERCEL: "1", VERCEL_ENV: "preview", OWNER_PRIVACY_SCRUB_LOCAL: "1" })).toBe(false);
   expect(scrubAllowedHere({ VERCEL: "1" })).toBe(false);
   expect(scrubAllowedHere({ VERCEL_ENV: "development" })).toBe(false);
   const { ws } = await clientWorkspace("Preview client", `preview-${run}@example.com`);
   const { GET, POST } = await route("app/api/admin/owner-privacy/route.ts", owner);
-  const saved = { VERCEL: process.env.VERCEL, VERCEL_ENV: process.env.VERCEL_ENV };
-  process.env.VERCEL = "1";
-  process.env.VERCEL_ENV = "preview";
-  try {
+  const saved = { VERCEL: process.env.VERCEL, VERCEL_ENV: process.env.VERCEL_ENV, OWNER_PRIVACY_SCRUB_LOCAL: process.env.OWNER_PRIVACY_SCRUB_LOCAL };
+  const refusedBoth = async () => {
     expect((await inTenant(ws, () => GET(new Request("http://x/api/admin/owner-privacy")))).status).toBe(403);
     const post = await inTenant(ws, () => POST(new Request("http://x/api/admin/owner-privacy", { method: "POST", body: JSON.stringify({ confirm: true, expected: 0 }) })));
     expect(post.status).toBe(403);
     expect((await post.json()).error).toContain("production");
+  };
+  try {
+    process.env.VERCEL = "1";
+    process.env.VERCEL_ENV = "preview";
+    await refusedBoth();
+    // Off Vercel without the opt-in.
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+    delete process.env.OWNER_PRIVACY_SCRUB_LOCAL;
+    await refusedBoth();
   } finally {
     for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   }
+});
+
+test("the rewrite is optimistic: a canvas or bible that changed after the read is left and reported, and the live room is told", async () => {
+  const { owner } = await fixture();
+  const { addMember } = await import("../../lib/platform");
+  const { platformOwnerScrub } = await import("../../lib/platformOwnerScrub");
+  const { teamCanvasReady } = await import("../../lib/workbench/team-canvas");
+  const { workbenchReady } = await import("../../lib/workbench/records");
+  const { ws } = await clientWorkspace("Fifth client", `fifth-${run}@example.com`);
+  await addMember(ws, owner, "admin");
+  await inTenant(ws, async () => { await teamCanvasReady(); await workbenchReady(); });
+  const at = Date.now();
+  const card = (lockedBy: string) => JSON.stringify({ nodes: { a: { id: "a", master: { lockedBy } } } });
+  await sql(ws, "INSERT INTO workbench_team_canvas (production_id, body, revision, updated_at) VALUES ('stays', ?, 2, ?), ('moves', ?, 7, ?)", [card(OWNER.name), at, card(OWNER.name), at]);
+  await sql(ws, "INSERT INTO workbench_bibles (project_id, version, owner, body, created_at) VALUES ('p', 1, ?, ?, ?), ('p', 2, ?, ?, ?)",
+    [owner.id, JSON.stringify({ publishedBy: OWNER.name }), at, owner.id, JSON.stringify({ publishedBy: OWNER.name, brief: "x" }), at]);
+  const { db } = await import("../../lib/db");
+  // Someone saves one canvas and one bible version between the read and the write.
+  const report = await inTenant(ws, () => platformOwnerScrub({
+    apply: true,
+    beforeWrite: async () => {
+      await db().execute("UPDATE workbench_team_canvas SET revision = revision + 1 WHERE production_id = 'moves'");
+      await db().execute(`UPDATE workbench_bibles SET body = '{"publishedBy":"${OWNER.name}","brief":"y"}' WHERE version = 2`);
+    },
+  }));
+  expect(report.changed).toBe(2);
+  expect(report.note).toContain("run it again");
+  expect(report.lines.find((l) => l.table === "workbench_team_canvas")).toMatchObject({ matched: 2, changed: 1 });
+  expect(report.lines.find((l) => l.table === "workbench_bibles")).toMatchObject({ matched: 2, changed: 1 });
+  const rows = await sql(ws, "SELECT production_id, body, revision FROM workbench_team_canvas ORDER BY production_id");
+  expect(rows.map((r) => [r.production_id, JSON.parse(String(r.body)).nodes.a.master.lockedBy, Number(r.revision)]))
+    .toEqual([["moves", OWNER.name, 8], ["stays", SUPPORT, 3]]);
+  expect((await sql(ws, "SELECT body FROM workbench_bibles ORDER BY version")).map((r) => JSON.parse(String(r.body)).publishedBy)).toEqual([SUPPORT, OWNER.name]);
+  // The live room is told of the landed rewrite only: one outbox row, for the canvas that took it, saying nothing to the team.
+  const ops = await sql(ws, "SELECT production_id, op_id, changed, revision, changes FROM rig_canvas_ops");
+  expect(ops).toHaveLength(1);
+  expect(ops[0]).toMatchObject({ production_id: "stays", op_id: "owner-privacy:3", changed: 0, revision: 3 });
+  const change = JSON.parse(String(ops[0].changes))[0];
+  expect(change).toMatchObject({ id: "a", made: false, fields: ["master"], before: { master: { lockedBy: OWNER.name } }, after: { master: { lockedBy: SUPPORT } } });
+  // Run again: what changed is rewritten now.
+  const again = await inTenant(ws, () => platformOwnerScrub({ apply: true }));
+  expect(again.changed).toBeUndefined();
+  expect(again.total).toBe(2);
+  expect((await sql(ws, "SELECT body FROM workbench_team_canvas WHERE production_id='moves'")).map((r) => JSON.parse(String(r.body)).nodes.a.master.lockedBy)).toEqual([SUPPORT]);
 });
 
 test("the rewrite of older records: a dry run first, then only the owner's values, only in this workspace, once", async () => {

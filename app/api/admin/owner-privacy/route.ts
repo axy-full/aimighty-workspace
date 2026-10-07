@@ -14,9 +14,10 @@ const headers = { "Cache-Control": "private, no-store" };
  * inside the one workspace their session is in.
  *
  * Both refuse unless this is the production deployment (VERCEL_ENV
- * "production") or not on Vercel at all (local, CI, tests). On a preview or
- * staging deployment a restored workspace row can name a production
- * database, so even the dry run would read production data from there.
+ * "production"), or off Vercel (local, CI, tests) with
+ * OWNER_PRIVACY_SCRUB_LOCAL=1. On a preview or staging deployment a restored
+ * workspace row can name a production database, so even the dry run would
+ * read production data from there.
  */
 function refused(): Response | null {
   if (!scrubAllowedHere()) return Response.json({ error: SCRUB_REFUSED }, { status: 403, headers });
