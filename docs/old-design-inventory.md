@@ -237,7 +237,7 @@ Marketing copy that the scanner cannot see: the five marketing screenshots carry
 
 ## 4. Old shells: routes
 
-**The old homepage (owner, decision 41; dated Thu 8 Oct).** `/` signed out today is the Gen page (`app/(marketing)/site/_pages/gen/index.tsx`), its hero prompt (`components/marketing/HeroPrompt.tsx`), its copy, its `.mk-hero*` and `.mk-prompt*` rules in `components/marketing/marketing.css` and its screenshot `public/marketing/screens/gen-composer-blank.jpg`. All of it is deleted in the same step as turning Guest Home on: stream 15's follow-up PR `site/guest-home-on` (stacked on `site/guest-home`) deletes them and makes Guest Home the only `/` for a signed-out visitor; it merges when the owner turns Guest Home on. /pricing and the other `/site/*` pages stay. Target: Thu 8 Oct.
+**The old homepage (owner, decision 41; dated Thu 8 Oct).** `/` signed out today is the Gen page (`app/(marketing)/site/_pages/gen/index.tsx`), its hero prompt (`components/marketing/HeroPrompt.tsx`), its copy, its `.mk-hero*` and `.mk-prompt*` rules in `components/marketing/marketing.css` and its screenshot `public/marketing/screens/make-panel.jpg` (a Release 1 capture since 7 Oct). All of it is deleted in the same step as turning Guest Home on: stream 15's follow-up PR `site/guest-home-on` (stacked on `site/guest-home`) deletes them and makes Guest Home the only `/` for a signed-out visitor; it merges when the owner turns Guest Home on. /pricing and the other `/site/*` pages stay. Target: Thu 8 Oct.
 
 From `docs/old-shells.md`, which this inventory supersedes as the deletion list. Three shells still serve routes: `/workspace`, `/workbench` and the pages under `app/(app)/`; the live `/suites` shell is the 3 October build (`components/graphite/`) that the D0 PRs and stream 1 rebuild. "Imported by" for a route is the Next.js router; the components a route renders are in §6.
 
@@ -1091,11 +1091,6 @@ These stay past the clean slate. Each has a reason and the date it is reviewed a
 
 | Path | Kind | Imported by | Deleting PR or stream | Target |
 |---|---|---|---|---|
-| `public/marketing/screens/gen-composer-blank.jpg` | export: screenshot of the Gen composer | `app/(marketing)/site/_pages/gen/index.tsx` | stream 15: deleted with the homepage by `site/guest-home-on` (decision 41); was: stream 15 step 2 (landing page, after the owner's frames) retakes it from the Make panel | after the new screens merge; owner to confirm date (§9) |
-| `public/marketing/screens/studio-rig-canvas.jpg` | export: screenshot of the Rig canvas (path label "particl.app / dune-studies / rig": a placeholder name too) | `app/(marketing)/site/_pages/studio/index.tsx` | stream 15 step 2: retake from the board | after the new screens merge; owner to confirm date (§9) |
-| `public/marketing/screens/viral-history.jpg` | export: screenshot of Viral History | `app/(marketing)/site/_pages/viral/index.tsx` | stream 15 step 2: retake from the Social board | after the new screens merge; owner to confirm date (§9) |
-| `public/marketing/screens/workspace-plans-credits.jpg` | export: screenshot of Workspace > Plans & credits | `app/(marketing)/site/_pages/workspace/index.tsx` | stream 15 step 2: retake from Settings > Plan & credits | after the new screens merge; owner to confirm date (§9) |
-| `public/marketing/screens/palette-cmd-k.jpg` | export: screenshot of the old ⌘K palette | `components/marketing/SharedBottom.tsx` | stream 15 step 2: retake from #513's palette | after the new screens merge; owner to confirm date (§9) |
 
 The marketing pictures are old-design exports that depend on the new screens existing, so they cannot go before the demo. Until they are retaken the marketing pages name the old interface inside the picture; stream 15 can drop the five `<Window>` blocks instead if the owner prefers no picture to an old one.
 

@@ -126,7 +126,7 @@ export default function StudioPage() {
           </div>
 
           <div className={styles.aside}>
-            <Window path="particl.app / dune-studies / rig" src={shot("studio-rig-canvas")} alt="The Board, the node graph of a shot" width={924} height={540} />
+            <Window path="particl.si / a-15-second-film / board" src={shot("board-canvas")} alt="The Studio board: the rail of regions, the cards and the tool row" width={924} height={540} />
             <Grid col={220} style={{ gap: 10 }}>
               {ASSETS.map((asset) => (
                 <div key={asset.name} className={styles.asset}>

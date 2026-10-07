@@ -56,7 +56,7 @@ function Shell() {
       <Head eyebrow="The board" title="The whole production on one canvas."
         lead="Brief · Looks · Storyboard · Shots · Cast · Cut · Deliver. Atomik plans each step and prices it; a person approves before anything is spent." />
       <Cols col={420}>
-        <Window path="⌘K · search everything" src={shot("palette-cmd-k")} alt="The ⌘K palette" width={924} height={540} />
+        <Window path="⌘K · search, or tell Atomik what to do" src={shot("palette-cmd-k")} alt="⌘K: Home, the board, Make and Atomik" width={924} height={540} />
         <Grid col={200}>
           {SHELL_TILES.map(([tag, name, body]) => <Tile key={tag} tag={tag} name={name} body={body} />)}
         </Grid>
