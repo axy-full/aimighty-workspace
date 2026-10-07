@@ -241,22 +241,30 @@ test("the sample production from the Particl sample workspace: plan, shots, cast
 
 test("Request access is stored for the owner with what they make and the brief", async ({ page }, info) => {
   await setSite({ guestHome: true });
-  /* Its own source, so the route's per-source daily limit is this test's alone. */
-  await page.setExtraHTTPHeaders({ "x-forwarded-for": `198.51.100.${Math.floor(Math.random() * 250) + 1}, s15-${Date.now()}` });
+  /* A test server trusts no forwarded header (lib/clientIp.ts), so every request here counts against one shared
+     per-source daily limit. This project's earlier requests are cleared first, leaving at most one per other size. */
+  const own = `guest-${info.project.name.replace(/\W/g, "")}-`;
+  const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try {
+    await db.execute({ sql: "DELETE FROM access_requests WHERE substr(email, 1, ?) = ?", args: [own.length, own] })
+      .catch((error) => { if (!/no such table/.test(String(error))) throw error; });
+  } finally {
+    db.close();
+  }
   await page.goto("/?signup=1");
-  const email = `guest-${info.project.name.replace(/\W/g, "")}-${Date.now()}@example.test`;
+  const email = `${own}${Date.now()}@example.test`;
   await page.getByTestId("signup-name").fill("Guest Tester");
   await page.getByTestId("signup-email").fill(email);
   await page.getByTestId("signup-make").fill("Ad films");
   await page.getByTestId("signup-request").click();
   await expect(page.getByRole("dialog")).toContainText("Request sent");
   await expect(page.getByTestId("signup-sent")).toBeVisible();
-  const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  const read = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try {
-    const row = (await db.execute({ sql: "SELECT note FROM access_requests WHERE email = ?", args: [email] })).rows[0] as unknown as { note: string };
+    const row = (await read.execute({ sql: "SELECT note FROM access_requests WHERE email = ?", args: [email] })).rows[0] as unknown as { note: string };
     expect(row.note).toContain("What they make: Ad films");
   } finally {
-    db.close();
+    read.close();
   }
 });
 
