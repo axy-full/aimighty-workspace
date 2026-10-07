@@ -10,6 +10,14 @@ process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 
 import { clientIp, DIRECT, UNATTRIBUTED, trustedProxyHops } from "../../lib/clientIp";
 
+/* Every warning the helper prints in this file (it warns once per process; see the last test). */
+const warnings: string[] = [];
+const realWarn = console.warn;
+console.warn = (...args: unknown[]) => {
+  if (String(args[0]).startsWith("[client-ip]")) warnings.push(args.map(String).join(" "));
+  else realWarn(...args);
+};
+
 const req = (headers: Record<string, string>) => ({ headers: new Headers(headers) });
 const PROXY = { SELFHOST_BEHIND_PROXY: "1" };
 
@@ -185,4 +193,64 @@ test("the salted keys are unchanged on Vercel", async () => {
     expect(sourceKey(r)).toBe(createHash("sha256").update("unit-salt:login:203.0.113.7").digest("hex").slice(0, 32));
     expect(sourceKey({ headers: new Headers() })).toBe(createHash("sha256").update("unit-salt:login:").digest("hex").slice(0, 32));
   });
+});
+
+test("report behind the proxy: spoofed left entries give the same ip_hash, the proxy's entry decides it", async () => {
+  await withEnv({ ...BEHIND, SESSION_SECRET: "unit-salt", RESEND_API_KEY: undefined }, async () => {
+    const { POST } = await import("../../app/api/report/route");
+    const { REPORT_REASONS } = await import("../../lib/reports");
+    const { platformDb } = await import("../../lib/platform");
+    const send = async (xff: string) => {
+      const res = await POST(new Request("https://particl.test/api/report", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": xff },
+        body: JSON.stringify({ url: "https://particl.test/x", reason: REPORT_REASONS[0] }),
+      }));
+      expect(res.status).toBe(201);
+      const { id } = await res.json();
+      return String((await platformDb().execute({ sql: "SELECT ip_hash FROM reports WHERE id = ?", args: [id] })).rows[0].ip_hash);
+    };
+    const expected = createHash("sha256").update("unit-salt:203.0.113.80").digest("hex").slice(0, 32);
+    expect(await send("203.0.113.80")).toBe(expected);
+    expect(await send("192.0.2.1, 203.0.113.80")).toBe(expected);
+    expect(await send("192.0.2.2, 198.51.100.3, 203.0.113.80")).toBe(expected);
+    expect(await send("203.0.113.80, 192.0.2.3")).not.toBe(expected);
+  });
+});
+
+test("request access behind the proxy: spoofed left entries give the same ip_hash, the proxy's entry decides it", async () => {
+  await withEnv({ ...BEHIND, SESSION_SECRET: "unit-salt", RESEND_API_KEY: undefined }, async () => {
+    const { POST } = await import("../../app/api/access-request/route");
+    const { NextRequest } = await import("next/server.js");
+    const { platformDb } = await import("../../lib/platform");
+    const send = async (xff: string, n: number) => {
+      const email = `asker-${n}@example.test`;
+      const res = await POST(new NextRequest("http://localhost/api/access-request", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": xff },
+        body: JSON.stringify({ name: "Asker", email, company: "" }),
+      }));
+      expect(res.status).toBe(200);
+      return String((await platformDb().execute({ sql: "SELECT ip_hash FROM access_requests WHERE email = ?", args: [email] })).rows[0].ip_hash);
+    };
+    const expected = createHash("sha256").update("unit-salt:203.0.113.90").digest("hex").slice(0, 32);
+    expect(await send("203.0.113.90", 1)).toBe(expected);
+    expect(await send("192.0.2.1, 203.0.113.90", 2)).toBe(expected);
+    expect(await send("192.0.2.2, 198.51.100.3, 203.0.113.90", 3)).toBe(expected);
+    expect(await send("203.0.113.90, 192.0.2.3", 4)).not.toBe(expected);
+  });
+});
+
+test("the shared bucket behind the proxy is announced once per process, naming the settings and never an address", () => {
+  const shapes: Record<string, string>[] = [{}, { "x-forwarded-for": "198.51.100.66, junk" }, { "x-forwarded-for": "198.51.100.68" }];
+  for (const headers of shapes) {
+    expect(clientIp(req({ ...headers, "x-forwarded-for": `${headers["x-forwarded-for"] ?? ""}, ` }), PROXY)).toBe(UNATTRIBUTED);
+    expect(clientIp(req(headers), { ...PROXY, TRUSTED_PROXY_HOPS: "9" })).toBe(UNATTRIBUTED);
+    expect(clientIp(req(headers), { ...PROXY, TRUST_CF_CONNECTING_IP: "1" })).toBe(UNATTRIBUTED);
+  }
+  /* Not on Vercel and not off the proxy: those are not misconfigurations. */
+  expect(clientIp(req({}), {})).toBe(DIRECT);
+  expect(warnings).toHaveLength(1);
+  for (const name of ["TRUSTED_PROXY_HOPS", "TRUST_CF_CONNECTING_IP", "X-Forwarded-For"]) expect(warnings[0]).toContain(name);
+  expect(warnings[0]).not.toMatch(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|[0-9a-f]{1,4}::|junk/i);
 });
