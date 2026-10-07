@@ -4,7 +4,7 @@ import { refKindOf } from "../workbench/ref-kind";
 import { stableId } from "../workbench/stable-id";
 import type { CanvasNode, Project } from "../workbench/studio";
 import { RigBuildError } from "../production/rig-build";
-import { cardHeight, cardWidth, graphEdges, isSectionNode, SECTION_MODE, SECTION_WIDTH } from "./rig-graph";
+import { cardHeight, cardWidth, isSectionNode, SECTION_MODE, SECTION_WIDTH } from "./rig-graph";
 
 /*
  * The Rig board, laid out so a big board reads at a glance (owner, 28
@@ -395,30 +395,4 @@ function layout(
     x += blockWidth + TIDY.sectionGap;
   }
   return { spots, made, right, bottom: bandBottom };
-}
-
-/* ── The phone's flow: sections as headings in the chain ──────────────── */
-
-export type FlowStep = { id: string; scene: boolean; wire: "blue" | "grey" | null };
-
-/**
- * The flow chain (lib/workspace/mobile-templates.ts flowChain) with the board's
- * sections read into it: the scene, its inputs and what it feeds stay first;
- * everything after them follows the board's sections, each under its title (a
- * title with nothing left under it, its cards all read with the scene, is not
- * repeated). A board with no section titles reads exactly as before.
- */
-export function sectionedFlow(chain: readonly FlowStep[], nodes: readonly CanvasNode[], assets: Assets): FlowStep[] {
-  if (!nodes.some(isSectionNode)) return [...chain];
-  const scene = chain.find((step) => step.scene)?.id ?? null;
-  const edges = graphEdges(nodes);
-  const head = new Set(scene ? [scene, ...edges.filter((e) => e.target === scene).map((e) => e.source), ...edges.filter((e) => e.source === scene).map((e) => e.target)] : []);
-  const order = chain.filter((step) => head.has(step.id)).map((step) => step.id);
-  for (const section of boardSections(nodes, assets)) {
-    const rest = section.members.filter((member) => !head.has(member.id));
-    if (section.card && rest.length) order.push(section.card.id);
-    for (const member of rest) order.push(member.id);
-  }
-  const sceneAt = scene ? order.indexOf(scene) : -1;
-  return order.map((id, i) => ({ id, scene: id === scene, wire: i === order.length - 1 ? null : i < sceneAt ? "blue" : "grey" }));
 }

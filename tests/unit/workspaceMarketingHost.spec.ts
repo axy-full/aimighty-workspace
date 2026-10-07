@@ -80,10 +80,4 @@ test("the workspace Marketing page mounts the shared flow, the shared picker and
   expect(panel).toContain('atomik.start("marketing")');
   expect(panel).not.toContain("fetch(");
   for (const marker of ["/api/", "maxCredits", "quoteFingerprint"]) expect(panel, marker).not.toContain(marker);
-
-  /* One upload rule: Studio files the same asset through the same builder. */
-  const studio = readFileSync("components/workbench/Studio.tsx", "utf8");
-  expect(studio).toContain("draftUploadAsset(file,");
-  expect(studio).toContain("DRAFT_UPLOAD_ACCEPT");
-  expect(studio).not.toContain('description: "Uploaded from device"');
 });

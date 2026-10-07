@@ -51,13 +51,6 @@ test("Atomik keeps the previous website's original eight-dot SVG geometry on bot
   });
 });
 
-test("the workbench uses the shared Atomik mark instead of the unrelated orbital icon", () => {
-  const studio = readFileSync("components/workbench/Studio.tsx", "utf8");
-  expect(studio.includes("@/components/AtomikMark")).toBe(true);
-  expect(/<AtomikMark\b/.test(studio)).toBe(true);
-  expect(studio.includes('rx="13" ry="5.3"')).toBe(false);
-});
-
 test("the shared Particl mark preserves the previous website's seven-dot trail", () => {
   const reference = readFileSync(
     "brand/particl/particl-mark-on-dark.svg",

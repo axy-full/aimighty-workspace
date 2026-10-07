@@ -2,14 +2,11 @@ import { test, expect } from "@playwright/test";
 import { newProject, type Asset, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { keepWiring, watchWiring, watchedWiring, wireShot, wiringDecision, type RigWiring } from "../../lib/shell/rig-wire";
-import { AUTO_RETRIES, autoRetryMs } from "../../lib/shell/business";
 import { MIRROR_ECHO_MS, mirrorSeek, type MirrorMark } from "../../lib/shell/viral";
 import { libraryHasTools } from "../../lib/shell/production-tools";
-import { RESUME_TRIES, composerBusy, connectedJobKey, forgetJob, quoteLands, resumeLands, resumeRetry, settledState, submitRefused } from "../../lib/shell/use-connected-job";
 import { branchFromTake } from "../../lib/production/rig-build";
 import { atomikSheetRuns } from "../../lib/shell/atomik-sheet";
 import { freshOver, freshRead } from "../../lib/shell/use-fresh-project";
-import type { ConnectedJob } from "../../lib/higgsfield-consumer/generation-client";
 
 /* Production › Rig › "Let the agent wire this shot": applied once, recorded on the shot. */
 const img = (id: string): Asset => ({ id, generationId: id, name: id, kind: "image", category: "Storyboard", url: `/api/media/${id}`, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] });
@@ -58,72 +55,6 @@ test("the agent's wiring lands once: prompt, notes, inputs and first frame, with
   const again = wireShot(wired, "s1", JOB, wiring);
   expect(again.inputs).toBe(0);
   expect(() => wireShot(project([shot("s1", { locked: true })]), "s1", JOB, wiring)).toThrow("Unlock this shot");
-});
-
-/* Business › a submitted job is resumed, not stranded. */
-test("a Business job is remembered per project and composer, and a status read settles the composer", () => {
-  expect(connectedJobKey("ads", "p1")).not.toBe(connectedJobKey("dtc", "p1"));
-  expect(connectedJobKey("ads", "p1")).not.toBe(connectedJobKey("ads", "p2"));
-  const job = (status: ConnectedJob["status"]) => ({ id: "j", status } as ConnectedJob);
-  expect(settledState(job("accepted")).phase).toBe("running");
-  expect(settledState(job("uncertain")).phase).toBe("running");
-  expect(settledState(job("completed")).phase).toBe("done");
-  expect(settledState(job("failed"))).toMatchObject({ phase: "failed", error: expect.stringContaining("didn't say if it charged") });
-  /* A failed quote is asked again on its own only when the failure passes by itself, spaced out and a few times (the route allows six a minute); a refusal of the input waits for Try again. */
-  expect(autoRetryMs({ status: 503 }, 1)).toBeGreaterThanOrEqual(5_000);
-  expect(autoRetryMs({ status: 503 }, AUTO_RETRIES + 1)).toBeNull();
-  expect(autoRetryMs({ status: 400, code: "parameter_invalid" }, 1)).toBeNull();
-  /* A price read while a remembered job was being resumed never replaces it (its polling would stop). */
-  const running = settledState(job("accepted"));
-  expect(quoteLands(running, { phase: "quoted", job: job("quoted") })).toBe(running);
-  expect(quoteLands({ phase: "submitting", job: job("quoted") }, { phase: "quoting" }).phase).toBe("submitting");
-  expect(quoteLands({ phase: "idle" }, { phase: "quoting" }).phase).toBe("quoting");
-  expect(quoteLands(settledState(job("completed")), { phase: "quoting" }).phase).toBe("quoting");
-});
-
-test("a resumed Business job lands only on the composer still waiting for it, and never clears a newer job", () => {
-  const job = (id: string, status: ConnectedJob["status"]) => ({ id, status } as ConnectedJob);
-  /* While the remembered job is read back the composer prices and submits nothing. */
-  expect(composerBusy("resuming")).toBe(true);
-  expect(composerBusy("submitting")).toBe(true);
-  expect(composerBusy("running")).toBe(true);
-  expect(composerBusy("quoted")).toBe(false);
-  expect(quoteLands({ phase: "resuming" }, { phase: "quoted", job: job("q", "quoted") }).phase).toBe("resuming");
-  /* The read for J1 comes back after J2 was submitted: J2 keeps the composer (and its polling). */
-  const j2 = { phase: "running" as const, job: job("j2", "accepted") };
-  expect(resumeLands(j2, settledState(job("j1", "completed")))).toBe(j2);
-  expect(resumeLands({ phase: "submitting", job: job("j2", "quoted") }, settledState(job("j1", "accepted"))).phase).toBe("submitting");
-  expect(resumeLands({ phase: "resuming" }, settledState(job("j1", "completed")))).toMatchObject({ phase: "done", job: { id: "j1" } });
-  /* A status read that finds the job still quoted: the submit never reached the account. */
-  expect(settledState(job("j", "quoted"))).toMatchObject({ phase: "failed", error: expect.stringContaining("nothing was billed") });
-
-  /* Compare-and-remove: an older job settling leaves a newer job's id in place. */
-  const kept = new Map<string, string>([["k", "j2"]]);
-  const storage = { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) };
-  forgetJob(storage, "k", "j1");
-  expect(kept.get("k")).toBe("j2");
-  forgetJob(storage, "k", "j2");
-  expect(kept.has("k")).toBe(false);
-  forgetJob(null, "k", "j2");
-
-  /* A missed resume read: forget what the server does not know, stop where this person may not read it (keeping the id), back off otherwise, and give up in the end. */
-  expect(resumeRetry(404, 1)).toBe("forget");
-  expect(resumeRetry(400, 1)).toBe("forget");
-  expect(resumeRetry(403, 1)).toBe("stop");
-  expect(resumeRetry(401, 1)).toBe("stop");
-  const waits = Array.from({ length: RESUME_TRIES - 1 }, (_, i) => resumeRetry(503, i + 1));
-  expect(waits).toEqual([4000, 8000, 16000, 32000, 60000, 60000, 60000]);
-  expect(resumeRetry(Number.NaN, 1)).toBe(4000);
-  expect(resumeRetry(503, RESUME_TRIES)).toBe("stop");
-
-  /* A refused submit (4xx) sent nothing; a 5xx or a lost reply may have reached the account, so its status is read, never re-sent. */
-  expect(submitRefused(409)).toBe(true);
-  expect(submitRefused(429)).toBe(true);
-  expect(submitRefused(503)).toBe(false);
-  expect(submitRefused(Number.NaN)).toBe(false);
-  /* Another request did send it: read, not dropped. */
-  expect(submitRefused(409, "already_submitted")).toBe(false);
-  expect(submitRefused(409, "approval_changed")).toBe(true);
 });
 
 /* Viral › History and Recent are the project's Library alone (tests/unit/suitesViral.spec.ts): nothing is read from the account. */

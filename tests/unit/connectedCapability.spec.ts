@@ -336,20 +336,10 @@ test("Generate has no reason of the connected account's left: a composer state s
   expect(source).not.toMatch(/\/api\/higgsfield\/consumer\/|CONNECTED_GENERATION_ENDPOINT|useConnectedCapability|higgsfield-consumer\/catalogue/);
 });
 
-test("Business and the connected workflows no longer read /api/me for ownership: the session decides, once", () => {
-  for (const file of ["lib/shell/use-business.ts", "components/graphite/tools/WorkflowHost.tsx"]) {
-    const source = readFileSync(file, "utf8");
-    expect(source, file).not.toContain("/api/me");
-    expect(source, file).toContain("useConnectedCapability");
-  }
+test("the composer no longer reads /api/me for ownership: the session decides, once", () => {
   expect(readFileSync("lib/workspace/use-composer.ts", "utf8")).not.toContain("/api/me");
   /* The connection itself is read in one place for the shell's surfaces. */
-  for (const file of ["lib/shell/use-business.ts", "lib/workspace/use-composer.ts"]) expect(readFileSync(file, "utf8"), file).not.toContain("/api/higgsfield/consumer/connection");
-  /* Engines is the one place that still reads the owner's connection: to list running jobs and to Disconnect. It never starts a sign-in. */
-  const row = readFileSync("components/graphite/ConnectedAccountRow.tsx", "utf8");
-  expect(row).toContain("CONNECTION_ENDPOINT");
-  expect(row).toContain('method: "DELETE"');
-  expect(row).not.toMatch(/consumer\/connect"|consumerAuthorizeUrl|"Reconnect|Opening sign-in|window\.location\.assign/);
+  expect(readFileSync("lib/workspace/use-composer.ts", "utf8")).not.toContain("/api/higgsfield/consumer/connection");
   /* Viral and Business › Image ads read nothing of the connected account at all: they run on Particl's API key. */
   for (const file of ["components/graphite/viral/ViralView.tsx", "lib/shell/viral.ts", "lib/shell/use-key-take.ts", "lib/shell/image-ads.ts", "lib/shell/use-marketing-presets.ts", "components/graphite/business/PresetPicker.tsx"]) {
     const source = readFileSync(file, "utf8");

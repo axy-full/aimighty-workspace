@@ -156,6 +156,6 @@ test("the month's statement itemises the takes in credits, and its CSV has no do
 });
 
 test.fixme("the shot list's own Export CSV names spent_credits and has no dollar column (owner question: the shot list page has no new home; its CSV is held at /api/export in tests/r1-port-credit-units-workbench.spec.ts)", async () => {
-  /* Was /atomik/shots › Export CSV (lib/shotListCost.ts › moneyColumns still names the columns). Port to the board's Shots region
+  /* Was /atomik/shots › Export CSV (lib/shotListCost.ts › moneyColumns named the columns; deleted with the file as dead code). Port to the board's Shots region
      when it has an export, or accept the loss. */
 });
