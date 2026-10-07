@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMake, type MakeModel } from "../make/use-make";
 import { MakePriceText, useMakePriceTitle } from "../make/price";
 import type { ComposerType } from "@/lib/workspace/composer";
@@ -39,6 +39,9 @@ export function MakeScreen({ scope, project, items, workspaceName, balance, proj
   const [adding, setAdding] = useState(false);
   const [said, setSaid] = useState(false);
   const goTitle = useMakePriceTitle(make.go.price);
+  /* A failed press is read below the fold on a short phone: bring it into view when it appears. */
+  const resultRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => { if (make.result) resultRef.current?.scrollIntoView({ block: "nearest" }); }, [make.result]);
   const { state } = make;
   const waits = Boolean(make.go.blocked) || !online;
   const reason = !online ? NEEDS_CONNECTION : make.go.blocked && (make.go.blocked !== SAY_WHAT || said) ? make.go.blocked : null;
@@ -93,6 +96,8 @@ export function MakeScreen({ scope, project, items, workspaceName, balance, proj
 
           <p className="ph-row-line" data-testid="phone-make-dest">{`Lands in ${make.composer.project?.name?.trim() || "a new project"} · Library, and on the board.`}</p>
           {make.notices.map((n) => <p key={n} className="ph-row-line" role="status">{n}</p>)}
+          {/* A press that did not go through: the same words the desktop's Result block shows (what the provider charged, as it said). The pinned button is the way to press again. */}
+          {make.result ? <p className="ph-row-line ph-row-line--warn" role="alert" data-testid="phone-make-result" ref={resultRef}>{make.result}</p> : null}
         </div>
       </main>
       <div className="ph-pinned" data-testid="mobile-actions">

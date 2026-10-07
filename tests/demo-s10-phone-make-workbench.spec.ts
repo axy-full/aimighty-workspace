@@ -125,6 +125,28 @@ test("Make sends once, at the price on its button", async ({ page }, info) => {
   expect(seen.generates[0].quoteFingerprint).toBeTruthy();
 });
 
+test("a press that fails shows its reason on the phone, as the desktop's Result does, and nothing is sent again", async ({ page }, info) => {
+  test.skip(!PORTRAIT.includes(info.project.name), "portrait phones");
+  test.setTimeout(180_000);
+  const { seen } = await seed(page);
+  await page.goto("/suites?screen=make");
+  await page.getByTestId("phone-make-prompt").fill("a fox crosses a frozen harbour at dusk");
+  const go = page.getByTestId("phone-make-go");
+  await expect(go).toHaveText(/^Make · [\d.,]+ cr$/, { timeout: 90_000 });
+  await expect(page.getByTestId("phone-make-result")).toHaveCount(0);
+  await go.click();
+  await expect.poll(() => seen.generates.length, { timeout: 30_000 }).toBe(1);
+  /* The refusal's own words; no claim about the charge (only the ledger says that). */
+  const result = page.getByTestId("phone-make-result");
+  await expect(result).toContainText("Fixture: not sent to an engine.", { timeout: 30_000 });
+  await expect(result).not.toContainText(/not billed|nothing billed|no charge/i);
+  await expect(result).toBeInViewport();
+  await page.waitForTimeout(1_500);
+  expect(seen.generates, "showing the failure sends nothing").toHaveLength(1);
+  await floors(page, "Make, failed press");
+  expect(seen.errors).toEqual([]);
+});
+
 test("the Make tab and a make= address open the phone's Make, not the desktop panel", async ({ page }, info) => {
   test.skip(!PORTRAIT.includes(info.project.name), "portrait phones");
   await seed(page);
