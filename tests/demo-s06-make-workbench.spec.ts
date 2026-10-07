@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Request } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -39,7 +39,9 @@ async function seed(page: Page, opts: { credits?: number } = {}) {
   const errors: string[] = [];
   const sends: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  page.on("request", (request) => { if (request.method() === "POST" && ["/api/generate", "/api/audio"].includes(new URL(request.url()).pathname)) sends.push(request.url()); });
+  /* A sound's price is the audio route's quoteOnly read (Make opens Audio on a voice, priced once there are words): it reserves nothing, so it is not a send. */
+  const quoteOnly = (request: Request) => { try { return (request.postDataJSON() as { quoteOnly?: unknown } | null)?.quoteOnly === true; } catch { return false; } };
+  page.on("request", (request) => { if (request.method() === "POST" && ["/api/generate", "/api/audio"].includes(new URL(request.url()).pathname) && !quoteOnly(request)) sends.push(request.url()); });
   return { errors, sends, name, workspaceId };
 }
 

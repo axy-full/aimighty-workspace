@@ -4,6 +4,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { releaseHeldJobs } from "@/lib/held";
 import { mayRelease } from "@/lib/workspace/release";
 import { HOLD_NEEDS_A_PERSON, holdBandOf, isAgentApprover } from "@/lib/cinemaHold";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -23,6 +24,11 @@ const releasedBefore = (gen: { status: string; params: Record<string, unknown> }
 export const POST = withTenant(async function POST(req: Request, { params }: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
+  /* Releasing a held take at a stated price approves spending: a person's, signed in (CLAUDE.md rule 14). An API or
+     MCP token, even one an admin made, never releases one; held takes still start on their own when credits arrive. */
+  if (got.token) return NextResponse.json({ error: "A held take is released by a person, signed in. API tokens cannot release it." }, { status: 403 });
+  /* The sample workspace spends nothing: a held take there stays held. */
+  { const off = await sampleWorkspaceOff(); if (off) return off; }
   const { id } = await params;
   const body = await req.json().catch(() => null) as { credits?: unknown } | null;
   const approved = Number(body?.credits ?? Number.NaN);

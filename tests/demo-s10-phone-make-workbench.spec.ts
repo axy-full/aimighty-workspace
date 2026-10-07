@@ -395,11 +395,12 @@ test("the Atomik sheet, commands and how-to are free: nothing is sent, approved 
   await send.click();
   await expect(lines.last()).toContainText("You approve each one yourself.");
   await expect(lines.last().getByTestId("phone-atomik-offer")).toHaveText("Open Home");
-  /* Remember: Atomik keeps nothing by itself; a person confirms on Memory's page. */
+  /* Remember: Memory is not on the phone (owner decision 14: phone Memory comes after the demo), so Atomik says so, offers no button, and keeps nothing. */
   await input.fill("remember our films open on a detail");
   await expect(send).toHaveText("Ask · free");
   await send.click();
-  await expect(lines.last()).toContainText("where you confirm it");
+  await expect(lines.last()).toContainText("Memory isn’t on the phone, so nothing was kept or forgotten. Open Particl on a computer to keep or forget a line there.");
+  await expect(lines.last().getByTestId("phone-atomik-offer")).toHaveCount(0);
   await page.waitForTimeout(500);
   expect(atomik.turns, "no paid Atomik request").toEqual([]);
   expect(atomik.released, "approve approves nothing").toEqual([]);

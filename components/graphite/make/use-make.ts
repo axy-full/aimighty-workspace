@@ -13,15 +13,16 @@ import { cites, nearestSetting, recipeChips, referenceTags, retagRecipe, type Ge
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { useSession } from "@/lib/session";
 import { cleanCinemaControls, isCinemaStudioAudioMime, isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
 import { cinemaPriceWords } from "@/lib/cinemaHold";
-import { hiddenInMake } from "@/lib/shell/make-price";
 import type { Project } from "@/lib/workbench/studio";
 import { composerButtonParts, EMPTY_PROMPT, READING_MODELS, shownTotal, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
 import { cleanSetup, composeForSend, recoverSetup, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { useComposer, type ComposerSent } from "@/lib/workspace/use-composer";
+import { hiddenInMake, MAKE_MODEL_PREFERENCE, MAKE_PICKS, makeQuoteValue, rowSettings } from "@/lib/shell/make-price";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
@@ -89,7 +90,8 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     announceMade({ projectId: made.projectId, nodeId: made.nodeId, name: made.name });
     shell.closeMake();
   }, [ws, shell, surface]);
-  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent, hide: hiddenInMake });
+  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent, hide: hiddenInMake,
+    preference: MAKE_MODEL_PREFERENCE, initialPicks: MAKE_PICKS });
   const { state, model, offered, settings, submitting } = composer;
   const dispatch = composer.dispatch;
   /* Back from where the words were left: only into an empty box, before anything else (a recipe, ⌘K's "make …") lands in it. */
@@ -137,9 +139,11 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   useEffect(() => { latest.current = state; });
 
   const anchored = state.references.some((r) => r.kind === "video") || (state.type === "video" && state.references.length > 0);
+  /* The sample workspace spends nothing (the owner's switch, lib/demo/spend-guard.server.ts): no Enhance, and Make waits with the sample's line. */
+  const spendOff = useSampleWorkspace();
   const enhancer = useEnhancer({
     prompt: state.prompt, mode: state.type as EnhanceMode, model: model?.id ?? null,
-    anchored, editing: state.type === "image" && state.references.length > 0,
+    anchored, editing: state.type === "image" && state.references.length > 0, off: spendOff,
   });
   const { dismiss: dismissEnhanced } = enhancer;
   const cinemaModel = model != null && isCinemaStudioModel(model.id);
@@ -308,13 +312,16 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   }, [wantsRates, ratesKey, priceKey, scopedFetch]);
   const rates = sheetRates?.key === priceKey ? sheetRates : null;
   const readingRates = wantsRates && !rates;
-  /** One row's figure, as a price: exact where the server priced the row, none where it did not. */
-  const rowValue = useCallback((m: ComposerModel): MakePrice & { title: string } => {
+  /** One row's figure, as a price: exact where the server priced the row, none where it did not; with the size and length it is
+   *  at ("52 cr · 1080p · 6 s"), which are the settings this engine would render with here (an engine without the size picked
+   *  renders at its own, and its row says so). */
+  const rowValue = useCallback((m: ComposerModel): MakePrice & { title: string; detail: string | null } => {
     const row = rowPrice(m, null, priceAt, rates, readingRates);
     const priced = row.kind === "rate" && row.credits != null ? row.credits : null;
     /* Cinema Studio's row says what approving it holds: "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
     const about = priced != null && isCinemaStudioModel(m.id) ? cinemaPriceWords(priced) : null;
-    return { value: priced != null && !row.approximate ? exact(priced) : null, about, title: row.kind === "none" ? "Priced on Make once the words are in" : row.title };
+    const value = priced != null && !row.approximate ? makeQuoteValue(priced, m.type) : null;
+    return { value, about, detail: value ? rowSettings(m, priceAt, row.detail) : null, title: row.kind === "none" ? "Priced on Make once the words are in" : row.title };
   }, [priceAt, rates, readingRates]);
 
   /* ── The words ───────────────────────────────────────────────────────── */
@@ -346,9 +353,9 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
      approves both at once; a raw: line is never enhanced, and a Cinema Studio take, quoted as "about", does not take Auto. */
   const autoNeeds = enhancer.auto && !enhancer.enhanced && Boolean(state.prompt.trim()) && !isRawPrompt(state.prompt) && !composer.quote?.approximate;
   const enhanceCredits = autoNeeds ? enhancer.credits : null;
-  const blocked = blockedBase ?? (autoNeeds && enhanceCredits == null ? enhancer.blocked ?? "Pricing the enhancement…" : null);
+  const blocked = spendOff ?? blockedBase ?? (autoNeeds && enhanceCredits == null ? enhancer.blocked ?? "Pricing the enhancement…" : null);
   const make = useCallback(() => {
-    if (recipeWait) return;
+    if (recipeWait || spendOff) return;
     if (model && !composer.blocked) used(model.id);
     if (enhancer.auto && enhancer.enhanced && enhancer.enhanced !== state.prompt && !isRawPrompt(state.prompt)) {
       pending.current = true;
@@ -367,7 +374,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
       return;
     }
     composer.generate();
-  }, [recipeWait, model, composer, used, enhancer, state.prompt, dispatch, autoNeeds]);
+  }, [recipeWait, spendOff, model, composer, used, enhancer, state.prompt, dispatch, autoNeeds]);
 
   /* ── What the line and the button say ───────────────────────────────── */
   const count = settings.draft ? 1 : Math.max(1, state.count);
@@ -381,13 +388,14 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     ? [model?.label, model?.audioTask === "speech" ? composer.voice?.name : soundTask ? `${composer.seconds} s` : null]
     : state.type === "image" ? [model?.label, settings.resolution]
     : [model?.label, settings.resolution, model?.durations?.length ? `${settings.duration} s` : null]).filter((part): part is string => Boolean(part));
-  const linePrice: MakePrice | null = takeCredits == null ? null : approximate ? { value: null, about: aboutOneTake() } : { value: exact(takeCredits), about: null };
+  /* A sound is a live estimate: "up to N cr" (lib/shell/make-price.ts › makeQuoteValue); a still or a clip is its card figure. */
+  const linePrice: MakePrice | null = takeCredits == null ? null : approximate ? { value: null, about: aboutOneTake() } : { value: makeQuoteValue(takeCredits, state.type), about: null };
   /* Auto's enhancement is in the figure: the button reads take + enhancement, and waits (unpriced) while the enhancement is still being priced. */
-  const goPrice: MakePrice | null = total == null || (autoNeeds && enhanceCredits == null) ? null
-    : approximate ? { value: null, about: composer.buttonParts.price } : { value: exact(total + (enhanceCredits ?? 0)), about: null };
+  const goPrice: MakePrice | null = spendOff || total == null || (autoNeeds && enhanceCredits == null) ? null
+    : approximate ? { value: null, about: composer.buttonParts.price } : { value: makeQuoteValue(total + (enhanceCredits ?? 0), state.type), about: null };
   const balanceNow = balance !== undefined ? balance : session.credits?.balance ?? null;
   /* Make stays pressable when the balance is short (the take waits, held, until credits arrive): the line only says so. */
-  const short = !approximate && total != null && !submitting ? shortByWords(balanceNow, exact(total + (enhanceCredits ?? 0))) : null;
+  const short = !spendOff && !approximate && total != null && !submitting ? shortByWords(balanceNow, makeQuoteValue(total + (enhanceCredits ?? 0), state.type)) : null;
 
   return {
     composer, state, model, settings, offered, tool, recent, submitting,
@@ -412,6 +420,8 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
       undo: undoRecipe, hide: hideRecipe,
     } : null,
     enhancer, soundTask, enhanceCredits, autoNeeds, balance: balanceNow,
+    /** The sample's line in the sample workspace, where nothing spends: Enhance is not offered and Make waits. */
+    spendOff,
   };
 }
 

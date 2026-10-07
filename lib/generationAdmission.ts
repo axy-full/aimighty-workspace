@@ -112,7 +112,7 @@ import { isBatchId } from "@/lib/variations";
 import { uploadSourceParams } from "@/lib/sourceClip";
 import { shotCapGate } from "@/lib/shotCap";
 import { approvedTakeOf } from "@/lib/shots";
-import { sampleSpendRefusal } from "@/lib/demo/spend-guard.server";
+import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
 import { reasonNeeded, cleanReason, lockAsk } from "@/lib/approval";
 import {
@@ -420,13 +420,10 @@ export async function executeGenerationAdmission(
       if (!project.rows.length)
         return admissionReply({ error: "No such project." }, { status: 404 });
     }
-    /* The sample production spends nothing: refused before anything is held or reserved. A quote (no request claim) still answers. */
+    /* The sample workspace spends nothing, filed or not: refused before anything is held or reserved. A quote (no request claim) still answers. */
     if (options.requestClaim) {
-      const sample = await sampleSpendRefusal(
-        body.projectId ? String(body.projectId) : null,
-        body.shotId ? String(body.shotId) : null,
-      );
-      if (sample) return admissionReply({ error: sample }, { status: 409 });
+      const sample = await sampleWorkspaceRefusal();
+      if (sample) return admissionReply({ error: sample, charged: 0 }, { status: 409 });
     }
     if (body.shotId) {
       const shot = await getShot(String(body.shotId));

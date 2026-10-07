@@ -4,13 +4,16 @@ import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { readSampleBoard } from "@/lib/demo/board.server";
 import { hideSampleMark, markSampleProduction, SampleError } from "@/lib/demo/mark.server";
 import { openSampleDraft } from "@/lib/demo/open.server";
+import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 const noStore = { "Cache-Control": "no-store" };
 
 /**
  * The sample production (lead decision 38). GET: this workspace's sample as the board reads it (credits from the
- * ledger's record, the owner's cast wording and cut), or `{ sample: null }`. Read-only, any member.
+ * ledger's record, the owner's cast wording and cut), or `{ board: null }`. Read-only, any member. `sampleWorkspace:
+ * true` is added when this workspace is the sample workspace (it holds a mark, readable or not), where the server
+ * refuses every paid job (lib/demo/spend-guard.server.ts): the screens then offer no paid control.
  *
  * POST, people only (a token is refused), the workspace's own rows only, and no take or ledger row is ever written:
  *   { action: "mark", draftId | projectId }  the workspace's owner or an admin marks their finished production as the sample;
@@ -20,7 +23,9 @@ const noStore = { "Cache-Control": "no-store" };
 export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
-  return Response.json({ board: await readSampleBoard() }, { headers: noStore });
+  const [board, line] = await Promise.all([readSampleBoard(), sampleWorkspaceRefusal().catch(() => "unknown")]);
+  /* A workspace that cannot be checked is treated as the sample workspace: the server refuses its paid jobs too. */
+  return Response.json({ board, ...(line ? { sampleWorkspace: true } : {}) }, { headers: noStore });
 });
 
 export const POST = withTenant(async function POST(req: Request) {

@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { legacyShell } from "./helpers/legacyShell";
+import { isCompact } from "./helpers/shellMode";
 
 /* Asking Atomik on a fresh project: the project saves itself, so no screen asks the person to save first.
    Nothing here presses a paid control: the estimate reads (quoteOnly) are free, and the run button is never pressed. */
@@ -62,16 +63,28 @@ test("a fresh project saves itself before Atomik is asked, with no save-first li
   await page.screenshot({ path: info.outputPath("autosave-atomik-legacy.png") });
 });
 
-test("the Suites shell: a new project opens Atomik's Agent without a save-first line", async ({ page }, info) => {
+test("the Suites shell: a new project opens the board with Atomik's panel, without a save-first line", async ({ page }, info) => {
+  test.skip(isCompact(info), "the phone app has no first-run card and no docked panel: its Home starts a project (r1-phone-start-workbench) and its Atomik sheet is priced before it is asked (demo-s10-phone-make-workbench)");
   const seen = watch(page);
   await signInLocally(page.request);
-  await page.goto("/suites");
-  await page.getByTestId("first-run-new").first().click();
+  /* Release 1: Studio's home is gone; an empty workspace's board shows the first-run card (New project, Explore the starter production). */
+  await page.goto("/suites?view=board");
+  await page.getByTestId("first-run-new").first().click({ timeout: 60_000 });
   await page.getByTestId("first-run-new-name").fill("Autosave suites film");
   await page.keyboard.press("Enter");
   await expect.poll(() => seen.saves.length, { timeout: 8000 }).toBeGreaterThan(0);
-  await page.goto("/suites?suite=atomik&page=agent");
-  await expect(page.getByText("Production orchestrator")).toBeVisible({ timeout: 30_000 });
+  /* Release 1: Atomik's old Agent page is gone; Atomik is the board's docked panel (its ask box and the price on its button). */
+  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
+  const dock = page.getByTestId("board-agent-dock");
+  await expect(dock).toBeVisible();
+  await expect(async () => {
+    if ((await dock.getAttribute("data-open")) !== "true") await dock.getByTestId("agent-rail").click({ timeout: 3000 });
+    await expect(dock).toHaveAttribute("data-open", "true", { timeout: 3000 });
+  }).toPass({ timeout: 30_000 });
+  const panel = page.getByTestId("board-agent-panel");
+  await panel.getByTestId("agent-input").fill("Plan a short film about a lighthouse keeper");
+  /* The ask is priced before it is pressed, and it is never pressed here. */
+  await expect(panel.getByTestId("agent-ask")).toHaveText(/^Ask · up to [\d.,]+ cr$/, { timeout: 30_000 });
   await page.waitForTimeout(2500);
   expect(await textOf(page)).not.toMatch(SAVE_FIRST);
   expect(seen.refused).toEqual([]);

@@ -7,6 +7,7 @@ import { currentTenant, runWithStore } from '@/lib/tenant';
 import { creditsApply } from '@/lib/credits';
 import { atomikPublicResponse } from '@/lib/workbench/atomik-response';
 import { atomikRequestSchema, atomikState, AtomikError, prepareAtomikJob, quoteAtomikJob, runAtomikJob, listAtomikJobs } from '@/lib/workbench/atomik-server';
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -52,6 +53,8 @@ export const POST = withTenant(async (req: Request) => {
   try {
     const { quoteOnly, ...input } = parsed.data;
     if (quoteOnly) return response(await quoteAtomikJob(input, auth.user.id));
+    /* The sample workspace spends nothing: answered before a job is written or reserved. */
+    { const off = await sampleWorkspaceOff(); if (off) return off; }
     const prepared = await prepareAtomikJob(input, auth.user.id, auth.token);
     if (prepared.scheduled) {
       const store = currentTenant();

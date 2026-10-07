@@ -1,5 +1,5 @@
 import { audioSeconds, activeModel, chosenKey, composerSettings, composerVoices, workspaceModels, type EngineRow } from "@/lib/workspace/composer";
-import { hiddenInMake } from "./make-price";
+import { hiddenInMake, MAKE_MODEL_PREFERENCE } from "./make-price";
 import { nodeAudioBody, speechVoiceFor, type NodeAudioSetup } from "@/lib/workbench/generation-audio";
 import type { CtxPrice } from "./context-menu";
 import { recipePrompt, recreateBlock, recreatePreset, type RecipeSource } from "./recipe";
@@ -16,8 +16,9 @@ import { cinemaPriceDollars, cinemaPriceWords } from "../cinemaHold";
  */
 export type RecreatePrice =
   | { state: "reading" }
-  /* `held`: Cinema Studio, whose approval holds 3N and is said "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
-  | { state: "ready"; credits: number; approximate: boolean; held?: true }
+  /* `held`: Cinema Studio, whose approval holds 3N and is said "about N cr, at most 3N cr" (lib/cinemaHold.ts).
+     `estimate`: a sound, priced by a live estimate ("up to N cr", as Make's own button says it). */
+  | { state: "ready"; credits: number; approximate: boolean; held?: true; estimate?: true }
   | { state: "unavailable"; reason: string };
 
 /** How a request is read: the caller's own scoped fetch. Rejects with an Error whose message is the server's reason. */
@@ -43,7 +44,7 @@ export async function quoteRecreate(source: RecipeSource, read: QuoteReader, pro
     if (type === "audio") {
       const audio = (await read("/api/audio")) as NodeAudioSetup;
       const models = workspaceModels([], audio);
-      const model = activeModel({ type, chosen: preset.model ? { [chosenKey(type)]: preset.model } : {} }, models);
+      const model = activeModel({ type, chosen: preset.model ? { [chosenKey(type)]: preset.model } : {} }, models, MAKE_MODEL_PREFERENCE);
       if (!model?.audioTask) return { state: "unavailable", reason: "Sound is not available here right now." };
       const text = recipePrompt(source).trim();
       if (!text) return { state: "unavailable", reason: "This take has no words to recreate from." };
@@ -52,12 +53,12 @@ export async function quoteRecreate(source: RecipeSource, read: QuoteReader, pro
       const body = nodeAudioBody({ task: model.audioTask, text, seconds, instrumental: preset.sound?.instrumental ?? true, voiceId: voice?.id ?? "", modelId: model.id });
       const answer = await read("/api/audio", { method: "POST", body: { ...body, quoteOnly: true } });
       const n = record(answer) ? credits(answer.estimatedCredits) : null;
-      return n == null ? { state: "unavailable", reason: "Sound cannot be priced with these settings." } : { state: "ready", credits: n, approximate: false };
+      return n == null ? { state: "unavailable", reason: "Sound cannot be priced with these settings." } : { state: "ready", credits: n, approximate: false, estimate: true };
     }
     const list = (await read("/api/workbench/engines")) as { models?: EngineRow[] };
     /* The engines Make offers: one it hides (lib/shell/make-price.ts › hiddenInMake) is not priced here, as Make lands on its own default. */
     const models = workspaceModels(Array.isArray(list?.models) ? list.models : [], null).filter((m) => !hiddenInMake(m.id));
-    const model = activeModel({ type, chosen: preset.model ? { [chosenKey(type)]: preset.model } : {} }, models);
+    const model = activeModel({ type, chosen: preset.model ? { [chosenKey(type)]: preset.model } : {} }, models, MAKE_MODEL_PREFERENCE);
     if (!model) return { state: "unavailable", reason: "No engine is offered for this take right now." };
     const settings = composerSettings(model, project?.aspect, preset.picks ?? {});
     const query = new URLSearchParams({ model: model.id, resolution: settings.resolution, ratio: settings.ratio, duration: String(settings.duration), ...(settings.generateAudio ? { audio: "1" } : {}) });
@@ -85,10 +86,10 @@ export async function quoteRecreate(source: RecipeSource, read: QuoteReader, pro
   }
 }
 
-/** "43 cr", "about 43 cr" where the engine settles on what it delivers, or Cinema Studio's "about N cr, at most 3N cr" (the composer's own wording). */
+/** "43 cr", "about 43 cr" where the engine settles on what it delivers, Cinema Studio's "about N cr, at most 3N cr", or "up to 1 cr" for a sound's estimate (the composer's own wording). */
 export function priceWords(price: Extract<RecreatePrice, { state: "ready" }>): string {
   if (price.held) return cinemaPriceWords(price.credits);
-  return `${price.approximate ? "about " : ""}${price.credits.toLocaleString("en-US")} cr`;
+  return `${price.approximate ? "about " : price.estimate ? "up to " : ""}${price.credits.toLocaleString("en-US")} cr`;
 }
 
 /** The menu's form of a price: its words after the label, and the dollars on hover at the workspace's credit rate. */
@@ -96,7 +97,7 @@ export function ctxPrice(price: RecreatePrice, creditUsd: number | undefined): C
   if (price.state === "reading") return { state: "reading" };
   if (price.state === "unavailable") return { state: "unavailable", reason: price.reason };
   const hover = typeof creditUsd === "number" && creditUsd > 0
-    ? price.held ? cinemaPriceDollars(price.credits, creditUsd) ?? undefined : `${price.approximate ? "About " : ""}US$${(price.credits * creditUsd).toFixed(2)}`
+    ? price.held ? cinemaPriceDollars(price.credits, creditUsd) ?? undefined : `${price.approximate ? "About " : price.estimate ? "Up to " : ""}US$${(price.credits * creditUsd).toFixed(2)}`
     : undefined;
   return { state: "ready", text: priceWords(price), ...(hover ? { hover } : {}) };
 }

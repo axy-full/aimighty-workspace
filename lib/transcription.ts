@@ -14,7 +14,7 @@ import { XaiHttpError } from "./xaiErrors";
 import { PreflightError } from "./preflight";
 import { LEDGER_UNIT_PAUSED } from "./ledgerUnit";
 import { SAMPLE_LINE } from "./demo/sample";
-import { sampleSpendRefusal } from "./demo/spend-guard.server";
+import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
 
 /**
  * Grok transcription of a stored audio or video original (owner, 23
@@ -219,8 +219,8 @@ async function transcription(input: TranscriptionInput, userId: string, options:
   const terms = currentBillingTerms(TRANSCRIPTION_JOB.kind, TRANSCRIPTION_JOB.model);
   const estimatedCredits = paidByPlatform("xai") ? creditsAtTerms(estimateUsd, terms) : 0;
   if (input.quoteOnly === true) return { status: 200, body: { quoteOnly: true, estimatedCredits, seconds: length.seconds } };
-  /* The sample production spends nothing: refused before the price shown or the balance is asked, as the audio and generation doors do. */
-  const sample = await sampleSpendRefusal(typeof input.projectId === "string" ? input.projectId : null);
+  /* The sample workspace spends nothing, with a project or without: refused before the price shown or the balance is asked, as the audio and generation doors do. */
+  const sample = await sampleWorkspaceRefusal();
   if (sample) return { status: 409, body: { error: sample, charged: 0 } };
   /* A paid transcription is saved on its claim before it is charged, so it runs only under one (the route's withGenerationRequest). */
   const claim = options.claim;

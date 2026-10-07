@@ -59,7 +59,7 @@ export function SettingsView({ account, section, open }: { account: WorkspaceAcc
         </div>
         {section === "team" ? <TeamSection key="team" open={fold} /> : null}
         {section === "credits" ? <CreditsSection key="credits" account={account} open={fold} /> : null}
-        {section === "rules" ? <RulesSection key="rules" /> : null}
+        {section === "rules" ? <RulesSection key="rules" open={fold} /> : null}
         {section === "connections" ? <ConnectionsSection key="connections" open={fold} /> : null}
         {section === "advanced" ? <AdvancedSection key="advanced" open={fold} /> : null}
         {FOOT[section] ? <p className="gs-foot">{FOOT[section]}</p> : null}

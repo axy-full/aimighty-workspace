@@ -4,6 +4,7 @@ import { requireRender, withTenant } from "@/lib/auth";
 import { withGenerationRequest } from "@/lib/generationRequests";
 import { executeGenerationAdmission } from "@/lib/generationAdmission";
 import { admissionResponse } from "@/lib/admissionSupport";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -11,6 +12,8 @@ export const maxDuration = 300;
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireRender();
   if (got.response) return got.response;
+  /* The sample workspace spends nothing: answered before the request is claimed. */
+  { const off = await sampleWorkspaceOff(); if (off) return off; }
   return withGenerationRequest(req, got.user.id, async (requestClaim) => {
     const body = await req.json().catch(() => ({}));
     if (!body || typeof body !== "object" || Array.isArray(body))

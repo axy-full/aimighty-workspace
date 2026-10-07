@@ -77,7 +77,10 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
         {act ? (
           <div className="gx-cast-acts">
             {data.variant === "cast" && !ready ? (
-              <Btn onClick={(e) => { e.stopPropagation(); ctx.openInspector(card.id); }} data-testid="cast-build">Build identity{training != null ? <> · <Price value={exact(training)} /></> : null}</Btn>
+              ctx.exploreOnly
+                /* Nothing spends here (the sample): no identity is built, and no price is shown. */
+                ? <Btn disabled title={ctx.exploreOnly} data-testid="cast-build">Build identity</Btn>
+                : <Btn onClick={(e) => { e.stopPropagation(); ctx.openInspector(card.id); }} data-testid="cast-build">Build identity{training != null ? <> · <Price value={exact(training)} /></> : null}</Btn>
             ) : null}
             {data.variant === "element" && data.lockable ? (
               <Btn onClick={(e) => { e.stopPropagation(); void lock(); }} data-testid="cast-lock">Lock as master · <Price value={FREE} /></Btn>

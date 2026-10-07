@@ -87,6 +87,7 @@ test("the train route refuses a run that costs more than the approved price, bef
   const route = load("app/api/identities/[id]/train/route.ts", {
     "next/server": nextServer(),
     "@/lib/auth": { requireRender: async () => ({ user: { id: "caller" } }), withTenant: (h: Handler) => h },
+    "@/lib/demo/spend-guard.server": { sampleWorkspaceOff: async () => null },
     "@/lib/identities": { trainCostUsd: () => usd, startTraining: async (id: string) => { started.push(id); return { id, status: "training" }; }, identityForBrowser: (i: object) => i },
     "@/lib/credits": { creditsApply: () => inCredits },
     "@/lib/tenant": { currentTenant: () => null },

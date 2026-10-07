@@ -28,6 +28,8 @@ import { burnDown, biggestBurners, projectionLine } from "@/lib/burndown";
 type Project = {
   id: string; name: string; description: string; code?: string; category?: string;
   spend?: number; credits?: number; capUsd?: number | null; capCredits?: number | null; capUnlocked?: boolean;
+  /** Whose cap `capCredits` is (its own, or the workspace's budget per production), and its own (lib/caps.ts effectiveCapRow). */
+  capFrom?: "production" | "workspace" | null; ownCapCredits?: number | null;
 
   productionId?: string | null;
 };
@@ -245,6 +247,11 @@ function CapLine({ project, spentCredits, spentUsd, isAdmin, onChanged }: { proj
   const unit = money.inCredits ? "cr" : "$";
   const show = (n: number) => (money.inCredits ? `${Math.round(n).toLocaleString("en-US")} cr` : `$${Math.round(n)}`);
   const pct = cap ? Math.round((spent / cap) * 100) : null;
+  /* Its own cap is what an admin edits; the workspace's budget is shown as such, never prefilled as its own. */
+  const own = money.inCredits ? (project.ownCapCredits !== undefined ? project.ownCapCredits : project.capCredits) ?? null : project.capUsd ?? null;
+  const fromBudget = money.inCredits && project.capFrom === "workspace";
+  /* Unlock only where the gate can refuse (at the cap), and for the cap shown; Lock again whenever it is unlocked. */
+  const atCap = cap != null && spent >= cap;
   async function patch(body: Record<string, unknown>) {
     const res = await fetch(`/api/projects/${project.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const json = await res.json().catch(() => ({}));
@@ -252,7 +259,7 @@ function CapLine({ project, spentCredits, spentUsd, isAdmin, onChanged }: { proj
     onChanged();
   }
   async function setCap() {
-    const raw = await appPrompt(money.inCredits ? "Cap for this project, in credits" : "Cap for this project, in dollars", cap ? String(Math.round(cap)) : "", money.inCredits ? "2000" : "250");
+    const raw = await appPrompt(fromBudget ? "This project's own cap, in credits (blank follows the workspace budget)" : money.inCredits ? "Cap for this project, in credits" : "Cap for this project, in dollars", own ? String(Math.round(own)) : "", money.inCredits ? "2000" : "250");
     if (raw === null) return;
     const v = raw.trim() === "" ? null : Number(raw.replace(/[^0-9.]/g, ""));
     if (v != null && !(v >= 0)) { await appAlert("Not a cap", "A cap is a number, or blank for none."); return; }
@@ -264,9 +271,9 @@ function CapLine({ project, spentCredits, spentUsd, isAdmin, onChanged }: { proj
       {isAdmin
         ? <button onClick={setCap} className="text-blue">{cap ? show(cap) : "set one"}</button>
         : <span className="text-ink">{cap ? show(cap) : "none"}</span>}
-      {cap ? <> — {show(spent)} spent{pct != null ? ` · ${pct}%` : ""}{project.capUnlocked ? " · unlocked past the cap" : ""}</> : <> — {unit === "cr" ? "credits" : "dollars"} this project may spend before the rule at the cap applies.</>}
-      {isAdmin && cap ? (
-        <>{" "}<button onClick={() => patch({ capUnlocked: !project.capUnlocked })} className="text-blue">{project.capUnlocked ? "Lock again" : "Unlock"}</button></>
+      {cap ? <>{fromBudget ? " (the workspace budget)" : ""} — {show(spent)} spent{pct != null ? ` · ${pct}%` : ""}{project.capUnlocked ? " · unlocked past the cap" : ""}</> : <> — {unit === "cr" ? "credits" : "dollars"} this project may spend before the rule at the cap applies.</>}
+      {isAdmin && cap && (project.capUnlocked || atCap) ? (
+        <>{" "}<button onClick={() => patch(project.capUnlocked ? { capUnlocked: false } : { capUnlocked: true, forCap: cap })} className="text-blue">{project.capUnlocked ? "Lock again" : "Unlock"}</button></>
       ) : null}
     </p>
   );

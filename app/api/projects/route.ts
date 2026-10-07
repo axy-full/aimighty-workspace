@@ -9,6 +9,17 @@ import { getPlatformLayer, planOf } from "@/lib/platform";
 import { creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
 import { ceilingFor, wouldExceed, ceilingMessage } from "@/lib/planLimits";
+import { effectiveCapRow, spentBy, workspaceBudget } from "@/lib/caps";
+
+/* Every row's cap and spend as the gate enforces and counts them, read fresh (the memo holds each row's own): its own
+   cap, else the workspace's budget per production, with whose it is and the production's own (lib/caps.ts
+   effectiveCapRow); and in a credits workspace what it has used as the gate counts it (lib/caps.ts spentBy: takes and
+   the meter's own jobs, such as Atomik's planning, which have no take). */
+async function withCaps<B extends { projects: { id: string; capCredits: number | null; credits?: number }[] }>(body: B, inCredits: boolean): Promise<B> {
+  const budget = inCredits ? await workspaceBudget() : null;
+  const spent = inCredits ? await spentBy("project_id", body.projects.map((p) => p.id)) : null;
+  return { ...body, projects: body.projects.map((p) => effectiveCapRow(spent ? { ...p, credits: spent.get(p.id)?.credits ?? 0 } : p, budget, inCredits)) };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +45,8 @@ export const GET = withTenant(async function GET() {
   await syncCreditReceipts();
   const inCredits = creditsApply(requireTenant());
   const unit = inCredits ? "cr" : "usd";
-  const hit = cached<{ unit?: "cr" | "usd" }>(PROJECTS_KEY, TTL_MS);
-  if (hit?.unit === unit) return NextResponse.json(hit);
+  const hit = cached<{ unit?: "cr" | "usd"; projects: { id: string; capCredits: number | null; credits?: number }[] }>(PROJECTS_KEY, TTL_MS);
+  if (hit?.unit === unit) return NextResponse.json(await withCaps(hit, inCredits));
 
   /* One grouped pass over generations for the counts and the money, then a
      handful of correlated subqueries for the shot-level facts the Projects
@@ -128,7 +139,7 @@ export const GET = withTenant(async function GET() {
     })),
   };
   putCache(PROJECTS_KEY, body);
-  return NextResponse.json(body);
+  return NextResponse.json(await withCaps(body, inCredits));
 });
 
 export const POST = withTenant(async function POST(req: Request) {
