@@ -133,7 +133,7 @@ function EngineSheet({ make }: { make: MakeModel }) {
                   <span className="ph-row-title">{m.label}</span>
                   {m.description ? <span className="ph-row-line">{m.description}</span> : null}
                 </span>
-                <span className="ph-row-line" title={row.value ? undefined : row.title}><Price value={row.value} /></span>
+                <span className="ph-row-line" title={row.value ? undefined : row.title} data-testid="phone-make-engine-row-price"><Price value={row.value} />{row.detail ? ` · ${row.detail}` : null}</span>
               </button>
             );
           })}

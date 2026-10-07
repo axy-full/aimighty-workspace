@@ -28,12 +28,14 @@ import {
   workspaceModels,
   type ComposerAction,
   type ComposerModel,
+  type ComposerPicks,
   type ComposerQuote,
   type ComposerReference,
   type ComposerSettings,
   type ComposerState,
   type ComposerType,
   type EngineRow,
+  type ModelPreference,
 } from "./composer";
 import { formatCredits } from "./cost";
 import { refreshProjectLibrary } from "./library";
@@ -269,6 +271,10 @@ export function useComposer(options: {
   onSent?: (sent: ComposerSent) => void;
   /** Engines this host does not offer at all (not in the list, not selected, not the default). A module-level function, so it is stable. */
   hide?: (modelId: string) => boolean;
+  /** The host's own default engines, when they are not the composer's (Make's: lib/shell/make-price.ts). Module-level, so stable. */
+  preference?: ModelPreference;
+  /** The settings the composer opens with, as if picked (Make opens on 1080p). Read once; a later pick, a recipe or Draft replaces them. */
+  initialPicks?: ComposerPicks;
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
@@ -277,7 +283,7 @@ export function useComposer(options: {
   const [state, dispatch] = useReducer(
     composerReducer,
     options.initialType,
-    (type) => (type ? { ...INITIAL_COMPOSER, type } : INITIAL_COMPOSER),
+    (type) => ({ ...INITIAL_COMPOSER, ...(type ? { type } : {}), picks: { ...INITIAL_COMPOSER.picks, ...options.initialPicks } }),
   );
   const [engines, setEngines] = useState<{ rows: EngineRow[]; error: string | null; loading: boolean }>({ rows: [], error: null, loading: true });
   const [enginesRead, setEnginesRead] = useState(0);
@@ -327,7 +333,8 @@ export function useComposer(options: {
   const hide = options.hide;
   const models = useMemo(() => workspaceModels(engines.rows, audio).filter((m) => !hide?.(m.id)), [engines.rows, audio, hide]);
   const offered = useMemo(() => offeredModels(state, models), [state, models]);
-  const model = useMemo(() => activeModel(state, models), [state, models]);
+  const preference = options.preference;
+  const model = useMemo(() => activeModel(state, models, preference), [state, models, preference]);
   const settings = useMemo(() => composerSettings(model, target?.aspect, state.picks), [model, target?.aspect, state.picks]);
   /* The words as sent: Gen's film vocabulary written in, and the setup itself as data (lib/workspace/film-vocabulary.ts).
      Cinema Studio 4.0 takes its own documented controls instead (lib/workspace/cinema-vocabulary.ts): sent as its

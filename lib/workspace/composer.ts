@@ -367,25 +367,30 @@ export function offeredModels(state: Pick<ComposerState, "type">, models: readon
  * preference is what it always was. Never invented: a default that the list
  * does not offer is simply not the default.
  */
-export const DEFAULT_MODEL_PREFERENCE: Record<ComposerType, readonly string[]> = {
+export const DEFAULT_MODEL_PREFERENCE: ModelPreference = {
   image: ["gpt_image_2_5", "gpt_image_2", "gpt-image-2.5-flare", "gpt-image-2"],
   video: ["seedance_2_5", "dreamina-seedance-2-5-260628"],
   audio: ["seed_audio", "eleven_sfx"],
 };
 
+/** A named default: an engine by id, or the first offered engine a test matches (a speech engine, whatever its id). */
+export type ModelPreference = Record<ComposerType, readonly (string | ((model: ComposerModel) => boolean))[]>;
+
 /**
  * The model the composer would send: the person's choice while the list still
  * offers it, else the named default when the list carries it, else the list's
  * first — which is why the composer works without anybody touching the model row.
+ * A host with defaults of its own (Make, lib/shell/make-price.ts › MAKE_MODEL_PREFERENCE) names them.
  */
 export function activeModel(
   /* `billing` is read by nothing: callers that still name the source keep compiling. */
   state: Pick<ComposerState, "type" | "chosen"> & { billing?: BillingSource },
   models: readonly ComposerModel[],
+  preference: ModelPreference = DEFAULT_MODEL_PREFERENCE,
 ): ComposerModel | null {
   const offered = offeredModels(state, models);
   const picked = state.chosen[chosenKey(state.type)];
-  const preferred = DEFAULT_MODEL_PREFERENCE[state.type].map((id) => offered.find((model) => model.id === id)).find(Boolean);
+  const preferred = preference[state.type].map((want) => offered.find((model) => (typeof want === "string" ? model.id === want : want(model)))).find(Boolean);
   return offered.find((model) => model.id === picked) ?? preferred ?? offered[0] ?? null;
 }
 
