@@ -128,7 +128,7 @@ test("the hero keeps a visitor's prompt and opens it in Gen, which prices the ta
   await signInLocally(page.request);
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("A lighthouse keeper walks the gallery in a storm.");
-  await expect(page.getByTestId("gen-preset-note")).toContainText("From the site");
+  await expect(page.locator(".gx-mk-line-note").filter({ hasText: "From the site" })).toBeVisible();
   await openAdvanced(page);
   await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-length")).toHaveValue("5");
