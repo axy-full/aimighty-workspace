@@ -1,9 +1,14 @@
 import { db, ready, now } from "../db";
 import { archiveReady, archiveStatement } from "../archive";
 import { invalidateSettings } from "../settings";
-import { readDraft, workbenchReady } from "../workbench/records";
+import { readDraft, workbenchReady, workbenchTransaction } from "../workbench/records";
+import { isPersonApprover } from "../workbench/plan-approval";
 import type { TenantUser } from "../tenant";
-import { isSampleDraftId, parseSampleMark, SAMPLE_SETTING_KEY, type SampleMark } from "./sample";
+import {
+  endSampleLift, insertSampleLift, liftRun, liveSampleLift, runStillGoing, sampleLiftReady, sampleLifts,
+  type LiftEnd, type LiftRow,
+} from "./lift.server";
+import { isSampleDraftId, parseSampleMark, SAMPLE_SETTING_KEY, type SampleLiftStatus, type SampleMark } from "./sample";
 
 /*
  * The build action: marks one of THIS workspace's own finished productions as the explore-only sample. It reads the
@@ -101,5 +106,83 @@ export async function hideSampleMark(user: TenantUser): Promise<boolean> {
   const current = parseSampleMark(stored);
   if (!current) return false;
   await writeMark({ ...current, hiddenAt: now(), hiddenBy: user.id }, user.id, "sample undone", true);
+  /* No mark, nothing lifted: a lift still open ends with it, so marking again never finds one waiting. */
+  const lift = await liveSampleLift();
+  if (lift) await endSampleLift(db(), lift.id, "unmarked", now(), user.id);
   return true;
 }
+
+/* ── The one-run lift (owner, 7 Oct; lib/demo/lift.server.ts) ─────────── */
+
+const LIFT_PEOPLE = "Only the workspace's owner or an admin can lift the sample mark.";
+
+/**
+ * Lift the mark for one run: the caller's next ask of Atomik on a board (`runId` left out), or a run of their own that
+ * is still going (`runId`, say one whose earlier lift ran out mid-way). People only: an owner or an admin, signed in;
+ * never Atomik, an outside agent, an MCP caller, a token or a guest. One lift at a time. It ends by itself.
+ */
+export async function liftSampleMark(user: TenantUser, input: { runId?: unknown } = {}): Promise<LiftRow> {
+  if (!canBuildSample(user) || !isPersonApprover(user.id)) throw new SampleError(LIFT_PEOPLE, 403);
+  if (!(await readSampleMark())) throw new SampleError("This workspace has no sample mark to lift.", 409);
+  const runId = input.runId == null || input.runId === "" ? null : id100(input.runId);
+  if (input.runId != null && input.runId !== "" && !runId) throw new SampleError("Choose the run to lift the mark for.", 400);
+  await sampleLiftReady();
+  return workbenchTransaction(async (tx) => {
+    if (await liveSampleLift(tx)) throw new SampleError("The mark is already lifted for one run.", 409);
+    let run: { id: string; productionId: string } | null = null;
+    if (runId) {
+      const found = await liftRun(tx, runId);
+      if (!found || found.owner !== user.id || !runStillGoing(found)) throw new SampleError("Lift it for one of your own runs that is still going, or for your next one.", 409);
+      run = { id: runId, productionId: found.productionId };
+    }
+    return insertSampleLift(tx, { by: user.id, at: now(), run });
+  });
+}
+
+/** Put the mark back now. False when nothing was lifted. The same people as the lift. */
+export async function putSampleMarkBack(user: TenantUser): Promise<boolean> {
+  if (!canBuildSample(user) || !isPersonApprover(user.id)) throw new SampleError("Only the workspace's owner or an admin can put the sample mark back.", 403);
+  return workbenchTransaction(async (tx) => {
+    const lift = await liveSampleLift(tx);
+    return lift ? endSampleLift(tx, lift.id, "put_back", now(), user.id) : false;
+  });
+}
+
+/** What the board reads: whether the mark is lifted now, and for whom (no names, no record). */
+export async function sampleLiftStatus(viewer: string): Promise<SampleLiftStatus> {
+  const lift = (await readSampleMark()) ? await liveSampleLift() : null;
+  return lift
+    ? { lifted: true, mine: lift.liftedBy === viewer, productionId: lift.productionId, runId: lift.runId, expiresAt: lift.expiresAt }
+    : { lifted: false, mine: false, productionId: null, runId: null, expiresAt: null };
+}
+
+/** One lift as an admin reads it in Settings: who, when, for which run, and when and why the mark came back. */
+export type LiftRecord = {
+  id: string; by: string; at: number; until: number;
+  run: { id: string; goal: string | null } | null;
+  backAt: number | null; why: LiftEnd | null; backBy: string | null;
+};
+
+/** The workspace's lifts, newest first, with people's names (owners and admins only: the route checks, and so does this). */
+export async function sampleLiftRecord(user: TenantUser, limit = 10): Promise<LiftRecord[]> {
+  if (!canBuildSample(user)) throw new SampleError(LIFT_PEOPLE, 403);
+  const rows = await sampleLifts(limit);
+  if (!rows.length) return [];
+  const people = [...new Set(rows.flatMap((r) => [r.liftedBy, r.endedBy]).filter((v): v is string => !!v))];
+  const names = new Map<string, string>();
+  const named = await db().execute({ sql: `SELECT id, name FROM users WHERE id IN (${people.map(() => "?").join(",")})`, args: people }).catch(() => null);
+  for (const r of named?.rows ?? []) if (r.name) names.set(String(r.id), String(r.name));
+  const runs = [...new Set(rows.map((r) => r.runId).filter((v): v is string => !!v))];
+  const goals = new Map<string, string>();
+  if (runs.length) {
+    const found = await db().execute({ sql: `SELECT id, goal FROM rig_agent_runs WHERE id IN (${runs.map(() => "?").join(",")})`, args: runs }).catch(() => null);
+    for (const r of found?.rows ?? []) goals.set(String(r.id), String(r.goal ?? ""));
+  }
+  const nameOf = (id: string) => (id === user.id ? "You" : names.get(id) ?? "A former member");
+  return rows.map((r) => ({
+    id: r.id, by: nameOf(r.liftedBy), at: r.liftedAt, until: r.expiresAt,
+    run: r.runId ? { id: r.runId, goal: goals.get(r.runId) || null } : null,
+    backAt: r.endedAt, why: r.endedReason, backBy: r.endedBy ? nameOf(r.endedBy) : null,
+  }));
+}
+

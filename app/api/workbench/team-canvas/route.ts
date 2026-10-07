@@ -177,8 +177,13 @@ export const POST = withTenant(async (req: Request) => {
       return Response.json({ revision: result.revision, moved: count("tidy"), sections: count("create"), live: result.live, credits: 0 }, { headers: NO_STORE });
     }
     /* The sample workspace spends nothing: Atomik on its boards plans, approves, renders and retries nothing.
-       Declining, stopping, skipping and undoing stay free. */
-    if (SPENDING_AGENT_ACTIONS.has(action.action)) { const off = await sampleWorkspaceOff(); if (off) return off; }
+       Declining, stopping, skipping and undoing stay free. While an owner or admin has lifted the mark for one run
+       (lib/demo/lift.server.ts), their own ask that makes it, and their own presses on that run, pass. */
+    if (SPENDING_AGENT_ACTIONS.has(action.action)) {
+      const scope = action.action === "agent.plan" ? { ask: { userId, requestId: action.requestId } } : "runId" in action ? { runId: action.runId, userId } : {};
+      const off = await sampleWorkspaceOff(scope);
+      if (off) return off;
+    }
     const { productionId } = action;
     const run =
       action.action === "agent.plan" ? await askRigAgent({ productionId, draftId: action.projectId, userId, requestId: action.requestId, goal: action.goal, model: action.model, limit: action.limit, mode: action.mode })

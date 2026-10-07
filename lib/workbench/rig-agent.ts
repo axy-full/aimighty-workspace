@@ -18,6 +18,9 @@ import { fromTenths, isRunLimitAmount, runTally, toTenths, type RunCharge } from
 import { applyCanvasOps } from "./canvas-ops";
 import type { OpOutcome } from "./canvas-ops-model";
 import { readDraft, workbenchTransaction } from "./records";
+import { bindSampleLift } from "@/lib/demo/lift.server";
+import { SAMPLE_LINE } from "@/lib/demo/sample";
+import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 import {
   ACTIVE_STATES, PLAN_LIMITS, RIG_AGENT_MODES, boardSnapshot, compilePlan, creditFigure, planFingerprintText, proposalView, undoOps, wiresOf,
   type BoardSnapshot, type RigAgentMode, type RigAgentMoneyView, type RigAgentPaidStepView, type RigAgentPlanView, type RigAgentRunView, type RigAgentState,
@@ -321,6 +324,9 @@ export async function askRigAgent(input: { productionId: string; draftId: string
   await rigAgentReady();
   /* The per-job line in force as the limit is approved: Auto never goes above it (nor above the line of the day). */
   const jobCeiling = await rigJobCeiling();
+  /* The sample workspace refuses every ask (lib/demo/spend-guard.server.ts) save the one its mark is lifted for: the
+     run this ask makes becomes the one run the lift covers, in this same write, or nothing is written. */
+  const sampleMarked = (await sampleWorkspaceRefusal()) !== null;
   const at = now();
   const run = await workbenchTransaction(async (tx) => {
     const again = await runByRequest(tx, input.userId, input.requestId);
@@ -341,6 +347,8 @@ export async function askRigAgent(input: { productionId: string; draftId: string
       id, productionId: input.productionId, draftId: input.draftId, owner: input.userId, requestId: input.requestId, goal: input.goal.trim(), model: input.model ?? "auto", at,
       limit: { credits: input.limit, mode, jobCeiling },
     });
+    if (sampleMarked && !(await bindSampleLift(tx, { userId: input.userId, runId: id, productionId: input.productionId, at })))
+      throw new RigAgentError(SAMPLE_LINE, 409);
     return (await getRun(tx, id))!;
   });
   if (run.state === "planning") await dispatchRigAgent(run, "plan");
