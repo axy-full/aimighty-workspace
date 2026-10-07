@@ -8,7 +8,7 @@ import { platformDb, platformReady } from "@/lib/platform";
 import { creditsApply } from "@/lib/credits";
 import { accountFailure, AccountError } from "@/lib/accountDb";
 import { createWorkspaceInvite, mailWorkspaceInvite } from "@/lib/teamInvitations";
-import { ownerMaskFor } from "@/lib/platformOwnerPrivacy";
+import { ownerMaskFor, supportMemberId } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 const INVITE_DAYS = 7;
@@ -58,17 +58,23 @@ export const GET = withTenant(async function GET() {
     workspace: { id: ws.id, name: ws.name, slug: ws.slug },
     requests: [],
     canSeeRoles,
-    users: (members.rows as any[]).filter((r) => Number(r.m_disabled) === 0 || canSeeRoles).map((r) => ({
-      id: r.id, ...who(r),
-      ...(canSeeRoles ? { role: r.role === "owner" ? "admin" : r.role, standing: r.role, permanent: r.role === "owner" } : {}),
-      disabled: Number(r.m_disabled) === 1 || Number(r.a_disabled) === 1,
-      locked: r.locked_until != null && Number(r.locked_until) > now(),
-      twoStep: r.two_step_at != null,
-      lastSeen: r.last_seen == null ? null : Number(r.last_seen),
-      createdAt: Number(r.joined_at ?? r.created_at),
-      clips: made.get(String(r.id))?.clips ?? 0,
-      ...(!inCredits ? { spend: made.get(String(r.id))?.spend ?? 0 } : {}),
-    })),
+    users: (members.rows as any[]).filter((r) => Number(r.m_disabled) === 0 || canSeeRoles).map((r) => {
+      /* The support row says nothing about the account behind it: an id of
+         this workspace's own (team/[id] resolves it), no last seen, no
+         two-step or lockout state, and only this membership's own switch. */
+      const support = mask.hides(r);
+      return {
+        id: support ? supportMemberId(ws.id, String(r.id)) : r.id, ...who(r),
+        ...(canSeeRoles ? { role: r.role === "owner" ? "admin" : r.role, standing: r.role, permanent: r.role === "owner" } : {}),
+        disabled: Number(r.m_disabled) === 1 || (!support && Number(r.a_disabled) === 1),
+        locked: !support && r.locked_until != null && Number(r.locked_until) > now(),
+        twoStep: support ? null : r.two_step_at != null,
+        lastSeen: support || r.last_seen == null ? null : Number(r.last_seen),
+        createdAt: Number(r.joined_at ?? r.created_at),
+        clips: made.get(String(r.id))?.clips ?? 0,
+        ...(!inCredits ? { spend: made.get(String(r.id))?.spend ?? 0 } : {}),
+      };
+    }),
     invites: (invites.rows as any[]).map((r) => ({
       code: r.code, ...who(r),
       ...(canSeeRoles ? { role: r.role } : {}),

@@ -178,13 +178,36 @@ test("Team: the owner is one Particl support row, without an address, in a clien
   const clientBody = await (await inTenant(client, () => GET(new Request("http://x/api/team")))).json();
   expectNoOwner(clientBody);
   expect(clientBody.users).toHaveLength(3);
-  const support = clientBody.users.find((u: { id: string }) => u.id === owner.id);
-  expect(support).toMatchObject({ name: SUPPORT, email: "", support: true, standing: "admin" });
+  expect(JSON.stringify(clientBody)).not.toContain(owner.id);
+  const support = clientBody.users.find((u: { support?: boolean }) => u.support);
+  expect(support).toMatchObject({ name: SUPPORT, email: "", standing: "admin", lastSeen: null, twoStep: null, locked: false });
+  expect(support.id).toMatch(/^support_[0-9a-f]{24}$/);
   expect(clientBody.users.find((u: { email: string }) => u.email === MEMBER.email)).toMatchObject({ name: MEMBER.name });
   expect(clientBody.invites).toEqual([expect.objectContaining({ name: SUPPORT, email: "", support: true })]);
   const houseBody = await (await inTenant(house, () => GET(new Request("http://x/api/team")))).json();
   expect(houseBody.users.find((u: { id: string }) => u.id === owner.id)).toMatchObject({ email: OWNER.email, name: OWNER.name });
   expect(houseBody.invites.map((i: { email: string }) => i.email)).toContain(OWNER.email);
+});
+
+test("Team: the client can disable and remove the support row by its own id", async () => {
+  const { owner } = await fixture();
+  const { addMember, platformDb } = await import("../../lib/platform");
+  const { ws, clientOwner } = await clientWorkspace("Fourth client", `fourth-${run}@example.com`);
+  await addMember(ws, owner, "admin");
+  const viewer = { ...clientOwner, owner: true, role: "admin" };
+  const { GET } = await route("app/api/team/route.ts", viewer);
+  const support = (await (await inTenant(ws, () => GET(new Request("http://x/api/team")))).json()).users.find((u: { support?: boolean }) => u.support);
+  const { PATCH, DELETE } = await route("app/api/team/[id]/route.ts", viewer);
+  const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+  const membership = async () => (await platformDb().execute({ sql: "SELECT disabled FROM memberships WHERE workspace_id=? AND account_id=?", args: [ws.id, owner.id] })).rows[0];
+  // An id that is no one's finds no one.
+  expect((await inTenant(ws, () => PATCH(new Request("http://x", { method: "PATCH", body: JSON.stringify({ disabled: true }) }), ctx("support_000000000000000000000000")))).status).toBe(404);
+  expect((await inTenant(ws, () => PATCH(new Request("http://x", { method: "PATCH", body: JSON.stringify({ disabled: true }) }), ctx(support.id)))).status).toBe(200);
+  expect(Number((await membership()).disabled)).toBe(1);
+  const removed = await inTenant(ws, () => DELETE(new Request("http://x", { method: "DELETE" }), ctx(support.id)));
+  expect(removed.status).toBe(200);
+  expect(await removed.json()).toEqual({ ok: true, name: SUPPORT });
+  expect(await membership()).toBeUndefined();
 });
 
 test("@mention list: the owner is not offered in a client workspace; teammates are", async () => {
@@ -322,6 +345,43 @@ test("read time: a lock stored under the owner's address reads Particl support, 
   expectNoOwner(page);
   const approved = Object.fromEntries(page.takes.map((t: { id: string; approvedBy: string }) => [t.id, t.approvedBy]));
   expect(approved).toEqual({ g_owner_name: SUPPORT, g_owner_mail: SUPPORT, g_member: MEMBER.name });
+
+  // The mask the team-canvas lock record, treatment drafts and the bible's publisher are read through.
+  const { storedActorMaskHere } = await import("../../lib/platformOwnerPrivacy");
+  const clientMask = await inTenant(client, () => storedActorMaskHere());
+  expect([OWNER.name, `Atomik for ${OWNER.name}`, OWNER.email, owner.id, MEMBER.name, "Atomik"].map(clientMask))
+    .toEqual([SUPPORT, `Atomik for ${SUPPORT}`, SUPPORT, SUPPORT, MEMBER.name, "Atomik"]);
+  const houseMask = await inTenant(house, () => storedActorMaskHere());
+  expect(houseMask(OWNER.name)).toBe(OWNER.name);
+  const { listTreatmentVersions } = await import("../../lib/atomikDocs");
+  for (const [id, version, by] of [["tv_o", 1, OWNER.name], ["tv_m", 2, MEMBER.name]] as const) {
+    await sql(client, `INSERT OR REPLACE INTO treatment_versions (id, project_id, version, title, logline, setup, scenes, notes, "by", created_at) VALUES (?, 'prj_review', ?, '', '', '{}', '[]', '[]', ?, ?)`, [id, version, by, Date.now()]);
+  }
+  const drafts = await inTenant(client, () => listTreatmentVersions("prj_review"));
+  expect(drafts.map((d) => d.by)).toEqual([MEMBER.name, SUPPORT]);
+});
+
+test("the rewrite refuses on a preview or staging deployment", async () => {
+  const { owner } = await fixture();
+  const { scrubAllowedHere } = await import("../../lib/platformOwnerScrub");
+  expect(scrubAllowedHere({})).toBe(true);
+  expect(scrubAllowedHere({ VERCEL: "1", VERCEL_ENV: "production" })).toBe(true);
+  expect(scrubAllowedHere({ VERCEL: "1", VERCEL_ENV: "preview" })).toBe(false);
+  expect(scrubAllowedHere({ VERCEL: "1" })).toBe(false);
+  expect(scrubAllowedHere({ VERCEL_ENV: "development" })).toBe(false);
+  const { ws } = await clientWorkspace("Preview client", `preview-${run}@example.com`);
+  const { GET, POST } = await route("app/api/admin/owner-privacy/route.ts", owner);
+  const saved = { VERCEL: process.env.VERCEL, VERCEL_ENV: process.env.VERCEL_ENV };
+  process.env.VERCEL = "1";
+  process.env.VERCEL_ENV = "preview";
+  try {
+    expect((await inTenant(ws, () => GET(new Request("http://x/api/admin/owner-privacy")))).status).toBe(403);
+    const post = await inTenant(ws, () => POST(new Request("http://x/api/admin/owner-privacy", { method: "POST", body: JSON.stringify({ confirm: true, expected: 0 }) })));
+    expect(post.status).toBe(403);
+    expect((await post.json()).error).toContain("production");
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
 });
 
 test("the rewrite of older records: a dry run first, then only the owner's values, only in this workspace, once", async () => {
@@ -351,6 +411,15 @@ test("the rewrite of older records: a dry run first, then only the owner's value
   }
   await sql(ws, "INSERT INTO treatments (id, updated_by, created_at, updated_at) VALUES ('t1', ?, ?, ?)", [OWNER.name, at, at]);
   await sql(ws, "INSERT INTO notes (id, gen_id, user_id, text, mentions, created_at) VALUES ('n1', 'g1', ?, 'hi', ?, ?)", [member.id, JSON.stringify([OWNER.name, MEMBER.name]), at]);
+  await sql(ws, `INSERT INTO treatment_versions (id, project_id, version, title, logline, setup, scenes, notes, "by", created_at) VALUES ('tv1', 'p', 1, '', '', '{}', '[]', '[]', ?, ?), ('tv2', 'p', 2, '', '', '{}', '[]', '[]', ?, ?)`, [OWNER.name, at, MEMBER.name, at]);
+  const { teamCanvasReady } = await import("../../lib/workbench/team-canvas");
+  const { workbenchReady } = await import("../../lib/workbench/records");
+  await inTenant(ws, async () => { await teamCanvasReady(); await workbenchReady(); });
+  const canvas = { nodes: { a: { id: "a", master: { lockedBy: OWNER.name } }, b: { id: "b", master: { lockedBy: `Atomik for ${OWNER.name}` } }, c: { id: "c", master: { lockedBy: MEMBER.name } } } };
+  await sql(ws, "INSERT INTO workbench_team_canvas (production_id, body, revision, updated_at) VALUES ('prod1', ?, 4, ?), ('prod2', ?, 1, ?)",
+    [JSON.stringify(canvas), at, JSON.stringify({ nodes: { d: { id: "d", master: { lockedBy: MEMBER.name } } } }), at]);
+  await sql(ws, "INSERT INTO workbench_bibles (project_id, version, owner, body, created_at) VALUES ('p', 1, ?, ?, ?), ('p', 2, ?, ?, ?)",
+    [owner.id, JSON.stringify({ brief: "b", publishedBy: OWNER.name }), at, member.id, JSON.stringify({ brief: "b", publishedBy: MEMBER.name }), at]);
   for (const [id, wsId] of [[`shr_mine_${run}`, ws.id], [`shr_other_${run}`, client.id]]) {
     await platformDb().execute({ sql: "INSERT INTO p_shares (id, token_hash, workspace_id, project_id, created_by, created_at, expires_at) VALUES (?, ?, ?, 'p', ?, ?, ?)", args: [id, `h_${id}`, wsId, OWNER.name, at, at + 1e6] });
   }
@@ -369,16 +438,19 @@ test("the rewrite of older records: a dry run first, then only the owner's value
   expect(count("element_lock_events", "by_name").matched).toBe(1);
   expect(count("p_shares", "created_by").matched).toBe(1);
   expect(count("notes", "mentions").matched).toBe(1);
-  expect(dry.total).toBe(12);
+  expect(count("treatment_versions", "by").matched).toBe(1);
+  expect(count("workbench_team_canvas", "body.lockedBy").matched).toBe(1);
+  expect(count("workbench_bibles", "body.publishedBy").matched).toBe(1);
+  expect(dry.total).toBe(15);
   expect(dry.applied).toBe(false);
   // The dry run wrote nothing.
   expect((await sql(ws, "SELECT review_by FROM generations WHERE id='g1'"))[0].review_by).toBe(OWNER.name);
 
   const post = (body: unknown) => inTenant(ws, () => POST(new Request("http://x/api/admin/owner-privacy", { method: "POST", headers, body: JSON.stringify(body) })));
-  expect((await post({ expected: 12 })).status).toBe(400);
-  expect((await post({ confirm: true, expected: 11 })).status).toBe(409);
-  const done = await (await post({ confirm: true, expected: 12 })).json();
-  expect(done).toMatchObject({ applied: true, total: 12 });
+  expect((await post({ expected: 15 })).status).toBe(400);
+  expect((await post({ confirm: true, expected: 14 })).status).toBe(409);
+  const done = await (await post({ confirm: true, expected: 15 })).json();
+  expect(done).toMatchObject({ applied: true, total: 15 });
 
   // The owner's values are gone; everyone else's are as they were.
   expectNoOwner(await sql(ws, "SELECT id, email, name FROM users WHERE id IN (?, 'usr_old')", [owner.id]));
@@ -395,6 +467,14 @@ test("the rewrite of older records: a dry run first, then only the owner's value
   expect((await sql(ws, "SELECT by_name FROM element_lock_events ORDER BY id")).map((r) => r.by_name)).toEqual([SUPPORT, MEMBER.name]);
   expect((await sql(ws, "SELECT updated_by FROM treatments"))[0].updated_by).toBe(SUPPORT);
   expect(JSON.parse(String((await sql(ws, "SELECT mentions FROM notes WHERE id='n1'"))[0].mentions))).toEqual([SUPPORT, MEMBER.name]);
+  expect((await sql(ws, `SELECT "by" AS who FROM treatment_versions ORDER BY id`)).map((r) => r.who)).toEqual([SUPPORT, MEMBER.name]);
+  const canvases = await sql(ws, "SELECT production_id, body, revision FROM workbench_team_canvas ORDER BY production_id");
+  const locks = (row: Record<string, unknown>) => Object.fromEntries(Object.entries(JSON.parse(String(row.body)).nodes as Record<string, { master: { lockedBy: string } }>).map(([k, n]) => [k, n.master.lockedBy]));
+  expect(locks(canvases[0])).toEqual({ a: SUPPORT, b: `Atomik for ${SUPPORT}`, c: MEMBER.name });
+  expect(Number(canvases[0].revision)).toBe(5);
+  expect(locks(canvases[1])).toEqual({ d: MEMBER.name });
+  expect(Number(canvases[1].revision)).toBe(1);
+  expect((await sql(ws, "SELECT body FROM workbench_bibles ORDER BY version")).map((r) => JSON.parse(String(r.body)).publishedBy)).toEqual([SUPPORT, MEMBER.name]);
   const shares = (await platformDb().execute({ sql: "SELECT id, created_by FROM p_shares WHERE id IN (?, ?)", args: [`shr_mine_${run}`, `shr_other_${run}`] })).rows;
   expect(Object.fromEntries(shares.map((r) => [r.id, r.created_by]))).toEqual({ [`shr_mine_${run}`]: SUPPORT, [`shr_other_${run}`]: OWNER.name });
 

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { isHouseWorkspace } from "./houseWorkspace";
 import { currentTenant, type TenantWorkspace } from "./tenant";
 
@@ -25,7 +26,7 @@ import { currentTenant, type TenantWorkspace } from "./tenant";
  *   address, @mention lists leave them out, audit lines name them "Particl
  *   support" (`ownerMaskFor`);
  * - a few stored values guests or members read are masked as they are read
- *   (`publicStoredActor`, `maskStoredActor`).
+ *   (`storedActorMask`, `maskStoredActor`).
  * What was written before is rewritten only on request, per workspace, after
  * a dry run (lib/platformOwnerScrub.ts).
  */
@@ -163,26 +164,62 @@ export function maskStoredActor<T extends string | null | undefined>(value: T): 
   return isOwnerAddress(identity, value) || identity.accountIds.includes(String(value)) ? SUPPORT_ACTOR : value;
 }
 
+type Member = { id?: unknown; email?: unknown; name?: unknown };
+
+/** The owner's names that no other member of this workspace goes by: only those may be matched as theirs. */
+export function uniqueOwnerNames(identity: PlatformOwnerIdentity, members: Member[]): string[] {
+  const others = new Set(members.filter((m) => !isOwnerIdentity(identity, m) && !isSupportMirrorEmail(m.email)).map((m) => String(m.name ?? "").trim()));
+  return [...new Set((identity.names ?? []).map((n) => n.trim()).filter((n) => n && n !== SUPPORT_ACTOR && !others.has(n)))];
+}
+
+const ATOMIK_FOR = "Atomik for ";
+
 /**
  * A stored "who" value — an address, an account id, or a display name written
- * at the time — as a workspace may show it. A name counts as the owner's only
- * when no other member of that workspace goes by it (`members`, the
- * workspace's `users` rows; without them a name is never matched).
+ * at the time (also as "Atomik for <name>") — as a workspace may show it:
+ * "Particl support" when it is the platform owner's, outside the house. A
+ * name counts only when no other member of the workspace goes by it. Built
+ * once per read (`members` is the workspace's `users` rows), then synchronous.
  */
-export async function publicStoredActor(
+export async function storedActorMask(
   ws: Pick<TenantWorkspace, "id"> | null | undefined,
-  value: string | null | undefined,
-  members?: () => Promise<{ id?: unknown; email?: unknown; name?: unknown }[]>,
-): Promise<string | null> {
-  if (value == null || value === "" || isHouseWorkspace(ws)) return value ?? null;
+  members: () => Promise<Member[]>,
+): Promise<<T extends string | null | undefined>(value: T) => T | string> {
+  if (!ws || isHouseWorkspace(ws)) return (value) => value;
   const identity = await platformOwnerIdentity();
-  if (isOwnerAddress(identity, value) || identity.accountIds.includes(value)) return SUPPORT_ACTOR;
-  const name = value.trim();
-  if (members && (identity.names ?? []).includes(name)) {
-    const others = (await members()).filter((m) => !isOwnerIdentity(identity, m) && !isSupportMirrorEmail(m.email));
-    if (!others.some((m) => String(m.name ?? "").trim() === name)) return SUPPORT_ACTOR;
-  }
-  return value;
+  const names = identity.names?.length ? uniqueOwnerNames(identity, await members()) : [];
+  const owner = (v: string) => isOwnerAddress(identity, v) || identity.accountIds.includes(v) || names.includes(v.trim());
+  return (value) => {
+    if (value == null || value === "") return value;
+    const atomik = value.startsWith(ATOMIK_FOR);
+    const core = atomik ? value.slice(ATOMIK_FOR.length) : value;
+    return owner(core) ? (atomik ? `${ATOMIK_FOR}${SUPPORT_ACTOR}` : SUPPORT_ACTOR) : value;
+  };
+}
+
+/** `storedActorMask` for the workspace in scope, reading its members from its own database. */
+export async function storedActorMaskHere(): Promise<<T extends string | null | undefined>(value: T) => T | string> {
+  const ws = currentTenant()?.workspace;
+  return storedActorMask(ws, async () => {
+    const { db } = await import("./db");
+    return (await db().execute("SELECT id, email, name FROM users")).rows as unknown as Member[];
+  });
+}
+
+/**
+ * The id a client workspace's Team list gives the platform owner's row: an
+ * opaque value of that workspace, so the row carries nothing that names or
+ * follows the account across workspaces. `resolveMemberId` turns it back.
+ */
+export function supportMemberId(workspaceId: string, accountId: string): string {
+  return `support_${createHash("sha256").update(`${workspaceId}:${accountId}`).digest("hex").slice(0, 24)}`;
+}
+
+/** The account behind a Team row id: the support row's opaque id resolves to the owner's account. */
+export async function resolveMemberId(ws: Pick<TenantWorkspace, "id">, id: string): Promise<string> {
+  if (!id.startsWith("support_") || isHouseWorkspace(ws)) return id;
+  const identity = await platformOwnerIdentity();
+  return identity.accountIds.find((accountId) => supportMemberId(ws.id, accountId) === id) ?? id;
 }
 
 /**

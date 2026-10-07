@@ -6,6 +6,7 @@ import { readProjectBody } from "@/lib/workbench/request-body";
 import { orderedIds } from "@/lib/workbench/team-canvas-model";
 import { collabConfigured } from "@/lib/collab";
 import { db } from "@/lib/db";
+import { storedActorMaskHere } from "@/lib/platformOwnerPrivacy";
 import {
   masterLocks, patchTeamCanvas, readTeamCanvas, requireProduction, teamCanvasRevision, teamPatchSchema, teamRoomFor, TeamCanvasError,
 } from "@/lib/workbench/team-canvas";
@@ -69,8 +70,12 @@ export const GET = withTenant(async (req: Request) => {
     if (url.searchParams.get("head") === "1")
       return Response.json({ head: true, revision: await teamCanvasRevision(productionId), server }, { headers: NO_STORE });
     const saved = await readTeamCanvas(productionId);
+    /* Who locked a master, as this workspace may read it: the platform owner is "Particl support" outside the house (lib/platformOwnerPrivacy.ts). */
+    const shown = await storedActorMaskHere();
+    const nodes = saved ? Object.fromEntries(Object.entries(saved.canvas.nodes).map(([id, n]) =>
+      [id, n.master?.lockedBy ? { ...n, master: { ...n.master, lockedBy: shown(n.master.lockedBy) } } : n])) : {};
     return Response.json({
-      canvas: saved ? { nodes: saved.canvas.nodes, assets: saved.canvas.assets, order: orderedIds(saved.canvas), removedIds: Object.keys(saved.canvas.removed), serverMade: saved.canvas.serverMade } : null,
+      canvas: saved ? { nodes, assets: saved.canvas.assets, order: orderedIds(saved.canvas), removedIds: Object.keys(saved.canvas.removed), serverMade: saved.canvas.serverMade } : null,
       revision: saved?.revision ?? 0,
       room: collabConfigured() ? teamRoomFor(requireTenant().id, productionId) : null,
       server,
