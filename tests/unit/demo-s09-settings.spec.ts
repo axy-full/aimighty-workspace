@@ -227,7 +227,7 @@ test.describe("Connections and Advanced (9.3)", () => {
 
 test.describe("public-repo and floor checks on Settings' own files", () => {
   const dir = join(__dirname, "../../components/graphite/settings");
-  const files = ["SettingsView.tsx", "parts.tsx", "model.ts", "navigate.ts", "use-settings.ts", "index.ts", "settings.css", "team/TeamSection.tsx", "credits/CreditsSection.tsx", "rules/spending.ts", "rules/spending-words.ts", "rules/RulesSection.tsx", "connections/ConnectionsSection.tsx", "advanced/AdvancedSection.tsx", "advanced/PromptRules.tsx"];
+  const files = ["SettingsView.tsx", "parts.tsx", "model.ts", "navigate.ts", "use-settings.ts", "settings.css", "team/TeamSection.tsx", "credits/CreditsSection.tsx", "rules/spending.ts", "rules/spending-words.ts", "rules/RulesSection.tsx", "connections/ConnectionsSection.tsx", "advanced/AdvancedSection.tsx", "advanced/PromptRules.tsx"];
   const read = (f: string) => readFileSync(join(dir, f), "utf8");
   test("no handoff placeholder names, no vendor cost words, no hard-coded credit rate", () => {
     for (const f of files) {

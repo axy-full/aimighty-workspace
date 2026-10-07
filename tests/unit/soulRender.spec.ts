@@ -455,6 +455,9 @@ test("an identity render the provider fails settles at zero, and its card says w
     expect(failed.failure).toMatchObject({ provider: "higgsfield", kind: "content_filter", payer: "platform", billing: null });
     const [read] = await withLedgerCharges([failed]);
     expect(read.failure?.charge).toEqual({ credits: 0, settled: true });
+    /* What the person reads: the provider's outcome and the charge, never a blanket line. */
+    const { failureLine } = await import("../../lib/errors");
+    expect(failureLine(read.failure!).text).toBe("Refused by the content filter · Not billed · Change the prompt or reference");
   }));
 
 test("filing: an entry built with a retired stills model is read-only and named without the old family word; an earlier account's identity is told apart", async () => {
