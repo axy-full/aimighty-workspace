@@ -29,6 +29,9 @@ const SOUND_BEFORE = "Rain on a tin roof, distant thunder.";
 const SOUND_AFTER = "Wind over dunes, a low constant bed.";
 
 
+/* The board draws its Cut card once the project holds a shot. */
+const SHOT: CanvasNode = { id: "node-shot0001", title: "Opening wide", type: "scene", x: 0, y: 0, width: 344, linked: [] };
+
 type Sent = { path: string; key: string | undefined; body: Record<string, unknown> };
 
 async function seeded(page: Page, nodes: CanvasNode[]) {
@@ -134,8 +137,11 @@ const madeOf = (prompt: string) => (prompt.includes(AFTER) ? "the node as it is 
 async function soundPanel(page: Page, project: Project) {
   await page.goto(`/suites?project=${project.id}&view=board&region=cut`);
   await expect(page.getByTestId("cut-card")).toBeVisible();
-  await page.getByTestId("cut-open-edit").click();
-  await expect(page.getByTestId("es")).toBeVisible();
+  /* The press can land before the page is hydrated (a dev server that has just compiled it): press again until it opens. */
+  await expect(async () => {
+    await page.getByTestId("cut-open-edit").click();
+    await expect(page.getByTestId("es")).toBeVisible({ timeout: 4_000 });
+  }).toPass({ timeout: 40_000 });
   /* The mix is folded away until asked for. */
   await page.getByTestId("es-tool-mix").click();
   await page.getByTestId("es-new-effect").click();
@@ -176,7 +182,7 @@ async function lostSoundEffect(page: Page, project: Project, scope: string, sent
 test("Edit & Sound's recovery shows the stored request, never re-sends it when it never reached the server, and a new one goes only at the price on the button", async ({ page }, info) => {
   test.skip(!["workbench-1440x900", "workbench-1920x1080"].includes(info.project.name), "the board and its Edit & Sound are the desktop's");
   test.setTimeout(240_000);
-  const { project, scope, tenantUrl, workspaceId, sent, errors } = await seeded(page, []);
+  const { project, scope, tenantUrl, workspaceId, sent, errors } = await seeded(page, [SHOT]);
   const { first, credits, nodeId, claim } = await lostSoundEffect(page, project, scope, sent, "before");
 
   /* Remounted: the stored description is on show while it is unconfirmed, not an empty box. */
@@ -231,7 +237,7 @@ test("Edit & Sound's recovery shows the stored request, never re-sends it when i
 test("Edit & Sound's recovery follows a sound effect that reached the server with its reply dropped: nothing is sent, and it stays billed once", async ({ page }, info) => {
   test.skip(!["workbench-1440x900", "workbench-1920x1080"].includes(info.project.name), "the board and its Edit & Sound are the desktop's");
   test.setTimeout(240_000);
-  const { project, scope, tenantUrl, workspaceId, sent, errors } = await seeded(page, []);
+  const { project, scope, tenantUrl, workspaceId, sent, errors } = await seeded(page, [SHOT]);
   const { first, credits, nodeId, landedId } = await lostSoundEffect(page, project, scope, sent, "after");
   expect(landedId).toBeTruthy();
 

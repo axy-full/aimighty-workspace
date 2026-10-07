@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { joinLocallyAsMember, signInLocally } from "./helpers/workbenchLocal";
 
 /**
  * Workspace activity, read for owners and admins only, in Settings › Team › Security (the old /settings#activity page is gone in
@@ -91,22 +91,15 @@ test("workspace activity is read under the captured scope, says when it fails, a
 
 test("members cannot open the workspace activity or trigger its request", async ({
   page,
+  request,
 }, testInfo) => {
   test.skip(
     testInfo.project.name !== "customer-1440x900",
     "one UI role-boundary regression",
   );
-  await signInLocally(page.request);
-  const me = await page.request
-    .get("/api/me")
-    .then((response) => response.json());
+  /* The page's person is a real member of the other context's workspace, not a mocked answer. */
+  await joinLocallyAsMember(request, page.request);
   let calls = 0;
-  await page.route("**/api/me", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ ...me, owner: false, role: "member" }),
-    }),
-  );
   await page.route("**/api/workspaces/audit?**", (route) => {
     calls++;
     return route.fulfill({ status: 403, body: "Forbidden" });

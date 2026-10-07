@@ -25,8 +25,11 @@ const DESKTOPS = ["workbench-1440x900", "workbench-1920x1080"];
 async function openComposer(page: Page, projectId: string) {
   await page.goto(`/suites?project=${projectId}&view=board&region=cut`);
   await expect(page.getByTestId("cut-card")).toBeVisible();
-  await page.getByTestId("cut-open-edit").click();
-  await expect(page.getByTestId("es")).toBeVisible();
+  /* The press can land before the page is hydrated (a dev server that has just compiled it): press again until it opens. */
+  await expect(async () => {
+    await page.getByTestId("cut-open-edit").click();
+    await expect(page.getByTestId("es")).toBeVisible({ timeout: 4_000 });
+  }).toPass({ timeout: 40_000 });
   await page.getByTestId("es-new-voice").click();
   const panel = page.getByTestId("es-compose").getByRole("region", { name: "Generate sound" });
   await expect(panel).toBeVisible();

@@ -79,8 +79,11 @@ async function open(page: Page, store: ProjectRoute, audio: Audio) {
   /* The cut's editor opens over the board from the Cut card. */
   await page.goto(`/suites?project=${store.current.id}&view=board&region=cut`);
   await expect(page.getByTestId("cut-card")).toBeVisible();
-  await page.getByTestId("cut-open-edit").click();
-  await expect(page.getByTestId("es")).toBeVisible();
+  /* The press can land before the page is hydrated (a dev server that has just compiled it): press again until it opens. */
+  await expect(async () => {
+    await page.getByTestId("cut-open-edit").click();
+    await expect(page.getByTestId("es")).toBeVisible({ timeout: 4_000 });
+  }).toPass({ timeout: 40_000 });
 }
 
 const laneOf = (page: Page, id: string) => page.getByTestId(`es-lane-${id}`);

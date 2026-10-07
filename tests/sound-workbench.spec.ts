@@ -35,8 +35,11 @@ function sine() {
 async function openMix(page: Page, projectId: string) {
   await page.goto(`/suites?project=${projectId}&view=board&region=cut`);
   await expect(page.getByTestId("cut-card")).toBeVisible();
-  await page.getByTestId("cut-open-edit").click();
-  await expect(page.getByTestId("es")).toBeVisible();
+  /* The press can land before the page is hydrated (a dev server that has just compiled it): press again until it opens. */
+  await expect(async () => {
+    await page.getByTestId("cut-open-edit").click();
+    await expect(page.getByTestId("es")).toBeVisible({ timeout: 4_000 });
+  }).toPass({ timeout: 40_000 });
   await page.getByTestId("es-tool-mix").click();
   return page.getByRole("region", { name: "Sound mix" });
 }
