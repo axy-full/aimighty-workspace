@@ -11,6 +11,12 @@ import { authAs, freshDatabases, load, rawToken, scoped, seedPeople, workspace, 
 const dir = freshDatabases("client-link");
 const A = workspace(dir, "ws_linka"), B = workspace(dir, "ws_linkb");
 const ORIGIN = "http://localhost";
+/* Links are built on APP_ORIGIN when it is set (lib/site.ts linkOrigin). This file owns that setting: unset for every
+   test, so a link is on the request's own origin (ORIGIN), whatever another spec left in the environment; the one
+   test about APP_ORIGIN sets its own value. Put back after each test. */
+let savedOrigin: string | undefined;
+test.beforeEach(() => { savedOrigin = process.env.APP_ORIGIN; delete process.env.APP_ORIGIN; });
+test.afterEach(() => { if (savedOrigin === undefined) delete process.env.APP_ORIGIN; else process.env.APP_ORIGIN = savedOrigin; });
 
 async function seed() {
   const { platformDb, platformReady } = await import("../../lib/platform");
@@ -97,7 +103,7 @@ test("only a signed-in owner or admin makes or withdraws a client link; tokens a
   expect(made.status).toBe(201);
   const { url } = await made.json();
   /* The secret names nothing: not the workspace, not the production. */
-  expect(url).toMatch(/^http:\/\/localhost\/review\/rv_[A-Za-z0-9_-]{43}$/);
+  expect(url).toMatch(new RegExp(`^${ORIGIN}/review/rv_[A-Za-z0-9_-]{43}$`));
   expect(url).not.toContain("linka");
   expect(url).not.toContain("prod_one");
 
