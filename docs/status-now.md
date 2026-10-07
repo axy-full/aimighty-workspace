@@ -1,4 +1,4 @@
-# Status now: 7 October 2026, 23:02 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 23:05 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -44,7 +44,7 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
 | Branch | State |
 |---|---|
 | `chore/r1-old-shell-branches` | Cutting the old Business/Crew/Inspector screens out of the shell, every old address proved to redirect first; Opus review after |
-| `test/r1-five-minute-green` | The five-minute test's last step un-skipped; desktop and phone |
+| `test/r1-five-minute-green` @ 81249a95 | **Passes:** a new invitee reaches an approved first render in 92 s (desktop) and 112 s (phone), one paid request per person's tap. Opus review running. Owner question 13 |
 | Release 1 remaining list | sent: `docs/r1-remaining.md` (this branch). Owner: list B in, list C out |
 | image-ad variants and presets | No frame in the handoff (only one card, one Make at 3 cr). Nothing built. Brief for Claude Design: `docs/design-brief-image-ad-versions.md` (this branch). Logic already in code |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
@@ -71,6 +71,8 @@ Scope: list B in (image-ad variants; phone gets "Open this on a larger screen" n
 
 11. Right-click menu: write "free" on the free items? (The design doesn't; left as drawn.)
 12. The public site's nav says Studio · Ads · Social while the app calls them templates: change it?
+
+13. Five-minute test, phone taps: the real phone path takes 9 taps; the old budget of 7 never counted Start. Accept 9 (matches desktop), or keep 7 and change the phone to stay on the plan screen after Build (saves one tap; plan-approval money code, its own reviewed change)?
 
 ## Machine
 GitHub rejected every push from about 20:33 to 20:47 and again from about 22:20 to 22:30 IST ("fatal error in commit_refs", GitHub's side); nothing was lost.
