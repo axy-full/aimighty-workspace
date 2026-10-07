@@ -9,7 +9,7 @@ import { DEFAULT_ENHANCER, ENHANCER_LABEL, ENHANCER_NOTE, ENHANCER_PROVIDERS, is
 import { revealClear } from "@/lib/shell/reveal";
 import { useShell } from "@/lib/shell/state";
 import { signOut } from "@/lib/shell/sign-out";
-import { switchWorkspace } from "@/lib/shell/switch-workspace";
+import { switchWorkspace, useSwitchState } from "@/lib/shell/switch-workspace";
 import { useRigDrain } from "@/components/workspace/rig/RigProvider";
 import {
   auditEntries, checkoutUrl, grantRow, packLine, packRequestLabel, planLine, requestLine, requestRows, sessionRows, statementCsvHref, statementHref, statementMonthsOf, twoStepLine, usageRows,
@@ -71,24 +71,26 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
   const session = useSession();
   const scopedFetch = useScopedFetch();
   const drain = useRigDrain();
-  const [busy, setBusy] = useState(false);
-  /* The workspace being switched to, while the board's last edit saves and the route answers. */
-  const [switching, setSwitching] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  /* A switch running, from here or the avatar menu: the workspace being switched to, while the board's last edit saves and the route answers. */
+  const sw = useSwitchState();
+  const switching = sw.phase === "idle" ? null : sw.id;
+  const busy = signingOut || switching !== null;
   const [error, setError] = useState("");
   const credits = creditsLabel(account?.credits?.balance ?? null, session.rates.unit, session.rates.creditUsd);
   const change = async (action: "switch" | "logout", id?: string) => {
     if (busy) return;
-    setBusy(true); setError("");
+    setError("");
     if (action === "logout") {
+      setSigningOut(true);
       const why = await signOut(scopedFetch);
-      if (why) { setError(why); setBusy(false); }
+      if (why) { setError(why); setSigningOut(false); }
       return;
     }
-    if (!id) { setBusy(false); return; }
+    if (!id) return;
     /* The board's last edit saved first, then the route, then the shell from the top (lib/shell/switch-workspace.ts). */
-    setSwitching(id);
     const why = await switchWorkspace({ id, fetch: scopedFetch, drain, go: () => window.location.assign("/suites") });
-    if (why) { setError(why); setBusy(false); setSwitching(null); }
+    if (why) setError(why);
   };
   const current = account?.workspace?.id ?? session.workspace?.id ?? null;
   const others = (session.workspaces ?? []).filter((w) => w.id !== current);

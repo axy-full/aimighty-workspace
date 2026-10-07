@@ -6,7 +6,7 @@ import { useSession } from "@/lib/session";
 import { personLine, workspaceLine } from "@/lib/shell/person";
 import { signOut } from "@/lib/shell/sign-out";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { switchWorkspace } from "@/lib/shell/switch-workspace";
+import { switchWorkspace, useSwitchState } from "@/lib/shell/switch-workspace";
 import { useRigDrain } from "@/components/workspace/rig/RigProvider";
 import { useOptionalToast } from "@/lib/workspace/state";
 import { useGoSettings } from "./settings/navigate";
@@ -29,9 +29,12 @@ export function SettingsMenu({ anchor, onClose }: { anchor: RefObject<HTMLButton
   const scopedFetch = useScopedFetch();
   const goSettings = useGoSettings();
   const drain = useRigDrain();
-  const [busy, setBusy] = useState(false);
-  /* The workspace being switched to, while the board's last edit saves and the route answers. */
-  const [switching, setSwitching] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  /* A switch running, from this menu or one opened before it: the workspace being switched to, while the board's last
+     edit saves and the route answers. Sign out and every switch wait for it. */
+  const sw = useSwitchState();
+  const switching = sw.phase === "idle" ? null : sw.id;
+  const busy = signingOut || switching !== null;
   /* A switch that did not happen after the menu was closed says why in the shell's toast instead. */
   const toast = useOptionalToast();
   const mounted = useRef(false);
@@ -56,11 +59,14 @@ export function SettingsMenu({ anchor, onClose }: { anchor: RefObject<HTMLButton
   /* Another of your workspaces (lib/shell/switch-workspace.ts): the board's last edit saved first, then the route, then the shell from the top. */
   const switchTo = (id: string) => async () => {
     if (busy) return;
-    setBusy(true); setSwitching(id); setProblem("");
+    setProblem("");
     const why = await switchWorkspace({ id, fetch: scopedFetch, drain, go: () => window.location.assign("/suites") });
     if (!why) return;
-    if (mounted.current) { setProblem(why); setBusy(false); setSwitching(null); }
-    else toast?.(why);
+    if (mounted.current) {
+      setProblem(why);
+      /* Back into the menu once the page is live again, so Escape and the arrows work. */
+      setTimeout(() => menu.current?.querySelector<HTMLElement>("[role='menuitem']:not([disabled])")?.focus(), 0);
+    } else toast?.(why);
   };
   const items: Item[] = [
     { id: "team", label: "Team", run: go(() => goSettings("team")) },
@@ -71,10 +77,10 @@ export function SettingsMenu({ anchor, onClose }: { anchor: RefObject<HTMLButton
     ...others.map((w) => ({ id: `switch-${w.id}`, label: switching === w.id ? `Switching to ${w.name}…` : `Switch to ${w.name}`, run: () => void switchTo(w.id)() })),
     ...(session.superAdmin ? [{ id: "platform-desk", label: "Platform desk", run: () => { onClose(); window.location.assign("/admin"); } }] : []),
     {
-      id: "sign-out", label: busy && !switching ? "Signing out…" : "Sign out", run: () => {
+      id: "sign-out", label: signingOut ? "Signing out…" : "Sign out", run: () => {
         if (busy) return;
-        setBusy(true); setProblem("");
-        void signOut(scopedFetch).then((why) => { if (why) { setProblem(why); setBusy(false); } });
+        setSigningOut(true); setProblem("");
+        void signOut(scopedFetch).then((why) => { if (why) { setProblem(why); setSigningOut(false); } });
       },
     },
   ];

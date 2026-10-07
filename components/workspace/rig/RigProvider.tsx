@@ -39,6 +39,7 @@ import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
 import { isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
 import { cinemaPriceWords } from "@/lib/cinemaHold";
+import { editsFrozen, sendsAllowed, subscribeSwitch } from "@/lib/shell/switch-workspace";
 
 /**
  * The Rig's live state, shared by the shot list, the node graph, the
@@ -245,6 +246,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     chain.current = chain.current.catch(() => false).then(async () => {
       if (!draftRef.current) return false;
       if (!dirty.current && !options.force) return true;
+      /* The switch route has been asked (lib/shell/switch-workspace.ts): nothing more goes to this workspace. */
+      if (!sendsAllowed()) return !dirty.current;
       await teamFlushRef.current?.();
       /* Read after that wait, together: what is sent is exactly what counts as saved. */
       const current = draftRef.current;
@@ -290,10 +293,15 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   }, [scope, setDraft, toast]);
   useEffect(() => { flushRef.current = () => flush(); }, [flush]);
 
+  const heldWrites = useRef<{ fn: (p: Project) => Project; publish: boolean; made: boolean }[]>([]);
   /* The masters this window knows of (set once the team canvas hook exists below): its own edits never change one. */
   const mastersRef = useRef<ReadonlySet<string>>(new Set());
   /** `made`: the change builds records (shots from boards, inputs, a filed take) — noted as made, for the merge. */
   const write = useCallback((fn: (p: Project) => Project, publish: boolean, made = false) => {
+    /* A workspace switch is running: the edit waits (the page takes none of its own then; this is the app's, say a take
+       filed or a teammate's change). If the switch does not happen it is made then, and saved as usual; if it does, it
+       is never sent to the workspace being left (a take is filed again from its job wherever the project opens next). */
+    if (editsFrozen()) { heldWrites.current.push({ fn, publish, made }); return; }
     const current = draftRef.current;
     if (!current) return;
     let changed = fn(current.project);
@@ -319,6 +327,12 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => void flush(), SAVE_DEBOUNCE_MS);
   }, [setDraft, flush, toast]);
+  /* A switch that did not happen: what waited during it is made now, in order, and saved as usual. */
+  useEffect(() => subscribeSwitch(() => {
+    if (editsFrozen() || !heldWrites.current.length) return;
+    const held = heldWrites.current.splice(0);
+    for (const w of held) write(w.fn, w.publish, w.made);
+  }), [write]);
   const update = useCallback((fn: (p: Project) => Project) => write(fn, true), [write]);
   /** A build (lib/production/rig-build) or a filed take: what it made is noted, as made. */
   const make = useCallback((fn: (p: Project) => Project) => write(fn, true, true), [write]);

@@ -54,6 +54,7 @@ import { StudioHome } from "./mobile/StudioHome";
 import { SuiteHome } from "./mobile/SuiteHome";
 import { useRig, useRigDrain } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
+import { SwitchingVeil } from "./SwitchingVeil";
 import { WorkspaceView } from "./WorkspaceView";
 import Boundary from "@/components/Boundary";
 import { throwIfArmed } from "@/lib/shell/fault";
@@ -384,6 +385,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     <AtomikHost scope={scope} project={project} bridge={planBridge}>
       <JobsTrayProvider>
       <LibraryFollowsJobs projectId={project?.id ?? null} refresh={library.refresh} />
+      <SwitchingVeil />
       <div className="gx" data-screen={shell.screen ?? undefined} data-phone={phoneOn ? (shell.phone.framed ? "framed" : "") : undefined}
         data-view={shell.view} data-suite={shell.suite.id} style={rootStyle} onContextMenu={onContext} onClick={() => shell.ctx && shell.closeCtx()}>
         {session.workspace?.suspended ? (
