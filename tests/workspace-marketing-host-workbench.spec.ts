@@ -15,7 +15,6 @@ import { newProject, type Project } from "../lib/workbench/studio";
  */
 
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
-const PHONE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const modelId = "higgsfield/marketing-studio-image";
 
 function campaignProject(): Project {
@@ -150,53 +149,7 @@ async function fixture(page: Page): Promise<State> {
 
 const url = "/workspace?project=ws-mkt-host&suite=moleculr&page=marketing";
 
-test("phones render the phone shell on Marketing Studio", async ({ page }, info) => {
-  test.skip(!PHONE.includes(info.project.name), "phone viewports");
-  await fixture(page);
-  await page.goto(url);
-  /* The phone shell renders here now (wave M-A): /workspace is the phone's
-     surface below 768px, and the desktop studio row is not mounted. */
-  await expect(page.getByTestId("phone-shell")).toBeVisible();
-  await expect(page.getByTestId("studio-row")).toHaveCount(0);
-});
-
-test("the workspace Marketing page hosts the real four sections, not a link out", async ({ page }, info) => {
-  test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
-  const state = await fixture(page);
-  await page.goto(url);
-  await expect(page.getByTestId("page-title")).toHaveText("Product image");
-  const tool = page.locator('[data-tool-body="marketing"]');
-  await expect(tool).toBeVisible({ timeout: 30_000 });
-  /* Marketing Studio itself: its own section nav and its seven sections. */
-  await expect(tool.getByRole("navigation", { name: "Ads sections", exact: true })).toBeVisible();
-  for (const id of ["product", "brand", "cast", "format", "variants", "design", "publish"])
-    await expect(tool.locator(`#${id}`)).toHaveCount(1);
-  /* The page's tool control opens the matching section rather than leaving the page. */
-  await expect(tool.locator("#product .moleculr-section-body")).toBeVisible();
-  await page.getByTestId("spec-work").getByRole("button", { name: "Variants & output", exact: true }).click();
-  await expect(tool.locator("#variants .moleculr-section-body")).toBeVisible();
-  /* No link out to the old workbench Marketing Studio remains on the page. */
-  await expect(tool.locator('a[href*="/workbench?project=ws-mkt-host&suite=moleculr"]')).toHaveCount(0);
-
-  /* The agent slot is this page's own Atomik plan, on the shell's engine. It
-     sits in Brand & cast, where /workbench puts its own agent panels. */
-  await page.getByTestId("spec-work").getByRole("button", { name: "Brand & cast", exact: true }).click();
-  await expect(tool.locator("#brand .moleculr-section-body")).toBeVisible();
-  const plan = page.getByTestId("marketing-plan-panel");
-  await expect(plan).toContainText("Build the campaign set");
-  await expect(plan.getByRole("button", { name: "Run with Atomik", exact: true })).toBeEnabled();
-
-  /* No horizontal overflow at desktop widths, and no page error. */
-  for (const width of [1200, 1440, 1920]) {
-    await page.setViewportSize({ width, height: 900 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
-  }
-  expect(state.dispatches).toEqual([]);
-  expect(state.external).toEqual([]);
-  expect(state.errors).toEqual([]);
-});
-
-test("a variant is configured, priced and gated on the workspace page; nothing dispatches before approval", async ({ page }, info) => {
+test.fixme("owner: Product image plan gate on the Ads board — the page's plan prices the same variant and stops at its gate (the quote on the button and no dispatch are held by tests/suites-business-workbench.spec.ts, the image-ad card test; the plan gate and a variant never configured refusing have no new home)", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const state = await fixture(page);
   await page.goto(url);

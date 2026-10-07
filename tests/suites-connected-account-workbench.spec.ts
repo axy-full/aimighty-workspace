@@ -59,15 +59,16 @@ test("Engines and Settings › Connections: no connected-account row even while 
   const { errors, posts, started, disconnects, reads } = await open(page, "/suites?view=workspace&tab=engines");
   /* Engines is Settings › Advanced with the new interface on, or the Workspace tab with it off: either way, no row. */
   await expect(page.getByTestId("settings-view").or(page.getByTestId("workspace-view")).first()).toBeVisible();
-  await page.waitForLoadState("networkidle");
+  await page.getByTestId("settings-engines-show").click();
+  await expect(page.getByTestId("settings-engines")).toContainText("0 available");
   await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
   await page.goto("/suites?view=workspace&tab=connections");
-  await expect(page.getByTestId("settings-publishing")).toBeVisible();
+  await expect(page.getByTestId("settings-title")).toHaveText("Connections");
   await expect(page.getByTestId("settings-earlier-account")).toHaveCount(0);
   await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
   for (const id of ["connected-account-connect", "connected-account-disconnect", "connected-account-capacity", "connected-account-job"])
     await expect(page.getByTestId(id), id).toHaveCount(0);
-  await expect(page.getByText(/Connect Higgsfield|connected account|Sign-in retired/i)).toHaveCount(0);
+  await expect(page.getByText(/Connect Higgsfield|connected account|Sign-in retired|Higgsfield/i)).toHaveCount(0);
   expect(reads()).toBe(0);
   expect(posts).toEqual([]);
   expect(disconnects()).toBe(0);

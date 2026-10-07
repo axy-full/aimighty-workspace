@@ -182,7 +182,7 @@ export function planOldRoute(pathname: string, search = ""): OldRoutePlan | null
     return plan("rig-canvas", (p) => boardOf(p), c === "new" ? { kind: "production-project", id: from.get("project") ?? "" } : { kind: "board", id: c });
   if (n === 3 && a === "rig" && b === "recipes") return plan("rig-recipes", (p) => boardOf(p), { kind: "production-project", id: c });
 
-  /* Spend and cap: Settings > Spending rules lists every project with its cap. */
+  /* Spend and cap: Settings > Spending rules holds the budget per production and the per-shot cap (a project's own cap has no page yet). */
   if (n === 2 && a === "projects") return fixed("project-spend", "view=workspace&tab=rules");
 
   /* A take, a shot or an element by id: the board's Shots (or Cast) region on its project; a take also opens in the Inspector. */

@@ -58,52 +58,58 @@ function rateLine(perCredit: number): string {
   return `1 credit = $${decimals < 2 ? perCredit.toFixed(2) : trimmed}`;
 }
 
-test("the phone says what a credit is worth on the card that decides to spend", async ({ page }, info) => {
+/** "$2,000.00": the dollars of a balance at the served rate, as the shell words them (lib/shell/price-words.ts › creditsUsd). */
+const dollarsOf = (credits: number, rate: number) => `$${(Math.round(credits * rate * 100) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+test("the phone says what a credit is worth on Settings › Plan & credits, the card that decides to spend", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const { project } = await seeded(page);
   const rate = await servedRate(page);
 
-  await page.goto(`/workspace?project=${project.id}&level=settings`);
-  await expect(page.locator('[data-screen="settings"]')).toBeVisible();
+  /* Release 1: the phone's Settings is the shell's own five-section page under the phone header; its Plan & credits balance row holds the rate. */
+  await page.goto(`/suites?project=${project.id}&view=workspace&tab=credits`);
+  await expect(page.getByTestId("settings-title")).toHaveText("Plan & credits");
+  const row = page.getByTestId("settings-balance-credits");
+  await expect(row).toBeVisible();
 
   /* One short line, derived — not a paragraph (CLAUDE.md ground rule 9). */
-  const line = page.getByTestId("mobile-settings-rate");
+  const line = row.locator(".gs-row-line");
   await expect(line).toHaveText(rateLine(rate));
   expect((await line.innerText()).split("\n")).toHaveLength(1);
 
-  /* And the card's own dollar figure agrees with it: balance × the same rate.
+  /* And the row's own dollar figure agrees with it: balance × the same rate.
      A card that stated one rate and computed with another would be worse than
      one that stated none. */
-  const balance = Number((await page.getByTestId("mobile-settings-balance").innerText()).replace(/[^\d.]/g, ""));
+  const value = row.locator(".gs-row-v");
+  const balance = Number((await value.locator(":scope").innerText()).split("cr")[0].replace(/[^\d.]/g, ""));
   /* The grant plus whatever the sign-up itself granted — the point is not the
      figure but that the dollars beside it come from the rate on the line. */
   expect(balance).toBeGreaterThanOrEqual(GRANT);
-  await expect(page.getByTestId("mobile-settings-usd")).toHaveText(`$${(balance * rate).toFixed(2)}`);
+  await expect(value.locator(".gs-usd")).toHaveText(`· ${dollarsOf(balance, rate)}`);
 
   /* The rate line clears the phone's floors like every other functional label. */
-  const box = (await line.boundingBox())!;
-  expect(box.width).toBeGreaterThan(0);
+  expect((await line.boundingBox())!.width).toBeGreaterThan(0);
   expect(await line.evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(12);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
   expect(errors).toEqual([]);
 });
 
-test("the phone's credit slot carries the rate in its own tooltip", async ({ page }, info) => {
+test("the phone's credit slot is a figure in credits and its tooltip is that balance at the served rate", async ({ page }, info) => {
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   const { project } = await seeded(page);
   const rate = await servedRate(page);
 
-  await page.goto(`/workspace?project=${project.id}&suite=particl`);
-  const slot = page.getByTestId("mobile-credits");
+  await page.goto(`/suites?project=${project.id}`);
+  const slot = page.getByTestId("phone-credits");
   await expect(slot).toBeVisible();
   await expect(slot).toHaveText(/^[\d,]+\s?cr$/);
-  /* The figure and the unit it is in, in one place: the balance is where most
-     people meet the credit, and a figure in an undefined unit is not a figure. */
-  await expect(slot).toHaveAttribute("title", `Workspace credits · ${rateLine(rate)}`);
-  /* The slot itself stays a figure — the rate lives in the tooltip, not in the
-     54px header, which has no room for a sentence. */
+  /* The slot itself stays a figure (the rate lives on Plan & credits, not in the header, which has no room for a sentence). Its
+     tooltip is the balance's dollars at the same served rate, beside what it does: it opens Top up. */
+  const balance = Number((await slot.innerText()).replace(/[^\d.]/g, ""));
+  expect(balance).toBeGreaterThanOrEqual(GRANT);
+  await expect(slot).toHaveAttribute("title", `${dollarsOf(balance, rate)} · Top up`);
   await expect(slot).not.toHaveText(/credit =/);
 });
 

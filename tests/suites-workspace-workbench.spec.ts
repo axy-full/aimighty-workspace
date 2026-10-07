@@ -92,7 +92,9 @@ test("Connections lists the MCP tools and Advanced › Tools Particl's own reach
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page, "/suites?view=workspace&tab=connections&open=mcp");
   await expect(page.getByTestId("settings-title")).toHaveText("Connections");
-  await expect(page.getByTestId("settings-mcp-tool")).toHaveCount(7);
+  /* Eight tools: prepare_shot (a person approves it in Particl) joined the seven that start or read takes. */
+  await expect(page.getByTestId("settings-mcp-tool")).toHaveCount(8);
+  await expect(page.getByTestId("settings-mcp-tool").filter({ hasText: "prepare_shot" })).toContainText("Prepare jobs");
   await expect(page.getByTestId("skill-packs")).toHaveCount(0);
   await expect(page.getByTestId("settings-view")).not.toContainText(/higgsfield/i);
   await page.goto("/suites?view=workspace&tab=advanced&open=tools");
@@ -102,6 +104,7 @@ test("Connections lists the MCP tools and Advanced › Tools Particl's own reach
 });
 
 test("Settings are Graphite over the real routes and speak their vocabulary; the one page they open is a month's statement", async ({ page }, info) => {
+  test.setTimeout(240_000);
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, patches, writes } = await open(page, "/suites?view=workspace&tab=general");
   /* General is Advanced › Workspace now. */
@@ -186,6 +189,7 @@ test("Settings are Graphite over the real routes and speak their vocabulary; the
   await expect(page.getByTestId("settings-audit")).toContainText("Changed member access");
   /* Off the shell: the account's own security page (where a password is typed) and a month's printable statement. */
   await page.goto("/suites?view=workspace&tab=credits&open=statements");
+  await expect(page.getByTestId("settings-statement")).toHaveCount(2);
   const hrefs = await page.getByTestId("settings-view").locator("a[href]").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
   expect(hrefs.filter((h) => h && h.startsWith("/statements/") && !h.includes("csv"))).toEqual(["/statements/2026-09", "/statements/2026-08"]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

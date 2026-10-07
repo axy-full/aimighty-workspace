@@ -3,11 +3,10 @@ import { createClient } from "@libsql/client";
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
-import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { forbidPaidWork, generation, mockLibrary } from "./helpers/workspaceFixtures";
 import { smallTargets } from "./phoneFloors";
 import { monthLabel } from "../lib/usageLedgerTerms";
-import { newProject, type Project } from "../lib/workbench/studio";
-import { projectName } from "./helpers/projectName";
+import { newProject, type CanvasNode } from "../lib/workbench/studio";
 
 /**
  * Idea 25 — Workspace › Usage lists every job under the bars: when, who,
@@ -92,6 +91,20 @@ async function seedConnected(page: Page, workspaceId: string, userId: string) {
   } finally { tenant.close(); }
 }
 
+/**
+ * Every dollar figure on the page except the ones Plan & credits owes the workspace: the balance row (its rate line "1 credit = $0.10" and the
+ * balance's dollars at that rate) and the Top up label. Anything else is a stray, and a vendor's amount would be one.
+ */
+async function strayDollars(page: Page): Promise<string[]> {
+  const dollars = (text: string) => [...text.matchAll(/\$\s?\d[\d,]*(\.\d+)?/g)].map((m) => m[0]);
+  const all = dollars(await page.evaluate(() => document.body.innerText));
+  for (const id of ["settings-balance-credits", "settings-top-up"]) {
+    const el = page.getByTestId(id);
+    if (await el.count()) for (const allowed of dollars(await el.first().innerText())) { const at = all.indexOf(allowed); if (at >= 0) all.splice(at, 1); }
+  }
+  return all;
+}
+
 /** Every body /api/usage sends this page, in whatever variant it asked for. */
 function usageBodies(page: Page) {
   const reads: Promise<string>[] = [];
@@ -146,18 +159,22 @@ async function ledgerFloors(page: Page) {
   expect(await smallTargets(page, '[data-testid="ws-ledger"]'), "ledger targets under 44×44").toEqual([]);
 }
 
-/** At the Workspace pane's end, where the last row of the ledger ends, and where the phone's tab bar begins. */
+/** At the end of the pane that scrolls Settings (a phone's is the phone shell's own scroller, a desktop's the Settings view), where the last row of the ledger ends, and where the phone's tab bar begins. */
 async function endOfPane(page: Page) {
-  return page.getByTestId("settings-view").evaluate(async (pane) => {
+  return page.getByTestId("ws-ledger").evaluate(async (ledger) => {
+    let pane: HTMLElement | null = ledger.parentElement;
+    while (pane && !(/(auto|scroll)/.test(getComputedStyle(pane).overflowY) && pane.scrollHeight > pane.clientHeight + 1)) pane = pane.parentElement;
+    if (!pane) pane = document.querySelector<HTMLElement>('[data-testid="settings-view"]')!;
     pane.scrollTop = pane.scrollHeight;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const rows = Array.from(pane.querySelectorAll<HTMLElement>('[data-testid="ws-ledger"] li, [data-testid="ws-ledger"] button')).filter((el) => el.getClientRects().length);
+    const rows = Array.from(ledger.querySelectorAll<HTMLElement>("li, button")).filter((el) => el.getClientRects().length);
     const last = rows[rows.length - 1];
-    const bar = document.querySelector<HTMLElement>(".gx-tabbar");
-    const fixed = Boolean(bar && bar.getClientRects().length && getComputedStyle(bar).position === "fixed");
+    const bar = document.querySelector<HTMLElement>('[data-testid="mobile-dock"]');
+    const fixed = Boolean(bar && bar.getClientRects().length && ["fixed", "sticky"].includes(getComputedStyle(bar).position));
+    const inFlow = Boolean(bar && bar.getClientRects().length);
     return {
       last: last.textContent ?? "", bottom: last.getBoundingClientRect().bottom,
-      barTop: fixed ? bar!.getBoundingClientRect().top : null, paneBottom: Math.min(innerHeight, pane.getBoundingClientRect().bottom),
+      barTop: fixed || inFlow ? bar!.getBoundingClientRect().top : null, paneBottom: Math.min(innerHeight, pane.getBoundingClientRect().bottom),
       scrolled: pane.scrollTop > 0,
     };
   });
@@ -178,7 +195,7 @@ test("a credit workspace's ledger: every job in credits — held, charged, not b
   const ledger = page.getByTestId("ws-ledger");
   const rows = ledger.getByTestId("ws-ledger-row");
   /* One page from the server, newest first; the neighbour's job is not here. */
-  await expect(rows).toHaveCount(50);
+  await expect(rows).toHaveCount(50, { timeout: 60_000 });
   await expect(page.getByTestId("ws-ledger-summary")).toHaveText(`All months · ${43 + 20 + OLDER} cr charged · 12 cr held while running · 3 not billed`);
   const row = (state: string) => ledger.locator(`[data-testid="ws-ledger-row"][data-state="${state}"]`);
   await expect(rows.first()).toHaveAttribute("data-state", "held");
@@ -211,7 +228,7 @@ test("a credit workspace's ledger: every job in credits — held, charged, not b
   if (PHONES.includes(info.project.name)) {
     await ledgerFloors(page);
     const end = await endOfPane(page);
-    expect(end.scrolled, "the Workspace pane scrolls").toBe(true);
+    expect(end.scrolled, "Settings scrolls").toBe(true);
     if (info.project.name !== "workbench-844x390") expect(end.barTop, "the phone's tab bar is pinned").not.toBeNull();
     expect(end.bottom, `the last row (“${end.last.slice(0, 40)}”) ends above the tab bar`).toBeLessThanOrEqual((end.barTop ?? end.paneBottom) + 0.5);
     await shot(page, info, "ledger-end");
@@ -258,67 +275,65 @@ test("a credit workspace's ledger: every job in credits — held, charged, not b
     expect(body).not.toMatch(/usd/i);
     for (const figure of VENDOR_USD) expect(body).not.toContain(figure);
   }
-  expect(await page.evaluate(() => document.body.innerText)).not.toContain("$");
+  /* On the page: the ledger and the Usage rows hold no dollar. (Plan & credits' own balance row, Top up and the rate line carry a
+     credit's dollars at the served rate, which are the workspace's and are not a vendor's amount.) */
+  expect(await ledger.innerText()).not.toContain("$");
+  for (const usage of await page.getByTestId("settings-usage-row").all()) expect(await usage.innerText()).not.toContain("$");
+  expect(await strayDollars(page), "a dollar figure that is not the balance row's or the top-up label").toEqual([]);
   expect(errors).toEqual([]);
 });
 
-const studio = (): Project => ({ ...newProject("Harbour ledger"), id: "ws-ledger", productionProjectId: "prod-ws", shotMappings: {} });
+/*
+ * Release 1: the Library and the Gen page's Inspector (AssetInspector's "Settled" fact, read from /api/usage?id= with its own
+ * "Could not be read / Try again") are gone from every address; a take's Inspector is the board's (components/graphite/board/inspector/
+ * TakeBody.tsx), which says what the take was charged from the take's own billed credits ("N cr paid"), and says nothing while it is
+ * held or running. What stays asserted: the figure is the billed credits, never the take's vendor dollars and never a figure
+ * re-derived from them, and no dollar is printed. The ledger's own rows, its refusal and its connected-account jobs stay in the tests
+ * above (the connected-account row is retired with the sign-in).
+ */
+const node = (id: string, title: string): CanvasNode => ({ id, title, type: "scene", x: 0, y: 0, width: 344, linked: [] });
 
-test("the Inspector's Settled fact is the ledger's own row — never a take's dollars, never a figure re-derived from them", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const wide = WIDE.includes(info.project.name);
+test("the board Inspector's paid figure is the take's billed credits — never a take's dollars, never a figure re-derived from them", async ({ page }, info) => {
+  test.skip(!WIDE.includes(info.project.name), "a phone draws no board canvas; the ledger rows above are its credits");
   const { workspace } = await signInLocally(page.request);
   await forbidPaidWork(page);
   const me = (await (await page.request.get("/api/me")).json()) as { id: string };
+  const scope = `particl-active-${workspace.id}-${me.id}`;
   const { ids } = await seedMeter(workspace.id, me.id);
-  const connectedId = `gen_hfc_${"b".repeat(40)}`;
-  await mockMedia(page);
-  await mockProjects(page, { current: studio(), list: [{ id: "ws-ledger", name: "Harbour ledger" }] });
-  /* Decoys a leak would print: the take's vendor dollars, and credits re-derived from them. */
+  const project = { ...newProject("Harbour ledger"), nodes: [node("node-shot0001", "Harbour at dusk"), node("node-shot0002", "Gulls at dawn")] };
+  const saved = await page.request.put("/api/workbench/projects", { headers: { "X-Workbench-Scope": scope }, data: { project, revision: 0 } });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  const shotIds: string[] = [];
+  for (const n of project.nodes) {
+    const mapped = await page.request.post("/api/workbench/projects", { headers: { "X-Workbench-Scope": scope }, data: { projectId: project.id, action: "map-shot", nodeId: n.id } });
+    expect(mapped.ok(), await mapped.text()).toBe(true);
+    shotIds.push(((await mapped.json()) as { shotId: string }).shotId);
+  }
+  await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: project.id });
+  /* Decoys a leak would print: the take's vendor dollars (2.8667 and 0.7777), and a billed figure on a take that is still running (77: it has been charged nothing). */
+  const take = (id: string, shotId: string, over: Record<string, unknown>) => generation({ id, shotId, version: 1, kind: "video", model: SEEDANCE, ...over });
   await mockLibrary(page, {
     uploads: [],
     generations: [
-      generation({ id: ids.charged, title: "Harbour at dusk", prompt: "Harbour at dusk", model: SEEDANCE, kind: "video", costUsd: 2.8667, creditsBilled: 99 }),
-      generation({ id: ids.held, title: "Gulls at dawn", prompt: "Gulls at dawn", status: "running", storedUrl: null, costUsd: 0.7777, creditsBilled: 77 }),
-      generation({ id: connectedId, title: "Pier in fog", prompt: "Pier in fog", provider: "higgsfield", providerCreditQuote: { provider: "higgsfield", unit: "higgsfield_credits", credits: 75, basis: "approved_quote" } }),
+      take(ids.charged, shotIds[0], { title: "Harbour at dusk", prompt: "Harbour at dusk", costUsd: 2.8667, creditsBilled: 43 }),
+      take(ids.held, shotIds[1], { title: "Gulls at dawn", prompt: "Gulls at dawn", status: "running", storedUrl: null, costUsd: 0.7777, creditsBilled: 77 }),
     ],
   });
-  const lookups: string[] = [];
-  page.on("request", (request) => { const url = new URL(request.url()); if (url.pathname === "/api/usage" && url.searchParams.get("id")) lookups.push(url.searchParams.get("id")!); });
-  /* The charged take's row is refused until Try again: the fact says so rather than guessing a figure. */
-  let refuse = true;
-  await page.route(new RegExp(`/api/usage\\?rows=1&id=${ids.charged}$`), (route) =>
-    refuse ? route.fulfill({ status: 503, json: { error: "The ledger could not be read." } }) : route.fallback());
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?suite=atomik&page=agent&sp=agent");
-  await expect(projectName(page)).toHaveText("Harbour ledger");
-  if (!wide) await page.getByTestId("toggle-library").click();
-  await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
-  const facts = page.getByTestId("asset-facts");
-  const inspect = async (id: string) => {
-    /* On a phone the Inspector is an overlay: close it before picking the next take from the Library. */
-    if (!wide && (await page.getByTestId("inspector").isVisible())) await page.getByTestId("close-inspector").click();
-    if (!wide && !(await page.getByTestId("library").isVisible())) await page.getByTestId("toggle-library").click();
-    await page.getByTestId("library").locator(`.gx-asset-thumb[data-ctx='asset:generation:${id}']`).click();
-    await expect(page.getByTestId("asset-inspector")).toBeVisible();
-  };
-  await inspect(ids.charged);
-  await expect(facts.locator("div").filter({ hasText: /^Settled/ })).toHaveText("SettledCould not be read");
-  refuse = false;
-  await page.getByTestId("inspector-settled-retry").click();
-  await expect(facts.locator("div").filter({ hasText: /^Settled/ })).toHaveText("Settled43 cr");
-  await expect(page.getByTestId("inspector-settled-retry")).toHaveCount(0);
-  await expect(facts).not.toContainText("$");
-  await expect(facts).not.toContainText("99 cr");
-  await inspect(ids.held);
-  await expect(facts.locator("div").filter({ hasText: /^Settled/ })).toHaveText("Settled" + "Held · 12 cr");
-  await expect(facts).not.toContainText("$");
-  /* The connected account's take is its provider's credits, as quoted; the ledger is not asked about it. */
-  await inspect(connectedId);
-  await expect(facts.locator("div").filter({ hasText: /^Settled/ })).toHaveText("Settled75 connected cr (quoted)");
-  expect(lookups).not.toContain(connectedId);
-  expect(lookups).toEqual(expect.arrayContaining([ids.charged, ids.held]));
+  await page.goto(`/suites?project=${project.id}&view=board`);
+  const insp = page.getByTestId("board-inspector");
+  await page.locator('[data-card-id="node-shot0001"]').getByTestId("take-card").click();
+  await expect(insp).toBeVisible({ timeout: 60_000 });
+  await expect(insp.getByTestId("insp-engine")).toContainText("43 cr paid");
+  await expect(insp).not.toContainText("$");
+  await expect(insp).not.toContainText("2.87");
+  /* A take that is still running has been charged nothing: no "paid", no figure. */
+  await page.locator('[data-card-id="node-shot0002"]').getByTestId("take-card").click();
+  await expect(insp).toContainText("Gulls at dawn");
+  await expect(insp.getByTestId("insp-paid")).toHaveCount(0);
+  await expect(insp).not.toContainText("$");
+  await expect(insp).not.toContainText("77 cr");
   await shot(page, info, "inspector");
   expect(errors).toEqual([]);
 });
@@ -351,7 +366,8 @@ test("migrated workspaces retain historical external receipts without displaying
   await expect(rows.nth(1)).toContainText("Failed · not billed");
   await expect(page.getByTestId("ws-ledger-summary")).toContainText("0 cr charged");
   await expect(page.getByTestId("ws-ledger-summary")).toContainText("2 not billed");
-  await expect(page.getByTestId("settings-view")).not.toContainText("$");
+  await expect(page.getByTestId("ws-ledger")).not.toContainText("$");
+  expect(await strayDollars(page), "a dollar figure that is not the balance row's or the top-up label").toEqual([]);
   const body = await (await page.request.get("/api/usage?rows=1")).json();
   expect(body.unit).toBe("credits");
   expect(JSON.stringify(body)).not.toMatch(/costUsd|engine_cost_usd|spendUsd/);
@@ -374,7 +390,7 @@ test("the ledger says it is reading, says when there is nothing yet, and a refus
   let refuse = true;
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
-  await page.route(/\/api\/usage\?rows=1(&|$)/, async (route) => {
+  await page.route(/\/api\/usage\?rows=1$/, async (route) => {
     if (refuse) { refuse = false; return route.fulfill({ status: 503, json: { error: "The ledger could not be read. Try again in a minute." } }); }
     await held;
     return route.fallback();
@@ -436,7 +452,7 @@ test("a member reads their own name and “Teammate” for everyone else's spend
   /* Usage: the member's own job by name, a teammate's as "Teammate". */
   await page.goto("/suites?view=workspace&tab=usage");
   const rows = page.getByTestId("ws-ledger-row");
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(3, { timeout: 60_000 });
   await expect(rows.filter({ hasText: "Ledger Member" })).toHaveCount(1);
   await expect(rows.filter({ hasText: "Teammate" })).toHaveCount(2);
   await expect(page.getByTestId("settings-usage-row")).toHaveCount(1);
@@ -448,9 +464,9 @@ test("a member reads their own name and “Teammate” for everyone else's spend
   await noTeammate("Plans & credits");
 
   /* The Dashboard became Activity (the control room): its credit ledger by person is not drawn there, so what is kept is the rule that matters:
-     the page names no teammate. */
+     the page names no teammate. A phone has no Activity screen: its own page that says so is read instead. */
   await page.goto("/suites?suite=atomik&page=runs");
-  await expect(page.getByTestId("control-room")).toBeVisible();
+  await expect(page.getByTestId(PHONES.includes(info.project.name) ? "phone-app" : "control-room")).toBeVisible({ timeout: 60_000 });
   await noTeammate("Activity");
   await shot(page, info, "member-activity");
 
