@@ -9,7 +9,7 @@ import { newProject, type Asset, type CanvasNode } from "../lib/workbench/studio
  * Stream 5 · the board's Cut and Deliver cards (design/particl-graphite/README.md § 3.1 i), behind the new-interface
  * switch. Three shots: two approved takes sit in the edit's sequence (5 s each), the third waits for review. The cut
  * says "2 approved takes · 0:10", the delivery checks read pending until the cut is complete, loudness is not
- * measured and offers no button, and Open Edit & Sound opens the existing editor over the board. Nothing paid is sent.
+ * not checked until Edit & Sound measures it, and Open Edit & Sound opens the editor over the board. Nothing paid is sent.
  */
 const SHOTS = process.env.S05_SHOTS || join(tmpdir(), "claude-s05-shots");
 const PNG = readFileSync("public/icon-192.png");
@@ -103,7 +103,7 @@ test("the cut says 2 approved takes · 0:10 with Shot 3 waiting; the checks read
   await expect(deliver.getByTestId("deliver-sub")).toHaveText("16:9 · 24 fps");
   for (const key of ["aspect", "fps", "duration"]) await expect(deliver.getByTestId(`deliver-${key}`)).toContainText("pending");
   await expect(deliver.getByTestId("deliver-duration")).toContainText("00:10");
-  await expect(deliver.getByTestId("deliver-loudness")).toHaveText(/Loudness\s*Not measured/);
+  await expect(deliver.getByTestId("deliver-loudness")).toHaveText(/Loudness\s*Not checked · Broadcast/);
   await expect(deliver.getByRole("button", { name: /Measure loudness/ })).toHaveCount(0);
   await expect(deliver.getByTestId("deliver-render")).toContainText("Export the cut · free");
   await expect(page.locator("body")).not.toContainText(/Dune|Mira\b|Northline/);
@@ -119,7 +119,7 @@ test("the cut says 2 approved takes · 0:10 with Shot 3 waiting; the checks read
   expect(paid).toEqual([]);
 });
 
-test("Open Edit & Sound opens the existing editor over the board, and Close brings the board back; Export the cut opens the browser export", async ({ page }, info) => {
+test("Open Edit & Sound opens the editor over the board, and Close brings the board back; Export the cut opens the browser export", async ({ page }, info) => {
   test.skip(!desktop(page), "phone widths open the project's Record (stream 10); the canvas is desktop only");
   const { project, paid } = await seed(page);
   await page.goto(`/suites?project=${project.id}&view=board`);
@@ -131,7 +131,7 @@ test("Open Edit & Sound opens the existing editor over the board, and Close brin
   await page.getByTestId("cut-open-edit").click();
   const edit = page.getByTestId("edit-sound");
   await expect(edit).toBeVisible();
-  await expect(edit.getByTestId("assembly")).toBeVisible();
+  await expect(edit.getByTestId("es-viewer")).toBeVisible();
   mkdirSync(SHOTS, { recursive: true });
   const size = info.project.name.replace("workbench-", "");
   await page.screenshot({ path: `${SHOTS}/edit-sound-${size}.png` });

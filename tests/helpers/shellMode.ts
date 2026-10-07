@@ -1,4 +1,4 @@
-import type { Page, TestInfo } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { COMPACT_QUERY } from "../../lib/shell/use-compact";
 
 /**
@@ -15,7 +15,7 @@ export const COMPACT = ["workbench-360x640", "workbench-390x844", "workbench-844
 export const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
 
 /** True when the project's viewport gets the phone app. Use it for `test.skip(isCompact(info), "<what the phone does instead, and the spec that covers it>")`. */
-export function isCompact(info: Pick<TestInfo, "project">): boolean {
+export function isCompact(info: { project: { name: string } }): boolean {
   return COMPACT.includes(info.project.name);
 }
 

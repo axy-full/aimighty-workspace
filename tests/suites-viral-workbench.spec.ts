@@ -4,6 +4,10 @@ import { randomUUID } from "node:crypto";
 import { joinLocallyAsMember, localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws no quick tool: Make there is the simple form and ?make=motion|swap shows Home (the same gap demo-s10-phone-make-workbench records as a fixme twin); the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws no quick tool: Make there is the simple form and ?make=motion|swap shows Home (the same gap demo-s10-phone-make-workbench records as a fixme twin); the desktop keeps every assertion here"); });
 
 /**
  * Viral = Genjutsu on Particl's API key, in the
@@ -20,6 +24,7 @@ import { smallTargets } from "./phoneFloors";
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
+const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
 const CLIP = { url: "/fixtures/clip-6s.mp4", name: "walk.mp4", type: "video/mp4" };
 const STILLS = [
   { url: "/campaign/character.webp", name: "wren.webp", type: "image/webp" },
@@ -146,7 +151,9 @@ test("Motion Transfer on the API key: a 4–8 s source and ordered stills, the l
 });
 
 test("the source's own tools: a frame saved to the project joins the references, and the well holds eight", async ({ page, playwright }, info) => {
-  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  /* The phone shell mounts no quick tool of its own: Make's screen there is the simple form, and `make=motion|swap` shows Home (the owner's list of what the phone draws). The phone's twin
+     is demo-s10-phone-make-workbench "the quick tools on a phone: … open from their address, and nothing is sent". The desktop keeps this whole test. */
+  test.skip(!DESKTOP.includes(info.project.name), "the quick tools are Make's panel modes; the phone draws none of them");
   test.setTimeout(180_000);
   const s = await seed(page, playwright, "owner");
   await page.goto("/suites?suite=subatomik&page=swap&sp=swap");

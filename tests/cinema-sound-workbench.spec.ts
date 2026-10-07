@@ -7,6 +7,11 @@ import { goWorkbenchStage } from "./helpers/workbenchNavigation";
 import { legacyShell } from "./helpers/legacyShell";
 import { MAKE_SHOWS_CINEMA } from "../lib/shell/make-price";
 import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /* Make does not offer Cinema Studio 4.0 until #523 (its 3N hold) is merged: lib/shell/make-price.ts › MAKE_SHOWS_CINEMA. */
 test.skip(!MAKE_SHOWS_CINEMA, "Cinema Studio 4.0 is not offered in Make until its hold (#523) is merged");
@@ -150,8 +155,8 @@ async function openGen(page: Page, generations: ReturnType<typeof generation>[] 
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Lighthouse study");
-  await expect(page.getByTestId("gen-model")).toContainText("Seedance");
+  await expect(projectName(page)).toHaveText("Lighthouse study");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Seedance");
   return { errors, priced, reads, holdSound: (until: Promise<void> | null) => { hold = until; } };
 }
 
@@ -268,7 +273,7 @@ test("Gen: Recreate of a Cinema Studio take made with sound turns the switch bac
   await page.getByTestId("make-tab-recent").click();
   await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_cinema_sound']").click();
   await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
-  await expect(page.getByTestId("gen-model")).toContainText("Cinema Studio 4.0");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Cinema Studio 4.0");
   const sound = page.getByTestId("gen-sound-toggle");
   await expect(sound).toHaveAttribute("aria-checked", "true");
   const chip = page.getByTestId("gen-recipe-chips").locator("[data-chip='sound']");
@@ -303,7 +308,7 @@ test("Gen, where sound is not offered: Cinema Studio has no Sound switch, a Recr
   await page.getByTestId("make-tab-recent").click();
   await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_cinema_sound']").click();
   await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
-  await expect(page.getByTestId("gen-model")).toContainText("Cinema Studio 4.0");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Cinema Studio 4.0");
   const chip = page.getByTestId("gen-recipe-chips").locator("[data-chip='sound']");
   await expect(chip).toHaveText("With sound → silent");
   await expect(chip).toHaveAttribute("data-state", "changed");

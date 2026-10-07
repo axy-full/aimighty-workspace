@@ -5,6 +5,7 @@ import sharp from "sharp";
 import { expect, type Page, type Route } from "@playwright/test";
 import { localPlatformDbUrl } from "./workbenchLocal";
 import { newProject, type Project } from "../../lib/workbench/studio";
+import { tmpdir } from "node:os";
 
 /*
  * Gap screens, lane 2 (3D blocking, Transcribe, Line drawings, Cut-out): what the four browser specs share. A seeded project
@@ -12,7 +13,7 @@ import { newProject, type Project } from "../../lib/workbench/studio";
  * a figure, and a watcher that records every request a person's press could be spending on. Neutral names only.
  */
 
-export const SHOTS = process.env.L2_SHOTS || "/private/tmp/claude-l2-shots";
+export const SHOTS = process.env.L2_SHOTS || join(tmpdir(), "claude-l2-shots");
 export const FINGERPRINT = "c".repeat(64);
 export const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 export const desktop = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1280;

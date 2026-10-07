@@ -8,6 +8,7 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { legacyShell } from "./helpers/legacyShell";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { createAstraScene } from "../lib/astra-blender/scene";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Audit fixes on surfaces outside the suites (other-ui): the Library's
@@ -250,7 +251,7 @@ test("Prompt attach keeps the files that arrived when one fails, and the compose
   });
 
   await page.goto(`/suites?make=video&project=${project.id}`);
-  await expect(page.getByTestId("project-name")).toHaveText(project.name);
+  await expect(projectName(page)).toHaveText(project.name);
   await page.getByTestId("gen-attach-file").setInputFiles([
     { name: "look.png", mimeType: "image/png", buffer: await png("#2b6a4a") },
     { name: "broken.png", mimeType: "image/png", buffer: await png("#6a2b2b") },

@@ -7,6 +7,11 @@ import { goWorkbenchStage } from "./helpers/workbenchNavigation";
 import { legacyShell } from "./helpers/legacyShell";
 import { MAKE_SHOWS_CINEMA } from "../lib/shell/make-price";
 import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /* Make does not offer Cinema Studio 4.0 until #523 (its 3N hold) is merged: lib/shell/make-price.ts › MAKE_SHOWS_CINEMA. */
 test.skip(!MAKE_SHOWS_CINEMA, "Cinema Studio 4.0 is not offered in Make until its hold (#523) is merged");
@@ -122,8 +127,8 @@ async function openGen(page: Page, generations: ReturnType<typeof generation>[] 
   await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
-  await expect(page.getByTestId("project-name")).toHaveText("Lighthouse study");
-  await expect(page.getByTestId("gen-model")).toContainText("Seedance");
+  await expect(projectName(page)).toHaveText("Lighthouse study");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Seedance");
   return { errors, priced, reads };
 }
 
@@ -144,7 +149,7 @@ test("Cinema Studio's own controls ride Gen's chips: nine Auto chips, grids with
   const { errors, priced, reads } = await openGen(page);
   const phone = PHONES.includes(info.project.name);
   await pickModel(page, /^Cinema Studio 4\.0/);
-  await expect(page.getByTestId("gen-model")).toContainText("Cinema Studio 4.0");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Cinema Studio 4.0");
 
   /* Nine chips, every one Auto, in the provider's own order; the film vocabulary's six give way to them. */
   await expect(page.getByTestId("gen-film")).toHaveCount(0);
@@ -309,7 +314,7 @@ test("Recreate brings a Cinema Studio take's controls back onto its chips and it
   await page.getByTestId("make-tab-recent").click();
   await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_cinema_take']").click();
   await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
-  await expect(page.getByTestId("gen-model")).toContainText("Cinema Studio 4.0");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Cinema Studio 4.0");
   await expect(chip(page, "camera_movement")).toHaveAttribute("aria-label", "Movement: Crane up");
   await expect(chip(page, "genre")).toHaveAttribute("aria-label", "Genre: Noir");
   await expect(chip(page, "light")).toHaveAttribute("aria-label", "Light: Auto");

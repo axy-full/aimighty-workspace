@@ -2,17 +2,17 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { isCompact } from "./helpers/shellMode";
 
 /**
- * Atomik › Tools & connections keeps the eight packs the Skills page listed; the
- * Workspace tabs are Graphite over the routes that already serve them —
- * General saves through /api/settings in the vocabulary the gate reads (and
- * renames through /api/workspaces), People reads /api/team and invites,
- * disables and revokes, Plans reads /api/billing, /api/statements and
- * /api/workspaces/topups, Usage draws bars from /api/usage, Engines lists
- * /api/workspaces/keys, the account connection and the xAI row, Security
- * reads /api/account/security and /api/workspaces/audit. The one page a tab
- * opens is a month's printable statement.
+ * Release 1: the old Workspace tabs (General, People, Plans & credits, Usage, Engines, Security) and Atomik's Tools & connections page are
+ * Settings sections (lib/shell/settings.ts › OLD_TAB_TO_SECTION): Team (people, Security fold), Plan & credits (plan, packs, Usage and
+ * Statements folds), Spending rules, Connections (tokens, MCP), Advanced (Models, Tools and Workspace folds). This spec keeps what it
+ * checked, on the routes that still serve it, at the section that holds it now: Settings saves through /api/settings in the vocabulary
+ * the gate reads and renames through /api/workspaces, Team reads /api/team and invites, disables and revokes, Plan & credits reads
+ * /api/billing, /api/statements and /api/workspaces/topups, Usage reads /api/usage, Engines lists /api/workspaces/keys and the xAI row,
+ * Security reads /api/account/security. The one page a section opens is a month's printable statement. The approval rule, the per-shot
+ * cap and the warn/at-cap choices that General held are Spending rules now, and tests/demo-s09-settings-workbench.spec.ts holds them.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-tabs", productionProjectId: "prod-ws", shotMappings: {} });
@@ -88,97 +88,106 @@ async function open(page: Page, path: string) {
   return { errors, patches, writes, ruleWrites };
 }
 
-test("Atomik › Tools & connections lists Particl's own reach and server, and no skill packs for a signed-in account", async ({ page }, info) => {
+test("Connections lists the MCP tools and Advanced › Tools Particl's own reach, with no skill packs and no Higgsfield word", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page, "/suites?suite=atomik&page=skills&sp=skills");
-  await expect(page.getByTestId("tools-view")).toBeVisible();
-  await expect(page.getByTestId("reach-particl").getByTestId("reach-row")).toHaveCount(6);
-  await page.getByTestId("tools-tab-connect").click();
-  await expect(page.getByTestId("mcp-tool")).toHaveCount(7);
+  const { errors } = await open(page, "/suites?view=workspace&tab=connections&open=mcp");
+  await expect(page.getByTestId("settings-title")).toHaveText("Connections");
+  await expect(page.getByTestId("settings-mcp-tool")).toHaveCount(7);
   await expect(page.getByTestId("skill-packs")).toHaveCount(0);
-  await expect(page.getByTestId("tools-view")).not.toContainText(/higgsfield/i);
+  await expect(page.getByTestId("settings-view")).not.toContainText(/higgsfield/i);
+  await page.goto("/suites?view=workspace&tab=advanced&open=tools");
+  await expect(page.getByTestId("settings-reach")).toHaveCount(6);
+  await expect(page.getByTestId("settings-view")).not.toContainText(/higgsfield/i);
   expect(errors).toEqual([]);
 });
 
-test("Workspace tabs are Graphite over the real routes and speak their vocabulary; the one page they open is a month's statement", async ({ page }, info) => {
+test("Settings are Graphite over the real routes and speak their vocabulary; the one page they open is a month's statement", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, patches, writes } = await open(page, "/suites?view=workspace&tab=general");
-  await expect(page.getByTestId("ws-general")).toBeVisible();
-  /* The rule in force is shown: the stored "anyone" reads as "Members render freely", not the first option. */
-  await expect(page.getByTestId("ws-approval")).toHaveValue("anyone");
-  await expect(page.getByTestId("ws-approval").locator("option")).toHaveText(["Members render freely", "An admin presses past the per-shot cap", "A producer signs off on every take"]);
-  /* A stored "webm" was always delivered as mp4; the container select says so and offers only what the reader knows. */
-  await expect(page.getByTestId("ws-format")).toHaveValue("mp4");
-  await expect(page.getByTestId("ws-format").locator("option")).toHaveText(["MP4", "MOV"]);
-  await expect(page.getByTestId("ws-enhancer-higgsfield")).toHaveAttribute("aria-checked", "true");
-  await page.getByTestId("ws-enhancer-claude").click();
-  await page.getByTestId("ws-approval").selectOption("cap");
-  await page.getByTestId("ws-cap-warn").selectOption("90");
-  await page.getByTestId("ws-name").fill("Harbour Studio");
-  await page.getByTestId("ws-save").click();
-  await expect(page.getByTestId("ws-note")).toHaveText("Saved.");
-  expect(patches).toEqual([{ promptEnhancer: "claude", approvalRule: "cap", capWarnPct: "90" }]);
+  /* General is Advanced › Workspace now. */
+  await expect(page.getByTestId("settings-title")).toHaveText("Advanced");
+  await expect(page.getByTestId("settings-fold-workspace")).toHaveAttribute("data-open", "true");
+  /* A stored "webm" was always delivered as mp4; the container says so and offers only what the reader knows. */
+  await expect(page.getByTestId("settings-format-mp4")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("settings-format").getByRole("radio")).toHaveText(["MP4", "MOV"]);
+  /* The enhancer in force is shown (the Higgsfield writer), and changing it saves in the gate's vocabulary. */
+  await page.getByTestId("settings-fold-models-toggle").click();
+  await expect(page.getByTestId("settings-enhancer-higgsfield")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("settings-enhancer-claude").click();
+  await expect.poll(() => patches).toEqual([{ promptEnhancer: "claude" }]);
+  await page.getByTestId("settings-ws-name-field").fill("Harbour Studio");
+  await page.getByTestId("settings-ws-name-save").click();
+  await expect(page.getByTestId("settings-ws-note")).toHaveText("Renamed.");
   expect(writes).toEqual([{ url: "/api/workspaces", method: "PATCH", body: { name: "Harbour Studio" } }]);
-  await expect(page.getByTestId("ws-export").getByRole("link")).toHaveCount(2);
+  await expect(page.getByTestId("settings-export").getByRole("link")).toHaveCount(2);
 
-  const tabs = page.getByRole("tablist", { name: "Workspace sections" });
-  await tabs.getByRole("tab", { name: "People" }).click();
-  await expect(page.getByTestId("ws-member")).toHaveCount(2);
-  const member = page.getByTestId("ws-member").nth(1);
+  /* Team: people and invites. */
+  await page.goto("/suites?view=workspace&tab=people");
+  await expect(page.getByTestId("settings-title")).toHaveText("Team");
+  await expect(page.getByTestId("settings-member")).toHaveCount(2);
+  const member = page.getByTestId("settings-member").nth(1);
   await expect(member).toContainText("locked");
   await expect(member.getByRole("button", { name: "Unlock" })).toBeVisible();
-  await expect(member.getByRole("button", { name: "Promote" })).toBeVisible();
+  await expect(member.getByTestId("settings-change-role")).toBeVisible();
   /* The owner's own row carries no action that would be refused. */
-  await expect(page.getByTestId("ws-member").first().getByRole("button")).toHaveCount(0);
-  await member.getByRole("button", { name: "Disable" }).click();
-  await expect(page.getByTestId("ws-people-note")).toContainText("Jordan Lee is disabled; their work stays.");
-  await page.getByTestId("ws-invite-revoke").click();
-  await expect(page.getByTestId("ws-people-note")).toContainText("no longer works");
-  expect(writes.slice(1)).toEqual([{ url: "/api/team/u2", method: "PATCH", body: { disabled: true } }, { url: "/api/team/invites/inv_old", method: "DELETE", body: null }]);
-  await page.getByTestId("ws-invite-name").fill("Maya");
-  await page.getByTestId("ws-invite-email").fill("m@example.test");
-  await page.getByTestId("ws-invite").click();
-  await expect(page.getByTestId("ws-invite-link")).toContainText("/invite/inv_abc123");
+  await expect(page.getByTestId("settings-member").first().getByRole("button")).toHaveCount(0);
+  const before = writes.length;
+  await member.getByTestId("settings-member-disable").click();
+  await expect(page.getByTestId("toast")).toContainText("Jordan Lee is disabled; their work stays.");
+  await page.getByTestId("settings-invite-revoke").click();
+  await expect(page.getByTestId("toast")).toContainText("no longer works");
+  expect(writes.slice(before)).toEqual([{ url: "/api/team/u2", method: "PATCH", body: { disabled: true } }, { url: "/api/team/invites/inv_old", method: "DELETE", body: null }]);
+  await page.getByTestId("settings-invite").click();
+  await page.getByTestId("settings-invite-name").fill("Maya");
+  await page.getByTestId("settings-invite-email").fill("m@example.test");
+  await page.getByTestId("settings-invite-make").click();
+  await expect(page.getByTestId("settings-invite-link")).toContainText("/invite/inv_abc123");
 
-  await tabs.getByRole("tab", { name: "Plans & credits" }).click();
-  await expect(page.getByTestId("workspace-balance")).toBeVisible();
-  await expect(page.getByTestId("ws-plan-line")).toHaveText("Studio plan · active · renews Oct 1");
-  /* Statement months are objects on the wire; each opens the printable statement, with its CSV beside it. */
-  await expect(page.getByTestId("ws-statement")).toHaveText(["2026-09", "2026-08"]);
-  await expect(page.getByTestId("ws-statement").first()).toHaveAttribute("href", "/statements/2026-09");
-  /* The packs the request flow sells, priced; Request pack queues one for the platform. */
-  await expect(page.getByTestId("ws-pack")).toHaveCount(2);
-  await expect(page.getByTestId("ws-pack").nth(1)).toContainText("2,200 cr · $200 · 200 free");
-  await page.getByTestId("ws-pack").nth(1).getByTestId("ws-pack-request").click();
-  await expect(page.getByTestId("ws-plans-note")).toContainText("Requested.");
+  /* Plan & credits: the plan as billing holds it, the packs the request flow sells (priced), and Request queues one for the platform. */
+  await page.goto("/suites?view=workspace&tab=credits&open=packs");
+  await expect(page.getByTestId("settings-plan")).toContainText("Studio");
+  await expect(page.getByTestId("settings-plan-renews")).toContainText("1 Oct 2026");
+  await expect(page.getByTestId("settings-pack")).toHaveCount(2);
+  await expect(page.getByTestId("settings-pack").nth(1)).toContainText("2,200 cr");
+  await expect(page.getByTestId("settings-pack").nth(1)).toContainText("$200");
+  await page.getByTestId("settings-pack").nth(1).getByTestId("settings-pack-request").click();
+  await expect(page.getByTestId("settings-credits-note")).toContainText("Requested.");
   expect(writes.at(-1)).toEqual({ url: "/api/workspaces/topups", method: "POST", body: { packId: "team" } });
+  /* Statement months are objects on the wire; each opens the printable statement, with its CSV beside it. */
+  await page.getByTestId("settings-fold-statements-toggle").click();
+  await expect(page.getByTestId("settings-statement")).toHaveCount(2);
+  await expect(page.getByTestId("settings-statement").first()).toContainText("2026-09");
+  await expect(page.getByTestId("settings-statement").first().getByRole("link", { name: "Open" })).toHaveAttribute("href", "/statements/2026-09");
 
-  await tabs.getByRole("tab", { name: "Usage" }).click();
-  await expect(page.getByTestId("ws-usage-bar")).toHaveCount(2);
-  await expect(page.getByTestId("ws-usage-bar").first()).toContainText("Seedance 2.5");
-  await expect(page.getByTestId("ws-usage")).toContainText("Settled spend · 312 cr");
+  /* Usage. */
+  await page.getByTestId("settings-fold-usage-toggle").click();
+  await expect(page.getByTestId("settings-usage-row")).toHaveCount(2);
+  await expect(page.getByTestId("settings-usage-row").first()).toContainText("Seedance 2.5");
+  await expect(page.getByTestId("settings-usage-total")).toContainText("312 cr settled");
 
-  await tabs.getByRole("tab", { name: "Engines" }).click();
-  await expect(page.getByTestId("ws-engine")).toHaveCount(2);
-  await expect(page.getByTestId("ws-engine").first()).toContainText("Available");
-  await expect(page.getByTestId("ws-engine").nth(1)).toContainText("Unavailable");
-  await expect(page.getByTestId("ws-engines")).not.toContainText("Verify checks");
+  /* Engines (Advanced › Models). */
+  await page.goto("/suites?view=workspace&tab=engines");
+  await page.getByTestId("settings-engines-show").click();
+  await expect(page.getByTestId("settings-engine")).toHaveCount(2);
+  await expect(page.getByTestId("settings-engine").first()).toContainText("Available");
+  await expect(page.getByTestId("settings-engine").nth(1)).toContainText("Unavailable");
+  await expect(page.getByTestId("settings-engines")).not.toContainText("Verify checks");
   /* The Higgsfield sign-in is retired: no grant held and nothing running, so no account row, and no developer-API check. */
   await expect(page.getByTestId("engine-xai")).toContainText("Connected · grok-4.6");
   await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
   await expect(page.getByTestId("connected-account-connect")).toHaveCount(0);
   await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);
 
-  await tabs.getByRole("tab", { name: "Security" }).click();
-  await expect(page.getByTestId("ws-security")).toContainText("2 signed in");
-  await expect(page.getByTestId("ws-two-step")).toHaveText("On");
-  await expect(page.getByTestId("ws-session")).toHaveText([/^This browser · since /, /^Safari on iPhone · since /]);
-  await expect(page.getByTestId("ws-audit")).toContainText("Changed member access");
+  /* Security (Team). */
+  await page.goto("/suites?view=workspace&tab=security");
+  await expect(page.getByTestId("settings-two-step")).toContainText("On");
+  await expect(page.getByTestId("settings-sessions")).toContainText("2 sessions");
+  await expect(page.getByTestId("settings-sessions")).toContainText("Safari on iPhone");
+  await expect(page.getByTestId("settings-audit")).toContainText("Changed member access");
   /* Off the shell: the account's own security page (where a password is typed) and a month's printable statement. */
-  await tabs.getByRole("tab", { name: "Plans & credits" }).click();
-  await expect(page.getByTestId("ws-statement")).toHaveCount(2);
-  const hrefs = await page.getByTestId("workspace-view").locator("a[href]").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
-  expect(hrefs.filter((h) => h && !h.startsWith("/api/") && !h.startsWith("http"))).toEqual(["/statements/2026-09", "/statements/2026-08"]);
+  await page.goto("/suites?view=workspace&tab=credits&open=statements");
+  const hrefs = await page.getByTestId("settings-view").locator("a[href]").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+  expect(hrefs.filter((h) => h && h.startsWith("/statements/") && !h.includes("csv"))).toEqual(["/statements/2026-09", "/statements/2026-08"]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
@@ -189,10 +198,10 @@ test("Engines: nothing connects the Higgsfield account, and an old sign-in retur
   page.on("request", (request) => { if (new URL(request.url()).pathname.startsWith("/api/higgsfield/consumer/") || request.url().startsWith("https://clerk.higgsfield.ai")) asked++; });
   await page.route("https://clerk.higgsfield.ai/**", (route) => route.abort());
   const { errors } = await open(page, "/suites?view=workspace&tab=engines&higgsfield=retired");
-  await expect(page.getByTestId("settings-view").or(page.getByTestId("workspace-view")).first()).toBeVisible();
-  await page.waitForLoadState("networkidle");
+  await expect(page.getByTestId("settings-engines")).toBeVisible();
   /* The shell's own URL keeps only its params, so a reload does not repeat it. */
   await expect.poll(() => new URL(page.url()).searchParams.get("higgsfield")).toBeNull();
+  await page.getByTestId("settings-engines-show").click();
   await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
   await expect(page.getByTestId("connected-account-connect")).toHaveCount(0);
   await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);
@@ -200,34 +209,34 @@ test("Engines: nothing connects the Higgsfield account, and an old sign-in retur
   expect(errors).toEqual([]);
 });
 
-test("General › Prompt rules: the team's rules edit here, the platform's switch off; a removal takes a second press", async ({ page }, info) => {
+test("Prompt rules: the team's rules edit here, the platform's switch off; a removal takes a second press", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, ruleWrites } = await open(page, "/suites?view=workspace&tab=general");
-  const card = page.getByTestId("ws-rules");
-  await expect(card.getByTestId("ws-rule")).toHaveCount(1);
+  const card = page.getByTestId("settings-prompt-rules");
+  await expect(card.getByTestId("settings-rule-row")).toHaveCount(1);
   await expect(card.getByRole("textbox", { name: "Rule", exact: true })).toHaveValue("Our brand never shows logos in the first frame.");
   /* The platform's rules are folded away; the count says they exist. */
-  await expect(page.getByTestId("ws-rules-inherited")).toHaveText("Show 2 inherited");
-  await page.getByTestId("ws-rules-inherited").click();
-  const inherited = card.locator("[data-testid='ws-rule'][data-source='platform']");
+  await expect(page.getByTestId("settings-rules-inherited")).toHaveText("Show 2 inherited");
+  await page.getByTestId("settings-rules-inherited").click();
+  const inherited = card.locator("[data-testid='settings-rule-row'][data-source='platform']");
   await expect(inherited).toHaveCount(2);
   await inherited.first().getByRole("switch").click();
-  await expect(page.getByTestId("ws-rules-inherited")).toHaveText("Hide 2 inherited · 1 off");
+  await expect(page.getByTestId("settings-rules-inherited")).toHaveText("Hide 2 inherited · 1 off");
   await expect(inherited.first().getByRole("switch")).toHaveAttribute("aria-checked", "false");
 
-  await page.getByTestId("ws-rule-text").fill("Keep every take under ten seconds.");
-  await page.getByTestId("ws-rule-add").click();
-  await expect(card.locator("[data-testid='ws-rule'][data-source='workspace']")).toHaveCount(2);
-  await expect(page.getByTestId("ws-rule-text")).toHaveValue("");
+  await page.getByTestId("settings-rule-text").fill("Keep every take under ten seconds.");
+  await page.getByTestId("settings-rule-add").click();
+  await expect(card.locator("[data-testid='settings-rule-row'][data-source='workspace']")).toHaveCount(2);
+  await expect(page.getByTestId("settings-rule-text")).toHaveValue("");
 
-  const own = card.locator("[data-testid='ws-rule'][data-source='workspace']").first();
+  const own = card.locator("[data-testid='settings-rule-row'][data-source='workspace']").first();
   await own.getByRole("combobox", { name: "Scope" }).selectOption("video");
   await expect(own.getByRole("combobox", { name: "Scope" })).toHaveValue("video");
-  await own.getByTestId("ws-rule-remove").click();
-  await expect(own.getByTestId("ws-rule-remove")).toHaveText("Remove it");
+  await own.getByTestId("settings-rule-remove").click();
+  await expect(own.getByTestId("settings-rule-remove")).toHaveText("Remove it");
   expect(ruleWrites.filter((w) => w.method === "DELETE")).toEqual([]);
-  await own.getByTestId("ws-rule-remove").click();
-  await expect(card.locator("[data-testid='ws-rule'][data-source='workspace']")).toHaveCount(1);
+  await own.getByTestId("settings-rule-remove").click();
+  await expect(card.locator("[data-testid='settings-rule-row'][data-source='workspace']")).toHaveCount(1);
   expect(ruleWrites).toEqual([
     { url: "/api/rules/pr_light", method: "PATCH", body: { on: false } },
     { url: "/api/rules", method: "POST", body: { text: "Keep every take under ten seconds.", scope: "all", apply: "prompt" } },
@@ -238,7 +247,7 @@ test("General › Prompt rules: the team's rules edit here, the platform's switc
   expect(errors).toEqual([]);
 });
 
-test("a rename holds across tabs and reaches the header; Engines has no connected-account row to disconnect", async ({ page }, info) => {
+test("a rename holds across sections and reaches the header; Engines has no connected-account row to disconnect", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   /* /api/me answers with the workspace's name as the platform now has it: the old one until the rename lands. */
   let saved: string | null = null;
@@ -255,19 +264,20 @@ test("a rename holds across tabs and reaches the header; Engines has no connecte
     writes.push({ url: "/api/workspaces", method: "PATCH", body: route.request().postDataJSON() });
     return route.fulfill({ json: { ok: true, workspace: { id: "w", name: saved, slug: "w" } } });
   });
-  await expect(page.getByTestId("ws-general")).toBeVisible();
-  await page.getByTestId("ws-name").fill("Harbour Studio");
-  await page.getByTestId("ws-save").click();
-  await expect(page.getByTestId("ws-note")).toHaveText("Saved.");
+  await expect(page.getByTestId("settings-ws-name-field")).toBeVisible();
+  await page.getByTestId("settings-ws-name-field").fill("Harbour Studio");
+  await page.getByTestId("settings-ws-name-save").click();
+  await expect(page.getByTestId("settings-ws-note")).toHaveText("Renamed.");
   expect(writes).toEqual([{ url: "/api/workspaces", method: "PATCH", body: { name: "Harbour Studio" } }]);
-  await expect(page.getByTestId("workspace-view").getByText(/^Harbour Studio · /)).toBeVisible();
-  /* The header reads /api/me again at once, not on its 30s poll. */
-  await expect(page.getByTestId("workspace-avatar")).toHaveAttribute("aria-label", "Workspace and account: Harbour Studio");
-  const tabs = page.getByRole("tablist", { name: "Workspace sections" });
-  await tabs.getByRole("tab", { name: "People" }).click();
-  await tabs.getByRole("tab", { name: "General" }).click();
-  await expect(page.getByTestId("ws-name")).toHaveValue("Harbour Studio");
-  await expect(page.getByTestId("ws-save")).toBeDisabled();
+  /* The header reads /api/me again at once, not on its 30s poll (a phone has no header avatar: its Settings page is under the phone header). */
+  if (!isCompact(info)) await expect(page.getByTestId("workspace-avatar")).toHaveAttribute("aria-label", "Workspace and account: Harbour Studio");
+  /* Moving between sections in the app (a reload reads the server's own name, and the rename here is answered by a stand-in). */
+  await page.getByTestId("settings-section-team").click();
+  await expect(page.getByTestId("settings-title")).toHaveText("Team");
+  await page.getByTestId("settings-section-advanced").click();
+  await page.getByTestId("settings-fold-workspace-toggle").click();
+  await expect(page.getByTestId("settings-ws-name-field")).toHaveValue("Harbour Studio");
+  await expect(page.getByTestId("settings-ws-name-save")).toBeDisabled();
 
   /* Even with a grant the connection route (mocked) would say is held, Engines has no connected-account row and asks nothing. */
   const posts: unknown[] = [];
@@ -275,8 +285,9 @@ test("a rename holds across tabs and reaches the header; Engines has no connecte
     posts.push(route.request().method());
     return route.fulfill({ json: { connected: true, requiresReconnect: false, capacity: { limit: 4, active: 0, mine: [] } } });
   });
-  await tabs.getByRole("tab", { name: "Engines" }).click();
-  await expect(page.getByTestId("ws-engines")).toBeVisible();
+  await page.goto("/suites?view=workspace&tab=engines");
+  await expect(page.getByTestId("settings-engines")).toBeVisible();
+  await page.getByTestId("settings-engines-show").click();
   await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
   await expect(page.getByTestId("connected-account-disconnect")).toHaveCount(0);
   await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);
