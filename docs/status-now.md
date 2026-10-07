@@ -23,7 +23,7 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
 ## In flight
 | Branch | State |
 |---|---|
-| 3D blocking B (`build/gaps-l2`) | Brought up to date: 44cda874 (3 import/ratchet conflicts; tsc clean; its unit specs 112 pass; browser spec passes at 1440 and 390). Opus review of the merge running. Merges only after Q7 |
+| 3D blocking B (`build/gaps-l2`) | Brought up to date: 44cda874 (3 import/ratchet conflicts; tsc clean; its unit specs 112 pass; browser spec passes at 1440 and 390). Opus delta review PASS at 44cda874 (one low: the sample shows Remake disabled with its price; follow-up after merge). Merges only after Q7 |
 | CI fixes on `release/1` | four lanes, above |
 
 ## Waiting on the owner
