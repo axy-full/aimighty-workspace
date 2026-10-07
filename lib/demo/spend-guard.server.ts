@@ -1,4 +1,5 @@
 import { db, ready } from "../db";
+import { liftLetsThrough, type LiftScope } from "./lift.server";
 import { parseSampleMark, SAMPLE_LINE, SAMPLE_SETTING_KEY } from "./sample";
 
 /**
@@ -13,12 +14,21 @@ import { parseSampleMark, SAMPLE_LINE, SAMPLE_SETTING_KEY } from "./sample";
  * route, `sampleWorkspaceRefusal` inside admission), and the reservation every platform-paid job passes
  * (lib/generationRequests.ts reserveGenerationSpend) asks again, so a door that skips the first check still stops
  * there. A quote is not a job: prices keep answering. Free actions are untouched. Undoing the mark lifts it all.
+ *
+ * The one exception (owner, 7 Oct): while an owner or admin has lifted the mark for one Atomik run
+ * (lib/demo/lift.server.ts), a request that names that run (`scope.runId`), or the lifter's own ask that makes it
+ * (`scope.ask`), passes. Everything else, including a request that names no run, is refused as before. The lift and
+ * its run are read afresh on every call, so the mark is back the moment the run ends or the lift runs out. A mark that
+ * cannot be read is never lifted.
  */
-export async function sampleWorkspaceRefusal(): Promise<string | null> {
+export async function sampleWorkspaceRefusal(scope: LiftScope = {}): Promise<string | null> {
   await ready();
   /* Read straight from the workspace's settings, so this file pulls in nothing heavy: it sits under every reservation. */
   const stored = (await db().execute({ sql: `SELECT value FROM settings WHERE key = ?`, args: [SAMPLE_SETTING_KEY] })).rows[0];
-  return stored && guardMark(stored.value) ? SAMPLE_LINE : null;
+  const mark = stored ? guardMark(stored.value) : null;
+  if (!mark) return null;
+  if (mark !== "unreadable" && (scope.runId || scope.ask) && (await liftLetsThrough(scope))) return null;
+  return SAMPLE_LINE;
 }
 
 /** What a route answers in the sample workspace: 409 with the sample's line and nothing charged. */
@@ -31,9 +41,9 @@ export function sampleWorkspaceReply(line: string = SAMPLE_LINE): Response {
  * the reply. It fails closed: a workspace whose mark cannot be read at all (the database did not answer) spends
  * nothing on this request either.
  */
-export async function sampleWorkspaceOff(): Promise<Response | null> {
+export async function sampleWorkspaceOff(scope: LiftScope = {}): Promise<Response | null> {
   try {
-    const line = await sampleWorkspaceRefusal();
+    const line = await sampleWorkspaceRefusal(scope);
     return line ? sampleWorkspaceReply(line) : null;
   } catch (error) {
     console.error("The sample check could not read this workspace:", error);

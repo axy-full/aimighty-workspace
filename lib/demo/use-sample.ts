@@ -5,7 +5,7 @@ import { useApi } from "../useApi";
 import { useSession } from "../session";
 import { useScopedFetch } from "../useScopedFetch";
 import type { SampleBoard } from "./board";
-import { CHECK_LINE, sampleGate, type SampleCheck, type SampleGate, type SampleSubject, SAMPLE_LINE } from "./sample";
+import { CHECK_LINE, sampleGate, type SampleCheck, type SampleGate, type SampleLiftStatus, type SampleSubject, SAMPLE_LINE } from "./sample";
 import { sampleChecker } from "./sample-check";
 
 /*
@@ -81,4 +81,16 @@ export function useSampleProduction(): { available: boolean; name: string; line:
     }
   }, [scoped]);
   return { available: Boolean(board), name: board?.sample.name ?? "", line: SAMPLE_LINE, open };
+}
+
+/**
+ * Whether the sample mark is lifted for one run now, and whether by the viewer (GET /api/demo/sample/lift). Read only
+ * in the sample workspace, and again every 30 s, so the board's line goes once the run ends. Null elsewhere, while it
+ * loads, or when the read failed (nothing is then opened on a guess: the board stays closed).
+ */
+export function useSampleLift(): SampleLiftStatus | null {
+  const { requestScope } = useSession();
+  const { state } = useSampleCheck();
+  const { data } = useApi<{ status?: SampleLiftStatus }>(state === "sample" ? "/api/demo/sample/lift" : null, 30_000, requestScope ?? null);
+  return state === "sample" ? data?.status ?? null : null;
 }

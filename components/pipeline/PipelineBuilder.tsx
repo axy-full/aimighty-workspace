@@ -7,6 +7,7 @@ import {
   type PipelineDraft,
   type PublicationChoice,
 } from "@/lib/pipeline/editor";
+import { holdBandOf } from "@/lib/cinemaHold";
 import styles from "./pipeline.module.css";
 export default function PipelineBuilder({
   catalog,
@@ -146,7 +147,8 @@ export default function PipelineBuilder({
                         Choose an engine
                       </option>
                       {catalog.models
-                        .filter((m) => m.kind === kind)
+                        /* Never a held model (Cinema Studio): a stage approves its quote, not its hold. */
+                        .filter((m) => m.kind === kind && holdBandOf(m.id) === 1)
                         .map((m) => (
                           <option
                             key={m.id}

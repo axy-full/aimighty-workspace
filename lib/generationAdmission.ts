@@ -420,9 +420,9 @@ export async function executeGenerationAdmission(
       if (!project.rows.length)
         return admissionReply({ error: "No such project." }, { status: 404 });
     }
-    /* The sample workspace spends nothing, filed or not: refused before anything is held or reserved. A quote (no request claim) still answers. */
+    /* The sample workspace spends nothing, filed or not, save the one run its mark is lifted for: refused before anything is held or reserved. A quote (no request claim) still answers. */
     if (options.requestClaim) {
-      const sample = await sampleWorkspaceRefusal();
+      const sample = await sampleWorkspaceRefusal({ runId: options.run?.id });
       if (sample) return admissionReply({ error: sample, charged: 0 }, { status: 409 });
     }
     if (body.shotId) {

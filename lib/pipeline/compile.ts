@@ -3,6 +3,7 @@ import {
   PIPELINE_LIMITS,
   PipelineError,
   pipelineSpec,
+  refuseHeldModel,
   type CompiledPipeline,
   type CompiledStage,
   type MediaKind,
@@ -63,6 +64,9 @@ export function compilePipeline(
         .join("; "),
     );
   const spec = parsed.data;
+  /* A stage approves its quote; a held model would charge up to its band times that. */
+  for (const stage of spec.stages)
+    if ("model" in stage) refuseHeldModel(stage.model);
   if (
     spec.context.projectId !== publication.projectId ||
     spec.context.bibleVersion !== publication.version
