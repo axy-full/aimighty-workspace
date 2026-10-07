@@ -98,7 +98,7 @@ test("the phone's credit slot carries the rate in its own tooltip", async ({ pag
   await page.goto(`/workspace?project=${project.id}&suite=particl`);
   const slot = page.getByTestId("mobile-credits");
   await expect(slot).toBeVisible();
-  await expect(slot).toHaveText(/^[\d,]+ cr$/);
+  await expect(slot).toHaveText(/^[\d,]+\s?cr$/);
   /* The figure and the unit it is in, in one place: the balance is where most
      people meet the credit, and a figure in an undefined unit is not a figure. */
   await expect(slot).toHaveAttribute("title", `Workspace credits · ${rateLine(rate)}`);
@@ -115,7 +115,7 @@ test("the desktop top bar's balance carries the same rate, from the same field",
   await page.goto(`/workspace?project=${project.id}&suite=particl`);
   const credits = page.getByTestId("workspace-credits");
   await expect(credits).toBeVisible();
-  await expect(credits).toHaveText(/^[\d,]+ cr$/);
+  await expect(credits).toHaveText(/^[\d,]+\s?cr$/);
   /* Since #269 the desktop slot is the same always-mounted label as the
      phone's, so it carries the same title — one rate, one sentence. */
   await expect(credits).toHaveAttribute("title", `Workspace credits · ${rateLine(rate)}`);

@@ -501,6 +501,8 @@ export async function uploadFilesToProject(scope: string, projectId: string, fil
         if (media) {
           try { stored = await uploadFile(file, "reference", progress, { scope }); }
           catch (error) {
+            /* A dropped connection is not a refusal: the upload stays saved for Resume (components/UploadRecovery.tsx), and is never started again as a second upload. */
+            if (error instanceof TypeError) throw error;
             stored = await uploadFile(file, "chat", progress, { scope });
             notes.push(`${file.name} is kept in the Library; engines may not take it as a reference (${error instanceof Error ? error.message.replace(/\.$/, "") : "the reference check refused it"}).`);
           }
