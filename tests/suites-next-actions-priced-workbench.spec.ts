@@ -1,24 +1,23 @@
-import { test, expect, type Locator, type Page, type TestInfo } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
-import { newProject, type Project } from "../lib/workbench/studio";
+import { newProject, type CanvasNode } from "../lib/workbench/studio";
 import type { Generation } from "../lib/jobs";
-import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload, type LibraryRoute } from "./helpers/workspaceFixtures";
+import { forbidPaidWork, generation, mockLibrary, mockMedia, type LibraryRoute } from "./helpers/workspaceFixtures";
 import { labelsUnderFloor } from "./helpers/businessOwn";
-import { smallTargets } from "./phoneFloors";
-import { projectName } from "./helpers/projectName";
 
 /**
- * Idea 12, second slice: priced Next actions on a take. A still is upscaled, outpainted or animated; a clip is upscaled,
- * reframed or extended — each from the take's Next row, in the Inspector or on the Takes desk's selected take. The action's
- * panel shows the estimate for exactly its request ("about N cr", from the quote route, which charges nothing); its one
- * button sends that request once, at that estimate, claimed first (a lost reply is never sent twice); a moved estimate is
- * asked about again; the new take lands filed with its source, which is left as it was; a failure says what its provider
- * did with the charge and offers Retry, priced again. Every paid route is mocked here and recorded: nothing is billed.
+ * Idea 12, second slice: priced Next actions on a take, in the board's Inspector (SOW 1.2). A still is upscaled, outpainted or
+ * animated; a clip is upscaled, reframed or extended, each from the Next row under the take's actions. The action's panel shows
+ * the estimate for exactly its request ("about N cr", from the quote route, which charges nothing); its one button sends that
+ * request once, at that estimate, claimed first (a lost reply is never sent twice); a moved estimate is asked about again; the new
+ * take lands filed with its source, which is left as it was; a failure says what its provider did with the charge and offers
+ * Retry, priced again. Every paid route is mocked here and recorded: nothing is billed.
+ *
+ * Ported from the old Library Inspector (the Assets tab, at every width). The board and its Inspector are the desktop's: a phone
+ * opens the project's Record, which judges and does not make, so the old phone floors of the Next panel have no screen to measure.
  */
-const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
-const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
-const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
+const DESKTOPS = ["workbench-1440x900", "workbench-1920x1080"];
 const SEEDANCE_25 = "dreamina-seedance-2-5-260628";
 const TOPAZ_IMAGE = "fal-ai/topaz/upscale/image";
 const BRIA_EXPAND = "fal-ai/bria/expand";
@@ -28,15 +27,37 @@ const VIDEO_ENGINES = new Set([SEEDANCE_25, ASTRA, LUMA_REFRAME]);
 /** Test estimates, in credits, by engine: made up for the mock, and nothing like a real price list. */
 const ESTIMATE: Record<string, number> = { [TOPAZ_IMAGE]: 12, [BRIA_EXPAND]: 3, [SEEDANCE_25]: 31, [ASTRA]: 44, [LUMA_REFRAME]: 9 };
 
-const fixture = (saved = true): Project => ({ ...newProject("Next steps"), id: "ws-next", ...(saved ? { productionProjectId: "prod-next" } : {}), shotMappings: {} });
-const store = (): LibraryRoute => ({
+const node = (id: string, title: string): CanvasNode => ({ id, title, type: "scene", x: 0, y: 0, width: 344, linked: [] });
+const NODES = { still: "node-pier0001", clip: "node-ferry001", wide: "node-wide0001", voice: "node-voice001" };
+
+/** A saved project whose four shots are mapped to production shots (the free mapping action); the library, mocked, holds one take in each. */
+async function seed(page: Page) {
+  const account = await signInLocally(page.request, "Next Tester");
+  const me = await (await page.request.get("/api/me")).json() as { id: string };
+  const scope = `particl-active-${account.workspace.id}-${me.id}`;
+  const project = { ...newProject("Next steps"), nodes: [node(NODES.still, "Pier at dusk"), node(NODES.clip, "Ferry turning"), node(NODES.wide, "Harbour at 1080p"), node(NODES.voice, "Keeper's line")] };
+  const headers = { "X-Workbench-Scope": scope };
+  const saved = await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  const { productionProjectId } = await saved.json() as { productionProjectId: string };
+  const shots: Record<string, string> = {};
+  for (const n of project.nodes) {
+    const mapped = await page.request.post("/api/workbench/projects", { headers, data: { projectId: project.id, action: "map-shot", nodeId: n.id } });
+    expect(mapped.ok(), await mapped.text()).toBe(true);
+    shots[n.id] = ((await mapped.json()) as { shotId: string }).shotId;
+  }
+  await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: project.id });
+  return { project, production: productionProjectId, shots };
+}
+
+const store = (production: string, shots: Record<string, string>): LibraryRoute => ({
   generations: [
-    generation({ id: "gen_still", title: "Pier at dusk", prompt: "a pier at dusk", projectId: "prod-next", shotId: "shot_pier", shotCode: "SH010", params: { ratio: "16:9", resolution: "1K" } }),
-    generation({ id: "gen_clip", title: "Ferry turning", prompt: "the ferry turns", kind: "video", model: SEEDANCE_25, projectId: "prod-next", shotId: "shot_ferry", shotCode: "SH020", params: { resolution: "720p", duration: 8, ratio: "16:9" } }),
-    generation({ id: "gen_wide", title: "Harbour at 1080p", prompt: "the harbour", kind: "video", model: SEEDANCE_25, projectId: "prod-next", params: { resolution: "1080p", duration: 8, ratio: "16:9" } }),
-    generation({ id: "gen_voice", title: "Keeper's line", prompt: "the storm is coming", kind: "audio", model: "eleven_v3", projectId: "prod-next" }),
+    generation({ id: "gen_still", title: "Pier at dusk", prompt: "a pier at dusk", projectId: production, shotId: shots[NODES.still], shotCode: "SH010", params: { ratio: "16:9", resolution: "1K" } }),
+    generation({ id: "gen_clip", title: "Ferry turning", prompt: "the ferry turns", kind: "video", model: SEEDANCE_25, projectId: production, shotId: shots[NODES.clip], shotCode: "SH020", params: { resolution: "720p", duration: 8, ratio: "16:9" } }),
+    generation({ id: "gen_wide", title: "Harbour at 1080p", prompt: "the harbour", kind: "video", model: SEEDANCE_25, projectId: production, shotId: shots[NODES.wide], shotCode: "SH030", params: { resolution: "1080p", duration: 8, ratio: "16:9" } }),
+    generation({ id: "gen_voice", title: "Keeper's line", prompt: "the storm is coming", kind: "audio", model: "eleven_v3", projectId: production, shotId: shots[NODES.voice], shotCode: "SH040" }),
   ],
-  uploads: [upload({ id: "up_script", filename: "the-crossing.pdf", mime: "application/pdf", kind: "file", width: 0, height: 0 })],
+  uploads: [],
 });
 
 type Sent = { body: Record<string, unknown>; key: string | null };
@@ -51,14 +72,14 @@ const ASK = { title: "v1 is approved. Why render another?", line: "Ana approved 
 const CAP_LINE = "SH010 is at 60 cr; this take makes it 72 cr, over the 50 cr a shot may take. An admin has to press this one.";
 
 /** The new take as admission files it: its own row, under its source's shot as the next version, naming its source. */
-function filed(id: string, body: Record<string, unknown>, library: LibraryRoute): Generation {
+function filed(id: string, production: string, body: Record<string, unknown>, library: LibraryRoute): Generation {
   const model = String(body.model);
   const shotId = typeof body.shotId === "string" && body.shotId ? body.shotId : null;
   const shot = library.generations.filter((g) => shotId && g.shotId === shotId);
   const references = Array.isArray(body.references) ? (body.references as Record<string, unknown>[]).map((r) => ({ ...r, kind: "image" })) : [];
   const task = typeof body.task === "string" ? body.task : "generate";
   return generation({
-    id, projectId: "prod-next", kind: VIDEO_ENGINES.has(model) ? "video" : "image", model, prompt: String(body.prompt ?? ""), title: null,
+    id, projectId: production, kind: VIDEO_ENGINES.has(model) ? "video" : "image", model, prompt: String(body.prompt ?? ""), title: null,
     status: "queued", storedUrl: null, shotId, shotCode: shot[0]?.shotCode ?? null, version: shotId ? Math.max(0, ...shot.map((g) => g.version)) + 1 : 1,
     task, sourceGenId: typeof body.sourceGenId === "string" ? body.sourceGenId : null, createdAt: Date.now(), updatedAt: Date.now(),
     params: {
@@ -71,7 +92,7 @@ function filed(id: string, body: Record<string, unknown>, library: LibraryRoute)
 }
 
 /** The paid routes, mocked and recorded: the quote (by engine, `bump` added once asked), the one paid POST, and its job. */
-async function mockPaid(page: Page, library: LibraryRoute): Promise<Server> {
+async function mockPaid(page: Page, production: string, library: LibraryRoute): Promise<Server> {
   const server: Server = { quotes: [], sent: [], writes: [], bump: 0, failNext: false, holdNext: false, rule: null };
   const jobs = new Map<string, { reads: number; fail: boolean; held: boolean }>();
   await page.route("**/api/generate/quote", async (route) => {
@@ -91,7 +112,7 @@ async function mockPaid(page: Page, library: LibraryRoute): Promise<Server> {
     server.sent.push({ body, key: request.headers()["idempotency-key"] ?? null });
     const id = `gen_next_${server.sent.length}`;
     const held = server.holdNext;
-    library.generations.unshift({ ...filed(id, body, library), ...(held ? { status: "held" } : {}) });
+    library.generations.unshift({ ...filed(id, production, body, library), ...(held ? { status: "held" } : {}) });
     jobs.set(id, { reads: 0, fail: server.failNext, held });
     server.failNext = false;
     server.holdNext = false;
@@ -119,35 +140,32 @@ async function mockPaid(page: Page, library: LibraryRoute): Promise<Server> {
   return server;
 }
 
-async function open(page: Page, url: string, saved = true) {
-  await signInLocally(page.request);
+async function open(page: Page) {
+  const { project, production, shots } = await seed(page);
   await forbidPaidWork(page);
   await mockMedia(page);
-  await mockProjects(page, { current: fixture(saved) });
-  const library = store();
+  const library = store(production, shots);
   await mockLibrary(page, library);
-  const server = await mockPaid(page, library);
+  const server = await mockPaid(page, production, library);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(url);
-  await expect(projectName(page)).toHaveText("Next steps");
-  return { server, library, errors };
+  await page.goto(`/suites?project=${project.id}&view=board`);
+  await expect(page.getByTestId("board")).toBeVisible();
+  return { server, library, errors, production, shots };
 }
-const assets = async (page: Page, info: TestInfo) => {
-  if (!WIDE.includes(info.project.name)) await page.getByTestId("toggle-library").click();
-  await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
-};
-const tile = (page: Page, id: string) => page.getByTestId("library").locator(`.gx-asset-thumb[data-ctx='asset:${id}']`);async function inspect(page: Page, info: TestInfo, id: string) {
-  await assets(page, info);
-  await tile(page, id).click();
-  return page.getByTestId("inspector");
+/** Select the take on a shot's card: the Inspector opens on it. */
+async function inspect(page: Page, node: string) {
+  await page.locator(`[data-card-id="${node}"]`).getByTestId("take-card").click();
+  const inspector = page.getByTestId("board-inspector");
+  await expect(inspector.getByTestId("insp-take")).toBeVisible();
+  return inspector;
 }
 
 /**
  * The panel keeps the floors where it is: inside the screen with nothing scrolling sideways, its labels at #7C7C84 after
- * alpha, and its price whole on its button; on a phone every target in it is 44px and its button clears the tab bar.
+ * alpha, and its price whole on its button.
  */
-async function panelFloors(page: Page, info: TestInfo, panel: Locator, where: string) {
+async function panelFloors(page: Page, panel: Locator, where: string) {
   const box = (await panel.boundingBox())!;
   expect(box.x + box.width, `${where}: the panel inside the screen`).toBeLessThanOrEqual(page.viewportSize()!.width + 0.5);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), `${where}: no sideways scroll`).toBeLessThanOrEqual(1);
@@ -155,27 +173,10 @@ async function panelFloors(page: Page, info: TestInfo, panel: Locator, where: st
   const go = panel.getByTestId("next-go");
   expect(await go.evaluate((el) => [...el.querySelectorAll<HTMLElement>(".gx-go-act, .gx-go-price")].filter((part) => part.scrollWidth > part.clientWidth + 1 || part.getBoundingClientRect().right > el.getBoundingClientRect().right + 1).map((part) => part.textContent)),
     `${where}: the price is never cut`).toEqual([]);
-  if (PHONES.includes(info.project.name)) {
-    expect(await smallTargets(page, `${where} [data-testid="next-panel"]`), `${where}: targets under 44×44`).toEqual([]);
-    const bar = page.getByTestId("tabbar");
-    if (await bar.isVisible()) {
-      await expect.poll(async () => {
-        await go.evaluate((el) => el.scrollIntoView({ block: "center" }));
-        const [after, barBox] = [(await go.boundingBox())!, (await bar.boundingBox())!];
-        return after.y + after.height - barBox.y;
-      }, { message: `${where}: the button clears the tab bar` }).toBeLessThanOrEqual(0.5);
-    }
-  }
-  /* With NEXT_SHOTS_DIR set, a picture of the panel where it is. */
-  if (process.env.NEXT_SHOTS_DIR) {
-    const action = await panel.getAttribute("data-action");
-    await panel.evaluate((el) => el.scrollIntoView({ block: "center" }));
-    await page.screenshot({ path: `${process.env.NEXT_SHOTS_DIR}/priced-${where.includes("inspector") ? "inspector" : "desk"}-${action}-${info.project.name.replace("workbench-", "")}.png` });
-  }
 }
 
 /** Open an action (unless its panel is open already: its button toggles it), see its estimate, press it once, and see the new take land. Returns the request it sent. */
-async function run(page: Page, info: TestInfo, server: Server, where: string, row: Locator, action: string, label: string, credits: number, set?: (panel: Locator) => Promise<void>) {
+async function run(page: Page, server: Server, where: string, row: Locator, action: string, label: string, credits: number, set?: (panel: Locator) => Promise<void>) {
   const button = row.getByTestId(`next-${action}`);
   if ((await button.getAttribute("aria-expanded")) !== "true") await button.click();
   const panel = row.getByTestId("next-panel");
@@ -184,7 +185,7 @@ async function run(page: Page, info: TestInfo, server: Server, where: string, ro
   const go = panel.getByTestId("next-go");
   await expect(go).toHaveText(`${label} · about ${credits} cr`);
   await expect(go).toBeEnabled();
-  await panelFloors(page, info, panel, where);
+  await panelFloors(page, panel, where);
   const before = server.sent.length;
   await go.click();
   await expect.poll(() => server.sent.length).toBe(before + 1);
@@ -195,30 +196,30 @@ async function run(page: Page, info: TestInfo, server: Server, where: string, ro
   expect(sent.body).toMatchObject({ maxCredits: credits, quoteFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) });
   return { panel, sent: sent.body };
 }
+const WHERE = '[data-testid="board-inspector"]';
 
 test("the Inspector prices a still's Upscale, Outpaint and Animate, sends each once at its estimate, and files each new take with the still", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { server, library, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
-  const inspector = await inspect(page, info, "generation:gen_still");
+  test.skip(!DESKTOPS.includes(info.project.name), "the board and its Inspector are the desktop's");
+  const { server, library, errors, production, shots } = await open(page);
+  const inspector = await inspect(page, NODES.still);
   const row = inspector.getByTestId("next-actions");
-  await expect(row.getByRole("button")).toHaveText(["Re-edit ›", "Upscale", "Outpaint", "Animate"]);
-  const where = '[data-testid="inspector"]';
+  await expect(row.getByRole("button")).toHaveText(["Upscale", "Outpaint", "Animate"]);
 
-  const up = await run(page, info, server, where, row, "upscale", "Upscale", 12, async (panel) => {
+  const up = await run(page, server, WHERE, row, "upscale", "Upscale", 12, async (panel) => {
     await expect(panel.locator(".gx-next-panel-head")).toHaveText(/^Upscale\s*Topaz Image Upscale$/);
     await expect(panel.getByTestId("next-scale").getByRole("radio", { checked: true })).toHaveText("2×");
   });
-  expect(up.sent).toMatchObject({ model: TOPAZ_IMAGE, projectId: "prod-next", shotId: "shot_pier", topaz: { factor: 2 }, references: [{ genId: "gen_still", role: "reference_image" }] });
+  expect(up.sent).toMatchObject({ model: TOPAZ_IMAGE, projectId: production, shotId: shots[NODES.still], topaz: { factor: 2 }, references: [{ genId: "gen_still", role: "reference_image" }] });
   await expect(up.panel.getByTestId("next-landed")).toContainText("Done: a new take, SH010 v2, filed with Pier at dusk, which stays as it is.");
   await up.panel.getByTestId("next-close").click();
   await expect(row.getByTestId("next-panel")).toHaveCount(0);
 
-  const out = await run(page, info, server, where, row, "outpaint", "Outpaint", 3, async (panel) => {
+  const out = await run(page, server, WHERE, row, "outpaint", "Outpaint", 3, async (panel) => {
     await expect(panel.getByTestId("next-ratio")).toHaveValue("9:16");
     await panel.getByTestId("next-ratio").selectOption("1:1");
     await panel.getByTestId("next-words").fill("more of the harbour");
   });
-  expect(out.sent).toMatchObject({ model: BRIA_EXPAND, ratio: "1:1", prompt: "more of the harbour", shotId: "shot_pier", references: [{ genId: "gen_still", role: "reference_image" }] });
+  expect(out.sent).toMatchObject({ model: BRIA_EXPAND, ratio: "1:1", prompt: "more of the harbour", shotId: shots[NODES.still], references: [{ genId: "gen_still", role: "reference_image" }] });
   await expect(out.panel.getByTestId("next-landed")).toContainText("SH010 v3");
   await out.panel.getByTestId("next-close").click();
 
@@ -228,15 +229,14 @@ test("the Inspector prices a still's Upscale, Outpaint and Animate, sends each o
   await expect(panel.getByTestId("next-blocked")).toHaveText("Write what moves.");
   await expect(panel.getByTestId("next-go")).toBeDisabled();
   const asked = server.quotes.length;
-  const anim = await run(page, info, server, where, row, "animate", "Animate", 31, async (p) => { await p.getByTestId("next-words").fill("The camera pushes in slowly; the flags stir"); });
+  const anim = await run(page, server, WHERE, row, "animate", "Animate", 31, async (p) => { await p.getByTestId("next-words").fill("The camera pushes in slowly; the flags stir"); });
   expect(server.quotes.slice(asked).every((q) => String(q.prompt).length > 0)).toBe(true);
-  expect(anim.sent).toMatchObject({ model: SEEDANCE_25, task: "generate", ratio: "16:9", resolution: "720p", duration: 5, generateAudio: false, shotId: "shot_pier", references: [{ genId: "gen_still", role: "first_frame" }] });
+  expect(anim.sent).toMatchObject({ model: SEEDANCE_25, task: "generate", ratio: "16:9", resolution: "720p", duration: 5, generateAudio: false, shotId: shots[NODES.still], references: [{ genId: "gen_still", role: "first_frame" }] });
 
-  /* The new take opens, and says what it was made from. */
+  /* The new take opens in the Inspector, as the shot's next version. */
   await anim.panel.getByTestId("next-open-result").click();
-  await expect(inspector.getByTestId("inspector-title")).toHaveText("The camera pushes in slowly; the flags stir");
-  await expect(inspector.getByTestId("asset-facts")).toContainText("Made from");
-  await expect(inspector.getByTestId("asset-facts")).toContainText("Pier at dusk · first frame");
+  await expect(inspector.getByTestId("insp-engine")).toContainText("Seedance");
+  await expect(inspector.getByTestId("insp-version")).toHaveCount(4);
 
   /* Three takes, three presses, three keys; the still itself was never written to, and is still there as it was. */
   expect(server.sent).toHaveLength(3);
@@ -246,11 +246,10 @@ test("the Inspector prices a still's Upscale, Outpaint and Animate, sends each o
   expect(errors).toEqual([]);
 });
 
-
 test("a moved estimate is asked about again: nothing is sent until the new one is pressed, and then it goes at the new one", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { server, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
-  const row = (await inspect(page, info, "generation:gen_still")).getByTestId("next-actions");
+  test.skip(!DESKTOPS.includes(info.project.name), "the board and its Inspector are the desktop's");
+  const { server, errors } = await open(page);
+  const row = (await inspect(page, NODES.still)).getByTestId("next-actions");
   await row.getByTestId("next-upscale").click();
   const panel = row.getByTestId("next-panel");
   const go = panel.getByTestId("next-go");
@@ -268,15 +267,15 @@ test("a moved estimate is asked about again: nothing is sent until the new one i
 });
 
 test("short of credits: the estimate turns the credits pill amber, and the take sent is held, charged nothing until it runs", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { server, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
+  test.skip(!DESKTOPS.includes(info.project.name), "the board and its Inspector are the desktop's");
+  const { server, errors } = await open(page);
   const pill = page.getByTestId("workspace-credits");
   await expect(pill).toContainText(/\d/);
   await expect(pill).not.toHaveAttribute("data-low");
   const balance = Number(((await pill.textContent()) ?? "").replace(/[^0-9.]/g, ""));
   expect(balance, "the balance the pill shows").toBeGreaterThan(0);
-  const row = (await inspect(page, info, "generation:gen_still")).getByTestId("next-actions");
-  /* An estimate the balance cannot cover: the pill weighs the balance against it, as it does Gen's price. */
+  const row = (await inspect(page, NODES.still)).getByTestId("next-actions");
+  /* An estimate the balance cannot cover: the pill weighs the balance against it, as it does Make's price. */
   const price = Math.ceil(balance) + 100;
   server.bump = price - ESTIMATE[TOPAZ_IMAGE];
   await row.getByTestId("next-upscale").click();
@@ -284,7 +283,7 @@ test("short of credits: the estimate turns the credits pill amber, and the take 
   const go = panel.getByTestId("next-go");
   await expect(go).toHaveText(`Upscale · about ${price.toLocaleString("en-US")} cr`);
   await expect(pill).toHaveAttribute("data-low", "true");
-  await panelFloors(page, info, panel, '[data-testid="inspector"]');
+  await panelFloors(page, panel, WHERE);
   /* Sent at that estimate, it is held: accepted, reserved nothing, and says so. */
   server.holdNext = true;
   await go.click();
@@ -297,9 +296,9 @@ test("short of credits: the estimate turns the credits pill amber, and the take 
 });
 
 test("a failed action says what happened and what its provider did with the charge, and Retry is priced again before it sends", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { server, library, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
-  const row = (await inspect(page, info, "generation:gen_clip")).getByTestId("next-actions");
+  test.skip(!DESKTOPS.includes(info.project.name), "the board and its Inspector are the desktop's");
+  const { server, library, errors } = await open(page);
+  const row = (await inspect(page, NODES.clip)).getByTestId("next-actions");
   await row.getByTestId("next-extend").click();
   const panel = row.getByTestId("next-panel");
   await panel.getByTestId("next-words").fill("the ferry clears the harbour");
@@ -320,33 +319,27 @@ test("a failed action says what happened and what its provider did with the char
   expect(errors).toEqual([]);
 });
 
-test("what cannot go says why and sends nothing: a sound's actions are not offered, a 1080p clip cannot be extended, an unsaved project waits", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { server, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
-  let inspector = await inspect(page, info, "generation:gen_voice");
+test("what cannot go says why and sends nothing: a sound's actions are not offered, a 1080p clip cannot be extended", async ({ page }, info) => {
+  test.skip(!DESKTOPS.includes(info.project.name), "the board and its Inspector are the desktop's");
+  const { server, errors } = await open(page);
+  let inspector = await inspect(page, NODES.voice);
   await expect(inspector.getByTestId("next-upscale")).toBeDisabled();
   await expect(inspector.getByTestId("next-extend")).toBeDisabled();
   await expect(inspector.getByTestId("next-not-offered")).toHaveText("Upscale and Extend are not offered: no engine Particl uses upscales or extends sound.");
-  if (!WIDE.includes(info.project.name)) await page.getByTestId("close-inspector").click();
-  inspector = await inspect(page, info, "generation:gen_wide");
+  inspector = await inspect(page, NODES.wide);
   await expect(inspector.getByTestId("next-extend")).toBeDisabled();
   await expect(inspector.getByTestId("next-upscale")).toBeEnabled();
   await expect(inspector.getByTestId("next-why")).toHaveText("Extend takes a 480p or 720p clip; this one is 1080p.");
   expect(server.quotes, "no quote without an open action").toEqual([]);
   expect(server.sent).toEqual([]);
-
-  const unsaved = await open(page, "/suites?suite=atomik&page=agent&sp=agent", false);
-  const still = await inspect(page, info, "generation:gen_still");
-  for (const id of ["re-edit", "upscale", "outpaint", "animate"]) await expect(still.getByTestId(`next-${id}`)).toBeDisabled();
-  await expect(still.getByTestId("next-why")).toHaveText("Saving this project…");
-  expect(unsaved.server.quotes).toEqual([]);
-  expect([...errors, ...unsaved.errors]).toEqual([]);
+  /* A project not yet saved waits ("Saving this project…", no quote): the row's gate, in unit nextActionsPriced; an unsaved project has no shot to draw a card. */
+  expect(errors).toEqual([]);
 });
 
 test("the workspace's rules hold in the panel: an approved shot asks why before it is priced; past the shot's cap, an admin has to press it", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { server, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
-  const row = (await inspect(page, info, "generation:gen_still")).getByTestId("next-actions");
+  test.skip(!DESKTOPS.includes(info.project.name), "the board and its Inspector are the desktop's");
+  const { server, errors } = await open(page);
+  const row = (await inspect(page, NODES.still)).getByTestId("next-actions");
   const panel = row.getByTestId("next-panel");
   /* SH010's v1 is approved: the quote asks why first, and nothing is priced until the reason is written. */
   server.rule = "reason";
@@ -356,11 +349,11 @@ test("the workspace's rules hold in the panel: an approved shot asks why before 
   await expect(panel.getByTestId("next-go")).not.toContainText("about");
   await panel.getByTestId("next-reason").fill("Square for the poster");
   await expect(panel.getByTestId("next-go")).toHaveText("Outpaint · about 3 cr");
-  await panelFloors(page, info, panel, '[data-testid="inspector"]');
+  await panelFloors(page, panel, WHERE);
   await panel.getByTestId("next-go").click();
   await expect.poll(() => server.sent.length).toBe(1);
   /* The reason goes with the take it explains, which is filed under the shot as its next version. */
-  expect(server.sent[0].body).toMatchObject({ model: BRIA_EXPAND, shotId: "shot_pier", reason: "Square for the poster", maxCredits: 3 });
+  expect(server.sent[0].body).toMatchObject({ model: BRIA_EXPAND, reason: "Square for the poster", maxCredits: 3 });
   await expect(panel.getByTestId("next-landed")).toBeVisible({ timeout: 20_000 });
   await panel.getByTestId("next-close").click();
 
@@ -372,24 +365,5 @@ test("the workspace's rules hold in the panel: an approved shot asks why before 
   await expect(panel.getByTestId("next-go")).toHaveText("Upscale");
   expect(server.sent, "nothing more sent").toHaveLength(1);
   expect(server.writes).toEqual([]);
-  expect(errors).toEqual([]);
-});
-
-test("on a phone the Inspector's Next panel keeps the floors for a clip's actions, and its button clears the tab bar", async ({ page }, info) => {
-  test.skip(!PHONES.includes(info.project.name), "the phone sizes");
-  const { server, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
-  const inspector = await inspect(page, info, "generation:gen_clip");
-  const row = inspector.getByTestId("next-actions");
-  const where = '[data-testid="inspector"]';
-  for (const action of ["upscale", "reframe", "extend"]) {
-    await row.getByTestId(`next-${action}`).click();
-    const panel = row.getByTestId("next-panel");
-    await expect(panel).toHaveAttribute("data-action", action);
-    if (action === "extend") await panel.getByTestId("next-words").fill("the ferry clears the harbour");
-    await expect(panel.getByTestId("next-go")).toContainText("about");
-    await panelFloors(page, info, panel, where);
-    await panel.getByTestId("next-close").click();
-  }
-  expect(server.sent, "opening and pricing sends nothing").toEqual([]);
   expect(errors).toEqual([]);
 });

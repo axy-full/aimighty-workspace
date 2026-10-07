@@ -128,14 +128,16 @@ test("no feature needs a Higgsfield sign-in: every account route refuses, and no
   await expect(page.getByTestId("ws-ledger-connected").getByTestId("ws-ledger-connected-row")).toHaveCount(3);
   await noSideScroll(page, "usage");
 
-  /* /usage: no connected-account tab. */
+  /* /usage is Settings › Plan & credits › Usage now: no connected-account tab there either. */
   await page.goto("/usage");
-  await expect(page.locator('[aria-label="Usage views"]')).toBeVisible();
+  await expect(page).toHaveURL(/\/suites\?(?=.*tab=credits)(?=.*open=usage)/);
+  await expect(settingsOrWorkspace(page)).toBeVisible();
+  await page.waitForLoadState("networkidle");
   await expect(page.getByRole("button", { name: /connected-account/i })).toHaveCount(0);
   await noSideScroll(page, "/usage");
 
   /* Shorts is no page: its old addresses open the suite's first page. */
-  await page.goto(`/subatomik?project=${encodeURIComponent(project.id)}&page=shorts&shell=legacy`);
+  await page.goto(`/subatomik?project=${encodeURIComponent(project.id)}&page=shorts`);
   await expect.poll(() => new URL(page.url()).searchParams.get("page")).not.toBe("shorts");
   await expect(page.getByText(/Shorts is retired/)).toHaveCount(0);
 

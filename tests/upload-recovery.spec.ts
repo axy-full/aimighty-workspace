@@ -3,7 +3,17 @@ import sharp from "sharp";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 
-/** Gen uses a saved Studio draft so recovered originals remain project-scoped. */
+/**
+ * A lost upload is recovered, not repeated: a file whose finish reply was lost is resumed after a reload as the same stored upload
+ * (the bytes are not sent again), a paused one asks for the original file and sends only the missing chunk, and another account
+ * sees nothing of either. The upload goes in through the board's own file input (the Library's add-a-file), which keeps the
+ * project-scoped envelope the old Gen page's reference picker kept; the recovery panel (components/UploadRecovery.tsx) is
+ * the shell's. Retargeted from /generate (retired in Release 1); the board is the desktop's.
+ */
+/** The board's file input: a saved project's board holds one, hidden, which the Library and the empty board press. */
+const boardFiles = (page: Page) => page.locator('input[type="file"]:not([accept])').first();
+
+/** A saved project, so recovered originals remain project-scoped. */
 async function savedProject(page: Page, scope: string) {
   const headers = { "X-Workbench-Scope": scope };
   const production = await page.request.post("/api/projects", {
@@ -35,8 +45,8 @@ test("a lost upload finish response recovers the same stored upload after reload
   page,
 }, testInfo) => {
   test.skip(
-    !["customer-1440x900", "customer-390x844"].includes(testInfo.project.name),
-    "real desktop and phone upload recovery",
+    testInfo.project.name !== "customer-1440x900",
+    "real desktop upload recovery (the board is the desktop's)",
   );
   const account = await signInLocally(page.request);
   const me = await page.request
@@ -46,7 +56,16 @@ test("a lost upload finish response recovers the same stored upload after reload
   const projectId = await savedProject(page, scope);
   let finishes = 0,
     chunks = 0,
+    filings = 0,
     original = "";
+  /* The drop that lost its answer never filed the upload; the resume files it into this project, once. */
+  await page.route("**/api/workbench/library", async (route) => {
+    if (route.request().method() === "POST") {
+      filings++;
+      expect(route.request().postDataJSON()).toEqual({ projectId, uploadId: original });
+    }
+    await route.continue();
+  });
   await page.route("**/api/uploads/chunk", async (route) => {
     if (route.request().method() === "POST") chunks++;
     await route.continue();
@@ -65,12 +84,10 @@ test("a lost upload finish response recovers the same stored upload after reload
     .png()
     .toBuffer();
   await page.goto(
-    `/generate?mode=video&project=${encodeURIComponent(projectId)}`,
+    `/suites?project=${encodeURIComponent(projectId)}&view=board`,
   );
-  const referencePicker = page
-    .getByRole("region", { name: "Video composer", exact: true })
-    .locator('input[type="file"][accept="image/*,video/*"]');
-  await expect(referencePicker).toBeEnabled();
+  const referencePicker = boardFiles(page);
+  await expect(page.getByTestId("board")).toBeVisible();
   await referencePicker.setInputFiles({
     name: "recover-reference.png",
     mimeType: "image/png",
@@ -85,6 +102,8 @@ test("a lost upload finish response recovers the same stored upload after reload
   await expect.poll(() => finishes).toBe(1);
   const pending = (await uploadEntries(page))[0];
   expect(pending.scope).toBe(scope);
+  expect(pending.projectId).toBe(projectId);
+  expect(filings).toBe(0);
   expect(pending.identity).toMatch(/^[a-f0-9]{64}$/);
   expect(JSON.stringify(pending).length).toBeLessThan(2000);
   await page.reload();
@@ -101,6 +120,11 @@ test("a lost upload finish response recovers the same stored upload after reload
   ).toHaveAttribute("href", `/api/uploads/${original}`);
   expect(finishes).toBe(1);
   expect(chunks).toBe(1);
+  await expect.poll(() => filings).toBe(1);
+  await expect.poll(async () => typeof (await uploadEntries(page))[0].filedAt).toBe("number");
+  const library = await page.request.get(`/api/workbench/library?projectId=${encodeURIComponent(projectId)}&source=uploads&limit=60`, { headers: { "X-Workbench-Scope": scope } });
+  expect(library.ok(), await library.text()).toBe(true);
+  expect((await library.json()).uploads.map((u: { id: string }) => u.id)).toEqual([original]);
   // Retry only a transport reset on this read; never repeat a write or HTTP failure.
   const listed = await page.request.get("/api/uploads", { maxRetries: 1 });
   expect(listed.ok(), await listed.text()).toBeTruthy();
@@ -174,12 +198,10 @@ test("a paused upload requires the original file and resends only the missing im
     buffer: bytes,
   };
   await page.goto(
-    `/generate?mode=video&project=${encodeURIComponent(projectId)}`,
+    `/suites?project=${encodeURIComponent(projectId)}&view=board`,
   );
-  const referencePicker = page
-    .getByRole("region", { name: "Video composer", exact: true })
-    .locator('input[type="file"][accept="image/*,video/*"]');
-  await expect(referencePicker).toBeEnabled();
+  const referencePicker = boardFiles(page);
+  await expect(page.getByTestId("board")).toBeVisible();
   await referencePicker.setInputFiles(original);
   await expect
     .poll(async () => {

@@ -5,9 +5,9 @@ import { effectiveModels } from "@/lib/defaultModels";
 import { getPlatformLayer, platformDb, platformReady } from "@/lib/platform";
 import { buildRateTable } from "@/lib/rateTable.server";
 import { runInTenant } from "@/lib/tenant";
-import { workbenchScopeFor } from "@/lib/workbench/request-scope";
+import { accountScopeFor, workbenchScopeFor } from "@/lib/workbench/request-scope";
 import { shellEntryRedirect } from "@/lib/signIn";
-import { searchStringOf } from "@/lib/workspace/switchover";
+import { searchStringOf } from "@/lib/shell/raw-search";
 
 /**
  * Who runs the connected Higgsfield account in this workspace, by name, for a
@@ -36,9 +36,10 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
   const ctx = await currentContext();
   if (ctx?.mfaRequired) redirect("/account/security");
   /* A visitor — a teammate whose session lapsed, holding a shared link — signs
-     in and comes back to this exact suite and page. Only an account with no
-     workspace goes to /workbench, and it keeps the whole query too. */
-  if (!ctx?.workspace) redirect(shellEntryRedirect(pathname, searchStringOf(await searchParams), Boolean(ctx)));
+     in and comes back to this exact suite and page. */
+  if (!ctx) redirect(shellEntryRedirect(pathname, searchStringOf(await searchParams)));
+  /* Signed in, in no workspace: the shell has nothing to open; the page says so (components/graphite/NoWorkspace.tsx). */
+  if (!ctx.workspace) return { none: true as const, scope: accountScopeFor(ctx.user.id), email: ctx.user.email || null };
   const credits = await creditStateFor(ctx.workspace).catch(() => null);
   const initialAccount = {
     workspace: { id: ctx.workspace.id, name: ctx.workspace.name },

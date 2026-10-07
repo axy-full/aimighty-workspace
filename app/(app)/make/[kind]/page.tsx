@@ -1,18 +1,11 @@
-import { notFound, redirect } from "next/navigation";
-import { generationHref, type GenRouteSearch } from "@/lib/genRoute";
+import { followOldRoute, type RawSearch } from "@/lib/shell/old-routes.server";
 
-export const metadata = { title: "Make · Particl" };
-
-/** Enter the canonical workspace before any client-side prompt or asset handoff. */
-export default async function MakePage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ kind: string }>;
-  searchParams: Promise<GenRouteSearch>;
-}) {
-  const [{ kind }, search] = await Promise.all([params, searchParams]);
-  const href = generationHref(kind, search);
-  if (!href) notFound();
-  redirect(href);
+/**
+ * Old address of Gen by kind (video, image, audio); any other kind is a 404.
+ * Redirected, never drawn (docs/old-shells.md): lib/shell/old-routes.ts holds where it goes.
+ */
+export const dynamic = "force-dynamic";
+export default async function Moved({ params, searchParams }: { params: Promise<{ kind: string }>; searchParams: Promise<RawSearch> }) {
+  const { kind } = await params;
+  await followOldRoute(`/make/${kind}`, await searchParams);
 }

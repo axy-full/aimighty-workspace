@@ -2,6 +2,35 @@
 
 The live shell is `/suites` (`app/suites/page.tsx` → `components/graphite/SuitesShell.tsx`). Three older shells still serve routes: `/workspace`, `/workbench`, and everything under `app/(app)/`. In phase D0 (the Graphite redesign, `design/particl-graphite/`) these routes keep working and are only re-pointed at the new design tokens. Retiring a route — redirect it to its `/suites` page, then delete its components and stylesheets — happens in D1, once every replacement page exists. This file is the inventory that decision is checked against.
 
+## Release 1: where the old routes stand
+
+Release 1 has one design. `?shell=legacy`, the `particl_shell` cookie, the switch-over gate and the account menu's "Use the previous workspace" are gone. Every old route below is a plain redirect to its final address in the Suites shell (`lib/shell/old-routes.ts`, held by `tests/unit/r1OldRoutes.spec.ts`): one hop, 307, the query that matters kept. The table further down is the older inventory; where it says a route is "Redirected today? No", read this section instead.
+
+- `/`, `/workbench`, `/workspace` → `/suites?view=home`; `project=` kept; `/workbench?stage=` is the board's region (`lib/shell/stage-redirects.ts`); `?suite=moleculr` is the Ads board
+- `/atomik` → `?atomik=1` (the panel); `page=approvals\|runs\|memory\|saved-skills` keep their control-room addresses; `budget`, `models`, `skills` are Settings sections
+- `/subatomik`, `/subatomic` → `?make=motion` (`page=swap` is `make=swap`; `page=history` is the Social board's History drawer)
+- `/generate`, `/images`, `/audio`, `/make/[kind]` → `?make=video\|image\|audio`; an unknown kind stays a 404
+- `/library`, `/all` → `?make=recent`
+- `/productions` → `?view=home`
+- `/productions/[prod]/[project]/media`, `/shots` → `?project=<studio project>&view=board&region=shots`
+- `/projects/[id]/canvas`, `/canvas/[id]`, `/rig/canvas/[boardId]`, `/rig/recipes/[projectId]` → `?project=<studio project>&view=board`
+- `/projects/[id]/rig/elements` → `?project=<studio project>&view=board&region=cast`
+- `/rig/run/[runId]`, `/pipelines`, `/dashboard` → `?suite=atomik&page=runs` (Control room > Activity)
+- `/settings`, `/team`, `/usage`, `/connect` → `?view=workspace&tab=advanced&open=workspace`, `tab=team`, `tab=credits&open=usage`, `tab=connections`
+
+A route that names a production project (or a board) is turned into the Studio project that holds its work (the same read as `GET /api/workbench/projects?production=`); when none is linked, the address opens Home.
+
+Owner decision, 6 October (evening): no old page survives Release 1, so the rows the audit left open are redirected too (307; only the page goes, its data stays):
+- `/projects/[id]` → `?view=workspace&tab=rules` (Settings > Spending rules lists every project with its cap)
+- `/takes/[id]` → `?project=<studio project>&view=board&region=shots&asset=generation:<id>` (the take in the Inspector); `/shots/[id]` → `…&region=shots`; `/elements/[id]` → `…&region=cast`; with no project found the same address without `project`
+- `/atomik/ideas`, `/treatment`, `/breakdown`, `/shots` → `?view=board&region=brief` (the project when the address named one; saved drafts stay in the database)
+- `/studio/shot` → `?make=video`
+- `/workbench/movie`, with or without `?snapshot=` → `?view=board&region=deliver` (the Deliver card does not take the snapshot hand-off)
+
+Still served where they are: the platform and admin desks, the printable statement, the report form, the legal pages, the sign-in and account pages, and `/site/*`. Nothing draws the old Studio any more: a signed-in account with no workspace is told so by the shell itself ("You’re not in a workspace yet", Create a workspace at `/billing?new=1`, Sign out; `components/graphite/NoWorkspace.tsx`), so `components/workbench/Studio.tsx` and what only it mounts are dead code too. The public site's `/business` and `/viral` addresses (the old suite names) are unchanged, for the owner to rename.
+
+Code the redirects leave unreachable (nothing imports it from a page any more; delete it with its tests when the owner agrees; a few helpers are still read by unit specs): `components/workspace/WorkspaceApp.tsx` and `components/workspace/mobile/**`; `components/suites/SuiteHome.tsx`; `components/make/{GenWorkspace,Composer,UnfiledWall,GenLoading,AstraUpscale,TopazImageUpscale}.tsx`; `components/pipeline/PipelineWorkspace.tsx`; `components/production/**`; `components/rig/{PhoneBoard,RigBar,nodes}`; `components/{Feed,Compare,QueueStrip,Tokens,Analytics,ElementScreen,ImpactSheet,PaneDivider,ProductionNav,ProvenanceCard,ShotBindings}.tsx` and their sheets; `components/assets/NewAssetSheet.tsx`; `components/atomik/{AtomikLoading,MentionText,ModelMenu,PickProduction,QuotedAtomikAction}.tsx`; `components/management/{HiggsfieldConnection,OpenAIConnection,WorkspaceSecurity}.tsx`; `components/workbench/MoviePage.tsx`; `app/(app)/library/mobile.css` and `app/(app)/studio/shot/shot.css`; and the helpers `lib/{boardSaver,breakdownCost,burndown,compare,composeHandoff,elementScreen,genRoute,panes,provenanceCard,rigApply,rigCanvasUrl,setupLocal,shotBindings,shotListCost,textCostLabel,useComposerPersistence,useGenerationBatch,useLongPress}.ts` and `lib/workspace/{make,settings-data,use-now,use-quote-checks,use-settings}.ts`.
+
 ## How to read the table
 
 - **Replacement URLs** use the params `/suites` actually reads: `project`, `suite`, `page`, `sel`, `asset` (`lib/workspace/navigation.ts › fromSearch`) and `view`, `tab`, `sp`, `cp`, `import` (`lib/shell/state.tsx › readParams`, `SHELL_PARAMS`). `page` is a state-layer page id; `sp` picks the shell page where several share one backing page (`lib/shell/ia.ts`). `/suites` reads no `mode` param: Gen's Video / Images / Audio choice is composer state, not URL state.

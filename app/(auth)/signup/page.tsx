@@ -179,7 +179,7 @@ function Signup() {
         setConfirm("");
       } else {
         if (data.workspace) await makeFirstBoardFromGuestBrief();
-        router.push(typeof data.next === "string" && data.next.startsWith("/") && !data.next.startsWith("//") ? data.next : "/workbench");
+        router.push(typeof data.next === "string" && data.next.startsWith("/") && !data.next.startsWith("//") ? data.next : "/suites");
         router.refresh();
       }
     } catch (e) {

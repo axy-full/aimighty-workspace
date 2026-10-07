@@ -24,6 +24,10 @@ export type UploadEnvelope = {
   /** When the server refused this file outright (its bytes, for this purpose). */
   refusedAt?: number;
   result?: UploadedFile;
+  /** The project this upload is for, when it was picked into one; a resumed upload is filed there once it completes. */
+  projectId?: string;
+  /** When it was filed into `projectId` — so a resume, a status check or another tab never files it twice. */
+  filedAt?: number;
 };
 export const uploadEnvelopeKey = (scope: string, identity: string) =>
   prefix + JSON.stringify([scope, identity]);
@@ -80,7 +84,9 @@ function validate(key: string, value: UploadEnvelope): UploadEnvelope {
     (value.error !== undefined && typeof value.error !== "string") ||
     (value.refusedAt !== undefined && !Number.isFinite(value.refusedAt)) ||
     (value.result !== undefined && !isUploadReceipt(value.result)) ||
-    (value.state === "complete" && !value.result)
+    (value.state === "complete" && !value.result) ||
+    (value.projectId !== undefined && (typeof value.projectId !== "string" || !value.projectId || value.projectId.length > 200)) ||
+    (value.filedAt !== undefined && !Number.isFinite(value.filedAt))
   )
     throw new Error(unreadable);
   return value;
@@ -138,7 +144,7 @@ export async function updateUploadEnvelope(
   patch: Partial<
     Pick<
       UploadEnvelope,
-      "state" | "error" | "result" | "storedChunks" | "started" | "refusedAt"
+      "state" | "error" | "result" | "storedChunks" | "started" | "refusedAt" | "projectId" | "filedAt"
     >
   >,
 ) {
@@ -199,6 +205,7 @@ export async function claimUploadEnvelope(
   scope: string,
   file: File,
   purpose: "reference" | "chat",
+  projectId?: string,
 ) {
   if (!scope || !scope.startsWith("particl-active-"))
     throw new Error("Sign in to the intended workspace before uploading.");
@@ -213,7 +220,13 @@ export async function claimUploadEnvelope(
   const key = uploadEnvelopeKey(scope, identity);
   return lockedClaim(key, () => {
     const prior = read(key);
-    if (prior) return prior;
+    if (prior) {
+      /* The same bytes picked into another project: that project is the one it is for now. */
+      if (!projectId || prior.projectId === projectId) return prior;
+      const next: UploadEnvelope = { ...prior, projectId, filedAt: undefined, updatedAt: Date.now() };
+      write(key, next);
+      return next;
+    }
     const entries = listUploadEnvelopes(scope);
     // Only live uploads hold a server session; a blocked one is already gone.
     if (entries.filter((entry) => entry.state !== "complete" && entry.state !== "blocked").length >= 32)
@@ -247,8 +260,39 @@ export async function claimUploadEnvelope(
       state: "pending",
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      ...(projectId ? { projectId } : {}),
     };
     write(key, value);
     return value;
   });
+}
+
+/**
+ * File a completed upload into the project it was picked for, once. A resume (or a status check) after a dropped
+ * connection completes the upload away from the drop that would have filed it, so it is filed here; `filedAt`, set
+ * under the envelope's own lock, keeps a second resume, a second tab or a repeated check from filing it again (and from
+ * putting back a file someone has since taken out of the project). Answers the project it was filed into, or null.
+ */
+export async function fileCompletedUpload(
+  entry: UploadEnvelope,
+  file: (projectId: string, uploadId: string, scope: string) => Promise<void>,
+): Promise<string | null> {
+  return lockedClaim("particl-upload-file:" + entry.scope + ":" + entry.session, async () => {
+    const current = readUploadEnvelope(entry);
+    if (current.state !== "complete" || !current.result || !current.projectId || current.filedAt !== undefined) return null;
+    await file(current.projectId, current.result.id, current.scope);
+    await updateUploadEnvelope(current, { filedAt: Date.now() });
+    return current.projectId;
+  });
+}
+
+/** The drop that uploaded it filed it: say so on its saved record, so a later resume or check leaves it be. */
+export async function markUploadFiled(scope: string, uploadId: string, projectId: string) {
+  try {
+    for (const entry of listUploadEnvelopes(scope))
+      if (entry.result?.id === uploadId && entry.projectId === projectId && entry.filedAt === undefined)
+        await updateUploadEnvelope(entry, { filedAt: Date.now() });
+  } catch {
+    /* Only a convenience: the filing itself is done, and the server files an upload into a project once. */
+  }
 }

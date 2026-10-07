@@ -1,12 +1,10 @@
-import SuiteHome from "@/components/suites/SuiteHome";
-import SwitchoverGate from "@/components/switchover/SwitchoverGate";
-import { switchNowOrGate, type RawSearch } from "@/lib/workspace/switchover.server";
+import { followOldRoute, type RawSearch } from "@/lib/shell/old-routes.server";
 
-export default async function Home({ searchParams }: { searchParams: Promise<RawSearch> }) {
-  const { target, search } = await switchNowOrGate("/", await searchParams);
-  return (
-    <SwitchoverGate target={target} search={search}>
-      <SuiteHome />
-    </SwitchoverGate>
-  );
+/**
+ * The old app home: the Suites shell is Home.
+ * Redirected, never drawn (docs/old-shells.md): lib/shell/old-routes.ts holds where it goes.
+ */
+export const dynamic = "force-dynamic";
+export default async function Moved({ searchParams }: { searchParams: Promise<RawSearch> }) {
+  await followOldRoute("/", await searchParams);
 }

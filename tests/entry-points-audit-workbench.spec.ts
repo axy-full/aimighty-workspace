@@ -21,16 +21,16 @@ test("entry points: a workspace goes straight to Suites; a visitor signs in and 
     const link = "/suites?suite=atomik&page=runs&project=p1";
     await visitor.goto(link);
     await expect(visitor).toHaveURL(`/login?next=${encodeURIComponent(link)}`);
+    /* An old app address signs a visitor in and brings them back to its new address. */
     await visitor.goto("/generate?mode=images&task=upscale");
-    const signIn = visitor.getByRole("link", { name: "Sign in" }).first();
-    await expect(signIn).toHaveAttribute("href", `/login?next=${encodeURIComponent("/generate?mode=images&task=upscale")}`);
+    await expect(visitor).toHaveURL(`/login?next=${encodeURIComponent("/suites?task=upscale&make=image&view=home")}`);
   } finally {
     await visitor.close();
   }
 
   await signInLocally(page.request);
   /* The switch is the response itself — a 307 — not a 200 carrying a meta refresh. */
-  for (const [entry, target] of [["/", /^\/suites\?suite=particl/], ["/atomik", /^\/suites\?suite=atomik/], ["/subatomik", /^\/suites\?suite=subatomik/], ["/workbench", /^\/suites\?suite=particl/]] as const) {
+  for (const [entry, target] of [["/", /^\/suites\?view=home$/], ["/atomik", /^\/suites\?atomik=1&view=home$/], ["/subatomik", /^\/suites\?make=motion&view=home$/], ["/workbench", /^\/suites\?view=home$/]] as const) {
     const res = await page.request.get(entry, { maxRedirects: 0 });
     expect(res.status(), entry).toBe(307);
     expect(res.headers().location, entry).toMatch(target);
@@ -39,20 +39,21 @@ test("entry points: a workspace goes straight to Suites; a visitor signs in and 
   const moved = await page.request.get("/images", { maxRedirects: 0 });
   expect(moved.status()).toBe(307);
   const response = await page.goto("/workbench?stage=brief");
-  /* The chain is two 307s (/workbench → /suites?suite=particl&page=brief → the board), and Playwright's redirectedFrom() is one hop back: walk it to the request the person made. */
-  let first = response?.request();
-  for (let hop = first?.redirectedFrom(); hop; hop = first?.redirectedFrom()) first = hop;
-  expect(first?.url()).toContain("/workbench?stage=brief");
-  /* The Studio's Brief page is deleted: the old stage address ends on the board's Brief region (one more 307 inside /suites). */
+  /* One hop: /workbench?stage=brief is answered by one 307 to the board's Brief region, and /suites moves it no further. */
+  const hop = response?.request().redirectedFrom();
+  expect(hop?.url()).toContain("/workbench?stage=brief");
+  expect(hop?.redirectedFrom()).toBeNull();
   await expect(page).toHaveURL(/\/suites\?(?=.*view=board)(?=.*region=brief)/);
   await page.goto("/");
-  await expect(page).toHaveURL(/\/suites\?suite=particl/);
-  await expect(page.getByTestId("switchover-note")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/suites\?(?=.*view=home)/);
 });
 
 test("Settings › Connections lists no tokens and offers to make one; the platform desk is for the platform owner only", async ({ page }, info) => {
   test.skip(info.project.name !== DESKTOP, "Links, once.");
   await signInLocally(page.request);
+  /* /connect is Settings › Connections now. */
+  await page.goto("/connect");
+  await expect(page).toHaveURL(/\/suites\?(?=.*view=workspace)(?=.*tab=connections)/);
   /* Engines is Advanced › Models and the token page's job (listing and making tokens) is Connections. */
   await page.goto("/suites?view=workspace&tab=connections");
   await expect(page.getByTestId("settings-title")).toHaveText("Connections");
@@ -62,6 +63,7 @@ test("Settings › Connections lists no tokens and offers to make one; the platf
   await page.getByTestId("workspace-avatar").click();
   await expect(page.getByTestId("settings-menu")).toBeVisible();
   await expect(page.getByTestId("settings-platform-desk")).toHaveCount(0);
+  await expect(page.getByTestId("platform-desk")).toHaveCount(0);
 });
 
 test("on a phone, Connections' tokens section is the last card on the page and ends above the tab bar", async ({ page }, info) => {
