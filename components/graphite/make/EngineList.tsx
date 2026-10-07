@@ -161,7 +161,8 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
             {enhancer.busy ? "Enhancing…" : enhancer.credits == null ? "Enhance now" : <>Enhance now · <Price value={exact(enhancer.credits)} /></>}
           </button>
         </div>
-        {enhancer.blocked ? <p className="gx-mk-line-note" data-testid="enhance-reason">{enhancer.blocked}</p> : null}
+        {/* Its line keeps its height when the reason goes (the price landing), so what sits under it (Takes) does not move under a press. */}
+        <p className="gx-mk-line-note" style={{ minHeight: "1.45em" }} data-testid="enhance-reason">{enhancer.blocked}</p>
         {enhancer.error ? <p className="gx-mk-error" role="alert">{enhancer.error}</p> : null}
         {enhancer.enhanced ? (
           <div className="gx-mk-enhanced" data-testid="enhanced-card">
@@ -241,12 +242,13 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
 
       <div className="gx-mk-field" data-testid="gen-takes">
         <span className="gx-mk-eyebrow" id={`${id}-takes`}>{settings.draft ? "Takes · one draft at a time" : "Takes"}</span>
-        <div className="gx-mk-chips" role="group" aria-labelledby={`${id}-takes`}>
+        {/* Two equal columns: a total landing on a chip does not move its neighbours, so a press that began before it still ends on the chip it began on; the columns are wide enough for a price, and a chip grows (wraps) before it would cut one, Cinema Studio's "about N cr, at most 3N cr" included. */}
+        <div className="gx-mk-chips" role="group" aria-labelledby={`${id}-takes`} style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
           {choices.map((n) => {
             /* No totals in the sample workspace, where nothing is made. */
-            const total = make.spendOff ? null : shownTotal(composer.quote, composer.quoteKey, n);
+            const total = make.spendOff || make.priceHeld ? null : shownTotal(composer.quote, composer.quoteKey, n);
             return (
-              <button key={n} type="button" className="gx-chip" aria-pressed={takes === n} disabled={Boolean(settings.draft) || n > TAKES_MAX} onClick={() => set({ type: "count", value: n })} data-testid={`gen-takes-${n}`}>
+              <button key={n} type="button" className="gx-chip" style={{ height: "auto", minHeight: 48, whiteSpace: "normal", paddingBlock: 4 }} aria-pressed={takes === n} disabled={Boolean(settings.draft) || n > TAKES_MAX} onClick={() => set({ type: "count", value: n })} data-testid={`gen-takes-${n}`}>
                 {takes === n ? "✓ " : ""}×{n}{total == null ? null
                   /* Cinema Studio's figure is approximate and held at 3N: said as every approval of it is (lib/cinemaHold.ts). */
                   : composer.quote?.approximate ? <> · <span className="gx-price" data-price="about">{cinemaPriceWords(total)}</span></>

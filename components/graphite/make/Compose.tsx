@@ -157,7 +157,9 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
           {make.go.price ? <><span className="gx-mk-go-sep"> · </span><MakePriceText price={make.go.price} /></> : null}
         </button>
       </div>
-      {reason ? <p className="gx-mk-reason" id="gx-mk-reason" role="status" data-testid="gen-blocked">{reason}{reason === CHECK_LINE ? <> <CheckAgain className="gx-hbtn" /></> : null}</p> : null}
+      {reason ? <p className="gx-mk-reason" id="gx-mk-reason" role="status" data-testid="gen-blocked">{reason}{reason === CHECK_LINE ? <> <CheckAgain className="gx-hbtn" /></> : null}</p> 
+        /* The line keeps its height when the reason goes (the price landing): a shorter panel would scroll back under a press already begun. */
+        : <p className="gx-mk-reason" aria-hidden="true" style={{ minHeight: "1.45em" }} />}
 
       <div className="gx-mk-tools" data-testid="make-quick-tools">
         <span className="gx-mk-eyebrow">Quick tools</span>

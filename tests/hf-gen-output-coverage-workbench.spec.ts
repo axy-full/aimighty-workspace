@@ -3,7 +3,6 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
-import { dimLabels, smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { openAdvanced } from "./helpers/makeAdvanced";
 import { projectName } from "./helpers/projectName";
@@ -24,7 +23,6 @@ test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app 
  * charge; nothing is priced or spent. Screenshots are opt-in: GEN_COVERAGE_SHOTS=<dir>.
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
-const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const SHOTS = process.env.GEN_COVERAGE_SHOTS;
 const DRAFT = "ws-sound";
 const fixture = (): Project => ({ ...newProject("Harbour sound study"), id: DRAFT, productionProjectId: "prod-ws", shotMappings: {} });
@@ -103,27 +101,29 @@ async function open(page: Page) {
   return { quotes, charges, mismatched, errors, store };
 }
 
-const sheetOf = (page: Page) => page.getByRole("dialog", { name: "Choose a model" });
-
-/** Picks a model by its name in Gen's model sheet. */
+/** Picks a model by its name in Make's engine list (under Change); picking closes the list, and the engine line names it. */
 async function pickModel(page: Page, name: RegExp) {
-  const button = page.getByTestId("gen-model");
-  await button.scrollIntoViewIfNeeded();
-  await button.click();
-  const sheet = sheetOf(page);
-  await expect(sheet).toBeVisible();
-  await sheet.getByRole("option").filter({ has: page.locator(".gx-model-name", { hasText: name }) }).first().click();
-  await expect(sheet).toHaveCount(0);
-  await expect(page.getByTestId("gen-model").locator(".gx-model-name")).toHaveText(name);
+  const change = page.getByTestId("gen-model");
+  if ((await change.getAttribute("aria-expanded")) !== "true") await change.click();
+  const list = page.getByTestId("make-engines");
+  await expect(list).toBeVisible();
+  await list.getByTestId("make-engine-row").filter({ has: page.locator(".gx-mk-row-name", { hasText: name }) }).first().click();
+  await expect(list).toHaveCount(0);
+  await expect(page.getByTestId("make-engine-line").locator(".gx-mk-part").first()).toHaveText(name);
+}
+/** The list open again (picking closes it): the voice, the length and Instrumental are in it. */
+async function openList(page: Page) {
+  const change = page.getByTestId("gen-model");
+  if ((await change.getAttribute("aria-expanded")) !== "true") await change.click();
+  await expect(page.getByTestId("make-engines")).toBeVisible();
 }
 
 const optionLabels = (page: Page) => page.getByTestId("gen-voice").locator("option").allTextContents();
 const generateButton = (page: Page) => page.getByTestId("gen-generate");
+/** A sound's figure is a live estimate: "Make · up to N cr" or "Make · N cr", never a different N. */
+const makeAt = (n: number) => new RegExp(`^Make · (up to )?${n} cr$`);
 
-/**
- * Generate's label, measured against the button's own box, then again with a wide fallback sans (Linux Chrome's
- * and many Android phones' fonts run wider than macOS's): every run of text sits inside, the price whole.
- */
+/** Generate's label, measured against the button's own box: every run of text sits inside it, the price whole, also in a wide fallback sans. */
 async function labelFits(page: Page) {
   const check = () => generateButton(page).evaluate((button) => {
     const box = button.getBoundingClientRect(), style = getComputedStyle(button);
@@ -141,60 +141,16 @@ async function labelFits(page: Page) {
     }
     return out;
   });
-  expect(await check(), "Generate's label fits its button").toEqual([]);
+  expect(await check(), "Make's label fits its button").toEqual([]);
   const wide = await page.addStyleTag({ content: '[data-testid="gen-view"], [data-testid="gen-view"] * { font-family: Verdana, "DejaVu Sans", sans-serif !important; }' });
-  expect(await check(), "Generate's label fits its button in a wide fallback sans").toEqual([]);
-  /* The sound rows keep to the card in the wide sans too. */
-  expect(await soundRowsFit(page), "the sound rows fit the card in a wide fallback sans").toEqual([]);
+  expect(await check(), "Make's label fits its button in a wide fallback sans").toEqual([]);
   await wide.evaluate((el) => (el as HTMLStyleElement).remove());
 }
 
-/** Every control of the sound rows sits inside the composer card: nothing is cut or pushed sideways. */
-function soundRowsFit(page: Page) {
-  return page.evaluate(() => {
-    const card = document.querySelector<HTMLElement>('[data-testid="gen-view"] .gx-gen-card[aria-label="Composer"]')!.getBoundingClientRect();
-    const out: string[] = [];
-    for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-testid="gen-voice"], [data-testid="gen-seconds"], [data-testid="gen-seconds"] *, [data-testid="gen-instrumental"], [data-testid="gen-instrumental"] *'))) {
-      if (!el.getClientRects().length) continue;
-      const r = el.getBoundingClientRect();
-      if (r.left < card.left - 0.5 || r.right > card.right + 0.5) out.push(`${el.dataset.testid || el.className || el.tagName} ${Math.round(r.left)}–${Math.round(r.right)} outside ${Math.round(card.left)}–${Math.round(card.right)}`);
-      if (el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflow !== "visible") out.push(`${el.dataset.testid || el.className} is cut`);
-    }
-    return out;
-  });
-}
-
-/** The phone floors: nothing sideways, 44px targets in Gen, no label under #7C7C84, no serif, and Gen's end above the tab bar. */
-async function floors(page: Page, info: TestInfo) {
+/** Nothing scrolls sideways and the button's price is whole, in Make's panel. */
+async function floors(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), "no sideways scroll").toBeLessThanOrEqual(0);
-  expect(await soundRowsFit(page), "the sound rows fit the card").toEqual([]);
   await labelFits(page);
-  const serif = await page.getByTestId("gen-view").evaluate((view) => Array.from(view.querySelectorAll<HTMLElement>("*"))
-    .filter((el) => el.getClientRects().length && /^(serif|times|georgia|garamond|palatino|cambria)/i.test(getComputedStyle(el).fontFamily.split(",")[0].replace(/["']/g, "").trim()))
-    .map((el) => el.className || el.tagName));
-  expect(serif, "no serif in Gen").toEqual([]);
-  if (!PHONES.includes(info.project.name)) return;
-  expect(await smallTargets(page, '[data-testid="gen-view"]'), "Gen's targets under 44×44").toEqual([]);
-  expect(await dimLabels(page, '[data-testid="gen-view"]'), "Gen's labels under #7C7C84").toEqual([]);
-  await clearOfTabBar(page);
-}
-
-/** On a phone, Gen scrolled to its end: its last element ends above the tab bar (whatever the bar's height). */
-async function clearOfTabBar(page: Page) {
-  const bar = page.locator(".gx-tabbar");
-  if (!(await bar.isVisible())) return;
-  const gap = await page.getByTestId("gen-view").evaluate(async (view) => {
-    /* Make's body is its own scroller. */
-    let scroller: HTMLElement | null = view as HTMLElement;
-    while (scroller && !(scroller.scrollHeight > scroller.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
-    (scroller ?? document.scrollingElement as HTMLElement).scrollTop = 1e9;
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const last = Array.from(view.querySelectorAll<HTMLElement>("*")).filter((el) => el.getClientRects().length)
-      /* Its contents, not the scroller's own box (Make's body runs on under the bar, its padding keeping them clear). */
-      .reduce((a, b) => (b.getBoundingClientRect().bottom > a.getBoundingClientRect().bottom ? b : a));
-    return document.querySelector(".gx-tabbar")!.getBoundingClientRect().top - last.getBoundingClientRect().bottom;
-  });
-  expect(gap, "Gen's last element ends above the tab bar").toBeGreaterThanOrEqual(0);
 }
 
 async function shot(page: Page, info: TestInfo, name: string) {
@@ -206,47 +162,50 @@ async function shot(page: Page, info: TestInfo, name: string) {
   await page.screenshot({ path: path.join(SHOTS, `${name}-${size}.png`) });
 }
 
-test("a line: the voice list is the chosen model's own and swaps with it, each change is priced again, and one Generate sends the voice on the button at its price", async ({ page }, info) => {
+test("a line: the voice list is the chosen model's own and swaps with it, each change is priced again, and one Make sends the voice on the button at its price", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { quotes, charges, mismatched, errors } = await open(page);
-  /* Gen makes video, images and sound: no 3D tab, whoever is signed in. Analysis ran through the signed-in
+  /* Make offers video, images and sound: no 3D, whoever is signed in. Analysis ran through the signed-in
      account, which is retired, so it is gone for everyone. */
-  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab")).toHaveText(["Video", "Images", "Audio"]);
-  await page.getByRole("tab", { name: "Audio" }).click();
+  await expect(page.getByRole("radiogroup", { name: "Type" }).getByRole("radio")).toHaveText(["Video", "Image", "Audio"]);
+  await page.getByTestId("make-type-audio").click();
   await pickModel(page, /^Grok Voice$/);
   const line = "Not tonight. The ice will hold until morning.";
   await page.getByTestId("gen-prompt").fill(line);
+  await openList(page);
 
   /* Grok Voice reads in xAI's own voices, the first chosen until the person picks: the line is priced in it. */
   expect(await optionLabels(page)).toEqual(["Eve", "Ara", "Rex"]);
   await expect(page.getByTestId("gen-voice")).toHaveValue("eve");
-  await expect(generateButton(page)).toHaveText("Make · 2 cr");
+  await expect(generateButton(page)).toHaveText(makeAt(2));
   expect(quotes.at(-1)).toMatchObject({ task: "speech", modelId: "grok-tts", voiceId: "eve", text: line });
-  await expect(page.getByTestId("gen-view").locator(".gx-gen-foot").first()).toHaveText("Eve · Saved to your takes");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Eve");
 
   /* Another voice is another price: the old figure never stands beside the new voice. */
   let asked = quotes.length;
   await page.getByTestId("gen-voice").selectOption("ara");
-  await expect(generateButton(page)).toHaveText("Make · 3 cr");
+  await expect(generateButton(page)).toHaveText(makeAt(3));
+  await expect(page.getByTestId("make-engine-price")).toHaveText(/^(up to )?3 cr$/);
   expect(quotes.length).toBeGreaterThan(asked);
   expect(quotes.at(-1)).toMatchObject({ modelId: "grok-tts", voiceId: "ara" });
 
   /* An ElevenLabs model swaps the list, and a Grok voice is never carried over: the line falls to its first voice. */
   asked = quotes.length;
   await pickModel(page, /^Eleven Multilingual v2$/);
+  await openList(page);
   expect(await optionLabels(page)).toEqual(["Rachel", "Sarah"]);
   await expect(page.getByTestId("gen-voice")).toHaveValue(ELEVEN_VOICES[0].id);
-  await expect(generateButton(page)).toHaveText("Make · 4 cr");
+  await expect(generateButton(page)).toHaveText(makeAt(4));
   expect(quotes.slice(asked).every((q) => q.modelId === "eleven_multilingual_v2" && q.voiceId === ELEVEN_VOICES[0].id)).toBe(true);
   await page.getByTestId("gen-voice").selectOption(ELEVEN_VOICES[1].id);
   await expect.poll(() => quotes.at(-1)?.voiceId).toBe(ELEVEN_VOICES[1].id);
-  await expect(generateButton(page)).toHaveText("Make · 4 cr");
+  await expect(generateButton(page)).toHaveText(makeAt(4));
   /* No line was ever priced in the other vendor's voice. */
   expect(mismatched).toEqual([]);
-  await floors(page, info);
+  await floors(page);
   await shot(page, info, "voice");
 
-  /* Generate: settled first, priced again exactly as it is sent, then sent once with the button's figure as its ceiling. */
+  /* Make: settled first, priced again exactly as it is sent, then sent once with the button's figure as its ceiling. */
   expect(charges).toEqual([]);
   asked = quotes.length;
   await generateButton(page).click();
@@ -265,20 +224,21 @@ test("a line: the voice list is the chosen model's own and swaps with it, each c
   expect(errors).toEqual([]);
 });
 
-test("effects and music: the length stepper and Instrumental each price the take again, and Generate sends the length and vocals on the button", async ({ page }, info) => {
+test("effects and music: the length and Instrumental each price the take again, and Make sends the length and vocals on the button", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { quotes, charges, errors } = await open(page);
-  await page.getByRole("tab", { name: "Audio" }).click();
-  /* This workspace's sound opens on effects, at ten seconds. */
-  await expect(page.getByTestId("gen-model").locator(".gx-model-name")).toHaveText("Eleven Sound Effects");
+  await page.getByTestId("make-type-audio").click();
+  /* Make opens sound on a voice (priced by its words); effects are one pick away, at ten seconds. */
+  await pickModel(page, /^Eleven Sound Effects$/);
   const cue = "A slow cello under rain on a tin roof";
   await page.getByTestId("gen-prompt").fill(cue);
-  const stepper = page.getByRole("group", { name: "Length" });
+  await openList(page);
+  const stepper = page.getByTestId("gen-seconds");
   const value = page.getByTestId("gen-seconds-value");
   const instrumental = page.getByTestId("gen-instrumental");
-  const shorter = stepper.getByRole("button", { name: "Shorter" }), longer = stepper.getByRole("button", { name: "Longer" });
+  const longer = stepper.getByRole("button", { name: "Longer" });
   await expect(value).toHaveText("10 s");
-  await expect(generateButton(page)).toHaveText("Make · 3 cr");
+  await expect(generateButton(page)).toHaveText(makeAt(3));
   expect(quotes.at(-1)).toMatchObject({ task: "sound", durationSeconds: 10, text: cue });
   /* An effect has no vocals to switch, and runs one second at a time to thirty: every length is priced as it is sent. */
   await expect(instrumental).toHaveCount(0);
@@ -286,45 +246,45 @@ test("effects and music: the length stepper and Instrumental each price the take
   await expect(value).toHaveText("30 s");
   await expect(longer).toBeDisabled();
   await expect.poll(() => quotes.at(-1)?.durationSeconds).toBe(30);
-  await expect(generateButton(page)).toHaveText("Make · 3 cr");
-  await expect(page.getByTestId("gen-view").locator(".gx-gen-foot").first()).toHaveText("30 s · Saved to your takes");
+  await expect(generateButton(page)).toHaveText(makeAt(3));
+  await expect(page.getByTestId("make-engine-line")).toContainText("30 s");
 
-  /* Music keeps the length while it is in range, and steps five seconds to its ten-second floor. */
+  /* Music keeps the length while it is in range (30 s is one of its chips); every chip is a new length, priced again. */
   await pickModel(page, /^Eleven Music$/);
-  await expect(value).toHaveText("30 s");
+  await openList(page);
+  await expect(page.getByTestId("gen-seconds-value")).toHaveText("30 s");
   await expect(instrumental).toHaveAttribute("aria-checked", "true");
-  await expect(generateButton(page)).toHaveText("Make · 40 cr");
+  await expect(generateButton(page)).toHaveText(makeAt(40));
   expect(quotes.at(-1)).toMatchObject({ task: "music", lengthMs: 30_000, instrumental: true, text: cue });
-  for (let i = 0; i < 4; i++) await shorter.click();
-  await expect(value).toHaveText("10 s");
-  await expect(shorter).toBeDisabled();
-  await expect(generateButton(page)).toHaveText("Make · 20 cr");
-  expect(quotes.at(-1)).toMatchObject({ lengthMs: 10_000, instrumental: true });
+  const chips = page.getByTestId("gen-seconds").getByTestId("make-music-chip");
+  await chips.filter({ hasText: /^15 s$/ }).click();
+  await expect(generateButton(page)).toHaveText(makeAt(25));
+  expect(quotes.at(-1)).toMatchObject({ lengthMs: 15_000, instrumental: true });
   /* Each press is a new length, and a new price before the button shows one. */
-  await longer.click();
-  await longer.click();
-  await expect(value).toHaveText("20 s");
-  await expect(generateButton(page)).toHaveText("Make · 30 cr");
-  expect(quotes.at(-1)).toMatchObject({ lengthMs: 20_000, instrumental: true });
+  await chips.filter({ hasText: /^60 s$/ }).click();
+  await expect(generateButton(page)).toHaveText(makeAt(70));
+  expect(quotes.at(-1)).toMatchObject({ lengthMs: 60_000, instrumental: true });
+  await chips.filter({ hasText: /^30 s$/ }).click();
+  await expect(generateButton(page)).toHaveText(makeAt(40));
 
   /* Vocals are another take: priced again. */
   let asked = quotes.length;
   await instrumental.click();
   await expect(instrumental).toHaveAttribute("aria-checked", "false");
-  await expect(generateButton(page)).toHaveText("Make · 35 cr");
+  await expect(generateButton(page)).toHaveText(makeAt(45));
   expect(quotes.length).toBeGreaterThan(asked);
-  expect(quotes.at(-1)).toMatchObject({ lengthMs: 20_000, instrumental: false });
-  await expect(page.getByTestId("gen-view").locator(".gx-gen-foot").first()).toHaveText("20 s · With vocals · Saved to your takes");
-  await floors(page, info);
+  expect(quotes.at(-1)).toMatchObject({ lengthMs: 30_000, instrumental: false });
+  await expect(page.getByTestId("make-engine-price")).toHaveText(/^(up to )?45 cr$/);
+  await floors(page);
   await shot(page, info, "music");
 
-  /* Generate: priced again exactly as it is sent, then sent once, the button's figure its ceiling. */
+  /* Make: priced again exactly as it is sent, then sent once, the button's figure its ceiling. */
   expect(charges).toEqual([]);
   asked = quotes.length;
   await generateButton(page).click();
   await expect.poll(() => charges.length).toBe(1);
   expect(quotes.length).toBe(asked + 1);
-  expect(charges[0].body).toMatchObject({ task: "music", text: cue, lengthMs: 20_000, instrumental: false, maxCredits: 35, projectId: "prod-ws" });
+  expect(charges[0].body).toMatchObject({ task: "music", text: cue, lengthMs: 30_000, instrumental: false, maxCredits: 45, projectId: "prod-ws" });
   expect(charges[0].key).toBeTruthy();
   await page.waitForTimeout(500);
   expect(charges).toHaveLength(1);

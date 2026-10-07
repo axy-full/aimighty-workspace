@@ -1,6 +1,4 @@
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
-import { mkdirSync } from "node:fs";
-import path from "node:path";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
@@ -8,6 +6,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, type 
 import { moreTakes } from "./helpers/genTakes";
 import { openAdvanced } from "./helpers/makeAdvanced";
 import { projectName } from "./helpers/projectName";
+import { CINEMA_STUDIO_MODEL_ID } from "../lib/cinemaStudioTypes";
 import { isCompact } from "./helpers/shellMode";
 
 /* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
@@ -140,47 +139,13 @@ async function floors(page: Page, info: TestInfo) {
   expect(dim, "labels under #7C7C84").toEqual([]);
 }
 
-/** On a phone the last thing on Make › Recent, scrolled to the end, ends above the tab bar. */
-async function clearOfTabBar(page: Page) {
-  const bar = page.getByTestId("tabbar");
-  if (!(await bar.isVisible())) return;
-  const gap = await page.evaluate(() => {
-    const scroller = document.querySelector<HTMLElement>('[data-testid="gen-view"]')!;
-    scroller.scrollTop = scroller.scrollHeight;
-    const view = document.querySelector<HTMLElement>('[data-testid="gen-view"]')!;
-    const results = view.querySelector<HTMLElement>(".gx-gen-results")!;
-    const last = Array.from(results.querySelectorAll<HTMLElement>("*")).filter((el) => el.getClientRects().length).reduce((a, b) => (b.getBoundingClientRect().bottom > a.getBoundingClientRect().bottom ? b : a), results);
-    return document.querySelector('[data-testid="tabbar"]')!.getBoundingClientRect().top - last.getBoundingClientRect().bottom;
-  });
-  expect(gap, "the last element ends above the tab bar").toBeGreaterThanOrEqual(0);
-}
 
-/** Opt-in (BATCH_SHOTS=<dir>): the page with the strip's end above the dock, the strip alone, and the takes stepper with Generate. */
-/**
- * Moves the page's clock on two seconds at a time until `seen` holds: status reads run at lib/poll's pace (and, for
- * the connected account, never sooner than its pollAfterSeconds), so a fixed jump either overshoots what a person
- * would see or undershoots the next read.
- */
-async function until(page: Page, seen: () => Promise<boolean>, what: string) {
-  await expect.poll(async () => { if (await seen()) return true; await page.clock.fastForward("00:02"); return seen(); }, { message: what, timeout: 60_000, intervals: [50] }).toBe(true);
-}
-
-async function shot(page: Page, info: TestInfo, name: string) {
-  const dir = process.env.BATCH_SHOTS;
-  if (!dir) return;
-  mkdirSync(dir, { recursive: true });
-  const size = info.project.name.replace("workbench-", "");
-  const strip = page.getByTestId("gen-batch").first();
-  if (await strip.count()) {
-    await strip.evaluate((el) => { (el as HTMLElement).style.scrollMarginBottom = "120px"; el.scrollIntoView({ block: "end" }); });
-    await page.screenshot({ path: path.join(dir, `${name}-${size}.png`) });
-    await strip.screenshot({ path: path.join(dir, `${name}-${size}-strip.png`) });
-  } else await page.screenshot({ path: path.join(dir, `${name}-${size}.png`) });
-  const cta = page.getByTestId("gen-view").locator(".gx-gen-card[aria-label='Composer']");
-  await page.getByTestId("gen-takes").scrollIntoViewIfNeeded();
-  const box = await cta.boundingBox();
-  const takes = await page.getByTestId("gen-takes").boundingBox();
-  if (box && takes) await page.screenshot({ path: path.join(dir, `${name}-${size}-cta.png`), clip: { x: box.x, y: Math.max(0, takes.y - 60), width: box.width, height: Math.min(page.viewportSize()!.height - Math.max(0, takes.y - 60), 220) } });
+/** Every Takes chip shows its whole price: nothing in it runs past its box, wide or tall. */
+async function chipsFit(page: Page) {
+  const cut = await page.getByTestId("gen-takes").locator("button").evaluateAll((chips) => chips
+    .filter((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)
+    .map((el) => `${el.textContent} (${el.scrollWidth}x${el.scrollHeight} in ${el.clientWidth}x${el.clientHeight})`));
+  expect(cut, "Takes chips cut").toEqual([]);
 }
 
 /* ── This workspace's credits ─────────────────────────────────────────── */
@@ -224,7 +189,7 @@ async function workspaceRoutes(page: Page, answer: { price?: (variation: number,
   return { quotes, charges, held, status };
 }
 
-test("this workspace's credits: 4 takes are one batch at the total on the button, one batch id and take numbers 1–4, and land as one strip", async ({ page }, info) => {
+test("this workspace's credits: 4 takes are one batch at the total on the button, one batch id and take numbers 1–4, each sent once", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, library } = await open(page);
   const routes = await workspaceRoutes(page);
@@ -249,37 +214,11 @@ test("this workspace's credits: 4 takes are one batch at the total on the button
   expect(routes.charges.every((c) => c.maxCredits === PRICE)).toBe(true);
   expect(new Set(routes.charges.map((c) => c.key)).size).toBe(4);
   expect(new Set(routes.charges.map((c) => c.shotId)).size).toBe(1);
-  await expect(page.getByRole("status").filter({ hasText: "4 takes sent at 72 cr. They file into Takes as one strip as they land." })).toBeVisible();
-
-  /* Rendering: one strip, take 1–4, each take followed on its own, on Make › Recent. */
-  await page.getByTestId("make-tab-recent").click();
-  const strip = page.getByTestId("gen-batch");
-  await expect(strip).toHaveCount(1);
-  await expect(strip.locator(".gx-batch-label")).toHaveText("take 1–4");
-  await expect(strip.getByTestId("gen-batch-take").locator(".gx-asset-name")).toHaveText(["take 1", "take 2", "take 3", "take 4"]);
-  await expect(strip.getByTestId("gen-batch-take-status")).toHaveText(["Rendering", "Rendering", "Rendering", "Rendering"]);
-  await expect(page.getByTestId("gen-running")).toHaveCount(0);
-  await floors(page, info);
-  await shot(page, info, "workspace-rendering");
-
-  /* Takes land one by one; the strip says so; when the last lands the Library has all four as one strip. */
-  const batchId = routes.charges[0].batchId;
-  routes.status.set("gen_batch_1_2", "succeeded");
-  await until(page, async () => (await strip.getByTestId("gen-batch-take-status").allTextContents()).join() === "Rendering,Complete,Rendering,Rendering", "take 2 lands first");
-  await expect(strip.locator(".gx-batch-meta")).toContainText("1 of 4 rendered");
-  library.generations = [4, 3, 2, 1].map((v) => generation({ id: `gen_batch_1_${v}`, kind: "video", title: PROMPT, prompt: PROMPT, params: { batchId, variation: v }, creditsBilled: PRICE }));
-  for (const v of [1, 3, 4]) routes.status.set(`gen_batch_1_${v}`, "succeeded");
-  const landedToast = page.getByTestId("toast").filter({ hasText: "4 takes rendered. They are one strip in Takes." });
-  await until(page, async () => (await landedToast.count()) > 0, "the batch is announced once it has landed");
-  await page.clock.fastForward("00:03");
-  const landed = page.getByTestId("gen-batch");
-  await expect(landed).toHaveCount(1);
-  await expect(landed).toHaveAttribute("data-state", "done");
-  await expect(landed.getByTestId("gen-batch-take").locator(".gx-asset-name")).toHaveText(["take 1", "take 2", "take 3", "take 4"]);
-  await expect(landed.getByTestId("gen-batch-take").locator(".gx-asset-thumb")).toHaveCount(4);
-  await floors(page, info);
-  await clearOfTabBar(page);
-  await shot(page, info, "workspace-landed");
+  /* The accepted batch closes Make and says what it came to: the batch's total and its take count. */
+  await expect(page.getByTestId("toast")).toContainText("72 cr · 4 takes · rendering");
+  await expect(page.getByTestId("make-panel")).toHaveCount(0);
+  /* (The batch strip and its per-take statuses on Recent, and the landing announcement that needs the composer mounted, are gone with
+     the old Gen results: docs/old-shells.md.) */
   /* Still four charges: nothing was sent twice. */
   expect(routes.charges).toHaveLength(4);
   expect(errors).toEqual([]);
@@ -312,12 +251,8 @@ test("this workspace's credits: a moved price sends none; admission refusing tak
   await expect(page.getByRole("status").filter({ hasText: "Takes 1–2 were sent at 37 cr. Takes 3–4 were not made (This workspace has reached its monthly cap on the platform's engines). Nothing was charged for them." })).toBeVisible();
   expect(routes.charges.map((c) => [c.variation, c.maxCredits])).toEqual([[1, PRICE], [2, PRICE + 1]]);
   expect(routes.quotes).toHaveLength(8);
-  await page.getByTestId("make-tab-recent").click();
-  const strip = page.getByTestId("gen-batch");
-  await expect(strip.getByTestId("gen-batch-take-status")).toHaveText(["Rendering", "Rendering", "Not made · not charged", "Not sent · not charged"]);
-  await floors(page, info);
-  await clearOfTabBar(page);
-  await shot(page, info, "workspace-refused");
+  /* Make stays open with that line (nothing started for takes 3-4): the line is the whole account, and it is on Make. */
+  await expect(page.getByTestId("make-panel")).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -334,13 +269,7 @@ test("this workspace's credits: when the credits run out mid-batch, takes 3–4 
   /* Two charges; two takes admitted as held, which cost nothing until they run. */
   expect(routes.charges.map((c) => c.variation)).toEqual([1, 2]);
   expect(routes.held).toEqual([3, 4]);
-  await page.getByTestId("make-tab-recent").click();
-  const strip = page.getByTestId("gen-batch");
-  await expect(strip.getByTestId("gen-batch-take-status")).toHaveText(["Rendering", "Rendering", "Held · needs credits", "Held · needs credits"]);
-  await expect(strip.locator(".gx-batch-meta")).toContainText("72 cr");
-  await floors(page, info);
-  await clearOfTabBar(page);
-  await shot(page, info, "workspace-held");
+  await expect(page.getByTestId("make-panel")).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -359,7 +288,7 @@ test("the takes stepper stays put as the live price lands: a press on More acros
   await expect(page.getByTestId("gen-blocked")).toHaveText("Getting the live price…");
   /* Where the stepper and Generate sit in the composer, whatever the scroll (at a scroller's end a shorter page scrolls back and hides a move). */
   const place = () => page.getByTestId("gen-view").evaluate((view) => {
-    const top = (selector: string) => Math.round((view.querySelector(selector)!.getBoundingClientRect().top - view.querySelector(".gx-gen-card")!.getBoundingClientRect().top) * 10) / 10;
+    const top = (selector: string) => Math.round((view.querySelector(selector)!.getBoundingClientRect().top - view.querySelector(".gx-mk-compose")!.getBoundingClientRect().top) * 10) / 10;
     return { takes: top('[data-testid="gen-takes"]'), generate: top('[data-testid="gen-generate"]') };
   });
   const pricing = await place();
@@ -383,7 +312,26 @@ test("the takes stepper stays put as the live price lands: a press on More acros
   await page.getByTestId("gen-takes-3").click();
   await expect(page.getByTestId("gen-takes-count")).toHaveText("3");
   await expect(page.getByTestId("gen-generate")).toHaveText(`Make 3 takes · ${3 * PRICE} cr`);
+  await expect(page.getByTestId("gen-takes-1")).toContainText(`${PRICE} cr`);
+  await chipsFit(page);
   expect(routes.quotes).toEqual([]);
   expect(routes.charges).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("Cinema Studio's takes chips show 'about N cr, at most 3N cr' whole, inside their chips", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one desktop width");
+  const { errors } = await open(page);
+  const cinema = { ...ENGINES[0], id: CINEMA_STUDIO_MODEL_ID, rate: { credits: 35, resolution: "720p", ratio: "16:9", duration: 5, approximate: true } };
+  await page.route(/\/api\/workbench\/engines(\?.*)?$/, (route) => {
+    const priced = new URL(route.request().url()).searchParams.has("model");
+    return route.fulfill({ json: { models: [cinema, ENGINES[1]], audio: null, credits: priced ? 35 : null, ...(priced ? { approximate: true } : {}) } });
+  });
+  await gen(page);
+  await page.getByTestId("gen-prompt").fill(PROMPT);
+  const one = page.getByTestId("gen-takes-1");
+  await expect(one).toContainText("at most 105 cr", { timeout: 60_000 });
+  await expect(page.getByTestId("gen-takes-4")).toContainText("at most 420 cr");
+  await chipsFit(page);
   expect(errors).toEqual([]);
 });

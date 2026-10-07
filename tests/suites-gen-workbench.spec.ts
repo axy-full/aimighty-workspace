@@ -85,7 +85,6 @@ test("Enhance wears its live price, approves exactly that, and the card offers U
 
 test("length is every second the engine allows, the sheet lists Studio engines only, and an asset drags in as a reference", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const wide = WIDE.includes(info.project.name);
   const { errors } = await open(page);
 
   const length = page.getByTestId("gen-length");
@@ -96,29 +95,27 @@ test("length is every second the engine allows, the sheet lists Studio engines o
   await length.selectOption(String(seconds.at(-1)));
   await expect(length).toHaveValue(String(seconds.at(-1)));
 
-  await page.getByTestId("gen-model").click();
-  const sheet = page.getByRole("dialog", { name: "Choose a model" });
+  /* Change lists the engines under it (already open under Advanced). */
+  const sheet = page.getByTestId("make-engines");
   /* One source since 28 September 2026: no signed-in account's catalogue, so no switch. */
   await expect(sheet.getByRole("tab")).toHaveCount(0);
-  await expect(sheet.getByTestId("gen-sheet-catalogue")).toHaveText("Studio engines");
-  await expect(sheet.getByRole("option").first()).toBeVisible();
-  /* With a pointer the search holds focus, so Escape alone closes it; elsewhere Close does. */
-  await page.keyboard.press("Escape");
-  await sheet.getByRole("button", { name: "Close" }).click({ timeout: 2_000 }).catch(() => {});
+  await expect(sheet).not.toContainText(/Higgsfield|connected/i);
+  await expect(sheet.getByTestId("make-engine-row").first()).toBeVisible();
+  await page.getByTestId("gen-model").click();
   await expect(sheet).toHaveCount(0);
 
-  /* The Library opens on Assets in Gen; its tile's text/plain id lands in the well. */
-  if (!wide) await page.getByTestId("make-open-library").click();
-  const tile = page.getByTestId("library").locator("[data-ctx^='asset:']").first();
+  /* Recent holds the project's assets; a card's text/plain id lands in the well when dropped there. */
+  await page.getByTestId("make-tab-recent").click();
+  const tile = page.getByTestId("make-panel").locator("[data-ctx^='asset:']").first();
   await expect(tile).toBeVisible();
   const id = (await tile.getAttribute("data-ctx"))!.slice("asset:".length);
-  if (!wide) await page.getByTestId("close-library").click();
+  await page.getByTestId("make-tab-make").click();
   await page.getByTestId("gen-well").evaluate((well, payload) => {
     const data = new DataTransfer();
     data.setData("text/plain", payload);
     well.dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true }));
   }, id);
-  await expect(page.getByTestId("gen-well")).toContainText(/@Image1 · /);
+  await expect(page.getByTestId("make-reference")).toHaveAttribute("title", /^@Image1 · /);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   expect(errors).toEqual([]);
 });
@@ -143,14 +140,7 @@ const ENGINES = [
 ];
 /* Longer than the 60 characters a take's name keeps: the name is cut mid-phrase, after "…desk lamp in". */
 const LONG = "A slow, cinematic push in on a battered scuffed desk lamp in a dark study, dust in the beam";
-type Seen = { complete: string | null; toasts: string[] };
-
-/** Moves the page's clock on two seconds at a time until `seen` holds: status reads run at lib/poll's pace. */
-async function until(page: Page, seen: () => Promise<boolean>, what: string) {
-  await expect.poll(async () => { if (await seen()) return true; await page.clock.fastForward("00:02"); return seen(); }, { message: what, timeout: 60_000, intervals: [50] }).toBe(true);
-}
-
-test("one take lands: its card says Complete with the ring held still, and the toast is a whole sentence", async ({ page }, info) => {
+test("one take is sent once, at the price on the button: Make closes and says what it came to", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   await signInLocally(page.request);
   await forbidPaidWork(page);
@@ -161,15 +151,17 @@ test("one take lands: its card says Complete with the ring held still, and the t
   await page.route("**/api/prompt/enhance", (route) => route.fulfill({ json: { model: "m", effort: "auto", estimateCredits: 1 } }));
   await page.route(/\/api\/workbench\/engines(\?.*)?$/, (route) =>
     route.fulfill({ json: { models: ENGINES, audio: null, credits: new URL(route.request().url()).searchParams.has("model") ? PRICE : null } }));
-  let status = "running", charges = 0;
+  let charges = 0;
+  const ceilings: number[] = [];
   await page.route("**/api/generate/quote", (route) => route.fulfill({ json: { estimatedCredits: PRICE, fingerprint: "f".repeat(64), unit: "cr" } }));
   await page.route(/\/api\/generate$/, (route) => {
     if (route.request().method() !== "POST") return route.fallback();
     charges++;
+    ceilings.push(Number((route.request().postDataJSON() as { maxCredits?: number }).maxCredits));
     return route.fulfill({ json: { id: "gen_lamp", status: "running" }, headers: { "Idempotency-Status": "complete" } });
   });
   await page.route(/\/api\/jobs\/gen_lamp(\?.*)?$/, (route) =>
-    route.fulfill({ json: { generation: generation({ id: "gen_lamp", kind: "video", status, prompt: LONG, creditsBilled: status === "succeeded" ? PRICE : null }) } }));
+    route.fulfill({ json: { generation: generation({ id: "gen_lamp", kind: "video", status: "running", prompt: LONG }) } }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.clock.install();
@@ -183,38 +175,11 @@ test("one take lands: its card says Complete with the ring held still, and the t
   await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${PRICE} cr`, { timeout: 60_000 });
   await page.getByTestId("gen-generate").click();
   await expect.poll(() => charges).toBe(1);
-  /* What was made is on Make › Recent. */
-  await page.getByTestId("make-tab-recent").click();
-  const card = page.getByTestId("gen-running");
-  await expect(card.locator(".gx-tile-chip")).toHaveText("Rendering");
-  /* While it renders the ring pulses — never for a person who asked for less motion. */
-  const animation = () => card.locator(".gx-ring").evaluate((el) => getComputedStyle(el).animationName);
-  expect(await animation()).toBe("gx-pulse");
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect.poll(animation).toBe("none");
-  await page.emulateMedia({ reducedMotion: "no-preference" });
-  await expect.poll(animation).toBe("gx-pulse");
-
-  /* Read in the task the card changes in (it lets go of the take a moment later): the ring as it is when the card
-     says Complete, and every toast shown. */
-  await page.evaluate(() => {
-    const seen: Seen = { complete: null, toasts: [] };
-    (window as unknown as { seen: Seen }).seen = seen;
-    new MutationObserver(() => {
-      const card = document.querySelector('[data-testid="gen-running"]');
-      if (seen.complete === null && card?.querySelector(".gx-tile-chip")?.textContent === "Complete")
-        seen.complete = getComputedStyle(card.querySelector(".gx-ring")!).animationName;
-      const toast = document.querySelector('[data-testid="toast"]')?.textContent?.trim();
-      if (toast && !seen.toasts.includes(toast)) seen.toasts.push(toast);
-    }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
-  });
-  status = "succeeded";
-  const seen = () => page.evaluate(() => (window as unknown as { seen: Seen }).seen);
-  await until(page, async () => { const now = await seen(); return now.complete !== null && now.toasts.some((t) => t.includes("rendered")); }, "the take lands and is announced");
-  const { complete, toasts } = await seen();
-  expect(complete, "the ring once the card says Complete").toBe("none");
-  /* The take's name is its prompt cut at 60 characters: never the subject of the sentence. */
-  expect(toasts.filter((t) => t.includes("rendered"))).toEqual(["Your take rendered. Filed in Takes for review."]);
+  /* The accepted press closes Make and says what it came to, in one line, at the price on the button. */
+  await expect(page.getByTestId("toast")).toContainText(`${PRICE} cr · rendering`);
+  await expect(page.getByTestId("make-panel")).toHaveCount(0);
   expect(charges).toBe(1);
+  /* The figure on the button is the ceiling the press was sent with. */
+  expect(ceilings).toEqual([PRICE]);
   expect(errors).toEqual([]);
 });

@@ -54,7 +54,7 @@ async function pasteFile(target: Locator, name: string, type: string, bytes: Buf
 }
 
 
-test("Gen: a pasted picture becomes a reference; a sound file is kept in the Library, and the box says why", async ({ page }, info) => {
+test.fixme("Make: a pasted picture becomes a reference; a sound file is kept in the Library, and the box says why — Make's words box has no Attach, paste or drop (components/graphite/make/Compose.tsx does not mount PromptAttach; only the well takes a drop); owner question: do Make's words take pasted and dropped files, as the 25 September rule 'every prompt box takes media' says?", async ({ page }, info) => {
   test.skip(!DESKTOPS.includes(info.project.name), "one desktop");
   const { project, errors } = await setup(page);
   await page.goto(`/suites?make=video&project=${project.id}`);

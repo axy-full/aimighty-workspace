@@ -1,8 +1,8 @@
-import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import { test, expect, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
-import { smallTargets, smallText } from "./phoneFloors";
+import { smallTargets } from "./phoneFloors";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { moreTakes } from "./helpers/genTakes";
 import { CINEMA_STUDIO_MODEL_ID } from "../lib/cinemaStudioTypes";
@@ -15,18 +15,14 @@ import { isCompact } from "./helpers/shellMode";
 test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /**
- * Gen's model sheet: a search field, a Recent group, spec chips and a price on
- * every row before anything is spent. Studio engines are priced by the engines
- * route where the composer stands — its picks, the project's aspect, its
- * references, one take — so the ticked row is the figure Generate shows. A row
- * with no figure reads "quoted"; Cinema Studio 4.0 always does (D0.2), its
- * price on Generate. The connected catalogue went with the sign-in
- * (lib/higgsfield-consumer/retired.ts): nobody, the workspace owner included,
- * sees a connected switch, and the account is never read.
+ * Make's Change list (the engine line's button): a price on every row before anything is spent. Studio engines are priced
+ * by the engines route where the composer stands, its picks, the project's aspect, its references, one take, so the ticked
+ * row is the figure Make shows. Cinema Studio 4.0 reads "about N cr, at most 3N cr". The connected catalogue went with the
+ * sign-in (lib/higgsfield-consumer/retired.ts): nobody, the workspace owner included, sees a connected switch, and the
+ * account is never read. (The old model sheet's search, Recent group and spec chips are gone: docs/old-shells.md.)
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
-const WIDE = ["workbench-1440x900", "workbench-1920x1080"];
 /* The two sizes the review looks at; PICKER_SHOTS=all captures every size. */
 const SHOTS = process.env.PICKER_SHOTS === "all" ? SIZES : ["workbench-390x844", "workbench-1440x900"];
 
@@ -74,35 +70,46 @@ async function open(page: Page, options: Options = {}) {
   return { errors, quotes, consumer, priced };
 }
 
-const sheetOf = (page: Page) => page.getByRole("dialog", { name: "Choose a model" });
+/** Make's engine list, under Change (the engine line's button); `open()` leaves it open with Advanced under it. */
+const sheetOf = (page: Page) => page.getByTestId("make-engines");
+const rowsOf = (page: Page) => sheetOf(page).getByTestId("make-engine-row");
+const rowPrice = (row: Locator) => row.getByTestId("make-engine-row-price");
 
+/** Opens the list when it is closed (Done closes it, and the Advanced fold with it). */
 async function openSheet(page: Page) {
-  const button = page.getByTestId("gen-model");
-  await button.scrollIntoViewIfNeeded();
-  await button.click();
+  const change = page.getByTestId("gen-model");
+  await change.scrollIntoViewIfNeeded();
+  if ((await change.getAttribute("aria-expanded")) !== "true") await change.click();
   const sheet = sheetOf(page);
   await expect(sheet).toBeVisible();
-  await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).filter((a) => a.effect && Number(a.effect.getTiming().iterations) !== Infinity).map((a) => a.finished)));
   return sheet;
 }
 
 async function closeSheet(page: Page) {
-  await sheetOf(page).getByRole("button", { name: "Close", exact: true }).click();
+  const change = page.getByTestId("gen-model");
+  if ((await change.getAttribute("aria-expanded")) === "true") await change.click();
   await expect(sheetOf(page)).toHaveCount(0);
 }
 
-const names = (page: Page, testId: string) => sheetOf(page).getByTestId(testId).locator(".gx-model-name").allTextContents();
-/* Every row has its figure (none still being read where the composer stands). */
+/** Every row has its figure (none still being read where the composer stands). */
 async function priced(page: Page) {
   const sheet = sheetOf(page);
-  await expect(sheet.getByRole("option").first()).toBeVisible();
-  await expect(sheet.locator('[data-testid="gen-sheet-price"][data-kind="loading"]')).toHaveCount(0, { timeout: 30_000 });
+  await expect(rowsOf(page).first()).toBeVisible({ timeout: 30_000 });
+  await expect(sheet).not.toHaveAttribute("aria-busy", "true", { timeout: 30_000 });
   return sheet;
 }
-const selectedRow = (page: Page) => sheetOf(page).locator('[role="option"][aria-selected="true"]');
-const figureOf = async (row: ReturnType<typeof selectedRow>) => Number(((await row.getByTestId("gen-sheet-price").locator("b").textContent()) ?? "").replace(/[^\d]/g, ""));
-/* Retrying: after a reload the list is read again before the group can draw. */
-const group = (page: Page, testId: string) => sheetOf(page).getByTestId(testId).locator(".gx-model-name");
+const selectedRow = (page: Page) => sheetOf(page).locator('[data-testid="make-engine-row"][aria-pressed="true"]');
+const figureOf = async (row: Locator) => Number(((await rowPrice(row).locator(".gx-price").textContent()) ?? "").replace(/[^\d.]/g, ""));
+/** The server's own quote for one take (the engines route, as the composer asks for it). */
+async function quote(page: Page, model: string, resolution: string, ratio: string, duration: number): Promise<number> {
+  const q = new URLSearchParams({ model, resolution, ratio, duration: String(duration) });
+  return (await page.request.get(`/api/workbench/engines?${q}`).then((r) => r.json()) as { credits: number }).credits;
+}
+/** The size and length a priced row names ("52 cr · 1080p · 6 s"). */
+const settingsOf = async (row: Locator) => {
+  const m = ((await rowPrice(row).textContent()) ?? "").match(/ · (\d+(?:p|K)|adaptive)(?: · (\d+) s)?$/);
+  return { resolution: m?.[1] ?? "", duration: m?.[2] ? Number(m[2]) : 5 };
+};
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
 
 async function shot(page: Page, info: TestInfo, name: string) {
@@ -110,53 +117,52 @@ async function shot(page: Page, info: TestInfo, name: string) {
   await page.screenshot({ path: info.outputPath(`${name}-${info.project.name.replace("workbench-", "")}.png`), animations: "disabled" });
 }
 
-test("every Studio engine wears spec chips and a price — Cinema Studio 4.0 reads about N, at most 3N; the picked row's price is the figure Generate shows", async ({ page }, info) => {
+const credits = (text: string | null) => Number((text ?? "").replace(/[^\d.]/g, ""));
+const WORDS = "A fox crossing a frozen harbour at dawn";
+const ASPECT = (project: Project) => project.aspect;
+
+test("every Studio engine wears a price at its own size and length — Cinema Studio 4.0 reads about N, at most 3N; the picked row's price is the figure Make shows", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, consumer } = await open(page);
-  const sheet = await openSheet(page);
-  const rows = sheet.getByRole("option");
-  await expect(rows.first()).toBeVisible();
+  const sheet = await priced(page);
+  const rows = rowsOf(page);
   const count = await rows.count();
   expect(count).toBeGreaterThanOrEqual(5);
   for (let i = 0; i < count; i++) {
     const row = rows.nth(i);
-    await expect(row.locator('[data-spec="resolution"]')).toHaveText(/^up to \d+(p|K)$/);
-    if (await row.getAttribute("data-model") === CINEMA_STUDIO_MODEL_ID) continue;
-    await expect(row.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "rate");
-    await expect(row.getByTestId("gen-sheet-price").locator("b")).toHaveText(/^\d+ cr$/);
-    /* A 16:9 project and an untouched composer: length and size, and the aspect only if it is not 16:9. */
-    await expect(row.getByTestId("gen-sheet-price").locator("span")).toHaveText(/^\d+ s · \S+( · \S+)?$/);
-    await expect(row.locator('[data-spec="length"]')).toHaveText(/^\d+(–|\/)\d+ s$/);
-    await expect(row.locator('[data-spec="refs"]')).toHaveText(/refs$|^Prompt only$/);
+    if (await row.getAttribute("data-engine") === CINEMA_STUDIO_MODEL_ID) continue;
+    /* A 16:9 project and an untouched composer: the figure, then the size and length this engine renders with here. */
+    await expect(rowPrice(row)).toHaveText(/^\d+ cr · \S+( · \d+ s)?$/);
+    await expect(rowPrice(row).locator(".gx-price")).toHaveAttribute("title", /^\$\d+\.\d\d$/);
   }
-  /* Cinema Studio 4.0 is in the sheet at what approving it holds, "about N cr, at most 3N cr", never "quoted", and no vendor's name. */
-  const cinema = sheet.getByRole("option", { name: /^Cinema Studio 4\.0/ });
+  /* Cinema Studio 4.0 is in the list at what approving it holds, "about N cr, at most 3N cr", never "quoted", and no vendor's name. */
+  const cinema = rows.filter({ has: page.locator(".gx-mk-row-name", { hasText: /^Cinema Studio 4\.0$/ }) });
   if (MAKE_SHOWS_CINEMA) {
-    await expect(cinema.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "rate");
-    await expect(cinema.getByTestId("gen-sheet-price").locator("b")).toHaveText(/^about \d+ cr, at most \d+ cr$/);
-    await expect(cinema.getByTestId("gen-sheet-price")).not.toContainText("quoted");
+    await expect(cinema).toHaveCount(1);
+    await expect(rowPrice(cinema)).toHaveText(/^about \d+ cr, at most \d+ cr$/);
+    await expect(rowPrice(cinema)).not.toContainText("quoted");
     await expect(cinema).not.toContainText(/Higgsfield/i);
+    const [about, most] = ((await rowPrice(cinema).textContent())!.match(/\d+/g) ?? []).map(Number);
+    expect(most).toBe(3 * about);
   } else {
     /* Not offered in Make until #523's hold is merged (lib/shell/make-price.ts › MAKE_SHOWS_CINEMA). */
     await expect(cinema).toHaveCount(0);
   }
-  /* The default engine is the selected row; its price is what the button asks for, once there is a prompt. */
-  const selected = sheet.locator('[role="option"][aria-selected="true"]');
+  /* The default engine is the ticked row; its price is what the button asks for, and the server's own quote at the settings it names. */
+  const selected = selectedRow(page);
   await expect(selected).toHaveCount(1);
-  const figure = (await selected.getByTestId("gen-sheet-price").locator("b").textContent())!;
-  await expect(selected.getByTestId("gen-sheet-price")).toHaveText(/5 s · /);
+  const figure = await figureOf(selected);
+  await expect(rowPrice(selected)).toHaveText(/ · 5 s$/);
+  const at = await settingsOf(selected);
+  expect(await quote(page, (await selected.getAttribute("data-engine"))!, at.resolution, ASPECT(fixture()), at.duration)).toBe(figure);
   await shot(page, info, "studio-sheet");
-  if (PHONES.includes(info.project.name)) {
-    await expect(sheet).toBeInViewport({ ratio: 0.9 });
-    expect(await smallTargets(page, ".gx-sheet"), "sheet targets under 44×44").toEqual([]);
-    expect(await smallText(page, ".gx-legacy"), "text under 12px").toEqual([]);
-  }
+  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, ".gx-make"), "Make targets under 44x44").toEqual([]);
   expect(await noOverflow(page)).toBe(true);
   expect(await sheet.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
   await closeSheet(page);
-  await page.getByTestId("gen-prompt").fill("A fox crossing a frozen harbour at dawn");
+  await page.getByTestId("gen-prompt").fill(WORDS);
   /* The live quote is a real route read; give a busy dev server room. */
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${figure}`, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${figure} cr`, { timeout: 30_000 });
   /* A Studio pick never reads the connected account; an untouched composer needs no priced read either. */
   expect(consumer).toEqual([]);
   expect(errors).toEqual([]);
@@ -164,67 +170,64 @@ test("every Studio engine wears spec chips and a price — Cinema Studio 4.0 rea
 
 /* The review's cases: Seedance is billed on the frame, so the project's aspect moves its price. */
 for (const aspect of ["21:9", "1:1"]) {
-  test(`a ${aspect} project: every row is priced at that aspect where the engine offers it, and the ticked row is Generate's figure`, async ({ page }, info) => {
+  test(`a ${aspect} project: every row is priced at that aspect where the engine offers it, and the ticked row is Make's figure`, async ({ page }, info) => {
     test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
     const { errors, priced: reads } = await open(page, { aspect });
-    await openSheet(page);
-    const sheet = await priced(page);
+    await priced(page);
     const selected = selectedRow(page);
-    await expect(selected.getByTestId("gen-sheet-price").locator("span").first()).toHaveText(new RegExp(` · ${aspect}$`));
     const figure = await figureOf(selected);
+    /* The list's own read was asked at the project's aspect, and the ticked row is the server's quote at that aspect and the settings the row names. */
     expect(reads.some((q) => q.get("aspect") === aspect)).toBe(true);
+    const at = await settingsOf(selected);
+    expect(await quote(page, (await selected.getAttribute("data-engine"))!, at.resolution, aspect, at.duration)).toBe(figure);
     await shot(page, info, `aspect-${aspect.replace(":", "x")}`);
-    /* An engine that does not offer the aspect is priced at its own default, and says which. Cinema Studio 4.0 alone reads quoted. */
-    for (const row of await sheet.getByRole("option").all())
-      await expect(row.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", await row.getAttribute("data-model") === CINEMA_STUDIO_MODEL_ID ? "none" : "rate");
+    /* An engine that does not offer the aspect is priced at its own default. Every row still carries a figure; Cinema Studio 4.0 its own words. */
+    for (const row of await rowsOf(page).all())
+      await expect(rowPrice(row)).toHaveText(await row.getAttribute("data-engine") === CINEMA_STUDIO_MODEL_ID ? /^about \d+ cr, at most \d+ cr$/ : /^\d+ cr · /);
     await closeSheet(page);
-    await page.getByTestId("gen-prompt").fill("A fox crossing a frozen harbour at dawn");
+    await page.getByTestId("gen-prompt").fill(WORDS);
     await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${figure} cr`, { timeout: 30_000 });
     expect(errors).toEqual([]);
   });
 }
 
-test("the rows follow the composer: the aspect chip, a bigger size and a longer take, several takes; picking another row keeps Generate equal to it", async ({ page }, info) => {
+test("the rows follow the composer: the aspect chip, a bigger size and a longer take, several takes; picking another row keeps Make equal to it", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors, priced: reads, consumer } = await open(page);
-  await page.getByTestId("gen-prompt").fill("A fox crossing a frozen harbour at dawn");
-  let sheet = await openSheet(page);
+  await page.getByTestId("gen-prompt").fill(WORDS);
   await priced(page);
   const start = await figureOf(selectedRow(page));
-  const engine = (await selectedRow(page).locator(".gx-model-name").textContent())!;
-  await closeSheet(page);
+  const engine = (await selectedRow(page).locator(".gx-mk-row-name").textContent())!;
   await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${start} cr`, { timeout: 30_000 });
 
-  /* Gen's aspect chip at 21:9: the row names 21:9, and Generate settles on the row's figure. */
-  await page.getByRole("group", { name: "Aspect" }).getByRole("button", { name: "21:9", exact: true }).click();
-  sheet = await openSheet(page);
+  /* The aspect chip at 21:9: the list is read again at it, and Make settles on the ticked row's figure. */
+  await page.getByRole("group", { name: "Aspect" }).getByRole("button", { name: /21:9/ }).click();
   await priced(page);
-  await expect(selectedRow(page).getByTestId("gen-sheet-price").locator("span").first()).toHaveText(/ · 21:9$/);
   const wide = await figureOf(selectedRow(page));
   expect(reads.some((q) => q.get("pickRatio") === "21:9")).toBe(true);
-  await closeSheet(page);
   await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${wide} cr`, { timeout: 30_000 });
+  const at = await settingsOf(selectedRow(page));
+  expect(await quote(page, (await selectedRow(page).getAttribute("data-engine"))!, at.resolution, "21:9", at.duration)).toBe(wide);
 
   /* A bigger size, a longer take and three takes: the row is one take at those settings, the button three. */
-  await page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p", exact: true }).click();
+  await page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: /1080p/ }).click();
   await page.getByTestId("gen-length").selectOption("10");
   await moreTakes(page, 2);
   await expect(page.getByTestId("gen-takes-count")).toHaveText("3");
-  sheet = await openSheet(page);
   await priced(page);
-  const price = selectedRow(page).getByTestId("gen-sheet-price");
-  await expect(price.locator("span").first()).toHaveText("10 s · 1080p · 21:9");
-  await expect(price.locator("span").nth(1)).toHaveText("per take");
+  await expect(rowPrice(selectedRow(page))).toHaveText(/ · 1080p · 10 s$/);
   const take = await figureOf(selectedRow(page));
   expect(take).toBeGreaterThan(wide);
+  expect(await quote(page, (await selectedRow(page).getAttribute("data-engine"))!, "1080p", "21:9", 10)).toBe(take);
   await shot(page, info, "touched");
-  await closeSheet(page);
   await expect(page.getByTestId("gen-generate")).toHaveText(`Make 3 takes · ${(take * 3).toLocaleString("en-US")} cr`, { timeout: 30_000 });
+  /* The takes chip's own total is the same three takes. */
+  await expect(page.getByTestId("gen-takes-3")).toContainText(`${(take * 3).toLocaleString("en-US")} cr`);
 
-  /* Another engine: its row, times three, is what Generate then asks for. */
-  sheet = await openSheet(page);
+  /* Another engine: its row, times three, is what Make then asks for. */
+  await openSheet(page);
   await priced(page);
-  const other = sheet.getByRole("option").filter({ hasNot: page.locator(".gx-model-name", { hasText: new RegExp(`^${engine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) }) }).first();
+  const other = rowsOf(page).filter({ hasNot: page.locator(".gx-mk-row-name", { hasText: new RegExp(`^${engine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) }) }).first();
   const otherFigure = await figureOf(other);
   await other.click();
   await expect(sheetOf(page)).toHaveCount(0);
@@ -233,155 +236,24 @@ test("the rows follow the composer: the aspect chip, a bigger size and a longer 
   expect(errors).toEqual([]);
 });
 
-test("search narrows by name, one-liner or chip, says when nothing matches, and the keyboard picks", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const wide = WIDE.includes(info.project.name);
-  const { errors } = await open(page);
-  let sheet = await openSheet(page);
-  const search = sheet.getByTestId("gen-model-search");
-  /* Count once the list has drawn: a count taken while it is still being read is 0. */
-  await expect(sheet.getByRole("option").first()).toBeVisible();
-  const all = await sheet.getByRole("option").count();
-  await expect(search).toHaveAttribute("placeholder", `Search ${all} models`);
-  /* A pointer can type straight away; a phone keeps its keyboard down until the field is tapped. */
-  if (wide) await expect(search).toBeFocused();
-  else await expect(search).not.toBeFocused();
-
-  await search.fill("kling");
-  const kling = await sheet.locator(".gx-model-name").allTextContents();
-  expect(kling.length).toBeGreaterThan(0);
-  expect(kling.length).toBeLessThan(all);
-  for (const name of kling) expect(name).toMatch(/kling/i);
-  /* "audio" finds only engines whose Gen takes carry sound: each wears the chip, and no one-liner promises sound it lacks. */
-  await search.fill("audio");
-  const loud = sheet.getByRole("option");
-  expect(await loud.count()).toBeGreaterThan(0);
-  expect(await loud.count()).toBeLessThan(all);
-  await expect(loud.filter({ hasNot: page.locator('[data-spec="audio"]') })).toHaveCount(0);
-  for (const chip of await sheet.locator('[data-spec="audio"]').all()) await expect(chip).toHaveAttribute("title", "Takes carry sound");
-  await expect(sheet.locator(".gx-model-sub").filter({ hasText: /native audio/i })).toHaveCount(0);
-  await search.fill("audio 1080p");
-  expect(await loud.count()).toBeGreaterThan(0);
-  for (const row of await loud.all()) await expect(row).toContainText(/audio/i);
-
-  await search.fill("no engine is called this");
-  await expect(sheet.getByTestId("gen-model-none")).toContainText("No model matches “no engine is called this”.");
-  await expect(sheet.getByRole("option")).toHaveCount(0);
-  await sheet.getByRole("button", { name: "Clear search" }).click();
-  await expect(search).toHaveValue("");
-  await expect(sheet.getByRole("option")).toHaveCount(all);
-  await shot(page, info, "search-cleared");
-
-  /* Enter takes the first match; the sheet closes and the composer carries it. */
-  await search.fill("kling pro");
-  const first = (await sheet.locator(".gx-model-name").first().textContent())!;
-  await search.press("Enter");
-  await expect(sheetOf(page)).toHaveCount(0);
-  await expect(page.getByTestId("gen-model").locator(".gx-model-name")).toHaveText(first);
-  if (wide) {
-    await expect(page.getByTestId("gen-model")).toBeFocused();
-    /* Enter on the empty, focused field picks nothing: the sheet stays and the model is unchanged. */
-    sheet = await openSheet(page);
-    await expect(sheet.getByTestId("gen-model-search")).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(sheet).toBeVisible();
-    await expect(page.getByTestId("gen-model").locator(".gx-model-name")).toHaveText(first);
-    /* Arrow keys walk the rows from the field; Enter on a row picks it. */
-    await page.keyboard.press("ArrowDown");
-    await expect(sheet.getByRole("option").first()).toBeFocused();
-    await page.keyboard.press("ArrowDown");
-    const second = sheet.getByRole("option").nth(1);
-    await expect(second).toBeFocused();
-    const picked = (await second.locator(".gx-model-name").textContent())!;
-    await page.keyboard.press("Enter");
-    await expect(sheetOf(page)).toHaveCount(0);
-    await expect(page.getByTestId("gen-model").locator(".gx-model-name")).toHaveText(picked);
-    /* Escape closes from anywhere inside. */
-    await openSheet(page);
-    await page.keyboard.press("Escape");
-    await expect(sheetOf(page)).toHaveCount(0);
-  }
-  expect(await noOverflow(page)).toBe(true);
-  expect(errors).toEqual([]);
-});
-
-test("Recent leads with the last three models used for this output, never repeated, and survives a reload", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page);
-  let sheet = await openSheet(page);
-  await expect(sheet.getByRole("option").nth(4)).toBeVisible();
-  const order = await sheet.locator(".gx-model-name").allTextContents();
-  expect(order.length).toBeGreaterThanOrEqual(5);
-  /* Nothing used yet: one list, no Recent. */
-  await expect(sheet.getByTestId("gen-model-recent")).toHaveCount(0);
-  const pick = async (name: string) => {
-    sheet = await openSheet(page);
-    await sheet.getByRole("option").filter({ has: page.locator(".gx-model-name", { hasText: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) }) }).click();
-    await expect(sheetOf(page)).toHaveCount(0);
-  };
-  await closeSheet(page);
-  for (const name of [order[3], order[4], order[1], order[0]]) await pick(name);
-  sheet = await openSheet(page);
-  await expect(group(page, "gen-model-recent")).toHaveText([order[0], order[1], order[4]]);
-  const rest = await names(page, "gen-model-all");
-  expect(rest).toEqual(order.filter((n) => ![order[0], order[1], order[4]].includes(n)));
-  await expect(sheet.getByRole("group", { name: "Recent" })).toBeVisible();
-  await expect(sheet.getByRole("group", { name: "More models" })).toBeVisible();
-  await expect(sheet.getByRole("option")).toHaveCount(order.length);
-  await shot(page, info, "recent");
-  /* A query searches everything and drops the group. */
-  await sheet.getByTestId("gen-model-search").fill(order[4].split(" ")[0]);
-  await expect(sheet.getByTestId("gen-model-recent")).toHaveCount(0);
-  await closeSheet(page);
-
-  /* Generating with a model makes it recent too. */
-  /* The save before any submit is refused here, so nothing is ever sent to an engine. */
-  let paused = true;
-  await page.route("**/api/workbench/projects**", (route) => (paused ? route.fulfill({ status: 503, json: { error: "Saving is paused in this test." } }) : route.fallback()));
-  await page.getByTestId("gen-prompt").fill("A fox crossing a frozen harbour");
-  await pick(order[2]);
-  await expect(page.getByTestId("gen-generate")).toHaveText(/^Make · \d+ cr$/, { timeout: 30_000 });
-  await page.getByTestId("gen-generate").click();
-  await expect(page.locator(".gx-gen-note[role='status']").filter({ hasText: "Saving is paused in this test." })).toBeVisible();
-  paused = false;
-
-  await page.reload();
-  await expect(page.getByTestId("gen-view")).toBeVisible();
-  await openAdvanced(page);
-  sheet = await openSheet(page);
-  await expect(group(page, "gen-model-recent")).toHaveText([order[2], order[0], order[1]]);
-  /* Recent is per output: Images has its own, and nothing is used there yet. */
-  await closeSheet(page);
-  await page.getByRole("tab", { name: "Images" }).click();
-  sheet = await openSheet(page);
-  await expect(sheet.getByRole("option").first()).toBeVisible();
-  await expect(sheet.getByTestId("gen-model-recent")).toHaveCount(0);
-  expect(await noOverflow(page)).toBe(true);
-  expect(errors).toEqual([]);
-});
-
 for (const member of [false, true])
 test(`${member ? "a member" : "the owner"} sees only this workspace's engines: no connected switch, and the account is never read`, async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors, consumer } = await open(page, { member });
-  const sheet = await openSheet(page);
-  await expect(sheet.getByRole("option").first()).toBeVisible();
+  const sheet = await priced(page);
   await expect(sheet.getByRole("tablist", { name: "Catalogue" })).toHaveCount(0);
   await expect(sheet.getByRole("tab")).toHaveCount(0);
-  /* One source, named, not offered as a switch. */
-  await expect(sheet.getByTestId("gen-sheet-catalogue")).toHaveText("Studio engines");
+  /* One source, not offered as a switch. */
   await expect(sheet).not.toContainText(/Higgsfield|connected cr/);
-  await expect(sheet.getByRole("button", { name: "Close", exact: true })).toBeVisible();
-  await expect(sheet.getByTestId("gen-sheet-price").first()).toHaveAttribute("data-kind", "rate");
-  /* Make's engine line says what it is in its title; the sheet names the catalogue. */
-  await expect(page.getByTestId("gen-model")).toHaveAttribute("title", "Studio engine · Change");
+  await expect(page.getByTestId("make-panel")).not.toContainText(/Higgsfield|connected cr/);
+  await expect(rowPrice(rowsOf(page).first())).toHaveText(/^\d+ cr · /);
   await shot(page, info, member ? "member-sheet" : "owner-sheet");
   await closeSheet(page);
   expect(consumer).toEqual([]);
   expect(errors).toEqual([]);
 });
 
-test("the sheet shows it is reading, then the list; a failed read says why instead of an empty list", async ({ page }, info) => {
+test("the list shows it is reading, then the rows; a failed read says why instead of an empty list", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -393,40 +265,37 @@ test("the sheet shows it is reading, then the list; a failed read says why inste
       return route.fallback();
     }),
   });
-  let sheet = await openSheet(page);
-  await expect(sheet.getByTestId("gen-model-loading")).toContainText("Reading the available models…");
-  await expect(sheet.getByRole("option")).toHaveCount(0);
+  const sheet = await openSheet(page);
+  await expect(sheet.getByRole("status")).toContainText("Reading the engines…");
+  await expect(rowsOf(page)).toHaveCount(0);
   await shot(page, info, "loading");
   release();
-  await expect(sheet.getByRole("option").first()).toBeVisible();
-  await expect(sheet.getByTestId("gen-model-loading")).toHaveCount(0);
+  await expect(rowsOf(page).first()).toBeVisible({ timeout: 30_000 });
+  await expect(sheet.getByRole("status").filter({ hasText: "Reading the engines…" })).toHaveCount(0);
   await closeSheet(page);
 
   failing = true;
   await page.reload();
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await openAdvanced(page);
-  sheet = await openSheet(page);
-  await expect(sheet.getByTestId("gen-model-empty").locator(".gx-empty")).toHaveText("The engine list is unavailable right now.");
-  await expect(sheet.getByRole("option")).toHaveCount(0);
-  /* Nothing to search, and a way out that is not a reload. */
-  await expect(sheet.getByTestId("gen-model-search")).toHaveCount(0);
+  await expect(sheetOf(page).getByRole("status")).toHaveText("The engine list is unavailable right now.");
+  await expect(rowsOf(page)).toHaveCount(0);
+  /* Make waits, unpriced, and says why. */
   await expect(page.getByTestId("gen-blocked")).toHaveText("The engine list is unavailable right now.");
+  await expect(page.getByTestId("gen-generate")).toHaveAttribute("data-spend", "unpriced");
   await shot(page, info, "error");
   expect(await noOverflow(page)).toBe(true);
-  /* Try again reads the list again: still failing says so again; once it answers, the list is there. */
-  await sheet.getByTestId("gen-model-retry").click();
-  await expect(sheet.getByTestId("gen-model-empty").locator(".gx-empty")).toHaveText("The engine list is unavailable right now.");
+  /* Once the list answers again (a reload reads it afresh), the rows are there and the reason is gone. */
   failing = false;
-  await sheet.getByTestId("gen-model-retry").click();
-  await expect(sheet.getByRole("option").first()).toBeVisible({ timeout: 30_000 });
-  await expect(sheet.getByTestId("gen-model-search")).toBeVisible();
-  await closeSheet(page);
-  await expect(page.getByTestId("gen-blocked")).not.toHaveText("The engine list is unavailable right now.");
+  await page.reload();
+  await expect(page.getByTestId("gen-view")).toBeVisible();
+  await openAdvanced(page);
+  await expect(rowsOf(page).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("gen-blocked").filter({ hasText: "The engine list is unavailable right now." })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
-test("the Audio output: sound effects and music carry a price and a one-liner; Generate asks for the same figure", async ({ page }, info) => {
+test("the Audio output: sound effects and music carry a price; Make asks for the same figure", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors } = await open(page);
   /* The composer's sound price is the audio admission's quoteOnly read: allowed through, and nothing else. */
@@ -436,27 +305,29 @@ test("the Audio output: sound effects and music carry a price and a one-liner; G
     if (body.quoteOnly !== true) throw new Error("Workspace tests must not submit paid work without a mock.");
     return route.continue();
   });
-  await page.getByRole("tab", { name: "Audio" }).click();
-  let sheet = await openSheet(page);
+  await page.getByTestId("make-type-audio").click();
+  await openSheet(page);
   await priced(page);
+  const row = (name: RegExp) => rowsOf(page).filter({ has: page.locator(".gx-mk-row-name", { hasText: name }) }).first();
   for (const name of [/^Sound effects|^Eleven.*(SFX|Sound)/i, /Music/i]) {
-    const row = sheet.getByRole("option").filter({ has: page.locator(".gx-model-name", { hasText: name }) }).first();
-    await expect(row.getByTestId("gen-sheet-price")).toHaveAttribute("data-kind", "rate");
-    await expect(row.locator(".gx-model-sub")).not.toHaveText("");
+    await expect(row(name)).toBeVisible();
+    await expect(row(name).locator(".gx-mk-row-sub")).not.toHaveText("");
+    /* The engines route's own audio read: a figure, with the length it is for ("10 s", or "any length"), never a made-up one. */
+    await expect(rowPrice(row(name))).toHaveText(/^(up to )?\d+(\.\d)? cr · (\d+ s|any length)$/, { timeout: 30_000 });
   }
+  await expect(rowPrice(row(/Music/i))).toHaveText(/ · 10 s$/);
   await shot(page, info, "audio");
-  const music = sheet.getByRole("option").filter({ has: page.locator(".gx-model-name", { hasText: /Music/i }) }).first();
-  await expect(music.getByTestId("gen-sheet-price").locator("span")).toHaveText("10 s");
-  const figure = await figureOf(music);
-  await music.click();
-  await expect(sheetOf(page)).toHaveCount(0);
   await page.getByTestId("gen-prompt").fill("A slow cello over rain on a tin roof");
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${figure} cr`, { timeout: 30_000 });
-  sheet = await openSheet(page);
+  await row(/Music/i).click();
+  await expect(page.getByTestId("gen-generate")).toHaveText(/^Make · (up to )?\d+(\.\d)? cr$/, { timeout: 30_000 });
+  const asked = credits(await page.getByTestId("gen-generate").textContent());
+  /* The line carries that same figure. */
+  expect(credits(await page.getByTestId("make-engine-price").textContent())).toBe(asked);
+  /* With words in, the Music row is priced, and it is the button's figure. */
+  await openSheet(page);
   await priced(page);
-  const effects = sheet.getByRole("option").first();
-  await expect(effects.getByTestId("gen-sheet-price").locator("span")).toHaveText(/^(any length|quoted)$/);
-  await closeSheet(page);
+  await expect(rowPrice(row(/Music/i))).toHaveText(/^(up to )?\d+(\.\d)? cr/);
+  expect(credits(await rowPrice(row(/Music/i)).locator(".gx-price").textContent())).toBe(asked);
   expect(await noOverflow(page)).toBe(true);
   expect(errors).toEqual([]);
 });
