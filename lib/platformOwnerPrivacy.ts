@@ -1,5 +1,5 @@
 import { isHouseWorkspace } from "./houseWorkspace";
-import type { TenantWorkspace } from "./tenant";
+import { currentTenant, type TenantWorkspace } from "./tenant";
 
 /**
  * The platform owner is seen only in the house workspace.
@@ -14,39 +14,50 @@ import type { TenantWorkspace } from "./tenant";
  * lib/auth.ts): the deployment's SUPER_ADMIN_EMAIL, or the owner of the
  * house (legacy) workspace. Nothing here names a person.
  *
- * Applied at the data boundary, in three places:
- * - a client workspace's own `users` table never holds the owner's address or
- *   name (`mirrorIdentity`, used by every writer of that table, and a scrub on
- *   the workspace database's first open), so every join on it — jobs, notes,
- *   chat, activity, approvals, exports — reads "Particl support";
+ * Applied at the data boundary, for everything written from now on:
+ * - a client workspace's own `users` table holds the owner as "Particl
+ *   support" (`mirrorIdentity`, used by every writer of that table), so every
+ *   join on it — jobs, notes, chat, activity, approvals, exports — reads so;
  * - the signed-in session's display name is "Particl support" inside a client
  *   workspace (`maskSessionUser`), so names written at the time of an action
  *   (picked by, review link by, push text, invite email) are too;
- * - lists read from the platform database (Team) leave the owner out
- *   (`ownerMaskFor`).
+ * - the Team list shows the owner as one "Particl support" row with no
+ *   address, @mention lists leave them out, audit lines name them "Particl
+ *   support" (`ownerMaskFor`);
+ * - a few stored values guests or members read are masked as they are read
+ *   (`publicStoredActor`, `maskStoredActor`).
+ * What was written before is rewritten only on request, per workspace, after
+ * a dry run (lib/platformOwnerScrub.ts).
  */
 
 export const SUPPORT_ACTOR = "Particl support";
 export const SYSTEM_ACTOR = "Particl";
 
 /** The address a client workspace's `users` row carries for the owner: reserved TLD, never deliverable, never a person. */
-const SUPPORT_MIRROR_DOMAIN = "support.particl.invalid";
+export const SUPPORT_MIRROR_DOMAIN = "support.particl.invalid";
 
 /**
- * The platform owner: the configured address, and the accounts that are
- * theirs (the house workspace's owner, and the account at that address).
+ * The platform owner: the configured address, the accounts that are theirs
+ * (the house workspace's owner, and the account at that address), and those
+ * accounts' names (only ever compared against, never shown outside the house).
  */
-export type PlatformOwnerIdentity = { email: string | null; accountIds: string[] };
+export type PlatformOwnerIdentity = { email: string | null; accountIds: string[]; names?: string[] };
 
 type Who = { id?: unknown; email?: unknown } | null | undefined;
 
 const norm = (v: unknown) => (typeof v === "string" ? v.trim().toLowerCase() : "");
 
+/** The owner's address, exactly, or as a removed member's row mangles it ("<address>#deleted-<ts>"). */
+export function isOwnerAddress(identity: PlatformOwnerIdentity, value: unknown): boolean {
+  const email = norm(value);
+  if (!identity.email || !email) return false;
+  return email === identity.email || email.startsWith(`${identity.email}#deleted-`);
+}
+
 /** True when `who` is the platform owner described by `identity`. */
 export function isOwnerIdentity(identity: PlatformOwnerIdentity, who: Who): boolean {
   if (!who) return false;
-  const email = norm(who.email);
-  if (identity.email && email && (email === identity.email || email.startsWith(`${identity.email}#deleted-`))) return true;
+  if (isOwnerAddress(identity, who.email)) return true;
   const id = who.id == null ? "" : String(who.id);
   return Boolean(id) && identity.accountIds.includes(id);
 }
@@ -59,22 +70,30 @@ export function isSupportMirrorEmail(email: unknown): boolean {
 let cached: { at: number; identity: PlatformOwnerIdentity } | null = null;
 const CACHE_MS = 60_000;
 
+const envIdentity = (): PlatformOwnerIdentity => ({ email: norm(process.env.SUPER_ADMIN_EMAIL) || null, accountIds: [], names: [] });
+
 /** Who the platform owner is, read the way `isPlatformOwner` reads it. Cached for a minute. */
 export async function platformOwnerIdentity(): Promise<PlatformOwnerIdentity> {
   if (cached && Date.now() - cached.at < CACHE_MS) return cached.identity;
-  const email = norm(process.env.SUPER_ADMIN_EMAIL) || null;
-  const accountIds: string[] = [];
+  const identity = envIdentity();
+  const names = new Set<string>();
   try {
-    const { legacyWorkspace, findAccountByEmail } = await import("./platform");
+    const { legacyWorkspace, findAccountByEmail, getAccount } = await import("./platform");
     const house = await legacyWorkspace();
-    if (house?.ownerId) accountIds.push(house.ownerId);
-    const byAddress = email ? await findAccountByEmail(email) : null;
-    if (byAddress?.id && !accountIds.includes(String(byAddress.id))) accountIds.push(String(byAddress.id));
+    const accounts = [
+      house?.ownerId ? await getAccount(house.ownerId) : null,
+      identity.email ? await findAccountByEmail(identity.email) : null,
+    ];
+    for (const a of accounts) {
+      if (!a?.id) continue;
+      if (!identity.accountIds.includes(String(a.id))) identity.accountIds.push(String(a.id));
+      if (String(a.name ?? "").trim()) names.add(String(a.name).trim());
+    }
   } catch {
     // No platform database yet: the address alone decides, and nothing is cached.
-    return { email, accountIds };
+    return identity;
   }
-  const identity = { email, accountIds };
+  identity.names = [...names];
   cached = { at: Date.now(), identity };
   return identity;
 }
@@ -131,6 +150,42 @@ export async function publicActorEmail(
 }
 
 /**
+ * A stored "who" value (an address, an account id) as the workspace in scope
+ * may show it: "Particl support" when it is the platform owner's, outside the
+ * house. Synchronous for row mappers: it reads the identity already looked up
+ * in this instance, or the configured address alone.
+ */
+export function maskStoredActor<T extends string | null | undefined>(value: T): T | string {
+  if (value == null || value === "") return value;
+  const ws = currentTenant()?.workspace;
+  if (!ws || isHouseWorkspace(ws)) return value;
+  const identity = cached?.identity ?? envIdentity();
+  return isOwnerAddress(identity, value) || identity.accountIds.includes(String(value)) ? SUPPORT_ACTOR : value;
+}
+
+/**
+ * A stored "who" value — an address, an account id, or a display name written
+ * at the time — as a workspace may show it. A name counts as the owner's only
+ * when no other member of that workspace goes by it (`members`, the
+ * workspace's `users` rows; without them a name is never matched).
+ */
+export async function publicStoredActor(
+  ws: Pick<TenantWorkspace, "id"> | null | undefined,
+  value: string | null | undefined,
+  members?: () => Promise<{ id?: unknown; email?: unknown; name?: unknown }[]>,
+): Promise<string | null> {
+  if (value == null || value === "" || isHouseWorkspace(ws)) return value ?? null;
+  const identity = await platformOwnerIdentity();
+  if (isOwnerAddress(identity, value) || identity.accountIds.includes(value)) return SUPPORT_ACTOR;
+  const name = value.trim();
+  if (members && (identity.names ?? []).includes(name)) {
+    const others = (await members()).filter((m) => !isOwnerIdentity(identity, m) && !isSupportMirrorEmail(m.email));
+    if (!others.some((m) => String(m.name ?? "").trim() === name)) return SUPPORT_ACTOR;
+  }
+  return value;
+}
+
+/**
  * What a workspace's own `users` table stores for an account. Outside the
  * house the platform owner is stored as "Particl support" at an address that
  * is not theirs, so nothing read from that workspace's database can name them.
@@ -142,29 +197,6 @@ export function mirrorIdentity(
 ): { email: string; name: string } {
   if (isHouseWorkspace(ws) || !isOwnerIdentity(identity, account)) return { email: account.email, name: account.name };
   return { email: `${account.id}@${SUPPORT_MIRROR_DOMAIN}`, name: SUPPORT_ACTOR };
-}
-
-/**
- * Rewrites a client workspace's `users` row for the platform owner, if one
- * was written before the rule (run once per workspace database per instance,
- * from lib/db.ts). The row keeps its id, so everything the owner made stays
- * filed under it; only the address and name change.
- */
-export async function scrubOwnerFromWorkspaceDb(
-  c: { execute(stmt: { sql: string; args: (string | number | null)[] }): Promise<unknown> },
-  ws: Pick<TenantWorkspace, "id">,
-  identity?: PlatformOwnerIdentity,
-): Promise<void> {
-  if (isHouseWorkspace(ws)) return;
-  const who = identity ?? (await platformOwnerIdentity());
-  if (!who.email && !who.accountIds.length) return;
-  const ids = who.accountIds.length ? who.accountIds : [""];
-  await c.execute({
-    sql: `UPDATE users SET name = ?, email = id || ?
-          WHERE email NOT LIKE ? AND (id IN (${ids.map(() => "?").join(",")}) OR LOWER(email) = ? OR LOWER(email) LIKE ?)`,
-    args: [SUPPORT_ACTOR, `@${SUPPORT_MIRROR_DOMAIN}`, `%@${SUPPORT_MIRROR_DOMAIN}`,
-      ...ids, who.email ?? "", who.email ? `${who.email}#deleted-%` : ""],
-  });
 }
 
 /**

@@ -51,7 +51,7 @@ export function roleCounts(team: Team | null): Record<RoleId, number> | null {
   return counts;
 }
 export function inviteLine(i: Invite): string {
-  return [i.email, "invited", `expires ${day(i.expiresAt) ?? "—"}`].join(" · ");
+  return [i.email, "invited", `expires ${day(i.expiresAt) ?? "—"}`].filter(Boolean).join(" · ");
 }
 export function peopleMeta(team: Team | null): string {
   if (!team) return "";

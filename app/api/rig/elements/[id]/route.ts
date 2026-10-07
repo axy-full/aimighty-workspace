@@ -4,7 +4,7 @@ import { db, ready, now } from "@/lib/db";
 import { getElement, elementUsage, overridesOf, type ElementFull } from "@/lib/elements";
 import { lockHistory, lockMaster, masterCheck, MasterLockError, unlockMaster, type LockBy } from "@/lib/masters";
 import { requireTenant } from "@/lib/tenant";
-import { publicActorEmail } from "@/lib/platformOwnerPrivacy";
+import { publicActorEmail, SUPPORT_ACTOR } from "@/lib/platformOwnerPrivacy";
 import { TeamCanvasError } from "@/lib/workbench/team-canvas";
 import { MediaSourceError } from "@/lib/mediaBindings";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
@@ -171,10 +171,10 @@ export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) 
      change later, not a change itself. Who did it, when and (for an unlock)
      why are kept, because the brief's own line is that unlocking is explicit
      and logged. */
-  /* Outside the house the platform owner is recorded by id and as "Particl support", never by address. */
-  const email = (await publicActorEmail(requireTenant(), got.user)) ?? "";
+  /* Outside the house the platform owner is recorded as "Particl support", never by address or account id. */
+  const email = (await publicActorEmail(requireTenant(), got.user)) ?? SUPPORT_ACTOR;
   const by: LockBy = {
-    userId: got.user.id, name: got.user.name || email || got.user.id, email, admin: got.user.role === "admin",
+    userId: got.user.id, name: got.user.name || email, email, admin: got.user.role === "admin",
     token: !!got.token, agent: body?.by === "atomik" ? { runId: null } : null,
   };
   try {
@@ -182,7 +182,7 @@ export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) 
       ? await lockMaster({ elementId, canvas }, by)
       : await unlockMaster({ elementId: elementId!, reason: body?.reason, canvas }, by);
     return NextResponse.json({
-      ok: true, locked, unchanged: result.unchanged, by: email || got.user.name, at: now(),
+      ok: true, locked, unchanged: result.unchanged, by: email, at: now(),
       element: lockSummary(result.element), event: result.event, node: result.node, revision: result.revision, sha256: result.sha256,
     });
   } catch (error) {

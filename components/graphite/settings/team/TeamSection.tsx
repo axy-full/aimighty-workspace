@@ -105,8 +105,8 @@ function People() {
       })}
       {(data?.invites ?? []).map((i) => (
         <Row key={i.code} name={i.name} line={inviteLine(i)} value="invited" testId="settings-invite-row">
-          {data?.mail?.configured ? <Btn disabled={busy != null} onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}/send`, "POST", undefined, `Sent to ${i.email} again.`)}>Resend</Btn> : null}
-          <Btn disabled={busy != null} testId="settings-invite-revoke" onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}`, "DELETE", undefined, `The link for ${i.email} no longer works.`)}>Revoke</Btn>
+          {data?.mail?.configured ? <Btn disabled={busy != null} onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}/send`, "POST", undefined, `Sent to ${i.email || i.name} again.`)}>Resend</Btn> : null}
+          <Btn disabled={busy != null} testId="settings-invite-revoke" onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}`, "DELETE", undefined, `The link for ${i.email || i.name} no longer works.`)}>Revoke</Btn>
         </Row>
       ))}
       {inviting ? (

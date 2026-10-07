@@ -7,7 +7,7 @@ import { quoteShots } from "@/lib/impact";
 import { isSlot, type Slot } from "@/lib/rig";
 import { billedCreditsExpr } from "@/lib/creditSql";
 import { requireTenant } from "@/lib/tenant";
-import { publicActorEmail } from "@/lib/platformOwnerPrivacy";
+import { publicActorEmail, SUPPORT_ACTOR } from "@/lib/platformOwnerPrivacy";
 
 /**
  * One shot's five slots (brief 3, surface 2c). The id is the shot's.
@@ -213,8 +213,8 @@ export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) 
      batch with one bad entry leaves the shot exactly as it was, rather than
      half-rebound to a state nobody asked for. */
   let changed = 0;
-  /* Outside the house the platform owner is recorded by id, never by address. */
-  const recordedBy = (await publicActorEmail(requireTenant(), got.user)) ?? got.user.id;
+  /* Outside the house the platform owner is recorded as "Particl support", never by address. */
+  const recordedBy = (await publicActorEmail(requireTenant(), got.user)) ?? SUPPORT_ACTOR;
   for (const c of changes) {
     if (!c.elementId) {
       /* Naming an attribute clears just that override and leaves the bundle;

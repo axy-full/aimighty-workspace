@@ -46,8 +46,11 @@ export const GET = withTenant(async function GET() {
     db().execute(`SELECT created_by AS id, COUNT(*) AS clips${inCredits ? "" : ", COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend"}
                   FROM generations GROUP BY created_by`),
   ]);
-  /* The platform owner is listed only in the house workspace (lib/platformOwnerPrivacy.ts). */
+  /* Outside the house the platform owner is one row reading "Particl support",
+     with no address, and can be removed like anyone: the client sees and
+     controls platform access, and the seats add up (lib/platformOwnerPrivacy.ts). */
   const mask = await ownerMaskFor(ws);
+  const who = (r: any) => (mask.hides(r) ? { email: "", name: mask.name(r), support: true } : { email: r.email, name: r.name });
   const made = new Map((stats.rows as any[]).map((r) => [String(r.id), { clips: Number(r.clips), spend: Number(r.spend) }]));
 
   return NextResponse.json({
@@ -55,8 +58,8 @@ export const GET = withTenant(async function GET() {
     workspace: { id: ws.id, name: ws.name, slug: ws.slug },
     requests: [],
     canSeeRoles,
-    users: mask.members(members.rows as any[]).filter((r) => Number(r.m_disabled) === 0 || canSeeRoles).map((r) => ({
-      id: r.id, email: r.email, name: r.name,
+    users: (members.rows as any[]).filter((r) => Number(r.m_disabled) === 0 || canSeeRoles).map((r) => ({
+      id: r.id, ...who(r),
       ...(canSeeRoles ? { role: r.role === "owner" ? "admin" : r.role, standing: r.role, permanent: r.role === "owner" } : {}),
       disabled: Number(r.m_disabled) === 1 || Number(r.a_disabled) === 1,
       locked: r.locked_until != null && Number(r.locked_until) > now(),
@@ -66,8 +69,8 @@ export const GET = withTenant(async function GET() {
       clips: made.get(String(r.id))?.clips ?? 0,
       ...(!inCredits ? { spend: made.get(String(r.id))?.spend ?? 0 } : {}),
     })),
-    invites: mask.members(invites.rows as any[]).map((r) => ({
-      code: r.code, email: r.email, name: r.name,
+    invites: (invites.rows as any[]).map((r) => ({
+      code: r.code, ...who(r),
       ...(canSeeRoles ? { role: r.role } : {}),
       createdAt: Number(r.created_at), expiresAt: Number(r.expires_at),
       sentAt: r.sent_at == null ? null : Number(r.sent_at), sendCount: Number(r.send_count ?? 0),

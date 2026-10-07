@@ -5,6 +5,7 @@ import { db, ready } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { originalKindOf } from "@/lib/originalMedia";
 import { reviewSet } from "@/lib/security/review-link";
+import { publicStoredActor } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ token: string }> };
@@ -59,6 +60,11 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
       const k = String(n.gen_id);
       (byGen.get(k) ?? byGen.set(k, []).get(k)!).push({ text: String(n.text), author: String(n.author ?? "the studio"), guest: Number(n.guest) === 1, at: Number(n.created_at) });
     }
+    /* Who approved, as a guest may read it: the platform owner reads "Particl support" outside the house (lib/platformOwnerPrivacy.ts). */
+    let members: Promise<any[]> | null = null;
+    const team = () => (members ??= db().execute("SELECT id, email, name FROM users").then((rs) => rs.rows as any[]));
+    const approver = new Map<string, string | null>();
+    for (const r of rows) if (r.review_by && !approver.has(String(r.review_by))) approver.set(String(r.review_by), await publicStoredActor(workspace, String(r.review_by), team));
     const logo = (await getSetting("brandLogoUploadId")) || null;
     const p = project.rows[0] as any;
     return {
@@ -71,7 +77,7 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
           shot: r.shot_code ? String(r.shot_code) : null, title: r.shot_title ? String(r.shot_title) : null,
           version: Number(r.version ?? 1),
           prompt: String((params.rawPrompt as string | undefined) ?? r.prompt ?? "").split(/\n\s*\n/)[0],
-          approvedBy: r.review_by ? String(r.review_by) : null,
+          approvedBy: r.review_by ? approver.get(String(r.review_by)) ?? null : null,
           media: `/api/review/${token}/media/${r.id}`,
           notes: byGen.get(String(r.id)) ?? [],
         };
