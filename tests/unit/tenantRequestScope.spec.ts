@@ -8,6 +8,7 @@ import {
   type TenantStore,
 } from "../../lib/tenant";
 import { workbenchScopeFor } from "../../lib/workbench/request-scope";
+import { crossOriginProblem } from "../../lib/requestOrigin";
 
 /** Execute the actual wrapper while controlling only session resolution. */
 function wrapper() {
@@ -44,6 +45,7 @@ function wrapper() {
     "workbenchScopeFor",
     "console",
     "recoveryRoute",
+    "crossOriginProblem",
     compiled,
   )(
     exports,
@@ -57,6 +59,7 @@ function wrapper() {
     workbenchScopeFor,
     { error: (line: string) => logs.push(line) },
     (handler: unknown) => handler,
+    crossOriginProblem,
   );
   return {
     withTenant: exports.withTenant,

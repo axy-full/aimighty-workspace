@@ -32,15 +32,26 @@ const MEMBER = { email: `mia-${run}@example.com`, name: "Mia Member" };
 const CLIENT = { email: `cleo-${run}@example.com`, name: "Cleo Client" };
 const SUPPORT = "Particl support";
 
-const before = { SUPER_ADMIN_EMAIL: process.env.SUPER_ADMIN_EMAIL, OWNER_PRIVACY_SCRUB_LOCAL: process.env.OWNER_PRIVACY_SCRUB_LOCAL };
+/* The rewrite's guard (scrubAllowedHere) reads where it runs from the
+   environment. Each test here runs as a local machine that opted in: off
+   Vercel (VERCEL and VERCEL_ENV unset) with OWNER_PRIVACY_SCRUB_LOCAL=1.
+   VERCEL_ENV is cleared, not assumed absent: another spec can leave it set for
+   the whole run (tests/unit/workerProbe.spec.ts sets VERCEL_ENV=preview when
+   it loads, the runner loads every spec before it starts workers, and workers
+   inherit its environment). What each test found is put back after it. */
+const SCOPED_ENV = ["SUPER_ADMIN_EMAIL", "OWNER_PRIVACY_SCRUB_LOCAL", "VERCEL", "VERCEL_ENV"] as const;
+let envBefore: Record<string, string | undefined> = {};
 test.beforeEach(async () => {
+  envBefore = Object.fromEntries(SCOPED_ENV.map((k) => [k, process.env[k]]));
   process.env.SUPER_ADMIN_EMAIL = OWNER.email;
+  delete process.env.VERCEL;
+  delete process.env.VERCEL_ENV;
   // Off Vercel the rewrite runs only when asked for explicitly; these tests ask.
   process.env.OWNER_PRIVACY_SCRUB_LOCAL = "1";
   (await import("../../lib/platformOwnerPrivacy")).resetPlatformOwnerIdentity();
 });
-test.afterAll(async () => {
-  for (const [k, v] of Object.entries(before)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+test.afterEach(async () => {
+  for (const [k, v] of Object.entries(envBefore)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   (await import("../../lib/platformOwnerPrivacy")).resetPlatformOwnerIdentity();
 });
 const password = "Unique-studio-password-43";
@@ -414,6 +425,37 @@ test("the rewrite refuses on a preview or staging deployment", async () => {
   } finally {
     for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   }
+});
+
+test("the rewrite itself refuses, and writes nothing, off Vercel without the opt-in and on a deployment that is not production", async () => {
+  const { owner } = await fixture();
+  const { addMember } = await import("../../lib/platform");
+  const { platformOwnerScrub, SCRUB_REFUSED } = await import("../../lib/platformOwnerScrub");
+  const { ws } = await clientWorkspace("Refused client", `refused-${run}@example.com`);
+  await addMember(ws, owner, "admin");
+  const at = Date.now();
+  await sql(ws, "INSERT INTO generations (id, model, prompt, params, status, review_by, created_at, updated_at) VALUES ('g_refused', 'mock', 'p', '{}', 'succeeded', ?, ?, ?)", [OWNER.name, at, at]);
+  const refused = async () => {
+    for (const apply of [false, true]) await expect(inTenant(ws, () => platformOwnerScrub({ apply }))).rejects.toThrow(SCRUB_REFUSED);
+    expect((await sql(ws, "SELECT review_by FROM generations WHERE id='g_refused'"))[0].review_by).toBe(OWNER.name);
+  };
+  // The hooks put the environment back after this test.
+  delete process.env.OWNER_PRIVACY_SCRUB_LOCAL; // off Vercel, not opted in
+  await refused();
+  process.env.OWNER_PRIVACY_SCRUB_LOCAL = "true"; // only "1" opts in
+  await refused();
+  process.env.OWNER_PRIVACY_SCRUB_LOCAL = "1"; // the opt-in counts for nothing on a deployment
+  process.env.VERCEL = "1";
+  process.env.VERCEL_ENV = "preview";
+  await refused();
+  delete process.env.VERCEL; // VERCEL_ENV alone still says a deployment
+  await refused();
+  process.env.VERCEL_ENV = "development";
+  await refused();
+  // The control: off Vercel with the opt-in, the same call runs and finds the owner's value.
+  delete process.env.VERCEL_ENV;
+  const dry = await inTenant(ws, () => platformOwnerScrub({ apply: false }));
+  expect(dry.lines.find((l) => l.table === "generations" && l.column === "review_by")).toMatchObject({ matched: 1 });
 });
 
 test("the rewrite is optimistic: a canvas or bible that changed after the read is left and reported, and the live room is told", async () => {

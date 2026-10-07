@@ -95,8 +95,8 @@ function read(page: Page): Promise<Found> {
       if (el.closest("[data-spend]")) return false;
       /* A tab switches what is shown ("Make" | "Recent"); it never starts anything. */
       if (el.getAttribute("role") === "tab") return false;
-      /* Neither does a destination in a navigation bar (the phone's Home · Record · Make · Atomik): it goes somewhere. */
-      if (el.closest("nav")) return false;
+      /* Neither does a destination in a navigation bar (the phone's Home · Record · Make · Atomik): it goes somewhere. Only a button that says so (data-destination) is skipped, so a paid button put in a nav is still checked. */
+      if (el.closest("nav") && el.hasAttribute("data-destination")) return false;
       const label = (el.getAttribute("aria-label") || el.textContent || "").replace(/\s+/g, " ").trim();
       return verbRe.test(label);
     }).map(name);
@@ -118,3 +118,21 @@ for (const probe of PROBES) {
     else test.info().annotations.push({ type: "to-do", description: `${found.unmarked.length} unmarked, ${found.marked} marked (needs ${probe.minSpend}); ${detail}` });
   });
 }
+
+/* A nav button is skipped above only because it is a destination; so each destination is opened, and what it opens must carry a priced control of its own. */
+test("Make panel: every quick-tool destination opens a screen with a [data-spend] control", async ({ page }) => {
+  await open(page, "/suites?make=1");
+  const destinations = await page.locator('nav [data-destination^="make:"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-destination") ?? ""));
+  test.skip(destinations.length === 0, "the phone's Make has no quick-tools row");
+  expect(destinations.sort()).toEqual(["make:motion", "make:swap", "make:upscale"]);
+  for (const destination of destinations) {
+    if (destination !== destinations[0]) await open(page, "/suites?make=1");
+    await page.locator(`[data-destination="${destination}"]`).click();
+    /* The tool's own go button, inside the Make panel: Home behind the panel draws priced buttons of its own (home-start). */
+    const go = destination === "make:upscale" ? "upscale-go" : "viral-generate";
+    await expect(page.getByTestId("gen-view").getByTestId(go), `${destination} opens its tool`).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("gen-view").getByTestId(go), `${destination}'s go button carries data-spend`).toHaveAttribute("data-spend", /^(priced|unpriced)$/);
+    /* It left the Make panel's compose view: the quick-tools row is not what is being counted. */
+    await expect(page.locator(`[data-destination="${destination}"]`)).toHaveCount(0);
+  }
+});

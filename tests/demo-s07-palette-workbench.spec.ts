@@ -43,6 +43,12 @@ async function noSideways(page: Page) {
 }
 
 async function floors(page: Page, where: string) {
+  /* The palette pops in (scale .97 to 1): a target measured mid-pop reads a pixel short. Measure the settled dialog. */
+  await page.evaluate(() => Promise.race([
+    Promise.all(document.getAnimations().filter((a) => a.effect?.getComputedTiming().iterations !== Infinity).map((a) => a.finished.catch(() => undefined))),
+    /* A paused animation never finishes: give up after 2 s rather than hang the test. */
+    new Promise((resolve) => setTimeout(resolve, 2000)),
+  ]));
   expect(await smallTextIn(page, ".gx-palette"), `${where}: text under 12 px`).toEqual([]);
   if (phone(page)) expect(await smallTargets(page, ".gx-palette"), `${where}: targets under 44 px`).toEqual([]);
 }

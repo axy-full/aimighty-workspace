@@ -201,7 +201,7 @@ export async function quoteConsumerMarketingTemplate(userId: string, draftId: st
     return consumerMarketingTemplateView(previous);
   }
   if (!(await readDraft(userId, draftId)))
-    throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
+    throw new ConsumerVideoServiceError("project_missing", "This isn't available.", 404);
   const { template, costs } = await requireTemplate(userId, input.presetId);
   const access = await connected(userId);
   const source = await resolveConsumerMarketingTemplateSource(input);

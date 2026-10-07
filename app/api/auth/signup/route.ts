@@ -17,6 +17,7 @@ import {
   takeAccountLimit,
 } from "@/lib/accountDb";
 import { INVITE_ONLY, inviteOnlyRefusal } from "@/lib/site/settings";
+import { inviteOrigin } from "@/lib/mail";
 import { readSite } from "@/lib/site/settings.server";
 import {
   beginSignup,
@@ -109,9 +110,10 @@ export const POST = recoveryRoute(async function POST(req: Request) {
     }
     const readiness = signupReadiness();
     if (!readiness.open) throw new AccountError(readiness.reason!, 503);
+    /* The verification link is built only on the configured origin (lib/mail.ts › inviteOrigin); without one nothing is begun. */
+    const origin = inviteOrigin(req);
+    if (origin === null) throw new AccountError("Email verification is being configured. Please try again shortly.", 503);
     const registration = await beginSignup(input, sourceKey(req));
-    const origin =
-      process.env.APP_ORIGIN?.replace(/\/$/, "") || new URL(req.url).origin;
     await deliverSignupVerification(registration, origin);
     return Response.json(
       {

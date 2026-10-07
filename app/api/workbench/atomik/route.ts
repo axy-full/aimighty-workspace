@@ -1,3 +1,4 @@
+import { crossOriginProblem } from "@/lib/requestOrigin";
 import {reserveRecoveryContinuation} from "@/lib/recovery";
 import { readBoundedText, RequestBodyError } from '@/lib/requestBody';
 import { after } from 'next/server';
@@ -40,8 +41,7 @@ export const POST = withTenant(async (req: Request) => {
   const auth = await requireRender();
   if (auth.response) return auth.response;
   if (wrongScope(req, auth.user.id)) return response({ error: 'This workspace or account changed. Return to the original project.' }, 409);
-  const origin = req.headers.get('origin');
-  if (origin && origin !== new URL(req.url).origin) return response({ error: 'Invalid request origin.' }, 403);
+  if (crossOriginProblem(req)) return response({ error: 'Invalid request origin.' }, 403);
   let value: unknown;
   try { value = JSON.parse(await readBoundedText(req, 20000)); }
   catch (error) {

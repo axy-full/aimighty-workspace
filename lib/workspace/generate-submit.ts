@@ -4,7 +4,11 @@ import { validAudioQuote } from "../workbench/generation-audio";
 import {
   claimPendingGeneration,
   clearPendingGeneration,
+  forgetOwnClaim,
+  readOwnClaim,
   readPendingGeneration,
+  readSettledGeneration,
+  recordSettledGeneration,
   type PendingGeneration,
 } from "../workbench/pending-generation";
 import { rememberWorkspaceQuote } from "./last-quote";
@@ -78,6 +82,12 @@ const UNREADABLE = "The saved generation request cannot be read. Check Activity 
  * returned to follow; a request that never arrived is fenced there and let go
  * here; one still being accepted, or a question that got no answer, leaves
  * the claim in place. It is never re-sent.
+ *
+ * A claim another tab settled is still this tab's to settle when this tab
+ * made it (lib/workbench/pending-generation.ts › readOwnClaim), and it comes
+ * first, before another tab's newer claim in the same slot: the note the
+ * settling tab left says what it became, else the server is asked by its key.
+ * Every settle leaves that note (recordSettledGeneration, SETTLED_MS).
  */
 export async function settlePendingGeneration(options: {
   scope: string; storageId: string; storage?: Storage;
@@ -92,7 +102,27 @@ export async function settlePendingGeneration(options: {
     /* Unreadable recovery storage never becomes a new paid attempt. */
     return { state: "unknown", reason: UNREADABLE };
   }
+  /*
+   * This tab's own copy of a claim it made and never had the reply to (lib/workbench/pending-generation.ts › readOwnClaim),
+   * when the shared slot no longer holds it: another tab settled it, and may since have claimed the slot again for a press of
+   * its own. The own claim is this press's and is settled first, exactly as if it were still shared: from the note the
+   * settling tab left, else asked of the server by its own key, route and body. Landed, it is followed; not known, nothing is
+   * sent; only when it made nothing does this press go on to the shared claim (another tab's) or, with none, to a new send.
+   */
+  const own = readOwnClaim(storage, options.storageId);
+  if (own && own.key !== attempt?.key) {
+    const known = readSettledGeneration(storage, own.key);
+    const mine = known
+      ? (forgetOwnClaim(storage, options.storageId, own.key), known.state === "landed" ? { ...known, credits: own.credits } : known)
+      : await askAbout(storage, options, own);
+    if (mine.state !== "lost" || !attempt) return mine;
+  }
   if (!attempt) return { state: "none" };
+  return askAbout(storage, options, attempt);
+}
+
+/** One claim asked about by its own key, route and body (POST /api/generate/check); a final answer lets it go and leaves a note of it. */
+async function askAbout(storage: Storage, options: { scope: string; storageId: string; endpoint?: "/api/generate" | "/api/audio" | "/api/audio/dub" }, attempt: PendingGeneration): Promise<Exclude<SettledAttempt, { state: "none" }>> {
   let found: { state?: unknown; id?: unknown; status?: unknown };
   try {
     found = await studioRequest<{ state?: unknown; id?: unknown; status?: unknown }>("/api/generate/check", {
@@ -103,15 +133,20 @@ export async function settlePendingGeneration(options: {
   } catch {
     return { state: "unknown", reason: UNCHECKED };
   }
+  /* Settled: the claim is let go (the shared one only if it is this one), and a note of what it became is left for another tab whose own copy names it. */
   if (found.state === "landed" && typeof found.id === "string" && found.id) {
-    clearPendingGeneration(storage, options.storageId, attempt.key);
     let model: string | null = null;
     try { const sent = JSON.parse(attempt.body) as { model?: unknown }; model = typeof sent.model === "string" ? sent.model : null; } catch { /* the job is followed either way */ }
-    return { state: "landed", jobId: found.id, status: typeof found.status === "string" ? found.status : "queued", credits: attempt.credits, model };
+    const landed = { state: "landed" as const, jobId: found.id, status: typeof found.status === "string" ? found.status : "queued", credits: attempt.credits, model };
+    recordSettledGeneration(storage, attempt.key, landed);
+    clearPendingGeneration(storage, options.storageId, attempt.key);
+    return landed;
   }
   if (found.state === "absent" || found.state === "refused") {
+    const lost = { state: "lost" as const, reason: found.state === "absent" ? NEVER_ARRIVED : REFUSED };
+    recordSettledGeneration(storage, attempt.key, lost);
     clearPendingGeneration(storage, options.storageId, attempt.key);
-    return { state: "lost", reason: found.state === "absent" ? NEVER_ARRIVED : REFUSED };
+    return lost;
   }
   return { state: "unknown", reason: found.state === "pending" ? STILL_ACCEPTING : UNCHECKED };
 }

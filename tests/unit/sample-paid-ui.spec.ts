@@ -33,6 +33,8 @@ const SURFACES: { name: string; file: string; guard: RegExp; control: RegExp }[]
   { name: "Approvals queue: every item reads as the sample's (no Approve anywhere it is drawn)", file: "lib/control-room/use-approvals.ts", guard: /useSampleWorkspace\(\)/, control: /spendOff \? \(current\.reply\?\.items \?\? \[\]\)\.map/ },
   { name: "Phone Home rows: a sample item has no priced button", file: "components/graphite/phone/HomeScreen.tsx", guard: /item\.sample/, control: /else if \(item\.sample\) action = item\.unchecked \? <CheckAgain className="ph-btn" \/> : null/ },
   { name: "Viral tool: no run button", file: "components/graphite/viral/ViralView.tsx", guard: /useSampleWorkspace\(\)/, control: /\{spendOff \? null : <button type="button" className="gx-primary gx-gen-go"/ },
+  { name: "3D blocking strip: no priced Remake", file: "components/graphite/board/blocking/ShotBlockingStrip.tsx", guard: /ctx\.exploreOnly/, control: /\{ctx\.exploreOnly \? null : <button type="button" className="gx-bk-btn" title=\{title/ },
+  { name: "3D blocking overlay: no Prop from a photo", file: "components/graphite/board/blocking/BlockingOverlay.tsx", guard: /ctx\.exploreOnly/, control: /\{ctx\.exploreOnly \? null : <button[^>]*data-testid="blocking-add-photo"/ },
   { name: "Ads image-ad card: no Make", file: "components/graphite/board/ads/cards/AdCards.tsx", guard: /exploreOnly/, control: /\{spendOff \? null : <Actions>/ },
   { name: "Edit & Sound: no New voice line, music or effect", file: "components/graphite/board/edit/EditSoundScreen.tsx", guard: /ctx\.exploreOnly/, control: /\{ctx\.exploreOnly \? null : <div className="gx-es-stack">/ },
 ];
@@ -42,6 +44,7 @@ for (const { name, file, guard, control } of SURFACES) {
     const source = readFileSync(file, "utf8");
     expect(source, "the sample check").toMatch(guard);
     expect(source, "the guarded control").toMatch(control);
+    if (file.endsWith("ShotBlockingStrip.tsx")) expect(source.match(/data-testid="blocking-remake"/g)?.length, "one Remake button, so the guard covers all of them").toBe(1);
   });
 }
 

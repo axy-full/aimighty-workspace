@@ -1,3 +1,4 @@
+import { crossOriginProblem } from '@/lib/requestOrigin';
 import { after } from 'next/server';
 import { z } from 'zod';
 import { requireRender, requireUser, withTenant } from '@/lib/auth';
@@ -64,8 +65,7 @@ const resumeSchema = z.object({ resume: z.literal(true), projectId: z.string().r
 export const POST = withTenant(async (req: Request) => {
   const auth = await requireRender(); if (auth.response) return auth.response;
   if (scopeError(req, auth.user.id)) return response({ error: 'Return to the account and workspace that prepared this workflow.' }, 409);
-  const origin = req.headers.get('origin');
-  if (origin && origin !== new URL(req.url).origin) return response({ error: 'Invalid request origin.' }, 403);
+  if (crossOriginProblem(req)) return response({ error: 'Invalid request origin.' }, 403);
   let value: unknown;
   try { value = JSON.parse(await readBoundedText(req, 12000)); }
   catch (error) { return response({ error: error instanceof RequestBodyError && error.status === 413 ? 'Keep these development instructions under 12 KB.' : 'Invalid request JSON.' }, error instanceof RequestBodyError ? error.status : 400); }

@@ -25,7 +25,9 @@ export const POST = recoveryRoute(async function POST(req: Request) {
   try { body = await accountJson(req); } catch (error) { return accountFailure(error); }
   const email = String(body.email ?? "").trim().toLowerCase();
   if (!email || !email.includes("@")) return NextResponse.json({ error: "Enter the email you signed up with." }, { status: 400 });
-  if (!mailConfigured()) {
+  /* A reset link is built only on the configured origin, never on the request's headers; without one nothing is written or sent. */
+  const origin = mailConfigured() ? inviteOrigin(req) : null;
+  if (origin === null) {
     return NextResponse.json({ error: "Email isn't set up on this deployment yet, so a reset can't be sent — contact management and they'll sort it." }, { status: 503 });
   }
   const generic = { ok: true, message: "If that address is registered, an email is on its way. The link works for an hour." };
@@ -46,7 +48,6 @@ export const POST = recoveryRoute(async function POST(req: Request) {
     sql: `INSERT INTO password_resets (token_hash, user_id, ip_hash, created_at, expires_at) VALUES (?,?,?,?,?)`,
     args: [tokenHash(token), user.id, source, ts, expiresAt],
   });
-  const origin = inviteOrigin(req);
   const mail = resetEmail({ name: String(user.name), link: `${origin}/reset/${token}`, expiresAt, origin });
   after(await reserveRecoveryContinuation('after-response', async () => {
     try { await sendMail({ to: email, ...mail }); }

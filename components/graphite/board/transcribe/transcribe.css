@@ -39,3 +39,6 @@
 .gx-tp-btn[data-primary] { background: var(--gx-accent); border-color: transparent; color: var(--gx-on-accent); font-weight: 600; }
 .gx-tp-btn[data-primary]:hover:not(:disabled) { background: var(--gx-accent-hover); }
 @media (max-width: 767px) { .gx-tp { width: 100%; } .gx-tp-btn { min-height: 44px; } .gx-tp-line { grid-template-columns: 1fr; } .gx-tp-text { grid-column: 1; } }
+
+.gx-tp-earlier { flex: none; padding: 0 16px; max-height: 40%; overflow-y: auto; }
+.gx-tp-earlier:empty { display: none; }

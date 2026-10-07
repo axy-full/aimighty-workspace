@@ -163,13 +163,14 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
 
       <div className="gx-mk-tools" data-testid="make-quick-tools">
         <span className="gx-mk-eyebrow">Quick tools</span>
-        <div className="gx-mk-tools-row">
+        {/* A row of destinations: each opens a tool, none starts a paid job (the tool's own button carries the price). */}
+        <nav className="gx-mk-tools-row" aria-label="Quick tools">
           {QUICK_TOOLS.map(({ tool, glyph }) => (
-            <button key={tool} type="button" className="gx-mk-tool" onClick={() => shell.setMake(tool)} data-testid={`make-tool-${tool}`}>
+            <button key={tool} type="button" className="gx-mk-tool" onClick={() => shell.setMake(tool)} data-destination={`make:${tool}`} data-testid={`make-tool-${tool}`}>
               <Glyph name={glyph} size={16} /><span>{tool === "upscale" ? UPSCALE_NAME : toolName(tool)}</span>
             </button>
           ))}
-        </div>
+        </nav>
       </div>
     </section>
   );

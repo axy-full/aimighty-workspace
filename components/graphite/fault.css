@@ -59,6 +59,7 @@
   .gx .gx-fault-kbd { display: none; }
 }
 @media (max-width: 767px), (pointer: coarse) {
+  .gx .gx-fault-actions > * { min-height: 44px; }
   .gx .gx-fault[data-variant="inline"] .gx-hbtn { height: 44px; }
 }
 /* A phone, or a phone on its side: the stage under the page head is short
