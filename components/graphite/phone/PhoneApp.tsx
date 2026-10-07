@@ -25,6 +25,7 @@ import { RecordScreen } from "./RecordScreen";
 import { MakeScreen } from "./MakeScreen";
 import { AtomikSheet } from "./AtomikSheet";
 import { StatesScreen } from "./StatesScreen";
+import { ConsentScreen } from "./ConsentScreen";
 import { PhoneCutScreen } from "./PhoneCutScreen";
 import { LargerScreen } from "./LargerScreen";
 import { StartBrief } from "./StartBrief";
@@ -66,7 +67,7 @@ function useRoute(): [PhoneRoute, (patch: Parameters<typeof phoneSearch>[1], mod
   return [route, go];
 }
 
-const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "Plan approval", make: "Make", fix: "Review", cut: "Cut" };
+const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "Plan approval", make: "Make", fix: "Review", cut: "Cut", consent: "Record consent" };
 
 /**
  * The phone (design/particl-graphite/README.md § 3.6; "Phone frames.dc.html"): it judges rather than makes.
@@ -173,6 +174,8 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
             <main className="ph-scroll" data-testid="mobile-scroll"><PhoneCutScreen scope={scope} project={project} items={items} online={online} /></main>
           ) : screen === "states" ? (
             <StatesScreen scope={scope} project={project} items={items} online={online} now={now} balance={account?.credits?.balance ?? null} onTopUp={topUp} onQueue={judgements.add} />
+          ) : screen === "consent" ? (
+            <ConsentScreen scope={scope} project={project} cast={route.cast} onCancel={home} onDone={(line) => { toast(line); home(); }} />
           ) : screen === "plan" ? (
             <PlanScreen scope={scope} project={project} runId={route.run} online={online} spendOff={spendOff ?? (approvals.items.some((q) => q.sample && q.approve?.kind === "board-approve" && q.approve.runId === route.run) ? SAMPLE_LINE : null)} onHome={home} onTopUp={topUp}
               onChange={() => openAtomik("Change the plan: ")} />

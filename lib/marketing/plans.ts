@@ -15,7 +15,7 @@ export function planLines(plan: PlanDef, inviteCredits: number): string[] {
   const extra: Record<string, string[]> = {
     studio: ["Review links", "Exports", "Post tools"],
     agency: ["Review links", "Exports and post tools", "Monthly statements"],
-    production: ["Everything in Agency", "Workspace admin and audit", "Setup hours"],
+    production: ["Everything in Agency", "Team admin and audit", "Setup hours"],
   };
   return [credits, productions, members, ...(extra[plan.id] ?? [])];
 }

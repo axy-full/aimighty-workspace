@@ -5,7 +5,7 @@
  * lib/marketing/prices.server.ts computes them.
  */
 
-export type SiteSuiteId = "gen" | "studio" | "business" | "viral" | "atomik" | "workspace";
+export type SiteSuiteId = "gen" | "studio" | "ads" | "social" | "atomik" | "settings";
 
 export type SiteSuite = {
   id: SiteSuiteId;
@@ -25,25 +25,25 @@ export const SITE_SUITES: SiteSuite[] = [
   { id: "studio", href: "/studio", tab: "Studio", tag: "01 Studio", name: "Studio",
     blurb: "A film on one board, from the brief to the delivered cut.",
     pages: STUDIO_PAGES },
-  { id: "business", href: "/business", tab: "Ads", tag: "02 Ads", name: "Ads",
-    blurb: "Product, brand and cast, then image ads that keep every reference.",
-    pages: ["Product", "Brand", "Cast", "Format", "Variants", "Design", "Publish"] },
-  { id: "viral", href: "/viral", tab: "Social", tag: "03 Social", name: "Social",
+  { id: "ads", href: "/ads", tab: "Ads", tag: "02 Ads", name: "Ads",
+    blurb: "Product and brand, hooks and formats, then image ads that keep every reference.",
+    pages: ["Brand", "Product", "Hooks", "Formats", "Ads"] },
+  { id: "social", href: "/social", tab: "Social", tag: "03 Social", name: "Social",
     blurb: "Recast motion and swap elements in footage you own.",
-    pages: ["Motion transfer", "Object swap", "Sources", "Compare", "History"] },
+    pages: ["Source", "Motion transfer", "Object swap", "History"] },
   { id: "gen", href: "/", tab: "Make", tag: "04 Make", name: "Make",
     blurb: "Video, images and audio in one panel over any screen, priced before you press.",
     pages: ["Video", "Images", "Audio", "Recent"] },
   { id: "atomik", href: "/atomik", tab: "Atomik", tag: "05 Atomik", name: "Atomik",
     blurb: "The production agent. Plans the work and waits for a person to approve it.",
     pages: ["Approvals", "Activity", "Skills", "Memory"] },
-  { id: "workspace", href: "/workspace", tab: "Settings", tag: "06 Settings", name: "Settings",
-    blurb: "Your team, plan and credits, and spending rules. Every action attributed.",
+  { id: "settings", href: "/settings", tab: "Settings", tag: "06 Settings", name: "Settings",
+    blurb: "Your team, plan and credits, spending rules and connections.",
     pages: ["Team", "Plan & credits", "Spending rules", "Connections", "Advanced"] },
 ];
 
 /** The header's tabs: every place but Settings, which sits behind the avatar in the app. */
-export const NAV_SUITES = SITE_SUITES.filter((suite) => suite.id !== "workspace");
+export const NAV_SUITES = SITE_SUITES.filter((suite) => suite.id !== "settings");
 
 export { PRICING_HREF, ACCESS_HREF, SIGN_UP_HREF, SIGN_IN_HREF, APP_HREF } from "./links";
 

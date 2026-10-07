@@ -2,41 +2,33 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AtomikMark } from "@/components/AtomikMark";
 import SitePage, { sitePrices } from "@/components/marketing/SitePage";
-import { Amber, Chips, Cols, Dot, Grid, Head, Section, SuiteHeader, Tile } from "@/components/marketing/ui";
+import { Chips, Cols, Dot, Grid, Head, Section, SuiteHeader, Tile } from "@/components/marketing/ui";
 import { ACCESS_HREF, SITE_SUITES } from "@/lib/marketing/site";
 import styles from "./atomik.module.css";
 
 export const metadata: Metadata = {
   title: "Atomik Agent",
-  description: "The production agent: it plans against your project and waits for your approval.",
+  description: "The production agent: it plans against your project, shows each step's price and waits for your approval.",
 };
 
-/* Copy from lib/workspace/spec-cards.ts (Atomik), lib/workbench/atomik-server.ts
-   and atomik-references.ts (what the agent reads), lib/workbench/suite-agent-plan.ts
-   (proposals → Rig nodes), lib/crew/room.ts (Crew), lib/shell/tools-connections.ts
-   (Tools & connections: Particl's own rows), docs/atomik-models.md (Models) and
-   docs/durable-production-pipelines.md (Runs, Recipes). The public site states no
-   prices: the sample plan and the recipes list their steps only. */
+/* What the page says is what Atomik holds today: the plan card
+   (components/graphite/board/cards/plan), the panel (components/graphite/atomik/panel)
+   and the four pages of its control room (components/graphite/control-room:
+   Approvals, Activity, Skills, Memory). Limits: lib/workbench/suite-agent-plan.ts
+   (8 actions) and lib/workbench/atomik-reference-types.ts (6 visuals). The public
+   site states no prices: the sample plan lists its steps only. */
 
-const AGENT_CHIPS = ["≤ 8 actions", "editable nodes", "≤ 6 visuals", "links not fetched", "each render approved"];
+const AGENT_CHIPS = ["≤ 8 actions", "≤ 6 visuals", "each step priced", "each render approved"];
 
-/* `badge` sits beside the tag (the whole page is not runnable); `gated`
-   sits under the body, beside the one sentence it qualifies. */
-const TILES: { tag: string; name: string; body: string; badge?: string; gated?: string }[] = [
-  { tag: "01 Agent", name: "Agent",
-    body: "Plain-language planning against the saved project and the references you select. Pictures and text files dropped in are filed on the project. Its actions land on the Board as editable nodes." },
-  { tag: "Crew · 7 departments", name: "Crew",
-    body: "Director, DOP, Production designer, Costume stylist, Editor, Producer and Continuity supervisor in one room. Each round they propose, challenge one another, and the chair converges three solutions." },
-  { tag: "02 Runs", name: "Runs",
-    body: "A production run is durable. Close the tab, reload or lose the connection: it keeps its place and its approved attempts, and recovery never re-dispatches." },
-  { tag: "03 Recipes", name: "Recipes",
-    body: "Every saved run keeps its plan: same stages, same inputs, same engines." },
-  { tag: "04 Builds", name: "Builds", badge: "Not yet runnable",
-    body: "The plan: describe a tool and the agent builds it, with interface, data, sign-in and generation models wired in. There is no build service yet." },
-  { tag: "05 Tools", name: "Tools & connections",
-    body: "What the agent reaches, and where each runs: Particl’s own engines, sound and 3D. A token and Particl’s own MCP server bring its tools into Claude or ChatGPT." },
-  { tag: "06 Models", name: "Models",
-    body: "Claude, OpenAI and Grok planners from the live catalogue, with reasoning effort and a Quick, Considered or Deep answer. Engines clamp ratio, resolution, duration and audio to what they accept; an unavailable model is never swapped silently." },
+const TILES: { tag: string; name: string; body: string }[] = [
+  { tag: "01 Approvals", name: "Approvals",
+    body: "One queue across every project. Approve each item at its own price, or everything under a figure in one go." },
+  { tag: "02 Activity", name: "Activity",
+    body: "Every run and what it settled, in credits, by project. A run waiting for a person is approved in Approvals." },
+  { tag: "03 Skills", name: "Skills",
+    body: "Save a run and run it again with new words. Each step still waits for its own approval." },
+  { tag: "04 Memory", name: "Memory",
+    body: "What Atomik keeps in mind for a project and for your team: brand, audience, references and cast. Add a line or forget one any time." },
 ];
 
 export default async function AtomikPage() {
@@ -44,33 +36,16 @@ export default async function AtomikPage() {
 
   /* The sample plan: its steps only, since the public site states no prices. */
   const STEPS: { name: string; state: "done" | "waiting" | "idle" }[] = [
-    { name: "Draft script from the brief · 3 scenes", state: "done" },
     { name: "Six board frames · Nano Banana 2 · 512", state: "waiting" },
-    { name: "Four identity renders · Cast", state: "idle" },
     { name: `Hero take · ${prices.hero.name} · ${prices.hero.basis}`, state: "idle" },
-  ];
-
-  const RECIPES: { name: string; body: string; chain: string[] }[] = [
-    { name: "Boards to a hero take",
-      body: "Six Nano Banana 2 stills at 512 from the script, a human pick, then a 5-second 1080p Seedance 2.5 take with audio from the chosen frame, laid on a timeline.",
-      chain: ["Image ×6", "Review", "Video · 5 s", "Timeline"] },
-    { name: "Four takes, one pick",
-      body: "One prompt from the brief, four 5-second Seedance 2.0 takes at 1080p, approved once, then a human checkpoint keeps the best.",
-      chain: ["Video ×4", "One approval", "Review"] },
-    { name: "Keyframe to a scored take",
-      body: "A Nano Banana Pro keyframe, a 5-second Kling 3.0 Pro take from it, a music cue written from the brief, and a timeline with the cue as its soundtrack.",
-      chain: ["Image", "Video", "Music", "Timeline"] },
-    { name: "A line over a take",
-      body: "A spoken line from the script in an Eleven v3 voice, a 5-second take to carry it, and a timeline with the line as its soundtrack.",
-      chain: ["Speech", "Video", "Timeline"] },
   ];
 
   return (
     <SitePage active="atomik">
       <SuiteHeader
         eyebrow="05 · Atomik Agent"
-        title="The production agent. Plans and runs the work."
-        lead="Describe the outcome; the agent plans it against this project and waits for you."
+        title="The production agent. Plans the work, you approve it."
+        lead="Describe the outcome; the agent plans it against this project, prices each step and waits for you."
         pages={SITE_SUITES.find((s) => s.id === "atomik")!.pages}
         cta={<>
           <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>
@@ -82,12 +57,12 @@ export default async function AtomikPage() {
         <Cols col={400} className={styles.agentCols}>
           <div className={styles.copy}>
             <Head eyebrow="01 · Agent" title="Describe the outcome. Approve each step."
-              lead="The agent reads the brief, script, direction and shot list, plus the references you select: uploaded text, images, and three sampled frames per video, six visuals at most. PDFs, audio and links count as descriptions only, and no URL is ever fetched. Its actions go to the Board as editable nodes." />
+              lead="The agent reads the brief and the references you select, six visuals at most. Its plan lands on the board, and nothing is spent until a person approves." />
             <Chips items={AGENT_CHIPS} />
           </div>
 
           <figure className={styles.convo} aria-label="A sample request and the plan it returns">
-            <p className={styles.bubble}>Draft the opening of Dune Studies: script from the brief, six boards, four identity renders and one hero take.</p>
+            <p className={styles.bubble}>Make the opening of A 15-second film: six board frames and one hero take.</p>
             <div className={styles.plan}>
               <div className={styles.planHead}>
                 <span className={styles.ring}><AtomikMark size={16} /></span>
@@ -105,7 +80,7 @@ export default async function AtomikPage() {
               </ol>
               <div className={styles.actions} aria-hidden="true">
                 <span className={`mk-btn mk-btn--sm gx-primary ${styles.still}`}>Approve</span>
-                <span className={`mk-btn mk-btn--sm mk-btn--secondary ${styles.still}`}>Decline</span>
+                <span className={`mk-btn mk-btn--sm mk-btn--secondary ${styles.still}`}>Change</span>
               </div>
             </div>
           </figure>
@@ -114,27 +89,8 @@ export default async function AtomikPage() {
 
       <Section id="atomik-pages" label="Atomik pages" className={styles.pages}>
         <Grid col={250}>
-          {TILES.map(({ tag, name, body, badge, gated }) => (
-            <Tile key={tag} tag={tag} badge={badge ? <Amber>{badge.toUpperCase()}</Amber> : undefined} name={name} body={body}>
-              {gated && <div className={styles.gated}><Amber>{gated.toUpperCase()}</Amber></div>}
-            </Tile>
-          ))}
-        </Grid>
-      </Section>
-
-      <Section id="atomik-recipes" panel label="Recipes">
-        <Head eyebrow="03 · Recipes" title="Saved plans that rerun exactly."
-          lead="Every saved run keeps its plan. Save one as a file to keep it." />
-        {/* 260, not the design's 280: this wrap is 1120 wide, so 280 would
-            leave a 3 + 1 row at desktop; 260 keeps four across there and
-            two by two at 844, as the design does. */}
-        <Grid col={260}>
-          {RECIPES.map((recipe, i) => (
-            <Tile key={recipe.name} className={styles.recipe} tag={`Example ${String(i + 1).padStart(2, "0")}`}
-              name={recipe.name} body={recipe.body}>
-              <div className={styles.chain}><Chips items={recipe.chain} /></div>
-              <span className={styles.foot}>New run · exact plan</span>
-            </Tile>
+          {TILES.map(({ tag, name, body }) => (
+            <Tile key={tag} tag={tag} name={name} body={body} />
           ))}
         </Grid>
       </Section>

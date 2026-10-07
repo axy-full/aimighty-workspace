@@ -15,7 +15,7 @@ const COMPOSER_TILES: [string, string, string][] = [
   ["Edit", "Edit a finished clip", "A take or an upload, up to 8 image references and an edit direction."],
   ["Finish", "Upscale in place", "Topaz Astra 2 for video and Topaz for stills. The original is kept; the upscale is a new take with its lineage."],
   ["Recover", "Nothing lost on reload", "Drafts, interrupted requests and lost responses come back as “Recover …”. Reusing a take loads its prompt; it never starts a job by itself."],
-  ["Modes", "Video · Images · Audio", "One segment switches the composer. Every tool in every suite is a preset that opens it pre-configured."],
+  ["Modes", "Video · Images · Audio", "One segment switches the composer. Every tool opens it already set up."],
 ];
 
 export default async function GenHome() {
@@ -47,7 +47,7 @@ export default async function GenHome() {
 
       <Section id="gen-composer" label="Make composer">
         <Head eyebrow="Make · one composer" title="One composer for video, images and audio."
-          lead="Every tool in every suite is a preset that opens it pre-configured; there is never a second interface." />
+          lead="Every tool opens this one composer already set up; there is never a second interface." />
         <Cols col={420}>
           <Window path="particl.si / make" src={shot("make-panel")} alt="Make over the board, with the engine line and its price" width={924} height={540} />
           <Grid col={220}>
