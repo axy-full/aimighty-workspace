@@ -121,6 +121,12 @@ export type RigContext = {
   apply: (fn: (project: Project) => Project | { project: Project; id?: string }, select?: boolean) => string | null;
   /** Saves pending edits; true once saved (an agent step reads the saved project). */
   save: () => Promise<boolean>;
+  /**
+   * Before this window leaves the workspace (lib/shell/switch-workspace.ts): everything it still has to save there is
+   * saved. True once nothing is left unsaved (or there was nothing); false when something could not be saved, which
+   * stays here, unsaved and editable, as any refused save does.
+   */
+  drain: () => Promise<boolean>;
   /** Deletes a shot (with the inputs only it used); returns the refusal, or null. ⌘Z brings it back in the Suites. */
   removeShot: (id: string) => string | null;
   /** The production's shared canvas: who else is here, presence to show them, and the server's own changes (Tidy). */
@@ -147,6 +153,11 @@ export function useRig(): RigContext {
   const value = useContext(Context);
   if (!value) throw new Error("useRig must be used inside <RigProvider>.");
   return value;
+}
+
+/** The Rig's drain where one is mounted; null outside it, where no board has anything to save. */
+export function useRigDrain(): RigContext["drain"] | null {
+  return useContext(Context)?.drain ?? null;
 }
 
 const API = "/api/workbench";
@@ -220,6 +231,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   /* Set once the team canvas hook exists below: its waiting edit goes out before the draft save. */
   const teamFlushRef = useRef<(() => Promise<void>) | null>(null);
+  /* …and, before leaving the workspace, every send of it still out ends too. */
+  const teamDrainRef = useRef<(() => Promise<boolean>) | null>(null);
   /* A local edit is also a team canvas edit; publishRef is set once the team canvas hook exists below. */
   const publishRef = useRef<((before: Project, after: Project) => void) | null>(null);
   /* What a merge brought in: onto the team canvas only where it still holds what the Rig had. */
@@ -448,7 +461,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   /* ── The production's team canvas (shared Rig nodes, live when Liveblocks is set up) ── */
   const readDraft = useCallback(() => draftRef.current?.project ?? null, []);
   const team = useTeamCanvas({ scope, productionId: project?.productionProjectId ?? null, current: readDraft, fold });
-  useEffect(() => { publishRef.current = team.publish; catchUpRef.current = team.catchUp; teamFlushRef.current = team.flush; }, [team.publish, team.catchUp, team.flush]);
+  useEffect(() => { publishRef.current = team.publish; catchUpRef.current = team.catchUp; teamFlushRef.current = team.flush; teamDrainRef.current = team.drain; }, [team.publish, team.catchUp, team.flush, team.drain]);
   useEffect(() => { mastersRef.current = team.locks; }, [team.locks]);
 
   /* ── Jobs (the Studio's own poller; it also files finished takes) ──── */
@@ -827,6 +840,32 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     }
   }, [make, select]);
   const save = useCallback(() => flush({ force: true }), [flush]);
+  /* Leaving the workspace: the open project's pending edit (a save already out ends first, and one that failed is sent
+     again), the team canvas's, then the projects left with edits not saved yet — each tried once more now. An edit made
+     while that ran goes round again; whatever could not be saved stays here as it is, and the answer is false. */
+  const drain = useCallback(async (): Promise<boolean> => {
+    const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+    for (let round = 0; round < 3; round++) {
+      if (!(await flush()) && draftRef.current) return false;
+      if (teamDrainRef.current && !(await teamDrainRef.current())) return false;
+      for (const [id, entry] of [...parked.current]) {
+        if (entry.stop) {
+          /* Refused when it was left: once more, here. Its loop has ended, so nothing else is sending it. */
+          const saved = await writeMergedDraft(API, scope, { base: entry.draft.base, mine: entry.draft.project, revision: entry.draft.revision, writer: entry.draft.writer, ancestors: entry.draft.ancestors, made: entry.draft.made }).catch(() => null);
+          if (saved && parked.current.get(id) === entry) parked.current.delete(id);
+        } else {
+          /* Still being saved on its own: its next try now rather than after its wait, and this waits for it. */
+          entry.wake();
+          await tick();
+          await entry.inflight;
+        }
+      }
+      await tick();
+      if (parked.current.size) return false;
+      if (!dirty.current) return true;
+    }
+    return false;
+  }, [flush, scope]);
   const removeShot = useCallback((id: string): string | null => {
     const current = draftRef.current;
     if (!current) return "Open a project first.";
@@ -877,9 +916,9 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const masters = team.locks;
   const value = useMemo<RigContext>(() => ({
     status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, saveError, selected, selectedNode, selectedCard,
-    select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, team: teamView,
+    select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, drain, removeShot, team: teamView,
     masters, canUnlock, lockMaster, unlockMaster, cutouts: cut.cutouts, quoteCutout: cut.quote, startCutout: cut.start,
-  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, selectedCard, select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, teamView, masters, canUnlock, lockMaster, unlockMaster, cut.cutouts, cut.quote, cut.start]);
+  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, selectedCard, select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, drain, removeShot, teamView, masters, canUnlock, lockMaster, unlockMaster, cut.cutouts, cut.quote, cut.start]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

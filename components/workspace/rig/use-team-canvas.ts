@@ -61,6 +61,8 @@ export type TeamCanvasApi = {
   presence: (patch: Partial<Presence>) => void;
   /** Sends any waiting canvas edit now. The draft save awaits it, so the canvas is never older than the saved draft. */
   flush: () => Promise<void>;
+  /** Before leaving the workspace (a switch): every send still out ends, then anything waiting is sent; true once nothing is left waiting to be sent. */
+  drain: () => Promise<boolean>;
   /** Lays the board out on the server, for everyone at once. Free. */
   tidy: () => Promise<TidyOutcome>;
   /** Folds in what the server just changed (Atomik's build), now rather than at the next check. A live room brings it by itself. */
@@ -196,7 +198,9 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     toast(`${names.length ? names.join(", ") : "A card"} ${names.length > 1 ? "are locked masters" : "is a locked master"}: that edit did not change ${names.length > 1 ? "them" : "it"}. An admin can unlock a master.`);
   }, [fold, toast, setLocks, locksFor]);
 
-  const send = useCallback(async () => {
+  /* Every send still out (the debounce's, a retry's, the one the page hiding starts), so leaving the workspace can wait for them. */
+  const sending = useRef(new Set<Promise<void>>());
+  const sendNow = useCallback(async () => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
     const post = async (pid: string, patch: TeamPatch) => {
       const going = inflight.current.get(pid) ?? [];
@@ -252,7 +256,20 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     }));
     if (again && !timer.current) timer.current = setTimeout(() => retry.current(), RETRY_MS);
   }, [scope, outbox, toast, handleHeld]);
+  const send = useCallback((): Promise<void> => {
+    const run = sendNow();
+    sending.current.add(run);
+    const done = () => { sending.current.delete(run); };
+    run.then(done, done);
+    return run;
+  }, [sendNow]);
   useEffect(() => { retry.current = () => void send(); }, [send]);
+  const drain = useCallback(async (): Promise<boolean> => {
+    /* A send already out may fail and put its edit back: it ends first, so this send carries it. */
+    while (sending.current.size) await Promise.allSettled([...sending.current]);
+    await send().catch(() => {});
+    return !outbox.size && !catchUps.current.size;
+  }, [send, outbox]);
 
   /* A page being closed or reloaded sends the waiting edit now, or the older canvas would win on the next open. */
   useEffect(() => {
@@ -498,5 +515,5 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
   }, [locksFor, setLocks]);
   const writeServer = useCallback((node: CanvasNode, fields: string[]) => { writeTrusted.current?.(node, fields); }, []);
 
-  return { mode, peers, server, publish, catchUp, presence, flush: send, tidy, refresh, locks, learnLock, writeServer };
+  return { mode, peers, server, publish, catchUp, presence, flush: send, drain, tidy, refresh, locks, learnLock, writeServer };
 }

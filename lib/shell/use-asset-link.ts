@@ -4,6 +4,7 @@ import type { Project } from "@/lib/workbench/studio";
 import type { ProjectHold } from "@/lib/workspace/data";
 import { linkWorkspace, stillCurrent, type AssetLink } from "./asset-link";
 import { useShell } from "./state";
+import { switchWorkspace } from "./switch-workspace";
 
 /**
  * A link to a take, from the moment the page opens until the take is on
@@ -71,8 +72,10 @@ export function useAssetLink(input: {
   selectProject: (id: string, opts?: { replace?: boolean }) => void;
   /** A fetch that carries the page's workspace scope (lib/useScopedFetch). */
   fetch: Fetch;
+  /** Saves what the board still has to save here, before a switch (RigProvider › drain); true once nothing is left unsaved. */
+  drain?: (() => Promise<boolean>) | null;
 }): LinkControl {
-  const { scope, workspace, workspaces, projectId, selectProject, fetch } = input;
+  const { scope, workspace, workspaces, projectId, selectProject, fetch, drain = null } = input;
   const { link, live } = useShell();
   const [resolved, setResolved] = useState<Resolved | null>(null);
   const [acting, setActing] = useState<Acting>({ busy: false, error: null });
@@ -139,19 +142,17 @@ export function useAssetLink(input: {
     }
   }, [link, production, acting.busy, fetch, same]);
 
-  /* Another of this account's workspaces: switch the session, then open the same link there. */
+  /* Another of this account's workspaces: what the board still has to save here saved, the session switched, then the same link opened there. */
   const switchTo = link?.workspace && where === "switch" ? (workspaces ?? []).find((w) => w.id === link.workspace) ?? null : null;
-  const switchWorkspace = useCallback(async () => {
+  const switchToLink = useCallback(async () => {
     if (!switchTo || acting.busy) return;
     setActing({ busy: true, error: null });
-    try {
-      const response = await fetch("/api/workspaces/switch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: switchTo.id }) });
-      if (!response.ok) throw new Error(await failure(response, "The workspace could not be switched. Try again."));
-      window.location.assign(window.location.pathname + window.location.search);
-    } catch (error) {
-      setActing({ busy: false, error: error instanceof Error ? error.message : "The workspace could not be switched. Try again." });
-    }
-  }, [switchTo, acting.busy, fetch]);
+    const why = await switchWorkspace({
+      id: switchTo.id, fetch, drain, fallback: "The workspace could not be switched. Try again.",
+      go: () => window.location.assign(window.location.pathname + window.location.search),
+    });
+    if (why) setActing({ busy: false, error: why });
+  }, [switchTo, acting.busy, fetch, drain]);
 
   /* How project resolution is held: nothing opens while the link is checked or cannot open; exactly its draft once known. */
   const hold: ProjectHold = !link ? null
@@ -159,7 +160,7 @@ export function useAssetLink(input: {
     : production ? (typeof target === "string" ? "exact" : "wait")
     : link.project ? "exact" : null;
 
-  return { link, hold, where, production, resolved, target, switchTo, acting, checkError, dismiss, retry, openProduction, switchWorkspace };
+  return { link, hold, where, production, resolved, target, switchTo, acting, checkError, dismiss, retry, openProduction, switchWorkspace: switchToLink };
 }
 
 /**
