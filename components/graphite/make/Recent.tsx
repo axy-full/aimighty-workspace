@@ -4,7 +4,11 @@ import Boundary from "@/components/Boundary";
 import { VirtualItems } from "@/components/workspace/VirtualItems";
 import { SAY, referenceRole } from "@/lib/shell/assets";
 import { RECENT_CHIPS, recentEntries, type RecentChip } from "@/lib/shell/make";
-import { exact } from "@/lib/shell/price-words";
+import { recentMeta } from "@/lib/shell/make-recent";
+import { exact, upTo, type PriceValue } from "@/lib/shell/price-words";
+import { priceWords as recreateWords, type RecreatePrice } from "@/lib/shell/recreate-price";
+import type { RecipeSource } from "@/lib/shell/recipe";
+import { useRecreatePrice } from "@/lib/shell/use-recreate-price";
 import { sendReference } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useRecreate } from "@/lib/shell/use-asset-actions";
@@ -12,7 +16,7 @@ import type { Project } from "@/lib/workbench/studio";
 import { libraryView, type LibraryEntry, type ProjectLibrary } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { TileFault } from "../PanelFault";
-import { Price } from "../Price";
+import { Price, usePriceTitle } from "../Price";
 import { LoadBanner, TakeSkeletons, TakeTile } from "../TakeTile";
 import type { MakeModel } from "./use-make";
 
@@ -24,9 +28,12 @@ const RING: Record<string, string> = { blue: "var(--gx-accent)", amber: "var(--g
  * uploads, newest first, under All · Takes · Unfiled · Filed, one card a row. Each card is the take's own (TakeTile:
  * its state, a held take's Release, what a failed take was charged) with Again, which puts its recipe back in Make
  * to be priced again (Retry, for a failed one), and Use as reference. Nothing here runs or charges anything.
+ * The line under a card's name names the engine in full (lib/shell/make-recent.ts › recentMeta: "Nano Banana Pro", never
+ * "NB Pro"), and Again wears what running it again costs today: the server's quote for the recipe Make would price
+ * (lib/shell/recreate-price.ts), or, with no quote, it waits with the reason.
  */
-export function Recent({ project, items, library, projects, make }: {
-  project: Project | null; items: LibraryEntry[]; library: ProjectLibrary; projects: "loading" | "ready" | "error"; make: MakeModel;
+export function Recent({ scope, project, items, library, projects, make }: {
+  scope: string; project: Project | null; items: LibraryEntry[]; library: ProjectLibrary; projects: "loading" | "ready" | "error"; make: MakeModel;
 }) {
   const shell = useShell();
   const ws = useWorkspace();
@@ -53,11 +60,11 @@ export function Recent({ project, items, library, projects, make }: {
       <article className="gx-mk-card" data-testid="make-recent-card" data-take={entry.take.id} data-status={entry.take.status}>
         <Boundary what="This take" probe={`take:${entry.take.id}`} resetKey={entry.take.id} fallback={(fault) => <TileFault fault={fault} name={entry.take.name} />}>
           <TakeTile entry={entry} variant="grid" selected={ws.state.selKind === "take" && ws.state.selId === entry.take.id} onRefresh={library.refresh} onOpen={() => open(entry)}
-            meta={<>{entry.take.meta}{settled != null && settled > 0 ? <> · <Price value={exact(settled)} /></> : null}</>} />
+            meta={<>{recentMeta(entry)}{settled != null && settled > 0 ? <> · <Price value={exact(settled)} /></> : null}</>} />
         </Boundary>
         {generated || referable ? (
           <div className="gx-mk-card-actions">
-            {generated ? <button type="button" className="gx-hbtn" onClick={() => recreate(entry)} data-testid="make-again">{entry.take.status === "failed" ? "Retry" : "Again"}</button> : null}
+            {generated ? <Again scope={scope} entry={entry} aspect={project?.aspect} onPress={() => recreate(entry)} /> : null}
             {referable ? <button type="button" className="gx-hbtn" onClick={() => reference(entry)} data-testid="make-use-reference">Use as reference</button> : null}
           </div>
         ) : null}
@@ -98,5 +105,33 @@ export function Recent({ project, items, library, projects, make }: {
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** A quote as Price draws it: exact, "up to" for a sound's estimate; Cinema Studio's "about" keeps its own words. */
+const againValue = (price: Extract<RecreatePrice, { state: "ready" }>): PriceValue | null =>
+  price.approximate ? null : price.estimate ? upTo(price.credits) : exact(price.credits);
+
+/**
+ * Again (Retry, for a failed take) at what it costs to run today: the same quote Make's button will show once the recipe is
+ * back in it. Until the quote is in, or when there is none, it waits, disabled, with the reason; never pressable unpriced.
+ */
+function Again({ scope, entry, aspect, onPress }: { scope: string; entry: LibraryEntry; aspect?: string; onPress: () => void }) {
+  const source = entry.asset.origin === "generation" ? (entry.asset.value as RecipeSource) : null;
+  const price = useRecreatePrice(scope, entry.take.id, source, aspect);
+  const ready = price?.state === "ready" ? price : null;
+  const value = ready ? againValue(ready) : null;
+  const title = usePriceTitle(value);
+  const word = entry.take.status === "failed" ? "Retry" : "Again";
+  const reason = price?.state === "unavailable" ? price.reason : null;
+  return (
+    <>
+      <button type="button" className="gx-hbtn" disabled={!ready} onClick={onPress} data-testid="make-again"
+        data-spend={ready ? "priced" : "unpriced"} data-spend-price={ready ? recreateWords(ready) : undefined}
+        title={ready ? title ?? undefined : reason ?? "Reading the price…"}>
+        {word}{ready ? <> · {value ? <Price value={value} /> : recreateWords(ready)}</> : null}
+      </button>
+      {reason ? <p className="gx-mk-line-note gx-mk-card-reason" data-testid="make-again-reason">{reason}</p> : null}
+    </>
   );
 }

@@ -73,11 +73,17 @@ test("the dock: a rail that opens to Atomik, an ask at the server's price, a pro
   expect(await smallTextIn(page, ".ag"), "text under 12 px").toEqual([]);
   await shot(page, "dock-proposal", info);
   await panel.getByTestId("agent-build").click();
-  /* The first render is priced and waits for the person who asked: Render · N cr is the queue's approval at that price, and is not pressed here. */
-  await expect(panel.getByTestId("agent-render").first()).toHaveText(/^Render · (up to )?[\d.,]+ cr$/, { timeout: 60_000 });
-  await expect(panel.getByTestId("agent-render").first()).toHaveAttribute("data-spend", "priced");
-  await expect(panel.getByTestId("agent-skip").first()).toBeVisible();
-  await expect(panel.getByTestId("agent-render-state").first()).toHaveText("Ready");
+  /* Plan approval (owner decisions L4/L5): after Build the renders wait behind ONE gate, the plan at its total, approved on the board's plan card.
+     The panel lists each render at its price as Ready with no Render button of its own (the queue holds the plan, not its steps), and the
+     card's Approve · N cr is the approval, at the sum of those prices. It is shown here and never pressed. */
+  const lines = panel.getByTestId("agent-render-state");
+  await expect(lines.first()).toHaveText("Ready", { timeout: 60_000 });
+  await expect(panel.getByTestId("agent-render")).toHaveCount(0);
+  await expect(panel.getByTestId("agent-skip")).toHaveCount(0);
+  const card = page.getByTestId("board-plan");
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  await expect(card.getByTestId("board-plan-primary")).toHaveText(/^Approve · [\d.,]+ cr$/);
+  await expect(card.getByTestId("board-plan-primary")).toHaveAttribute("data-spend", "priced");
   expect(await smallTextIn(page, ".ag"), "text under 12 px").toEqual([]);
   await shot(page, "dock-render", info);
   /* Undo the build; collapse back to the rail. */

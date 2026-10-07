@@ -9,6 +9,7 @@ import type { Project } from "@/lib/workbench/studio";
 import { Eyebrow } from "./PhoneChrome";
 import { NEEDS_CONNECTION } from "./HomeScreen";
 import { PhoneSheet } from "./PhoneSheet";
+import { readableTakeName } from "./phone-model";
 
 const TYPES: { type: ComposerType; label: string }[] = [{ type: "video", label: "Video" }, { type: "image", label: "Image" }, { type: "audio", label: "Audio" }];
 const SAY_WHAT = "Say what to make.";
@@ -133,7 +134,7 @@ function EngineSheet({ make }: { make: MakeModel }) {
                   <span className="ph-row-title">{m.label}</span>
                   {m.description ? <span className="ph-row-line">{m.description}</span> : null}
                 </span>
-                <span className="ph-row-line" title={row.value ? undefined : row.title}><Price value={row.value} /></span>
+                <span className="ph-row-line" title={row.value ? undefined : row.title} data-testid="phone-make-engine-row-price"><Price value={row.value} />{row.detail ? ` · ${row.detail}` : null}</span>
               </button>
             );
           })}
@@ -160,7 +161,7 @@ function ReferenceSheet({ items, taken, onPick, onClose }: { items: readonly Lib
           {list.map((e) => (
             <button key={e.take.id} type="button" className="ph-make-pick-tile" onClick={() => onPick(e.take.id)} data-testid="phone-make-pick">
               {e.media === "image" ? <img src={e.url!} alt="" loading="lazy" /> : <video src={e.url!} muted playsInline preload="metadata" />}
-              <span className="ph-make-ref-name">{e.take.name}</span>
+              <span className="ph-make-ref-name">{readableTakeName(e.take.name)}</span>
             </button>
           ))}
         </div>
