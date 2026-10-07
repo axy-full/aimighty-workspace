@@ -6,6 +6,7 @@ import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, type 
 import { moreTakes } from "./helpers/genTakes";
 import { openAdvanced } from "./helpers/makeAdvanced";
 import { projectName } from "./helpers/projectName";
+import { CINEMA_STUDIO_MODEL_ID } from "../lib/cinemaStudioTypes";
 import { isCompact } from "./helpers/shellMode";
 
 /* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
@@ -136,6 +137,15 @@ async function floors(page: Page, info: TestInfo) {
     return out;
   });
   expect(dim, "labels under #7C7C84").toEqual([]);
+}
+
+
+/** Every Takes chip shows its whole price: nothing in it runs past its box, wide or tall. */
+async function chipsFit(page: Page) {
+  const cut = await page.getByTestId("gen-takes").locator("button").evaluateAll((chips) => chips
+    .filter((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)
+    .map((el) => `${el.textContent} (${el.scrollWidth}x${el.scrollHeight} in ${el.clientWidth}x${el.clientHeight})`));
+  expect(cut, "Takes chips cut").toEqual([]);
 }
 
 /* ── This workspace's credits ─────────────────────────────────────────── */
@@ -302,7 +312,26 @@ test("the takes stepper stays put as the live price lands: a press on More acros
   await page.getByTestId("gen-takes-3").click();
   await expect(page.getByTestId("gen-takes-count")).toHaveText("3");
   await expect(page.getByTestId("gen-generate")).toHaveText(`Make 3 takes · ${3 * PRICE} cr`);
+  await expect(page.getByTestId("gen-takes-1")).toContainText(`${PRICE} cr`);
+  await chipsFit(page);
   expect(routes.quotes).toEqual([]);
   expect(routes.charges).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("Cinema Studio's takes chips show 'about N cr, at most 3N cr' whole, inside their chips", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one desktop width");
+  const { errors } = await open(page);
+  const cinema = { ...ENGINES[0], id: CINEMA_STUDIO_MODEL_ID, rate: { credits: 35, resolution: "720p", ratio: "16:9", duration: 5, approximate: true } };
+  await page.route(/\/api\/workbench\/engines(\?.*)?$/, (route) => {
+    const priced = new URL(route.request().url()).searchParams.has("model");
+    return route.fulfill({ json: { models: [cinema, ENGINES[1]], audio: null, credits: priced ? 35 : null, ...(priced ? { approximate: true } : {}) } });
+  });
+  await gen(page);
+  await page.getByTestId("gen-prompt").fill(PROMPT);
+  const one = page.getByTestId("gen-takes-1");
+  await expect(one).toContainText("at most 105 cr", { timeout: 60_000 });
+  await expect(page.getByTestId("gen-takes-4")).toContainText("at most 420 cr");
+  await chipsFit(page);
   expect(errors).toEqual([]);
 });
