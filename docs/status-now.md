@@ -1,4 +1,4 @@
-# Status now: 7 October 2026, 19:30 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 19:34 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. Two defects block the live code off Vercel (signed-out home loop; sign-in 403 behind the proxy); both fixes are being built so they apply to main too, and merge to main only on the owner's go.
 
@@ -39,9 +39,9 @@ In the new Make panel, a tab whose reply was lost can send a second paid request
 | image-ad variants and presets | No frame in the handoff (only one card, one Make at 3 cr). Nothing built. Brief for Claude Design: `docs/design-brief-image-ad-versions.md` (this branch). Logic already in code |
 | "Particl demo" cap field (`admin/workspace-cap-field` @ 32994932) | Up to date with release/1. The cap is enforced on the server at the hold for every paid path (new door-by-door spec). Opus review running. Owner question 7 |
 | home loop | Not reproduced on main (signed-out `/`, `/pricing`, `/studio` answer 200 self-hosted). Testing release/1 and the earlier run to find the trigger before any fix |
-| self-host fixes (owner yes, 18:15) | home-page loop (proxy) and sign-in behind the proxy (Opus author and Opus review; release/1 only; the owner checks it on the test address first). Sign-in lane (Opus) running; home-loop lane and #561's review start as slots free |
+| `fix/r1-signin-behind-proxy` @ 75b56ffe (sign-in, gated) | Built: one origin check for all routes; behind the proxy it accepts only the configured APP_ORIGIN when `SELFHOST_BEHIND_PROXY=1` (ignored on Vercel, so Vercel is unchanged). Proven on a local standalone build. Applies to main with three mechanical conflicts. Fresh Opus review running; then release/1 only, and the owner checks it on the test address. The test address must be https for sign-in (the session cookie is Secure) |
 | home loop | Not reproduced on main (signed-out `/`, `/pricing`, `/studio` answer 200 self-hosted). Testing release/1 and the earlier run to find the trigger before any fix |
-| self-host fixes (owner yes, 18:15) | home-page loop (proxy) and sign-in behind the proxy (Opus author and Opus review; release/1 only; the owner checks it on the test address first). Sign-in lane (Opus) running; home-loop lane and #561's review start as slots free |
+| `fix/r1-signin-behind-proxy` @ 75b56ffe (sign-in, gated) | Built: one origin check for all routes; behind the proxy it accepts only the configured APP_ORIGIN when `SELFHOST_BEHIND_PROXY=1` (ignored on Vercel, so Vercel is unchanged). Proven on a local standalone build. Applies to main with three mechanical conflicts. Fresh Opus review running; then release/1 only, and the owner checks it on the test address. The test address must be https for sign-in (the session cookie is Secure) |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
 
 ## Owner's answers (17:40)
