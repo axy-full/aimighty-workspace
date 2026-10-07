@@ -39,13 +39,14 @@ const SUPPORT = "Particl support";
    the whole run (tests/unit/workerProbe.spec.ts sets VERCEL_ENV=preview when
    it loads, the runner loads every spec before it starts workers, and workers
    inherit its environment). What each test found is put back after it. */
-const SCOPED_ENV = ["SUPER_ADMIN_EMAIL", "OWNER_PRIVACY_SCRUB_LOCAL", "VERCEL", "VERCEL_ENV"] as const;
+const SCOPED_ENV = ["SUPER_ADMIN_EMAIL", "OWNER_PRIVACY_SCRUB_LOCAL", "VERCEL", "VERCEL_ENV", "PARTICL_DEPLOYMENT"] as const;
 let envBefore: Record<string, string | undefined> = {};
 test.beforeEach(async () => {
   envBefore = Object.fromEntries(SCOPED_ENV.map((k) => [k, process.env[k]]));
   process.env.SUPER_ADMIN_EMAIL = OWNER.email;
   delete process.env.VERCEL;
   delete process.env.VERCEL_ENV;
+  delete process.env.PARTICL_DEPLOYMENT; // a development machine (lib/deployment.ts)
   // Off Vercel the rewrite runs only when asked for explicitly; these tests ask.
   process.env.OWNER_PRIVACY_SCRUB_LOCAL = "1";
   (await import("../../lib/platformOwnerPrivacy")).resetPlatformOwnerIdentity();
@@ -422,6 +423,11 @@ test("the rewrite refuses on a preview or staging deployment", async () => {
     delete process.env.VERCEL_ENV;
     delete process.env.OWNER_PRIVACY_SCRUB_LOCAL;
     await refusedBoth();
+    // A self-hosted staging server, opt-in or not.
+    process.env.PARTICL_DEPLOYMENT = "staging";
+    await refusedBoth();
+    process.env.OWNER_PRIVACY_SCRUB_LOCAL = "1";
+    await refusedBoth();
   } finally {
     for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   }
@@ -452,10 +458,46 @@ test("the rewrite itself refuses, and writes nothing, off Vercel without the opt
   await refused();
   process.env.VERCEL_ENV = "development";
   await refused();
-  // The control: off Vercel with the opt-in, the same call runs and finds the owner's value.
+  // Self-hosted staging, or a setting it does not recognise: refused, opt-in or not.
   delete process.env.VERCEL_ENV;
+  process.env.PARTICL_DEPLOYMENT = "staging";
+  await refused();
+  process.env.PARTICL_DEPLOYMENT = "prod";
+  await refused();
+  // The control: off Vercel with the opt-in, the same call runs and finds the owner's value.
+  delete process.env.PARTICL_DEPLOYMENT;
   const dry = await inTenant(ws, () => platformOwnerScrub({ apply: false }));
   expect(dry.lines.find((l) => l.table === "generations" && l.column === "review_by")).toMatchObject({ matched: 1 });
+  // And a self-hosted production server runs it without the local opt-in.
+  delete process.env.OWNER_PRIVACY_SCRUB_LOCAL;
+  process.env.PARTICL_DEPLOYMENT = "production";
+  const prod = await inTenant(ws, () => platformOwnerScrub({ apply: false }));
+  expect(prod.lines.find((l) => l.table === "generations" && l.column === "review_by")).toMatchObject({ matched: 1 });
+});
+
+test("where the rewrite may run: the full truth table, Vercel unchanged", async () => {
+  const { scrubAllowedHere } = await import("../../lib/platformOwnerScrub");
+  // What the guard answered before PARTICL_DEPLOYMENT existed.
+  const before = (env: Record<string, string | undefined>) =>
+    Boolean(env.VERCEL || env.VERCEL_ENV) ? env.VERCEL_ENV === "production" : env.OWNER_PRIVACY_SCRUB_LOCAL === "1";
+  const vercels = [undefined, "1"];
+  const vercelEnvs = [undefined, "", "production", "preview", "development"];
+  const settings = [undefined, "", "production", "staging", "development", " Production ", "prod"];
+  const optIns = [undefined, "1", "true"];
+  for (const VERCEL of vercels) for (const VERCEL_ENV of vercelEnvs) for (const PARTICL_DEPLOYMENT of settings) for (const OWNER_PRIVACY_SCRUB_LOCAL of optIns) {
+    const env = { VERCEL, VERCEL_ENV, PARTICL_DEPLOYMENT, OWNER_PRIVACY_SCRUB_LOCAL };
+    const label = JSON.stringify(env);
+    const vercel = Boolean(VERCEL || VERCEL_ENV);
+    const setting = PARTICL_DEPLOYMENT?.trim().toLowerCase();
+    let expected: boolean;
+    if (vercel) expected = VERCEL_ENV === "production"; // PARTICL_DEPLOYMENT ignored on Vercel
+    else if (setting === "production") expected = true;
+    else if (setting === "staging" || setting === "prod") expected = false;
+    else expected = OWNER_PRIVACY_SCRUB_LOCAL === "1"; // development or unset
+    expect(scrubAllowedHere(env), label).toBe(expected);
+    // Byte-identical to before on Vercel, and wherever PARTICL_DEPLOYMENT is unset.
+    if (vercel || !setting) expect(scrubAllowedHere(env), label).toBe(before(env));
+  }
 });
 
 test("the rewrite is optimistic: a canvas or bible that changed after the read is left and reported, and the live room is told", async () => {
