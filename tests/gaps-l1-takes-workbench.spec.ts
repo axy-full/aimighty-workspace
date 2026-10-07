@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import { noBannedNames, everySpendButtonPriced, SHOTS } from "./helpers/r1-gaps";
 import { DESKTOP, bringIntoView, seedShots, take, textReadsAtFloor } from "./helpers/gaps-l1";
 import { smallText } from "./phoneFloors";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 /*
  * Gaps, lane 1 · Takes (design/particl-graphite "Gaps B frames": a take in review, reject with a reason, the Undo toast).
@@ -13,7 +15,7 @@ import { smallText } from "./phoneFloors";
 const PHONE = "phone widths open the project's Record and its review is the phone's own screen (tests/r1-gap-phone-fix-states-workbench.spec.ts); the board canvas is desktop only";
 const frame = (page: import("@playwright/test").Page, name: string, project: string) => {
   mkdirSync(SHOTS, { recursive: true });
-  return page.screenshot({ path: `${process.env.GAPS_L1_SHOTS || "/private/tmp/claude-gaps-l1-shots"}/l1-${name}-${project.replace("workbench-", "")}.png`, animations: "disabled" });
+  return page.screenshot({ path: `${process.env.GAPS_L1_SHOTS || join(tmpdir(), "claude-gaps-l1-shots")}/l1-${name}-${project.replace("workbench-", "")}.png`, animations: "disabled" });
 };
 
 test("a take in review: Approve, Reject, Change with words priced from the quote; nothing is sent until a person presses", async ({ page }, info) => {

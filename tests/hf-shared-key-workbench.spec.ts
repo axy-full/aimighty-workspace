@@ -10,6 +10,7 @@ import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/
 import { smallTargets } from "./phoneFloors";
 import type { TrayReply } from "../lib/jobsTray";
 import { heldPriceNow } from "../lib/creditTerms";
+import { projectName } from "./helpers/projectName";
 
 /**
  * One owned provider key serves every workspace on the platform's keys
@@ -175,7 +176,7 @@ test("the jobs tray says what a take on the shared key is doing: Queued — star
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto("/suites?suite=atomik&page=agent&sp=agent");
-    await expect(page.getByTestId("project-name").first()).toHaveText("Bottle launch");
+    await expect(projectName(page)).toHaveText("Bottle launch");
     const pill = page.getByTestId("running-jobs");
     await expect(pill).toBeVisible();
     await pill.click();

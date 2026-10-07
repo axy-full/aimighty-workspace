@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { projectName } from "./helpers/projectName";
 
 /**
  * The selection keys (⌫, ⌘D, ⌘R) act where the selection is shown, and leave
@@ -27,7 +28,7 @@ async function open(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=atomik&page=agent&sp=agent");
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await expect(projectName(page)).toHaveText("Coastal light study");
   await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
   /* Record, after the shell's own handler, whether it took each key from the browser. */
   await page.evaluate(() => {

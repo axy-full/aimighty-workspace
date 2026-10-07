@@ -155,8 +155,8 @@ export function CreditsSection({ account, open }: { account: WorkspaceAccount | 
           {billing.data.reach ? (
             <div className="gs-embed">
               <ReachPair testId="settings-reach"
-                video={billing.data.reach.video ? <ReachTile kind="video" count={leftFrom(balance, billing.data.reach.video)} take={billing.data.reach.video} suffix={leftAt(billing.data.reach.video.basis)} /> : null}
-                image={billing.data.reach.image ? <ReachTile kind="image" count={leftFrom(balance, billing.data.reach.image)} take={billing.data.reach.image} suffix={leftAt(billing.data.reach.image.basis)} /> : null} />
+                video={billing.data.reach.video ? <ReachTile kind="video" count={leftFrom(balance, billing.data.reach.video)} take={billing.data.reach.video} suffix={leftAt(billing.data.reach.video.basis)} testId="settings-reach-video" /> : null}
+                image={billing.data.reach.image ? <ReachTile kind="image" count={leftFrom(balance, billing.data.reach.image)} take={billing.data.reach.image} suffix={leftAt(billing.data.reach.image.basis)} testId="settings-reach-image" /> : null} />
             </div>
           ) : null}
           {billing.data.rates ? <div className="gs-embed"><RateCard groups={billing.data.rates} reference={billing.data.reach ?? null} legend="Your balance is counted at the outlined prices." testId="settings-rate-card" /></div> : null}
