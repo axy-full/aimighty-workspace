@@ -1,4 +1,4 @@
-# Status now: 7 October 2026, 21:38 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 22:13 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -32,7 +32,7 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
   - browser: mostly specs still driving the old Gen composer, the old Workspace pane and the retired connected account; plus money specs (no vendor dollars, credit value on phone, batch takes, recovery race, spend buttons) that must be ported, never dropped.
 - Run 37615298051 on ac03f878: all 3 unit shards green (first green unit run on `release/1`); browser shards still running.
 - On "contabo", 3ca30197: typecheck clean; unit 3,950 passed, 3 failed (the same three), 7 skipped.
-- CI on 88133fee (every fix lane in) running; its result decides the next round.
+- **CI on 88133fee (run 37649646956): 2 failing tests left, down from about 240 at 16:00.** Both are one 3D blocking test at 1440 and 1920: a camera position compared exactly comes back as -2.999999999999999 instead of -3 (float noise, not behaviour). Unit and core green. A small test fix is running; then a full green run.
 - Fix lanes running since 16:20, one branch each, merged into `release/1` only after a fresh review (Opus where money, sign-in or tenancy):
   - `fix/r1-ci-make`: the Make composer specs (prices, batches, model picker).
   - `fix/r1-ci-settings`: Settings, credits, no vendor dollars, retired connected account.
@@ -40,7 +40,9 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
 ## In flight
 | Branch | State |
 |---|---|
-| CI fixes on `release/1` | lanes above |
+| CI fixes on `release/1` | last one running (`fix/r1-blocking-float`) |
+| `chore/r1-dead-old-pages` @ e08da842 | 155 unreachable old files and 22 old specs deleted; Opus review running. Old Business/Crew/Inspector screens can still mount from the shell (addresses are rewritten to the board): a separate, careful cut |
+| `fix/r1-d0-check` | D0 screens checked screen by screen (right-click prices, Delete with Undo, header, ⌘K, phone bar); screenshots for the owner |
 | Release 1 remaining list | sent: `docs/r1-remaining.md` (this branch). Owner: list B in, list C out |
 | image-ad variants and presets | No frame in the handoff (only one card, one Make at 3 cr). Nothing built. Brief for Claude Design: `docs/design-brief-image-ad-versions.md` (this branch). Logic already in code |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
