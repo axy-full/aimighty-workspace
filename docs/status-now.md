@@ -1,4 +1,4 @@
-# Status now: 8 October 2026, 00:31 IST, Release 1 lead moved to "contabo"
+# Status now: 8 October 2026, 00:42 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -45,7 +45,7 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
 ## In flight
 | Branch | State |
 |---|---|
-| Hotfix PRs to main (owner yes, "go" to merge) | 1 sign-in behind the proxy, 2 public links, 3 rate limits (client address), 4 an explicit production flag instead of VERCEL_ENV: being ported to main as draft PRs, each with a fresh Opus review |
+| Hotfix PRs to main (owner yes; merge only on "go") | #563 sign-in behind the proxy; #564 public links (after #563); #565 rate limits (client address); #562 production flag (**reviewed PASS**); #566 self-host build files. Opus reviews of #563–#566 running |
 | Workspace switch (tenancy) | Found while porting customer test 3: the avatar menu's switch (and Workspace › General) doesn't wait for an unsaved board edit; the last edit is refused or lost (never written to the other workspace: the scope header stops it). Fix: wait for the board's save before switching. Opus fix next; release/1 only; main needs the owner's yes |
 | `chore/r1-old-shell-branches` @ 99b97e0b | Old Business/Crew/Inspector screens cut (~150 files); every old address proved by a pure routing table + sweep; three routing bugs fixed. Opus review running. Owner question 16 |
 | `test/r1-five-minute-green` @ f8e2cee2 (review PASS) | **Passes:** a new invitee reaches an approved first render in 92 s (desktop) and 112 s (phone), one paid request per person's tap. Its phone flake is a real bug: approving the last take hides the Undo toast after 0.26 s. Fix running (`fix/r1-phone-review-undo`). Owner question 13 |
