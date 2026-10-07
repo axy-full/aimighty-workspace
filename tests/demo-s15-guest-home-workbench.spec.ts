@@ -242,11 +242,12 @@ test("the sample production from the Particl sample workspace: plan, shots, cast
 test("Request access is stored for the owner with what they make and the brief", async ({ page }, info) => {
   await setSite({ guestHome: true });
   /* A test server trusts no forwarded header (lib/clientIp.ts), so every request here counts against one shared
-     per-source daily limit. This project's earlier requests are cleared first, leaving at most one per other size. */
+     per-source daily limit (5). Requests left by this spec's earlier runs (any size; workers=1, and
+     localPlatformDbUrl() only ever names a local file database) are cleared first, so they can't push it over. */
   const own = `guest-${info.project.name.replace(/\W/g, "")}-`;
   const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try {
-    await db.execute({ sql: "DELETE FROM access_requests WHERE substr(email, 1, ?) = ?", args: [own.length, own] })
+    await db.execute("DELETE FROM access_requests WHERE email LIKE 'guest-%@example.test'")
       .catch((error) => { if (!/no such table/.test(String(error))) throw error; });
   } finally {
     db.close();
