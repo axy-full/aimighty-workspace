@@ -188,7 +188,7 @@ test("Gen: the Sound switch is off on Cinema Studio, a WAV reference leaves it o
 
   await page.getByTestId("gen-prompt").fill(WORDS);
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   /* A WAV dropped as a reference is cited and priced, and the switch stays where it was. */
   const well = page.getByTestId("gen-well");
   await dropId(page, well, "upload:room-tone");
@@ -196,7 +196,7 @@ test("Gen: the Sound switch is off on Cinema Studio, a WAV reference leaves it o
   await expect.poll(() => reads.some((q) => q.get("model") === CINEMA && q.getAll("uploadId").includes("room-tone"))).toBe(true);
   await expect(sound).toHaveAttribute("aria-checked", "false");
   expect(reads.every((q) => !q.has("audio")), "a read asked for sound").toBe(true);
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
 
   /* The floors, on the switch: clear of the sticky Generate and the tab bar, a full target, a readable label. */
   await row.evaluate((el) => el.scrollIntoView({ block: "center" }));
@@ -226,7 +226,7 @@ test("Gen: turning Sound on asks for the price again, at the figure for a take w
   await pickModel(page, /^Cinema Studio 4\.0/);
   await page.getByTestId("gen-prompt").fill(WORDS);
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   const sound = page.getByTestId("gen-sound-toggle");
   await sound.scrollIntoViewIfNeeded();
 
@@ -244,7 +244,7 @@ test("Gen: turning Sound on asks for the price again, at the figure for a take w
   held.open();
   holdSound(null);
   /* The fresh figure is the one for a take with sound. */
-  await expect(go).toHaveText("Make · about 36 cr");
+  await expect(go).toHaveText("Make · about 36 cr, at most 108 cr");
   expect(await noOverflow(page)).toBe(true);
   await shot(page, info, "gen-sound-on");
 
@@ -258,7 +258,7 @@ test("Gen: turning Sound on asks for the price again, at the figure for a take w
   await sound.click();
   await expect(sound).toHaveAttribute("aria-checked", "false");
   await expect.poll(() => reads.slice(again).some((q) => q.get("model") === CINEMA && !q.has("audio"))).toBe(true);
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   /* Another engine has no switch; back on Cinema Studio it is as it was left. */
   await pickModel(page, /^Seedance 2\.5/);
   await expect(page.getByTestId("gen-sound-option")).toHaveCount(0);
@@ -280,7 +280,7 @@ test("Gen: Recreate of a Cinema Studio take made with sound turns the switch bac
   await expect(chip).toHaveText("With sound");
   await expect(chip).toHaveAttribute("data-state", "kept");
   await expect.poll(() => reads.some((q) => q.get("model") === CINEMA && q.get("audio") === "1")).toBe(true);
-  await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 36 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 36 cr, at most 108 cr");
   await shot(page, info, "gen-sound-recreate");
   /* Turned off here: the card says so, and Generate sends a silent take. */
   await sound.scrollIntoViewIfNeeded();
@@ -288,7 +288,7 @@ test("Gen: Recreate of a Cinema Studio take made with sound turns the switch bac
   await expect(chip).toHaveText("With sound → silent");
   await expect(chip).toHaveAttribute("data-state", "changed");
   await expect(page.getByTestId("gen-recipe-why").locator("[data-note='sound']")).toHaveText("Sound Changed here");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 31 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 31 cr, at most 93 cr");
   await page.getByTestId("gen-generate").click();
   await expect.poll(() => priced.length).toBe(1);
   expect(priced[0]).toMatchObject({ model: CINEMA, prompt: WORDS });
@@ -315,7 +315,7 @@ test("Gen, where sound is not offered: Cinema Studio has no Sound switch, a Recr
   await expect(page.getByTestId("gen-recipe-why").locator("[data-note='sound']")).toHaveText("Sound Cinema Studio 4.0 has no Sound switch here");
   await expect(page.getByTestId("gen-sound-option")).toHaveCount(0);
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText("Make · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   expect(reads.some((q) => q.has("audio")), "a read asked for sound").toBe(false);
   expect(await noOverflow(page)).toBe(true);
   await shot(page, info, "gen-sound-not-offered");
@@ -342,7 +342,7 @@ test("Gen follows the server's own answer: the Sound switch shows only where the
   const silentResponse = await silentRead;
   const silent = await silentResponse.json() as { credits: number };
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText(`Make · about ${silent.credits} cr`);
+  await expect(go).toHaveText(`Make · about ${silent.credits} cr, at most ${silent.credits * 3} cr`);
   if (!offered) {
     await expect(page.getByTestId("gen-sound-option")).toHaveCount(0);
     /* Asked for by hand, sound is refused by the price read and by admission alike, before anything is reserved or sent. */
@@ -366,7 +366,7 @@ test("Gen follows the server's own answer: the Sound switch shows only where the
     await sound.click();
     const loud = await (await loudRead).json() as { credits: number };
     expect(loud.credits).toBeGreaterThanOrEqual(silent.credits);
-    await expect(go).toHaveText(`Make · about ${loud.credits} cr`);
+    await expect(go).toHaveText(`Make · about ${loud.credits} cr, at most ${loud.credits * 3} cr`);
     await go.click();
     await expect.poll(() => priced.length).toBe(1);
     expect(priced[0]).toMatchObject({ model: CINEMA, prompt: WORDS, generateAudio: true });
@@ -460,7 +460,7 @@ test("the canvas dialog, where sound is offered: Sound is off with the node's WA
   await expect(dialog.getByRole("list", { name: "Bound references" })).toContainText("Room tone.wav · Sound");
   const sound = dialog.getByRole("switch", { name: "With sound" });
   await expect(sound).toHaveAttribute("aria-checked", "false");
-  await expect(dialog.getByRole("button", { name: "Generate · about 35 cr", exact: true })).toBeEnabled();
+  await expect(dialog.getByRole("button", { name: "Generate · about 35 cr, at most 105 cr", exact: true })).toBeEnabled();
   expect(f.reads.every((q) => !q.has("audio")), "a read asked for sound").toBe(true);
 
   /* The floors, on the switch. */
@@ -488,7 +488,7 @@ test("the canvas dialog, where sound is offered: Sound is off with the node's WA
   await expect(dialog.getByRole("button", { name: "Loading estimate…", exact: true })).toBeDisabled();
   held.open();
   f.holdSound(null);
-  const generate = dialog.getByRole("button", { name: "Generate · about 40 cr", exact: true });
+  const generate = dialog.getByRole("button", { name: "Generate · about 40 cr, at most 120 cr", exact: true });
   await expect(generate).toBeEnabled();
   expect(f.reads.at(-1)?.getAll("uploadId")).toEqual(["room-upload"]);
   await sound.scrollIntoViewIfNeeded();
@@ -496,7 +496,7 @@ test("the canvas dialog, where sound is offered: Sound is off with the node's WA
 
   await generate.click();
   await expect.poll(() => f.submissions.length).toBe(1);
-  expect(f.submissions[0]).toMatchObject({ model: CINEMA, generateAudio: true, maxCredits: 40, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
+  expect(f.submissions[0]).toMatchObject({ model: CINEMA, generateAudio: true, maxCredits: 120, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
   await expect(dialog).toHaveCount(0);
   /* The node's first input is the WAV, so the inspector's monitor holds that sound, at full volume. The node's own mode
      ("Video") is not a volume; read as one, it threw and stopped the page. */
@@ -527,7 +527,7 @@ test("the canvas dialog, where sound is offered: off, the take goes silent with 
   /* The words are the dialog's direction, which starts from the node's brief: sent exactly as shown, never rewritten. */
   const direction = await dialog.getByRole("textbox", { name: "Generation direction" }).inputValue();
   expect(direction).toContain(WORDS);
-  await dialog.getByRole("button", { name: "Generate · about 35 cr", exact: true }).click();
+  await dialog.getByRole("button", { name: "Generate · about 35 cr, at most 105 cr", exact: true }).click();
   await expect.poll(() => f.submissions.length).toBe(1);
   expect(f.submissions[0]).toMatchObject({ model: CINEMA, prompt: direction, refine: false, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
   expect(f.submissions[0]).not.toHaveProperty("generateAudio");
@@ -544,14 +544,14 @@ test("the canvas dialog, where sound is not offered: no Sound switch with the no
   await expect(dialog.getByRole("list", { name: "Bound references" })).toContainText("Room tone.wav · Sound");
   await expect(dialog.getByRole("switch", { name: "With sound" })).toHaveCount(0);
   await expect(dialog.getByTestId("dialog-cinema-sound")).toHaveCount(0);
-  const generate = dialog.getByRole("button", { name: "Generate · about 35 cr", exact: true });
+  const generate = dialog.getByRole("button", { name: "Generate · about 35 cr, at most 105 cr", exact: true });
   await expect(generate).toBeEnabled();
   expect(f.reads.some((q) => q.has("audio")), "a read asked for sound").toBe(false);
   expect(await noOverflow(page)).toBe(true);
   await shot(page, info, "dialog-sound-not-offered");
   await generate.click();
   await expect.poll(() => f.submissions.length).toBe(1);
-  expect(f.submissions[0]).toMatchObject({ model: CINEMA, maxCredits: 35, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
+  expect(f.submissions[0]).toMatchObject({ model: CINEMA, maxCredits: 105, references: [{ uploadId: "room-upload", role: "reference_audio" }] });
   expect(f.submissions[0]).not.toHaveProperty("generateAudio");
   expect(f.errors).toEqual([]);
 });

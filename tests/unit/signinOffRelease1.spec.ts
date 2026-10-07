@@ -132,6 +132,7 @@ async function runSync(retiredModule: Record<string, unknown>) {
     "@/lib/workbench/rig-agent": { drainRigAgentWakeups: work("rig_agents", {}) },
     "@/lib/storageCost": { backfillSizes: work("storage_sizes", {}) },
     "@/lib/uploadReservations": { cleanupExpiredUploads: work("expired_uploads", {}) },
+    "@/lib/genjutsuVideo": { expireUnansweredCinemaTakes: work("cinema_unanswered", { expired: [] }) },
     "@/lib/held": { releaseHeldJobs: work("held_jobs", {}) },
     "@/lib/settings": { setSetting: async (key: string, value: string) => { settings[key] = value; } },
     "@/lib/platform": { platformReady: async () => {}, platformDb: () => ({}), getWorkspace: async (id: string) => ({ id, deletedAt: null }) },
@@ -162,7 +163,7 @@ async function runSync(retiredModule: Record<string, unknown>) {
   }
 }
 
-const EVERY_OTHER_STAGE = ["generations", "pipelines", "training", "soul_training", "canvas_pushes", "rig_agents", "storage_sizes", "expired_uploads", "held_jobs"];
+const EVERY_OTHER_STAGE = ["generations", "pipelines", "training", "soul_training", "canvas_pushes", "rig_agents", "storage_sizes", "expired_uploads", "cinema_unanswered", "held_jobs"];
 
 test("the heartbeat runs every other stage, in order, and never the connected account's collection", async () => {
   const { response, ran, settings } = await runSync(retired as unknown as Record<string, unknown>);

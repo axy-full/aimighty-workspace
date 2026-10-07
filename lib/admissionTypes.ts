@@ -16,6 +16,11 @@ export type AdmissionQuote = {
   unit: "cr" | "usd";
   /** Present when the figure is an approximation and the take settles on its delivered output. */
   approximate?: true;
+  /**
+   * Present when the take holds its ceiling (Cinema Studio, lib/cinemaHold.ts): what a person approves and
+   * admission holds, "at most" this many credits. The approval (`maxCredits`) is this figure, not the estimate.
+   */
+  ceilingCredits?: number;
 };
 export type PreparedAdmission = {
   version: 1;

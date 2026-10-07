@@ -26,6 +26,8 @@ import {
   type PendingGeneration,
 } from "@/lib/workbench/pending-generation";
 import { settlePendingGeneration } from "@/lib/workspace/generate-submit";
+import { cinemaPriceDollars, cinemaPriceWords, heldCredits } from "@/lib/cinemaHold";
+import { useSession } from "@/lib/session";
 import { SaveFailedError, saveMessage } from '@/lib/workbench/save-then-continue';
 import { PRODUCT_IMAGE_NAME } from '@/lib/uiNames';
 
@@ -178,6 +180,7 @@ function TakeDialog({
   const model = models.find((m) => m.id === modelId && m.kind === kind);
   /* Cinema Studio 4.0 also takes the node's sounds as references (WAV uploads; the server checks each). */
   const cinemaModel = kind === "video" && model != null && isCinemaStudioModel(model.id);
+  const { rates: sessionRates } = useSession();
   /* Its Sound switch, where this workspace is offered it (once its sound is priced, or in the house workspace). */
   const soundModel = cinemaModel && model?.sound === true;
   const boundRefs = useMemo(() => target.refs
@@ -365,7 +368,8 @@ function TakeDialog({
         ratio,
         resolution,
         duration,
-        maxCredits: cost!,
+        /* The approval is what the take may charge: Cinema Studio's hold, its quote times its band (lib/cinemaHold.ts). */
+        maxCredits: heldCredits(cost!, model!.id),
         references,
         marketing,
         quoteFingerprint: quote?.fingerprint,
@@ -609,6 +613,8 @@ function TakeDialog({
           </p>
           <Button
             className="btn primary"
+            /* Hovering a Cinema Studio price shows its dollars at the public price of a credit (CLAUDE.md rule 14). */
+            title={cinemaModel && cost != null && !busy && !pending ? cinemaPriceDollars(cost, sessionRates.unit === "cr" ? sessionRates.creditUsd : null) ?? undefined : undefined}
             disabled={
               busy ||
               !!initial.error ||
@@ -622,7 +628,10 @@ function TakeDialog({
                 ? "Recover submitted take"
                 : cost == null
                   ? "Loading estimate…"
-                  : quote?.key === quoteKey && quote.approximate
+                  /* Cinema Studio holds "about N cr, at most 3N cr", the whole of what Generate approves (lib/cinemaHold.ts). */
+                  : cinemaModel
+                    ? `Generate · ${cinemaPriceWords(cost)}`
+                    : quote?.key === quoteKey && quote.approximate
                     ? `Generate · about ${cost} cr`
                     : `Generate · ${cost} cr estimated`}
           </Button>

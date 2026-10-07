@@ -115,6 +115,8 @@ type BatchRun = {
   projectId: string;
   name: string;
   model: string;
+  /** The engine's id, so the strip says a held engine's price the way its button did (lib/cinemaHold.ts). */
+  modelId?: string;
   takes: BatchTake[];
 };
 /** A batch as Gen's Results and the shell's strip show it: its takes, each in its own words. */
@@ -581,7 +583,7 @@ export function useComposer(options: {
               projectId: filed.project.id, batchId, name: base, model: model.label,
               takes: unconfirmed.map((take) => ({ variation: take.variation, storageId: storageId(take.variation), credits: take.credits })),
             });
-          followBatch({ id: batchId, source: "workspace", projectId: filed.project.id, name: base, model: model.label, takes: outcome.takes });
+          followBatch({ id: batchId, source: "workspace", projectId: filed.project.id, name: base, model: model.label, modelId: model.id, takes: outcome.takes });
           dispatch({ type: "notice", value: `${before}${batchNotice(outcome.takes, "cr")}` });
           if (outcome.takes.some((take) => take.state === "queued" || take.state === "held"))
             sentRef.current?.({
