@@ -1,5 +1,4 @@
 import { test, expect } from "@playwright/test";
-import { agentCharged, agentPrice, agentReserved } from "../../components/graphite/production/agent-price";
 import { NOTES_LIMIT, clearSentNotes, notesBack, notesOf, notesSent, withNotes } from "../../lib/production/notes";
 import { BEAT_LIMITS, newBeat, newScene, newShot, removalName, removeFromSheet, restoreRefusal, restoreToSheet, type BeatScene, type BeatSheet } from "../../lib/production/beats";
 import { UNDO_HINT, popUndo, pushUndo, splitUndoHint, undoneLabel, withUndoHint, type UndoEntry } from "../../lib/shell/undo";
@@ -8,7 +7,6 @@ import { mergeDraft } from "../../lib/workbench/draft-merge";
 import { noteTakenOut, recordMade, type MadeRecords } from "../../lib/workbench/merge";
 import { beatSheetFrom } from "../../lib/production/beats";
 import { newProject, type Project } from "../../lib/workbench/studio";
-import type { DevelopmentJob } from "../../lib/workbench/development-types";
 
 /**
  * Agent stages keep the director's notes and speak in credits; Beats deletes
@@ -22,48 +20,8 @@ function scene(heading: string, beats = 3, shots = 2): BeatScene {
 function sheetOf(...scenes: BeatScene[]): BeatSheet {
   return { scriptSha256: "a".repeat(64), updatedAt: "2026-09-25T00:00:00.000Z", scenes };
 }
-type Run = Pick<DevelopmentJob, "status" | "credits" | "costUsd" | "estimateCredits" | "estimateUsd" | "ownKey">;
-const run = (over: Partial<Run>): Run => ({ status: "succeeded", credits: 9, estimateCredits: 12, ownKey: false, ...over });
 
-/* ── Price in the workspace's unit ───────────────────────────────────────── */
 
-test("a credit workspace sees credits only — even when a dollar figure arrives with the quote", () => {
-  expect(agentPrice({ estimateCredits: 12 }, true)).toBe("12 credits");
-  expect(agentPrice({ estimateCredits: 12, estimateUsd: 0.0312 }, true)).toBe("12 credits");
-  expect(agentPrice({ estimateCredits: 1234 }, true)).toBe("1,234 credits");
-  expect(agentPrice({ estimateCredits: 1 }, true)).toBe("1 credit");
-  expect(agentPrice({ estimateCredits: 12, estimateUsd: 0.0312 }, true)).not.toContain("$");
-});
-
-test("a credit workspace never reads a dollar quote, never '0 credits' for one; the house workspace reads its dollars", () => {
-  expect(agentPrice({ estimateCredits: 0, estimateUsd: 0.0312 }, true)).toBe("Quote unavailable");
-  /* The house workspace (lib/houseWorkspace.ts) is never billed in credits: the dollars its own quote carries. */
-  expect(agentPrice({ estimateCredits: 0, estimateUsd: 2.5 }, false)).toBe("$2.5000");
-  expect(agentPrice({ estimateCredits: 0 }, false)).toBe("Quote unavailable");
-  /* No dollar figure at all (a platform model that costs nothing): the credit figure is all there is. */
-  expect(agentPrice({ estimateCredits: 0 }, true)).toBe("0 credits");
-});
-
-test("a run in progress: reserved credits, or what it may cost on the workspace's own key", () => {
-  expect(agentReserved(run({ status: "running", credits: null }), true)).toBe("reserved up to 12 credits");
-  /* A credit workspace's run list carries no dollars, so an own-key run says where it is billed. */
-  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0, ownKey: true }), true)).toBe("External account · historical");
-  /* The house's runs are metered as not platform-billed (ownKey), and read in its dollars. */
-  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0, estimateUsd: 0.05, ownKey: true }), false)).toBe("up to $0.0500");
-  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0 }), false)).toBe("Quote unavailable");
-});
-
-test("a finished run's charge: credits, not billed when it failed, on your key, dollars, or still settling", () => {
-  expect(agentCharged(run({}), true)).toBe("9 credits");
-  expect(agentCharged(run({ credits: null }), true)).toBeNull();
-  expect(agentCharged(run({ status: "failed", credits: 0 }), true)).toBe("not billed");
-  expect(agentCharged(run({ ownKey: true, estimateCredits: 0, credits: 0 }), true)).toBe("External account · historical");
-  /* An older reply without the flag: a zero-credit estimate is the workspace's own key. */
-  expect(agentCharged(run({ ownKey: undefined, estimateCredits: 0, credits: 0 }), true)).toBe("0 credits");
-  /* The house workspace: what the engines charged, in dollars, never credits. */
-  expect(agentCharged(run({ costUsd: 0.0213, ownKey: true }), false)).toBe("$0.0213");
-  expect(agentCharged(run({ costUsd: null, credits: null }), false)).toBeNull();
-});
 
 /* ── Notes ───────────────────────────────────────────────────────────────── */
 

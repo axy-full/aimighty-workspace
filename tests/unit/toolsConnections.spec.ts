@@ -89,11 +89,6 @@ test("tokens read in the workspace's unit: credits never show a dollar, a blank 
   expect(tokenBody("Reader", "read", "credits", 500)).toEqual({ name: "Reader", scope: "read" });
 });
 
-test("the page lists no skill packs for a signed-in account and no connected-account card", () => {
-  const view = readFileSync("components/graphite/atomik/ToolsView.tsx", "utf8");
-  expect(view).not.toContain("SKILL_PACKS");
-  expect(view).not.toContain('data-testid="skill-row"');
-  expect(view).not.toContain('data-testid="reach-connected"');
-  expect(view).not.toMatch(/higgsfield-ai\/skills|connected account/i);
+test("the Tools page is still a shell page (Settings' Connections and Advanced carry what it listed)", () => {
   expect(shellPage("atomik", "skills")).toMatchObject({ label: "Tools", title: "Tools & connections", own: true });
 });

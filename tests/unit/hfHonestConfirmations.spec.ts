@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { CONFIRM, boardPlace, destinationName, isHere, openLabel, solutionStatusLabel, type Confirmation, type Destination, type Here } from "../../lib/shell/confirmations";
+import { CONFIRM, boardPlace, destinationName, isHere, type Destination, type Here } from "../../lib/shell/confirmations";
 import { SAY, type GenPreset } from "../../lib/shell/assets";
 import { readGenPresets, sendGenPreset } from "../../lib/shell/gen-preset";
 import { CAST_LIMITS, mergeAgentCast, newEntry, sourcedCastId, type CastProposal } from "../../lib/production/cast";
@@ -12,25 +12,7 @@ import { SHOT_TITLE_MAX, solutionShot } from "../../lib/crew/room";
  * page id it does not know would silently land on the suite's first stage),
  * and that the toast's own words name.
  */
-const EVERY: [string, Confirmation][] = [
-  ["crew → Brief", CONFIRM.crewBrief()],
-  ["crew → Rig", CONFIRM.crewRig("Cut on the drop", "node-1")],
-  ["crew → Rig, no node named", CONFIRM.crewRig("Cut on the drop")],
-  ["crew → Gen", CONFIRM.crewGen()],
-  ["minutes filed", CONFIRM.minutesFiled()],
-];
-
-test("every confirmation opens a real place, the one its words name, under that place's own label", () => {
-  for (const [name, c] of EVERY) {
-    expect(c.open, name).toBeTruthy();
-    const to = c.open!;
-    const place = destinationName(to);
-    expect(c.text, `${name} names where it opens`).toContain(place);
-    expect(openLabel(to), name).toBe(`Open ${place}`);
-    /* A Studio stage is a place on the board now (the stage pages are gone): it opens the board, on the region that took its job. */
-    if (to.to === "page") expect(boardPlace(to), `${name} opens the board`).toMatch(/^\?view=board/);
-  }
-  /* The take Business opens is a place on the board too: Shots, with that take selected. */
+test("the take a toast opens is a place on the board: Shots, with that take selected", () => {
   const take = CONFIRM.take("gen_hfc_" + "a".repeat(40));
   expect(take).toEqual({ to: "page", suite: "studio", page: "takes", select: { kind: "take", id: "generation:gen_hfc_" + "a".repeat(40) } });
   expect(destinationName(take)).toBe("Shots");
@@ -52,7 +34,6 @@ test("Open in Gen and Retry hand Gen what they carry in memory, so their toasts 
   const stop = readGenPresets((p) => got.push(p));
   stop();
   expect(got).toEqual([{ prompt: "Locked dawn frame", note: "Crew · solution" }]);
-  expect(CONFIRM.crewGen().text).toBe("The solution is Make’s prompt");
 });
 
 test("a Crew solution becomes a shot named by its words before the dash, cut at a word with an ellipsis", () => {
@@ -73,44 +54,23 @@ test("a Crew solution becomes a shot named by its words before the dash, cut at 
   expect(solutionShot(" — just the text").title).toBe("Crew solution");
 });
 
-test("Crew › → Board says the Board and opens that shot; it never claims a Storyboard frame", () => {
-  const rig = CONFIRM.crewRig("Cut on the drop", "node-abc");
-  expect(rig.text).toBe("Added to the Board · Cut on the drop");
-  expect(rig.text).not.toMatch(/frame/i);
-  expect(rig.open).toEqual({ to: "page", suite: "studio", page: "rig", select: { kind: "shot", id: "node-abc" } });
-  expect(CONFIRM.crewRig("Cut on the drop").open).toEqual({ to: "page", suite: "studio", page: "rig" });
-  /* Open in Gen: Gen fills its prompt, so nothing is said about pasting or copying. */
-  expect(CONFIRM.crewGen().text).not.toMatch(/paste|copied|clipboard/i);
-  expect(CONFIRM.crewGen().open).toEqual({ to: "gen" });
-});
-
-test("a solution's line names the same place its route's confirmation opens", () => {
-  expect(solutionStatusLabel("open")).toBeNull();
-  const routes: ["sent_to_brief" | "boarded" | "generated", Confirmation][] = [["sent_to_brief", CONFIRM.crewBrief()], ["boarded", CONFIRM.crewRig("x")], ["generated", CONFIRM.crewGen()]];
-  for (const [status, c] of routes) expect(solutionStatusLabel(status), status).toContain(destinationName(c.open!));
-  expect(solutionStatusLabel("boarded")).toBe("Added to the Board");
-  expect(solutionStatusLabel("sent_to_brief")).toBe("Added to the Brief");
-  expect(solutionStatusLabel("generated")).toBe("Opened in Make");
-});
-
 test("a toast shown where its result already is carries no Open", () => {
-  const at = (h: Partial<Here>): Here => ({ view: "suite", suite: "studio", page: "stages", library: false, ...h });
-  const brief = CONFIRM.crewBrief().open!;
+  const at = (h: Partial<Here>): Here => ({ view: "suite", suite: "studio", page: "board", library: false, ...h });
+  const brief: Destination = { to: "page", suite: "studio", page: "brief" };
   /* On the board the place is the board's own address: the Brief region. */
   expect(isHere(brief, at({ board: "?view=board&region=brief" }))).toBe(true);
   expect(isHere(brief, at({ board: "?view=board&region=cut" }))).toBe(false);
   expect(isHere(brief, at({ board: "?view=board" })), "the whole board is not the Brief region").toBe(false);
   expect(isHere(brief, at({ board: null })), "off the board, the Brief region is somewhere else").toBe(false);
-  expect(isHere(brief, at({ view: "crew" })), "Crew's view is not the board").toBe(false);
   /* Gen is Make's panel, open over any page: there is where it is open. */
   expect(isHere({ to: "gen" }, at({ make: true }))).toBe(true);
-  expect(isHere({ to: "gen" }, at({ view: "crew", make: true }))).toBe(true);
+  expect(isHere({ to: "gen" }, at({ view: "workspace", make: true }))).toBe(true);
   expect(isHere({ to: "gen" }, at({}))).toBe(false);
   expect(isHere({ to: "library" }, at({ library: true }))).toBe(true);
   expect(isHere({ to: "library" }, at({ library: false }))).toBe(false);
   /* Opening a particular shot or take is never "already there": the selection is the point. */
-  expect(isHere(CONFIRM.crewRig("x", "node-1").open!, at({ board: "?view=board" }))).toBe(false);
-  expect(isHere(CONFIRM.crewRig("x").open!, at({ board: "?view=board" }))).toBe(true);
+  expect(isHere({ to: "page", suite: "studio", page: "rig", select: { kind: "shot", id: "node-1" } }, at({ board: "?view=board" }))).toBe(false);
+  expect(isHere({ to: "page", suite: "studio", page: "rig" }, at({ board: "?view=board" }))).toBe(true);
 });
 
 test("Cast counts what the agent's list added, not what it proposed", () => {

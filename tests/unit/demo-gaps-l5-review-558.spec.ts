@@ -298,7 +298,6 @@ test("L7: Atomik's Tools page calls a prepare token what it is", async () => {
   const { tokenFacts, scopeWords } = await import("../../lib/shell/tools-connections");
   expect(scopeWords("prepare")).toBe("Prepares jobs only");
   expect(tokenFacts({ id: "t", name: "x", scope: "prepare", lastUsed: null, createdAt: 0, spendThisMonth: 0, capCredits: null }, "credits")).toMatch(/^Prepares jobs only · /);
-  expect(readFileSync("components/graphite/atomik/ToolsView.tsx", "utf8")).toMatch(/t\.scope === "render" \? "available"/);
 });
 
 test("L8: an admin's API token can't file a top-up request, start checkout or withdraw one", async () => {

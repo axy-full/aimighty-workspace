@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { newProject } from "../lib/workbench/studio";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import type { PublicPipelineRun } from "../lib/pipeline/service";
-import { buildPipelineSpec, effectivePipelineDraft, emptyPipelineDraft, type PipelineCatalog } from "../lib/pipeline/editor";
+import { buildPipelineSpec, effectivePipelineDraft, emptyPipelineDraft, type PipelineCatalog } from "./helpers/pipelineEditor";
 
 /**
  * A production's pipeline, through its routes: published context -> a private run -> each stage quoted, approved at its quote
@@ -12,7 +12,7 @@ import { buildPipelineSpec, effectivePipelineDraft, emptyPipelineDraft, type Pip
  * every take is the person's own and in their workspace, and a stale scope or another account's session sees nothing.
  *
  * The /pipelines page that built and drove the run is gone in Release 1 (its address opens the control room's Activity), so the
- * page steps are made through the same routes the page called, with the body the page built (lib/pipeline/editor.ts): the
+ * page steps are made through the same routes the page called, with the body the page built (tests/helpers/pipelineEditor.ts): the
  * rules a browser showed are held where they live. The movie hand-off ("Render final movie" -> /workbench/movie) went with the
  * page; the run keeps its assembled timeline, which is what is asserted.
  */

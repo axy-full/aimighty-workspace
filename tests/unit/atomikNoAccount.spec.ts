@@ -132,8 +132,8 @@ test("no Atomik code calls the connected step route, the recipes route or the ac
 
   const atomik = [
     ...walk("app/api/atomik"), ...walk("components/atomik"), ...walk("components/graphite/atomik"),
-    "components/graphite/AtomikGate.tsx", "components/graphite/AtomikSheet.tsx", "components/suites/AtomikSuite.tsx",
-    "components/workspace/spec/tools/AtomikTool.tsx", "lib/workspace/atomik-host.tsx",
+    "components/graphite/AtomikGate.tsx", "components/graphite/AtomikSheet.tsx",
+    "lib/workspace/atomik-host.tsx",
     ...readdirSync("lib").filter((name) => /^atomik.*\.tsx?$/.test(name)).map((name) => path.join("lib", name)),
   ].filter((file) => /\.(ts|tsx)$/.test(file));
   expect(atomik.length).toBeGreaterThan(20);

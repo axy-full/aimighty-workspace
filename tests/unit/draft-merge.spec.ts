@@ -9,15 +9,13 @@ import { createSoundNode, findSoundNode } from "../../lib/workbench/sound-genera
 import { connectNodes, graphEdges } from "../../lib/workspace/rig-graph";
 import { canConnect } from "../../lib/workbench/node-graph";
 import { removeShots, restoreShots } from "../../lib/production/rig-build";
-import { environmentsFromBeats, newEnvironmentEntry, sourcedPlaceId } from "../../lib/production/environment";
+import { newEnvironmentEntry, sourcedPlaceId } from "../../lib/production/environment";
 import { beatSheetFrom } from "../../lib/production/beats";
 import { applyTeamPatch, catchUpForTeam, diffForTeam, emptyTeamCanvas } from "../../lib/workbench/team-canvas-model";
 import { recoverMediaAssets, type MediaJob } from "../../lib/workbench/job-recovery";
 import { addInput, buildFromBoards } from "../../lib/production/rig-build";
 import { deleteDrawing } from "../../lib/production/boards";
-import { prepareMoleculrVariants } from "../../lib/workbench/moleculr-storyboard";
 import { EMPTY_MOLECULR } from "../../lib/workbench/moleculr";
-import { uid } from "../../lib/workbench/studio";
 import { canUndo, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
 
 /* lib/workbench/merge.ts: how two saves of one draft come together. */
@@ -778,15 +776,6 @@ test.describe("what two windows make from one source, then edit in one of them",
     expect(merged.nodes.find((n) => n.id === built.id)).toMatchObject({ title: "Opening — renamed", text: "The person's own prompt" });
   });
 
-  test("Marketing › Prepare hook × cast variants in two windows prepares each combination once, as one window refuses to prepare it twice", () => {
-    const hero: Asset = { id: "product-1", name: "bottle.png", kind: "image", category: "Product", url: "/campaign/hero.webp", mime: "image/png", description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] };
-    const base = project((p) => { p.nodes = []; p.assets = [hero]; p.moleculr = { ...EMPTY_MOLECULR, productName: "Still Water", productAssetIds: [hero.id], hooks: ["Quiet mornings", "Cold, clean, yours"] }; });
-    const theirs = prepareMoleculrVariants(clone(base), "image", () => uid("campaign"));
-    expect(() => prepareMoleculrVariants(clone(theirs), "image", () => uid("campaign"))).toThrow(/already prepared/);
-    const merged = mergeDraft(base, prepareMoleculrVariants(clone(base), "image", () => uid("campaign")), theirs);
-    expect({ variants: merged.moleculr!.variants.length, nodes: merged.nodes.length }).toEqual({ variants: 2, nodes: theirs.nodes.length });
-    expect(duplicates(ids(merged.nodes))).toEqual([]);
-  });
 
   test("a direction note first typed in two windows is still mine: typing is not a source both windows share", () => {
     const base = project((p) => { p.nodes = [node("n1", { title: "Opening", type: "scene" })]; });
@@ -797,45 +786,6 @@ test.describe("what two windows make from one source, then edit in one of them",
 });
 
 test.describe("what one window took out stays out, and only that (Project.takenOut)", () => {
-  test("what each window made differently from one source is all kept: a variant for a hook one window added, a shot from a frame it made ready, a place from a beat sheet line it added", () => {
-    /* Marketing: A prepared the variants of the two hooks it had; B added a third hook, then prepared. */
-    const hero: Asset = { id: "product-1", name: "bottle.png", kind: "image", category: "Product", url: "/campaign/hero.webp", mime: "image/png", description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] };
-    const brief = project((p) => { p.nodes = []; p.assets = [hero]; p.moleculr = { ...EMPTY_MOLECULR, productName: "Still Water", productAssetIds: [hero.id], hooks: ["Quiet mornings", "Cold, clean, yours"] }; });
-    const prepared = prepareMoleculrVariants(clone(brief), "image", () => uid("campaign"));
-    const made: MadeRecords = new Map();
-    const hooked = edit(brief, (p) => { p.moleculr!.hooks.push("A third hook"); });
-    madeBy(brief, hooked, made);
-    const mine = prepareMoleculrVariants(clone(hooked), "image", () => uid("campaign"));
-    madeBy(hooked, mine, made);
-    const merged = mergeDraft(brief, mine, prepared, { made });
-    expect(merged.moleculr!.variants.map((v) => v.hook).sort()).toEqual(["A third hook", "Cold, clean, yours", "Quiet mornings"]);
-    expect(merged.moleculr!.variants.every((v) => merged.nodes.some((n) => n.id === v.nodeId)), "every variant keeps its node").toBe(true);
-    expect(duplicates(ids(merged.nodes))).toEqual([]);
-
-    /* Rig › Build from Storyboards: A built the two frames ready in its copy; B made a third ready, then built. */
-    const scenes = [{ heading: "INT. HARBOUR", summary: "", beats: ["Ice."], shots: ["Wide on the ice", "Close on the fox", "The pier"].map((description) => ({ description, framing: "Wide", movement: "", lighting: "", sound: "" })), characters: [], locations: [], props: [] }] as unknown as Parameters<typeof beatSheetFrom>[0];
-    const beats = beatSheetFrom(scenes, "0".repeat(64), "wb_development_job-4");
-    const frame = (i: number) => ({ prompt: "p", takes: [{ genId: `gen-frame-${i}`, style: "color-sketch" as const, at: "2026-09-26T00:00:00.000Z" }] });
-    const boards = project((p) => { p.nodes = []; p.production = { beats, boards: { style: "color-sketch", model: "gemini-3.1-flash-image", frames: { [beats.scenes[0].shots[0].id]: frame(1), [beats.scenes[0].shots[1].id]: frame(2) } } } as Project["production"]; });
-    const built = buildFromBoards(clone(boards), "kling-v3").project;
-    const ready = edit(boards, (p) => { p.production!.boards!.frames[beats.scenes[0].shots[2].id] = frame(3); });
-    const shots = new Map() as MadeRecords;
-    madeBy(boards, ready, shots);
-    const three = buildFromBoards(clone(ready), "kling-v3").project;
-    madeBy(ready, three, shots);
-    expect(mergeDraft(boards, three, built, { made: shots }).nodes.filter((n) => n.boardShotId).map((n) => n.title)).toEqual(["1.1 — Wide on the ice", "1.2 — Close on the fox", "1.3 — The pier"]);
-
-    /* Environment › Add from the beat sheet: A added the one place its sheet had; B added a location to a scene, then added. */
-    const located = (locations: string[]) => [{ heading: "INT. HARBOUR", summary: "", beats: ["Ice."], shots: [], characters: [], locations, props: [] }] as unknown as Parameters<typeof beatSheetFrom>[0];
-    const sheet = project((p) => { p.production = { beats: beatSheetFrom(located(["Harbour"]), "0".repeat(64), "wb_development_job-5"), environment: { world: "", model: "gemini-3.1-flash-image", entries: [] } } as Project["production"]; });
-    const added = edit(sheet, (p) => { p.production!.environment!.entries = environmentsFromBeats(p.production!.beats, []); });
-    const places: MadeRecords = new Map();
-    const relocated = edit(sheet, (p) => { p.production!.beats!.scenes[0].locations = ["Harbour", "Fish market"]; });
-    madeBy(sheet, relocated, places);
-    const both = edit(relocated, (p) => { p.production!.environment!.entries = environmentsFromBeats(p.production!.beats, []); });
-    madeBy(relocated, both, places);
-    expect(mergeDraft(sheet, both, added, { made: places }).production!.environment!.entries.map((e) => e.name)).toEqual(["Harbour", "Fish market"]);
-  });
 
   test("a record another window took out before this window's copy was read, made again here on purpose, stays", () => {
     const run = (p: Project) => { p.production!.environment!.entries.push(newEnvironmentEntry("Fish market", "", "", sourcedPlaceId("wb_development_job-6", "Fish market"))); };

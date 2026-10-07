@@ -357,11 +357,3 @@ test("retired with the Higgsfield sign-in: the capability answers member for eve
   expect(readFileSync("lib/shell/state.tsx", "utf8")).toContain("owner: session.owner");
 });
 
-/* ── Atomik › Tools & connections reaches no signed-in account ── */
-
-test("Tools & connections checks no connected account: it reads no capability, reach or connection route", () => {
-  const source = readFileSync("components/graphite/atomik/ToolsView.tsx", "utf8");
-  expect(source).not.toContain("useConnectedCapability");
-  expect(source).not.toContain("/api/higgsfield/consumer/");
-  expect(source).not.toMatch(/session\.(owner|requestScope)/);
-});

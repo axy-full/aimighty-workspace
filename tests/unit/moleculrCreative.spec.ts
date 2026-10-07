@@ -2,10 +2,8 @@ import { test, expect } from '@playwright/test';
 import { EMPTY_MOLECULR, moleculrPrompt, variantAssets } from '../../lib/workbench/moleculr';
 import { CREATIVE_TEMPLATES, saveProduct, switchProduct } from '../../lib/workbench/moleculr-creative';
 import { createPoster, posterDimensions, posterDocumentSchema, posterTextLines } from '../../lib/workbench/moleculr-poster';
-import { buildMoleculrStoryboard, prepareMoleculrVariants } from '../../lib/workbench/moleculr-storyboard';
-import { newProject, seedProject } from '../../lib/workbench/studio';
+import { newProject } from '../../lib/workbench/studio';
 import { saveSchema } from '../../lib/workbench/studio-schema';
-import { generationReferenceIds } from '../../lib/workbench/node-graph';
 import { recoverMediaAssets } from '../../lib/workbench/job-recovery';
 
 test('switching products snapshots edits and restores each original image selection', () => {
@@ -31,54 +29,6 @@ test('campaign prompt carries reviewed facts, brand direction and selected nativ
   expect(prompt).toContain('Made of glass'); expect(prompt).toContain('Studio essential'); expect(prompt).toContain('#334455'); expect(prompt).toContain('Do not invent product claims');
   const saved = saveSchema.parse({ project: { ...project, moleculr: brief }, revision: 1 });
   expect(saved.project.moleculr?.creative?.templateId).toBe('studio-seamless');
-});
-test('storyboard creates independently reviewable shots with persistent original references and no fake takes', () => {
-  const project = seedProject(); project.nodes = []; project.shots = [];
-  project.moleculr = { ...EMPTY_MOLECULR, productAssetIds: ['hero'], castAssetIds: ['character'], creative: { path: 'template', category: 'ugc', templateId: 'ugc-presenter', direction: '', aspect: '9:16', seconds: 15 } };
-  let sequence = 0;
-  const next = buildMoleculrStoryboard(project, () => `new-${++sequence}`, '2026-09-18T00:00:00.000Z');
-  expect(next.moleculr?.variants).toHaveLength(3); expect(next.assets).toEqual(project.assets);
-  expect(next.shots).toHaveLength(0); expect(project.nodes).toHaveLength(0);
-  for (const variant of next.moleculr!.variants) {
-    const node = next.nodes.find(item => item.id === variant.nodeId)!;
-    expect(node.text).toContain('SHOT'); expect(node.mode).toBe('Video'); expect(generationReferenceIds(node, next)).toEqual(['hero','character']);
-    expect(variant.generation?.ratio).toBe('9:16');
-  }
-  expect(next.moleculr!.variants.map(variant => variant.generation?.duration)).toEqual([4,7,4]);
-  expect(variantAssets(next, next.moleculr!)).toEqual([]);
-});
-test('bulk creative preparation creates hook and cast combinations with exact preset role order and separate reviewed settings', () => {
-  const project = seedProject(); project.nodes = [];
-  project.moleculr = { ...EMPTY_MOLECULR, hooks: ['Hook A','Hook B'], productAssetIds: ['hero','environment'], castAssetIds: ['character'], marketing: { enhancePrompt: true, quality: 'high', presetId: '123e4567-e89b-42d3-a456-426614174000' } };
-  let id = 0; const next = prepareMoleculrVariants(project, 'image', () => `batch-${++id}`);
-  expect(next.moleculr!.variants).toHaveLength(2);
-  for (const variant of next.moleculr!.variants) {
-    const node = next.nodes.find(item => item.id === variant.nodeId)!;
-    expect(generationReferenceIds(node, next)).toEqual(['hero','character']);
-    expect(variant.generation?.marketing).toEqual({ quality: 'high', enhancePrompt: true, presetId: project.moleculr.marketing!.presetId });
-  }
-  expect(() => prepareMoleculrVariants(next, 'image', () => `batch-${++id}`)).toThrow('already prepared');
-  expect(project.nodes).toHaveLength(0); expect(next.assets).toEqual(project.assets);
-});
-test('bulk bounds and missing cast fail atomically, and product-only batches do not add a person', () => {
-  const project = seedProject(); project.nodes = [];
-  project.moleculr = { ...EMPTY_MOLECULR, hooks: ['Hook'], productAssetIds: ['hero'], castAssetIds: [] };
-  let id = 0; const next = prepareMoleculrVariants(project, 'video', () => `batch-${++id}`);
-  expect(generationReferenceIds(next.nodes.find(node => node.type === 'generate')!, next)).toEqual(['hero']);
-  expect(next.moleculr!.variants[0].castAssetId).toBeUndefined();
-  project.moleculr.castAssetIds = ['deleted'];
-  expect(() => prepareMoleculrVariants(project, 'video', () => `batch-${++id}`)).toThrow('missing');
-  project.moleculr.hooks = Array.from({ length: 12 }, (_, i) => `Hook ${i}`); project.moleculr.castAssetIds = ['character','hero','environment'];
-  expect(() => prepareMoleculrVariants(project, 'video', () => `batch-${++id}`)).toThrow('24');
-  expect(project.nodes).toHaveLength(0);
-});
-test('invalid references, duplicate identities and capacity stop storyboard preparation atomically', () => {
-  const project = newProject('Limits'); project.moleculr = { ...EMPTY_MOLECULR, creative: { path: 'template', category: 'motion', templateId: 'motion-orbit', direction: '', aspect: '16:9', seconds: 15 } };
-  expect(() => buildMoleculrStoryboard(project, () => 'duplicate')).toThrow('unique');
-  project.moleculr.productAssetIds = ['missing']; expect(() => buildMoleculrStoryboard(project, () => 'unused')).toThrow('missing');
-  project.moleculr.productAssetIds = []; project.moleculr.variants = Array.from({ length: 99 }, (_, index) => ({ id: `v-${index}`, nodeId: `n-${index}`, hook: '' }));
-  expect(() => buildMoleculrStoryboard(project, () => 'unused')).toThrow('100-variant');
-  expect(project.nodes).toEqual([]);
 });
 test('poster dimensions preserve requested aspect and layers reject unsafe sizes and arbitrary payloads', () => {
   let index = 0; const poster = createPoster('Launch', () => `layer-${++index}`);
