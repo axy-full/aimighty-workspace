@@ -61,6 +61,13 @@ function main() {
     // Remote database clients may hold sockets open; the build must move on.
     setTimeout(() => process.exit(0), 100).unref();
   };
+  // Anything thrown outside the awaited run (a client's background error) is one line and a passing build.
+  const crash = (error) => {
+    console.log(`preview seed: failed (${errorCode(error)})`);
+    process.exit(0);
+  };
+  process.on("uncaughtException", crash);
+  process.on("unhandledRejection", crash);
   setTimeout(() => {
     console.log("preview seed: failed (timeout)");
     process.exit(0);

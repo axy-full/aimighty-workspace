@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -36,11 +36,14 @@ test("outside a preview build, prebuild prints one skipped line and succeeds", (
   }
 });
 
-test("a full seed on local files: invitation, then Preview workspace and grant; reruns change nothing", () => {
+test("a full seed on local files: no accounts, then the house without him, then his reset link; reruns change nothing", (t) => {
   // A fresh process (tests/ops/preview-seed-scenario.cjs) through the build step's own loader.
   const dir = mkdtempSync(join(tmpdir(), "particl-preview-seed-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const result = run({}, [join(root, "tests/ops/preview-seed-scenario.cjs"), dir]);
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.lines.at(-1)), { ok: true, runs: 7, lines: result.lines.length - 1 });
-  for (const line of result.lines.slice(0, -1)) assert.doesNotMatch(line, /@|https?:|invite=|file:/);
+  const summary = JSON.parse(result.lines.at(-1));
+  assert.equal(summary.ok, true);
+  assert.equal(summary.lines, result.lines.length - 1);
+  for (const line of result.lines.slice(0, -1)) assert.doesNotMatch(line, /@|https?:|\/reset\/|invite=|file:/);
 });

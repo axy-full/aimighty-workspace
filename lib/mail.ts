@@ -122,17 +122,6 @@ The link works once, until ${until}. If it wasn't you, nothing has changed — y
   return { subject, text, html };
 }
 
-/** A sign-up invitation: an account and a workspace of one's own. The platform desk's mail, and the preview seed's. */
-export function signupInviteMail(opts: { inviter: string; name: string; link: string; validFor: string }): {
-  subject: string; text: string; html: string;
-} {
-  return {
-    subject: `${opts.inviter} invited you to particl studio`,
-    text: `Hi ${opts.name || "there"},\n\n${opts.inviter} has invited you to particl studio — a room for making shots, and for knowing what they cost. Create your account and your own workspace here:\n${opts.link}\n\nThe link is yours alone and works for ${opts.validFor}.\n\n— particl studio`,
-    html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;color:#15171C;line-height:1.5;background:#FCFCFD"><p style="font-size:17px;margin:0 0 12px">Hi ${opts.name || "there"},</p><p style="font-size:15px;color:#666A72;margin:0 0 20px"><strong style="color:#15171C">${opts.inviter}</strong> has invited you to particl studio — a room for making shots, and for knowing what they cost. Create your account and your own workspace:</p><p style="margin:0 0 22px"><a href="${opts.link}" style="display:inline-block;background:#15171C;color:#F5F6F8;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:8px">Create your workspace</a></p><p style="font-size:13.5px;color:#666A72;margin:0 0 18px">The link is yours alone and works for ${opts.validFor}.</p><p style="font-size:12px;color:#8A8E96;margin:0;word-break:break-all">If the button doesn't work: ${opts.link}</p></div>`,
-  };
-}
-
 /** The public origin invitations should point at: the request's own host. */
 export function inviteOrigin(req: Request): string {
   const forced = process.env.APP_ORIGIN?.replace(/\/$/, "");
