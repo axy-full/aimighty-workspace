@@ -41,6 +41,8 @@ type SwitchRequest = {
   timeoutMs?: number;
   /** The workspace this session is in now, read when the route did not answer in time (default: /api/me). */
   whoami?: () => Promise<string | null>;
+  /** How long that question may take before the switch counts as not landed (default 5 s; tests shorten it). */
+  whoamiTimeoutMs?: number;
 };
 
 /* ── The drains ───────────────────────────────────────────────────────── */
@@ -131,13 +133,15 @@ export function resetSwitchForTests() {
 }
 
 async function sessionWorkspace(): Promise<string | null> {
-  const response = await fetch("/api/me", { cache: "no-store" });
+  const response = await fetch("/api/me", { cache: "no-store", signal: AbortSignal.timeout(WHOAMI_TIMEOUT_MS) });
   if (!response.ok) return null;
   const me = (await response.json().catch(() => null)) as { workspace?: { id?: unknown } } | null;
   return typeof me?.workspace?.id === "string" ? me.workspace.id : null;
 }
 
 const GO = Symbol("go");
+/* The page is still frozen while it asks who this session is now, so that question is bounded too. */
+const WHOAMI_TIMEOUT_MS = 5_000;
 
 /* The control that was pressed (focused as the switch began): focus goes back to it when the switch does not happen. */
 let pressed: Element | null = null;
@@ -155,7 +159,12 @@ async function attempt(request: SwitchRequest): Promise<string | null> {
     let outcome = await Promise.race([steps(request, controller.signal), timeout]);
     /* Out of time with the route already asked: the switch may have landed all the same. Still frozen, ask who this is now. */
     if (outcome === SWITCH_TOO_LONG && state.phase === "posting") {
-      const now = await (request.whoami ?? sessionWorkspace)().catch(() => null);
+      let giveUp: ReturnType<typeof setTimeout> | undefined;
+      const now = await Promise.race([
+        (request.whoami ?? sessionWorkspace)().catch(() => null),
+        new Promise<null>((resolve) => { giveUp = setTimeout(() => resolve(null), request.whoamiTimeoutMs ?? WHOAMI_TIMEOUT_MS); }),
+      ]);
+      clearTimeout(giveUp);
       if (now === request.id) outcome = GO;
     }
     if (outcome === GO) {

@@ -209,6 +209,14 @@ test("too long while the route answers, but the switch landed all the same: the 
   expect(switchState().phase).toBe("leaving");
 });
 
+test("too long while the route answers, and asking who this is hangs too: the freeze still ends with the timeout message", async () => {
+  const h = harness(() => new Promise<Response>(() => {}));
+  const result = await withDrain(async () => true, { id: "ws-b", fetch: h.fetch, go: h.go, timeoutMs: 30, whoami: () => new Promise<string | null>(() => {}), whoamiTimeoutMs: 40 });
+  expect(result).toBe(SWITCH_TOO_LONG);
+  expect(h.events).toEqual(["switch(posting)"]);
+  expect(switchState().phase).toBe("idle");
+});
+
 test("every registered editor is drained, in turn, twice, before the route; one that left is not; one that fails stops it", async () => {
   const events: string[] = [];
   const board = registerDrain(async () => { events.push("board"); return true; });
