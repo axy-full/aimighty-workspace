@@ -23,6 +23,8 @@ import {
   readPendingGeneration,
   claimPendingGeneration,
   clearPendingGeneration,
+  readOwnClaim,
+  readSettledGeneration,
   type PendingGeneration,
 } from "@/lib/workbench/pending-generation";
 import { settlePendingGeneration } from "@/lib/workspace/generate-submit";
@@ -332,9 +334,13 @@ function TakeDialog({
       /* Whatever is claimed for this node is asked about first, by its own key, and never sent again. */
       let claimed: PendingGeneration | null = null;
       try { claimed = readPendingGeneration(window.localStorage, storageId); } catch { /* settled below as unreadable */ }
+      /* This tab's own copy of a claim another tab let go is settled first (settlePendingGeneration); the take it made is described by it. */
+      const own = readOwnClaim(window.localStorage, storageId);
       const settled = await settlePendingGeneration({ scope, storageId });
       if (settled.state === "unknown") { setError(settled.reason); return; }
       if (settled.state === "landed") {
+        const note = own ? readSettledGeneration(window.localStorage, own.key) : null;
+        if (own && (!claimed || (note?.state === "landed" && note.jobId === settled.jobId))) claimed = own;
         /* It reached the server: that take is followed, at the price approved for it, and nothing is sent. */
         onQueued(settled.jobId, claimed?.endpoint === "/api/audio" ? "audio" : model?.kind, claimed ? acceptedSettings(claimed) : undefined);
         onClose();

@@ -495,3 +495,52 @@ test("a claimed send (the rate-table Rig) settles its own copy the same way afte
   });
   expect(k1).toBeTruthy();
 });
+
+test("two tabs: this tab's own claim comes before another tab's newer claim in the same slot, so a press never pays twice", async () => {
+  for (const how of ["note", "check"] as const) {
+    const shared = memory();
+    const { a, k1 } = await lostInTabA(shared);
+    const b = tabOf(shared);
+    const paid: string[] = [];
+    /* Tab B settles kA (landed) and follows it; then presses again on the same slot, and kB is lost before it reaches the server. */
+    await withServer({ "/api/generate/check": () => ({ json: { state: "landed", id: "gen_k1", status: "running" } }) }, async () => {
+      expect(await press(b)).toEqual({ state: "queued", jobId: "gen_k1", credits: 21 });
+    });
+    let kB = "";
+    await withServer({ "/api/generate/quote": quote, "/api/generate": () => "network" }, async (calls) => {
+      expect((await press(b)).state).toBe("refused");
+      kB = calls[1].key!;
+    });
+    expect(readPendingGeneration(shared, STORAGE_ID)?.key).toBe(kB);
+    if (how === "check") shared.removeItem(SETTLED);
+    /* Tab A presses: its own kA is settled first (landed) and followed. kB is not asked about, nothing is quoted or sent. */
+    await withServer({
+      "/api/generate/check": (body) => ({ json: body.key === k1 ? { state: "landed", id: "gen_k1", status: "running" } : { state: "absent" } }),
+      "/api/generate/quote": quote,
+      "/api/generate": (body) => { paid.push(String(body.prompt)); return { status: 202, json: { id: "gen_kC" } }; },
+    }, async (calls) => {
+      expect(await press(a)).toEqual({ state: "queued", jobId: "gen_k1", credits: 21 });
+      expect(calls.map((c) => [c.path, c.body.key])).toEqual(how === "note" ? [] : [["/api/generate/check", k1]]);
+    });
+    expect(paid, `${how}: tab A sent nothing`).toEqual([]);
+    /* B's own kB stays for B (and for whoever presses next). */
+    expect(readPendingGeneration(shared, STORAGE_ID)?.key).toBe(kB);
+    expect(readOwnClaim(a, STORAGE_ID)).toBeNull();
+  }
+});
+
+test("two tabs: this tab's own claim that made nothing is let go, and then another tab's newer claim in the slot is asked about as before", async () => {
+  const shared = memory();
+  const { a, k1 } = await lostInTabA(shared);
+  const theirs = { key: "other-window-0002", body: JSON.stringify({ prompt: "Theirs", model: ENGINE }), credits: 21, endpoint: "/api/generate" as const };
+  /* Another tab found kA never arrived, let it go, and its own later claim is waiting in the slot. */
+  shared.removeItem(STORAGE_ID);
+  claimPendingGeneration(tabOf(shared), STORAGE_ID, theirs);
+  await withServer({ "/api/generate/check": (body) => ({ json: body.key === k1 ? { state: "absent" } : { state: "pending" } }) }, async (calls) => {
+    const outcome = await press(a);
+    expect(outcome.state).toBe("refused");
+    expect(calls.map((c) => c.body.key)).toEqual([k1, theirs.key]);
+  });
+  expect(readOwnClaim(a, STORAGE_ID)).toBeNull();
+  expect(readPendingGeneration(shared, STORAGE_ID)?.key).toBe(theirs.key);
+});

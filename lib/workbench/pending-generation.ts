@@ -70,8 +70,14 @@ export function clearPendingGeneration(
  * The claim in `storage` is shared by every tab of this browser, and the tab that settles it removes it. A tab whose own
  * reply was lost would then find nothing to ask about and quote anew: two paid requests for one press. So each tab keeps its
  * own copy of every claim it made (sessionStorage: this tab only, kept across a reload), and the tab that settles a claim
- * leaves a short-lived note of what it became, by its key. A tab finding its own copy with no shared claim reads the note,
- * else asks the server by that key (POST /api/generate/check), before anything else is sent.
+ * leaves a short-lived note of what it became, by its key. A tab holding its own copy that the shared slot no longer names
+ * (gone, or another tab's newer claim) settles it first: the note, else the server asked by that key (POST
+ * /api/generate/check), before anything else is sent (lib/workspace/generate-submit.ts › settlePendingGeneration). So a
+ * claim is only written over this tab's own copy once that copy is settled.
+ *
+ * The limit: the copy lives as long as the tab. A closed tab forgets it (a restored one usually keeps it), and where
+ * sessionStorage is unavailable it is kept in memory and a reload forgets it. Such a tab's next press is then a new take, and
+ * its lost request is followed only by a tab that still finds the shared claim; nothing else depends on the copy.
  */
 const OWN_PREFIX = "particl:own-claim:v1:";
 const SETTLED_KEY = "particl:settled-generations:v1";

@@ -174,10 +174,18 @@ function readResumeIn(store: () => globalThis.Storage, scope: string, projectId:
     return null;
   }
 }
-function writeResume(scope: string, projectId: string, take: string, value: ResumeRecord | null) {
-  const write = (storage: () => globalThis.Storage) => {
+/**
+ * `shot`: the node this press files on. The shared record is left alone when it names another shot: another tab's take of the
+ * same words, unconfirmed, whose record it is (this tab may be on its own older shot: readOwnResume). This tab's copy is its own.
+ */
+function writeResume(scope: string, projectId: string, take: string, value: ResumeRecord | null, shot: string | null) {
+  const write = (storage: () => globalThis.Storage, shared: boolean) => {
     try {
       const store = storage();
+      if (shared && shot) {
+        const there = readResumeIn(storage, scope, projectId, take);
+        if (there?.node && there.node.id !== shot) return;
+      }
       if (value) store.setItem(RESUME_KEY(scope, projectId, take), JSON.stringify({ ...value, at: Date.now() }));
       else store.removeItem(RESUME_KEY(scope, projectId, take));
       for (let i = store.length - 1; i >= 0; i--) {
@@ -188,9 +196,9 @@ function writeResume(scope: string, projectId: string, take: string, value: Resu
       }
     } catch { /* without storage, a lost take is not taken up again after a reload: its claimed request still is */ }
   };
-  write(() => window.localStorage);
-  /* This tab's copy (see readResume). */
-  write(() => window.sessionStorage);
+  write(() => window.localStorage, true);
+  /* This tab's copy (see readOwnResume). */
+  write(() => window.sessionStorage, false);
 }
 
 function validMapping(value: unknown): value is { shotId: string; productionProjectId: string } {
@@ -620,8 +628,10 @@ export function useComposer(options: {
         /* The take's own recovery key: a claimed request left unconfirmed is checked on the server, never re-sent. Sound
            takes share their lane, so theirs is the lane's and these settings': a new prompt is a new request. */
         const claimSlot = (projectId: string, node: CanvasNode) => pendingGenerationKey(scope, projectId, model.audioTask ? `${node.id}:${stableId("take", now.quoteKey)}` : node.id);
-        const again = readResume(scope, project.id, takeKey)
-          ?? readOwnResume(scope, project.id, takeKey, (node) => readOwnClaim(window.localStorage, claimSlot(project.id, node)) !== null);
+        /* This tab's own unconfirmed take first: another tab may since have settled it and made a take of these words on a new
+           shot (with its own shared record). Then the shared record, as before. */
+        const again = readOwnResume(scope, project.id, takeKey, (node) => readOwnClaim(window.localStorage, claimSlot(project.id, node)) !== null)
+          ?? readResume(scope, project.id, takeKey);
         const start = again ? again.take : 0;
         const end = again ? Math.max(count, again.take + 1) : count;
         /* The draft the takes file into: read fresh for the first, then carried from each save to the next. */
@@ -637,7 +647,7 @@ export function useComposer(options: {
         const remember = () => {
           const node = made as CanvasNode | null;
           /* Until the server confirms the job, the next Generate of this take takes this shot up again. */
-          if (node) writeResume(scope, project.id, takeKey, { kind: "workspace", projectId: project.id, take, node });
+          if (node) writeResume(scope, project.id, takeKey, { kind: "workspace", projectId: project.id, take, node }, node.id);
         };
         const filed = await saveOnLatest(scope, project.id, draft, (latest) => {
           /* Sound files on its lane: the one the draft has now (Edit & Sound may have made it meanwhile), else one made here, once. */
@@ -713,7 +723,7 @@ export function useComposer(options: {
         }
         if (outcome.state === "refused") { setRun(null); dispatch({ type: "notice", value: `${before}${outcome.reason}` }); setFailed(true); return; }
         /* Taken: the next Generate of this batch goes on from the take after it. */
-        writeResume(scope, project.id, takeKey, take + 1 < end ? { kind: "workspace", projectId: project.id, take: take + 1, node: null } : null);
+        writeResume(scope, project.id, takeKey, take + 1 < end ? { kind: "workspace", projectId: project.id, take: take + 1, node: null } : null, shot.id);
         setRun({ source: "workspace", name, meta: [name, model.label, formatCredits(outcome.credits)].join(" · "), jobId: outcome.jobId, projectId: project.id });
         sent = { projectId: project.id, nodeId: shot.id, name, jobId: outcome.jobId, batchId: null, credits: outcome.credits, takes: take - start + 1, held: outcome.status === "held" };
         }

@@ -389,14 +389,14 @@ export async function settleWorkspaceBatch(options: { scope: string; projectId: 
   const storage = options.storage ?? window.localStorage;
   const own = tabStorage(storage);
   const key = wsKey(options.scope, options.projectId);
-  let record: WorkspaceBatchRecord | null;
-  try { record = readWorkspaceBatch(storage, options.scope, options.projectId); } catch (error) {
-    return { state: "unknown", reason: error instanceof Error ? error.message : "The saved batch cannot be read." };
-  }
-  /* No shared record, but this tab's own: another tab settled that batch. This press asks about it as if it were still shared. */
-  let mine = false;
+  /* This tab's own unconfirmed batch first (another tab may have settled it and remembered a batch of its own since), as if it
+     were still shared; then the shared record, as before. Each is settled by a press that sends nothing new. */
+  let record: WorkspaceBatchRecord | null = null;
+  try { record = readWorkspaceBatch(own, options.scope, options.projectId); } catch { try { own.removeItem(key); } catch { /* nothing to drop */ } }
   if (!record) {
-    try { record = readWorkspaceBatch(own, options.scope, options.projectId); mine = record != null; } catch { try { own.removeItem(key); } catch { /* nothing to drop */ } record = null; }
+    try { record = readWorkspaceBatch(storage, options.scope, options.projectId); } catch (error) {
+      return { state: "unknown", reason: error instanceof Error ? error.message : "The saved batch cannot be read." };
+    }
   }
   if (!record) return { state: "none" };
   const landed: { variation: number; jobId: string; credits: number }[] = [], lost: number[] = [], waiting: WorkspaceBatchRecord["takes"] = [];
@@ -409,8 +409,8 @@ export async function settleWorkspaceBatch(options: { scope: string; projectId: 
   }
   const batchId = record.batchId;
   const holds = (store: Storage) => { try { return (JSON.parse(store.getItem(key) ?? "null") as { batchId?: unknown } | null)?.batchId === batchId; } catch { return false; } };
-  for (const store of mine ? [own] : [storage, own]) {
-    if (store === own && !mine && !holds(own)) continue;
+  for (const store of [storage, own]) {
+    if (!holds(store)) continue;
     try {
       if (waiting.length) store.setItem(key, JSON.stringify({ ...record, takes: waiting }));
       else store.removeItem(key);
