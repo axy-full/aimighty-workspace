@@ -54,6 +54,8 @@ const dub = () => generation({
 
 type Options = {
   member?: boolean; generations?: ReturnType<typeof generation>[]; url?: string; holdPlate?: boolean;
+  /** The engines' quote differs with and without the take's references (17 cr without, 31 cr with the still bound), so the two prices can be told apart. */
+  splitPrice?: boolean;
   /** Routes of the test's own, set once the session exists and before the page opens. */
   setup?: (page: Page) => Promise<void>;
 };
@@ -84,8 +86,9 @@ async function open(page: Page, options: Options = {}) {
   /* The composer's price reads (GET, never a charge) are answered here so the figure is known; the list itself is real. */
   const quotes: URLSearchParams[] = [];
   await page.route(/\/api\/workbench\/engines\?.*model=/, (route) => {
-    quotes.push(new URL(route.request().url()).searchParams);
-    return route.fulfill({ json: { credits: 31 } });
+    const asked = new URL(route.request().url()).searchParams;
+    quotes.push(asked);
+    return route.fulfill({ json: { credits: options.splitPrice && !asked.has("genId") ? 17 : 31 } });
   });
   /* Generate's own re-quote is where a press would first spend: it is recorded and refused, so nothing runs. */
   const priced: Record<string, unknown>[] = [];
@@ -131,7 +134,7 @@ const MISSING_READ = "Reading the take’s references…";
 
 test("Again lands the whole recipe in a Make that is already open, waits for its references, names what is missing, and prices it again", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors, quotes, priced, release } = await open(page, { holdPlate: true });
+  const { errors, quotes, priced, release } = await open(page, { holdPlate: true, splitPrice: true });
   const prompt = page.getByTestId("gen-prompt");
   await prompt.fill("my own words");
   await recreate(page, "gen_harbour");
@@ -144,10 +147,13 @@ test("Again lands the whole recipe in a Make that is already open, waits for its
   await expect(prompt).toHaveValue(RAW);
   await expect(page.getByTestId("make-engine-line")).toContainText("Seedance 2.0");
   await expect(page.getByTestId("make-engine-line")).toContainText("1080p · 8 s");
-  await advanced(page);
-  await expect(page.getByTestId("make-panel").getByRole("group", { name: "Aspect" }).getByRole("button", { name: /21:9/ })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: /1080p/ })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("gen-length")).toHaveValue("8");
+  /* Make redraws as the references are read, which folds Advanced again: open it and read it in one retried step. */
+  await expect(async () => {
+    await openAdvanced(page);
+    await expect(page.getByTestId("make-panel").getByRole("group", { name: "Aspect" }).getByRole("button", { name: /21:9/ })).toHaveAttribute("aria-pressed", "true", { timeout: 3_000 });
+    await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: /1080p/ })).toHaveAttribute("aria-pressed", "true", { timeout: 3_000 });
+    await expect(page.getByTestId("gen-length")).toHaveValue("8", { timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
 
   /* The still has not answered yet: the recipe is half-read, and Make waits (it can be pressed only to say why), sending no price check. */
   const go = page.getByTestId("gen-generate");
@@ -156,7 +162,12 @@ test("Again lands the whole recipe in a Make that is already open, waits for its
   /* Long enough for the composer's own debounced price of the reference-less state to have come back. */
   await expect.poll(() => quotes.length).toBeGreaterThan(0);
   await page.waitForTimeout(600);
+  /* The only figure on hand is the quote without the references (17 cr): not what this take costs, so none shows, on the button or the line. */
+  expect(quotes.some((q) => !q.has("genId"))).toBe(true);
   await expect(go).toHaveAttribute("aria-disabled", "true");
+  await expect(go).toHaveText("Make");
+  await expect(go).toHaveAttribute("data-spend", "unpriced");
+  await expect(page.getByTestId("make-engine-price")).toHaveCount(0);
   await expect(card).toContainText(MISSING_READ);
   await go.click({ force: true });
   expect(priced).toEqual([]);
@@ -171,6 +182,8 @@ test("Again lands the whole recipe in a Make that is already open, waits for its
 
   /* Priced again, exactly as recreated, before anything runs. */
   await expect(go).toHaveText("Make · 31 cr", { timeout: 30_000 });
+  await expect(go).toHaveAttribute("data-spend", "priced");
+  await expect(page.getByTestId("make-engine-price")).toHaveText("31 cr");
   await expect(go).not.toHaveAttribute("aria-disabled", "true");
   const asked = quotes.at(-1)!;
   expect(Object.fromEntries(["model", "ratio", "resolution", "duration", "genId"].map((k) => [k, asked.get(k)]))).toEqual({

@@ -392,9 +392,10 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     : state.type === "image" ? [model?.label, settings.resolution]
     : [model?.label, settings.resolution, model?.durations?.length ? `${settings.duration} s` : null]).filter((part): part is string => Boolean(part));
   /* A sound is a live estimate: "up to N cr" (lib/shell/make-price.ts › makeQuoteValue); a still or a clip is its card figure. */
-  const linePrice: MakePrice | null = takeCredits == null ? null : approximate ? { value: null, about: aboutOneTake(), credits: shownTotal(composer.quote, composer.quoteKey, 1) } : { value: makeQuoteValue(takeCredits, state.type), about: null };
+  /* While a recreated take's references are still being read, the figure on hand is the quote without them: not what the take will cost, so no price shows. */
+  const linePrice: MakePrice | null = takeCredits == null || recipe?.refs.reading ? null : approximate ? { value: null, about: aboutOneTake(), credits: shownTotal(composer.quote, composer.quoteKey, 1) } : { value: makeQuoteValue(takeCredits, state.type), about: null };
   /* Auto's enhancement is in the figure: the button reads take + enhancement, and waits (unpriced) while the enhancement is still being priced. */
-  const goPrice: MakePrice | null = spendOff || total == null || (autoNeeds && enhanceCredits == null) ? null
+  const goPrice: MakePrice | null = spendOff || recipe?.refs.reading || total == null || (autoNeeds && enhanceCredits == null) ? null
     : approximate ? { value: null, about: composer.buttonParts.price, credits: total } : { value: makeQuoteValue(total + (enhanceCredits ?? 0), state.type), about: null };
   const balanceNow = balance !== undefined ? balance : session.credits?.balance ?? null;
   /* Make stays pressable when the balance is short (the take waits, held, until credits arrive): the line only says so. */
