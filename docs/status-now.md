@@ -1,4 +1,4 @@
-# Status now: 7 October 2026, 18:21 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 18:41 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Demo postponed (owner, about 17:30 IST); no date yet. The Thursday merge train is cancelled. Nothing merges to main and nothing deploys to production without the owner's "go".**
 Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's AT RISK and WON'T MAKE IT items, with an estimate per item; (c) move prep for Coolify on a test address, files only. Then a proposed demo date and the `release/1` → main plan.
@@ -24,10 +24,9 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
   - `fix/r1-ci-make`: the Make composer specs (prices, batches, model picker).
   - `fix/r1-ci-settings`: Settings, credits, no vendor dollars, retired connected account.
   - `fix/r1-ci-board`: board, phone, Guest Home off, spend buttons.
-  - `money/r1-make-stale-claim` (Opus): see the money finding below.
 
 ## Money finding (CI lane, 17:30)
-In the new Make panel, a tab whose reply was lost can send a second paid request after another tab already settled the first, if the person presses Make again in the first tab. The old `recovery-race` spec forbade this. An Opus lane is confirming it and preparing a fix: the first tab checks its own lost request before sending again. The owner said yes (17:40): a tab checks its lost request before sending again.
+In the new Make panel, a tab whose reply was lost can send a second paid request after another tab already settled the first, if the person presses Make again in the first tab. The old `recovery-race` spec forbade this. Confirmed on release/1 for video (1 extra paid request), image batches (the whole batch again) and audio. The owner said yes (17:40) to the fix. Fixed on `money/r1-make-stale-claim` @ e14ce236: each tab keeps its own copy of what it lost; a settled outcome leaves a 1-hour note; the next press checks first and sends nothing if it landed; changed words always send. The ported race test passes at all five sizes; unit 54/54. Opus review running.
 
 ## In flight
 | Branch | State |
@@ -37,7 +36,9 @@ In the new Make panel, a tab whose reply was lost can send a second paid request
 | `ops/selfhost-test-address`, draft PR #561 into release/1 @ 9415674d (was 45326806) | Move prep done, files only: Dockerfile, `.dockerignore`, standalone output behind `NEXT_OUTPUT=standalone` (no effect on Vercel), the one cron mapped, storage plan, env NAMES, the existing health route, `ops/selfhost/smoke.sh`, steps in `docs/selfhost-test.md`. The standalone build runs without secrets. Two product defects block a test address (owner questions 3 and 4) |
 | image-ad variants and presets | No frame in the handoff (only one card, one Make at 3 cr). Nothing built. Brief for Claude Design: `docs/design-brief-image-ad-versions.md` (this branch). Logic already in code |
 | "Particl demo" cap field (`admin/workspace-cap-field`) | Opus lane: bring up to date, check, 100 cr cap; propose how "cheap engines only" is enforced |
+| `ops/selfhost-test-address`, PR #561 @ 47bd3754 | Runbook now also covers keeping the particl.app and www redirects after the move (Cloudflare redirect rule recommended) and the DNS records for all four names. Opus review queued |
 | self-host fixes (owner yes, 18:15) | home-page loop (proxy) and sign-in behind the proxy (Opus author and Opus review; release/1 only; the owner checks it on the test address first). Sign-in lane (Opus) running; home-loop lane and #561's review start as slots free |
+| `ops/selfhost-test-address`, PR #561 @ 47bd3754 | Runbook now also covers keeping the particl.app and www redirects after the move (Cloudflare redirect rule recommended) and the DNS records for all four names. Opus review queued |
 | self-host fixes (owner yes, 18:15) | home-page loop (proxy) and sign-in behind the proxy (Opus author and Opus review; release/1 only; the owner checks it on the test address first). Sign-in lane (Opus) running; home-loop lane and #561's review start as slots free |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
 
@@ -51,6 +52,9 @@ Scope: list B in (image-ad variants; phone gets "Open this on a larger screen" n
 3. Self-hosted test address: it needs staging copies of the platform and workspace databases and a staging Blob store. The test address keeps the cron off, so it doesn't run beside Vercel's.
 
 4. Image-ad versions and presets: no design frame exists. The brief for Claude Design is `docs/design-brief-image-ad-versions.md` on this branch. Draw it, or drop the item from Release 1?
+
+5. Atomik's idea draft (a paid 2 cr write; nothing in the app calls it now): does it come back in Release 1, and where (a board card or Atomik's sheet)? Recommended: not in Release 1; its old race test stays marked as waiting.
+6. Found while fixing: the phone's Make shows nothing when a press fails. A UI fix is queued (list A).
 
 ## Machine
 "contabo": 18 cores, 94 GB; agents capped at 12 cores and 64 GB. Up to 6 heavy jobs at once through `~/ops/heavy.sh` at low priority; full suites run in CI.
