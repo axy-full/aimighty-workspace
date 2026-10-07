@@ -1,8 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useMake, type MakeModel } from "../make/use-make";
-import { MakePriceText } from "../make/Compose";
-import { usePriceTitle } from "../Price";
+import { MakePriceText, useMakePriceTitle } from "../make/Compose";
 import type { ComposerType } from "@/lib/workspace/composer";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import type { Project } from "@/lib/workbench/studio";
@@ -39,7 +38,7 @@ export function MakeScreen({ scope, project, items, workspaceName, balance, proj
   const make = useMake({ scope, project, projects, workspaceName, onProject, balance, onBoard: true });
   const [adding, setAdding] = useState(false);
   const [said, setSaid] = useState(false);
-  const goTitle = usePriceTitle(make.go.price?.value ?? null);
+  const goTitle = useMakePriceTitle(make.go.price);
   const { state } = make;
   const waits = Boolean(make.go.blocked) || !online;
   const reason = !online ? NEEDS_CONNECTION : make.go.blocked && (make.go.blocked !== SAY_WHAT || said) ? make.go.blocked : null;

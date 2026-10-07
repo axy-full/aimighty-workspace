@@ -158,6 +158,8 @@ test("Make approves Cinema Studio's hold: about N cr, at most 3N cr on its row a
   const { quotes, sent, errors, go } = await open(page, info);
   await expect(go).toHaveText(`Make · about ${N} cr, at most ${3 * N} cr`, { timeout: 60_000 });
   await priceFits(page, go);
+  /* Its hover says both figures in dollars, at the price of a credit (review L1). */
+  await expect(go).toHaveAttribute("title", /^about US\$\d[\d,]*\.\d\d, at most US\$\d[\d,]*\.\d\d \(US\$\d+\.\d\d a credit\)$/);
   await shot(page, info, "make-hold");
   await go.click();
   await expect.poll(() => sent.length).toBe(1);
