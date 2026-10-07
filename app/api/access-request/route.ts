@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { platformDb as db, platformReady as ready, now, newId } from "@/lib/platform";
 import { SUPER_ADMIN_EMAIL } from "@/lib/auth";
 import { mailConfigured, sendMail } from "@/lib/mail";
+import { clientIp } from "@/lib/clientIp";
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +31,7 @@ const DAY = 24 * 60 * 60 * 1000;
 
 /** One-way and salted. This exists to count requests, not to identify anyone. */
 function hashIp(req: NextRequest): string {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim()
-    ?? req.headers.get("x-real-ip") ?? "";
+  const ip = clientIp(req);
   if (!ip) return "";
   const salt = process.env.SESSION_SECRET ?? process.env.TURSO_AUTH_TOKEN ?? "particl";
   return createHash("sha256").update(`${salt}:${ip}`).digest("hex").slice(0, 32);

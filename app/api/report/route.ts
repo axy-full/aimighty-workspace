@@ -5,6 +5,7 @@ import { platformDb, platformReady, newId, now, SUPER_ADMIN_EMAIL } from "@/lib/
 import { reportInput } from "@/lib/reports";
 import { sendMail, mailConfigured } from "@/lib/mail";
 import { currentContext } from "@/lib/auth";
+import { clientIp } from "@/lib/clientIp";
 
 export const dynamic = "force-dynamic";
 
@@ -37,8 +38,7 @@ const ROWS_PER_IP_PER_DAY = 200;
 
 /** One-way and salted. This exists to count reports, not to identify anyone. */
 function hashIp(req: Request): string {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim()
-    ?? req.headers.get("x-real-ip") ?? "";
+  const ip = clientIp(req);
   if (!ip) return "";
   const salt = process.env.SESSION_SECRET ?? process.env.TURSO_AUTH_TOKEN ?? "particl";
   return createHash("sha256").update(`${salt}:${ip}`).digest("hex").slice(0, 32);
