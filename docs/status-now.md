@@ -1,16 +1,17 @@
-# Status now: 7 October 2026, 19:39 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 19:52 IST, Release 1 lead moved to "contabo"
 
-Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. Only one defect blocks the live code off Vercel: sign-in 403 behind the proxy (fix in review; applies to main too; main only on the owner's go). The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
+Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
 **Demo postponed (owner, about 17:30 IST); no date yet. The Thursday merge train is cancelled. Nothing merges to main and nothing deploys to production without the owner's "go".**
 Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's AT RISK and WON'T MAKE IT items, with an estimate per item; (c) move prep for Coolify on a test address, files only. Then a proposed demo date and the `release/1` → main plan.
 
 **Lead:** the session on "contabo" took over from the "vps" session at about 15:50 IST. Deny rules checked: `git restore` and `docker ps` are both refused.
-**Integration preview:** `release/1` (draft #546) = 01116ec7. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
+**Integration preview:** `release/1` (draft #546) = df5a551a. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
 
 ## In `release/1` since 15:00
 - 3D blocking part B (`build/gaps-l2` 44cda874, Opus PASS; owner yes to Q7: staging only, production only in a later train after a Turso backup branch).
 - `fix/r1-ci-worker-probe-env` (Opus PASS).
+- `fix/r1-signin-behind-proxy` (Opus PASS; owner yes: release/1 only): behind the proxy, `SELFHOST_BEHIND_PROXY=1` makes every origin check accept exactly APP_ORIGIN; Vercel unchanged. **The owner checks it on the test address next** (https; steps in `docs/selfhost-test.md`).
 - PR #561 `ops/selfhost-test-address` (Opus FAIL on the runbook: a plain platform copy names production workspace databases; fixed; delta PASS): Dockerfile, standalone output behind a flag, cron-sync, smoke test, runbook with the staging-set and keyring rules, a check of every workspace address before the scheduled task, Build Variable only on NEXT_PUBLIC_*, the particl.app redirect and DNS for all four names, and what changes when production leaves Vercel.
 - `fix/r1-ci-board` (Opus PASS): board, phone, Guest Home off, palette, sample workspace, spend buttons; phone fault buttons 44 px.
 - `fix/r1-blocking-sample-remake` (Opus PASS): the sample no longer offers 3D blocking's priced Remake. Optional polish queued: hide the disabled "price pending" button too, and a rendered test.
@@ -38,8 +39,10 @@ In the new Make panel, a tab whose reply was lost can send a second paid request
 | Release 1 remaining list | sent: `docs/r1-remaining.md` (this branch). Owner: list B in, list C out |
 | image-ad variants and presets | No frame in the handoff (only one card, one Make at 3 cr). Nothing built. Brief for Claude Design: `docs/design-brief-image-ad-versions.md` (this branch). Logic already in code |
 | "Particl demo" cap field (`admin/workspace-cap-field` @ 32994932) | Up to date with release/1. The cap is enforced on the server at the hold for every paid path (new door-by-door spec). Opus review running. Owner question 7 |
-| `fix/r1-signin-behind-proxy` @ 75b56ffe (sign-in, gated) | Built: one origin check for all routes; behind the proxy it accepts only the configured APP_ORIGIN when `SELFHOST_BEHIND_PROXY=1` (ignored on Vercel, so Vercel is unchanged). Proven on a local standalone build. Applies to main with three mechanical conflicts. Fresh Opus review running; then release/1 only, and the owner checks it on the test address. The test address must be https for sign-in (the session cookie is Secure) |
-| `fix/r1-signin-behind-proxy` @ 75b56ffe (sign-in, gated) | Built: one origin check for all routes; behind the proxy it accepts only the configured APP_ORIGIN when `SELFHOST_BEHIND_PROXY=1` (ignored on Vercel, so Vercel is unchanged). Proven on a local standalone build. Applies to main with three mechanical conflicts. Fresh Opus review running; then release/1 only, and the owner checks it on the test address. The test address must be https for sign-in (the session cookie is Secure) |
+| `fix/r1-public-origin-links` (Opus, gated) | Before production leaves Vercel: password-reset, invite and top-up links never built from request headers; review, share, MCP and OpenAPI links use the public address, not the internal one |
+| `fix/r1-review-lows` | Polish: reviewers' lows (sample hides "price pending", tighter spend audit for nav buttons, landscape 44 px, phone Make shows a failed press, old "save first" messages gone) |
+| `fix/r1-public-origin-links` (Opus, gated) | Before production leaves Vercel: password-reset, invite and top-up links never built from request headers; review, share, MCP and OpenAPI links use the public address, not the internal one |
+| `fix/r1-review-lows` | Polish: reviewers' lows (sample hides "price pending", tighter spend audit for nav buttons, landscape 44 px, phone Make shows a failed press, old "save first" messages gone) |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
 
 ## Owner's answers (17:40)
