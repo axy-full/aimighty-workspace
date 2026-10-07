@@ -15,8 +15,6 @@ export type MakeProps = {
   library: ProjectLibrary; projects?: "loading" | "ready" | "error";
   projectsError?: string | null; onRetry?: () => void;
   workspaceName: string | null; onProject: (id: string) => void;
-  /** The Inspector's column is open: Make sits beside it rather than over it. */
-  beside?: boolean;
   /** The project's frame, so every card on Recent holds it. */
   aspect?: string | null;
   /** The workspace's live credit balance, when the shell reads it (for "Short by N cr"). */
@@ -31,10 +29,10 @@ export type MakeProps = {
  * Make with the new interface switched on (design/particl-graphite/README.md § 3.2; "Make frames.dc.html" 1–8):
  * a 440 px panel over any screen, full width on a phone. Its head is the title, Make | Recent and Close; its body is
  * the composer as the handoff draws it (Compose), Recent, or a quick tool. Left of whatever is docked at the right
- * edge (`--board-dock`, set by the shell from the board's dock), and beside the Inspector's column when that is open.
+ * edge (`--board-dock`, set by the shell from the board's dock).
  * The logic is useMake's, which the phone's simple Make shares.
  */
-export function Make({ scope, project, items, library, projects = "ready", projectsError = null, onRetry, workspaceName, onProject, beside = false, aspect = null, balance, onBoard, listOpen = false }: MakeProps) {
+export function Make({ scope, project, items, library, projects = "ready", projectsError = null, onRetry, workspaceName, onProject, aspect = null, balance, onBoard, listOpen = false }: MakeProps) {
   const shell = useShell();
   /* Results land on the board too when the board is the screen under the panel (the shell's own view, unless the host says). */
   const make = useMake({ scope, project, projects, workspaceName, onProject, balance, onBoard: onBoard ?? shell.view === "board", listOpen });
@@ -44,7 +42,7 @@ export function Make({ scope, project, items, library, projects = "ready", proje
   const tab = make.tool ?? (make.recent ? "recent" : make.state.type);
   return (
     <aside ref={panel} className="gx-make gx-mk" aria-label={title} data-testid="make-panel" data-ui="new" data-tab={tab}
-      data-beside={beside ? "" : undefined} style={aspect ? ({ "--tile-aspect": aspect } as CSSProperties) : undefined}>
+      style={aspect ? ({ "--tile-aspect": aspect } as CSSProperties) : undefined}>
       <div className="gx-mk-head">
         <strong className="gx-mk-title" data-testid="make-title">{title}</strong>
         {make.tool ? null : (

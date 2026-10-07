@@ -153,7 +153,6 @@ export function screenOf(at: { view: string | null; kind: string | null; control
     return isLanded("board", screens) ? "board" : null;
   }
   if (at.view === "workspace") return isLanded("settings", screens) ? "settings" : null;
-  if (at.view === "crew" || at.view === "gen") return null;
   return at.controlRoom && isLanded("control-room", screens) ? "control-room" : null;
 }
 

@@ -12,7 +12,6 @@
   box-shadow: -24px 0 60px rgba(0, 0, 0, 0.6);
   animation: gx-in .2s var(--gx-ease) both;
 }
-.gx .gx-make[data-beside] { right: calc(var(--gx-w-inspector, 320px) + 1px); }
 .gx-make-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 12px 10px 16px; }
 .gx-make-title { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
 .gx .gx-make-close { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 6px; font-size: 18px; line-height: 1; color: var(--gx-text-2); }
@@ -105,7 +104,6 @@
    phone, as every sheet is. No two-letter tiles; the engine in use is tinted. */
 @media (min-width: 768px) {
   .gx .gx-veil.gx-veil--make { display: flex; justify-content: flex-end; align-items: stretch; padding: var(--make-top, 56px) 0 0; background: rgba(0, 0, 0, 0.55); }
-  .gx .gx-veil--make[data-beside] { padding-right: calc(var(--gx-w-inspector, 320px) + 1px); }
   .gx .gx-veil--make > .gx-sheet.gx-sheet--models { width: min(440px, 100%); max-height: none; border-radius: 0; border: 0; border-left: 1px solid var(--gx-hair-strong); background: var(--gx-root); box-shadow: none; animation: gx-in .2s var(--gx-ease) both; }
 }
 .gx-veil--make .gx-sheet-row--spec > .gx-tool-tag { display: none; }
@@ -143,7 +141,6 @@
    The aside keeps `.gx-make` above (its place, its width, the phone's full width) and adds `.gx-mk`. Sizes are the
    master's: words at 17 px in a 10 px box, 96 px reference tiles, a 14 px engine line with Change, a 36 px Make. ── */
 .gx .gx-make.gx-mk { right: var(--board-dock, 0px); }
-.gx .gx-make.gx-mk[data-beside] { right: calc(var(--gx-w-inspector, 320px) + 1px); }
 .gx-mk-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 12px 10px 16px; }
 .gx-mk-title { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
 .gx .gx-mk-close { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 6px; font-size: 18px; line-height: 1; color: var(--gx-text-2); }

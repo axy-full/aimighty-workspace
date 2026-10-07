@@ -3,11 +3,10 @@ import { SETTINGS_SECTIONS, type SettingsSectionId } from "./settings";
 
 /**
  * The Suites shell's information architecture (design/particl-graphite/README.md
- * › Information architecture). Four suites plus two views that are not suites
- * (Gen, Workspace). Every page maps onto a page the state layer already knows
- * (lib/workspace/pages.ts), so navigation, selection repair and the page
- * bodies are reused rather than rebuilt; the map narrows as later build steps
- * give Business and Viral their own composers.
+ * › Information architecture), as Release 1 leaves it: Atomik's control room is the one suite with pages, the Studio suite is a
+ * single backing page nothing draws, and Home, the board and Settings are views (lib/shell/screens.ts). Every page maps onto a
+ * page the state layer already knows (lib/workspace/pages.ts). Business, Viral, Crew and the Studio overview are not here:
+ * their addresses are rewritten (`route`, lib/shell/screens.ts).
  */
 export type ShellSuiteId = "studio" | "atomik";
 /**
