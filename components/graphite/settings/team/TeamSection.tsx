@@ -6,7 +6,7 @@ import { auditEntries, sessionRows, twoStepLine, type SecurityBody } from "@/lib
 import { labels as AUDIT_LABELS } from "@/components/management/WorkspaceAudit";
 import type { SettingsFold } from "@/lib/shell/settings";
 import { Btn, Fold, LinkBtn, Note, Problem, Row, Section } from "../parts";
-import { inviteLine, memberLine, peopleMeta, roleChangeable, roleOf, workspaceTwoStep, type Team, type WorkspacePolicy } from "../model";
+import { ROLES, inviteLine, memberLine, peopleMeta, roleChangeable, roleCounts, roleOf, workspaceTwoStep, type Team, type WorkspacePolicy } from "../model";
 import { lostConnection, useRead, useWrite } from "../use-settings";
 
 /**
@@ -30,6 +30,7 @@ export function TeamSection({ open }: { open: SettingsFold | null }) {
         </Section>
       )}
       <Security initiallyOpen={open === "security"} />
+      <Roles />
     </>
   );
 }
@@ -80,7 +81,7 @@ function People() {
         const self = Boolean(session.email) && u.email === session.email;
         const changeable = roleChangeable(u, roles);
         return (
-          <Row key={u.id} name={u.name} line={memberLine(u)} value={roleOf(u)} testId="settings-member">
+          <Row key={u.id} name={u.name} line={memberLine(u)} value={roles ? roleOf(u) : undefined} testId="settings-member">
             {changeable && roleOpen === u.id ? (
               <span className="gs-choice" role="group" aria-label={`Role for ${u.name}`}>
                 {(["admin", "member"] as const).map((r) => (
@@ -148,11 +149,11 @@ function Security({ initiallyOpen }: { initiallyOpen: boolean }) {
   return (
     <Fold label="Security" meta="sign-in, sessions and access" open={open} onToggle={() => setOpen((v) => !v)} testId="settings-security">
       {account.error ? <Problem text={account.error} onRetry={() => void account.read()} /> : null}
-      <Row name="Two-step sign-in" line="Your own sign-in, for every workspace" value={twoStep ?? (account.data ? "Not reported" : "Reading…")} testId="settings-two-step">
+      <Row name="Your two-factor sign-in" line="An authenticator app, for every workspace you are on" value={twoStep ?? (account.data ? "Not reported" : "Reading…")} testId="settings-two-step">
         <LinkBtn href="/account/security" testId="settings-two-step-change">Change</LinkBtn>
       </Row>
       {session.owner ? <WorkspaceRule rule={rule} error={policy.error} reread={policy.read} /> : (
-        <Row name="Required on this workspace" line={rule.line} value={rule.value} testId="settings-workspace-two-step" />
+        <Row name="Two-factor on this workspace" line={rule.line} value={rule.value} testId="settings-workspace-two-step" />
       )}
       <Row name="Signed in" line={sessions.slice(0, 4).map((s) => `${s.label} · since ${when(s.since)}`).join(" · ") || undefined}
         value={account.data ? `${sessions.length || 1} ${sessions.length === 1 || !sessions.length ? "session" : "sessions"}` : "Reading…"} testId="settings-sessions" />
@@ -161,6 +162,23 @@ function Security({ initiallyOpen }: { initiallyOpen: boolean }) {
         <Row name="Recent activity" line={events.length ? events.map((e) => `${e.label} · ${when(e.at)}`).join(" · ") : audit.data ? "Nothing recorded yet" : audit.error ?? "Reading…"} testId="settings-audit" />
       ) : null}
     </Fold>
+  );
+}
+
+/**
+ * Roles (Team security, Gaps B): the code's owner, admin and member, what each may do, and how many hold each on the
+ * owner's view. There is no other role and no limit per role (owner correction 7); a role changes on the person's
+ * row above, by the owner.
+ */
+function Roles() {
+  const session = useSession();
+  const admin = session.role === "admin" || session.role === "owner";
+  const { data } = useRead<Team>(admin ? "/api/team" : null);
+  const counts = roleCounts(data);
+  return (
+    <Section label="Roles" meta="what each role may do" testId="settings-roles">
+      {ROLES.map((r) => <Row key={r.id} name={r.name} line={r.line} value={counts ? String(counts[r.id]) : undefined} testId="settings-role" />)}
+    </Section>
   );
 }
 
@@ -197,7 +215,7 @@ function WorkspaceRule({ rule, error, reread }: { rule: ReturnType<typeof worksp
   };
   return (
     <>
-      <Row name="Required on this workspace" line={rule.line} value={rule.value} testId="settings-workspace-two-step">
+      <Row name="Two-factor on this workspace" line={rule.line} value={rule.value} testId="settings-workspace-two-step">
         {rule.action === "enrol-first" ? <LinkBtn href="/account/security" testId="settings-workspace-two-step-enrol">Set up yours first</LinkBtn> : null}
         {rule.action === "turn-on" || rule.action === "turn-off" ? (
           <button type="button" className="gs-btn" aria-expanded={confirming} disabled={busy} data-testid="settings-workspace-two-step-toggle"

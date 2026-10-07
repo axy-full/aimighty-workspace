@@ -183,15 +183,23 @@ test("Change: the type's engines priced in cr with dollars on hover, the drawn l
   await say(page, "make shot 2 at golden hour");
   const rows = page.getByTestId("make-engine-row");
   await expect(rows.first()).toBeVisible();
-  /* The engine in use is the pressed row; every figure is "N cr" with its dollars, or none at all. */
+  /* The engine in use is the pressed row; every figure is "N cr" with its dollars, or none at all; Cinema Studio's
+     is what approving it holds, "about N cr, at most 3N cr" (lib/cinemaHold.ts), and only Cinema Studio's says "about". */
   await expect(list.locator('[data-testid="make-engine-row"][aria-pressed="true"]')).toHaveCount(1);
   await expect(list.locator(".gx-price").first()).toHaveText(/^\d[\d,]* cr$/, { timeout: 60_000 });
-  for (const price of await list.locator(".gx-price").all()) {
+  for (const row of await rows.all()) {
+    const price = row.locator(".gx-price");
+    if (!(await price.count())) continue;
     const words = (await price.innerText()).trim();
+    if (await row.getAttribute("data-engine") === "higgsfield-cinema-studio-4.0") {
+      const [, about, most] = words.match(/^about (\d[\d,.]*) cr, at most (\d[\d,.]*) cr$/) ?? [];
+      expect(Number(most.replace(/,/g, "")), words).toBeCloseTo(3 * Number(about.replace(/,/g, "")), 1);
+      continue;
+    }
     expect(words).toMatch(/^\d[\d,]* cr$|^free$/);
     if (words !== "free") await expect(price).toHaveAttribute("title", /^\$\d[\d,]*\.\d\d$/);
   }
-  expect(await list.innerText()).not.toMatch(/\bquoted\b|\babout \d/i);
+  expect(await list.innerText()).not.toMatch(/\bquoted\b/i);
   const lengths = page.getByTestId("make-length");
   if (await lengths.count()) {
     await lengths.last().click();

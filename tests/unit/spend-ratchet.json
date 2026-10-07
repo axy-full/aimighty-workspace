@@ -2,162 +2,162 @@
   "ratchet": {
     "components/Feed.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "UNOWNED: no frame draws this route"
     },
     "components/assets/NewAssetSheet.tsx": {
-      "count": 2,
-      "until": "2026-10-08",
+      "count": 1,
+      "until": "2026-10-16",
       "by": "goes with the file: stream 3 (Library drawer) + stream 6 (Make > Recent)"
     },
     "components/astra-blender/AstraAgentPanel.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file; UNOWNED (§9): Astra Blender workspace (3D)"
     },
     "components/astra-blender/AstraRenderPanel.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "Astra Blender workspace (3D): UNOWNED: 3D blocking tool"
     },
     "components/graphite/SuitesShell.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 1 (rebuilt in place)"
     },
     "components/graphite/atomik/MemoryView.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 8 (control room)"
     },
     "components/graphite/business/BusinessView.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 11 (Ads and Social)"
     },
     "components/graphite/production/CastIdentities.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 5 (cards 2)"
     },
     "components/graphite/production/RigExtras.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 3 (board canvas)"
     },
     "components/marketing/HeroPrompt.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "site/copy-names (stream 15)"
     },
     "components/pipeline/PipelineRun.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 8 (Activity)"
     },
     "components/pipeline/PipelineWorkspace.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 8 (Activity)"
     },
     "components/rig/PhoneBoard.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 3 (board canvas)"
     },
     "components/suites/AtomikSuite.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 8 (control room)"
     },
     "components/suites/ReferenceAd.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 11 (Ads and Social)"
     },
     "components/suites/SubatomikWorkspace.tsx": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 11 (Social) + stream 6 (Make quick tools)"
     },
     "components/suites/SuiteAgentPanel.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 7 (Atomik)"
     },
     "components/workbench/DevelopmentPanel.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide)"
     },
     "components/workbench/GenerationDialog.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide)"
     },
     "components/workbench/MovieExport.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide)"
     },
     "components/workbench/SoulIdentityPanel.tsx": {
       "count": 2,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide)"
     },
     "components/workbench/SoundGenerate.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide)"
     },
     "components/workbench/Studio.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: flip PR, then D1 retire /workbench (lead)"
     },
     "components/workspace/GenerateComposer.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "flip PR, then D1 retire /workspace (lead)"
     },
     "components/workspace/Home.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "flip PR, then D1 retire /workspace (lead)"
     },
     "components/workspace/TopBar.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "flip PR, then D1 retire /workspace (lead)"
     },
     "components/workspace/inspector/CastInspector.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "goes with the file: stream 5 (cards 2)"
     },
     "components/workspace/mobile/MakeComposer.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 10 (phone) + D1 retire /workspace"
     },
     "components/workspace/mobile/pages/CardsPages.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 10 (phone) + D1 retire /workspace"
     },
     "components/workspace/pages/CastPage.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 5 (cards 2)"
     },
     "components/workspace/pages/EditPage.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "stream 5 (cards 2)"
     },
     "components/workspace/rig/RigVerify.tsx": {
       "count": 1,
-      "until": "2026-10-08",
+      "until": "2026-10-16",
       "by": "no inventory row: the lead assigns it (the board PR deletes the old screens)"
     }
   },

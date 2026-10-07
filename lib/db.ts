@@ -292,6 +292,8 @@ const SCHEMA = [
      revoked_at  INTEGER
    )`,
   `CREATE INDEX IF NOT EXISTS idx_tokens_user ON api_tokens(user_id)`,
+  /* A token's grant beyond its stored scope (lib/security/token-grants.ts): a prepare token is stored "read". */
+  `CREATE TABLE IF NOT EXISTS api_token_grants (token_id TEXT PRIMARY KEY, kind TEXT NOT NULL, created_at INTEGER NOT NULL)`,
   /* Shots — the production unit a project is actually organised by.
      A shot is asked for once and rendered many times; every render is a
      VERSION of it. This is what makes "revisions per shot" a real number,

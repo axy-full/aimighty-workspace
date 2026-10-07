@@ -7,6 +7,7 @@ import type { BoardCtx } from "../cards/types";
 import { spendAttrsOf } from "@/lib/spend";
 import { usePriceTitle } from "../../Price";
 import { PriceWords } from "./PriceWords";
+import { ClientLink } from "@/components/graphite/security/ClientLink";
 import { CrewTakeReview } from "../review/CrewTakeReview";
 
 /*
@@ -76,6 +77,8 @@ export function CrewReview({ ctx }: { ctx: BoardCtx }) {
           </div>
         </div>
       ))}
+      {/* The production's review set for a client who does not sign in (Gaps A, "Copy client link"). */}
+      <ClientLink productionId={ctx.productionId} toast={ctx.toast} />
     </div>
   );
 }

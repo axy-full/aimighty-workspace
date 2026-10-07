@@ -88,7 +88,7 @@
     "components/ElementScreen.tsx": 1,
     "components/ProductionNav.tsx": 1,
     "components/ShotBindings.tsx": 1,
-    "components/assets/NewAssetSheet.tsx": 6,
+    "components/assets/NewAssetSheet.tsx": 3,
     "components/astra-blender/AstraAgentPanel.tsx": 14,
     "components/astra-blender/AstraBlenderWorkspace.tsx": 7,
     "components/astra-blender/AstraStudio.tsx": 3,
