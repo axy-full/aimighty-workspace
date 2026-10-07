@@ -55,6 +55,24 @@ export function trustedProxyHops(env: Env = process.env): number | null {
   return n >= 1 && n <= MAX_HOPS ? n : null;
 }
 
+let warned = false;
+
+/**
+ * The fixed bucket behind the proxy, said once per process so a misconfigured host is visible in its logs. Names the
+ * settings to check, never an address or a header value.
+ */
+function unattributed(): string {
+  if (!warned) {
+    warned = true;
+    console.warn(
+      "[client-ip] Behind the proxy, a request carried no usable client address, so rate limits are counting it in one " +
+      "shared bucket. Check TRUSTED_PROXY_HOPS (a whole number 1-5, unset = 1), TRUST_CF_CONNECTING_IP (1 only behind " +
+      "Cloudflare, which then must send CF-Connecting-IP), and that the proxy appends X-Forwarded-For. Shown once.",
+    );
+  }
+  return UNATTRIBUTED;
+}
+
 /** The client's address for rate limiting (see above). Never empty except on Vercel, where it is exactly what it was. */
 export function clientIp(req: { headers: Headers }, env: Env = process.env): string {
   const h = req.headers;
@@ -62,9 +80,9 @@ export function clientIp(req: { headers: Headers }, env: Env = process.env): str
     return h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || "";
   }
   if (env.SELFHOST_BEHIND_PROXY !== "1") return DIRECT;
-  if (env.TRUST_CF_CONNECTING_IP === "1") return address(h.get("cf-connecting-ip")) ?? UNATTRIBUTED;
+  if (env.TRUST_CF_CONNECTING_IP === "1") return address(h.get("cf-connecting-ip")) ?? unattributed();
   const hops = trustedProxyHops(env);
-  if (hops === null) return UNATTRIBUTED;
+  if (hops === null) return unattributed();
   const chain = (h.get("x-forwarded-for") ?? "").split(",");
-  return address(chain.length >= hops ? chain[chain.length - hops] : null) ?? UNATTRIBUTED;
+  return address(chain.length >= hops ? chain[chain.length - hops] : null) ?? unattributed();
 }
