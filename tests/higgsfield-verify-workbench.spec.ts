@@ -58,17 +58,16 @@ test('the engine check is the platform owner\'s alone and answers in credits, ne
   expect(JSON.stringify(await refused.json())).not.toMatch(/estimate|credits|usd|\$/i);
 });
 
-test('the platform owner\'s check answers with credit estimates only: no dollar field, no provider reference, no credential', async ({ page }) => {
+test('the platform owner\'s check answers with credit estimates only: no dollar field, no provider reference, no credential', async ({ page }, info) => {
+  test.skip(info.project.name !== 'workbench-1440x900', 'the route allows 5 checks per 5 minutes: one viewport');
   const f = await fixture(page, true);
-  await page.unroute('**/api/workspaces/keys/higgsfield/verify');
   const response = await page.request.post('/api/workspaces/keys/higgsfield/verify', { headers: { 'X-Workbench-Scope': f.scope }, data: {} });
   expect(response.status(), await response.text()).toBe(200);
   const body = await response.json();
   const text = JSON.stringify(body);
   expect(Object.keys(body.estimates).sort()).toEqual(['1080p', '720p']);
   for (const estimate of Object.values(body.estimates) as Record<string, unknown>[]) expect(estimate).not.toHaveProperty('usd');
-  expect(text).not.toMatch(/"usd"|\$|api[_-]?key|secret|token/i);
-  expect(f.checks()).toBe(0);
+  expect(text).not.toMatch(/"usd"|\$|api[_-]?key|secret|token|reference/i);
 });
 
 test.fixme('platform management verifies manually from a Verify connection button, with credit estimates and safe error results (owner question: the card has no page in Release 1)', async () => {

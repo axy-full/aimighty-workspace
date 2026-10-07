@@ -97,6 +97,7 @@ test("Home's project card reads credits, never a vendor's dollar", async ({ page
   await page.goto("/suites?view=home");
   await expect(page.getByText(name).first()).toBeVisible({ timeout: 60_000 });
   expect(await vendorFigures(page)).toEqual([]);
+  expect(dollarsIn(await page.evaluate(() => document.body.innerText)), "this page draws no visible dollar").toEqual([]);
   await floors(page);
   await shot(page, info, "home");
 });
@@ -107,6 +108,7 @@ test("the board's Shots region reads credits per shot, never a vendor's dollar",
   await page.goto(`/suites?project=${project.id}&view=board&region=shots`);
   await expect(page.getByTestId("board-canvas")).toBeVisible({ timeout: 60_000 });
   expect(await vendorFigures(page)).toEqual([]);
+  expect(dollarsIn(await page.evaluate(() => document.body.innerText)), "this page draws no visible dollar").toEqual([]);
   await floors(page);
   await shot(page, info, "board-shots");
 });
@@ -119,6 +121,7 @@ test("Settings › Spending rules reads the budget and cap in credits, never the
   await page.goto("/suites?view=workspace&tab=rules");
   await expect(page.getByTestId("settings-budget-value")).toContainText("777 cr", { timeout: 60_000 });
   expect(await vendorFigures(page)).toEqual([]);
+  expect(dollarsIn(await page.evaluate(() => document.body.innerText)), "this page draws no visible dollar").toEqual([]);
   await floors(page);
   await shot(page, info, "spending-rules");
 });

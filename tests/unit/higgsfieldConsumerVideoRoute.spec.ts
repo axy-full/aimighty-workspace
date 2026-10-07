@@ -14,6 +14,7 @@ import * as contract from '../../lib/higgsfield-consumer/video-contract';
 import { ConsumerOriginalError } from '../../lib/higgsfield-consumer/video-original';
 import * as records from '../../lib/higgsfield-consumer/marketing-records';
 import * as retired from '../../lib/higgsfield-consumer/retired';
+import { crossOriginProblem } from '../../lib/requestOrigin';
 
 const key = '11111111-1111-4111-8111-111111111111';
 const wallet = '22222222-2222-4222-8222-222222222222';
@@ -33,8 +34,8 @@ async function fixture() {
   const statement = source.statements.find(s => ts.isFunctionDeclaration(s) && s.name?.text === 'withTenant')!;
   const wrapped = {} as Pick<typeof auth, 'withTenant'>;
   const compile = (text: string) => ts.transpileModule(text, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  new Function('exports', 'resolveStore', 'runWithStore', 'NoTenantError', 'MediaSourceError', 'workbenchScopeFor', 'recoveryRoute', compile(statement.getText(source)))(
-    wrapped, async () => store, tenant.runWithStore, tenant.NoTenantError, MediaSourceError, workbenchScopeFor, (handler: unknown) => handler,
+  new Function('exports', 'resolveStore', 'runWithStore', 'NoTenantError', 'MediaSourceError', 'workbenchScopeFor', 'recoveryRoute', 'crossOriginProblem', compile(statement.getText(source)))(
+    wrapped, async () => store, tenant.runWithStore, tenant.NoTenantError, MediaSourceError, workbenchScopeFor, (handler: unknown) => handler, crossOriginProblem,
   );
   const calls: { name: string; args: unknown[]; workspace: string }[] = [];
   const limits: unknown[][] = [];

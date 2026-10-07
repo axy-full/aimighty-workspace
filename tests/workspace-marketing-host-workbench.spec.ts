@@ -149,7 +149,7 @@ async function fixture(page: Page): Promise<State> {
 
 const url = "/workspace?project=ws-mkt-host&suite=moleculr&page=marketing";
 
-test.fixme("owner: Product image plan gate on the Ads board — the page's plan prices the same variant and stops at its gate (the quote on the button and no dispatch are held by tests/suites-business-own-workbench.spec.ts)", async ({ page }, info) => {
+test.fixme("owner: Product image plan gate on the Ads board — the page's plan prices the same variant and stops at its gate (the quote on the button and no dispatch are held by tests/suites-business-workbench.spec.ts, the image-ad card test; the plan gate and a variant never configured refusing have no new home)", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const state = await fixture(page);
   await page.goto(url);

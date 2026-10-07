@@ -147,7 +147,7 @@ function Workspace({ account, open }: { account: WorkspaceAccount | null; open: 
   const settings = useRead<Settings>("/api/settings");
   const { save, busy, note } = useSave(() => void settings.read());
   /* The account is re-read after a rename (requestAccountRefresh); the session is the page's first paint and stays the old name. */
-  const name = account?.workspace?.name ?? session.workspace?.name ?? "";
+  const name = (account?.workspace && account.workspace.id === session.workspace?.id ? account.workspace.name : null) ?? session.workspace?.name ?? "";
   const [title, setTitle] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [renameNote, setRenameNote] = useState<{ ok: boolean; text: string } | null>(null);

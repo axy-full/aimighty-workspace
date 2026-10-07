@@ -46,7 +46,9 @@ async function livePaidControls(page: Page): Promise<string[]> {
     /* The balance chip shows credits held, not a price: it opens Credits and spends nothing. */
     const balance = new Set(["workspace-credits", "phone-credits"]);
     for (const el of document.querySelectorAll("button, [role=button]")) {
-      if (el.hasAttribute("data-spend") || balance.has(el.getAttribute("data-testid") ?? "") || !visible(el) || off(el)) continue;
+      /* An engine row only picks the engine the price is shown for; pressing it starts nothing (the paid-request watcher still sees every send). */
+      const picker = /(^|-)make-engine-row$/.test(el.getAttribute("data-testid") ?? "");
+      if (el.hasAttribute("data-spend") || balance.has(el.getAttribute("data-testid") ?? "") || picker || !visible(el) || off(el)) continue;
       const text = `${el.textContent ?? ""} ${el.getAttribute("aria-label") ?? ""}`;
       if (figure.test(text)) out.push(`priced ${el.getAttribute("data-testid") ?? el.tagName}: ${text.trim().slice(0, 60)}`);
     }

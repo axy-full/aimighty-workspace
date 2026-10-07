@@ -5,6 +5,7 @@ import path from "node:path";
 import ts from "typescript";
 import * as siteModel from "../../lib/site/settings";
 import { INVITE_ONLY, DEFAULT_SITE, type SiteSettings } from "../../lib/site/settings";
+import { mailLinkOrigin } from "../../lib/site";
 
 /**
  * Sign-up is by invitation link unless the platform owner opens it in /admin (lead decision 36), and the SERVER
@@ -15,6 +16,8 @@ class AccountError extends Error {
 }
 type Calls = string[];
 type Route = { POST?: (req: Request) => Promise<Response>; GET?: (req: Request) => Promise<Response> };
+/** The origin each verification link was built on. */
+const origins: string[] = [];
 
 function load(file: string, site: SiteSettings, calls: Calls, env: { configured?: boolean; limited?: boolean } = {}): Route {
   const readiness = () => (env.configured
@@ -42,7 +45,7 @@ function load(file: string, site: SiteSettings, calls: Calls, env: { configured?
     },
     "@/lib/signupRegistration": {
       beginSignup: async () => { calls.push("registration.begin"); return { email: "someone@example.test" }; },
-      deliverSignupVerification: async () => { calls.push("verification.mail"); },
+      deliverSignupVerification: async (_registration: unknown, origin: string) => { calls.push("verification.mail"); origins.push(origin); },
       signupReadiness: readiness,
       acceptSignupInvitation: async () => { calls.push("invitation.accept"); return { owner: { id: "owner" }, requestId: "req" }; },
       resendSignup: async () => { calls.push("registration.resend"); return { email: "someone@example.test" }; },
@@ -54,6 +57,8 @@ function load(file: string, site: SiteSettings, calls: Calls, env: { configured?
       workspaceCreationReadiness: () => ({ canCreate: true }),
     },
     "@/lib/site/settings": siteModel,
+    /* The real link-origin rule (lib/site.ts); lib/mail.ts only adds a log line to it. */
+    "@/lib/mail": { inviteOrigin: (req: Request) => mailLinkOrigin(req) },
     "@/lib/site/settings.server": { readSite: async () => { calls.push("site.read"); return site; } },
   };
   const compiled = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -133,4 +138,31 @@ test("closed: resending a self-serve verification and verifying a self-serve reg
   await load("app/api/auth/verify/route.ts", open, openCalls, { configured: true }).POST!(new Request("http://localhost/api/auth/verify", { method: "POST", body: JSON.stringify({ token: "x".repeat(48) }) }));
   expect(openCalls).toContain("registration.resend");
   expect(openCalls).toContain("registration.verify");
+});
+
+test("open: on a self-hosted production server without APP_ORIGIN no verification is begun or resent; with it the link is on APP_ORIGIN", async () => {
+  const env = process.env as Record<string, string | undefined>;
+  const saved = { APP_ORIGIN: env.APP_ORIGIN, VERCEL: env.VERCEL, NODE_ENV: env.NODE_ENV };
+  const spoof = { "Content-Type": "application/json", Host: "attacker.test", "X-Forwarded-Host": "attacker.test", "X-Forwarded-Proto": "https" };
+  const signup = () => new Request("http://localhost:3000/api/auth/signup", { method: "POST", headers: spoof, body: JSON.stringify(form) });
+  const resend = () => new Request("http://localhost:3000/api/auth/signup/resend", { method: "POST", headers: spoof, body: JSON.stringify({ email: "someone@example.test" }) });
+  delete env.APP_ORIGIN; delete env.VERCEL; env.NODE_ENV = "production";
+  try {
+    const calls: Calls = [];
+    const refused = await load("app/api/auth/signup/route.ts", open, calls, { configured: true }).POST!(signup());
+    expect(refused.status).toBe(503);
+    expect((await refused.json()).error).toMatch(/Email verification is being configured/);
+    expect((await load("app/api/auth/signup/resend/route.ts", open, calls, { configured: true }).POST!(resend())).status).toBe(503);
+    expect(calls.filter((c) => c.startsWith("registration.") || c === "verification.mail")).toEqual([]);
+
+    env.APP_ORIGIN = "https://app.example.test/";
+    origins.length = 0;
+    const sent: Calls = [];
+    expect((await load("app/api/auth/signup/route.ts", open, sent, { configured: true }).POST!(signup())).status).toBe(202);
+    expect((await load("app/api/auth/signup/resend/route.ts", open, sent, { configured: true }).POST!(resend())).status).toBe(202);
+    expect(sent.filter((c) => c === "verification.mail")).toHaveLength(2);
+    expect(origins).toEqual(["https://app.example.test", "https://app.example.test"]);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete env[key]; else env[key] = value; }
+  }
 });

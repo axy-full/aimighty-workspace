@@ -1,5 +1,6 @@
 import { STUDIO_GROUP } from "@/lib/board/regions";
 import type { BoardCard, BoardSource, GroupData } from "@/lib/board/types";
+import { shotBlockingView, type ShotBlockingView } from "../../blocking/shot-blocking";
 import { needsReview, shotTakes, shotsHeader, shotState, type ShotTakes } from "./take-model";
 
 /*
@@ -23,7 +24,8 @@ export type ShotsGroupData = GroupData & {
   cost?: { live: boolean; spent: number | null };
   stop?: { runId: string };
 };
-export type TakeCardData = { row: ShotTakes };
+/** What a shot's own card says about its saved 3D blocking (components/graphite/board/blocking). */
+export type TakeCardData = { row: ShotTakes; blocking?: ShotBlockingView | null };
 
 export function deriveShots(src: Pick<BoardSource, "kind" | "project" | "library" | "agent">): BoardCard[] {
   if (src.kind !== "studio") return [];
@@ -41,7 +43,7 @@ export function deriveShots(src: Pick<BoardSource, "kind" | "project" | "library
     const state = shotState(row);
     cards.push({
       id: row.nodeId, kind: "take", region: "shots", order: row.index, group: SHOTS_GROUP, nodeId: row.nodeId,
-      state, ...(state === "needs" ? { needs: 1 } : {}), summary: header.summary, data: { row } satisfies TakeCardData,
+      state, ...(state === "needs" ? { needs: 1 } : {}), summary: header.summary, data: { row, blocking: shotBlockingView(src.project, row.nodeId) } satisfies TakeCardData,
     });
   }
   const waiting = rows.find((r) => r.shown && needsReview(r.shown));

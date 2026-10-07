@@ -192,8 +192,9 @@ test("Atomik never offers an account approval, the owner's included: its panel n
   });
   /* Release 1: the per-page plan (Motion Transfer's "Run this page") is gone with the page; Atomik opens from the header or the phone's tab. */
   await page.goto(`/suites?project=${film.id}&atomik=1`);
-  await expect(page.getByTestId("atomik-input").or(page.getByTestId("phone-app")).first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("atomik-input").or(page.getByTestId("phone-atomik-input")).first()).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("atomik-owner-run")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Approve/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /connected account|sign in|connect/i })).toHaveCount(0);
   await noAccountWords(page);
   expect(writes).toEqual([]);

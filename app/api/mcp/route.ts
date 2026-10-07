@@ -4,6 +4,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { creditsApply } from "@/lib/credits";
 import { TOOLS, runTool, makeCaller } from "@/lib/mcp";
 import { currentTenant } from "@/lib/tenant";
+import { linkOrigin } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -61,10 +62,10 @@ const workspacePost = withTenant(async function POST(req: Request) {
   if (method === "tools/call") {
     const name = String(params?.name ?? "");
     const args = (params?.arguments ?? {}) as Record<string, string | number | boolean | undefined>;
-    const origin = new URL(req.url).origin;
-    const call = makeCaller(origin, req.headers.get("authorization") ?? "");
+    /* The tools call this same server at its own address (the bearer never leaves it); the links they hand back use the public one. */
+    const call = makeCaller(new URL(req.url).origin, req.headers.get("authorization") ?? "");
     try {
-      const text = await runTool(name, args, call, origin, { credits: creditsApply(currentTenant()?.workspace) });
+      const text = await runTool(name, args, call, linkOrigin(req), { credits: creditsApply(currentTenant()?.workspace) });
       return ok(id, { content: [{ type: "text", text }] });
     } catch (e) {
       // A refused render or a bad project name is information for the model,

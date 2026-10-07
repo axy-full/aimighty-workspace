@@ -1,5 +1,6 @@
 import { BRIEF_DOC_WIDTH, briefDocHeight } from "./doc/model";
 import { DocCard, ShotList } from "./doc/DocCards";
+import { DocInspector } from "./doc/DocInspector";
 import { derivePlanCards, type DocData, type FrameData, type PlanData } from "./plan/derive";
 import { PlanCard } from "./plan/PlanCard";
 import { NextCard, NEXT_CARD_SIZE, type NextData } from "./plan/NextCard";
@@ -33,6 +34,7 @@ export const planCards: CardSet = {
         h: data.variant === "brief" ? briefDocHeight(data.doc) : briefDocHeight({ title: data.title, brief: data.text, look: "", footer: "" }),
       }),
       Card: DocCard,
+      Inspector: DocInspector,
     }),
     defineCard<FrameData>({
       kind: "frame",

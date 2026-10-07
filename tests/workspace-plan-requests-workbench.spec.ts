@@ -252,7 +252,7 @@ test.fixme("owner: Product image plan gate on the Ads board — the plan prices 
   expect(state.errors).toEqual([]);
 });
 
-test.fixme("owner: Product image plan gate on the Ads board — a variant never configured is named, not guessed at, and its plan refuses", async ({ page }, info) => {
+test.fixme("owner: Product image plan gate on the Ads board — a variant never configured is named, not guessed at, and its plan refuses (no new home for the refusal; the quote body and the single send with maxCredits and quoteFingerprint are held by tests/suites-business-workbench.spec.ts)", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   const base = campaignProject();
   const variants = base.moleculr!.variants.map((variant) => ({ ...variant, generation: undefined }));

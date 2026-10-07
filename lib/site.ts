@@ -4,17 +4,61 @@
  * robots.txt and the sitemap, so the three cannot disagree.
  */
 
-/** The origin links and link previews are built on: APP_ORIGIN, else the production deployment's. */
-export function siteOrigin(env: Record<string, string | undefined> = process.env): string | null {
-  const forced = env.APP_ORIGIN?.trim();
-  if (forced) {
-    try {
-      const url = new URL(forced);
-      if (url.protocol === "https:" || url.protocol === "http:") return url.origin;
-    } catch { /* not a URL: fall through */ }
+type Env = Record<string, string | undefined>;
+
+/**
+ * APP_ORIGIN, normalised to scheme://host[:port] (no path, no trailing slash);
+ * null when unset or not an http(s) URL. The one reading of APP_ORIGIN that
+ * links, link previews and the proxy origin check (lib/requestOrigin.ts) share.
+ */
+export function configuredOrigin(env: Env = process.env): string | null {
+  const raw = env.APP_ORIGIN?.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    /* Only http(s): any other scheme has the opaque origin "null", which a sandboxed frame would match. */
+    return url.protocol === "https:" || url.protocol === "http:" ? url.origin : null;
+  } catch {
+    return null;
   }
+}
+
+/** The origin links and link previews are built on: APP_ORIGIN, else the production deployment's. */
+export function siteOrigin(env: Env = process.env): string | null {
+  const forced = configuredOrigin(env);
+  if (forced) return forced;
   const production = env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
   return production ? `https://${production.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}` : null;
+}
+
+/**
+ * The origin of a link handed back to the person who asked for it (a review
+ * link, a share link, the API description): APP_ORIGIN, else the request's own
+ * origin. Behind a proxy the request's own origin is the server's listen
+ * address, so a self-hosted deployment sets APP_ORIGIN; on Vercel the request's
+ * own origin is the host Vercel routed, as it always was. Request headers
+ * (Host, X-Forwarded-*) are never read.
+ */
+export function linkOrigin(req: Request, env: Env = process.env): string {
+  return configuredOrigin(env) ?? new URL(req.url).origin;
+}
+
+/**
+ * The origin of a link sent by email (password reset, invitation, sign-up
+ * verification, the top-up desk), where a wrong host hands a one-time secret
+ * to whoever owns it. Never built from request headers:
+ * - APP_ORIGIN when it is set (production sets it);
+ * - on Vercel without it, the request's own origin: Vercel only routes this
+ *   project's own domains to the function, so it is one of ours;
+ * - outside production (next dev, tests), the request's own origin;
+ * - otherwise (a self-hosted production server without APP_ORIGIN) null, and
+ *   the caller sends nothing rather than a link to its listen address.
+ */
+export function mailLinkOrigin(req: Request, env: Env = process.env): string | null {
+  const forced = configuredOrigin(env);
+  if (forced) return forced;
+  if (env.VERCEL || env.NODE_ENV !== "production") return new URL(req.url).origin;
+  return null;
 }
 
 export const SITE_NAME = "Particl";

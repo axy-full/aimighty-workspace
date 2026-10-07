@@ -1,3 +1,5 @@
+import { blockingDef } from "../blocking/BlockingCard";
+import { deriveBlocking } from "../blocking/blocking-model";
 import { mediaDef } from "../transcribe/MediaCard";
 import type { CardSet } from "./types";
 
@@ -9,6 +11,6 @@ import type { CardSet } from "./types";
  */
 export const gapCardsA: CardSet = {
   id: "gaps-a",
-  defs: [mediaDef],
-  derive: () => [],
+  defs: [mediaDef, blockingDef],
+  derive: (src) => deriveBlocking(src),
 };

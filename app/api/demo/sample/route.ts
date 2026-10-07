@@ -1,3 +1,4 @@
+import { crossOriginProblem } from "@/lib/requestOrigin";
 import { requireSession, requireUser, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
@@ -33,8 +34,7 @@ export const POST = withTenant(async function POST(req: Request) {
   if (auth.response) return auth.response;
   const scopeError = workbenchScopeProblem(req, requireTenant().id, auth.user.id, true);
   if (scopeError) return Response.json({ error: scopeError }, { status: 409, headers: noStore });
-  const origin = req.headers.get("origin");
-  if (origin && origin !== new URL(req.url).origin) return Response.json({ error: "Invalid request origin" }, { status: 403 });
+  if (crossOriginProblem(req)) return Response.json({ error: "Invalid request origin" }, { status: 403 });
   const body = await req.json().catch(() => null) as { action?: unknown; draftId?: unknown; projectId?: unknown } | null;
   try {
     if (body?.action === "mark") {

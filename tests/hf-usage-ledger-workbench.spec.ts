@@ -91,6 +91,20 @@ async function seedConnected(page: Page, workspaceId: string, userId: string) {
   } finally { tenant.close(); }
 }
 
+/**
+ * Every dollar figure on the page except the ones Plan & credits owes the workspace: the balance row (its rate line "1 credit = $0.10" and the
+ * balance's dollars at that rate) and the Top up label. Anything else is a stray, and a vendor's amount would be one.
+ */
+async function strayDollars(page: Page): Promise<string[]> {
+  const dollars = (text: string) => [...text.matchAll(/\$\s?\d[\d,]*(\.\d+)?/g)].map((m) => m[0]);
+  const all = dollars(await page.evaluate(() => document.body.innerText));
+  for (const id of ["settings-balance-credits", "settings-top-up"]) {
+    const el = page.getByTestId(id);
+    if (await el.count()) for (const allowed of dollars(await el.first().innerText())) { const at = all.indexOf(allowed); if (at >= 0) all.splice(at, 1); }
+  }
+  return all;
+}
+
 /** Every body /api/usage sends this page, in whatever variant it asked for. */
 function usageBodies(page: Page) {
   const reads: Promise<string>[] = [];
@@ -265,7 +279,7 @@ test("a credit workspace's ledger: every job in credits — held, charged, not b
      credit's dollars at the served rate, which are the workspace's and are not a vendor's amount.) */
   expect(await ledger.innerText()).not.toContain("$");
   for (const usage of await page.getByTestId("settings-usage-row").all()) expect(await usage.innerText()).not.toContain("$");
-  expect(await page.evaluate(() => document.body.innerText)).not.toMatch(/\$\s?(2\.87|0\.78|1\.33|0\.35|0\.04)/);
+  expect(await strayDollars(page), "a dollar figure that is not the balance row's or the top-up label").toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -296,7 +310,7 @@ test("the board Inspector's paid figure is the take's billed credits — never a
     shotIds.push(((await mapped.json()) as { shotId: string }).shotId);
   }
   await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: project.id });
-  /* Decoys a leak would print: the take's vendor dollars, and credits re-derived from them (99 and 77 are not what the ledger billed). */
+  /* Decoys a leak would print: the take's vendor dollars (2.8667 and 0.7777), and a billed figure on a take that is still running (77: it has been charged nothing). */
   const take = (id: string, shotId: string, over: Record<string, unknown>) => generation({ id, shotId, version: 1, kind: "video", model: SEEDANCE, ...over });
   await mockLibrary(page, {
     uploads: [],
@@ -313,7 +327,6 @@ test("the board Inspector's paid figure is the take's billed credits — never a
   await expect(insp).toBeVisible({ timeout: 60_000 });
   await expect(insp.getByTestId("insp-engine")).toContainText("43 cr paid");
   await expect(insp).not.toContainText("$");
-  await expect(insp).not.toContainText("99 cr");
   await expect(insp).not.toContainText("2.87");
   /* A take that is still running has been charged nothing: no "paid", no figure. */
   await page.locator('[data-card-id="node-shot0002"]').getByTestId("take-card").click();
@@ -354,7 +367,7 @@ test("migrated workspaces retain historical external receipts without displaying
   await expect(page.getByTestId("ws-ledger-summary")).toContainText("0 cr charged");
   await expect(page.getByTestId("ws-ledger-summary")).toContainText("2 not billed");
   await expect(page.getByTestId("ws-ledger")).not.toContainText("$");
-  await expect(page.getByTestId("settings-view")).not.toContainText(/\$\s?1\.(25|3)/);
+  expect(await strayDollars(page), "a dollar figure that is not the balance row's or the top-up label").toEqual([]);
   const body = await (await page.request.get("/api/usage?rows=1")).json();
   expect(body.unit).toBe("credits");
   expect(JSON.stringify(body)).not.toMatch(/costUsd|engine_cost_usd|spendUsd/);

@@ -3,13 +3,29 @@ import { mkdtempSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 const dir = mkdtempSync(path.join(tmpdir(), "particl-worker-probe-"));
-process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
-process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 delete process.env.BLOB_READ_WRITE_TOKEN;
-process.env.VERCEL_ENV = "preview";
-process.env.VERCEL_DEPLOYMENT_ID = "unit-probe-deployment";
+/* The probe reads which deployment it runs on from VERCEL_ENV and
+   VERCEL_DEPLOYMENT_ID, and its databases from the two URLs. They are set for
+   this spec's tests only, never at load: the runner loads every spec before it
+   starts workers, so a value set at load lands in every worker's environment,
+   and other specs (the owner privacy guard, the recovery fence's deployment
+   label) would read a preview deployment that is not there. */
+const PROBE_ENV = {
+  PLATFORM_DATABASE_URL: `file:${path.join(dir, "platform.db")}`,
+  TURSO_DATABASE_URL: `file:${path.join(dir, "primary.db")}`,
+  VERCEL_ENV: "preview",
+  VERCEL_DEPLOYMENT_ID: "unit-probe-deployment",
+} as const;
+let envBefore: Record<string, string | undefined> = {};
+test.beforeAll(() => {
+  envBefore = Object.fromEntries(Object.keys(PROBE_ENV).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, PROBE_ENV);
+});
+test.afterAll(() => {
+  for (const [k, v] of Object.entries(envBefore)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+});
 
 async function workspace(id: string, legacy = false) {
   const { platformDb, platformReady, getWorkspace } =

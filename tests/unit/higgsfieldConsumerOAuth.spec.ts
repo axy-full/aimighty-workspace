@@ -5,6 +5,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import ts from "typescript";
 import type { TenantStore } from "../../lib/tenant";
+import { crossOriginProblem } from "../../lib/requestOrigin";
 
 const directory = mkdtempSync(path.join(tmpdir(), "particl-consumer-oauth-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
@@ -962,6 +963,7 @@ async function routeFixture() {
     "MediaSourceError",
     "workbenchScopeFor",
     "recoveryRoute",
+    "crossOriginProblem",
     ts.transpileModule(declaration.getText(source), {
       compilerOptions: {
         module: ts.ModuleKind.CommonJS,
@@ -976,6 +978,7 @@ async function routeFixture() {
     media.MediaSourceError,
     scope.workbenchScopeFor,
     (handler: unknown) => handler,
+    crossOriginProblem,
   );
   let starts = 0,
     disconnects = 0,
