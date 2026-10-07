@@ -10,12 +10,17 @@ import {
   accountJson,
   sameOriginProblem,
 } from "@/lib/accountDb";
+import { inviteOnlyRefusal } from "@/lib/site/settings";
+import { readSite } from "@/lib/site/settings.server";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 export const POST = recoveryRoute(async function POST(req: Request) {
   if (sameOriginProblem(req))
     return Response.json({ error: "Invalid request origin." }, { status: 403 });
   try {
+    /* Only self-serve registrations are verified here (an invitation creates its account directly). While sign-up
+       is by invitation the registration is kept, untouched, and finishes if the owner opens sign-up again. */
+    if (!(await readSite()).openSignup) return inviteOnlyRefusal();
     const body = await accountJson(req),
       ctx = await currentContext(),
       jar = await cookies(),

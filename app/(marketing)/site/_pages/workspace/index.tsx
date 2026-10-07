@@ -41,7 +41,7 @@ export default async function WorkspacePage() {
         cta={(
           <>
             <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>
-            <Link href="/" className="mk-btn mk-btn--secondary">Open Gen</Link>
+            <Link href="/" className="mk-btn mk-btn--secondary">Open Make</Link>
           </>
         )}
       />
@@ -53,7 +53,7 @@ export default async function WorkspacePage() {
         </Grid>
 
         <Grid col={300} style={{ gap: 20 }}>
-          <Window path="particl.app / workspace / plans" src={shot("workspace-plans-credits")} alt="Workspace, Plans and credits: the balance, the plan, credit packs and monthly statements" width={924} height={540} />
+          <Window path="particl.si / settings / plan & credits" src={shot("settings-plan-credits")} alt="Settings, Plan & credits: the balance, this month, Top up and the plan" width={924} height={540} />
         </Grid>
 
         <Grid col={270} style={{ alignItems: "start" }}>

@@ -42,6 +42,7 @@ import { audioClips } from "@/lib/workbench/audio";
 import type { Asset, Project } from "@/lib/workbench/studio";
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import styles from "./SoundGenerate.module.css";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 type Voice = { id: string; name: string; category?: string };
 
@@ -408,7 +409,7 @@ export function SoundGenerate({
         onChange((p) => ({ ...p, nodes: [...p.nodes, created] }));
         target = created;
       }
-      if (!(await onSave())) throw new Error("Save your latest work before generating.");
+      if (!(await onSave())) throw new SaveFailedError();
       const mapping = await studioRequest("/api/workbench/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },

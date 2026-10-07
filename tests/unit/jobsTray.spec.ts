@@ -256,7 +256,7 @@ test("figures are written the ledger's way, and ages say how long it has run or 
   expect(trayWhen(row("r", "rendering", T0), T0 + 4 * MIN)).toBe("4 min");
   expect(trayWhen(row("d", "complete", T0 - 60 * MIN, T0), T0 + 20 * MIN)).toBe("20 min ago");
   expect(trayWhen(row("d", "complete", T0, T0), T0 + 20_000)).toBe("just now");
-  expect(Object.values(ACTION_LABEL)).toEqual(["Open in Takes", "Release", "Recreate", "Open Gen", "Open Viral"]);
+  expect(Object.values(ACTION_LABEL)).toEqual(["Open in Takes", "Release", "Recreate", "Open Make", "Open Social"]);
 });
 
 test("a reply is checked row by row before the tray draws it", () => {

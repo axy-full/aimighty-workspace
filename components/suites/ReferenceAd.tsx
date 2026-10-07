@@ -22,6 +22,7 @@ import {
   referenceAdBinding,
   type ReferenceAdConfig,
 } from "@/lib/workbench/reference-ad";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 /** Standalone reference review. Parent owns persistence; this component never submits media. */
 export function ReferenceAd({
@@ -167,7 +168,7 @@ export function ReferenceAd({
     setNotice("");
     try {
       if (!(await onSave()))
-        throw new Error("Save this project before analyzing its reference.");
+        throw new SaveFailedError();
       if (
         !active.current ||
         latest.current.project.id !== capturedProject ||

@@ -12,6 +12,7 @@ import { cleanAttachments } from "@/lib/attachments";
 import { plannerMemoryText } from "@/lib/atomikMemory";
 import { plannerInputs, priceKeyStep } from "@/lib/atomikLibrary";
 import { ARCHIVED_NOTE, ThreadError, archiveThread, renameThread, restoreThread } from "@/lib/atomikThreads";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 /* A bounded 270s provider attempt has enough time for reasoning before this route ends. */
@@ -77,6 +78,8 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   if (got.response) return got.response;
   const quoteOnly = (await req.clone().json().catch(() => ({}))).quoteOnly === true;
   if (quoteOnly) { const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure; }
+  /* The sample workspace spends nothing: answered before the request is claimed. A quote still answers. */
+  if (!quoteOnly) { const off = await sampleWorkspaceOff(); if (off) return off; }
   const run = async () => {
   const { id } = await ctx.params;
 

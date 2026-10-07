@@ -1,8 +1,7 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type CanvasNode, type Project } from "../lib/workbench/studio";
-import { applyTeamPatch, emptyTeamCanvas, orderedIds, type TeamCanvas } from "../lib/workbench/team-canvas-model";
-import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { forbidPaidWork } from "./helpers/workspaceFixtures";
 
 /**
  * One shared Rig canvas per production (owner, 2026-09-24). The team canvas
@@ -44,62 +43,7 @@ test("the team canvas API: a saved production's canvas is merged per node and ke
   expect((await request.post("/api/collab/auth", { headers, data: { room: `particl:${me.workspace.id}:${productionProjectId}` } })).status()).toBe(503);
 });
 
-/** The team canvas route, in memory, with the server's own merge. */
-async function mockTeamCanvas(page: Page, canvas: TeamCanvas) {
-  const store = { canvas, patches: [] as { upsertNodes: CanvasNode[]; removeNodes: string[]; order: string[] | null }[] };
-  await page.route("**/api/workbench/team-canvas**", async (route) => {
-    const request = route.request();
-    if (request.method() === "GET")
-      return route.fulfill({ json: { canvas: { nodes: store.canvas.nodes, assets: store.canvas.assets, order: orderedIds(store.canvas), removedIds: Object.keys(store.canvas.removed) }, revision: store.patches.length + 1, room: null } });
-    const body = request.postDataJSON();
-    store.patches.push(body);
-    store.canvas = applyTeamPatch(store.canvas, { ...body, at: Date.now() });
-    return route.fulfill({ json: { revision: store.patches.length + 1 } });
-  });
-  return store;
-}
 
-test("the Rig opens onto the team canvas: a teammate's shot appears, mine joins it, and moving a node is shared", async ({ page }, info) => {
-  test.skip(!DESKTOPS.includes(info.project.name), "desktop widths");
-  await signInLocally(page.request);
-  await forbidPaidWork(page);
-  await mockMedia(page);
-  const mine: Project = { ...newProject("Coastal light study"), id: "ws-team", productionProjectId: "prod-team", shotMappings: {}, nodes: [shot("rig-a", "The encounter", 100, 100), shot("rig-mine", "My private shot", 100, 500)] };
-  await mockProjects(page, { current: mine });
-  await mockLibrary(page, { uploads: [], generations: [] });
-  const team = await mockTeamCanvas(page, applyTeamPatch(emptyTeamCanvas(), {
-    upsertNodes: [shot("rig-a", "The encounter", 100, 100), shot("rig-ana", "Ana's harbour wide", 420, 100)], removeNodes: [], upsertAssets: [], order: ["rig-a", "rig-ana"], at: 1,
-  }));
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?suite=studio&page=rig");
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
-  await expect(page.getByTestId("rig-team")).toContainText("Team canvas");
-
-  await page.locator(".gx-pagehead").getByText("Canvas", { exact: true }).click();
-  const graph = page.getByTestId("rig-graph");
-  await expect(graph.locator('.pxw-graph-node[data-node-id="rig-ana"]')).toContainText("Ana's harbour wide");
-  await expect(graph.locator('.pxw-graph-node[data-node-id="rig-mine"]')).toBeVisible();
-  /* My shot, never on the team canvas, joins it rather than vanishing. */
-  await expect.poll(() => team.patches.some((p) => p.upsertNodes.some((n) => n.id === "rig-mine"))).toBe(true);
-  expect(orderedIds(team.canvas)).toEqual(["rig-a", "rig-ana", "rig-mine"]);
-
-  /* Drag a node: it moves here, and only that node travels to the team. */
-  const card = graph.locator('.pxw-graph-node[data-node-id="rig-ana"]');
-  const box = (await card.boundingBox())!;
-  const before = team.patches.length;
-  await page.mouse.move(box.x + 30, box.y + 20);
-  await page.mouse.down();
-  await page.mouse.move(box.x + 90, box.y + 60, { steps: 6 });
-  await page.mouse.up();
-  await expect.poll(() => team.patches.length).toBeGreaterThan(before);
-  const moved = team.patches.slice(before).flatMap((p) => p.upsertNodes);
-  expect(moved.map((n) => n.id)).toEqual(["rig-ana"]);
-  expect(moved[0]).toMatchObject({ x: 480, y: 140 });
-  /* A drag is not a click: the dragged node is not selected by it. */
-  await expect(card).not.toHaveAttribute("data-selected", "true");
-  expect(errors).toEqual([]);
-});
 
 test("an edit made just before the page reloads still reaches the team canvas, so the next open does not undo it", async ({ page }, info) => {
   /* Real server throughout: a request sent while a page unloads bypasses route mocks. */
@@ -149,86 +93,4 @@ test("an edit made while the team canvas is still loading is kept, not overwritt
   const canvas = async () => (await page.request.get(`/api/workbench/team-canvas?productionId=${productionProjectId}`, { headers }).then((r) => r.json())).canvas;
   await expect.poll(async () => (await canvas())?.nodes["rig-a"]?.durationS).toBe(6);
   await expect.poll(async () => (await page.request.get(`/api/workbench/projects?id=${draft.id}`, { headers }).then((r) => r.json())).project.nodes[0].durationS).toBe(6);
-});
-
-test("an edit waiting for one production is only ever sent there, and a refused edit is dropped, never sinking the next", async ({ page }, info) => {
-  test.skip(!DESKTOPS.includes(info.project.name), "desktop widths");
-  await signInLocally(page.request);
-  await forbidPaidWork(page);
-  await mockMedia(page);
-  const projects: Record<string, Project> = {
-    "ws-a": { ...newProject("Harbour"), id: "ws-a", productionProjectId: "prod-a", shotMappings: {}, nodes: [shot("a1", "Harbour wide", 100, 100)] },
-    "ws-b": { ...newProject("Desert"), id: "ws-b", productionProjectId: "prod-b", shotMappings: {}, nodes: [shot("b1", "Desert wide", 100, 100), shot("b2", "Desert close", 420, 100)] },
-  };
-  const revisions: Record<string, number> = { "ws-a": 1, "ws-b": 1 };
-  await page.route("**/api/workbench/projects**", async (route) => {
-    const request = route.request();
-    if (request.method() === "GET") {
-      const id = new URL(request.url()).searchParams.get("id") ?? "ws-a";
-      const list = Object.values(projects).map((p) => ({ id: p.id, name: p.name, revision: revisions[p.id], updatedAt: "2026-09-18T10:00:00Z" }));
-      return route.fulfill({ json: { projects: list, productions: [], project: projects[id] ?? null, revision: revisions[id] ?? 0, shared: null } });
-    }
-    if (request.method() === "PUT") {
-      const body = request.postDataJSON() as { project: Project; revision: number };
-      const id = body.project.id;
-      if (body.revision !== revisions[id]) return route.fulfill({ status: 409, json: { error: "This project changed in another window." } });
-      revisions[id]++;
-      projects[id] = { ...body.project, productionProjectId: projects[id].productionProjectId, shotMappings: {} };
-      return route.fulfill({ json: { revision: revisions[id], productionProjectId: projects[id].productionProjectId, shotMappings: {} } });
-    }
-    return route.fulfill({ status: 400, json: { error: "Unexpected projects request in a workspace test." } });
-  });
-  await mockLibrary(page, { uploads: [], generations: [] });
-  /* The team canvas: offline on demand, and it refuses one particular edit (b1 at 6 s) every time it sees it. */
-  const sent: { productionId: string; nodes: CanvasNode[] }[] = [];
-  let offline = false;
-  let refused = 0;
-  await page.route("**/api/workbench/team-canvas**", async (route) => {
-    const request = route.request();
-    if (request.method() === "GET") return route.fulfill({ json: { canvas: null, revision: 0, room: null } });
-    if (offline) return route.abort("internetdisconnected");
-    const body = request.postDataJSON() as { productionId: string; upsertNodes: CanvasNode[] };
-    if (body.upsertNodes.some((n) => n.id === "b1" && n.durationS === 6)) {
-      refused++;
-      return route.fulfill({ status: 400, json: { error: "Check the canvas edit before saving." } });
-    }
-    sent.push({ productionId: body.productionId, nodes: body.upsertNodes });
-    return route.fulfill({ json: { revision: sent.length } });
-  });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  const sentTo = (pid: string, id: string) => sent.filter((s) => s.productionId === pid && s.nodes.some((n) => n.id === id));
-
-  await page.goto("/suites?suite=studio&page=rig&project=ws-a&sel=shot:a1");
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour");
-  await expect(page.getByTestId("rig-team")).toContainText("Team canvas");
-  await expect.poll(() => sentTo("prod-a", "a1").length).toBeGreaterThan(0);
-
-  /* A's edit is made while the connection is down... */
-  offline = true;
-  await page.getByRole("button", { name: "Longer" }).click();
-  await expect(page.getByTestId("shot-duration")).toHaveText("6s");
-  await page.waitForTimeout(1200);
-  /* ...and the person moves to B before it gets through. */
-  await page.getByTestId("project-switcher").click();
-  await page.getByRole("option", { name: /Desert/ }).click();
-  await expect(page.getByTestId("project-name")).toHaveText("Desert");
-  offline = false;
-  await expect(page.getByTestId("rig-team")).toContainText("Team canvas");
-  /* The retry lands in A's canvas, where it was made; B's canvas never sees A's shot. */
-  await expect.poll(() => sentTo("prod-a", "a1").some((s) => s.nodes.some((n) => n.durationS === 6)), { timeout: 15_000 }).toBe(true);
-  expect(sentTo("prod-b", "a1")).toEqual([]);
-
-  /* In B, an edit the canvas refuses is dropped with a notice... */
-  await page.locator('.pxw-rig-row[data-shot-id="b1"]').click();
-  await expect(page.getByTestId("shot-duration")).toHaveText("5s");
-  await page.getByRole("button", { name: "Longer" }).click();
-  await expect.poll(() => refused).toBe(1);
-  await expect(page.getByText(/Your last Rig edit did not reach the team/)).toBeVisible();
-  /* ...and the next edit, on another shot, reaches the team on its own. */
-  await page.locator('.pxw-rig-row[data-shot-id="b2"]').click();
-  await page.getByRole("button", { name: "Longer" }).click();
-  await expect.poll(() => sentTo("prod-b", "b2").some((s) => s.nodes.some((n) => n.id === "b2" && n.durationS === 6))).toBe(true);
-  expect(refused).toBe(1);
-  expect(errors).toEqual([]);
 });

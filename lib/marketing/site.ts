@@ -1,9 +1,8 @@
-import { SHELL_SUITES, WORKSPACE_TABS } from "@/lib/shell/ia";
-
 /**
- * The public site's map: its tabs and the six places it describes. Copy is
- * the product's own (design/particl-graphite/README.md lists the sources);
- * prices are never written here — lib/marketing/prices.server.ts computes them.
+ * The public site's map: its tabs and the six places it describes. The ids
+ * are the code's; every word a visitor reads uses the product's names
+ * (design/particl-graphite/README.md § 7). Prices are never written here —
+ * lib/marketing/prices.server.ts computes them.
  */
 
 export type SiteSuiteId = "gen" | "studio" | "business" | "viral" | "atomik" | "workspace";
@@ -18,34 +17,35 @@ export type SiteSuite = {
   pages: string[];
 };
 
-/* Studio's stages and Workspace's tabs are read from the shell, so the site
-   cannot fall behind the product (ten stages since 24 September). */
-const STUDIO_PAGES = SHELL_SUITES.find((suite) => suite.id === "studio")!.pages
-  .filter((page) => !page.phoneOnly).map((page) => page.label);
-const COUNT: Record<number, string> = { 8: "Eight", 9: "Nine", 10: "Ten", 11: "Eleven", 12: "Twelve" };
+/* The Studio board's regions, in the order its rail shows them (Release 1: the board is the whole production). */
+const STUDIO_PAGES = ["Brief", "Looks", "Storyboard", "Shots", "Cast", "Cut", "Deliver"];
 
+/* In the order the header shows them; Settings is reached from the footer and the strip. */
 export const SITE_SUITES: SiteSuite[] = [
-  { id: "gen", href: "/", tab: "Gen", tag: "01 Gen", name: "Gen",
-    blurb: "Video, images and audio from one composer, reachable from every suite.",
-    pages: ["Video", "Images", "Audio", "Results"] },
-  { id: "studio", href: "/studio", tab: "Studio", tag: "02 Studio", name: "Production Studio",
-    blurb: `The production studio. ${COUNT[STUDIO_PAGES.length] ?? STUDIO_PAGES.length} stages from brief to delivery.`,
+  { id: "studio", href: "/studio", tab: "Studio", tag: "01 Studio", name: "Studio",
+    blurb: "A film on one board, from the brief to the delivered cut.",
     pages: STUDIO_PAGES },
-  { id: "business", href: "/business", tab: "Business", tag: "03 Business", name: "Business Suite",
-    blurb: "Build and grow your brand from one marketing studio.",
+  { id: "business", href: "/business", tab: "Ads", tag: "02 Ads", name: "Ads",
+    blurb: "Product, brand and cast, then image ads that keep every reference.",
     pages: ["Product", "Brand", "Cast", "Format", "Variants", "Design", "Publish"] },
-  { id: "viral", href: "/viral", tab: "Viral", tag: "04 Viral", name: "Viral Studio",
+  { id: "viral", href: "/viral", tab: "Social", tag: "03 Social", name: "Social",
     blurb: "Recast motion and swap elements in footage you own.",
-    pages: ["Motion Transfer", "Object Swap", "Sources", "Compare", "History"] },
-  { id: "atomik", href: "/atomik", tab: "Atomik", tag: "05 Atomik", name: "Agent",
-    blurb: "The production agent. Plans and runs the work.",
-    pages: ["Agent", "Runs", "Recipes", "Builds", "Tools", "Models", "Approvals", "Budget"] },
-  { id: "workspace", href: "/workspace", tab: "Workspace", tag: "06 Workspace", name: "Workspace",
-    blurb: "One isolated tenant, every action attributed.",
-    pages: WORKSPACE_TABS.map((tab) => tab.label) },
+    pages: ["Motion transfer", "Object swap", "Sources", "Compare", "History"] },
+  { id: "gen", href: "/", tab: "Make", tag: "04 Make", name: "Make",
+    blurb: "Video, images and audio in one panel over any screen, priced before you press.",
+    pages: ["Video", "Images", "Audio", "Recent"] },
+  { id: "atomik", href: "/atomik", tab: "Atomik", tag: "05 Atomik", name: "Atomik",
+    blurb: "The production agent. Plans the work and waits for a person to approve it.",
+    pages: ["Approvals", "Activity", "Skills", "Memory"] },
+  { id: "workspace", href: "/workspace", tab: "Settings", tag: "06 Settings", name: "Settings",
+    blurb: "Your team, plan and credits, and spending rules. Every action attributed.",
+    pages: ["Team", "Plan & credits", "Spending rules", "Connections", "Advanced"] },
 ];
 
-export { PRICING_HREF, ACCESS_HREF, SIGN_IN_HREF, APP_HREF } from "./links";
+/** The header's tabs: every place but Settings, which sits behind the avatar in the app. */
+export const NAV_SUITES = SITE_SUITES.filter((suite) => suite.id !== "workspace");
+
+export { PRICING_HREF, ACCESS_HREF, SIGN_UP_HREF, SIGN_IN_HREF, APP_HREF } from "./links";
 
 /** A screenshot of the product, served from public/marketing. */
 export const shot = (name: string) => `/marketing/screens/${name}.jpg`;

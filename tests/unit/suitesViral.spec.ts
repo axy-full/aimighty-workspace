@@ -25,19 +25,19 @@ test("the two pages are the two Genjutsu variants; the limits are the API key's 
   expect(VIRAL_PAGES).toEqual({ motion: "motion-transfer", swap: "object-swap" });
   expect(VIRAL_COPY.motion.verb).toBe("Transfer motion");
   expect(VIRAL_COPY.swap.promptLabel).toBe("What to replace · optional");
-  /* 1–8 references (the API's own limit), a 4–30 s source, and exactly the resolutions admission accepts. */
+  /* 1–8 references (the API's own limit), a 4–8 s source, and exactly the resolutions admission accepts. */
   expect(REFERENCE_MAX).toBe(GENJUTSU_LIMITS.maxImages);
   expect(REFERENCE_MAX).toBe(8);
-  expect(SOURCE_SECONDS).toEqual({ min: 4, max: 30 });
-  expect(VIRAL_COPY.mediaLabel).toBe("Source video · 4–30 s, then up to 8 ordered reference images");
+  expect(SOURCE_SECONDS).toEqual({ min: 4, max: 8 });
+  expect(VIRAL_COPY.mediaLabel).toBe("Source video · 4–8 s, then up to 8 ordered reference images");
   expect([...VIRAL_RESOLUTIONS]).toEqual([...GENJUTSU_RESOLUTIONS]);
 });
 
-test("the well takes exactly one 4–30 s video at index 0 and up to 8 ordered images", () => {
+test("the well takes exactly one 4–8 s video at index 0 and up to 8 ordered images", () => {
   let s = INITIAL_VIRAL;
-  expect(addMedia(s, video("long", 45)).note).toBe("The source video must be 4–30 s; this one is 45 s.");
-  expect(addMedia(s, video("short", 2)).note).toBe("The source video must be 4–30 s; this one is 2 s.");
-  ({ state: s } = addMedia(s, video("src", 12)));
+  expect(addMedia(s, video("long", 45)).note).toBe("The source video must be 4–8 s; this one is 45 s. Motion transfer and Object swap take clips up to 8 s for now; pick a shorter one or trim it first.");
+  expect(addMedia(s, video("short", 2)).note).toBe("The source video must be 4–8 s; this one is 2 s. Motion transfer and Object swap take clips up to 8 s for now; pick a shorter one or trim it first.");
+  ({ state: s } = addMedia(s, video("src", 6)));
   expect(s.source?.sourceId).toBe("src");
   expect(addMedia(s, video("src2", 8)).note).toBe("Source video replaced with src2.mp4.");
   ({ state: s } = addMedia(s, image("a")));
@@ -53,9 +53,9 @@ test("the well takes exactly one 4–30 s video at index 0 and up to 8 ordered i
 
 test("the primary says why it cannot run, in order, and never asks for a connected account", () => {
   expect(viralBlock(INITIAL_VIRAL, { ...ready, hasProject: false })).toBe("Open a project first.");
-  expect(viralBlock(INITIAL_VIRAL, { ...ready, saved: false })).toBe("Save this project first.");
-  expect(viralBlock(INITIAL_VIRAL, ready)).toBe("Add one source video (4–30 s).");
-  const withSource = addMedia(INITIAL_VIRAL, video("src", 10)).state;
+  expect(viralBlock(INITIAL_VIRAL, { ...ready, saved: false })).toBe("Saving this project…");
+  expect(viralBlock(INITIAL_VIRAL, ready)).toBe("Add one source video (4–8 s).");
+  const withSource = addMedia(INITIAL_VIRAL, video("src", 6)).state;
   expect(viralBlock(withSource, ready)).toBe("Add at least one reference image.");
   const complete = addMedia(withSource, image("a")).state;
   expect(viralBlock(complete, ready)).toBeNull();
@@ -67,7 +67,7 @@ test("the primary says why it cannot run, in order, and never asks for a connect
 });
 
 test("the request is the key route's transform body — exactly what the Subatomik studio sends — filed to the saved project", () => {
-  const s = addMedia(addMedia(addMedia(INITIAL_VIRAL, video("src", 10)).state, image("a")).state, image("b", "generation")).state;
+  const s = addMedia(addMedia(addMedia(INITIAL_VIRAL, video("src", 6)).state, image("a")).state, image("b", "generation")).state;
   const input = genjutsuInput("swap", { ...s, prompt: " keep the hands " })!;
   expect(input).toEqual({ variant: "object-swap", resolution: "720p", prompt: "keep the hands", source: { uploadId: "src" }, references: [{ uploadId: "a" }, { genId: "b" }] });
   const request = viralRequest(input, project);
@@ -82,7 +82,7 @@ test("the request is the key route's transform body — exactly what the Subatom
   /* Sent with the approval the press was given, and nothing else added. */
   expect(generationRequestBody({ ...request.input, maxCredits: 22, quoteFingerprint: "f".repeat(64) })).toMatchObject({ maxCredits: 22, quoteFingerprint: "f".repeat(64), task: "genjutsu" });
   /* A generated source goes by its generation id; Motion Transfer is its own model. */
-  const fromGen = genjutsuInput("motion", { ...s, source: { ...video("clip", 12), id: "generation:clip", origin: "generation" } })!;
+  const fromGen = genjutsuInput("motion", { ...s, source: { ...video("clip", 6), id: "generation:clip", origin: "generation" } })!;
   const motion = viralRequest(fromGen, project);
   if (!("input" in motion) || !motion.input) throw new Error("a generate request");
   expect(generationRequestBody(motion.input)).toMatchObject({ model: GENJUTSU_MODELS["motion-transfer"], sourceGenId: "clip" });

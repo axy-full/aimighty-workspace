@@ -14,9 +14,10 @@ import { PLANS } from "../../lib/workspace/plans";
  * no feature may need a sign-in to a Higgsfield account. Every account route
  * that could price, start or build work, or read the account's catalogue,
  * presets, voices or diagnostics answers 410 before any rate allowance or
- * service is touched. What jobs already running need to finish
- * (status reads, saved-job lists, a lost batch's check, set-aside), the
- * credit history and Disconnect still reach their code.
+ * service is touched. For Release 1 the reads R1 kept for jobs already running
+ * (status reads, saved-job lists, a lost batch's check) and the credit history
+ * answer 410 too (signInOff), and so does the connection route (its read, Set
+ * aside and Disconnect): no request reads, refreshes or revokes a stored grant.
  *
  * Each route runs for real — the tenant wrapper, the owner and render
  * guards, the body reader, the route's own schemas — and every function any
@@ -186,16 +187,15 @@ test("the sign-in, discovery and qualification routes answer 410 to anyone, and 
   }
 });
 
-test("a sign-in started before the retirement is never finished: its callback uses nothing of the sign-in but the way back", async () => {
+test("the old sign-in return address imports nothing and lands on Settings › Connections, whatever it carries", async () => {
   const file = `${ACCOUNT_ROUTES}/callback/route.ts`;
-  expect(importSpecifiers(readFileSync(file, "utf8"))).toEqual(["@/lib/higgsfield-consumer/oauth", "@/lib/higgsfield-consumer/retired"]);
+  expect(importSpecifiers(readFileSync(file, "utf8"))).toEqual([]);
   const loaded = await loadRoute(file);
-  const { response, network } = await loaded.call("GET");
-  /* The way back is recorded like every account function (so here it throws, and the route falls back to the plain refusal);
-     nothing else of the sign-in is touched. The redirect itself: tests/unit/higgsfieldConsumerOAuth.spec.ts. */
-  expect(loaded.touched).toEqual(["@/lib/higgsfield-consumer/oauth#consumerCallbackLocation"]);
-  await expectRetired(response);
-  expect(network).toBe(0);
+  const request = new Request(`https://particl.example/api/higgsfield/consumer/callback?code=c&state=s`);
+  const response = await loaded.handlers.GET(request);
+  expect(response.status).toBe(303);
+  expect(response.headers.get("Location")).toBe("/suites?view=workspace&tab=connections");
+  expect(loaded.touched).toEqual([]);
 });
 
 test("every retired action on the mixed routes answers 410 before the rate allowance or any service, for any body", async () => {
@@ -214,32 +214,44 @@ test("every retired action on the mixed routes answers 410 before the rate allow
   }
 });
 
-test("what running jobs need still reaches its code: status, a lost batch's check, set-aside, the saved lists and Disconnect", async () => {
+test("Release 1: status, a lost batch's check, the saved lists and the credit history answer 410 before anything is touched", async () => {
   for (const [name, route] of Object.entries(MIXED)) {
+    if (name === "connection") continue;
     const loaded = await loadRoute(route.file);
     for (const [action, body] of Object.entries(route.stays)) {
-      const before = loaded.touched.length;
-      const { response } = await loaded.call("POST", body);
-      expect(response.status, `${name} ${action}`).not.toBe(410);
-      expect(loaded.touched.length, `${name} ${action} reaches its service`).toBeGreaterThan(before);
+      const { response, network } = await loaded.call("POST", body);
+      await expectRetired(response);
+      expect(network, `${name} ${action}`).toBe(0);
     }
-    expect(loaded.limits.length, name).toBe(Object.keys(route.stays).length);
+    expect(loaded.touched, name).toEqual([]);
+    expect(loaded.limits, name).toEqual([]);
   }
-  /* The saved-job lists and the connection read are GET; Disconnect is DELETE. None is retired. */
-  for (const file of ["generation", "genjutsu", "video", "marketing-templates", "shorts", "audio-tools", "connection"].map((name) => `${ACCOUNT_ROUTES}/${name}/route.ts`)) {
+  /* The saved-job lists and the credit history are GET. */
+  for (const file of ["generation", "genjutsu", "video", "marketing-templates", "shorts", "audio-tools", "activity"].map((name) => `${ACCOUNT_ROUTES}/${name}/route.ts`)) {
     const loaded = await loadRoute(file);
-    const query = file.includes("/connection/") ? "" : "?draftId=draft-1";
-    const request = new Request(`https://particl.example/${file}${query}`, { headers: { "X-Workbench-Scope": scope } });
-    const response = await loaded.handlers.GET(request);
-    expect(response.status, file).not.toBe(410);
-    expect(loaded.touched.length, `${file} GET reaches its read`).toBeGreaterThan(0);
+    const request = new Request(`https://particl.example/${file}?draftId=draft-1`, { headers: { "X-Workbench-Scope": scope } });
+    await expectRetired(await loaded.handlers.GET(request));
+    expect(loaded.touched, file).toEqual([]);
+    expect(loaded.limits, file).toEqual([]);
   }
-  const connection = await loadRoute(`${ACCOUNT_ROUTES}/connection/route.ts`);
-  const disconnect = await connection.handlers.DELETE(new Request(`https://particl.example/${ACCOUNT_ROUTES}/connection`, { method: "DELETE", headers: { "X-Workbench-Scope": scope } }));
-  expect(disconnect.status).not.toBe(410);
-  expect(connection.touched).toEqual(["@/lib/higgsfield-consumer/oauth#removeConsumerConnection"]);
-  /* The credit history reads the ledger only; it is not an account call and not retired. */
-  expect(importSpecifiers(readFileSync(`${ACCOUNT_ROUTES}/activity/route.ts`, "utf8"))).not.toContain("@/lib/higgsfield-consumer/retired");
+});
+
+test("the connection route is off too: its read, Set aside and Disconnect answer 410 and touch no grant", async () => {
+  const route = MIXED.connection;
+  const loaded = await loadRoute(route.file);
+  for (const [action, body] of Object.entries(route.stays)) {
+    const { response, network } = await loaded.call("POST", body);
+    await expectRetired(response);
+    expect(network, action).toBe(0);
+  }
+  for (const method of ["GET", "DELETE"]) {
+    const response = await loaded.handlers[method](new Request(`https://particl.example/${route.file}`, { method, headers: { "X-Workbench-Scope": scope } }));
+    await expectRetired(response);
+  }
+  expect(loaded.touched).toEqual([]);
+  expect(loaded.limits).toEqual([]);
+  const source = readFileSync(route.file, "utf8");
+  for (const method of ["GET", "POST", "DELETE"]) expect(source).toContain(`export const ${method} = signInOff(kept${method});`);
 });
 
 test("each mixed route retires exactly its new-work actions, and checks before its allowance, render gate or service", () => {
@@ -257,7 +269,9 @@ test("each mixed route retires exactly its new-work actions, and checks before i
     const declared = source.match(/const RETIRED = new Set\(\[([^\]]*)\]\)/);
     expect(declared, name).not.toBeNull();
     expect([...declared![1].matchAll(/"([^"]+)"/g)].map((match) => match[1]).sort(), name).toEqual([...route.retired].sort());
-    const post = source.slice(source.indexOf("export const POST"));
+    /* The kept handler (behind signInOff for Release 1) still checks first, should it ever be switched back on. */
+    const post = source.slice(source.indexOf("const keptPOST"));
+    for (const method of ["GET", "POST"]) expect(source, `${name} ${method}`).toContain(`export const ${method} = signInOff(kept${method});`);
     const check = post.indexOf("if (asksRetired(raw, RETIRED)) return retiredResponse();");
     expect(check, name).toBeGreaterThan(0);
     for (const later of ["takeAccountLimit(", "requireRender(", ".safeParse("]) {

@@ -18,8 +18,8 @@ test("a name's use is summed across productions, failed takes aside, and reads a
 });
 
 test("each cited name finds its still by name, case blind, or none", () => {
-  const cast = [{ name: "Mara", uploadId: "img_1" }, { name: "Mule", uploadId: null }];
-  expect(castThumbs(["mara", "Mule", "Nobody"], cast)).toEqual([
-    { name: "mara", uploadId: "img_1" }, { name: "Mule", uploadId: null }, { name: "Nobody", uploadId: null },
+  const cast = [{ name: "Keeper", uploadId: "img_1" }, { name: "Mule", uploadId: null }];
+  expect(castThumbs(["keeper", "Mule", "Nobody"], cast)).toEqual([
+    { name: "keeper", uploadId: "img_1" }, { name: "Mule", uploadId: null }, { name: "Nobody", uploadId: null },
   ]);
 });

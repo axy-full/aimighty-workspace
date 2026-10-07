@@ -8,6 +8,7 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { legacyShell } from "./helpers/legacyShell";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { createAstraScene } from "../lib/astra-blender/scene";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Audit fixes on surfaces outside the suites (other-ui): the Library's
@@ -139,7 +140,7 @@ test("New asset: training is priced in the workspace's unit, only uploaded still
   test.skip(!DESKTOP.includes(info.project.name), "one desktop");
   const { workspaceId, me } = await account(page);
   const take = `gen_audit_still_${randomUUID().replaceAll("-", "")}`;
-  await takes(page, workspaceId, me.id, [{ id: take, kind: "image", prompt: "Iver in profile against a white wall" }]);
+  await takes(page, workspaceId, me.id, [{ id: take, kind: "image", prompt: "Rowan in profile against a white wall" }]);
   let price: number | null = null, unit = "";
   const identityBodies: Record<string, unknown>[] = [], trainBodies: Record<string, unknown>[] = [];
   await page.route("**/api/identities**", async (route) => {
@@ -167,11 +168,11 @@ test("New asset: training is priced in the workspace's unit, only uploaded still
   await page.getByRole("button", { name: /^New asset/ }).click();
   const sheet = page.getByRole("dialog", { name: "New asset", exact: true });
   await expect(sheet).toBeVisible();
-  await sheet.getByRole("textbox", { name: "Name", exact: true }).fill("Iver");
+  await sheet.getByRole("textbox", { name: "Name", exact: true }).fill("Rowan");
 
   /* A take is a reference, not a training photo. */
   await sheet.getByRole("button", { name: "A take", exact: true }).click();
-  await page.getByRole("menuitem").filter({ hasText: "Iver in profile" }).click();
+  await page.getByRole("menuitem").filter({ hasText: "Rowan in profile" }).click();
   await expect(page.getByRole("menu")).toHaveCount(0);
   await expect(sheet).toContainText("Needs 1 uploaded stills of the same person; 0 so far.");
   await expect(sheet.getByRole("checkbox", { name: "Consent to train" })).toHaveCount(0);
@@ -193,7 +194,7 @@ test("New asset: training is priced in the workspace's unit, only uploaded still
   await create.click();
   await expect(page.getByText("Stopped by the test.")).toBeVisible();
   expect(identityBodies).toHaveLength(1);
-  expect(identityBodies[0]).toMatchObject({ name: "Iver", reuseDraft: true });
+  expect(identityBodies[0]).toMatchObject({ name: "Rowan", reuseDraft: true });
   expect((identityBodies[0].photos as string[])).toHaveLength(1);
   expect(trainBodies[0]).toEqual(unit === "cr" ? { consent: true, maxCredits: price } : { consent: true, maxUsd: price });
 });
@@ -249,14 +250,21 @@ test("Prompt attach keeps the files that arrived when one fails, and the compose
     return route.fallback();
   });
 
-  await page.goto(`/suites?view=gen&project=${project.id}`);
-  await expect(page.getByTestId("project-name")).toHaveText(project.name);
-  await page.getByTestId("gen-attach-file").setInputFiles([
-    { name: "look.png", mimeType: "image/png", buffer: await png("#2b6a4a") },
-    { name: "broken.png", mimeType: "image/png", buffer: await png("#6a2b2b") },
-  ]);
-  await expect(page.getByTestId("gen-well")).toContainText("look.png", { timeout: 30_000 });
-  await expect(page.getByTestId("gen-attach-note")).toContainText("broken.png could not be uploaded (The store refused this file)");
+  await page.goto(`/suites?make=video&project=${project.id}`);
+  await expect(projectName(page)).toHaveText(project.name);
+  /* Release 1: the old Gen composer's attach button is gone; Make's References well takes device files by drop (components/graphite/make/Compose.tsx
+     > dropOnWell > dropToIds > the same uploadFilesToProject), so the files arrive as a drop on the well. */
+  const files = [
+    { name: "look.png", mime: "image/png", data: (await png("#2b6a4a")).toString("base64") },
+    { name: "broken.png", mime: "image/png", data: (await png("#6a2b2b")).toString("base64") },
+  ];
+  await page.getByTestId("gen-well").evaluate((well, list) => {
+    const transfer = new DataTransfer();
+    for (const f of list) transfer.items.add(new File([Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0))], f.name, { type: f.mime }));
+    well.dispatchEvent(new DragEvent("drop", { dataTransfer: transfer, bubbles: true, cancelable: true }));
+  }, files);
+  await expect(page.getByTestId("gen-well").getByTestId("make-reference")).toContainText("look.png", { timeout: 30_000 });
+  await expect(page.getByTestId("gen-well").getByRole("alert")).toContainText("broken.png could not be uploaded (The store refused this file)");
 
   /* The Generate composer's project library: references, yes; an edit or upscale button with nothing behind it, no. */
   await page.goto(`/workspace?project=${project.id}&suite=particl&page=rig`);
@@ -292,15 +300,15 @@ test("Rig on a phone: Apply prices each shot at the engine's own settings, sends
   const board = {
     id: "brd_audit", projectId: "prj_audit", name: "Apply fixture", createdAt: at, updatedAt: at,
     nodes: [
-      node("n_asset", "asset", "@Iver", { ref: { elementId: "el_iver" }, ports: [{ id: "face", label: "FACE", attributeId: "att_face", versionId: "ver_1", version: "v1" }] }),
+      node("n_asset", "asset", "@Rowan", { ref: { elementId: "el_iver" }, ports: [{ id: "face", label: "FACE", attributeId: "att_face", versionId: "ver_1", version: "v1" }] }),
       node("n_shot", "shot", "SH01", { ref: { shotId: "sh1" }, inputs: [{ id: "cast", label: "CAST" }], settings: { title: "Wide" } }),
       node("n_video", "video", "Seedance", { ref: { engine }, settings: { resolution: "1080p", seconds: 5 } }),
     ],
     wires: [{ id: "w1", from: { nodeId: "n_asset", portId: "face" }, to: { nodeId: "n_shot", slotId: "cast" }, kind: "inherited" }],
   };
-  const shot = (id: string, code: string, planned: number, description: string) => ({ id, projectId: "prj_audit", code, title: code, description, cast: ["@Iver"], planned, setup: {}, state: "draft", takes: 0, spend: 0 });
+  const shot = (id: string, code: string, planned: number, description: string) => ({ id, projectId: "prj_audit", code, title: code, description, cast: ["@Rowan"], planned, setup: {}, state: "draft", takes: 0, spend: 0 });
   const version = (id: string, i: number) => ({ id, attributeId: "att_face", elementId: "el_iver", label: `v${i}`, uploadId: null, genId: null, identityId: null, status: "ready", createdAt: at + i });
-  const element = { id: "el_iver", projectId: "prj_audit", castId: null, kind: "character", name: "Iver", description: "", locked: false, lockedBy: null, lockedAt: null, fromShotId: null, fromGenId: null, createdAt: at,
+  const element = { id: "el_iver", projectId: "prj_audit", castId: null, kind: "character", name: "Rowan", description: "", locked: false, lockedBy: null, lockedAt: null, fromShotId: null, fromGenId: null, createdAt: at,
     attributes: [{ id: "att_face", elementId: "el_iver", kind: "face", label: "Face", currentId: "ver_1", locked: false, position: 0, versions: [version("ver_1", 1), version("ver_2", 2)] }] };
   const bodies: Record<string, unknown>[] = [];
   const puts: { nodes: { id: string; ports: { versionId?: string; version?: string }[] }[] }[] = [];
@@ -309,7 +317,7 @@ test("Rig on a phone: Apply prices each shot at the engine's own settings, sends
     if (route.request().method() === "PUT") { puts.push(route.request().postDataJSON()); return route.fulfill({ json: { board } }); }
     return route.fulfill({ json: { board } });
   });
-  await page.route((url) => url.pathname === "/api/shots", (route) => route.fulfill({ json: { shots: [shot("sh1", "SH01", 3, "Iver crosses the ice"), shot("sh2", "SH02", 8, "Iver turns"), shot("sh3", "SH03", 5, "Iver waves")] } }));
+  await page.route((url) => url.pathname === "/api/shots", (route) => route.fulfill({ json: { shots: [shot("sh1", "SH01", 3, "Rowan crosses the ice"), shot("sh2", "SH02", 8, "Rowan turns"), shot("sh3", "SH03", 5, "Rowan waves")] } }));
   await page.route((url) => url.pathname === "/api/rig/elements", (route) => route.fulfill({ json: { elements: [element] } }));
   await page.route((url) => url.pathname === "/api/generate", async (route) => {
     const body = route.request().postDataJSON();
@@ -331,8 +339,8 @@ test("Rig on a phone: Apply prices each shot at the engine's own settings, sends
   expect(await fits(page)).toBe(true);
   await apply.click();
 
-  const toast = page.getByRole("status").filter({ hasText: "Iver" });
-  await expect(toast).toContainText("Iver → v2 · 1 of 3 takes rendering");
+  const toast = page.getByRole("status").filter({ hasText: "Rowan" });
+  await expect(toast).toContainText("Rowan → v2 · 1 of 3 takes rendering");
   await expect(toast).toContainText("SH02 may not have started: the connection dropped");
   expect(bodies.map((b) => b.shotId)).toEqual(["sh1", "sh2"]);
   /* Priced and sent at what admission bills: the 3s shot at the engine's 4s. */
@@ -352,7 +360,7 @@ test("Rig on a phone: Apply prices each shot at the engine's own settings, sends
   await sheet.getByRole("option").nth(0).click();
   await sheet.getByRole("radio", { name: /^Apply to draft · 3/ }).click();
   await page.locator("[data-apply]").click();
-  await expect(page.getByRole("status").filter({ hasText: "Nothing started" })).toContainText("Nothing started · Iver stays on v2 · SH01 didn't start: The generation estimate changed");
+  await expect(page.getByRole("status").filter({ hasText: "Nothing started" })).toContainText("Nothing started · Rowan stays on v2 · SH01 didn't start: The generation estimate changed");
   expect(bodies).toHaveLength(1);
   await page.waitForTimeout(800); // past the board's 400ms save beat
   expect(puts).toHaveLength(1);

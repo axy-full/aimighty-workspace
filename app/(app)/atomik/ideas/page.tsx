@@ -90,7 +90,7 @@ export default function IdeasPage() {
      project, the project gets a treatment seeded from the logline. */
   async function produce(i: Row) {
     const suggested = i.logline.split(/[.!?]/)[0]?.trim().slice(0, 40) ?? "";
-    const name = await appPrompt("Name the project", suggested, "Northline");
+    const name = await appPrompt("Name the project", suggested, "Untitled film");
     if (!name?.trim()) return;
     const res = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
     const json = await res.json().catch(() => ({}));

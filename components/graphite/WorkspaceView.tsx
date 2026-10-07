@@ -8,6 +8,7 @@ import { WORKSPACE_TABS } from "@/lib/shell/ia";
 import { DEFAULT_ENHANCER, ENHANCER_LABEL, ENHANCER_NOTE, ENHANCER_PROVIDERS, isEnhancerProvider, type EnhancerProvider } from "@/lib/shell/enhancer";
 import { revealClear } from "@/lib/shell/reveal";
 import { useShell } from "@/lib/shell/state";
+import { signOut } from "@/lib/shell/sign-out";
 import {
   auditEntries, checkoutUrl, grantRow, packLine, packRequestLabel, planLine, requestLine, requestRows, sessionRows, statementCsvHref, statementHref, statementMonthsOf, twoStepLine, usageRows,
   type BillingPlan, type BillingSubscription, type SecurityBody, type Topups, type UsageBody,
@@ -21,7 +22,6 @@ import { labels as AUDIT_LABELS } from "@/components/management/WorkspaceAudit";
 import { leftFrom, type RateGroup, type WorkspaceReach } from "@/lib/mediaReach";
 import { RateCard, ReachPair, ReachTile, leftAt } from "@/components/commercial/MediaReach";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
-import { ConnectedAccountRow } from "./ConnectedAccountRow";
 import { ConnectRow } from "./ConnectRow";
 import { ManagementDashboard } from "./ManagementDashboard";
 
@@ -74,12 +74,17 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
   const change = async (action: "switch" | "logout", id?: string) => {
     if (busy) return;
     setBusy(true); setError("");
+    if (action === "logout") {
+      const why = await signOut(scopedFetch);
+      if (why) { setError(why); setBusy(false); }
+      return;
+    }
     try {
-      const response = await scopedFetch(action === "switch" ? "/api/workspaces/switch" : "/api/auth/logout", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action === "switch" ? { id } : {}),
+      const response = await scopedFetch("/api/workspaces/switch", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }),
       });
       if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Your account could not be changed. Please try again.");
-      window.location.assign(action === "switch" ? "/suites" : "/login");
+      window.location.assign("/suites");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Your account could not be changed. Please try again.");
       setBusy(false);
@@ -554,7 +559,6 @@ function Usage() {
 type Keys = { keys: { name: string; label: string; does: string; set: boolean }[] };
 function Engines() {
   const session = useSession();
-  const owner = session.role === "owner";
   /* Only the house workspace is handed a dollar table (lib/houseWorkspace.ts): it is never billed in credits. */
   const house = session.rates.unit === "usd";
   const { data, error } = useRead<Keys>("/api/workspaces/keys");
@@ -571,7 +575,7 @@ function Engines() {
           </div>
         ))}
       </div>
-      <ConnectedAccountRow owner={owner} />
+      {/* No "Earlier connected account" row: off for Release 1 with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts). */}
       <XaiEngineRow />
     </>
   );

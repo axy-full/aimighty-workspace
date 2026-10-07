@@ -79,7 +79,8 @@ export function admissionCheckpoint(
   /* The margin key, or the exact terms the reservation will charge (lib/credits.ts quotedCredits). */
   margin: EstimateTerms,
   compiled: Record<string, unknown>,
-  terms: { approximate?: boolean } = {},
+  /* `band`: a take that holds its ceiling (lib/cinemaHold.ts) states that ceiling with its estimate. */
+  terms: { approximate?: boolean; band?: number } = {},
 ): AdmissionReply | undefined {
   if (!options.checkpoint) return;
   // Explicit source identities also let deletion guards protect quoted implicit cast references.
@@ -113,6 +114,7 @@ export function admissionCheckpoint(
     price: unit === "cr" ? estimatedCredits : usd,
     unit,
     ...(terms.approximate ? { approximate: true as const } : {}),
+    ...(terms.band && terms.band > 1 ? { ceilingCredits: estimatedCredits * terms.band } : {}),
   } as const;
   return options.checkpoint({
     kind,
@@ -159,7 +161,8 @@ export async function prepareAdmission(
       actorId: actor.user.id,
       request: {
         ...structuredClone(captured.request),
-        maxCredits: captured.quote.estimatedCredits,
+        /* The approval is what the take may charge: its hold where it holds one (lib/cinemaHold.ts). */
+        maxCredits: captured.quote.ceilingCredits ?? captured.quote.estimatedCredits,
       },
       compiled: captured.compiled,
       quote: captured.quote,

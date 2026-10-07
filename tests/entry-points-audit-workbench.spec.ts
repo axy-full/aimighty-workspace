@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { DESKTOP } from "./helpers/appPagesAudit";
+import { lastRowClearsPinned } from "./phoneFloors";
 import { siteOrigin } from "../lib/site";
 
 /**
@@ -38,47 +39,49 @@ test("entry points: a workspace goes straight to Suites; a visitor signs in and 
   const moved = await page.request.get("/images", { maxRedirects: 0 });
   expect(moved.status()).toBe(307);
   const response = await page.goto("/workbench?stage=brief");
-  expect(response?.request().redirectedFrom()?.url()).toContain("/workbench?stage=brief");
-  await expect(page).toHaveURL(/\/suites\?suite=particl&page=brief/);
+  /* The chain is two 307s (/workbench → /suites?suite=particl&page=brief → the board), and Playwright's redirectedFrom() is one hop back: walk it to the request the person made. */
+  let first = response?.request();
+  for (let hop = first?.redirectedFrom(); hop; hop = first?.redirectedFrom()) first = hop;
+  expect(first?.url()).toContain("/workbench?stage=brief");
+  /* The Studio's Brief page is deleted: the old stage address ends on the board's Brief region (one more 307 inside /suites). */
+  await expect(page).toHaveURL(/\/suites\?(?=.*view=board)(?=.*region=brief)/);
   await page.goto("/");
   await expect(page).toHaveURL(/\/suites\?suite=particl/);
   await expect(page.getByTestId("switchover-note")).toHaveCount(0);
 });
 
-test("Suites Workspace › Engines links the token page; the platform desk is for the platform owner only", async ({ page }, info) => {
+test("Settings › Connections lists no tokens and offers to make one; the platform desk is for the platform owner only", async ({ page }, info) => {
   test.skip(info.project.name !== DESKTOP, "Links, once.");
   await signInLocally(page.request);
-  await page.goto("/suites?view=workspace&tab=engines");
-  const connect = page.getByTestId("workspace-connect-link");
-  await expect(connect).toHaveAttribute("href", "/connect");
-  await expect(connect).toContainText("No tokens yet");
-  await page.getByRole("tab", { name: "General" }).click();
-  await expect(page.getByTestId("platform-desk")).toHaveCount(0);
+  /* Engines is Advanced › Models and the token page's job (listing and making tokens) is Connections. */
+  await page.goto("/suites?view=workspace&tab=connections");
+  await expect(page.getByTestId("settings-title")).toHaveText("Connections");
+  await expect(page.getByTestId("settings-tokens-empty")).toContainText("No tokens yet");
+  await expect(page.getByTestId("settings-token-make")).toBeVisible();
+  /* The avatar's menu offers the platform desk to the platform owner alone. */
+  await page.getByTestId("workspace-avatar").click();
+  await expect(page.getByTestId("settings-menu")).toBeVisible();
+  await expect(page.getByTestId("settings-platform-desk")).toHaveCount(0);
 });
 
-test("on a phone, the tokens row is the last card on Engines and ends above the tab bar", async ({ page }, info) => {
+test("on a phone, Connections' tokens section is the last card on the page and ends above the tab bar", async ({ page }, info) => {
   test.skip(!["workbench-360x640", "workbench-390x844"].includes(info.project.name), "the phones with a pinned tab bar");
   await signInLocally(page.request);
-  /* The Higgsfield account's row reads its status once; with no grant and nothing running it shows nothing. */
-  const accountRead = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/higgsfield/consumer/connection");
-  await page.goto("/suites?view=workspace&tab=engines");
+  /* The Higgsfield sign-in is off for Release 1: Settings has no connected-account row and never reads the account. */
+  const accountReads: string[] = [];
+  page.on("request", (request) => { if (new URL(request.url()).pathname.startsWith("/api/higgsfield/consumer/")) accountReads.push(request.url()); });
+  await page.goto("/suites?view=workspace&tab=advanced&open=models");
   /* Everything above it has loaded, so nothing moves it after the measure. */
-  await expect(page.getByTestId("ws-engine").first()).toBeVisible();
-  await accountRead;
+  await expect(page.getByTestId("settings-engines").locator(".gs-row-v")).not.toHaveText("Reading…");
+  await page.getByTestId("settings-engines-show").click();
   await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
+  expect(accountReads).toEqual([]);
   /* The developer-API check went with the Higgsfield sign-in. */
   await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);
-  await expect(page.getByTestId("workspace-connect-link")).toContainText(/token/);
-  const end = () => page.getByTestId("workspace-view").evaluate(async (pane) => {
-    pane.scrollTop = pane.scrollHeight;
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const row = pane.querySelector<HTMLElement>('[data-testid="engine-connect"]')!;
-    const bar = document.querySelector<HTMLElement>(".gx-tabbar");
-    const pinned = bar && bar.getClientRects().length && getComputedStyle(bar).position === "fixed";
-    return { last: row.parentElement?.lastElementChild === row, gap: pinned ? Math.round((bar.getBoundingClientRect().top - row.getBoundingClientRect().bottom) * 100) / 100 : null };
-  });
-  expect((await end()).last, "the tokens row is the tab's last card").toBe(true);
-  await expect.poll(async () => (await end()).gap, { message: "at the pane's end, the tokens row ends above the pinned tab bar" }).toBeGreaterThanOrEqual(0);
+  /* The phone's Settings is a page under the phone header; its scroller ends above the tab bar. */
+  await page.goto("/suites?view=workspace&tab=connections");
+  await expect(page.getByTestId("settings-token-make")).toBeVisible();
+  expect(await lastRowClearsPinned(page), "the last row clears the tab bar").toEqual([]);
 });
 
 test("public metadata: robots, sitemap, one icon per URL, and client review pages without Particl's install card", async ({ page, baseURL }, info) => {

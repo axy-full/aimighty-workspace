@@ -1,5 +1,6 @@
 "use client";
 
+import { spendAttrsText } from "@/lib/spend";
 import { useRef, useState, useImperativeHandle, type Ref } from "react";
 import { Image as ImageIcon, Upload } from "lucide-react";
 import { useGenAssetInput, type GenAssetInputHandle } from "@/lib/genAssetInput";
@@ -16,8 +17,8 @@ import type { AdmissionQuote } from "@/lib/admissionTypes";
 import styles from "./gen.module.css";
 import edit from "./seedance-edit.module.css";
 
+import { imageUpscaleBody } from "@/lib/shell/upscale";
 import {
-  TOPAZ_IMAGE_MODEL as MODEL,
   DEFAULT_TOPAZ_IMAGE,
   TOPAZ_IMAGE_PRESETS,
   type TopazImageSettings,
@@ -107,23 +108,7 @@ export default function TopazImageUpscale({
     : null;
   const savedContext = paid.pending?.context;
   const topaz = saved?.topaz ? (saved.topaz as TopazImageSettings) : settings;
-  const body = {
-    projectId: project?.productionProjectId ?? null,
-    model: MODEL,
-    task: "generate",
-    prompt: "",
-    resolution: "24MP",
-    ratio: "adaptive",
-    refine: false,
-    topaz: settings,
-    references: source
-      ? [
-          source.origin === "upload"
-            ? { uploadId: source.id, role: "reference_image" }
-            : { genId: source.id, role: "reference_image" },
-        ]
-      : [],
-  };
+  const body = imageUpscaleBody(source ? { origin: source.origin, sourceId: source.id } : null, project?.productionProjectId ?? null, settings);
   const bodyKey = JSON.stringify(body);
   const quote = reviewed?.body === bodyKey ? reviewed.quote : null;
   const inputLocked = busy || !!paid.pending || !!paid.error;
@@ -417,6 +402,8 @@ export default function TopazImageUpscale({
               busy || uploading || !!paid.error || (!paid.pending && !canQuote)
             }
             onClick={() => void (paid.pending || quote ? submit() : review())}
+            aria-busy={busy || undefined}
+            {...spendAttrsText((paid.pending ? String(savedContext?.price ?? "Saved request") : quote ? priceLabel(quote) : null))}
           >
             <span>
               {busy

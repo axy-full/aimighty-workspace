@@ -190,7 +190,7 @@ test("navigation waits for hydration and initial load, then accepts the first wo
     await route.fallback();
   });
   await page.goto(await legacyShell(page, "/workbench"),{waitUntil:"commit"});
-  const workflow=page.getByRole("navigation",{name:"Particl Production Studio pages",exact:true}).getByRole("link",{name:"Deliver",exact:true});
+  const workflow=page.getByRole("navigation",{name:"Studio pages",exact:true}).getByRole("link",{name:"Deliver",exact:true});
   await expect(workflow).toBeVisible();
   await expect(workflow).toBeDisabled();
   await expect(workflow).not.toHaveAttribute("href");
@@ -226,7 +226,7 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
   await expect(page.locator(".project-bar")).toBeVisible();
   const mobile = page.viewportSize()!.width < 760;
   if (mobile) await openWorkbenchProject(page);
-  await expect(page.getByRole("navigation", { name: "Particl Production Studio pages", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Studio pages", exact: true })).toBeVisible();
   await goStage(page, "brief");
   const title = `Browser production ${testInfo.project.name}`;
   await page.getByLabel("Project title", { exact: true }).fill(title);
@@ -238,7 +238,7 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
   }
   await goStage(page, "brief");
-  await page.getByLabel("Project screenplay", { exact: true }).fill("EXT. TEST DUNES - DAY\n\nMIRA walks into the light.");
+  await page.getByLabel("Project screenplay", { exact: true }).fill("EXT. TEST DUNES - DAY\n\nWREN walks into the light.");
   await expect(page.getByRole("region", { name: "Screenplay scene breakdown" }).getByRole("checkbox")).toHaveCount(1);
   await page.getByRole("button", { name: "Select all scenes", exact: true }).click();
   await page.getByRole("button", { name: "Build 1 scene nodes", exact: true }).click();
@@ -250,7 +250,7 @@ test("responsive production: save, stages, node versions, jobs, refresh and edit
   await expect(uploadToast).toBeVisible();
   await expect.poll(async () => {
     const toastBounds = await uploadToast.boundingBox();
-    const navigationBounds = await page.getByRole("navigation", { name: "Particl Production Studio pages", exact: true }).boundingBox();
+    const navigationBounds = await page.getByRole("navigation", { name: "Studio pages", exact: true }).boundingBox();
     return !!toastBounds && !!navigationBounds && toastBounds.y + toastBounds.height <= navigationBounds.y;
   }).toBe(true);
 

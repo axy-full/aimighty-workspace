@@ -116,7 +116,8 @@ export function selectHistory(reason: SelectReason): "push" | "replace" {
 export function assetLinkHref(input: { origin: string; workspace: string | null | undefined; production: string | null | undefined; asset: string }): string | null {
   const asset = validAssetId(input.asset);
   if (!asset || !input.workspace || !REF.test(input.workspace) || !input.production || !REF.test(input.production)) return null;
-  const q = new URLSearchParams({ page: "takes", sp: "takes", [WORKSPACE_PARAM]: input.workspace, [PRODUCTION_PARAM]: input.production, [ASSET_PARAM]: asset });
+  /* The board's Shots region: the Takes page it used to name is deleted (lib/shell/stage-redirects.ts), and an old copied link still lands here. */
+  const q = new URLSearchParams({ view: "board", region: "shots", [WORKSPACE_PARAM]: input.workspace, [PRODUCTION_PARAM]: input.production, [ASSET_PARAM]: asset });
   return `${input.origin.replace(/\/+$/, "")}/suites?${q.toString()}`;
 }
 

@@ -30,7 +30,7 @@ export type WorkflowCapabilities = { voice: boolean; dubbing: boolean; analysis:
 /** Why the tool cannot run right now, in the words shown under its title; null when it can. */
 export function workflowReason(surface: WorkflowSurface, input: { hasProject: boolean; capability: WorkflowCapability | null; capabilities: WorkflowCapabilities | null; error?: string | null }): string | null {
   if (!VOICE_TOOL_NAMES.includes(surface.tool)) return "This tool is not offered.";
-  if (!input.hasProject) return "Save your project first.";
+  if (!input.hasProject) return "Open a project first.";
   if (input.error) return input.error;
   if (!input.capability) return "Reading the connected account…";
   if (!input.capability.owner) return "The workspace owner uses the connected account.";

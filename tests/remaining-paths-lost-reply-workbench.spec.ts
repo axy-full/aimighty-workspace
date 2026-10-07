@@ -86,7 +86,7 @@ test("the Shots grid's Render sends the price on its button as the ceiling, and 
   const made = await page.request.post("/api/projects", { data: { name: `Lost reply shots ${randomUUID().slice(0, 6)}` } });
   expect(made.ok(), await made.text()).toBe(true);
   const projectId = (await made.json()).id as string;
-  const shot = await page.request.post("/api/shots", { data: { projectId, code: "SH01", title: "Wide", kind: "shot", description: "Iver crosses the ice at dawn" } });
+  const shot = await page.request.post("/api/shots", { data: { projectId, code: "SH01", title: "Wide", kind: "shot", description: "Rowan crosses the ice at dawn" } });
   expect(shot.ok(), await shot.text()).toBe(true);
   const shotId = String((await shot.json()).id ?? (await shot.json()).shot?.id);
   const list = await page.request.get("/api/productions").then((r) => r.json()) as { productions: { id: string; projects: { id: string }[] }[] };
@@ -162,11 +162,11 @@ test("the platform desk's preview renders carry the per-clip price as their ceil
     });
     await page.goto("/admin");
     const press = async () => {
-      const render = page.getByRole("button", { name: "Render 1 previews", exact: true });
+      const render = page.getByRole("button", { name: /^Render 1 previews · [\d,]+ cr$/ });
       await expect(render).toBeEnabled({ timeout: 60_000 });
       await render.click();
       await page.getByRole("dialog").getByRole("button", { name: /^Spend \$/ }).click();
-      await expect(page.getByRole("button", { name: "Render 1 previews", exact: true })).toBeEnabled({ timeout: 60_000 });
+      await expect(page.getByRole("button", { name: /^Render 1 previews · [\d,]+ cr$/ })).toBeEnabled({ timeout: 60_000 });
     };
 
     const landedId = await loseNextReply(page);

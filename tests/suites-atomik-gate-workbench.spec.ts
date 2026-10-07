@@ -2,6 +2,7 @@ import { test, expect, type Page, type Request } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { projectName } from "./helpers/projectName";
 
 /**
  * The Suites shell's Atomik gate. "+ Run stage" and the Inspector's plan button
@@ -84,20 +85,22 @@ test("+ Run stage opens the gate in the Suites shell: Not now sends nothing, App
   expect(errors).toEqual([]);
 });
 
-test("⌘K: Ask Atomik keeps the words; a model row opens Gen on that model; no phone-only rows", async ({ page }, info) => {
+test("⌘K: Ask Atomik keeps the words; no model rows and no phone-only rows", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "the palette is a desktop key");
   const { mock, errors } = await setup(page);
-  await page.goto("/suites?view=gen");
-  await expect(page.getByTestId("page-title")).toHaveText("Generate");
+  await page.goto("/suites?make=video");
+  await expect(page.getByTestId("make-panel")).toBeVisible();
   const palette = page.getByRole("dialog", { name: "Search" });
   const open = async () => { await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k"); await expect(palette).toBeVisible(); };
 
   await open();
   await expect(palette.getByRole("option").first()).toBeVisible();
   expect((await palette.getByRole("option").allTextContents()).some((t) => t.includes("Where to?"))).toBe(false);
+  expect((await palette.getByRole("option").allTextContents()).some((t) => t.includes("MODEL"))).toBe(false);
   await palette.getByRole("textbox").fill("Kling 3.0 Pro");
-  await palette.getByRole("option").filter({ hasText: "MODEL" }).first().click();
-  await expect(page.getByTestId("gen-model")).toContainText("Kling 3.0 Pro");
+  await expect(palette.getByRole("option")).toHaveText([/^ATOMIKAsk Atomik: Kling 3\.0 Pro/]);
+  await palette.getByRole("textbox").fill("");
+  await page.keyboard.press("Escape");
 
   await open();
   await palette.getByRole("textbox").fill("zz make a thirty second teaser");
@@ -123,7 +126,7 @@ test("⌘K: Ask Atomik keeps the words; a model row opens Gen on that model; no 
 async function askBeforeAnyProject(page: Page) {
   const state = { failing: true };
   await page.route("**/api/workbench/projects**", (route) => (state.failing && route.request().method() === "GET" ? route.fulfill({ status: 500, json: { error: "Projects are unavailable right now." } }) : route.fallback()));
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=video");
   await expect(page.getByTestId("project-name")).toHaveText("Projects didn’t load");
   const palette = page.getByRole("dialog", { name: "Search" });
   await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
@@ -148,7 +151,7 @@ test("⌘K before any project is open: the words wait, and land in Agent once th
   const retry = page.getByTestId("projects-error").getByRole("button", { name: "Try again" });
   await expect(async () => {
     if (await retry.isVisible()) await retry.click({ timeout: 2_000 });
-    await expect(page.getByTestId("project-name")).toHaveText("Coastal light study", { timeout: 2_000 });
+    await expect(projectName(page)).toHaveText("Coastal light study", { timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
   await expect(page.locator("[data-tool-body=\"agent\"] textarea").first()).toHaveValue("zz a teaser for the launch");
   expect(mock.dispatches).toEqual([]);
@@ -164,7 +167,7 @@ test("⌘K before any project is open: the words land when the list loads on its
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("page-title")).toHaveText("Agent");
   await expect(page.getByTestId("toast")).toHaveText("Your request goes into Agent once a project is open.");
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await expect(projectName(page)).toHaveText("Coastal light study");
   await expect(page.locator("[data-tool-body=\"agent\"] textarea").first()).toHaveValue("zz a teaser for the launch");
   expect(mock.dispatches).toEqual([]);
   expect(errors).toEqual([]);

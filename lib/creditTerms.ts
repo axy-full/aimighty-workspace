@@ -1,3 +1,5 @@
+import { holdBandOf } from "./cinemaHold";
+
 /**
  * The credit: the platform's own unit of spend.
  *
@@ -88,10 +90,12 @@ export function billCredits(usd: number, engine?: string | null): number {
  * credits: its engine dollars at today's rate. The snapshot's `needs` is what
  * it cost when it was held, and stands in only for a row too old to carry
  * `estUsd`. The Release button shows this figure and the release charges it.
+ * A take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts) costs its
+ * hold to start: its quote times its band, what Release approves.
  */
 export function heldPriceNow(held: { estUsd?: unknown; needs?: unknown } | null | undefined, kind: string | null | undefined, model: string | null | undefined): number {
   const est = Number(held?.estUsd ?? 0);
-  const now = Number.isFinite(est) && est > 0 ? billCredits(est, marginKeyOf(kind, model)) : 0;
+  const now = Number.isFinite(est) && est > 0 ? billCredits(est, marginKeyOf(kind, model)) * holdBandOf(model) : 0;
   const then = Number(held?.needs ?? 0);
   return now || (Number.isFinite(then) && then > 0 ? Math.ceil(then) : 0);
 }

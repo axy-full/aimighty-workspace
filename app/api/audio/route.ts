@@ -4,6 +4,7 @@ import { requireRender, withTenant } from "@/lib/auth";
 import { withGenerationRequest } from "@/lib/generationRequests";
 import { executeAudioAdmission } from "@/lib/audioAdmission";
 import { admissionResponse } from "@/lib/admissionSupport";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 import { creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
 import { GROK_SPEECH_MODEL, GROK_TTS_MODEL, grokVoiceConfigured, grokVoicesForScreen } from "@/lib/xaiVoice";
@@ -37,9 +38,10 @@ export const POST = withTenant(async function POST(req: Request) {
         },
       }),
     );
-  return body.quoteOnly === true
-    ? perform()
-    : withGenerationRequest(req, got.user.id, perform, { atomicBinding: true });
+  if (body.quoteOnly === true) return perform();
+  /* The sample workspace spends nothing: answered before the request is claimed. A quote still answers. */
+  { const off = await sampleWorkspaceOff(); if (off) return off; }
+  return withGenerationRequest(req, got.user.id, perform, { atomicBinding: true });
 });
 
 /** What the Audio screen needs to draw itself: engines, terms, and — when

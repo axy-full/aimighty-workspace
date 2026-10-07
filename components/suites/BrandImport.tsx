@@ -7,6 +7,7 @@ import { EMPTY_BRAND_KIT, brandKitSchema } from "@/lib/workbench/moleculr-creati
 import type { MoleculrBrief } from "@/lib/workbench/moleculr";
 import type { Asset } from "@/lib/workbench/studio";
 import styles from "./moleculr-creative.module.css";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 export function BrandImport({ projectId, scope, brief, enabled, onChange, onSave, onImportRemote }: {
   projectId: string; scope: string; brief: MoleculrBrief; enabled: boolean;
@@ -33,7 +34,7 @@ export function BrandImport({ projectId, scope, brief, enabled, onChange, onSave
     pending.current = true; setBusy("read"); setError(""); setNotice(""); setResult(null);
     const abort = new AbortController(); controller.current = abort;
     try {
-      if (onSave && !(await onSave())) throw new Error("Save the project before reading its brand website.");
+      if (onSave && !(await onSave())) throw new SaveFailedError();
       if (!stillHere(website)) return;
       const response = await fetch("/api/workbench/moleculr/extract-brand", { method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ projectId, url: website }), signal: abort.signal });
       const data = await response.json();

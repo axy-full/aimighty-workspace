@@ -87,6 +87,7 @@ test("the train route refuses a run that costs more than the approved price, bef
   const route = load("app/api/identities/[id]/train/route.ts", {
     "next/server": nextServer(),
     "@/lib/auth": { requireRender: async () => ({ user: { id: "caller" } }), withTenant: (h: Handler) => h },
+    "@/lib/demo/spend-guard.server": { sampleWorkspaceOff: async () => null },
     "@/lib/identities": { trainCostUsd: () => usd, startTraining: async (id: string) => { started.push(id); return { id, status: "training" }; }, identityForBrowser: (i: object) => i },
     "@/lib/credits": { creditsApply: () => inCredits },
     "@/lib/tenant": { currentTenant: () => null },
@@ -127,10 +128,10 @@ test("the train route refuses a run that costs more than the approved price, bef
 
 test("a retried New asset hands back the caller's own untrained identity instead of a name clash", async () => {
   const fixtures = [
-    { id: "idn_other", name: "Iver", createdBy: "someone-else", projectId: null, status: "draft", loraUrl: null, castId: null },
-    { id: "idn_trained", name: "Mara", createdBy: "caller", projectId: null, status: "failed", loraUrl: "https://lora", castId: null },
-    { id: "idn_carried", name: "Iver", createdBy: "caller", projectId: null, status: "failed", loraUrl: null, castId: null },
-    { id: "idn_mine", name: "Iver", createdBy: "caller", projectId: null, status: "failed", loraUrl: null, castId: null, description: "Kept" },
+    { id: "idn_other", name: "Rowan", createdBy: "someone-else", projectId: null, status: "draft", loraUrl: null, castId: null },
+    { id: "idn_trained", name: "Keeper", createdBy: "caller", projectId: null, status: "failed", loraUrl: "https://lora", castId: null },
+    { id: "idn_carried", name: "Rowan", createdBy: "caller", projectId: null, status: "failed", loraUrl: null, castId: null },
+    { id: "idn_mine", name: "Rowan", createdBy: "caller", projectId: null, status: "failed", loraUrl: null, castId: null, description: "Kept" },
     { id: "idn_asset_only", name: "Tove", createdBy: "caller", projectId: null, status: "failed", loraUrl: null, castId: null },
   ];
   /* Rig assets already built on these identities (attribute_versions.identity_id). */
@@ -144,7 +145,7 @@ test("a retried New asset hands back the caller's own untrained identity instead
     "@/lib/identities": {
       listIdentities: async () => fixtures,
       updateIdentity: async (id: string, patch: { photos: string[]; description?: string }) => { updated.push({ id, ...patch }); return { ...fixtures.find((f) => f.id === id), ...patch }; },
-      createIdentity: async (input: { name: string }) => { created.push(input.name); if (input.name === "Iver" || input.name === "Tove") throw new Error(`There is already an identity called ${input.name}.`); return { id: "idn_new", name: input.name }; },
+      createIdentity: async (input: { name: string }) => { created.push(input.name); if (input.name === "Rowan" || input.name === "Tove") throw new Error(`There is already an identity called ${input.name}.`); return { id: "idn_new", name: input.name }; },
       syncIdentity: async () => ({}), MIN_PHOTOS: 5, MAX_PHOTOS: 40, RECOMMENDED_PHOTOS: "", TRAIN_STEPS: 1500, trainCostUsd: () => 3.6, RENDER_USD_PER_MP: 0.035, TRAINER: "trainer",
       identityForBrowser: (i: { loraUrl?: string | null }) => ({ ...i, loraUrl: undefined, trained: Boolean(i.loraUrl) }),
     },
@@ -161,7 +162,7 @@ test("a retried New asset hands back the caller's own untrained identity instead
     new Request("http://localhost/api/identities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
     { params: Promise.resolve({ id: "" }) },
   );
-  const again = await post({ name: "iver", photos: ["up1", "up2"], projectId: null, reuseDraft: true });
+  const again = await post({ name: "rowan", photos: ["up1", "up2"], projectId: null, reuseDraft: true });
   expect(again.status).toBe(200);
   expect((await again.json()).identity.id).toBe("idn_mine");
   // The failed identity a Rig asset already carries is left to that asset; the free one is reused, and its description kept.
@@ -177,11 +178,11 @@ test("a retried New asset hands back the caller's own untrained identity instead
   created.length = 0;
 
   // A description the body sends is written; a blank one leaves the stored one alone.
-  await post({ name: "Iver", description: "Tall, grey coat", photos: ["up3"], reuseDraft: true });
+  await post({ name: "Rowan", description: "Tall, grey coat", photos: ["up3"], reuseDraft: true });
   expect(updated.at(-1)).toEqual({ id: "idn_mine", photos: ["up3"], description: "Tall, grey coat" });
 
   // A trained identity is never taken over, and without reuseDraft the clash stands.
-  expect((await post({ name: "Mara", photos: [], reuseDraft: true })).status).toBe(201);
-  expect(created).toEqual(["Mara"]);
-  expect((await post({ name: "Iver", photos: [] })).status).toBe(400);
+  expect((await post({ name: "Keeper", photos: [], reuseDraft: true })).status).toBe(201);
+  expect(created).toEqual(["Keeper"]);
+  expect((await post({ name: "Rowan", photos: [] })).status).toBe(400);
 });

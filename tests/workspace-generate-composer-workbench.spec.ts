@@ -166,7 +166,7 @@ test("typing in the prompt never fires G, I or A", async ({ page }, info) => {
   /* The shell has to be up before anything is measured against it: an
      Inspector counted mid-hydration is absent for reasons that have nothing
      to do with the keyboard. */
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await expect(page.getByTestId("inspector")).toBeVisible();
   const inspectorWasOpen = await page.getByTestId("inspector").count();
   expect(inspectorWasOpen).toBe(1);

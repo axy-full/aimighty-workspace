@@ -17,7 +17,7 @@ import '@/components/studio/project-navigation.css';
 import '@/components/suites/four-suites.css';
 export const dynamic='force-dynamic';
 export const viewport={width:'device-width',initialScale:1,viewportFit:'cover',themeColor:'#000000'};
-export const metadata={title:'Particl — Production Studio'};
+export const metadata={title:'Particl — Studio'};
 export default async function Workbench({searchParams}:{searchParams:Promise<RawSearch>}){
  const ctx=await currentContext();
  if(ctx?.mfaRequired)redirect('/account/security');

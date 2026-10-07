@@ -219,9 +219,9 @@ test("the draft maps the production faithfully: shots to Rig shots, the approved
     production: { id: "prj_1", name: "Starter production", description: "Three shots to render against." },
     shots: [
       { id: "shot_a", code: "SH010", title: "The city, first light", description: "A quiet street at dawn.", planned: 5 },
-      { id: "shot_b", code: "SH020", title: "", description: "@Mara crosses the street.", planned: null },
+      { id: "shot_b", code: "SH020", title: "", description: "@Courier crosses the street.", planned: null },
     ],
-    cast: [{ name: "Mara", kind: "character", description: "A courier." }, { name: "Mule", kind: "prop", description: "A cargo bicycle." }],
+    cast: [{ name: "Courier", kind: "character", description: "A courier." }, { name: "Mule", kind: "prop", description: "A cargo bicycle." }],
     takes: [
       { id: "gen_1", shotId: "shot_a", version: 1, prompt: "wide", approved: false, createdAt: 1 },
       { id: "gen_2", shotId: "shot_a", version: 2, prompt: "push", approved: false, createdAt: 2 },
@@ -230,10 +230,10 @@ test("the draft maps the production faithfully: shots to Rig shots, the approved
     ],
   };
   const { project, shotOf } = starterDraft("starter-abc", source, "2026-09-27T00:00:00.000Z");
-  expect(project).toMatchObject({ id: "starter-abc", name: "Starter production", productionProjectId: "prj_1", brief: "A quiet street at dawn. @Mara crosses the street." });
+  expect(project).toMatchObject({ id: "starter-abc", name: "Starter production", productionProjectId: "prj_1", brief: "A quiet street at dawn. @Courier crosses the street." });
   expect(project.nodes.map((n) => [n.id, n.type, n.title, n.text, n.status ?? null])).toEqual([
     ["node-shot-01", "scene", "The city, first light", "A quiet street at dawn.", null],
-    ["node-shot-02", "scene", "SH020", "@Mara crosses the street.", "approved"],
+    ["node-shot-02", "scene", "SH020", "@Courier crosses the street.", "approved"],
   ]);
   expect(shotOf).toEqual({ "node-shot-01": "shot_a", "node-shot-02": "shot_b" });
   // A shot's picture is its approved take, else its newest.
@@ -241,7 +241,7 @@ test("the draft maps the production faithfully: shots to Rig shots, the approved
   for (const asset of project.assets) expect(asset.url).toBe(`/api/media/${asset.generationId}`);
   // The cut holds a clip only where a take is approved, so Up next is the first shot still to render.
   expect(project.shots.map((s) => [s.name, s.assetId ? project.assets.find((a) => a.id === s.assetId)?.generationId : ""])).toEqual([["SH010 — The city, first light", ""], ["SH020 — SH020", "gen_3"]]);
-  expect(project.production?.cast?.entries.map((e) => [e.name, e.kind, e.category])).toEqual([["Mara", "character", "character"], ["Mule", "element", "prop"]]);
+  expect(project.production?.cast?.entries.map((e) => [e.name, e.kind, e.category])).toEqual([["Courier", "character", "character"], ["Mule", "element", "prop"]]);
   // It is a draft the save route accepts as it is.
   const parsed = saveSchema.safeParse({ project, revision: 0 });
   expect(parsed.success, parsed.success ? "" : JSON.stringify(parsed.error.issues)).toBe(true);

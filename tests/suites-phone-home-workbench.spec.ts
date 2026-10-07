@@ -32,8 +32,7 @@ async function open(page: Page, path: string) {
 
 test("phone: Home › the Studio tile opens the stage grid; a card opens its page; ‹ Studio and ‹ Home come back; the floors hold", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "phone widths");
-  const errors = await open(page, "/suites?suite=studio&page=rig");
-  await expect(page.getByTestId("phone-back")).toHaveText(/Studio/);
+  const errors = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   await page.getByTestId("tabbar-home").click();
   await expect(page.getByTestId("suite-home")).toBeVisible();
   await expect(page.getByTestId("page-title")).toHaveText("Where to?");
@@ -52,23 +51,25 @@ test("phone: Home › the Studio tile opens the stage grid; a card opens its pag
   expect(await smallText(page, ".gx-legacy"), "text under 12px").toEqual([]);
   expect(await smallTargets(page, ".gx-home"), "targets under 44×44").toEqual([]);
 
+  /* A card opens its region of the board (the stage pages are deleted); Back is the grid again. */
   await page.getByTestId("home-stage-takes").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
-  await page.getByTestId("phone-back").click();
+  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region")]; }).toEqual(["board", "shots"]);
+  await page.goBack();
   await expect(page.getByTestId("studio-home")).toBeVisible();
   await page.getByTestId("home-generate-next").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
-  await page.getByTestId("phone-back").click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("view")).toBe("board");
+  await page.goBack();
   await expect(page.getByTestId("studio-home")).toBeVisible();
   await page.getByTestId("phone-back").click();
   await expect(page.getByTestId("suite-home")).toBeVisible();
   expect(errors).toEqual([]);
 });
 
-test("desktop: the strip has neither the Home nor the Studio grid tab and the header no back button", async ({ page }, info) => {
+test("desktop: the Studio overview has no strip of stage tabs, and the header no back button", async ({ page }, info) => {
   test.skip(!["workbench-1440x900"].includes(info.project.name), "one desktop width");
-  const errors = await open(page, "/suites?suite=studio&page=rig");
-  await expect(page.getByRole("navigation", { name: "Pages" }).getByRole("button")).toHaveCount(10);
+  const errors = await open(page, "/suites?suite=studio&page=brief&sp=stages");
+  await expect(page.getByTestId("studio-home")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Pages" })).toHaveCount(0);
   await expect(page.getByTestId("phone-back")).toBeHidden();
   await expect(page.getByTestId("tabbar")).toBeHidden();
   expect(errors).toEqual([]);

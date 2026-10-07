@@ -284,6 +284,8 @@ async function routeFixture() {
           throw new account.AccountError("PRIVATE LIMIT DETAIL", 429);
       },
     },
+    /* The handler kept behind signInOff, as it ran before Release 1 (the switch itself: tests/unit/signinOffRelease1.spec.ts). */
+    "@/lib/higgsfield-consumer/retired": { signInOff: (kept: unknown) => kept },
     "@/lib/higgsfield-consumer/activity": {
       getConsumerCreditActivity: async (id: string) => {
         reads.push(id);

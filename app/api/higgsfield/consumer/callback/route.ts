@@ -1,23 +1,22 @@
-import { consumerCallbackLocation } from "@/lib/higgsfield-consumer/oauth";
-import { retiredResponse } from "@/lib/higgsfield-consumer/retired";
 export const runtime = "nodejs";
+
+/** Settings › Connections in the shell (lib/shell/settings.ts: `?view=workspace&tab=<section>`). */
+const SIGN_IN_RETURN_PATH = "/suites?view=workspace&tab=connections";
+
 /**
- * The end of a sign-in started before the Higgsfield sign-in was retired
- * (lib/higgsfield-consumer/retired.ts). It never finishes the authorization:
- * nothing is exchanged or stored, and the browser returns to Workspace ›
- * Engines, which says the sign-in is retired.
+ * The old return address of the Higgsfield sign-in, which is off for Release 1
+ * (lib/higgsfield-consumer/retired.ts › SIGN_IN_OFF). Whatever the query
+ * carries (a code, a state, an error), nothing is read, exchanged or stored:
+ * the browser simply lands on Settings › Connections, with no message.
  */
-export async function GET() {
-  try {
-    return new Response(null, {
-      status: 303,
-      headers: {
-        Location: consumerCallbackLocation("retired"),
-        "Cache-Control": "private, no-store",
-        "Referrer-Policy": "no-referrer",
-      },
-    });
-  } catch {
-    return retiredResponse();
-  }
+export function GET() {
+  return new Response(null, {
+    status: 303,
+    headers: {
+      /* Relative, so the browser stays on the origin it came back to (and keeps its session there). */
+      Location: SIGN_IN_RETURN_PATH,
+      "Cache-Control": "private, no-store",
+      "Referrer-Policy": "no-referrer",
+    },
+  });
 }

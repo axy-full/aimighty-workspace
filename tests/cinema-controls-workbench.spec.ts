@@ -5,6 +5,16 @@ import { smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { goWorkbenchStage } from "./helpers/workbenchNavigation";
 import { legacyShell } from "./helpers/legacyShell";
+import { MAKE_SHOWS_CINEMA } from "../lib/shell/make-price";
+import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
+
+/* Make does not offer Cinema Studio 4.0 until #523 (its 3N hold) is merged: lib/shell/make-price.ts › MAKE_SHOWS_CINEMA. */
+test.skip(!MAKE_SHOWS_CINEMA, "Cinema Studio 4.0 is not offered in Make until its hold (#523) is merged");
 
 /**
  * Cinema Studio 4.0's documented creative controls, as Gen and the canvas
@@ -114,10 +124,11 @@ async function openGen(page: Page, generations: ReturnType<typeof generation>[] 
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (m) => { if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) errors.push(m.text().slice(0, 300)); });
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
-  await expect(page.getByTestId("project-name")).toHaveText("Lighthouse study");
-  await expect(page.getByTestId("gen-model")).toContainText("Seedance");
+  await openAdvanced(page);
+  await expect(projectName(page)).toHaveText("Lighthouse study");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Seedance");
   return { errors, priced, reads };
 }
 
@@ -138,7 +149,7 @@ test("Cinema Studio's own controls ride Gen's chips: nine Auto chips, grids with
   const { errors, priced, reads } = await openGen(page);
   const phone = PHONES.includes(info.project.name);
   await pickModel(page, /^Cinema Studio 4\.0/);
-  await expect(page.getByTestId("gen-model")).toContainText("Cinema Studio 4.0");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Cinema Studio 4.0");
 
   /* Nine chips, every one Auto, in the provider's own order; the film vocabulary's six give way to them. */
   await expect(page.getByTestId("gen-film")).toHaveCount(0);
@@ -150,7 +161,7 @@ test("Cinema Studio's own controls ride Gen's chips: nine Auto chips, grids with
   const prompt = page.getByTestId("gen-prompt");
   await prompt.fill(WORDS);
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText("Generate · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   const readsBefore = reads.length;
 
   /* Movement: Auto first, then every documented move, each drawn; search narrows by name. */
@@ -227,7 +238,7 @@ test("Cinema Studio's own controls ride Gen's chips: nine Auto chips, grids with
   await expect(chip(page, "light")).toHaveAttribute("aria-label", "Light: Contre-jour");
 
   /* The price stayed where it was: no control is in the published formula, so none asked for a new one. */
-  await expect(go).toHaveText("Generate · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   expect(reads.length).toBe(readsBefore);
   await page.getByTestId("gen-cinema").evaluate((el) => el.scrollIntoView({ block: "center" }));
   await shot(page, info, "cinema-chips");
@@ -261,7 +272,7 @@ test("a WAV upload is Cinema Studio's sound reference (@Audio1) at the same pric
   const prompt = page.getByTestId("gen-prompt");
   await prompt.fill(`${WORDS} to the hum of @Audio1`);
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText("Generate · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   const well = page.getByTestId("gen-well");
   await expect(well).toContainText("Drag stills, clips or WAV sounds here from the Library.");
 
@@ -276,7 +287,7 @@ test("a WAV upload is Cinema Studio's sound reference (@Audio1) at the same pric
   await expect(well.locator(".gx-ref-wave")).toBeVisible();
   /* Priced with the sound in the read, at the same approximate figure. */
   await expect.poll(() => reads.some((q) => q.get("model") === CINEMA && q.getAll("uploadId").includes("room-tone"))).toBe(true);
-  await expect(go).toHaveText("Generate · about 31 cr");
+  await expect(go).toHaveText("Make · about 31 cr, at most 93 cr");
   expect(await noOverflow(page)).toBe(true);
   await well.evaluate((el) => el.scrollIntoView({ block: "center" }));
   await shot(page, info, "cinema-sound");
@@ -292,7 +303,7 @@ test("a WAV upload is Cinema Studio's sound reference (@Audio1) at the same pric
   await expect(go).toBeDisabled();
   await well.getByRole("button", { name: "Remove Room tone.wav" }).click();
   await expect(page.getByTestId("gen-blocked")).toHaveCount(0);
-  await expect(go).toHaveText("Generate · 12 cr");
+  await expect(go).toHaveText("Make · 12 cr");
   expect(priced).toHaveLength(1);
   expect(errors).toEqual([]);
 });
@@ -300,9 +311,10 @@ test("a WAV upload is Cinema Studio's sound reference (@Audio1) at the same pric
 test("Recreate brings a Cinema Studio take's controls back onto its chips and its WAV sound back into References; the card says when the chips no longer hold them", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors, priced } = await openGen(page, [TAKE()]);
+  await page.getByTestId("make-tab-recent").click();
   await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_cinema_take']").click();
   await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
-  await expect(page.getByTestId("gen-model")).toContainText("Cinema Studio 4.0");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Cinema Studio 4.0");
   await expect(chip(page, "camera_movement")).toHaveAttribute("aria-label", "Movement: Crane up");
   await expect(chip(page, "genre")).toHaveAttribute("aria-label", "Genre: Noir");
   await expect(chip(page, "light")).toHaveAttribute("aria-label", "Light: Auto");
@@ -311,7 +323,7 @@ test("Recreate brings a Cinema Studio take's controls back onto its chips and it
   await expect(row).toHaveAttribute("data-state", "kept");
   await expect(page.getByTestId("gen-well")).toContainText("@Audio1 · Room tone.wav");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("@Audio1 hums while a lighthouse keeper climbs");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · about 31 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · about 31 cr, at most 93 cr");
   await shot(page, info, "cinema-recreate");
   /* A change made here: the card says so. */
   await chip(page, "genre").click();
@@ -422,8 +434,18 @@ test("the canvas dialog offers Cinema Studio's nine controls, each Auto; picks g
   await expect(dialog.getByRole("combobox", { name: "Cinema Studio movement" }).locator("option")).toHaveCount(34);
   /* The node's sound is a reference here, by name. */
   await expect(dialog.getByRole("list", { name: "Bound references" })).toContainText("Room tone.wav · Sound");
-  const generate = dialog.getByRole("button", { name: "Generate · about 35 cr", exact: true });
+  const generate = dialog.getByRole("button", { name: "Generate · about 35 cr, at most 105 cr", exact: true });
   await expect(generate).toBeEnabled();
+  /* The hold is the whole of what Generate approves (lib/cinemaHold.ts): its price is never cut, at every size —
+     inside the dialog and the screen, wrapping whole rather than clipped, and at least 12 px. */
+  await generate.scrollIntoViewIfNeeded();
+  const fit = await generate.evaluate((el) => {
+    const box = el.getBoundingClientRect(), dialogBox = el.closest("[role=dialog]")!.getBoundingClientRect();
+    return { uncut: el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + 1,
+      inside: box.left >= dialogBox.left - 0.5 && box.right <= dialogBox.right + 0.5 && box.left >= 0 && box.right <= innerWidth + 1,
+      legible: parseFloat(getComputedStyle(el).fontSize) >= 12 };
+  });
+  expect(fit).toEqual({ uncut: true, inside: true, legible: true });
   expect(f.reads.at(-1)?.getAll("uploadId")).toEqual(["portrait-upload", "room-upload"]);
   const readsBefore = f.reads.length;
 
@@ -458,9 +480,9 @@ test("the canvas dialog offers Cinema Studio's nine controls, each Auto; picks g
   await dialog.getByRole("combobox", { name: "Generation engine" }).selectOption(CINEMA);
   await expect(dialog.getByRole("combobox", { name: "Cinema Studio movement" })).toHaveValue("dolly-in");
 
-  await dialog.getByRole("button", { name: "Generate · about 35 cr", exact: true }).click();
+  await dialog.getByRole("button", { name: "Generate · about 35 cr, at most 105 cr", exact: true }).click();
   await expect.poll(() => f.submissions.length).toBe(1);
-  expect(f.submissions[0].body).toMatchObject({ model: CINEMA, projectId: "production-cinema", shotId: "shot-cinema", maxCredits: 35 });
+  expect(f.submissions[0].body).toMatchObject({ model: CINEMA, projectId: "production-cinema", shotId: "shot-cinema", maxCredits: 105 });
   expect(f.submissions[0].body.cinema).toEqual({ camera_model: "35mm-film", camera_movement: "dolly-in", color_palette: "after-dark" });
   expect(f.submissions[0].body.references).toEqual([{ uploadId: "portrait-upload", role: "reference_image" }, { uploadId: "room-upload", role: "reference_audio" }]);
   await expect(dialog).toHaveCount(0);

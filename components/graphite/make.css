@@ -1,0 +1,329 @@
+/*
+ * Make (components/graphite/MakePanel.tsx; design/particl-graphite/README.md § 3.2): a 440 px panel at the right of
+ * whatever is on screen, from under the header to the foot, black with a hairline at its left edge. Beside the
+ * Inspector's column when that is open. Below 768 px it is the screen's width, its targets 44 px, its end clear of
+ * the floating tab bar. Overlays (the Library and Inspector below 1280 px, sheets, menus, toasts) sit above it.
+ * Loaded after phone.css.
+ */
+.gx .gx-make {
+  position: absolute; top: var(--make-top, 56px); bottom: 0; right: 0; z-index: 28;
+  width: min(440px, 100%); display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  background: var(--gx-root); border-left: 1px solid var(--gx-hair-strong);
+  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.6);
+  animation: gx-in .2s var(--gx-ease) both;
+}
+.gx .gx-make[data-beside] { right: calc(var(--gx-w-inspector, 320px) + 1px); }
+.gx-make-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 12px 10px 16px; }
+.gx-make-title { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.gx .gx-make-close { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 6px; font-size: 18px; line-height: 1; color: var(--gx-text-2); }
+.gx .gx-make-close:hover { color: var(--gx-text); background: var(--gx-input-hover); }
+.gx .gx-make-lib { gap: 6px; }
+.gx-make-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+
+/* The composer: no card of its own inside the panel; the panel is the card. */
+.gx .gx-make .gx-gen-card { padding: 0 16px 16px; gap: 14px; border: 0; border-radius: 0; background: transparent; }
+.gx-make-compose { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.gx .gx-make .gx-make-words { min-height: 92px; font-size: 15px; line-height: 1.5; }
+.gx-make-label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+
+/* The engine line: what renders it and its price on one line, Change at its end; the whole line opens the sheet. */
+.gx .gx-make-engine { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--gx-hair); background: transparent; }
+.gx .gx-make-engine:hover { background: var(--gx-input-hover); }
+.gx-make-engine > .gx-glyph { flex: none; color: var(--gx-text-2); }
+.gx-make-engine-line { flex: 1; min-width: 0; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx .gx-make-engine-line > .gx-model-name { display: inline; font-size: 13.5px; }
+.gx-make-engine-part::before { content: " · "; color: var(--gx-text-2); }
+.gx-make-engine-part { color: var(--gx-text); }
+.gx-make-change { flex: none; font-size: 13px; font-weight: 600; color: var(--gx-accent-text); }
+
+/* Make, where it goes, and its price: always in reach — the row sticks to the panel's foot while the controls under
+   it scroll. Its price wraps whole, never cut (shell.css › .gx-gen-go). */
+.gx .gx-make .gx-gen-cta.gx-make-go {
+  position: sticky; bottom: 0; z-index: 2; margin: 0 -16px; padding: 10px 16px; border-radius: 0;
+  display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+  background: var(--gx-root); box-shadow: 0 -1px 0 var(--gx-hair);
+}
+.gx-make-dest { min-width: 0; flex: 1 1 140px; font-size: 13px; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.gx .gx-make .gx-gen-go { width: auto; flex: 0 1 auto; max-width: 100%; padding-left: 16px; padding-right: 16px; }
+
+/* Takes still out are on Recent: the composer says so at every width. */
+.gx .gx-make .gx-resumed-jump { display: flex; align-self: flex-start; }
+
+/* A recreated take's card comes into view clear of Make's sticky row. */
+.gx .gx-make .gx-recipe { scroll-margin-bottom: 84px; }
+
+/* The short form's shape row (aspect, length) sits between the references and the engine line. */
+.gx-make-shape { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* Advanced: one folded line under the quick tools, then what the drawn panel does not have, under a hairline. */
+.gx .gx-make-adv { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 6px 0; background: transparent; border: 0; border-top: 1px solid var(--gx-hair); border-radius: 0; color: var(--gx-text); font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer; }
+.gx-make-adv-chev { color: var(--gx-text-2); transition: transform .15s var(--gx-ease); }
+.gx-make-adv[aria-expanded="true"] .gx-make-adv-chev { transform: rotate(90deg); }
+.gx-make-adv-notes { min-width: 0; font-size: 13px; font-weight: 400; color: var(--gx-text-2); overflow-wrap: anywhere; }
+@media (max-width: 767px), (pointer: coarse) { .gx .gx-make-adv { min-height: 44px; } }
+.gx-make-more { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding-top: 14px; }
+
+/* Recent: Gen's results, two to a row. */
+.gx .gx-make-recent { padding: 0 16px 16px; }
+
+/* Quick tools (the master's row under Make): Motion transfer and Object swap, each a mode of this panel. */
+.gx-make-tools { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; border-top: 1px solid var(--gx-hair); }
+.gx-make-tools-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.gx .gx-make-tools-row > .gx-hbtn { background: transparent; border-color: var(--gx-dialog-border); font-weight: 500; }
+.gx-make-tools-row .gx-glyph { color: var(--gx-text-2); }
+
+/* A quick tool (components/graphite/viral/ViralView.tsx › ViralTool): the source video card, the words with their
+   resolution, the references four across, the line with the live estimate. */
+.gx .vr-src { border-radius: 10px; overflow: hidden; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.gx .vr-src[data-over="true"], .gx .vr-refs[data-over="true"] .vr-ref-add { border-color: var(--gx-accent); background: var(--gx-tint); }
+.vr-src-media { position: relative; aspect-ratio: 16 / 9; background: var(--gx-root); }
+.vr-src-media .gx-lazy, .vr-src-media video, .vr-src-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gx .vr-src-badge { left: 10px; top: 10px; font-size: 12px; letter-spacing: 0; padding: 2px 7px; }
+.gx .vr-src-x { position: absolute; right: 6px; top: 6px; background: var(--gx-on-media); }
+.vr-src-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; }
+.vr-src-text { display: flex; flex-direction: column; min-width: 0; }
+.vr-src-name { font-size: 15px; font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.vr-src-line { font-size: 13px; color: var(--gx-text-2); }
+.vr-words { display: flex; flex-direction: column; gap: 8px; }
+.gx .vr-res { align-self: flex-start; }
+.gx .vr-res .gx-seg-btn[aria-checked="true"]::before { opacity: 1; }
+.gx .vr-res .gx-seg-btn[aria-checked="true"] > span { color: var(--gx-text); font-weight: 600; }
+.vr-refs { display: flex; flex-direction: column; gap: 8px; }
+.vr-ref-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.vr-ref-tile { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--gx-root); border: 1px solid var(--gx-card-border); }
+.vr-ref-tile .gx-lazy, .vr-ref-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vr-ref-name { position: absolute; left: 6px; right: 6px; bottom: 6px; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px #000; }
+.gx .vr-ref-x { position: absolute; right: 4px; top: 4px; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--gx-on-media); color: var(--gx-text); font-size: 13px; line-height: 1; }
+.gx .vr-ref-add { aspect-ratio: 1; border-radius: 8px; border: 1px dashed var(--gx-dashed); background: transparent; color: var(--gx-text-2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 12px; }
+.gx .vr-ref-add > span { font-size: 16px; line-height: 1; }
+.gx .vr-engine, .gx .vr-engine:hover { background: transparent; cursor: default; }
+.gx .vr-order { gap: 6px; }
+/* The 12 px floor inside the panel: its eyebrows, Recent's rows and a reference's place in the order. */
+.gx .gx-make .gx-eyebrow, .gx-make .vr-status, .gx-make .vr-job-note, .gx-make .bz-role { font-size: 12px; }
+
+/* The engine sheet (Change): over Make's own column from 768 px, the rest of the screen dimmed; a bottom sheet on a
+   phone, as every sheet is. No two-letter tiles; the engine in use is tinted. */
+@media (min-width: 768px) {
+  .gx .gx-veil.gx-veil--make { display: flex; justify-content: flex-end; align-items: stretch; padding: var(--make-top, 56px) 0 0; background: rgba(0, 0, 0, 0.55); }
+  .gx .gx-veil--make[data-beside] { padding-right: calc(var(--gx-w-inspector, 320px) + 1px); }
+  .gx .gx-veil--make > .gx-sheet.gx-sheet--models { width: min(440px, 100%); max-height: none; border-radius: 0; border: 0; border-left: 1px solid var(--gx-hair-strong); background: var(--gx-root); box-shadow: none; animation: gx-in .2s var(--gx-ease) both; }
+}
+.gx-veil--make .gx-sheet-row--spec > .gx-tool-tag { display: none; }
+.gx .gx-veil--make .gx-sheet-row[aria-selected="true"] { background: var(--gx-tint); box-shadow: inset 0 0 0 1px var(--gx-tint-border); }
+
+/* Three type tabs keep the 44 px floor on the narrowest phones. */
+@media (max-width: 400px) {
+  .gx-make .gx-seg--fill .gx-seg-btn { min-width: 44px; padding: 0 4px; }
+}
+
+/* Touch: every target 44 px. */
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .gx-make-close, .gx .gx-make-lib { min-width: 44px; height: 44px; }
+  .gx-make-head { gap: 8px; padding: 8px 8px 8px 16px; }
+  .gx .gx-make .gx-seg-btn { min-height: 44px; }
+  .gx .gx-make .gx-make-engine { min-height: 48px; }
+  .gx .gx-make-tools-row > .gx-hbtn, .gx .vr-src-foot > .gx-hbtn { min-height: 44px; }
+  .gx .vr-ref-x, .gx .vr-src-x { width: 44px; height: 44px; right: 0; top: 0; border-radius: 0 0 0 8px; }
+}
+
+@media (max-width: 767px) {
+  /* Make is the screen: the top bar keeps its first row, and Make's own head takes the second (the project switcher's
+     and the page strip's, as Gen's buttons did); where it goes is on Make's row. */
+  .gx:has(.gx-make) .gx-header > .gx-bar { display: none; }
+  .gx .gx-make { width: 100%; left: 0; top: var(--make-top, 64px); border-left: 0; border-top: 0; padding-top: 4px; box-shadow: none; }
+  .gx .gx-make-head { padding: 2px 6px 2px 16px; }
+  /* The body's end clears the floating tab bar; Make's row sticks to the end of its content box, above the bar. */
+  .gx .gx-make-body { padding-bottom: var(--ph-clear, 16px); scroll-padding-bottom: var(--ph-clear, 16px); }
+  .gx .gx-make .gx-gen-cta.gx-make-go { flex-wrap: nowrap; padding: 4px 16px; }
+  .gx .gx-make .gx-gen-go { flex: 0 0 auto; }
+  .gx-make-dest { flex: 1 1 0; }
+}
+
+/* ── Make with the new interface switched on (components/graphite/make/*; README § 3.2, "Make frames.dc.html").
+   The aside keeps `.gx-make` above (its place, its width, the phone's full width) and adds `.gx-mk`. Sizes are the
+   master's: words at 17 px in a 10 px box, 96 px reference tiles, a 14 px engine line with Change, a 36 px Make. ── */
+.gx .gx-make.gx-mk { right: var(--board-dock, 0px); }
+.gx .gx-make.gx-mk[data-beside] { right: calc(var(--gx-w-inspector, 320px) + 1px); }
+.gx-mk-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 12px 10px 16px; }
+.gx-mk-title { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.gx .gx-mk-close { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 6px; font-size: 18px; line-height: 1; color: var(--gx-text-2); }
+.gx .gx-mk-close:hover { color: var(--gx-text); background: var(--gx-input-hover); }
+.gx-mk-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+.gx-mk-eyebrow { font-family: var(--gx-font); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--gx-eyebrow); }
+.gx-mk-note, .gx-mk-dest, .gx-mk-reason, .gx-mk-line-note { font-size: 13px; color: var(--gx-text-2); line-height: 1.45; }
+.gx-mk-line-note, .gx-mk-reason, .gx-mk-error, .gx-mk-short { margin: 0; }
+.gx-mk-line-note[data-alert] { color: var(--gx-waiting-text); }
+.gx-mk-error { font-size: 13px; color: var(--gx-failed-text); }
+.gx .gx-mk-link { min-height: 24px; padding: 0; border: 0; background: none; font-size: 13px; font-weight: 600; color: var(--gx-accent-text); }
+.gx .gx-mk-link:hover { color: var(--gx-accent-text-hover); }
+.gx .gx-mk-x { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; color: var(--gx-text-2); font-size: 15px; }
+.gx-mk .gx-seg-btn[aria-checked="true"]::before { opacity: 1; }
+.gx-mk .gx-seg-btn[aria-checked="true"] > span { color: var(--gx-text); font-weight: 600; }
+
+/* The composer. */
+.gx-mk-compose { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 0 16px 16px; }
+.gx-mk-words { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 10px; background: var(--gx-input); border: 1px solid var(--gx-input-border); transition: border-color .2s; }
+.gx-mk-words[data-filled] { border-color: var(--gx-tint-border-45); }
+.gx-mk-words:focus-within { border-color: var(--gx-accent); box-shadow: 0 0 0 1px var(--gx-accent); }
+.gx .gx-mk-text { width: 100%; min-height: 92px; padding: 0; resize: vertical; border: 0; outline: none; background: transparent; color: var(--gx-text); font: inherit; font-size: 17px; line-height: 1.45; }
+.gx .gx-mk-text::placeholder { color: var(--gx-placeholder); }
+.gx-mk-typerow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+
+.gx-mk-refs { display: flex; flex-direction: column; gap: 10px; border-radius: 10px; }
+.gx-mk-refs[data-over="true"] { outline: 1px dashed var(--gx-accent); outline-offset: 4px; }
+.gx-mk-label { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 8px; }
+.gx-mk-tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+.gx-mk-tile { position: relative; width: 96px; height: 96px; border-radius: 8px; overflow: hidden; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
+.gx-mk-tile .gx-lazy, .gx-mk-tile img, .gx-mk-tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gx-mk-wave { width: 100%; height: 100%; padding: 22px; fill: none; stroke: var(--gx-text-2); stroke-width: 1.6; stroke-linecap: round; }
+.gx-mk-tile-name { position: absolute; left: 6px; right: 6px; bottom: 6px; font-size: 12px; font-weight: 500; color: var(--gx-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px var(--gx-on-media); }
+.gx .gx-mk-tile-x { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--gx-on-media); color: var(--gx-text); font-size: 13px; line-height: 1; }
+.gx .gx-mk-add { width: 96px; height: 96px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: 8px; border: 1px dashed var(--gx-dashed); background: transparent; color: var(--gx-text-2); font-size: 12px; }
+.gx .gx-mk-add > span { font-size: 18px; line-height: 1; }
+.gx .gx-mk-add:hover { border-color: var(--gx-hover-border); color: var(--gx-text); }
+
+/* The engine line: engine · size · length · price, Change at its end. Each part keeps together; a price never breaks. */
+.gx-mk-engine { display: flex; flex-direction: column; gap: 10px; }
+.gx-mk-engine-row { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.gx-mk-spark { flex: none; color: var(--gx-text-2); }
+.gx-mk-line { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; row-gap: 2px; font-size: 14px; color: var(--gx-text); }
+.gx-mk-part { white-space: nowrap; }
+.gx-mk-sep { white-space: pre; color: var(--gx-text-2); }
+.gx .gx-mk-change { flex: none; min-height: 28px; padding: 0 0 0 8px; border: 0; background: none; font-size: 13px; font-weight: 600; color: var(--gx-accent-text); }
+.gx .gx-mk-change:hover { color: var(--gx-accent-text-hover); }
+
+/* Change: the engines with their prices, the drawn lengths, then Advanced, folded. */
+.gx-mk-list { display: flex; flex-direction: column; gap: 8px; padding: 4px; border-radius: 10px; border: 1px solid var(--gx-card-border); background: var(--gx-card); }
+.gx-mk-rows { display: flex; flex-direction: column; }
+.gx .gx-mk-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 6px; background: transparent; text-align: left; }
+.gx .gx-mk-row:hover { background: var(--gx-hair-soft); }
+.gx .gx-mk-row[aria-pressed="true"] { background: var(--gx-tint-10); }
+.gx-mk-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.gx-mk-row-name { font-size: 14px; font-weight: 600; color: var(--gx-text); }
+.gx-mk-row-sub { font-size: 13px; color: var(--gx-text-2); }
+.gx-mk-row-price { flex: none; font-family: var(--gx-mono); font-size: 13px; color: var(--gx-text); }
+.gx-mk-row-at { font-family: inherit; color: var(--gx-text-2); white-space: nowrap; }
+.gx-mk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.gx-mk-list > .gx-mk-chips { padding: 0 6px 4px; }
+.gx-mk-field { display: flex; flex-direction: column; gap: 8px; padding: 0 6px; min-width: 0; }
+.gx-mk-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gx .gx-mk-fold { width: 100%; min-height: 36px; display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-top: 1px solid var(--gx-hair); background: none; font-size: 13px; font-weight: 600; color: var(--gx-text-2); }
+.gx .gx-mk-fold[aria-expanded="true"] { color: var(--gx-text); }
+.gx-mk-fold-mark { font-family: var(--gx-mono); font-size: 14px; }
+.gx-mk-fold-notes { flex: 1; min-width: 0; margin: 0 10px; font-size: 12px; font-weight: 500; text-align: right; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.gx-mk-advanced { display: flex; flex-direction: column; gap: 14px; padding: 2px 0 8px; }
+.gx-mk-advanced .gx-select { max-width: 160px; }
+.gx-mk-enhanced { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--gx-card-border); }
+.gx-mk-enhanced > p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--gx-text); }
+
+/* Where it goes and Make: always in reach, the row sticks to the panel's foot while the composer scrolls. */
+.gx-mk-short { font-size: 13px; line-height: 1.45; color: var(--gx-waiting-text); }
+.gx .gx-mk-short > .gx-mk-link { display: inline-flex; align-items: center; vertical-align: middle; }
+.gx-mk-go { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 0 -16px; padding: 8px 16px; background: var(--gx-root); }
+.gx-mk-dest { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.gx .gx-mk-go-btn.gx-primary { height: auto; min-height: 36px; max-width: 100%; flex-wrap: wrap; justify-content: center; column-gap: 6px; row-gap: 2px; padding: 6px 16px; border-radius: 8px; font-size: 14px; text-align: center; }
+.gx .gx-mk-go-btn.gx-primary[data-waits] { opacity: .6; cursor: default; }
+.gx-mk-reason { margin-top: -10px; }
+
+/* Quick tools: Motion transfer and Object swap, each a mode of this panel. */
+.gx-mk-tools { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--gx-hair); }
+.gx-mk-tools-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.gx .gx-mk-tool { height: 28px; display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text); font-size: 13px; font-weight: 500; }
+.gx .gx-mk-tool:hover { border-color: var(--gx-hover-border); }
+.gx-mk-tool > svg { color: var(--gx-text-2); }
+
+/* A recreated take's recipe, said in one place with Undo. */
+.gx-mk-recipe { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--gx-tint-border); background: var(--gx-tint-08); }
+.gx-mk-recipe-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.gx-mk-recipe-head .gx-mk-eyebrow { color: var(--gx-accent-text); flex: none; }
+.gx-mk-recipe-name { flex: 1; min-width: 0; font-size: 13px; color: var(--gx-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Recent: one card a row, each the take's own card with Again and Use as reference under it. */
+.gx-mk-recent { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 16px; min-width: 0; }
+.gx-mk-cards { display: flex; flex-direction: column; gap: 12px; }
+.gx-mk-card { display: flex; flex-direction: column; border-radius: 10px; border: 1px solid var(--gx-card-border); background: var(--gx-card); overflow: hidden; }
+.gx .gx-mk-card .gx-asset { border: 0; border-radius: 0; background: transparent; }
+.gx .gx-mk-card .gx-asset > .gx-asset-name { margin-top: 10px; padding: 0 12px; font-size: 15px; letter-spacing: -.01em; }
+.gx .gx-mk-card .gx-asset > .gx-asset-meta { padding: 0 12px; font-size: 13px; }
+.gx .gx-mk-card .gx-tile-reason { padding: 0 12px; }
+/* Nothing read below 12 px: the corner badge and the state chip on a card. */
+.gx .gx-mk-card .gx-badge, .gx .gx-mk-card .gx-tile-chip { font-size: 12px; }
+.gx-mk-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; padding: 0 12px 12px; }
+.gx-mk-card-reason { flex-basis: 100%; text-align: end; }
+.gx-mk-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 8px 0; }
+.gx-mk-empty > p { margin: 0; font-size: 14px; color: var(--gx-text-2); }
+
+/* The shot setup's chip labels, at the 12 px floor inside Advanced. */
+.gx .gx-mk-advanced .gx-fv-chip-label { font-size: 12px; }
+
+/* Touch: every target 44 px (a segment may be 40 px inside its 46 px track, shell.css). */
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .gx-mk-close { width: 44px; height: 44px; }
+  .gx-mk-head { gap: 8px; padding: 8px 8px 8px 16px; }
+  .gx .gx-mk-change, .gx .gx-mk-link, .gx .gx-mk-x { min-height: 44px; min-width: 44px; }
+  .gx .gx-mk-change { padding-left: 12px; }
+  .gx .gx-mk-tile-x { width: 44px; height: 44px; top: 0; right: 0; border-radius: 0 0 0 8px; }
+  .gx .gx-mk-tool, .gx .gx-mk-fold, .gx .gx-mk-row { min-height: 44px; }
+  .gx .gx-mk-tool { height: 44px; }
+  .gx .gx-mk-go-btn.gx-primary { min-height: 48px; }
+}
+@media (max-width: 767px) {
+  .gx .gx-mk-head { padding: 2px 6px 2px 16px; }
+  /* The body's end clears the floating tab bar; Make's row sticks above it. */
+  .gx .gx-mk-body { padding-bottom: var(--ph-clear, 16px); scroll-padding-bottom: var(--ph-clear, 16px); }
+}
+/* Recent: one card a row, each the take's own card with its engine and price, then Again · N cr and Use as reference. */
+.gx .gx-make-recent .gx-asset > .gx-asset-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; white-space: normal; overflow: visible; text-overflow: clip; font-size: 13px; }
+.gx-make-card-line { min-width: 0; overflow-wrap: anywhere; }
+.gx-make-card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.gx .gx-make-card-actions .gx-hbtn { height: auto; min-height: 32px; padding-top: 4px; padding-bottom: 4px; white-space: normal; text-align: left; }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .gx-make-card-actions .gx-hbtn { min-height: 44px; }
+}
+.gx-make-engine-line { white-space: normal; overflow: visible; text-overflow: clip; }
+.gx-make-engine-part { white-space: nowrap; }
+.gx-sheet-basis { margin: 0; padding: 8px 14px; border-bottom: 1px solid var(--gx-hair); font-size: 13px; color: var(--gx-text-2); }
+/* Recent is one card a row (the strips and drafts in it keep their own columns inside the row). */
+.gx-gen-grid.gx-make-cards { grid-template-columns: minmax(0, 1fr); }
+
+/* Make › Upscale (components/graphite/make/UpscaleTool.tsx): the source, the target and the model, then the line with the quote. */
+.up-row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.up-field { display: flex; flex-direction: column; gap: 6px; flex: 1 1 160px; min-width: 0; }
+.up-select { width: 100%; min-height: 36px; min-width: 0; text-overflow: ellipsis; }
+.up-model { min-height: 32px; display: inline-flex; align-items: center; font-size: 14px; color: var(--gx-text); }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .up-select, .gx .up-row > .gx-hbtn, .gx .up-field .gx-seg-btn { min-height: 44px; }
+}
+
+/* Gaps B, Make details: Advanced as the frames draw it. A row is a name and its value; a static chip is something the brief set. */
+.gx-mk-row2 { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 32px; font-size: 13px; color: var(--gx-text); }
+.gx-mk-row2-name { color: var(--gx-text-2); }
+.gx-mk-row2-value { text-align: right; }
+.gx-chip[data-static] { cursor: default; }
+.gx .gx-mk-go-btn.gx-hbtn { min-height: 36px; padding: 6px 16px; }
+.gx .gx-mk-go-btn.gx-hbtn[aria-disabled="true"], .gx .gx-mk-go-btn.gx-hbtn[data-waits] { opacity: 1; color: var(--gx-text-2); }
+.gx-mk-result { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 0; border-top: 1px solid var(--gx-hair-soft); }
+.gx-mk-result-line { margin: 0; font-size: 13px; line-height: 1.45; color: var(--gx-waiting-text); }
+.gx .gx-mk-retry { height: auto; min-height: 36px; padding: 6px 16px; border-radius: 8px; font-size: 14px; }
+
+/* Gaps B, Motion transfer and Object swap: the sections as the frames draw them. */
+.gx .vr-ref-tile[draggable="true"] { cursor: grab; }
+.gx .vr-ref-tile[draggable="true"]:active { cursor: grabbing; }
+.vr-ref-num { position: absolute; left: 6px; top: 6px; min-width: 20px; height: 20px; padding: 0 5px; display: grid; place-items: center; border-radius: 10px; background: var(--gx-on-media); color: var(--gx-text); font: 600 12px/1 var(--gx-mono); }
+.vr-frames { display: flex; flex-direction: column; gap: 8px; }
+.vr-frame-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+.gx .vr-frame { position: relative; width: 84px; aspect-ratio: 1; padding: 0; border-radius: 8px; overflow: hidden; background: var(--gx-root); border: 1px dashed var(--gx-dashed); color: var(--gx-text); display: grid; place-items: center; cursor: pointer; }
+.gx .vr-frame[data-set] { border-style: solid; border-color: var(--gx-card-border); }
+.gx .vr-frame:disabled { cursor: default; }
+.vr-frame .gx-lazy, .vr-frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.vr-frame-add { font-size: 18px; line-height: 1; color: var(--gx-text-2); }
+.vr-frame-name { position: absolute; left: 6px; bottom: 5px; font-size: 12px; font-weight: 500; text-shadow: 0 1px 2px #000; }
+.gx .vr-download { align-self: center; }
+.vr-running { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--gx-hair-soft); }
+.vr-bar { position: relative; display: block; width: 100%; height: 3px; border-radius: 2px; background: var(--gx-hair-soft); overflow: hidden; }
+.vr-bar::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 30%; background: var(--gx-accent); animation: vr-slide 1.6s var(--gx-ease) infinite; }
+@keyframes vr-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .vr-bar::before { animation: none; width: 100%; opacity: .5; } }
+@media (max-width: 767px), (pointer: coarse) { .gx .vr-frame { width: 88px; min-height: 44px; } .gx .vr-ref-x { width: 32px; height: 32px; } }
+/* A disabled control in the panel still reads at the floor (55% white): the reason beside it says why it waits. */
+.gx .gx-make .gx-hbtn:disabled, .gx .gx-make .gx-hbtn[aria-disabled="true"], .gx .gx-make .gx-chip:disabled { color: var(--gx-text-2); opacity: 1; }

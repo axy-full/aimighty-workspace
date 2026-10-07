@@ -3,7 +3,7 @@ import { useAtomik } from "@/lib/workspace/atomik-host";
 import { agentStateLabel, priceText, runButton, stepRows } from "@/lib/workspace/atomik-view";
 import { agentDot } from "@/lib/workspace/next";
 import { getSuite, pageDef, suiteOfPage } from "@/lib/workspace/pages";
-import { formatCredits } from "@/lib/workspace/run-engine";
+import { quotePrice } from "@/lib/workspace/run-engine";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { PageId } from "@/lib/workspace/types";
 import { Keycap, Kicker } from "./ui";
@@ -33,7 +33,7 @@ export function AtomikPanel() {
   const rows = plan && !ownerRun ? stepRows(plan, run, atomik.ctx) : [];
   const waiting = run?.status === "waiting";
   const quote = run?.quote ?? null;
-  const gatePrice = quote ? formatCredits(quote.credits, quote.unit) : null;
+  const gatePrice = quote ? quotePrice(quote) : null;
   /* A run held on another page stays reachable: an approval never hides. */
   const elsewhere = atomik.state.run && (!run || atomik.state.run.id !== run.id) && ["running", "waiting"].includes(atomik.state.run.status)
     ? atomik.state.run

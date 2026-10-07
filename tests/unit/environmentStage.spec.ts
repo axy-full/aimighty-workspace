@@ -1,12 +1,12 @@
 import { test, expect } from "@playwright/test";
 import { DEFAULT_ENVIRONMENT, ENVIRONMENT_CATEGORY, environmentsFromBeats, newEnvironmentEntry, plateAsset, platePrompt, plateRequest } from "../../lib/production/environment";
-import { pageOfLegacy } from "../../lib/shell/ia";
+import { stageAddress } from "../../lib/shell/stage-redirects";
 import { newProject, type Asset } from "../../lib/workbench/studio";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 
 /* Production › Environment (owner, 24 September): the world, place by place, before Cast. */
 const sheet = { scriptSha256: "a".repeat(64), updatedAt: new Date().toISOString(), scenes: [
-  { id: "s1", heading: "EXT. HARBOUR - DUSK", summary: "", beats: [], shots: [], characters: ["Mara"], locations: ["Harbour"], props: [] },
+  { id: "s1", heading: "EXT. HARBOUR - DUSK", summary: "", beats: [], shots: [], characters: ["Keeper"], locations: ["Harbour"], props: [] },
   { id: "s2", heading: "INT. HUT - NIGHT", summary: "", beats: [], shots: [], characters: [], locations: ["Hut", "harbour"], props: [] },
 ] };
 
@@ -34,11 +34,11 @@ test("a plate render follows the world, the film's ratio and its references — 
   expect(plateAsset(entry, { id: "g", generationId: "g", url: "/api/media/g" }, 1)).toMatchObject({ category: ENVIRONMENT_CATEGORY, name: "Harbour", kind: "image" });
 });
 
-test("a project saves with its environment; the Cast link still opens Cast, Storyboards still opens Storyboards", () => {
+test("a project saves with its environment; the Cast and Storyboards links open the board's regions (the stage pages are deleted)", () => {
   const project = { ...newProject("Dune"), production: { environment: { ...DEFAULT_ENVIRONMENT, world: "w", entries: [{ ...newEnvironmentEntry("Harbour"), plates: [{ assetId: "g", at: new Date().toISOString(), source: "upload" as const }], selected: "g" }] } } };
   expect(projectSchema.safeParse(project).success).toBe(true);
-  expect(pageOfLegacy("particl", "boards")?.id).toBe("boards");
-  expect(pageOfLegacy("particl", "boards", "environment")?.id).toBe("environment");
-  expect(pageOfLegacy("particl", "cast")?.id).toBe("cast");
-  expect(pageOfLegacy("particl", "brief")?.id).toBe("brief");
+  expect(stageAddress("boards")).toBe("?view=board&region=storyboard");
+  expect(stageAddress("environment")).toBe("?view=board&region=cast");
+  expect(stageAddress("cast")).toBe("?view=board&region=cast");
+  expect(stageAddress("brief")).toBe("?view=board&region=brief");
 });

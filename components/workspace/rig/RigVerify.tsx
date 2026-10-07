@@ -24,7 +24,7 @@ import "./rig-verify.css";
  * The Rig's Verify card (plan PR 7): a check of one take against its masters,
  * priced first ("about N cr"), charged in credits at what the judge actually
  * used, and free to read again. The scorecard shows on the card, in the Card
- * Inspector, and as a badge on the take in Takes (./VerifyBadge.tsx).
+ * Inspector.
  */
 
 const KIND_WORD = { cast: "Cast", environment: "Environment", element: "Element" } as const;

@@ -57,21 +57,26 @@ test("every old deep link lands on the page that now holds its work", async ({ p
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   await signedIn(page);
 
-  const cases: { from: string; page: RegExp; title: string; suite: string }[] = [
-    { from: `/workbench?project=${PROJECT}&stage=canvas`, page: /[?&]page=rig(&|$)/, title: "Rig", suite: "particl" },
-    { from: `/workbench?project=${PROJECT}&stage=storyboard`, page: /[?&]page=boards(&|$)/, title: "Storyboards", suite: "particl" },
-    { from: `/workbench?project=${PROJECT}&stage=characters`, page: /[?&]page=cast(&|$)/, title: "Cast & Elements", suite: "particl" },
-    { from: `/workbench?project=${PROJECT}&stage=astra-blender`, page: /[?&]page=astra(&|$)/, title: "Astra 3D", suite: "particl" },
-    { from: `/workbench?project=${PROJECT}&stage=assets`, page: /[?&]page=takes(&|$)/, title: "Takes", suite: "particl" },
-    { from: `/workbench?project=${PROJECT}&stage=export`, page: /[?&]page=deliver(&|$)/, title: "Deliver", suite: "particl" },
+  /* `make`: the old page is a Make quick tool now (lib/shell/make.ts). The switch still names Viral's page; /suites then
+     sends it on to Studio with Make open in that tool, so the page underneath is Studio's first. */
+  /* `board`: the Studio stage pages are deleted (the board is the whole production), so the switch's target still names the old
+     page and /suites sends it on, in one more 307, to the board's region for it (lib/shell/stage-redirects.ts). */
+  const cases: { from: string; page: RegExp; title: string; suite: string; board?: Record<string, string>; make?: { tool: "motion" | "swap"; title: string } }[] = [
+    { from: `/workbench?project=${PROJECT}&stage=canvas`, page: /[?&]page=rig(&|$)/, title: "", suite: "particl", board: {} },
+    { from: `/workbench?project=${PROJECT}&stage=storyboard`, page: /[?&]page=boards(&|$)/, title: "", suite: "particl", board: { region: "storyboard" } },
+    { from: `/workbench?project=${PROJECT}&stage=characters`, page: /[?&]page=cast(&|$)/, title: "", suite: "particl", board: { region: "cast" } },
+    { from: `/workbench?project=${PROJECT}&stage=astra-blender`, page: /[?&]page=astra(&|$)/, title: "", suite: "particl", board: { region: "shots" } },
+    { from: `/workbench?project=${PROJECT}&stage=assets`, page: /[?&]page=takes(&|$)/, title: "", suite: "particl", board: { region: "shots" } },
+    { from: `/workbench?project=${PROJECT}&stage=export`, page: /[?&]page=deliver(&|$)/, title: "", suite: "particl", board: { region: "deliver" } },
     /* Stage ids retired before this change still resolve. */
-    { from: `/workbench?project=${PROJECT}&stage=script`, page: /[?&]page=brief(&|$)/, title: "Brief & Script", suite: "particl" },
+    { from: `/workbench?project=${PROJECT}&stage=script`, page: /[?&]page=brief(&|$)/, title: "", suite: "particl", board: { region: "brief" } },
     /* The Suites shell folds the old Generate page into Agent (lib/shell/ia.ts). */
     { from: `/atomik?project=${PROJECT}&page=generate`, page: /[?&]page=generate(&|$)/, title: "Agent", suite: "atomik" },
     { from: `/atomik?project=${PROJECT}&page=runs`, page: /[?&]page=runs(&|$)/, title: "Runs", suite: "atomik" },
-    { from: `/subatomik?project=${PROJECT}&page=motion-transfer`, page: /[?&]page=motion(&|$)/, title: "Motion Transfer", suite: "subatomik" },
-    { from: `/subatomik?project=${PROJECT}&page=object-swap`, page: /[?&]page=swap(&|$)/, title: "Object Swap", suite: "subatomik" },
-    { from: `/workbench?project=${PROJECT}&suite=moleculr&page=marketing`, page: /[?&]page=marketing(&|$)/, title: "Image ads", suite: "moleculr" },
+    { from: `/subatomik?project=${PROJECT}&page=motion-transfer`, page: /[?&]page=motion(&|$)/, title: project.name, suite: "subatomik", make: { tool: "motion", title: "Motion transfer" } },
+    { from: `/subatomik?project=${PROJECT}&page=object-swap`, page: /[?&]page=swap(&|$)/, title: project.name, suite: "subatomik", make: { tool: "swap", title: "Object swap" } },
+    /* Business is the Ads board for everyone: its page is the board's image-ads card. */
+    { from: `/workbench?project=${PROJECT}&suite=moleculr&page=marketing`, page: /[?&]page=marketing(&|$)/, title: "", suite: "moleculr", board: { view: "board", kind: "ads" } },
   ];
 
   for (const one of cases) {
@@ -85,9 +90,20 @@ test("every old deep link lands on the page that now holds its work", async ({ p
     expect(target, one.from).toMatch(one.page);
     expect(target, one.from).toMatch(new RegExp(`[?&]suite=${one.suite}(&|$)`));
     expect(target, one.from).toMatch(new RegExp(`[?&]project=${PROJECT}(&|$)`));
-    await expect(page, one.from).toHaveURL(new RegExp(`[?&]suite=${one.suite}(&|$)`));
     await expect(page, one.from).toHaveURL(new RegExp(`[?&]project=${PROJECT}(&|$)`));
-    await expect(page.getByTestId("page-title"), one.from).toHaveText(one.title);
+    if (one.board) {
+      await expect(page.locator(".gx"), one.from).toHaveAttribute("data-screen", /^board/);
+      await expect.poll(() => { const q = new URL(page.url()).searchParams; return Object.entries({ view: "board", ...one.board }).every(([k, v]) => q.get(k) === v); }, { message: one.from }).toBe(true);
+    } else {
+      await expect(page, one.from).toHaveURL(new RegExp(`[?&]suite=${one.make ? "particl" : one.suite}(&|$)`));
+      await expect(page.getByTestId("page-title"), one.from).toHaveText(one.title);
+    }
+    if (one.make) {
+      await expect(page, one.from).toHaveURL(new RegExp(`[?&]make=${one.make.tool}(&|$)`));
+      await expect(page.getByTestId("make-panel"), one.from).toBeVisible();
+      await expect(page.getByTestId("make-panel"), one.from).toHaveAttribute("data-tab", one.make.tool);
+      await expect(page.getByTestId("make-title"), one.from).toHaveText(one.make.title);
+    }
     await expect(legacyShell(page)).toHaveCount(0);
   }
 });
@@ -105,34 +121,50 @@ test("a bare old URL opens the workspace home, and a Moleculr section arrives as
     await page.goto(from);
     await expect(page, from).toHaveURL(/\/suites\?/);
     expect(new URL(await switched).searchParams.has("page"), from).toBe(false);
-    /* The Suites shell has no project-picker home: Studio opens on its first page. */
+    /* The Suites shell has no project-picker home: Studio opens on its overview (the stage pages are the board's regions). */
     await expect(page.locator(".gx"), from).toBeVisible();
-    await expect(page.getByTestId("page-title"), from).toHaveText("Brief & Script");
+    await expect(page.getByTestId("page-title"), from).toHaveText(project.name);
   }
 
+  /* A Moleculr section is a card of the Ads board, for everyone. */
   await page.goto(`/workbench?project=${PROJECT}&suite=moleculr&page=brand`);
-  await expect(page).toHaveURL(/[?&]page=marketing/);
-  await expect(page).toHaveURL(/#brand$/);
-  await expect(page.getByTestId("page-title")).toHaveText("Image ads");
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads");
+  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("kind")]; }).toEqual(["board", "ads"]);
 });
 
-test("a selection and any other query param survive the switch", async ({ page }, info) => {
+test("the project and any other query param survive the switch", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   await signedIn(page);
 
   await page.goto(`/workbench?project=${PROJECT}&stage=canvas&sel=shot:sw-b`);
-  await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
-  await expect(page).toHaveURL(/[?&]sel=shot%3Asw-b(&|$)/);
-  await expect(page.getByTestId("inspector")).toContainText("The encounter");
+  /* The Rig page is the board, and the project rides along to it. (A `sel=shot:` selection is not carried: the board keeps its own
+     selection, and an old selection link opens it unselected.) */
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
+  await expect(page).toHaveURL(/[?&]view=board(&|$)/);
+  await expect(page).toHaveURL(new RegExp(`[?&]project=${PROJECT}(&|$)`));
 
   /* Subatomik's connected-account override is a param the mapping does not
      own, so it is carried through untouched rather than dropped. */
   const switched = switchTarget(page);
+  /* Object Swap is Make's quick tool now: /suites sends the switch's target on to Make's address (lib/shell/make.ts),
+     and that hop carries the param too. */
+  const toMake = page.waitForRequest((r) => r.isNavigationRequest() && r.frame() === page.mainFrame() && new URL(r.url()).searchParams.get("make") === "swap").then((r) => r.url());
   await page.goto(`/subatomik?project=${PROJECT}&page=object-swap&account=particl`);
   const target = await switched;
   expect(target).toMatch(/[?&]page=swap(&|$)/);
   expect(target).toMatch(/[?&]account=particl(&|$)/);
-  await expect(page.getByTestId("page-title")).toHaveText("Object Swap");
+  expect(await toMake).toMatch(/[?&]account=particl(&|$)/);
+  await expect(page).toHaveURL(/[?&]make=swap(&|$)/);
+  await expect(page.getByTestId("make-panel")).toBeVisible();
+  await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "swap");
+  await expect(page.getByTestId("make-title")).toHaveText("Object swap");
+  /* …and it is still on the address once Studio has written its own page into it (lib/workspace/navigation.ts › CARRIED_PARAMS),
+     and after Make closes over that page. */
+  await expect(page).toHaveURL(/[?&]page=brief(&|$)/);
+  await expect(page).toHaveURL(/[?&]account=particl(&|$)/);
+  await page.getByTestId("make-close").click();
+  await expect(page.getByTestId("make-panel")).toHaveCount(0);
+  await expect(page).toHaveURL(/[?&]account=particl(&|$)/);
 });
 
 test("the back button leaves the redirect alone instead of bouncing", async ({ page }, info) => {
@@ -141,12 +173,12 @@ test("the back button leaves the redirect alone instead of bouncing", async ({ p
 
   await page.goto(`/workspace?project=${PROJECT}&suite=particl&page=brief`);
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
-  /* An old bookmark, arriving over the top of it. */
+  /* An old bookmark, arriving over the top of it: the board (the Rig page is the board). */
   await page.goto(`/workbench?project=${PROJECT}&stage=canvas`);
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
   /* Back returns to where the person was, not to /workbench and forward again. */
   await page.goBack();
-  await expect(page).toHaveURL(/[?&]page=brief(&|$)/);
+  await expect(page).toHaveURL(/\/workspace\?/);
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
 });
 
@@ -156,14 +188,23 @@ test("phones land on the Suites shell as well, at the same mapped URLs", async (
   test.skip(!PHONE.includes(info.project.name), "phone viewports");
   await signedIn(page);
 
-  for (const [from, title] of [
-    [`/workbench?project=${PROJECT}&stage=canvas`, "Rig"],
-    [`/subatomik?project=${PROJECT}&page=motion-transfer`, "Motion Transfer"],
-    ["/", "Brief & Script"],
+  /* Motion Transfer is Make's quick tool now (lib/shell/make.ts): its old link opens Make in that tool over Studio. */
+  for (const [from, title, make] of [
+    [`/workbench?project=${PROJECT}&stage=canvas`, null, null],
+    [`/subatomik?project=${PROJECT}&page=motion-transfer`, project.name, "motion"],
+    ["/", project.name, null],
   ] as const) {
     await page.goto(from);
     await expect(page, from).toHaveURL(/\/suites\?/);
-    await expect(page.getByTestId("page-title"), from).toHaveText(title);
+    /* The Rig page is the board; the others open Studio's overview. */
+    if (title === null) await expect(page.locator(".gx"), from).toHaveAttribute("data-screen", "board");
+    else await expect(page.getByTestId("page-title"), from).toHaveText(title);
+    if (make) {
+      await expect(page, from).toHaveURL(new RegExp(`[?&]make=${make}(&|$)`));
+      await expect(page.getByTestId("make-panel"), from).toBeVisible();
+      await expect(page.getByTestId("make-panel"), from).toHaveAttribute("data-tab", make);
+      await expect(page.getByTestId("make-title"), from).toHaveText("Motion transfer");
+    }
     /* The tab bar is the portrait phone's; a phone held landscape keeps the header's tabs. */
     if (info.project.name !== "workbench-844x390") await expect(page.getByTestId("tabbar"), from).toBeVisible();
     await expect(legacyShell(page), from).toHaveCount(0);
@@ -196,12 +237,12 @@ test("the escape hatch opens the old shell, is remembered, and can be cancelled"
   /* …and cancelled explicitly, which clears the cookie and puts the new
      workspace back in front — and keeps it there on the next plain URL. */
   await page.goto(`/workbench?project=${PROJECT}&stage=assets&${SHELL_PARAM}=new`);
-  await expect(page).toHaveURL(/[?&]page=takes(&|$)/);
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
+  await expect(page).toHaveURL(/[?&]region=shots(&|$)/);
   await expect.poll(shellCookie).toBeUndefined();
   await page.goto(`/workbench?project=${PROJECT}&stage=canvas`);
-  await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board");
+  await expect(page).toHaveURL(/[?&]view=board(&|$)/);
 });
 
 test("the account menu carries the person back to the previous workspace", async ({ page }, info) => {

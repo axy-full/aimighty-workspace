@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Assets on every page: `+` and a drop land a
@@ -18,7 +19,7 @@ async function open(page: Page) {
   await signInLocally(page.request);
   await forbidPaidWork(page);
   await mockMedia(page);
-  await mockProjects(page, { current: fixture(), list: [{ id: "ws-assets", name: "Coastal light study" }, { id: "ws-other", name: "Northline" }] });
+  await mockProjects(page, { current: fixture(), list: [{ id: "ws-assets", name: "Coastal light study" }, { id: "ws-other", name: "Granite" }] });
   await mockLibrary(page, {
     uploads: [upload({ id: "up_plate", filename: "harbour-plate.webp" }), upload({ id: "up_tone", filename: "room-tone.mp3", mime: "audio/mpeg", kind: "audio", width: 0, height: 0 })],
     generations: [generation({ id: "gen_wide", title: "Wide on the water", prompt: "Wide on the water", params: { rawPrompt: "wide on the water, raw", enhancedPrompt: "Wide on the water at dusk, 35mm, low sun" } })],
@@ -41,8 +42,8 @@ async function open(page: Page) {
   await page.route("**/api/prompt/enhance", (route) => route.fulfill({ json: { model: "m", effort: "auto", estimateCredits: 1 } }));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?suite=particl&page=boards&sp=boards");
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await page.goto("/suites?suite=atomik&page=agent&sp=agent");
+  await expect(projectName(page)).toHaveText("Coastal light study");
   return { errors, calls };
 }
 
@@ -75,25 +76,28 @@ test("right-click: every command works or says exactly why not; delete is soft a
   const wideTile = library.locator(".gx-asset-thumb[data-ctx='asset:generation:gen_wide']");
   await wideTile.click({ button: "right" });
   const menu = page.getByTestId("context-menu");
-  await expect(menu.getByRole("menuitem", { name: "Recreate" })).toBeEnabled();
+  /* Recreate spends once Make is pressed: it shows Make's own price (the server's quote), and is enabled only once there is one. */
+  await expect(menu.getByRole("menuitem", { name: /^Recreate · (about )?[\d,]+ cr/ })).toBeEnabled();
   await expect(menu.getByRole("menuitem", { name: /^Paste/ })).toBeDisabled();
   await expect(menu.getByRole("menuitem", { name: /^Duplicate/ })).toHaveAttribute("title", "A generation has one copy. Recreate makes a new take from the same recipe.");
-  await expect(menu.getByRole("menuitem", { name: /^Move to/ })).toBeEnabled();
+  await expect(menu.getByRole("menuitem", { name: /^Move to…/ })).toBeEnabled();
+  /* Delete hides it in the trash and never erases it: the toast says so and carries Undo. */
   await expect(menu.getByRole("menuitem", { name: /^Delete/ })).toBeEnabled();
   await menu.getByRole("menuitem", { name: /^Delete/ }).click();
-  await expect(page.getByTestId("toast")).toHaveText("Deleted Wide on the water · ⌘Z to undo. The original stays on the server indefinitely.");
+  await expect(page.getByTestId("toast")).toHaveText(/^Moved Wide on the water to trash/);
+  await expect(page.getByTestId("toast-undo")).toBeVisible();
   expect(calls.at(-1)).toEqual({ method: "PATCH", path: "/api/jobs/gen_wide", body: { trashed: true } });
-  await page.keyboard.press("ControlOrMeta+z");
+  await page.getByTestId("toast-undo").click();
   await expect(page.getByTestId("toast")).toHaveText("Wide on the water restored");
   expect(calls.at(-1)).toEqual({ method: "PATCH", path: "/api/jobs/gen_wide", body: { trashed: false } });
 
   /* Recreate opens Gen with the render's own recipe, and the toast says it is there. */
   await wideTile.click({ button: "right" });
-  await menu.getByRole("menuitem", { name: "Recreate" }).click();
+  await menu.getByRole("menuitem", { name: /^Recreate/ }).click();
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("wide on the water, raw");
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Wide on the water");
-  await expect(page.getByTestId("toast")).toHaveText("Wide on the water’s recipe is in Gen.");
+  await expect(page.getByTestId("toast")).toHaveText("Wide on the water’s recipe is in Make.");
   expect(errors).toEqual([]);
 });
 
@@ -114,12 +118,12 @@ test("cut here, paste in another project: the upload moves; Move to… does the 
   await expect(page.getByTestId("toast")).toHaveText("harbour-plate.webp is already in Coastal light study.");
   expect(calls).toEqual([]);
 
-  /* Move to… → Northline files it there and unfiles it here. */
+  /* Move to… → Granite files it there and unfiles it here. */
   if (!wide) await page.getByTestId("toggle-library").click();
   await plate.locator(".gx-asset-thumb").click({ button: "right" });
   await page.getByTestId("context-menu").getByRole("menuitem", { name: /^Move to/ }).click();
-  await page.getByRole("dialog", { name: "Move harbour-plate.webp to" }).getByRole("option", { name: "Northline" }).click();
-  await expect(page.getByTestId("toast")).toHaveText("Moved harbour-plate.webp to Northline");
+  await page.getByRole("dialog", { name: "Move harbour-plate.webp to" }).getByRole("option", { name: "Granite" }).click();
+  await expect(page.getByTestId("toast")).toHaveText("Moved harbour-plate.webp to Granite");
   expect(calls).toEqual([
     { method: "POST", path: "/api/workbench/library", body: { projectId: "ws-other", uploadId: "up_plate" } },
     { method: "DELETE", path: "/api/workbench/library", body: { projectId: "ws-assets", uploadId: "up_plate" } },

@@ -7,7 +7,7 @@ import { APP_HREF, PRICING_HREF, SIGN_IN_HREF, SITE_SUITES, shot } from "@/lib/m
 import AccessForm from "./AccessForm";
 import { Chips, Cols, Grid, Head, Section, Tile, Window } from "./ui";
 
-/** Suites strip → Shell → Pricing teaser → Request access: the end of every page. */
+/** Places strip → the board → Pricing teaser → Request access: the end of every page. */
 export default function SharedBottom({ prices, member }: { prices: SitePrices; member: boolean }) {
   return (
     <>
@@ -21,11 +21,11 @@ export default function SharedBottom({ prices, member }: { prices: SitePrices; m
 
 function SuitesStrip() {
   return (
-    <Section id="suites" panel label="Suites">
+    <Section id="suites" panel label="Places">
       <Head
-        eyebrow="Five suites · one workspace · one shell"
-        title="One room. One composer."
-        aside={<p className="mk-lead" style={{ fontSize: 15, maxWidth: "46ch" }}>Every tool is a preset that opens the same composer. Assets are visible and draggable on every page.</p>}
+        eyebrow="Studio · Ads · Social · Make · Atomik"
+        title="Every project is one board."
+        aside={<p className="mk-lead" style={{ fontSize: 15, maxWidth: "46ch" }}>Studio, Ads and Social are boards. Make opens over any of them; Atomik sits beside.</p>}
       />
       <div className="mk-suites-grid">
         {SITE_SUITES.map((suite) => (
@@ -42,21 +42,21 @@ function SuitesStrip() {
 }
 
 const SHELL_TILES: [string, string, string][] = [
-  ["Projects", "Home opens on your projects", "Recent projects, saved projects, a new one. A project is one brief and one cast across every suite; switching suites waits for pending saves."],
-  ["⌘K", "Palette", "Generate, suites, every page, Workspace, models, assets and “Ask Atomik: …”. Enter runs the top hit."],
-  ["Library", "Tools | Assets", "On every stage. Every tile drags onto any reference well or Rig node. Download original is always the original bytes."],
-  ["⌘J", "Inspector", "Controls, Inputs and Versions for whatever is selected: asset, take, run, node, item or stage."],
-  ["Right-click", "Menu everywhere", "Copy, cut, paste, duplicate, move to, retry, and a 20-deep undo."],
-  ["Enhancer", "One prompt enhancer", "One provider, chosen in Workspace › General. Never on raw: prompts."],
+  ["Home", "What are we making?", "Start from a brief or a template: Film, Ad campaign, Social clips or a script. Your projects show what needs you."],
+  ["⌘K", "Search and Atomik", "Go to any part of the board, open Make, or ask Atomik. Enter runs the top result."],
+  ["⌥M", "Make", "Video, images and audio over any screen. The engine line shows the price before you press."],
+  ["Library", "A drawer on the board", "Every take and reference, ready to drag onto a shot. Download keeps the original file."],
+  ["⌘J", "Inspector", "Shows a take's prompt, engine and the price paid."],
+  ["Right-click", "Menu everywhere", "Copy, duplicate, use as reference, or recreate at its price. Delete has Undo."],
 ];
 
 function Shell() {
   return (
-    <Section id="shell" label="Shell">
-      <Head eyebrow="The shell" title="The same room on every page."
-        lead="Library on the left, Inspector on the right, one composer, one prompt enhancer. Every card is a button; nothing dead-ends in a toast." />
+    <Section id="shell" label="The board">
+      <Head eyebrow="The board" title="The whole production on one canvas."
+        lead="Brief · Looks · Storyboard · Shots · Cast · Cut · Deliver. Atomik plans each step and prices it; a person approves before anything is spent." />
       <Cols col={420}>
-        <Window path="⌘K · search everything" src={shot("palette-cmd-k")} alt="The ⌘K palette" width={924} height={540} />
+        <Window path="⌘K · search, or tell Atomik what to do" src={shot("palette-cmd-k")} alt="⌘K: Home, the board, Make and Atomik" width={924} height={540} />
         <Grid col={200}>
           {SHELL_TILES.map(([tag, name, body]) => <Tile key={tag} tag={tag} name={name} body={body} />)}
         </Grid>
@@ -64,9 +64,9 @@ function Shell() {
       <Cols col={300} style={{ alignItems: "center", marginTop: 16 }}>
         <div className="mk-head">
           <div className="mk-eyebrow">On a phone</div>
-          <h3 className="mk-h3">The same room, one hand.</h3>
-          <p className="mk-lead">Home · Workflow · Canvas · Takes · Edit in a tab bar, stage sheets that pull up over the work. Every tap target is at least 44 px.</p>
-          <Chips items={["Home", "Workflow", "Canvas", "Takes", "Edit", "≥ 44 px targets"]} />
+          <h3 className="mk-h3">Judge the work, one hand.</h3>
+          <p className="mk-lead">Home · Record · Make · Atomik in the tab bar. Approve a plan, review takes and ask for a fix. Every tap target is at least 44 px.</p>
+          <Chips items={["Home", "Record", "Make", "Atomik", "≥ 44 px targets"]} />
         </div>
       </Cols>
     </Section>

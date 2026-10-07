@@ -12,6 +12,7 @@ import { AtomikRunDialog, type AtomikRunTarget } from '@/components/workbench/At
 import { readPendingAtomik, atomikPendingInput } from '@/lib/workbench/atomik-pending-request';
 import { studioRequest } from '@/components/workbench/GenerationDialog';
 import styles from './astra-integration.module.css';
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 type State = { models: ThinkingModel[]; jobs: AtomikJob[] };
 export function AstraAgentPanel({ project, scope, enabled, onSave, onApply, onAsset }: { project: Project; scope: string; enabled: boolean; onSave: () => Promise<boolean>; onApply: (plan: Plan) => Promise<void>; onAsset?: (asset: Asset) => void }) {
@@ -65,7 +66,7 @@ export function AstraAgentPanel({ project, scope, enabled, onSave, onApply, onAs
   async function review() {
     setBusy(true); setError('');
     try {
-      if (!(await onSave())) throw new Error('Save this project before asking Astra to edit it.');
+      if (!(await onSave())) throw new SaveFailedError();
       const scene = project.astraBlender ?? createAstraScene('product');
       validateAstraBindings(scene, [...project.assets, ...(project.sharedAssets ?? [])]);
       setTarget({ astraBlender: { sceneDigest: await astraSceneDigest(scene), ...(mode === 'native' ? { mode, nativeDigest: await astraNativeDigest(project.astraNative) } : {}), ...(referenceIds.length ? { referenceIds } : {}) }, request, model: ASTRA_BLENDER_MODEL, effort: 'medium', depth: 'Deep', refs: [] });

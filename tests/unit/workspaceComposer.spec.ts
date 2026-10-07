@@ -170,8 +170,8 @@ test("a missing or stale quote blocks the send with a visible reason", () => {
   expect(composerButtonLabel({ quote: ready(key, 18), quoteKey: key, submitting: false })).toBe("Generate · 18 cr");
   expect(composerButtonLabel({ quote: ready(key, 1296), quoteKey: key, submitting: false })).toBe("Generate · 1,296 cr");
   /* An approximate figure (an engine that settles on what it delivers) never reads as exact. */
-  expect(composerButtonLabel({ quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false })).toBe("Generate · about 18 cr");
-  expect(composerButtonLabel({ quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false, count: 3 })).toBe("Generate 3 takes · about 54 cr");
+  expect(composerButtonLabel({ quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false })).toBe("Generate · about 18 cr, at most 54 cr");
+  expect(composerButtonLabel({ quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false, count: 3 })).toBe("Generate 3 takes · about 54 cr, at most 162 cr");
   expect(composerButtonLabel({ quote: ready(key, 18), quoteKey: key, submitting: true })).toBe("Submitting…");
   expect(composerBlock({ ...base, quote: ready(key, 18), submitting: true })).toBe("Submitting this generation…");
   /* Changing the model moves the key, so the old figure cannot be sent. */
@@ -406,7 +406,7 @@ test("the palette shows Generate… first on an empty query", () => {
   expect(rows[0]).toMatchObject({ id: "composer", label: "Generate…", group: "ACTION", hint: "G", action: { type: "composer" } });
   /* And it is findable by name, beside the Rig row, which no longer claims G. */
   const hits = filterPalette(paletteCommands({ shots: [{ id: "s1", name: "Opening" }] }), "generate");
-  expect(hits.map((row) => row.id)).toEqual(["composer", "page:generate", "plan:generate", "generate"]);
+  expect(hits.map((row) => row.id)).toEqual(["composer", "plan:generate", "generate"]);
   expect(hits.find((row) => row.id === "generate")?.hint).toBe("");
 });
 
