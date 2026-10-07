@@ -29,9 +29,11 @@ export const GET = withTenant(async function GET() {
 
   const [members, invites, stats] = await Promise.all([
     platformDb().execute({
+      /* Two-factor per person (Team security, Gaps B): whether their account has an authenticator on, nothing more. */
       sql: `SELECT a.id, a.email, a.name, a.last_seen, a.created_at, a.locked_until, a.disabled AS a_disabled,
-                   m.role, m.disabled AS m_disabled, m.created_at AS joined_at
+                   m.role, m.disabled AS m_disabled, m.created_at AS joined_at, asec.enabled_at AS two_step_at
             FROM memberships m JOIN accounts a ON a.id = m.account_id
+            LEFT JOIN account_security asec ON asec.account_id = a.id
             WHERE m.workspace_id = ? AND a.deleted_at IS NULL ORDER BY m.created_at ASC`,
       args: [ws.id],
     }),
@@ -55,6 +57,7 @@ export const GET = withTenant(async function GET() {
       ...(canSeeRoles ? { role: r.role === "owner" ? "admin" : r.role, standing: r.role, permanent: r.role === "owner" } : {}),
       disabled: Number(r.m_disabled) === 1 || Number(r.a_disabled) === 1,
       locked: r.locked_until != null && Number(r.locked_until) > now(),
+      twoStep: r.two_step_at != null,
       lastSeen: r.last_seen == null ? null : Number(r.last_seen),
       createdAt: Number(r.joined_at ?? r.created_at),
       clips: made.get(String(r.id))?.clips ?? 0,

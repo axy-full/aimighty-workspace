@@ -35,8 +35,12 @@ test("addresses open the phone's screens; the board is its Record and Approvals 
   expect(readPhone("?screen=nonsense").asked).toBe("home");
 });
 
-test("every one of the design's phone screens is drawn (the eight and Gaps A's Cut); an address that is not one opens Home, never an empty screen", () => {
-  expect([...DRAWN_SCREENS].sort()).toEqual(["atomik", "cut", "fix", "home", "make", "plan", "record", "review", "states"]);
+test("every one of the design's phone screens is drawn (the eight, Gaps A's Cut and its consent step); an address that is not one opens Home, never an empty screen", () => {
+  expect([...DRAWN_SCREENS].sort()).toEqual(["atomik", "consent", "cut", "fix", "home", "make", "plan", "record", "review", "states"]);
+  /* The consent step (Gaps A) carries the cast member it records for; a malformed one is never carried, and leaving drops it. */
+  expect(readPhone("?screen=consent&cast=cast:cast:lead").cast).toBe("cast:cast:lead");
+  expect(readPhone("?screen=consent&cast=../x").cast).toBeNull();
+  expect(phoneSearch("?screen=consent&cast=n1&project=p1", { screen: "home" })).toBe("?project=p1");
   for (const screen of ["fix", "states", "cut"]) expect(readPhone(`?screen=${screen}`).screen).toBe(screen);
   expect(readPhone("?screen=nonsense").screen).toBe("home");
   /* Change with words keeps the take it was opened on. */

@@ -88,7 +88,7 @@ test("the train route refuses a run that costs more than the approved price, bef
     "next/server": nextServer(),
     "@/lib/auth": { requireRender: async () => ({ user: { id: "caller" } }), withTenant: (h: Handler) => h },
     "@/lib/demo/spend-guard.server": { sampleWorkspaceOff: async () => null },
-    "@/lib/identities": { trainCostUsd: () => usd, startTraining: async (id: string) => { started.push(id); return { id, status: "training" }; }, identityForBrowser: (i: object) => i },
+    "@/lib/identities": { getIdentity: async (id: string) => ({ id, projectId: "prod_fixture" }), trainCostUsd: () => usd, startTraining: async (id: string) => { started.push(id); return { id, status: "training" }; }, identityForBrowser: (i: object) => i },
     "@/lib/credits": { creditsApply: () => inCredits },
     "@/lib/tenant": { currentTenant: () => null },
     "@/lib/allowance": { allowanceCheck: async (_v: string, cost: number) => { walls.push(cost); return { ok: true }; } },
@@ -96,6 +96,11 @@ test("the train route refuses a run that costs more than the approved price, bef
     "@/lib/creditTerms": { billCredits },
     "@/lib/identityTraining": { trainApprovalProblem },
     "@/lib/generationRequests": { withGenerationRequest: (_r: Request, _u: string, run: () => Promise<Response>) => run(), SpendReservationError: class extends Error {} },
+    /* Training records consent, so the route is people-only; the caller here is a signed-in person. */
+    "@/lib/security/people-only": await import("../../lib/security/people-only"),
+    /* Every training cites a live consent record (lane 5); its own rules are tested in demo-gaps-l5-review-558. */
+    "@/lib/security/consent": { consentForTraining: async () => ({ id: "cns_fixture" }), projectKeysFor: async () => ["prod_fixture"] },
+    "@/lib/security/consent-words": { ConsentError: class extends Error { status = 400; } },
   });
   const post = (body: unknown) => route.POST(
     new Request("http://localhost/api/identities/idn_1/train", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),

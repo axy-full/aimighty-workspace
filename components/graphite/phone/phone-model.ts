@@ -14,17 +14,17 @@ import type { ReviewState } from "@/lib/workspace/takes";
 const ID = /^[A-Za-z0-9_-]{1,100}$/;
 
 /** The design's phone screens (README § 1.1). */
-export const PHONE_SCREENS = ["home", "plan", "review", "fix", "record", "make", "atomik", "states", "cut"] as const;
+export const PHONE_SCREENS = ["home", "plan", "review", "fix", "record", "make", "atomik", "states", "cut", "consent"] as const;
 export type PhoneScreen = (typeof PHONE_SCREENS)[number];
 
 /** The URL params the phone owns (the shell keeps them, with the switch on only). */
-export const PHONE_PARAMS = ["screen", "device", "from", "run", "take"] as const;
+export const PHONE_PARAMS = ["screen", "device", "from", "run", "take", "cast"] as const;
 
 /**
- * The screens this build draws: all nine of the design's (Cut is Gaps A's). An address for one this build does not draw opens Home,
- * never an empty screen.
+ * The screens this build draws: all nine of the design's (Cut is Gaps A's), and the consent step (Gaps A). An address
+ * for one this build does not draw opens Home, never an empty screen.
  */
-export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "plan", "review", "fix", "record", "make", "atomik", "states", "cut"]);
+export const DRAWN_SCREENS: ReadonlySet<PhoneScreen> = new Set<PhoneScreen>(["home", "plan", "review", "fix", "record", "make", "atomik", "states", "cut", "consent"]);
 
 export const isPhoneScreen = (value: unknown): value is PhoneScreen => PHONE_SCREENS.includes(value as PhoneScreen);
 
@@ -41,6 +41,8 @@ export type PhoneRoute = {
   take: string | null;
   /** The Atomik run a plan opens on (`run=`). */
   run: string | null;
+  /** The cast member the consent step records for (`cast=`, the Cast card's id). */
+  cast: string | null;
   /**
    * The address is one of the phone's own screens. Otherwise (Settings, an old page) the shell's page for it
    * renders under the phone's header, with a back to Home (DECISIONS 11).
@@ -111,6 +113,7 @@ export function readPhone(search: string | URLSearchParams): PhoneRoute {
     fromNotification: q.get("from") === "notification",
     take: take && ID.test(take) ? take : null,
     run: q.get("run") && ID.test(q.get("run")!) ? q.get("run") : null,
+    cast: q.get("cast") && /^[A-Za-z0-9_.:-]{1,160}$/.test(q.get("cast")!) ? q.get("cast") : null,
     own: ownAddress(q),
     larger: largerPage(q),
   };
@@ -133,6 +136,7 @@ export function phoneSearch(current: string, patch: Partial<Record<(typeof PHONE
     if (patch.screen !== "review" && patch.screen !== "fix" && patch.take === undefined) q.delete("take");
     if (patch.from === undefined) q.delete("from");
     if (patch.screen !== "plan" && patch.run === undefined) q.delete("run");
+    if (patch.screen !== "consent" && patch.cast === undefined) q.delete("cast");
   }
   const text = q.toString();
   return text ? `?${text}` : "";
