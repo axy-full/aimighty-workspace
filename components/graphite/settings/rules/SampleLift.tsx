@@ -28,7 +28,7 @@ const WHY: Record<LiftWhy, string> = {
 
 function recordLine(r: LiftRecord): string {
   const run = r.run ? (r.run.goal ? `“${r.run.goal.length > 60 ? r.run.goal.slice(0, 59) + "…" : r.run.goal}”` : "one run") : "next run";
-  const back = r.backAt == null ? "still lifted" : `back on ${clock(r.backAt)}, ${r.why === "put_back" && r.backBy ? `${r.backBy} put it back` : WHY[r.why ?? "expired"]}`;
+  const back = r.backAt == null ? "still lifted" : `back on ${clock(r.backAt)}, ${r.why === "put_back" && r.backBy ? `${r.backBy === "You" ? "you" : r.backBy} put it back` : WHY[r.why ?? "expired"]}`;
   return `${when(r.at)} · ${run} · ${back}`;
 }
 
