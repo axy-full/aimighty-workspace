@@ -1,4 +1,4 @@
-# Status now: 8 October 2026, 00:19 IST, Release 1 lead moved to "contabo"
+# Status now: 8 October 2026, 00:23 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -44,7 +44,7 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
 | Branch | State |
 |---|---|
 | Hotfix PRs to main (owner yes, "go" to merge) | 1 sign-in behind the proxy, 2 public links, 3 rate limits (client address), 4 an explicit production flag instead of VERCEL_ENV: being ported to main as draft PRs, each with a fresh Opus review |
-| `ops/selfhost-runbook-cutover` @ 05bd291b | Production facts added (R2, Inngest with re-point steps, mail, AI Gateway, Astra sandbox stays on Vercel); staging test with fresh empty databases. Delta review running. Owner question 18 |
+| `ops/selfhost-runbook-cutover` @ 05bd291b | Production facts added (R2, Inngest with re-point steps, mail, AI Gateway, Astra sandbox stays on Vercel); staging test with fresh empty databases. Review PASS; last fixes going in (Bot Fight Mode must be off; turn off Inngest's Vercel sync rather than uninstall; do `/setup` right after staging's first deploy). Owner question 18 |
 | Workspace switch (tenancy) | Found while porting customer test 3: the avatar menu's switch (and Workspace › General) doesn't wait for an unsaved board edit; the last edit is refused or lost (never written to the other workspace: the scope header stops it). Fix: wait for the board's save before switching. Opus fix next; release/1 only; main needs the owner's yes |
 | `fix/r1-production-deployment-flag` @ be3bee21 + main PR #562 | PARTICL_DEPLOYMENT=production/staging replaces the VERCEL_ENV guards (Vercel identical). Opus review running |
 | `chore/r1-old-shell-branches` @ 99b97e0b | Old Business/Crew/Inspector screens cut (~150 files); every old address proved by a pure routing table + sweep; three routing bugs fixed. Opus review running. Owner question 16 |
@@ -87,7 +87,7 @@ Scope: list B in (image-ad variants; phone gets "Open this on a larger screen" n
 16. The old 3D render panel is gone with the old Inspector, so the paid 3D render route has no screen. Does a 3D render panel come back? If yes, its money-recovery tests need a home before it is paid.
 17. Workspace switch: fix it to wait for the unsaved edit (recommended; tenancy, reviewed), then port customer test 3's checks onto it and delete the old test on your "go"?
 
-18. Background steps longer than Cloudflare's ~100 s (Astra render finish up to 165 s, dubbing polls, still/audio render, Atomik steps) would be cut (524) and retried once particl.si is behind Cloudflare: try Inngest's streaming mode (small reviewed PR, tested on staging; recommended), Cloudflare Enterprise, or an unproxied Inngest address (conflicts with the firewall)?
+18. (Update: no code change needed: `INNGEST_STREAMING=true` on production keeps long steps alive through Cloudflare; verify on the first long run after cutover.) Background steps longer than Cloudflare's ~100 s (Astra render finish up to 165 s, dubbing polls, still/audio render, Atomik steps) would be cut (524) and retried once particl.si is behind Cloudflare: try Inngest's streaming mode (small reviewed PR, tested on staging; recommended), Cloudflare Enterprise, or an unproxied Inngest address (conflicts with the firewall)?
 
 ## Machine
 GitHub rejected every push from about 20:33 to 20:47 and again from about 22:20 to 22:30 IST ("fatal error in commit_refs", GitHub's side); nothing was lost.
