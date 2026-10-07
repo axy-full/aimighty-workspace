@@ -54,7 +54,7 @@ test("header B: Home · project · Make · Atomik, Search ⌘K, Jobs, credits, a
   await expect(header.getByTestId("workspace-credits")).toContainText(/\d/);
   await expect(header.getByTestId("workspace-avatar")).toBeVisible();
   /* Left to right: the segment, Search, Jobs, credits, avatar. */
-  const xs = await Promise.all([segments.nth(3), search, header.getByTestId("workspace-credits"), header.getByTestId("workspace-avatar")].map(async (l) => (await l.boundingBox())!.x));
+  const xs = await Promise.all([segments.nth(3), search, header.getByTestId("running-jobs"), header.getByTestId("workspace-credits"), header.getByTestId("workspace-avatar")].map(async (l) => (await l.boundingBox())!.x));
   expect([...xs].sort((a, b) => a - b)).toEqual(xs);
   expect((await header.boundingBox())!.height).toBe(56);
   await shot(page, "01-header", info);
@@ -155,7 +155,7 @@ test("right-click a take: Recreate carries the server's quote in credits, nothin
   await expect(recreate).toContainText(`Recreate · ${price}`);
   const quoted = (await (await quote).json()) as { credits?: number };
   expect(typeof quoted.credits, "the server answered with a price").toBe("number");
-  expect(price!.replace(/,/g, "")).toContain(String(quoted.credits));
+  expect(price!.replace(/,/g, "")).toBe(`${quoted.credits} cr`);
   for (const name of names) if (!/^Recreate/.test(name)) expect(name, "an unpriced command shows no figure").not.toMatch(/\d[\d,]*\s*cr\b/);
   await expect(menu.getByRole("menuitem", { name: /^Delete/ })).toHaveAttribute("data-danger", "true");
   await expect(menu.getByRole("menuitem", { name: /^Undo/ })).toBeDisabled();
@@ -198,9 +198,49 @@ test("right-click in Make's Recent: the same menu, the same quoted price, Delete
   await expect(recreate).toHaveCount(1);
   await expect(recreate).toHaveAttribute("data-spend", "priced");
   const quoted = (await (await quote).json()) as { credits?: number };
-  expect((await recreate.getAttribute("data-spend-price"))!.replace(/,/g, "")).toContain(String(quoted.credits));
+  expect((await recreate.getAttribute("data-spend-price"))!.replace(/,/g, "")).toBe(`${quoted.credits} cr`);
   await expect(menu.getByRole("menuitem", { name: /^Delete/ })).toBeEnabled();
   await shot(page, "04-right-click-make-recent", info);
+  expect(seeded.paid).toEqual([]);
+});
+
+for (const mode of ["sample", "failed"] as const) {
+  test(`right-click where nothing spends (${mode}): no priced Recreate, and the reason is said`, async ({ page }, info) => {
+    test.skip(isCompact(info), "a right-click is a mouse gesture: no context menu is drawn on the phone");
+    const seeded = await seedShots(page, `D0 ${mode}`);
+    await page.route("**/api/demo/sample", (route) => route.request().method() !== "GET" ? route.fallback()
+      : mode === "failed" ? route.fulfill({ status: 500, json: { error: "unavailable" } }) : route.fulfill({ json: { board: null, sampleWorkspace: true } }));
+    await page.goto(`/suites?project=${seeded.project.id}&view=board`);
+    const tile = page.getByTestId("board-library").locator(".bd-tile", { hasText: "tk-s1-v1" });
+    if (!(await tile.isVisible().catch(() => false))) await page.getByRole("button", { name: /^Library$/ }).first().click();
+    await expect(tile).toBeVisible();
+    await tile.click({ button: "right" });
+    const menu = page.getByTestId("context-menu");
+    await expect(menu).toBeVisible();
+    await expect(menu.locator('[data-spend="priced"]')).toHaveCount(0);
+    await expect(menu.getByRole("menuitem", { name: /^Recreate/ })).toBeDisabled();
+    expect(await menu.innerText()).not.toMatch(/\d\s*cr\b/);
+    expect(seeded.paid).toEqual([]);
+  });
+}
+
+test("a Library drawer tile selects its own take, so Delete (⌫) acts on the tile that was pressed", async ({ page }, info) => {
+  test.skip(isCompact(info), "keyboard shortcuts on a board are a desktop gesture");
+  const seeded = await openBoard(page);
+  const trashed: string[] = [];
+  await page.route(/\/api\/jobs\/tk-[^/?]+$/, async (route) => {
+    const request = route.request();
+    const body = request.method() === "PATCH" ? request.postDataJSON() as { trashed?: boolean } : {};
+    if (body.trashed === undefined) return route.fallback();
+    trashed.push(new URL(request.url()).pathname.split("/").pop()!);
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  const library = page.getByTestId("board-library");
+  if (!(await library.isVisible().catch(() => false))) await page.getByRole("button", { name: /^Library$/ }).first().click();
+  await library.locator(".bd-tile", { hasText: "tk-s2-v1" }).click();
+  await library.locator(".bd-tile", { hasText: "tk-s1-v1" }).click();
+  await page.keyboard.press("Backspace");
+  await expect.poll(() => trashed).toEqual(["tk-s1-v1"]);
   expect(seeded.paid).toEqual([]);
 });
 

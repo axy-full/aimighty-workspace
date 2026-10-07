@@ -18,6 +18,7 @@ import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
 import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
 import { useShell } from "@/lib/shell/state";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { useRecreatePrice } from "@/lib/shell/use-recreate-price";
 import { ctxPrice } from "@/lib/shell/recreate-price";
 import type { RecipeSource } from "@/lib/shell/recipe";
@@ -108,7 +109,9 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   /* The take under an open right-click menu, when Recreate can run for it: its price is read here (lib/shell/use-recreate-price.ts). */
   const ctxTarget = shell.ctx?.target;
   const ctxEntry = ctxTarget?.kind === "asset" ? items.find((i) => i.take.id === ctxTarget.id) ?? null : null;
-  const recreatable = ctxEntry && ctxEntry.asset.origin === "generation" && !assetRef(ctxEntry).noRecreate ? ctxEntry : null;
+  /* The sample workspace spends nothing, and the hook fails closed: no priced Recreate in the menu, and no quote asked for it. */
+  const spendOff = useSampleWorkspace();
+  const recreatable = !spendOff && ctxEntry && ctxEntry.asset.origin === "generation" && !assetRef(ctxEntry).noRecreate ? ctxEntry : null;
   const recreatePrice = useRecreatePrice(session.requestScope ?? scope, recreatable?.take.id ?? null, recreatable ? (recreatable.asset.value as RecipeSource) : null, project?.aspect);
   const caps: CtxCapabilities = (() => {
     const target = shell.ctx?.target;
@@ -120,6 +123,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
       projectId: project?.id ?? null, otherProjects: data.projects.filter((p) => p.id !== project?.id).length, canUndo: shell.canUndo,
     });
     /* Recreate spends once Make is pressed: its price is Make's own, read from the server's quote while the menu is open. */
+    if (spendOff) { const { retry: _retry, ...can } = base.can; void _retry; return { ...base, can, why: { ...base.why, retry: spendOff } }; }
     return base.can.retry && recreatePrice ? { ...base, price: { retry: ctxPrice(recreatePrice, session.rates.creditUsd) } } : base;
   })();
 
