@@ -1,12 +1,12 @@
-# Status now: 7 October 2026, 19:34 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 19:39 IST, Release 1 lead moved to "contabo"
 
-Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. Two defects block the live code off Vercel (signed-out home loop; sign-in 403 behind the proxy); both fixes are being built so they apply to main too, and merge to main only on the owner's go.
+Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. Only one defect blocks the live code off Vercel: sign-in 403 behind the proxy (fix in review; applies to main too; main only on the owner's go). The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
 **Demo postponed (owner, about 17:30 IST); no date yet. The Thursday merge train is cancelled. Nothing merges to main and nothing deploys to production without the owner's "go".**
 Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's AT RISK and WON'T MAKE IT items, with an estimate per item; (c) move prep for Coolify on a test address, files only. Then a proposed demo date and the `release/1` → main plan.
 
 **Lead:** the session on "contabo" took over from the "vps" session at about 15:50 IST. Deny rules checked: `git restore` and `docker ps` are both refused.
-**Integration preview:** `release/1` (draft #546) = 37e8fd58. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
+**Integration preview:** `release/1` (draft #546) = 01116ec7. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
 
 ## In `release/1` since 15:00
 - 3D blocking part B (`build/gaps-l2` 44cda874, Opus PASS; owner yes to Q7: staging only, production only in a later train after a Turso backup branch).
@@ -38,9 +38,7 @@ In the new Make panel, a tab whose reply was lost can send a second paid request
 | Release 1 remaining list | sent: `docs/r1-remaining.md` (this branch). Owner: list B in, list C out |
 | image-ad variants and presets | No frame in the handoff (only one card, one Make at 3 cr). Nothing built. Brief for Claude Design: `docs/design-brief-image-ad-versions.md` (this branch). Logic already in code |
 | "Particl demo" cap field (`admin/workspace-cap-field` @ 32994932) | Up to date with release/1. The cap is enforced on the server at the hold for every paid path (new door-by-door spec). Opus review running. Owner question 7 |
-| home loop | Not reproduced on main (signed-out `/`, `/pricing`, `/studio` answer 200 self-hosted). Testing release/1 and the earlier run to find the trigger before any fix |
 | `fix/r1-signin-behind-proxy` @ 75b56ffe (sign-in, gated) | Built: one origin check for all routes; behind the proxy it accepts only the configured APP_ORIGIN when `SELFHOST_BEHIND_PROXY=1` (ignored on Vercel, so Vercel is unchanged). Proven on a local standalone build. Applies to main with three mechanical conflicts. Fresh Opus review running; then release/1 only, and the owner checks it on the test address. The test address must be https for sign-in (the session cookie is Secure) |
-| home loop | Not reproduced on main (signed-out `/`, `/pricing`, `/studio` answer 200 self-hosted). Testing release/1 and the earlier run to find the trigger before any fix |
 | `fix/r1-signin-behind-proxy` @ 75b56ffe (sign-in, gated) | Built: one origin check for all routes; behind the proxy it accepts only the configured APP_ORIGIN when `SELFHOST_BEHIND_PROXY=1` (ignored on Vercel, so Vercel is unchanged). Proven on a local standalone build. Applies to main with three mechanical conflicts. Fresh Opus review running; then release/1 only, and the owner checks it on the test address. The test address must be https for sign-in (the session cookie is Secure) |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
 
