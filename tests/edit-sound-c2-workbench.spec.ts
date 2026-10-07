@@ -27,9 +27,10 @@ async function openComposer(page: Page, projectId: string) {
   await expect(page.getByTestId("cut-card")).toBeVisible();
   /* The press can land before the page is hydrated (a dev server that has just compiled it): press again until it opens. */
   await expect(async () => {
-    await page.getByTestId("cut-open-edit").click();
-    await expect(page.getByTestId("es")).toBeVisible({ timeout: 4_000 });
+    await page.getByTestId("cut-open-edit").click({ timeout: 3_000 });
+    await expect(page.getByTestId("edit-sound")).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 40_000 });
+  await expect(page.getByTestId("es")).toBeVisible();
   await page.getByTestId("es-new-voice").click();
   const panel = page.getByTestId("es-compose").getByRole("region", { name: "Generate sound" });
   await expect(panel).toBeVisible();

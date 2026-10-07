@@ -164,9 +164,10 @@ test("Edit & Sound on Grok Voice alone: voice-over speaks, and the ElevenLabs do
   await page.goto(`/suites?project=${project.id}&view=board&region=cut`);
   await expect(page.getByTestId("cut-card")).toBeVisible();
   await expect(async () => {
-    await page.getByTestId("cut-open-edit").click();
-    await expect(page.getByTestId("es")).toBeVisible({ timeout: 4_000 });
+    await page.getByTestId("cut-open-edit").click({ timeout: 3_000 });
+    await expect(page.getByTestId("edit-sound")).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 40_000 });
+  await expect(page.getByTestId("es")).toBeVisible();
   await page.getByTestId("es-new-effect").click();
   const composer = page.getByTestId("es-compose");
   const kinds = composer.getByRole("group", { name: "Sound type" });

@@ -112,15 +112,16 @@ test("the desktop top bar's balance carries the same rate, from the same field",
   const { project } = await seeded(page);
   const rate = await servedRate(page);
 
-  await page.goto(`/workspace?project=${project.id}&suite=particl`);
+  await page.goto(`/suites?project=${project.id}&view=board`);
   const credits = page.getByTestId("workspace-credits");
   await expect(credits).toBeVisible();
   await expect(credits).toHaveText(/^[\d,]+\s?cr$/);
   /* Since #269 the desktop slot is the same always-mounted label as the
      phone's, so it carries the same title — one rate, one sentence. */
   await expect(credits).toHaveAttribute("title", `Workspace credits · ${rateLine(rate)}`);
-  /* It still goes where the rate can be acted on. */
-  await expect(credits).toHaveAttribute("href", "/billing");
+  /* It still goes where the rate can be acted on: Settings › Plan & credits. */
+  await credits.click();
+  await expect(page).toHaveURL(/view=workspace.*tab=credits|tab=credits.*view=workspace/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
 });
 
