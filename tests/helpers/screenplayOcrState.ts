@@ -1,4 +1,9 @@
-import { assemblePages, type ScreenplayImport } from "./screenplay";
+/**
+ * The OCR page state the old Brief import dialog kept (it was lib/workbench/screenplay-ocr-state.ts, drawn by the Screenplay OCR
+ * review that Release 1 deleted). The save schema that validates a project's OCR provenance is live (lib/workbench/studio-schema.ts),
+ * and tests/unit/screenplayOcr.spec.ts builds its valid and invalid inputs with these pure helpers. Test helper only.
+ */
+import { assemblePages, type ScreenplayImport } from "../../lib/workbench/screenplay";
 
 export function screenplayPage(result: ScreenplayImport, number: number) {
   const page = result.pages[number - 1];

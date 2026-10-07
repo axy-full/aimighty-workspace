@@ -18,6 +18,8 @@ export const ADS_SCREEN: ScreenModule = {
     { from: "?suite=moleculr&page=marketing&sp=format", to: "?view=board&kind=ads&frame=2&card=formats" },
     { from: "?suite=moleculr&page=marketing&sp=hooks", to: "?view=board&kind=ads&frame=2&card=hooks" },
     { from: "?suite=moleculr&page=marketing&sp=design", to: "?view=board&kind=ads&frame=3" },
+    /* The retired Ads page (SHELL_PAGE_ALIASES) was Image ads: its link opens the image ad group. */
+    { from: "?suite=moleculr&page=marketing&sp=ads", to: "?view=board&kind=ads&frame=2&card=image-ad" },
     /* Business has no page left that a link can open: the suite, and its one backing page with no `sp`, are the Ads board too. */
     { from: "?suite=moleculr&page=marketing", to: "?view=board&kind=ads" },
     { from: "?suite=moleculr", to: "?view=board&kind=ads" },
@@ -33,6 +35,8 @@ export const SOCIAL_SCREEN: ScreenModule = {
   /* Viral's History is the Social board's History drawer (README § 1.2); Motion transfer and Object swap are Make's quick tools (lib/shell/make.ts). */
   rows: [
     { from: "?suite=subatomik&page=history", to: "?view=board&kind=social&drawer=history" },
+    /* The shell's own spelling of History (`sp=`). The bare suite opened on Motion transfer, which is Make's (lib/shell/make.ts › fromViralLink). */
+    { from: "?suite=subatomik&sp=history", to: "?view=board&kind=social&drawer=history" },
   ],
   fallback: [],
 };

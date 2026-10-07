@@ -1,9 +1,5 @@
 import { test, expect } from "@playwright/test";
-import {
-  GEN_PROMPT_MAX, OWN_LIMITS, OWN_PAGES, PARTICL_SETUP_PREFIX, aboutCredits, brandKitMade, briefForGen, briefHooks, briefsIn, chooseProduct, hooksRequest, isOwnPage,
-  isParticlSetupId, libraryIdOf, mergeHooks, particlItemActions, particlSetupItems, particlSetupList, productLabel, unsavedProduct, withTemplate, type BriefForGen,
-} from "../../lib/shell/business-own";
-import { SHELL_SUITES } from "../../lib/shell/ia";
+import { GEN_PROMPT_MAX, OWN_LIMITS, PARTICL_SETUP_PREFIX, aboutCredits, brandKitMade, briefForGen, briefHooks, briefsIn, chooseProduct, hooksRequest, isParticlSetupId, libraryIdOf, mergeHooks, particlItemActions, particlSetupItems, particlSetupList, productLabel, unsavedProduct, withTemplate, type BriefForGen } from "../../lib/shell/business-own";
 import { NO_PARTICL_SETUP, foreignSetupIds, setupIdsOfParameters } from "../../lib/higgsfield-consumer/marketing-records";
 import { EMPTY_MOLECULR, type MoleculrBrief } from "../../lib/workbench/moleculr";
 import { CREATIVE_CATEGORIES, CREATIVE_TEMPLATES, EMPTY_BRAND_KIT, saveProduct } from "../../lib/workbench/moleculr-creative";
@@ -21,25 +17,6 @@ const clip = (id: string, fields: Partial<Asset> = {}): Asset => ({ ...still(id)
 function project(brief: Partial<MoleculrBrief> = {}, assets: Asset[] = []): Project {
   return { ...newProject("Harbour launch"), id: "proj-harbour", assets, moleculr: { ...EMPTY_MOLECULR, ...brief } };
 }
-
-test("Business's own pages follow Setup in the strip, backed by the Marketing page, and none is owner-run", () => {
-  const business = SHELL_SUITES.find((s) => s.id === "business")!;
-  const ids = business.pages.filter((p) => !p.phoneOnly).map((p) => p.id);
-  expect(ids).toEqual(["dtc", "setup", ...OWN_PAGES]);
-  /* Business › Ads is gone; the strip is numbered 01 Image ads … 08 Design, with a gap before Setup and before Brand. */
-  expect(business.pages.filter((p) => !p.phoneOnly).map((p) => p.n)).toEqual(["01", "02", "03", "04", "05", "06", "07", "08"]);
-  expect(business.pages.filter((p) => p.gapBefore).map((p) => p.id)).toEqual(["setup", "brand"]);
-  const brand = business.pages.find((p) => p.id === "brand")!;
-  /* A group of their own: the hairline sits before Brand. */
-  expect(brand.gapBefore).toBe(true);
-  for (const id of OWN_PAGES) {
-    const page = business.pages.find((p) => p.id === id)!;
-    expect(page.own, id).toBe(true);
-    expect(page.legacy, id).toEqual({ suite: "moleculr", page: "marketing" });
-    expect(isOwnPage(id)).toBe(true);
-  }
-  expect(isOwnPage("ads") || isOwnPage("setup") || isOwnPage(null) || isOwnPage("motion")).toBe(false);
-});
 
 test("a price shown before a paid step is an estimate: about N cr, whole, never below zero", () => {
   expect(aboutCredits(7)).toBe("about 7 cr");

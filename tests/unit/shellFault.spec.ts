@@ -125,7 +125,7 @@ test.describe("the ways back in", () => {
   test("every header segment has a plain link that lands on it", () => {
     /* The places the live header opens until their packages ship: the Studio overview, Studio, Make's panel, the Atomik suite. */
     expect(Object.fromEntries(HEADER_SEGMENT.map((s) => [s.id, segmentHref(s.id)]))).toEqual({
-      home: "/suites?suite=particl&page=brief&sp=stages",
+      home: "/suites?view=home",
       project: "/suites?view=board",
       make: "/suites?make=video",
       atomik: "/suites?suite=atomik",
@@ -221,8 +221,8 @@ test.describe("Boundary", () => {
 test.describe("the shell's walls, in source", () => {
   const shell = read("components/graphite/SuitesShell.tsx");
 
-  test("every stage body, the Library, the Inspector, Gen, Crew, Workspace, search, the strip, the composer and Atomik have their own boundary", () => {
-    for (const probe of ["stageProbe", '"library"', '"inspector"', '"gen"', '"crew"', '"workspace"', '"palette"', '"strip"', '"composer"', '"atomik-gate"', '"atomik-sheet"']) {
+  test("the control room's body, Make, Settings, search, the strip, the composer and Atomik have their own boundary (the Library, Inspector and Crew walls went with their columns)", () => {
+    for (const probe of ["stageProbe", '"gen"', '"workspace"', '"palette"', '"strip"', '"composer"', '"atomik-gate"', '"atomik-sheet"']) {
       expect(shell, probe).toMatch(new RegExp(`<Boundary [^>]*probe=\\{?${probe.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\}?`));
     }
     /* Moving to another stage, project or selection resets the wall. */

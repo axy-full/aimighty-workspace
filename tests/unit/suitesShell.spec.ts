@@ -1,12 +1,8 @@
 import { test, expect } from "@playwright/test";
-import {
-  ALL_SHELL_PAGES, HEADER_SEGMENT, SHELL_SUITES, WORKSPACE_TABS, firstShellPage, isShellSuite, pageOfLegacy, restorePage, shellPage, suiteOfLegacy,
-  pageAlias,
-} from "../../lib/shell/ia";
+import { ALL_SHELL_PAGES, HEADER_SEGMENT, SHELL_SUITES, firstShellPage, isShellSuite, pageOfLegacy, restorePage, shellPage, suiteOfLegacy } from "../../lib/shell/ia";
 import { PAGES } from "../../lib/workspace/pages";
 import { UNDO_DEPTH, boundUndo, canUndo, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
 import { ctxItems, inSelectionSurface, parseCtx, placeMenu, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxItem } from "../../lib/shell/context-menu";
-import { PALETTE_ROWS } from "../../lib/shell/palette";
 
 /* ── Information architecture ───────────────────────────────────────────── */
 
@@ -14,17 +10,13 @@ test("the header segment is option B: Home · the project · Make · Atomik", ()
   expect(HEADER_SEGMENT.map((s) => [s.id, s.label])).toEqual([["home", "Home"], ["project", "Project"], ["make", "Make"], ["atomik", "Atomik"]]);
 });
 
-test("every suite has the README's pages, numbered in order, with its group gaps; Studio has Home only (the stage pages are the board's regions)", () => {
+test("the shell has two suites: Atomik's control room, and the Studio suite whose one page nothing draws (Business, Viral, Crew and the Studio overview are gone)", () => {
   const shape = Object.fromEntries(SHELL_SUITES.map((s) => [s.id, s.pages.filter((p) => !p.phoneOnly && !p.stripHidden).map((p) => `${p.gapBefore ? "|" : ""}${p.n} ${p.label}`)]));
-  const home = SHELL_SUITES.find((s) => s.id === "studio")!.pages.find((p) => p.id === "home");
-  expect(home).toMatchObject({ id: "home", n: "", own: true, phoneOnly: true });
-  /* The ten Studio stage pages are deleted: Studio keeps the overview and the phone's Home, both Home's, neither a stage. */
-  expect(SHELL_SUITES.find((s) => s.id === "studio")!.pages.map((p) => p.id)).toEqual(["stages", "home"]);
+  /* The stage pages, the Studio overview and the phone's Home are deleted: Studio keeps one backing page, never a tab. */
+  expect(SHELL_SUITES.find((s) => s.id === "studio")!.pages.map((p) => [p.id, p.phoneOnly])).toEqual([["board", true]]);
+  expect(SHELL_SUITES.map((s) => s.id)).toEqual(["studio", "atomik"]);
   expect(shape).toEqual({
     studio: [],
-    business: ["01 Image ads", "|02 Setup", "|03 Brand", "04 Product", "05 Format", "06 Hooks", "07 Reference", "08 Design"],
-    /* Motion Transfer and Object Swap are Make's quick tools (lib/shell/make.ts); History stays a page. */
-    viral: ["01 History"],
     /* The control room's own four tabs, in the design's order (Atomik frames g–j), unnumbered; Agent, Budget, Models and Tools are not tabs. */
     atomik: [" Approvals", " Activity", " Skills", " Memory"],
   });
@@ -60,36 +52,28 @@ test("every shell page is backed by a page the state layer really has", () => {
 });
 
 test("a suite restores its remembered page and falls back to its first", () => {
-  /* A stage id is not a page any more (it is a region of the board): it restores Studio's first page, the overview. */
-  expect(restorePage("studio", "rig").id).toBe("stages");
+  /* A stage id is not a page any more (it is a region of the board): it restores Studio's one backing page. */
+  expect(restorePage("studio", "rig").id).toBe("board");
   expect(restorePage("studio", "gone").id).toBe(firstShellPage("studio").id);
-  expect(restorePage("viral", null).id).toBe("history");
-  expect(restorePage("viral", "motion").id).toBe("history");
+  expect(restorePage("atomik", "gone").id).toBe("approvals");
   expect(shellPage("atomik", "budget")?.title).toBe("Budget");
   expect(isShellSuite("studio")).toBe(true);
-  expect(isShellSuite("gen")).toBe(false);
+  for (const retired of ["business", "viral", "gen", "crew"]) expect(isShellSuite(retired), retired).toBe(false);
 });
 
 test("a state-layer page finds its shell page; a shared backing page follows the hint", () => {
-  expect(suiteOfLegacy("moleculr")).toBe("business");
-  /* Beats shares Brief's backing page and follows the hint. */
+  /* Business and Viral's backing suites are the Studio suite now: it holds nothing a link can open. */
+  expect(suiteOfLegacy("moleculr")).toBe("studio");
+  expect(suiteOfLegacy("subatomik")).toBe("studio");
+  expect(suiteOfLegacy("particl")).toBe("studio");
+  expect(suiteOfLegacy("atomik")).toBe("atomik");
+  /* A stage, and the pages of the retired suites, are no shell page. */
   expect(pageOfLegacy("particl", "takes")).toBeNull();
   expect(pageOfLegacy("particl", "edit")).toBeNull();
-  /* Studio's two pages share Brief's backing page; the hint tells them apart, and the overview is the default. */
-  expect(pageOfLegacy("particl", "brief")?.id).toBe("stages");
-  expect(pageOfLegacy("particl", "brief", "home")?.id).toBe("home");
-  /* Business opens on Image ads; Ads is gone, and an old `sp=ads` link is Image ads. */
-  expect(pageOfLegacy("moleculr", "marketing")?.id).toBe("dtc");
-  expect(pageOfLegacy("moleculr", "marketing", "setup")?.id).toBe("setup");
-  expect(pageOfLegacy("moleculr", "marketing", "not-a-page")?.id).toBe("dtc");
-  expect(pageOfLegacy("moleculr", "marketing", "ads")?.id).toBe("dtc");
-  expect(pageAlias("business", "ads")).toBe("dtc");
-  expect(pageAlias("business", "dtc") ?? pageAlias("studio", "ads") ?? pageAlias("business", null) ?? pageAlias("business", "toString")).toBeNull();
-  expect(shellPage("business", "ads")?.id).toBe("dtc");
-  expect(restorePage("business", "ads").id).toBe("dtc");
-  expect(firstShellPage("business").id).toBe("dtc");
-  expect(SHELL_SUITES.find((s) => s.id === "business")!.pages.some((p) => p.id === "ads")).toBe(false);
-  expect(shellPage("business", "setup")).toMatchObject({ n: "02", title: "Setup items", hint: "Saved products, brand kit and reference ad" });
+  /* Brief backs the one page of the Studio suite, which nothing draws. */
+  expect(pageOfLegacy("particl", "brief")?.id).toBe("board");
+  expect(pageOfLegacy("moleculr", "marketing")).toBeNull();
+  expect(pageOfLegacy("subatomik", "history")).toBeNull();
 });
 
 test("suite names and marks are the design's, verbatim, with Atomik renamed by the owner", () => {
@@ -98,8 +82,6 @@ test("suite names and marks are the design's, verbatim, with Atomik renamed by t
      Owner, 28 September 2026: Atomik is "Just Atomik agent". */
   expect(SHELL_SUITES.map((s) => [s.mark, s.name])).toEqual([
     ["STUDIO", "Studio"],
-    ["ADS", "Ads"],
-    ["SOCIAL", "Social"],
     ["AGENT", "Atomik Agent"],
   ]);
 });
@@ -170,7 +152,7 @@ test("the menu follows the README's order for each target", () => {
   /* A Rig node lists what the Rig carries out for it: nothing wired → only Paste and Undo; the rest once the Rig registers them. */
   expect(commands(ctxItems({ kind: "node", id: "n" }, caps()))).toEqual(["paste", "—", "undo"]);
   expect(commands(ctxItems({ kind: "node", id: "n" }, caps({ can: { bypass: true, unplug: true } })))).toEqual(["paste", "—", "bypass", "unplug", "—", "undo"]);
-  expect(commands(ctxItems({ kind: "empty" }, caps()))).toEqual([...head, ...tail, "—", "generate-here", "open-library", "toggle-inspector"]);
+  expect(commands(ctxItems({ kind: "empty" }, caps()))).toEqual([...head, ...tail, "—", "generate-here", "open-library"]);
 });
 
 test("a blocked item stays in the menu, disabled, with its reason", () => {
@@ -199,10 +181,10 @@ test("a Rig node leaves out commands the Rig does not carry out, and keeps a blo
   expect(ctxItems({ kind: "asset", id: "a" }, caps()).filter((i) => !i.sep)).toHaveLength(10);
 });
 
-test("empty space blocks selection commands but keeps its own three", () => {
+test("empty space blocks selection commands but keeps its own two", () => {
   const items = ctxItems({ kind: "empty" }, caps({ can: { copy: true } }));
   expect(find(items, "copy")).toMatchObject({ disabled: true, reason: "Select an asset or a node first." });
-  for (const c of ["generate-here", "open-library", "toggle-inspector"]) expect(find(items, c).disabled).toBeFalsy();
+  for (const c of ["generate-here", "open-library"]) expect(find(items, c).disabled).toBeFalsy();
 });
 
 test("the menu opens at the cursor, flips at an edge and never leaves the viewport", () => {

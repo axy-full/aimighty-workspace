@@ -21,7 +21,7 @@ export function useConfirm() {
   const open = useCallback((to: Destination) => {
     const shell = live(), ws = latest.current;
     if (to.to === "gen") { shell.openMake(); return; }
-    if (to.to === "library") { shell.openLibrary("assets"); return; }
+    if (to.to === "library") { shell.goBoard({ drawer: "library" }); return; }
     shell.goSuite(to.suite, to.page);
     if (to.select) {
       ws.dispatch({ type: "patch", patch: { selKind: to.select.kind, selId: to.select.id, ...(to.select.kind === "shot" ? { inspector: true } : {}) } });
@@ -46,7 +46,7 @@ export function useConfirm() {
 function hereOf(shell: Shell): Here {
   /* The Studio board's own address, so an Open to the place it is already at carries none. */
   const board = shell.screen === "board" && (!shell.params.kind || shell.params.kind === "studio") ? `?view=board${shell.params.region ? `&region=${shell.params.region}` : ""}` : null;
-  return { view: shell.view === "board" || shell.view === "home" ? "suite" : shell.view, suite: shell.suite.id, page: shell.page.id, board, make: shell.make !== null, library: shell.view === "suite" && (shell.wide || shell.libOpen) && shell.libTab === "assets" };
+  return { view: shell.view === "board" || shell.view === "home" ? "suite" : shell.view, suite: shell.suite.id, page: shell.page.id, board, make: shell.make !== null, library: false };
 }
 
 /**

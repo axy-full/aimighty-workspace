@@ -13,8 +13,6 @@ import { FILES_EVENT, type FilesDropDetail } from "@/components/DragLayer";
 import { useWorkspace } from "@/lib/workspace/state";
 import { GenerateComposer } from "@/components/workspace/GenerateComposer";
 import { GenerationStrip } from "@/components/workspace/GenerationStrip";
-import { PAGE_BODIES } from "@/components/workspace/pages/registry";
-import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
 import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
 import { useShell } from "@/lib/shell/state";
@@ -28,8 +26,6 @@ import { boundUndo, splitUndoHint } from "@/lib/shell/undo";
 import { AtomikSheet } from "./AtomikSheet";
 import { ContextMenu } from "./ContextMenu";
 import { AtomikGate } from "./AtomikGate";
-import { BusinessSuite } from "./business/BusinessSuite";
-import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
 import { MakePanel } from "./MakePanel";
 import { ASSET_LABEL, assetCapabilities, assetRef, type AssetRef } from "@/lib/shell/assets";
 import { setShotDropHandler } from "@/lib/shell/drop-targets";
@@ -37,27 +33,18 @@ import { useAssetActions } from "@/lib/shell/use-asset-actions";
 import { INSPECTOR_SURFACE, endBindings, galleryItems, pickGallery, publishedGallery, setPreviewBinder, type BoundAction } from "@/lib/shell/preview-bridge";
 import { stillCurrent } from "@/lib/shell/asset-link";
 import { copyAssetLink } from "@/lib/shell/copy-asset-link";
-import { ViralView } from "./viral/ViralView";
-import { ToolsView } from "./atomik/ToolsView";
-import { MemoryView } from "./atomik/MemoryView";
-import { SkillsView } from "./atomik/SkillsView";
 import { Header } from "./Header";
-import { Inspector } from "./Inspector";
-import { Library } from "./Library";
 import { LoadBanner } from "./TakeTile";
-import { PageHead } from "./PageHead";
 import { Palette } from "./Palette";
 import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { useCompact } from "@/lib/shell/use-compact";
-import { StudioHome } from "./mobile/StudioHome";
-import { SuiteHome } from "./mobile/SuiteHome";
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { WorkspaceView } from "./WorkspaceView";
 import Boundary from "@/components/Boundary";
 import { throwIfArmed } from "@/lib/shell/fault";
-import { FaultAside, PanelFault } from "./PanelFault";
+import { PanelFault } from "./PanelFault";
 import type { ProjectActions } from "./FirstRun";
 import { AtomikMount, PhoneMount, ScreenBody, SettingsBody, type ScreenContext } from "./screens";
 import { isLanded } from "@/lib/shell/screens";
@@ -72,12 +59,11 @@ function LibraryFollowsJobs({ projectId, refresh }: { projectId: string | null; 
 }
 
 /**
- * One shell (design/particl-graphite/README.md › Shell): header, stage strip,
- * and [Library 280] | [Stage] | [Inspector 320] with 1px hairline gutters —
- * overlays below 1280. It sits over the same state layer, Atomik host and Rig
- * provider as the shell it replaces, so every page body works from day one.
+ * One shell (design/particl-graphite/README.md › Shell): the header, then one screen (Home, the board, Settings or Atomik's control
+ * room), with Make, Atomik's panel and ⌘K over it. It sits over the state layer, Atomik host and Rig provider. The old suite pages
+ * (Studio's stages and overview, Business, Viral, Crew) and the Library and Inspector columns they were drawn in are gone.
  */
-export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: { scope: string; initialAccount: WorkspaceAccount | null; seams?: ShellSeams; planBridge?: PlanBridge }) {
+export function SuitesShell({ scope, initialAccount, planBridge }: { scope: string; initialAccount: WorkspaceAccount | null; planBridge?: PlanBridge }) {
   /* A throw out here (the chrome itself) is app/suites/error.tsx's; everything below has its own boundary. */
   throwIfArmed("shell");
   const ws = useWorkspace();
@@ -94,8 +80,6 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const project = data.project;
   const library = useProjectLibrary(scope, project?.id ?? null);
   const items = library.items;
-  /* Loaded only while Crew is on screen; the open room is remembered per project, so coming back reopens it. */
-  const crew = useCrew(shell.view === "crew" ? project?.id ?? null : null);
   const actions = useAssetActions({ scope, project, projects: data.projects, items });
   const [moving, setMoving] = useState<AssetRef | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -130,8 +114,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const command = (cmd: CtxCommand, target: CtxTarget) => {
     switch (cmd) {
       case "generate-here": shell.openMake(); return;
-      case "open-library": shell.openLibrary("assets"); return;
-      case "toggle-inspector": shell.toggleInspector(); return;
+      /* The Library is the board's drawer. */
+      case "open-library": shell.goBoard({ drawer: "library" }); return;
       case "undo": void shell.undo(); return;
       case "paste": void actions.paste(); return;
     }
@@ -150,9 +134,10 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
       case "delete": void actions.remove(target.id); return;
       case "use-as-reference": actions.useAsReference(target.id); return;
       case "retry": actions.retry(target.id); return;
+      /* The take opens on the board's Shots, in the board's own Inspector. */
       case "open-in-inspector":
         shell.selectAsset(target.id, { reason: "pick" });
-        shell.openInspector();
+        shell.goBoard({ region: "shots" });
         return;
       case "move": {
         const entry = items.find((i) => i.take.id === target.id);
@@ -243,7 +228,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     return () => window.removeEventListener("pointerdown", onPress, true);
   }, []);
 
-  /* One keymap: ⌘K, ⌘J, ⌥M, Esc, and the menu's shortcuts on the selection when focus is not in a field. */
+  /* One keymap: ⌘K, ⌥M, Esc, and the menu's shortcuts on the selection when focus is not in a field. */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       /* A screen that handled the key (the board's own shortcuts, a panel's field) has said so: the shell's keymap leaves it. */
@@ -251,14 +236,12 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
       const mod = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
       if (mod && key === "k") { event.preventDefault(); shell.setPalette(!shell.palette); return; }
-      if (mod && key === "j") { event.preventDefault(); shell.toggleInspector(); return; }
       if (event.key === "Escape") {
         if (shell.ctx) shell.closeCtx();
         else if (shell.palette) shell.setPalette(false);
         else if (state.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
         else if (state.composer) dispatch({ type: "patch", patch: { composer: false } });
         else if (state.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
-        else if (shell.libOpen || shell.inspOpen) shell.closePanels();
         /* Atomik's panel (new interface) closes after ⌘K and the menus, before Make, unless a sheet is open over it. */
         else if (shell.atomik && !document.querySelector(".gx-veil")) shell.closeAtomik();
         /* Make closes with Esc, except from a field (Esc there closes the field's own list first) or while a sheet is open over it. */
@@ -348,17 +331,9 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   /* Every card and skeleton holds the project's frame (the card contract, components/graphite/TakeTile.tsx). */
   const aspect = tileAspect(project?.aspect);
 
-  const overlay = !shell.wide;
-  /* The new interface's screens (lib/shell/screens.ts): Home and the board fill the body under the header; the control room
-     keeps the project chip and the strip but not the Library, the Inspector or the page head. */
+  /* The screens (lib/shell/screens.ts): Home and the board fill the body under the header; Settings and Atomik's control room are the
+     other two places, and the control room keeps the project chip and the strip. Nothing else is a page. */
   const fullScreen = shell.screen === "home" || shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
-  const controlRoom = shell.screen === "control-room";
-  const showLibrary = shell.view !== "workspace" && !controlRoom && (shell.wide || shell.libOpen);
-  /* The desktop Studio home inspects nothing of its own: its Inspector column opens for a take picked there, never for a stage spec it does not show. */
-  const onStudioHome = shell.view === "suite" && shell.suite.id === "studio" && shell.page.id === "stages";
-  const showInspector = shell.view !== "workspace" && !controlRoom && !fullScreen && (shell.wide ? shell.inspector && !(onStudioHome && state.selKind !== "take") : shell.inspOpen);
-  const columns = [shell.wide && showLibrary ? "280px" : null, "minmax(0,1fr)", shell.wide && showInspector ? "320px" : null].filter(Boolean).join(" ");
-  const Body = PAGE_BODIES[state.page];
   const projectHead = (
     <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError}
       onPick={pickProject} onCreate={createProject} />
@@ -373,7 +348,6 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const stageProbe = `stage:${shell.page.id}`;
   const screenCtx: ScreenContext = { shell, scope, account, project, items, library, data, projectActions, now, onCreate: createFromSeed };
   /* The chrome variables: how far right panels reach (Home and the other views pad by it), and the board's dock (Make sits beside it). */
-  const onBoard = shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
   const rootStyle = { "--gx-overlay-right": `${shell.make ? 441 : shell.atomik ? 341 : 0}px`, "--board-dock": `${shell.dockRight}px` } as React.CSSProperties;
   /* The phone's own screens replace the header, strip, body and tab bar (switch on and landed; lib/shell/screens.ts › phoneAt). */
   const phoneOn = shell.phone.on;
@@ -405,68 +379,34 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
           <div className="gx-screen gx-scroll" data-testid="screen" data-screen={shell.screen}><div className="gx-stage" data-testid="content">{linkCard}</div></div>
         ) : fullScreen ? (
           <div className="gx-screen" data-testid="screen" data-screen={shell.screen}><ScreenBody screen={shell.screen!} ctx={screenCtx} /></div>
-        ) : shell.view === "crew" ? <><CrewStrip room={crew} />
-          <Boundary what="Crew" probe="crew" resetKey={`crew:${shell.crewPage}:${project?.id ?? ""}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="crew" /></div>}>
-            <CrewView project={project} room={crew} scope={scope} projectsError={projectsError} onRetry={data.retry} />
-          </Boundary></> : shell.view === "workspace" && shell.screen === "settings" ? (
+        ) : shell.view === "workspace" && shell.screen === "settings" ? (
           <SettingsBody ctx={screenCtx} />
         ) : shell.view === "workspace" ? (
           <Boundary what="Workspace" probe="workspace" resetKey={`workspace:${shell.wsTab}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="workspace" /></div>}>
             <WorkspaceView account={account} />
           </Boundary>
         ) : (
-          <div className="gx-body" style={{ gridTemplateColumns: columns, ...(aspect ? { "--tile-aspect": aspect } : {}) } as React.CSSProperties} data-testid="shell-body" data-columns={columns}>
-            {overlay && (shell.libOpen || shell.inspOpen) ? <div className="gx-scrim" onClick={shell.closePanels} data-testid="panel-scrim" /> : null}
-            {showLibrary ? (
-              <Boundary what="The Library" probe="library" resetKey={`${project?.id ?? ""}:${shell.view}:${shell.page.id}`}
-                fallback={(fault) => <FaultAside kind="library" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : undefined} />}>
-                <Library project={project} items={items} library={library} projects={data.status} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} />
-              </Boundary>
-            ) : null}
+          <div className="gx-body" style={{ gridTemplateColumns: "minmax(0,1fr)", ...(aspect ? { "--tile-aspect": aspect } : {}) } as React.CSSProperties} data-testid="shell-body" data-columns="minmax(0,1fr)">
             <main className="gx-main" data-screen-label={shell.page.id}>
               {bar ? null : projectHead}
               {linkCard ? (
                 <div className="gx-stage gx-scroll" data-testid="content">{linkCard}</div>
               ) : (
-                <>
-                  {/* The phone's Home and Studio stage grid carry their own titles; the page head is the stage's. */}
-                  {((shell.page.id === "home" || shell.page.id === "stages") && shell.suite.id === "studio") || controlRoom ? null : <PageHead project={project} onGenerate={seams.onGenerate} generate={seams.generate} />}
-                  <div className="gx-stage gx-scroll" data-testid="content">
-                    <Boundary what={shell.page.title} probe={stageProbe} resetKey={stageKey} fallback={(fault) => <PanelFault fault={fault} name={stageProbe} />}>
-                    {projectsError && !project ? (
-                      /* With Make open the banner (and its one Try again) is Make's, where the draft waits. */
-                      shell.make ? null : <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" />
-                    ) : controlRoom ? (
-                      <ScreenBody screen="control-room" ctx={screenCtx} />
-                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
-                      <SuiteHome key="home" project={project} items={items} />
-                    ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "stages" ? (
-                      <StudioHome key="stages" project={project} items={items} actions={projectActions} loading={data.status === "loading"} now={now} />
-                    ) : shell.page.own && shell.suite.id === "business" ? (
-                      <BusinessSuite key={shell.page.id} scope={scope} project={project} page={shell.page.id} />
-                    ) : shell.page.own && shell.suite.id === "viral" ? (
-                      <ViralView key={shell.page.id} scope={scope} project={project} items={items} />
-                    ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <ToolsView />
-                    : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "memory" ? <MemoryView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} />
-                    : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "saved-skills" ? <SkillsView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : (<>
-                      <div className="pxw gx-legacy gx-enter" key={shell.page.id}>
-                        <div className="pxw-content"><Body page={state.page} project={project} scope={scope} /></div>
-                      </div>
-                    </>)}
-                    </Boundary>
-                  </div>
-                </>
+                <div className="gx-stage gx-scroll" data-testid="content">
+                  <Boundary what={shell.page.title} probe={stageProbe} resetKey={stageKey} fallback={(fault) => <PanelFault fault={fault} name={stageProbe} />}>
+                  {projectsError && !project ? (
+                    /* With Make open the banner (and its one Try again) is Make's, where the draft waits. */
+                    shell.make ? null : <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" />
+                  ) : (
+                    <ScreenBody screen="control-room" ctx={screenCtx} />
+                  )}
+                  </Boundary>
+                </div>
               )}
               <div className="pxw gx-legacy" style={{ flex: "none", minHeight: 0 }}>
                 <Boundary what="The run strip" probe="strip" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="strip" variant="inline" /></div>}><GenerationStrip /></Boundary>
               </div>
             </main>
-            {showInspector ? (
-              <Boundary what="The Inspector" probe="inspector" resetKey={`${state.selKind}:${state.selId ?? ""}:${project?.id ?? ""}`}
-                fallback={(fault) => <FaultAside kind="inspector" overlay={overlay} fault={fault} onClose={overlay ? shell.closePanels : shell.toggleInspector} />}>
-                <Inspector scope={scope} project={project} overlay={overlay} held={Boolean(linkCard)} />
-              </Boundary>
-            ) : null}
           </div>
         )}
         </>}
@@ -476,7 +416,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
           <Boundary what="Make" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <aside className="gx-make" aria-label="Make"><PanelFault fault={fault} name="gen" actions={<button type="button" className="gx-hbtn" onClick={shell.closeMake}>Close</button>} /></aside>}>
             <MakePanel scope={scope} project={project} items={items} library={library} projects={data.status} projectsError={projectsError} onRetry={data.retry}
               workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })}
-              balance={account?.credits?.balance ?? null} aspect={aspect} beside={shell.wide && showInspector && state.selKind === "take" && Boolean(state.selId) && shell.view !== "crew" && shell.view !== "workspace"} />
+              balance={account?.credits?.balance ?? null} aspect={aspect} />
           </Boundary>
         ) : null}
         <Boundary what="Search" probe="palette" resetKey={shell.palette ? "open" : "closed"} fallback={(fault) => !shell.palette ? null : (

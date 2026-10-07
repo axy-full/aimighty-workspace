@@ -24,9 +24,9 @@ const SURFACES: { name: string; file: string; guard: RegExp; control: RegExp }[]
   { name: "⌘K's Ask Atomik card: no priced Ask", file: "components/graphite/atomik/panel/PaletteCards.tsx", guard: /useSampleWorkspace\(\)/, control: /spendOff && intent\.kind === "ask" \? null/ },
   { name: "⌘K's Approve under N cr card: no list, total or confirm", file: "components/graphite/atomik/panel/PaletteApprove.tsx", guard: /useSampleWorkspace\(\)/, control: /if \(spendOff\) return \(/ },
   { name: "DraftFinalBar: not drawn (no quote, no Make the 1080p final)", file: "components/graphite/DraftFinal.tsx", guard: /useSampleWorkspace\(\)/, control: /spendOff \? null : <PricedDraftFinalBar/ },
-  { name: "Inspector: no Draft eyebrow over a bar that is not drawn", file: "components/graphite/AssetInspector.tsx", guard: /useSampleWorkspace\(\)/, control: /pair\?\.draft && generation && !spendOff/ },
+  /* The old Inspector's priced Recreate and Draft eyebrow went with it; the board's Inspector holds the priced Next row (Upscale, Outpaint, Animate, Reframe, Extend) behind the board's gate. */
+  { name: "Board Inspector: no priced Next row", file: "components/graphite/board/inspector/TakeBody.tsx", guard: /ctx: BoardCtx/, control: /!ctx\.exploreOnly && !ctx\.readOnly \? \(\s*<AssetNextActions/ },
   { name: "Right-click menu: no priced Recreate, no quote asked", file: "components/graphite/SuitesShell.tsx", guard: /const spendOff = useSampleWorkspace\(\)/, control: /if \(spendOff\) \{ const \{ retry: _retry, \.\.\.can \} = base\.can;[^\n]*why: \{ \.\.\.base\.why, retry: spendOff \}/ },
-  { name: "Inspector: no priced Recreate", file: "components/graphite/AssetInspector.tsx", guard: /useSampleWorkspace\(\)/, control: /\{spendOff \? null : <button type="button" className="gx-primary"/ },
   { name: "ReleaseTake: not drawn for a held take", file: "components/graphite/ReleaseTake.tsx", guard: /useSampleWorkspace\(\)/, control: /if \(spendOff \|\| !generation/ },
   { name: "Control room ThreadCheckpoint: no checkpoint, no Continue", file: "components/graphite/control-room/ThreadCheckpoint.tsx", guard: /useSampleWorkspace\(\)/, control: /if \(spendOff\) return null/ },
   { name: "Control room BatchApprove: not drawn", file: "components/graphite/control-room/BatchApprove.tsx", guard: /useSampleWorkspace\(\)/, control: /if \(spendOff\) return null/ },

@@ -15,23 +15,19 @@ const TABS: { id: TabId; label: string; glyph: GlyphName }[] = [
  * frames draw it (design/particl-graphite/README.md § 3.6). It hides only over a full-screen review (the take previewer) and
  * a plan's approval (the Atomik sheet): components/graphite/shell.css.
  *
- * Every tab is a place the shell already has. Home is the phone's "Where to?"; Record is the open project's own page, today's
- * nearest to the design's project record — the Studio overview (its stages, what is running, its latest takes), until the
- * record itself ships; Make is its panel; Atomik is Atomik's suite. Settings sit behind the avatar, and the Library behind the page
- * head's Library button, so neither is a tab. A page that is not one of the four keeps the tab it belongs to lit: every other
- * Studio page, Business, Viral and Crew are the project's.
+ * Every tab is a place the shell already has. Home is Home; Record is the open project's board; Make is its panel; Atomik is
+ * Atomik's control room. Settings sit behind the avatar, and the Library is the board's drawer, so neither is a tab. Every other
+ * place (the Ads and Social boards, Settings aside) keeps the board's tab lit.
  */
 export function TabBar() {
   const shell = useShell();
-  const onHome = shell.view === "suite" && shell.suite.id === "studio" && shell.page.id === "home";
   const active: TabId | null = shell.make ? "make"
     : shell.view === "workspace" ? null
-    : shell.view === "crew" ? "record"
     : shell.suite.id === "atomik" ? "atomik"
-    : onHome ? "home" : "record";
+    : shell.screen === "home" ? "home" : "record";
   const go = (id: TabId) => {
-    if (id === "home") shell.goSuite("studio", "home");
-    else if (id === "record") shell.goSuite("studio", "stages");
+    if (id === "home") shell.goHome();
+    else if (id === "record") shell.goProject();
     else if (id === "make") shell.openMake();
     else shell.goSuite("atomik");
   };

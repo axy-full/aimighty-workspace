@@ -127,11 +127,13 @@ export function fromGenLink(search: string | URLSearchParams): string | null {
 
 /**
  * The quick tool an old Viral page link names (README § 1.2): `?suite=subatomik|viral&page=motion|swap[&sp=…]`, the
- * shell's `sp=motion|swap`, and the bare suite, which opened on Motion Transfer. A page wins over `sp`, as it does in
+ * shell's `sp=motion|swap`, and the bare suite, which opened on Motion Transfer; never an address that names a `view`. A page wins over `sp`, as it does in
  * the shell. Null for History (still a page) and anything that is not Viral.
  */
 export function viralTool(search: string | URLSearchParams): MakeTool | null {
   const q = new URLSearchParams(search);
+  /* An address that names a view is already a place (`view=board&suite=subatomik` is the Social board's backing suite, not the old page). */
+  if (q.has("view")) return null;
   const named = resolvePageId(q.get("page"));
   if ((named ? suiteOfPage(named) : resolveSuite(q.get("suite"))) !== "subatomik") return null;
   if (named) return isMakeTool(named) ? named : null;
@@ -154,7 +156,11 @@ export function fromViralLink(search: string | URLSearchParams): string | null {
 }
 
 /** Either old address (Gen, or a Viral quick tool) as Make's, or null. */
-export const fromMakeLink = (search: string | URLSearchParams): string | null => fromGenLink(search) ?? fromViralLink(search);
+export function fromMakeLink(search: string | URLSearchParams): string | null {
+  const gen = fromGenLink(search);
+  /* An address that is both (`view=gen&page=motion`) is Make on the tool: one pass, so the result is final. */
+  return gen === null ? fromViralLink(search) : (fromViralLink(gen) ?? gen);
+}
 
 /**
  * Make's entry in the screen registry (lib/shell/screens.ts). Make is a panel over any screen and has been live

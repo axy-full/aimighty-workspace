@@ -1,5 +1,11 @@
-import { newProject, type Asset, type Project } from "../workbench/studio";
-import type { PipelineSpec } from "./schema";
+/**
+ * The body the old /pipelines page built for a run (it was lib/pipeline/editor.ts, drawn by the Pipeline builder that Release 1
+ * deleted with the page). No screen builds a run any more; the routes (/api/pipelines) are live, and the specs that hold their
+ * money, approval and tenancy rules (tests/pipelines.spec.ts, tests/unit/pipelineEditor.spec.ts) make their requests with this
+ * builder, so the bodies they send stay the ones the page sent. Test helper only.
+ */
+import { newProject, type Asset, type Project } from "../../lib/workbench/studio";
+import type { PipelineSpec } from "../../lib/pipeline/schema";
 
 export type PublicationChoice = {
   projectId: string;

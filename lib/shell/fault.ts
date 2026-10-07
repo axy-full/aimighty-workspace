@@ -113,11 +113,11 @@ export type SegmentId = HeaderSegmentId;
 
 /**
  * Each header segment as a plain link, for the pages drawn outside the live shell: the same places the live
- * header opens (components/graphite/Header.tsx) — Home the Studio overview, the project its board,
- * Make its panel (over Studio), Atomik its suite.
+ * header opens (components/graphite/Header.tsx) — Home, the project its board,
+ * Make its panel, Atomik its suite.
  */
 export function segmentHref(id: SegmentId): string {
-  if (id === "home") return `${STUDIO_HREF}?suite=particl&page=brief&sp=stages`;
+  if (id === "home") return `${STUDIO_HREF}?view=home`;
   if (id === "project") return `${STUDIO_HREF}?view=board`;
   if (id === "make") return `${STUDIO_HREF}?make=video`;
   return `${STUDIO_HREF}?suite=${shellSuite("atomik").legacy}`;

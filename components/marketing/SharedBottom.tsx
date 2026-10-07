@@ -46,7 +46,6 @@ const SHELL_TILES: [string, string, string][] = [
   ["⌘K", "Search and Atomik", "Go to any part of the board, open Make, or ask Atomik. Enter runs the top result."],
   ["⌥M", "Make", "Video, images and audio over any screen. The engine line shows the price before you press."],
   ["Library", "A drawer on the board", "Every take and reference, ready to drag onto a shot. Download keeps the original file."],
-  ["⌘J", "Inspector", "Shows a take's prompt, engine and the price paid."],
   ["Right-click", "Menu everywhere", "Copy, duplicate, use as reference, or recreate at its price. Delete has Undo."],
 ];
 

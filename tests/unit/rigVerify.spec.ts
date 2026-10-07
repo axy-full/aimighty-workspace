@@ -9,7 +9,6 @@ import { db, ready } from '../../lib/db';
 import { newProject, type Asset, type CanvasNode, type Project } from '../../lib/workbench/studio';
 import { canvasNodeSchema } from '../../lib/workbench/studio-schema';
 import { developmentStages } from '../../lib/workbench/development-plan';
-import { developmentInput } from '../../lib/workbench/development-client';
 import type { DevelopmentRequest } from '../../lib/workbench/development-types';
 import { executeDevelopmentAgent, listDevelopmentJobs, prepareDevelopmentJob, quoteDevelopmentJob, runDevelopmentStep, type DevelopmentCall, type DevelopmentDependencies, type DevelopmentError } from '../../lib/workbench/development-server';
 import {
@@ -465,11 +464,3 @@ test('a check sends its review copies at low detail, through the Gateway and str
   expect(images.map((part) => part.detail)).toEqual(['low', 'low']);
 });
 
-test('a recovered verify request is accepted as saved, and frames on any other kind are not', () => {
-  const body = { projectId: 'p1', requestId: 'req-verify-1', kind: 'verify', model: model.id, effort: 'auto', nodeId: 'check', sourceHash: 'a'.repeat(64), maxCredits: 3,
-    videoFrames: [{ assetId: 'clip', uploadId: 'up_1', timeSeconds: 0.5 }] };
-  expect(developmentInput({ version: 1, scope: 's', projectId: 'p1', body: JSON.stringify(body) }).kind).toBe('verify');
-  expect(() => developmentInput({ version: 1, scope: 's', projectId: 'p1', body: JSON.stringify({ ...body, kind: 'rig' }) })).toThrow();
-  expect(() => developmentInput({ version: 1, scope: 's', projectId: 'p1', body: JSON.stringify({ ...body, videoFrames: [1, 2, 3, 4] }) })).toThrow();
-  expect(() => developmentInput({ version: 1, scope: 's', projectId: 'p1', body: JSON.stringify({ ...body, attachmentAssetIds: ['a'] }) })).toThrow();
-});

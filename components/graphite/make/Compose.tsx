@@ -4,6 +4,7 @@ import LazyMedia from "@/components/LazyMedia";
 import { isDroppable } from "@/lib/drop";
 import type { MakeTool } from "@/lib/shell/make";
 import { useShell } from "@/lib/shell/state";
+import { usePlaces } from "@/components/graphite/atomik/panel/use-places";
 import { CINEMA_BANK } from "@/lib/workspace/cinema-vocabulary";
 import type { ComposerType } from "@/lib/workspace/composer";
 import { useFilmTypeahead } from "../FilmVocabulary";
@@ -33,6 +34,7 @@ const priceLabelOf = (price: MakePrice) => price.about ?? priceWords(price.value
  */
 export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
   const shell = useShell();
+  const places = usePlaces();
   const { state } = make;
   const box = useRef<HTMLTextAreaElement>(null);
   const typeahead = useFilmTypeahead({
@@ -106,7 +108,7 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
                 <button type="button" className="gx-mk-tile-x" aria-label={`Remove ${r.name}`} onClick={() => make.removeReference(r.key)}>×</button>
               </div>
             ))}
-            <button type="button" className="gx-mk-add" onClick={() => shell.openLibrary("assets")} data-testid="make-add-reference">
+            <button type="button" className="gx-mk-add" onClick={places.library} data-testid="make-add-reference">
               <span aria-hidden="true">+</span>Add
             </button>
           </div>

@@ -2,7 +2,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
-import { useShell } from "@/lib/shell/state";
+import { usePlaces } from "@/components/graphite/atomik/panel/use-places";
 import { useBodyQuote, quotePrice } from "@/lib/shell/use-quote";
 import { ASTRA_MODEL, DEFAULT_ASTRA } from "@/lib/astra";
 import { DEFAULT_TOPAZ_IMAGE } from "@/lib/topaz";
@@ -29,7 +29,7 @@ const CHOOSE = "Choose a picture or a clip.";
  * request is never sent twice). The original is kept; the result is a new take in this project's Library.
  */
 export function UpscaleTool({ scope, project, items }: { scope: string; project: Project | null; items: readonly LibraryEntry[] }) {
-  const shell = useShell();
+  const places = usePlaces();
   const { toast } = useWorkspace();
   const [added, setAdded] = useState<UpscaleSource[]>([]);
   const sources = useMemo(() => [...added, ...upscaleSources(items).filter((s) => !added.some((a) => a.id === s.id))], [added, items]);
@@ -106,7 +106,7 @@ export function UpscaleTool({ scope, project, items }: { scope: string; project:
       setNote("Queued. The result lands in this project's Library, and its progress is in Jobs.");
     } catch (e) { setProblem(e instanceof Error ? e.message : "The upscale was not sent."); } finally { setBusy(false); }
   };
-  const library = () => shell.openLibrary("assets");
+  const library = places.library;
 
   return (
     <section className="gx-gen-card gx-make-compose vr-tool up-tool" aria-label={UPSCALE_NAME} data-testid="upscale-tool" data-kind={source?.kind ?? ""}>

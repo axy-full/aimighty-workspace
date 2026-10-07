@@ -5,26 +5,6 @@
       "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
-    "components/astra-blender/AstraAgentPanel.tsx": {
-      "count": 14,
-      "until": "2026-10-16",
-      "by": "goes with the file; UNOWNED (§9): Astra Blender workspace (3D)"
-    },
-    "components/astra-blender/AstraBlenderWorkspace.tsx": {
-      "count": 7,
-      "until": "2026-10-16",
-      "by": "goes with the file; UNOWNED (§9): Astra Blender workspace (3D)"
-    },
-    "components/astra-blender/AstraExportPanel.tsx": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "Astra Blender workspace (3D): UNOWNED: 3D blocking tool"
-    },
-    "components/astra-blender/AstraStudio.tsx": {
-      "count": 3,
-      "until": "2026-10-16",
-      "by": "goes with the file; UNOWNED (§9): Astra Blender workspace (3D)"
-    },
     "components/atomik/MarketingStudioEntry.tsx": {
       "count": 3,
       "until": "2026-10-16",
@@ -34,11 +14,6 @@
       "count": 5,
       "until": "2026-10-16",
       "by": "goes with the file: stream 11 (Ads and Social)"
-    },
-    "components/graphite/crew/CrewView.tsx": {
-      "count": 4,
-      "until": "2026-10-16",
-      "by": "goes with the file: stream 7 (Atomik: Crew review, frame m)"
     },
     "components/graphite/production/TimelineCut.tsx": {
       "count": 1,
@@ -50,60 +25,10 @@
       "until": "2026-10-16",
       "by": "flip PR, then D1 retire app shell (lead)"
     },
-    "components/suites/AtomikSuite.tsx": {
-      "count": 3,
-      "until": "2026-10-16",
-      "by": "stream 8 (control room)"
-    },
-    "components/suites/CreativeTemplateBrowser.tsx": {
-      "count": 2,
-      "until": "2026-10-16",
-      "by": "goes with the file: stream 11 (Ads and Social)"
-    },
-    "components/suites/MarketingPresets.tsx": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "goes with the file: stream 11 (Ads and Social)"
-    },
-    "components/suites/MarketingStudioFlow.tsx": {
-      "count": 4,
-      "until": "2026-10-16",
-      "by": "goes with the file: stream 11 (Ads and Social)"
-    },
-    "components/suites/MoleculrWorkspace.tsx": {
-      "count": 3,
-      "until": "2026-10-16",
-      "by": "goes with the file: stream 11 (Ads and Social)"
-    },
-    "components/suites/SubatomikWorkspace.tsx": {
-      "count": 7,
-      "until": "2026-10-16",
-      "by": "goes with the file: stream 11 (Social) + stream 6 (Make quick tools)"
-    },
-    "components/suites/SuiteAgentPanel.tsx": {
-      "count": 2,
-      "until": "2026-10-16",
-      "by": "goes with the file: stream 7 (Atomik)"
-    },
     "components/workbench/AtomikRunDialog.tsx": {
       "count": 1,
       "until": "2026-10-16",
       "by": "UNOWNED: \"Build with Astra\" (3D blocking tool)"
-    },
-    "components/workspace/AccountMenu.tsx": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "flip PR, then D1 retire /workspace (lead)"
-    },
-    "components/workspace/inspector/CastInspector.tsx": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "goes with the file: stream 5 (cards 2)"
-    },
-    "components/workspace/pages/registry.tsx": {
-      "count": 2,
-      "until": "2026-10-16",
-      "by": "goes with the file: stream 5 (cards 2)"
     },
     "components/workspace/rig/RigProvider.tsx": {
       "count": 2,
@@ -114,11 +39,6 @@
       "count": 1,
       "until": "2026-10-16",
       "by": "stream 3 (one message rewords)"
-    },
-    "components/workspace/spec/tools/AstraTool.tsx": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "goes with the file; UNOWNED (§9): Astra 3D stage tool"
     },
     "lib/astra-blender/agent.ts": {
       "count": 7,
@@ -236,11 +156,6 @@
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workbench/draft-merge.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/workbench/moleculr-graph.ts": {
       "count": 1,
       "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"

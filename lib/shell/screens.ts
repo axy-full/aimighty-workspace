@@ -1,4 +1,5 @@
 import { normalize } from "./ia";
+import { resolvePageId, suiteOfPage } from "@/lib/workspace/pages";
 import { fromMakeLink, MAKE_SCREEN } from "./make";
 import { applyRows, matchRow, type Row } from "./screen-rows";
 import { HOME_SCREEN } from "@/components/graphite/home/routes";
@@ -73,10 +74,40 @@ export function spelling(search: string, screens: readonly ScreenModule[] = SCRE
   return text(q);
 }
 
-/** A bare landing: no page of the shell is named, so the master's first screen (Home) is where it opens. */
-/* `make=` is a panel over a screen, not a place: `?make=video` is Make over Home. */
-const PLACE = ["view", "suite", "page", "sp", "asset", "import", "cp", "tab", "room", "sel"] as const;
-const bare = (q: URLSearchParams) => !PLACE.some((key) => q.has(key));
+/** The views the shell still has (Release 1): Home, the board and Settings. `crew`, `suite`, `gen` and anything else are not views. */
+const VIEWS: readonly string[] = ["home", "board", "workspace"];
+
+/**
+ * The last step of `route`: what no row moved. Release 1 has no old page, so an address that names none of the shell's
+ * places is never left to open one. Crew's pages (`cp`, `room`) and the Studio overview and its Home (`page=brief&sp=stages|home`,
+ * which are Home) are gone, and a suite no row took (an unknown `sp`, a bare `suite=particl`) holds nothing a link can open: it lands on
+ * the board when it names a take (`asset`, `sel`, `import`), else on Home. Atomik's control room (`suite=atomik`) is the one place that keeps
+ * its `suite` and `page`; a view that is not Home, the board or Settings is dropped (`view=crew`, `view=suite`).
+ */
+function settle(q: URLSearchParams): void {
+  q.delete("cp"); q.delete("crew"); q.delete("room");
+  const view = q.get("view");
+  if (view && !VIEWS.includes(view)) q.delete("view");
+  if (q.has("view") || q.get("suite") === "atomik") return;
+  for (const key of ["suite", "page", "sp", "rig", "beats"]) q.delete(key);
+  q.set("view", ["asset", "sel", "import"].some((key) => q.has(key)) ? "board" : "home");
+}
+
+/** Before everything: a view the shell never had (`view=suite`, `view=nonsense`) is no view, so the spellings and the rows for the old pages see the address as it is. `crew` stays: the board's rows take it. */
+const withoutOddView = (search: string): string => {
+  const q = new URLSearchParams(search);
+  const view = q.get("view");
+  if (view && view !== "crew" && view !== "gen" && view !== "make" && !VIEWS.includes(view)) q.delete("view");
+  return text(q);
+};
+
+/** A page id names its suite (lib/workspace/navigation.ts › fromSearch: the page is the more specific claim), so a link may leave `suite` out. */
+function withSuite(search: string): string {
+  const q = new URLSearchParams(search);
+  const page = resolvePageId(q.get("page"));
+  if (!q.has("view") && !q.has("suite") && page) q.set("suite", suiteOfPage(page));
+  return text(q);
+}
 
 /** The rows that apply: the landed screens' `rows`; every other screen's `fallback`. */
 function activeRows(screens: readonly ScreenModule[]): { rows: Row[]; fallback: Row[] } {
@@ -89,11 +120,11 @@ function activeRows(screens: readonly ScreenModule[]): { rows: Row[]; fallback: 
 }
 
 /**
- * The address the shell opens for `search`: the spellings, then the rows, then (with Home landed) Home for a bare landing. One pass: a row's target is never another row's source (tests/unit/demo-s01-routes.spec.ts
+ * The address the shell opens for `search`: the spellings, then the rows, then (with Home landed) `settle`: Home for a bare landing. One pass: a row's target is never another row's source (tests/unit/demo-s01-routes.spec.ts
  * holds that), so the result is final.
  */
 export function route(search: string, screens: readonly ScreenModule[] = SCREENS): string {
-  const spelled = spelling(search, screens);
+  const spelled = withSuite(spelling(withoutOddView(search), screens));
   const { rows, fallback } = activeRows(screens);
   /* `q` is shared with ⌘K's own search words (`find=1&q=…`), so it is never dropped with a screen's params. */
   const params = screenParams(screens).filter((key) => key !== "q");
@@ -103,7 +134,7 @@ export function route(search: string, screens: readonly ScreenModule[] = SCREENS
   const weight = (row: Row | null) => (row ? [...new URLSearchParams(row.from).keys()].length : -1);
   const moved = forward && weight(forward) >= weight(back) ? applyRows(spelled, [forward]) : back ? applyRows(spelled, [back], ["view", ...params]) : null;
   const q = new URLSearchParams(moved ?? spelled);
-  if (isLanded("home", screens) && bare(q)) q.set("view", "home");
+  if (isLanded("home", screens)) settle(q);
   return text(q);
 }
 
@@ -122,7 +153,6 @@ export function screenOf(at: { view: string | null; kind: string | null; control
     return isLanded("board", screens) ? "board" : null;
   }
   if (at.view === "workspace") return isLanded("settings", screens) ? "settings" : null;
-  if (at.view === "crew" || at.view === "gen") return null;
   return at.controlRoom && isLanded("control-room", screens) ? "control-room" : null;
 }
 

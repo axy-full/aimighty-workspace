@@ -7,6 +7,7 @@ import { uploadFilesToProject, useProjectLibrary } from "@/lib/workspace/library
 import LazyMedia from "@/components/LazyMedia";
 import { useSession } from "@/lib/session";
 import { useShell } from "@/lib/shell/state";
+import { usePlaces } from "../atomik/panel/use-places";
 import { useOpenTake } from "@/lib/shell/use-open-take";
 import { useKeyTake } from "@/lib/shell/use-key-take";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
@@ -79,11 +80,6 @@ export function ViralHistory({ scope, project, items }: { scope: string; project
   return <HistoryView scope={scope} project={project} items={items} />;
 }
 
-/** Viral's page: History. Motion Transfer and Object Swap are ViralTool, in the Make panel. */
-export function ViralView({ scope, project, items }: { scope: string; project: Project | null; items: LibraryEntry[] }) {
-  return <HistoryView scope={scope} project={project} items={items} />;
-}
-
 function findMedia(items: LibraryEntry[], id: string): ViralMedia | null {
   const entry = items.find((e) => e.take.id === id);
   return entry ? viralMedia(entry) : null;
@@ -142,6 +138,7 @@ function useRecreate(items: LibraryEntry[]) {
  */
 export function ViralTool({ scope, page, project, items }: { scope: string; page: ViralPage; project: Project | null; items: LibraryEntry[] }) {
   const shell = useShell();
+  const places = usePlaces();
   const session = useSession();
   const copy = VIRAL_COPY[page];
   const tool = TOOL[page];
@@ -229,7 +226,7 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
   const running = run.phase === "running" ? run : null;
   const runningTake = running ? viralTakes(items, variant).find((t) => t.id === running.jobId) ?? null : null;
   const seconds = s.source?.seconds != null ? `${Math.round(s.source.seconds)} s` : null;
-  const library = () => shell.openLibrary("assets");
+  const library = places.library;
 
   const swap = page === "swap";
   const dragging = useRef<string | null>(null);
@@ -333,7 +330,7 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
             <span className="gx-gen-note">Rendered.</span>
             <span className="vr-done-actions">
               <button type="button" className="gx-hbtn" disabled={sendToTakes.opening === run.jobId} onClick={() => { if (run.phase === "done") void sendToTakes.sendTake({ id: run.jobId, createdAt: run.generation.createdAt }); }} data-testid="viral-open-takes">{sendToTakes.opening === run.jobId ? "Opening…" : "Open in Takes"}</button>
-              <button type="button" className="gx-hbtn" onClick={() => { take.reset(); shell.goSuite("viral", "history", { closeMake: true }); }} data-testid="viral-open-history">Open History</button>
+              <button type="button" className="gx-hbtn" onClick={() => { take.reset(); shell.goBoard({ kind: "social", drawer: "history", closeMake: true }); }} data-testid="viral-open-history">Open History</button>
             </span>
           </div>
         ) : null}
@@ -415,7 +412,7 @@ function Recent({ scope, page, project, items, take, send }: { scope: string; pa
   const status = library.state.status;
   return (
     <section className="gx-gen-results" aria-label="Recent" data-testid="viral-recent" aria-busy={status === "loading" || status === "idle"}>
-      <div className="gx-gen-results-head"><span className="gx-panel-title">Recent</span><button type="button" className="gx-hbtn" onClick={() => shell.goSuite("viral", "history", { closeMake: true })}>Open History</button></div>
+      <div className="gx-gen-results-head"><span className="gx-panel-title">Recent</span><button type="button" className="gx-hbtn" onClick={() => shell.goBoard({ kind: "social", drawer: "history", closeMake: true })}>Open History</button></div>
       {!project ? <p className="cw-dim">Open a project to see its takes.</p>
         : (status === "loading" || status === "idle") && !mine.length ? <><span className="vr-job vr-skel" aria-hidden="true" /><span className="vr-job vr-skel" aria-hidden="true" /></>
         : status === "error" && !mine.length ? <LibraryError message={library.state.error} onRetry={() => void library.refresh()} />
@@ -486,8 +483,8 @@ function HistoryView({ scope, project, items }: { scope: string; project: Projec
     <div className="cw-empty vr-empty" data-testid="history-empty">
       <span>No takes in this project yet.</span>
       <span className="vr-empty-actions">
-        <button type="button" className="gx-hbtn" onClick={() => shell.goSuite("viral", "motion")}>Motion Transfer</button>
-        <button type="button" className="gx-hbtn" onClick={() => shell.goSuite("viral", "swap")}>Object Swap</button>
+        <button type="button" className="gx-hbtn" onClick={() => shell.openMake("motion")}>Motion Transfer</button>
+        <button type="button" className="gx-hbtn" onClick={() => shell.openMake("swap")}>Object Swap</button>
       </span>
     </div>
   );

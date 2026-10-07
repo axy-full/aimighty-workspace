@@ -11,7 +11,7 @@ import {
   emptyPipelineDraft,
   pipelineMovieProject,
   type PipelineCatalog,
-} from "../../lib/pipeline/editor";
+} from "../helpers/pipelineEditor";
 import { compilePipeline } from "../../lib/pipeline/compile";
 import * as schema from "../../lib/pipeline/schema";
 import * as publicView from "../../lib/pipeline/public";

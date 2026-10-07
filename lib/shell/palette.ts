@@ -1,19 +1,13 @@
-import { STUDIO_RAIL } from "@/lib/board/regions";
 import type { MakeTab } from "./make";
-import { ALL_SHELL_PAGES, CREW_PAGES, SHELL_SUITES, WORKSPACE_TABS, type CrewPageId, type ShellSuiteId, type WorkspaceTabId } from "./ia";
 
 /**
- * ⌘K (README › Navigation): Generate, suites, every page, Workspace, models,
+ * ⌘K (README › Navigation): Home, the board, Make, Atomik, Settings, models,
  * assets, and "Ask Atomik: …". Enter runs the top hit. Pure ranking here; the
  * component supplies models and assets from live data.
  */
 export type PaletteRun =
   /** Make, on one of its types (Video, Image, Audio) or quick tools (Motion transfer, Object swap). */
   | { type: "gen"; tool?: Exclude<MakeTab, "recent"> }
-  | { type: "suite"; suite: ShellSuiteId }
-  | { type: "page"; suite: ShellSuiteId; page: string }
-  | { type: "workspace"; tab: WorkspaceTabId }
-  | { type: "crew"; page: CrewPageId }
   | { type: "model"; id: string }
   | { type: "asset"; id: string }
   | { type: "ask"; text: string }

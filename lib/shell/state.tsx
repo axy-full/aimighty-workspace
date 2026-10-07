@@ -1,13 +1,12 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "@/lib/workspace/state";
-import { isCrewPage, pageAlias, pageOfLegacy, redirectFor, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
+import { pageOfLegacy, redirectFor, restorePage, shellSuite, suiteOfLegacy, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
 import { isSettingsSection } from "./settings";
 import { isStageId, stageAddress } from "./stage-redirects";
 import { SCREENS, atomikAt, isLanded, phoneAt, route, sameSearch, screenOf, screenParams, type BoardKindId, type ScreenId } from "./screens";
 import { useCompact } from "./use-compact";
 import { canUndo, popUndo, pushUndo, undoneLabel, type UndoEntry } from "./undo";
-import { libraryHasTools } from "./production-tools";
 import { findRequested, withoutFind } from "./fault";
 import type { CtxCommand, CtxTarget } from "./context-menu";
 import { useSession } from "@/lib/session";
@@ -19,7 +18,7 @@ import { useConnectedCollector } from "./use-connected-collector";
 import { IMPORT_PARAM } from "@/lib/workspace/rig-import";
 import { CARRIED_PARAMS } from "@/lib/workspace/navigation";
 import type { ComposerType } from "@/lib/workspace/composer";
-import { MAKE_PARAM, fromMakeLink, isMakeTool, makeType, readMake, viralTool, type MakeTab } from "./make";
+import { MAKE_PARAM, makeType, readMake, type MakeTab } from "./make";
 import { sendGenPreset } from "./gen-preset";
 import type { GenPreset } from "./recipe";
 import type { CreateSeed } from "./create-project";
@@ -41,7 +40,7 @@ import type { CreateSeed } from "./create-project";
  */
 export const SUITES_PATH = "/suites";
 /* …and an old link's `account` (lib/workspace/navigation.ts › CARRIED_PARAMS), which nothing here reads but the address keeps. */
-export const SHELL_PARAMS = ["view", "tab", "sp", "cp", "room", MAKE_PARAM, ASSET_PARAM, ...LINK_PARAMS, IMPORT_PARAM, ...CARRIED_PARAMS] as const;
+export const SHELL_PARAMS = ["view", "tab", "sp", MAKE_PARAM, ASSET_PARAM, ...LINK_PARAMS, IMPORT_PARAM, ...CARRIED_PARAMS] as const;
 /**
  * What the shell keeps across its own address writes: today's list, plus (new interface only) the params the new
  * screens own, from the screen registry (lib/shell/screens.ts): kind, frame, list, region, drawer, review, card,
@@ -55,7 +54,6 @@ const CARRIED_OVER = ["atomik"] as const;
 /** Three columns from here up; overlays below (README › Responsive). */
 export const WIDE_FROM = 1280;
 
-export type LibTab = "tools" | "assets";
 export type Clip = { mode: "copy" | "cut"; target: Exclude<CtxTarget, { kind: "empty" }>; name: string; /** What the paste needs to know about it (lib/shell/use-asset-actions). */ payload?: unknown };
 export type CtxState = { x: number; y: number; target: CtxTarget; title: string };
 
@@ -63,23 +61,16 @@ export type Shell = {
   view: ShellView;
   suite: ShellSuite;
   page: ShellPage;
-  /** Workspace's old tab, or (new interface) one of Settings' five sections. */
+  /** Workspace's old tab, or one of Settings' five sections. */
   wsTab: WorkspaceTabId;
   /** Settings' `open` fold (`&open=models`), or null. */
   wsOpen: string | null;
-  crewPage: CrewPageId;
   wide: boolean;
-  libTab: LibTab;
-  /** Below 1280 the panels are overlays, one at a time. */
-  libOpen: boolean;
-  inspOpen: boolean;
-  /** At 1280 and up the Inspector is a column that ⌘J shows and hides. */
-  inspector: boolean;
   palette: boolean;
   ctx: CtxState | null;
   clip: Clip | null;
   canUndo: boolean;
-  /** `closeMake`: the page is where the person is going from Make (Viral History from a quick tool), so Make closes. */
+  /** `closeMake`: the page is where the person is going from Make, so Make closes. */
   goSuite: (suite: ShellSuiteId, page?: string, opts?: { closeMake?: boolean }) => void;
   /** The header's project segment: the board. */
   goProject: () => void;
@@ -98,7 +89,6 @@ export type Shell = {
   setMake: (tab: MakeTab) => void;
   /** Gen is Make's panel now: kept for the header, which calls it until it calls openMake. It opens Make. */
   goGen: () => void;
-  goCrew: (page?: CrewPageId) => void;
   goWorkspace: (tab?: WorkspaceTabId, opts?: { open?: string }) => void;
   /* ── The new interface (lib/shell/screens.ts). Each helper falls back to today's page when the switch is off or the
      screen has not landed, so a caller never has to ask. ── */
@@ -119,7 +109,7 @@ export type Shell = {
   /** Home: `?view=home`, or today's Studio overview. */
   goHome: () => void;
   /** The board: `?view=board`, with the kind, a region, the List view or a start. */
-  goBoard: (opts?: { kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" }) => void;
+  goBoard: (opts?: { kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" | "history"; frame?: string; closeMake?: boolean }) => void;
   /** One of the control room's four pages (approvals, runs, memory, saved-skills): the same addresses as ever. */
   goControlRoom: (page: "approvals" | "runs" | "memory" | "saved-skills") => void;
   /** Opens Atomik's panel (or "how"), with the words handed over; today's Atomik Agent page when the panel has not landed. */
@@ -137,12 +127,6 @@ export type Shell = {
    */
   createProject: ((name: string, seed?: CreateSeed) => Promise<{ id: string; productionId?: string | null } | { error: string }>) | null;
   setCreateProject: (run: Shell["createProject"]) => void;
-  setLibTab: (tab: LibTab) => void;
-  toggleLibrary: () => void;
-  toggleInspector: () => void;
-  openLibrary: (tab?: LibTab) => void;
-  openInspector: () => void;
-  closePanels: () => void;
   setPalette: (open: boolean) => void;
   openCtx: (ctx: CtxState) => void;
   closeCtx: () => void;
@@ -178,7 +162,7 @@ export function useShell(): Shell {
 }
 
 type Params = {
-  view: ShellView; tab: WorkspaceTabId; sp: string | null; cp: CrewPageId; make: MakeTab | null; asset: string | null;
+  view: ShellView; tab: WorkspaceTabId; sp: string | null; make: MakeTab | null; asset: string | null;
   /** The screens' own params present in the address (kind, region, atomik…). */
   extra: Readonly<Record<string, string>>;
 };
@@ -187,9 +171,9 @@ const EMPTY: Readonly<Record<string, string>> = Object.freeze({});
 /** Settings' fold, `&open=models`: it belongs to Workspace's view and goes when the view does. */
 const OPEN = "open";
 
-/** The old Gen page (`view=gen`) and Viral's two tools read as Make open over a page (lib/shell/make.ts › fromMakeLink). */
+/** An address as the shell reads it: through `route`, so no old address (Crew, Business, Viral, the old Gen view) is read as an old page. */
 function readParams(search: string, last: ComposerType = "video"): Params {
-  const q = new URLSearchParams(fromMakeLink(search) ?? search);
+  const q = new URLSearchParams(route(search));
   const view = q.get("view");
   const tab = q.get("tab");
   const make = readMake(q);
@@ -198,10 +182,9 @@ function readParams(search: string, last: ComposerType = "video"): Params {
   const extra: Record<string, string> = {};
   for (const key of screenKeys) { const value = q.get(key); if (value !== null) extra[key] = value; }
   return {
-    view: view === "workspace" || view === "crew" ? view : mounted === "home" ? "home" : mounted?.startsWith("board") ? "board" : "suite",
+    view: view === "workspace" ? view : mounted === "home" ? "home" : mounted?.startsWith("board") ? "board" : "suite",
     tab: WORKSPACE_TABS.some((t) => t.id === tab) || isSettingsSection(tab) ? (tab as WorkspaceTabId) : "general",
     sp: q.get("sp"),
-    cp: isCrewPage(q.get("cp")) ? (q.get("cp") as CrewPageId) : "room",
     make: make === "last" ? last : make,
     asset: assetParam(q),
     extra,
@@ -212,7 +195,7 @@ function writeParams(params: Params, mode: "push" | "replace") {
   if (params.view === "suite") q.delete("view"); else q.set("view", params.view);
   if (params.view === "workspace") q.set("tab", params.tab); else q.delete("tab");
   if (params.sp) q.set("sp", params.sp); else q.delete("sp");
-  if (params.view === "crew") q.set("cp", params.cp); else q.delete("cp");
+  q.delete("cp"); q.delete("room");
   if (params.make) q.set(MAKE_PARAM, params.make); else q.delete(MAKE_PARAM);
   const asset = validAssetId(params.asset);
   if (asset) q.set(ASSET_PARAM, asset); else q.delete(ASSET_PARAM);
@@ -253,9 +236,6 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const madeType = makeType(params.make);
   if (madeType && madeType !== lastMake) { setLastMake(madeType); }
   useEffect(() => { lastMakeRef.current = lastMake; }, [lastMake]);
-  const [libTab, setLibTab] = useState<LibTab>("tools");
-  const [libOpen, setLibOpen] = useState(false);
-  const [inspOpen, setInspOpen] = useState(false);
   /* `?find=1` (the 404's and the error page's Search) lands with ⌘K open — read from the opening URL, like the params above. */
   const [palette, setPaletteOpen] = useState(() => findRequested(initialSearch ?? (typeof window === "undefined" ? "" : window.location.search)));
   const [ctx, setCtx] = useState<CtxState | null>(null);
@@ -308,17 +288,9 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   useEffect(() => {
     const onResize = () => setWide(window.innerWidth >= WIDE_FROM);
     const onPop = () => {
-      /* An entry with an old Gen or Viral tool address reads as Make, and says so; a Viral tool over the page on screen. */
-      const moved = fromMakeLink(window.location.search);
-      if (moved !== null) {
-        const q = new URLSearchParams(moved);
-        const now = latestWs.current.latest(), at = liveRef.current, tool = viralTool(window.location.search);
-        if (tool && q.get(MAKE_PARAM) === tool && now.view === "studio" && at?.view === "suite") {
-          q.set("suite", now.suite); q.set("page", now.page); q.set("sp", at.page.id);
-        }
-        const text = q.toString();
-        window.history.replaceState(null, "", window.location.pathname + (text ? "?" + text : "") + window.location.hash);
-      }
+      /* An entry from before the redirects (an old Gen, Viral, Crew or Business address) is rewritten the way a landing is. */
+      const routed = route(window.location.search);
+      if (!sameSearch(routed, window.location.search)) window.history.replaceState(null, "", window.location.pathname + routed + window.location.hash);
       setParams(readParams(window.location.search, lastMakeRef.current));
     };
     window.addEventListener("resize", onResize);
@@ -346,18 +318,14 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     const asked = typeof preset === "string" ? preset : preset?.type;
     /* A preset is for the composer: from a quick tool it goes to the type Make was last on. */
     const tab: MakeTab = asked ?? (preset ? makeType(params.make) ?? lastMakeRef.current : params.make && params.make !== "recent" ? params.make : lastMakeRef.current);
-    setLibOpen(false); setInspOpen(false); setPaletteOpen(false);
+    setPaletteOpen(false);
     if (params.make === tab) return;
     apply({ ...params, make: tab }, params.make ? "replace" : "push");
   }, [params, apply]);
 
   const goSuite = useCallback((id: ShellSuiteId, pageId?: string, opts?: { closeMake?: boolean }) => {
-    /* Motion Transfer and Object Swap are Make's quick tools (README § 1.2): they open over the page on screen. The
-       suite on its own opened on Motion Transfer, and still does until History is the page it remembers. */
-    const tool = id !== "viral" ? null : pageId !== undefined ? (isMakeTool(pageId) ? pageId : null) : memory.viral ? null : "motion";
-    if (tool) { openMake(tool); return; }
-    /* The ten Studio stage pages are gone: an old stage id (a card's, a link's, a toast's Open) is the board's region for it. */
-    if (id === "studio" && isStageId(pageId)) { navigateRef.current?.(stageAddress(pageId), opts); return; }
+    /* The Studio suite has no page: an old stage id (a card's, a link's, a toast's Open) is the board's region for it, and anything else is Home. */
+    if (id === "studio") { navigateRef.current?.(isStageId(pageId) ? stageAddress(pageId) : "?view=home", opts); return; }
     const target = pageId ? restorePage(id, pageId) : restorePage(id, memory[id]);
     /* An old page whose screen has landed opens that screen (lib/shell/screens.ts), however it is asked for. */
     {
@@ -366,15 +334,15 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       if (!sameSearch(routed, old)) { navigateRef.current?.(routed, opts); return; }
     }
     setMemory((m) => ({ ...m, [id]: target.id }));
-    setLibOpen(false); setInspOpen(false); setPaletteOpen(false); setCtx(null);
+    setPaletteOpen(false); setCtx(null);
     const before = window.location.pathname + window.location.search;
     ws.go(target.legacy.suite, target.legacy.page);
     const pushed = before !== window.location.pathname + window.location.search;
     /* The state layer pushed the entry when its own page changed; when two shell
        pages share one backing page it did not, and the shell pushes instead. */
     /* Make stays open over the page it moved to; on a phone, where it is the whole screen, going somewhere closes it. */
-    apply({ view: "suite", tab: "general", sp: target.id, cp: "room", make: opts?.closeMake ? null : stayMake(params.make), extra: carry(params.extra) }, pushed ? "replace" : "push");
-  }, [ws, memory, apply, params.make, params.extra, openMake]);
+    apply({ view: "suite", tab: "general", sp: target.id, make: opts?.closeMake ? null : stayMake(params.make), extra: carry(params.extra) }, pushed ? "replace" : "push");
+  }, [ws, memory, apply, params.make, params.extra]);
 
   /**
    * Moves to an address, after the screen registry has had its say (`route`): a new screen's address sets the view and
@@ -392,7 +360,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       if (legacy) { goSuite(suiteOfLegacy(legacy), wanted, opts); return; }
     }
     const next = readParams(routed, lastMakeRef.current);
-    setLibOpen(false); setInspOpen(false); setPaletteOpen(false); setCtx(null);
+    setPaletteOpen(false); setCtx(null);
     apply({ ...next, make: opts?.closeMake ? null : stayMake(params.make), extra: { ...carry(params.extra), ...next.extra } }, "push");
   }, [apply, goSuite, params.make, params.extra]);
   useEffect(() => { navigateRef.current = navigate; }, [navigate]);
@@ -401,22 +369,22 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const goProject = useCallback(() => { navigate("?view=board"); }, [navigate]);
 
   const goHome = useCallback(() => {
-    /* Before Home has landed: the Studio overview on a desktop, the phone's "Where to?" on a phone. */
-    if (!isLanded("home")) { goSuite("studio", window.innerWidth >= WIDE_FROM ? "stages" : "home"); return; }
     navigate("?view=home");
-  }, [goSuite, navigate]);
+  }, [navigate]);
 
-  const goBoard = useCallback((opts: { kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" } = {}) => {
+  const goBoard = useCallback((opts: { kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" | "history"; frame?: string; closeMake?: boolean } = {}) => {
     const q = new URLSearchParams({ view: "board" });
     if (opts.kind) q.set("kind", opts.kind);
     if (opts.region) q.set("region", opts.region);
+    /* The design's frame letter: `m` is the board's Crew review, `n` its Project record (lib/board/routes.ts). */
+    if (opts.frame) q.set("frame", opts.frame);
     if (opts.list) q.set("list", "1");
     if (opts.start) q.set("start", opts.start);
     /* The board opens with its Library drawer out (`drawer=`: the board reads it as it mounts). */
     if (opts.drawer) q.set("drawer", opts.drawer);
     /* Atomik's panel opens with the board in the same move: a second write right after this one would read the address as it was before it. */
     if (opts.atomik && isLanded("atomik")) q.set("atomik", "1");
-    navigate(`?${q}`);
+    navigate(`?${q}`, opts.closeMake ? { closeMake: true } : undefined);
   }, [navigate]);
 
   const setScreenParams = useCallback((patch: Readonly<Record<string, string | null>>, mode: "push" | "replace" = "replace") => {
@@ -445,11 +413,6 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
        the providers above were handed that form too (components/graphite/SuitesApp.tsx). */
     const fixed = redirectFor(window.location.pathname, window.location.search);
     if (fixed) window.history.replaceState(null, "", fixed + window.location.hash);
-    /* The old Gen page's address (`view=gen`, `mode=`, `sheet=1`) and Viral's two tools become Make's own before anything else writes it. */
-    const moved = fromMakeLink(window.location.search);
-    if (moved !== null) window.history.replaceState(null, "", window.location.pathname + (moved ? "?" + moved : "") + window.location.hash);
-    /* `make=1` names the type it opened on from here on. */
-    else if (readMake(window.location.search) === "last") writeParams(params, "replace");
     /* The screen registry's rows and each screen's own spellings (lib/shell/screens.ts), and the one-shot `settings=1` that
        opens the avatar menu (Header) and leaves the address. The server did this already for a signed-in request, so this
        only meets an address the client reached by itself. */
@@ -457,6 +420,8 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       const routed = route(window.location.search);
       if (!sameSearch(routed, window.location.search)) window.history.replaceState(null, "", window.location.pathname + routed + window.location.hash);
     }
+    /* `make=1` names the type it opened on from here on. */
+    if (readMake(window.location.search) === "last") writeParams(params, "replace");
     if (new URLSearchParams(window.location.search).get("settings") === "1") {
       const q = new URLSearchParams(window.location.search);
       q.delete("settings");
@@ -468,12 +433,6 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       ws.go(target.legacy.suite, target.legacy.page, { replace: true });
       /* Home and the board are not a page of Studio: the address names no `sp`. */
       writeParams({ ...params, sp: params.view === "home" || params.view === "board" ? params.sp : target.id }, "replace");
-    } else if (pageAlias(suiteId, params.sp)) {
-      /* An old link to a page that left the strip (Business › Ads): the address names the page it landed on, from here on. */
-      const renamed = { ...params, sp: mapped.id };
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- One shot on landing: the retired id leaves the shell's params with the URL, so no later write puts it back.
-      setParams(renamed);
-      writeParams(renamed, "replace");
     }
     /* One shot: a reload of this URL should not reopen search. */
     if (findRequested(window.location.search)) window.history.replaceState(null, "", window.location.pathname + withoutFind(window.location.search) + window.location.hash);
@@ -505,10 +464,8 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const phone = useMemo(() => phoneAt(params.extra, compact), [params.extra, compact]);
 
   const value = useMemo<Shell>(() => ({
-    /* Where a page has no tools of its own (Make open over it, the Business and Viral composers, the phone's
-       Home) the Library is what you can drag in, however you arrived (tab, palette or a link). */
-    view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: libraryHasTools(params.make ? "make" : params.view, suite.id) ? libTab : "assets", libOpen, inspOpen,
-    inspector: ws.state.inspector, palette, ctx, clip, canUndo: canUndo(undoStack, ws.state.projectId),
+    view: params.view, suite, page, wsTab: params.tab, wide,
+    palette, ctx, clip, canUndo: canUndo(undoStack, ws.state.projectId),
     goSuite,
     goProject,
     make: params.make,
@@ -517,13 +474,11 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     closeMake: () => { if (params.make) apply({ ...params, make: null }, "push"); },
     setMake: (tab) => { if (params.make && params.make !== tab) apply({ ...params, make: tab }, "replace"); },
     goGen: () => openMake(),
-    /* Crew is the board's Crew review and Project record (lib/board/routes.ts rows). */
-    goCrew: (page) => navigate(`?view=crew&cp=${page ?? params.cp}`),
     goWorkspace: (tab, opts) => {
       const wanted = tab ?? params.tab;
       /* One of Settings' five sections: its screen, or (switch off, or not landed) the page that holds it today (settings rows). */
       if (isSettingsSection(wanted)) { navigate(`?view=workspace&tab=${wanted}${opts?.open ? `&open=${encodeURIComponent(opts.open)}` : ""}`); return; }
-      setLibOpen(false); setInspOpen(false); setPaletteOpen(false);
+      setPaletteOpen(false);
       apply({ ...params, view: "workspace", tab: wanted, make: stayMake(params.make), extra: { ...carry(params.extra), ...(opts?.open ? { [OPEN]: opts.open } : {}) } }, "push");
     },
     wsOpen: params.view === "workspace" ? params.extra?.[OPEN] ?? null : null,
@@ -544,23 +499,6 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     dockRight: dock,
     createProject: (name, seed) => (createRef.current ? createRef.current(name, seed) : Promise.resolve({ error: "Projects are still loading. Try again." })),
     setCreateProject: (run) => { createRef.current = run; },
-    setLibTab,
-    toggleLibrary: () => { setLibOpen((v) => !v); setInspOpen(false); },
-    toggleInspector: () => {
-      if (window.innerWidth >= WIDE_FROM) ws.dispatch({ type: "toggleInspector" });
-      else { setInspOpen((v) => !v); setLibOpen(false); }
-    },
-    openLibrary: (tab) => {
-      if (tab) setLibTab(tab);
-      /* Crew and Workspace have no Library: the suite page they were opened over hosts it. */
-      if (params.view === "crew" || params.view === "workspace") { setPaletteOpen(false); apply({ ...params, view: "suite" }, "push"); }
-      if (window.innerWidth < WIDE_FROM) { setLibOpen(true); setInspOpen(false); }
-    },
-    openInspector: () => {
-      if (window.innerWidth >= WIDE_FROM) { if (!ws.state.inspector) ws.dispatch({ type: "toggleInspector" }); }
-      else { setInspOpen(true); setLibOpen(false); }
-    },
-    closePanels: () => { setLibOpen(false); setInspOpen(false); },
     setPalette: (open) => { setPaletteOpen(open); if (open) setCtx(null); },
     openCtx: (next) => setCtx(next),
     closeCtx: () => setCtx(null),
@@ -607,7 +545,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       }
     },
     live,
-  }), [params, lastMake, openMake, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, goProject, apply, ws, setUndoStack, live, link, take, screen, phone, navigate, goHome, goBoard, setScreenParams, openAtomik, dock, settingsRequested]);
+  }), [params, lastMake, openMake, suite, page, wide, palette, ctx, clip, undoStack, goSuite, goProject, apply, ws, setUndoStack, live, link, take, screen, phone, navigate, goHome, goBoard, setScreenParams, openAtomik, dock, settingsRequested]);
   useEffect(() => { liveRef.current = value; }, [value]);
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;

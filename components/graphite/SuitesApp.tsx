@@ -4,10 +4,8 @@ import { useSearchParams } from "next/navigation";
 import { createPlanBridge } from "@/lib/workspace/atomik-host";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { WorkspaceProvider } from "@/lib/workspace/state";
-import { RigProvider, RigSeams } from "@/components/workspace/rig/RigProvider";
+import { RigProvider } from "@/components/workspace/rig/RigProvider";
 import { ShellProvider, shellParams, SUITES_PATH } from "@/lib/shell/state";
-import { normalize } from "@/lib/shell/ia";
-import { fromMakeLink } from "@/lib/shell/make";
 import { route } from "@/lib/shell/screens";
 import { SuitesShell } from "./SuitesShell";
 
@@ -37,7 +35,7 @@ export default function SuitesApp({ scope, initialAccount }: { scope: string; in
     <WorkspaceProvider initialSearch={initialSearch} plans={bridge.source} path={SUITES_PATH} keep={keep}>
       <ShellProvider initialSearch={initialSearch}>
         <RigProvider scope={scope}>
-          <RigSeams>{(seams) => <SuitesShell scope={scope} initialAccount={initialAccount} planBridge={bridge} seams={seams} />}</RigSeams>
+          <SuitesShell scope={scope} initialAccount={initialAccount} planBridge={bridge} />
         </RigProvider>
       </ShellProvider>
     </WorkspaceProvider>
