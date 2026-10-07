@@ -252,7 +252,7 @@ function CapCell({ w, defaultUsd, creditUsd, onChanged }: {
     <span className="flex flex-col gap-0.5">
       <span className="admin-cap-k">ENGINE CAP / MO</span>
       <span className="mono-s">{label.main}</span>
-      <span className={`text-[11.5px] ${view.kind === "own" && view.usd === 0 ? "text-lift" : "text-dim"}`}>{label.sub}</span>
+      <span className={`text-[12px] ${view.kind === "own" && view.usd === 0 ? "text-lift" : "text-lead"}`}>{label.sub}</span>
     </span>
   );
   // The house takes no cap, and nobody can open a deleted workspace: read, not set.
@@ -287,11 +287,11 @@ function CapCell({ w, defaultUsd, creditUsd, onChanged }: {
             onChange={(e) => { setVal(e.target.value); setProblem(null); }}
             onKeyDown={(e) => { if (e.key === "Enter") submit(); if (e.key === "Escape") { setEditing(false); setProblem(null); } }}
             aria-label={`Engine cap for ${w.name}, dollars a month`} aria-invalid={problem ? true : undefined} />
-          <button type="button" className="btn-primary !h-7 !px-2 !text-[11px]" onClick={submit} disabled={busy || !val.trim()}>Save</button>
+          <button type="button" className="btn-primary !h-7 !px-2 !text-[12px]" onClick={submit} disabled={busy || !val.trim()}>Save</button>
         </span>
         {problem
-          ? <span className="text-[11.5px] text-lift" role="alert">{problem}</span>
-          : <span className="text-[11.5px] text-dim">$0 stops every paid job</span>}
+          ? <span className="text-[12px] text-lift" role="alert">{problem}</span>
+          : <span className="text-[12px] text-lead">$0 stops every paid job</span>}
         {w.allowanceUsd != null && <button type="button" className="ak-act is-muted self-start" disabled={busy} onClick={remove}>REMOVE CAP</button>}
       </span>
     );
