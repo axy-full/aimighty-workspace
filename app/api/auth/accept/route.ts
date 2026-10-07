@@ -18,6 +18,7 @@ import {
   MailboxProofNeeded,
 } from "@/lib/teamInvitations";
 import { mailConfigured, sendMail, inviteEmail, inviteOrigin } from "@/lib/mail";
+import { publicActorName } from "@/lib/platformOwnerPrivacy";
 import { policyAccepted } from "@/lib/policyAccept";
 import {
   accountFailure,
@@ -101,10 +102,12 @@ async function emailLink(req: Request, body: Record<string, unknown>) {
     );
   const inviter = (
     await platformDb().execute({
-      sql: "SELECT name FROM accounts WHERE id=?",
+      sql: "SELECT id, email, name FROM accounts WHERE id=?",
       args: [String(got.inv.created_by ?? "")],
     })
   ).rows[0];
+  // Outside the house the platform owner invites as "Particl support" (lib/platformOwnerPrivacy.ts).
+  const inviterLine = inviter ? `${await publicActorName(got.ws, { id: inviter.id, email: inviter.email, name: inviter.name })} (${got.ws.name})` : got.ws.name;
   const origin = inviteOrigin(req);
   try {
     await mailWorkspaceInvite({
@@ -116,9 +119,7 @@ async function emailLink(req: Request, body: Record<string, unknown>) {
           to,
           ...inviteEmail({
             name: String(got.inv.name),
-            inviter: inviter
-              ? `${String(inviter.name)} (${got.ws.name})`
-              : got.ws.name,
+            inviter: inviterLine,
             link,
             role: String(got.inv.role),
             expiresAt: Number(got.inv.expires_at),

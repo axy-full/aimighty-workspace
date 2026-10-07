@@ -1,3 +1,4 @@
+import { maskStoredActor } from "./platformOwnerPrivacy";
 import type { Transaction } from "@libsql/client";
 import { mediaMutation, validateMediaSources } from "./mediaMutation";
 import { MediaSourceError } from "./mediaBindings";
@@ -83,7 +84,8 @@ function rowToElement(r: any): ElementRow {
     name: String(r.name ?? ""),
     description: String(r.description ?? ""),
     locked: Number(r.locked ?? 0) === 1,
-    lockedBy: r.locked_by ?? null,
+    // Outside the house a lock the platform owner made reads "Particl support" (lib/platformOwnerPrivacy.ts).
+    lockedBy: maskStoredActor(r.locked_by ?? null),
     lockedAt: r.locked_at == null ? null : Number(r.locked_at),
     fromShotId: r.from_shot_id ?? null,
     fromGenId: r.from_gen_id ?? null,

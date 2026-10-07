@@ -9,7 +9,7 @@ import { approvedWelcomeCredits } from "@/lib/workspaceProvisioning";
 import { asPlanId, DEFAULT_PLANS } from "@/lib/plans";
 import { peakByEngine, peakOverall } from "@/lib/concurrency";
 import { defaultAllowanceUsd } from "@/lib/allowance";
-import { mailConfigured, sendMail, inviteOrigin } from "@/lib/mail";
+import { mailConfigured, sendMail, inviteOrigin, signupInviteEmail } from "@/lib/mail";
 import { provisioningConfigured } from "@/lib/provision";
 import { keyringConfigured } from "@/lib/keyring";
 import { meterByWorkspace, meterSummary, marginUsd, engineSpansSince } from "@/lib/meter";
@@ -112,11 +112,8 @@ export const POST = recoveryRoute(async function POST(req: Request) {
   let sent = false; let mailError: string | null = null;
   if (mailConfigured() && body.send !== false) {
     try {
-      await sendMail({
-        to: email, subject: `${got.user.name} invited you to particl studio`,
-        text: `Hi ${name || "there"},\n\n${got.user.name} has invited you to particl studio — a room for making shots, and for knowing what they cost. Create your account and your own workspace here:\n${link}\n\nThe link is yours alone and works for ${INVITE_DAYS} days.\n\n— particl studio`,
-        html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;color:#15171C;line-height:1.5;background:#FCFCFD"><p style="font-size:17px;margin:0 0 12px">Hi ${name || "there"},</p><p style="font-size:15px;color:#666A72;margin:0 0 20px"><strong style="color:#15171C">${got.user.name}</strong> has invited you to particl studio — a room for making shots, and for knowing what they cost. Create your account and your own workspace:</p><p style="margin:0 0 22px"><a href="${link}" style="display:inline-block;background:#15171C;color:#F5F6F8;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:8px">Create your workspace</a></p><p style="font-size:13.5px;color:#666A72;margin:0 0 18px">The link is yours alone and works for ${INVITE_DAYS} days.</p><p style="font-size:12px;color:#8A8E96;margin:0;word-break:break-all">If the button doesn't work: ${link}</p></div>`,
-      });
+      // From the platform: the inviter reads "Particl", never the person at the desk.
+      await sendMail({ to: email, ...signupInviteEmail({ name, link, days: INVITE_DAYS }) });
       sent = true;
       await p.execute({ sql: `UPDATE signup_invites SET sent_at = ?, send_count = send_count + 1 WHERE code = ?`, args: [now(), code] });
     } catch (e) { mailError = (e as Error).message; }

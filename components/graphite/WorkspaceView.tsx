@@ -346,7 +346,7 @@ function People() {
         return (
           <div className="wsx-row" key={u.id} data-testid="ws-member">
             <span className="wsx-initials" aria-hidden="true">{initials(u.name)}</span>
-            <span style={{ minWidth: 0 }}><span className="wsx-name">{u.name}</span><span className="cw-dim">{u.email} · last seen {when(u.lastSeen)} · {u.clips} {u.clips === 1 ? "clip" : "clips"}{u.disabled ? " · disabled" : ""}{u.locked ? " · locked" : ""}</span></span>
+            <span style={{ minWidth: 0 }}><span className="wsx-name">{u.name}</span><span className="cw-dim">{u.email ? `${u.email} · ` : ""}last seen {when(u.lastSeen)} · {u.clips} {u.clips === 1 ? "clip" : "clips"}{u.disabled ? " · disabled" : ""}{u.locked ? " · locked" : ""}</span></span>
             <span className="wsx-actions">
               {u.role ? <span className="gx-pill">{u.standing === "owner" ? "owner" : u.role}</span> : null}
               {roles && !fixed && u.role === "member" ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(u.id, `/api/team/${encodeURIComponent(u.id)}`, "PATCH", { role: "admin" })}>Promote</button> : null}
@@ -362,11 +362,11 @@ function People() {
       {(data?.invites ?? []).map((i) => (
         <div className="wsx-row" key={i.code} data-testid="ws-invite-row">
           <span className="wsx-initials" aria-hidden="true">…</span>
-          <span style={{ minWidth: 0 }}><span className="wsx-name">{i.name}</span><span className="cw-dim">{i.email} · invited · expires {when(i.expiresAt)}</span></span>
+          <span style={{ minWidth: 0 }}><span className="wsx-name">{i.name}</span><span className="cw-dim">{i.email ? `${i.email} · ` : ""}invited · expires {when(i.expiresAt)}</span></span>
           <span className="wsx-actions">
             <span className="gx-pill">{i.role ?? "invited"}</span>
-            {data?.mail?.configured ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}/send`, "POST", undefined, `Sent to ${i.email} again.`)}>Resend</button> : null}
-            <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}`, "DELETE", undefined, `The link for ${i.email} no longer works.`)} data-testid="ws-invite-revoke">Revoke</button>
+            {data?.mail?.configured ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}/send`, "POST", undefined, `Sent to ${i.email || i.name} again.`)}>Resend</button> : null}
+            <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}`, "DELETE", undefined, `The link for ${i.email || i.name} no longer works.`)} data-testid="ws-invite-revoke">Revoke</button>
           </span>
         </div>
       ))}

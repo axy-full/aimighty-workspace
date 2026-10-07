@@ -5,6 +5,7 @@ import { requireTenant } from "@/lib/tenant";
 import { platformDb, platformReady, now, getPlatformLayer } from "@/lib/platform";
 import {accountTransaction,accountFailure,AccountError} from "@/lib/accountDb";
 import {repairPendingMemberships,ensureMemberSeat} from "@/lib/teamInvitations";
+import { publicActorName, resolveMemberId } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -27,7 +28,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   if (got.response) return got.response;
   const ws = requireTenant();
   await platformReady();
-  const { id } = await params;
+  // The Team list gives the platform owner an id of this workspace's own (lib/platformOwnerPrivacy.ts).
+  const id = await resolveMemberId(ws, (await params).id);
   const body = await req.json().catch(() => ({}));
   if(body.role!==undefined&&!['admin','member'].includes(String(body.role)))return Response.json({error:'Choose admin or member.'},{status:400});
   if(body.disabled!==undefined&&typeof body.disabled!=='boolean')return Response.json({error:'Disabled must be true or false.'},{status:400});
@@ -79,7 +81,8 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   if (got.response) return got.response;
   const ws = requireTenant();
   await platformReady();
-  const { id } = await params;
+  // The Team list gives the platform owner an id of this workspace's own (lib/platformOwnerPrivacy.ts).
+  const id = await resolveMemberId(ws, (await params).id);
   if (id === got.user.id) return NextResponse.json({ error: "You can't remove yourself." }, { status: 400 });
   const target = await member(ws.id, id);
   if (!target) return NextResponse.json({ error: "No such member" }, { status: 404 });
@@ -100,5 +103,5 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
     {sql:'UPDATE users SET disabled=1,deleted_at=? WHERE id=?',args:[now(),id]},
     {sql:'UPDATE api_tokens SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL',args:[now(),id]},
   ],'write').catch(()=>{});
-  return NextResponse.json({ ok: true, name: target.name });
+  return NextResponse.json({ ok: true, name: await publicActorName(ws, target) });
 }, { requireRequestScope: true });
