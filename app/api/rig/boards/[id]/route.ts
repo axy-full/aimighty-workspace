@@ -1,3 +1,4 @@
+import { crossOriginProblem } from "@/lib/requestOrigin";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireSession, requireUser, withTenant } from "@/lib/auth";
@@ -66,8 +67,7 @@ export const POST = withTenant(async function POST(req: Request, ctx: Ctx) {
   if (got.response) return got.response;
   const scopeError = workbenchScopeProblem(req, requireTenant().id, got.user.id, true);
   if (scopeError) return NextResponse.json({ error: scopeError }, { status: 409, headers: NO_STORE });
-  const origin = req.headers.get("origin");
-  if (origin && origin !== new URL(req.url).origin) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
+  if (crossOriginProblem(req)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   const { id } = await ctx.params;
   const parsed = importSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success || !/^[A-Za-z0-9_-]{1,100}$/.test(id)) return NextResponse.json({ error: "Check the board action before sending it." }, { status: 400, headers: NO_STORE });

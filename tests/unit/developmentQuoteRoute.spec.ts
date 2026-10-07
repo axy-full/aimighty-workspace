@@ -4,6 +4,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import ts from "typescript";
 import { runInTenant, type TenantWorkspace } from "../../lib/tenant";
+import * as requestOrigin from "../../lib/requestOrigin";
 
 /*
  * A credit workspace that brought its own language key pays that model's
@@ -30,6 +31,7 @@ async function route(quote: Record<string, unknown>): Promise<Record<string, Han
     "@/lib/credits": await import("../../lib/credits"),
     "@/lib/ledgerUnit": await import("../../lib/ledgerUnit"),
     "@/lib/requestBody": await import("../../lib/requestBody"),
+    "@/lib/requestOrigin": requestOrigin,
     "@/lib/recovery": { reserveRecoveryContinuation: async () => () => {} },
     "@/lib/mock": await import("../../lib/mock"),
     "@/lib/platformSpend": await import("../../lib/platformSpend"),

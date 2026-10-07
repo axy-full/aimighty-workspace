@@ -1,3 +1,4 @@
+import { crossOriginProblem } from '@/lib/requestOrigin';
 import { after } from 'next/server';
 import { z } from 'zod';
 import { requireUser, requireRender, withTenant } from '@/lib/auth';
@@ -14,7 +15,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 const response = (data: unknown, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'private, no-store' } });
 function scope(req: Request, id: string, token: boolean) { const problem = workbenchScopeProblem(req, requireTenant().id, id, !token); if (problem)
-    return response({ error: problem }, 409); if (req.method !== 'GET' && req.headers.get('origin') && req.headers.get('origin') !== new URL(req.url).origin)
+    return response({ error: problem }, 409); if (req.method !== 'GET' && crossOriginProblem(req))
     return response({ error: 'Invalid request origin.' }, 403); return null; }
 function failure(error: unknown) { const status = error instanceof AstraRenderError ? error.status : error instanceof z.ZodError || error instanceof SyntaxError ? 400 : Number((error as {
     status?: number;
