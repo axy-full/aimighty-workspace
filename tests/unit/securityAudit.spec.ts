@@ -402,6 +402,7 @@ async function membershipRoute(
     "@/lib/platform": await import("../../lib/platform"),
     "@/lib/accountDb": await import("../../lib/accountDb"),
     "@/lib/teamInvitations": await import("../../lib/teamInvitations"),
+    "@/lib/platformOwnerPrivacy": await import("../../lib/platformOwnerPrivacy"),
     "@/lib/db": await import("../../lib/db"),
     "@/lib/auth": {
       withTenant: (handler: MembershipHandler) => handler,

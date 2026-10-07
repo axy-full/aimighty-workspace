@@ -18,6 +18,7 @@ import { ACCOUNT_MODEL_PREFIX, ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/at
 import { approvedBody, fetchStepQuote, planTotal, quoteMoved, stepPrice, stepRender, type StepQuote, type StepRender, type StepRenderContext } from "@/lib/atomikStepRender";
 import { isKeyStep, keyStepFamily, keyStepLabel } from "@/lib/atomikKeySteps";
 import { useSkillRunOpens } from "./skills/useSkillRunOpens";
+import { cinemaPriceWords } from "@/lib/cinemaHold";
 
 /**
  * Atomik, at app level (design/particl-graphite/README.md §5).
@@ -111,6 +112,8 @@ export type AtomikLive = {
   approvable: (step: Step) => boolean;
   /** True when that live quote is approximate (a Marketing Studio 2.5 build settles on its delivered image): shown as "about". */
   approximate: (step: Step) => boolean;
+  /** A Cinema Studio step's price in its own words, "about N cr, at most 3N cr" (lib/cinemaHold.ts): its live quote holds a ceiling. Null otherwise. */
+  heldWords: (step: Step) => string | null;
   /** Why the checkpoint could not be priced (the admission route's own refusal), if it could not. */
   stepQuoteError: string | null;
   /** True inside the app shell, which hosts the rail this conversation lives in; false where nothing does. */
@@ -339,15 +342,22 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   /* An archived thread's step is shown at its price and waits, unpaid, until the thread is restored. */
   const approvable = useCallback((s: Step) => !archived && !isAccountStep(s) && liveQuoted?.stepId === s.id, [liveQuoted, archived]);
   const approximate = useCallback((s: Step) => liveQuoted?.stepId === s.id && liveQuoted.quote.approximate === true, [liveQuoted]);
+  /* A take that holds its ceiling (Cinema Studio) is approved at its hold, said in the one wording (lib/cinemaHold.ts). */
+  const heldWords = useCallback((s: Step) => {
+    const n = credits(s);
+    return n !== null && money.inCredits && liveQuoted?.stepId === s.id && liveQuoted.quote.ceilingCredits != null ? cinemaPriceWords(n) : null;
+  }, [credits, money, liveQuoted]);
   const priceLabel = useCallback((s: Step) => {
     if (isAccountStep(s)) return "Read-only";
+    const held = heldWords(s);
+    if (held) return held;
     const n = credits(s);
     /* A library step's plan-time figure is the provider's estimate when it was planned: about that,
        until its checkpoint quote (the ceiling Continue sends) or its bill replaces it. */
     if (n !== null) return (isKeyStep(s) && s.status === "proposed" && liveQuoted?.stepId !== s.id) || approximate(s) ? `about ${money.price(n)}` : money.price(n);
     if (s.id === checkpointId) return stepQuoteError ? "no price" : "pricing…";
     return "priced at checkpoint";
-  }, [money, credits, checkpointId, stepQuoteError, liveQuoted, approximate]);
+  }, [money, credits, checkpointId, stepQuoteError, liveQuoted, approximate, heldWords]);
 
   const spentCredits = live.filter((s) => s.status === "done").reduce((a, s) => a + (credits(s) ?? 0), 0);
   const current: Current = useMemo(() => {
@@ -569,7 +579,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
 
   const fmt = useCallback((n: number) => money.price(n), [money]);
   const value: AtomikLive = {
-    chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, priceLabel, approvable, approximate, stepQuoteError, hosted: true, isReadOnly, fmt, engineLabel,
+    chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, priceLabel, approvable, approximate, heldWords, stepQuoteError, hosted: true, isReadOnly, fmt, engineLabel,
     busy, error: paid.error ?? ownSave?.error ?? errors[activeKey] ?? null, recoveryText, models, model, effort, modelNote, draftText, setDraftText, setThinkingModel, setReasoningEffort, quote, quoteError, quoting, send, approve, stop, changeEngine, clear: start, threads,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -584,7 +594,7 @@ const EMPTY_THREADS: AtomikThreads = {
 
 const EMPTY: AtomikLive = {
   chat: null, messages: [], plan: [], current: { kind: "idle" }, engines: [], ring: { mode: "idle" }, word: null,
-  totals: { total: 0, unpriced: 0, underCap: null, planning: 0 }, credits: () => null, priceLabel: () => "", approvable: () => false, approximate: () => false, stepQuoteError: null, hosted: false, isReadOnly: () => false, fmt: (n) => String(n), engineLabel: (id) => id,
+  totals: { total: 0, unpriced: 0, underCap: null, planning: 0 }, credits: () => null, priceLabel: () => "", approvable: () => false, approximate: () => false, heldWords: () => null, stepQuoteError: null, hosted: false, isReadOnly: () => false, fmt: (n) => String(n), engineLabel: (id) => id,
   busy: false, error: null, recoveryText:null, models:[], model:"auto", effort:"auto", modelNote:null, draftText:"", setDraftText:()=>{}, setThinkingModel:()=>{}, setReasoningEffort:()=>{}, quote:null, quoteError:null, quoting:false, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {}, threads: EMPTY_THREADS,
 };
 

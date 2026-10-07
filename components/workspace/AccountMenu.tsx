@@ -3,8 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { clearPrivateLocal, useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { initialsOf } from "@/lib/workspace/format";
-import { useWorkspace } from "@/lib/workspace/state";
-import { legacyShellHref } from "@/lib/workspace/switchover";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -38,7 +36,6 @@ const ACCOUNT: { href: string; label: string }[] = [
 
 export function AccountMenu({ account }: { account: WorkspaceAccount | null }) {
   const session = useSession();
-  const { state } = useWorkspace();
   const scopedFetch = useScopedFetch();
   const box = useRef<HTMLDetailsElement>(null);
   const [busy, setBusy] = useState(false);
@@ -135,19 +132,6 @@ export function AccountMenu({ account }: { account: WorkspaceAccount | null }) {
           </>
         ) : null}
         <a className="pxw-account-item" role="menuitem" href="/billing?workspace=new">Create a workspace</a>
-
-        {/* The switch-over escape hatch. One release; see
-            docs/workspace-switchover.md for when it comes out. */}
-        <p className="pxw-account-kicker">THIS RELEASE</p>
-        <a
-          className="pxw-account-item pxw-account-item--legacy"
-          role="menuitem"
-          href={legacyShellHref(state)}
-          data-testid="legacy-shell-link"
-        >
-          <span>Use the previous workspace</span>
-          <small>The old studio, with this project and page</small>
-        </a>
 
         <button type="button" role="menuitem" className="pxw-account-item" disabled={busy} onClick={() => void change("logout")}>
           Sign out

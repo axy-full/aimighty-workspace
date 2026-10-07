@@ -16,7 +16,7 @@ export const SOUL_MODELS = [
   { id: "soul_cinematic", label: "Identity still · Cinema", line: "Cinema-grade stills of a person or a thing." },
   { id: "soul_2", label: "Identity still · 2", line: "Realistic, editorial stills." },
   { id: "soul_location", label: "Location still", line: "Places and scenes, no people." },
-  { id: "soul_cast", label: "Persona still", line: "A new persona from words alone." },
+  { id: "soul_cast", label: "Identity still", line: "A new identity from words alone." },
 ] as const;
 export type SoulModelId = (typeof SOUL_MODELS)[number]["id"];
 export type ElementCategory = "character" | "environment" | "prop";

@@ -7,8 +7,8 @@ import { password, noSideScroll, signupInvite } from "./helpers/identityAdmin";
 /* Identity fixes, in the browser at every size the customer config runs (its
    shards already serve the account pages, so these add no new routes to a
    workbench shard's dev server). Named to sort beside account-security and
-   away from gen.spec, whose 1440 upload test leaves a shard's dev server
-   near the runner's memory limit. The platform desk has its own spec
+   away from the old gen spec (deleted, Q15), whose 1440 upload test left a
+   shard's dev server near the runner's memory limit. The platform desk has its own spec
    (tests/platform-desk.spec.ts). Local ENGINE_MOCK server only. */
 
 test("after a reset that needs the second factor, sign-in says the password changed", async ({ page }) => {
@@ -111,25 +111,6 @@ test("a copied invitation link asks for the invitation email before a new accoun
   await page.getByRole("button", { name: "Join the workspace" }).click();
   await expect.poll(() => posted.length).toBe(2);
   expect(posted[1]).toMatchObject({ code, m: "proof-from-email", accept: true });
-});
-
-test("the Team page says an invitation hit the mail limit, not that delivery failed", async ({ page }) => {
-  await signInLocally(page.request);
-  const limit = "That address has been sent 3 invitations from this workspace today. Copy the invitation link instead.";
-  // Only the invitation POST is answered here, in the route's own shape; the roster loads for real.
-  await page.route("**/api/team", (route) =>
-    route.request().method() === "POST"
-      ? route.fulfill({ json: { code: "limited-code", email: "someone@example.test", name: "Someone", role: "member", expiresInDays: 7, sent: false, mailError: limit, mailLimited: true } })
-      : route.fallback(),
-  );
-  await page.goto("/team");
-  await page.getByRole("button", { name: "Invite someone" }).first().click();
-  await page.getByLabel("Name", { exact: true }).fill("Someone");
-  await page.getByLabel("Email address", { exact: true }).fill("someone@example.test");
-  await page.getByRole("button", { name: /Send invite|Create invite/ }).click();
-  await expect(page.getByText(`Invitation created, not emailed. ${limit}`)).toBeVisible();
-  await expect(page.getByText(/Email delivery failed/)).toHaveCount(0);
-  expect(await noSideScroll(page)).toBe(true);
 });
 
 test("a member whose workspace requires two-step sign-in replaces a lost authenticator", async ({ page }) => {

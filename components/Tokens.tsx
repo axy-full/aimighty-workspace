@@ -13,7 +13,7 @@ import { parseCeiling, parseCreditCeiling } from "@/lib/tokenCeiling";
  *  The house workspace alone (`unit: "usd"`, lib/houseWorkspace.ts) is
  *  answered in the engines' dollars: `spendThisMonth` and `capUsd`. */
 export type Token = {
-  id: string; name: string; scope: "read" | "render";
+  id: string; name: string; scope: "read" | "render" | "prepare";
   capCredits?: number | null; legacyCeiling?: boolean; capUsd?: number | null; spendThisMonth: number;
   lastUsed: number | null; createdAt: number;
 };
@@ -115,7 +115,7 @@ export default function Tokens({ onNewToken }: { onNewToken?: (t: string) => voi
             <span className="flex min-w-0 flex-col">
               <span className="truncate">{t.name}</span>
               <span className="text-[13px] text-mute">
-                {t.scope === "read" ? "Read-only" : "Can generate"}
+                {t.scope === "read" ? "Read-only" : t.scope === "prepare" ? "Prepares jobs only" : "Can generate"}
                 {inDollars
                   ? (t.capUsd != null ? ` · ${spent(t)} of ${usd(t.capUsd, 2)} this month` : t.spendThisMonth > 0 ? ` · ${spent(t)} this month` : "")
                   : t.capCredits != null ? ` · ${spent(t)} of ${fmtCredits(t.capCredits)} this month` : t.spendThisMonth > 0 ? ` · ${spent(t)} this month` : ""}

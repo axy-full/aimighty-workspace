@@ -23,7 +23,7 @@ import {
   submitConsumerGenjutsuJob,
   pollConsumerGenjutsu,
 } from "@/lib/higgsfield-consumer/genjutsu-service";
-import { asksRetired, retiredResponse } from "@/lib/higgsfield-consumer/retired";
+import { asksRetired, retiredResponse, signInOff } from "@/lib/higgsfield-consumer/retired";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -142,7 +142,7 @@ function problem(error: unknown) {
     { status: 503, headers },
   );
 }
-export const GET = withTenant(
+const keptGET = withTenant(
   async (req: Request) => {
     const owner = await requireOwner();
     if (owner.response) return owner.response;
@@ -207,7 +207,7 @@ export const GET = withTenant(
   },
   { requireRequestScope: true },
 );
-export const POST = withTenant(
+const keptPOST = withTenant(
   async (req: Request) => {
     const owner = await requireOwner();
     if (owner.response) return owner.response;
@@ -265,3 +265,7 @@ export const POST = withTenant(
   },
   { requireRequestScope: true },
 );
+
+/* Off for Release 1 with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts › signInOff): every method answers 410 and never reads a stored grant. */
+export const GET = signInOff(keptGET);
+export const POST = signInOff(keptPOST);

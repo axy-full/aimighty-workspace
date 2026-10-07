@@ -5,6 +5,7 @@ import { libraryKind, libraryReady, libraryUrl, type LibraryAsset, type LibraryU
 import { inlineSafe } from "../serveType";
 import { uploadFile, type UploadedFile } from "../uploadClient";
 import { fileProjectUpload } from "../workbench/project-library-client";
+import { fileCompletedUpload, markUploadFiled, type UploadEnvelope } from "../uploadRecovery";
 import { projectTakes, type ReviewState, type Take } from "./takes";
 import { finalOf, isDraft } from "../draftFinal";
 
@@ -463,8 +464,9 @@ export async function uploadToProject(scope: string, projectId: string, files: F
   try {
     for (const file of files) {
       set(key, { uploading: `Uploading ${file.name}` });
-      const stored = await uploadFile(file, "chat", (pct) => set(key, { uploading: `${file.name} · ${pct}%` }), { scope });
+      const stored = await uploadFile(file, "chat", (pct) => set(key, { uploading: `${file.name} · ${pct}%` }), { scope, projectId });
       await fileProjectUpload(projectId, stored.id, scope);
+      await markUploadFiled(scope, stored.id, projectId);
       completed++;
     }
   } finally {
@@ -499,13 +501,16 @@ export async function uploadFilesToProject(scope: string, projectId: string, fil
       try {
         let stored: UploadedFile;
         if (media) {
-          try { stored = await uploadFile(file, "reference", progress, { scope }); }
+          try { stored = await uploadFile(file, "reference", progress, { scope, projectId }); }
           catch (error) {
-            stored = await uploadFile(file, "chat", progress, { scope });
+            /* A dropped connection is not a refusal: the upload stays saved for Resume (components/UploadRecovery.tsx), and is never started again as a second upload. */
+            if (error instanceof TypeError) throw error;
+            stored = await uploadFile(file, "chat", progress, { scope, projectId });
             notes.push(`${file.name} is kept in the Library; engines may not take it as a reference (${error instanceof Error ? error.message.replace(/\.$/, "") : "the reference check refused it"}).`);
           }
-        } else stored = await uploadFile(file, "chat", progress, { scope });
+        } else stored = await uploadFile(file, "chat", progress, { scope, projectId });
         await fileProjectUpload(projectId, stored.id, scope);
+        await markUploadFiled(scope, stored.id, projectId);
         ids.push(`upload:${stored.id}`);
         uploads.push(stored);
       } catch (error) {
@@ -520,6 +525,15 @@ export async function uploadFilesToProject(scope: string, projectId: string, fil
   // The same reason once, with every file it stopped.
   for (const [why, names] of failed) notes.push(`${names.join(", ")} could not be uploaded (${why}).`);
   return { ids, uploads, notes };
+}
+
+/**
+ * An upload resumed from Uploads (components/UploadRecovery.tsx) after its drop lost the connection: filed into the
+ * project it was dropped into, once, and that project's Library read again if it is open.
+ */
+export async function fileRecoveredUpload(entry: UploadEnvelope): Promise<void> {
+  const projectId = await fileCompletedUpload(entry, fileProjectUpload);
+  if (projectId && entries.has(keyOf(entry.scope, projectId))) await load(entry.scope, projectId);
 }
 
 /* ── What a grid of takes shows ───────────────────────────────────────── */

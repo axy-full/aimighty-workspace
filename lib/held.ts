@@ -6,6 +6,7 @@ import { meter } from "./meter";
 import { currentTenant } from "./tenant";
 import { creditState } from "./credits";
 import { billCredits, heldPriceNow, marginKeyOf } from "./creditTerms";
+import { holdBandOf } from "./cinemaHold";
 import { reserveGenerationSpend, SpendReservationError } from "./generationRequests";
 import { enqueueRender } from "./inngest";
 import { runInline } from "./renderWork";
@@ -15,6 +16,7 @@ import { sendMail, mailConfigured } from "./mail";
 import { membershipRole, workspaceAdmins } from "./platform";
 import { workspaceLimits, standing } from "./limits";
 import { notify } from "./push";
+import { SETTINGS_CREDITS } from "./shell/settings";
 import { ProviderPoolBusyError } from "./generationRequests";
 import { POOL_MARK, SHARED_POOL, leavePool, poolPrecheck, queueForPool, releasePoolWaiters, waitingIn } from "./providerPool";
 
@@ -115,8 +117,9 @@ export async function discardHeldJob(id: string, tx?: Transaction): Promise<bool
   return out.rowsAffected > 0;
 }
 
+/** `needs`: what starting it approves — for a take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts), its hold. */
 export function heldInfo(estUsd: number, kind: string, model: string, why: HeldWhy = "credits"): HeldInfo {
-  return { estUsd, needs: billCredits(estUsd, marginKeyOf(kind, model)), at: now(), why };
+  return { estUsd, needs: billCredits(estUsd, marginKeyOf(kind, model)) * holdBandOf(model), at: now(), why };
 }
 
 export function heldMessage(needs: number, left: number): string {
@@ -319,7 +322,8 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
     try {
       await reserveGenerationSpend({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "running",
                     engineCostUsd: r.estUsd, projectId: r.projectId, shotId: r.shotId, createdBy: r.createdBy },
-                    { token: r.token, shotCapExempt: r.shotId ? await exempt(r.createdBy) : false });
+                    /* A take that holds its ceiling (Cinema Studio) starts at the hold its `needs` approved. */
+                    { token: r.token, shotCapExempt: r.shotId ? await exempt(r.createdBy) : false, holdBand: holdBandOf(r.model) });
     } catch (e) {
       /* Nothing else stops it, only a shared slot: it waits in that line (from its own hold time), unreserved and unsent. */
       if (e instanceof ProviderPoolBusyError) {
@@ -416,9 +420,9 @@ export async function notifyHeld(gen: { id: string; needs: number; left: number 
   if (!admins.length) return;
   const title = "Renders are being held";
   const body = `A take needs ${gen.needs} credits and ${Math.max(0, Math.floor(gen.left))} are left. Top up to release it — nothing is lost.`;
-  await notify("balanceLow", admins.map((a) => a.id), { title, body, url: "/settings#credits" }).catch(() => {});
+  await notify("balanceLow", admins.map((a) => a.id), { title, body, url: SETTINGS_CREDITS }).catch(() => {});
   if (!mailConfigured()) return;
-  const link = `${siteUrl()}/settings#credits`;
+  const link = `${siteUrl()}${SETTINGS_CREDITS}`;
   await Promise.allSettled(admins.filter((a) => a.email).map((a) => sendMail({
     to: a.email,
     subject: `${ws.name}: ${title}`,

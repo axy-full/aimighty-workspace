@@ -3,9 +3,12 @@ import { currentTenant } from "./tenant";
 import { creditsApply } from "./credits";
 import { billCreditsWith, marginFor, marginKeyOf } from "./creditTerms";
 import { creditsFor, type EstimateTerms } from "./billingTerms";
-import { getSetting } from "./settings";
+import { getSetting, invalidateSettings } from "./settings";
 import { workspaceAdmins, platformDb, platformReady } from "./platform";
 import { notify } from "./push";
+import { budgetPause, budgetPauseLine, cleanBudget, cleanWarnPct, type BudgetPause } from "./budgetPause";
+
+export { budgetPause, budgetPauseLine, cleanBudget, cleanWarnPct, type BudgetPause };
 
 /**
  * A production's cap, in the workspace's unit.
@@ -43,8 +46,13 @@ export function capVerdict(o: { cap: number | null; spent: number; needs: number
   return { allow: true, pct, warned: false };
 }
 
-/** A production's cap as set, with nothing spent read. */
-export type CapRow = { unit: CapUnit; cap: number | null; unlocked: boolean; warnedAt: number | null; name: string };
+/** The workspace's budget per production now, in credits, or null when none is set. */
+export async function workspaceBudget(): Promise<number | null> {
+  return cleanBudget(await getSetting("productionBudgetCredits"));
+}
+
+/** A production's cap as set, with nothing spent read. `from` says whose it is: the production's own, or the workspace's budget. */
+export type CapRow = { unit: CapUnit; cap: number | null; unlocked: boolean; warnedAt: number | null; name: string; from?: "production" | "workspace" | null };
 /** The cap and what the production has spent against it, in the same unit. */
 export type ProjectCap = CapRow & { spent: number };
 export type Spent = { usd: number; credits: number };
@@ -130,12 +138,16 @@ export async function projectCap(projectId: string): Promise<CapRow | null> {
   });
   const r = rs.rows[0] as unknown as Record<string, unknown> | undefined;
   if (!r) return null;
+  const own = inCredits ? (r.cap_credits == null ? null : Number(r.cap_credits)) : (r.cap_usd == null ? null : Number(r.cap_usd));
+  /* A credits production with no cap of its own follows the workspace's budget per production, when an admin set one. */
+  const budget = own == null && inCredits ? await workspaceBudget() : null;
   return {
     unit: inCredits ? "cr" : "$",
-    cap: inCredits ? (r.cap_credits == null ? null : Number(r.cap_credits)) : (r.cap_usd == null ? null : Number(r.cap_usd)),
+    cap: own ?? budget,
     unlocked: Number(r.cap_unlocked ?? 0) === 1,
     warnedAt: r.cap_warned_at == null ? null : Number(r.cap_warned_at),
     name: String(r.name ?? ""),
+    from: own != null ? "production" : budget != null ? "workspace" : null,
   };
 }
 
@@ -156,15 +168,17 @@ export async function projectCapSpent(projectId: string): Promise<ProjectCap | n
  * credits at the engine's margin, like everything else — or, given the exact
  * terms the job's reservation will charge (currentBillingTerms), at those.
  */
-export async function checkCap(projectId: string | null, needsUsd: number, engine: EstimateTerms): Promise<CapVerdict> {
+export async function checkCap(projectId: string | null, needsUsd: number, engine: EstimateTerms, band = 1): Promise<CapVerdict> {
   if (!projectId) return { allow: true, pct: null, warned: false };
   const row = await projectCap(projectId);
   if (!row || row.cap == null) return { allow: true, pct: null, warned: false };
   const pc = await withSpent(projectId, row);
-  const needs = pc.unit === "cr" ? creditsFor(needsUsd, engine) : needsUsd;
+  /* `band`: a take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts) counts at its hold, not its estimate. */
+  const hold = Number.isInteger(band) && band > 1 ? band : 1;
+  const needs = pc.unit === "cr" ? creditsFor(needsUsd, engine) * hold : needsUsd * hold;
   const ruleRaw = await getSetting("atCap");
   const rule: CapRule = ruleRaw === "stop" || ruleRaw === "warn" ? ruleRaw : "producer";
-  const warnPct = Math.max(1, Math.min(100, Number(await getSetting("capWarnPct")) || 80));
+  const warnPct = cleanWarnPct(await getSetting("capWarnPct"));
   const v = capVerdict({ cap: pc.cap, spent: pc.spent, needs, rule, unlocked: pc.unlocked, warnPct, unit: pc.unit });
   if (v.allow && v.warned && !pc.warnedAt) {
     // Once per cap: the producer hears when the threshold is first crossed, not on every take after it.
@@ -177,4 +191,116 @@ export async function checkCap(projectId: string | null, needsUsd: number, engin
     }
   }
   return v;
+}
+
+/**
+ * Whether the next paid job of a production reaches the pause at a share of its budget (`budgetPause`), reckoned as
+ * the gate reckons spend (`projectCapSpent`). Credits workspaces only; null when there is no cap, the production is
+ * unlocked past its cap by an admin, or the job does not reach the pause. The sentence is what the run says.
+ */
+export async function budgetAsk(projectId: string | null, needsCredits: number): Promise<{ pause: BudgetPause; line: string } | null> {
+  if (!projectId) return null;
+  const row = await projectCapSpent(projectId);
+  /* An admin's unlock lets a production past its cap; below the cap the ask still stands (an unlock is never a
+     standing exemption from the pause, and any change to the cap or the budget re-locks it: resetCapLocks). */
+  if (!row || row.unit !== "cr" || row.cap == null || (row.unlocked && row.spent >= row.cap)) return null;
+  const pause = budgetPause({ cap: row.cap, spent: row.spent, needs: needsCredits, warnPct: cleanWarnPct(await getSetting("capWarnPct")) });
+  if (!pause || !pause.reached) return null;
+  return { pause, line: budgetPauseLine(pause) };
+}
+
+/* One write transaction on the workspace's database: a cap or budget and its re-lock land together, and an unlock is
+   checked against the cap and budget it reads in the same transaction (SQLite serialises writers). */
+async function inWrite<T>(fn: (tx: Awaited<ReturnType<ReturnType<typeof db>["transaction"]>>) => Promise<T>): Promise<T> {
+  await ready();
+  const tx = await db().transaction("write");
+  try { const value = await fn(tx); await tx.commit(); return value; }
+  catch (error) { await tx.rollback().catch(() => {}); throw error; }
+  finally { tx.close(); }
+}
+
+/**
+ * An unlock (and the once-per-cap warning) belongs to the cap it was given for. A production's own cap is written
+ * with its re-lock in ONE statement, so a new cap never stands beside an old unlock: a changed cap re-locks the row
+ * and re-arms its warning; the same cap written again changes neither.
+ */
+export async function setOwnCap(projectId: string, unit: CapUnit, value: number | null): Promise<void> {
+  const col = unit === "cr" ? "cap_credits" : "cap_usd";
+  await ready();
+  await db().execute({
+    sql: `UPDATE projects SET cap_unlocked = CASE WHEN ${col} IS ? THEN cap_unlocked ELSE 0 END, cap_warned_at = NULL, ${col} = ? WHERE id = ?`,
+    args: [value, value, projectId],
+  });
+}
+
+/**
+ * The workspace's budget per production, written with its re-lock in ONE transaction: when the budget changes, every
+ * production that follows it (no cap of its own) is re-locked and its warning re-armed. A workspace not billed in
+ * credits has no budget to enforce, so nothing there is re-locked. Returns whether the budget changed.
+ */
+export async function setWorkspaceBudget(value: string, userId: string, inCredits: boolean): Promise<boolean> {
+  const changed = await inWrite(async (tx) => {
+    const before = (await tx.execute({ sql: "SELECT value FROM settings WHERE key = 'productionBudgetCredits'", args: [] })).rows[0];
+    const was = cleanBudget(before?.value ?? ""), next = cleanBudget(value);
+    await tx.execute({
+      sql: `INSERT INTO settings (key, value, updated_by, updated_at) VALUES ('productionBudgetCredits',?,?,?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`,
+      args: [value, userId, now()],
+    });
+    if (was === next) return false;
+    if (inCredits) await tx.execute({ sql: "UPDATE projects SET cap_unlocked = 0, cap_warned_at = NULL WHERE cap_credits IS NULL", args: [] });
+    return true;
+  });
+  invalidateSettings();
+  return changed;
+}
+
+/** Re-locks a production (an admin's Lock again, or a test's set-up): never unlocks anything. */
+export async function resetCapLocks(scope: { projectId: string } | { budget: true }): Promise<void> {
+  await ready();
+  if ("projectId" in scope) {
+    await db().execute({ sql: "UPDATE projects SET cap_unlocked = 0, cap_warned_at = NULL WHERE id = ?", args: [scope.projectId] });
+  } else {
+    await db().execute("UPDATE projects SET cap_unlocked = 0, cap_warned_at = NULL WHERE cap_credits IS NULL");
+  }
+}
+
+export const capChanged = (cap: number, unit: CapUnit) => `The cap changed to ${fmt(cap, unit)}: look again before unlocking.`;
+export const NOT_AT_CAP = "This production is not at its cap, so there is nothing to unlock. Look again.";
+export const NO_CAP = "This production has no cap to unlock.";
+
+/**
+ * An admin's Unlock, tied to the cap they were shown (`forCap`, in the workspace's unit): it lands only if that is still
+ * the production's cap (its own, or the workspace's budget, read in the same write transaction as the unlock) and the
+ * production is at it, as the gate counts spend. Otherwise it is refused with what changed, and nothing is written.
+ */
+export async function unlockAtCap(projectId: string, forCap: number): Promise<{ ok: true } | { ok: false; status: 404 | 409; error: string }> {
+  const inCredits = creditsApply(currentTenant()?.workspace);
+  const unit: CapUnit = inCredits ? "cr" : "$";
+  const spent = (await spentBy("project_id", [projectId])).get(projectId)!;
+  const used = inCredits ? spent.credits : spent.usd;
+  return inWrite(async (tx) => {
+    const row = (await tx.execute({ sql: "SELECT cap_credits, cap_usd FROM projects WHERE id = ?", args: [projectId] })).rows[0] as unknown as { cap_credits: unknown; cap_usd: unknown } | undefined;
+    if (!row) return { ok: false as const, status: 404 as const, error: "No such project." };
+    const budget = inCredits ? cleanBudget((await tx.execute({ sql: "SELECT value FROM settings WHERE key = 'productionBudgetCredits'", args: [] })).rows[0]?.value ?? "") : null;
+    const own = inCredits ? (row.cap_credits == null ? null : Number(row.cap_credits)) : (row.cap_usd == null ? null : Number(row.cap_usd));
+    const cap = own ?? budget;
+    if (cap == null) return { ok: false as const, status: 409 as const, error: NO_CAP };
+    if (Math.abs(cap - forCap) > 1e-9) return { ok: false as const, status: 409 as const, error: capChanged(cap, unit) };
+    if (used + 1e-9 < cap) return { ok: false as const, status: 409 as const, error: NOT_AT_CAP };
+    await tx.execute({ sql: "UPDATE projects SET cap_unlocked = 1 WHERE id = ?", args: [projectId] });
+    return { ok: true as const };
+  });
+}
+
+/**
+ * A production's cap as every screen shows it, from its own row and the workspace's budget: the effective cap the
+ * gate enforces (`capCredits`), whose it is (`capFrom`), and the production's own (`ownCapCredits`, what an admin
+ * edits). Credits workspaces only; a dollars row is returned as it was.
+ */
+export function effectiveCapRow<R extends { capCredits: number | null }>(row: R, budget: number | null, inCredits: boolean):
+  R & { capFrom: "production" | "workspace" | null; ownCapCredits: number | null } {
+  if (!inCredits) return { ...row, capFrom: row.capCredits != null ? "production" : null, ownCapCredits: row.capCredits };
+  const own = row.capCredits;
+  return { ...row, capCredits: own ?? budget, capFrom: own != null ? "production" : budget != null ? "workspace" : null, ownCapCredits: own };
 }

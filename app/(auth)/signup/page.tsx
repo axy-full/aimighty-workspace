@@ -1,33 +1,71 @@
 "use client";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AuthCard, Field, Submit, ErrorLine } from "@/components/AuthCard";
+import { TRAIL } from "@/components/ui/Mark";
+import { RequestAccessForm, sentLine, inviteCredits } from "@/components/graphite/guest/RequestAccess";
 import { billingPath, readAnswer, signupSignInPath } from "@/lib/authPages";
-import "@/components/commercial/commercial.css";
+import { decodeGuestBrief, guestBriefRaw, subscribeGuestBrief } from "@/lib/guest/brief";
+import { makeFirstBoardFromGuestBrief } from "@/lib/guest/first-board";
+import "@/components/graphite/shell.css";
+import "@/components/graphite/guest/guest.css";
 
+/**
+ * Sign-up on Graphite (lead decisions 36, 39 and 41), drawn as the master's sign-up sheet (design README § 3.7,
+ * frames 3a and 3b) on a page of its own; app/graphite.css tokens only.
+ *
+ * - With an invitation link (`?invite=`): the invitation fills the email (and the name when it has one); the brief
+ *   kept from guest Home is shown; the form asks only for what is missing — the name if the invitation has none,
+ *   the workspace's name, a password, and the terms.
+ * - Without one, while sign-up is by invitation (the server says `inviteOnly`): Request access.
+ * - Without one, while the owner has opened sign-up: today's self-serve form.
+ * - A verification link while sign-up is closed is refused by the server; the page offers Request access instead.
+ *
+ * Sign-in behaviour is unchanged: the same routes, fields and redirects as before; only the layout and the pre-fill.
+ */
 type SignupAvailability = {
   email?: string;
   name?: string;
   open: boolean;
+  /** Sign-up is by invitation link only (the platform owner's /admin setting, lead decision 36). */
+  inviteOnly?: boolean;
   reason?: string;
   error?: string;
 };
+class InviteOnly extends Error {}
 const validPlan = (value: string | null) =>
   ["studio", "agency", "production"].includes(value || "") ? value! : "studio";
+
 export default function SignupPage() {
   return (
-    <Suspense
-      fallback={
-        <AuthCard title="Create your workspace">
-          <p>Loading…</p>
-        </AuthCard>
-      }
-    >
+    <Suspense fallback={<Page title="Create your account"><p className="gx-su-sub" role="status">Loading…</p></Page>}>
       <Signup />
     </Suspense>
   );
 }
+
+/** The page's frame: the particl mark, then the sheet's card, centred. */
+function Page({ title, sub, children }: { title: string; sub?: string; children: ReactNode }) {
+  return (
+    <div className="gx gx-signup-page" data-testid="signup-page">
+      <main className="gx-su gx-su--page" aria-labelledby="gx-signup-title">
+        <Link href="/" className="gx-su-brand" aria-label="particl">
+          <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">
+            {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
+          </svg>
+          <span>particl</span>
+        </Link>
+        <div>
+          <p className="gx-su-eyebrow">Sign up</p>
+          <h1 className="gx-su-title" id="gx-signup-title">{title}</h1>
+          {sub ? <p className="gx-su-sub">{sub}</p> : null}
+        </div>
+        {children}
+      </main>
+    </div>
+  );
+}
+
 function Signup() {
   const router = useRouter(),
     params = useSearchParams(),
@@ -45,13 +83,15 @@ function Signup() {
     [accept, setAccept] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
+    [refused, setRefused] = useState(false),
+    [requested, setRequested] = useState<string | null>(null),
     [sent, setSent] = useState(false),
     [notice, setNotice] = useState(""),
     [needsSignIn, setNeedsSignIn] = useState(false);
-  const verification = useRef<{
-    token: string;
-    promise: Promise<Record<string, unknown>>;
-  } | null>(null);
+  /* What this person typed on guest Home, kept in this browser: it becomes their first board (lead decision 39). */
+  const keptBrief = decodeGuestBrief(useSyncExternalStore(subscribeGuestBrief, guestBriefRaw, () => null))?.text.trim() ?? "";
+  const verification = useRef<{ token: string; promise: Promise<Record<string, unknown>> } | null>(null);
+
   useEffect(() => {
     let active = true;
     if (verify) {
@@ -63,41 +103,34 @@ function Signup() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ token: verify }),
           }).then(async (response) => {
-            const { data, problem } = await readAnswer(
-              response,
-              "This verification link could not be used.",
-            );
+            const { data, problem } = await readAnswer(response, "This verification link could not be used.");
+            if (data.inviteOnly === true) throw new InviteOnly(problem ?? "");
             if (problem) throw new Error(problem);
             return data;
           }),
         };
       verification.current.promise
-        .then((data) => {
+        .then(async (data) => {
           if (!active) return;
+          if (data.workspace) await makeFirstBoardFromGuestBrief();
           const destination =
             typeof data.next === "string" && data.next.startsWith("/billing")
               ? data.next
-              : billingPath(
-                  validPlan(
-                    typeof data.planId === "string" ? data.planId : null,
-                  ),
-                  data.cadence === "annual" ? "annual" : "monthly",
-                );
+              : billingPath(validPlan(typeof data.planId === "string" ? data.planId : null), data.cadence === "annual" ? "annual" : "monthly");
           router.replace(destination);
           router.refresh();
         })
         .catch((e) => {
-          if (active) setError(e.message);
+          if (!active) return;
+          if (e instanceof InviteOnly) setRefused(true);
+          else setError(e.message);
         });
       return () => {
         active = false;
       };
     }
     const controller = new AbortController();
-    fetch(
-      "/api/auth/signup" + (code ? "?code=" + encodeURIComponent(code) : ""),
-      { signal: controller.signal },
-    )
+    fetch("/api/auth/signup" + (code ? "?code=" + encodeURIComponent(code) : ""), { signal: controller.signal })
       .then(async (response) => {
         const answer = await readAnswer(response, "Sign-up is unavailable.");
         if (answer.problem) throw new Error(answer.problem);
@@ -116,6 +149,7 @@ function Signup() {
       controller.abort();
     };
   }, [code, verify, router]);
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!available?.open || busy) return;
@@ -130,52 +164,31 @@ function Signup() {
       const response = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...(code ? { code } : {}),
-          name,
-          email,
-          workspace,
-          password,
-          accept,
-          planId: plan,
-          cadence,
-        }),
+        body: JSON.stringify({ ...(code ? { code } : {}), name, email, workspace, password, accept, planId: plan, cadence }),
       });
-      const { data, problem } = await readAnswer(
-        response,
-        "Your account could not be created.",
-      );
+      const { data, problem } = await readAnswer(response, "Your account could not be created.");
+      if (data.inviteOnly === true) { setRefused(true); return; }
       if (problem) {
         setNeedsSignIn(data.needsSignIn === true);
         throw new Error(problem);
       }
       if (data.verificationRequired) {
         setSent(true);
-        setNotice(
-          typeof data.message === "string" && data.message
-            ? data.message
-            : "Open the verification link in your email to continue.",
-        );
+        setNotice(typeof data.message === "string" && data.message ? data.message : "Open the verification link in your email to continue.");
         setPassword("");
         setConfirm("");
       } else {
-        router.push(
-          typeof data.next === "string" &&
-            data.next.startsWith("/") &&
-            !data.next.startsWith("//")
-            ? data.next
-            : "/workbench",
-        );
+        if (data.workspace) await makeFirstBoardFromGuestBrief();
+        router.push(typeof data.next === "string" && data.next.startsWith("/") && !data.next.startsWith("//") ? data.next : "/suites");
         router.refresh();
       }
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Could not reach Particl. Try again.",
-      );
+      setError(e instanceof Error ? e.message : "Could not reach Particl. Try again.");
     } finally {
       setBusy(false);
     }
   }
+
   async function resend() {
     if (busy) return;
     setBusy(true);
@@ -186,190 +199,131 @@ function Signup() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      const { data, problem } = await readAnswer(
-        response,
-        "The verification email could not be sent.",
-      );
+      const { data, problem } = await readAnswer(response, "The verification email could not be sent.");
+      if (data.inviteOnly === true) { setRefused(true); return; }
       if (problem) throw new Error(problem);
-      setNotice(
-        typeof data.message === "string" && data.message
-          ? data.message
-          : "If a verification is pending for this address, a new email is on its way.",
-      );
+      setNotice(typeof data.message === "string" && data.message ? data.message : "If a verification is pending for this address, a new email is on its way.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Try again in a moment.");
     } finally {
       setBusy(false);
     }
   }
+
+  const signIn = (
+    <div className="gx-su-foot">
+      <span>Already have an account?</span>
+      <Link href={login} className="gx-su-link" data-testid="signup-signin">Sign in</Link>
+    </div>
+  );
+  const kept = keptBrief ? (
+    <div className="gx-su-field" data-testid="signup-kept-brief">
+      <span className="gx-su-label">Your brief · kept for your first board</span>
+      <p className="gx-su-brief"><span>{keptBrief}</span></p>
+    </div>
+  ) : null;
+
+  /* Invitation-only, with no link (or a self-serve verification after sign-up closed): ask for access instead. */
+  if (refused || (!code && !verify && available?.inviteOnly)) {
+    if (requested)
+      return (
+        <Page title="Request sent" sub={`We’ll email a link to ${requested}.`}>
+          <p className="gx-su-note" data-testid="signup-sent">{sentLine(inviteCredits(null))}</p>
+          {signIn}
+        </Page>
+      );
+    return (
+      <Page title="Particl is invite-only for now." sub="Sign-up needs an invitation link. Ask for access and we’ll send you one.">
+        <div data-testid="signup-invite-only" className="gx-su-form">
+          {kept}
+          <RequestAccessForm brief={keptBrief} source="From the sign-up page" onSent={setRequested} />
+        </div>
+        {signIn}
+      </Page>
+    );
+  }
+
   if (verify)
     return (
-      <AuthCard
-        title={error ? "Check your verification link" : "Verifying your email"}
-        sub={
-          error || "Your account will open as soon as verification completes."
-        }
-      >
-        {error && (
-          <div className="auth-actions">
-            <Link href={`/signup?plan=${plan}&cadence=${cadence}`}>
-              Return to sign up
-            </Link>
-            <Link href={login}>Sign in</Link>
+      <Page title={error ? "Check your verification link" : "Verifying your email"} sub={error || "Your account will open as soon as verification completes."}>
+        {error ? (
+          <div className="gx-su-foot">
+            <Link href={`/signup?plan=${plan}&cadence=${cadence}`} className="gx-su-link">Return to sign up</Link>
+            <Link href={login} className="gx-su-link">Sign in</Link>
           </div>
-        )}
-      </AuthCard>
+        ) : null}
+      </Page>
     );
+
   if (sent)
     return (
-      <AuthCard
-        title="Check your email"
-        sub={`We sent a verification link to ${email}.`}
-      >
-        <p role="status" className="auth-status">
-          {notice}
-        </p>
-        <p className="auth-status">
-          Your {plan} plan choice and {cadence} billing are saved. You will
-          review checkout after verification. No payment has been taken.
-        </p>
-        {error && <ErrorLine>{error}</ErrorLine>}
-        <div className="auth-actions">
-          <button disabled={busy} onClick={() => void resend()}>
-            {busy ? "Sending…" : "Resend verification email"}
-          </button>
-          <Link href={login}>Sign in</Link>
-        </div>
-      </AuthCard>
+      <Page title="Check your email" sub={`We sent a verification link to ${email}.`}>
+        <p role="status" className="gx-su-note">{notice}</p>
+        <p className="gx-su-note">Your {plan} plan choice and {cadence} billing are saved. You will review checkout after verification. No payment has been taken.</p>
+        {error ? <p className="gx-su-problem" role="alert">{error}</p> : null}
+        <button type="button" className="gx-hbtn gx-su-second" disabled={busy} onClick={() => void resend()}>{busy ? "Sending…" : "Resend verification email"}</button>
+        {signIn}
+      </Page>
     );
+
+  /* What the invitation already says is shown, not asked for again. */
+  const knownName = Boolean(code && available?.name);
   return (
-    <AuthCard
-      title="Create your studio workspace"
-      sub={
-        code
-          ? "Accept your invitation and give your workspace a name."
-          : "Start with your account. Verify your email, then review your plan and payment."
-      }
-    >
-      {!code && (
-        <div className="auth-plan-choice">
-          <strong>{plan.charAt(0).toUpperCase() + plan.slice(1)}</strong> ·{" "}
-          {cadence === "annual"
-            ? "Annual billing · 20% discount"
-            : "Monthly billing"}
-          <br />
-          <Link href="/pricing">Compare plans</Link>
-        </div>
-      )}
-      {!available && !error && (
-        <p role="status" className="auth-status">
-          Checking account availability…
+    <Page title={code ? "Create your account" : "Create your studio workspace"}
+      sub={code ? "You have an invitation link. Name your workspace and choose a password." : "Start with your account. Verify your email, then review your plan and payment."}>
+      {!code ? (
+        <p className="gx-su-note" data-testid="signup-plan">
+          <strong>{plan.charAt(0).toUpperCase() + plan.slice(1)}</strong> · {cadence === "annual" ? "Annual billing · 20% discount" : "Monthly billing"} · <Link href="/pricing" className="gx-su-link">Compare plans</Link>
         </p>
-      )}
-      {available && !available.open && (
-        <p role="status" className="auth-status">
-          {available.reason ||
-            "New accounts are not available yet. Please return when account registration opens."}
-        </p>
-      )}
-      <form onSubmit={submit}>
-        <Field label="Your name">
-          <input
-            required
-            autoComplete="name"
-            maxLength={120}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </Field>
-        <Field label="Work email">
-          <input
-            type="email"
-            required
-            autoComplete="email"
-            value={email}
-            readOnly={!!code}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </Field>
-        <Field label="Workspace name">
-          <input
-            required
-            maxLength={100}
-            value={workspace}
-            onChange={(e) => setWorkspace(e.target.value)}
-            placeholder="Your studio or production house"
-          />
-        </Field>
-        <Field label="Password">
-          <input
-            type="password"
-            required
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </Field>
-        <Field label="Confirm password">
-          <input
-            type="password"
-            required
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-          />
-        </Field>
-        <label className="mt-3 flex items-start gap-2 text-[13px] leading-relaxed text-dim">
-          <input
-            className="mt-1"
-            type="checkbox"
-            required
-            checked={accept}
-            onChange={(e) => setAccept(e.target.checked)}
-          />
-          <span>
-            I agree to the{" "}
-            <Link className="text-ink underline" href="/terms" target="_blank">
-              terms
-            </Link>{" "}
-            and{" "}
-            <Link className="text-ink underline" href="/policy" target="_blank">
-              content policy
-            </Link>
-            . Read the{" "}
-            <Link
-              className="text-ink underline"
-              href="/privacy"
-              target="_blank"
-            >
-              privacy notice
-            </Link>
-            .
-          </span>
+      ) : null}
+      {code ? kept : null}
+      {!available && !error ? <p role="status" className="gx-su-sub">Checking your invitation…</p> : null}
+      {available && !available.open ? (
+        <p role="status" className="gx-su-note">{available.reason || "New accounts are not available yet. Please return when account registration opens."}</p>
+      ) : null}
+      <form className="gx-su-form" onSubmit={submit}>
+        {knownName ? null : (
+          <label className="gx-su-field">
+            <span className="gx-su-label">Your name</span>
+            <input className="gx-su-input" required autoComplete="name" maxLength={120} value={name} onChange={(e) => setName(e.target.value)} data-testid="signup-name" />
+          </label>
+        )}
+        <label className="gx-su-field">
+          <span className="gx-su-label">{code ? "Email" : "Work email"}</span>
+          <input className="gx-su-input" type="email" required autoComplete="email" value={email} readOnly={Boolean(code)} onChange={(e) => setEmail(e.target.value)} data-testid="signup-email" />
         </label>
-        <fieldset disabled={!available?.open || busy} className="mt-4">
-          <Submit busy={busy}>
-            {code ? "Create the workspace" : "Create account and verify email"}
-          </Submit>
-        </fieldset>
-        {error && (
-          <div role="alert">
-            <ErrorLine>{error}</ErrorLine>
-          </div>
-        )}
-        {needsSignIn && (
-          <p className="auth-status">
-            <Link href={login}>
-              {code
-                ? "Sign in to accept this invitation"
-                : "Sign in to continue with this plan"}
-            </Link>
-          </p>
-        )}
+        <label className="gx-su-field">
+          <span className="gx-su-label">Workspace name</span>
+          <input className="gx-su-input" required maxLength={100} value={workspace} onChange={(e) => setWorkspace(e.target.value)} placeholder="Your studio or production house" data-testid="signup-workspace" />
+        </label>
+        <label className="gx-su-field">
+          <span className="gx-su-label">Password</span>
+          <input className="gx-su-input" type="password" required autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} data-testid="signup-password" />
+        </label>
+        <label className="gx-su-field">
+          <span className="gx-su-label">Confirm password</span>
+          <input className="gx-su-input" type="password" required autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} data-testid="signup-confirm" />
+        </label>
+        <label className="gx-su-check">
+          <input type="checkbox" required checked={accept} onChange={(e) => setAccept(e.target.checked)} data-testid="signup-terms" />
+          <span>I agree to the terms and the content policy, and I have read the privacy notice.</span>
+        </label>
+        {/* The three documents as their own targets, not words inside the box's label. */}
+        <div className="gx-su-docs">
+          <Link className="gx-su-link" href="/terms" target="_blank">Terms</Link>
+          <Link className="gx-su-link" href="/policy" target="_blank">Content policy</Link>
+          <Link className="gx-su-link" href="/privacy" target="_blank">Privacy notice</Link>
+        </div>
+        <button type="submit" className="gx-primary gx-su-go" disabled={!available?.open || busy} aria-busy={busy || undefined} data-testid="signup-submit">
+          {busy ? "Creating…" : code ? "Create account" : "Create account and verify email"}
+        </button>
+        {error ? <p className="gx-su-problem" role="alert">{error}</p> : null}
+        {needsSignIn ? (
+          <p className="gx-su-note"><Link href={login} className="gx-su-link">{code ? "Sign in to accept this invitation" : "Sign in to continue with this plan"}</Link></p>
+        ) : null}
       </form>
-      <p className="auth-status">
-        Already have an account? <Link href={login}>Sign in</Link>
-      </p>
-    </AuthCard>
+      {code ? <p className="gx-su-note">{inviteCredits(null)} Nothing is spent without your approval.</p> : null}
+      {signIn}
+    </Page>
   );
 }

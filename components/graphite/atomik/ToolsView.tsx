@@ -65,7 +65,7 @@ export function ToolsView() {
 function Reach({ onTab }: { onTab: (tab: ToolsTab) => void }) {
   const shell = useShell();
   const rows = reachRows();
-  const open = (target: ReachOpen) => ("gen" in target ? shell.goGen() : "tab" in target ? onTab(target.tab) : shell.goSuite(target.suite, target.page));
+  const open = (target: ReachOpen) => ("gen" in target ? shell.openMake() : "tab" in target ? onTab(target.tab) : shell.goSuite(target.suite, target.page));
   return (
     <>
       <p className="tc-intro">What Atomik reaches today, and where each one runs. Open goes straight there.</p>
@@ -274,7 +274,7 @@ function Tokens({ onFresh }: { onFresh: (token: string) => void }) {
         const share = ceilingShare(t, data.unit);
         return (
           <div className="tc-row" key={t.id} data-testid="token-row" data-id={t.id}>
-            <span className="tc-dot" data-status={t.scope === "read" ? "built-in" : "available"} aria-hidden="true" />
+            <span className="tc-dot" data-status={t.scope === "render" ? "available" : "built-in"} aria-hidden="true" />
             <span className="tc-text">
               <span className="tc-name">{t.name}</span>
               <span className="cw-dim" data-testid="token-facts">{tokenFacts(t, data.unit)}</span>

@@ -318,11 +318,11 @@ export async function uploadFile(
   file: File,
   purpose: "reference" | "chat",
   onProgress?: (pct: number) => void,
-  options?: { scope?: string },
+  options?: { scope?: string; projectId?: string },
 ): Promise<UploadedFile> {
   if (!options?.scope)
     throw new Error("Sign in to the intended workspace before uploading.");
-  const entry = await claimUploadEnvelope(options.scope, file, purpose);
+  const entry = await claimUploadEnvelope(options.scope, file, purpose, options.projectId);
   try {
     return await resumeUpload(entry, file, onProgress);
   } catch (error) {
@@ -332,7 +332,7 @@ export async function uploadFile(
        hand, so the stale record is replaced with a new upload, once. */
     await removeUploadEnvelope(entry);
     return resumeUpload(
-      await claimUploadEnvelope(options.scope, file, purpose),
+      await claimUploadEnvelope(options.scope, file, purpose, options.projectId),
       file,
       onProgress,
     );

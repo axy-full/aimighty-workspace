@@ -98,7 +98,7 @@ export function MarketingPresets({
         if (sequence !== request.current) return;
         if (!response.ok || !data?.configured || !Array.isArray(data.items))
           throw new Error(
-            data?.error || "Marketing Studio presets could not be loaded.",
+            data?.error || "Product image presets could not be loaded.",
           );
         setCatalog((before) => ({
           scope,
@@ -175,7 +175,7 @@ export function MarketingPresets({
   return (
     <section
       className={`suite-panel ${styles.panel}`}
-      aria-label="Marketing Studio images"
+      aria-label="Product images"
     >
       <div className="suite-section-heading">
         <div>
@@ -387,7 +387,7 @@ export function MarketingPresets({
         <label>
           Build
           <select
-            aria-label="Marketing Studio build"
+            aria-label="Product image build"
             value={settings.variant ?? "alpha"}
             onChange={(event) => {
               const variant = event.target.value as MarketingBuild;

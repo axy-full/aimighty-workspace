@@ -19,6 +19,8 @@ import {
   currentTenant, runWithStore, runInTenant, NoTenantError,
   type TenantStore, type TenantUser, type TenantToken, type TenantWorkspace, type WorkspaceRole,
 } from "./tenant";
+import { isHouseWorkspace } from "./houseWorkspace";
+import { maskSessionUser, platformOwnerIdentity } from "./platformOwnerPrivacy";
 
 /**
  * Who is asking, and for which workspace.
@@ -122,7 +124,13 @@ export async function currentContext(): Promise<Context | null> {
   if (!pick) return { user: userFrom(found.account, "member"), workspace: null, role: null, workspaces };
   // A session pointing at a workspace the account has since left falls back to its first.
   if (found.workspaceId !== pick.workspace.id) pick = mine[0];
-  return { user: userFrom(found.account, pick.role), workspace: pick.workspace, role: pick.role, workspaces, mfaRequired: Boolean(pick.workspace.requiresMfa && !Number(found.account.mfa_enabled)) };
+  /* Outside the house the platform owner's name is "Particl support": names
+     written into records (picked by, review link by, push text, invite mail)
+     come from here (lib/platformOwnerPrivacy.ts). The address stays — the
+     platform checks read it, and it goes back only to its own holder. */
+  const person = userFrom(found.account, pick.role);
+  const user = isHouseWorkspace(pick.workspace) ? person : maskSessionUser(person, pick.workspace, await platformOwnerIdentity());
+  return { user, workspace: pick.workspace, role: pick.role, workspaces, mfaRequired: Boolean(pick.workspace.requiresMfa && !Number(found.account.mfa_enabled)) };
 }
 
 /** The signed-in user for this request, or null. */
@@ -135,7 +143,7 @@ export async function currentUser(): Promise<User | null> {
 
 /* ── API tokens ────────────────────────────────────────────────────────── */
 
-export type TokenScope = "read" | "render";
+export type TokenScope = "read" | "render" | "prepare";
 export type Caller = { user: User; token?: TenantToken };
 
 /**
@@ -171,8 +179,8 @@ export async function callerFromToken(raw: string): Promise<TenantStore | null> 
   return runInTenant(ws, async () => {
     await ready();
     const rs = await db().execute({
-      sql: `SELECT t.id AS tid, t.name AS tname, t.scope, t.cap_usd, t.cap_credits, t.last_used, u.*
-            FROM api_tokens t JOIN users u ON u.id = t.user_id
+      sql: `SELECT t.id AS tid, t.name AS tname, t.scope, t.cap_usd, t.cap_credits, t.last_used, g.kind AS grant_kind, u.*
+            FROM api_tokens t JOIN users u ON u.id = t.user_id LEFT JOIN api_token_grants g ON g.token_id = t.id
             WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.disabled = 0 AND u.deleted_at IS NULL
             LIMIT 1`,
       args: [hashToken(raw)],
@@ -202,7 +210,9 @@ export async function callerFromToken(raw: string): Promise<TenantStore | null> 
       workspace: ws, user,
       token: {
         id: String(row.tid), name: String(row.tname),
-        scope: row.scope === "read" ? "read" : "render",
+        /* An unknown scope is never read as "render": only the word itself grants spending. A prepare token is
+           stored "read" with its grant apart (lib/security/token-grants.ts), so an older build reads it read-only. */
+        scope: row.scope === "render" ? "render" : row.scope === "read" && row.grant_kind === "prepare" ? "prepare" : "read",
         capUsd: row.cap_usd == null ? null : Number(row.cap_usd),
         capCredits: row.cap_credits == null ? null : Number(row.cap_credits),
       },
@@ -225,7 +235,7 @@ async function resolveStore(): Promise<TenantStore> {
  * handler that reaches for data before checking who is asking still
  * cannot get any.
  */
-export function withTenant<Req extends Request = Request, Ctx = unknown>(handler: (req: Req, ctx: Ctx) => Promise<Response>, options: { readOnlyPostTransport?: boolean; requireRequestScope?: boolean; allowMfaEnrollment?: boolean } = {}) {
+export function withTenant<Req extends Request = Request, Ctx = unknown>(handler: (req: Req, ctx: Ctx) => Promise<Response>, options: { readOnlyPostTransport?: boolean; requireRequestScope?: boolean; allowMfaEnrollment?: boolean; /** The one kind of write a `prepare` token may make: preparing a job for a person to approve. */ preparedJobs?: boolean; /** The MCP endpoint's JSON-RPC over POST: its tools call the app's routes with the same bearer. */ mcpTransport?: boolean } = {}) {
   return recoveryRoute(async (req: Req, ctx: Ctx): Promise<Response> => {
     let store: TenantStore;
     try { store = await resolveStore(); }
@@ -235,6 +245,8 @@ export function withTenant<Req extends Request = Request, Ctx = unknown>(handler
     }
     if(!['GET','HEAD','OPTIONS'].includes(req.method)){
       if(store.token?.scope==='read'&&!(req.method==='POST'&&options.readOnlyPostTransport))return Response.json({error:'This token is read-only.'},{status:403});
+      /* A prepare token writes nothing but a prepared job (and speaks MCP over POST): every other write is refused here, before any handler runs. */
+      if(store.token?.scope==='prepare'&&!(req.method==='POST'&&(options.mcpTransport||options.preparedJobs)))return Response.json({error:'This token prepares jobs; a person approves each in Particl.'},{status:403});
       const origin=req.headers.get('origin');
       if(!store.token&&origin&&origin!==new URL(req.url).origin)return Response.json({error:'Invalid request origin.'},{status:403});
     }
@@ -322,7 +334,9 @@ export async function requireRender(): Promise<
   if (got.token && got.token.scope !== "render") {
     return {
       response: Response.json(
-        { error: `The token "${got.token.name}" is read-only — it can list and fetch renders, but not start one.` },
+        { error: got.token.scope === "prepare"
+          ? `The token "${got.token.name}" prepares jobs; a person approves each in Particl. It can't start one.`
+          : `The token "${got.token.name}" is read-only — it can list and fetch renders, but not start one.` },
         { status: 403 }
       ),
     };

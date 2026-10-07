@@ -32,8 +32,8 @@ test("a Verify check is priced, charged once, stored, and read back free; nobody
     const node = (id: string, type: CanvasNode["type"], extra: Partial<CanvasNode>): CanvasNode => ({ id, title: id, type, x: 0, y: 0, width: 220, linked: [], ...extra });
     const project: Project = { ...newProject(`Verify API ${randomUUID().slice(0, 8)}`),
       assets: [asset("face", master), asset("shot-take", take, { nodeId: "open" })],
-      nodes: [node("mira", "character", { assetId: "face" }), node("open", "scene", { assetId: "shot-take", linked: ["mira"] }),
-        node("check", "review", { linked: ["open", "mira"], verify: { rubric: 1, frames: { videoAt: [0.1, 0.5, 0.9], max: 3 } } })] };
+      nodes: [node("wren", "character", { assetId: "face" }), node("open", "scene", { assetId: "shot-take", linked: ["wren"] }),
+        node("check", "review", { linked: ["open", "wren"], verify: { rubric: 1, frames: { videoAt: [0.1, 0.5, 0.9], max: 3 } } })] };
     const saved = await request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } });
     expect(saved.ok(), await saved.text()).toBe(true);
     const url = `/api/workbench/development?projectId=${project.id}`;

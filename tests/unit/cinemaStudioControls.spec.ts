@@ -426,7 +426,7 @@ test("admission keeps the checked controls on the take, prices it exactly as wit
   expect(all.quote.estimatedCredits).toBe(plain.quote.estimatedCredits);
 
   /* Accepted once, at that price, with the controls on the row. */
-  const approved = { ...f.body({ cinema: ALL }), maxCredits: all.quote.estimatedCredits, quoteFingerprint: all.quote.fingerprint };
+  const approved = { ...f.body({ cinema: ALL }), maxCredits: all.quote.ceilingCredits, quoteFingerprint: all.quote.fingerprint };
   const accepted = await f.post(approved, "cinema-controls-once");
   const result = await accepted.json();
   expect(accepted.status, JSON.stringify(result)).toBe(202);
@@ -435,7 +435,7 @@ test("admission keeps the checked controls on the take, prices it exactly as wit
   expect(rows).toHaveLength(1);
   expect(JSON.parse(String(rows[0].params))).toMatchObject({ cinema: ALL, higgsfieldVendorCostUsd: (plain.compiled.params as VideoParams).higgsfieldVendorCostUsd });
   /* An approval given for other controls is not this request's. */
-  const swapped = await f.post({ ...f.body({ cinema: { ...ALL, genre: "comedy" } }), maxCredits: all.quote.estimatedCredits, quoteFingerprint: all.quote.fingerprint }, "cinema-controls-swapped");
+  const swapped = await f.post({ ...f.body({ cinema: { ...ALL, genre: "comedy" } }), maxCredits: all.quote.ceilingCredits, quoteFingerprint: all.quote.fingerprint }, "cinema-controls-swapped");
   expect(swapped.status, await swapped.text()).toBe(409);
   expect(f.dispatches).toHaveLength(1);
 }));
@@ -467,7 +467,7 @@ test("admission takes WAV sound references for Cinema Studio only, within the do
   /* A client's claimed role cannot make a sound a picture: the row says what it is. */
   const claimed = prepared(await f.admission.prepareGeneration(f.body({ references: [{ uploadId: "room", role: "reference_image" }] }), actor));
   expect((claimed.compiled.references as Reference[]).map((r) => [r.kind, r.role])).toEqual([["audio", "reference_audio"]]);
-  const accepted = await f.post({ ...f.body({ prompt: "@Image1 hums along to @Audio1", references: [look, room] }), maxCredits: sounded.quote.estimatedCredits, quoteFingerprint: sounded.quote.fingerprint }, "cinema-sound-once");
+  const accepted = await f.post({ ...f.body({ prompt: "@Image1 hums along to @Audio1", references: [look, room] }), maxCredits: sounded.quote.ceilingCredits, quoteFingerprint: sounded.quote.fingerprint }, "cinema-sound-once");
   expect(accepted.status, await accepted.text()).toBe(202);
   expect(JSON.parse(String((await f.rows())[0].params)).references).toEqual([
     { uploadId: "look", role: "reference_image", kind: "image" }, { uploadId: "room", role: "reference_audio", kind: "audio" }]);

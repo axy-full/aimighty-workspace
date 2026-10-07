@@ -2,7 +2,6 @@ import { test, expect } from "@playwright/test";
 import { agentCharged, agentPrice, agentReserved } from "../../components/graphite/production/agent-price";
 import { NOTES_LIMIT, clearSentNotes, notesBack, notesOf, notesSent, withNotes } from "../../lib/production/notes";
 import { BEAT_LIMITS, newBeat, newScene, newShot, removalName, removeFromSheet, restoreRefusal, restoreToSheet, type BeatScene, type BeatSheet } from "../../lib/production/beats";
-import { attachBeatsStage, undoBeatRemoval } from "../../lib/production/beats-undo";
 import { UNDO_HINT, popUndo, pushUndo, splitUndoHint, undoneLabel, withUndoHint, type UndoEntry } from "../../lib/shell/undo";
 import { productionSchema } from "../../lib/workbench/studio-schema";
 import { mergeDraft } from "../../lib/workbench/draft-merge";
@@ -169,68 +168,6 @@ test("a deleted scene never goes back into a beat sheet that was replaced since 
   /* The last scene of a sheet had no neighbours: it goes back into the empty sheet. */
   const last = removeFromSheet(sheetOf(a), { kind: "scene", id: a.id })!;
   expect(restoreToSheet(last.sheet, last.removal)!.scenes.map((x) => x.heading)).toEqual(["INT. HUT"]);
-});
-
-/* ── Beats: where an undo lands ──────────────────────────────────────────── */
-
-test("an undo goes through the open Beats stage; with none open it waits for the next one", () => {
-  const scope = `ws-${Math.random()}`, projectId = `p-${Math.random()}`;
-  const a = scene("INT. HUT"), b = scene("EXT. ICE");
-  let sheet: BeatSheet = sheetOf(a, b);
-  const restore = (removal: Parameters<typeof restoreToSheet>[1]) => {
-    const next = restoreToSheet(sheet, removal);
-    if (!next) return restoreRefusal(sheet, removal);
-    sheet = next;
-    return null;
-  };
-
-  /* Open: restored at once. */
-  const first = attachBeatsStage(scope, projectId, restore);
-  expect(first.missed).toEqual([]);
-  let taken = removeFromSheet(sheet, { kind: "scene", id: b.id })!;
-  sheet = taken.sheet;
-  expect(undoBeatRemoval(scope, projectId, taken.removal)).toEqual({ done: "restored" });
-  expect(sheet.scenes.map((x) => x.heading)).toEqual(["INT. HUT", "EXT. ICE"]);
-
-  /* Closed (the director moved to Brief): held, never written by the closed stage. */
-  first.detach();
-  taken = removeFromSheet(sheet, { kind: "beat", sceneId: a.id, id: a.beats[0].id })!;
-  sheet = taken.sheet;
-  expect(undoBeatRemoval(scope, projectId, taken.removal)).toEqual({ done: "held" });
-  expect(sheet.scenes[0].beats).toHaveLength(2);
-
-  /* The next Beats stage for the project puts it back as it opens. */
-  const second = attachBeatsStage(scope, projectId, restore);
-  expect(second.missed).toEqual([]);
-  expect(second.restored.map((r) => r.kind)).toEqual(["beat"]);
-  expect(sheet.scenes[0].beats.map((x) => x.text)).toEqual(["INT. HUT beat 1", "INT. HUT beat 2", "INT. HUT beat 3"]);
-
-  /* A stale stage's detach does not close the newer one. */
-  first.detach();
-  taken = removeFromSheet(sheet, { kind: "shot", sceneId: b.id, id: b.shots[1].id })!;
-  sheet = taken.sheet;
-  expect(undoBeatRemoval(scope, projectId, taken.removal)).toEqual({ done: "restored" });
-
-  /* Its scene is gone: it says so. */
-  taken = removeFromSheet(sheet, { kind: "shot", sceneId: b.id, id: b.shots[0].id })!;
-  sheet = removeFromSheet(taken.sheet, { kind: "scene", id: b.id })!.sheet;
-  expect(undoBeatRemoval(scope, projectId, taken.removal)).toEqual({ done: "missed", why: "its scene is gone" });
-  second.detach();
-});
-
-test("another workspace's or project's undo is held for it, never applied to the open one", () => {
-  const scope = `ws-${Math.random()}`, projectId = `p-${Math.random()}`;
-  const seen: string[] = [];
-  const stage = attachBeatsStage(scope, projectId, (removal) => { seen.push(removal.kind); return null; });
-  const a = scene("INT. HUT");
-  const taken = removeFromSheet(sheetOf(a), { kind: "scene", id: a.id })!;
-  /* The same project id in another workspace, and another project in this one. */
-  expect(undoBeatRemoval(`other-${scope}`, projectId, taken.removal)).toEqual({ done: "held" });
-  expect(undoBeatRemoval(scope, `other-${projectId}`, taken.removal)).toEqual({ done: "held" });
-  expect(seen).toEqual([]);
-  const later = attachBeatsStage(`other-${scope}`, projectId, (removal) => { seen.push(`other:${removal.kind}`); return null; });
-  expect(seen).toEqual(["other:scene"]);
-  later.detach(); stage.detach();
 });
 
 /* ── The shell's undo toast ──────────────────────────────────────────────── */

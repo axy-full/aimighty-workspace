@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { sendChatPush } from "@/lib/push";
+import { requireTenant } from "@/lib/tenant";
+import { ownerMaskFor } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -98,10 +100,11 @@ export const POST = withTenant(async function POST(req: Request) {
   let mentions: string[] = [];
   if (claimed.length) {
     const rs = await db().execute({
-      sql: `SELECT id FROM users WHERE disabled=0 AND id IN (${claimed.map(() => "?").join(",")})`,
+      sql: `SELECT id, email FROM users WHERE disabled=0 AND id IN (${claimed.map(() => "?").join(",")})`,
       args: claimed,
     });
-    mentions = rs.rows.map((r: any) => String(r.id));
+    // Outside the house the platform owner is nobody to mention (lib/platformOwnerPrivacy.ts).
+    mentions = (await ownerMaskFor(requireTenant())).members(rs.rows as any[]).map((r: any) => String(r.id));
   }
 
   const mid = id("msg");

@@ -4,9 +4,20 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { workbenchScopeFor } from "../lib/workbench/request-scope";
 
-test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid request and reuses its saved output", async ({
+/**
+ * Topaz image upscale, end to end against the mock backend: the original upload is the source, the price on the button is
+ * the server's quote for exactly that request (2× and 4× each priced), a paid request whose reply is lost is saved before it
+ * is sent and replayed whole (same body, same key) by Recover, never sent as a second request, and the result is a new take
+ * with the original left as it was. Retargeted from the old Gen page's Topaz Image Upscale panel (retired in Release 1) to
+ * Make › Upscale, which keeps the same claim (usePaidAction) and the same routes. The panel's quick tools are the board's
+ * (desktop); a phone's Make is the simple form and has no tool row.
+ */
+const DESKTOPS = ["customer-1440x900", "customer-1920x1080"];
+
+test("Topaz upscale uses the original upload, quotes dimensions, recovers one paid request and reuses its saved output", async ({
   page,
 }, info) => {
+  test.skip(!DESKTOPS.includes(info.project.name), "Make's quick tools are the board's; a phone's Make is the simple form");
   // A compiled production server deliberately cannot provision local tenant
   // databases. Reuse a previously provisioned, isolated fixture for that run.
   const existingEmail = process.env.PW_TOPAZ_EXISTING_EMAIL;
@@ -47,6 +58,7 @@ test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid r
   let generationId = "";
   await page.route("**/api/generate", async (route) => {
     const request = route.request();
+    if (request.method() !== "POST") return route.fallback();
     submitted.push({
       body: request.postData(),
       key: request.headers()["idempotency-key"],
@@ -54,68 +66,52 @@ test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid r
     const response = await route.fetch();
     expect(response.ok(), await response.text()).toBe(true);
     generationId = (await response.json()).id;
+    /* The first reply is lost after the server took the request. */
     if (submitted.length === 1) return route.abort("failed");
     return route.fulfill({ response });
   });
-  await page.goto(`/generate?mode=images&project=${draft.id}`);
-  await page.getByRole("button", { name: "Engine", exact: true }).click();
-  await page
-    .getByRole("dialog", { name: "Choose a model" })
-    .getByRole("button", { name: /Topaz Image Upscale/ })
-    .click();
-  const panel = page.getByRole("region", {
-    name: "Topaz Image Upscale",
-    exact: true,
+  await page.goto(`/suites?project=${draft.id}&view=board&make=upscale`);
+  await expect(page.getByTestId("upscale-tool")).toBeVisible();
+  const go = page.getByTestId("upscale-go");
+  const select = page.getByTestId("upscale-select");
+  await expect(go).toBeDisabled();
+  /* The project is open and saved once the tool asks for a source: the page is hydrated and the input listens. */
+  await expect(page.getByTestId("upscale-reason")).toHaveText("Choose a picture or a clip.", { timeout: 30_000 });
+  await page.getByLabel("Upload a source").setInputFiles({
+    name: "Original frame.png",
+    mimeType: "image/png",
+    buffer: source,
   });
-  await expect(
-    panel.getByRole("button", { name: /Review upscale cost/ }),
-  ).toBeDisabled();
-  await panel
-    .getByLabel("Upload upscale source", { exact: true })
-    .setInputFiles({
-      name: "Original frame.png",
-      mimeType: "image/png",
-      buffer: source,
-    });
-  await expect(panel.getByLabel("Source image", { exact: true })).toHaveValue(
-    /^upload:/,
-  );
-  const sourceKey = await panel
-    .getByLabel("Source image", { exact: true })
-    .inputValue();
-  await panel.getByRole("button", { name: /Review upscale cost/ }).click();
-  await expect(
-    panel.getByRole("button", { name: /Upscale image.*2 cr/ }),
-  ).toBeEnabled();
+  await expect(page.getByTestId("upscale-source")).toHaveText("Original frame.png", { timeout: 30_000 });
+  await expect(select).toHaveValue(/^upload:/);
+  const sourceKey = await select.inputValue();
+  await expect(page.getByTestId("upscale-model")).toHaveText("Topaz image upscale");
+  /* 2×, then 4×: each priced by its own quote, and nothing is sent by reading either. */
+  await expect(go).toHaveText(/^Upscale · (up to )?2 cr$/, { timeout: 30_000 });
+  await expect(go).toBeEnabled();
   expect(submitted).toHaveLength(0);
-  await panel.getByLabel("Image scale", { exact: true }).selectOption("4");
-  await expect(
-    panel.getByRole("button", { name: /Review upscale cost/ }),
-  ).toBeEnabled();
-  await panel.getByRole("button", { name: /Review upscale cost/ }).click();
-  const primary = panel.getByRole("button", { name: /Upscale image.*3 cr/ });
-  await expect(primary).toBeEnabled();
+  await page.getByRole("radio", { name: "4× larger" }).click();
+  await expect(go).toHaveText(/^Upscale · (up to )?3 cr$/, { timeout: 30_000 });
+  await expect(go).toBeEnabled();
   await page.screenshot({ path: info.outputPath("topaz-image.png") });
-  const box = await primary.boundingBox(),
+  const box = await go.boundingBox(),
     viewport = page.viewportSize()!;
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
-  await primary.click();
-  await expect(
-    panel.getByRole("button", { name: /Recover upscale/ }),
-  ).toBeEnabled();
+  await go.click();
+  await expect(go).toHaveText(/^Recover upscale/);
+  await expect(go).toBeEnabled();
+  expect(submitted).toHaveLength(1);
   await page.reload();
-  await expect(panel.getByLabel("Image scale", { exact: true })).toHaveValue(
-    "4",
-  );
-  await expect(panel.getByLabel("Image scale", { exact: true })).toBeDisabled();
-  await panel.getByRole("button", { name: /Recover upscale/ }).click();
-  await expect(
-    page.getByText("Upscale queued. Its progress is in Your takes.", {
-      exact: true,
-    }),
-  ).toBeVisible();
+  /* The saved request is what is on offer, and nothing else can be changed or sent while it is unsettled. */
+  await expect(page.getByTestId("upscale-recover")).toBeVisible();
+  await expect(page.getByTestId("upscale-select")).toBeDisabled();
+  await expect(page.getByRole("radio", { name: "4× larger" })).toBeDisabled();
+  await expect(go).toHaveText(/^Recover upscale · (up to )?3 cr$/);
+  await go.click();
+  await expect(page.getByTestId("upscale-note")).toContainText("Queued");
+  /* The same request, byte for byte and under the same key: never a second one. */
   expect(submitted).toHaveLength(2);
   expect(submitted[1]).toEqual(submitted[0]);
   const getJob = () =>
@@ -134,12 +130,9 @@ test("Topaz Gen uses the original upload, quotes dimensions, recovers one paid r
     `/api/uploads/${sourceKey.split(":")[1]}`,
   );
   expect(await original.body()).toEqual(source);
-  await page.goto(
-    `/generate?mode=images&project=${draft.id}&task=upscale&source=generation:${generationId}`,
-  );
-  await expect(panel.getByLabel("Source image", { exact: true })).toHaveValue(
-    `generation:${generationId}`,
-  );
+  /* The result is a take in the project, offered as a source for the next upscale. */
+  await page.goto(`/suites?project=${draft.id}&view=board&make=upscale`);
+  await expect(page.getByTestId("upscale-select").locator(`option[value="generation:${generationId}"]`)).toHaveCount(1, { timeout: 30_000 });
   expect(errors).toEqual([]);
   expect(
     await page.evaluate(

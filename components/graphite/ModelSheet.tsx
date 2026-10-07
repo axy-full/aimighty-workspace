@@ -2,6 +2,9 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { ComposerModel } from "@/lib/workspace/composer";
 import { modelChips, pickerSections, type RowPrice } from "@/lib/workspace/model-picker";
+import { figureWords, makeFigure } from "@/lib/shell/make-price";
+import { exact, priceTitle } from "@/lib/shell/price-words";
+import { useCreditUsd } from "./Price";
 
 /** A way out of an empty sheet ("Try again"). */
 export type SheetAction = { label: string; onClick: () => void; testId?: string };
@@ -12,7 +15,7 @@ export type SheetAction = { label: string; onClick: () => void; testId?: string 
  * (lib/workspace/model-picker.ts › rowPrice), so a model is chosen knowing its
  * price rather than reading it off Generate.
  */
-export function ModelSheet({ label, catalogue, offered, recent, selectedId, priceOf, empty, emptyActions = [], loading, onPick, onClose }: {
+export function ModelSheet({ label, catalogue, offered, recent, selectedId, priceOf, basis = null, empty, emptyActions = [], loading, onPick, onClose }: {
   /** The listbox's name ("Video models"). */
   label: string;
   /** What the list is, named beside the title ("Studio engines"). */
@@ -22,6 +25,8 @@ export function ModelSheet({ label, catalogue, offered, recent, selectedId, pric
   selectedId: string | null;
   /** The figure beside a row (rowPrice, where the composer stands). */
   priceOf: (model: ComposerModel) => RowPrice;
+  /** What the figures are at ("480p · 5 s · one take"): said once under the title, so no row reads at a size it does not name. */
+  basis?: string | null;
   /** Why the list is empty (a refusal, or nothing offered for this output). */
   empty: string;
   /** What the person can do about an empty list. */
@@ -35,6 +40,7 @@ export function ModelSheet({ label, catalogue, offered, recent, selectedId, pric
   const search = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const ids = useId();
+  const creditUsd = useCreditUsd();
   const { recent: lead, rest } = useMemo(() => pickerSections(offered, recent, query), [offered, recent, query]);
 
   /* A pointer keeps typing where it is; a phone keeps its keyboard down until the field is tapped.
@@ -73,6 +79,9 @@ export function ModelSheet({ label, catalogue, offered, recent, selectedId, pric
   const row = (m: ComposerModel) => {
     const price = priceOf(m);
     const chips = modelChips(m);
+    const figure = makeFigure(price.credits, price.approximate);
+    /* The row's hover: the dollars at the server's credit rate, then how the figure was read. */
+    const dollars = figure?.kind === "exact" && price.credits != null ? priceTitle(exact(price.credits), creditUsd) : null;
     return (
       <button key={m.id} type="button" role="option" aria-selected={m.id === selectedId} className="gx-sheet-row gx-sheet-row--spec" data-model={m.id} onClick={() => onPick(m)}>
         <span className="gx-tool-tag" aria-hidden="true">{m.label.slice(0, 2).toUpperCase()}</span>
@@ -81,13 +90,13 @@ export function ModelSheet({ label, catalogue, offered, recent, selectedId, pric
           {m.description ? <span className="gx-model-sub">{m.description}</span> : null}
           {chips.length ? (
             <span className="gx-sheet-specs" data-testid="gen-sheet-facts">
-              {chips.map((c) => <span key={c.key} className="gx-spec" data-spec={c.key} title={c.title}>{c.text}</span>)}
+              {chips.map((c) => <span key={c.key} className="gx-spec" data-spec={c.key} title={c.title}>{c.key === "resolution" && /\d/.test(c.text) ? `up to ${c.text}` : c.text}</span>)}
             </span>
           ) : null}
         </span>
-        <span className="gx-sheet-price" data-testid="gen-sheet-price" data-kind={price.kind} title={price.title}>
+        <span className="gx-sheet-price" data-testid="gen-sheet-price" data-kind={price.kind} title={[dollars, price.title].filter(Boolean).join(" · ")}>
           {price.kind === "loading" ? <i className="gx-sheet-price-skel" aria-hidden="true" /> : null}
-          {price.credits != null ? <b>{price.approximate ? "about " : ""}{price.credits.toLocaleString("en-US")} {price.unit}</b> : null}
+          {figure ? <b>{figureWords(figure)}</b> : null}
           {price.detail ? <span>{price.detail}</span> : null}
           {price.perTake ? <span>per take</span> : null}
         </span>
@@ -111,6 +120,7 @@ export function ModelSheet({ label, catalogue, offered, recent, selectedId, pric
           </div>
         ) : null}
       </div>
+      {listed && basis ? <p className="gx-hint gx-sheet-basis" data-testid="gen-sheet-basis">Prices at {basis}</p> : null}
       {lead.length || rest.length ? (
         <div ref={list} id={`${ids}-list`} className="gx-sheet-list gx-scroll" role="listbox" aria-label={label} onKeyDown={onListKey}>
           {lead.length ? (

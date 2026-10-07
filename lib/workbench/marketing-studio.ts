@@ -56,7 +56,7 @@ export function marketingMarkdown(project: Project, plan: Plan) {
       assets.find((asset) => asset.id === id)?.name ??
       `${id} (no longer in project)`,
   );
-  return `# ${project.name} / Marketing Studio\n\nRun: ${plan.id}\nModel: ${plan.model}\nDetail: ${plan.depth}${plan.effort ? `\nReasoning effort: ${plan.effort}` : ""}\n\n## Request\n\n${plan.request}\n\n## Summary\n\n${plan.summary}\n\n${plan.steps.map((step, index) => `## Section ${index + 1}\n\n${step}`).join("\n\n")}\n\n## Selected references\n\n${refs.length ? refs.map((name) => `- ${name}`).join("\n") : "No assets selected."}\n`;
+  return `# ${project.name} / Product image\n\nRun: ${plan.id}\nModel: ${plan.model}\nDetail: ${plan.depth}${plan.effort ? `\nReasoning effort: ${plan.effort}` : ""}\n\n## Request\n\n${plan.request}\n\n## Summary\n\n${plan.summary}\n\n${plan.steps.map((step, index) => `## Section ${index + 1}\n\n${step}`).join("\n\n")}\n\n## Selected references\n\n${refs.length ? refs.map((name) => `- ${name}`).join("\n") : "No assets selected."}\n`;
 }
 
 // Spreadsheet applications execute formula-like cells unless they are escaped.

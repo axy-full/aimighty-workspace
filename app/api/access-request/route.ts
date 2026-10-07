@@ -52,7 +52,12 @@ export const POST = recoveryRoute(async function POST(req: NextRequest) {
 
   const email = String(b.email ?? "").trim().toLowerCase();
   const name = String(b.name ?? "").trim().slice(0, 120);
-  const note = String(b.note ?? "").trim().slice(0, 1200);
+  /* Guest Home's Request access also says what the person makes and keeps the brief they typed (lead decision
+     39); both ride in the existing note so the owner reads them in /admin's Requests, with no new column. */
+  const make = String(b.make ?? "").trim().slice(0, 200);
+  const brief = String(b.brief ?? "").trim().slice(0, 900);
+  const note = [String(b.note ?? "").trim(), make ? `What they make: ${make}` : "", brief ? `Their brief: ${brief}` : ""]
+    .filter(Boolean).join("\n").slice(0, 1200);
   if (!looksLikeEmail(email)) {
     return NextResponse.json(
       { error: "That doesn't look like an email address." }, { status: 400 },

@@ -1,7 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PromptAttach, attachedAsset, keptNote, resolveAttached } from "@/components/PromptAttach";
-import { setRigDropHandler, setShotFilesHandler } from "@/lib/shell/drop-targets";
 import LazyMedia from "@/components/LazyMedia";
 import { assetPreview, previewAttrs } from "@/lib/preview";
 import { thinkingModelName } from "@/components/atomik/ModelPicker";
@@ -13,11 +12,10 @@ import type { DevelopmentJob } from "@/lib/workbench/development-types";
 import type { Asset } from "@/lib/workbench/studio";
 import { uploadWorkbench } from "@/lib/workbench/upload";
 import { shotEngines } from "@/lib/workspace/engines";
-import { uploadFilesToProject, useProjectLibrary } from "@/lib/workspace/library";
+import { useProjectLibrary } from "@/lib/workspace/library";
 import { inputKindText, shotInputs, shotPreviewAsset } from "@/lib/workspace/rig";
 import type { RigShot } from "@/lib/workspace/shots";
 import { useWorkspace } from "@/lib/workspace/state";
-import { LibraryMore } from "../LibraryMore";
 import { AgentAction } from "./AgentAction";
 import { useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
@@ -185,121 +183,6 @@ export function BuildFromBoards() {
         Build from Storyboards{framed ? ` · ${framed} framed` : ""}
       </button>
     </div>
-  );
-}
-
-/* ── The Rig's library: everything the project holds, dragged onto a shot. ─────────────────────────── */
-
-type RigItem = { key: string; label: string; group: RigGroup; url: string | null; media: "image" | "video" | "audio" | "text" | "file"; asset?: Asset; text?: string };
-type RigGroup = "Generations" | "Videos" | "Images" | "Sounds" | "Uploads" | "Characters" | "Elements" | "Briefs";
-const RIG_GROUPS: RigGroup[] = ["Generations", "Videos", "Images", "Sounds", "Uploads", "Characters", "Elements", "Briefs"];
-const ELEMENT_CATS = new Set(["Element", "Environment", "Prop", "Look"]);
-
-/** Everything droppable: library takes (by kind and origin), the cast and elements, and the project's words (brief, direction, beats, frame prompts). */
-function rigItems(project: import("@/lib/workbench/studio").Project, library: ReturnType<typeof useProjectLibrary>["items"]): RigItem[] {
-  const category = new Map<string, string>();
-  for (const a of project.assets) for (const id of [a.id, a.generationId, a.uploadId]) if (id) category.set(id, a.category);
-  const out: RigItem[] = [];
-  for (const e of library) {
-    const cat = category.get(e.take.sourceId) ?? "";
-    const media = e.media ?? "file";
-    const group: RigGroup = cat === "Character" ? "Characters" : ELEMENT_CATS.has(cat) ? "Elements" : media === "audio" ? "Sounds" : e.asset.origin === "upload" ? "Uploads" : "Generations";
-    out.push({ key: `take:${e.take.id}`, label: e.take.name, group, url: e.url, media, asset: media === "image" || media === "video" ? entryAsset(e) : undefined });
-  }
-  for (const a of project.assets) if ((a.category === "Character" || ELEMENT_CATS.has(a.category)) && !library.some((e) => e.take.sourceId === a.id || e.take.sourceId === a.generationId)) {
-    out.push({ key: `asset:${a.id}`, label: a.name, group: a.category === "Character" ? "Characters" : "Elements", url: a.url, media: a.kind === "video" ? "video" : "image", asset: a });
-  }
-  const words: [string, string][] = [["The brief", project.brief], ["Creative direction", project.direction]];
-  (project.production?.beats?.scenes ?? []).forEach((scene, si) => {
-    words.push([`Scene ${si + 1} · ${scene.heading}`, [scene.summary, ...scene.beats.map((b) => `• ${b.text}`)].filter(Boolean).join("\n")]);
-    scene.shots.forEach((shot, ti) => { const frame = project.production?.boards?.frames[shot.id]; words.push([`Shot ${si + 1}.${ti + 1}`, frame?.prompt || shot.description]); });
-  });
-  for (const e of project.production?.cast?.entries ?? []) words.push([`${e.kind === "character" ? "Cast" : "Element"} · ${e.name}`, e.description]);
-  words.forEach(([label, text], i) => { if (text?.trim()) out.push({ key: `brief:${i}`, label, group: "Briefs", url: null, media: "text", text: text.trim() }); });
-  return out;
-}
-
-export function RigLibrary() {
-  const rig = useRig();
-  const { toast } = useWorkspace();
-  const project = rig.project;
-  const library = useProjectLibrary(rig.scope, project?.id ?? null);
-  const [group, setGroup] = useState<RigGroup | "All">("All");
-  const [open, setOpen] = useState(true);
-  const items = useMemo(() => (project ? rigItems(project, library.items) : []), [project, library.items]);
-  const byKey = useMemo(() => new Map(items.map((i) => [i.key, i])), [items]);
-
-  /* One path for a drop and for "Add to the shot": a picture becomes an input, words join the prompt, sound is refused with its reason. */
-  const place = useCallback((item: RigItem | undefined, shotId: string, shotName: string) => {
-    if (!item || !project) return;
-    if (item.media === "text") {
-      const node = project.nodes.find((n) => n.id === shotId);
-      const next = [node?.text?.trim(), item.text].filter(Boolean).join("\n\n").slice(0, RIG_PROMPT_LIMIT);
-      const why = rig.patchShot(shotId, { prompt: next });
-      toast(why ?? `${item.label} is in ${shotName}’s prompt`);
-      return;
-    }
-    if (!item.asset) { toast(item.media === "audio" ? "Engines take pictures as inputs; sound goes on the lanes in Edit & Sound." : "Only pictures and videos can be a shot’s input."); return; }
-    const why = rig.apply((p) => addInput(p, shotId, item.asset!, item.label));
-    toast(why ?? `${item.label} is an input of ${shotName}`);
-  }, [project, rig, toast]);
-  const handler = useRef<(key: string, shot: { nodeId: string; name: string }) => void>(() => {});
-  useEffect(() => { handler.current = (key, shot) => place(byKey.get(key) ?? byKey.get(`take:${key}`), shot.nodeId, shot.name); }, [place, byKey]);
-  useEffect(() => { setRigDropHandler((key, shot) => handler.current(key, shot)); return () => setRigDropHandler(null); }, []);
-  /* Files from the device dropped on a shot: kept in the Library, and every picture or video becomes the shot's input. */
-  const filesOnShot = useRef<(files: File[], shot: { nodeId: string; name: string }) => Promise<void>>(async () => {});
-  useEffect(() => {
-    filesOnShot.current = async (files, shot) => {
-      if (!project) return;
-      toast(`Uploading ${files.length === 1 ? files[0].name : `${files.length} files`} for ${shot.name}…`);
-      try {
-        const { uploads, notes } = await uploadFilesToProject(rig.scope, project.id, files);
-        const placed: string[] = [], kept: string[] = [];
-        for (const u of uploads) {
-          if (u.kind !== "image" && u.kind !== "video") { kept.push(u.filename); continue; }
-          const asset: Asset = { id: u.id, uploadId: u.id, kind: u.kind, category: "Reference", name: u.filename.slice(0, 200), url: u.url, mime: u.mime, description: `Reference for ${shot.name}`, prompt: "", status: "Draft", locked: false, version: 1, refs: [] };
-          const why = rig.apply((p) => addInput(p, shot.nodeId, asset, asset.name));
-          if (why) kept.push(`${u.filename} (${why})`); else placed.push(u.filename);
-        }
-        toast([placed.length ? `${placed.join(", ")} ${placed.length === 1 ? "is an input" : "are inputs"} of ${shot.name}.` : "", kept.length ? `Kept in the Library, not an input: ${kept.join(", ")}.` : "", ...notes].filter(Boolean).join(" "));
-      } catch (cause) { toast(cause instanceof Error ? cause.message : "The files could not be uploaded."); }
-    };
-  }, [project, rig, toast]);
-  useEffect(() => { setShotFilesHandler((files, shot) => void filesOnShot.current(files, shot)); return () => setShotFilesHandler(null); }, []);
-
-  if (!project) return null;
-  const shown = group === "All" ? items : items.filter((i) => i.group === group);
-  const selected = rig.selected;
-  return (
-    <section className="pxw-rig-library" aria-label="Rig library" data-testid="rig-library" data-section="rig-library">
-      <div className="pxw-rig-library-head">
-        <button type="button" className="pxw-link-button" aria-expanded={open} onClick={() => setOpen(!open)}>Library · {items.length}{library.hasMore ? "+" : ""}</button>
-        <span className="pxw-rig-library-hint">Drag onto a shot: pictures become its inputs, briefs join its prompt.{selected ? ` Or press + to add to ${selected.name}.` : ""}</span>
-      </div>
-      {open ? (
-        <>
-          <div className="pxw-rig-library-groups" role="radiogroup" aria-label="Library groups">
-            {(["All", ...RIG_GROUPS] as const).map((g) => {
-              const n = g === "All" ? items.length : items.filter((i) => i.group === g).length;
-              return <button key={g} type="button" role="radio" aria-checked={group === g} disabled={!n} onClick={() => setGroup(g)} data-testid={`rig-library-${g}`}>{g} · {n}</button>;
-            })}
-          </div>
-          <div className="pxw-rig-library-items">
-            {shown.map((item) => (
-              <div key={item.key} className="pxw-rig-library-item" draggable data-testid="rig-library-item" data-group={item.group} {...(item.url && item.media !== "text" ? previewAttrs({ url: item.url, kind: item.media === "image" || item.media === "video" || item.media === "audio" ? item.media : "file", name: item.label }) : {})}
-                onDragStart={(e) => { e.dataTransfer.setData("text/plain", item.key); e.dataTransfer.effectAllowed = "copy"; }}>
-                <span className="pxw-rig-library-thumb">{item.url && (item.media === "image" || item.media === "video") ? <LazyMedia url={item.url} kind={item.media} alt="" name={item.label} className="gx-lazy" /> : <span aria-hidden="true">{item.media === "text" ? "¶" : item.media === "audio" ? "♪" : "▤"}</span>}</span>
-                <span className="pxw-rig-library-name" title={item.text ?? item.label}>{item.label}</span>
-                <button type="button" className="pxw-link-button" disabled={!selected} aria-label={`Add ${item.label} to the shot`} onClick={() => selected && place(item, selected.id, selected.name)}>+</button>
-              </div>
-            ))}
-            {!shown.length && library.state.status !== "error" ? <p className="pxw-inspector-note">Nothing here yet.</p> : null}
-          </div>
-          {/* The same store as the Library panel and Takes: Load more here reaches older takes too. */}
-          <LibraryMore library={library} testId="rig-library-more" />
-        </>
-      ) : null}
-    </section>
   );
 }
 

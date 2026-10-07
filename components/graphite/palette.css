@@ -1,0 +1,28 @@
+/*
+ * ⌘K's Atomik card (design/particl-graphite "Atomik frames" c–e; the master's palette card): under the hits, one card
+ * for what was typed. Graphite tokens only (app/graphite.css). The rows themselves are shell.css's .gx-palette-row.
+ */
+.ak-pcard {
+  margin: 4px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+  background: var(--gx-root); border: 1px solid var(--gx-card-border); border-radius: 8px;
+}
+.ak-pcard-title { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: var(--gx-ls-h2); line-height: 1.3; overflow-wrap: anywhere; }
+.ak-pcard-line { margin: 0; font-size: 13px; line-height: 1.5; color: var(--gx-text-2); }
+.ak-pcard-note { font-size: 12px; line-height: 1.4; color: var(--gx-text-2); }
+.ak-pcard-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ak-pcard-foot .ak-btn { height: 32px; padding: 0 13px; font-size: var(--gx-fs-control); }
+.ak-prows { display: flex; flex-direction: column; }
+.ak-prow {
+  display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr) auto; gap: 12px; padding: 8px 0;
+  border-top: 1px solid var(--gx-hair-soft); font-size: 13px; line-height: 1.4;
+}
+.ak-prow-project { color: var(--gx-text-2); min-width: 0; overflow-wrap: anywhere; }
+.ak-prow-step { min-width: 0; overflow-wrap: anywhere; }
+.ak-prows .ak-eyebrow { padding-top: 4px; }
+.ak-ptotal { padding-top: 8px; border-top: 1px solid var(--gx-dialog-border); font-size: 14px; font-weight: 600; }
+
+@media (max-width: 767px), (pointer: coarse) {
+  .ak-pcard-foot .ak-btn { min-height: 44px; }
+  .ak-prow { grid-template-columns: minmax(0, 1fr) auto; }
+  .ak-prow-project { grid-column: 1 / -1; }
+}

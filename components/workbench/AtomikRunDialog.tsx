@@ -2,6 +2,7 @@
 import type { AstraRequest } from '@/lib/astra-blender/proposal';
 
 import { useEffect, useRef, useState } from 'react';
+import { spendAttrsText } from '@/lib/spend';
 import type { SuiteId } from '@/lib/suites';
 import { SUITE_AGENT_COPY } from '@/lib/workbench/suite-agent-plan';
 import type { Project } from '@/lib/workbench/studio';
@@ -17,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from './ui/button';
 import { studioRequest } from './GenerationDialog';
 import { ModelPicker, EffortPicker, effortLabel, thinkingModelName, type ThinkingModel } from '@/components/atomik/ModelPicker';
+import { SaveFailedError, saveThenContinue } from '@/lib/workbench/save-then-continue';
 
 export type AtomikRunTarget = { astraBlender?: AstraRequest; referenceAd?:ReferenceAnalysisSource; suite?: SuiteId; request: string; role?: string; model: string; effort?: string; depth: string; refs: string[] };
 type Quote = { estimateCredits: number; model: string; effort?: string; screenplay?: { chars: number; includedChars: number; truncated: boolean }; key: string };
@@ -98,7 +100,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
         const { assets, referenceAd: analysis } = JSON.parse(referenceKey);
         if (analysis && (assets.length !== 1 || assets[0].kind !== 'video' || assets[0].id !== analysis.assetId)) throw new Error('Choose one original video for reference-ad analysis.');
         if (assets.reduce((count: number, asset: { kind: string }) => count + (asset.kind === 'video' ? analysis ? REFERENCE_AD_FRAMES : 3 : asset.kind === 'image' ? 1 : 0), 0) > (analysis ? REFERENCE_AD_FRAMES : ATOMIK_MAX_VISUALS)) throw new Error('Use at most six images or sampled frames. Each selected video uses three frames.');
-        if (assets.some((asset: { kind: string }) => asset.kind === 'video') && !(await callbacks.current.onSave())) throw new Error('Save this project before preparing video references.');
+        if (assets.some((asset: { kind: string }) => asset.kind === 'video') && !(await callbacks.current.onSave())) throw new SaveFailedError();
         if (controller.signal.aborted) return;
         const frames = await prepareAtomikVideoFrames(assets, project.id, scope, controller.signal, !!analysis);
         if (!controller.signal.aborted) setFrameState({ key: referenceKey, frames });
@@ -112,13 +114,12 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        if (!(await callbacks.current.onSave())) throw new Error('Save this project before requesting an estimate.');
-        if (controller.signal.aborted) return;
-        const value = await studioRequest<Omit<Quote, 'key'>>('/api/workbench/atomik', {
+        /* The project saves itself first (free); the estimate is asked only once it has landed, and never on unsaved data. */
+        const value = await saveThenContinue(() => callbacks.current.onSave(), () => controller.signal.aborted ? null : studioRequest<Omit<Quote, 'key'>>('/api/workbench/atomik', {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench-Scope': scope }, signal: controller.signal,
           body: JSON.stringify({ ...JSON.parse(quoteKey), quoteOnly: true }),
-        });
-        if (!controller.signal.aborted) { setQuote({ ...value, key: quoteKey }); setError(''); }
+        }));
+        if (value && !controller.signal.aborted) { setQuote({ ...value, key: quoteKey }); setError(''); }
       } catch (e) {
         if (controller.signal.aborted) return;
         const message = e instanceof Error ? e.message : 'The estimate could not be loaded.';
@@ -161,7 +162,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
     submitting.current = true;
     setBusy(true); setError('');
     try {
-      if (!pending && !(await onSave())) throw new Error('Save your latest work before starting Atomik.');
+      if (!pending && !(await onSave())) throw new SaveFailedError();
       if (!mounted.current) return;
       await withPendingAtomikLock(scope, project.id, async () => {
         if (!mounted.current) return;
@@ -198,10 +199,11 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
     } finally { submitting.current = false; if (mounted.current) setBusy(false); }
   }
 
+  const runLabel = busy ? 'Submitting…' : !loaded ? error ? 'Recovery unavailable' : 'Checking earlier requests…' : pending ? 'Recover this request' : shownQuote ? (approximate ? `Run · about ${shownQuote.estimateCredits} cr` : `Run · ${shownQuote.estimateCredits} cr estimated`) : error ? 'Estimate unavailable' : 'Loading estimate…';
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}>
     <DialogContent className="ps ps-dialog" showCloseButton={!busy}>
       <DialogHeader>
-        <DialogTitle>{astraBlender ? 'Build with Astra' : referenceAd ? 'Analyze reference ad' : suite ? SUITE_AGENT_COPY[suite].title : role === 'marketing' ? 'Run Marketing Studio' : member ? 'Run ' + member.name : 'Plan with Genie'}</DialogTitle>
+        <DialogTitle>{astraBlender ? 'Build with Astra' : referenceAd ? 'Analyze reference ad' : suite ? SUITE_AGENT_COPY[suite].title : role === 'marketing' ? 'Run Product image' : member ? 'Run ' + member.name : 'Plan with Genie'}</DialogTitle>
         <DialogDescription>{project.name} · {refs.length} selected reference{refs.length === 1 ? '' : 's'}</DialogDescription>
       </DialogHeader>
       <div className="dialog-fields">
@@ -232,8 +234,8 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
         {error && <p className="save-problem" role="alert">{error}</p>}
         {pending && error && !terminal && <p className="muted small-copy">Recovery uses the saved request ID, including after closing this dialog or reloading.</p>}
         {terminal ? <Button className="btn" onClick={onClose}>Close and review Activity</Button> :
-          <Button className="btn primary" disabled={busy || !loaded || (!shownQuote && !pending) || (!pending && !readyFrames) || request.trim().length < 3} onClick={() => void submit()}>
-            {busy ? 'Submitting…' : !loaded ? error ? 'Recovery unavailable' : 'Checking earlier requests…' : pending ? 'Recover this request' : shownQuote ? (approximate ? `Run · about ${shownQuote.estimateCredits} cr` : `Run · ${shownQuote.estimateCredits} cr estimated`) : error ? 'Estimate unavailable' : 'Loading estimate…'}
+          <Button className="btn primary" disabled={busy || !loaded || (!shownQuote && !pending) || (!pending && !readyFrames) || request.trim().length < 3} aria-busy={busy || undefined} onClick={() => void submit()} {...spendAttrsText(runLabel)}>
+            {runLabel}
           </Button>}
       </div>
     </DialogContent>

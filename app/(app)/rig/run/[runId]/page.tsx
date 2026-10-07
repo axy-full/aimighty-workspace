@@ -1,12 +1,11 @@
-import { redirect } from "next/navigation";
+import { followOldRoute, type RawSearch } from "@/lib/shell/old-routes.server";
 
 /**
- * Rig · Run. A Rig run had no runner: nothing advances stage_runs
- * (lib/runs.ts), so every stage stayed queued under a "Running" ring while
- * Continue and Stop changed nothing. Runs execute in Pipelines, so an old run
- * link opens the project's pipelines there instead of a view that cannot move.
+ * A Rig run: Control room > Activity.
+ * Redirected, never drawn (docs/old-shells.md): lib/shell/old-routes.ts holds where it goes.
  */
-export default async function RunPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const project = (await searchParams).project;
-  redirect(typeof project === "string" && project ? `/pipelines?projectId=${encodeURIComponent(project)}` : "/pipelines");
+export const dynamic = "force-dynamic";
+export default async function Moved({ params, searchParams }: { params: Promise<{ runId: string }>; searchParams: Promise<RawSearch> }) {
+  const { runId } = await params;
+  await followOldRoute(`/rig/run/${runId}`, await searchParams);
 }

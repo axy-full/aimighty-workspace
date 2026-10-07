@@ -1,0 +1,78 @@
+<!-- particl-guest-home · round 2 · exported 2026-10-05 -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>/* Offline bundle: React, ReactDOM and Babel load from ./assets/vendor instead of unpkg. */window.__resources = Object.assign({}, window.__resources, { "https://unpkg.com/react@18.3.1/umd/react.production.min.js": "assets/vendor/react.production.min.js", "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js": "assets/vendor/react-dom.production.min.js", "https://unpkg.com/@babel/standalone@7.29.0/babel.min.js": "assets/vendor/babel.min.js" });</script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+html,body{margin:0;background:#000;color:#F5F5F7;-webkit-font-smoothing:antialiased;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Geist,system-ui,sans-serif}
+*{box-sizing:border-box}
+a{color:#6EB4FF;text-decoration:none}a:hover{color:#8FC4FF}
+</style>
+</helmet>
+<div style="padding:28px 32px 48px;display:flex;flex-direction:column;gap:28px;font-size:13px;line-height:1.45">
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-0.02em">Particl · the guest Home (signed out)</h1>
+    <p style="margin:0;font-size:13px;color:rgba(235,235,245,0.6)">Desktop at 1440 × 900 and phone at 390 × 844. Sign-up is by invitation link only; every button that opens the sheet still says “Sign up”.</p>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <span style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.55);font-weight:600">Desktop</span>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax({{ w }}px,1fr));gap:20px">
+      <sc-for list="{{ desktop }}" as="f" hint-placeholder-count="4">
+        <section id="{{ f.id }}" style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px"><span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;border-radius:999px;background:rgba(10,132,255,0.14);border:1px solid rgba(10,132,255,0.35);color:#6EB4FF">{{ f.badge }}</span><strong style="font-size:13.5px;font-weight:600">{{ f.title }}</strong></div>
+          <div style="position:relative;width:{{ w }}px;height:{{ h }}px;overflow:hidden;border:1px solid rgba(255,255,255,0.12);border-radius:8px;background:#000"><iframe src="{{ f.src }}" title="{{ f.title }}" style="width:1440px;height:900px;border:0;display:block;transform:scale({{ scale }});transform-origin:0 0"></iframe></div>
+          <div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;color:rgba(235,235,245,0.6)"><span>{{ f.line }}</span><a href="{{ f.src }}" target="_blank">Open ›</a></div>
+        </section>
+      </sc-for>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <span style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.55);font-weight:600">Phone</span>
+    <div style="display:flex;flex-wrap:wrap;gap:20px">
+      <sc-for list="{{ phone }}" as="f" hint-placeholder-count="4">
+        <section id="{{ f.id }}" style="display:flex;flex-direction:column;gap:8px;width:{{ pw }}px">
+          <div style="display:flex;align-items:center;gap:10px"><span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;border-radius:999px;background:rgba(10,132,255,0.14);border:1px solid rgba(10,132,255,0.35);color:#6EB4FF">{{ f.badge }}</span><strong style="font-size:13.5px;font-weight:600">{{ f.title }}</strong></div>
+          <div style="position:relative;width:{{ pw }}px;height:{{ ph }}px;overflow:hidden;border:1px solid rgba(255,255,255,0.12);border-radius:8px;background:#000"><iframe src="{{ f.src }}" title="{{ f.title }}" style="width:390px;height:844px;border:0;display:block;transform:scale({{ pscale }});transform-origin:0 0"></iframe></div>
+          <div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;color:rgba(235,235,245,0.6)"><span>{{ f.line }}</span><a href="{{ f.src }}" target="_blank">Open ›</a></div>
+        </section>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { vw: window.innerWidth };
+  componentDidMount() { this._r = () => this.setState({ vw: window.innerWidth }); window.addEventListener('resize', this._r); }
+  componentWillUnmount() { window.removeEventListener('resize', this._r); }
+  renderVals() {
+    const scale = Math.max(0.3, Math.min(0.5, (this.state.vw - 84) / 2900)), pscale = 0.8;
+    const M = 'Particl%20Suites.dc.html';
+    const brief = '&brief=' + encodeURIComponent('A 15-second fashion film about quiet confidence. A woman crosses a sculptural desert; a mirror sphere reflects the world around her.');
+    const mk = (list, pre) => list.map(([badge, title, line, src]) => ({ id: (pre + badge).toLowerCase(), badge, title, line, src }));
+    const desktop = mk([
+      ['1', 'Home, signed out', 'Sign in · Sign up in the header; no Waiting for you, no Your projects; the box, templates and the sample production stay', M + '?guest=1&view=home'],
+      ['2', 'The sample production, read-only', 'Looks, storyboard, plan card with prices, shots, cut; the slim line and Sign up at the top; paid buttons read “Sign up to make this”', M + '?guest=1&view=board&frame=s'],
+      ['3a', 'Sign up · with an invitation link', 'The brief kept, email, Create account; 250 cr on the house (Invite plan); nothing spent without approval', M + '?guest=1&view=home&signup=1&invite=1' + brief],
+      ['3b', 'Sign up · without a link', '“Particl is invite-only for now.” Name, email, what you make, Request access; the brief kept', M + '?guest=1&view=home&signup=1' + brief]
+    ], 'd');
+    const phone = mk([
+      ['P1', 'Home, signed out', 'Sign in · Sign up; the box; templates; the sample production', M + '?device=phone&guest=1&screen=home'],
+      ['P2', 'The sample production', 'Looks · storyboard · plan with prices · shots · cut; “Sign up to make this”', M + '?device=phone&guest=1&screen=sample'],
+      ['P3a', 'Sign up · with a link', 'Brief kept · email · Create account · 250 cr on the house', M + '?device=phone&guest=1&screen=signup&invite=1' + brief],
+      ['P3b', 'Sign up · without a link', 'Invite-only · name, email, what you make · Request access', M + '?device=phone&guest=1&screen=signup' + brief]
+    ], 'p');
+    return { desktop, phone, scale, w: Math.round(1440 * scale), h: Math.round(900 * scale), pscale, pw: Math.round(390 * pscale), ph: Math.round(844 * pscale) };
+  }
+}
+</script>
+</body>
+</html>

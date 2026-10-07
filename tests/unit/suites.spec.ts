@@ -43,10 +43,10 @@ test("suite links preserve the draft ID and validate each suite page independent
 
 test("the four suites carry the 19 September names and the eight-stage Particl dock order", () => {
   expect(SUITES.map((suite) => suite.name)).toEqual([
-    "Particl Production Studio",
+    "Studio",
     "Atomik Agent",
-    "Moleculr Business Suite",
-    "Subatomik Viral Studio",
+    "Ads",
+    "Social",
   ]);
   expect(SUITES.map((suite) => suite.id)).toEqual(["particl", "atomik", "moleculr", "subatomik"]);
   expect(PAGES.particl.map(page => page.id)).toEqual(STAGES.map(stage => stage.id));
@@ -64,8 +64,8 @@ test("the four suites carry the 19 September names and the eight-stage Particl d
     "Brief & Script",
     "Boards",
     "Cast & Elements",
-    "Astra",
-    "Rig",
+    "3D blocking",
+    "Board",
     "Takes",
     "Edit & Sound",
     "Deliver",
@@ -73,7 +73,8 @@ test("the four suites carry the 19 September names and the eight-stage Particl d
   expect(STAGES.map((stage) => stage.label)).toEqual(PAGES.particl.map((page) => page.label));
   expect(STAGES.find((stage) => stage.id === "brief")?.hint).toBe("Find the story and the production in it");
   expect(PAGES.atomik.map((page) => page.id)).toEqual(["runs", "generate", "recipes", "approvals", "budget", "models"]);
-  expect(PAGES.subatomik.map((page) => page.id)).toEqual(["motion-transfer", "object-swap", "shorts"]);
+  /* Shorts ran only on a signed-in Higgsfield account: off for Release 1. */
+  expect(PAGES.subatomik.map((page) => page.id)).toEqual(["motion-transfer", "object-swap"]);
 });
 
 test("retired Particl stage IDs normalise to the stage that now holds their panel", () => {
@@ -95,7 +96,7 @@ test("retired Particl stage IDs normalise to the stage that now holds their pane
 });
 
 test("Moleculr is one Marketing Studio page whose former pages are ordered in-page sections", () => {
-  expect(PAGES.moleculr).toEqual([{ id: "marketing", label: "Marketing Studio" }]);
+  expect(PAGES.moleculr).toEqual([{ id: "marketing", label: "Product image" }]);
   expect(MOLECULR_SECTIONS.map((section) => section.id)).toEqual([
     "product",
     "brand",

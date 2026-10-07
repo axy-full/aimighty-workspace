@@ -45,6 +45,8 @@ test("actual token GET, POST and DELETE refuse read and render bearers before da
       id: forbiddenDb,
     },
     "@/lib/securityAudit": { securityAuditStatement: forbiddenDb },
+    /* A prepare token's grant (lib/security/token-grants.ts, lane 5); its own tests are in demo-gaps-l5-review-558. */
+    "@/lib/security/token-grants": { grantPrepareStatement: () => ({ sql: "SELECT 1", args: [] }), preparing: async () => new Set<string>() },
     "@/lib/tokenCeiling": await import("../../lib/tokenCeiling"),
     "@/lib/credits": { creditsApply: forbiddenDb },
     "@/lib/creditReceipts": await import("../../lib/creditReceipts"),

@@ -4,6 +4,7 @@ import { platformDb, platformReady } from "@/lib/platform";
 import { requireTenant } from "@/lib/tenant";
 import { parseAuditCursor, readWorkspaceSecurityHistory } from "@/lib/securityAudit";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
+import { ownerMaskFor } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -28,13 +29,18 @@ export const GET = withTenant(async (req: Request) => {
     const result = await readWorkspaceSecurityHistory([platformDb(), db()], workspace.id, limit, before);
     const ids = [...new Set(result.events.flatMap((event) => [...(event.actorId ? [event.actorId] : []), ...(["account", "member"].includes(event.targetType) && event.targetId ? [event.targetId] : [])]))];
     const actors: Record<string, string> = {};
+    /* Outside the house the platform owner is "Particl support", member or
+       not — what they did from the platform desk is theirs too
+       (lib/platformOwnerPrivacy.ts). */
+    const mask = await ownerMaskFor(workspace);
+    for (const id of ids) if (mask.hides({ id })) actors[id] = mask.name({ id });
     if (ids.length) {
       const rows = await platformDb().execute({
-        sql: `SELECT a.id,a.name FROM accounts a JOIN memberships m ON m.account_id=a.id
+        sql: `SELECT a.id,a.email,a.name FROM accounts a JOIN memberships m ON m.account_id=a.id
           WHERE m.workspace_id=? AND a.deleted_at IS NULL AND a.id IN (${ids.map(() => "?").join(",")})`,
         args: [workspace.id, ...ids],
       });
-      for (const row of rows.rows) actors[String(row.id)] = String(row.name);
+      for (const row of rows.rows) actors[String(row.id)] = mask.name({ id: row.id, email: row.email, name: row.name });
     }
     return Response.json({ ...result, actors }, { headers });
   } catch {

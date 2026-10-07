@@ -367,7 +367,7 @@ test("admission keeps the formula quote with its clip seconds and dispatches onc
   // Past the provider's 30 s reference budget there is no price, so no take.
   const long = await f.upload("long", "video", 30.5);
   expect(await f.admission.prepareGeneration(f.body({ references: [long] }), actor)).toMatchObject({ ok: false, status: 400 });
-  const approved = { ...body, maxCredits: quote.quote.estimatedCredits, quoteFingerprint: quote.quote.fingerprint };
+  const approved = { ...body, maxCredits: quote.quote.ceilingCredits, quoteFingerprint: quote.quote.fingerprint };
   const accepted = await f.post(approved, "cinema-approved-once");
   const result = await accepted.json();
   expect(accepted.status, JSON.stringify(result)).toBe(202);
@@ -384,17 +384,19 @@ test("admission keeps the formula quote with its clip seconds and dispatches onc
   expect(meter).toMatchObject({ status: "running", engine_cost_usd: usd });
 }));
 
-test("settlement uses the provider's own charge or the delivered-output figure only within a sane band of the quote", async () => {
-  const { cinemaStudioSettlementUsd, cinemaStudioDeliveredUsd } = await import("../../lib/cinemaStudio");
+test("settlement uses the provider's own charge or the delivered-output figure, never past the approved hold", async () => {
+  const { cinemaStudioSettlementUsd, cinemaStudioSettlement, cinemaStudioDeliveredUsd } = await import("../../lib/cinemaStudio");
   expect(cinemaStudioSettlementUsd(1, 0.9)).toBe(0.9);
   expect(cinemaStudioSettlementUsd(1, 2.5)).toBe(2.5);
   expect(cinemaStudioSettlementUsd(1, 0.5)).toBe(0.5);
   expect(cinemaStudioSettlementUsd(1, 3)).toBe(3);
-  // A reported per-job charge wins when it is sane; otherwise the delivered figure or the quote.
+  // A reported per-job charge wins when it states one; otherwise the delivered figure or the quote.
   expect(cinemaStudioSettlementUsd(1, 0.9, 1.2)).toBe(1.2);
-  expect(cinemaStudioSettlementUsd(1, 0.9, 40)).toBe(0.9);
-  // Outside half to three times the quote, a measurement or unit mistake is assumed: the quote stands.
-  for (const wrong of [0.49, 3.01, 1e6, 0, -1, Number.NaN, Infinity, null])
+  // Past the hold (three times the quote) the take settles at the hold, and the rest is the platform's.
+  expect(cinemaStudioSettlement(1, 0.9, 40)).toEqual({ usd: 3, overrunUsd: 37 });
+  for (const over of [3.01, 1e6]) expect(cinemaStudioSettlementUsd(1, over), String(over)).toBe(3);
+  // Under half the quote, or no figure at all, a measurement or unit mistake is assumed: the quote stands.
+  for (const wrong of [0.49, 0, -1, Number.NaN, Infinity, null])
     expect(cinemaStudioSettlementUsd(1, wrong as number | null), String(wrong)).toBe(1);
   for (const bad of [{ width: 0 }, { height: Number.NaN }, { seconds: -1 }, { hasVideoInput: true, inputSeconds: Number.NaN }])
     expect(cinemaStudioDeliveredUsd({ resolution: "720p", width: 1280, height: 720, seconds: 5, ...bad }), JSON.stringify(bad)).toBeNull();

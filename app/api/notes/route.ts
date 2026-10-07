@@ -3,6 +3,8 @@ import { db, ready, now, id } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { peopleIn } from "@/lib/mentions";
 import { sendPushTo } from "@/lib/push";
+import { requireTenant } from "@/lib/tenant";
+import { ownerMaskFor } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -51,8 +53,9 @@ export const POST = withTenant(async function POST(req: Request) {
   /* A note that names someone should reach them (brief 2.1): "the 3rd one
      but with the pan slower" belongs on the take, and the person it is
      addressed to should not have to find it. */
-  const team = await db().execute(`SELECT id, name FROM users WHERE disabled = 0 AND deleted_at IS NULL`);
-  const people = (team.rows as unknown as { id: string; name: string }[])
+  const team = await db().execute(`SELECT id, email, name FROM users WHERE disabled = 0 AND deleted_at IS NULL`);
+  /* Outside the house the platform owner is nobody to mention (lib/platformOwnerPrivacy.ts). */
+  const people = (await ownerMaskFor(requireTenant())).members(team.rows as unknown as { id: string; email: string; name: string }[])
     .map((r) => ({ id: String(r.id), name: String(r.name ?? "") })).filter((p) => p.name);
   const named = peopleIn(text, people);
   await db().execute({

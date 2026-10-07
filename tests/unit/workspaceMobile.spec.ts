@@ -153,8 +153,8 @@ test("the suite counters count the suite's own pages, never a literal", () => {
   expect(progress.done).toBe(5);
   expect(progress.inProgress).toBe(1);
   expect(progress.pct).toBe(63);
-  expect(progress.activeLabel).toBe("Rig");
-  expect(stagesLine(progress)).toBe("5 of 8 stages · Rig in progress");
+  expect(progress.activeLabel).toBe("Board");
+  expect(stagesLine(progress)).toBe("5 of 8 stages · Board in progress");
   expect(progressDot(progress)).toBe("var(--pxw-blue-ink)");
 });
 

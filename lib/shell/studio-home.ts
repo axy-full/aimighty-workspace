@@ -7,7 +7,7 @@
 import type { Project } from "@/lib/workbench/studio";
 import type { ProjectSummary } from "@/lib/workspace/data";
 import type { LibraryEntry } from "@/lib/workspace/library";
-import { shellSuite, type ShellPage } from "./ia";
+import { STAGE_REDIRECTS, type StageId } from "./stage-redirects";
 
 export type StageStatus = "done" | "progress" | "ready" | "waiting";
 export type StageCard = { id: string; n: string; label: string; meta: string; status: StageStatus };
@@ -15,9 +15,12 @@ export type StageCard = { id: string; n: string; label: string; meta: string; st
 const words = (text: string | undefined) => (text ?? "").trim().split(/\s+/).filter(Boolean).length;
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
-/** The studio pages that have a card: every page of the strip, never the home itself. */
-export function studioStages(): ShellPage[] {
-  return shellSuite("studio").pages.filter((p) => !p.phoneOnly);
+/**
+ * The overview's cards, in production order. Each opens the board on the region that took the stage's job
+ * (lib/shell/stage-redirects.ts): the ten stage pages are gone, and these are Home's shortcuts into the one board.
+ */
+export function studioStages(): { id: StageId; n: string; label: string }[] {
+  return STAGE_REDIRECTS.map((stage, i) => ({ id: stage.id, n: String(i + 1).padStart(2, "0"), label: stage.label }));
 }
 
 const COUNT_WORDS: Record<number, string> = { 8: "eight", 9: "nine", 10: "ten", 11: "eleven" };
@@ -74,12 +77,12 @@ export function suiteTiles(cards: readonly StageCard[], facts: HomeFacts): Suite
   return [
     /* The prototype said "eight stages"; the owner's Production brief (23 September) sets the count, so it is read from the strip. */
     { id: "studio", label: "Studio", color: "#0A84FF", line: `Brief to delivery, ${COUNT_WORDS[cards.length] ?? cards.length} stages.`, fact: `${done} of ${cards.length} done` },
-    /* Gen has no 3D (Astra is the 3D stage), and "ready" was never checked: the fact is the engine Gen opens on. */
-    { id: "gen", label: "Gen", color: "#BF5AF2", line: "Video, images, audio — one composer.", fact: facts.rendering ? `${facts.rendering} rendering` : `${facts.videoEngine} · default` },
-    { id: "business", label: "Business", color: "#FF9F0A", line: "Image ads, brand kit, product, briefs.", fact: "Opens on Image ads" },
-    { id: "viral", label: "Viral", color: "#FF453A", line: "Genjutsu: motion transfer, object swap.", fact: `${facts.viralResolution} · quoted on the source` },
+    /* Make has no 3D (3D blocking is its own stage), and "ready" was never checked: the fact is the engine Make opens on. */
+    { id: "gen", label: "Make", color: "#BF5AF2", line: "Video, images, audio — one composer.", fact: facts.rendering ? `${facts.rendering} rendering` : `${facts.videoEngine} · default` },
+    { id: "business", label: "Ads", color: "#FF9F0A", line: "Image ads, brand kit, product, briefs.", fact: "Opens on Image ads" },
+    { id: "viral", label: "Social", color: "#FF453A", line: "Motion transfer, object swap.", fact: `${facts.viralResolution} · quoted on the source` },
     { id: "atomik", label: "Atomik", color: "#30D158", line: "Plans, prices, waits for your word.", fact: `${facts.awaiting} awaiting approval` },
-    { id: "crew", label: "Crew", color: "#BF5AF2", line: "One Grok agent per department.", fact: facts.seats == null ? "seats loading" : `${facts.seats} ${facts.seats === 1 ? "seat" : "seats"}` },
+    { id: "crew", label: "Crew review", color: "#BF5AF2", line: "One Grok agent per department.", fact: facts.seats == null ? "seats loading" : `${facts.seats} ${facts.seats === 1 ? "seat" : "seats"}` },
   ];
 }
 

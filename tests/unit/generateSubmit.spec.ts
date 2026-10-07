@@ -160,7 +160,7 @@ test("with nothing claimed, a Generate is quoted, held to the price on the butto
   await withServer({ "/api/generate/quote": quote, "/api/generate": () => ({ status: 202, json: { id: "gen_new" } }) }, async (calls) => {
     const storage = memory();
     expect(await dispatchGeneration({ scope: SCOPE, storageId: STORAGE_ID, shown: 20, storage, request: { endpoint: "/api/generate", input: edited() } }))
-      .toEqual({ state: "repriced", credits: 21, reason: "The price is now 21 cr. Press Generate again to approve it." });
+      .toEqual({ state: "repriced", credits: 21, reason: "The price is now 21 cr. Press it again to approve it." });
     expect(calls.map((c) => c.path)).toEqual(["/api/generate/quote"]);
     expect(await dispatchGeneration({ scope: SCOPE, storageId: STORAGE_ID, shown: 21, storage, request: { endpoint: "/api/generate", input: edited() } }))
       .toEqual({ state: "queued", jobId: "gen_new", credits: 21 });
@@ -171,7 +171,7 @@ test("with nothing claimed, a Generate is quoted, held to the price on the butto
 
 /* The rate-table Rig (the phone board's Apply, the canvas's Run node) prices its own request and sends
    that price as its ceiling, under a stored Idempotency-Key (sendClaimedGeneration). */
-const RERENDER = { prompt: "Iver crosses the ice", model: ENGINE, projectId: "prj_1", shotId: "sh1", ratio: "16:9", resolution: "1080p", duration: 5, maxCredits: 19 };
+const RERENDER = { prompt: "Rowan crosses the ice", model: ENGINE, projectId: "prj_1", shotId: "sh1", ratio: "16:9", resolution: "1080p", duration: 5, maxCredits: 19 };
 const SLOT = pendingGenerationKey(SCOPE, "prj_1", "rig-apply:sh1");
 const LOST_SEND = { key: "lost-send-00001", body: JSON.stringify(RERENDER), credits: 19, endpoint: "/api/generate" as const };
 

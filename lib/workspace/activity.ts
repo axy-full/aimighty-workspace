@@ -13,7 +13,7 @@
 import type { Plan } from "./plan-types";
 import { failureChargeWord } from "../errors";
 import type { TakeFailure } from "../providerOutcome";
-import { formatCredits, type ActivityEntry, type EngineState } from "./run-engine";
+import { formatCredits, quotePrice, type ActivityEntry, type EngineState } from "./run-engine";
 import { planFor } from "./plans";
 
 export type ActivityGeneration = {
@@ -215,7 +215,7 @@ export function nextLine(state: Pick<EngineState, "run">, data: NextLineData): s
   const run = state.run && state.run.page === (plan?.page ?? data.page) ? state.run : null;
 
   if (run?.status === "waiting" && run.quote)
-    return `Waiting on your approval — ${formatCredits(run.quote.credits, run.quote.unit)}.`;
+    return `Waiting on your approval — ${quotePrice(run.quote)}.`;
   if (run?.status === "running" && plan) {
     const step = plan.steps[Math.min(run.i, plan.steps.length - 1)];
     return `${step.label}…`;

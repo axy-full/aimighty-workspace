@@ -30,7 +30,7 @@ function output(input: DevelopmentCall): DevelopmentResult {
     scenes: input.chunk.segments.map(segment => ({ id: segment.id, heading: segment.heading, sourceStart: segment.start, sourceEnd: segment.end,
       summary: 'Dramatic action grounded in this segment.', beats: ['Establish need.', 'Escalate conflict.'],
       shots: [{ description: 'Establish the subject.', framing: 'Wide', movement: 'Locked', lighting: 'Window key', sound: 'Room tone' }],
-      characters: ['Mira'], props: ['Mirror'], locations: ['Dunes'], productionNotes: ['Track scarf continuity.'] })), critique: ['Confirm continuity.'], assumptions: ['Proposed framing.'] };
+      characters: ['Wren'], props: ['Mirror'], locations: ['Dunes'], productionNotes: ['Track scarf continuity.'] })), critique: ['Confirm continuity.'], assumptions: ['Proposed framing.'] };
 }
 function harness() {
   const events: MeterEvent[] = [], calls: DevelopmentCall[] = [];
@@ -46,7 +46,7 @@ function harness() {
 async function fixture(kind: DevelopmentRequest['kind'] = 'screenplay') {
   await ready(); await fundFixtureWorkspace();
   const project = seedProject(); project.id = 'development-' + randomUUID(); project.productionProjectId = 'real-' + randomUUID();
-  project.script = 'TITLE PAGE\n\nEXT. DUNES - DAY\nMira follows her reflection.\n\nINT. ROOM - NIGHT\nShe opens a letter.';
+  project.script = 'TITLE PAGE\n\nEXT. DUNES - DAY\nWren follows her reflection.\n\nINT. ROOM - NIGHT\nShe opens a letter.';
   await db().execute({ sql: 'INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)', args: ['owner:' + project.id, 'owner', project.id, project.name, JSON.stringify(project), Date.now()] });
   const request: DevelopmentRequest = { projectId: project.id, requestId: randomUUID(), kind, model: model.id, effort: 'auto', instructions: 'Make this shootable.' };
   return { project, request };
@@ -57,7 +57,7 @@ async function approve(request: DevelopmentRequest, deps: Partial<DevelopmentDep
 }
 
 test('a million-character screenplay is partitioned without omissions or broken surrogate pairs', () => {
-  const script = ('TITLE\nEXT. DUNES - DAY\n' + 'Mira walks 🌅.\n'.repeat(100)).repeat(700).slice(0, 1_000_000);
+  const script = ('TITLE\nEXT. DUNES - DAY\n' + 'Wren walks 🌅.\n'.repeat(100)).repeat(700).slice(0, 1_000_000);
   const chunks = developmentChunks(script), segments = chunks.flatMap(chunk => chunk.segments);
   expect(segments[0].start).toBe(0); expect(segments.at(-1)!.end).toBe(script.length);
   expect(segments.map(segment => script.slice(segment.start, segment.end)).join('')).toBe(script);
@@ -213,7 +213,7 @@ test('a resumed full script retains all segments and idea development produces d
   for (const kind of ['screenplay', 'adfilm', 'idea'] as const) await runInTenant(workspace(), async () => {
     const { request, project } = await fixture(kind), h = harness();
     if (kind === 'screenplay') {
-      project.script = 'INT. LONG SCENE - DAY\n' + 'Mira walks toward the mirror.\n'.repeat(450);
+      project.script = 'INT. LONG SCENE - DAY\n' + 'Wren walks toward the mirror.\n'.repeat(450);
       await db().execute({ sql: 'UPDATE workbench_projects SET body=? WHERE project_id=?', args: [JSON.stringify(project), project.id] });
     }
     const { job } = await prepareDevelopmentJob(await approve(request, h.deps), 'owner', undefined, h.deps);
@@ -247,7 +247,7 @@ test('a stale started phase is fenced as uncertain, while queued phases remain r
 });
 
 test('installed SDK emits v4 Gateway protocol with correct OIDC/key authentication and native effort, without retries', async () => {
-  const chunk = developmentChunks('INT. ROOM - DAY\nMira enters.')[0];
+  const chunk = developmentChunks('INT. ROOM - DAY\nWren enters.')[0];
   const input: DevelopmentCall = { model: { ...model, id: 'openai/gpt-6-astra', owner: 'openai', reasoningOptions: [{ type: 'effort', values: ['medium'] }] },
     effort: 'medium', stage: 'draft', kind: 'screenplay', instructions: 'Return JSON.', prompt: 'Source.', maxTokens: 4000, chunk };
   for (const method of ['oidc', 'api-key'] as const) {

@@ -1,0 +1,60 @@
+<!-- Particl · Gaps B frames · written 2026-10-06 -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>/* Offline bundle: React, ReactDOM and Babel load from ./assets/vendor instead of unpkg. */window.__resources = Object.assign({}, window.__resources, { "https://unpkg.com/react@18.3.1/umd/react.production.min.js": "assets/vendor/react.production.min.js", "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js": "assets/vendor/react-dom.production.min.js", "https://unpkg.com/@babel/standalone@7.29.0/babel.min.js": "assets/vendor/babel.min.js" });</script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+html,body{margin:0;background:#000;color:#F5F5F7;-webkit-font-smoothing:antialiased;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Geist,system-ui,sans-serif}
+*{box-sizing:border-box}
+a{color:#6EB4FF;text-decoration:none}a:hover{color:#8FC4FF}
+</style>
+</helmet>
+<div style="padding:28px 32px 56px;display:flex;flex-direction:column;gap:32px;font-size:13px;line-height:1.45">
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-0.02em">Particl · every gap, now · batch B</h1>
+    <p style="margin:0;font-size:13px;color:rgba(235,235,245,0.6)">Money states, takes, Make details, Motion transfer and Object swap, Settings details, empty Ads and Social boards and post states. Desktop 1440 × 900.</p>
+  </div>
+  <sc-for list="{{ groups }}" as="g" hint-placeholder-count="7">
+    <section style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:baseline;gap:10px;border-bottom:1px solid rgba(255,255,255,0.09);padding-bottom:8px"><strong style="font-size:15px;font-weight:600">{{ g.title }}</strong><span style="font-size:13px;color:rgba(235,235,245,0.6)">{{ g.line }}</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
+        <sc-for list="{{ g.frames }}" as="f" hint-placeholder-count="3">
+          <div id="{{ f.id }}" style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px"><span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;font-weight:600;letter-spacing:0.06em;padding:2px 8px;border-radius:999px;background:rgba(10,132,255,0.14);border:1px solid rgba(10,132,255,0.35);color:#6EB4FF">{{ f.badge }}</span><strong style="font-size:13px;font-weight:600">{{ f.title }}</strong></div>
+            <div style="position:relative;width:{{ f.w }}px;height:{{ f.h }}px;overflow:hidden;border:1px solid rgba(255,255,255,0.12);border-radius:8px;background:#000"><iframe src="{{ f.src }}" title="{{ f.title }}" loading="lazy" style="width:{{ f.fw }}px;height:{{ f.fh }}px;border:0;display:block;transform:scale({{ f.scale }});transform-origin:0 0"></iframe></div>
+            <a href="{{ f.src }}" target="_blank" style="font-size:12px">Open ›</a>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const M = 'Particl%20Suites.dc.html';
+    const D = (badge, title, q) => ({ id: badge.toLowerCase(), badge, title, src: M + q, w: 576, h: 360, fw: 1440, fh: 900, scale: 0.4 });
+    const P = (badge, title, q) => ({ id: badge.toLowerCase(), badge, title, src: M + q, w: 234, h: 506, fw: 390, fh: 844, scale: 0.6 });
+    const groups = [
+      ['8 · Money states on the board', 'Short with Top up · failed, Nothing billed · engine unavailable · needs an admin · paused at 80 %', [D('B8a', 'Short by 53 cr · Top up', '?view=board&gap=money&state=short'), D('B8b', 'Failed · Nothing billed · Retry', '?view=board&gap=money&state=failed'), D('B8c', 'Engine unavailable, with the reason', '?view=board&gap=money&state=unavailable'), D('B8d', 'A step needs an admin', '?view=board&gap=money&state=admin'), D('B8e', 'Paused at 80 % · Continue or Stop', '?view=board&gap=money&state=paused')]],
+      ['9 · Takes: reject with a reason, Undo', 'Every result has the same actions', [D('B9a', 'Take card actions', '?view=board&gap=takes'), D('B9b', 'Reject with a reason', '?view=board&gap=takes&state=reject'), D('B9c', 'Rejected · Undo toast', '?view=board&gap=takes&state=undo')]],
+      ['10 · Make details', 'Film chips, shot control, Enhance with Auto, Draft first, resolution, length, sound, takes', [D('B10a', 'Video', '?view=board&gap=make'), D('B10b', 'Audio · voice and music length', '?view=board&gap=make&state=audio'), D('B10c', 'Insufficient credits', '?view=board&gap=make&state=short'), D('B10d', 'Failed · Nothing billed', '?view=board&gap=make&state=failed')]],
+      ['11 · Motion transfer and Object swap', 'Start and end frames, reorder references, run status and Cancel', [D('B11a', 'Motion transfer', '?view=board&gap=motion'), D('B11b', 'Motion transfer · running', '?view=board&gap=motion&state=running'), D('B11c', 'Object swap', '?view=board&gap=swap'), D('B11d', 'Object swap · running', '?view=board&gap=swap&state=running')]],
+      ['12 · Settings details', 'MCP token shown once · Team security · budget and cap (admin only)', [D('B12a', 'New token', '?view=workspace&ws=connections&token=new'), D('B12b', 'Token shown once', '?view=workspace&ws=connections&token=shown'), D('B12c', 'Team · owner, admin, member', '?view=workspace&ws=team'), D('B12d', 'Budget and cap · admin', '?view=workspace&ws=rules&edit=rules'), D('B12e', 'Budget and cap · member', '?view=workspace&ws=rules&edit=rules&role=member')]],
+      ['13 · Empty Ads and Social boards, post states', 'First open; draft, waiting for approval, scheduled, posted, failed', [D('B13a', 'Empty Ads board', '?view=board&kind=ads&gap=empty'), D('B13b', 'Empty Social board', '?view=board&kind=social&gap=empty'), D('B13c', 'Post states', '?view=board&kind=social&gap=posts')]]
+    ].map(([title, line, frames]) => ({ title, line, frames }));
+    return { groups };
+  }
+}
+</script>
+</body>
+</html>

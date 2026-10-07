@@ -13,7 +13,7 @@ import { boardUrlFor } from "../../lib/rigCanvasUrl";
 import { ADDABLE_KINDS, KINDS, isRunnable } from "../../components/rig/nodes";
 import { clearComposeHandoff, generateHrefFor, handoffFits, handoffKey, handoffPrompt, HANDOFF_TTL_MS, readComposeHandoff, writeComposeHandoff } from "../../lib/composeHandoff";
 import { shellEntryRedirect, signInHrefFor } from "../../lib/signIn";
-import { serverSwitchTarget, workspaceUrlFor } from "../../lib/workspace/switchover";
+import { planOldRoute } from "../../lib/shell/old-routes";
 import { PRIVATE_PATHS, PUBLIC_PATHS, publicPageMetadata, siteOrigin } from "../../lib/site";
 import { NEUTRAL_ICON, reviewMetadata } from "../../lib/reviewMetadata";
 import robots from "../../app/robots";
@@ -291,21 +291,18 @@ test("signing in comes back to the page and its query, not to a bare path", () =
   expect(signInHrefFor(null, "a=1")).toBe("/login");
 });
 
-test("a signed-out Suites link signs in and returns to its suite and page; no workspace goes to /workbench with the whole query", () => {
+test("a signed-out Suites link signs in and returns to its suite and page", () => {
   const query = "suite=atomik&page=runs&project=p1";
-  expect(shellEntryRedirect("/suites", query, false)).toBe(`/login?next=${encodeURIComponent(`/suites?${query}`)}`);
-  expect(shellEntryRedirect("/workspace", "", false)).toBe(`/login?next=${encodeURIComponent("/workspace")}`);
-  expect(shellEntryRedirect("/suites", query, true)).toBe(`/workbench?${query}`);
-  expect(shellEntryRedirect("/suites", "", true)).toBe("/workbench");
+  expect(shellEntryRedirect("/suites", query)).toBe(`/login?next=${encodeURIComponent(`/suites?${query}`)}`);
+  expect(shellEntryRedirect("/suites", "")).toBe(`/login?next=${encodeURIComponent("/suites")}`);
 });
 
-test("the server switches a person with a workspace at once, and leaves visitors and shell= URLs to the gate", () => {
-  const target = workspaceUrlFor("/workbench", "project=p1&stage=brief");
-  expect(target).toBeTruthy();
-  expect(serverSwitchTarget(target, "project=p1&stage=brief", true)).toBe(target);
-  expect(serverSwitchTarget(target, "project=p1&stage=brief", false)).toBeNull();
-  expect(serverSwitchTarget(target, "project=p1&shell=new", true)).toBeNull();
-  expect(serverSwitchTarget(null, "", true)).toBeNull();
+test("an old entry point always has a /suites address, and no way back to the old shell is left", () => {
+  const target = planOldRoute("/workbench", "project=p1&stage=brief")!.to(null);
+  expect(target).toBe("/suites?project=p1&view=board&region=brief");
+  /* The old escape params are dropped: they choose nothing. */
+  expect(planOldRoute("/workbench", "project=p1&shell=legacy")!.to(null)).toBe("/suites?project=p1&view=home");
+  expect(planOldRoute("/workbench", "project=p1&new=1")!.to(null)).toBe("/suites?project=p1&view=home");
 });
 
 /* ── Public metadata ─────────────────────────────────────────────────────── */

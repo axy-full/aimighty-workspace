@@ -16,9 +16,9 @@ test("an entry's Soul model follows its kind and category; settings are only the
 
 test("the beat sheet's characters and props become entries; locations go to Environment; nothing already cast is added twice", () => {
   const sheet = { scriptSha256: "a".repeat(64), updatedAt: new Date().toISOString(), scenes: [
-    { id: "s", heading: "H", summary: "", beats: [], shots: [], characters: ["Mara"], locations: ["Harbour"], props: ["Lantern"] },
+    { id: "s", heading: "H", summary: "", beats: [], shots: [], characters: ["Keeper"], locations: ["Harbour"], props: ["Lantern"] },
   ] };
-  const entries = castFromBeats(sheet, [newEntry("character", "mara")]);
+  const entries = castFromBeats(sheet, [newEntry("character", "keeper")]);
   expect(entries.map((e) => [e.name, e.kind, e.category, entryModel(e)])).toEqual([["Lantern", "element", "prop", "soul_cinematic"]]);
 });
 

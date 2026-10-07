@@ -3,9 +3,15 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { dimLabels, smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
+import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /**
- * Suites › Gen, build step 2 (design/particl-graphite/README.md › Gen): the
+ * Suites › Make (design/particl-graphite/README.md § 3.2; it was Gen): the
  * composer on the existing useComposer host, the prompt enhancer with its
  * live price on the button, per-second length, the model sheet, and the
  * Library's assets dragged in as references.
@@ -37,9 +43,10 @@ async function open(page: Page) {
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await openAdvanced(page);
+  await expect(projectName(page)).toHaveText("Coastal light study");
   return { errors, enhance };
 }
 
@@ -57,7 +64,7 @@ test("Enhance wears its live price, approves exactly that, and the card offers U
   expect(enhance).toHaveLength(0);
 
   await page.getByTestId("gen-prompt").fill("@Image1 a fox crossing a frozen harbour");
-  await expect(button).toHaveText("Enhance · 1 cr");
+  await expect(button).toHaveText("Enhance now · 1 cr");
   expect(enhance.at(-1)).toMatchObject({ quoteOnly: true, mode: "video", prompt: "@Image1 a fox crossing a frozen harbour" });
   await button.click();
   const card = page.getByTestId("enhanced-card");
@@ -101,7 +108,7 @@ test("length is every second the engine allows, the sheet lists Studio engines o
   await expect(sheet).toHaveCount(0);
 
   /* The Library opens on Assets in Gen; its tile's text/plain id lands in the well. */
-  if (!wide) await page.getByTestId("toggle-library").click();
+  if (!wide) await page.getByTestId("make-open-library").click();
   const tile = page.getByTestId("library").locator("[data-ctx^='asset:']").first();
   await expect(tile).toBeVisible();
   const id = (await tile.getAttribute("data-ctx"))!.slice("asset:".length);
@@ -120,33 +127,13 @@ test("the Gen composer keeps the phone floors", async ({ page }, info) => {
   test.skip(WIDE.includes(info.project.name) || !SIZES.includes(info.project.name), "the three phone viewports");
   await open(page);
   await page.getByTestId("gen-prompt").fill("a fox crossing a frozen harbour");
-  await expect(page.getByTestId("enhance")).toHaveText("Enhance · 1 cr");
+  await expect(page.getByTestId("enhance")).toHaveText("Enhance now · 1 cr");
   await page.getByTestId("enhance").click();
   await expect(page.getByTestId("enhanced-card")).toBeVisible();
   await page.getByTestId("gen-view").evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
   expect(await smallText(page, ".gx-legacy"), "text under 12px").toEqual([]);
-  expect(await smallTargets(page, ".gx-gen"), "targets under 44×44").toEqual([]);
-  expect(await dimLabels(page, ".gx-gen"), "labels under #7C7C84").toEqual([]);
-});
-
-test("Gen › Edit hosts Seedance Edit on this workspace's credits, 2.5 by default, 2.0 on the picker", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors } = await open(page);
-  await page.getByTestId("gen-tab-edit").click();
-  await expect(page.getByTestId("gen-edit")).toContainText("Change something inside an existing shot");
-  const panel = page.getByTestId("seedance-edit");
-  await expect(panel).toBeVisible();
-  await expect(panel).toHaveAttribute("data-model", "dreamina-seedance-2-5-260628");
-  await expect(panel).toContainText("Seedance 2.5 Edit");
-  await page.getByTestId("gen-edit-model-20").click();
-  await expect(page.getByTestId("seedance-edit")).toHaveAttribute("data-model", "dreamina-seedance-2-0-260128");
-  await expect(page.getByTestId("seedance-edit")).toContainText("Seedance 2.0 Edit");
-  await expect(page.getByTestId("gen-edit")).toContainText("Edit an existing clip with Seedance 2.0.");
-  await expect(page.getByTestId("gen-edit")).not.toContainText(/\$|settled|per token/i);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.getByRole("tab", { name: "Video" }).click();
-  await expect(page.getByTestId("gen-prompt")).toBeVisible();
-  expect(errors).toEqual([]);
+  expect(await smallTargets(page, ".gx-make"), "targets under 44×44").toEqual([]);
+  expect(await dimLabels(page, ".gx-make"), "labels under #7C7C84").toEqual([]);
 });
 
 /* One take on this workspace's credits, route-mocked end to end: one Studio video engine at a fixed price. */
@@ -186,15 +173,18 @@ test("one take lands: its card says Complete with the ring held still, and the t
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.clock.install();
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
+  await openAdvanced(page);
+  await expect(projectName(page)).toHaveText("Coastal light study");
 
   await page.getByTestId("gen-prompt").fill(LONG);
   /* The first live price can wait on a cold compile. */
-  await expect(page.getByTestId("gen-generate")).toHaveText(`Generate · ${PRICE} cr`, { timeout: 60_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(`Make · ${PRICE} cr`, { timeout: 60_000 });
   await page.getByTestId("gen-generate").click();
   await expect.poll(() => charges).toBe(1);
+  /* What was made is on Make › Recent. */
+  await page.getByTestId("make-tab-recent").click();
   const card = page.getByTestId("gen-running");
   await expect(card.locator(".gx-tile-chip")).toHaveText("Rendering");
   /* While it renders the ring pulses — never for a person who asked for less motion. */

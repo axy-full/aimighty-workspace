@@ -21,6 +21,8 @@ test("POST /api/tokens refuses a ceiling it cannot read instead of storing no li
   const dependencies: Record<string, unknown> = {
     "next/server": createRequire(path.resolve("package.json"))("next/server"),
     "@/lib/securityAudit": { securityAuditStatement: () => ({ sql: "SELECT 1", args: [] }) },
+    /* A prepare token's grant (lib/security/token-grants.ts, lane 5); its own tests are in demo-gaps-l5-review-558. */
+    "@/lib/security/token-grants": { grantPrepareStatement: () => ({ sql: "SELECT 1", args: [] }), preparing: async () => new Set<string>() },
     "@/lib/tenant": { requireTenant: () => ({ id: "tenant-fixture" }) },
     "@/lib/tokenCeiling": await import("../../lib/tokenCeiling"),
     "@/lib/credits": { creditsApply: () => true },
@@ -94,6 +96,8 @@ test("in a credits workspace POST stores whole credits and GET names no dollar f
   const dependencies: Record<string, unknown> = {
     "next/server": createRequire(path.resolve("package.json"))("next/server"),
     "@/lib/securityAudit": { securityAuditStatement: () => ({ sql: "SELECT 1", args: [] }) },
+    /* A prepare token's grant (lib/security/token-grants.ts, lane 5); its own tests are in demo-gaps-l5-review-558. */
+    "@/lib/security/token-grants": { grantPrepareStatement: () => ({ sql: "SELECT 1", args: [] }), preparing: async () => new Set<string>() },
     "@/lib/tenant": { requireTenant: () => ({ id: "tenant-fixture", legacy: false, usesPlatformKeys: true }) },
     "@/lib/tokenCeiling": await import("../../lib/tokenCeiling"),
     "@/lib/credits": await import("../../lib/credits").then((m) => ({ creditsApply: m.creditsApply })),

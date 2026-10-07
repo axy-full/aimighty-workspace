@@ -22,7 +22,9 @@ test("page ids per suite match the architecture contract; Atomik keeps Generate"
   expect(PAGES.particl.map((p) => p.id)).toEqual(["brief", "boards", "cast", "astra", "rig", "takes", "edit", "deliver"]);
   expect(PAGES.atomik.map((p) => p.id)).toEqual(["agent", "runs", "generate", "recipes", "builds", "skills", "models", "approvals", "budget"]);
   expect(PAGES.moleculr.map((p) => p.id)).toEqual(["marketing"]);
-  expect(PAGES.subatomik.map((p) => p.id)).toEqual(["motion", "swap", "shorts", "sources", "compare", "history"]);
+  /* Shorts ran only on a signed-in Higgsfield account: off for Release 1, and its id resolves to no page. */
+  expect(PAGES.subatomik.map((p) => p.id)).toEqual(["motion", "swap", "sources", "compare", "history"]);
+  expect(resolvePageId("shorts")).toBeNull();
   expect(new Set(ALL_PAGES.map((p) => p.id)).size).toBe(ALL_PAGES.length);
   for (const p of ALL_PAGES) expect(p.description.length).toBeGreaterThan(0);
 });
@@ -31,7 +33,7 @@ test("stage tabs are short, titles are full", () => {
   const byId = Object.fromEntries(ALL_PAGES.map((p) => [p.id, p]));
   expect([byId.brief.label, byId.brief.title]).toEqual(["Brief", "Brief & Script"]);
   expect([byId.cast.label, byId.cast.title]).toEqual(["Cast", "Cast & Elements"]);
-  expect([byId.astra.label, byId.astra.title]).toEqual(["Astra", "Astra 3D"]);
+  expect([byId.astra.label, byId.astra.title]).toEqual(["3D blocking", "3D blocking"]);
   expect([byId.edit.label, byId.edit.title]).toEqual(["Edit", "Edit & Sound"]);
 });
 
@@ -63,7 +65,7 @@ test("every current and retired page id resolves", () => {
 });
 
 test("primary action, views and selection kind per page", () => {
-  expect(primaryAction("rig")).toEqual({ kind: "generate", label: "Generate", key: "G" });
+  expect(primaryAction("rig")).toEqual({ kind: "generate", label: "Make", key: "G" });
   expect(primaryAction("takes").label).toBe("+ Upload");
   expect(primaryAction("cast").label).toBe("+ Add cast");
   for (const id of ["brief", "agent", "marketing", "history"] as const) expect(primaryAction(id)).toEqual({ kind: "run-stage", label: "+ Run stage", key: "A" });

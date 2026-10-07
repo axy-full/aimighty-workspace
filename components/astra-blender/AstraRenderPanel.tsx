@@ -11,6 +11,7 @@ import { studioRequest, StudioRequestError } from '@/components/workbench/Genera
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/workbench/ui/dialog';
 import { clearPendingAstraRender, persistPendingAstraRender, readPendingAstraRender, withAstraRenderLock, type PendingAstraRender } from './astra-render-recovery';
 import styles from './astra-render.module.css';
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 const ENDPOINT = '/api/workbench/astra-blender/render';
 type NativeProject = Project & { astraNative?: AstraNativeSource };
@@ -111,7 +112,7 @@ export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshPro
       if (saved) { setPending(saved); throw new Error('Recover the previous render request before requesting another quote.'); }
       if (source === 'native' && !project.astraNative) throw new Error('Review and apply a native 3D proposal before rendering native code.');
       const sourceKey = sourceIdentity(project, source);
-      if (!(await latest.current.onSave())) throw new Error('Save this project before reviewing a native render quote.');
+      if (!(await latest.current.onSave())) throw new SaveFailedError();
       if (!mounted.current) return;
       if (sourceKey !== sourceIdentity(latest.current.project, source)) throw new Error('The source changed while saving. Review a quote for the latest source.');
       const sourceDigest = source === 'native' ? await astraNativeDigest(project.astraNative) : await astraSceneDigest(project.astraBlender ?? createAstraScene('product'));
@@ -135,7 +136,7 @@ export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshPro
         if (!recovery && quote) {
           if (quote.quote.expiresAt <= Date.now()) throw new Error('The render quote expired. Review a new quote.');
           if (quote.sourceKey !== sourceIdentity(latest.current.project, quote.source)) throw new Error('The source changed after this quote. Review a new quote before rendering.');
-          if (!(await latest.current.onSave())) throw new Error('Save the quoted source before starting the render.');
+          if (!(await latest.current.onSave())) throw new SaveFailedError();
           if (quote.sourceKey !== sourceIdentity(latest.current.project, quote.source)) throw new Error('The source changed while saving. Review a new quote before rendering.');
         }
         const body = recovery?.body ?? JSON.stringify({ projectId: project.id, requestId: quote!.requestId, source: quote!.source, sourceDigest: quote!.quote.sourceDigest, quoteOnly: false, quoteDigest: quote!.quote.quoteDigest, maxCredits: quote!.quote.estimateCredits });

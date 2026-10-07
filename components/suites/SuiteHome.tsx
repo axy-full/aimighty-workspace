@@ -25,7 +25,7 @@ const descriptions = {
     "From the first brief to the final delivery. Eight connected production stages.",
   atomik: "Plan the work, choose the engines and approve each priced stage.",
   moleculr:
-    "Build your brand, develop campaigns and create consistent campaign assets in one Marketing Studio.",
+    "Build your brand, develop campaigns and create consistent campaign assets in one place.",
   subatomik: "Transfer movement and rework subjects with video transforms, on your connected credits.",
 };
 export default function SuiteHome() {
