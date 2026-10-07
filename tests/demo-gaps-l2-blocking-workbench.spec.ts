@@ -111,7 +111,7 @@ test("Add from the shot builds the scene from the beat sheet; the camera, lens a
   await shoot(page, info.project.name, "l2-blocking-saved");
   expect(paid, "saving is free: nothing was sent to a paid route").toEqual([]);
   /* The 3D view round-trip drifts the saved start by float error (-3 comes back as -2.999999999999999): compare it to 6 decimals, everything else exactly. */
-  const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
+  const r6 = (v: number) => Math.round(v * 1e6) / 1e6 + 0; /* + 0 turns a rounded -0 into 0 */
   /* It is on the project: the scene, the move, and a frame filed as the shot's input. */
   await expect.poll(async () => {
     const r = await page.request.get(`/api/workbench/projects?id=${project.id}`, { headers: { "X-Workbench-Scope": scope } });
