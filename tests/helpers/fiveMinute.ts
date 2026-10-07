@@ -55,20 +55,21 @@ export type SpendKind = "agent.plan" | "agent.render" | "agent.approvePlan" | "g
  */
 export function watchSpending(page: Page) {
   const allowed = new Map<SpendKind, string>();
-  const spent: { kind: SpendKind; step: string }[] = [];
+  const spent: { kind: SpendKind; step: string; body?: Record<string, unknown> }[] = [];
   const violations: string[] = [];
-  const note = (kind: SpendKind) => {
+  const note = (kind: SpendKind, body?: Record<string, unknown>) => {
     const step = allowed.get(kind);
-    if (step) spent.push({ kind, step });
+    if (step) spent.push(body ? { kind, step, body } : { kind, step });
     else violations.push(`${kind} went out with no person's press open for it`);
   };
   page.on("request", (request) => {
     if (request.method() !== "POST") return;
     const path = new URL(request.url()).pathname;
     if (path === "/api/workbench/team-canvas") {
-      const action = (request.postDataJSON() as { action?: string } | null)?.action;
+      const body = request.postDataJSON() as ({ action?: string } & Record<string, unknown>) | null;
+      const action = body?.action;
       /* A plan's one approval spends too: its renders then go with no press of their own (CLAUDE.md rule 14). */
-      if (action === "agent.plan" || action === "agent.render" || action === "agent.approvePlan") note(action);
+      if (action === "agent.plan" || action === "agent.render" || action === "agent.approvePlan") note(action, body ?? undefined);
     } else if (path === "/api/generate" || (path.startsWith("/api/generate/") && !path.endsWith("/quote"))) note("generate");
     else if (/^\/api\/jobs\/[^/]+\/retry$/.test(path)) note("retry");
     else if (/^\/api\/audio(\/dub)?$/.test(path)) note("audio");
@@ -81,8 +82,6 @@ export function watchSpending(page: Page) {
     allow: (kind: SpendKind, step: string) => { allowed.set(kind, step); },
     /** Their press is done. */
     close: (kind: SpendKind) => { allowed.delete(kind); },
-    /** A request the test itself sent for the person, because the screen that would send it is not built. */
-    record: (kind: SpendKind, step: string) => { spent.push({ kind, step }); },
   };
 }
 export type SpendLedger = ReturnType<typeof watchSpending>;
@@ -145,8 +144,8 @@ export async function runOf(api: APIRequestContext, headers: Record<string, stri
 
 /**
  * What Home's Start does, on the routes it uses (components/graphite/home/start.ts): make the project from the brief,
- * read what Atomik's thinking costs, and ask with that figure as the limit. Used only where the screen that would press
- * it is not built (the phone's Home has no brief box); the caller records it in the spending ledger as that person's press.
+ * read what Atomik's thinking costs, and ask with that figure as the limit. Warm-up only (tests/five-minute.warmup.ts):
+ * the timed run presses Start on screen.
  */
 export async function startAtomikOnApi(api: APIRequestContext, brief: string) {
   const { headers } = await scopeFor(api);
