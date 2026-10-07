@@ -26,7 +26,7 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
   - `money/r1-make-stale-claim` (Opus): see the money finding below.
 
 ## Money finding (CI lane, 17:30)
-In the new Make panel, a tab whose reply was lost can send a second paid request after another tab already settled the first, if the person presses Make again in the first tab. The old `recovery-race` spec forbade this. An Opus lane is confirming it and preparing a fix: the first tab checks its own lost request before sending again. The owner said yes (18:15): a tab checks its lost request before sending again.
+In the new Make panel, a tab whose reply was lost can send a second paid request after another tab already settled the first, if the person presses Make again in the first tab. The old `recovery-race` spec forbade this. An Opus lane is confirming it and preparing a fix: the first tab checks its own lost request before sending again. The owner said yes (17:40): a tab checks its lost request before sending again.
 
 ## In flight
 | Branch | State |
@@ -37,7 +37,7 @@ In the new Make panel, a tab whose reply was lost can send a second paid request
 | image-ad variants (list B) | next free slot |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
 
-## Owner's answers (18:15)
+## Owner's answers (17:40)
 Scope: list B in (image-ad variants; phone gets "Open this on a larger screen" now, frames later); list C out. Stale-tab fix: yes. Q7: yes. Dunes: v4 at 233 cr in "Particl sample"; "Particl demo" for live presses only, capped at 100 cr, cheap engines only; nothing generates without the owner's "run". Price check on production after a merge. Sample lift ends with the run. Privacy rewrite: yes after the owner sees dry-run counts and a Turso backup copy. Q4/Q5: yes.
 
 ## Waiting on the owner
