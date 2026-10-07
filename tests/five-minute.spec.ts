@@ -55,6 +55,14 @@ type Run = {
   startFigure: number | null;
 };
 
+/** The takes of the project the Library holds as approved: a lasting state, read from the server (not a toast that comes and goes). */
+async function approvedTakes(run: Run): Promise<number> {
+  const { headers } = await scopeFor(run.page.request);
+  const reply = await run.page.request.get(`/api/workbench/library?projectId=${encodeURIComponent(run.draftId)}&source=generations&limit=60`, { headers });
+  const json = await reply.json().catch(() => null) as { generations?: { reviewState?: string }[] } | null;
+  return (json?.generations ?? []).filter((g) => g.reviewState === "approved").length;
+}
+
 async function open(browser: Browser, viewport: { width: number; height: number }, phone: boolean): Promise<Run> {
   const base = process.env.PW_BASE_URL || "http://localhost:4551";
   test.skip(!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(base), "runs only against a local server");
@@ -278,6 +286,7 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     expect(await unpricedSpendButtons(page, '[data-testid="board-inspector"]'), "inspector buttons that spend carry their price").toEqual([]);
     await tap(run, approve);
     await expect(page.getByTestId("board-group").filter({ hasText: /Shots · 1 of \d+ approved/ })).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => approvedTakes(run), { message: "the Library holds the take as approved", timeout: 30_000 }).toBeGreaterThanOrEqual(1);
     mark(run, "first take approved");
     expect(run.spend.spent.map((s) => s.kind), "approving a take spends nothing").toEqual(["agent.plan", "agent.approvePlan"]);
     expect(bannedNamesIn(await visibleText(page)), "retired names on screen").toEqual([]);
@@ -464,8 +473,11 @@ test.describe("the five-minute test · phone 390x844", () => {
     await expect(page.getByTestId("phone-approve")).toBeEnabled();
     await expectFloors(page, "phone review", { scope: ".ph-app", scroller: false });
     expect(bannedNamesIn(await visibleText(page)), "retired names on screen").toEqual([]);
+    /* The toast comes and goes; its wording is checked when it first appears, and the lasting state is read from the Library. */
+    const toastShown = page.getByText(/approved · nothing spent/).first().waitFor({ state: "visible", timeout: 15_000 });
     await tap(run, page.getByTestId("phone-approve"));
-    await expect(page.getByText(/approved · nothing spent/)).toBeVisible({ timeout: 15_000 });
+    await toastShown;
+    await expect.poll(() => approvedTakes(run), { message: "the Library holds the take as approved", timeout: 30_000 }).toBeGreaterThanOrEqual(1);
     mark(run, "first take approved");
     expect(run.spend.spent.map((s) => s.kind), "approving a take spends nothing").toEqual(["agent.plan", "agent.approvePlan"]);
   });
