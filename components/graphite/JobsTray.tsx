@@ -23,8 +23,9 @@ export function JobsPill() {
   const anchor = useRef<HTMLButtonElement>(null);
   if (!tray) return null;
   const { summary } = tray;
-  /* Nothing at all, or stopped (the account changed in another tab: the last count is not this account's to show). */
-  if (((!summary && !tray.error) || tray.stopped) && !tray.open) return null;
+  /* Not read yet, or stopped (the account changed in another tab: the last count is not this account's to show). A tray that was read and
+     is empty keeps its quiet "Jobs" pill: the master's header always draws it (README § 1), and the tray's own empty state says why. */
+  if (((!summary && !tray.error && tray.status !== "ready") || tray.stopped) && !tray.open) return null;
   const unread = !summary && Boolean(tray.error);
   const quiet = !summary || summary.kind === "quiet";
   return (
