@@ -126,6 +126,10 @@ async function open(page: Page, info: TestInfo, admit: (take: number) => "runnin
   const pair = heldPair((await row.getByTestId("make-engine-row-price").textContent())!);
   expect(pair.most).toBeCloseTo(3 * pair.about, 1);
   await expect(row).not.toContainText(/quoted/);
+  /* Hovering the row's price says both figures in dollars, as the button's does (and the phone's row). */
+  const rowFigure = row.getByTestId("make-engine-row-price").locator(".gx-price");
+  await rowFigure.hover();
+  await expect(rowFigure).toHaveAttribute("title", /^about US\$\d[\d,]*\.\d\d, at most US\$\d[\d,]*\.\d\d \(US\$\d+\.\d\d a credit\)$/);
   await shot(page, info, "make-engines-hold");
   await row.click();
   await expect(page.getByTestId("make-engine-line")).toContainText("Cinema Studio 4.0");
