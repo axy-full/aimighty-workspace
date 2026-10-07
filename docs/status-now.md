@@ -1,4 +1,4 @@
-# Status now: 8 October 2026, 01:33 IST, Release 1 lead moved to "contabo"
+# Status now: 8 October 2026, 02:49 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -6,11 +6,13 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
 Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's AT RISK and WON'T MAKE IT items, with an estimate per item; (c) move prep for Coolify on a test address, files only. Then a proposed demo date and the `release/1` → main plan.
 
 **Lead:** the session on "contabo" took over from the "vps" session at about 15:50 IST. Deny rules checked: `git restore` and `docker ps` are both refused.
-**Integration preview:** `release/1` (draft #546) = 0ce3c338. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
+**Integration preview:** `release/1` (draft #546) = 45728aea. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
 
 ## In `release/1` since 15:00
 - 3D blocking part B (`build/gaps-l2` 44cda874, Opus PASS; owner yes to Q7: staging only, production only in a later train after a Turso backup branch).
 - `fix/r1-ci-worker-probe-env` (Opus PASS).
+- `chore/r1-old-shell-branches` (PASS): the old Business/Crew/Inspector/Library screens and ~150 unreachable files are cut; every old address proved to redirect.
+- Five-minute test + phone review Undo (PASS): passes on desktop and phone; approving the last take on the phone keeps its Undo. Phone tap budget 9 pending question 13.
 - `fix/r1-production-deployment-flag` (Opus PASS): off Vercel, `PARTICL_DEPLOYMENT=production|staging` replaces the VERCEL_ENV guards; Vercel identical. Main port: **draft PR #562, reviewed, waits for the owner's go.**
 - `ops/selfhost-runbook-cutover` (four review rounds, PASS): `docs/selfhost-test.md` is the owner's runbook: staging with fresh empty databases (do `/setup` right after deploy); production specifics (R2, Inngest with `INNGEST_STREAMING=true` and re-point steps, mail, AI Gateway, Astra sandbox stays on Vercel); exact Traefik timeout lines; cutover order with the hPanel firewall limited to Cloudflare, Full (strict) with an Origin Certificate, Bot Fight Mode off, rollback.
 - `fix/r1-d0-check` (Opus FAIL, fixed, delta PASS): D0 shell checked at five sizes (57 screenshots). Jobs pill stays on an empty tray; Library-drawer takes open the asset menu and select themselves; right-click Recreate priced from the server and disabled in the sample; Delete goes to trash with Undo.
@@ -37,7 +39,7 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
   - browser: mostly specs still driving the old Gen composer, the old Workspace pane and the retired connected account; plus money specs (no vendor dollars, credit value on phone, batch takes, recovery race, spend buttons) that must be ported, never dropped.
 - Run 37615298051 on ac03f878: all 3 unit shards green (first green unit run on `release/1`); browser shards still running.
 - On "contabo", 3ca30197: typecheck clean; unit 3,950 passed, 3 failed (the same three), 7 skipped.
-- Every known CI failure now has a reviewed fix in `release/1` (0ce3c338). The CI run on 0ce3c338 is running: expected green.
+- CI on 0ce3c338: 19 of 20 jobs green (all unit shards); one browser shard hung near its 120-minute limit. The old-screen cut and the five-minute test with the phone review fix are now in (45728aea); its CI run is going.
 - Fix lanes running since 16:20, one branch each, merged into `release/1` only after a fresh review (Opus where money, sign-in or tenancy):
   - `fix/r1-ci-make`: the Make composer specs (prices, batches, model picker).
   - `fix/r1-ci-settings`: Settings, credits, no vendor dollars, retired connected account.
@@ -49,9 +51,7 @@ The `.dockerignore` fix is in `release/1`: staging can build from `release/1` ag
 | Branch | State |
 |---|---|
 | Hotfix PRs to main (owner yes; merge only on "go") | **All five reviewed PASS, ready for the owner's go:** #563 sign-in behind the proxy → #564 public links (after #563) → #565 rate limits → #562 production flag. **#566 self-host build files** (Docker build fix included, PASS) |
-| Workspace switch (tenancy) `fix/r1-workspace-switch-drains-save` @ 2ae06e8c | Built: switching saves the pending board edit first and only switches once it saved; a failed save switches nothing and says so. Opus review running; release/1 only; main needs the owner's yes |
-| `chore/r1-old-shell-branches` @ b809cd4d | Reviewed PASS; merges after the current CI run |
-| `test/r1-five-minute-green` + `fix/r1-phone-review-undo` @ bb8e85fa (both PASS) | **Passes:** a new invitee reaches an approved first render in 92 s (desktop) and 112 s (phone), one paid request per person's tap. Phone review now keeps Undo on the last take (the five-minute flake's cause). Merges after the current CI run. Owner question 13 |
+| Workspace switch (tenancy) @ 0869c160 | Every editor (board, team canvas, Edit & Sound's own store) registers a saver; the switch saves all of them, freezes the board, then switches. Two review rounds found gaps, now fixed; third review running |
 | Release 1 remaining list | sent: `docs/r1-remaining.md` (this branch). Owner: list B in, list C out |
 | image-ad variants and presets | No frame in the handoff (only one card, one Make at 3 cr). Nothing built. Brief for Claude Design: `docs/design-brief-image-ad-versions.md` (this branch). Logic already in code |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
