@@ -9,6 +9,9 @@ import { MAKE_SHOWS_CINEMA } from "../lib/shell/make-price";
 
 /* Make does not offer Cinema Studio 4.0 until #523 (its 3N hold) is merged: lib/shell/make-price.ts › MAKE_SHOWS_CINEMA. */
 test.skip(!MAKE_SHOWS_CINEMA, "Cinema Studio 4.0 is not offered in Make until its hold (#523) is merged");
+/* The engines list is read through a route that fetches the server's own answer: one still in flight when a test has
+   passed is let go, never a failure of the next. */
+test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
 
 /**
  * Cinema Studio 4.0's Sound switch, in Gen and in the canvas dialog, and its
