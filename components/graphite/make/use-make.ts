@@ -16,12 +16,12 @@ import { useEnhancer } from "@/lib/shell/use-enhancer";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { useSession } from "@/lib/session";
 import { cleanCinemaControls, isCinemaStudioAudioMime, isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
+import { cinemaPriceWords } from "@/lib/cinemaHold";
 import type { Project } from "@/lib/workbench/studio";
 import { composerButtonParts, EMPTY_PROMPT, READING_MODELS, shownTotal, type ComposerModel, type ComposerState, type ComposerType } from "@/lib/workspace/composer";
 import { cleanSetup, composeForSend, recoverSetup, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { useComposer, type ComposerSent } from "@/lib/workspace/use-composer";
-/* Release 1: Cinema Studio is not offered in Make until its 3N hold is in (lib/shell/make-price.ts › MAKE_SHOWS_CINEMA). */
 import { hiddenInMake, MAKE_MODEL_PREFERENCE, MAKE_PICKS, makeQuoteValue, rowSettings } from "@/lib/shell/make-price";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -32,8 +32,8 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
  * price, the one send at the price on the button, the held take when credits are short. What it adds is the new
  * interface's Auto (README § 0 rule 2): the type is inferred from the words until the person picks one, and the
  * engine and its settings are the composer's own defaults, shown as one line with Change. Prices come out as
- * PriceValues for components/graphite/Price.tsx; Cinema Studio's approximate figure keeps the composer's own
- * wording until its helper lands (PR #523).
+ * PriceValues for components/graphite/Price.tsx; Cinema Studio's approximate figure is said in its own words,
+ * "about N cr, at most 3N cr" (lib/cinemaHold.ts), the most a take may charge, which is what it holds.
  */
 
 export type MakeInput = {
@@ -50,8 +50,11 @@ export type MakeInput = {
   listOpen?: boolean;
 };
 
-/** A price Make shows: a value for components/graphite/Price.tsx, or Cinema Studio's own approximate words. */
-export type MakePrice = { value: PriceValue | null; about: string | null };
+/**
+ * A price Make shows: a value for components/graphite/Price.tsx, or Cinema Studio's own approximate words with the
+ * credits they are about (`credits`, N of "about N cr, at most 3N cr"), for their dollars on hover.
+ */
+export type MakePrice = { value: PriceValue | null; about: string | null; credits?: number | null };
 
 /** A reference a recreated take cited that Make does not carry: gone from this workspace, or not a picture or a video. */
 type MissingReference = { tag: string | null; kind: string; origin: RecipeReference["origin"]; gone: boolean; reason: string };
@@ -315,11 +318,13 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   /** One row's figure, as a price: exact where the server priced the row, none where it did not; with the size and length it is
    *  at ("52 cr · 1080p · 6 s"), which are the settings this engine would render with here (an engine without the size picked
    *  renders at its own, and its row says so). */
-  const rowValue = useCallback((m: ComposerModel): { value: PriceValue | null; title: string; detail: string | null } => {
+  const rowValue = useCallback((m: ComposerModel): MakePrice & { title: string; detail: string | null } => {
     const row = rowPrice(m, null, priceAt, rates, readingRates);
-    /* Cinema Studio's rows carry an approximate figure; its words are its own (PR #523), so the row shows none. */
-    const value = row.kind === "rate" && row.credits != null && !row.approximate ? makeQuoteValue(row.credits, m.type) : null;
-    return { value, detail: value ? rowSettings(m, priceAt, row.detail) : null, title: row.kind === "none" ? "Priced on Make once the words are in" : row.title };
+    const priced = row.kind === "rate" && row.credits != null ? row.credits : null;
+    /* Cinema Studio's row says what approving it holds: "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
+    const about = priced != null && isCinemaStudioModel(m.id) ? cinemaPriceWords(priced) : null;
+    const value = priced != null && !row.approximate ? makeQuoteValue(priced, m.type) : null;
+    return { value, about, credits: about ? priced : null, detail: value ? rowSettings(m, priceAt, row.detail) : null, title: row.kind === "none" ? "Priced on Make once the words are in" : row.title };
   }, [priceAt, rates, readingRates]);
 
   /* ── The words ───────────────────────────────────────────────────────── */
@@ -379,7 +384,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   const approximate = Boolean(composer.quote?.approximate);
   const takeCredits = composer.credits;
   const total = submitting ? null : shownTotal(composer.quote, composer.quoteKey, count);
-  /* Cinema Studio's approximate figure keeps the composer's own words ("about N cr") until PR #523's helper lands. */
+  /* Cinema Studio's approximate figure is the composer's own words, "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
   const aboutOneTake = () => composerButtonParts({ quote: composer.quote, quoteKey: composer.quoteKey, submitting: false, count: 1, verb: "Make" }).price;
   const soundTask = model?.audioTask === "sound" || model?.audioTask === "music" ? model.audioTask : null;
   const line = (state.type === "audio"
@@ -387,10 +392,10 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     : state.type === "image" ? [model?.label, settings.resolution]
     : [model?.label, settings.resolution, model?.durations?.length ? `${settings.duration} s` : null]).filter((part): part is string => Boolean(part));
   /* A sound is a live estimate: "up to N cr" (lib/shell/make-price.ts › makeQuoteValue); a still or a clip is its card figure. */
-  const linePrice: MakePrice | null = takeCredits == null ? null : approximate ? { value: null, about: aboutOneTake() } : { value: makeQuoteValue(takeCredits, state.type), about: null };
+  const linePrice: MakePrice | null = takeCredits == null ? null : approximate ? { value: null, about: aboutOneTake(), credits: shownTotal(composer.quote, composer.quoteKey, 1) } : { value: makeQuoteValue(takeCredits, state.type), about: null };
   /* Auto's enhancement is in the figure: the button reads take + enhancement, and waits (unpriced) while the enhancement is still being priced. */
   const goPrice: MakePrice | null = spendOff || total == null || (autoNeeds && enhanceCredits == null) ? null
-    : approximate ? { value: null, about: composer.buttonParts.price } : { value: makeQuoteValue(total + (enhanceCredits ?? 0), state.type), about: null };
+    : approximate ? { value: null, about: composer.buttonParts.price, credits: total } : { value: makeQuoteValue(total + (enhanceCredits ?? 0), state.type), about: null };
   const balanceNow = balance !== undefined ? balance : session.credits?.balance ?? null;
   /* Make stays pressable when the balance is short (the take waits, held, until credits arrive): the line only says so. */
   const short = !spendOff && !approximate && total != null && !submitting ? shortByWords(balanceNow, makeQuoteValue(total + (enhanceCredits ?? 0), state.type)) : null;

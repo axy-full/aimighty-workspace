@@ -72,7 +72,7 @@ export function billingSentence(billing: ProviderBilling, provider: OutcomeProvi
 /** What Particl's own ledger holds for a failed take, in credits. */
 export function chargeSentence(charge: TakeCharge): string {
   if (!charge.settled) return charge.credits > 0 ? `${fmt(charge.credits)} cr held` : "Settling";
-  return charge.credits > 0 ? `${fmt(charge.credits)} cr charged` : "Not billed";
+  return charge.credits > 0 ? `${fmt(charge.credits)} cr charged` : charge.released ? "Not charged" : "Not billed";
 }
 const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
@@ -98,7 +98,7 @@ export function failureLine(failure: TakeFailure, options: { cancelled?: boolean
 export function failedChip(failure: TakeFailure | null | undefined, cancelled = false): string {
   const word = cancelled ? "Cancelled" : "Failed";
   if (!failure) return word;
-  if (failure.charge) return failure.charge.settled ? `${word} · ${failure.charge.credits > 0 ? "charged" : "not billed"}` : word;
+  if (failure.charge) return failure.charge.settled ? `${word} · ${failure.charge.credits > 0 ? "charged" : failure.charge.released ? "not charged" : "not billed"}` : word;
   switch (failure.billing?.state) {
     case "refunded": return `${word} · refunded`;
     case "not_charged": return `${word} · not charged`;
@@ -117,7 +117,7 @@ export function failureUncharged(failure: TakeFailure | null | undefined): boole
 /** A failed take's charge in a word or two for a tight meta line ("not billed", "12 cr", "refunded"), or null when unconfirmed. */
 export function failureChargeWord(failure: TakeFailure | null | undefined): string | null {
   if (!failure) return null;
-  if (failure.charge) return failure.charge.settled ? (failure.charge.credits > 0 ? `${fmt(failure.charge.credits)} cr` : "not billed") : null;
+  if (failure.charge) return failure.charge.settled ? (failure.charge.credits > 0 ? `${fmt(failure.charge.credits)} cr` : failure.charge.released ? "not charged" : "not billed") : null;
   switch (failure.billing?.state) {
     case "refunded": return "refunded";
     case "not_charged": return "not charged";

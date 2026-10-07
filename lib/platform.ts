@@ -411,6 +411,12 @@ export function platformReady(): Promise<void> {
       await addColumn("topup_requests", TOPUP_BONUS_COLUMN);
       await addColumn("meter_events", "credit_usd REAL");
       await addColumn("meter_events", "credit_margin REAL");
+      /* A take reserved at its hold (Cinema Studio: its quote times this band, lib/cinemaHold.ts): it settles at
+         its actual cost, never past the hold, and at its quote when it has no figure (lib/meter.ts). Additive. */
+      await addColumn("meter_events", "hold_band INTEGER");
+      /* What the engine charged past a take's hold, in its dollars: absorbed by the platform, read only by the
+         platform admin desk (lib/meter.ts holdOverrunsSince). No customer route selects it. */
+      await addColumn("meter_events", "overrun_usd REAL");
       /* Reporting content is open to anybody — a victim must not need an
          account — so the counting has to be by something an anonymous caller
          still has. Salted and truncated, the same shape access_requests

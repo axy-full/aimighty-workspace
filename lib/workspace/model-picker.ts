@@ -2,6 +2,7 @@ import { isCinemaStudioModel } from "../cinemaStudioTypes";
 import { composerSettings, type ComposerModel, type ComposerPicks, type ComposerReference, type ComposerSettings, type ComposerType, type EngineRate } from "./composer";
 import { mediaQuoteReferences } from "../workbench/media-reference-input";
 import type { Asset } from "../workbench/studio";
+import { cinemaPriceWords } from "../cinemaHold";
 
 /**
  * Gen's model sheet, as pure data: the spec chips on every row, the price
@@ -13,8 +14,9 @@ import type { Asset } from "../workbench/studio";
  * is the figure Generate shows for one take. A figure is only shown when the
  * settings it names are that engine's composerSettings; otherwise the row
  * waits. A row with no figure to show reads "quoted": its live price is on
- * Generate. Cinema Studio 4.0 always reads "quoted" (owner's decision): it is
- * priced by a live estimate of the exact request.
+ * Generate. Cinema Studio 4.0's row reads its price as every approval of it
+ * does, "about N cr, at most 3N cr" (lib/cinemaHold.ts), never "quoted": the
+ * server prices it at the same settings, and approving it holds 3N.
  *
  * What this browser remembers (recent picks) is kept per workspace scope, and
  * cleared with the rest of the private keys at sign-out (lib/session.tsx).
@@ -140,8 +142,8 @@ function fits(rate: EngineRate, m: ComposerModel, want: ComposerSettings): boole
 export function needsPricedRead(offered: readonly ComposerModel[], at: PriceAt): boolean {
   return offered.some((m) =>
     m.audioTask === "sound" || m.audioTask === "music"
-    /* Cinema Studio's row never shows a figure (rowPrice), so it never asks for one. */
-    || (m.type !== "audio" && !isCinemaStudioModel(m.id) && (at.references.length > 0 || !m.rate || !fits(m.rate, m, composerSettings(m, at.aspect, at.picks))))
+    /* Cinema Studio's row is priced like any other (rowPrice): it asks when its rate does not fit. */
+    || (m.type !== "audio" && (at.references.length > 0 || !m.rate || !fits(m.rate, m, composerSettings(m, at.aspect, at.picks))))
   );
 }
 
@@ -170,8 +172,6 @@ const LOADING: Omit<RowPrice, "perTake"> = { credits: null, unit: "cr", detail: 
 export function rowPrice(m: ComposerModel, _retired: unknown = null, at: PriceAt = UNTOUCHED, sheet: SheetRates | null = null, reading = false): RowPrice {
   void _retired;
   const perTake = at.takes > 1;
-  /* Cinema Studio 4.0 is priced by a live estimate of the exact request: its row says so, and Generate carries the figure. */
-  if (isCinemaStudioModel(m.id)) return { ...NONE, perTake: false };
   if (m.type === "audio") {
     const rate = m.audioTask === "sound" ? sheet?.audio?.sound : m.audioTask === "music" ? sheet?.audio?.music : undefined;
     if (rate) {
@@ -191,9 +191,12 @@ export function rowPrice(m: ComposerModel, _retired: unknown = null, at: PriceAt
   if (rate) {
     const detail = settingsDetail(rate);
     const refs = at.references.length ? `with the ${at.references.length === 1 ? "reference" : `${at.references.length} references`} attached` : "no references";
-    const about = rate.approximate ? "About " : "";
-    return { credits: rate.credits, unit: "cr", detail, kind: "rate", perTake, ...(rate.approximate ? { approximate: true } : {}),
-      title: `${about}${rate.credits.toLocaleString("en-US")} cr per take at ${[detail, rate.ratio === "16:9" ? "16:9" : null].filter(Boolean).join(" · ")}, ${refs}` };
+    /* Cinema Studio's figure is approximate and held at 3N: "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
+    const cinema = isCinemaStudioModel(m.id);
+    const approximate = cinema || rate.approximate;
+    const words = cinema ? cinemaPriceWords(rate.credits) : `${rate.approximate ? "about " : ""}${rate.credits.toLocaleString("en-US")} cr`;
+    return { credits: rate.credits, unit: "cr", detail, kind: "rate", perTake, ...(approximate ? { approximate: true } : {}),
+      title: `${words.charAt(0).toUpperCase()}${words.slice(1)} per take at ${[detail, rate.ratio === "16:9" ? "16:9" : null].filter(Boolean).join(" · ")}, ${refs}` };
   }
   if (reading && fromSheet === undefined) return { ...LOADING, perTake: false };
   return { ...NONE, perTake: false };

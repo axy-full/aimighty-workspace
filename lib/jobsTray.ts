@@ -25,6 +25,7 @@ import { canProgress, resumeAge, resumePhase, shortName } from "./higgsfield-con
 import { fmtConnectedCredits, fmtLedgerCredits, fmtLedgerUsd } from "./usageLedgerTerms";
 import { vendorNameIn } from "./vendorNames";
 import { KEY_CHANGED_LABEL, KEY_CHANGED_REASON, POOL_MARK, POOL_REASON, waitsOnChangedKey } from "./sharedKeyTerms";
+import { holdBandOf, overHoldMark } from "./cinemaHold";
 
 /** `aside`: a connected job set aside (by its owner, or past the time it may hold a slot) — never sent again, nothing to wait for. */
 export type TrayStage = "submitting" | "queued" | "rendering" | "confirming" | "held" | "unconfirmed" | "complete" | "failed" | "cancelled" | "aside";
@@ -61,6 +62,8 @@ export type TrayJob = {
   takeId?: string | null;
   /** Release: the whole credits it approves — the figure on its button, sent with the press (POST /api/jobs/:id/release `{ credits }`). */
   releaseCredits?: number | null;
+  /** Release approves a hold (Cinema Studio, lib/cinemaHold.ts): the band its quote is held at, so the button says "about N cr, at most 3N cr". */
+  releaseBand?: number;
   /** Recreate: the take's own recipe as Gen reads it (lib/shell/recipe recreatePreset), built where the take is read. */
   preset?: GenPreset | null;
 };
@@ -190,12 +193,15 @@ export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: strin
     case "succeeded":
       return {
         ...base, stage: "complete", label: "Complete", tone: "green", settledAt: row.settledAt ?? null,
+        /* Its engine charged past the hold approved for it: kept and shown, charged the hold (lib/cinemaHold.ts). */
+        reason: overHoldMark(params),
         mediaUrl: row.storedUrl ? mediaOf(row.kind, row.id) : null, price: charged, action: "open", takeId,
       };
     case "failed":
       return {
         ...base, stage: "failed", tone: "red", settledAt: row.settledAt ?? null,
-        label: unbilled ? "Failed · not billed" : "Failed", reason: typedReason(row.failure) ?? failureLine(row.error, params), price: charged, ...again(),
+        /* A held take (Cinema Studio) that failed charging nothing had its hold released whole. */
+        label: unbilled ? (holdBandOf(row.model) > 1 && money.unit === "cr" ? "Failed · not charged" : "Failed · not billed") : "Failed", reason: typedReason(row.failure) ?? failureLine(row.error, params), price: charged, ...again(),
       };
     case "cancelled": {
       /* Discarded while held: the person's own doing, not a failure, and nothing was reserved for it. */
@@ -218,7 +224,7 @@ export function engineTrayJob(row: EngineRow, money: EngineMoney, draftId: strin
         label: needs ? `Held · needs ${fmtLedgerCredits(needs)}` : "Held · needs credits",
         reason: kind === "balance" || kind === "slots" ? null : ownLine(row.error),
         /* Release approves an exact figure: without one there is nothing to approve here. */
-        price: null, ...(needs ? { action: "release" as const, releaseCredits: needs } : {}),
+        price: null, ...(needs ? { action: "release" as const, releaseCredits: needs, ...(holdBandOf(row.model) > 1 ? { releaseBand: holdBandOf(row.model) } : {}) } : {}),
       };
     }
     case "running":

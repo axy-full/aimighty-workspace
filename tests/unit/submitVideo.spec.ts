@@ -219,3 +219,22 @@ test('Astra releases unsent legacy quotes, retains prior claims and restores acc
   if(kind==='reviewed'){expect(result).toMatchObject({ok:true,taskId:'astra-accepted'});expect(await submitVideoJob(job)).toMatchObject({ok:true,taskId:'astra-accepted'});}
  });expect(calls).toBe(1);}finally{engine.render=original;}
 });
+
+test('a Cinema Studio take that ends uncertain at submit says what is true: nothing charged, its hold back',async()=>{
+ const {runInTenant}=await import('../../lib/tenant');const {engineFor}=await import('../../lib/engines');const {submitVideoJob}=await import('../../lib/submitVideo');const {db,ready,now}=await import('../../lib/db');const {platformDb}=await import('../../lib/platform');
+ const {getModel}=await import('../../lib/models');const {getTask}=await import('../../lib/tasks');const {reserveGenerationSpend}=await import('../../lib/generationRequests');
+ const engine=engineFor('higgsfield'),original=engine.render;let calls=0;
+ engine.render=async()=>{calls++;throw new Error('Could not reach the video engine: fetch failed');};
+ try{await runInTenant(workspace('uncertain_cinema'),async()=>{
+  await ready();await fundFixtureWorkspace();const model=getModel('higgsfield-cinema-studio-4.0');const genId='gen_uncertain_cinema';
+  const params={ratio:'16:9',resolution:'720p',duration:5,watermark:false,higgsfieldCredentialFingerprint:'fp'};
+  await db().execute({sql:`INSERT INTO generations(id,kind,model,prompt,params,status,provider,task,created_at,updated_at) VALUES(?,'video',?,'Test',?,'queued','higgsfield','generate',?,?)`,args:[genId,model.id,JSON.stringify(params),now(),now()]});
+  await reserveGenerationSpend({id:genId,kind:'video',engine:'higgsfield',model:model.id,status:'running',engineCostUsd:.7},{holdBand:3});
+  const result=await submitVideoJob({genId,model,task:getTask('generate'),prompt:'Test',params,references:[],source:null,ts:now()} as VideoJob);
+  expect(result.ok).toBe(false);
+  if(!result.ok){expect(result.cls).toBe('uncertain');expect(result.error).toContain('Nothing was charged for it, and the credits it held are back.');expect(result.error).not.toContain('estimated cost remains reserved');}
+  expect(calls).toBe(1);
+  const row=(await db().execute({sql:'SELECT status,cost_usd FROM generations WHERE id=?',args:[genId]})).rows[0];expect(row).toMatchObject({status:'failed',cost_usd:0});
+  const event=(await platformDb().execute({sql:'SELECT status,billed_credits FROM meter_events WHERE id=?',args:[genId]})).rows[0];expect(event).toMatchObject({status:'failed',billed_credits:0});
+ });}finally{engine.render=original;}
+});
