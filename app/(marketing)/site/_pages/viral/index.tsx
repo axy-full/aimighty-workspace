@@ -61,7 +61,7 @@ export default function ViralPage() {
             ))}
           </Grid>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-            <Window path="particl.app / viral / history" src={shot("viral-history")} alt="Viral, History" width={924} height={540} />
+            <Window path="particl.si / make / motion transfer" src={shot("make-motion-transfer")} alt="Motion transfer in Make: one source video and references" width={924} height={540} />
             <Grid col={140} style={{ gap: 10 }}>
               {FACTS.map(([k, v]) => <Fact key={k} k={k} v={v} />)}
             </Grid>

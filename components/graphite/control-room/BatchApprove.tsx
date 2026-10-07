@@ -4,6 +4,7 @@ import { BATCH_UNDER_DEFAULT, cleanUnder, selectBatch, type QueueItem } from "@/
 import { exact } from "@/lib/shell/price-words";
 import { spendAttrsOf } from "@/lib/spend";
 import type { BatchResult } from "@/lib/control-room/approve";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { Price, usePriceTitle } from "../Price";
 
 /**
@@ -19,6 +20,8 @@ export function BatchApprove({ items, run }: {
   items: readonly QueueItem[];
   run: (items: readonly QueueItem[], onStep: (done: QueueItem, at: number) => void) => Promise<BatchResult>;
 }) {
+  /* The sample workspace spends nothing: there is no approving in one go there. */
+  const spendOff = useSampleWorkspace();
   const [text, setText] = useState(String(BATCH_UNDER_DEFAULT));
   const under = cleanUnder(text);
   const batch = useMemo(() => selectBatch(items, under), [items, under]);
@@ -39,6 +42,7 @@ export function BatchApprove({ items, run }: {
     }
   };
 
+  if (spendOff) return null;
   return (
     <div className="cr-block" data-testid="approve-in-one-go">
       <span className="cr-eyebrow">Approve in one go</span>

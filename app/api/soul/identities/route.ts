@@ -13,6 +13,7 @@ import {
 } from "@/lib/soulIdentities";
 import { soulCharacterGenerationEnabled } from "@/lib/vendorRates";
 import { higgsfieldConfigured } from "@/lib/higgsfield";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 const headers = { "Cache-Control": "private, no-store" };
@@ -54,6 +55,8 @@ export const POST = withTenant(
   async (request: Request) => {
     const got = await requireRender();
     if (got.response) return got.response;
+    /* The sample workspace spends nothing: answered before the request is claimed. */
+    { const off = await sampleWorkspaceOff(); if (off) return off; }
     return withGenerationRequest(request, got.user.id, async (claim) => {
       try {
         const body = (await request.json()) as CreateSoulIdentityInput;

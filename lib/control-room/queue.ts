@@ -86,6 +86,8 @@ export type QueueItem = {
   step: { n: number; of: number } | null;
   /** The sample production: nothing in it spends credits. */
   sample: boolean;
+  /** The workspace could not be checked, so the item is held back like the sample's: its line says so, not "sample". */
+  unchecked?: boolean;
   approve: ApproveRef | null;
   decline: DeclineRef | null;
   open: OpenRef;

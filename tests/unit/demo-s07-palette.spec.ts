@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { PALETTE_ROWS, newPaletteIndex, searchNewPalette } from "../../lib/shell/palette";
+import { newPaletteIndex, searchNewPalette } from "../../lib/shell/palette";
 import { askButton, atomikIntent, isHowQuestion, matchPlace, thinkingLine } from "../../lib/shell/atomik-panel";
 import { selectBatch, type QueueItem } from "../../lib/control-room/queue";
 
@@ -14,12 +14,14 @@ const RAIL = [
 ];
 const index = newPaletteIndex({ rail: RAIL, models: [{ id: "m1", name: "Engine one", kind: "Video" }], assets: [{ id: "a1", name: "The mirrored plate", kind: "image" }] });
 
-test("the empty palette lists Home, the board's places, Make and Atomik first, as the master does", () => {
+test("the empty palette lists Home, the board's places, Make's types and tools, Atomik and Settings' five sections", () => {
   const first = searchNewPalette(index, "");
-  expect(first).toHaveLength(PALETTE_ROWS);
-  expect(first.map((r) => `${r.group}:${r.label}`).slice(0, 12)).toEqual([
-    "Home:Home", "Board:Brief", "Board:Looks", "Board:Storyboard", "Board:Shots", "Board:Cast", "Board:Cut", "Board:Deliver", "Board:Ads", "Board:Social", "Make:Make", "Atomik:Atomik",
+  expect(first.map((r) => `${r.group}:${r.label}`)).toEqual([
+    "Home:Home", "Board:Brief", "Board:Looks", "Board:Storyboard", "Board:Shots", "Board:Cast", "Board:Cut", "Board:Deliver", "Board:Ads", "Board:Social",
+    "Make:Video", "Make:Image", "Make:Audio", "Make:Motion transfer", "Make:Object swap", "Atomik:Atomik",
+    "Settings:Team", "Settings:Plan & credits", "Settings:Spending rules", "Settings:Connections", "Settings:Advanced",
   ]);
+  expect(first.find((r) => r.label === "Image")?.run).toEqual({ type: "gen", tool: "image" });
   expect(first.find((r) => r.label === "Atomik")?.hint).toBe("Approvals · Activity · Skills · Memory");
   expect(first[0].hint).toBe("What needs you");
 });

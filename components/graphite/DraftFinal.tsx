@@ -10,6 +10,7 @@ import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
 import { sendClaimedGeneration, settlePendingGeneration } from "@/lib/workspace/generate-submit";
 import { refreshProjectLibrary, type LibraryEntry } from "@/lib/workspace/library";
 import { neutralCopy } from "@/lib/workspace/rig";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { useWorkspace } from "@/lib/workspace/state";
 import { TakeStrip } from "./TakeStrip";
 
@@ -54,13 +55,21 @@ const LANDED = "Your last press of Make the final reached the server: that final
  * The draft's next step: its state, and on a draft that can still make one,
  * the priced final with its approval (Gen's strip and the Inspector).
  */
-export function DraftFinalBar({ scope, projectId, draft, finals }: {
+type DraftBarProps = {
   scope: string;
   /** The workbench project whose library holds the pair: re-read once the final is sent and once it lands. */
   projectId: string | null;
   draft: Generation;
   finals: readonly Generation[];
-}) {
+};
+
+/** The sample workspace spends nothing: a draft offers no final there, and the bar is not drawn (nothing is quoted either). */
+export function DraftFinalBar(props: DraftBarProps) {
+  const spendOff = useSampleWorkspace();
+  return spendOff ? null : <PricedDraftFinalBar {...props} />;
+}
+
+function PricedDraftFinalBar({ scope, projectId, draft, finals }: DraftBarProps) {
   const { toast } = useWorkspace();
   const [now, setNow] = useState(() => Date.now());
   /** A final sent from here that the library has not shown yet: followed all the same. */

@@ -64,6 +64,11 @@ const TOMBSTONES = [
   "public/marketing/screens/studio-cast.jpg",
   "public/marketing/screens/studio-takes.jpg",
   "public/marketing/screens/workspace-general-enhancer.jpg",
+  /* Old-design site screenshots, replaced by Release 1 captures (7 Oct). */
+  "public/marketing/screens/gen-composer-blank.jpg",
+  "public/marketing/screens/studio-rig-canvas.jpg",
+  "public/marketing/screens/viral-history.jpg",
+  "public/marketing/screens/workspace-plans-credits.jpg",
   /* The three renamed sheets, under their old names. */
   "app/workbench/mobile-hand" + "off.css",
   "app/workbench/mobile-hand" + "off-stages.css",

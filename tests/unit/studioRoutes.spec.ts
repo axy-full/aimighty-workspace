@@ -59,6 +59,7 @@ test("a project refused by the plan's production ceiling leaves no empty product
     "@/lib/credits": await import("../../lib/credits"),
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/planLimits": await import("../../lib/planLimits"),
+    "@/lib/caps": await import("../../lib/caps"),
   });
   await runInTenant(workspace("ceiling"), async () => {
     await ready();

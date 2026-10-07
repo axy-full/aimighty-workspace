@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useMemo, useState, type MutableRefObject } from "react";
 import { useApprovals } from "@/lib/control-room/use-approvals";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
+import { CheckAgain } from "../../CheckAgain";
+import { CHECK_LINE } from "@/lib/demo/sample";
 import { selectBatch, type QueueItem } from "@/lib/control-room/queue";
 import { priceWords } from "@/lib/shell/price-words";
 import { spendAttrsOf } from "@/lib/spend";
@@ -18,6 +21,7 @@ import { Price, usePriceTitle } from "../../Price";
  */
 export function PaletteApproveCard({ under, onDone, enterRef }: { under: number; onDone: () => void; enterRef: MutableRefObject<(() => void) | null> }) {
   const approvals = useApprovals();
+  const spendOff = useSampleWorkspace();
   const { toast } = useWorkspace();
   const batch = useMemo(() => selectBatch(approvals.items, under), [approvals.items, under]);
   const [busy, setBusy] = useState(false);
@@ -42,6 +46,14 @@ export function PaletteApproveCard({ under, onDone, enterRef }: { under: number;
   };
   const loading = approvals.status === "loading";
   const empty = !loading && !batch.items.length;
+  /* The sample workspace spends nothing: no list, no total, no approving; the one line says so. */
+  if (spendOff) return (
+    <div className="ak-pcard" data-testid="palette-approve-card">
+      <span className="ak-eyebrow ak-accent">Atomik</span>
+      <strong className="ak-pcard-title">{spendOff}</strong>
+      {spendOff === CHECK_LINE ? <CheckAgain className="ak-link" /> : null}
+    </div>
+  );
   return (
     <div className="ak-pcard" data-testid="palette-approve-card">
       <span className="ak-eyebrow ak-accent">Atomik</span>

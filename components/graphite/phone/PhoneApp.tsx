@@ -3,6 +3,8 @@ import "./phone-screens.css";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { QueueItem } from "@/lib/control-room/queue";
 import { useApprovals } from "@/lib/control-room/use-approvals";
+import { SAMPLE_LINE } from "@/lib/demo/sample";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { moving } from "@/lib/jobsTray";
 import { isMakeTool } from "@/lib/shell/make";
 import { openAtomikChat, type OpenChat } from "@/lib/shell/use-skills";
@@ -86,6 +88,8 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
   const online = useOnline();
   const judgements = useQueuedJudgements(scope);
   const approvals = useApprovals();
+  /* Nothing spends in the sample workspace (or one that could not be checked): the plan and the record are read-only there. */
+  const spendOff = useSampleWorkspace();
   const tray = useJobsTray();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(t); }, []);
@@ -170,12 +174,12 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
           ) : screen === "states" ? (
             <StatesScreen scope={scope} project={project} items={items} online={online} now={now} balance={account?.credits?.balance ?? null} onTopUp={topUp} onQueue={judgements.add} />
           ) : screen === "plan" ? (
-            <PlanScreen scope={scope} project={project} runId={route.run} online={online} onHome={home} onTopUp={topUp}
+            <PlanScreen scope={scope} project={project} runId={route.run} online={online} spendOff={spendOff ?? (approvals.items.some((q) => q.sample && q.approve?.kind === "board-approve" && q.approve.runId === route.run) ? SAMPLE_LINE : null)} onHome={home} onTopUp={topUp}
               onChange={() => openAtomik("Change the plan: ")} />
           ) : (
           <main className="ph-scroll" data-testid="mobile-scroll">
             {page ? <div className="ph-page">{page.body}</div> : screen === "record" ? (
-              <RecordScreen scope={scope} project={project} items={items} queue={approvals.items} now={now} onPlan={openPlan} onReview={() => go({ screen: "review" })} onCut={() => go({ screen: "cut" })} />
+              <RecordScreen scope={scope} project={project} items={items} queue={approvals.items} spendOff={spendOff} now={now} onPlan={openPlan} onReview={() => go({ screen: "review" })} onCut={() => go({ screen: "cut" })} />
             ) : (
               <HomeScreen scope={scope} approvals={approvals} projects={data.projects} projectsError={data.status === "error" ? data.error ?? "Projects could not be loaded." : null} onRetryProjects={data.retry} project={project} items={items} online={online} now={now}
                 onReview={() => go({ screen: "review" })}
