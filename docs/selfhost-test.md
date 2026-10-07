@@ -41,6 +41,10 @@ These came from a real local standalone build (Turbopack, no secrets) started wi
 6. **Dispatch.** With `DISPATCH_MODE` unset in production, background work is handed to `APP_ORIGIN/api/worker` (native mode), i.e. out through the public address and back. On the staging address this is harmless under `ENGINE_MOCK=1`. Self-hosted Inngest comes in P4.
 7. **Workspace databases on disk.** If the Turso API variables are set, new workspaces create real Turso databases in the organisation. Do **not** set `TURSO_API_TOKEN` / `TURSO_ORG` on the staging address unless they point at the staging organisation or group.
 
+## Staging now (7 Oct)
+
+The owner has created the staging app on the platform: branch `release/1`, Dockerfile build, Dockerfile location `/ops/selfhost/Dockerfile`, on a **temporary sslip.io `https` address** (never write that address in the repo or any public place: it contains the server's IP). `staging.particl.si` replaces it later (see click-by-click step 4). Before any scheduled task is added, run the two read-only checks in step 9b (keyring fingerprint, workspace hosts).
+
 ## Before you start (owner)
 
 - [ ] The **staging databases the Vercel preview runs on** (Preview environment values: platform database URL and token, and its `KEYRING_SECRET`). Not production, and not a plain copy of production's platform database (see the warning at the top).
@@ -197,6 +201,18 @@ Menu names are for current Coolify v4 as best known; a label marked (unsure) may
 8. **Deploy.** Click **Deploy**. Watch **Deployments, Logs**. The first build takes several minutes. The step "npm run build" prints `preview seed: skipped (VERCEL_ENV is not set)`; that is expected and touches no database. It passes when the log ends with the container started and the health check going green. If it fails, copy the last 30 lines to Claude (no variable values are printed by the build).
 9. **Smoke test.** From a shell on this machine, in the repo: `bash ops/selfhost/smoke.sh <staging address from step 4>`. Expected: every check passes once storage is configured. If anything fails, send the output (without the hostname).
 9b. **Check the workspace addresses before any scheduled task.** In the Turso dashboard, open the **staging** platform database's shell (read only) and run only this query: `SELECT id, db_url FROM workspaces;`. Every `db_url` host must belong to the staging group (or be empty for the house workspace). If any row names a production database, **stop**: do not add the scheduled task, and tell Claude only that a row failed (never paste the URLs). Don't paste the output anywhere.
+
+    Two more read-only checks, in the **app's terminal** on the platform (they print only an 8-character fingerprint, a count and host names). The first shows which keyring the host holds (compare it with the same fingerprint computed from the Preview environment's value; it must differ from production's):
+
+    ```
+    node -e 'console.log("keyring fingerprint:",require("crypto").createHash("sha256").update(process.env.KEYRING_SECRET||"").digest("hex").slice(0,8))'
+    ```
+
+    The second lists the workspace database hosts the platform database names (every host must be a staging one):
+
+    ```
+    node -e 'const{createClient}=require("@libsql/client");const c=createClient({url:process.env.PLATFORM_DATABASE_URL,authToken:process.env.PLATFORM_AUTH_TOKEN});c.execute("SELECT db_url FROM workspaces").then(r=>{const h={};for(const x of r.rows){const u=String(x.db_url??"");const k=u?u.replace(/^[a-z]+:\/\//i,"").split(/[/?]/)[0]:"(none: house workspace)";h[k]=(h[k]||0)+1}console.log("workspaces:",r.rows.length);console.log(h)}).catch(e=>console.log("error:",e.message))'
+    ```
 10. **Scheduled task (only after 9b passes; leave it disabled while the Vercel preview uses the same staging databases, unless the owner decides otherwise).** **Configuration, Scheduled Tasks, + Add**: name `cron-sync`, command `node /app/cron-sync.mjs`, frequency `*/10 * * * *`, save, then run it once by hand if the page has a run button (unsure), and read its log for `cron-sync: 200`.
 11. **Stop or roll back.** Nothing live is affected. Coolify, the app, **Stop** (or Delete in Danger Zone). To keep the settings and just pause the heartbeat: Scheduled Tasks, disable `cron-sync`. Vercel and particl.si are untouched throughout.
 
@@ -295,10 +311,10 @@ Steps 1 to 6 do not move live traffic. From step 7 the live site is affected. Do
 
 0. **Gates.** Every gate in "Gates still ahead" below is **passed or explicitly waived by the owner**, in writing in the owner's message. If any is open, stop here.
 1. **Staging works end to end.** **OWNER:** staging DNS record and platform domain for `https://staging.particl.si` (with the advisor); staging values in the app (`PARTICL_DEPLOYMENT=staging`, `ENGINE_MOCK=1`, Preview databases and keyring, no live Stripe). **OWNER:** add the proxy timeout lines above and restart the proxy. Deploy, run `smoke.sh https://staging.particl.si`, and **sign in** in a browser. Passes when every check is green and sign-in sticks.
-2. **OWNER's "go": the four hotfix PRs are merged to `main`** (the lead merges, on the owner's word): sign-in behind the proxy, public links, client IP, and the production flag (`PARTICL_DEPLOYMENT`). **Verify each on `main` before going on**, for example `git grep SELFHOST_BEHIND_PROXY origin/main`, `git grep TRUST_CF_CONNECTING_IP origin/main`, `git grep PARTICL_DEPLOYMENT origin/main`, and the public-links change by its PR number being merged. If a grep finds nothing, that PR is not on `main`: stop.
+2. **OWNER's "go": five preconditions are merged to `main`** (the lead merges, on the owner's word): (a) sign-in behind the proxy, (b) public links, (c) client IP, (d) the production flag (`PARTICL_DEPLOYMENT`), and (e) **the self-host files** (`ops/selfhost/*`, `.dockerignore`, and the `next.config` standalone switch; a fifth hotfix PR is being prepared for this). **Verify each on `main` before going on**, limiting every search to code so this document does not match itself: `git grep -l SELFHOST_BEHIND_PROXY origin/main -- lib app proxy.ts`, `git grep -l TRUST_CF_CONNECTING_IP origin/main -- lib app proxy.ts`, `git grep -l PARTICL_DEPLOYMENT origin/main -- lib app proxy.ts`, `git grep -l mailLinkOrigin origin/main -- lib app` (or `configuredOrigin`; use whichever name the public-links PR introduced; PR numbers come later), and `git ls-tree origin/main ops/selfhost/` (must list the Dockerfile, `cron-sync.mjs` and `smoke.sh`). If any check finds nothing, that change is not on `main`: stop.
 3. **Staging moves to `main`, then production is prepared.**
    - Switch the **staging app's branch to `main`**, rebuild, and **redo the sign-in check and `smoke.sh`** on staging. Do not go on until they pass on a build of `main`.
-   - What `main` carries: if the build path is **Railpack** (no Dockerfile or cron script needed from the repo), the build runs `next build` and `next start`; the scheduled task command for a main build is whatever file `main` has: if `ops/selfhost/cron-sync.mjs` is on `main`, use `node /app/ops/selfhost/cron-sync.mjs` (Railpack keeps the repo under `/app`; verify the working directory), otherwise call the route from outside with the bearer secret or add the script to `main` first. Check `git ls-tree origin/main ops/selfhost/` before choosing. With the Dockerfile path the files must be on `main` too.
+   - **Scheduled task command for a main build** (after the merges above): `node /app/ops/selfhost/cron-sync.mjs` on Railpack (the repo is kept under `/app`; verify the container's working directory), `node /app/cron-sync.mjs` on the Dockerfile path. Do not call the route from outside with the bearer secret (it would put `CRON_SECRET` in a host crontab, and Cloudflare cuts the request at about 100 s with a 524).
    - **Production app** on the server, built from `main` by the same build path as staging, **stopped** until step 7. Environment variables, one explicit list: **copy every Production value from Vercel** except the variables Vercel sets itself (`VERCEL*`, see the table), with these specifics:
      - Same `SESSION_SECRET` as production on Vercel, or everyone is signed out. Same `KEYRING_SECRET` and the production databases.
      - The production Blob token (`BLOB_READ_WRITE_TOKEN`) or R2 values, whichever production uses today.
