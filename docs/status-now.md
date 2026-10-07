@@ -1,4 +1,4 @@
-# Status now: 7 October 2026, 16:25 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 17:20 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. Thursday 8 Oct: merge train on the owner's "go". Friday 9 Oct: demo.
 
@@ -10,17 +10,21 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
 
 ## CI on `release/1`
 - No full CI run has finished since yesterday: each merge cancelled the run before it. Run 37604935678 on 3ca30197 is the first to run through.
-- Already failing in that run:
+- Run 37604935678 on 3ca30197 finished red: 3 unit tests and about 240 browser tests (35 spec files).
   - unit: 3 tests in `platformOwnerPrivacy.spec.ts`. The follow-up's new "production only" guard refuses the tests' local run (they don't set the opt-in).
-  - browser: Make (batch takes, model picker, Grok voices), credits shown on phone, no-vendor-dollars pages, Settings at 360 px, Guest Home off, three recovery-race tests.
-- Next: split the failures into fix lanes once the run ends (about 16:45). Money and sign-in fixes get an Opus review before they merge.
-- On "contabo": typecheck on 3ca30197 is clean. The local unit run is in progress.
+  - browser: mostly specs still driving the old Gen composer, the old Workspace pane and the retired connected account; plus money specs (no vendor dollars, credit value on phone, batch takes, recovery race, spend buttons) that must be ported, never dropped.
+- On "contabo", 3ca30197: typecheck clean; unit 3,950 passed, 3 failed (the same three), 7 skipped.
+- Fix lanes running since 16:50, one branch each, merged into `release/1` only after a fresh review (Opus where money, sign-in or tenancy):
+  - `fix/r1-ci-privacy-tests` (Opus): the 3 unit tests; the guard itself stays.
+  - `fix/r1-ci-make`: the Make composer specs (prices, batches, model picker).
+  - `fix/r1-ci-settings`: Settings, credits, no vendor dollars, retired connected account.
+  - `fix/r1-ci-board`: board, phone, Guest Home off, spend buttons, recovery race.
 
 ## In flight
 | Branch | State |
 |---|---|
-| 3D blocking B (`build/gaps-l2`) | PASS at 4d24cc2e. Being brought up to date with `release/1` and re-checked now. Merges only after Q7 |
-| CI fixes on `release/1` | starting after the run ends |
+| 3D blocking B (`build/gaps-l2`) | Brought up to date: 44cda874 (3 import/ratchet conflicts; tsc clean; its unit specs 112 pass; browser spec passes at 1440 and 390). Opus review of the merge running. Merges only after Q7 |
+| CI fixes on `release/1` | four lanes, above |
 
 ## Waiting on the owner
 1. The signed-in price check on the preview: Motion transfer and Object swap at 6 s, 720p (about 62 cr).
