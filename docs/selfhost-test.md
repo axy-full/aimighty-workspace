@@ -1,10 +1,15 @@
 # Self-hosted test address (Coolify on the build server)
 
-Status: prepared 7 Oct 2026 on branch `ops/selfhost-test-address`. **Files only**: nothing here has been built in Docker (the preparing machine has none), and nothing in Vercel, Cloudflare, DNS, Turso, hPanel or Coolify has been touched. The owner runs every step below.
+Status: prepared 7 Oct 2026 on branch `ops/selfhost-test-address`. **Files only**: the image has not been built in Docker here (the preparing machine has none); the standalone Next build was built and run locally, and nothing in Vercel, Cloudflare, DNS, Turso, hPanel or Coolify has been touched. The owner runs every step below.
 
 This is the first half of SOW Phase 3 step 3 ("P4 beside Vercel"): the same app, a build of `main` plus these files (branch `ops/selfhost-test-address`), running at a **test address** next to the live Vercel site. Coolify runs on the same server as the build tools, behind its Traefik proxy, and the test address is Coolify's free generated `sslip.io` address, so **there is no DNS or Cloudflare step at all**. It is not the cutover. Production DNS does not move.
 
 > **LOUD WARNING: databases.** The test address must point at **STAGING databases, never production.** A copy of the platform database and of one or two workspace databases made for this purpose. The older runbook (handover Part C, step 11 of P4) said staging may share the live database; that is **not** what this test does. Reasons: the test host has different `CREDIT_USD` handling during the switchover, it can create workspace databases through the Turso API, and a mistake would write rows into live customer data. If there is no staging copy yet, stop at "Before you start".
+
+> **LOUD WARNING: a platform copy names workspace databases.** The platform database stores each workspace's own database address (`workspaces.db_url`) and its sealed token. A plain copy of production's platform database therefore still points at the **production** workspace databases, and with production's `KEYRING_SECRET` the test host could open them. The scheduled `cron-sync` reconciles every workspace it finds, so it would write into live customer data.
+> - Use the **staging set the Vercel preview already runs on** (the Preview environment's database values), not a fresh copy of production.
+> - **Never put production's `KEYRING_SECRET` on the test host.** Use the Preview environment's value. If you are not sure the Preview keyring differs from production's, stop and ask: `scripts/ops/prepare-restore.mjs` repoints every workspace at new databases but re-seals with the **original** keyring, so it does not solve this on its own.
+> - Before turning on `cron-sync`, run the check in step 9b: every workspace address must be a staging host.
 
 > **LOUD WARNING: nothing may spend.** `ENGINE_MOCK=1` on the test address, always. Do not enter real engine keys there unless a later gate says so.
 
@@ -38,7 +43,8 @@ These came from a real local standalone build (Turbopack, no secrets) started wi
 
 ## Before you start (owner)
 
-- [ ] A **staging copy** of the platform database and the workspace databases you want to look at (with its token). Not production.
+- [ ] The **staging databases the Vercel preview runs on** (Preview environment values: platform database URL and token, and its `KEYRING_SECRET`). Not production, and not a plain copy of production's platform database (see the warning at the top).
+- [ ] You know the Preview `KEYRING_SECRET` is **not** production's. If unsure, stop.
 - [ ] A **staging Blob store** (its read/write token). Not the live store.
 - [ ] Vercel's staging/preview environment values open in another tab (you copy values yourself; they never go into chat, the repo or a note).
 - [ ] The Coolify project (one empty project) is open on this machine.
@@ -47,7 +53,7 @@ These came from a real local standalone build (Turbopack, no secrets) started wi
 
 | Setting | Value |
 |---|---|
-| Source | Public repository, URL `https://github.com/axy-full/aimighty-workspace`, branch **`ops/selfhost-test-address`** (main plus these files, so "a build of main") |
+| Source | Public repository, URL `https://github.com/axy-full/aimighty-workspace`, branch **`ops/selfhost-test-address`** (release/1 plus these files; the Dockerfile works the same on main) |
 | Build pack | **Dockerfile** |
 | Base directory | `/` (repo root, so the build context contains `package.json`) |
 | Dockerfile location | `/ops/selfhost/Dockerfile` |
@@ -56,7 +62,7 @@ These came from a real local standalone build (Turbopack, no secrets) started wi
 | Health check | Enabled. Path `/api/health`, port `3000`, method GET, expected status `200`, start period 40 s. (The image also has its own HEALTHCHECK.) |
 | Persistent storage | One volume, destination `/app/.data` (see Storage) |
 | Resource limits | Memory `4g`, CPUs `2` (the build needs more than the runtime; this machine also runs the other lanes' builds, so deploy when it is quiet) |
-| Build variables | Tick **Build Variable** only on `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (baked in at build). Nothing secret is a build variable. |
+| Build variables | Only `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_VAPID_PUBLIC_KEY` are build variables (baked in at build). Coolify may tick **Build Variable** ("available at build time") on every new variable by default: **untick it on every other variable**. A secret marked as a build variable reaches the build environment and the image history, and lets the build reach the database. |
 | Auto deploy | **Off** (deploy by hand) |
 | Scheduled task | `cron-sync`, see below |
 
@@ -66,7 +72,7 @@ These came from a real local standalone build (Turbopack, no secrets) started wi
 
 | Vercel cron | Schedule | Purpose | Test address |
 |---|---|---|---|
-| `GET /api/cron/sync` | `*/10 * * * *` | The platform heartbeat: reconciles every workspace (pending render sync, held jobs, training identities, storage sizes, deletion retries, expired upload reservations, pipeline and canvas wake-ups, recovery drain) and records its last-run heartbeat that `/api/health` (signed in) reports. | Runs every 10 minutes as a Coolify scheduled task, inside the app container. |
+| `GET /api/cron/sync` | `*/10 * * * *` | The platform heartbeat: reconciles every workspace (pending render sync, held jobs, training identities, storage sizes, deletion retries, expired upload reservations, pipeline and canvas wake-ups, recovery drain) and records its last-run heartbeat that `/api/health` (signed in) reports. | Runs every 10 minutes as a Coolify scheduled task, inside the app container, **only after the step 9b check passes**. Off until then. |
 
 Setup (Coolify: the app, **Scheduled Tasks**, **+ Add**; menu names as best known, check the labels on your version):
 
@@ -80,11 +86,11 @@ Setup (Coolify: the app, **Scheduled Tasks**, **+ Add**; menu names as best know
 
 Why a script and not `curl`: the Node slim image has no curl, and Coolify wraps the command in its own shell quoting, which breaks a long `node -e "..."` one-liner. `/app/cron-sync.mjs` (source `ops/selfhost/cron-sync.mjs`) uses Node's built-in fetch to call `http://127.0.0.1:3000/api/cron/sync`.
 
-The header is the one the route checks (`app/api/cron/sync/route.ts`): `Authorization: Bearer <CRON_SECRET>`. The script reads `CRON_SECRET` from the container's own environment, so the value is never typed into the task and never printed. Without the header the route answers 401 (which `smoke.sh` relies on). Exit codes: 0 for a 2xx answer, 1 for a 401 or an error, 2 if `CRON_SECRET` is not set in the container.
+The header is the one the route checks (`app/api/cron/sync/route.ts`): `Authorization: Bearer <CRON_SECRET>`. The script reads `CRON_SECRET` from the container's own environment, so the value is never typed into the task and never printed. Without the header the route answers 401 (`smoke.sh` checks this; in production it answers 401 even if `CRON_SECRET` is unset, so the real proof the secret is set is the task's `cron-sync: 200`). Exit codes: 0 for a 2xx answer, 1 for a 401 or an error, 2 if `CRON_SECRET` is not set in the container.
 
 Checked locally against the standalone server: with the right secret the script prints `cron-sync: 200` and exits 0; with a wrong one `cron-sync: 401` and exit 1; with none, exit 2.
 
-After the first run, open the task's execution log in Coolify and look for `cron-sync: 200`. Because the staging copy may also be served by a Vercel preview, tell the owner if two heartbeats would run against the same staging database; the leased heartbeat is built for that, but it is the owner's call.
+After the first run, open the task's execution log in Coolify and look for `cron-sync: 200`. The staging databases are also served by the Vercel preview, so two heartbeats would run against them. The leased heartbeat is built for that, but keep the task **disabled** until the owner says otherwise.
 
 ## Storage: what is written, and where
 
@@ -115,7 +121,7 @@ Column **STAGING**: "YES" means the value must be a staging value on the test ad
 | `PLATFORM_AUTH_TOKEN` | Required | Token for it | **YES: staging** |
 | `TURSO_DATABASE_URL` | Required | Fallback database URL some code reads | **YES: staging Turso** |
 | `TURSO_AUTH_TOKEN` | Required | Token for it | **YES: staging** |
-| `KEYRING_SECRET` | Required | Decrypts stored workspace keys and database tokens (30+ characters); must be the value that sealed the staging copy; never rotate; stop if blank | the staging copy's own value |
+| `KEYRING_SECRET` | Required | Decrypts stored workspace keys and database tokens (30+ characters); must be the value that sealed the staging databases; never rotate; stop if blank | **YES: the Preview environment's value. Never production's** |
 | `SESSION_SECRET` | Required | Signs session cookies | fresh value (test sessions must not work on production) |
 | `CRON_SECRET` | Required | Bearer secret for `/api/cron/sync` and `/api/worker`; the scheduled task reads it from the container | fresh value |
 | `SUPER_ADMIN_EMAIL` | Required | Who may use platform admin routes | same as Vercel |
@@ -134,7 +140,7 @@ Column **STAGING**: "YES" means the value must be a staging value on the test ad
 | `RIG_AGENT_ENABLED`, `LEGACY_WORKSPACE_NAME` | Optional | Feature switch; the original studio's name | same as Vercel |
 | `LIVEBLOCKS_SECRET_KEY` | Optional | Live board collaboration | same as Vercel, or unset |
 | `VAPID_PRIVATE_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_SUBJECT` | Optional | Web push | unset |
-| Engine and assistant keys and switches: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_PROMPT_MODEL`, `ANTHROPIC_PROMPT_EFFORT`, `AI_GATEWAY_BASE_URL`, `GATEWAY_PROMPT_MODELS`, `REFINE_PROVIDER`, `HF_API_KEY_ID`, `HF_API_KEY_SECRET`, `HF_CREDENTIALS`, `HF_CREDENTIALS_PREVIOUS`, `HF_CREDENTIAL_ALIASES`, `HF_POOL_SIZE`, `HF_POOL_WORKSPACE_SHARE`, `HF_CONSUMER_CLIENT_ID`, `HF_CORRELATION_HEADER`, `HF_CINEMA_STUDIO_ENABLED`, `HF_CONSUMER_VIDEO_ANALYSIS_ENABLED`, `HF_SOUL_CHARACTER_ENABLED`, `HF_SOUL_CHARACTER_USD_720P`, `HF_SOUL_CHARACTER_USD_1080P`, `GEMINI_BASE_URL`, `GEMINI_IMAGE_MODEL`, `GOOGLE_SAFETY_THRESHOLD`, `ARK_BASE_URL`, `ARK_TEXT_MODEL`, `XAI_BASE_URL`, `XAI_MODEL`, `XAI_RATE_USD_PER_MTOK`, `FAL_*`, `ELEVEN_*`, `ASTRA_BLENDER_*`, `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, `VERCEL_OIDC_TOKEN` | Do not set | **No engine keys are needed**: `ENGINE_MOCK=1` answers every call. Real keys would mean real spend | **not set** |
+| Engine and assistant keys and switches: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_PROMPT_MODEL`, `ANTHROPIC_PROMPT_EFFORT`, `AI_GATEWAY_BASE_URL`, `GATEWAY_PROMPT_MODELS`, `REFINE_PROVIDER`, `HF_API_KEY_ID`, `HF_API_KEY_SECRET`, `HF_CREDENTIALS`, `HF_CREDENTIALS_PREVIOUS`, `HF_CREDENTIAL_ALIASES`, `HF_POOL_SIZE`, `HF_POOL_WORKSPACE_SHARE`, `HF_CONSUMER_CLIENT_ID`, `HF_CORRELATION_HEADER`, `HF_CINEMA_STUDIO_ENABLED`, `HF_CONSUMER_VIDEO_ANALYSIS_ENABLED`, `HF_SOUL_CHARACTER_ENABLED`, `HF_SOUL_CHARACTER_USD_720P`, `HF_SOUL_CHARACTER_USD_1080P`, `GEMINI_BASE_URL`, `GEMINI_IMAGE_MODEL`, `GOOGLE_SAFETY_THRESHOLD`, `ARK_BASE_URL`, `ARK_TEXT_MODEL`, `XAI_BASE_URL`, `XAI_MODEL`, `XAI_RATE_USD_PER_MTOK`, `FAL_*`, `ELEVEN_*`, `ASTRA_BLENDER_*`, `AI_GATEWAY_API_KEY`, `GEMINI_API_KEY`, `ARK_API_KEY`, `OPENAI_API_KEY`, `OWNER_PRIVACY_SCRUB_LOCAL`, `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, `VERCEL_OIDC_TOKEN` | Do not set | **No engine keys are needed**: `ENGINE_MOCK=1` answers every call. Real keys would mean real spend | **not set** |
 | `AIMIGHTY_URL`, `AIMIGHTY_TOKEN`, `PARTICL_URL`, `PARTICL_TOKEN` | Do not set | Client settings for the MCP and rehearsal scripts | not set |
 | `NODE_ENV`, `PORT`, `HOSTNAME` | Do not add | Set by the image (`production`, `3000`, `0.0.0.0`) | n/a |
 | `VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `VERCEL_GIT_COMMIT_SHA`, `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL` | Never set | Vercel sets these itself; on another host they change behaviour (and `VERCEL_ENV=preview` would let `prebuild` touch databases) | **not set** |
@@ -153,7 +159,7 @@ Used only by scripts and CI, not by the running app: `PARTICL_BACKUP_*`, `PARTIC
 | A `/_next/static/...js` file from the page | 200 |
 | `/vendor/tesseract-7.0.0/worker.min.js` | 200 (proves the postinstall copy is in the image) |
 | `/api/me`, `/api/projects` signed out | 401 each |
-| `/api/cron/sync` with no header | 401 (proves `CRON_SECRET` is set) |
+| `/api/cron/sync` with no header | 401 (the route refuses an unauthenticated call; the task's `cron-sync: 200` is what proves the secret is set) |
 | Security headers on `/login` | frame DENY and a content policy |
 | Any 5xx | none |
 
@@ -167,13 +173,25 @@ Menu names are for current Coolify v4 as best known; a label marked (unsure) may
 2. **New resource.** **+ New** (unsure: it may read "Add New Resource"), then **Public Repository** (the repo is public, so no GitHub App is needed). Repository URL: `https://github.com/axy-full/aimighty-workspace`. Click **Check repository**. Server: the localhost server (this machine). Continue.
 3. **Build settings.** Branch: `ops/selfhost-test-address`. **Build Pack: Dockerfile**. **Base Directory:** `/`. **Port (Ports Exposes):** `3000`. Continue (or Save). On the next page, in **Configuration, General**, set **Dockerfile Location:** `/ops/selfhost/Dockerfile`. Save. Do **not** deploy yet.
 4. **Domain.** In **Configuration, General, Domains**, Coolify has already generated an address of the form `http://<random>.<server-ip>.sslip.io`. Keep it (it is free and needs no DNS). Copy the exact text; this is the **test address**. If your version offers a "Generate Domain" button (unsure), use it. Note that it may be `http://`, not `https://`: that is fine for a smoke test, and `smoke.sh` accepts either.
-5. **Environment variables.** **Configuration, Environment Variables**, **Developer view** (unsure: sometimes a toggle at the top). Add the names from the table above: every row marked Required, with values copied from Vercel's staging/preview environment where it says "same as Vercel" and **staging** values where it says STAGING. Set `ENGINE_MOCK=1`, `CREDIT_USD=0.10`, and set `APP_ORIGIN`, `APP_URL` and `NEXT_PUBLIC_APP_URL` to the test address from step 4. On `NEXT_PUBLIC_APP_URL` tick **Build Variable** (unsure: shown as a "Build Variable?" checkbox). Check: the databases and the Blob store are staging, `KEYRING_SECRET` is not blank, no `STRIPE_*`, no `TURSO_API_*`, no `VERCEL*`, no engine keys. Save.
+5. **Environment variables.** **Configuration, Environment Variables**, **Developer view** (unsure: sometimes a toggle at the top). Add the names from the table above: every row marked Required, with values copied from Vercel's staging/preview environment where it says "same as Vercel" and **staging** values where it says STAGING. Set `ENGINE_MOCK=1`, `CREDIT_USD=0.10`, and set `APP_ORIGIN`, `APP_URL` and `NEXT_PUBLIC_APP_URL` to the test address from step 4. On `NEXT_PUBLIC_APP_URL` tick **Build Variable** (unsure: shown as a "Build Variable?" checkbox). Check: the databases and the Blob store are staging, `KEYRING_SECRET` is not blank, no `STRIPE_*`, no `TURSO_API_*`, no `VERCEL*`, no engine keys. Save. **Untick Build Variable on every variable except `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_VAPID_PUBLIC_KEY`** (check your version's default). `KEYRING_SECRET` and the database values come from the **Preview** environment, never Production.
 6. **Health check.** **Configuration, Healthcheck** (unsure): enable, path `/api/health`, port `3000`, method GET, return code `200`, start period 40 seconds. Save.
 7. **Storage and limits.** **Configuration, Persistent Storage, + Add**: volume mount, name `selfhost-data`, destination path `/app/.data`. Then **Resource Limits**: memory `4g`, CPUs `2`. Make sure **Auto Deploy** is off.
 8. **Deploy.** Click **Deploy**. Watch **Deployments, Logs**. The first build takes several minutes. The step "npm run build" prints `preview seed: skipped (VERCEL_ENV is not set)`; that is expected and touches no database. It passes when the log ends with the container started and the health check going green. If it fails, copy the last 30 lines to Claude (no variable values are printed by the build).
 9. **Smoke test.** From a shell on this machine, in the repo: `bash ops/selfhost/smoke.sh <test address from step 4>`. Expected today: **`home /` FAILS** (the signed-out redirect loop, finding 2), everything else passes. If anything else fails, that is news; send the output.
-10. **Scheduled task.** **Configuration, Scheduled Tasks, + Add**: name `cron-sync`, command `node /app/cron-sync.mjs`, frequency `*/10 * * * *`, save, then run it once by hand if the page has a run button (unsure), and read its log for `cron-sync: 200`.
+9b. **Check the workspace addresses before any scheduled task.** In the Turso dashboard, open the **staging** platform database's shell (read only) and run `SELECT id, db_url FROM workspaces;`. Every `db_url` host must belong to the staging group (or be empty for the house workspace). If any row names a production database, **stop**: do not add the scheduled task, and tell Claude only that a row failed (never paste the URLs). Don't paste the output anywhere.
+10. **Scheduled task (only after 9b passes; leave it disabled while the Vercel preview uses the same staging databases, unless the owner decides otherwise).** **Configuration, Scheduled Tasks, + Add**: name `cron-sync`, command `node /app/cron-sync.mjs`, frequency `*/10 * * * *`, save, then run it once by hand if the page has a run button (unsure), and read its log for `cron-sync: 200`.
 11. **Stop or roll back.** Nothing live is affected. Coolify, the app, **Stop** (or Delete in Danger Zone). To keep the settings and just pause the heartbeat: Scheduled Tasks, disable `cron-sync`. Vercel and particl.si are untouched throughout.
+
+## Before production leaves Vercel (not needed for the test address)
+
+These work on Vercel without any setting and change on another host:
+- **AI Gateway** (`lib/gateway.ts`; Atomik drafts, memory read, prompt enhance): on Vercel it signs in with the deployment's own identity. Off Vercel it needs `AI_GATEWAY_API_KEY` (created on Vercel's AI Gateway page) until P4b moves models to their own APIs.
+- **Vercel Sandbox** (`lib/astra-blender/sandbox.ts`, the 3D render): needs `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID` off Vercel.
+- **Production-only guards keyed on `VERCEL_ENV === "production"`** are off on another host: the "no test Stripe key on production" check (`lib/billingConfig.ts`), deployment readiness (`lib/deploymentReadiness.ts`), and the owner-privacy scrub (`lib/platformOwnerScrub.ts`, which then needs `OWNER_PRIVACY_SCRUB_LOCAL=1`). Decide before cutover: set `VERCEL_ENV=production` on the production host only, or a small code change.
+- **Long requests:** routes declare `maxDuration` up to 800 s (uploads, media). Traefik v3's entrypoint `readTimeout` defaults to 60 s: raise `respondingTimeouts` on the entrypoint or long uploads will be cut.
+- **Sign-in behind the proxy** and the **signed-out home loop** (findings above) must be fixed first.
+
+The test address itself is public plain HTTP until the P2 Cloudflare-only firewall exists: keep it short-lived (stop it after the check), or add Traefik basic auth. Its generated hostname contains the server's IP: don't paste it anywhere public.
 
 ## Domains at cutover: particl.si, www.particl.si, particl.app, www.particl.app
 
@@ -188,7 +206,7 @@ The steps below assume `particl.si` stays primary and every other name 308s to i
 
 ### Option A (recommended): a Cloudflare redirect rule
 The redirect happens at Cloudflare's edge, so it needs no app code, puts no load on the server, and keeps working if the app is down.
-1. All three hosts must be in Cloudflare zones with **proxied** (orange-cloud) records. A name that is not proxied never reaches the rule. If `particl.app` is not yet a Cloudflare zone, add it and move its nameservers first (a registrar step for the owner), well before the cutover.
+1. All three hosts must be in Cloudflare zones with **proxied** (orange-cloud) records. A name that is not proxied never reaches the rule. If `particl.app` is not yet a Cloudflare zone, add it and move its nameservers first (a registrar step for the owner), well before the cutover. When `particl.app` becomes a Cloudflare zone, import its existing records and check every one (MX, SPF, DKIM, DMARC and any verification TXT included) against the current DNS host **before** switching nameservers.
 2. In the `particl.app` zone: **Rules, Redirect Rules, Create rule** (Single Redirect):
    - If: custom filter, hostname is in `particl.app`, `www.particl.app`.
    - Then: Dynamic, expression `concat("https://particl.si", http.request.uri.path)`, status **308**, **Preserve query string** ticked.
@@ -218,10 +236,10 @@ Under option A the two `particl.app` records may point anywhere while proxied (t
 ### Keep, and don't touch
 - **Mail records** on both domains (MX, SPF/TXT, DKIM, DMARC, the mail sender's verification records) stay exactly as they are. Moving the website changes only the A, AAAA and CNAME rows above.
 - **CAA records**, if any: they must allow the certificate issuer in use (Cloudflare's for proxied names; Let's Encrypt only under option B).
-- **Rollback:** before the change, write down the four current records (Vercel's values), and lower their TTL a day ahead. Rolling back means restoring those four values (SOW: rollback is one DNS change). Leave the Vercel domain settings in place until the two weeks of watching are over, so a rollback lands on a working redirect.
+- **Rollback:** before the change, write down the four current records (Vercel's values), and lower their TTL a day ahead. Rolling back means restoring those four values **and their proxy status** (Vercel records are usually DNS-only, grey cloud; proxied records use Cloudflare's fixed Auto TTL) (SOW: rollback is one DNS change). Leave the Vercel domain settings in place until the two weeks of watching are over, so a rollback lands on a working redirect.
 
 ### Checks after the change
-`curl -sI https://particl.app/pricing?x=1` and the same for `www.particl.app` and `www.particl.si`: each must answer **308** with `location: https://particl.si/pricing?x=1`. `curl -sI https://particl.si/` answers 200. Then run `smoke.sh https://particl.si`.
+`curl -sI 'https://particl.app/pricing?x=1'` and the same for `www.particl.app` and `www.particl.si`: each must answer **308** with `location: https://particl.si/pricing?x=1`. `curl -sI https://particl.si/` answers 200. Then run `smoke.sh https://particl.si`.
 
 ## Gates still ahead before any cutover (SOW section 4)
 

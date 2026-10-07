@@ -4,8 +4,8 @@
 node_modules
 .data
 .env
-.env.*
-*.pem
+**/.env*
+**/*.pem
 npm-debug.log*
 coverage
 tests
@@ -20,3 +20,4 @@ ops/selfhost/smoke.sh
 mcp
 **/*.md
 .DS_Store
+.claude

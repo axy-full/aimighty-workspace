@@ -59,7 +59,7 @@ for r in /api/me /api/projects; do
   [ "$CODE" = 401 ] && pass "signed-out $r" "401 in ${SECS}s" || fail "signed-out $r" "expected 401, got $CODE"
 done
 
-# 7. The cron route refuses a request without the secret (proves CRON_SECRET is set on this server)
+# 7. The cron route refuses an unauthenticated call (the scheduled task's "cron-sync: 200" is what proves CRON_SECRET is set)
 get cron /api/cron/sync
 [ "$CODE" = 401 ] && pass "cron without secret" "401 in ${SECS}s" || fail "cron without secret" "expected 401, got $CODE"
 
