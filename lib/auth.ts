@@ -1,6 +1,7 @@
 import { recoveryRoute } from "./recovery";
 import { SESSION_COOKIE } from "./sessionCookie";
 import { crossOriginProblem } from "./requestOrigin";
+import { clientIp } from "./clientIp";
 import { MediaSourceError } from "./mediaBindings";
 import { workbenchScopeFor } from "./workbench/request-scope";
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
@@ -523,7 +524,7 @@ export async function clearFailures(accountId: string, source?: string, email?: 
 
 /** A one-way, salted label for where a request came from. */
 export function sourceKey(req: { headers: Headers }): string {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? req.headers.get("x-real-ip") ?? "";
+  const ip = clientIp(req);
   const salt = process.env.SESSION_SECRET ?? process.env.TURSO_AUTH_TOKEN ?? "particl";
   return createHash("sha256").update(`${salt}:login:${ip}`).digest("hex").slice(0, 32);
 }

@@ -348,9 +348,11 @@ test("L-C: a review link's client key is salted like the login source key, so it
   const link = await import("../../lib/security/review-link");
   const req = { headers: new Headers({ "x-forwarded-for": "203.0.113.7, 10.0.0.1" }) };
   const unsalted = createHash("sha256").update("shr_one:203.0.113.7").digest("hex").slice(0, 24);
-  const saved = { session: process.env.SESSION_SECRET, turso: process.env.TURSO_AUTH_TOKEN };
-  const put = (name: "SESSION_SECRET" | "TURSO_AUTH_TOKEN", value: string | undefined) => { if (value === undefined) delete process.env[name]; else process.env[name] = value; };
+  const saved = { session: process.env.SESSION_SECRET, turso: process.env.TURSO_AUTH_TOKEN, vercel: process.env.VERCEL };
+  const put = (name: "SESSION_SECRET" | "TURSO_AUTH_TOKEN" | "VERCEL", value: string | undefined) => { if (value === undefined) delete process.env[name]; else process.env[name] = value; };
   try {
+    /* Vercel's request shape, where the first forwarded entry is the client (lib/clientIp.ts). */
+    put("VERCEL", "1");
     put("SESSION_SECRET", "unit-salt-one");
     const one = link.clientKey(req, "shr_one");
     expect(one).not.toBe(unsalted);
@@ -365,7 +367,7 @@ test("L-C: a review link's client key is salted like the login source key, so it
     put("TURSO_AUTH_TOKEN", undefined);
     expect(link.clientKey(req, "shr_one")).toBe(createHash("sha256").update("particl:review-link:shr_one:203.0.113.7").digest("hex").slice(0, 24));
   } finally {
-    put("SESSION_SECRET", saved.session); put("TURSO_AUTH_TOKEN", saved.turso);
+    put("SESSION_SECRET", saved.session); put("TURSO_AUTH_TOKEN", saved.turso); put("VERCEL", saved.vercel);
   }
 });
 

@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client";
 import { createHash } from "node:crypto";
 import { db, ready, now, id as newId } from "../db";
+import { clientIp } from "../clientIp";
 import { mintShare, type Share } from "../shares";
 
 /**
@@ -84,7 +85,7 @@ export const LIMITS = { write: 30 } as const;
  * are simply never matched again and age out of the rate window, pruned as new windows fill (`underLimit`).
  */
 export function clientKey(req: { headers: Headers }, shareId: string): string {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || req.headers.get("x-real-ip") || "unknown";
+  const ip = clientIp(req) || "unknown";
   const salt = process.env.SESSION_SECRET ?? process.env.TURSO_AUTH_TOKEN ?? "particl";
   return createHash("sha256").update(`${salt}:review-link:${shareId}:${ip}`).digest("hex").slice(0, 24);
 }

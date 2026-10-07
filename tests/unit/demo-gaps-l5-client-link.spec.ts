@@ -11,6 +11,12 @@ import { authAs, freshDatabases, load, rawToken, scoped, seedPeople, workspace, 
 const dir = freshDatabases("client-link");
 const A = workspace(dir, "ws_linka"), B = workspace(dir, "ws_linkb");
 const ORIGIN = "http://localhost";
+/* Links are built on APP_ORIGIN when it is set (lib/site.ts linkOrigin). This file owns that setting: unset for every
+   test, so a link is on the request's own origin (ORIGIN), whatever another spec left in the environment; the one
+   test about APP_ORIGIN sets its own value. Put back after each test. */
+let savedOrigin: string | undefined;
+test.beforeEach(() => { savedOrigin = process.env.APP_ORIGIN; delete process.env.APP_ORIGIN; });
+test.afterEach(() => { if (savedOrigin === undefined) delete process.env.APP_ORIGIN; else process.env.APP_ORIGIN = savedOrigin; });
 
 async function seed() {
   const { platformDb, platformReady } = await import("../../lib/platform");
@@ -97,7 +103,7 @@ test("only a signed-in owner or admin makes or withdraws a client link; tokens a
   expect(made.status).toBe(201);
   const { url } = await made.json();
   /* The secret names nothing: not the workspace, not the production. */
-  expect(url).toMatch(/^http:\/\/localhost\/review\/rv_[A-Za-z0-9_-]{43}$/);
+  expect(url).toMatch(new RegExp(`^${ORIGIN}/review/rv_[A-Za-z0-9_-]{43}$`));
   expect(url).not.toContain("linka");
   expect(url).not.toContain("prod_one");
 
@@ -230,15 +236,24 @@ test("a link is limited per client: too many decisions from one place are refuse
   const { url } = await (await r.team.POST(scoped(who, `${ORIGIN}/api/review-links`, { method: "POST", body: JSON.stringify({ projectId: "prod_one" }) }), undefined as never)).json();
   const token = url.split("/review/")[1];
   const { LIMITS } = await import("../../lib/security/review-link");
-  const from = (ip: string, path: string, body: unknown) => new Request(`${ORIGIN}${path}`, { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": ip }, body: JSON.stringify(body) });
-  const statuses: number[] = [];
-  for (let i = 0; i <= LIMITS.write; i++) statuses.push((await r.verdict.POST(from("203.0.113.9", `/api/review/${token}/verdict`, { genId: "g_review", verdict: "changes" }), ctx(token))).status);
-  expect(statuses.slice(0, LIMITS.write).every((s) => s === 201)).toBe(true);
-  expect(statuses.at(-1)).toBe(429);
-  expect((await r.notes.POST(from("203.0.113.9", `/api/review/${token}/notes`, { genId: "g_review", text: "x" }), ctx(token))).status).toBe(429);
-  /* The real client, elsewhere, is not locked out by a flood from a leaked copy; and anyone can still read. */
-  expect((await r.verdict.POST(from("198.51.100.7", `/api/review/${token}/verdict`, { genId: "g_review", verdict: "approved" }), ctx(token))).status).toBe(201);
-  for (let i = 0; i < 50; i++) expect((await r.view.GET(new Request(`${ORIGIN}/api/review/${token}`), ctx(token))).status).toBe(200);
+  /* Behind the self-hosted proxy, whose own entry is the last one in X-Forwarded-For (lib/clientIp.ts); the
+     spoofed first entries change nothing. */
+  const from = (ip: string, path: string, body: unknown, spoof = "") => new Request(`${ORIGIN}${path}`, { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": spoof ? `${spoof}, ${ip}` : ip }, body: JSON.stringify(body) });
+  const saved = process.env.SELFHOST_BEHIND_PROXY;
+  process.env.SELFHOST_BEHIND_PROXY = "1";
+  try {
+    const statuses: number[] = [];
+    for (let i = 0; i <= LIMITS.write; i++) statuses.push((await r.verdict.POST(from("203.0.113.9", `/api/review/${token}/verdict`, { genId: "g_review", verdict: "changes" }, i % 2 ? `192.0.2.${i}` : ""), ctx(token))).status);
+    expect(statuses.slice(0, LIMITS.write).every((s) => s === 201)).toBe(true);
+    expect(statuses.at(-1)).toBe(429);
+    expect((await r.notes.POST(from("203.0.113.9", `/api/review/${token}/notes`, { genId: "g_review", text: "x" }), ctx(token))).status).toBe(429);
+    expect((await r.notes.POST(from("203.0.113.9", `/api/review/${token}/notes`, { genId: "g_review", text: "x" }, "198.51.100.7"), ctx(token))).status).toBe(429);
+    /* The real client, elsewhere, is not locked out by a flood from a leaked copy; and anyone can still read. */
+    expect((await r.verdict.POST(from("198.51.100.7", `/api/review/${token}/verdict`, { genId: "g_review", verdict: "approved" }), ctx(token))).status).toBe(201);
+    for (let i = 0; i < 50; i++) expect((await r.view.GET(new Request(`${ORIGIN}/api/review/${token}`), ctx(token))).status).toBe(200);
+  } finally {
+    if (saved === undefined) delete process.env.SELFHOST_BEHIND_PROXY; else process.env.SELFHOST_BEHIND_PROXY = saved;
+  }
 });
 
 test("a client link and a share link are built on APP_ORIGIN when it is set (behind a proxy the request's own origin is the listen address), never on Host or X-Forwarded-Host", async () => {
