@@ -25,6 +25,12 @@ export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string 
 /** The sections this build draws. The rest still open the page that holds them today (SETTINGS_INTERIM). */
 export const SETTINGS_BUILT: readonly SettingsSectionId[] = Object.freeze(["team", "credits", "rules", "connections", "advanced"]);
 
+/**
+ * The app address of Settings › Plan & credits, for a link sent outside the app (a push, an email). Never `/settings`:
+ * that is the public Settings page for someone who is not signed in (proxy.ts).
+ */
+export const SETTINGS_CREDITS = "/suites?view=workspace&tab=credits";
+
 export const isSettingsSection = (value: unknown): value is SettingsSectionId => SETTINGS_SECTIONS.some((s) => s.id === value);
 export const isBuiltSection = (value: unknown): value is SettingsSectionId => isSettingsSection(value) && SETTINGS_BUILT.includes(value);
 export const sectionLabel = (id: SettingsSectionId): string => SETTINGS_SECTIONS.find((s) => s.id === id)!.label;
