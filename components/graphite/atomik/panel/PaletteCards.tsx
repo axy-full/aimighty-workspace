@@ -6,6 +6,8 @@ import { spendAttrsOf } from "@/lib/spend";
 import { usePriceTitle } from "../../Price";
 import { usePlaces } from "./use-places";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
+import { CheckAgain } from "../../CheckAgain";
+import { CHECK_LINE } from "@/lib/demo/sample";
 import type { Project } from "@/lib/workbench/studio";
 
 /**
@@ -38,6 +40,7 @@ export function PaletteAskCard({ intent, project, onClose, enterRef }: {
       <strong className="ak-pcard-title">Ask Atomik: {intent.text}</strong>
       <div className="ak-pcard-foot">
         <span className="ak-pcard-note" data-testid="palette-thinking-line">{spendOff && intent.kind === "ask" ? spendOff : button.reason ?? thinkingLine(intent, credits)}</span>
+        {spendOff === CHECK_LINE && intent.kind === "ask" ? <CheckAgain className="ak-link" /> : null}
         {spendOff && intent.kind === "ask" ? null : (
           <button type="button" className="ak-btn ak-btn-primary" disabled={button.disabled} title={title ?? (button.price?.kind === "free" ? "How-to answers are free" : undefined)}
             onClick={press} data-testid="palette-ask" {...spendAttrsOf(button.price)}>{button.label}</button>

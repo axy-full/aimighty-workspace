@@ -6,6 +6,8 @@ import { spendAttrsOf } from "@/lib/spend";
 import type { PressOutcome } from "@/lib/control-room/approve";
 import { Price, usePriceTitle } from "../Price";
 import { ThreadCheckpoint } from "./ThreadCheckpoint";
+import { CHECK_LINE } from "@/lib/demo/sample";
+import { CheckAgain } from "../CheckAgain";
 import { itemLine, SAMPLE_LINE } from "./words";
 
 /**
@@ -61,12 +63,15 @@ export function ApprovalRow({ item, onApprove, onDecline, onOpen, onTopUp }: {
       </span>
       <span className="cr-row-actions">
         <button type="button" className="cr-btn" onClick={() => onOpen(item)} data-testid="approval-open">Open</button>
-        {item.sample ? <span className="cr-row-sample">{SAMPLE_LINE}</span> : (<>
-          {item.decline && !thread ? (
-            <button type="button" className="cr-btn" disabled={busy !== null} onClick={() => void press("decline")} data-testid="approval-not-now">
-              {busy === "decline" ? "Setting aside…" : "Not now"}
-            </button>
-          ) : null}
+        {item.decline && !thread ? (
+          <button type="button" className="cr-btn" disabled={busy !== null} onClick={() => void press("decline")} data-testid="approval-not-now">
+            {busy === "decline" ? "Setting aside…" : "Not now"}
+          </button>
+        ) : null}
+        {item.sample ? (
+          /* Nothing here spends: setting aside stays (it is free); there is no Approve, and the line says why. */
+          <span className="cr-row-sample" data-testid="approval-sample-line">{item.unchecked ? <>{CHECK_LINE} <CheckAgain className="cr-link" /></> : SAMPLE_LINE}</span>
+        ) : (<>
           {approvable ? (
             <button type="button" className="cr-btn cr-btn--approve" disabled={busy !== null} aria-expanded={thread ? checkpoint : undefined} aria-busy={busy === "approve" || undefined} title={dollars}
               onClick={() => (thread ? setCheckpoint((open) => !open) : void press("approve"))} data-testid="approval-approve"

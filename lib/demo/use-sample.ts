@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useApi } from "../useApi";
 import { useSession } from "../session";
 import { useScopedFetch } from "../useScopedFetch";
 import type { SampleBoard } from "./board";
-import { sampleGate, sampleWorkspaceAnswer, type SampleGate, type SampleSubject, SAMPLE_LINE } from "./sample";
+import { CHECK_LINE, sampleGate, type SampleCheck, type SampleGate, type SampleSubject, SAMPLE_LINE } from "./sample";
+import { sampleChecker } from "./sample-check";
 
 /*
  * The browser's half of the sample production. One read of GET /api/demo/sample per mount (the mark and the board's
@@ -30,43 +31,37 @@ export function useSampleGate(project: SampleSubject | null | undefined): Sample
 /*
  * Is this the sample workspace (the owner's switch, 6 Oct)? The server refuses every paid job there
  * (lib/demo/spend-guard.server.ts); the screens then offer no paid control: Enhance, Atomik's ask and Start are not
- * offered or are disabled with the sample's line, with no price. One read of GET /api/demo/sample per workspace scope,
- * shared by every screen that asks, kept for a short while.
+ * offered or are disabled with a line, with no price. One read of GET /api/demo/sample per workspace scope, shared by
+ * every screen that asks (lib/demo/sample-check.ts). It says one of three things: "sample", "normal", or "unknown" when
+ * the read failed. Unknown fails closed for spending (the same hidden controls) but says CHECK_LINE, not the sample's
+ * line, and is read again on its own (2 s, 5 s, 15 s) and by the person's free Try again.
  */
-const SHARED_MS = 15_000;
-const shared = new Map<string, { at: number; answer: Promise<boolean> }>();
-function readSampleWorkspace(scope: string | null): Promise<boolean> {
-  const key = scope ?? "";
-  const hit = shared.get(key);
-  if (hit && Date.now() - hit.at < SHARED_MS) return hit.answer;
-  /* Fails closed, as the server does: a read that failed says "sample", and is not kept: the next ask reads again. */
-  let failed = false;
-  const answer = fetch("/api/demo/sample", { cache: "no-store", ...(scope != null ? { headers: { "X-Workbench-Scope": scope } } : {}) })
-    .then(async (res) => {
-      const body = res.ok ? await res.json().catch(() => null) : null;
-      failed = !res.ok || body === null;
-      return sampleWorkspaceAnswer({ ok: res.ok, body });
-    })
-    .catch(() => { failed = true; return sampleWorkspaceAnswer(null); })
-    .finally(() => { if (failed && shared.get(key)?.answer === answer) shared.delete(key); });
-  shared.set(key, { at: Date.now(), answer });
-  return answer;
-}
+export type SampleWorkspaceCheck = {
+  /** null while the first read is out, and for a workspace that is not the sample. */
+  state: SampleCheck | null;
+  /** Read again now; the automatic waits start over. */
+  retry: () => void;
+};
 
-/** The sample's line when this workspace is the sample workspace (nothing here spends) or the read failed, else null. Null while it loads. */
-export function useSampleWorkspace(): string | null {
+export function useSampleCheck(): SampleWorkspaceCheck {
   const { requestScope, signedIn } = useSession();
-  /* The answer is kept with the scope it was read for, so a signed-out or changed scope reads as "no" with no reset. */
-  const [answer, setAnswer] = useState<{ scope: string; on: boolean } | null>(null);
-  const scope = requestScope ?? "";
+  const scope = requestScope ?? null;
+  const slot = useSyncExternalStore(sampleChecker.subscribe, () => sampleChecker.get(scope), () => sampleChecker.get(null));
   useEffect(() => {
     if (!signedIn) return;
-    let live = true;
-    void readSampleWorkspace(requestScope ?? null).then((on) => { if (live) setAnswer({ scope, on }); });
-    return () => { live = false; };
-  }, [requestScope, scope, signedIn]);
-  const off = signedIn && answer?.scope === scope && answer.on;
-  return off ? SAMPLE_LINE : null;
+    void sampleChecker.ensure(scope);
+  }, [scope, signedIn]);
+  const retry = useCallback(() => { void sampleChecker.retry(scope); }, [scope]);
+  return { state: signedIn ? slot.state : null, retry };
+}
+
+/**
+ * Nothing here spends: the sample's line when this is the sample workspace, CHECK_LINE while it could not be checked,
+ * else null (and null while it loads). A truthy answer means "offer no priced control".
+ */
+export function useSampleWorkspace(): string | null {
+  const { state } = useSampleCheck();
+  return state === "sample" ? SAMPLE_LINE : state === "unknown" ? CHECK_LINE : null;
 }
 
 export type OpenedSample = { draftId: string } | { error: string };

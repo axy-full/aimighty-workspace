@@ -10,6 +10,8 @@ import { useFilmTypeahead } from "../FilmVocabulary";
 import { Glyph, type GlyphName } from "../icons";
 import { priceWords } from "@/lib/shell/price-words";
 import { Price, usePriceTitle } from "../Price";
+import { CheckAgain } from "../CheckAgain";
+import { CHECK_LINE } from "@/lib/demo/sample";
 import { toolName } from "../viral/ViralView";
 import { UPSCALE_NAME } from "./UpscaleTool";
 import { EngineList } from "./EngineList";
@@ -162,7 +164,7 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
           {make.go.price ? <><span className="gx-mk-go-sep"> · </span><MakePriceText price={make.go.price} /></> : null}
         </button>
       </div>
-      {reason ? <p className="gx-mk-reason" id="gx-mk-reason" role="status" data-testid="gen-blocked">{reason}</p> : null}
+      {reason ? <p className="gx-mk-reason" id="gx-mk-reason" role="status" data-testid="gen-blocked">{reason}{reason === CHECK_LINE ? <> <CheckAgain className="gx-hbtn" /></> : null}</p> : null}
 
       <div className="gx-mk-tools" data-testid="make-quick-tools">
         <span className="gx-mk-eyebrow">Quick tools</span>

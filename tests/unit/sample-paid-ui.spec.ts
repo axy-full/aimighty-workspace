@@ -9,23 +9,14 @@ import { sampleWorkspaceAnswer } from "../../lib/demo/sample";
  * that hook's answer), so a refactor cannot quietly bring a priced control back.
  */
 
-test("the read fails closed: a failed, refused or unreadable answer is the sample; only a clear answer without the flag is not", () => {
-  expect(sampleWorkspaceAnswer(null)).toBe(true);
-  expect(sampleWorkspaceAnswer({ ok: false, body: null })).toBe(true);
-  expect(sampleWorkspaceAnswer({ ok: false, body: { sampleWorkspace: false } })).toBe(true);
-  expect(sampleWorkspaceAnswer({ ok: true, body: null })).toBe(true);
-  expect(sampleWorkspaceAnswer({ ok: true, body: "<html>" })).toBe(true);
-  expect(sampleWorkspaceAnswer({ ok: true, body: { board: null, sampleWorkspace: true } })).toBe(true);
-  expect(sampleWorkspaceAnswer({ ok: true, body: { board: null } })).toBe(false);
-  expect(sampleWorkspaceAnswer({ ok: true, body: { board: null, sampleWorkspace: false } })).toBe(false);
-});
-
-test("the hook reads through that answer, and a failed read is not kept", () => {
-  const source = readFileSync("lib/demo/use-sample.ts", "utf8");
-  expect(source).toMatch(/sampleWorkspaceAnswer\(\{ ok: res\.ok/);
-  expect(source).toMatch(/\.catch\(\(\) => \{ failed = true; return sampleWorkspaceAnswer\(null\); \}\)/);
-  expect(source).not.toMatch(/\.catch\(\(\) => false\)/);
-  expect(source).toMatch(/shared\.delete\(key\)/);
+test("the read fails closed: only a clear answer without the flag offers priced controls; a failed one is unknown (still closed), not the sample", () => {
+  expect(sampleWorkspaceAnswer(null)).toBe("unknown");
+  expect(sampleWorkspaceAnswer({ ok: false, body: { sampleWorkspace: false } })).toBe("unknown");
+  expect(sampleWorkspaceAnswer({ ok: true, body: "<html>" })).toBe("unknown");
+  expect(sampleWorkspaceAnswer({ ok: true, body: { board: null, sampleWorkspace: true } })).toBe("sample");
+  expect(sampleWorkspaceAnswer({ ok: true, body: { board: null } })).toBe("normal");
+  /* The hook hands every screen a line for "sample" and for "unknown" (so they hide priced controls), and null only for "normal". The truth table and the retry: tests/unit/sample-check.spec.ts. */
+  expect(readFileSync("lib/demo/use-sample.ts", "utf8")).toMatch(/state === "sample" \? SAMPLE_LINE : state === "unknown" \? CHECK_LINE : null/);
 });
 
 /** Each named surface: the file, and what must be in it for the sample (hook or the board's own gate), then the priced control it guards. */
@@ -40,7 +31,7 @@ const SURFACES: { name: string; file: string; guard: RegExp; control: RegExp }[]
   { name: "Control room BatchApprove: not drawn", file: "components/graphite/control-room/BatchApprove.tsx", guard: /useSampleWorkspace\(\)/, control: /if \(spendOff\) return null/ },
   { name: "Next row: no priced actions (so no NextActionPanel)", file: "components/graphite/AssetNextActions.tsx", guard: /useSampleWorkspace\(\)/, control: /scope && project && !spendOff \? pricedActions/ },
   { name: "Approvals queue: every item reads as the sample's (no Approve anywhere it is drawn)", file: "lib/control-room/use-approvals.ts", guard: /useSampleWorkspace\(\)/, control: /spendOff \? \(current\.reply\?\.items \?\? \[\]\)\.map/ },
-  { name: "Phone Home rows: a sample item has no priced button", file: "components/graphite/phone/HomeScreen.tsx", guard: /item\.sample/, control: /else if \(item\.sample\) action = null/ },
+  { name: "Phone Home rows: a sample item has no priced button", file: "components/graphite/phone/HomeScreen.tsx", guard: /item\.sample/, control: /else if \(item\.sample\) action = item\.unchecked \? <CheckAgain className="ph-btn" \/> : null/ },
   { name: "Viral tool: no run button", file: "components/graphite/viral/ViralView.tsx", guard: /useSampleWorkspace\(\)/, control: /\{spendOff \? null : <button type="button" className="gx-primary gx-gen-go"/ },
   { name: "Ads image-ad card: no Make", file: "components/graphite/board/ads/cards/AdCards.tsx", guard: /exploreOnly/, control: /\{spendOff \? null : <Actions>/ },
   { name: "Edit & Sound: no New voice line, music or effect", file: "components/graphite/board/edit/EditSoundScreen.tsx", guard: /ctx\.exploreOnly/, control: /\{ctx\.exploreOnly \? null : <div className="gx-es-stack">/ },

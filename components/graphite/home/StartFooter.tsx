@@ -1,5 +1,7 @@
 "use client";
 import { spendAttrsOf } from "@/lib/spend";
+import { CheckAgain } from "../CheckAgain";
+import { CHECK_LINE } from "@/lib/demo/sample";
 import { Price, usePriceTitle } from "../Price";
 import { upTo } from "@/lib/shell/price-words";
 import type { Thinking } from "./use-thinking-price";
@@ -35,6 +37,7 @@ export function StartFooter({ thinking, figure, busy, disabled, onStart, onRetry
     <div className="gx-hm-foot" data-testid="home-start-row">
       <span className="gx-hm-thinking" data-testid="home-thinking">
         {line ?? <span>Atomik’s thinking may cost <Price value={price} testId="home-thinking-price" /></span>}
+        {off === CHECK_LINE ? <CheckAgain className="gx-hm-link gx-hm-retry" /> : null}
         {retry ? <button type="button" className="gx-hm-link gx-hm-retry" onClick={onRetry} data-testid="home-thinking-retry">Try again</button> : null}
       </span>
       <button type="button" className="gx-hm-start" onClick={onStart} disabled={disabled || busy || !price} aria-busy={busy || undefined}

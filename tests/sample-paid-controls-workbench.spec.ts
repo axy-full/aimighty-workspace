@@ -6,14 +6,18 @@ import { PHONES, seedPhoneStates, signedInWarm, watchErrors } from "./helpers/r1
 import { isCompact } from "./helpers/shellMode";
 import { adsUrl, desktop, mockReads, seedAds } from "./helpers/s11-board";
 import { seedCut } from "./helpers/gaps-l3";
-import { SAMPLE_LINE } from "../lib/demo/sample";
+import { CHECK_LINE, SAMPLE_LINE } from "../lib/demo/sample";
+
+/** What a screen says in each mode where nothing spends: the sample's line, or the neutral one when the check failed. */
+const lineFor = (mode: "sample" | "failed") => (mode === "failed" ? CHECK_LINE : SAMPLE_LINE);
 
 /**
  * The sample workspace offers no priced control (M1 of the review of fix/sample-paid-off): the server refuses every paid
  * door there, and the screens do not offer one to be refused. The same surface is read in three workspaces: another one
- * (the control is there, priced), the sample workspace, and one whose GET /api/demo/sample FAILS (it reads as the sample,
- * as the server treats a workspace it cannot check). The answer is mocked at the route, so nothing here is marked, and
- * nothing paid is sent: every paid route is forbidden. Quotes may still show as information; only controls are checked.
+ * (the control is there, priced), the sample workspace, and one whose GET /api/demo/sample FAILS (its priced controls stay
+ * hidden, as the server refuses what it cannot clear, but it says the check failed rather than calling it the sample, and
+ * it checks again). The answer is mocked at the route, so nothing here is marked, and nothing paid is sent: every paid
+ * route is forbidden. Quotes may still show as information; only controls are checked.
  */
 type Mode = "other" | "sample" | "failed";
 const MODES: Mode[] = ["other", "sample", "failed"];
@@ -70,7 +74,7 @@ test("⌘K: a request to Atomik has no priced Ask in the sample (nor when the re
     if (mode === "other") {
       await expect(card.getByTestId("palette-ask")).toHaveText(/^Ask · up to \d+ cr$/, { timeout: 15_000 });
     } else {
-      await expect(card.getByTestId("palette-thinking-line")).toHaveText(SAMPLE_LINE);
+      await expect(card.getByTestId("palette-thinking-line")).toContainText(lineFor(mode));
       await expect(card).not.toContainText(/\d\s*cr\b/);
       /* Enter in the search box does not hand a request on either: nothing is asked, nothing is priced. */
       await page.getByRole("textbox", { name: "Search" }).press("Enter");
@@ -109,7 +113,7 @@ test("⌘K: Approve everything under N cr lists and approves nothing in the samp
     await offered(card.getByTestId("palette-approve-confirm"), mode);
     if (mode === "other") await expect(card.getByTestId("palette-approve-confirm")).toHaveAttribute("data-spend", "priced");
     else {
-      await expect(card).toContainText(SAMPLE_LINE);
+      await expect(card).toContainText(lineFor(mode));
       await expect(card.getByTestId("palette-approve-row")).toHaveCount(0);
     }
   }
@@ -137,7 +141,7 @@ test("Approvals: no Approve, no Continue, no Approve in one go in the sample; an
     await offered(page.getByTestId("approval-approve").filter({ hasText: /\d\s*cr/ }), mode, 2);
     /* The plan step's Continue is not reachable either (its button is the row's Approve, which is gone). */
     await expect(page.getByTestId("approval-continue")).toHaveCount(0);
-    if (mode !== "other") await expect(page.getByTestId("approval-row").first()).toContainText(SAMPLE_LINE);
+    if (mode !== "other") await expect(page.getByTestId("approval-row").first()).toContainText(lineFor(mode));
   }
   expect(sent).toEqual([]);
 });
@@ -253,11 +257,99 @@ test("Make › Motion transfer and Object swap: no run button and no estimate in
       await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", tool, { timeout: 60_000 });
       await offered(page.getByTestId("viral-generate"), mode);
       if (mode !== "other") {
-        await expect(page.getByTestId("viral-reason")).toHaveText(SAMPLE_LINE);
+        await expect(page.getByTestId("viral-reason")).toContainText(lineFor(mode));
         await expect(page.getByTestId("make-engine-price")).toHaveCount(0);
       }
     }
   }
+  expect(sent).toEqual([]);
+});
+
+/* ── A check that failed, in a workspace that is not the sample ───────────────────────────────────────────────────── */
+
+test("A failed check in a normal workspace: no priced Approve and a neutral line, never the sample's; a 500 then a 200 restores it, on its own and by Try again", async ({ page }, info) => {
+  test.setTimeout(120_000);
+  const state = { mode: "failed" as Mode };
+  const sent = watchPaid(page);
+  await signInWithNewInterface(page.request);
+  await forbidPaidWork(page);
+  await answerSample(page, state);
+  await page.route("**/api/control-room/approvals", (route) => route.fulfill({ json: QUEUE }));
+  const phone = isCompact(info);
+  const rows = page.getByTestId(phone ? "phone-approval-row" : "approval-row");
+  const approve = page.getByTestId(phone ? "phone-row-approve" : "approval-approve");
+  const url = phone ? "/suites?view=home" : "/suites?suite=atomik&page=approvals";
+  const priced = phone ? page.locator('[data-testid="phone-approval-row"] button[data-spend], [data-testid="phone-approval-row"] .ph-btn--price') : approve.filter({ hasText: /\d\s*cr/ });
+  const ready = async () => {
+    await expect(rows).toHaveCount(2, { timeout: 60_000 });
+  };
+  const closed = async () => {
+    await expect(approve).toHaveCount(0);
+    await expect(priced).toHaveCount(0);
+    await expect(rows.first()).toContainText(CHECK_LINE);
+    await expect(rows.first()).not.toContainText(/sample/i);
+    await expect(rows.first().getByTestId("sample-check-retry")).toBeVisible();
+  };
+  const restored = async (timeout: number) => {
+    await expect(approve.first()).toBeVisible({ timeout });
+    await expect(rows.first()).not.toContainText(CHECK_LINE);
+  };
+  /* On its own: the first wait is 2 s. */
+  await page.goto(url);
+  await ready();
+  await closed();
+  state.mode = "other";
+  await restored(15_000);
+  await expect(approve).toHaveCount(phone ? 1 : 2);
+  /* By hand: the check fails again, and Try again reads now. */
+  state.mode = "failed";
+  await page.goto(url);
+  await ready();
+  await closed();
+  state.mode = "other";
+  await rows.first().getByTestId("sample-check-retry").click();
+  await restored(3_000);
+  /* And it is the sample, said so, when the server says so. */
+  state.mode = "sample";
+  await page.goto(url);
+  await ready();
+  await expect(approve).toHaveCount(0);
+  await expect(rows.first()).toContainText(SAMPLE_LINE);
+  await expect(page.getByTestId("sample-check-retry")).toHaveCount(0);
+  expect(sent).toEqual([]);
+});
+
+test("Approvals: a sample item keeps its free Not now (a held take is set aside) and has no Approve; so does a workspace that could not be checked", async ({ page }, info) => {
+  test.skip(isCompact(info), "desktop widths: the control room's row");
+  const state = { mode: "other" as Mode };
+  const sent = watchPaid(page);
+  const discarded: string[] = [];
+  await signInWithNewInterface(page.request);
+  await forbidPaidWork(page);
+  await answerSample(page, state);
+  await page.route("**/api/control-room/approvals", (route) => route.fulfill({ json: QUEUE }));
+  await page.route("**/api/jobs/gen_fx_a", (route) => {
+    if (route.request().method() !== "DELETE") return route.fallback();
+    discarded.push(route.request().method());
+    return route.fulfill({ json: { ok: true } });
+  });
+  for (const mode of MODES) {
+    state.mode = mode;
+    await page.goto("/suites?suite=atomik&page=approvals");
+    await expect(page.getByTestId("approval-row")).toHaveCount(2);
+    const held = page.getByTestId("approval-row").first();
+    /* The held take can be set aside in every workspace; the plan's step has its own Continue and is not set aside here. */
+    await expect(held.getByTestId("approval-not-now")).toHaveCount(1);
+    await expect(held.getByTestId("approval-not-now")).toBeEnabled();
+    await expect(page.getByTestId("approval-not-now")).toHaveCount(1);
+    await offered(page.getByTestId("approval-approve"), mode, 2);
+    if (mode !== "other") await expect(held).toContainText(lineFor(mode));
+  }
+  state.mode = "sample";
+  await page.goto("/suites?suite=atomik&page=approvals");
+  await page.getByTestId("approval-row").first().getByTestId("approval-not-now").click();
+  await expect.poll(() => discarded.length).toBe(1);
+  await expect(page.getByTestId("approval-problem")).toHaveCount(0);
   expect(sent).toEqual([]);
 });
 

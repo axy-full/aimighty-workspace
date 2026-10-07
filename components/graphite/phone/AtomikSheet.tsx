@@ -9,6 +9,8 @@ import type { SettingsSection } from "@/lib/shell/palette";
 import type { MakeTool } from "@/lib/shell/make";
 import { useShell } from "@/lib/shell/state";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
+import { CHECK_LINE } from "@/lib/demo/sample";
+import { CheckAgain } from "../CheckAgain";
 import type { Project } from "@/lib/workbench/studio";
 import { useHowFacts } from "../atomik/panel/use-atomik-panel";
 import { usePriceTitle } from "../Price";
@@ -134,7 +136,7 @@ function Sheet({ productionId, query, online, places, onClose }: { productionId:
             disabled={Boolean(spendOff)} onChange={(e) => { setText(e.target.value); setNote(null); }} data-testid="phone-atomik-input" />
           <button type="button" className="ph-btn ph-btn--primary" disabled={Boolean(spendOff) || button.disabled || Boolean(blocked) || a.busy} title={spendOff ?? title ?? undefined}
             onClick={() => say(text)} data-testid="phone-atomik-send">{spendOff ? "Ask" : a.busy ? "Sending…" : button.label}</button>
-          {why ? <p className="ph-row-line ph-plan-why" role="status" data-testid="phone-atomik-note">{why}</p> : null}
+          {why ? <p className="ph-row-line ph-plan-why" role="status" data-testid="phone-atomik-note">{why}{why === CHECK_LINE ? <> <CheckAgain className="ph-btn" /></> : null}</p> : null}
         </>
       )}>
       <div ref={body} className="ph-atomik" data-testid="phone-atomik-body">

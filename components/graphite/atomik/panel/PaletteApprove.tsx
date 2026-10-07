@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useState, type MutableRefObject } from "react";
 import { useApprovals } from "@/lib/control-room/use-approvals";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
+import { CheckAgain } from "../../CheckAgain";
+import { CHECK_LINE } from "@/lib/demo/sample";
 import { selectBatch, type QueueItem } from "@/lib/control-room/queue";
 import { priceWords } from "@/lib/shell/price-words";
 import { spendAttrsOf } from "@/lib/spend";
@@ -49,6 +51,7 @@ export function PaletteApproveCard({ under, onDone, enterRef }: { under: number;
     <div className="ak-pcard" data-testid="palette-approve-card">
       <span className="ak-eyebrow ak-accent">Atomik</span>
       <strong className="ak-pcard-title">{spendOff}</strong>
+      {spendOff === CHECK_LINE ? <CheckAgain className="ak-link" /> : null}
     </div>
   );
   return (

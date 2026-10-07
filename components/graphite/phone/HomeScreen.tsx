@@ -12,6 +12,8 @@ import { useWorkspace } from "@/lib/workspace/state";
 import type { Project } from "@/lib/workbench/studio";
 import { useProjectCards, useProjectCover, type ProjectCardModel } from "../home/use-project-cards";
 import { Price } from "../Price";
+import { CheckAgain } from "../CheckAgain";
+import { CHECK_LINE } from "@/lib/demo/sample";
 import { Eyebrow } from "./PhoneChrome";
 import { NotifyButton } from "./NotifyButton";
 import { itemsLine, reviewCountLine, reviewQueue } from "./phone-model";
@@ -116,7 +118,7 @@ function ApprovalRow({ item, approvals, online, now, onTopUp, onPlan, onThread }
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const short = (item.shortBy ?? 0) > 0;
   const line = [item.project.name, item.where, item.step ? `step ${item.step.n} of ${item.step.of}` : null, when(item.at, now)].filter(Boolean).join(" · ");
-  const note = item.sample ? SAMPLE_LINE : short ? `Short by ${creditsText(item.shortBy!)}` : item.needsAdmin && !item.canApprove ? "Needs an admin" : !item.canApprove ? item.why : item.note;
+  const note = item.sample ? (item.unchecked ? CHECK_LINE : SAMPLE_LINE) : short ? `Short by ${creditsText(item.shortBy!)}` : item.needsAdmin && !item.canApprove ? "Needs an admin" : !item.canApprove ? item.why : item.note;
   const approve = async () => {
     setBusy(true);
     const out = await approvals.approve(item);
@@ -132,7 +134,7 @@ function ApprovalRow({ item, approvals, online, now, onTopUp, onPlan, onThread }
     <button type="button" className="ph-btn" onClick={() => onThread(item)} aria-label={`Open the plan: ${item.title}`} data-testid="phone-row-open">Open</button>
   );
   /* The sample spends nothing: its row says so in its line, and offers no priced button. */
-  else if (item.sample) action = null;
+  else if (item.sample) action = item.unchecked ? <CheckAgain className="ph-btn" /> : null;
   else if (short && item.canApprove) action = <button type="button" className="ph-btn ph-btn--hot" onClick={onTopUp} data-testid="phone-row-topup">Top up</button>;
   else if (!item.canApprove || !item.approve) action = null;
   /* A plan is several steps priced together: it opens its approval screen rather than approving in place. */

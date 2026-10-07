@@ -48,6 +48,8 @@ import { HistoryDrawer, LibraryDrawer } from "./drawers/Drawers";
 import { addInput } from "@/lib/production/rig-build";
 import { entryAsset } from "@/lib/production/sequence";
 import { useSampleBoard, useSampleWorkspace } from "@/lib/demo/use-sample";
+import { CHECK_LINE } from "@/lib/demo/sample";
+import { CheckAgain } from "../CheckAgain";
 import { sampleGate } from "@/lib/demo/sample";
 import "./board.css";
 
@@ -510,7 +512,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     return (
       <BoardInternalsProvider value={internals}>
         <div className="bd bd--compact" data-testid="board" data-board-kind={kind} data-sample={gate.exploreOnly ? "1" : undefined}>
-          {gate.exploreOnly ? <p className="bd-sample bd-sample--list" role="status" data-testid="board-sample">{gate.exploreOnly}</p> : null}
+          {gate.exploreOnly ? <p className="bd-sample bd-sample--list" role="status" data-testid="board-sample">{gate.exploreOnly}{gate.exploreOnly === CHECK_LINE ? <> <CheckAgain className="bd-link" /></> : null}</p> : null}
           <List ctx={ctx} cards={placed.cards} />{drawerEl}
         </div>
       </BoardInternalsProvider>
@@ -540,7 +542,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           {list ? null : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} />
           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}
-          {gate.exploreOnly ? <p className="bd-sample" role="status" data-testid="board-sample">{gate.exploreOnly}</p> : null}
+          {gate.exploreOnly ? <p className="bd-sample" role="status" data-testid="board-sample">{gate.exploreOnly}{gate.exploreOnly === CHECK_LINE ? <> <CheckAgain className="bd-link" /></> : null}</p> : null}
           {live ? <WhoIsHere peers={peers} /> : null}
           <input ref={files} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} />
         </div>

@@ -26,6 +26,8 @@ import { useClock } from "../ResumedJobs";
 import { Glyph } from "../icons";
 import { Price, usePriceTitle } from "../Price";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
+import { CHECK_LINE } from "@/lib/demo/sample";
+import { CheckAgain } from "../CheckAgain";
 import { priceWords, upTo } from "@/lib/shell/price-words";
 
 /**
@@ -309,6 +311,7 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
       {reason ? (
         <div className="vr-reason-row">
           <p className="gx-reason" id="vr-reason" data-testid="viral-reason">{reason}</p>
+          {reason === CHECK_LINE ? <CheckAgain className="gx-hbtn" /> : null}
           {estimateFailed && request ? <button type="button" className="gx-hbtn" onClick={() => void take.quote(request, key)} data-testid="viral-reason-retry">Try again</button> : null}
         </div>
       ) : null}

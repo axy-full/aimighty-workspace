@@ -155,7 +155,8 @@ function RenderLine({ step, run, item, busy, onRender, onSkip }: {
   const state = verify ? step.reason
     : step.state === "failed" ? (step.charge?.settled ? (step.charge.credits > 0 ? chargeSentence(step.charge) : "Failed · Nothing billed") : "Failed")
     : RENDER_STATE[step.state] ?? step.state;
-  const tapOk = waiting && !!item && item.canApprove;
+  /* A sample item (or a workspace that could not be checked) spends nothing: its Render stays disabled, and Skip stays free. */
+  const tapOk = waiting && !!item && item.canApprove && !item.sample;
   return (
     <Msg testId={`agent-render-${step.seq}`}
       actions={waiting && run.mine && item ? (

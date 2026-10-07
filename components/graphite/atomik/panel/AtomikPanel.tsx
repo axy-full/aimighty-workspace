@@ -4,6 +4,8 @@ import { ProjectProvider, useProject } from "@/lib/projectContext";
 import { AtomikProvider, useAtomik } from "@/components/atomik/AtomikProvider";
 import { useShell } from "@/lib/shell/state";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
+import { CheckAgain } from "../../CheckAgain";
+import { CHECK_LINE } from "@/lib/demo/sample";
 import { STUDIO_RAIL } from "@/lib/board/regions";
 import {
   ATOMIK_PANEL_EVENT, askButton, atomikIntent, handAtomik, matchPlace, takeHanded,
@@ -233,7 +235,7 @@ function Panel({ mode, query, onClose, productionId }: { mode: "panel" | "how"; 
             {spendOff ? "Ask" : a.busy ? "Sending…" : button.label}
           </button>
         </div>
-        {spendOff ?? note ?? blocked ?? button.reason ?? a.error ? <p className="ak-note" role="status" data-testid="atomik-note">{spendOff ?? note ?? blocked ?? button.reason ?? a.error}</p> : null}
+        {spendOff ?? note ?? blocked ?? button.reason ?? a.error ? <p className="ak-note" role="status" data-testid="atomik-note">{spendOff ?? note ?? blocked ?? button.reason ?? a.error}{spendOff === CHECK_LINE ? <> <CheckAgain className="ak-link" /></> : null}</p> : null}
       </div>
     </aside>
   );
