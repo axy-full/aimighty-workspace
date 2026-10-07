@@ -134,16 +134,20 @@ test("the switch waits for the board's pending save, and a refused switch keeps 
   await page.waitForTimeout(500);
   expect(state.events.filter((e) => e === "switch"), "one press, one switch request").toHaveLength(1);
 
-  /* Refused: it says the route's reason, nothing switched, and the board is still this workspace's and editable. */
+  /* Refused: it says the route's reason, nothing switched, the menu is not busy any more, and the board is still this
+     workspace's and editable. (The account read every 30 s may already have dropped the workspace from the menu.) */
   await expect(settingsMenu(page).getByRole("alert")).toHaveText("Not a workspace of yours.");
-  await expect(item).toBeEnabled();
+  await expect(settingsMenu(page).getByRole("menuitem", { name: /^Switching to/ })).toHaveCount(0);
+  await expect(settingsMenu(page).getByRole("menuitem", { name: "Sign out", exact: true })).toBeEnabled();
   expect(((await (await page.request.get("/api/me")).json()) as { workspace: { id: string } }).workspace.id).toBe(person.workspaceId);
   await closeSettings(page);
   await action.fill(AFTER);
   await expect.poll(() => state.events.at(-1)).toBe(`save:${AFTER}:200`);
 
-  /* Allowed again: the switch goes through and the shell opens in the other workspace. */
+  /* Allowed again (read afresh, the page opened again: nothing is left to save): the switch goes through, and the shell opens in the other workspace. */
   await addMember(person.other.id, person.userId);
+  await page.reload();
+  await expect(page.locator('[data-card-id="group:shots"]')).toBeVisible({ timeout: 60_000 });
   await openSettings(page);
   await settingsMenu(page).getByRole("menuitem", { name: `Switch to ${person.other.name}`, exact: true }).click();
   await expect.poll(async () => ((await (await page.request.get("/api/me")).json()) as { workspace: { id: string } }).workspace.id, { timeout: 30_000 }).toBe(person.other.id);
@@ -199,12 +203,17 @@ test("a link to another of your workspaces, on a phone too: its switch goes thro
 
   await removeMember(person.other.id, person.userId);
   await button.click();
-  await expect(page.getByTestId("link-error")).toHaveText("Not a workspace of yours.");
-  await expect(button).toBeEnabled();
+  /* Refused: nothing switched and the card is not busy any more. (The account read every 30 s may already have dropped the
+     workspace, and with it the offer: the card then says the link is for a workspace you are not in.) */
+  await expect(page.getByTestId("link-error").or(page.getByTestId("link-lead").filter({ hasText: "This link is for a workspace you are not in." }))).toBeVisible();
+  if (await page.getByTestId("link-error").isVisible()) await expect(page.getByTestId("link-error")).toHaveText("Not a workspace of yours.");
+  await expect(page.getByText("Switching…")).toHaveCount(0);
   expect(state.events).toEqual(["switch"]);
   expect(((await (await page.request.get("/api/me")).json()) as { workspace: { id: string } }).workspace.id).toBe(person.workspaceId);
 
   await addMember(person.other.id, person.userId);
+  await page.reload();
+  await expect(page.getByTestId("link-card")).toHaveAttribute("data-phase", "workspace", { timeout: 60_000 });
   await button.click();
   await expect.poll(async () => ((await (await page.request.get("/api/me")).json()) as { workspace: { id: string } }).workspace.id, { timeout: 30_000 }).toBe(person.other.id);
   expect(state.events).toEqual(["switch", "switch"]);
