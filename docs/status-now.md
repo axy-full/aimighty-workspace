@@ -1,4 +1,4 @@
-# Status now: 7 October 2026, 23:58 IST, Release 1 lead moved to "contabo"
+# Status now: 8 October 2026, 00:04 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -44,7 +44,7 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
 | Branch | State |
 |---|---|
 | Hotfix PRs to main (owner yes, "go" to merge) | 1 sign-in behind the proxy, 2 public links, 3 rate limits (client address), 4 an explicit production flag instead of VERCEL_ENV: being ported to main as draft PRs, each with a fresh Opus review |
-| `ops/selfhost-runbook-cutover` | staging.particl.si, exact Traefik timeout lines, full cutover order |
+| `ops/selfhost-runbook-cutover` | Review FAIL, being fixed. High: on a Docker host ufw doesn't filter Docker's ports, so the firewall must be the provider's (hPanel) or Docker's own chain, default-deny, dashboard ports closed, IPv6 covered, checked from outside. Also: the production env list, proving Full (strict) on staging first, the health check, Bot Fight Mode vs the app's own hand-off |
 | `chore/r1-old-shell-branches` | Cutting the old Business/Crew/Inspector screens out of the shell, every old address proved to redirect first; Opus review after |
 | `test/r1-five-minute-green` @ f8e2cee2 (review PASS) | **Passes:** a new invitee reaches an approved first render in 92 s (desktop) and 112 s (phone), one paid request per person's tap. Its phone flake is a real bug: approving the last take hides the Undo toast after 0.26 s. Fix running (`fix/r1-phone-review-undo`). Owner question 13 |
 | Release 1 remaining list | sent: `docs/r1-remaining.md` (this branch). Owner: list B in, list C out |
@@ -78,6 +78,9 @@ Scope: list B in (image-ad variants; phone gets "Open this on a larger screen" n
 12. The public site's nav says Studio · Ads · Social while the app calls them templates: change it?
 
 13. Five-minute test, phone taps: the real phone path takes 9 taps; the old budget of 7 never counted Start. Accept 9 (matches desktop), or keep 7 and change the phone to stay on the plan screen after Build (saves one tap; plan-approval money code, its own reviewed change)?
+
+14. Cloudflare cuts a proxied request that sends nothing for about 100 s. Upload "finish" (assembling files up to 2 GB) will fail on large files once particl.si is behind Cloudflare. Options: upload straight to storage (recommended; a build item), Cloudflare Enterprise timeouts, or an unproxied upload address (conflicts with the Cloudflare-only firewall). Which?
+15. The old platform gates (R2 on, self-hosted Inngest, the 1,000-job load test, 12 staging smoke checks incl. a paid run, credit switchover on Vercel first): keep them before cutover, or waive some explicitly?
 
 ## Machine
 GitHub rejected every push from about 20:33 to 20:47 and again from about 22:20 to 22:30 IST ("fatal error in commit_refs", GitHub's side); nothing was lost.
