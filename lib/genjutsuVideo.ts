@@ -22,7 +22,7 @@ import { engineMock, fixtureUrl } from "./mock";
 import { fixtureBytes } from "./mockFs";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import { fundedOutcome } from "./providerFailure";
-import { higgsfieldRequestOutcome, noAnswerOutcome, serializeOutcome } from "./providerOutcome";
+import { higgsfieldRequestOutcome, noAnswerOutcome, serializeOutcome, silentOutcome } from "./providerOutcome";
 
 type Original = { bytes: number; sha256: string; width: number; height: number; seconds: number; requestId: string };
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
@@ -69,18 +69,18 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
         if (state.status === "failed" || state.status === "cancelled") {
           if (original) throw new Error("Contradictory provider outcome");
           /* Its own status and words; its FAQ says failed and NSFW requests are refunded, and only completions billed. */
-          /* Unstamped when its funding could not be read: the provider's own words are still recorded (review N1). */
-          const told = higgsfieldRequestOutcome(state.raw);
+          /* A Cinema Studio take's failure is always on the admin desk: its provider's words, or, when they cannot be read,
+             that it ended the take without a word on the charge; unstamped when its funding cannot be read (review N1). */
+          const cinema = isCinemaStudioModel(String(row.model));
+          const told = higgsfieldRequestOutcome(state.raw) ?? (cinema ? silentOutcome("higgsfield", "run", state.status, state.error) : null);
           const said = await fundedOutcome(told, id, "higgsfield").catch(() => told);
           /* A failed Cinema Studio take is charged what its provider reported for it, never past its quote (N), and nothing
-             when it reported nothing (owner's decision, 6 October 2026; the meter caps it, lib/meter.ts heldSettlement).
-             Reported nothing, it goes to the meter with no figure, so the admin desk counts it even with no outcome. */
-          const cinema = isCinemaStudioModel(String(row.model));
-          const reported = typeof state.costUsd === "number" && Number.isFinite(state.costUsd) ? Math.max(0, state.costUsd) : null;
-          const failedUsd = cinema && reported != null ? reported : 0;
+             when it reported nothing (owner's decision, 6 October 2026; the meter caps it, lib/meter.ts heldSettlement). */
+          const failedUsd = cinema && typeof state.costUsd === "number" && Number.isFinite(state.costUsd) && state.costUsd > 0
+            ? state.costUsd : 0;
           await writeGenerationOutcome({ sql: `UPDATE generations SET status=?,cost_usd=?,error=?,provider_outcome=COALESCE(?,provider_outcome),updated_at=? WHERE id=? AND deleted=0 AND status IN ('queued','running') AND json_extract(params,'$.higgsfieldVideoPollToken')=?`,
             args: [state.status, Math.min(failedUsd, usd), state.error || (isGenjutsuModel(String(row.model)) ? "The connected account canceled this transform request." : "The connected account canceled this request."), said ? serializeOutcome(said) : null, now(), id, token] },
-            { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "failed", engineCostUsd: cinema && reported == null ? null : failedUsd, projectId: row.project_id == null ? null : String(row.project_id), createdBy: row.created_by == null ? undefined : String(row.created_by), providerOutcome: said });
+            { id, kind: "video", model: String(row.model), engine: "higgsfield", status: "failed", engineCostUsd: failedUsd, projectId: row.project_id == null ? null : String(row.project_id), createdBy: row.created_by == null ? undefined : String(row.created_by), providerOutcome: said });
           await deliverGenerationSettlement(id);
           await settleHiggsfieldGenerationReceipt(id);
           return;
