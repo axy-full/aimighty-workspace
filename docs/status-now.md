@@ -1,6 +1,7 @@
-# Status now: 7 October 2026, 17:20 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 17:31 IST, Release 1 lead moved to "contabo"
 
-Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. Thursday 8 Oct: merge train on the owner's "go". Friday 9 Oct: demo.
+Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Demo postponed (owner, about 17:30 IST); no date yet. The Thursday merge train is cancelled. Nothing merges to main and nothing deploys to production without the owner's "go".**
+Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's AT RISK and WON'T MAKE IT items, with an estimate per item; (c) move prep for Coolify on a test address, files only. Then a proposed demo date and the `release/1` → main plan.
 
 **Lead:** the session on "contabo" took over from the "vps" session at about 15:50 IST. Deny rules checked: `git restore` and `docker ps` are both refused.
 **Integration preview:** `release/1` (draft #546) = ac03f878. The preview runs on the staging databases.
@@ -20,13 +21,18 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
   - `fix/r1-ci-worker-probe-env` @ e5edf11b: Opus PASS; stops `workerProbe.spec.ts` leaking deployment settings into other specs. Merges with the next batch (so the running CI isn't cancelled).
   - `fix/r1-ci-make`: the Make composer specs (prices, batches, model picker).
   - `fix/r1-ci-settings`: Settings, credits, no vendor dollars, retired connected account.
-  - `fix/r1-ci-board`: board, phone, Guest Home off, spend buttons, recovery race.
+  - `fix/r1-ci-board`: board, phone, Guest Home off, spend buttons.
+  - `money/r1-make-stale-claim` (Opus): see the money finding below.
+
+## Money finding (CI lane, 17:30)
+In the new Make panel, a tab whose reply was lost can send a second paid request after another tab already settled the first, if the person presses Make again in the first tab. The old `recovery-race` spec forbade this. An Opus lane is confirming it and preparing a fix: the first tab checks its own lost request before sending again. Owner question 7 below.
 
 ## In flight
 | Branch | State |
 |---|---|
 | 3D blocking B (`build/gaps-l2`) | Brought up to date: 44cda874 (3 import/ratchet conflicts; tsc clean; its unit specs 112 pass; browser spec passes at 1440 and 390). Opus delta review PASS at 44cda874 (one low: the sample shows Remake disabled with its price; follow-up after merge). Merges only after Q7 |
 | CI fixes on `release/1` | lanes above |
+| Release 1 remaining list | audit running: state, what's left, estimate per item |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
 
 ## Waiting on the owner
@@ -35,7 +41,8 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
 3. Sample lift: allow the plan's fixes after the last take lands, or end the lift at once?
 4. Platform-owner privacy: yes or no to a one-off, dry-run-first rewrite of old records in client workspaces.
 5. Customer test 3 (an old-shell test, skipped): delete it?
-6. Q7: the preview runs on staging. OK to put 3D blocking B into `release/1` once its re-check passes?
+6. Q7: the preview runs on staging. OK to put 3D blocking B into `release/1`? (Its re-check passed: 44cda874, Opus PASS.)
+7. Make: a second press in a tab that lost its reply should check that request first and send nothing if it already landed (recommended), rather than send a new paid request. Yes?
 
 ## Machine
 "contabo": 18 cores, 94 GB; agents capped at 12 cores and 64 GB. Up to 6 heavy jobs at once through `~/ops/heavy.sh` at low priority; full suites run in CI.
