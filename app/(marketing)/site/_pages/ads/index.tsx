@@ -14,7 +14,7 @@ export const metadata: Metadata = {
    holds today (components/graphite/board/ads): the brand, product, reference, hooks, formats and ads cards. */
 const FACTS: [string, string][] = [
   ["Product images", "Up to 5 originals"],
-  ["Hooks", "12 per campaign"],
+  ["Hooks", "12 per brief"],
   ["Formats", "9 creative formats"],
 ];
 

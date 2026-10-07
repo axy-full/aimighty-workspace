@@ -51,7 +51,7 @@ export default function HeroPrompt({ model, label, short }: {
           <span style={{ flex: 1 }} />
           <span className="mk-prompt-meta mk-hide-phone">Opens in Make</span>
           <button type="submit" className="mk-btn gx-primary mk-go">
-            Generate
+            Make
           </button>
         </div>
       </form>

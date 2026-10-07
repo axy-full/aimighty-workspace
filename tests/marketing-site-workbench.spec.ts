@@ -70,7 +70,7 @@ test("the old public addresses redirect for good, query kept, and the new ones a
   test.skip(info.project.name !== DESKTOP, "routing, once");
   for (const [from, to] of [["/business", "/ads"], ["/viral", "/social"], ["/workspace", "/settings"]]) {
     const res = await page.request.get(`${from}?utm_source=mail`, { maxRedirects: 0 });
-    expect(res.status(), from).toBe(308);
+    expect(res.status(), from).toBe(from === "/workspace" ? 307 : 308);
     const at = new URL(res.headers().location, "http://localhost");
     expect(at.pathname + at.search, from).toBe(`${to}?utm_source=mail`);
     const there = await page.goto(`${from}?utm_source=mail`);
@@ -118,7 +118,7 @@ test("the hero keeps a visitor's prompt and opens it in Gen, which prices the ta
   await page.goto("/");
   const go = page.locator(".mk-go");
   /* The public hero prints no price. */
-  await expect(go).toHaveText("Generate");
+  await expect(go).toHaveText("Make");
   await page.getByLabel("Describe the shot").fill("A lighthouse keeper walks the gallery in a storm.");
   await go.click();
   const signIn = page.locator(".mk-take").getByRole("link", { name: "Sign in" });

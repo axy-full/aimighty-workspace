@@ -201,6 +201,9 @@ test("signed out, the public pages work and an old app address asks for sign-in 
       ["/workbench?project=p1&stage=cast", "/suites?project=p1&view=board&region=cast"],
       ["/generate?mode=images", "/suites?make=image&view=home"],
       ["/workbench?project=p1&shell=legacy", "/suites?project=p1&view=home"],
+      /* The public pages share these paths: a link that carries an app parameter is the app's, not the site's. */
+      ["/workspace?project=p1&suite=particl", "/suites?project=p1&view=home"],
+      ["/settings?view=workspace&tab=credits", "/suites?view=workspace&tab=advanced&open=workspace"],
     ]) {
       await visitor.goto(from);
       await expect(visitor, from).toHaveURL(`/login?next=${encodeURIComponent(next)}`);

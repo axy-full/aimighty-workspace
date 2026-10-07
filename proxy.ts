@@ -34,10 +34,10 @@ function isVisitor(request: NextRequest) {
   return !member && !appLink;
 }
 
-function moved(request: NextRequest, pathname: string) {
+function moved(request: NextRequest, pathname: string, status: 307 | 308 = 308) {
   const url = request.nextUrl.clone();
   url.pathname = pathname;
-  return NextResponse.redirect(url, 308);
+  return NextResponse.redirect(url, status);
 }
 
 export function proxy(request: NextRequest) {
@@ -45,12 +45,14 @@ export function proxy(request: NextRequest) {
 
   /* /site is an implementation detail; its canonical address is the path above (an old one goes straight to its new). */
   if (pathname === "/site" || pathname.startsWith("/site/")) {
-    const path = pathname.slice(5) || "/";
+    /* `/site//x` would otherwise redirect to `//x`, a host-relative address. */
+    const path = pathname.slice(5).replace(/^\/{2,}/, "/") || "/";
     return moved(request, MOVED_PAGES[path]?.to ?? path);
   }
 
   const old = MOVED_PAGES[pathname];
-  if (old && (!old.visitorOnly || isVisitor(request))) return moved(request, old.to);
+  /* Temporary (307) where the same address is the app's for a member: a cached 308 would send a member who signs in to the site. */
+  if (old && (!old.visitorOnly || isVisitor(request))) return moved(request, old.to, old.visitorOnly ? 307 : 308);
 
   const always = ALWAYS[pathname];
   if (always) return rewrite(request, always);

@@ -108,7 +108,8 @@ test("the old public addresses move for good, with the query kept", async () => 
     ["/business", "/ads", "?utm_source=mail&ref=a%20b"], ["/viral", "/social", "?x=1"], ["/workspace", "/settings", "?utm_campaign=launch"],
   ] as const) {
     const res = await run(`${from}${query}`);
-    expect(res.status, `${from}${query}`).toBe(308);
+    /* /workspace is the app's address for a member, so its move is temporary (307); the other two are final. */
+    expect(res.status, `${from}${query}`).toBe(from === "/workspace" ? 307 : 308);
     expect(where(res), `${from}${query}`).toBe(`${to}${query}`);
   }
 });
@@ -132,11 +133,22 @@ test("the new addresses show the site, and the old internal paths go straight to
   /* A member's /settings is the app's old route; the three always-public pages stay public for them too. */
   expect(rewritten(await run("/settings", { cookie: `${SESSION_COOKIE}=anything` }))).toBeNull();
   expect(rewritten(await run("/ads", { cookie: `${SESSION_COOKIE}=anything` }))).toBe("/site/ads");
+  /* A doubled slash is not a host-relative address. */
+  const doubled = await run("/site//evil.test/x");
+  expect(where(doubled)).toBe("/evil.test/x");
   for (const [from, to] of [["/site/ads", "/ads"], ["/site/business", "/ads"], ["/site/viral?x=1", "/social?x=1"], ["/site/workspace", "/settings"], ["/site/studio", "/studio"]] as const) {
     const res = await run(from);
     expect(res.status, from).toBe(308);
     expect(where(res), from).toBe(to);
   }
+});
+
+test("a link that goes outside the app never names the public /settings or /workspace address", () => {
+  /* /settings is the public page for anyone signed out, so a pushed or emailed link opens Settings in the app. */
+  const held = readFileSync("lib/held.ts", "utf8");
+  expect(held).not.toMatch(/["'`]\/(?:settings|workspace)\b|\}\/(?:settings|workspace)\b/);
+  expect(held).toContain("SETTINGS_CREDITS");
+  expect(readFileSync("lib/shell/settings.ts", "utf8")).toContain('SETTINGS_CREDITS = "/suites?view=workspace&tab=credits"');
 });
 
 test("every public page is served by the one site route", () => {

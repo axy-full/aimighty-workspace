@@ -24,7 +24,7 @@ const REGIONS: { title: string; text: string }[] = [
   { title: "Shots", text: "The takes of each shot, to compare, pick and approve." },
   { title: "Cast", text: "Characters, places and props, each kept with its reference. A character can be trained as an identity." },
   { title: "Cut", text: "The approved takes in order on a short timeline, with the editor one press away." },
-  { title: "Deliver", text: "Checks the cut’s aspect, frame rate and length, then exports it from your browser. Free." },
+  { title: "Deliver", text: "Checks the cut’s aspect and frame rate, then exports it from your browser. Free." },
 ];
 
 /* The two campaign stills the site already ships, as board cards. Placeholder names only. */
