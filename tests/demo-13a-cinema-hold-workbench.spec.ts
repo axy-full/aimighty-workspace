@@ -44,13 +44,14 @@ async function pickTakes(page: Page, takes: number) {
 
 /**
  * Opens `url` once the page is done loading, on a cold dev server too. Its first visit compiles the route, and the dev
- * server may then reload the page while a test is already driving it. So: visit, wait until the network is quiet (the
- * route and its chunks are in) and the screen's first control is up, and visit again, which loads the compiled page
- * whole. The second visit is the one the test drives. Nothing here is a longer timeout for a step of the test.
+ * server may then reload the page while a test is already driving it. So: visit, wait for the page's load event and
+ * the screen's first control, and visit again, which loads the compiled page whole. The second visit is the one the
+ * test drives. Never `networkidle`: the shell keeps polling (jobs, quotes), so a quiet network may never come (review
+ * L5). Nothing here is a longer timeout for a step of the test.
  */
 async function openSettled(page: Page, url: string, ready: string) {
   for (const visit of ["warm-up", "test"]) {
-    await page.goto(url, { waitUntil: "networkidle", timeout: 120_000 });
+    await page.goto(url, { waitUntil: "load", timeout: 120_000 });
     await expect(page.getByTestId(ready), visit).toBeVisible({ timeout: 120_000 });
   }
 }
