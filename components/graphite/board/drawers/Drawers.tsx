@@ -8,6 +8,7 @@ import type { MediaJob } from "@/lib/workbench/job-recovery";
 import type { Project } from "@/lib/workbench/studio";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { Glyph } from "../Rail";
+import { useShell } from "@/lib/shell/state";
 
 /*
  * The rail's two drawers (README § 1.1, frames o and p): 280 px beside the rail, over the canvas, closed by default.
@@ -30,6 +31,7 @@ const FILTERS = ["All", "Images", "Video", "Audio", "Cast"] as const;
 type Filter = (typeof FILTERS)[number];
 
 export function LibraryDrawer({ items, project, onClose }: { items: readonly LibraryEntry[]; project: Project; onClose: () => void }) {
+  const shell = useShell();
   const [filter, setFilter] = useState<Filter>("All");
   /* Cast: the files the board's cast, environment and element cards stand for. */
   const cast = useMemo(() => {
@@ -51,7 +53,7 @@ export function LibraryDrawer({ items, project, onClose }: { items: readonly Lib
       </div>
       <div className="bd-drawer-grid">
         {shown.length ? shown.map((entry) => (
-          <div key={entry.take.id} className="bd-tile" draggable title={`${entry.take.name} · drag onto a shot to use it as a reference`}
+          <div key={entry.take.id} className="bd-tile" draggable data-ctx={`asset:${entry.take.id}`} onClick={() => shell.selectAsset(entry.take.id, { reason: "pick" })} title={`${entry.take.name} · drag onto a shot to use it as a reference`}
             onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}>
             <span className="bd-tile-media">
               {entry.media === "video" && entry.url ? <LazyMedia url={entry.url} kind="video" preview={false} />
