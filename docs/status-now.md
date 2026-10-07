@@ -1,4 +1,4 @@
-# Status now: 8 October 2026, 00:25 IST, Release 1 lead moved to "contabo"
+# Status now: 8 October 2026, 00:31 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -6,11 +6,12 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
 Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's AT RISK and WON'T MAKE IT items, with an estimate per item; (c) move prep for Coolify on a test address, files only. Then a proposed demo date and the `release/1` → main plan.
 
 **Lead:** the session on "contabo" took over from the "vps" session at about 15:50 IST. Deny rules checked: `git restore` and `docker ps` are both refused.
-**Integration preview:** `release/1` (draft #546) = 6522c83e. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
+**Integration preview:** `release/1` (draft #546) = 0e7bbe5c. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
 
 ## In `release/1` since 15:00
 - 3D blocking part B (`build/gaps-l2` 44cda874, Opus PASS; owner yes to Q7: staging only, production only in a later train after a Turso backup branch).
 - `fix/r1-ci-worker-probe-env` (Opus PASS).
+- `fix/r1-production-deployment-flag` (Opus PASS): off Vercel, `PARTICL_DEPLOYMENT=production|staging` replaces the VERCEL_ENV guards; Vercel identical. Main port: **draft PR #562, reviewed, waits for the owner's go.**
 - `ops/selfhost-runbook-cutover` (four review rounds, PASS): `docs/selfhost-test.md` is the owner's runbook: staging with fresh empty databases (do `/setup` right after deploy); production specifics (R2, Inngest with `INNGEST_STREAMING=true` and re-point steps, mail, AI Gateway, Astra sandbox stays on Vercel); exact Traefik timeout lines; cutover order with the hPanel firewall limited to Cloudflare, Full (strict) with an Origin Certificate, Bot Fight Mode off, rollback.
 - `fix/r1-d0-check` (Opus FAIL, fixed, delta PASS): D0 shell checked at five sizes (57 screenshots). Jobs pill stays on an empty tray; Library-drawer takes open the asset menu and select themselves; right-click Recreate priced from the server and disabled in the sample; Delete goes to trash with Undo.
 - `chore/r1-dead-old-pages` (Opus FAIL, fixed, PASS): 155 unreachable old source files and 22 old specs deleted; ratchets only lowered.
@@ -46,7 +47,6 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
 |---|---|
 | Hotfix PRs to main (owner yes, "go" to merge) | 1 sign-in behind the proxy, 2 public links, 3 rate limits (client address), 4 an explicit production flag instead of VERCEL_ENV: being ported to main as draft PRs, each with a fresh Opus review |
 | Workspace switch (tenancy) | Found while porting customer test 3: the avatar menu's switch (and Workspace › General) doesn't wait for an unsaved board edit; the last edit is refused or lost (never written to the other workspace: the scope header stops it). Fix: wait for the board's save before switching. Opus fix next; release/1 only; main needs the owner's yes |
-| `fix/r1-production-deployment-flag` @ be3bee21 + main PR #562 | PARTICL_DEPLOYMENT=production/staging replaces the VERCEL_ENV guards (Vercel identical). Opus review running |
 | `chore/r1-old-shell-branches` @ 99b97e0b | Old Business/Crew/Inspector screens cut (~150 files); every old address proved by a pure routing table + sweep; three routing bugs fixed. Opus review running. Owner question 16 |
 | `test/r1-five-minute-green` @ f8e2cee2 (review PASS) | **Passes:** a new invitee reaches an approved first render in 92 s (desktop) and 112 s (phone), one paid request per person's tap. Its phone flake is a real bug: approving the last take hides the Undo toast after 0.26 s. Fix running (`fix/r1-phone-review-undo`). Owner question 13 |
 | Release 1 remaining list | sent: `docs/r1-remaining.md` (this branch). Owner: list B in, list C out |
