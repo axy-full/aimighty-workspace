@@ -1,4 +1,4 @@
-# Status now: 7 October 2026, 19:23 IST, Release 1 lead moved to "contabo"
+# Status now: 7 October 2026, 19:30 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. Two defects block the live code off Vercel (signed-out home loop; sign-in 403 behind the proxy); both fixes are being built so they apply to main too, and merge to main only on the owner's go.
 
@@ -6,11 +6,12 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
 Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's AT RISK and WON'T MAKE IT items, with an estimate per item; (c) move prep for Coolify on a test address, files only. Then a proposed demo date and the `release/1` → main plan.
 
 **Lead:** the session on "contabo" took over from the "vps" session at about 15:50 IST. Deny rules checked: `git restore` and `docker ps` are both refused.
-**Integration preview:** `release/1` (draft #546) = 49963aaf. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
+**Integration preview:** `release/1` (draft #546) = 37e8fd58. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
 
 ## In `release/1` since 15:00
 - 3D blocking part B (`build/gaps-l2` 44cda874, Opus PASS; owner yes to Q7: staging only, production only in a later train after a Turso backup branch).
 - `fix/r1-ci-worker-probe-env` (Opus PASS).
+- PR #561 `ops/selfhost-test-address` (Opus FAIL on the runbook: a plain platform copy names production workspace databases; fixed; delta PASS): Dockerfile, standalone output behind a flag, cron-sync, smoke test, runbook with the staging-set and keyring rules, a check of every workspace address before the scheduled task, Build Variable only on NEXT_PUBLIC_*, the particl.app redirect and DNS for all four names, and what changes when production leaves Vercel.
 - `fix/r1-ci-board` (Opus PASS): board, phone, Guest Home off, palette, sample workspace, spend buttons; phone fault buttons 44 px.
 - `fix/r1-blocking-sample-remake` (Opus PASS): the sample no longer offers 3D blocking's priced Remake. Optional polish queued: hide the disabled "price pending" button too, and a rendered test.
 - Platform-owner privacy (`fix/r1-platform-owner-private`, delta review PASS) and its follow-up (`fix/r1-owner-privacy-followup`).
@@ -35,14 +36,11 @@ In the new Make panel, a tab whose reply was lost can send a second paid request
 |---|---|
 | CI fixes on `release/1` | lanes above |
 | Release 1 remaining list | sent: `docs/r1-remaining.md` (this branch). Owner: list B in, list C out |
-| `ops/selfhost-test-address`, draft PR #561 into release/1 @ 9415674d (was 45326806) | Move prep done, files only: Dockerfile, `.dockerignore`, standalone output behind `NEXT_OUTPUT=standalone` (no effect on Vercel), the one cron mapped, storage plan, env NAMES, the existing health route, `ops/selfhost/smoke.sh`, steps in `docs/selfhost-test.md`. The standalone build runs without secrets. Two product defects block a test address (owner questions 3 and 4) |
 | image-ad variants and presets | No frame in the handoff (only one card, one Make at 3 cr). Nothing built. Brief for Claude Design: `docs/design-brief-image-ad-versions.md` (this branch). Logic already in code |
-| "Particl demo" cap field (`admin/workspace-cap-field` @ 32994932) | Up to date with release/1. The cap is enforced on the server at the hold for every paid path (new door-by-door spec). Opus review next. Owner question 7 |
-| `ops/selfhost-test-address`, PR #561 @ 47bd3754 | Runbook now also covers keeping the particl.app and www redirects after the move (Cloudflare redirect rule recommended) and the DNS records for all four names. Opus review running |
-| `fix/selfhost-home-loop` (from main) | home-loop fix running; draft PR to main, also merges into release/1 |
+| "Particl demo" cap field (`admin/workspace-cap-field` @ 32994932) | Up to date with release/1. The cap is enforced on the server at the hold for every paid path (new door-by-door spec). Opus review running. Owner question 7 |
+| home loop | Not reproduced on main (signed-out `/`, `/pricing`, `/studio` answer 200 self-hosted). Testing release/1 and the earlier run to find the trigger before any fix |
 | self-host fixes (owner yes, 18:15) | home-page loop (proxy) and sign-in behind the proxy (Opus author and Opus review; release/1 only; the owner checks it on the test address first). Sign-in lane (Opus) running; home-loop lane and #561's review start as slots free |
-| `ops/selfhost-test-address`, PR #561 @ 47bd3754 | Runbook now also covers keeping the particl.app and www redirects after the move (Cloudflare redirect rule recommended) and the DNS records for all four names. Opus review running |
-| `fix/selfhost-home-loop` (from main) | home-loop fix running; draft PR to main, also merges into release/1 |
+| home loop | Not reproduced on main (signed-out `/`, `/pricing`, `/studio` answer 200 self-hosted). Testing release/1 and the earlier run to find the trigger before any fix |
 | self-host fixes (owner yes, 18:15) | home-page loop (proxy) and sign-in behind the proxy (Opus author and Opus review; release/1 only; the owner checks it on the test address first). Sign-in lane (Opus) running; home-loop lane and #561's review start as slots free |
 | `fix/r1-blocking-sample-remake` (on top of B) | the sample hides Remake's priced button; building |
 
