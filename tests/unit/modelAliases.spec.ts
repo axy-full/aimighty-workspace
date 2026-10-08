@@ -227,3 +227,39 @@ test("a quote for a dropped id is the alias's quote: the model that runs is the 
     expect(dropped.estimateCredits).toBe(alias.estimateCredits);
   });
 });
+
+test("a development request saved before the drop, naming a dropped id, finds its job on retry instead of a conflict", async () => {
+  const { seedProject } = await import("../../lib/workbench/studio");
+  const { developmentSourceHash, prepareDevelopmentJob, quoteDevelopmentJob } = await import("../../lib/workbench/development-server");
+  const models = ["openai/gpt-5.5"].map(entry);
+  let reservations = 0;
+  const deps = {
+    models: async () => models, allowance: async () => ({ ok: true as const }),
+    auth: async () => ({ token: "test-only-not-sent", method: "api-key" }), funding: async () => {}, reservation: async () => true,
+    reserve: async () => { reservations++; }, meter: async () => {}, call: async () => { throw new Error("nothing runs here"); },
+  };
+  await inTenant(async () => {
+    const { db, ready } = await import("../../lib/db");
+    await ready(); await fundFixtureWorkspace();
+    const project = seedProject();
+    project.id = "aliases-dev-" + randomUUID();
+    project.productionProjectId = "real-" + randomUUID();
+    project.script = "EXT. DUNES - DAY\nWren follows her reflection.";
+    await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)", args: ["owner:" + project.id, "owner", project.id, project.name, JSON.stringify(project), Date.now()] });
+    const asked = { projectId: project.id, requestId: randomUUID(), kind: "screenplay" as const, model: "openai/gpt-5.5-pro", effort: "auto" };
+    const quote = await quoteDevelopmentJob(asked, "owner", deps as never);
+    const raw = { ...asked, sourceHash: quote.sourceHash, maxCredits: quote.estimateCredits, maxUsd: quote.estimateUsd };
+    const first = await prepareDevelopmentJob(raw, "owner", undefined, deps as never);
+    expect(first.scheduled).toBe(true);
+    /* Saved now, the job carries the alias, and a retry of the same body finds it. */
+    expect((await db().execute({ sql: "SELECT request_body FROM workbench_development_jobs WHERE id = ?", args: [first.job.id] })).rows[0].request_body).toContain('"model":"openai/gpt-5.5"');
+    expect((await prepareDevelopmentJob(raw, "owner", undefined, deps as never)).job.id).toBe(first.job.id);
+    /* As a job saved before this change was: fingerprinted on the body as sent, dropped id and all. */
+    await db().execute({ sql: "UPDATE workbench_development_jobs SET fingerprint = ? WHERE id = ?", args: [developmentSourceHash(JSON.stringify(raw)), first.job.id] });
+    const retry = await prepareDevelopmentJob(raw, "owner", undefined, deps as never);
+    expect(retry).toMatchObject({ scheduled: false, job: { id: first.job.id } });
+    /* Nothing else matches it. */
+    await expect(prepareDevelopmentJob({ ...raw, instructions: "Changed request" }, "owner", undefined, deps as never)).rejects.toThrow("different workflow");
+    expect(reservations).toBe(1);
+  });
+});

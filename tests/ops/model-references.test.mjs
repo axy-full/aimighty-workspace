@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -151,4 +152,23 @@ test("a wrong environment stops with the reason and no value", async (t) => {
   assert.match(errors[0], /needs PLATFORM_DATABASE_URL/);
   assert.match(errors[1], /workspace ws_tenant/);
   for (const line of errors) for (const leak of [TOKEN, KEYRING, "tenant.db"]) assert.equal(line.includes(leak), false, leak);
+});
+
+test("interrupted, it removes its snapshots before exiting", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "particl-model-references-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const env = await databases(root);
+  const scratchParent = join(root, "tmp");
+  await mkdir(scratchParent);
+  // The child signals itself as soon as the script has made its snapshot folder and is listening.
+  const child = `
+    const { modelReferences } = await import(${JSON.stringify(pathToFileURL(join(process.cwd(), "scripts/ops/model-references.mjs")).href)});
+    const watch = setInterval(() => { if (process.listenerCount("SIGTERM") > 0) { clearInterval(watch); process.kill(process.pid, "SIGTERM"); } }, 0);
+    await modelReferences(process.env);
+    await new Promise((r) => setTimeout(r, 5000));`;
+  const code = await new Promise((done) => {
+    execFile(process.execPath, ["--input-type=module", "-e", child], { env: { ...process.env, ...env, TMPDIR: scratchParent } }, (error) => done(error?.code ?? 0));
+  });
+  assert.equal(code, 143);
+  assert.deepEqual(await readdir(scratchParent), []);
 });

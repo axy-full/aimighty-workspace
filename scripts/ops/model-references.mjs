@@ -9,7 +9,8 @@
  * platform database's workspace records, tokens opened with KEYRING_SECRET in
  * process only). Each database is copied to a private snapshot first
  * (backup-lib snapshotDatabase) and only the snapshot is queried; the
- * snapshots are deleted at the end. Nothing is written to any database.
+ * snapshots are deleted at the end, or on SIGINT/SIGTERM. Nothing is written to
+ * any database.
  *
  * It prints one JSON object: per dropped id and per place (table.column, or a
  * settings key) the number of rows naming it, and per database the workspace
@@ -23,6 +24,7 @@
  * Needs PLATFORM_DATABASE_URL (or TURSO_DATABASE_URL), PLATFORM_AUTH_TOKEN for
  * a remote one, and KEYRING_SECRET when a workspace database is remote.
  */
+import { rmSync } from "node:fs";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -59,7 +61,8 @@ export const PLACES = [
   { scope: "workspace", table: "atomik_chats", column: "model", where: "deleted = 0", use: "choice" },
   { scope: "workspace", table: "ideas", column: "model", use: "choice" },
   { scope: "workspace", table: "rig_agent_runs", column: "model", use: "choice" },
-  { scope: "workspace", table: "crew_sessions", column: "model", use: "choice" },
+  // xAI model names only (lib/crew/xai.ts); a room's rounds reuse it, but no dropped id can be there.
+  { scope: "workspace", table: "crew_sessions", column: "model", use: "history" },
   { scope: "workspace", table: "shot_presets", column: "spec", use: "choice" },
   { scope: "workspace", table: "boards", column: "nodes", use: "choice" },
   { scope: "workspace", table: "workbench_team_canvas", column: "body", use: "choice" },
@@ -114,6 +117,13 @@ export async function modelReferences(env = process.env) {
   const platformSpec = livePlatformSpec(env);
   const scratch = await mkdtemp(join(tmpdir(), "model-references-"));
   await chmod(scratch, 0o700);
+  /* Interrupted (Ctrl+C, a stopped job): the snapshots are copies of customer data, so they go before exiting. */
+  const interrupted = (signal) => {
+    rmSync(scratch, { recursive: true, force: true });
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  };
+  process.once("SIGINT", interrupted);
+  process.once("SIGTERM", interrupted);
   try {
     const platformSnapshot = join(scratch, "platform.db");
     await snapshotDatabase(connection(platformSpec, env), platformSnapshot, scratch);
@@ -147,6 +157,8 @@ export async function modelReferences(env = process.env) {
       perDatabase: databases.filter((d) => d.found.length),
     };
   } finally {
+    process.off("SIGINT", interrupted);
+    process.off("SIGTERM", interrupted);
     await rm(scratch, { recursive: true, force: true });
   }
 }

@@ -502,15 +502,18 @@ export async function prepareDevelopmentJob(input: DevelopmentRequest, owner: st
   let release!: () => void;
   const tail = new Promise<void>(resolve => { release = resolve; }); preparationTails.set(key, tail);
   await previous;
-  try { return await prepareUnlocked(onAlias(input), owner, token, overrides); }
+  /* A job saved before 8 October under a dropped id was fingerprinted on the body as sent: its retry still finds it. */
+  const accepted = new Set([developmentSourceHash(JSON.stringify(input))]);
+  try { return await prepareUnlocked(onAlias(input), owner, token, overrides, accepted); }
   finally { release(); if (preparationTails.get(key) === tail) preparationTails.delete(key); }
 }
-async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?: TenantToken, overrides?: Partial<DevelopmentDependencies>) {
+async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?: TenantToken, overrides?: Partial<DevelopmentDependencies>, accepted = new Set<string>()) {
   await developmentReady();
   const deps = dependencies(overrides), fingerprint = developmentSourceHash(JSON.stringify(input));
+  accepted.add(fingerprint);
   const found = (await db().execute({ sql: 'SELECT * FROM workbench_development_jobs WHERE owner=? AND request_id=?', args: [owner, input.requestId] })).rows[0];
   if (found) {
-    if (found.fingerprint !== fingerprint) throw new DevelopmentError('This request ID belongs to a different workflow. Start a new request.', 409);
+    if (!accepted.has(String(found.fingerprint))) throw new DevelopmentError('This request ID belongs to a different workflow. Start a new request.', 409);
     return { job: await publicJob(found), scheduled: false };
   }
   if (!input.sourceHash || input.maxCredits == null || (!paidByPlatform(textVendor(input.model)) && input.maxUsd == null)) throw new DevelopmentError('Review the complete workflow quote before starting.');
@@ -538,7 +541,7 @@ async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?:
   catch (error) { if (error instanceof VerifyError) throw new DevelopmentError(error.message, error.status); throw error; }
   if (!inserted.rowsAffected) {
     const duplicate = (await db().execute({ sql: 'SELECT * FROM workbench_development_jobs WHERE owner=? AND request_id=?', args: [owner, input.requestId] })).rows[0];
-    if (!duplicate || duplicate.fingerprint !== fingerprint) throw new DevelopmentError('This request identity conflicts with another workflow.', 409);
+    if (!duplicate || !accepted.has(String(duplicate.fingerprint))) throw new DevelopmentError('This request identity conflicts with another workflow.', 409);
     return { job: await publicJob(duplicate), scheduled: false };
   }
   const row = (await db().execute({ sql: 'SELECT * FROM workbench_development_jobs WHERE id=?', args: [id] })).rows[0];

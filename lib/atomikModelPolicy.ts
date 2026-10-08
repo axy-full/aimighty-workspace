@@ -169,7 +169,8 @@ export function selectAtomikModel(wanted: string, availableIds: readonly string[
     return want;
   }
   if (routed && available.has(routed)) return routed;
-  const first = ATOMIK_MODEL_IDS.find(id => available.has(id));
+  /* Auto's own choices first, as the workbench and board agents prefer them; then the rest of the catalogue in order. */
+  const first = [...ATOMIK_AUTO_MODEL_IDS, ...ATOMIK_MODEL_IDS].find(id => available.has(id));
   if (!first) throw new Error("No supported Atomik thinking model is connected. Check AI Gateway configuration.");
   return first;
 }
