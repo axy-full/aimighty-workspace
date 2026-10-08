@@ -255,3 +255,23 @@ test('a job runs only on the backend it was approved under, and rows from before
     expect((await m.cancelAstraRenderJob('u_test', m.project.id, second.job.id, f.deps)).status).toBe('cancelled');
     expect(f.metered.at(-1)).toMatchObject({ engine: 'vercel-sandbox', status: 'failed', engineCostUsd: 0 });
 }));
+
+test('a job settled by another host never flips back to uncertain from a stale read (cancel or reconcile)', async () => context('selfhost-settled-stale', async (m) => {
+    const pool = workerPool();
+    const f = await selfhost(pool);
+    const name = 'astra-blender-00000000-0000-4000-8000-0000000000cc';
+    const settleElsewhere = async (id: string) => { await m.db().execute({ sql: "UPDATE astra_render_jobs SET status='cancelled',settled=1,billed_credits=0,error='refunded elsewhere' WHERE id=?", args: [id] }); };
+    // Cancel: the runtime lookup fails after another host has settled (and refunded) the job.
+    const first = await m.prepareAstraRender(m.input, 'u_test', undefined, f.deps);
+    await m.db().execute({ sql: "UPDATE astra_render_jobs SET status='running',runtime_id=?,claimed_at=? WHERE id=?", args: [name, Date.now(), first.job.id] });
+    f.deps.sandbox = { sdk: { create: async () => { throw new Error('never creates'); }, get: async () => { await settleElsewhere(first.job.id); throw new Error('worker unreachable'); } } };
+    await m.cancelAstraRenderJob('u_test', m.project.id, first.job.id, f.deps);
+    expect(await m.row(first.job.id)).toMatchObject({ status: 'cancelled', settled: 1, error: 'refunded elsewhere' });
+    // Reconcile: a stopped runtime with no usage, read just as another host settled the job.
+    const second = await m.prepareAstraRender({ ...m.input, requestId: 'request-native-2' }, 'u_test', undefined, f.deps);
+    await m.db().execute({ sql: "UPDATE astra_render_jobs SET status='running',runtime_id=?,claimed_at=? WHERE id=?", args: [name, Date.now(), second.job.id] });
+    f.deps.sandbox = { sdk: { create: async () => { throw new Error('never creates'); }, get: async () => { await settleElsewhere(second.job.id); return { name, status: 'stopped', writeFiles: async () => {}, runCommand: async () => ({ exitCode: 0 }), readFile: async () => null, stop: async () => {} }; } } };
+    await m.reconcileAstraRender(second.job.id, f.deps);
+    expect(await m.row(second.job.id)).toMatchObject({ status: 'cancelled', settled: 1, error: 'refunded elsewhere' });
+    expect(f.metered).toEqual([]);
+}));

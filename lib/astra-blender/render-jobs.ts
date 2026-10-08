@@ -189,12 +189,13 @@ async function settle(row: JobRecord, status: 'succeeded' | 'failed' | 'cancelle
     const source = JSON.parse(row.source_json) as Snapshot;
     const actual = row.runtime_id ? usage ? astraComputeCost(usage, source.rates) : null : 0;
     if (actual == null) {
-        await db().execute({ sql: "UPDATE astra_render_jobs SET status='uncertain',error=?,updated_at=? WHERE id=?", args: ['Runtime usage is not yet available. The approved reservation is held; this run will not restart automatically.', Date.now(), row.id] });
+        // A row read before another host settled it never reopens that settled (perhaps refunded) job.
+        await db().execute({ sql: "UPDATE astra_render_jobs SET status='uncertain',error=?,updated_at=? WHERE id=? AND settled=0", args: ['Runtime usage is not yet available. The approved reservation is held; this run will not restart automatically.', Date.now(), row.id] });
         return;
     }
     // Never silently bill over the reviewed maximum; retain actual telemetry for operator reconciliation.
     if (actual > Number(row.max_cost_usd) + 1e-9) {
-        await db().execute({ sql: "UPDATE astra_render_jobs SET status='uncertain',usage_json=?,error=?,updated_at=? WHERE id=?", args: [JSON.stringify(usage), 'Reported runtime usage exceeds the approved reservation. Billing needs review.', Date.now(), row.id] });
+        await db().execute({ sql: "UPDATE astra_render_jobs SET status='uncertain',usage_json=?,error=?,updated_at=? WHERE id=? AND settled=0", args: [JSON.stringify(usage), 'Reported runtime usage exceeds the approved reservation. Billing needs review.', Date.now(), row.id] });
         return;
     }
     const credits = Number(row.estimate_credits) > 0 ? billCredits(actual, ASTRA_COMPUTE_MODEL) : 0;
@@ -392,7 +393,7 @@ export async function cancelAstraRenderJob(owner: string, projectId: string, id:
             await settle(current, current.outputs_registered ? 'succeeded' : 'cancelled', result.usage, deps);
         }
         catch {
-            await db().execute({ sql: "UPDATE astra_render_jobs SET status='uncertain',error='Cancellation is pending runtime confirmation.',updated_at=? WHERE id=?", args: [Date.now(), id] });
+            await db().execute({ sql: "UPDATE astra_render_jobs SET status='uncertain',error='Cancellation is pending runtime confirmation.',updated_at=? WHERE id=? AND settled=0", args: [Date.now(), id] });
         }
     }
     return publicJob((await record(id))!);
