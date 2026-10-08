@@ -2,6 +2,8 @@
 
 **PAUSED at the owner's request (8 Oct, about 06:15 IST).** No agents or servers running; all work pushed. Resume from this file.
 
+**09:58 IST, one fix while paused:** the staging Docker build failed on 0e7bbe5 (TS2307: a rehearsal script imported tests/). PR #567 moves the rehearsal to tests/ops/ and keeps tests/ out of the image. Proof build without the .dockerignore paths passed; fresh review PASS. Merged: release/1 = c287f044. Owner to redeploy staging.
+
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
 **Demo postponed (owner, about 17:30 IST); no date yet. The Thursday merge train is cancelled. Nothing merges to main and nothing deploys to production without the owner's "go".**
