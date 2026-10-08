@@ -15,7 +15,7 @@ import { newProject, type Project } from "../lib/workbench/studio";
  * on this device until a template or Start uploads them; the empty board's box holds uploads already in the project's Library.
  * Nothing here is paid for: uploads and a template's project are free, and every paid route is refused (forbidPaidWork).
  */
-const SHOTS = process.env.ATTACH_THUMBS_SHOTS || join(tmpdir(), "particl-suites", "attach-thumbs");
+const SHOTS = process.env.ATTACH_THUMBS_SHOTS || join(tmpdir(), "particl-attach-thumbs");
 mkdirSync(SHOTS, { recursive: true });
 const HOME = "/suites?view=home";
 const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
