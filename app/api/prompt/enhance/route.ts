@@ -64,8 +64,10 @@ export const POST = withTenant(async function POST(req: Request) {
       if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
       /* The price the person saw is required: there is no unquoted enhancement.
          The answer is judged before the job settles: a rewrite that dropped a
-         citation, or that is not a prompt, is refused and the workspace is not charged. */
-      const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, true) }, { accept: (text) => parseEnhanced(text, prompt) });
+         citation, or that is not a prompt, is refused and the workspace is not charged.
+         The provider gets 90 s (no request stays silent past 100 s, docs/long-flows.md › C4);
+         a stall past it settles as uncertain at the estimate, held for reconciliation. */
+      const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, true), timeoutMs: 90_000 }, { accept: (text) => parseEnhanced(text, prompt) });
       const parsed = parseEnhanced(result.text, prompt);
       if (!parsed.ok) return NextResponse.json({ error: parsed.reason }, { status: 502 });
       return NextResponse.json({ prompt: parsed.prompt, provider, writer }, { headers: { "Cache-Control": "no-store" } });
