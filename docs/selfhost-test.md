@@ -38,7 +38,7 @@ Staging is built and passing; this is what it is, so production can be built the
 | Secrets | `KEYRING_SECRET`, `SESSION_SECRET`, `CRON_SECRET` generated fresh (`openssl rand -base64 48`). |
 | Storage | The **staging** R2 bucket (`STORAGE_BACKEND=r2` + the four `R2_*`). Never production's bucket. |
 | Fixed | `ENGINE_MOCK=1`, `CREDIT_USD=0.10`, `PARTICL_DEPLOYMENT=staging`, `SELFHOST_BEHIND_PROXY=1`; `APP_ORIGIN`, `APP_URL`, `NEXT_PUBLIC_APP_URL` = exactly the https address staging is served on (changing it needs a rebuild). |
-| Not set | `TURSO_API_*`, `RESEND_*`, `MAIL_FROM`, `STRIPE_*`, `INNGEST_*`, `DISPATCH_MODE` (so it dispatches natively), engine and AI keys, any `VERCEL*`. |
+| Not set | `TURSO_API_*`, `RESEND_*`, `MAIL_FROM`, `STRIPE_*`, `INNGEST_*`, `DISPATCH_MODE` (so it dispatches natively), engine and AI keys; never `VERCEL`, `VERCEL_ENV` or `VERCEL_OIDC_TOKEN` (`VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID` only for the 3D render test below). |
 | First account | `/setup` right after the first deploy (the first account there becomes the platform owner). If `/setup` says it is complete and you did not do it: stop, wipe the volume, redeploy. |
 | Scheduled task | Name `cron-sync`, command `node /app/cron-sync.mjs`, frequency `*/10 * * * *`, timeout 300 s. Its log should show `cron-sync: 200`. |
 | Smoke | `bash ops/selfhost/smoke.sh <staging address>`: all checks pass. |
@@ -237,9 +237,9 @@ With grey cloud there is no Cloudflare limit in front, so these Traefik timeouts
 Traefik asks Let's Encrypt for a certificate as soon as the app's route appears. With the normal method (HTTP-01), that attempt fails while the names still point at Vercel. Traefik does not retry until its configuration changes, so visitors would get Traefik's self-signed certificate after the switch, and each failed attempt counts against Let's Encrypt's limit of 5 failures per name per hour. So the main path gets the certificates **before** the switch, with a DNS challenge.
 
 **(a) Main path: a DNS-challenge resolver (OWNER, with the advisor), before cutover step 4.**
-1. **Cloudflare token.** **My Profile, API Tokens, Create Token**, custom token with permissions **Zone, DNS, Edit** and **Zone, Zone, Read**, zone resources **Include, Specific zone, `particl.si`** only. It is shown once; it never goes into the repo, a chat or a note.
+1. **Cloudflare token.** **My Profile, API Tokens, Create Token**, custom token with permissions **Zone, DNS, Edit** and **Zone, Zone, Read**, zone resources **Include, Specific zone, `particl.si`** only. It is shown once; it never goes into the repo, a chat or a note. If issuance later fails with a zone-lookup error, widen **Zone, Zone, Read** to all zones, or create a second token with only that permission and add it as `CF_ZONE_API_TOKEN_FILE` next to the one below.
 2. **Token file on the server.** Save it as `/data/coolify/proxy/cf-dns-token` (one line, no trailing space), owner root, mode `600`. Coolify mounts `/data/coolify/proxy` into Traefik at `/traefik` (check the `volumes:` of the proxy compose).
-3. **Proxy configuration.** Coolify, **Servers**, the server, **Proxy**, **Configuration**. In the Traefik service add, under `environment:`:
+3. **Proxy configuration.** Coolify, **Servers**, the server, **Proxy**, **Configuration**. In the Traefik service add, under `environment:` (add the `environment:` key at the same level as `command:` if the service has none):
    ```yaml
          - CF_DNS_API_TOKEN_FILE=/traefik/cf-dns-token
    ```
@@ -286,13 +286,17 @@ Plain `ufw` is **not enough** for Docker ports: Docker publishes 80, 443, 8000, 
      iptables -I DOCKER-USER -i "$IF" -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j ADMIN-ONLY
    done
    # The same ports over IPv6: closed (the owner uses IPv4).
-   for p in 8000 6001 6002 8080; do
-     ip6tables -C INPUT -p tcp --dport "$p" -j DROP 2>/dev/null || ip6tables -I INPUT -p tcp --dport "$p" -j DROP
-     if ip6tables -L DOCKER-USER >/dev/null 2>&1; then
-       ip6tables -C DOCKER-USER -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j DROP 2>/dev/null ||
-       ip6tables -I DOCKER-USER -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j DROP
-     fi
-   done
+   if command -v ip6tables >/dev/null 2>&1 && ip6tables -L INPUT >/dev/null 2>&1; then
+     for p in 8000 6001 6002 8080; do
+       ip6tables -C INPUT -p tcp --dport "$p" -j DROP 2>/dev/null || ip6tables -I INPUT -p tcp --dport "$p" -j DROP
+       if ip6tables -L DOCKER-USER >/dev/null 2>&1; then
+         ip6tables -C DOCKER-USER -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j DROP 2>/dev/null ||
+         ip6tables -I DOCKER-USER -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j DROP
+       fi
+     done
+   else
+     echo "ip6tables not available: IPv6 rules skipped (check with curl -6 from outside)"
+   fi
    ```
    Matching only **new inbound** connections keeps the containers' own outgoing calls (Turso, R2, the engines) working.
 2. **Keep it after a reboot** with a systemd unit that re-runs the script once Docker is up. Do **not** use `iptables-persistent` / `netfilter-persistent`: it conflicts with ufw (installing it removes ufw) and would also save Docker's own chains. Save as `/etc/systemd/system/particl-firewall.service`:
@@ -326,20 +330,32 @@ Plain `ufw` is **not enough** for Docker ports: Docker publishes 80, 443, 8000, 
 
 ## Restore point before production code touches the live databases
 
-The app creates and changes tables on first use. So **before the production app first starts** against the live Turso databases (its first deploy, step 4), and **again just before the DNS switch** (step 8), the owner records a way back. Take both of the following at restore point A; at point B the Turso timestamp is enough.
+The app creates and changes tables on first use. So **before the production app first starts** against the live Turso databases (its first deploy, step 4), and **again just before the DNS switch** (step 8), the owner records a way back.
 
-**1. Turso point-in-time timestamps (always; no tooling).**
+**Today production has no automated encrypted backup.** `.github/workflows/backup.yml` skips on every run because the repository variable `PARTICL_BACKUP_ENABLED` is not `true`. Even switched on, it would fail on R2 coverage until the tooling PR below lands.
+
+**Point A and point B = Turso timestamps plus `.dump` copies.** The full encrypted bundle is **not available yet** (see 2). Do **not** run the recovery fence on production for this.
+
+**1. Turso point-in-time timestamps and `.dump` copies (no tooling).**
 - **OWNER:** write down the exact UTC time (for example `2026-10-20T09:00:00Z`) for **point A** (before the first deploy) and **point B** (before the switch). It covers the platform database and **every workspace database** (all databases in the production Turso group).
 - Check the plan's window in the Turso dashboard: Free 24 hours, Developer 10 days, Scaler 30 days, Pro 90 days. A point older than the window is gone.
+- **OWNER, at point A:** `turso db shell <database> .dump > <database>-pointA.sql` for each database. This saves a readable SQL file on the owner's machine. Keep it private: it holds sealed tokens and password hashes.
 - **There is no tooling for this path.** A restore means: `turso db create <new name> --from-db <database> --timestamp <time>` for each database, then, by hand with Claude's help, repointing every workspace's database address and token in the platform database. Those tokens are sealed with `KEYRING_SECRET`, so this needs the original keyring and care. It loses everything written after that time.
-- **Prove it once, on copies:** create a copy of the platform database and of one workspace database at point A, open them read-only (`turso db shell <new name> "SELECT count(*) FROM workspaces"` on the platform copy), see the rows, delete the copies.
-- As a plain extra copy, `turso db shell <database> .dump > <database>-pointA.sql` for each database saves a readable SQL file on the owner's machine (keep it private: it holds sealed tokens and password hashes).
+- **Prove it once, on copies.**
+  - Create a copy of the platform database and of one workspace database at point A.
+  - Look at them: `turso db shell <new name> "SELECT count(*) FROM workspaces"` on the platform copy, and see the rows.
+  - Delete the copies.
+  - `turso db shell` is **not** read-only: on any database, run only `.dump` or `SELECT`.
+  - Each copy counts toward the plan's database quota while it exists.
 
-**2. A full encrypted bundle at point A (recommended, whatever the plan window).** The only scripted path:
-- Variables in the operator shell, never typed on the command line: `PARTICL_BACKUP_KEY` (32 random bytes, base64, kept in the password manager), the **original** `KEYRING_SECRET`, and the database and media tokens named in `SOURCE.json` (format in `docs/backup-restore.md`, "Capture").
-- Command: `node scripts/ops/backup-restore.mjs backup SOURCE.json NEW_BUNDLE_DIRECTORY`, then `restore NEW_BUNDLE_DIRECTORY NEW_OFFLINE_DIRECTORY` and `report NEW_OFFLINE_DIRECTORY` to prove it reads back.
-- **Writes must be paused on the live Vercel site** during capture; the backup tool cannot do that. The pause is the recovery fence (`docs/enforced-recovery-fence.md`): `node scripts/ops/recovery-fence.mjs begin …`, wait until `status` shows nothing outstanding, `seal`, capture, then `resume`. While paused, the live site refuses new writes (uploads, renders, edits) but stays readable. Without the pause, each database is copied at a slightly different moment, so rows written during the capture can be in one copy and missing from another.
-- **Expected blocker: media in R2.** The tool reads media only from a Blob store or local disk (`scripts/ops/backup-lib.mjs`, lines 561 to 562) and checks that every referenced file is in that store. Files written since production moved to R2 are not, so a production capture is expected to stop with a coverage error. If it does, a full bundle needs a tooling PR first (R2 as a media source); until then the Turso timestamps and SQL dumps are the way back.
+**2. The full encrypted bundle (later, after the tooling PR).** It is the only scripted path, but it cannot capture production today:
+- The tool reads media only from a Blob store or local disk (`scripts/ops/backup-lib.mjs`, lines 561 to 562) and checks that every referenced file is in that store. Files written since production moved to R2 are not, so a capture stops with a coverage error.
+- The lead is starting a tooling PR that adds R2 as a media source. Until it lands, do not attempt a production bundle.
+- **When it is available, it needs a maintenance window.** Writes are paused with the recovery fence (`docs/enforced-recovery-fence.md`). While the fence is draining or closed, **every API request and `/api/health` answer 503** (Retry-After 60): the site is effectively down, not read-only. The gate never reopens on its own.
+  - `node scripts/ops/recovery-fence.mjs begin NEW_PRIVATE_DIRECTORY INPUT.json`. `INPUT.json` holds `preconditions` (`deployments: [{id, protocol: "particl-recovery-fence-v1"}]`, `oldDeploymentsStopped: true`, `externalWritersExcluded: true`, and an `evidence` string) and `media` (for example `{kind: "blob", tokenEnv: "BLOB_READ_WRITE_TOKEN"}`). On Vercel, "old deployments stopped" is hard to make true: plan it with Claude.
+  - `status NEW_PRIVATE_DIRECTORY` until nothing is outstanding, then `seal NEW_PRIVATE_DIRECTORY`. It writes `sources.json`, `source-env.json` and `receipt.json` into that directory.
+  - Capture: `node scripts/ops/backup-restore.mjs backup <that directory>/sources.json NEW_BUNDLE_DIRECTORY`. Variables come from the operator shell, never the command line: `PARTICL_BACKUP_KEY` (32 random bytes, base64, kept in the password manager), the **original** `KEYRING_SECRET`, and the credentials named in `source-env.json`. Then `restore NEW_BUNDLE_DIRECTORY NEW_OFFLINE_DIRECTORY` and `report NEW_OFFLINE_DIRECTORY` prove it reads back.
+  - `node scripts/ops/recovery-fence.mjs resume NEW_PRIVATE_DIRECTORY` to reopen. **On any failure, run `resume` immediately**, so the site is not left down.
 - Restoring a bundle into new databases goes through `prepare`. It takes only the offline directory that `restore` produced, and it always invalidates access: it **signs everyone out**, and removes API tokens, review links, password-reset links and consumer sign-in grants. That is right after a real restore, but it is not a quiet rollback.
 
 ## Cutover order (grey cloud)
@@ -353,10 +369,10 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
      - Then from a phone on mobile data (network B): sign in to the same account with the right password. It must work: limits are counted per address.
      - If network B is blocked too, every visitor shares one address: **stop** and report it.
 2. **Lower the TTL (OWNER, a day ahead).** Write down the current records for `particl.si` and `www.particl.si` (type, value, TTL, proxy status) and lower their TTL to the minimum. If `particl.si` is not yet a Cloudflare zone, stop and say so.
-3. **Firewall and certificate resolver (OWNER, with the advisor).** As in "Firewall on the server" (including the outside checks) and "Certificates before the switch" (a), steps 1 to 4.
+3. **Firewall and certificate resolver (OWNER, with the advisor).** As in "Firewall on the server" (including the outside checks) and "Certificates before the switch" (a), steps 1 to 3 (step 4, the labels, is done in cutover step 4).
 4. **Production app built, checked once, stopped (OWNER).**
    1. **Required first: deploy the same `main` commit on Vercel**, so the code that changes tables on first use is the same on both hosts sharing the databases.
-   2. Record **restore point A** ("Restore point" above): the Turso timestamp, the restore test on copies, and the full bundle if it can be taken.
+   2. Record **restore point A** ("Restore point" above): the Turso timestamp, the `.dump` copies, and the restore test on copies. (No encrypted bundle yet.)
    3. Every variable in "Live-copy settings" is set. `TRUST_CF_CONNECTING_IP` and `TRUSTED_PROXY_HOPS` are **unset**.
    4. Domains `https://particl.si,https://www.particl.si`, Direction redirect to non-www, stop grace period 300, labels on `letsencrypt-dns`.
    5. Scheduled task: Coolify, the production app, **Scheduled Tasks, + Add**: name `cron-sync`, command `node /app/cron-sync.mjs`, frequency `*/10 * * * *`, timeout 300 s, saved **disabled**. (The script calls `http://127.0.0.1:3000/api/cron/sync` inside the container with `CRON_SECRET`.)
@@ -401,7 +417,7 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
     2. **OWNER:** re-enable the Vercel cron and disable `cron-sync` on the server. **Keep the production app running** until at least the TTL has passed since the DNS change (plus a few minutes) and `dig +short particl.si @1.1.1.1` and `@8.8.8.8` show Vercel again, so visitors still on the old answer are served. Then stop it.
     3. **OWNER:** re-enable the Inngest Vercel integration's sync for the project and resync, so Inngest's app URL points at Vercel again; check it shows 6 functions.
     4. **Data, ordinary rollback: nothing to copy back.** Both hosts use the **same Turso databases** (platform and workspaces), the **same R2 bucket** and the **same Blob store**. With R2 selected, the self-hosted app keeps nothing durable on its own disk (upload pieces go to R2 too). Everything written during the window is already where Vercel reads it. An upload in progress at the moment of switching may need to be retried.
-    5. **Data problem (wrong or damaged rows):** go back to point B (or A) as in "Restore point". With the Turso timestamps this is a hand-made restore with Claude's help; everything written after that time is lost. It is the owner's decision, not a reflex.
+    5. **Data problem (wrong or damaged rows):** go back to point B (or A) as in "Restore point". This is a hand-made restore from the Turso timestamps, with Claude's help; everything written after that time is lost. It is the owner's decision, not a reflex.
     6. **Never** use Vercel's Instant Rollback to a deployment from before #524 (it predates the credit switchover and would bill the wrong price).
 16. **After the window (OWNER).** Retire the Vercel deployment and domains, but **keep the Vercel team, project and snapshot** while Astra renders run on Vercel Sandbox. Rotate exposed keys. Retire Blob only after every old Blob object is copied to R2.
 
@@ -410,7 +426,7 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
 **How it works today (read in code).** The app drives a **Vercel Sandbox** microVM with `@vercel/sandbox` 3.3.0 (`lib/astra-blender/sandbox.ts`). The VM starts from the snapshot in `ASTRA_BLENDER_SNAPSHOT_ID`, in region `iad1`, with 2 vCPUs, an empty environment, no ports and a deny-all network policy. The app writes the inputs in, runs Blender, reads the `.blend`, the PNG preview and the GLB back out, stores them in R2 itself, then stops the VM. The VM never calls the app back.
 
 **How it signs in.**
-- **On Vercel:** `credentials()` (sandbox.ts, lines 93 to 97) passes nothing, so the SDK uses the function's own Vercel OIDC identity. No variables needed.
+- **On Vercel:** `credentials()` (sandbox.ts, lines 98 to 102) passes nothing, so the SDK uses the function's own Vercel OIDC identity. No variables needed.
 - **Off Vercel:** there is no OIDC identity. The SDK needs all three of `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, which `credentials()` passes when all three are set. With any missing it falls back to OIDC and fails ("Could not get credentials from OIDC context").
 - So the self-hosted app needs: `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, `ASTRA_BLENDER_SNAPSHOT_ID`, `ASTRA_BLENDER_RATE_CARD`. Never `VERCEL_OIDC_TOKEN` (it expires within hours).
 
@@ -423,10 +439,7 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
 - If anything in between cut that request, the app would keep running the render, and Inngest's retry would find the job already started and do nothing, so a second VM is never bought (`runAstraRender` only starts a job that is still queued). The person would see the result late rather than twice.
 - From this server the inputs and outputs cross the Atlantic to `iad1`; only a real render shows how long that takes.
 
-**Code change.** None is required if all five names are set. One guard is in **PR #571 (pending review)**: off Vercel, 3D counts as available only with all three `VERCEL_*` credentials; otherwise renders are refused before any charge. Why it is needed:
-- **The problem:** if the three `VERCEL_*` names are missing off Vercel, the panel still offers the render (`astraRuntimeStatus`, sandbox.ts lines 79 to 90, checks only the snapshot; `astraRenderAvailability`, render-jobs.ts line 90, adds only the rate card). The job is then claimed and funded, and `Sandbox.create` fails. The job is marked `uncertain` with its credits held (render-jobs.ts line 244), and reconciliation cannot clear it, because `getAstraRenderStatus` fails the same way (render-jobs.ts line 277).
-- **The fix (PR #571):** `astraRuntimeStatus` reports not configured, with a plain reason, when off Vercel and the three credentials are not all set.
-- Until #571 is on the branch that is deployed, the step 12 check (the first six names `set`) covers it.
+**Code change: done (PR #571, merged into `release/1`).** Off Vercel, 3D counts as available only when all three `VERCEL_*` credentials are set (`astraRuntimeStatus`, sandbox.ts line 83); otherwise the panel shows it as not connected and a render is refused before any credits are reserved. Before #571, a missing credential let a render be funded, fail at `Sandbox.create`, and stay `uncertain` with its credits held. `main` needs #571 too (PR #566's list). The step 12 check still confirms the names are set.
 
 **Confirmed by reading code:** the sign-in rule, the five names, no callback or Vercel-address dependency, the 180 s and 165 s limits, Inngest background dispatch with a 202 to the browser, no second VM on a retry, and that `ENGINE_MOCK=1` blocks any render (so staging cannot render as it is set today).
 
@@ -507,10 +520,14 @@ Each is passed, or waived by the owner in writing (cutover step 0).
      iptables -C DOCKER-USER -i "$IF" -p udp -m conntrack --ctstate NEW --ctorigdstport 443 -j DROP 2>/dev/null ||
      iptables -I DOCKER-USER -i "$IF" -p udp -m conntrack --ctstate NEW --ctorigdstport 443 -j DROP
      # IPv6: no AAAA record, so close 80 and 443 over IPv6.
-     for p in 80 443; do
-       ip6tables -C INPUT -p tcp --dport "$p" -j DROP 2>/dev/null || ip6tables -I INPUT -p tcp --dport "$p" -j DROP
-     done
-     ip6tables -C INPUT -p udp --dport 443 -j DROP 2>/dev/null || ip6tables -I INPUT -p udp --dport 443 -j DROP
+     if command -v ip6tables >/dev/null 2>&1 && ip6tables -L INPUT >/dev/null 2>&1; then
+       for p in 80 443; do
+         ip6tables -C INPUT -p tcp --dport "$p" -j DROP 2>/dev/null || ip6tables -I INPUT -p tcp --dport "$p" -j DROP
+       done
+       ip6tables -C INPUT -p udp --dport 443 -j DROP 2>/dev/null || ip6tables -I INPUT -p udp --dport 443 -j DROP
+     else
+       echo "ip6tables not available: IPv6 rules skipped (check with curl -6 from outside)"
+     fi
      ```
      If `ip6tables -L DOCKER-USER` exists, the advisor adds the same IPv6 drops there. **After a reboot:** add `ExecStart=/usr/local/sbin/particl-cf-only.sh` as a second `ExecStart` line in `particl-firewall.service` (main path (b)), then `systemctl daemon-reload` and `systemctl restart particl-firewall.service`. No `netfilter-persistent`. Cloudflare's list changes now and then; re-running the script picks up the new list.
    - Or remove HTTP/3 from the proxy instead: delete the `--entrypoints.https.http3` line and the `443:443/udp` port in the proxy compose, then restart the proxy.
