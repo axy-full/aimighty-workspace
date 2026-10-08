@@ -188,7 +188,7 @@ export function snapshotModels(snapshot: CatalogSnapshot = modelCatalogJson as u
 
 /** The provider's own key. Anthropic has no VendorKeyName until the direct router lands. */
 const PROVIDER_KEY: Record<CatalogProviderId, () => string | null> = {
-  anthropic: () => process.env.ANTHROPIC_API_KEY || null,
+  anthropic: () => vendorKey('anthropic'),
   google: () => vendorKey('gemini'),
   xai: () => vendorKey('xai'),
   openai: () => vendorKey('openai'),

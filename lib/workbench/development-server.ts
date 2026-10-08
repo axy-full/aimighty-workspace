@@ -1,4 +1,5 @@
 import { textVendor, directTextCostUsd, sdkTextUsage, TEXT_PROVIDER_HEADER, type TextVendor } from '../openai-direct';
+import { assertDirectBillingReady } from '../textDirect';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { ToolLoopAgent, stepCountIs } from 'ai';
@@ -9,6 +10,7 @@ import { atomikModels, getAtomikProject } from './atomik-server';
 import { atomikReasoningAllowance, atomikReasoningRequest } from '../atomik-reasoning';
 import { gatewayReachable } from '../gateway';
 import { languageAuth, languageModel } from '../language-provider';
+import type { TextRoute } from '../textRoute';
 import { allowanceCheck } from '../allowance';
 import { reserveGenerationSpend } from '../generationRequests';
 import { assertMeterFunding, meter, type MeterEvent } from '../meter';
@@ -65,15 +67,17 @@ export type DevelopmentDependencies = {
   funding: (id: string, model?: string) => Promise<void>;
   reservation: (id: string) => Promise<boolean>;
 };
-export type DevelopmentAuth = { token: string; method: 'api-key' | 'oidc'; vendor?: TextVendor };
+export type DevelopmentAuth = { token: string; method: 'api-key' | 'oidc'; vendor?: TextVendor | TextRoute };
 async function developmentAuth(model: string): Promise<DevelopmentAuth> {
   if (engineMock()) return { token: 'mock-not-sent', method: 'api-key' };
+  assertDirectBillingReady(model);
   const vendor = textVendor(model);
   const method = vendor === 'openai' || vendorKey('gateway') ? 'api-key' : 'oidc';
   const auth = await languageAuth(model);
   const token = auth.Authorization?.replace(/^Bearer\s+/i, '');
   if (!token) throw new DevelopmentError('This workspace has no connected development provider.', 503);
-  return { token, method, vendor };
+  // The door the auth was issued for (a direct vendor under TEXT_DIRECT), so languageModel checks the same one.
+  return { token, method, vendor: (auth[TEXT_PROVIDER_HEADER] as TextRoute | undefined) ?? vendor };
 }
 async function reservationExists(id: string) {
   await platformReady();
@@ -362,6 +366,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   const models = await deps.models(), menu = developmentModels(models);
   const model = models.find(model => model.id === input.model && menu.some(entry => entry.id === model.id));
   if (!model) throw new DevelopmentError('Choose an available thinking model with confirmed pricing.', 422);
+  assertDirectBillingReady(model.id);
   if (images && !canSee(model)) throw new DevelopmentError(`${model.name} cannot see images. Choose an agent model that can ${input.kind === 'verify' ? 'see the take and its masters' : 'read the drawing'}.`, 422);
   const answer = developmentAnswerTokens(input.kind);
   const reasoning = atomikReasoningRequest(model, input.effort, answer, answer);

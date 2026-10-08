@@ -665,3 +665,36 @@ for (const agentKind of ['raw', 'suite', 'astra'] as const) test(`direct ${agent
     });
   } } finally { if (priorKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = priorKey; if (previousMock === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = previousMock; }
 });
+
+test('until direct text is billed (PR 3), a TEXT_DIRECT model is refused before a quote, a reservation or a call', async () => {
+  const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
+  delete process.env.ENGINE_MOCK; process.env.ANTHROPIC_API_KEY = 'test-anthropic-key-never-sent';
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('No provider call is allowed in this test.'); };
+  try {
+    await runInTenant(workspace(), async () => {
+      const { input } = await fixture();
+      const h = harness();
+      process.env.TEXT_DIRECT = 'anthropic';
+      await expect(quoteAtomikJob(input, 'owner', h.deps)).rejects.toMatchObject({ name: 'TextNotSentError', status: 422, message: expect.stringContaining('not billed yet (PR 3)') });
+      await expect(prepareAtomikJob(input, 'owner', undefined, h.deps)).rejects.toMatchObject({ status: 422 });
+      expect(h.reservations()).toBe(0); expect(h.events).toHaveLength(0);
+      // A job approved before the switch is refused at run time, before the provider: failed, nothing charged.
+      delete process.env.TEXT_DIRECT;
+      const prepared = await prepareAtomikJob({ ...input, requestId: randomUUID() }, 'owner', undefined, h.deps);
+      process.env.TEXT_DIRECT = 'anthropic';
+      await runAtomikJob(prepared.job.id, 'owner', h.deps);
+      expect(h.calls()).toBe(0);
+      const [job] = await listAtomikJobs('owner', input.projectId);
+      expect(job).toMatchObject({ status: 'failed', costUsd: 0 });
+      expect(h.events.at(-1)).toMatchObject({ status: 'failed', engineCostUsd: 0 });
+    });
+    // The suite agent's own door refuses too, before building a model.
+    process.env.TEXT_DIRECT = 'anthropic';
+    const { runSuiteAgent } = await import('../../lib/workbench/suite-agent');
+    await expect(runSuiteAgent({ model: 'anthropic/claude-sonnet-4.6' } as Parameters<typeof runSuiteAgent>[0], {})).rejects.toMatchObject({ name: 'TextNotSentError', status: 422 });
+  } finally {
+    globalThis.fetch = realFetch;
+    for (const [name, value] of [['ENGINE_MOCK', saved.mock], ['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+  }
+});
