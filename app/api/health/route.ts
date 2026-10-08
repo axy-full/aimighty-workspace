@@ -13,6 +13,7 @@ import { mailConfigured, mailFrom } from "@/lib/mail";
 import { engineMock } from "@/lib/mock";
 import { dispatchMode } from "@/lib/dispatch";
 import { recentDispatches } from "@/lib/dispatch-log";
+import { deployedCommit } from "@/lib/deployment";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -186,7 +187,7 @@ export const GET = recoveryRoute(async function GET(req: Request) {
           process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
         ),
         region: process.env.VERCEL_REGION ?? "local",
-        commit: (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7),
+        commit: (deployedCommit() ?? "local").slice(0, 7),
       },
       { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } },
     ),
