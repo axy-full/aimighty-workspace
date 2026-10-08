@@ -13,6 +13,7 @@ import { runInline } from "./renderWork";
 import { submitVideoRow } from "./submitVideo";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import { sendMail, mailConfigured } from "./mail";
+import { backgroundMailOrigin } from "./site";
 import { membershipRole, workspaceAdmins } from "./platform";
 import { workspaceLimits, standing } from "./limits";
 import { notify } from "./push";
@@ -404,11 +405,6 @@ async function pruneLine(workspaceId: string): Promise<void> {
   for (const id of ids) if (!still.has(id)) await leavePool(id, workspaceId);
 }
 
-function siteUrl(): string {
-  const raw = process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL
-    ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
-  return raw.replace(/\/$/, "");
-}
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 
 /** Tell the owner and admins, once per episode: the first take held while nothing else was. */
@@ -422,7 +418,10 @@ export async function notifyHeld(gen: { id: string; needs: number; left: number 
   const body = `A take needs ${gen.needs} credits and ${Math.max(0, Math.floor(gen.left))} are left. Top up to release it — nothing is lost.`;
   await notify("balanceLow", admins.map((a) => a.id), { title, body, url: SETTINGS_CREDITS }).catch(() => {});
   if (!mailConfigured()) return;
-  const link = `${siteUrl()}${SETTINGS_CREDITS}`;
+  /* The emailed link is built on the configured origin only (lib/site.ts), never a request's headers; without one, no mail. */
+  const origin = backgroundMailOrigin();
+  if (origin === null) { console.error("[mail] APP_ORIGIN is not set: the held-renders email was not sent."); return; }
+  const link = `${origin}${SETTINGS_CREDITS}`;
   await Promise.allSettled(admins.filter((a) => a.email).map((a) => sendMail({
     to: a.email,
     subject: `${ws.name}: ${title}`,
