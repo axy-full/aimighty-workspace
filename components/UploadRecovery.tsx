@@ -30,13 +30,19 @@ export default function UploadRecovery({ scope }: { scope: string | null }) {
   ) as { entries?: UploadEnvelope[]; error?: string };
   const entries = state.entries ?? [];
   if (!scope || (!entries.length && !state.error)) return null;
+  /* Finished receipts stay listed until dismissed; only an unfinished upload asks for its original file. */
+  const resumable = entries.some(
+    (entry) => entry.state !== "complete" && entry.state !== "blocked",
+  );
   return (
     <details className={styles.panel}>
       <summary>
         Uploads <span>{entries.length || "!"}</span>
       </summary>
       <section aria-label="Upload recovery" className={styles.body}>
-        <p>Choose the original file to resume an interrupted upload.</p>
+        {resumable && (
+          <p>Choose the original file to resume an interrupted upload.</p>
+        )}
         {state.error && <p role="alert">{state.error}</p>}
         {entries.map((entry) => (
           <UploadRow key={entry.session} entry={entry} />
