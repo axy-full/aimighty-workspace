@@ -83,6 +83,7 @@ ASTRA_BLENDER_RATE_CARD=<unchanged>
 - Billing is unchanged: the same rate card and formula, applied to the CPU milliseconds, wall duration and egress that the worker reports. The meter engine is `selfhost-blender` (`vercel-sandbox` for Vercel), the model is still `blender-5.2.2-cpu`, and both are charged in credits the same way. Missing usage leaves the reservation held as uncertain.
 - A job keeps the backend it was approved under. One approved on the other backend fails before it starts and is refunded; one that already started is read and stopped on its own backend. Rows from before the switch are Vercel rows.
 - Recovery reads a session by name from whichever worker holds it, stops it 240 seconds after its claim, and never creates one.
+- A self-hosted session is stopped as soon as its outputs are read into memory, before they are stored, so its reported duration covers the render alone. Recovery leaves a job alone while its outputs are being stored. Vercel keeps storing first: the VM's own 180-second timeout already bounds its duration.
 
 ## Low-level server integration
 

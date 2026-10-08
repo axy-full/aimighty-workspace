@@ -301,3 +301,35 @@ test('a cancel that read the job while it was claimed, then found it back in the
     expect(f.metered.map(event => [event.status, event.engineCostUsd])).toEqual([['failed', 0]]);
     expect(pool.calls).toEqual([]);
 }));
+
+test('a self-hosted session is stopped before the outputs are stored, so a slow storage write does not stretch its billed duration', async () => context('selfhost-stop-before-store', async (m) => {
+    const pool = workerPool();
+    pool.liveDuration = true;
+    const f = await selfhost(pool);
+    const store = f.deps.storeArtifacts!;
+    let stoppedWhenStoring: string | undefined;
+    let duringStore: Record<string, unknown> | undefined;
+    f.deps.storeArtifacts = async (...args) => {
+        stoppedWhenStoring = pool.sessions.get(W1)?.status;
+        // The panel's poll reconciles while the outputs are being written: it must leave the job to the writer.
+        await m.reconcileAstraRender(args[0], f.deps);
+        duringStore = await m.row(args[0]);
+        await new Promise(resolve => setTimeout(resolve, 1500)); // a slow storage write
+        return store(...args);
+    };
+    const first = await m.prepareAstraRender(m.input, 'u_test', undefined, f.deps);
+    const started = Date.now();
+    await m.runAstraRender(first.job.id, f.deps);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1500);
+    expect(stoppedWhenStoring).toBe('stopped');
+    expect(duringStore).toMatchObject({ status: 'saving', settled: 0 });
+    const row = await m.row(first.job.id);
+    expect(row.status).toBe('succeeded');
+    const usage = JSON.parse(String(row.usage_json));
+    expect(usage.durationMs).toBeLessThan(1500);
+    expect(f.metered).toHaveLength(1);
+    const { astraComputeCost, astraComputeRates } = await import('../../lib/astra-blender/render-pricing');
+    expect(f.metered[0].engineCostUsd).toBe(astraComputeCost(usage, astraComputeRates()!));
+    // One stop on the worker: the later stop in cleanup is not repeated once the first was confirmed.
+    expect(pool.calls.filter(call => call.method === 'DELETE')).toHaveLength(1);
+}));

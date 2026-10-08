@@ -223,7 +223,15 @@ async function executeAstraProgram(program:string,inputs:AstraRenderInput[],onCr
   };
   // A self-hosted worker takes only the name: its runtime is already installed at the same paths.
   const instance = source ? await runtime.create({ ...vendorCredentials(backend), ...options, source }) : await runtime.create(options);
-  let failed = false;
+  let failed = false, stopped = false;
+  const stopAndRecord = async () => {
+    await instance.stop({ signal: AbortSignal.timeout(10_000) });
+    if(dependencies.onStopped){
+      const final=await runtime.get({...vendorCredentials(backend),name:instance.name,resume:false,signal:AbortSignal.timeout(10_000)});
+      await dependencies.onStopped(runtimeUsage(final));
+    }
+    stopped = true;
+  };
   try {
     // Persist BEFORE files or command submission. A failed checkpoint stops the VM.
     await onCreated?.(instance.name);
@@ -248,16 +256,17 @@ async function executeAstraProgram(program:string,inputs:AstraRenderInput[],onCr
       glb=candidate;
     } catch { signal.throwIfAborted(); /* A full native scene may not have a supported portable GLB representation. */ }
     const artifacts = { blend, preview, ...(glb?{glb}:{}) };
+    /* Self-hosted: the outputs are in memory, so stop the session now. Its usage then covers the render
+       alone (a slow storage write cannot stretch it past the quoted 180 s) and the worker is free sooner.
+       A stop that fails here does not lose the outputs: they are stored, and the stop is retried below.
+       Vercel keeps its order: the VM's own 180 s timeout already bounds its reported duration. */
+    if (backend === "selfhost") await stopAndRecord().catch(() => {});
     await dependencies.onArtifacts?.(artifacts);
     return artifacts;
   } catch (error) { failed = true; throw error; }
   finally {
     try {
-      await instance.stop({ signal: AbortSignal.timeout(10_000) });
-      if(dependencies.onStopped){
-        const stopped=await runtime.get({...vendorCredentials(backend),name:instance.name,resume:false,signal:AbortSignal.timeout(10_000)});
-        await dependencies.onStopped(runtimeUsage(stopped));
-      }
+      if (!stopped) await stopAndRecord();
     }
     catch { if (!failed) throw new AstraRuntimeError("The 3D runtime completed, but runtime shutdown could not be confirmed. The persisted runtime needs reconciliation.", "stop_unconfirmed"); }
   }

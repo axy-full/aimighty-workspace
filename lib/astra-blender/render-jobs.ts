@@ -338,6 +338,10 @@ export async function reconcileAstraRender(id: string, deps: AstraRenderDependen
         await settle(row, 'cancelled', null, deps);
         return;
     }
+    // Outputs are being stored (each stored output refreshes updated_at): leave the writer to finish. A self-hosted
+    // session is already stopped by then, with its usage recorded, so settling here would race the write.
+    if (row.status === 'saving' && Date.now() - Number(row.updated_at) <= ASTRA_RUN_CEILING_MS)
+        return;
     // Measured from the claim: a job can wait in the queue (busy workers, dispatch outage) long before it starts.
     const startedAt = Number(row.claimed_at ?? row.created_at);
     const cachedUsage = row.usage_json ? JSON.parse(row.usage_json) as AstraRuntimeUsage | null : null;

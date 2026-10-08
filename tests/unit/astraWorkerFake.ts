@@ -4,7 +4,7 @@ export const WORKER_SECRET = "unit-worker-secret-0123456789-abcdefghij";
 export const WORKER_URLS = ["http://render-1:8080", "http://render-2:8080", "http://render-3:8080"];
 
 export type WorkerMode = "free" | "busy" | "down" | "refuse" | "error";
-type Session = { name: string; status: "running" | "stopped"; files: Map<string, Buffer> };
+type Session = { name: string; status: "running" | "stopped"; files: Map<string, Buffer>; createdAt?: number; stoppedAt?: number };
 export type WorkerCall = { origin: string; method: string; path: string; query: string | null; redirect: RequestRedirect | undefined; authorization: string | null; body: Buffer | null };
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDpkAAAAASUVORK5CYII=", "base64");
@@ -15,7 +15,9 @@ export function workerPool(origins: string[] = WORKER_URLS, secrets: Record<stri
   const sessions = new Map<string, Session>();
   const calls: WorkerCall[] = [];
   const usage = { activeCpuMs: 12000, durationMs: 15000, egressBytes: 0 };
-  let exitCode = 0;
+  let exitCode = 0, liveDuration = false;
+  /* By default a fixed usage; with liveDuration, wall time from create to stop, frozen at stop (as the worker reports it). */
+  const reported = (held: Session) => liveDuration ? { ...usage, durationMs: (held.stoppedAt ?? Date.now()) - (held.createdAt ?? Date.now()) } : usage;
   const reply = (status: number, body?: unknown) => new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   const fetch = async (input: URL, init: RequestInit): Promise<Response> => {
     const url = new URL(String(input));
@@ -36,13 +38,13 @@ export function workerPool(origins: string[] = WORKER_URLS, secrets: Record<stri
       if (!/^astra-blender-[0-9a-f-]{36}$/.test(String(name))) return reply(400, { error: "bad name" });
       // A running session makes the worker busy; a stopped one is replaced.
       if (mode === "busy" || held?.status === "running") return reply(409, { busy: true });
-      sessions.set(url.origin, { name, status: "running", files: new Map() });
+      sessions.set(url.origin, { name, status: "running", files: new Map(), createdAt: Date.now() });
       return reply(201, { name, status: "running" });
     }
     const name = parts[2];
     if (!held || held.name !== name) return reply(404);
-    if (parts.length === 3 && init.method === "GET") return reply(200, { name, status: held.status, ...usage });
-    if (parts.length === 3 && init.method === "DELETE") { held.status = "stopped"; held.files.clear(); return reply(200, { name, status: "stopped", ...usage }); }
+    if (parts.length === 3 && init.method === "GET") return reply(200, { name, status: held.status, ...reported(held) });
+    if (parts.length === 3 && init.method === "DELETE") { if (held.status === "running") held.stoppedAt = Date.now(); held.status = "stopped"; held.files.clear(); return reply(200, { name, status: "stopped", ...reported(held) }); }
     if (held.status === "stopped" && init.method !== "GET") return reply(409, { error: "stopped" });
     if (parts[3] === "files" && init.method === "PUT") { held.files.set(url.searchParams.get("path")!, body!); return reply(201, { path: url.searchParams.get("path"), bytes: body!.length }); }
     if (parts[3] === "run" && init.method === "POST") {
@@ -65,6 +67,7 @@ export function workerPool(origins: string[] = WORKER_URLS, secrets: Record<stri
     running: () => [...sessions].filter(([, session]) => session.status === "running").map(([origin]) => origin),
     set(origin: string, mode: WorkerMode) { modes.set(origin, mode); },
     set exitCode(value: number) { exitCode = value; },
+    set liveDuration(value: boolean) { liveDuration = value; },
     /** Leave a session on a worker as if another render held it. */
     hold(origin: string, name: string) { sessions.set(origin, { name, status: "running", files: new Map() }); },
   };
