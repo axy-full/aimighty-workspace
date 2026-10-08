@@ -99,7 +99,7 @@ export function scenesOf(project: Project | null): number {
 export const lookRefs = (project: Project | null) =>
   (project?.assets ?? []).filter((a) => ["image", "link", "document"].includes(a.kind)).length;
 /* The category drafts file 3D uploads and renders under; older drafts carry the pre-rename value. */
-const ASTRA_CATEGORIES = new Set(["Astra", ["Astra", "blender"].join(" ")]);
+const ASTRA_CATEGORIES = new Set(["3D", "Astra", ["Astra", "blender"].join(" ")]);
 const astraAssets = (project: Project | null) =>
   (project?.assets ?? []).filter((a) => ASTRA_CATEGORIES.has(a.category) || a.mime === "model/gltf-binary").length;
 const uploads = (project: Project | null, kind?: string) =>
