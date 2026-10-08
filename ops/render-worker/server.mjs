@@ -17,7 +17,7 @@ import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { constants as fsConstants, readFileSync } from "node:fs";
-import { lstat, mkdir, open, readdir, readFile, readlink, realpath, rm } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, readlink, realpath, rm, stat } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import { posix as posixPath, join } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -41,6 +41,12 @@ export const LIMITS = Object.freeze({
   maxAgeMs: 300_000,
   jsonBytes: 64 * 1024,
   secretChars: 32,
+  headersTimeoutMs: 15_000,
+  // Receiving any request (the largest is a 50 MiB upload). Node's requestTimeout
+  // stops counting once the request is in, so the run route has its own deadline.
+  requestTimeoutMs: 190_000,
+  keepAliveTimeoutMs: 5_000,
+  runDeadlineMs: 190_000,
 });
 const CHILD_PATH = "/usr/bin:/bin";
 const CLOCK_TICKS_PER_SECOND = 100; // Linux USER_HZ; Node has no sysconf().
@@ -91,35 +97,81 @@ function readCpuUsec(file) {
   } catch { return null; }
 }
 
-const statTicks = (stat) => {
-  // Fields after "(comm) ": state, ppid, pgrp, ... utime..cstime are stat fields 14..17.
-  const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-  return { pgrp: Number(fields[2]), ticks: Number(fields[11]) + Number(fields[12]) + Number(fields[13]) + Number(fields[14]) };
-};
 const ticksToMs = (ticks) => Math.round((ticks * 1000) / CLOCK_TICKS_PER_SECOND);
 
-/**
- * Fallback meter (no readable cgroup; Node exposes no RUSAGE_CHILDREN): CPU ms
- * of the run's process group, incl. children its members have reaped.
- * `leaderCpuMs` is one read (python, then Blender after execve); `groupCpuMs`
- * walks /proc for the other members and is slower on a busy host.
- */
-async function leaderCpuMs(pid) {
-  try { return ticksToMs(statTicks(await readFile(`/proc/${pid}/stat`, "utf8")).ticks); } catch { return 0; }
+function uptimeTicks() {
+  try { return Math.floor(Number(readFileSync("/proc/uptime", "utf8").split(" ")[0]) * CLOCK_TICKS_PER_SECOND); } catch { return 0; }
 }
 
-async function groupCpuMs(pgid) {
-  let ticks = 0;
-  let entries;
-  try { entries = await readdir("/proc"); } catch { return 0; }
-  for (const entry of entries) {
-    if (!/^\d+$/.test(entry)) continue;
-    try {
-      const stat = statTicks(await readFile(`/proc/${entry}/stat`, "utf8"));
-      if (stat.pgrp === pgid) ticks += stat.ticks;
-    } catch { /* exited while reading */ }
+/**
+ * Fallback CPU meter, used only when the cgroup's cpu.stat cannot be read
+ * (Node exposes no RUSAGE_CHILDREN). Every 100 ms it reads utime+stime of every
+ * process owned by the worker's uid that started after the session did (not
+ * the server, not PID 1), whatever its process group or session: a setsid()
+ * or double-forked child is billed too. Each process counts at its highest
+ * reading, so the time after its last reading (under 100 ms) is missed, and so
+ * is a process shorter than one reading. Known processes are re-read every
+ * tick; the /proc walk that finds new ones runs one at a time.
+ */
+export class ProcessMeter {
+  constructor({ uid = process.getuid?.(), exclude = [process.pid, 1], intervalMs = 100 } = {}) {
+    this.uid = uid;
+    this.exclude = new Set(exclude);
+    this.since = uptimeTicks() - 1;
+    this.seen = new Map(); // "pid:starttime" -> highest utime+stime ticks
+    this.known = new Set();
+    this.scanning = null;
+    this.timer = setInterval(() => this.tick(), intervalMs);
+    this.timer.unref();
+    this.tick();
   }
-  return ticksToMs(ticks);
+
+  totalMs() {
+    let ticks = 0;
+    for (const value of this.seen.values()) ticks += value;
+    return ticksToMs(ticks);
+  }
+
+  async read(pid) {
+    const text = await readFile(`/proc/${pid}/stat`, "utf8");
+    // Fields after "(comm) " start at stat field 3: utime, stime = 14, 15; starttime = 22.
+    const fields = text.slice(text.lastIndexOf(")") + 2).split(" ");
+    const started = Number(fields[19]);
+    if (started < this.since) return false;
+    const key = `${pid}:${started}`;
+    this.seen.set(key, Math.max(this.seen.get(key) ?? 0, Number(fields[11]) + Number(fields[12])));
+    return true;
+  }
+
+  async readKnown() {
+    await Promise.all([...this.known].map((pid) => this.read(pid).catch(() => { this.known.delete(pid); })));
+  }
+
+  async scan() {
+    let entries;
+    try { entries = await readdir("/proc"); } catch { return; }
+    for (const entry of entries) {
+      const pid = Number(entry);
+      if (!Number.isInteger(pid) || this.exclude.has(pid) || this.known.has(pid)) continue;
+      try {
+        if ((await stat(`/proc/${pid}`)).uid !== this.uid) continue;
+        if (await this.read(pid)) this.known.add(pid);
+      } catch { /* exited */ }
+    }
+  }
+
+  tick() {
+    this.readKnown();
+    this.scanning ??= this.scan().finally(() => { this.scanning = null; });
+  }
+
+  /** A last reading of everything, before the processes are killed. */
+  async final() {
+    await (this.scanning ?? this.scan());
+    await this.readKnown();
+  }
+
+  stop() { clearInterval(this.timer); }
 }
 
 /** Keeps only the last `limit` bytes written to it. */
@@ -191,6 +243,12 @@ export function createRenderWorker(options) {
   const maxAgeMs = options.maxAgeMs ?? LIMITS.maxAgeMs;
   const sweepStrays = options.sweepStrays === true;
   const log = options.log ?? ((line) => console.log(line));
+  const timeouts = {
+    headersMs: options.headersTimeoutMs ?? LIMITS.headersTimeoutMs,
+    requestMs: options.requestTimeoutMs ?? LIMITS.requestTimeoutMs,
+    keepAliveMs: options.keepAliveTimeoutMs ?? LIMITS.keepAliveTimeoutMs,
+    runDeadlineMs: options.runDeadlineMs ?? LIMITS.runDeadlineMs,
+  };
   let realRoot = null;
   let current = null;
   let creating = false;
@@ -231,7 +289,7 @@ export function createRenderWorker(options) {
       const now = readCpuUsec(cpuStatPath);
       if (now !== null) return Math.max(0, Math.round((now - session.cpuBase) / 1000));
     }
-    return session.childCpuMs + (session.run?.sampleMs ?? 0);
+    return session.meter?.totalMs() ?? 0;
   }
 
   function usage(session) {
@@ -251,8 +309,10 @@ export function createRenderWorker(options) {
     session.stoppedAt = Date.now();
     session.abort.abort();
     session.stopping = (async () => {
+      await session.meter?.final().catch(() => {});
       if (session.run) { session.run.kill(); await session.run.done; }
       await Promise.allSettled([...session.ops]);
+      session.meter?.stop();
       await sweep();
       session.finalCpuMs = liveCpuMs(session);
       await wipe().catch(() => log("wipe failed"));
@@ -358,9 +418,10 @@ export function createRenderWorker(options) {
       await wipe();
       for (const dir of [["astra"], ["astra", "input"], ["astra", "output"]]) await mkdir(disk(dir), { mode: 0o700 });
       const now = Date.now();
+      const cpuBase = readCpuUsec(cpuStatPath);
       current = {
         name: body.name, status: "running", createdAt: now, lastActivity: now, stoppedAt: null,
-        cpuBase: readCpuUsec(cpuStatPath), childCpuMs: 0, finalCpuMs: null,
+        cpuBase, meter: cpuBase === null ? new ProcessMeter() : null, finalCpuMs: null,
         files: new Map(), committedBytes: 0, pendingBytes: 0, pendingPaths: new Set(),
         run: null, ops: new Set(), abort: new AbortController(), stopping: null,
       };
@@ -438,6 +499,12 @@ export function createRenderWorker(options) {
   }
 
   async function runCommand(req, res, session) {
+    // The whole exchange, from the first byte to the answer, ends by this deadline.
+    const deadline = setTimeout(() => { session.run?.kill(); req.socket.destroy(); }, timeouts.runDeadlineMs);
+    try { await runOnce(req, res, session); } finally { clearTimeout(deadline); }
+  }
+
+  async function runOnce(req, res, session) {
     const body = await readJson(req);
     requireRunning(session);
     if (!validRunBody(body)) throw new HttpError(400, { error: "command_refused" });
@@ -451,17 +518,8 @@ export function createRenderWorker(options) {
     const child = spawn(PYTHON, ["run.py"], { cwd, env: { PATH: CHILD_PATH, HOME: realRoot }, detached: true, stdio: ["ignore", "pipe", "pipe"] });
     let timedOut = false;
     let settled = false;
-    const run = { sampleMs: 0, kill: () => killGroup(child.pid), done: null };
+    const run = { kill: () => killGroup(child.pid), done: null };
     session.run = run;
-    let scanning = false;
-    const record = (ms) => { run.sampleMs = Math.max(run.sampleMs, ms); };
-    const sampler = setInterval(() => {
-      if (!child.pid) return;
-      leaderCpuMs(child.pid).then(record);
-      if (scanning) return;
-      scanning = true;
-      groupCpuMs(child.pid).then(record).finally(() => { scanning = false; });
-    }, 100);
     const timer = setTimeout(() => { timedOut = true; run.kill(); }, body.timeoutMs);
     child.stdout.on("data", (chunk) => stdout.push(chunk));
     child.stderr.on("data", (chunk) => stderr.push(chunk));
@@ -472,7 +530,6 @@ export function createRenderWorker(options) {
       const finish = () => {
         if (settled) return;
         settled = true;
-        clearInterval(sampler);
         clearTimeout(timer);
         killGroup(child.pid); // nothing of the run outlives it
         child.stdout.destroy();
@@ -488,7 +545,6 @@ export function createRenderWorker(options) {
       child.on("close", finish);
     });
     const { code, signal } = await run.done;
-    session.childCpuMs += run.sampleMs;
     session.run = null;
     session.lastActivity = Date.now();
     const exitCode = code ?? 128 + (osConstants.signals[signal] ?? 9);
@@ -521,7 +577,8 @@ export function createRenderWorker(options) {
     throw new HttpError(405, { error: "method_not_allowed" });
   }
 
-  const server = createServer((req, res) => {
+  // Timeouts are checked every connectionsCheckingInterval (1 s here, 30 s by default).
+  const server = createServer({ connectionsCheckingInterval: options.connectionsCheckingIntervalMs ?? 1_000 }, (req, res) => {
     handle(req, res).catch(async (error) => {
       const known = error instanceof HttpError;
       if (!known) log(`internal error: ${error?.code ?? error?.name ?? "unknown"}`);
@@ -535,6 +592,9 @@ export function createRenderWorker(options) {
     });
   });
   server.maxConnections = 64;
+  server.headersTimeout = timeouts.headersMs;
+  server.requestTimeout = timeouts.requestMs;
+  server.keepAliveTimeout = timeouts.keepAliveMs;
 
   const reaper = setInterval(() => {
     const session = current;
@@ -553,6 +613,7 @@ export function createRenderWorker(options) {
     async close() {
       clearInterval(reaper);
       if (current) await stopSession(current);
+      current?.meter?.stop();
       const closed = new Promise((resolve) => server.close(() => resolve()));
       server.closeAllConnections();
       await closed;
@@ -566,6 +627,9 @@ async function main() {
   // the /tmp wipe and the stray-process sweep.
   const testRoot = process.env.ASTRA_WORKER_TEST_ROOT;
   const secret = process.env.ASTRA_WORKER_SECRET;
+  // Only keeps the secret out of process.env for later code in this process. It
+  // does NOT clear /proc/<pid>/environ (the kernel's copy of the start-up
+  // environment): any process of the worker user can still read it there.
   delete process.env.ASTRA_WORKER_SECRET;
   let worker;
   try {

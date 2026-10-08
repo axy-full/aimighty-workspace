@@ -7,6 +7,7 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createConnection } from "node:net";
 import { createRenderWorker, LIMITS } from "../../ops/render-worker/server.mjs";
 
 // The worker runs the real /usr/bin/python3 and the same launcher shape the
@@ -406,7 +407,27 @@ test("usage without a readable cgroup falls back to the run's own CPU time", { s
     await put(t, id, "/vercel/sandbox/astra/run.py", t.launcher);
     assert.equal((await run(t, id)).data.exitCode, 0);
     const stopped = await t.api("DELETE", `/v1/sessions/${id}`);
-    assert.ok(stopped.data.activeCpuMs >= 300 && stopped.data.activeCpuMs < 5_000, String(stopped.data.activeCpuMs));
+    // Lower bound only: on a shared test machine other processes of this user
+    // that start during the session are counted too (in the container there are none).
+    assert.ok(stopped.data.activeCpuMs >= 300, String(stopped.data.activeCpuMs));
+  } finally { await t.close(); }
+});
+
+test("usage without a cgroup still bills a child that left the process group (setsid)", { skip }, async () => {
+  const t = await setup({ cpuStatPath: "/nonexistent/cpu.stat" });
+  try {
+    const id = await session(t);
+    const pidFile = join(t.tmp, "scratch", "escaped");
+    const burn = `import os, time\nopen('${pidFile}', 'w').write(str(os.getpid()))\nend = time.process_time() + 0.8\nwhile time.process_time() < end: pass\n`;
+    // run.py starts the burner in a new session and returns at once: the run's
+    // process group is gone before the burner has used any CPU.
+    await put(t, id, "/vercel/sandbox/astra/run.py", `import subprocess, sys\nsubprocess.Popen([sys.executable, '-c', ${JSON.stringify(burn)}], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n`);
+    assert.equal((await run(t, id)).data.exitCode, 0);
+    assert.ok(await waitFor(() => existsSync(pidFile)));
+    const escaped = Number(await readFile(pidFile, "utf8"));
+    assert.ok(await waitFor(() => !alive(escaped), 10_000), "the burner finishes");
+    const stopped = await t.api("DELETE", `/v1/sessions/${id}`);
+    assert.ok(stopped.data.activeCpuMs >= 500, String(stopped.data.activeCpuMs));
   } finally { await t.close(); }
 });
 
@@ -454,6 +475,48 @@ test("DELETE is idempotent and wipes the session", { skip }, async () => {
   } finally { await t.close(); }
 });
 
+test("HTTP timeouts are explicit: headers 15 s, request 190 s, keep-alive 5 s, run route 190 s", async () => {
+  assert.deepEqual([LIMITS.headersTimeoutMs, LIMITS.requestTimeoutMs, LIMITS.keepAliveTimeoutMs, LIMITS.runDeadlineMs], [15_000, 190_000, 5_000, 190_000]);
+  const worker = createRenderWorker({ secret: SECRET, log: () => {} });
+  assert.equal(worker.server.headersTimeout, 15_000);
+  assert.equal(worker.server.requestTimeout, 190_000);
+  assert.equal(worker.server.keepAliveTimeout, 5_000);
+  assert.ok(LIMITS.runDeadlineMs > LIMITS.maxTimeoutMs);
+  await worker.close();
+});
+
+test("timeouts end slow headers, slow bodies and an overlong run exchange", { skip }, async () => {
+  const t = await setup({ headersTimeoutMs: 300, requestTimeoutMs: 600, keepAliveTimeoutMs: 200, runDeadlineMs: 800, connectionsCheckingIntervalMs: 50 });
+  const raw = (text) => new Promise((resolve) => {
+    const socket = createConnection(t.worker.server.address().port, "127.0.0.1");
+    let answer = "";
+    const started = Date.now();
+    socket.on("data", (chunk) => { answer += chunk; });
+    socket.on("error", () => {});
+    socket.on("close", () => resolve({ answer, ms: Date.now() - started }));
+    socket.write(text);
+  });
+  try {
+    const headers = await raw("POST /v1/sessions HTTP/1.1\r\nHost: worker\r\n");
+    assert.match(headers.answer, /^HTTP\/1\.1 408/);
+    assert.ok(headers.ms < 3_000);
+    const body = await raw(`POST /v1/sessions HTTP/1.1\r\nHost: worker\r\nAuthorization: Bearer ${SECRET}\r\nContent-Length: 100\r\n\r\n{`);
+    assert.match(body.answer, /^HTTP\/1\.1 408/);
+    assert.ok(body.ms < 3_000);
+    // The run route: a run allowed 20 s still ends at the 0.8 s exchange deadline, process killed.
+    const id = await session(t);
+    const pidFile = join(t.tmp, "scratch", "run-pid");
+    await put(t, id, "/vercel/sandbox/astra/run.py", `import os, time\nopen('${pidFile}', 'w').write(str(os.getpid()))\ntime.sleep(30)\n`);
+    const started = Date.now();
+    await assert.rejects(run(t, id, { timeoutMs: 20_000 }));
+    assert.ok(Date.now() - started < 5_000);
+    const pid = Number(await readFile(pidFile, "utf8"));
+    assert.ok(await waitFor(() => !alive(pid)));
+    assert.ok(await waitFor(() => t.worker.current().run === null));
+    assert.equal((await t.api("GET", `/v1/sessions/${id}`)).data.status, "running");
+  } finally { await t.close(); }
+});
+
 test("README's smoke script is smoke.mjs, byte for byte", async () => {
   const readme = readFileSync(new URL("../../ops/render-worker/README.md", import.meta.url), "utf8");
   const smoke = readFileSync(new URL("../../ops/render-worker/smoke.mjs", import.meta.url), "utf8");
@@ -469,11 +532,12 @@ test("compose: three identical workers but for their cores, locked down, interna
   const services = Object.fromEntries(Array.from({ length: blocks.length / 2 }, (_, index) => [blocks[index * 2], blocks[index * 2 + 1].split(/^\S/m)[0].replace(/ +#.*$/gm, "")]));
   assert.deepEqual(Object.keys(services), ["render-1", "render-2", "render-3"]);
   assert.deepEqual(Object.values(services).map((block) => /cpuset: "([\d,]+)"/.exec(block)?.[1]), ["12,13", "14,15", "16,17"]);
-  const [first, ...rest] = Object.values(services).map((block) => block.replace(/^ +cpuset: .*\n/m, ""));
+  assert.deepEqual(Object.values(services).map((block) => /ASTRA_WORKER_SECRET: \$\{(ASTRA_WORKER_SECRET_\d):\?/.exec(block)?.[1]), ["ASTRA_WORKER_SECRET_1", "ASTRA_WORKER_SECRET_2", "ASTRA_WORKER_SECRET_3"]);
+  const [first, ...rest] = Object.values(services).map((block) => block.replace(/^ +cpuset: .*\n/m, "").replace(/ASTRA_WORKER_SECRET_\d/g, "ASTRA_WORKER_SECRET_N"));
   for (const other of rest) assert.equal(other, first);
   for (const line of ["cpus: 2", "cpu_shares: 256", "mem_limit: 4g", "memswap_limit: 4g", "pids_limit: 256", "read_only: true", "cap_drop: [ALL]",
     'security_opt: ["no-new-privileges:true"]', "networks: [render-internal]", "/vercel/sandbox:size=1g,uid=10001,gid=10001,mode=0700", "/tmp:size=256m",
-    "ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET:?"]) {
+    "ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET_N:?"]) {
     assert.ok(first.includes(line), line);
   }
   assert.ok(!/^\s*ports:/m.test(yaml) && !/^\s*expose:/m.test(yaml));
