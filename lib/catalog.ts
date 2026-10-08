@@ -16,8 +16,8 @@ import modelCatalogJson from './modelCatalog.json';
  *
  * MODEL_CATALOG=static serves the same entries from lib/modelCatalog.json, a
  * dated snapshot of the gateway's public list (scripts/ops/snapshot-catalog.mjs),
- * limited to providers whose key is set and that can be called. The default
- * stays the live read.
+ * limited to the models that can be called where their calls will go (see
+ * callable() below). The default stays the live read.
  */
 
 /* ── What the gateway says about a model ──────────────────────────────── */
@@ -195,26 +195,25 @@ const PROVIDER_KEY: Record<CatalogProviderId, () => string | null> = {
 };
 
 /**
- * A text model is offered only while its provider can actually be called: by
- * the gateway, or directly once `TEXT_DIRECT` lists the provider. OpenAI text
- * always goes direct on its key. Stills (models that output images) already
- * go direct on their provider's key, so the key alone is enough for them.
+ * Offered only where the call will actually go. OpenAI (text goes direct) and
+ * stills (models that output images; they go direct) need their provider's
+ * key. Anthropic, Gemini and Grok text needs its own key once `TEXT_DIRECT`
+ * routes that vendor directly, and only the gateway while it is still on it.
  */
 function callable(model: CatalogModel, providerId: CatalogProviderId): boolean {
-  if (providerId === 'openai' || model.outputModalities?.includes('image')) return true;
-  return gatewayReachable() || isTextDirect(providerId);
+  if (providerId === 'openai' || model.outputModalities?.includes('image')) return Boolean(PROVIDER_KEY[providerId]());
+  return isTextDirect(providerId) ? Boolean(PROVIDER_KEY[providerId]()) : gatewayReachable();
 }
 
 /**
- * Every snapshot model whose provider's key is set and which can be called
- * (all of them under ENGINE_MOCK, as the live read serves everything there).
- * Prices, limits, modalities and reasoning options are the gateway's, frozen
- * on `pricedAt`.
+ * Every snapshot model that can be called (all of them under ENGINE_MOCK, as
+ * the live read serves everything there). Prices, limits, modalities and
+ * reasoning options are the gateway's, frozen on `pricedAt`.
  */
 export function staticCatalog(snapshot?: CatalogSnapshot): CatalogModel[] {
   const mock = engineMock();
   return snapshotModels(snapshot).flatMap(({ providerId, ...model }) =>
-    mock || (PROVIDER_KEY[providerId]() && callable(model, providerId)) ? [model] : []);
+    mock || callable(model, providerId) ? [model] : []);
 }
 
 const warnedSources = new Set<string>();

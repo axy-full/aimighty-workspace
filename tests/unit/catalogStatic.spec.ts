@@ -149,16 +149,21 @@ test("the static catalogue serves exactly what the gateway read serves", async (
     expect(JSON.stringify(viaStatic.get(m.id)), m.id).toBe(JSON.stringify(m));
 });
 
-test("the static catalogue serves a provider's models only while its key is set", async () => {
+test("OpenAI models and stills are served on their provider's key; ENGINE_MOCK serves everything", async () => {
   const snapshot = buildCatalogSnapshot(gatewayData, OFFERED_CATALOG_IDS, "2026-10-08", SOURCE);
-  const owners = () => [...new Set(staticCatalog(snapshot).map((m) => m.owner))].sort();
-  expect(owners()).toEqual(["anthropic", "google", "openai", "spacexai"]);
-  delete process.env.ANTHROPIC_API_KEY;
-  expect(owners()).toEqual(["google", "openai", "spacexai"]);
+  const ids = () => new Set(staticCatalog(snapshot).map((m) => m.id));
+  expect(ids()).toEqual(new Set(snapshot.models.map((m) => m.id)));
+  delete process.env.OPENAI_API_KEY;
+  expect([...ids()].filter((id) => id.startsWith("openai/"))).toEqual([]);
+  // Stills go direct on their own key; the gateway keeps carrying Gemini and Grok text.
   delete process.env.GEMINI_API_KEY;
   delete process.env.XAI_API_KEY;
-  expect(owners()).toEqual(["openai"]);
-  delete process.env.OPENAI_API_KEY;
+  let now = ids();
+  for (const id of ["google/gemini-3-pro-image", "google/gemini-3.1-flash-image", "spacexai/grok-imagine-image", "spacexai/grok-imagine-image-2.0"])
+    expect(now.has(id), id).toBe(false);
+  for (const id of ["google/gemini-3.5-flash", "spacexai/grok-4.7", "anthropic/claude-sonnet-4.6"]) expect(now.has(id), id).toBe(true);
+  delete process.env.AI_GATEWAY_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
   expect(staticCatalog(snapshot)).toEqual([]);
   // Under ENGINE_MOCK every entry is served, keys or not, as the live read does.
   process.env.ENGINE_MOCK = "1";
@@ -168,10 +173,9 @@ test("the static catalogue serves a provider's models only while its key is set"
   // An entry whose provider does not match its owner is never served.
   const tampered = JSON.parse(JSON.stringify(snapshot)) as CatalogSnapshot;
   tampered.models[0].providerId = tampered.models[0].providerId === "openai" ? "google" : "openai";
-  process.env.OPENAI_API_KEY = "sk-unit-static";
-  process.env.GEMINI_API_KEY = "gm-unit-static";
-  process.env.ANTHROPIC_API_KEY = "ak-unit-static";
-  expect(staticCatalog(tampered).map((m) => m.id)).not.toContain(snapshot.models[0].id);
+  Object.assign(process.env, { AI_GATEWAY_API_KEY: "gw-unit-static", OPENAI_API_KEY: "sk-unit-static", GEMINI_API_KEY: "gm-unit-static", ANTHROPIC_API_KEY: "ak-unit-static" });
+  now = new Set(staticCatalog(tampered).map((m) => m.id));
+  expect(now.has(snapshot.models[0].id)).toBe(false);
 });
 
 test("with the static catalogue, OpenAI text still needs an id the key can list; OpenAI stills do not", async () => {
@@ -187,32 +191,40 @@ test("with the static catalogue, OpenAI text still needs an id the key can list;
   expect(ids).not.toContain("google/veo-3.1-generate-001");
 });
 
-test("in static mode a provider's text models are offered only while the gateway or TEXT_DIRECT can call them", () => {
+test("in static mode Claude, Gemini and Grok text is offered where its calls will go: direct needs the key, the gateway needs only the gateway", () => {
   const snapshot = buildCatalogSnapshot(gatewayData, OFFERED_CATALOG_IDS, "2026-10-08", SOURCE);
-  const served = () => new Set(staticCatalog(snapshot).map((m) => m.id));
-  // Gateway reachable: every keyed provider.
-  expect(served()).toEqual(new Set(snapshot.models.map((m) => m.id)));
-
-  // No gateway, nothing direct: OpenAI (always direct) and stills (direct on their own key) only.
-  delete process.env.AI_GATEWAY_API_KEY;
   const textOf = (owner: string) => snapshot.models.filter((m) => m.owner === owner && !m.outputModalities?.includes("image")).map((m) => m.id);
-  let ids = served();
-  for (const owner of ["anthropic", "google", "spacexai"]) for (const id of textOf(owner)) expect(ids.has(id), id).toBe(false);
-  for (const id of ["openai/gpt-5-mini", "openai/gpt-image-2", "google/gemini-3-pro-image", "google/gemini-3.1-flash-image", "spacexai/grok-imagine-image-2.0"])
-    expect(ids.has(id), id).toBe(true);
+  const claude = textOf("anthropic"), gemini = textOf("google"), grok = textOf("spacexai");
+  expect(claude.length && gemini.length && grok.length).toBeTruthy();
+  const offered = (ids: string[]) => { const served = new Set(staticCatalog(snapshot).map((m) => m.id)); return ids.filter((id) => served.has(id)); };
+  const gateway = (up: boolean) => { if (up) process.env.AI_GATEWAY_API_KEY = "gw-unit-static"; else delete process.env.AI_GATEWAY_API_KEY; };
 
-  // Each vendor comes back on its own as TEXT_DIRECT lists it; unknown names are ignored.
-  process.env.TEXT_DIRECT = " anthropic ,nobody";
-  ids = served();
-  for (const id of textOf("anthropic")) expect(ids.has(id), id).toBe(true);
-  for (const id of [...textOf("google"), ...textOf("spacexai")]) expect(ids.has(id), id).toBe(false);
-  process.env.TEXT_DIRECT = "anthropic,google,xai";
-  expect(served()).toEqual(new Set(snapshot.models.map((m) => m.id)));
+  // 1. Direct with key: offered even with the gateway down.
+  gateway(false);
+  process.env.TEXT_DIRECT = "anthropic";
+  expect(offered(claude)).toEqual(claude);
 
-  // Direct still needs the provider's key.
+  // 2. Direct without key: hidden, even with the gateway up (the call would not go there).
+  gateway(true);
   delete process.env.ANTHROPIC_API_KEY;
-  ids = served();
-  for (const id of textOf("anthropic")) expect(ids.has(id), id).toBe(false);
+  expect(offered(claude)).toEqual([]);
+
+  // 3. Gateway up without key, vendor not direct: offered, exactly as today.
+  delete process.env.TEXT_DIRECT;
+  expect(offered(claude)).toEqual(claude);
+  expect(offered(gemini)).toEqual(gemini);
+  expect(offered(grok)).toEqual(grok);
+
+  // 4. Gateway down without direct: hidden, keys or not.
+  gateway(false);
+  process.env.ANTHROPIC_API_KEY = "ak-unit-static";
+  expect(offered([...claude, ...gemini, ...grok])).toEqual([]);
+
+  // Each vendor follows its own route; unknown names in TEXT_DIRECT are ignored.
+  process.env.TEXT_DIRECT = " anthropic ,nobody,xai";
+  expect(offered(claude)).toEqual(claude);
+  expect(offered(grok)).toEqual(grok);
+  expect(offered(gemini)).toEqual([]);
 });
 
 test("MODEL_CATALOG: only the exact value static reads the snapshot; an unknown value warns once and reads the gateway", () => {
