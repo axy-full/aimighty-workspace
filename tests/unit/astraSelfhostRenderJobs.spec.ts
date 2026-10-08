@@ -275,3 +275,29 @@ test('a job settled by another host never flips back to uncertain from a stale r
     expect(await m.row(second.job.id)).toMatchObject({ status: 'cancelled', settled: 1, error: 'refunded elsewhere' });
     expect(f.metered).toEqual([]);
 }));
+
+test('a cancel that read the job while it was claimed, then found it back in the queue after a busy release, refunds it', async () => context('selfhost-cancel-after-release', async (m) => {
+    const pool = workerPool();
+    const f = await selfhost(pool);
+    const first = await m.prepareAstraRender(m.input, 'u_test', undefined, f.deps);
+    // The cancel reads the job while a run holds its claim...
+    await m.db().execute({ sql: "UPDATE astra_render_jobs SET status='starting',runtime_id=?,claimed_at=? WHERE id=?", args: ['astra-blender-00000000-0000-4000-8000-0000000000dd', Date.now(), first.job.id] });
+    // ...and every worker answers busy before the cancel's own update: the claim goes back to the queue.
+    const client = m.db();
+    const execute = client.execute.bind(client);
+    let released = false;
+    client.execute = (async (statement: Parameters<typeof execute>[0]) => {
+        if (!released && typeof statement === 'object' && String(statement.sql).includes('SET cancel_requested=1')) {
+            released = true;
+            await execute({ sql: "UPDATE astra_render_jobs SET status='queued',runtime_id=NULL,claimed_at=NULL,error=? WHERE id=?", args: [m.ASTRA_WORKERS_BUSY, first.job.id] });
+        }
+        return execute(statement);
+    }) as typeof client.execute;
+    try {
+        expect((await m.cancelAstraRenderJob('u_test', m.project.id, first.job.id, f.deps)).status).toBe('cancelled');
+    } finally { client.execute = execute; }
+    expect(released).toBe(true);
+    expect(await m.row(first.job.id)).toMatchObject({ status: 'cancelled', settled: 1, runtime_id: null, billed_credits: 0 });
+    expect(f.metered.map(event => [event.status, event.engineCostUsd])).toEqual([['failed', 0]]);
+    expect(pool.calls).toEqual([]);
+}));

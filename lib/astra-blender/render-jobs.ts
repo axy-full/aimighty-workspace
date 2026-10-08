@@ -384,8 +384,9 @@ export async function cancelAstraRenderJob(owner: string, projectId: string, id:
     // before settlement or cleanup; a concurrent delete could race a late Blob PUT.
     if(row.status==='saving')return publicJob((await record(id))!);
     const cancelled = await db().execute({ sql: "UPDATE astra_render_jobs SET status='cancelled' WHERE id=? AND status='queued'", args: [id] });
+    // Settle what is there now: the row read above may predate a busy release that took its runtime name back.
     if (cancelled.rowsAffected && row.funded)
-        await settle(row, 'cancelled', null, deps);
+        await settle((await record(id))!, 'cancelled', null, deps);
     else if (row.runtime_id) {
         try {
             const result = await cancelAstraRender(row.runtime_id, sandboxFor(row, deps));
