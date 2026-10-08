@@ -5,6 +5,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import ts from "typescript";
 import type { TenantWorkspace } from "../../lib/tenant";
+import * as requestOrigin from "../../lib/requestOrigin";
 
 /* Projects, shots and video stills: the routes' own answers, run against a real workspace database. */
 
@@ -21,6 +22,7 @@ type Handler = (req: Request, ctx: { params: Promise<{ id: string }> }) => Promi
 async function route(file: string, dependencies: Record<string, unknown>): Promise<Record<string, Handler>> {
   const all: Record<string, unknown> = {
     "next/server": createRequire(path.resolve("package.json"))("next/server"),
+    "@/lib/requestOrigin": requestOrigin,
     "@/lib/auth": {
       withTenant: (handler: Handler) => handler,
       requireUser: async () => ({ user: { id: "owner", name: "Owner" } }),
