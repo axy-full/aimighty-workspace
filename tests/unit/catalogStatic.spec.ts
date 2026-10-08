@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
-  buildCatalogSnapshot, catalog, gatewayCatalog, staticCatalog, snapshotModels, textCostUsd, textQuoteCostUsd,
+  buildCatalogSnapshot, catalog, catalogSource, gatewayCatalog, staticCatalog, snapshotModels, textCostUsd, textQuoteCostUsd,
   CATALOG_PROVIDER_OF_OWNER, type CatalogModel, type CatalogSnapshot,
 } from "../../lib/catalog";
 import { directTextCostUsd } from "../../lib/openai-direct";
@@ -18,14 +18,22 @@ import committedJson from "../../lib/modelCatalog.json";
  * lib/modelCatalog.json freezes the gateway's public /v1/models for the ids we
  * offer (scripts/ops/snapshot-catalog.mjs). Prices feed billing, so the snapshot
  * must price every model a feature can pick, and must serve exactly what the
- * live read serves. The fixture is a verbatim excerpt of that same response
- * (2026-10-08): refresh it together with the snapshot.
+ * live read serves. The fixture is the verbatim excerpt, for every offered id,
+ * of the same saved response the snapshot was written from (2026-10-08):
+ * refresh the two together (snapshot-catalog.mjs --from=<saved> --priced-at=<day>).
  */
 const committed = committedJson as unknown as CatalogSnapshot;
 const fixture = JSON.parse(readFileSync(path.join(__dirname, "../fixtures/gateway-models-2026-10-08.json"), "utf8")) as { data: unknown[] };
 const SOURCE = "https://ai-gateway.vercel.sh/v1/models";
+const MAX_AGE_DAYS = 120;
+/* The live list also carries models we do not offer; the snapshot must drop them. */
+const UNOFFERED = [
+  { id: "google/veo-3.1-generate-001", type: "video", pricing: { video_duration_pricing: [{ resolution: "1080p", cost_per_second: "0.4" }] } },
+  { id: "bfl/flux-2-pro", type: "image", pricing: { image: "0.03" } },
+];
+const gatewayData = [...fixture.data, ...UNOFFERED];
 
-const ENV_KEYS = ["ENGINE_MOCK", "MODEL_CATALOG", "AI_GATEWAY_API_KEY", "AI_GATEWAY_BASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY", "ATOMIK_MAX_REQUEST_USD"] as const;
+const ENV_KEYS = ["ENGINE_MOCK", "MODEL_CATALOG", "AI_GATEWAY_API_KEY", "AI_GATEWAY_BASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY", "ATOMIK_MAX_REQUEST_USD", "TEXT_DIRECT", "VERCEL", "VERCEL_OIDC_TOKEN"] as const;
 let saved: Record<string, string | undefined> = {};
 let realFetch: typeof fetch;
 let openAIListed: string[] = [];
@@ -41,7 +49,7 @@ test.beforeEach(() => {
   realFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url === SOURCE) return new Response(JSON.stringify(fixture), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (url === SOURCE) return new Response(JSON.stringify({ object: "list", data: gatewayData }), { status: 200, headers: { "Content-Type": "application/json" } });
     if (url === "https://api.openai.com/v1/models") return new Response(JSON.stringify({ data: openAIListed.map((id) => ({ id })) }), { status: 200 });
     throw new Error(`unexpected fetch ${url}`);
   }) as typeof fetch;
@@ -109,11 +117,22 @@ test("the snapshot is dated, covers every offered id, and names a provider for e
   expect(snapshotModels().length).toBe(committed.models.length);
 });
 
+test(`the snapshot's prices are at most ${MAX_AGE_DAYS} days old`, () => {
+  const ageDays = (Date.now() - Date.parse(`${committed.pricedAt}T00:00:00Z`)) / 86_400_000;
+  expect(Number.isFinite(ageDays), `pricedAt ${committed.pricedAt} is not a date`).toBe(true);
+  expect(ageDays,
+    `lib/modelCatalog.json was priced on ${committed.pricedAt}, ${Math.floor(ageDays)} days ago. ` +
+    "Run `node scripts/ops/snapshot-catalog.mjs --check`, review every price that changed, then refresh the snapshot " +
+    "and tests/fixtures/gateway-models-*.json together.").toBeLessThanOrEqual(MAX_AGE_DAYS);
+});
+
 test("the static catalogue serves exactly what the gateway read serves", async () => {
   const live = await gatewayCatalog(true);
   const offered = live.filter((m) => OFFERED_CATALOG_IDS.includes(m.id));
-  expect(live.length).toBeGreaterThan(offered.length); // the fixture carries unoffered models too
-  const snapshot = JSON.parse(JSON.stringify(buildCatalogSnapshot(fixture.data, OFFERED_CATALOG_IDS, "2026-10-08", SOURCE))) as CatalogSnapshot;
+  expect(live.length).toBe(offered.length + UNOFFERED.length);
+  // Every priced entry is compared, not a sample.
+  expect(offered.map((m) => m.id).sort()).toEqual(committed.models.map((m) => m.id).sort());
+  const snapshot = JSON.parse(JSON.stringify(buildCatalogSnapshot(gatewayData, OFFERED_CATALOG_IDS, "2026-10-08", SOURCE))) as CatalogSnapshot;
   const served = staticCatalog(snapshot);
   expect(served).toEqual(offered);
   expect(JSON.stringify(served)).toBe(JSON.stringify(offered));
@@ -131,7 +150,7 @@ test("the static catalogue serves exactly what the gateway read serves", async (
 });
 
 test("the static catalogue serves a provider's models only while its key is set", async () => {
-  const snapshot = buildCatalogSnapshot(fixture.data, OFFERED_CATALOG_IDS, "2026-10-08", SOURCE);
+  const snapshot = buildCatalogSnapshot(gatewayData, OFFERED_CATALOG_IDS, "2026-10-08", SOURCE);
   const owners = () => [...new Set(staticCatalog(snapshot).map((m) => m.owner))].sort();
   expect(owners()).toEqual(["anthropic", "google", "openai", "spacexai"]);
   delete process.env.ANTHROPIC_API_KEY;
@@ -141,7 +160,7 @@ test("the static catalogue serves a provider's models only while its key is set"
   expect(owners()).toEqual(["openai"]);
   delete process.env.OPENAI_API_KEY;
   expect(staticCatalog(snapshot)).toEqual([]);
-  // A dead gateway key changes nothing: the snapshot does not depend on it.
+  // Under ENGINE_MOCK every entry is served, keys or not, as the live read does.
   process.env.ENGINE_MOCK = "1";
   expect(staticCatalog(snapshot).length).toBe(snapshot.models.length);
   delete process.env.ENGINE_MOCK;
@@ -158,6 +177,7 @@ test("the static catalogue serves a provider's models only while its key is set"
 test("with the static catalogue, OpenAI text still needs an id the key can list; OpenAI stills do not", async () => {
   process.env.MODEL_CATALOG = "static";
   delete process.env.AI_GATEWAY_API_KEY;
+  process.env.TEXT_DIRECT = "anthropic,xai";
   openAIListed = ["gpt-6-astra"];
   const ids = (await catalog(true)).map((m) => m.id);
   expect(ids.filter((id) => id.startsWith("openai/gpt-6") || id === "openai/gpt-5-mini")).toEqual(["openai/gpt-6-astra"]);
@@ -167,10 +187,64 @@ test("with the static catalogue, OpenAI text still needs an id the key can list;
   expect(ids).not.toContain("google/veo-3.1-generate-001");
 });
 
+test("in static mode a provider's text models are offered only while the gateway or TEXT_DIRECT can call them", () => {
+  const snapshot = buildCatalogSnapshot(gatewayData, OFFERED_CATALOG_IDS, "2026-10-08", SOURCE);
+  const served = () => new Set(staticCatalog(snapshot).map((m) => m.id));
+  // Gateway reachable: every keyed provider.
+  expect(served()).toEqual(new Set(snapshot.models.map((m) => m.id)));
+
+  // No gateway, nothing direct: OpenAI (always direct) and stills (direct on their own key) only.
+  delete process.env.AI_GATEWAY_API_KEY;
+  const textOf = (owner: string) => snapshot.models.filter((m) => m.owner === owner && !m.outputModalities?.includes("image")).map((m) => m.id);
+  let ids = served();
+  for (const owner of ["anthropic", "google", "spacexai"]) for (const id of textOf(owner)) expect(ids.has(id), id).toBe(false);
+  for (const id of ["openai/gpt-5-mini", "openai/gpt-image-2", "google/gemini-3-pro-image", "google/gemini-3.1-flash-image", "spacexai/grok-imagine-image-2.0"])
+    expect(ids.has(id), id).toBe(true);
+
+  // Each vendor comes back on its own as TEXT_DIRECT lists it; unknown names are ignored.
+  process.env.TEXT_DIRECT = " anthropic ,nobody";
+  ids = served();
+  for (const id of textOf("anthropic")) expect(ids.has(id), id).toBe(true);
+  for (const id of [...textOf("google"), ...textOf("spacexai")]) expect(ids.has(id), id).toBe(false);
+  process.env.TEXT_DIRECT = "anthropic,google,xai";
+  expect(served()).toEqual(new Set(snapshot.models.map((m) => m.id)));
+
+  // Direct still needs the provider's key.
+  delete process.env.ANTHROPIC_API_KEY;
+  ids = served();
+  for (const id of textOf("anthropic")) expect(ids.has(id), id).toBe(false);
+});
+
+test("MODEL_CATALOG: only the exact value static reads the snapshot; an unknown value warns once and reads the gateway", () => {
+  const warnings: string[] = [];
+  const realWarn = console.warn;
+  console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(" ")); };
+  try {
+    expect(catalogSource()).toBe("gateway");
+    for (const value of ["", "gateway"]) {
+      process.env.MODEL_CATALOG = value;
+      expect(catalogSource()).toBe("gateway");
+    }
+    process.env.MODEL_CATALOG = "static";
+    expect(catalogSource()).toBe("static");
+    expect(warnings).toEqual([]);
+
+    for (const value of ["Static", " static", "statik"]) {
+      process.env.MODEL_CATALOG = value;
+      expect(catalogSource()).toBe("gateway");
+      expect(catalogSource()).toBe("gateway");
+    }
+    expect(warnings.length).toBe(3);
+    for (const line of warnings) expect(line).toContain("MODEL_CATALOG");
+  } finally {
+    console.warn = realWarn;
+  }
+});
+
 test("textCostUsd and the quote functions give the same numbers on both catalogues", async () => {
   const live = (await gatewayCatalog(true)).filter((m) => m.type === "language" && OFFERED_CATALOG_IDS.includes(m.id));
   const committedById = new Map(staticCatalog().map((m) => [m.id, m]));
-  const fromFixture = new Map(staticCatalog(JSON.parse(JSON.stringify(buildCatalogSnapshot(fixture.data, OFFERED_CATALOG_IDS, "2026-10-08", SOURCE)))).map((m) => [m.id, m]));
+  const fromFixture = new Map(staticCatalog(JSON.parse(JSON.stringify(buildCatalogSnapshot(gatewayData, OFFERED_CATALOG_IDS, "2026-10-08", SOURCE)))).map((m) => [m.id, m]));
   expect(live.length).toBeGreaterThan(8);
   const sizes: [number, number][] = [[0, 0], [1, 1], [8_000, 1_800], [199_999, 4_000], [200_000, 4_000], [200_001, 4_000], [271_999, 1_000], [272_000, 1_000], [272_001, 1_000], [1_000_000, 32_000]];
   const numbers = (m: CatalogModel) => sizes.flatMap(([i, o]) => {

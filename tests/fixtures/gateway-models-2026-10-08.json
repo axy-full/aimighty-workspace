@@ -2,6 +2,230 @@
  "object": "list",
  "data": [
   {
+   "id": "anthropic/claude-3-haiku",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1710288000,
+   "owned_by": "anthropic",
+   "name": "Claude 3 Haiku",
+   "description": "Claude 3 Haiku is Anthropic's fastest, most compact model for near-instant responsiveness. It answers simple queries and requests with speed. Customers will be able to build seamless AI experiences that mimic human interactions. Claude 3 Haiku can process images and return text outputs, and features a 200K context window.",
+   "context_window": 200000,
+   "max_tokens": 4096,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "tool-use",
+    "vision",
+    "explicit-caching",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "knowledge": "2023-08-31",
+   "pricing": {
+    "input": "0.00000025",
+    "output": "0.00000125",
+    "input_cache_read": "0.00000003",
+    "input_cache_write": "0.0000003"
+   }
+  },
+  {
+   "id": "anthropic/claude-fable-5",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1782864000,
+   "owned_by": "anthropic",
+   "name": "Claude Fable 5",
+   "description": "Claude Fable 5 is a Mythos-class model with robust safeguards. It can handle long-running, complex, and asynchronous tasks where previous models would have needed more frequent check-ins.",
+   "context_window": 1000000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "none",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "tool-use",
+    "explicit-caching",
+    "file-input",
+    "vision",
+    "structured-output"
+   ],
+   "regions": [
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ]
+    },
+    {
+     "type": "budget_tokens"
+    }
+   ],
+   "knowledge": "2026-01-31",
+   "pricing": {
+    "input": "0.00001",
+    "output": "0.00005",
+    "input_cache_read": "0.000001",
+    "input_cache_write": "0.0000125",
+    "web_search": "10",
+    "regional": {
+     "us": {
+      "input": "0.000011",
+      "output": "0.000055",
+      "input_cache_read": "0.0000011",
+      "input_cache_write": "0.00001375"
+     }
+    }
+   }
+  },
+  {
+   "id": "anthropic/claude-fable-5.1",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1788134400,
+   "owned_by": "anthropic",
+   "name": "Claude Fable 5.1",
+   "description": "Claude Fable 5.1 improves on Fable 5 across long-running agentic coding, knowledge work, and research, following instructions precisely over sessions that run unattended for hours.",
+   "context_window": 1000000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "none",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "tool-use",
+    "explicit-caching",
+    "file-input",
+    "vision",
+    "structured-output"
+   ],
+   "regions": [
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ]
+    },
+    {
+     "type": "budget_tokens"
+    }
+   ],
+   "knowledge": "2026-06",
+   "pricing": {
+    "input": "0.00001",
+    "output": "0.00005",
+    "input_cache_read": "0.00000025",
+    "input_cache_write": "0.0000125",
+    "web_search": "10",
+    "regional": {
+     "us": {
+      "input": "0.000011",
+      "output": "0.000055",
+      "input_cache_read": "0.000000275",
+      "input_cache_write": "0.00001375"
+     }
+    }
+   }
+  },
+  {
    "id": "anthropic/claude-haiku-4.5",
    "object": "model",
    "created": 1755815280,
@@ -83,6 +307,563 @@
       "output": "0.0000055",
       "input_cache_read": "0.00000011",
       "input_cache_write": "0.000001375"
+     }
+    }
+   }
+  },
+  {
+   "id": "anthropic/claude-opus-4",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1747872000,
+   "owned_by": "anthropic",
+   "name": "Claude Opus 4",
+   "description": "Claude Opus 4 is Anthropic's most powerful model yet and the state-of-the-art coding model. It delivers sustained performance on long-running tasks that require focused effort and thousands of steps, significantly expanding what AI agents can solve. Claude Opus 4 is ideal for powering frontier agent products and features.",
+   "context_window": 200000,
+   "max_tokens": 32000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "explicit-caching"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "budget_tokens",
+     "min": 1024
+    }
+   ],
+   "knowledge": "2025-03-31",
+   "pricing": {
+    "input": "0.000015",
+    "output": "0.000075",
+    "input_cache_read": "0.0000015",
+    "input_cache_write": "0.00001875",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "anthropic/claude-opus-4.5",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1763942400,
+   "owned_by": "anthropic",
+   "name": "Claude Opus 4.5",
+   "description": "Claude Opus 4.5 is Anthropic\u2019s latest model in the Opus series, meant for demanding reasoning tasks and complex problem solving. This model has improvements in general intelligence and vision compared to previous iterations. In addition, it is suited for difficult coding tasks and agentic workflows, especially those with computer use and tool use, and can effectively handle context usage and external memory files.",
+   "context_window": 200000,
+   "max_tokens": 64000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "explicit-caching",
+    "file-input",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high"
+     ]
+    },
+    {
+     "type": "budget_tokens"
+    }
+   ],
+   "knowledge": "2025-05",
+   "interleaved": true,
+   "pricing": {
+    "input": "0.000005",
+    "output": "0.000025",
+    "input_cache_read": "0.0000005",
+    "input_cache_write": "0.00000625",
+    "web_search": "10",
+    "regional": {
+     "eu": {
+      "input": "0.0000055",
+      "output": "0.0000275",
+      "input_cache_read": "0.00000055",
+      "input_cache_write": "0.000006875"
+     },
+     "us": {
+      "input": "0.0000055",
+      "output": "0.0000275",
+      "input_cache_read": "0.00000055",
+      "input_cache_write": "0.000006875"
+     }
+    }
+   }
+  },
+  {
+   "id": "anthropic/claude-opus-4.6",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1770249600,
+   "owned_by": "anthropic",
+   "name": "Claude Opus 4.6",
+   "description": "Opus 4.6 is the world\u2019s best model for coding and professional work, built to power agents that take on whole categories of real-world work. It excels across the entire SDLC, breaking through on hard problems, identifying complex bugs, and demonstrating deeper codebase understanding. It also delivers a step-change in knowledge work, with near-production-ready documents, presentations, and spreadsheets on the first pass.",
+   "context_window": 1000000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "tool-use",
+    "reasoning",
+    "vision",
+    "file-input",
+    "explicit-caching",
+    "web-search",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "max"
+     ]
+    },
+    {
+     "type": "budget_tokens"
+    }
+   ],
+   "knowledge": "2025-05-31",
+   "interleaved": true,
+   "pricing": {
+    "input": "0.000005",
+    "output": "0.000025",
+    "input_cache_read": "0.0000005",
+    "input_cache_write": "0.00000625",
+    "web_search": "10",
+    "regional": {
+     "eu": {
+      "input": "0.0000055",
+      "output": "0.0000275",
+      "input_cache_read": "0.00000055",
+      "input_cache_write": "0.000006875"
+     },
+     "us": {
+      "input": "0.0000055",
+      "output": "0.0000275",
+      "input_cache_read": "0.00000055",
+      "input_cache_write": "0.000006875",
+      "fast": {
+       "input": "0.000033",
+       "output": "0.000165",
+       "input_cache_read": "0.0000033",
+       "input_cache_write": "0.00004125"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "anthropic/claude-opus-4.7",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1776297600,
+   "owned_by": "anthropic",
+   "name": "Claude Opus 4.7",
+   "description": "Opus 4.7 builds on the coding and agentic strengths of Opus 4.6 with stronger performance on complex, multi-step tasks and more reliable agentic execution. It also brings improved performance on knowledge work, from drafting documents to building presentations and analyzing data.",
+   "context_window": 1000000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "tool-use",
+    "reasoning",
+    "vision",
+    "file-input",
+    "explicit-caching",
+    "web-search",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ]
+    },
+    {
+     "type": "budget_tokens"
+    }
+   ],
+   "knowledge": "2026-01-31",
+   "pricing": {
+    "input": "0.000005",
+    "output": "0.000025",
+    "input_cache_read": "0.0000005",
+    "input_cache_write": "0.00000625",
+    "web_search": "10",
+    "regional": {
+     "eu": {
+      "input": "0.0000055",
+      "output": "0.0000275",
+      "input_cache_read": "0.00000055",
+      "input_cache_write": "0.000006875"
+     },
+     "us": {
+      "input": "0.0000055",
+      "output": "0.0000275",
+      "input_cache_read": "0.00000055",
+      "input_cache_write": "0.000006875",
+      "fast": {
+       "input": "0.000033",
+       "output": "0.000165",
+       "input_cache_read": "0.0000033",
+       "input_cache_write": "0.00004125"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "anthropic/claude-opus-4.8",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1779926400,
+   "owned_by": "anthropic",
+   "name": "Claude Opus 4.8",
+   "description": "Opus 4.8 is a focused upgrade to Opus 4.7 and is Anthropic's best generally available model for coding, agentic tasks, and enterprise workflows. It builds on the strengths of previous Opus models with stronger performance on complex, multi-step coding tasks. Anthropic recommends using it on long-horizon coding and agentic tasks. It is also stronger on professional work, including document drafting, data analysis, and presentations.",
+   "context_window": 1000000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "tool-use",
+    "reasoning",
+    "vision",
+    "file-input",
+    "explicit-caching",
+    "web-search",
+    "fast",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ]
+    },
+    {
+     "type": "budget_tokens"
+    }
+   ],
+   "knowledge": "2026-01",
+   "pricing": {
+    "input": "0.000005",
+    "output": "0.000025",
+    "input_cache_read": "0.0000005",
+    "input_cache_write": "0.00000625",
+    "web_search": "10",
+    "fast": {
+     "input": "0.00001",
+     "output": "0.00005",
+     "input_cache_read": "0.000001",
+     "input_cache_write": "0.0000125"
+    },
+    "regional": {
+     "eu": {
+      "input": "0.0000055",
+      "output": "0.0000275",
+      "input_cache_read": "0.00000055",
+      "input_cache_write": "0.000006875"
+     },
+     "us": {
+      "input": "0.0000055",
+      "output": "0.0000275",
+      "input_cache_read": "0.00000055",
+      "input_cache_write": "0.000006875",
+      "fast": {
+       "input": "0.000011",
+       "output": "0.000055",
+       "input_cache_read": "0.0000011",
+       "input_cache_write": "0.00001375"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "anthropic/claude-opus-4.8-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1779926400,
+   "owned_by": "anthropic",
+   "name": "Claude Opus 4.8 (Fast)",
+   "description": "Opus 4.8 is a focused upgrade to Opus 4.7 and is Anthropic's best generally available model for coding, agentic tasks, and enterprise workflows. It builds on the strengths of previous Opus models with stronger performance on complex, multi-step coding tasks. Anthropic recommends using it on long-horizon coding and agentic tasks. It is also stronger on professional work, including document drafting, data analysis, and presentations.",
+   "context_window": 1000000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "tool-use",
+    "reasoning",
+    "vision",
+    "file-input",
+    "explicit-caching",
+    "web-search",
+    "fast",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ]
+    },
+    {
+     "type": "budget_tokens"
+    }
+   ],
+   "knowledge": "2026-01",
+   "pricing": {
+    "input": "0.00001",
+    "output": "0.00005",
+    "input_cache_read": "0.000001",
+    "input_cache_write": "0.0000125",
+    "web_search": "10",
+    "regional": {
+     "us": {
+      "input": "0.000011",
+      "output": "0.000055",
+      "input_cache_read": "0.0000011",
+      "input_cache_write": "0.00001375"
      }
     }
    }
@@ -192,6 +973,204 @@
       }
      }
     }
+   }
+  },
+  {
+   "id": "anthropic/claude-opus-5-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1784851200,
+   "owned_by": "anthropic",
+   "name": "Claude Opus 5 (Fast)",
+   "description": "Claude Opus 5 is the latest model in Anthropic's Opus family and a step-change improvement over Opus 4.8. It delivers major gains over Opus 4.8 in agentic coding, professional knowledge work, and long-horizon reasoning, and it is stronger per token across effort levels.",
+   "context_window": 1000000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "tool-use",
+    "reasoning",
+    "vision",
+    "file-input",
+    "explicit-caching",
+    "web-search",
+    "fast",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ]
+    },
+    {
+     "type": "budget_tokens"
+    }
+   ],
+   "knowledge": "2026-05",
+   "pricing": {
+    "input": "0.00001",
+    "output": "0.00005",
+    "input_cache_read": "0.000001",
+    "input_cache_write": "0.0000125",
+    "web_search": "10",
+    "regional": {
+     "us": {
+      "input": "0.000011",
+      "output": "0.000055",
+      "input_cache_read": "0.0000011",
+      "input_cache_write": "0.00001375"
+     }
+    }
+   }
+  },
+  {
+   "id": "anthropic/claude-sonnet-4",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1747872000,
+   "owned_by": "anthropic",
+   "name": "Claude Sonnet 4",
+   "description": "Claude Sonnet 4 balances impressive performance for coding with the right speed and cost for high-volume use cases: Coding: Handle everyday development tasks with enhanced performance-power code reviews, bug fixes, API integrations, and feature development with immediate feedback loops.",
+   "context_window": 1000000,
+   "max_tokens": 64000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "explicit-caching",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "budget_tokens",
+     "min": 1024
+    }
+   ],
+   "knowledge": "2025-03-31",
+   "pricing": {
+    "input": "0.000003",
+    "input_tiers": [
+     {
+      "cost": "0.000003",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.000006",
+      "min": 200001
+     }
+    ],
+    "output": "0.000015",
+    "output_tiers": [
+     {
+      "cost": "0.000015",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.0000225",
+      "min": 200001
+     }
+    ],
+    "input_cache_read": "0.0000003",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.0000003",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.0000006",
+      "min": 200001
+     }
+    ],
+    "input_cache_write": "0.00000375",
+    "input_cache_write_tiers": [
+     {
+      "cost": "0.00000375",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.0000075",
+      "min": 200001
+     }
+    ]
    }
   },
   {
@@ -507,20 +1486,30 @@
    }
   },
   {
-   "id": "bfl/flux-2-pro",
+   "id": "anthropic/claude-sonnet-5",
    "object": "model",
    "created": 1755815280,
-   "released": 1764028800,
-   "owned_by": "bfl",
-   "name": "FLUX.2 [pro]",
-   "description": "FLUX.2 is a completely new base model trained for visual intelligence, not just pixel generation, setting a new standard for both image generation and image editing. With FLUX.2 models you can expect the highest quality, higher resolutions (up to 4MP), and new capabilities like multi-ref images. FLUX.2 [pro] supports generation, editing, and multiple reference images (up to 9 MP total input).\nThis provider gives the option to change the moderation level for inputs and outputs. The control is under safety tolerance and is by default 2 on a range from 0 (more strict) through 6 (more permissive).",
-   "context_window": 67300,
-   "max_tokens": 67300,
-   "type": "image",
-   "zdr": "none",
-   "no_training": "none",
+   "released": 1782691200,
+   "owned_by": "anthropic",
+   "name": "Claude Sonnet 5",
+   "description": "Sonnet 5 is an upgrade to Sonnet 4.6, with gains across agentic coding and professional work. It builds on the strengths of previous Sonnet models, bringing top-tier intelligence at Sonnet pricing for coding, agents, and everyday professional work at scale.",
+   "context_window": 1000000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
    "tags": [
-    "image-generation"
+    "reasoning",
+    "tool-use",
+    "explicit-caching",
+    "file-input",
+    "vision",
+    "web-search",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
    ],
    "supported_specifications": [
     "v2",
@@ -529,13 +1518,593 @@
    ],
    "modalities": {
     "input": [
-     "text"
+     "text",
+     "image",
+     "pdf"
     ],
     "output": [
-     "image"
+     "text"
     ]
    },
-   "pricing": {}
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ]
+    },
+    {
+     "type": "budget_tokens"
+    }
+   ],
+   "knowledge": "2026-01-31",
+   "pricing": {
+    "input": "0.000002",
+    "output": "0.00001",
+    "input_cache_read": "0.0000002",
+    "input_cache_write": "0.0000025",
+    "web_search": "10",
+    "regional": {
+     "eu": {
+      "input": "0.0000022",
+      "output": "0.000011",
+      "input_cache_read": "0.00000022",
+      "input_cache_write": "0.00000275"
+     },
+     "us": {
+      "input": "0.0000022",
+      "output": "0.000011",
+      "input_cache_read": "0.00000022",
+      "input_cache_write": "0.00000275"
+     }
+    }
+   }
+  },
+  {
+   "id": "google/gemini-2.5-flash",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1742428800,
+   "owned_by": "google",
+   "name": "Gemini 2.5 Flash",
+   "description": "Gemini 2.5 Flash is a thinking model that offers great, well-rounded capabilities. It is designed to offer a balance between price and performance with multimodal support and a 1M token context window.",
+   "context_window": 1000000,
+   "max_tokens": 65535,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "implicit-caching",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high"
+     ]
+    },
+    {
+     "type": "budget_tokens"
+    }
+   ],
+   "knowledge": "2025-01",
+   "pricing": {
+    "input": "0.0000003",
+    "output": "0.0000025",
+    "input_cache_read": "0.00000003",
+    "web_search": "35",
+    "maps_search": "25",
+    "service_tiers": {
+     "priority": {
+      "input": "0.00000054",
+      "output": "0.0000045",
+      "input_cache_read": "0.000000054"
+     },
+     "flex": {
+      "input": "0.00000015",
+      "output": "0.00000125"
+     }
+    },
+    "regional": {
+     "eu": {
+      "input": "0.0000003",
+      "output": "0.0000025",
+      "input_cache_read": "0.00000003"
+     },
+     "us": {
+      "input": "0.0000003",
+      "output": "0.0000025",
+      "input_cache_read": "0.00000003"
+     }
+    }
+   }
+  },
+  {
+   "id": "google/gemini-2.5-flash-lite",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1750118400,
+   "owned_by": "google",
+   "name": "Gemini 2.5 Flash Lite",
+   "description": "Gemini 2.5 Flash-Lite is a balanced, low-latency model with configurable thinking budgets and tool connectivity (e.g., Google Search grounding and code execution). It supports multimodal input and offers a 1M-token context window.",
+   "context_window": 1048576,
+   "max_tokens": 65535,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "implicit-caching",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high"
+     ]
+    },
+    {
+     "type": "budget_tokens"
+    }
+   ],
+   "knowledge": "2025-01",
+   "pricing": {
+    "input": "0.0000001",
+    "output": "0.0000004",
+    "input_cache_read": "0.00000001",
+    "web_search": "35",
+    "maps_search": "25",
+    "service_tiers": {
+     "priority": {
+      "input": "0.00000018",
+      "output": "0.00000072",
+      "input_cache_read": "0.000000018"
+     },
+     "flex": {
+      "input": "0.00000005",
+      "output": "0.0000002"
+     }
+    },
+    "regional": {
+     "eu": {
+      "input": "0.0000001",
+      "output": "0.0000004",
+      "input_cache_read": "0.00000001"
+     },
+     "us": {
+      "input": "0.0000001",
+      "output": "0.0000004",
+      "input_cache_read": "0.00000001"
+     }
+    }
+   }
+  },
+  {
+   "id": "google/gemini-2.5-pro",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1742428800,
+   "owned_by": "google",
+   "name": "Gemini 2.5 Pro",
+   "description": "Gemini 2.5 Pro is our most advanced reasoning Gemini model, capable of solving complex problems. Gemini 2.5 Pro can comprehend vast datasets and challenging problems from different information sources, including text, audio, images, video, and even entire code repositories.",
+   "context_window": 1048576,
+   "max_tokens": 65535,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "implicit-caching",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high"
+     ]
+    },
+    {
+     "type": "budget_tokens"
+    }
+   ],
+   "knowledge": "2025-01",
+   "pricing": {
+    "input": "0.00000125",
+    "input_tiers": [
+     {
+      "cost": "0.00000125",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.0000025",
+      "min": 200001
+     }
+    ],
+    "output": "0.00001",
+    "output_tiers": [
+     {
+      "cost": "0.00001",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.000015",
+      "min": 200001
+     }
+    ],
+    "input_cache_read": "0.000000125",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.000000125",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.00000025",
+      "min": 200001
+     }
+    ],
+    "web_search": "35",
+    "maps_search": "25",
+    "service_tiers": {
+     "priority": {
+      "input": "0.00000225",
+      "output": "0.000018",
+      "input_cache_read": "0.000000225",
+      "long_context": {
+       "threshold": 200001,
+       "input": "0.0000045",
+       "output": "0.000027",
+       "input_cache_read": "0.00000045"
+      }
+     },
+     "flex": {
+      "input": "0.000000625",
+      "output": "0.000005",
+      "long_context": {
+       "threshold": 200001,
+       "input": "0.00000125",
+       "output": "0.0000075"
+      }
+     }
+    },
+    "regional": {
+     "eu": {
+      "input": "0.00000125",
+      "input_tiers": [
+       {
+        "cost": "0.00000125",
+        "min": 0,
+        "max": 200001
+       },
+       {
+        "cost": "0.0000025",
+        "min": 200001
+       }
+      ],
+      "output": "0.00001",
+      "output_tiers": [
+       {
+        "cost": "0.00001",
+        "min": 0,
+        "max": 200001
+       },
+       {
+        "cost": "0.000015",
+        "min": 200001
+       }
+      ],
+      "input_cache_read": "0.000000125",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.000000125",
+        "min": 0,
+        "max": 200001
+       },
+       {
+        "cost": "0.00000025",
+        "min": 200001
+       }
+      ]
+     },
+     "us": {
+      "input": "0.00000125",
+      "input_tiers": [
+       {
+        "cost": "0.00000125",
+        "min": 0,
+        "max": 200001
+       },
+       {
+        "cost": "0.0000025",
+        "min": 200001
+       }
+      ],
+      "output": "0.00001",
+      "output_tiers": [
+       {
+        "cost": "0.00001",
+        "min": 0,
+        "max": 200001
+       },
+       {
+        "cost": "0.000015",
+        "min": 200001
+       }
+      ],
+      "input_cache_read": "0.000000125",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.000000125",
+        "min": 0,
+        "max": 200001
+       },
+       {
+        "cost": "0.00000025",
+        "min": 200001
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "google/gemini-3-flash",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1765929600,
+   "owned_by": "google",
+   "name": "Gemini 3 Flash",
+   "description": "Google's most intelligent model built for speed, combining frontier intelligence with superior search and grounding.",
+   "context_window": 1000000,
+   "max_tokens": 65000,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "file-input",
+    "vision",
+    "tool-use",
+    "web-search",
+    "implicit-caching",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2025-03",
+   "pricing": {
+    "input": "0.0000005",
+    "input_tiers": [
+     {
+      "cost": "0.0000005",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.0000005",
+      "min": 200001
+     }
+    ],
+    "output": "0.000003",
+    "output_tiers": [
+     {
+      "cost": "0.000003",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.000003",
+      "min": 200001
+     }
+    ],
+    "input_cache_read": "0.00000005",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.00000005",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.00000005",
+      "min": 200001
+     }
+    ],
+    "web_search": "14",
+    "maps_search": "14",
+    "service_tiers": {
+     "priority": {
+      "input": "0.0000009",
+      "output": "0.0000054",
+      "input_cache_read": "0.00000009"
+     },
+     "flex": {
+      "input": "0.00000025",
+      "output": "0.0000015"
+     }
+    }
+   }
   },
   {
    "id": "google/gemini-3-pro-image",
@@ -620,6 +2189,187 @@
      "flex": {
       "input": "0.000001",
       "output": "0.000006"
+     }
+    }
+   }
+  },
+  {
+   "id": "google/gemini-3.1-flash-image",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1779926400,
+   "owned_by": "google",
+   "name": "Gemini 3.1 Flash Image (Nano Banana 2)",
+   "description": "Gemini 3.1 Flash Image is optimized for image understanding and generation and offers a balance of price and performance.",
+   "context_window": 131072,
+   "max_tokens": 32768,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "image-generation",
+    "implicit-caching",
+    "reasoning",
+    "vision",
+    "web-search",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image"
+    ],
+    "output": [
+     "text",
+     "image"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2025-01",
+   "pricing": {
+    "input": "0.0000005",
+    "output": "0.000003",
+    "input_cache_read": "0.00000005",
+    "image_dimension_quality_pricing": [
+     {
+      "size": "512",
+      "cost": "0.045"
+     },
+     {
+      "size": "1K",
+      "cost": "0.067"
+     },
+     {
+      "size": "2K",
+      "cost": "0.101"
+     },
+     {
+      "size": "4K",
+      "cost": "0.151"
+     },
+     {
+      "size": "default",
+      "cost": "0.067"
+     }
+    ],
+    "web_search": "14",
+    "maps_search": "14"
+   }
+  },
+  {
+   "id": "google/gemini-3.1-flash-lite",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1778112000,
+   "owned_by": "google",
+   "name": "Gemini 3.1 Flash Lite",
+   "description": "Gemini 3.1 Flash Lite outperforms 2.5 Flash Lite on overall quality and lands close to 2.5 Flash performance across key capability areas. It is a workhorse model for high-volume use cases, with improvements across audio input/ASR, RAG snippet ranking, translation, data extraction, and code completion.",
+   "context_window": 1000000,
+   "max_tokens": 65000,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "tool-use",
+    "implicit-caching",
+    "file-input",
+    "vision",
+    "web-search",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2025-01",
+   "pricing": {
+    "input": "0.00000025",
+    "output": "0.0000015",
+    "input_cache_read": "0.00000003",
+    "web_search": "14",
+    "maps_search": "14",
+    "service_tiers": {
+     "priority": {
+      "input": "0.00000045",
+      "output": "0.0000027",
+      "input_cache_read": "0.000000045"
+     },
+     "flex": {
+      "input": "0.000000125",
+      "output": "0.00000075",
+      "input_cache_read": "0.0000000125"
+     }
+    },
+    "regional": {
+     "eu": {
+      "input": "0.000000275",
+      "output": "0.00000165",
+      "input_cache_read": "0.0000000275"
+     },
+     "us": {
+      "input": "0.000000275",
+      "output": "0.00000165",
+      "input_cache_read": "0.0000000275"
      }
     }
    }
@@ -844,18 +2594,408 @@
    }
   },
   {
-   "id": "google/veo-3.1-generate-001",
+   "id": "google/gemini-3.5-flash-lite",
    "object": "model",
    "created": 1755815280,
-   "released": 1760486400,
+   "released": 1784592000,
    "owned_by": "google",
-   "name": "Veo 3.1",
-   "description": "Veo 3.1 is Google's state-of-the-art model for generating high-fidelity, 8-second 720p, 1080p or 4k videos featuring stunning realism and natively generated audio.",
-   "context_window": 0,
-   "max_tokens": 0,
-   "type": "video",
+   "name": "Gemini 3.5 Flash Lite",
+   "description": "Gemini 3.5 Flash Lite features upgraded agentic capabilities, making the model ideal for subagents in complex workflows.",
+   "context_window": 1000000,
+   "max_tokens": 65000,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "tool-use",
+    "implicit-caching",
+    "file-input",
+    "vision",
+    "web-search",
+    "video-input",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf",
+     "video"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2026-03",
+   "pricing": {
+    "input": "0.0000003",
+    "output": "0.0000025",
+    "input_cache_read": "0.00000003",
+    "web_search": "14",
+    "maps_search": "14",
+    "service_tiers": {
+     "priority": {
+      "input": "0.00000054",
+      "output": "0.0000045",
+      "input_cache_read": "0.000000054"
+     },
+     "flex": {
+      "input": "0.00000015",
+      "output": "0.00000125",
+      "input_cache_read": "0.000000015"
+     }
+    },
+    "regional": {
+     "eu": {
+      "input": "0.00000033",
+      "output": "0.00000275",
+      "input_cache_read": "0.000000033"
+     },
+     "us": {
+      "input": "0.00000033",
+      "output": "0.00000275",
+      "input_cache_read": "0.000000033"
+     }
+    }
+   }
+  },
+  {
+   "id": "google/gemini-3.6-flash",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1784592000,
+   "owned_by": "google",
+   "name": "Gemini 3.6 Flash",
+   "description": "Gemini 3.6 Flash delivers higher quality across coding, agentic workflows, and web development with reduced token consumption and fewer model calls compared to previous model iterations.",
+   "context_window": 1000000,
+   "max_tokens": 64000,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "file-input",
+    "tool-use",
+    "vision",
+    "implicit-caching",
+    "web-search",
+    "video-input",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf",
+     "video"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2026-03",
+   "pricing": {
+    "input": "0.00000075",
+    "output": "0.00000375",
+    "input_cache_read": "0.000000075",
+    "web_search": "14",
+    "maps_search": "14",
+    "service_tiers": {
+     "priority": {
+      "input": "0.00000135",
+      "output": "0.00000675",
+      "input_cache_read": "0.000000135"
+     },
+     "flex": {
+      "input": "0.000000375",
+      "output": "0.000001875",
+      "input_cache_read": "0.00000004"
+     }
+    },
+    "regional": {
+     "eu": {
+      "input": "0.000000825",
+      "output": "0.000004125",
+      "input_cache_read": "0.0000000825"
+     },
+     "us": {
+      "input": "0.000000825",
+      "output": "0.000004125",
+      "input_cache_read": "0.0000000825"
+     }
+    }
+   }
+  },
+  {
+   "id": "google/gemini-3.7-flash",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1786579200,
+   "owned_by": "google",
+   "name": "Gemini 3.7 Flash",
+   "description": "Gemini 3.7 Flash is the high-efficiency, cost-effective powerhouse of the Gemini 3 family. It delivers Pro-level agentic capabilities, major leaps in code generation and terminal execution. 3.7 Flash serves as the primary agentic workhorse in the Gemini 3 family, bridging the gap between deep-reasoning Pro models and high-throughput Flash-Lite models while delivering high token efficiency and multi-step multimodal processing.",
+   "context_window": 1000000,
+   "max_tokens": 65535,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "file-input",
+    "vision",
+    "tool-use",
+    "web-search",
+    "implicit-caching",
+    "video-input",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf",
+     "video"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2026-03",
+   "pricing": {
+    "input": "0.00000075",
+    "output": "0.00000375",
+    "input_cache_read": "0.000000075",
+    "web_search": "14",
+    "maps_search": "14",
+    "service_tiers": {
+     "flex": {
+      "input": "0.000000375",
+      "output": "0.000001875",
+      "input_cache_read": "0.0000000375"
+     },
+     "priority": {
+      "input": "0.00000135",
+      "output": "0.00000675",
+      "input_cache_read": "0.000000135"
+     }
+    },
+    "regional": {
+     "eu": {
+      "input": "0.000000825",
+      "output": "0.000004125",
+      "input_cache_read": "0.0000000825"
+     },
+     "us": {
+      "input": "0.000000825",
+      "output": "0.000004125",
+      "input_cache_read": "0.0000000825"
+     }
+    }
+   }
+  },
+  {
+   "id": "google/gemini-3.8-flash",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1788307200,
+   "owned_by": "google",
+   "name": "Gemini 3.8 Flash",
+   "description": "Gemini 3.8 Flash is the high-efficiency, cost-effective powerhouse of the Gemini 3 family. It delivers Pro-level agentic capabilities, major leaps in code generation and terminal execution. 3.8 Flash serves as the primary agentic workhorse in the Gemini 3 family, bridging the gap between deep-reasoning Pro models and high-throughput Flash-Lite models while delivering high token efficiency and multi-step multimodal processing.",
+   "context_window": 1000000,
+   "max_tokens": 65535,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "file-input",
+    "vision",
+    "tool-use",
+    "web-search",
+    "implicit-caching",
+    "video-input",
+    "structured-output"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf",
+     "video"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "high"
+     ]
+    }
+   ],
+   "pricing": {
+    "input": "0.00000075",
+    "output": "0.00000375",
+    "input_cache_read": "0.000000075",
+    "web_search": "14",
+    "maps_search": "14",
+    "service_tiers": {
+     "flex": {
+      "input": "0.000000375",
+      "output": "0.000001875",
+      "input_cache_read": "0.0000000375"
+     },
+     "priority": {
+      "input": "0.00000135",
+      "output": "0.00000675",
+      "input_cache_read": "0.000000135"
+     }
+    },
+    "regional": {
+     "eu": {
+      "input": "0.000000825",
+      "output": "0.000004125",
+      "input_cache_read": "0.0000000825"
+     },
+     "us": {
+      "input": "0.000000825",
+      "output": "0.000004125",
+      "input_cache_read": "0.0000000825"
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-3.5-turbo",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1677628800,
+   "owned_by": "openai",
+   "name": "GPT-3.5 Turbo",
+   "description": "OpenAI's most capable and cost effective model in the GPT-3.5 family optimized for chat purposes, but also works well for traditional completions tasks.",
+   "context_window": 16385,
+   "max_tokens": 4096,
+   "type": "language",
    "zdr": "all",
    "no_training": "all",
+   "tags": [
+    "tool-use"
+   ],
    "supported_specifications": [
     "v2",
     "v3",
@@ -866,94 +3006,961 @@
      "text"
     ],
     "output": [
-     "video"
+     "text"
     ]
    },
-   "video_capabilities": {
-    "supported_operations": [
-     "text-to-video",
-     "image-to-video",
-     "first-last-frame",
-     "reference-to-video",
-     "extend-video"
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice"
+   ],
+   "temperature": true,
+   "knowledge": "2021-09-01",
+   "pricing": {
+    "input": "0.0000005",
+    "output": "0.0000015"
+   }
+  },
+  {
+   "id": "openai/gpt-4-turbo",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1712620800,
+   "owned_by": "openai",
+   "name": "GPT-4 Turbo",
+   "description": "gpt-4-turbo from OpenAI has broad general knowledge and domain expertise allowing it to follow complex instructions in natural language and solve difficult problems accurately. It has a knowledge cutoff of April 2023 and a 128,000 token context window.",
+   "context_window": 128000,
+   "max_tokens": 4096,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "tool-use",
+    "vision"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image"
     ],
-    "supported_resolutions": [
-     "720p",
-     "1080p",
-     "4k"
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice"
+   ],
+   "temperature": true,
+   "knowledge": "2023-12-01",
+   "pricing": {
+    "input": "0.00001",
+    "output": "0.00003"
+   }
+  },
+  {
+   "id": "openai/gpt-4.1",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1744588800,
+   "owned_by": "openai",
+   "name": "GPT-4.1",
+   "description": "GPT 4.1 is OpenAI's flagship model for complex tasks. It is well suited for problem solving across domains.",
+   "context_window": 1047576,
+   "max_tokens": 32768,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
     ],
-    "supported_aspect_ratios": [
-     "16:9",
-     "9:16"
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "knowledge": "2024-06-01",
+   "pricing": {
+    "input": "0.000002",
+    "output": "0.000008",
+    "input_cache_read": "0.0000005",
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.0000035",
+      "output": "0.000014",
+      "input_cache_read": "0.000000875"
+     }
+    },
+    "fast": {
+     "input": "0.0000035",
+     "output": "0.000014",
+     "input_cache_read": "0.000000875"
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-4.1-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1744588800,
+   "owned_by": "openai",
+   "name": "GPT-4.1 (Fast)",
+   "description": "GPT 4.1 is OpenAI's flagship model for complex tasks. It is well suited for problem solving across domains.",
+   "context_window": 1047576,
+   "max_tokens": 32768,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
     ],
-    "supported_durations_seconds": [
-     4,
-     6,
-     8
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "knowledge": "2024-06-01",
+   "pricing": {
+    "input": "0.0000035",
+    "output": "0.000014",
+    "input_cache_read": "0.000000875",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "openai/gpt-4.1-mini",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1747180800,
+   "owned_by": "openai",
+   "name": "GPT-4.1 mini",
+   "description": "GPT 4.1 mini provides a balance between intelligence, speed, and cost that makes it an attractive model for many use cases.",
+   "context_window": 1047576,
+   "max_tokens": 32768,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
     ],
-    "generate_audio": true,
-    "supported_fps": [
-     24
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "knowledge": "2024-06-01",
+   "pricing": {
+    "input": "0.0000004",
+    "output": "0.0000016",
+    "input_cache_read": "0.0000001",
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.0000007",
+      "output": "0.0000028",
+      "input_cache_read": "0.000000175"
+     }
+    },
+    "fast": {
+     "input": "0.0000007",
+     "output": "0.0000028",
+     "input_cache_read": "0.000000175"
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-4.1-mini-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1747180800,
+   "owned_by": "openai",
+   "name": "GPT-4.1 mini (Fast)",
+   "description": "GPT 4.1 mini provides a balance between intelligence, speed, and cost that makes it an attractive model for many use cases.",
+   "context_window": 1047576,
+   "max_tokens": 32768,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
     ],
-    "max_sample_count": 4,
-    "input_limits": {
-     "image": {
-      "max_count": 3,
-      "max_file_size_mb": 20,
-      "supported_formats": [
-       "jpg",
-       "jpeg",
-       "png"
-      ],
-      "supported_sources": [
-       "url",
-       "base64"
-      ]
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "knowledge": "2024-06-01",
+   "pricing": {
+    "input": "0.0000007",
+    "output": "0.0000028",
+    "input_cache_read": "0.000000175",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "openai/gpt-4.1-nano",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1744588800,
+   "owned_by": "openai",
+   "name": "GPT-4.1 nano",
+   "description": "GPT-4.1 nano is the fastest, most cost-effective GPT 4.1 model.",
+   "context_window": 1047576,
+   "max_tokens": 32768,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "knowledge": "2024-06-01",
+   "pricing": {
+    "input": "0.0000001",
+    "output": "0.0000004",
+    "input_cache_read": "0.000000025",
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.0000002",
+      "output": "0.0000008",
+      "input_cache_read": "0.00000005"
+     }
+    },
+    "varies_by_provider": true,
+    "fast": {
+     "input": "0.0000002",
+     "output": "0.0000008",
+     "input_cache_read": "0.00000005"
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-4.1-nano-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1744588800,
+   "owned_by": "openai",
+   "name": "GPT-4.1 nano (Fast)",
+   "description": "GPT-4.1 nano is the fastest, most cost-effective GPT 4.1 model.",
+   "context_window": 1047576,
+   "max_tokens": 32768,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "knowledge": "2024-06-01",
+   "pricing": {
+    "input": "0.0000002",
+    "output": "0.0000008",
+    "input_cache_read": "0.00000005",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "openai/gpt-4o",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1715558400,
+   "owned_by": "openai",
+   "name": "GPT-4o",
+   "description": "GPT-4o from OpenAI has broad general knowledge and domain expertise allowing it to follow complex instructions in natural language and solve difficult problems accurately. It matches GPT-4 Turbo performance with a faster and cheaper API.",
+   "context_window": 128000,
+   "max_tokens": 16384,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "knowledge": "2023-10-01",
+   "pricing": {
+    "input": "0.0000025",
+    "output": "0.00001",
+    "input_cache_read": "0.00000125",
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.00000425",
+      "output": "0.000017",
+      "input_cache_read": "0.000002125"
+     }
+    },
+    "fast": {
+     "input": "0.00000425",
+     "output": "0.000017",
+     "input_cache_read": "0.000002125"
+    },
+    "regional": {
+     "eu": {
+      "input": "0.0000025",
+      "output": "0.00001",
+      "input_cache_read": "0.00000125"
      },
-     "video": {
-      "max_count": 1,
-      "supported_formats": [
-       "mp4"
-      ],
-      "supported_sources": [
-       "url"
-      ]
+     "us": {
+      "input": "0.0000025",
+      "output": "0.00001",
+      "input_cache_read": "0.00000125"
      }
     }
-   },
-   "pricing": {
-    "video_duration_pricing": [
-     {
-      "resolution": "720p",
-      "audio": false,
-      "cost_per_second": "0.2"
-     },
-     {
-      "resolution": "720p",
-      "audio": true,
-      "cost_per_second": "0.4"
-     },
-     {
-      "resolution": "1080p",
-      "audio": false,
-      "cost_per_second": "0.2"
-     },
-     {
-      "resolution": "1080p",
-      "audio": true,
-      "cost_per_second": "0.4"
-     },
-     {
-      "resolution": "4k",
-      "audio": false,
-      "cost_per_second": "0.4"
-     },
-     {
-      "resolution": "4k",
-      "audio": true,
-      "cost_per_second": "0.6"
-     }
+   }
+  },
+  {
+   "id": "openai/gpt-4o-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1715558400,
+   "owned_by": "openai",
+   "name": "GPT-4o (Fast)",
+   "description": "GPT-4o from OpenAI has broad general knowledge and domain expertise allowing it to follow complex instructions in natural language and solve difficult problems accurately. It matches GPT-4 Turbo performance with a faster and cheaper API.",
+   "context_window": 128000,
+   "max_tokens": 16384,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
     ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "knowledge": "2023-10-01",
+   "pricing": {
+    "input": "0.00000425",
+    "output": "0.000017",
+    "input_cache_read": "0.000002125",
+    "web_search": "10",
+    "regional": {
+     "eu": {
+      "input": "0.00000425",
+      "output": "0.000017",
+      "input_cache_read": "0.000002125"
+     },
+     "us": {
+      "input": "0.00000425",
+      "output": "0.000017",
+      "input_cache_read": "0.000002125"
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-4o-mini",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1721260800,
+   "owned_by": "openai",
+   "name": "GPT-4o mini",
+   "description": "GPT-4o mini from OpenAI is their most advanced and cost-efficient small model. It is multi-modal (accepting text or image inputs and outputting text) and has higher intelligence than gpt-3.5-turbo but is just as fast.",
+   "context_window": 128000,
+   "max_tokens": 16384,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "knowledge": "2023-10-01",
+   "pricing": {
+    "input": "0.00000015",
+    "output": "0.0000006",
+    "input_cache_read": "0.000000075",
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.00000025",
+      "output": "0.000001",
+      "input_cache_read": "0.000000125"
+     }
+    },
+    "fast": {
+     "input": "0.00000025",
+     "output": "0.000001",
+     "input_cache_read": "0.000000125"
+    },
+    "regional": {
+     "eu": {
+      "input": "0.00000015",
+      "output": "0.0000006",
+      "input_cache_read": "0.000000075"
+     },
+     "us": {
+      "input": "0.00000015",
+      "output": "0.0000006",
+      "input_cache_read": "0.000000075"
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-4o-mini-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1721260800,
+   "owned_by": "openai",
+   "name": "GPT-4o mini (Fast)",
+   "description": "GPT-4o mini from OpenAI is their most advanced and cost-efficient small model. It is multi-modal (accepting text or image inputs and outputting text) and has higher intelligence than gpt-3.5-turbo but is just as fast.",
+   "context_window": 128000,
+   "max_tokens": 16384,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "knowledge": "2023-10-01",
+   "pricing": {
+    "input": "0.00000025",
+    "output": "0.000001",
+    "input_cache_read": "0.000000125",
+    "web_search": "10",
+    "regional": {
+     "eu": {
+      "input": "0.00000025",
+      "output": "0.000001",
+      "input_cache_read": "0.000000125"
+     },
+     "us": {
+      "input": "0.00000025",
+      "output": "0.000001",
+      "input_cache_read": "0.000000125"
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1754524800,
+   "owned_by": "openai",
+   "name": "GPT-5",
+   "description": "GPT-5 is OpenAI's flagship language model that excels at complex reasoning, broad real-world knowledge, code-intensive, and multi-step agentic tasks.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-09-30",
+   "pricing": {
+    "input": "0.00000125",
+    "output": "0.00001",
+    "input_cache_read": "0.000000125",
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.0000025",
+      "output": "0.00002",
+      "input_cache_read": "0.00000025"
+     },
+     "flex": {
+      "input": "0.000000625",
+      "output": "0.000005",
+      "input_cache_read": "0.0000000625"
+     }
+    },
+    "varies_by_provider": true,
+    "fast": {
+     "input": "0.0000025",
+     "output": "0.00002",
+     "input_cache_read": "0.00000025"
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1754524800,
+   "owned_by": "openai",
+   "name": "GPT-5 (Fast)",
+   "description": "GPT-5 is OpenAI's flagship language model that excels at complex reasoning, broad real-world knowledge, code-intensive, and multi-step agentic tasks.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-09-30",
+   "pricing": {
+    "input": "0.0000025",
+    "output": "0.00002",
+    "input_cache_read": "0.00000025",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "openai/gpt-5-codex",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1757894400,
+   "owned_by": "openai",
+   "name": "GPT-5-Codex",
+   "description": "GPT-5-Codex is a version of GPT-5 optimized for agentic coding tasks in Codex or similar environments.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-09-30",
+   "pricing": {
+    "input": "0.00000125",
+    "output": "0.00001",
+    "input_cache_read": "0.00000013",
+    "web_search": "14"
    }
   },
   {
@@ -1039,6 +4046,2000 @@
      "input": "0.00000045",
      "output": "0.0000036",
      "input_cache_read": "0.000000045"
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5-mini-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1754524800,
+   "owned_by": "openai",
+   "name": "GPT-5 mini (Fast)",
+   "description": "GPT-5 mini is a cost optimized model that excels at reasoning/chat tasks. It offers an optimal balance between speed, cost, and capability.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-05-31",
+   "pricing": {
+    "input": "0.00000045",
+    "output": "0.0000036",
+    "input_cache_read": "0.000000045",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "openai/gpt-5-nano",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1754524800,
+   "owned_by": "openai",
+   "name": "GPT-5 nano",
+   "description": "GPT-5 nano is a high throughput model that excels at simple instruction or classification tasks.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-05-31",
+   "pricing": {
+    "input": "0.00000005",
+    "output": "0.0000004",
+    "input_cache_read": "0.000000005",
+    "web_search": "10",
+    "service_tiers": {
+     "flex": {
+      "input": "0.000000025",
+      "output": "0.0000002",
+      "input_cache_read": "0.0000000025"
+     }
+    },
+    "varies_by_provider": true
+   }
+  },
+  {
+   "id": "openai/gpt-5-pro",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1759708800,
+   "owned_by": "openai",
+   "name": "GPT-5 pro",
+   "description": "GPT-5 pro uses more compute to think harder and provide consistently better answers. Since GPT-5 pro is designed to tackle tough problems, some requests may take several minutes to finish.",
+   "context_window": 400000,
+   "max_tokens": 272000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-09-30",
+   "pricing": {
+    "input": "0.000015",
+    "output": "0.00012",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "openai/gpt-5.1-codex",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1762905600,
+   "owned_by": "openai",
+   "name": "GPT-5.1-Codex",
+   "description": "GPT-5.1-Codex is a version of GPT-5.1 optimized for agentic coding tasks in Codex or similar environments.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-09-30",
+   "pricing": {
+    "input": "0.00000125",
+    "output": "0.00001",
+    "input_cache_read": "0.00000013",
+    "web_search": "14"
+   }
+  },
+  {
+   "id": "openai/gpt-5.1-codex-max",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1763510400,
+   "owned_by": "openai",
+   "name": "GPT 5.1 Codex Max",
+   "description": "GPT\u20115.1-Codex-Max is purpose-built for agentic coding.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-09-30",
+   "pricing": {
+    "input": "0.00000125",
+    "output": "0.00001",
+    "input_cache_read": "0.000000125",
+    "web_search": "14"
+   }
+  },
+  {
+   "id": "openai/gpt-5.1-codex-mini",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1762905600,
+   "owned_by": "openai",
+   "name": "GPT 5.1 Codex Mini",
+   "description": "GPT-5.1 Codex mini is a smaller, faster, and cheaper version of GPT-5.1 Codex.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-09-30",
+   "pricing": {
+    "input": "0.00000025",
+    "output": "0.000002",
+    "input_cache_read": "0.00000003",
+    "web_search": "14"
+   }
+  },
+  {
+   "id": "openai/gpt-5.1-thinking",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1762905600,
+   "owned_by": "openai",
+   "name": "GPT 5.1 Thinking",
+   "description": "An upgraded version of GPT-5 that adapts thinking time more precisely to the question to spend more time on complex questions and respond more quickly to simpler tasks.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2024-09-30",
+   "pricing": {
+    "input": "0.00000125",
+    "output": "0.00001",
+    "input_cache_read": "0.000000125",
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.0000025",
+      "output": "0.00002",
+      "input_cache_read": "0.00000025"
+     },
+     "flex": {
+      "input": "0.000000625",
+      "output": "0.000005",
+      "input_cache_read": "0.0000000625"
+     }
+    },
+    "varies_by_provider": true,
+    "fast": {
+     "input": "0.0000025",
+     "output": "0.00002",
+     "input_cache_read": "0.00000025"
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.1-thinking-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1762905600,
+   "owned_by": "openai",
+   "name": "GPT 5.1 Thinking (Fast)",
+   "description": "An upgraded version of GPT-5 that adapts thinking time more precisely to the question to spend more time on complex questions and respond more quickly to simpler tasks.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2024-09-30",
+   "pricing": {
+    "input": "0.0000025",
+    "output": "0.00002",
+    "input_cache_read": "0.00000025",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "openai/gpt-5.2",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1765411200,
+   "owned_by": "openai",
+   "name": "GPT 5.2",
+   "description": "GPT-5.2 is OpenAI's best general-purpose model, part of the GPT-5 flagship model family. It's their most intelligent model yet for both general and agentic tasks.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2025-08-31",
+   "pricing": {
+    "input": "0.00000175",
+    "output": "0.000014",
+    "input_cache_read": "0.000000175",
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.0000035",
+      "output": "0.000028",
+      "input_cache_read": "0.00000035"
+     },
+     "flex": {
+      "input": "0.000000875",
+      "output": "0.000007",
+      "input_cache_read": "0.0000000875"
+     }
+    },
+    "varies_by_provider": true,
+    "fast": {
+     "input": "0.0000035",
+     "output": "0.000028",
+     "input_cache_read": "0.00000035"
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.2-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1765411200,
+   "owned_by": "openai",
+   "name": "GPT 5.2 (Fast)",
+   "description": "GPT-5.2 is OpenAI's best general-purpose model, part of the GPT-5 flagship model family. It's their most intelligent model yet for both general and agentic tasks.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2025-08-31",
+   "pricing": {
+    "input": "0.0000035",
+    "output": "0.000028",
+    "input_cache_read": "0.00000035",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "openai/gpt-5.2-codex",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1766016000,
+   "owned_by": "openai",
+   "name": "GPT 5.2 Codex",
+   "description": "GPT\u20115.2-Codex is a version of GPT\u20115.2\u2060 further optimized for agentic coding in Codex, including improvements on long-horizon work through context compaction, stronger performance on large code changes like refactors and migrations, improved performance in Windows environments, and significantly stronger cybersecurity capabilities.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2025-08-31",
+   "pricing": {
+    "input": "0.00000175",
+    "output": "0.000014",
+    "input_cache_read": "0.000000175",
+    "web_search": "14"
+   }
+  },
+  {
+   "id": "openai/gpt-5.2-pro",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1765411200,
+   "owned_by": "openai",
+   "name": "GPT 5.2 ",
+   "description": "Version of GPT-5.2 that produces smarter and more precise responses.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "tool-use",
+    "vision",
+    "reasoning",
+    "file-input",
+    "web-search",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2025-08-31",
+   "pricing": {
+    "input": "0.000021",
+    "output": "0.000168",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "openai/gpt-5.3-codex",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1770249600,
+   "owned_by": "openai",
+   "name": "GPT 5.3 Codex",
+   "description": "GPT-5.3-Codex advances both the frontier coding performance of GPT\u20115.2-Codex and the reasoning and professional knowledge capabilities of GPT\u20115.2, together in one model, which is also 25% faster. This enables it to take on long-running tasks that involve research, tool use, and complex execution.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2025-08-31",
+   "pricing": {
+    "input": "0.00000175",
+    "output": "0.000014",
+    "input_cache_read": "0.000000175",
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.0000035",
+      "output": "0.000028",
+      "input_cache_read": "0.00000035"
+     }
+    },
+    "fast": {
+     "input": "0.0000035",
+     "output": "0.000028",
+     "input_cache_read": "0.00000035"
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.3-codex-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1770249600,
+   "owned_by": "openai",
+   "name": "GPT 5.3 Codex (Fast)",
+   "description": "GPT-5.3-Codex advances both the frontier coding performance of GPT\u20115.2-Codex and the reasoning and professional knowledge capabilities of GPT\u20115.2, together in one model, which is also 25% faster. This enables it to take on long-running tasks that involve research, tool use, and complex execution.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2025-08-31",
+   "pricing": {
+    "input": "0.0000035",
+    "output": "0.000028",
+    "input_cache_read": "0.00000035",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "openai/gpt-5.4",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1772668800,
+   "owned_by": "openai",
+   "name": "GPT 5.4",
+   "description": "GPT-5.4 is OpenAI's best general-purpose model, part of the GPT-5 flagship model family. It's their most intelligent model yet for both general and agentic tasks.",
+   "context_window": 1050000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "regions": [
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2025-08-31",
+   "pricing": {
+    "input": "0.0000025",
+    "input_tiers": [
+     {
+      "cost": "0.0000025",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.000005",
+      "min": 272000
+     }
+    ],
+    "output": "0.000015",
+    "output_tiers": [
+     {
+      "cost": "0.000015",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.0000225",
+      "min": 272000
+     }
+    ],
+    "input_cache_read": "0.00000025",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.00000025",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.0000005",
+      "min": 272000
+     }
+    ],
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.000005",
+      "output": "0.00003",
+      "input_cache_read": "0.0000005"
+     },
+     "flex": {
+      "input": "0.00000125",
+      "output": "0.0000075",
+      "input_cache_read": "0.00000013",
+      "long_context": {
+       "threshold": 272000,
+       "input": "0.0000025",
+       "output": "0.00001125",
+       "input_cache_read": "0.00000025"
+      }
+     }
+    },
+    "fast": {
+     "input": "0.000005",
+     "output": "0.00003",
+     "input_cache_read": "0.0000005"
+    },
+    "regional": {
+     "us": {
+      "input": "0.00000275",
+      "input_tiers": [
+       {
+        "cost": "0.00000275",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000055",
+        "min": 272000
+       }
+      ],
+      "output": "0.0000165",
+      "output_tiers": [
+       {
+        "cost": "0.0000165",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00002475",
+        "min": 272000
+       }
+      ],
+      "input_cache_read": "0.000000275",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.000000275",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000055",
+        "min": 272000
+       }
+      ],
+      "fast": {
+       "input": "0.0000055",
+       "output": "0.000033",
+       "input_cache_read": "0.00000055"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.4-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1772668800,
+   "owned_by": "openai",
+   "name": "GPT 5.4 (Fast)",
+   "description": "GPT-5.4 is OpenAI's best general-purpose model, part of the GPT-5 flagship model family. It's their most intelligent model yet for both general and agentic tasks.",
+   "context_window": 1050000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "regions": [
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2025-08-31",
+   "pricing": {
+    "input": "0.000005",
+    "output": "0.00003",
+    "input_cache_read": "0.0000005",
+    "web_search": "10",
+    "regional": {
+     "us": {
+      "input": "0.0000055",
+      "output": "0.000033",
+      "input_cache_read": "0.00000055"
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.4-mini",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1773705600,
+   "owned_by": "openai",
+   "name": "GPT 5.4 Mini",
+   "description": "GPT-5.4 Mini brings the strengths of GPT-5.4 to a faster, more efficient model designed for high-volume workloads.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "regions": [
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2025-08-31",
+   "pricing": {
+    "input": "0.00000075",
+    "output": "0.0000045",
+    "input_cache_read": "0.000000075",
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.0000015",
+      "output": "0.000009",
+      "input_cache_read": "0.00000015"
+     },
+     "flex": {
+      "input": "0.000000375",
+      "output": "0.00000225",
+      "input_cache_read": "0.0000000375"
+     }
+    },
+    "fast": {
+     "input": "0.0000015",
+     "output": "0.000009",
+     "input_cache_read": "0.00000015"
+    },
+    "regional": {
+     "us": {
+      "input": "0.000000825",
+      "output": "0.00000495",
+      "input_cache_read": "0.0000000825",
+      "fast": {
+       "input": "0.00000165",
+       "output": "0.0000099",
+       "input_cache_read": "0.000000165"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.4-mini-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1773705600,
+   "owned_by": "openai",
+   "name": "GPT 5.4 Mini (Fast)",
+   "description": "GPT-5.4 Mini brings the strengths of GPT-5.4 to a faster, more efficient model designed for high-volume workloads.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "regions": [
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2025-08-31",
+   "pricing": {
+    "input": "0.0000015",
+    "output": "0.000009",
+    "input_cache_read": "0.00000015",
+    "web_search": "10",
+    "regional": {
+     "us": {
+      "input": "0.00000165",
+      "output": "0.0000099",
+      "input_cache_read": "0.000000165"
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.4-nano",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1773705600,
+   "owned_by": "openai",
+   "name": "GPT 5.4 Nano",
+   "description": "GPT-5.4 Nano is designed for tasks where speed and cost matter most like classification, data extraction, ranking, and sub-agents.",
+   "context_window": 400000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "websocket-realtime"
+   ],
+   "regions": [
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2025-08-31",
+   "pricing": {
+    "input": "0.0000002",
+    "output": "0.00000125",
+    "input_cache_read": "0.00000002",
+    "web_search": "10",
+    "service_tiers": {
+     "flex": {
+      "input": "0.0000001",
+      "output": "0.000000625",
+      "input_cache_read": "0.00000001"
+     }
+    },
+    "regional": {
+     "us": {
+      "input": "0.00000022",
+      "output": "0.000001375",
+      "input_cache_read": "0.000000022"
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.4-pro",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1772668800,
+   "owned_by": "openai",
+   "name": "GPT 5.4 Pro",
+   "description": "GPT-5.4 Pro uses more compute to think harder and provide consistently better answers. It's designed to tackle tough problems.",
+   "context_window": 1050000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output"
+   ],
+   "regions": [
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2025-08-31",
+   "pricing": {
+    "input": "0.00003",
+    "input_tiers": [
+     {
+      "cost": "0.00003",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.00006",
+      "min": 272000
+     }
+    ],
+    "output": "0.00018",
+    "output_tiers": [
+     {
+      "cost": "0.00018",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.00027",
+      "min": 272000
+     }
+    ],
+    "web_search": "10",
+    "service_tiers": {
+     "flex": {
+      "input": "0.000015",
+      "output": "0.00009",
+      "long_context": {
+       "threshold": 272000,
+       "input": "0.00003",
+       "output": "0.000135"
+      }
+     }
+    },
+    "regional": {
+     "us": {
+      "input": "0.000033",
+      "input_tiers": [
+       {
+        "cost": "0.000033",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.000066",
+        "min": 272000
+       }
+      ],
+      "output": "0.000198",
+      "output_tiers": [
+       {
+        "cost": "0.000198",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.000297",
+        "min": 272000
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.5",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1776988800,
+   "owned_by": "openai",
+   "name": "GPT 5.5",
+   "description": "GPT\u20115.5 understands what you\u2019re trying to do faster and can carry more of the work itself. It excels at writing and debugging code, researching online, analyzing data, creating documents and spreadsheets, operating software, and moving across tools until a task is finished. Instead of carefully managing every step, you can give GPT\u20115.5 a messy, multi-part task and trust it to plan, use tools, check its work, navigate through ambiguity, and keep going.",
+   "context_window": 1000000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "regions": [
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2025-12-01",
+   "pricing": {
+    "input": "0.000005",
+    "input_tiers": [
+     {
+      "cost": "0.000005",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.00001",
+      "min": 272000
+     }
+    ],
+    "output": "0.00003",
+    "output_tiers": [
+     {
+      "cost": "0.00003",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.000045",
+      "min": 272000
+     }
+    ],
+    "input_cache_read": "0.0000005",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.0000005",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.000001",
+      "min": 272000
+     }
+    ],
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.0000125",
+      "output": "0.000075",
+      "input_cache_read": "0.00000125"
+     },
+     "flex": {
+      "input": "0.0000025",
+      "output": "0.000015",
+      "input_cache_read": "0.00000025",
+      "long_context": {
+       "threshold": 272000,
+       "input": "0.000005",
+       "output": "0.0000225",
+       "input_cache_read": "0.0000005"
+      }
+     }
+    },
+    "varies_by_provider": true,
+    "fast": {
+     "input": "0.0000125",
+     "output": "0.000075",
+     "input_cache_read": "0.00000125"
+    },
+    "regional": {
+     "us": {
+      "input": "0.0000055",
+      "input_tiers": [
+       {
+        "cost": "0.0000055",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.000011",
+        "min": 272000
+       }
+      ],
+      "output": "0.000033",
+      "output_tiers": [
+       {
+        "cost": "0.000033",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000495",
+        "min": 272000
+       }
+      ],
+      "input_cache_read": "0.00000055",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.00000055",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000011",
+        "min": 272000
+       }
+      ],
+      "fast": {
+       "input": "0.00001375",
+       "output": "0.0000825",
+       "input_cache_read": "0.000001375"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.5-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1776988800,
+   "owned_by": "openai",
+   "name": "GPT 5.5 (Fast)",
+   "description": "GPT\u20115.5 understands what you\u2019re trying to do faster and can carry more of the work itself. It excels at writing and debugging code, researching online, analyzing data, creating documents and spreadsheets, operating software, and moving across tools until a task is finished. Instead of carefully managing every step, you can give GPT\u20115.5 a messy, multi-part task and trust it to plan, use tools, check its work, navigate through ambiguity, and keep going.",
+   "context_window": 1000000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "regions": [
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2025-12-01",
+   "pricing": {
+    "input": "0.0000125",
+    "output": "0.000075",
+    "input_cache_read": "0.00000125",
+    "web_search": "10",
+    "regional": {
+     "us": {
+      "input": "0.00001375",
+      "output": "0.0000825",
+      "input_cache_read": "0.000001375"
+     }
     }
    }
   },
@@ -1160,6 +6161,580 @@
        },
        {
         "cost": "0.000297",
+        "min": 272000
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.6-luna",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1783555200,
+   "owned_by": "openai",
+   "name": "GPT 5.6 Luna",
+   "description": "GPT-5.6 Luna is a fast, affordable GPT-5.6 model that brings strong capability at the lowest cost in the series.",
+   "context_window": 1050000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "file-input",
+    "tool-use",
+    "vision",
+    "implicit-caching",
+    "web-search",
+    "explicit-caching",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ]
+    }
+   ],
+   "knowledge": "2026-02-16",
+   "pricing": {
+    "input": "0.0000002",
+    "input_tiers": [
+     {
+      "cost": "0.0000002",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.0000004",
+      "min": 272000
+     }
+    ],
+    "output": "0.0000012",
+    "output_tiers": [
+     {
+      "cost": "0.0000012",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.0000018",
+      "min": 272000
+     }
+    ],
+    "input_cache_read": "0.00000002",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.00000002",
+      "max": 272000
+     },
+     {
+      "cost": "0.00000004",
+      "min": 272000
+     }
+    ],
+    "input_cache_write": "0.00000025",
+    "input_cache_write_tiers": [
+     {
+      "cost": "0.00000025",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.0000005",
+      "min": 272000
+     }
+    ],
+    "web_search": "10",
+    "service_tiers": {
+     "flex": {
+      "input": "0.0000001",
+      "output": "0.0000006",
+      "input_cache_read": "0.00000001",
+      "long_context": {
+       "threshold": 272000,
+       "input": "0.0000002",
+       "output": "0.0000009",
+       "input_cache_read": "0.00000002"
+      }
+     },
+     "priority": {
+      "input": "0.0000004",
+      "output": "0.0000024",
+      "input_cache_read": "0.00000004",
+      "long_context": {
+       "threshold": 272000,
+       "input": "0.0000008",
+       "output": "0.0000036",
+       "input_cache_read": "0.00000008"
+      }
+     }
+    },
+    "fast": {
+     "input": "0.0000004",
+     "input_tiers": [
+      {
+       "cost": "0.0000004",
+       "min": 0,
+       "max": 272000
+      },
+      {
+       "cost": "0.0000008",
+       "min": 272000
+      }
+     ],
+     "output": "0.0000024",
+     "output_tiers": [
+      {
+       "cost": "0.0000024",
+       "min": 0,
+       "max": 272000
+      },
+      {
+       "cost": "0.0000036",
+       "min": 272000
+      }
+     ],
+     "input_cache_read": "0.00000004",
+     "input_cache_read_tiers": [
+      {
+       "cost": "0.00000004",
+       "min": 0,
+       "max": 272000
+      },
+      {
+       "cost": "0.00000008",
+       "min": 272000
+      }
+     ],
+     "input_cache_write": "0.0000005",
+     "input_cache_write_tiers": [
+      {
+       "cost": "0.0000005",
+       "min": 0,
+       "max": 272000
+      },
+      {
+       "cost": "0.000001",
+       "min": 272000
+      }
+     ]
+    },
+    "regional": {
+     "eu": {
+      "input": "0.00000022",
+      "input_tiers": [
+       {
+        "cost": "0.00000022",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000044",
+        "min": 272000
+       }
+      ],
+      "output": "0.00000132",
+      "output_tiers": [
+       {
+        "cost": "0.00000132",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000198",
+        "min": 272000
+       }
+      ],
+      "input_cache_read": "0.000000022",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.000000022",
+        "max": 272000
+       },
+       {
+        "cost": "0.000000044",
+        "min": 272000
+       }
+      ],
+      "input_cache_write": "0.000000275",
+      "input_cache_write_tiers": [
+       {
+        "cost": "0.000000275",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000055",
+        "min": 272000
+       }
+      ]
+     },
+     "us": {
+      "input": "0.00000022",
+      "input_tiers": [
+       {
+        "cost": "0.00000022",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000044",
+        "min": 272000
+       }
+      ],
+      "output": "0.00000132",
+      "output_tiers": [
+       {
+        "cost": "0.00000132",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000198",
+        "min": 272000
+       }
+      ],
+      "input_cache_read": "0.000000022",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.000000022",
+        "max": 272000
+       },
+       {
+        "cost": "0.000000044",
+        "min": 272000
+       }
+      ],
+      "input_cache_write": "0.000000275",
+      "input_cache_write_tiers": [
+       {
+        "cost": "0.000000275",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000055",
+        "min": 272000
+       }
+      ],
+      "fast": {
+       "input": "0.00000044",
+       "input_tiers": [
+        {
+         "cost": "0.00000044",
+         "min": 0,
+         "max": 272000
+        },
+        {
+         "cost": "0.00000088",
+         "min": 272000
+        }
+       ],
+       "output": "0.00000264",
+       "output_tiers": [
+        {
+         "cost": "0.00000264",
+         "min": 0,
+         "max": 272000
+        },
+        {
+         "cost": "0.00000396",
+         "min": 272000
+        }
+       ],
+       "input_cache_read": "0.000000044",
+       "input_cache_read_tiers": [
+        {
+         "cost": "0.000000044",
+         "min": 0,
+         "max": 272000
+        },
+        {
+         "cost": "0.000000088",
+         "min": 272000
+        }
+       ],
+       "input_cache_write": "0.00000055",
+       "input_cache_write_tiers": [
+        {
+         "cost": "0.00000055",
+         "min": 0,
+         "max": 272000
+        },
+        {
+         "cost": "0.0000011",
+         "min": 272000
+        }
+       ]
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.6-luna-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1783555200,
+   "owned_by": "openai",
+   "name": "GPT 5.6 Luna (Fast)",
+   "description": "GPT-5.6 Luna is a fast, affordable GPT-5.6 model that brings strong capability at the lowest cost in the series.",
+   "context_window": 1050000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "file-input",
+    "tool-use",
+    "vision",
+    "implicit-caching",
+    "web-search",
+    "explicit-caching",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ]
+    }
+   ],
+   "knowledge": "2026-02-16",
+   "pricing": {
+    "input": "0.0000004",
+    "input_tiers": [
+     {
+      "cost": "0.0000004",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.0000008",
+      "min": 272000
+     }
+    ],
+    "output": "0.0000024",
+    "output_tiers": [
+     {
+      "cost": "0.0000024",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.0000036",
+      "min": 272000
+     }
+    ],
+    "input_cache_read": "0.00000004",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.00000004",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.00000008",
+      "min": 272000
+     }
+    ],
+    "input_cache_write": "0.0000005",
+    "input_cache_write_tiers": [
+     {
+      "cost": "0.0000005",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.000001",
+      "min": 272000
+     }
+    ],
+    "web_search": "10",
+    "regional": {
+     "eu": {
+      "input": "0.0000004",
+      "input_tiers": [
+       {
+        "cost": "0.0000004",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000008",
+        "min": 272000
+       }
+      ],
+      "output": "0.0000024",
+      "output_tiers": [
+       {
+        "cost": "0.0000024",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000036",
+        "min": 272000
+       }
+      ],
+      "input_cache_read": "0.00000004",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.00000004",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000008",
+        "min": 272000
+       }
+      ],
+      "input_cache_write": "0.0000005",
+      "input_cache_write_tiers": [
+       {
+        "cost": "0.0000005",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.000001",
+        "min": 272000
+       }
+      ]
+     },
+     "us": {
+      "input": "0.00000044",
+      "input_tiers": [
+       {
+        "cost": "0.00000044",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000088",
+        "min": 272000
+       }
+      ],
+      "output": "0.00000264",
+      "output_tiers": [
+       {
+        "cost": "0.00000264",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000396",
+        "min": 272000
+       }
+      ],
+      "input_cache_read": "0.000000044",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.000000044",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.000000088",
+        "min": 272000
+       }
+      ],
+      "input_cache_write": "0.00000055",
+      "input_cache_write_tiers": [
+       {
+        "cost": "0.00000055",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000011",
         "min": 272000
        }
       ]
@@ -1521,6 +7096,812 @@
    }
   },
   {
+   "id": "openai/gpt-5.6-sol-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1783555200,
+   "owned_by": "openai",
+   "name": "GPT 5.6 Sol (Fast)",
+   "description": "GPT-5.6 Sol is the flagship of OpenAI's GPT-5.6 series, its most capable model for long-horizon agentic work across coding, biology, and cybersecurity.",
+   "context_window": 1050000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "tool-use",
+    "implicit-caching",
+    "file-input",
+    "vision",
+    "web-search",
+    "explicit-caching",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ]
+    }
+   ],
+   "knowledge": "2026-02-16",
+   "pricing": {
+    "input": "0.000008",
+    "input_tiers": [
+     {
+      "cost": "0.000008",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.000016",
+      "min": 272000
+     }
+    ],
+    "output": "0.00004",
+    "output_tiers": [
+     {
+      "cost": "0.00004",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.00006",
+      "min": 272000
+     }
+    ],
+    "input_cache_read": "0.0000008",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.0000008",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.0000016",
+      "min": 272000
+     }
+    ],
+    "input_cache_write": "0.00001",
+    "input_cache_write_tiers": [
+     {
+      "cost": "0.00001",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.00002",
+      "min": 272000
+     }
+    ],
+    "web_search": "10",
+    "regional": {
+     "eu": {
+      "input": "0.000008",
+      "input_tiers": [
+       {
+        "cost": "0.000008",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.000016",
+        "min": 272000
+       }
+      ],
+      "output": "0.00004",
+      "output_tiers": [
+       {
+        "cost": "0.00004",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00006",
+        "min": 272000
+       }
+      ],
+      "input_cache_read": "0.0000008",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.0000008",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000016",
+        "min": 272000
+       }
+      ],
+      "input_cache_write": "0.00001",
+      "input_cache_write_tiers": [
+       {
+        "cost": "0.00001",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00002",
+        "min": 272000
+       }
+      ]
+     },
+     "us": {
+      "input": "0.0000088",
+      "input_tiers": [
+       {
+        "cost": "0.0000088",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000176",
+        "min": 272000
+       }
+      ],
+      "output": "0.000044",
+      "output_tiers": [
+       {
+        "cost": "0.000044",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.000066",
+        "min": 272000
+       }
+      ],
+      "input_cache_read": "0.00000088",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.00000088",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000176",
+        "min": 272000
+       }
+      ],
+      "input_cache_write": "0.000011",
+      "input_cache_write_tiers": [
+       {
+        "cost": "0.000011",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.000022",
+        "min": 272000
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.6-terra",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1783555200,
+   "owned_by": "openai",
+   "name": "GPT 5.6 Terra",
+   "description": "GPT-5.6 Terra is a balanced GPT-5.6 model for everyday work, with performance comparable to the previous generation at half the cost.",
+   "context_window": 1050000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "web-search",
+    "file-input",
+    "tool-use",
+    "vision",
+    "implicit-caching",
+    "explicit-caching",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ]
+    }
+   ],
+   "knowledge": "2026-02-16",
+   "pricing": {
+    "input": "0.000002",
+    "input_tiers": [
+     {
+      "cost": "0.000002",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.000004",
+      "min": 272000
+     }
+    ],
+    "output": "0.000012",
+    "output_tiers": [
+     {
+      "cost": "0.000012",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.000018",
+      "min": 272000
+     }
+    ],
+    "input_cache_read": "0.0000002",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.0000002",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.0000004",
+      "min": 272000
+     }
+    ],
+    "input_cache_write": "0.0000025",
+    "input_cache_write_tiers": [
+     {
+      "cost": "0.0000025",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.000005",
+      "min": 272000
+     }
+    ],
+    "web_search": "10",
+    "service_tiers": {
+     "flex": {
+      "input": "0.000001",
+      "output": "0.000006",
+      "input_cache_read": "0.0000001",
+      "long_context": {
+       "threshold": 272000,
+       "input": "0.000002",
+       "output": "0.000009",
+       "input_cache_read": "0.0000002"
+      }
+     },
+     "priority": {
+      "input": "0.000004",
+      "output": "0.000024",
+      "input_cache_read": "0.0000004",
+      "long_context": {
+       "threshold": 272000,
+       "input": "0.000008",
+       "output": "0.000036",
+       "input_cache_read": "0.0000008"
+      }
+     }
+    },
+    "fast": {
+     "input": "0.000004",
+     "input_tiers": [
+      {
+       "cost": "0.000004",
+       "min": 0,
+       "max": 272000
+      },
+      {
+       "cost": "0.000008",
+       "min": 272000
+      }
+     ],
+     "output": "0.000024",
+     "output_tiers": [
+      {
+       "cost": "0.000024",
+       "min": 0,
+       "max": 272000
+      },
+      {
+       "cost": "0.000036",
+       "min": 272000
+      }
+     ],
+     "input_cache_read": "0.0000004",
+     "input_cache_read_tiers": [
+      {
+       "cost": "0.0000004",
+       "min": 0,
+       "max": 272000
+      },
+      {
+       "cost": "0.0000008",
+       "min": 272000
+      }
+     ],
+     "input_cache_write": "0.000005",
+     "input_cache_write_tiers": [
+      {
+       "cost": "0.000005",
+       "min": 0,
+       "max": 272000
+      },
+      {
+       "cost": "0.00001",
+       "min": 272000
+      }
+     ]
+    },
+    "regional": {
+     "eu": {
+      "input": "0.0000022",
+      "input_tiers": [
+       {
+        "cost": "0.0000022",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000044",
+        "min": 272000
+       }
+      ],
+      "output": "0.0000132",
+      "output_tiers": [
+       {
+        "cost": "0.0000132",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000198",
+        "min": 272000
+       }
+      ],
+      "input_cache_read": "0.00000022",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.00000022",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000044",
+        "min": 272000
+       }
+      ],
+      "input_cache_write": "0.00000275",
+      "input_cache_write_tiers": [
+       {
+        "cost": "0.00000275",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000055",
+        "min": 272000
+       }
+      ]
+     },
+     "us": {
+      "input": "0.0000022",
+      "input_tiers": [
+       {
+        "cost": "0.0000022",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000044",
+        "min": 272000
+       }
+      ],
+      "output": "0.0000132",
+      "output_tiers": [
+       {
+        "cost": "0.0000132",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000198",
+        "min": 272000
+       }
+      ],
+      "input_cache_read": "0.00000022",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.00000022",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000044",
+        "min": 272000
+       }
+      ],
+      "input_cache_write": "0.00000275",
+      "input_cache_write_tiers": [
+       {
+        "cost": "0.00000275",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000055",
+        "min": 272000
+       }
+      ],
+      "fast": {
+       "input": "0.0000044",
+       "input_tiers": [
+        {
+         "cost": "0.0000044",
+         "min": 0,
+         "max": 272000
+        },
+        {
+         "cost": "0.0000088",
+         "min": 272000
+        }
+       ],
+       "output": "0.0000264",
+       "output_tiers": [
+        {
+         "cost": "0.0000264",
+         "min": 0,
+         "max": 272000
+        },
+        {
+         "cost": "0.0000396",
+         "min": 272000
+        }
+       ],
+       "input_cache_read": "0.00000044",
+       "input_cache_read_tiers": [
+        {
+         "cost": "0.00000044",
+         "min": 0,
+         "max": 272000
+        },
+        {
+         "cost": "0.00000088",
+         "min": 272000
+        }
+       ],
+       "input_cache_write": "0.0000055",
+       "input_cache_write_tiers": [
+        {
+         "cost": "0.0000055",
+         "min": 0,
+         "max": 272000
+        },
+        {
+         "cost": "0.000011",
+         "min": 272000
+        }
+       ]
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-5.6-terra-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1783555200,
+   "owned_by": "openai",
+   "name": "GPT 5.6 Terra (Fast)",
+   "description": "GPT-5.6 Terra is a balanced GPT-5.6 model for everyday work, with performance comparable to the previous generation at half the cost.",
+   "context_window": 1050000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "web-search",
+    "file-input",
+    "tool-use",
+    "vision",
+    "implicit-caching",
+    "explicit-caching",
+    "structured-output",
+    "websocket-realtime",
+    "fast"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ]
+    }
+   ],
+   "knowledge": "2026-02-16",
+   "pricing": {
+    "input": "0.000004",
+    "input_tiers": [
+     {
+      "cost": "0.000004",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.000008",
+      "min": 272000
+     }
+    ],
+    "output": "0.000024",
+    "output_tiers": [
+     {
+      "cost": "0.000024",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.000036",
+      "min": 272000
+     }
+    ],
+    "input_cache_read": "0.0000004",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.0000004",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.0000008",
+      "min": 272000
+     }
+    ],
+    "input_cache_write": "0.000005",
+    "input_cache_write_tiers": [
+     {
+      "cost": "0.000005",
+      "min": 0,
+      "max": 272000
+     },
+     {
+      "cost": "0.00001",
+      "min": 272000
+     }
+    ],
+    "web_search": "10",
+    "regional": {
+     "eu": {
+      "input": "0.000004",
+      "input_tiers": [
+       {
+        "cost": "0.000004",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.000008",
+        "min": 272000
+       }
+      ],
+      "output": "0.000024",
+      "output_tiers": [
+       {
+        "cost": "0.000024",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.000036",
+        "min": 272000
+       }
+      ],
+      "input_cache_read": "0.0000004",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.0000004",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000008",
+        "min": 272000
+       }
+      ],
+      "input_cache_write": "0.000005",
+      "input_cache_write_tiers": [
+       {
+        "cost": "0.000005",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00001",
+        "min": 272000
+       }
+      ]
+     },
+     "us": {
+      "input": "0.0000044",
+      "input_tiers": [
+       {
+        "cost": "0.0000044",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000088",
+        "min": 272000
+       }
+      ],
+      "output": "0.0000264",
+      "output_tiers": [
+       {
+        "cost": "0.0000264",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.0000396",
+        "min": 272000
+       }
+      ],
+      "input_cache_read": "0.00000044",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.00000044",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.00000088",
+        "min": 272000
+       }
+      ],
+      "input_cache_write": "0.0000055",
+      "input_cache_write_tiers": [
+       {
+        "cost": "0.0000055",
+        "min": 0,
+        "max": 272000
+       },
+       {
+        "cost": "0.000011",
+        "min": 272000
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
    "id": "openai/gpt-6-astra",
    "object": "model",
    "created": 1755815280,
@@ -1864,6 +8245,333 @@
    }
   },
   {
+   "id": "openai/gpt-6-astra-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1788480000,
+   "owned_by": "openai",
+   "name": "GPT-6 Astra (Fast)",
+   "description": "GPT-6 Astra is OpenAI's most capable model for complex reasoning, coding, computer use, research, and document creation.",
+   "context_window": 1050000,
+   "max_tokens": 128000,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "websocket-realtime",
+    "explicit-caching",
+    "structured-output",
+    "fast"
+   ],
+   "regions": [
+    "eu",
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ]
+    }
+   ],
+   "knowledge": "2026-04-30",
+   "pricing": {
+    "input": "0.00002",
+    "input_tiers": [
+     {
+      "cost": "0.00002",
+      "min": 0,
+      "max": 272001
+     },
+     {
+      "cost": "0.00004",
+      "min": 272001
+     }
+    ],
+    "output": "0.0001",
+    "output_tiers": [
+     {
+      "cost": "0.0001",
+      "min": 0,
+      "max": 272001
+     },
+     {
+      "cost": "0.00015",
+      "min": 272001
+     }
+    ],
+    "input_cache_read": "0.000002",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.000002",
+      "min": 0,
+      "max": 272001
+     },
+     {
+      "cost": "0.000004",
+      "min": 272001
+     }
+    ],
+    "input_cache_write": "0.000025",
+    "input_cache_write_tiers": [
+     {
+      "cost": "0.000025",
+      "max": 272001
+     },
+     {
+      "cost": "0.00005",
+      "min": 272001
+     }
+    ],
+    "web_search": "10",
+    "regional": {
+     "eu": {
+      "input": "0.00002",
+      "input_tiers": [
+       {
+        "cost": "0.00002",
+        "min": 0,
+        "max": 272001
+       },
+       {
+        "cost": "0.00004",
+        "min": 272001
+       }
+      ],
+      "output": "0.0001",
+      "output_tiers": [
+       {
+        "cost": "0.0001",
+        "min": 0,
+        "max": 272001
+       },
+       {
+        "cost": "0.00015",
+        "min": 272001
+       }
+      ],
+      "input_cache_read": "0.000002",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.000002",
+        "min": 0,
+        "max": 272001
+       },
+       {
+        "cost": "0.000004",
+        "min": 272001
+       }
+      ],
+      "input_cache_write": "0.000025",
+      "input_cache_write_tiers": [
+       {
+        "cost": "0.000025",
+        "max": 272001
+       },
+       {
+        "cost": "0.00005",
+        "min": 272001
+       }
+      ]
+     },
+     "us": {
+      "input": "0.000022",
+      "input_tiers": [
+       {
+        "cost": "0.000022",
+        "min": 0,
+        "max": 272001
+       },
+       {
+        "cost": "0.000044",
+        "min": 272001
+       }
+      ],
+      "output": "0.00011",
+      "output_tiers": [
+       {
+        "cost": "0.00011",
+        "min": 0,
+        "max": 272001
+       },
+       {
+        "cost": "0.000165",
+        "min": 272001
+       }
+      ],
+      "input_cache_read": "0.0000022",
+      "input_cache_read_tiers": [
+       {
+        "cost": "0.0000022",
+        "min": 0,
+        "max": 272001
+       },
+       {
+        "cost": "0.0000044",
+        "min": 272001
+       }
+      ],
+      "input_cache_write": "0.0000275",
+      "input_cache_write_tiers": [
+       {
+        "cost": "0.0000275",
+        "max": 272001
+       },
+       {
+        "cost": "0.000055",
+        "min": 272001
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-image-1",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1742860800,
+   "owned_by": "openai",
+   "name": "GPT Image 1",
+   "description": "GPT Image 1 is OpenAI's new state-of-the-art image generation model. It is a natively multimodal language model that accepts both text and image inputs, and produces image outputs.",
+   "context_window": 0,
+   "max_tokens": 0,
+   "type": "image",
+   "zdr": "none",
+   "no_training": "all",
+   "tags": [
+    "image-generation",
+    "implicit-caching"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "pricing": {
+    "input": "0.000005",
+    "output": "0.00004",
+    "input_cache_read": "0.00000125"
+   }
+  },
+  {
+   "id": "openai/gpt-image-1-mini",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1759708800,
+   "owned_by": "openai",
+   "name": "GPT Image 1 Mini",
+   "description": "A cost-efficient version of GPT Image 1. It is a natively multimodal language model that accepts both text and image inputs, and produces image outputs.",
+   "context_window": 0,
+   "max_tokens": 0,
+   "type": "image",
+   "zdr": "none",
+   "no_training": "all",
+   "tags": [
+    "image-generation",
+    "implicit-caching"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "pricing": {
+    "input": "0.000002",
+    "output": "0.000008",
+    "input_cache_read": "0.0000002"
+   }
+  },
+  {
+   "id": "openai/gpt-image-1.5",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1765843200,
+   "owned_by": "openai",
+   "name": "GPT Image 1.5",
+   "description": "GPT Image 1.5 is OpenAI's latest image generation model, with better instruction following and adherence to prompts.",
+   "context_window": 0,
+   "max_tokens": 0,
+   "type": "image",
+   "zdr": "none",
+   "no_training": "all",
+   "tags": [
+    "image-generation",
+    "implicit-caching"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "pricing": {
+    "input": "0.000005",
+    "output": "0.000032",
+    "input_cache_read": "0.00000125"
+   }
+  },
+  {
    "id": "openai/gpt-image-2",
    "object": "model",
    "created": 1755815280,
@@ -1897,6 +8605,1222 @@
     "input": "0.000005",
     "output": "0.00003",
     "input_cache_read": "0.00000125"
+   }
+  },
+  {
+   "id": "openai/gpt-image-2.5-flare",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1788825600,
+   "owned_by": "openai",
+   "name": "GPT Image 2.5 Flare",
+   "description": "GPT Image 2.5 Flare generates images from text and image inputs, optimized for fast, high-quality everyday image generation.",
+   "context_window": 0,
+   "max_tokens": 0,
+   "type": "image",
+   "zdr": "none",
+   "no_training": "all",
+   "tags": [
+    "image-generation",
+    "implicit-caching"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "pricing": {
+    "input": "0.000005",
+    "output": "0.00003",
+    "input_cache_read": "0.00000125"
+   }
+  },
+  {
+   "id": "openai/gpt-image-2.5-sunburst",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1788825600,
+   "owned_by": "openai",
+   "name": "GPT Image 2.5 Sunburst",
+   "description": "GPT Image 2.5 Sunburst generates and edits images from text and image inputs, with a focus on precise editing.",
+   "context_window": 0,
+   "max_tokens": 0,
+   "type": "image",
+   "zdr": "none",
+   "no_training": "all",
+   "tags": [
+    "image-generation",
+    "implicit-caching"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "pricing": {
+    "input": "0.000005",
+    "output": "0.00003",
+    "input_cache_read": "0.00000125"
+   }
+  },
+  {
+   "id": "openai/gpt-oss-120b",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1754352000,
+   "owned_by": "openai",
+   "name": "GPT OSS 120B",
+   "description": "Extremely capable general-purpose LLM with strong, controllable reasoning capabilities",
+   "context_window": 131072,
+   "max_tokens": 131072,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "tool-use",
+    "structured-output",
+    "implicit-caching"
+   ],
+   "regions": [
+    "us"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-06-01",
+   "pricing": {
+    "input": "0.0000001",
+    "output": "0.0000005",
+    "input_cache_read": "0.0000001",
+    "varies_by_provider": true,
+    "regional": {
+     "us": {
+      "input": "0.0000001",
+      "output": "0.0000005",
+      "input_cache_read": "0.0000001"
+     }
+    }
+   }
+  },
+  {
+   "id": "openai/gpt-oss-20b",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1754352000,
+   "owned_by": "openai",
+   "name": "GPT OSS 20B",
+   "description": "A compact, open-weight language model optimized for low-latency and resource-constrained environments, including local and edge deployments.",
+   "context_window": 131072,
+   "max_tokens": 8192,
+   "type": "language",
+   "zdr": "some",
+   "no_training": "some",
+   "tags": [
+    "reasoning",
+    "tool-use",
+    "structured-output",
+    "implicit-caching"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-06-01",
+   "pricing": {
+    "input": "0.00000003",
+    "output": "0.00000014",
+    "varies_by_provider": true
+   }
+  },
+  {
+   "id": "openai/o1",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1733356800,
+   "owned_by": "openai",
+   "name": "o1",
+   "description": "o1 is OpenAI's flagship reasoning model, designed for complex problems that require deep thinking. It provides strong reasoning capabilities with improved accuracy for complex multi-step tasks.",
+   "context_window": 200000,
+   "max_tokens": 100000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "implicit-caching",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2023-10-01",
+   "pricing": {
+    "input": "0.000015",
+    "output": "0.00006",
+    "input_cache_read": "0.0000075"
+   }
+  },
+  {
+   "id": "openai/o3",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1744761600,
+   "owned_by": "openai",
+   "name": "o3",
+   "description": "OpenAI's o3 is their most powerful reasoning model, setting new state-of-the-art benchmarks in coding, math, science, and visual perception. It excels at complex queries requiring multi-faceted analysis, with particular strength in analyzing images, charts, and graphics.",
+   "context_window": 200000,
+   "max_tokens": 100000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "fast",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-06-01",
+   "pricing": {
+    "input": "0.000002",
+    "output": "0.000008",
+    "input_cache_read": "0.0000005",
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.0000035",
+      "output": "0.000014",
+      "input_cache_read": "0.000000875"
+     },
+     "flex": {
+      "input": "0.000001",
+      "output": "0.000004",
+      "input_cache_read": "0.00000025"
+     }
+    },
+    "fast": {
+     "input": "0.0000035",
+     "output": "0.000014",
+     "input_cache_read": "0.000000875"
+    }
+   }
+  },
+  {
+   "id": "openai/o3-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1744761600,
+   "owned_by": "openai",
+   "name": "o3 (Fast)",
+   "description": "OpenAI's o3 is their most powerful reasoning model, setting new state-of-the-art benchmarks in coding, math, science, and visual perception. It excels at complex queries requiring multi-faceted analysis, with particular strength in analyzing images, charts, and graphics.",
+   "context_window": 200000,
+   "max_tokens": 100000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "fast",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-06-01",
+   "pricing": {
+    "input": "0.0000035",
+    "output": "0.000014",
+    "input_cache_read": "0.000000875",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "openai/o3-mini",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1738281600,
+   "owned_by": "openai",
+   "name": "o3-mini",
+   "description": "o3-mini is OpenAI's most recent small reasoning model, providing high intelligence at the same cost and latency targets of o1-mini.",
+   "context_window": 200000,
+   "max_tokens": 100000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2023-10-01",
+   "pricing": {
+    "input": "0.0000011",
+    "output": "0.0000044",
+    "input_cache_read": "0.00000055"
+   }
+  },
+  {
+   "id": "openai/o3-pro",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1749513600,
+   "owned_by": "openai",
+   "name": "o3 Pro",
+   "description": "The o-series of models are trained with reinforcement learning to think before they answer and perform complex reasoning. The o3-pro model uses more compute to think harder and provide consistently better answers.",
+   "context_window": 200000,
+   "max_tokens": 100000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "vision",
+    "file-input",
+    "tool-use",
+    "web-search",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-06-01",
+   "pricing": {
+    "input": "0.00002",
+    "output": "0.00008",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "openai/o4-mini",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1744761600,
+   "owned_by": "openai",
+   "name": "o4-mini",
+   "description": "OpenAI's o4-mini delivers fast, cost-efficient reasoning with exceptional performance for its size, particularly excelling in math (best-performing on AIME benchmarks), coding, and visual tasks.",
+   "context_window": 200000,
+   "max_tokens": 100000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-06-01",
+   "pricing": {
+    "input": "0.0000011",
+    "output": "0.0000044",
+    "input_cache_read": "0.000000275",
+    "web_search": "10",
+    "service_tiers": {
+     "priority": {
+      "input": "0.000002",
+      "output": "0.000008",
+      "input_cache_read": "0.0000005"
+     },
+     "flex": {
+      "input": "0.00000055",
+      "output": "0.0000022",
+      "input_cache_read": "0.000000138"
+     }
+    },
+    "fast": {
+     "input": "0.000002",
+     "output": "0.000008",
+     "input_cache_read": "0.0000005"
+    }
+   }
+  },
+  {
+   "id": "openai/o4-mini-fast",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1744761600,
+   "owned_by": "openai",
+   "name": "o4-mini (Fast)",
+   "description": "OpenAI's o4-mini delivers fast, cost-efficient reasoning with exceptional performance for its size, particularly excelling in math (best-performing on AIME benchmarks), coding, and visual tasks.",
+   "context_window": 200000,
+   "max_tokens": 100000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "file-input",
+    "implicit-caching",
+    "reasoning",
+    "tool-use",
+    "vision",
+    "web-search",
+    "structured-output",
+    "fast"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": false,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "knowledge": "2024-06-01",
+   "pricing": {
+    "input": "0.000002",
+    "output": "0.000008",
+    "input_cache_read": "0.0000005",
+    "web_search": "10"
+   }
+  },
+  {
+   "id": "spacexai/grok-4.1-fast-reasoning",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1763510400,
+   "owned_by": "spacexai",
+   "name": "Grok 4.1 Fast Reasoning",
+   "description": "",
+   "context_window": 1000000,
+   "max_tokens": 1000000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "file-input",
+    "vision",
+    "tool-use",
+    "implicit-caching",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "pricing": {
+    "input": "0.0000002",
+    "output": "0.0000005",
+    "input_cache_read": "0.00000005"
+   }
+  },
+  {
+   "id": "spacexai/grok-4.20-reasoning",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1773100800,
+   "owned_by": "spacexai",
+   "name": "Grok 4.20 Reasoning",
+   "description": "Grok 4.20 Beta is the newest flagship model from xAI with industry-leading speed and agentic tool calling capabilities. It combines the lowest hallucination rate on the market with strict prompt adherence, delivering consistently precise and truthful responses.",
+   "context_window": 2000000,
+   "max_tokens": 2000000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "tool-use",
+    "implicit-caching",
+    "vision",
+    "file-input",
+    "web-search",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "pricing": {
+    "input": "0.00000125",
+    "input_tiers": [
+     {
+      "cost": "0.00000125",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.0000025",
+      "min": 200001
+     }
+    ],
+    "output": "0.0000025",
+    "output_tiers": [
+     {
+      "cost": "0.0000025",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.000005",
+      "min": 200001
+     }
+    ],
+    "input_cache_read": "0.0000002",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.0000002",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.0000004",
+      "min": 200001
+     }
+    ],
+    "web_search": "5",
+    "service_tiers": {
+     "priority": {
+      "input": "0.0000025",
+      "output": "0.000005",
+      "input_cache_read": "0.0000004",
+      "long_context": {
+       "threshold": 200001,
+       "input": "0.000005",
+       "output": "0.00001",
+       "input_cache_read": "0.0000008"
+      }
+     }
+    },
+    "varies_by_provider": true
+   }
+  },
+  {
+   "id": "spacexai/grok-4.3",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1777507200,
+   "owned_by": "spacexai",
+   "name": "Grok 4.3",
+   "description": "Grok 4.3 is a new model matching the scale of Grok 4.20 with an improved architecture and a December 2025 knowledge cutoff.",
+   "context_window": 1000000,
+   "max_tokens": 1000000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "tool-use",
+    "implicit-caching",
+    "file-input",
+    "vision",
+    "structured-output",
+    "web-search"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "pricing": {
+    "input": "0.00000125",
+    "input_tiers": [
+     {
+      "cost": "0.00000125",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.0000025",
+      "min": 200001
+     }
+    ],
+    "output": "0.0000025",
+    "output_tiers": [
+     {
+      "cost": "0.0000025",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.000005",
+      "min": 200001
+     }
+    ],
+    "input_cache_read": "0.0000002",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.0000002",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.0000004",
+      "min": 200001
+     }
+    ],
+    "web_search": "5",
+    "service_tiers": {
+     "priority": {
+      "input": "0.0000025",
+      "output": "0.000005",
+      "input_cache_read": "0.0000004",
+      "long_context": {
+       "threshold": 200001,
+       "input": "0.000005",
+       "output": "0.00001",
+       "input_cache_read": "0.0000008"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "spacexai/grok-4.5",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1783468800,
+   "owned_by": "spacexai",
+   "name": "Grok 4.5",
+   "description": "SpaceXAI's smartest model with frontier performance on coding, knowledge work, and STEM.",
+   "context_window": 500000,
+   "max_tokens": 500000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "tool-use",
+    "implicit-caching",
+    "file-input",
+    "vision",
+    "web-search",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image",
+     "pdf"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "pricing": {
+    "input": "0.000002",
+    "input_tiers": [
+     {
+      "cost": "0.000002",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.000004",
+      "min": 200001
+     }
+    ],
+    "output": "0.000006",
+    "output_tiers": [
+     {
+      "cost": "0.000006",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.000012",
+      "min": 200001
+     }
+    ],
+    "input_cache_read": "0.0000003",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.0000003",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.0000006",
+      "min": 200001
+     }
+    ],
+    "web_search": "5",
+    "service_tiers": {
+     "priority": {
+      "input": "0.000004",
+      "output": "0.000012",
+      "input_cache_read": "0.0000006",
+      "long_context": {
+       "threshold": 200001,
+       "input": "0.000008",
+       "output": "0.000024",
+       "input_cache_read": "0.0000012"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "spacexai/grok-4.6",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1786492800,
+   "owned_by": "spacexai",
+   "name": "Grok 4.6",
+   "description": "Grok 4.6 builds on Grok 4.5 with a particular focus on long-running agents and more ambitious interactive and visual work. It stays with complex tasks across many steps, whether researching a topic, analyzing information, working across a codebase, or turning an idea into a polished application or work artifact.",
+   "context_window": 500000,
+   "max_tokens": 500000,
+   "type": "language",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "reasoning",
+    "tool-use",
+    "implicit-caching",
+    "vision",
+    "structured-output"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text",
+     "image"
+    ],
+    "output": [
+     "text"
+    ]
+   },
+   "supported_parameters": [
+    "max_tokens",
+    "temperature",
+    "stop",
+    "tools",
+    "tool_choice",
+    "reasoning",
+    "include_reasoning",
+    "response_format",
+    "structured_outputs"
+   ],
+   "temperature": true,
+   "reasoning_options": [
+    {
+     "type": "effort",
+     "values": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+     ]
+    }
+   ],
+   "knowledge": "2026-02-01",
+   "pricing": {
+    "input": "0.000002",
+    "input_tiers": [
+     {
+      "cost": "0.000002",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.000004",
+      "min": 200001
+     }
+    ],
+    "output": "0.000006",
+    "output_tiers": [
+     {
+      "cost": "0.000006",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.000012",
+      "min": 200001
+     }
+    ],
+    "input_cache_read": "0.0000005",
+    "input_cache_read_tiers": [
+     {
+      "cost": "0.0000005",
+      "min": 0,
+      "max": 200001
+     },
+     {
+      "cost": "0.000001",
+      "min": 200001
+     }
+    ],
+    "web_search": "5",
+    "service_tiers": {
+     "priority": {
+      "input": "0.000004",
+      "output": "0.000012",
+      "input_cache_read": "0.000001",
+      "long_context": {
+       "threshold": 200001,
+       "input": "0.000008",
+       "output": "0.000024",
+       "input_cache_read": "0.000002"
+      }
+     }
+    }
    }
   },
   {
@@ -2008,6 +9932,53 @@
       }
      }
     }
+   }
+  },
+  {
+   "id": "spacexai/grok-imagine-image",
+   "object": "model",
+   "created": 1755815280,
+   "released": 1769558400,
+   "owned_by": "spacexai",
+   "name": "Grok Imagine Image",
+   "description": "Generate high-quality images from text prompts with xAI's imagine API.",
+   "context_window": 0,
+   "max_tokens": 0,
+   "type": "image",
+   "zdr": "all",
+   "no_training": "all",
+   "tags": [
+    "image-generation"
+   ],
+   "supported_specifications": [
+    "v2",
+    "v3",
+    "v4"
+   ],
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "reasoning_options": [
+    {
+     "type": "toggle"
+    },
+    {
+     "type": "effort",
+     "values": [
+      "none",
+      "low",
+      "medium",
+      "high"
+     ]
+    }
+   ],
+   "pricing": {
+    "image": "0.02"
    }
   },
   {
