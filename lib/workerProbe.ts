@@ -1,5 +1,6 @@
 import { withRecoveryActivity } from './recovery';
 import { createHash } from "node:crypto";
+import { deploymentLabel } from "./deployment";
 import { db, ready, now } from "./db";
 import { getWorkspace } from "./platform";
 import { runInTenant, requireTenant } from "./tenant";
@@ -28,8 +29,8 @@ export type WorkerProbeReceipt = {
 };
 export function workerProbeIdentity() {
   return {
-    environment:
-      process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "development",
+    // On Vercel exactly VERCEL_ENV as before; off Vercel PARTICL_DEPLOYMENT (lib/deployment.ts).
+    environment: deploymentLabel(process.env, process.env.NODE_ENV ?? "development"),
     deployment:
       process.env.VERCEL_DEPLOYMENT_ID ?? process.env.VERCEL_URL ?? "local",
   };

@@ -16,6 +16,7 @@ import { ConsumerOriginalError } from "../../lib/higgsfield-consumer/video-origi
 import { ConsumerGenjutsuError } from "../../lib/higgsfield-consumer/genjutsu-sources";
 import * as studio from "../../lib/higgsfield-consumer/shorts-studio";
 import * as retired from "../../lib/higgsfield-consumer/retired";
+import { crossOriginProblem } from "../../lib/requestOrigin";
 
 const key = "11111111-1111-4111-8111-111111111111";
 const wallet = "22222222-2222-4222-8222-222222222222";
@@ -35,7 +36,7 @@ async function fixture() {
   const declaration = ast.statements.find((statement) => ts.isFunctionDeclaration(statement) && statement.name?.text === "withTenant")!;
   const compile = (source: string) => ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const wrapped = {} as Pick<typeof auth, "withTenant">;
-  new Function("exports", "resolveStore", "runWithStore", "NoTenantError", "MediaSourceError", "workbenchScopeFor", "recoveryRoute", compile(declaration.getText(ast)))(wrapped, async () => store, tenant.runWithStore, tenant.NoTenantError, MediaSourceError, workbenchScopeFor, (handler: unknown) => handler);
+  new Function("exports", "resolveStore", "runWithStore", "NoTenantError", "MediaSourceError", "workbenchScopeFor", "recoveryRoute", "crossOriginProblem", compile(declaration.getText(ast)))(wrapped, async () => store, tenant.runWithStore, tenant.NoTenantError, MediaSourceError, workbenchScopeFor, (handler: unknown) => handler, crossOriginProblem);
   const calls: { name: string; args: unknown[] }[] = [], limits: unknown[][] = [];
   let failure: unknown;
   const job = { id: key, draftId: "draft-1", status: "quoted", quoteCredits: 40, creditUnit: "higgsfield_credits", clips: [] };

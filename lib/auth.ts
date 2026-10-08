@@ -1,7 +1,9 @@
 import { recoveryRoute } from "./recovery";
 import { SESSION_COOKIE } from "./sessionCookie";
+import { crossOriginProblem } from "./requestOrigin";
 import { MediaSourceError } from "./mediaBindings";
 import { workbenchScopeFor } from "./workbench/request-scope";
+import { clientIp } from "./clientIp";
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { db, ready, now } from "./db";
@@ -235,8 +237,7 @@ export function withTenant<Req extends Request = Request, Ctx = unknown>(handler
     }
     if(!['GET','HEAD','OPTIONS'].includes(req.method)){
       if(store.token?.scope==='read'&&!(req.method==='POST'&&options.readOnlyPostTransport))return Response.json({error:'This token is read-only.'},{status:403});
-      const origin=req.headers.get('origin');
-      if(!store.token&&origin&&origin!==new URL(req.url).origin)return Response.json({error:'Invalid request origin.'},{status:403});
+      if(!store.token&&crossOriginProblem(req))return Response.json({error:'Invalid request origin.'},{status:403});
     }
     const capturedScope = req.headers.get("X-Workbench-Scope");
     const needsScope = options.requireRequestScope && store.user && !store.token && !["GET", "HEAD", "OPTIONS"].includes(req.method);
@@ -509,7 +510,7 @@ export async function clearFailures(accountId: string, source?: string, email?: 
 
 /** A one-way, salted label for where a request came from. */
 export function sourceKey(req: { headers: Headers }): string {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? req.headers.get("x-real-ip") ?? "";
+  const ip = clientIp(req);
   const salt = process.env.SESSION_SECRET ?? process.env.TURSO_AUTH_TOKEN ?? "particl";
   return createHash("sha256").update(`${salt}:login:${ip}`).digest("hex").slice(0, 32);
 }
