@@ -20,8 +20,10 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/public/vendor ./public/vendor
 COPY . .
-# NEXT_PUBLIC_* values are baked in at build time: tick "Build Variable" on
+# Values baked in at build time: tick "Build Variable" on APP_ORIGIN
+# (robots.txt, sitemap.xml and link previews are made at build),
 # NEXT_PUBLIC_APP_URL and NEXT_PUBLIC_VAPID_PUBLIC_KEY in the platform.
+ARG APP_ORIGIN
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY
 ARG SOURCE_COMMIT=unknown
