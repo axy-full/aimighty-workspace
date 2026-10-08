@@ -203,10 +203,18 @@ export function staticCatalog(snapshot?: CatalogSnapshot): CatalogModel[] {
     mock || PROVIDER_KEY[providerId]() ? [model] : []);
 }
 
-/** Where the catalogue comes from: the live gateway read (default) or the
- * checked-in snapshot (`MODEL_CATALOG=static`). */
+const warnedSources = new Set<string>();
+/** Where the catalogue comes from: the live gateway read (default, or
+ * `MODEL_CATALOG=gateway`) or the checked-in snapshot (`MODEL_CATALOG=static`).
+ * Any other value is named in one warning and reads the gateway. */
 export function catalogSource(): 'gateway' | 'static' {
-  return process.env.MODEL_CATALOG?.trim() === 'static' ? 'static' : 'gateway';
+  const value = process.env.MODEL_CATALOG;
+  if (value === 'static') return 'static';
+  if (value !== undefined && value !== '' && value !== 'gateway' && !warnedSources.has(value)) {
+    warnedSources.add(value);
+    console.warn(`MODEL_CATALOG: unknown value ${JSON.stringify(value)} (expected "static" or "gateway"); reading the gateway`);
+  }
+  return 'gateway';
 }
 
 export async function catalog(force = false): Promise<CatalogModel[]> {
