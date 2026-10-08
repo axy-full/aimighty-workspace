@@ -121,6 +121,11 @@ jobs:
     timeout-minutes: 120
     env:
       ENGINE_MOCK: '1'
+      # Lets a mocked text or transcript reply be slowed by a marker in what a
+      # spec sends (lib/mock.ts mockDelayMs), so a paid run outlasts the 25 s
+      # early answer (tests/r1-paid-answer-pending-workbench.spec.ts). Only
+      # with ENGINE_MOCK=1, never in a production build.
+      PARTICL_TEST_MOCK_DELAYS: '1'
       APP_ORIGIN: http://localhost:4551
       PW_BASE_URL: http://localhost:4551
       PLATFORM_DATABASE_URL: file:.data/browser-platform.db
