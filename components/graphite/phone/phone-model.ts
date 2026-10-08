@@ -55,15 +55,17 @@ export type PhoneRoute = {
   larger: LargerPage | null;
 };
 
-/** The control room's pages with no phone screen yet. */
-export type LargerPage = "activity" | "memory" | "skills";
-export const LARGER_TITLES: Record<LargerPage, string> = { activity: "Activity", memory: "Memory", skills: "Skills" };
+/** The control room's pages with no phone screen yet, and the board's 3D scene drawer (its render panel is the desktop's). */
+export type LargerPage = "activity" | "memory" | "skills" | "render";
+export const LARGER_TITLES: Record<LargerPage, string> = { activity: "Activity", memory: "Memory", skills: "Skills", render: "3D scene" };
 
 /**
  * Activity (`page=runs`), Skills (`page=saved-skills`) and Memory (`page=memory`) are the control room's pages; Memory and
  * Skills also live under Agent's backing page (`page=agent&sp=memory|saved-skills`), where the shell writes them.
  */
 export function largerPage(q: URLSearchParams): LargerPage | null {
+  /* The board's 3D scene drawer (`drawer=render`, owner Q19): the old render panel, kept for the desktop until renders get a new home. */
+  if (isBoard(q) && q.get("drawer") === "render" && !q.has("screen")) return "render";
   if (q.get("suite") !== "atomik" || q.get("view") || q.has("screen")) return null;
   const page = q.get("page"), sp = q.get("sp");
   const which = page === "agent" ? sp : page;
@@ -103,7 +105,7 @@ export function readPhone(search: string | URLSearchParams): PhoneRoute {
   const asked: PhoneScreen = isPhoneScreen(named) ? named
     : q.get("make") ? "make"
     : q.get("atomik") ? "atomik"
-    : isBoard(q) ? "record"
+    : isBoard(q) && largerPage(q) !== "render" ? "record"
     : "home";
   const take = q.get("take");
   return {
