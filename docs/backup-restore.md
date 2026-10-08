@@ -247,23 +247,14 @@ policy, and escrow these environment secrets:
 | `PARTICL_BACKUP_SOURCE_JSON`     | The complete source JSON inventory from this runbook. Keep it synchronized with newly provisioned workspaces; omissions cause failure.                                        |
 | `PARTICL_BACKUP_ENV_JSON`        | A JSON object of the scoped URL/token variables referenced by that inventory (for `dual` media: every R2 variable named and the Blob token), plus the original `KEYRING_SECRET`. Do not include a Turso organization/provisioning API token. |
 | `PARTICL_BACKUP_KEY`             | The independent 32-byte base64 archive key, also retained outside GitHub by recovery custodians.                                                                              |
-| `PARTICL_BACKUP_QUIESCENCE_JSON` | Fresh confirmation from the operator or maintenance orchestrator that the exact sources are fenced and all mutating services are paused.                                      |
+| `PARTICL_BACKUP_QUIESCENCE_JSON` | The `receipt.json` written by `recovery-fence.mjs seal` (docs/enforced-recovery-fence.md) for the checkpoint this run captures.                                                |
 
-The quiescence record is valid for at most two hours and must remain valid through
-capture and verification. For example (replace times and fingerprint):
-
-```json
-{
-  "issuedAt": "2026-09-14T02:00:00Z",
-  "expiresAt": "2026-09-14T03:30:00Z",
-  "sourceFingerprint": "<sha256 from the fingerprint command>",
-  "mutationsPaused": true,
-  "workersPaused": true,
-  "uploadsPaused": true,
-  "provisioningPaused": true,
-  "purgePaused": true
-}
-```
+The capture checks the **live** fence in the platform database before capture,
+after capture and after the restore check, so only a sealed enforced-fence
+receipt works. A hand-written JSON of `mutationsPaused`-style assertions is
+refused. The receipt expires when the coordinator lease does (30 minutes after
+`begin` or the last `renew`, at most two hours), and the whole capture plus
+restore check must finish inside it. See "Switching it on for production" below.
 
 ```sh
 node scripts/ops/backup-automation.mjs fingerprint /secure/source.json
@@ -271,11 +262,12 @@ node scripts/ops/backup-automation.mjs plan
 node --test tests/ops/*.test.mjs
 ```
 
-The confirmation is a protected operational assertion, **not an application pause
-switch**. This implementation does not automatically pause Vercel, the native worker, Inngest or
-external writers. Do not activate the schedule until an operator or maintenance
-orchestrator actually fences them for the window and refreshes this record. An
-old permanent `true` setting is rejected. Read-only database preflight checks
+The fence is the application's pause switch: from `begin` until `resume`, every
+wrapped request (sign-in included, because a session lookup writes) and every
+database or storage write answers 503 "The studio is paused for a consistent
+recovery checkpoint". Nothing in the workflow begins or seals a fence; an
+operator does, for each capture. It does not stop writers outside the app
+(manual database or storage credentials). Read-only database preflight checks
 also reject queued/running/uncertain jobs, retained failed meter reservations,
 active identity training, provisioning and purge leases before and after capture.
 The checks cannot replace the fence or rule out a new writer starting later.
@@ -298,6 +290,112 @@ is actionable even when yesterday's artifact is still within 26 hours. Download
 the exact retained encrypted artifact for recovery, retain its complete bundle,
 and use the original matching backup key; never replace it with a newly generated
 key and assume an old archive will decrypt.
+
+### Switching it on for production (owner settings)
+
+Production today: Vercel, Turso, media `dual` (R2 first, Blob fallback). Every
+value below is set by the owner; none is in this repository.
+
+**GitHub, repository `Settings`:**
+
+| Where | Name | Value |
+| --- | --- | --- |
+| Environments → New environment | `particl-backup` | Deployment branches: selected, `main` only. A required reviewer is optional: with one, every run (the 02:17 one too) waits for an approval click, and while it waits the workflow's concurrency group holds the hourly freshness runs behind it, so reject a scheduled run you will not use. |
+| Actions → Variables (**repository** level: job conditions read it before an environment applies) | `PARTICL_BACKUP_ENABLED` | `true` while captures should run; anything else disables capture and freshness. |
+| `particl-backup` environment secret | `PARTICL_BACKUP_KEY` | Once: 32 random bytes, base64 (`openssl rand -base64 32`). Store first in the password manager as `particl-backup-key-v1` with a second custodian. Never `KEYRING_SECRET`. Losing it makes every archive unreadable. |
+| `particl-backup` environment secret | `PARTICL_BACKUP_SOURCE_JSON` | Each checkpoint: the file `sources.json` written by `seal`. |
+| `particl-backup` environment secret | `PARTICL_BACKUP_ENV_JSON` | Each checkpoint: the file `source-env.json` written by `seal` (database URLs and tokens, the R2 and Blob values below, the original `KEYRING_SECRET`). |
+| `particl-backup` environment secret | `PARTICL_BACKUP_QUIESCENCE_JSON` | Each checkpoint: the file `receipt.json` written by `seal`. |
+| Actions → General → Artifact and log retention | — | At least 84 days (Sunday captures). |
+| The owner's GitHub notification settings → Actions | — | Notify on failed workflows; test it once. |
+
+Set secrets from the files, never on a command line, e.g.
+`gh secret set PARTICL_BACKUP_QUIESCENCE_JSON --env particl-backup < /private/checkpoint/receipt.json`.
+
+**This repository is public.** Anyone signed in to GitHub can download its
+Actions artifacts. The bundle is AES-256-GCM ciphertext (all databases, all
+media and the escrowed `KEYRING_SECRET`), so `PARTICL_BACKUP_KEY` alone protects
+every retained archive. Keep it out of GitHub except this one environment
+secret, and rotate to a new key version if it may have leaked.
+
+**Operator shell for `begin` / `seal` / `resume`** (an encrypted machine, values
+from the password manager or the Vercel production settings, never typed into
+commands):
+
+| Variable | Value comes from |
+| --- | --- |
+| `PLATFORM_DATABASE_URL`, `PLATFORM_AUTH_TOKEN` | Production's same-named Vercel variables, if production sets them. The token must be able to write (the fence lives in the platform database). |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | Production's same-named Vercel variables, exactly as production has them (set them when production does, even if `PLATFORM_*` is also set: the configured primary is a source). |
+| `KEYRING_SECRET` | Production's value. Never a new one. |
+| `BACKUP_R2_ACCOUNT_ID`, `BACKUP_R2_BUCKET` | Production's `R2_ACCOUNT_ID`, `R2_BUCKET`. |
+| `BACKUP_R2_ENDPOINT` | Production's `R2_ENDPOINT`, only if production sets it; otherwise remove `endpointEnv` from the input JSON. |
+| `BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY` | A **new** Cloudflare R2 API token, not the app's key: R2 → Manage R2 API tokens → Create API token → permission **Object Read only** → apply to **the production media bucket only**. Capture only lists and reads. |
+| `BACKUP_BLOB_TOKEN` | Production's `BLOB_READ_WRITE_TOKEN` (Vercel Blob has no read-only token; capture only lists and reads). |
+
+The R2 key values are bound into the receipt, so the run must use the same
+values as `seal`; it does, because `PARTICL_BACKUP_ENV_JSON` is `seal`'s own
+export. Tenant database tokens come from the platform rows, opened with
+`KEYRING_SECRET`.
+
+Checkpoint input (`/private/checkpoint-input.json`, see
+docs/enforced-recovery-fence.md for the preconditions):
+
+```json
+{
+  "preconditions": {
+    "deployments": [{ "id": "<production deployment id>", "protocol": "particl-recovery-fence-v1" }],
+    "oldDeploymentsStopped": true,
+    "externalWritersExcluded": true,
+    "evidence": "<what proves no other deployment or credential can write>"
+  },
+  "media": {
+    "kind": "dual",
+    "r2": {
+      "accountIdEnv": "BACKUP_R2_ACCOUNT_ID",
+      "accessKeyIdEnv": "BACKUP_R2_ACCESS_KEY_ID",
+      "secretAccessKeyEnv": "BACKUP_R2_SECRET_ACCESS_KEY",
+      "bucketEnv": "BACKUP_R2_BUCKET",
+      "endpointEnv": "BACKUP_R2_ENDPOINT"
+    },
+    "blob": { "tokenEnv": "BACKUP_BLOB_TOKEN" }
+  }
+}
+```
+
+### First run checklist
+
+1. **Dry run.** Actions → "Encrypted Particl backups" → Run workflow → branch
+   `main`, operation `dry-run`. It reads no secrets; expect the plan JSON and
+   every `tests/ops` test passing.
+2. **Pick a quiet window** and tell users: signed-in work answers 503 from
+   `begin` until `resume` (expect about 30 minutes; the first run measures it).
+3. **Fence.** `recovery-fence.mjs begin /private/checkpoint-<date>
+   /private/checkpoint-input.json`, then `status` until it shows no activities
+   and no intents (the cron drains accepted jobs; a long video render holds it).
+   Run `renew`, then `seal` straight away: the receipt expires 30 minutes after
+   that `renew`, and the whole capture plus restore check must finish inside it.
+   If `seal` refuses, read `status`; if it cannot be cleared, `resume` and stop.
+4. **Load the checkpoint** into the three per-checkpoint secrets (`sources.json`,
+   `source-env.json`, `receipt.json`) and set `PARTICL_BACKUP_ENABLED=true`.
+5. **Capture.** Run workflow → branch `main`, operation `capture`; approve the
+   environment. The capture step must print `"verified":true` with the database
+   and media counts. Note the step's duration and the artifact size.
+6. **Resume** as soon as the capture step ends, pass or fail:
+   `recovery-fence.mjs resume /private/checkpoint-<date>`. Check the site works.
+7. **Check the run.** Artifact `particl-backup-verified-<run>-<attempt>` exists
+   with the expected retention; the `freshness` job in the same run is green.
+8. **Independent restore report.** On an encrypted machine:
+   `gh run download <run> -n particl-backup-verified-<run>-<attempt> -D /secure/backups/<date>`,
+   then `backup-restore.mjs restore` (with `PARTICL_BACKUP_KEY` from the password
+   manager, not GitHub) and `backup-restore.mjs report`. Expect
+   `media.verified: true`, `byStore` counts for `r2` and `blob`, and the database
+   count from step 5. Remove the decrypted directory afterwards.
+9. **Record** the run id, capture time, key version, duration and size in the
+   recovery inventory.
+10. **Between attended runs**, the 02:17 schedule fails a minute or two in, at
+    the receipt check (the receipt has expired; it touches nothing) and hourly freshness turns red 26
+    hours after the last capture. Set `PARTICL_BACKUP_ENABLED` back to `false`
+    until the next attended checkpoint if that noise is not wanted.
 
 ## Restore into new infrastructure
 
