@@ -31,9 +31,9 @@ export const PYTHON = "/usr/bin/python3";
 export const SESSION_NAME = /^astra-blender-[0-9a-f-]{36}$/;
 const MiB = 1024 * 1024;
 export const LIMITS = Object.freeze({
-  files: 64,
+  files: 66,
   fileBytes: 50 * MiB,
-  totalBytes: 100 * MiB,
+  totalBytes: 110 * MiB,
   outputBytes: 320 * MiB,
   streamTailBytes: 64 * 1024,
   maxTimeoutMs: 180_000,

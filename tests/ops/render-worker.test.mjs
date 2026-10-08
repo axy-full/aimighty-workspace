@@ -252,7 +252,8 @@ test("path traversal, paths outside the session and symlinks are refused", { ski
   } finally { await t.close(); }
 });
 
-test("upload caps: 64 files, 50 MiB each, 100 MiB in total (413)", { skip }, async () => {
+test("upload caps fit a maximum app job: 66 files, 50 MiB each, 110 MiB in total (413 above)", { skip }, async () => {
+  assert.deepEqual([LIMITS.files, LIMITS.fileBytes, LIMITS.totalBytes], [66, 50 * MiB, 110 * MiB]);
   const t = await setup();
   try {
     let id = await session(t);
@@ -264,15 +265,22 @@ test("upload caps: 64 files, 50 MiB each, 100 MiB in total (413)", { skip }, asy
     const stream = new ReadableStream({ pull(controller) { if (sent++ < 51) controller.enqueue(chunk); else controller.close(); } });
     assert.equal((await put(t, id, "/vercel/sandbox/astra/input/b.blend", stream)).status, 413);
     assert.equal(existsSync(join(t.root, "astra", "input", "b.blend")), false);
+    // 100 MiB of inputs (the app's maximum) plus the program fits.
     assert.equal((await put(t, id, "/vercel/sandbox/astra/input/a.blend", fifty)).status, 201);
     assert.equal((await put(t, id, "/vercel/sandbox/astra/input/b.blend", fifty)).status, 201);
-    assert.equal((await put(t, id, "/vercel/sandbox/astra/run.py", "x")).status, 413);
+    assert.equal((await put(t, id, "/vercel/sandbox/astra/scene.py", Buffer.alloc(9 * MiB, 35))).status, 201);
+    assert.equal((await put(t, id, "/vercel/sandbox/astra/run.py", Buffer.alloc(MiB, 35))).status, 201);
+    // Exactly 110 MiB now: one more byte is refused.
+    assert.equal((await put(t, id, "/vercel/sandbox/astra/input/c.png", "x")).status, 413);
     // Replacing a file counts its new size only.
     assert.equal((await put(t, id, "/vercel/sandbox/astra/input/b.blend", Buffer.alloc(10))).status, 201);
-    assert.equal((await put(t, id, "/vercel/sandbox/astra/run.py", "x")).status, 201);
+    assert.equal((await put(t, id, "/vercel/sandbox/astra/input/c.png", "x")).status, 201);
     await t.api("DELETE", `/v1/sessions/${id}`);
+    // 64 inputs (the app's maximum) plus scene.py and run.py fit; a 67th file does not.
     id = await session(t);
-    for (let index = 0; index < LIMITS.files; index++) assert.equal((await put(t, id, `/vercel/sandbox/astra/input/f${index}.png`, "x")).status, 201);
+    for (let index = 0; index < 64; index++) assert.equal((await put(t, id, `/vercel/sandbox/astra/input/f${index}.png`, "x")).status, 201);
+    assert.equal((await put(t, id, "/vercel/sandbox/astra/scene.py", "x")).status, 201);
+    assert.equal((await put(t, id, "/vercel/sandbox/astra/run.py", "x")).status, 201);
     assert.equal((await put(t, id, "/vercel/sandbox/astra/input/one-more.png", "x")).status, 413);
     assert.equal((await put(t, id, "/vercel/sandbox/astra/input/f0.png", "again")).status, 201);
   } finally { await t.close(); }
