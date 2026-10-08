@@ -1,4 +1,5 @@
 import { vendorKey, vendorKeyEnv, type VendorKeyName } from "./vendorKeys";
+import { isTextDirect, type TextDirectVendor } from "./textDirectVendors";
 
 /**
  * Which door a text model goes through (P4b, the gateway removal).
@@ -12,8 +13,8 @@ import { vendorKey, vendorKeyEnv, type VendorKeyName } from "./vendorKeys";
  * key fails with the name of the missing variable; it never quietly goes back
  * to the gateway, and an unmapped model id is refused rather than guessed.
  */
-export const DIRECT_VENDORS = ["anthropic", "google", "xai"] as const;
-export type DirectVendor = (typeof DIRECT_VENDORS)[number];
+/** `TEXT_DIRECT` is parsed in one place (lib/textDirectVendors.ts), shared with the catalogue's offer rule. */
+export type DirectVendor = TextDirectVendor;
 export type TextRoute = "openai" | DirectVendor | "gateway";
 
 /** The vendor key each direct door reads. Google text shares the Nano Banana key. */
@@ -97,12 +98,6 @@ export function directVendorOf(model: string): DirectVendor | null {
   return null;
 }
 
-/** The vendors `TEXT_DIRECT` switches on. Unknown names are ignored (they keep today's door). */
-export function textDirectVendors(): Set<DirectVendor> {
-  const listed = (process.env.TEXT_DIRECT ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
-  return new Set(listed.filter((v): v is DirectVendor => (DIRECT_VENDORS as readonly string[]).includes(v)));
-}
-
 export function isDirectRoute(route: TextRoute): route is DirectVendor {
   return route !== "openai" && route !== "gateway";
 }
@@ -111,7 +106,7 @@ export function isDirectRoute(route: TextRoute): route is DirectVendor {
 export function textRoute(model: string): TextRoute {
   if (model.startsWith("openai/") && vendorKey("openai")) return "openai";
   const vendor = directVendorOf(model);
-  return vendor && textDirectVendors().has(vendor) ? vendor : "gateway";
+  return vendor && isTextDirect(vendor) ? vendor : "gateway";
 }
 
 /** The provider's own id for an app id. Unlisted ids are refused. */

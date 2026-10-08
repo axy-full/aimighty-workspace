@@ -8,7 +8,8 @@ import { gatewayAuth, gatewayReachable, GATEWAY_BASE } from './gateway';
 import { vendorKey } from './vendorKeys';
 import { recoveryFetch } from './recovery';
 import { assertTextProvider, directOpenAIKey, OPENAI_BASE, openAIFetch, openAIModelId, TEXT_PROVIDER_HEADER, usesOpenAIResponses } from './openai-direct';
-import { DIRECT_BASE_URL, DIRECT_KEY, directFetch, directKey, directModelId, isDirectRoute, textDirectVendors, textRoute, type DirectVendor } from './textRoute';
+import { DIRECT_BASE_URL, DIRECT_KEY, directFetch, directKey, directModelId, isDirectRoute, textRoute, type DirectVendor } from './textRoute';
+import { textDirectVendors } from './textDirectVendors';
 export function languageReachable() {
   return gatewayReachable() || !!vendorKey('openai') || [...textDirectVendors()].some(vendor => !!vendorKey(DIRECT_KEY[vendor]));
 }

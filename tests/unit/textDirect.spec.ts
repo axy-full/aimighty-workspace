@@ -6,7 +6,8 @@ import { directTextCostUsd, TEXT_PROVIDER_HEADER, textVendor } from '../../lib/o
 import { VERIFIED_TEXT_MODEL_IDS } from '../../lib/atomikModelPolicy';
 import { atomikReasoningRequest } from '../../lib/atomik-reasoning';
 import { directTextRequest, directTextUsage, textPost } from '../../lib/textDirect';
-import { DIRECT_MODEL_IDS, UNMAPPED_DIRECT_MODEL_IDS, directFetch, directModelId, textDirectVendors, textRoute } from '../../lib/textRoute';
+import { DIRECT_MODEL_IDS, UNMAPPED_DIRECT_MODEL_IDS, directFetch, directModelId, textRoute } from '../../lib/textRoute';
+import { textDirectVendors } from '../../lib/textDirectVendors';
 import type { CatalogModel } from '../../lib/catalog';
 
 /* Every provider call in this file goes to a stubbed fetch. Keys are fixtures and never leave the process. */
