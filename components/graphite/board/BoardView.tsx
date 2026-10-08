@@ -44,7 +44,7 @@ import { Rail, type BoardDrawer } from "./Rail";
 import { BoardReview } from "./review";
 import { ToolPill, type BoardTool } from "./ToolPill";
 import { PeerCursors, WhoIsHere } from "./Presence";
-import { HistoryDrawer, LibraryDrawer } from "./drawers/Drawers";
+import { HistoryDrawer, LibraryDrawer, RenderDrawer } from "./drawers/Drawers";
 import { addInput } from "@/lib/production/rig-build";
 import { entryAsset } from "@/lib/production/sequence";
 import { useSampleBoard, useSampleLift, useSampleWorkspace } from "@/lib/demo/use-sample";
@@ -149,7 +149,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const empty = !!project && placed.cards.length === 0;
 
   /* A drawer opens from the design's frame letter, or from `drawer=` (Viral's History page is the Social board's History drawer: lib/shell/ads-social.ts). */
-  const [drawer, setDrawer] = useState<BoardDrawer | null>(() => frameDrawer(frame) ?? (shell.params.drawer === "history" || shell.params.drawer === "library" ? shell.params.drawer : null));
+  const [drawer, setDrawer] = useState<BoardDrawer | null>(() => frameDrawer(frame) ?? (shell.params.drawer === "history" || shell.params.drawer === "library" || shell.params.drawer === "render" ? shell.params.drawer : null));
   /* ── Glides: a region's top-left to the canvas's top-left at this zoom, or a card to its middle ── */
   const viewportFor = useCallback((box: BoardBox, zoom: number, centre = false): Viewport => {
     const { width, height } = store.getState();
@@ -514,7 +514,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* A rail drawer: the Library, or History (Viral's History page opens here, on a phone too, where it covers the list). */
   const drawerEl = drawer === "library" ? <LibraryDrawer items={items} project={project} onClose={() => setDrawer(null)} />
           : drawer === "history" && board.HistoryDrawer ? <board.HistoryDrawer ctx={ctx} items={items} onClose={() => setDrawer(null)} />
-          : drawer === "history" ? <HistoryDrawer scope={scope} productionId={project.productionProjectId ?? null} jobs={rig.jobs} project={project} onClose={() => setDrawer(null)} onOpen={(nodeId) => { glide({ card: nodeId }); select(nodeId); }} /> : null;
+          : drawer === "history" ? <HistoryDrawer scope={scope} productionId={project.productionProjectId ?? null} jobs={rig.jobs} project={project} onClose={() => setDrawer(null)} onOpen={(nodeId) => { glide({ card: nodeId }); select(nodeId); }} />
+          : drawer === "render" && kind === "studio" ? <RenderDrawer scope={scope} project={project} save={rig.save} onClose={() => setDrawer(null)} /> : null;
   if (compact) {
     return (
       <BoardInternalsProvider value={internals}>
@@ -530,7 +531,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   return (
     <BoardInternalsProvider value={internals}>
       <div className="bd" style={style} data-testid="board" data-board-kind={kind} data-tool={tool} data-offline={offline || undefined} data-sample={gate.exploreOnly ? "1" : undefined}>
-        <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} />
+        <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} render={kind === "studio"} />
         <div className="bd-main" data-testid="board-canvas">
           {list ? <List ctx={ctx} cards={placed.cards} /> : (
             <BoardCanvas placed={placed} selection={selection} onSelect={pick} onFreeMoved={onFreeMoved} readOnly={offline} onMoveEnd={onMoveEnd}
