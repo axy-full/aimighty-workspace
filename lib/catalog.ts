@@ -3,6 +3,8 @@ import { GATEWAY_BASE, gatewayAuth, gatewayReachable } from "./gateway";
 import { vendorKey } from './vendorKeys';
 import { openAIConnection } from './openai-models';
 import { engineMock } from './mock';
+import { isTextDirect } from './textDirectVendors';
+import modelCatalogJson from './modelCatalog.json';
 
 /**
  * Everything the Vercel AI Gateway will run, read from the gateway itself.
@@ -11,7 +13,11 @@ import { engineMock } from './mock';
  * supplies live availability and prices; Atomik applies a separate verified
  * catalogue of Claude, OpenAI and Grok planning models.
  * Retired or disconnected models disappear from the menu.
-
+ *
+ * MODEL_CATALOG=static serves the same entries from lib/modelCatalog.json, a
+ * dated snapshot of the gateway's public list (scripts/ops/snapshot-catalog.mjs),
+ * limited to the models that can be called where their calls will go (see
+ * callable() below). The default stays the live read.
  */
 
 /* ── What the gateway says about a model ──────────────────────────────── */
@@ -42,7 +48,7 @@ export type CatalogModel = {
   temperature?: boolean;
 };
 
-type RawModel = {
+export type RawModel = {
   id?: string; name?: string; type?: string; description?: string;
   context_window?: number; max_tokens?: number; released?: number;
   pricing?: Record<string, unknown> | null;
@@ -68,6 +74,29 @@ export function parseReasoningOptions(value: unknown): ReasoningOption[] {
 }
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 
+/** One gateway `/v1/models` entry in our shape. The live read and the
+ * checked-in snapshot (lib/modelCatalog.json) both go through this, so a
+ * snapshot entry is exactly what the live read served on the day it was taken. */
+export function toCatalogModel(m: RawModel & { id: string }): CatalogModel {
+  return {
+    id: m.id,
+    name: m.name ?? m.id.split("/").pop() ?? m.id,
+    released: typeof m.released === "number" && Number.isFinite(m.released) ? m.released : undefined,
+    owner: m.id.split("/")[0] ?? "",
+    type: (m.type as CatalogType) ?? "language",
+    description: m.description ?? "",
+    contextWindow: m.context_window ?? null,
+    maxTokens: m.max_tokens ?? null,
+    pricing: m.pricing ?? null,
+    inputModalities: strings(m.modalities?.input),
+    outputModalities: strings(m.modalities?.output),
+    tags: strings(m.tags),
+    supportedParameters: strings(m.supported_parameters),
+    reasoningOptions: parseReasoningOptions(m.reasoning_options),
+    temperature: typeof m.temperature === 'boolean' ? m.temperature : undefined,
+  };
+}
+
 /* ── The read, cached ─────────────────────────────────────────────────── */
 
 let cache: { at: number; models: CatalogModel[] } | null = null;
@@ -81,7 +110,7 @@ const TTL_MS = 60 * 60 * 1000;   // an hour; the catalogue moves in weeks
  * Atomik's screen refusing to render, and every caller here is drawing a
  * menu rather than spending money.
  */
-async function gatewayCatalog(force = false): Promise<CatalogModel[]> {
+export async function gatewayCatalog(force = false): Promise<CatalogModel[]> {
   if (!force && cache && Date.now() - cache.at < TTL_MS) return cache.models;
   if (!gatewayReachable() && !vendorKey('openai')) return [];
   try {
@@ -98,23 +127,7 @@ async function gatewayCatalog(force = false): Promise<CatalogModel[]> {
     const j = await res.json() as { data?: RawModel[] };
     const models = (j.data ?? [])
       .filter((m): m is RawModel & { id: string } => typeof m.id === "string")
-      .map((m): CatalogModel => ({
-        id: m.id,
-        name: m.name ?? m.id.split("/").pop() ?? m.id,
-        released: typeof m.released === "number" && Number.isFinite(m.released) ? m.released : undefined,
-        owner: m.id.split("/")[0] ?? "",
-        type: (m.type as CatalogType) ?? "language",
-        description: m.description ?? "",
-        contextWindow: m.context_window ?? null,
-        maxTokens: m.max_tokens ?? null,
-        pricing: m.pricing ?? null,
-        inputModalities: strings(m.modalities?.input),
-        outputModalities: strings(m.modalities?.output),
-        tags: strings(m.tags),
-        supportedParameters: strings(m.supported_parameters),
-        reasoningOptions: parseReasoningOptions(m.reasoning_options),
-        temperature: typeof m.temperature === 'boolean' ? m.temperature : undefined,
-      }));
+      .map(toCatalogModel);
     if (models.length) cache = { at: Date.now(), models };
     return models;
   } catch (e) {
@@ -123,19 +136,115 @@ async function gatewayCatalog(force = false): Promise<CatalogModel[]> {
   }
 }
 
+/* ── The checked-in snapshot ──────────────────────────────────────────── */
+
+/** Who bills a model once it is called directly, keyed by the id's first segment.
+ * An explicit table: an owner not listed here is never served from the snapshot. */
+export type CatalogProviderId = 'anthropic' | 'google' | 'xai' | 'openai';
+export const CATALOG_PROVIDER_OF_OWNER: Readonly<Record<string, CatalogProviderId>> = {
+  anthropic: 'anthropic', google: 'google', spacexai: 'xai', xai: 'xai', openai: 'openai',
+};
+const providerOfOwner = (owner: string): CatalogProviderId | null =>
+  Object.hasOwn(CATALOG_PROVIDER_OF_OWNER, owner) ? CATALOG_PROVIDER_OF_OWNER[owner] : null;
+
+export type CatalogSnapshotEntry = CatalogModel & { providerId: CatalogProviderId; pricedAt: string };
+export type CatalogSnapshot = {
+  source: string;
+  pricedAt: string;
+  models: CatalogSnapshotEntry[];
+  /** Offered ids the gateway did not list on `pricedAt`: unpriced, so never served. */
+  missing: string[];
+};
+
+/**
+ * The snapshot entries for the offered ids, in the gateway's own order, each
+ * mapped exactly as the live read maps it. Used once by
+ * scripts/ops/snapshot-catalog.mjs to write lib/modelCatalog.json.
+ */
+export function buildCatalogSnapshot(data: unknown, ids: readonly string[], pricedAt: string, source: string): CatalogSnapshot {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(pricedAt)) throw new Error(`pricedAt must be an ISO date, got ${pricedAt}`);
+  const wanted = new Set(ids);
+  const seen = new Set<string>();
+  const models: CatalogSnapshotEntry[] = [];
+  for (const m of Array.isArray(data) ? data as RawModel[] : []) {
+    if (!m || typeof m.id !== 'string' || !wanted.has(m.id) || seen.has(m.id)) continue;
+    const model = toCatalogModel(m as RawModel & { id: string });
+    const providerId = providerOfOwner(model.owner);
+    if (!providerId) throw new Error(`no provider for ${m.id}`);
+    seen.add(m.id);
+    models.push({ providerId, pricedAt, ...model });
+  }
+  return { source, pricedAt, models, missing: [...wanted].filter((id) => !seen.has(id)) };
+}
+
+/** The snapshot's models, each as the plain CatalogModel the live read served, plus its provider. */
+export function snapshotModels(snapshot: CatalogSnapshot = modelCatalogJson as unknown as CatalogSnapshot): (CatalogModel & { providerId: CatalogProviderId })[] {
+  return (snapshot.models ?? []).flatMap(({ providerId, pricedAt, ...model }) => {
+    void pricedAt;
+    // A malformed entry is dropped rather than served under a guessed provider.
+    return providerOfOwner(model.owner) === providerId ? [{ ...model, providerId }] : [];
+  });
+}
+
+/** The provider's own key. Anthropic has no VendorKeyName until the direct router lands. */
+const PROVIDER_KEY: Record<CatalogProviderId, () => string | null> = {
+  anthropic: () => process.env.ANTHROPIC_API_KEY || null,
+  google: () => vendorKey('gemini'),
+  xai: () => vendorKey('xai'),
+  openai: () => vendorKey('openai'),
+};
+
+/**
+ * Offered only where the call will actually go. OpenAI (text goes direct) and
+ * stills (models that output images; they go direct) need their provider's
+ * key. Anthropic, Gemini and Grok text needs its own key once `TEXT_DIRECT`
+ * routes that vendor directly, and only the gateway while it is still on it.
+ */
+function callable(model: CatalogModel, providerId: CatalogProviderId): boolean {
+  if (providerId === 'openai' || model.outputModalities?.includes('image')) return Boolean(PROVIDER_KEY[providerId]());
+  return isTextDirect(providerId) ? Boolean(PROVIDER_KEY[providerId]()) : gatewayReachable();
+}
+
+/**
+ * Every snapshot model that can be called (all of them under ENGINE_MOCK, as
+ * the live read serves everything there). Prices, limits, modalities and
+ * reasoning options are the gateway's, frozen on `pricedAt`.
+ */
+export function staticCatalog(snapshot?: CatalogSnapshot): CatalogModel[] {
+  const mock = engineMock();
+  return snapshotModels(snapshot).flatMap(({ providerId, ...model }) =>
+    mock || callable(model, providerId) ? [model] : []);
+}
+
+const warnedSources = new Set<string>();
+/** Where the catalogue comes from: the live gateway read (default, or
+ * `MODEL_CATALOG=gateway`) or the checked-in snapshot (`MODEL_CATALOG=static`).
+ * Any other value is named in one warning and reads the gateway. */
+export function catalogSource(): 'gateway' | 'static' {
+  const value = process.env.MODEL_CATALOG;
+  if (value === 'static') return 'static';
+  if (value !== undefined && value !== '' && value !== 'gateway' && !warnedSources.has(value)) {
+    warnedSources.add(value);
+    console.warn(`MODEL_CATALOG: unknown value ${JSON.stringify(value)} (expected "static" or "gateway"); reading the gateway`);
+  }
+  return 'gateway';
+}
+
 export async function catalog(force = false): Promise<CatalogModel[]> {
-  const models = await gatewayCatalog(force);
+  const fromSnapshot = catalogSource() === 'static';
+  const models = fromSnapshot ? staticCatalog() : await gatewayCatalog(force);
   if (!vendorKey('openai') || engineMock()) return models;
   const direct = await openAIConnection(force);
   const allowed = new Set(direct.models);
   return models.filter(model => {
-    if (model.owner !== 'openai') return gatewayReachable();
+    // The snapshot is already limited to providers whose key is set.
+    if (model.owner !== 'openai') return fromSnapshot || gatewayReachable();
     // Text goes to OpenAI directly, so a text model must be one the key can
     // list, and nothing stands in for a missing id. Image, speech and the
     // other media types still run through the Gateway and follow its
     // reachability like every other vendor's; a restricted or failing key
     // must not empty those menus.
-    if (model.type !== 'language') return gatewayReachable();
+    if (model.type !== 'language') return fromSnapshot || gatewayReachable();
     return direct.verified && allowed.has(model.id.slice('openai/'.length));
   });
 }
@@ -151,49 +260,21 @@ export async function findModel(id: string): Promise<CatalogModel | null> {
 /* ── The shortlist ────────────────────────────────────────────────────── */
 
 /**
- * The models put at the top of a menu, in order.
- *
- * A list of 369 is not a choice, it is a search problem, and most of that
- * list is embeddings and rerankers nobody picks by hand. These are the ones
- * worth naming. Anything here that the gateway is not currently serving is
- * silently dropped, so a retirement costs nothing; anything the gateway
- * serves that is NOT here is still reachable under "everything else".
+ * The models put at the top of a menu, in order. Only Atomik's planner menu
+ * is drawn from this catalogue; anything listed here that is not being served
+ * is silently dropped, so a retirement costs nothing.
  */
 export const FEATURED = {
   /** Atomik's planning catalogue: the verified Claude, OpenAI and Grok models (lib/atomikModelPolicy). */
   planner: ATOMIK_MODEL_IDS,
-  video: [
-    "bytedance/seedance-2.5",
-    "google/veo-3.1-generate-001",
-    "google/veo-3.1-fast-generate-001",
-    "klingai/kling-v3.0-t2v",
-    "klingai/kling-v3.0-i2v",
-    "alibaba/wan-v3.0-video",
-    "minimax/minimax-h3",
-    "spacexai/grok-imagine-video-1.5",
-  ],
-  image: [
-    "google/gemini-3-pro-image",
-    "bytedance/seedream-5.0-pro",
-    "bfl/flux-2-pro",
-    "openai/gpt-image-2",
-    "recraft/recraft-v4",
-    "spacexai/grok-imagine-image-2.0",
-  ],
-  speech: [
-    "openai/tts-1-hd",
-    "fish-audio/s2.1-pro",
-    "spacexai/grok-tts",
-  ],
 } as const;
 
-/** The featured models of one kind that the gateway is actually serving,
+/** The featured models of one kind that are actually being served,
  *  in the order above, followed by everything else of that kind. */
 export async function menuFor(kind: keyof typeof FEATURED): Promise<{
   featured: CatalogModel[]; rest: CatalogModel[];
 }> {
-  const type: CatalogType = kind === "planner" ? "language" : kind;
-  const all = (await byType(type)).filter(m => kind !== "planner" || isAtomikModel(m.id));
+  const all = (await byType("language")).filter(m => isAtomikModel(m.id));
   const want = FEATURED[kind] as readonly string[];
   const featured = want
     .map((id) => all.find((m) => m.id === id))
