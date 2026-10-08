@@ -183,6 +183,8 @@ export async function discoverRecoverySources(client, env, media) {
     r2Settings(media.kind === "r2" ? media : media.r2, env);
     if (names.some((name) => !env[name]))
       throw new Error("Media store credentials are missing.");
+    if (names.some((name) => name in credentials && credentials[name] !== env[name]))
+      throw new Error("A media credential name collides with a database or keyring variable.");
     for (const name of names) credentials[name] = env[name];
     r2Credential = digest(names.map((name) => [name, env[name]]));
   }

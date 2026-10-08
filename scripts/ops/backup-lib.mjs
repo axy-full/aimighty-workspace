@@ -68,7 +68,7 @@ export function openKeyring(value, keyring) {
     cipher.final(),
   ]).toString("utf8");
 }
-function safePath(value) {
+export function safePath(value) {
   if (
     typeof value !== "string" ||
     !value ||
@@ -264,7 +264,7 @@ export async function snapshotDatabase(config, destination, scratch) {
   }
 }
 
-async function encryptStream(input, output, key, aad) {
+async function encryptStream(input, output, key, aad, via = []) {
   const iv = randomBytes(12),
     cipher = createCipheriv("aes-256-gcm", key, iv);
   cipher.setAAD(Buffer.from(aad));
@@ -279,6 +279,7 @@ async function encryptStream(input, output, key, aad) {
   });
   await pipeline(
     input,
+    ...via,
     measure,
     cipher,
     createWriteStream(output, { flags: "wx", mode: 0o600 }),
@@ -547,16 +548,16 @@ async function openR2Object(client, bucket, entry) {
   // A single-part R2 ETag is the object's MD5: check the bytes against it.
   const expectMd5 = PLAIN_MD5.test(entry.etag ?? "") ? entry.etag.toLowerCase() : null;
   const md5 = createHash("md5");
-  const input = nodeStream(out.Body).pipe(
-    new Transform({
-      transform(chunk, _, next) {
-        md5.update(chunk);
-        next(null, chunk);
-      },
-    }),
-  );
   return {
-    input,
+    input: nodeStream(out.Body),
+    via: [
+      new Transform({
+        transform(chunk, _, next) {
+          md5.update(chunk);
+          next(null, chunk);
+        },
+      }),
+    ],
     contentType: out.ContentType,
     check() {
       if (expectMd5 && md5.digest("hex") !== expectMd5) fail("R2 object bytes do not match its ETag.");
@@ -865,8 +866,8 @@ export async function createBackup(
         output = join(bundle, object);
       const attempt = async () => {
         await rm(output, { force: true });
-        const { input, contentType, check } = await open();
-        const meta = await encryptStream(input, output, key, `${FORMAT}:${object}:${path}`);
+        const { input, via, contentType, check } = await open();
+        const meta = await encryptStream(input, output, key, `${FORMAT}:${object}:${path}`, via);
         if (size !== undefined && meta.bytes !== size) fail("Media size changed during backup.");
         check?.();
         return { ...(contentType ? { contentType } : {}), ...meta };
