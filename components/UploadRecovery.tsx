@@ -11,6 +11,8 @@ import { fileRecoveredUpload } from "@/lib/workspace/library";
 import styles from "./upload-recovery.module.css";
 
 const serverSnapshot = () => "{}";
+const STILL_FINISHING = "Storage is still finishing. Check again shortly.";
+const READY_TO_RESUME = "Ready to resume. Choose the original file if needed.";
 export default function UploadRecovery({ scope }: { scope: string | null }) {
   const snapshot = useCallback(() => {
     if (!scope) return "{}";
@@ -59,15 +61,19 @@ function UploadRow({ entry }: { entry: UploadEnvelope }) {
   const complete = entry.state === "complete";
   /* Shown already finishing (the page reloaded while the server assembled it):
      follow that finish to its end. Nothing is sent; an upload still running in
-     this or another tab holds the run lock, and this waits for it. */
+     this or another tab is waited for first. Resume and Cancel stay usable. */
   const finishingAtMount = useRef(entry.state === "finishing");
   useEffect(() => {
     if (!finishingAtMount.current) return;
     finishingAtMount.current = false;
+    setMessage(STILL_FINISHING);
     followFinishing(entry)
-      .then((result) => (result ? fileRecoveredUpload(entry) : undefined))
+      .then(async (result) => {
+        setMessage((shown) => (shown === STILL_FINISHING ? (result === "resume" ? READY_TO_RESUME : "") : shown));
+        if (result && result !== "resume") await fileRecoveredUpload(entry);
+      })
       .catch((error) =>
-        setMessage(error instanceof Error ? error.message : "Check status again shortly."),
+        setMessage(error instanceof Error ? error.message : "Upload recovery failed. Try again."),
       );
     // Once per row, from the record it was first shown with.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -122,9 +128,7 @@ function UploadRow({ entry }: { entry: UploadEnvelope }) {
                   else if (result.failure) setMessage("");
                   else
                     setMessage(
-                      result.retryAfterMs > 0
-                        ? "Storage is still finishing. Check again shortly."
-                        : "Ready to resume. Choose the original file if needed.",
+                      result.retryAfterMs > 0 ? STILL_FINISHING : READY_TO_RESUME,
                     );
                 })
               }

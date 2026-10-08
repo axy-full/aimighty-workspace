@@ -501,3 +501,83 @@ test("after a reload mid-finish, the saved 'finishing' upload follows the server
   expect(checked.listUploadEnvelopes(scope)[0]).toMatchObject({ state: "blocked", error: "Storage is full." });
   expect(checked.listUploadEnvelopes(scope)[0].refusedAt).toBeUndefined();
 });
+
+test("a background refusal is remembered from when it was first read, and after the memory the same file starts afresh", async () => {
+  const fresh = { id: "upl_fresh", kind: "file", url: "/api/uploads/upl_fresh" };
+  let first = "", finishes = 0;
+  const api = await client((async (url: string, init: RequestInit = {}) => {
+    if (url.endsWith("/chunk")) return Response.json({ ok: true });
+    if (url.endsWith("/finish")) {
+      const { session } = JSON.parse(String(init.body));
+      finishes++;
+      if (!first) {
+        first = session;
+        return Response.json({ state: "assembling", pollAfterMs: 100 }, { status: 202 });
+      }
+      return Response.json(fresh);
+    }
+    if (url.includes("/session?"))
+      return url.includes(encodeURIComponent(first)) && first
+        ? Response.json({ state: "aborted", storedChunks: [], retryAfterMs: 0, failure: { error: "Unrecognised file.", status: 415 } })
+        : Response.json({ state: "open", storedChunks: [], retryAfterMs: 0 });
+    throw new Error("Unexpected request " + url);
+  }) as typeof fetch);
+  const scope = "particl-active-memory-owner";
+  const file = new File(["refused bytes"], "odd.bin");
+  await expect(api.uploadFile(file, "chat", undefined, { scope })).rejects.toThrow("Unrecognised file.");
+  const [entry] = api.listUploadEnvelopes(scope);
+  expect(entry).toMatchObject({ state: "blocked", error: "Unrecognised file." });
+  const key = api.uploadEnvelopeKey(scope, entry.identity);
+  // Remembered as of the first read: later reads do not move it on.
+  const longAgo = Date.now() - 11 * 60_000;
+  api.items.set(key, JSON.stringify({ ...JSON.parse(api.items.get(key)!), refusedAt: longAgo }));
+  await api.checkUpload(api.listUploadEnvelopes(scope)[0]);
+  await api.checkUpload(api.listUploadEnvelopes(scope)[0]);
+  expect(api.listUploadEnvelopes(scope)[0].refusedAt).toBe(longAgo);
+  // Past the memory, the same file is a fresh upload, not the old refusal.
+  expect(await api.uploadFile(file, "chat", undefined, { scope })).toEqual(fresh);
+  const [again] = api.listUploadEnvelopes(scope);
+  expect(again.session).not.toBe(first);
+  expect(again).toMatchObject({ state: "complete", result: fresh });
+  expect(finishes).toBe(2);
+});
+
+test("following a reloaded finish holds no lock while it polls, and one that ends with nothing published turns to Resume", async () => {
+  const scope = "particl-active-follow-owner";
+  const file = new File(["a long original"], "big.mov", { type: "video/quicktime" });
+  const saved = async (api: Awaited<ReturnType<typeof client>>) => {
+    const entry = await api.claimUploadEnvelope(scope, file, "chat");
+    api.items.set(api.uploadEnvelopeKey(scope, entry.identity), JSON.stringify({ ...entry, started: true, state: "finishing", storedChunks: [0] }));
+    return api.listUploadEnvelopes(scope)[0];
+  };
+  // Still assembling: Cancel goes through at once, and the follow then stops.
+  let deletes = 0;
+  const busy = await client((async (url: string, init: RequestInit = {}) => {
+    if (url.endsWith("/chunk") && init.method === "DELETE") return (deletes++, Response.json({ ok: true }));
+    if (url.includes("/session?")) return Response.json({ state: "assembling", storedChunks: [0], retryAfterMs: 1_000_000 });
+    throw new Error("Unexpected request " + url);
+  }) as typeof fetch);
+  const entry = await saved(busy);
+  const following = busy.followFinishing(entry);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const lock = busy.withUploadLock(busy.uploadRunLock(entry), async () => "free");
+  expect(await Promise.race([lock, new Promise((resolve) => setTimeout(() => resolve("held"), 500))])).toBe("free");
+  await busy.dismissUpload(entry);
+  expect(deletes).toBe(1);
+  expect(await following).toBeNull();
+  expect(busy.listUploadEnvelopes(scope)).toHaveLength(0);
+
+  // Prepared, or a lease that lapsed with nothing published: the record offers Resume upload.
+  for (const end of [
+    [{ state: "prepared", storedChunks: [0], retryAfterMs: 0 }],
+    [{ state: "assembling", storedChunks: [0], retryAfterMs: 1_000 }, { state: "assembling", storedChunks: [0], retryAfterMs: 0 }],
+  ]) {
+    let read = 0;
+    const api = await client((async (url: string) => {
+      if (url.includes("/session?")) return Response.json(end[Math.min(read++, end.length - 1)]);
+      throw new Error("Nothing is sent: " + url);
+    }) as typeof fetch);
+    expect(await api.followFinishing(await saved(api))).toBe("resume");
+    expect(api.listUploadEnvelopes(scope)[0].state).toBe("pending");
+  }
+});

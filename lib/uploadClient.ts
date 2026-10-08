@@ -157,10 +157,15 @@ async function markComplete(entry: UploadEnvelope, remote: UploadStatus) {
   return result;
 }
 /** The session ended without an upload: the saved record says why (the finish's own failure when it
- *  left one) and stops holding a slot. A refusal of the file itself is remembered, as a refused finish is. */
+ *  left one) and stops holding a slot. A refusal of the file itself is remembered, as a refused finish
+ *  is, from the first time it is read: `refused` is true only then. A record that already carries its
+ *  refusal keeps that time, so once REFUSAL_MEMORY_MS has passed the same file starts a fresh upload. */
 async function settleGone(entry: UploadEnvelope, remote: UploadStatus) {
   const failure = remote.failure;
-  const refused = !!failure && REFUSALS.has(failure.status);
+  const refused =
+    !!failure &&
+    REFUSALS.has(failure.status) &&
+    readUploadEnvelope(entry).refusedAt === undefined;
   const message = failure?.error || GONE_MESSAGE;
   await updateUploadEnvelope(entry, {
     state: "blocked",
@@ -175,12 +180,14 @@ async function settleGone(entry: UploadEnvelope, remote: UploadStatus) {
 async function awaitFinish(
   entry: UploadEnvelope,
   firstDelayMs = POLL_FIRST_MS,
-): Promise<{ receipt: UploadedFile } | { again: true }> {
+  following?: () => boolean,
+): Promise<{ receipt: UploadedFile } | { again: true } | { stopped: true }> {
   let delay = Math.min(POLL_MAX_MS, Math.max(POLL_MIN_MS, firstDelayMs)),
     misses = 0;
   for (;;) {
     await sleep(delay);
     delay = Math.min(POLL_MAX_MS, delay * 1.5);
+    if (following && !following()) return { stopped: true };
     let remote: UploadStatus;
     try {
       remote = await status(entry);
@@ -207,23 +214,47 @@ export async function checkUpload(entry: UploadEnvelope) {
   return remote;
 }
 /** A record left `finishing` (the page reloaded while the server assembled it) follows the
- *  background finish to its end without sending anything: the receipt once committed, the
- *  reason once it failed. A finish still running here or in another tab holds the run lock,
- *  so this waits for it and then finds nothing left to follow. */
-export async function followFinishing(entry: UploadEnvelope): Promise<UploadedFile | null> {
-  return withUploadLock(uploadRunLock(entry), async () => {
-    const current = readUploadEnvelope(entry);
-    if (current.state !== "finishing") return null;
+ *  background finish to its end without sending anything. Answers the receipt once committed;
+ *  "resume" when the finish ended with nothing published (the record turns `pending`, so Resume
+ *  upload finishes it); null when there is nothing (left) to follow: the record is not
+ *  finishing, it ended (blocked with its reason), or Resume or Cancel took it over.
+ *  A finish still running in this or another tab holds the run lock, so this first waits for
+ *  it; the lock is not held while polling, so Resume and Cancel stay at hand meanwhile. */
+export async function followFinishing(entry: UploadEnvelope): Promise<UploadedFile | "resume" | null> {
+  const finishing = () => {
+    try {
+      return readUploadEnvelope(entry).state === "finishing";
+    } catch {
+      return false; // Dismissed or replaced meanwhile.
+    }
+  };
+  if (!(await withUploadLock(uploadRunLock(entry), async () => finishing()))) return null;
+  const current = readUploadEnvelope(entry);
+  const toResume = async () => {
+    if (!finishing()) return null;
+    await updateUploadEnvelope(current, { state: "pending" });
+    return "resume" as const;
+  };
+  try {
     const remote = await status(current);
-    if (remote.state === "committed") return markComplete(current, remote);
+    if (remote.state === "committed") return await markComplete(current, remote);
     if (GONE_STATES.includes(remote.state)) {
       await settleGone(current, remote);
       return null;
     }
-    if (remote.state !== "assembling" || remote.retryAfterMs <= 0) return null;
-    const outcome = await awaitFinish(current);
-    return "receipt" in outcome ? outcome.receipt : null;
-  });
+    if (remote.state !== "assembling" || remote.retryAfterMs <= 0) return await toResume();
+    const outcome = await awaitFinish(current, POLL_FIRST_MS, finishing);
+    if ("receipt" in outcome) return outcome.receipt;
+    return "again" in outcome ? await toResume() : null;
+  } catch (error) {
+    // The status could not be read: leave it to Resume and Check status, saying why.
+    if (finishing())
+      await updateUploadEnvelope(current, {
+        state: "pending",
+        error: error instanceof Error ? error.message : undefined,
+      }).catch(() => {});
+    throw error;
+  }
 }
 
 /** Replays only the captured session and finish metadata. Missing chunks require
@@ -334,11 +365,11 @@ export async function resumeUpload(
          and assembles in the background; the session is read until it is
          committed. A finish whose lease ended with nothing published is
          sent again, identically (at most twice). */
-      let outcome: { receipt: UploadedFile } | { again: true } = assembling
+      let outcome: Awaited<ReturnType<typeof awaitFinish>> = assembling
           ? await awaitFinish(current)
           : { again: true },
         sent = 0;
-      while ("again" in outcome) {
+      while (!("receipt" in outcome)) {
         if (sent++ > 2)
           throw new Error(
             "This upload is still being stored. Check status again shortly.",
