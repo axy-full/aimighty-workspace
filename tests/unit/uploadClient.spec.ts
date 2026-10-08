@@ -385,3 +385,119 @@ test("a finish that fails for the moment, not for the file, is sent again when t
   expect(await api.uploadFile(file, "chat", undefined, { scope })).toMatchObject({ id: "upl_ok" });
   expect(finishes).toBe(2);
 });
+
+/** A server whose finish answers 202 and assembles in the background: the session reads `assembling` `polls` times, then `end`. */
+function backgroundServer(
+  end: Record<string, unknown>,
+  options: { polls?: number; finish?: () => Response } = {},
+) {
+  const requests: { url: string; method: string; at: number }[] = [];
+  let reads = 0;
+  const fetch = (async (url: string, init: RequestInit = {}) => {
+    requests.push({ url, method: init.method ?? "GET", at: Date.now() });
+    if (url.endsWith("/chunk")) return Response.json({ ok: true });
+    if (url.endsWith("/finish"))
+      return options.finish?.() ?? Response.json({ state: "assembling", pollAfterMs: 100 }, { status: 202 });
+    if (url.includes("/session?")) {
+      if (!requests.some((request) => request.url.endsWith("/finish")) && !options.finish)
+        return Response.json({ state: "open", storedChunks: [], retryAfterMs: 0 });
+      return reads++ < (options.polls ?? 2)
+        ? Response.json({ state: "assembling", storedChunks: [0], retryAfterMs: 1_199_000 })
+        : Response.json({ storedChunks: [], retryAfterMs: 0, ...end });
+    }
+    throw new Error("Unexpected request " + url);
+  }) as typeof globalThis.fetch;
+  return { fetch, requests, reads: () => reads };
+}
+const receipt = { id: "upl_big", kind: "video", url: "/api/uploads/upl_big", filename: "big.mov", bytes: 11 };
+
+test("a finish answered 202 is followed on the session until it is committed, with growing pauses", async () => {
+  const server = backgroundServer({ state: "committed", upload: receipt });
+  const api = await client(server.fetch);
+  const scope = "particl-active-background-owner";
+  const progress: number[] = [];
+  const done = api.uploadFile(new File(["a long original"], "big.mov", { type: "video/quicktime" }), "chat", (pct) => progress.push(pct), { scope });
+  await expect.poll(() => server.reads()).toBeGreaterThan(0);
+  expect(api.listUploadEnvelopes(scope)[0].state).toBe("finishing");
+  expect(await done).toEqual(receipt);
+  expect(api.listUploadEnvelopes(scope)[0]).toMatchObject({ state: "complete", result: receipt });
+  expect(progress.at(-1)).toBe(100);
+  const finishes = server.requests.filter((request) => request.url.endsWith("/finish"));
+  expect(finishes).toHaveLength(1);
+  const polls = server.requests.filter((request) => request.url.includes("/session?") && request.at >= finishes[0].at);
+  expect(polls).toHaveLength(3);
+  // 100 ms, then 150 ms, then 225 ms: a backoff, not a busy loop.
+  expect(polls[2].at - polls[1].at).toBeGreaterThanOrEqual(polls[1].at - polls[0].at);
+  expect(polls[0].at - finishes[0].at).toBeGreaterThanOrEqual(90);
+});
+
+test("a background finish that fails ends the saved upload with the server's reason; a refusal is remembered", async () => {
+  for (const [failure, refused] of [
+    [{ error: "The upload could not finish. Its reserved storage will be released after cleanup. Try again shortly.", status: 503 }, false],
+    [{ error: "The upload bytes do not match its chunks.", status: 400 }, true],
+  ] as const) {
+    const server = backgroundServer({ state: "aborting", failure });
+    const api = await client(server.fetch);
+    const scope = `particl-active-fail${failure.status}-owner`;
+    await expect(api.uploadFile(new File(["bytes"], "clip.mov"), "chat", undefined, { scope })).rejects.toThrow(failure.error);
+    const [entry] = api.listUploadEnvelopes(scope);
+    expect(entry).toMatchObject({ state: "blocked", error: failure.error });
+    expect(entry.refusedAt !== undefined).toBe(refused);
+    expect(server.requests.filter((request) => request.url.endsWith("/finish"))).toHaveLength(1);
+  }
+});
+
+test("a finish whose lease lapsed with nothing published is sent again, identically, and a 409 while another finishes is followed", async () => {
+  let finishes = 0;
+  const server = backgroundServer({ state: "prepared", storedChunks: [0] }, {
+    polls: 1,
+    finish: () => ++finishes === 1
+      ? Response.json({ state: "assembling", pollAfterMs: 100 }, { status: 202 })
+      : Response.json(receipt),
+  });
+  const api = await client(server.fetch);
+  const scope = "particl-active-lapsed-owner";
+  expect(await api.uploadFile(new File(["bytes"], "clip.mov"), "chat", undefined, { scope })).toEqual(receipt);
+  expect(server.requests.filter((request) => request.url.endsWith("/finish"))).toHaveLength(2);
+
+  // Another tab is finishing the same upload: this one follows it instead of failing.
+  let sent = 0;
+  const busy = backgroundServer({ state: "committed", upload: receipt }, {
+    polls: 2,
+    finish: () => (sent++, Response.json({ error: "This upload is still finishing. Try again shortly." }, { status: 409 })),
+  });
+  const other = await client(busy.fetch);
+  expect(await other.uploadFile(new File(["bytes"], "clip.mov"), "chat", undefined, { scope })).toEqual(receipt);
+  expect(sent).toBe(1);
+});
+
+test("after a reload mid-finish, the saved 'finishing' upload follows the server to its receipt without sending anything", async () => {
+  const server = backgroundServer({ state: "committed", upload: receipt }, { polls: 1, finish: () => { throw new Error("nothing is sent"); } });
+  const api = await client(server.fetch);
+  const scope = "particl-active-reload-owner";
+  const file = new File(["a long original"], "big.mov", { type: "video/quicktime" });
+  const saved = await api.claimUploadEnvelope(scope, file, "chat");
+  const key = api.uploadEnvelopeKey(scope, saved.identity);
+  const finishing = { ...saved, started: true, state: "finishing", storedChunks: [0] };
+  api.items.set(key, JSON.stringify(finishing));
+  expect(await api.followFinishing(api.listUploadEnvelopes(scope)[0])).toEqual(receipt);
+  expect(api.listUploadEnvelopes(scope)[0]).toMatchObject({ state: "complete", result: receipt });
+  // Following again finds nothing left to follow.
+  expect(await api.followFinishing(api.listUploadEnvelopes(scope)[0])).toBeNull();
+
+  // Resume (no file needed) on a record whose finish is still assembling polls too, and sends no finish.
+  const again = backgroundServer({ state: "committed", upload: receipt }, { polls: 1, finish: () => { throw new Error("nothing is sent"); } });
+  const resumed = await client(again.fetch);
+  const entry = await resumed.claimUploadEnvelope(scope, file, "chat");
+  resumed.items.set(resumed.uploadEnvelopeKey(scope, entry.identity), JSON.stringify({ ...entry, started: true, state: "pending", storedChunks: [0] }));
+  expect(await resumed.resumeUpload(resumed.listUploadEnvelopes(scope)[0])).toEqual(receipt);
+  expect(again.requests.every((request) => request.url.includes("/session?"))).toBe(true);
+  // Check status on a failed background finish says why and ends the record.
+  const failed = backgroundServer({ state: "aborted", failure: { error: "Storage is full.", status: 507 } }, { polls: 0, finish: () => { throw new Error("nothing is sent"); } });
+  const checked = await client(failed.fetch);
+  const third = await checked.claimUploadEnvelope(scope, file, "chat");
+  checked.items.set(checked.uploadEnvelopeKey(scope, third.identity), JSON.stringify({ ...third, started: true, state: "finishing", storedChunks: [0] }));
+  expect((await checked.checkUpload(checked.listUploadEnvelopes(scope)[0])).failure?.status).toBe(507);
+  expect(checked.listUploadEnvelopes(scope)[0]).toMatchObject({ state: "blocked", error: "Storage is full." });
+  expect(checked.listUploadEnvelopes(scope)[0].refusedAt).toBeUndefined();
+});

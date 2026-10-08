@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   listUploadEnvelopes,
   subscribeUploads,
   type UploadEnvelope,
 } from "@/lib/uploadRecovery";
-import { checkUpload, dismissUpload, resumeUpload } from "@/lib/uploadClient";
+import { checkUpload, dismissUpload, followFinishing, resumeUpload } from "@/lib/uploadClient";
 import { fileRecoveredUpload } from "@/lib/workspace/library";
 import styles from "./upload-recovery.module.css";
 
@@ -57,6 +57,21 @@ function UploadRow({ entry }: { entry: UploadEnvelope }) {
   const [message, setMessage] = useState("");
   const file = useRef<HTMLInputElement>(null);
   const complete = entry.state === "complete";
+  /* Shown already finishing (the page reloaded while the server assembled it):
+     follow that finish to its end. Nothing is sent; an upload still running in
+     this or another tab holds the run lock, and this waits for it. */
+  const finishingAtMount = useRef(entry.state === "finishing");
+  useEffect(() => {
+    if (!finishingAtMount.current) return;
+    finishingAtMount.current = false;
+    followFinishing(entry)
+      .then((result) => (result ? fileRecoveredUpload(entry) : undefined))
+      .catch((error) =>
+        setMessage(error instanceof Error ? error.message : "Check status again shortly."),
+      );
+    // Once per row, from the record it was first shown with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   async function action(work: () => Promise<unknown>) {
     setBusy(true);
     setMessage("");
@@ -104,6 +119,7 @@ function UploadRow({ entry }: { entry: UploadEnvelope }) {
                   const result = await checkUpload(entry);
                   /* Found stored after all: it goes where it was dropped, as a resume would have put it. */
                   if (result.state === "committed") await fileRecoveredUpload(entry);
+                  else if (result.failure) setMessage("");
                   else
                     setMessage(
                       result.retryAfterMs > 0
