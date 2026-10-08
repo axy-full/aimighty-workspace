@@ -2,6 +2,9 @@
 import { useRef, useState } from "react";
 import { BOARD_TEMPLATES } from "@/lib/board/kind";
 import { uploadFilesToProject } from "@/lib/workspace/library";
+import type { UploadedFile } from "@/lib/uploadClient";
+import { AttachThumbs } from "../AttachThumbs";
+import { TileMedia, uploadTile } from "../LibraryTile";
 import { useBoardAgent } from "./agent";
 import type { BoardCtx } from "./cards/types";
 import { Glyph } from "./Rail";
@@ -14,7 +17,9 @@ import { Glyph } from "./Rail";
  * server's estimate of Atomik's thinking and the press is a person's; until
  * that seam is on the board, Start says why it waits. Aspect is the
  * project's, carried everywhere (ease rule 3); length goes into the words.
- * Attach keeps the files in the project's Library and hands them to Atomik.
+ * Attach keeps the files in the project's Library and hands them to Atomik;
+ * each shows under the box as its Library tile, and pressing one takes it out
+ * of what Start sends (it stays in the Library).
  */
 const ASPECTS = ["16:9", "9:16", "1:1"] as const;
 const LENGTHS = [6, 15, 30] as const;
@@ -27,7 +32,7 @@ export function EmptyBoard({ ctx }: { ctx: BoardCtx }) {
   const agent = useBoardAgent();
   const [words, setWords] = useState("");
   const [seconds, setSeconds] = useState<number | null>(15);
-  const [attached, setAttached] = useState<string[]>([]);
+  const [attached, setAttached] = useState<{ id: string; upload: UploadedFile }[]>([]);
   const [said, setSaid] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -51,8 +56,8 @@ export function EmptyBoard({ ctx }: { ctx: BoardCtx }) {
     if (!list?.length) return;
     setBusy(true);
     try {
-      const { ids, notes } = await uploadFilesToProject(ctx.scope, ctx.project.id, [...list]);
-      setAttached((was) => [...was, ...ids]);
+      const { uploads, notes } = await uploadFilesToProject(ctx.scope, ctx.project.id, [...list]);
+      setAttached((was) => [...was, ...uploads.map((upload) => ({ id: `upload:${upload.id}`, upload }))]);
       setSaid(notes.length ? notes.join(" ") : null);
     } catch (error) {
       setSaid(error instanceof Error ? error.message : "The files could not be uploaded.");
@@ -64,7 +69,7 @@ export function EmptyBoard({ ctx }: { ctx: BoardCtx }) {
   const start = async () => {
     if (why || !agent.start) return;
     setBusy(true);
-    const refusal = await agent.start({ words: words.trim(), aspect, seconds, attachments: attached });
+    const refusal = await agent.start({ words: words.trim(), aspect, seconds, attachments: attached.map((a) => a.id) });
     setBusy(false);
     setSaid(refusal);
   };
@@ -102,7 +107,9 @@ export function EmptyBoard({ ctx }: { ctx: BoardCtx }) {
             <button type="button" className="gx-btn gx-btn--primary bd-start" aria-disabled={why ? true : undefined} title={why ?? undefined} onClick={() => void start()} data-testid="board-start">Start</button>
           </div>
         </div>
-        {attached.length ? <p className="bd-empty-line">{attached.length === 1 ? "1 file attached" : `${attached.length} files attached`}</p> : null}
+        <AttachThumbs testId="board-attached" disabled={busy}
+          items={attached.map(({ id, upload }) => { const tile = uploadTile(upload); return { key: id, name: upload.filename, picture: <TileMedia url={tile.url} media={tile.media} /> }; })}
+          onRemove={(id) => setAttached((was) => was.filter((a) => a.id !== id))} />
         {said ? <p className="bd-empty-line" role="status">{said}</p> : null}
         <div className="bd-templates" role="group" aria-label="Templates">
           {BOARD_TEMPLATES.map((t) => (

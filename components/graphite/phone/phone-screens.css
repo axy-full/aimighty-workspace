@@ -278,9 +278,8 @@
 .ph-start .gx-hm-sep { display: none; }
 .ph-start .gx-hm-row { gap: 8px; }
 .ph-start .gx-hm-chips { gap: 8px; }
-.gx .ph-start .gx-hm-btn, .gx .ph-start .gx-hm-tpl, .gx .ph-start .gx-hm-file, .gx .ph-start .gx-hm-start { height: 44px; min-height: 44px; font-size: 14px; }
+.gx .ph-start .gx-hm-btn, .gx .ph-start .gx-hm-tpl, .gx .ph-start .gx-hm-start { height: 44px; min-height: 44px; font-size: 14px; }
 .gx .ph-start .gx-hm-chip { height: 44px; min-height: 44px; min-width: 44px; font-size: 14px; }
-.gx .ph-start .gx-hm-file-x { width: 44px; height: 44px; }
 .gx .ph-start .gx-hm-link { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; }
 .gx .ph-start .gx-hm-start { flex: 1 1 100%; }
 .ph-start .gx-hm-foot { gap: 8px; }

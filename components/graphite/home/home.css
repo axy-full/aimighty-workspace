@@ -49,17 +49,7 @@
 .gx .gx-hm-btn:disabled, .gx .gx-hm-chip:disabled, .gx .gx-hm-tpl:disabled, .gx .gx-hm-link:disabled { color: var(--gx-disabled); cursor: default; }
 .gx .gx-hm-chip[aria-pressed="true"]:disabled { color: var(--gx-accent-text); }
 
-/* Added files: a brief and references, each a chip with Remove. */
-.gx-hm-files { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
-.gx-hm-file {
-  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: var(--gx-h-strip-btn); padding: 0 2px 0 4px;
-  border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-card-border); background: var(--gx-card); min-width: 0;
-}
-.gx-hm-file-pic { width: 22px; height: 22px; border-radius: var(--gx-r-xs); overflow: hidden; flex: none; display: grid; place-items: center; color: var(--gx-text-2); background: var(--gx-root); }
-.gx-hm-file-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.gx-hm-file-name { min-width: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--gx-text); }
-.gx .gx-hm-file-x { width: 26px; height: 26px; flex: none; border-radius: var(--gx-r-xs); display: grid; place-items: center; font-size: 16px; line-height: 1; color: var(--gx-text-2); }
-.gx .gx-hm-file-x:hover:not(:disabled) { color: var(--gx-text); }
+/* Added files show under the box as Library tiles: components/graphite/library-tile.css. */
 
 .gx-hm-note, .gx-hm-problem { margin: 0; font-size: 12px; line-height: 1.45; }
 .gx-hm-note { color: var(--gx-text-2); }
@@ -154,15 +144,13 @@
   .gx-hm-sep { display: none; }
   .gx-hm-starts { margin-top: -16px; }
   .gx-hm-grid { grid-template-columns: 1fr; }
-  .gx-hm-file-name { max-width: 160px; }
   .gx .gx-hm-start { flex: 1 1 100%; }
   .gx-hm-wait-actions { margin-left: 20px; }
 }
 /* Phones and other touch screens (844 × 390 too): every control is at least 44 px. */
 @media (max-width: 767px), (pointer: coarse) {
-  .gx .gx-hm-btn, .gx .gx-hm-tpl, .gx .gx-hm-file { height: 44px; }
+  .gx .gx-hm-btn, .gx .gx-hm-tpl { height: 44px; }
   .gx .gx-hm-chip { height: 44px; min-width: 44px; }
-  .gx .gx-hm-file-x { width: 44px; height: 44px; }
   .gx .gx-hm-link { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
   .gx .gx-hm-start { height: 44px; }
   .gx-hm-text { font-size: 16px; }
