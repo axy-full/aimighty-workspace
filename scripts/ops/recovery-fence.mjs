@@ -8,7 +8,14 @@ import {
   RecoveryFence,
   RECOVERY_PROTOCOL,
 } from "../../lib/recovery/control.mjs";
-import { databaseIdentity, openKeyring, connection } from "./backup-lib.mjs";
+import {
+  databaseIdentity,
+  openKeyring,
+  connection,
+  MEDIA_KINDS,
+  mediaEnvNames,
+  r2Settings,
+} from "./backup-lib.mjs";
 import {
   assertNoActiveOrUncertain,
   sourceFingerprint,
@@ -148,7 +155,7 @@ export async function discoverRecoverySources(client, env, media) {
     }
   }
   for (const spec of byIdentity.values()) spec.workspaceIds.sort();
-  if (!media || !["blob", "local"].includes(media.kind))
+  if (!media || !MEDIA_KINDS.includes(media.kind))
     throw new Error("Explicit complete media inventory is required.");
   if (media.kind === "local") {
     // Capture every application media directory, including partial upload chunks.
@@ -168,6 +175,19 @@ export async function discoverRecoverySources(client, env, media) {
       throw new Error("Private Blob store credential is missing.");
     credentials[media.tokenEnv] = env[media.tokenEnv];
   }
+  // R2 alone, or dual (R2 first, Blob fallback: production's layout). Only
+  // env var names live in the config; their values go to the private export.
+  let r2Credential = null;
+  if (media.kind === "r2" || media.kind === "dual") {
+    const names = mediaEnvNames(media);
+    r2Settings(media.kind === "r2" ? media : media.r2, env);
+    if (names.some((name) => !env[name]))
+      throw new Error("Media store credentials are missing.");
+    if (names.some((name) => name in credentials && credentials[name] !== env[name]))
+      throw new Error("A media credential name collides with a database or keyring variable.");
+    for (const name of names) credentials[name] = env[name];
+    r2Credential = digest(names.map((name) => [name, env[name]]));
+  }
   return {
     config: {
       version: 1,
@@ -182,7 +202,7 @@ export async function discoverRecoverySources(client, env, media) {
       databases: evidence,
       media,
       mediaCredential:
-        media.kind === "blob" ? digest(env[media.tokenEnv]) : null,
+        media.kind === "blob" ? digest(env[media.tokenEnv]) : r2Credential,
     }),
   };
 }

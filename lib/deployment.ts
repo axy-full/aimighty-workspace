@@ -69,3 +69,17 @@ export function deploymentLabel(env: Environment = process.env, vercelFallback =
   if (onVercel(env)) return env.VERCEL_ENV ?? vercelFallback;
   return deploymentEnv(env);
 }
+
+/**
+ * The commit this server runs: `VERCEL_GIT_COMMIT_SHA` (Vercel sets it), else
+ * `GIT_COMMIT_SHA` (ops/selfhost/Dockerfile sets it from the platform's
+ * SOURCE_COMMIT). Null when neither names one; a blank value or the
+ * Dockerfile's "unknown" default names none. Callers fall back to "local".
+ */
+export function deployedCommit(env: Environment = process.env): string | null {
+  for (const raw of [env.VERCEL_GIT_COMMIT_SHA, env.GIT_COMMIT_SHA]) {
+    const sha = raw?.trim();
+    if (sha && sha !== "unknown") return sha;
+  }
+  return null;
+}
