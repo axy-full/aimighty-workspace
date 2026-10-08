@@ -64,3 +64,28 @@ test("checkout origin rejects credential-bearing and attacker-controlled path or
     else process.env.APP_ORIGIN = before;
   }
 });
+
+test("storage is ready when the backend the app selects is complete: R2 with all four variables, or the Blob token", () => {
+  const R2 = { STORAGE_BACKEND: "r2", R2_ACCOUNT_ID: "fixture", R2_ACCESS_KEY_ID: "fixture", R2_SECRET_ACCESS_KEY: "SECRET_R2", R2_BUCKET: "fixture" };
+  const storage = (env: Record<string, string | undefined>) =>
+    deploymentReadiness({ PARTICL_DEPLOYMENT: "production", ...env }).checks.find((c) => c.id === "storage")?.ready;
+  // R2 with no Blob token is ready (production after the Blob token is removed).
+  expect(storage(R2)).toBe(true);
+  // R2 missing any one of its four variables is not ready, even with a Blob token left behind.
+  for (const name of ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET"]) {
+    expect(storage({ ...R2, [name]: undefined }), name).toBe(false);
+    expect(storage({ ...R2, [name]: "" }), `${name} blank`).toBe(false);
+    expect(storage({ ...R2, [name]: undefined, BLOB_READ_WRITE_TOKEN: "fixture" }), `${name} with Blob token`).toBe(false);
+  }
+  // The Blob token alone is ready, as before; so is an explicit STORAGE_BACKEND=blob with it.
+  expect(storage({ BLOB_READ_WRITE_TOKEN: "fixture" })).toBe(true);
+  expect(storage({ STORAGE_BACKEND: "blob", BLOB_READ_WRITE_TOKEN: "fixture" })).toBe(true);
+  expect(storage({ STORAGE_BACKEND: "blob" })).toBe(false);
+  // Nothing set in production, local disk, or a backend the app refuses: not ready.
+  expect(storage({})).toBe(false);
+  expect(storage({ VERCEL_ENV: "production" })).toBe(false);
+  expect(storage({ STORAGE_BACKEND: "local", BLOB_READ_WRITE_TOKEN: "fixture" })).toBe(false);
+  expect(storage({ ...R2, STORAGE_BACKEND: "s3" })).toBe(false);
+  // Names only, never values.
+  expect(JSON.stringify(deploymentReadiness({ ...R2, PARTICL_DEPLOYMENT: "production" }))).not.toContain("SECRET_R2");
+});
