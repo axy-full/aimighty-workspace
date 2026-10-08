@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 import { seedBoard } from "./helpers/s03-board";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { expectLargerScreen } from "./helpers/largerScreen";
+import { astraRenderPendingKey } from "../components/astra-blender/astra-render-recovery";
+import { CHECK_LINE, SAMPLE_LINE } from "../lib/demo/sample";
 import { isCompact } from "./helpers/shellMode";
 import { createAstraScene } from "../lib/astra-blender/scene";
 import { astraSceneDigest } from "../lib/astra-blender/proposal";
@@ -36,13 +38,34 @@ async function openDrawer(page: Page, projectId: string): Promise<Locator> {
   return panel;
 }
 
-async function mockRender(page: Page) {
-  const quotes: AstraRenderRequest[] = [], submissions: string[] = [], other: string[] = [];
+/** Reload the board (the routes stay) and open the drawer again: what a person does after a lost answer or a closed tab. */
+async function reopen(page: Page): Promise<Locator> {
+  await page.reload();
+  await expect(page.getByTestId("board-rail")).toBeVisible();
+  await page.getByTestId("board-drawer-render").click();
+  const panel = page.getByTestId("board-render").getByRole("region", { name: "Native 3D renders", exact: true });
+  await expect(panel).toBeVisible({ timeout: 30_000 });
+  return panel;
+}
+
+/**
+ * The render route, answered here. `loseResponse`: the first send's answer never arrives, either before the server
+ * kept the job ("missing") or after it did ("accepted"), as in production's spec.
+ */
+async function mockRender(page: Page, options: { loseResponse?: "missing" | "accepted" } = {}) {
+  const quotes: AstraRenderRequest[] = [], submissions: string[] = [], other: string[] = [], cancellations: string[] = [];
   let jobs: AstraRenderJob[] = [];
   const bytes = { preview: await readFile("public/fixtures/still.png"), blend: Buffer.from("BLENDER-v500-fixture"), glb: Buffer.from("glTF-fixture") };
   await page.route(`**${ENDPOINT}**`, async (route) => {
     const request = route.request(), url = new URL(request.url());
     if (request.method() === "GET") return route.fulfill({ json: { runtime: READY, jobs: url.searchParams.has("requestId") ? jobs.filter((job) => job.requestId === url.searchParams.get("requestId")) : jobs } });
+    if (request.method() === "PATCH") {
+      const input = request.postDataJSON() as { projectId: string; jobId: string; action: string };
+      cancellations.push(input.jobId);
+      expect(input).toEqual({ projectId: jobs[0].projectId, jobId: jobs[0].id, action: "cancel" });
+      jobs[0] = { ...jobs[0], status: "cancelled", billedCredits: 0, updatedAt: Date.now() };
+      return route.fulfill({ json: { job: jobs[0] } });
+    }
     if (request.method() !== "POST") { other.push(request.method()); return route.fulfill({ status: 409, json: { error: "Unexpected render request in this fixture." } }); }
     const input = request.postDataJSON() as AstraRenderRequest;
     if (input.quoteOnly) {
@@ -50,7 +73,9 @@ async function mockRender(page: Page) {
       return route.fulfill({ json: { runtime: READY, quote: { estimateCredits: 12, quoteDigest: "a".repeat(64), sourceDigest: input.sourceDigest, expiresAt: Date.now() + 60000, billingNote: "The approved ceiling covers this native job. Actual usage is settled after completion." } } });
     }
     submissions.push(request.postData()!);
+    if (options.loseResponse === "missing" && submissions.length === 1) return route.abort("failed");
     jobs = [{ id: "render-fixture-1", requestId: input.requestId, projectId: input.projectId, source: input.source, sourceDigest: input.sourceDigest, status: "running", estimateCredits: 12, billedCredits: null, createdAt: Date.now(), updatedAt: Date.now(), error: null, artifacts: [], assetsRegistered: false }];
+    if (options.loseResponse === "accepted" && submissions.length === 1) return route.abort("failed");
     return route.fulfill({ status: 202, json: { job: jobs[0] } });
   });
   await page.route("**/api/uploads/astra-render-*", (route) => {
@@ -58,7 +83,7 @@ async function mockRender(page: Page) {
     return route.fulfill({ contentType: kind === "preview" ? "image/png" : "application/octet-stream", body: bytes[kind] });
   });
   return {
-    quotes, submissions, other,
+    quotes, submissions, other, cancellations,
     complete() {
       const artifacts = (["preview", "blend", "glb"] as const).map((kind) => ({ kind, assetId: `asset-${kind}`, uploadId: `astra-render-${kind}`, url: `/api/uploads/astra-render-${kind}`, filename: kind === "preview" ? "preview.png" : `scene.${kind}`, mime: kind === "preview" ? "image/png" : "application/octet-stream", bytes: bytes[kind].length }));
       jobs[0] = { ...jobs[0], status: "succeeded", billedCredits: 8, assetsRegistered: true, artifacts, updatedAt: Date.now() };
@@ -115,6 +140,103 @@ test("the Studio board's 3D scene drawer shows the quote before any spend, sends
   expect(state.other).toEqual([]);
   expect(paid).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+/* Production's recovery cases (tests/astra-render-workbench.spec.ts, deleted with the old page), on the board's drawer. */
+async function startRender(page: Page, panel: Locator) {
+  await panel.getByRole("button", { name: "Review render quote", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Run native 3D render", exact: true });
+  await dialog.getByRole("button", { name: "Start render · up to 12 cr", exact: true }).click();
+  return dialog;
+}
+
+test("an interrupted render send keeps the exact approved request; after a reload, Recover sends those same bytes once more", async ({ page }, info) => {
+  test.skip(isCompact(info), "a phone has no screen for the render panel");
+  await forbidPaidWork(page);
+  const state = await mockRender(page, { loseResponse: "missing" });
+  const { project, headers } = await seedBoard(page);
+  const panel = await openDrawer(page, project.id);
+  const dialog = await startRender(page, panel);
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  expect(state.submissions).toHaveLength(1);
+  const original = state.submissions[0];
+  const key = astraRenderPendingKey(headers["X-Workbench-Scope"], project.id);
+  expect(JSON.parse((await page.evaluate((k) => localStorage.getItem(k), key))!).body).toBe(original);
+
+  const again = await reopen(page);
+  const recover = again.getByRole("button", { name: "Recover saved render request · up to 12 cr", exact: true });
+  await expect(recover).toBeEnabled();
+  await expect(recover).toHaveAttribute("data-spend-price", "up to 12 cr");
+  await recover.click();
+  await expect(again.getByRole("article", { name: "Native render render-fixture-1", exact: true })).toBeVisible();
+  expect(state.submissions).toEqual([original, original]);
+  expect(state.quotes).toHaveLength(1);
+  expect(await page.evaluate((k) => localStorage.getItem(k), key)).toBeNull();
+  expect(state.other).toEqual([]);
+});
+
+test("a lost answer for a job the server kept is found by lookup, with no second send", async ({ page }, info) => {
+  test.skip(isCompact(info), "a phone has no screen for the render panel");
+  await forbidPaidWork(page);
+  const state = await mockRender(page, { loseResponse: "accepted" });
+  const { project, headers } = await seedBoard(page);
+  const panel = await openDrawer(page, project.id);
+  const dialog = await startRender(page, panel);
+  await expect(dialog).toHaveCount(0);
+  await expect(panel.getByRole("article", { name: "Native render render-fixture-1", exact: true })).toBeVisible();
+  expect(state.submissions).toHaveLength(1);
+  expect(state.quotes).toHaveLength(1);
+  expect(await page.evaluate((k) => localStorage.getItem(k), astraRenderPendingKey(headers["X-Workbench-Scope"], project.id))).toBeNull();
+  expect(state.other).toEqual([]);
+});
+
+test("a cancelled render stays cancelled, at nothing charged, after a reload", async ({ page }, info) => {
+  test.skip(isCompact(info), "a phone has no screen for the render panel");
+  await forbidPaidWork(page);
+  const state = await mockRender(page);
+  const { project } = await seedBoard(page);
+  const panel = await openDrawer(page, project.id);
+  await startRender(page, panel);
+  await panel.getByRole("button", { name: "Cancel render", exact: true }).click();
+  const job = panel.getByRole("article", { name: "Native render render-fixture-1", exact: true });
+  await expect(job).toContainText("Cancelled");
+  await expect(panel.getByRole("progressbar")).toHaveCount(0);
+  const again = await reopen(page);
+  await expect(again.getByRole("article", { name: "Native render render-fixture-1", exact: true })).toContainText("0 cr charged");
+  await expect(again.getByRole("article", { name: "Native render render-fixture-1", exact: true })).toContainText("Cancelled");
+  expect(state.cancellations).toEqual(["render-fixture-1"]);
+  expect(state.submissions).toHaveLength(1);
+  expect(state.other).toEqual([]);
+});
+
+test("in the sample workspace (and when that check fails) every paid press in the drawer is disabled and says the board's line", async ({ page }, info) => {
+  test.skip(isCompact(info), "a phone has no screen for the render panel");
+  await forbidPaidWork(page);
+  const state = await mockRender(page);
+  const mode = { failed: false };
+  await page.route("**/api/demo/sample", (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    return mode.failed ? route.fulfill({ status: 500, json: { error: "unavailable" } }) : route.fulfill({ json: { board: null, sampleWorkspace: true } });
+  });
+  const { project, headers } = await seedBoard(page);
+  /* A saved request waiting for recovery, so the Recover press is on screen too. */
+  const scope = headers["X-Workbench-Scope"], requestId = "render-request-sample-1";
+  const body = JSON.stringify({ projectId: project.id, requestId, source: "scene", sourceDigest: "c".repeat(64), quoteOnly: false, quoteDigest: "a".repeat(64), maxCredits: 12 });
+  await page.addInitScript(({ key, record }) => { try { localStorage.setItem(key, record); } catch { /* storage off */ } },
+    { key: astraRenderPendingKey(scope, project.id), record: JSON.stringify({ version: 1, scope, projectId: project.id, requestId, body, createdAt: Date.now() }) });
+  for (const [failed, line] of [[false, SAMPLE_LINE], [true, CHECK_LINE]] as const) {
+    mode.failed = failed;
+    const panel = await openDrawer(page, project.id);
+    await expect(panel.getByTestId("astra-render-blocked")).toHaveText(line);
+    const review = panel.getByRole("button", { name: "Review render quote", exact: true });
+    await expect(review).toBeDisabled();
+    await expect(review).toHaveAttribute("title", line);
+    const recover = panel.getByRole("button", { name: "Recover saved render request · up to 12 cr", exact: true });
+    await expect(recover).toBeDisabled();
+    await expect(recover).toHaveAttribute("title", line);
+  }
+  expect(state.quotes).toEqual([]);
+  expect(state.submissions).toEqual([]);
 });
 
 test("with no 3D runtime connected (the off-Vercel guard), the drawer says the server's words and cannot ask for a quote", async ({ page }, info) => {
