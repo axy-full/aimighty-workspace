@@ -457,3 +457,129 @@ test("on the phone, Uploads shows a finished upload as done and asks for the ori
     fullPage: true,
   });
 });
+
+/** Test-only (mock dev server, never production): hold the finish's assembly this long, and answer 202 after 200 ms. */
+const slowFinish = (delayMs: number) => ({
+  "x-particl-test-finish-delay-ms": String(delayMs),
+  "x-particl-test-finish-answer-ms": "200",
+});
+
+test("a slow finish answers 202, the upload follows its session to the receipt, and a reload mid-finish still lands it", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "customer-1440x900",
+    "real desktop uploads (the board is the desktop's); the phone's follow-up is below",
+  );
+  test.setTimeout(150_000); // Two deliberately slow finishes and a reload.
+  await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((response) => response.json());
+  const scope = `particl-active-${me.workspace.id}-${me.id}`;
+  const projectId = await savedProject(page, scope);
+  let finishes = 0,
+    polls = 0;
+  await page.route("**/api/uploads/finish", async (route) => {
+    finishes++;
+    await route.continue({ headers: { ...route.request().headers(), ...slowFinish(3_000) } });
+  });
+  await page.route("**/api/uploads/session?*", async (route) => {
+    polls++;
+    await route.continue();
+  });
+  const png = (background: string) =>
+    sharp({ create: { width: 512, height: 512, channels: 3, background } }).png().toBuffer();
+  await page.goto(`/suites?project=${encodeURIComponent(projectId)}&view=board`);
+  await expect(page.getByTestId("board")).toBeVisible();
+
+  // 1. No reload: the 202 is followed until the session is committed.
+  const accepted = page.waitForResponse("**/api/uploads/finish");
+  await boardFiles(page).setInputFiles({ name: "slow-reference.png", mimeType: "image/png", buffer: await png("#3a5a2f") });
+  const answer = await accepted;
+  expect(answer.status()).toBe(202);
+  expect(await answer.json()).toMatchObject({ state: "assembling" });
+  await expect.poll(async () => (await uploadEntries(page)).map((entry) => entry.state)).toEqual(["finishing"]);
+  await expect
+    .poll(async () => (await uploadEntries(page)).map((entry) => entry.state), { timeout: 30_000 })
+    .toEqual(["complete"]);
+  expect(finishes).toBe(1);
+  expect(polls).toBeGreaterThan(0);
+  const first = (await uploadEntries(page))[0].result;
+  expect(first.url).toBe(`/api/uploads/${first.id}`);
+
+  // 2. A reload while the server is still assembling: the saved 'finishing' upload follows it, sending nothing again.
+  const second = page.waitForResponse("**/api/uploads/finish");
+  await boardFiles(page).setInputFiles({ name: "reload-reference.png", mimeType: "image/png", buffer: await png("#5a2f3a") });
+  expect((await second).status()).toBe(202);
+  await page.reload();
+  const summary = page.locator("summary").filter({ hasText: "Uploads" });
+  await summary.click();
+  const recovery = page.getByRole("region", { name: "Upload recovery" });
+  const reloaded = recovery.getByRole("article", { name: "reload-reference.png" });
+  await expect(reloaded.getByText("Upload ready", { exact: true })).toBeVisible({ timeout: 30_000 });
+  expect(finishes).toBe(2);
+  const saved = (await uploadEntries(page)).find((entry) => entry.file.name === "reload-reference.png");
+  expect(saved.state).toBe("complete");
+  const listed = await page.request.get("/api/uploads", { maxRetries: 1 });
+  expect(listed.ok(), await listed.text()).toBeTruthy();
+  expect((await listed.json()).uploads.map((upload: { id: string }) => upload.id).sort()).toEqual([first.id, saved.result.id].sort());
+  await expect(page.locator("body")).toHaveJSProperty("scrollWidth", await page.evaluate(() => innerWidth));
+  await page.screenshot({ path: testInfo.outputPath("upload-slow-finish.png"), fullPage: true });
+});
+
+test("on the phone, an upload saved mid-finish follows the server's background finish to its receipt", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "customer-390x844",
+    "the phone's Uploads panel; the phone has no board to upload from, so the saved record is the one uploadFile writes",
+  );
+  await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((response) => response.json());
+  const scope = `particl-active-${me.workspace.id}-${me.id}`;
+  const headers = { "X-Workbench-Scope": scope };
+  const bytes = await sharp({ create: { width: 512, height: 512, channels: 3, background: "#4a2f6b" } }).png().toBuffer();
+  const session = randomUUID();
+  const chunk = await page.request.post("/api/uploads/chunk", {
+    headers,
+    multipart: { session, index: "0", chunk: { name: "blob", mimeType: "application/octet-stream", buffer: bytes } },
+  });
+  expect(chunk.ok(), await chunk.text()).toBe(true);
+  const finish = await page.request.post("/api/uploads/finish", {
+    headers: { ...headers, ...slowFinish(4_000) },
+    data: { session, count: 1, filename: "phone-slow.png", purpose: "reference", mime: "image/png" },
+  });
+  expect(finish.status(), await finish.text()).toBe(202);
+  // A second identical finish while it assembles is refused for the moment, not run twice.
+  const duplicate = await page.request.post("/api/uploads/finish", {
+    headers,
+    data: { session, count: 1, filename: "phone-slow.png", purpose: "reference", mime: "image/png" },
+  });
+  expect(duplicate.status()).toBe(409);
+  const finishing = {
+    version: 1, scope, session, identity: "c".repeat(64),
+    file: { name: "phone-slow.png", type: "image/png", size: bytes.length, lastModified: 1 },
+    purpose: "reference", chunkBytes: 3_500_000, count: 1, storedChunks: [0],
+    state: "finishing", started: true, createdAt: Date.now(), updatedAt: Date.now(),
+  };
+  await page.goto("/suites");
+  await page.evaluate((entry) => {
+    localStorage.setItem("particl:upload:v1:" + JSON.stringify([entry.scope, entry.identity]), JSON.stringify(entry));
+  }, finishing);
+  await page.reload();
+  await page.locator("summary").filter({ hasText: "Uploads" }).click();
+  const row = page.getByRole("region", { name: "Upload recovery" }).getByRole("article", { name: "phone-slow.png" });
+  await expect(row.getByText("Upload ready", { exact: true })).toBeVisible({ timeout: 30_000 });
+  const status = await page.request.get(`/api/uploads/session?session=${session}`, { headers });
+  const committed = await status.json();
+  expect(committed.state).toBe("committed");
+  await expect(row.getByRole("link", { name: "Open uploaded file" })).toHaveAttribute("href", committed.upload.url);
+  // Once committed, the same finish answers the saved receipt.
+  const replay = await page.request.post("/api/uploads/finish", {
+    headers,
+    data: { session, count: 1, filename: "phone-slow.png", purpose: "reference", mime: "image/png" },
+  });
+  expect(replay.status()).toBe(200);
+  expect(await replay.json()).toEqual(committed.upload);
+  await expect(page.locator("body")).toHaveJSProperty("scrollWidth", await page.evaluate(() => innerWidth));
+  await page.screenshot({ path: testInfo.outputPath("phone-upload-slow-finish.png"), fullPage: true });
+});
