@@ -22,13 +22,14 @@ export default function PrivacyPage() {
       </P>
       <P title="Where">
         <p>
-          Each workspace has a database of its own, at Turso, holding everything
-          but the files. Masters, uploads and identity photos are objects in
-          private storage on Vercel, under a prefix that is the
-          workspace&rsquo;s alone, reachable only by short-lived signed links.
-          Accounts, workspace membership, verification requests, credit grants
-          and billing records are held in the platform record. Each customer
-          workspace has a separate content database.
+          Particl runs on its own server, hosted by Contabo. Each workspace has
+          a database of its own, at Turso, holding everything but the files.
+          Masters, uploads and identity photos are objects in private storage
+          on Cloudflare R2, under a prefix that is the workspace&rsquo;s alone,
+          reachable only by short-lived signed links. Accounts, workspace
+          membership, verification requests, credit grants and billing records
+          are held in the platform record. Each customer workspace has a
+          separate content database.
         </p>
       </P>
       <P title="Who sees it">
