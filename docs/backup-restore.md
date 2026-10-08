@@ -188,8 +188,8 @@ Coverage follows `lib/storage/backend.ts`: a referenced key (renders, uploads,
 platform assets, a bare stored key) must exist on R2 or, failing that, on Blob
 under the same key; an absolute Blob URL must exist on R2 at its decoded
 pathname or on Blob at that exact URL. Any other absolute URL fails. A failure
-names up to 20 missing objects as `database/table/row (key)`, never a URL or
-credential.
+names up to 20 missing objects as `database/table/row` only, never a key, URL,
+file name or credential (an upload's key can carry the customer's file name).
 
 Each R2 object is read pinned to its listed ETag (`If-Match`), its length is
 checked, and a single-part ETag is checked as the MD5 of the bytes. Objects
@@ -209,7 +209,7 @@ node scripts/ops/backup-restore.mjs report /secure/rehearsals/unique-restore
 `restore` re-checks that every referenced object resolves to a restored,
 digest-verified file; `report` proves it again against the offline directory
 and prints `media: { kind, verified, references, byStore, objects }`, naming
-any referenced file that is missing or changed.
+(by database/table/row) any referenced file that is missing or changed.
 
 Both destination directories must not exist. Keep the complete archive directory,
 including `header.json`, `manifest.enc` and every numbered encrypted object.
@@ -396,7 +396,10 @@ key and assume an old archive will decrypt.
    restored to. `local` writes `local-media/` in the app's local layout
    (`generations/<id>.<ext>`, `uploads/<id>.<ext>`, `platform/...`; use it as the
    app's `.data` directory) with every referenced object copied and checked by
-   SHA-256, and rewrites absolute upload URLs to the upload's own key. Both
+   SHA-256, and rewrites absolute upload URLs to the upload's own key. `local`
+   copies **only referenced objects** (renders, uploads, platform assets);
+   identity zips, consent recordings, pending chunks and any unreferenced object
+   stay in the offline directory under `media/` for the operator to place. Both
    check every reference first and refuse if one cannot be placed.
 
    `prepare` creates new local copies, remaps workspace and provisioning database
