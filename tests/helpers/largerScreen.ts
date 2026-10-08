@@ -8,7 +8,7 @@ import { smallTargets, smallText } from "../phoneFloors";
  * address, asserts the page and its floors (text 12 px and up, targets 44 px and up, no sideways scroll), then that
  * Home really is one press away.
  */
-export async function expectLargerScreen(page: Page, address: string, title: "Activity" | "Memory" | "Skills") {
+export async function expectLargerScreen(page: Page, address: string, title: "Activity" | "Memory" | "Skills" | "3D scene") {
   await signInWithNewInterface(page.request);
   await page.goto(address);
   const larger = page.getByTestId("phone-larger");

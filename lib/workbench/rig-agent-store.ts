@@ -95,7 +95,8 @@ const SCHEMA = [
 
 /** Additive columns for paid work, on tables an earlier version may already have made. */
 const COLUMNS: Record<string, [string, string][]> = {
-  rig_agent_runs: [["limits", "TEXT"], ["plan_charge", "TEXT"]],
+  /* `attachments`: the files a person attached to the ask (`upload:<id>`, filed in the production's Library), as JSON. */
+  rig_agent_runs: [["limits", "TEXT"], ["plan_charge", "TEXT"], ["attachments", "TEXT"]],
   rig_agent_steps: [
     ["admission", "TEXT"], ["quote_credits", "REAL"], ["band", "INTEGER"], ["approved_at", "INTEGER"], ["approved_by", "TEXT"],
     ["approved_fingerprint", "TEXT"], ["reason", "TEXT"], ["pause", "TEXT"], ["settled_at", "INTEGER"], ["outcome", "TEXT"],
@@ -157,6 +158,8 @@ export type RunRow = {
   perJobCap: number | null;
   limits: LimitRecord[];
   planCharge: PlanCharge | null;
+  /** The files attached to the ask (`upload:<id>`), checked against the production's Library as it was asked and again before planning. */
+  attachments: string[];
   leaseUntil: number; wakeAt: number | null; createdAt: number; updatedAt: number;
 };
 
@@ -200,6 +203,7 @@ function runOf(r: Record<string, unknown>): RunRow {
     undoneAt: num(r.undone_at), undoneBy: str(r.undone_by), undo: parse<UndoRecord | null>(r.undo, null),
     capCredits: num(r.cap_credits), perJobCap: num(r.per_job_cap), limits: parse<LimitRecord[]>(r.limits, []),
     planCharge: r.plan_charge === "reserved" || r.plan_charge === "settled" || r.plan_charge === "released" ? r.plan_charge : null,
+    attachments: ((list: unknown) => (Array.isArray(list) ? list.filter((a): a is string => typeof a === "string") : []))(parse<unknown>(r.attachments, [])),
     leaseUntil: Number(r.lease_until ?? 0), wakeAt: num(r.wake_at), createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   };
 }
@@ -259,13 +263,15 @@ export async function insertRun(tx: Transaction, run: {
   id: string; productionId: string; draftId: string; owner: string; requestId: string; goal: string; model: string; at: number;
   /** The limit the person approved as they asked, the mode, and the per-job line then in force. */
   limit: { credits: number; mode: RigAgentMode; jobCeiling: number };
+  /** The files attached to the ask, already checked (`upload:<id>`). */
+  attachments?: readonly string[];
 }) {
   const limits: LimitRecord[] = [{ credits: run.limit.credits, mode: run.limit.mode, jobCeiling: run.limit.jobCeiling, by: run.owner, at: run.at }];
   await tx.execute({
-    sql: `INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,mode,cap_credits,per_job_cap,limits,model,state,lease_until,wake_at,created_at,updated_at)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,'planning',0,?,?,?)`,
+    sql: `INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,mode,cap_credits,per_job_cap,limits,model,state,lease_until,wake_at,created_at,updated_at,attachments)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,'planning',0,?,?,?,?)`,
     args: [run.id, run.productionId, run.draftId, run.owner, run.requestId, run.goal, run.limit.mode, run.limit.credits, run.limit.jobCeiling,
-      JSON.stringify(limits), run.model, run.at, run.at, run.at],
+      JSON.stringify(limits), run.model, run.at, run.at, run.at, run.attachments?.length ? JSON.stringify(run.attachments) : null],
   });
 }
 

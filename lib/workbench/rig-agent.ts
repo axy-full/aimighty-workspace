@@ -23,7 +23,7 @@ import { SAMPLE_LINE } from "@/lib/demo/sample";
 import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 import {
   ACTIVE_STATES, PLAN_LIMITS, RIG_AGENT_MODES, boardSnapshot, compilePlan, creditFigure, planFingerprintText, proposalView, undoOps, wiresOf,
-  type BoardSnapshot, type RigAgentMode, type RigAgentMoneyView, type RigAgentPaidStepView, type RigAgentPlanView, type RigAgentRunView, type RigAgentState,
+  type BoardSnapshot, type SnapshotAttachment, type RigAgentMode, type RigAgentMoneyView, type RigAgentPaidStepView, type RigAgentPlanView, type RigAgentRunView, type RigAgentState,
 } from "./rig-agent-plan";
 import {
   closePlanApproval, fixRoom, approvalClosed, insertPlanApproval, isPersonApprover, planApprovalOf, planQuote, recordFix,
@@ -31,8 +31,9 @@ import {
 } from "./plan-approval";
 import {
   mockPlannerModel, plannerCeilingUsd, plannerCostUsd, PlannerError, runPlanner, selectPlannerModel,
-  MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL, PLANNER_TIMEOUT_MS, type PlannerOutcome,
+  MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL, NO_ATTACHMENT_CONTENT, PLANNER_TIMEOUT_MS, type PlannerAttachmentContent, type PlannerOutcome,
 } from "./rig-agent-planner";
+import { attachedOf, loadPlanAttachmentContent, PlanAttachmentError, resolvePlanAttachments, type AttachmentReaders, type PlanAttachment } from "./rig-agent-attachments";
 import { effectiveJobCeiling, rigJobCeiling, suggestedRunLimit } from "./rig-agent-limits";
 import { advancePaidSteps, closeEndedSteps, MAX_SEND_ATTEMPTS, RIG_AGENT_VERIFY, stepTitle, STOPPED_UNSENT, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
 import {
@@ -242,33 +243,38 @@ export type RigAgentAskTerms = { limit: number; jobCeiling: number; planning: nu
  * do). With the viewer's project (draftId) and no run in progress, also what asking would cost. A
  * run in progress whose wake is due is nudged, so a board open in a browser keeps it moving.
  */
-export async function rigAgentState(productionId: string, viewer: string, draftId?: string | null): Promise<{ enabled: boolean; run: RigAgentRunView | null; ask: RigAgentAskTerms | null }> {
+export async function rigAgentState(productionId: string, viewer: string, draftId?: string | null, attachments: readonly string[] = []): Promise<{ enabled: boolean; run: RigAgentRunView | null; ask: RigAgentAskTerms | null }> {
   await requireProduction(productionId);
   const enabled = rigAgentEnabled();
+  /* Files the ask would attach are priced in: checked here as the ask checks them (an unknown or foreign one is refused). */
+  const attached = attachments.length ? attachedOf(await checkedAttachments(productionId, attachments)) : [];
   const run = (await rigAgentExists()) ? await latestRun(db(), productionId) : null;
   const busy = !!run && ACTIVE_STATES.includes(run.state);
-  const ask = enabled && draftId && !busy ? await askTerms(productionId, draftId, viewer).catch(() => null) : null;
+  const ask = enabled && draftId && !busy ? await askTerms(productionId, draftId, viewer, attached).catch(() => null) : null;
   if (!run) return { enabled, run: null, ask };
   await nudge(run).catch(() => {});
   return { enabled, run: runView(run, await stepsOf(db(), run.id), viewer, await ledgerOf(run), await planApprovalOf(db(), run.id)), ask };
 }
 
-async function askTerms(productionId: string, draftId: string, viewer: string): Promise<RigAgentAskTerms> {
+async function askTerms(productionId: string, draftId: string, viewer: string, attached: readonly SnapshotAttachment[] = []): Promise<RigAgentAskTerms> {
   const [limit, jobCeiling] = await Promise.all([suggestedRunLimit(), rigJobCeiling()]);
   let planning: number | null = null;
   const draft = await readDraft(viewer, draftId);
   if (draft && draft.project.productionProjectId === productionId) {
     const saved = await readTeamCanvas(productionId);
     const nodes = saved ? orderedIds(saved.canvas).map((id) => saved.canvas.nodes[id]) : draft.project.nodes;
-    planning = await planningCredits(draft.project, { nodes, assets: saved ? Object.values(saved.canvas.assets) : [] });
+    planning = await planningCredits(draft.project, { nodes, assets: saved ? Object.values(saved.canvas.assets) : [] }, attached);
   }
   return { limit, jobCeiling, planning };
 }
 
-/** Planning's approximate ceiling for a board, in credits; null when the planner's price can't be read. */
-async function planningCredits(project: Project, canvas: { nodes: CanvasNode[]; assets: Asset[] }): Promise<number | null> {
+/**
+ * Planning's approximate ceiling for a board, in credits; null when the planner's price can't be read. The same
+ * estimator the charge reserves at (plannerCeilingUsd over boardSnapshot), with the same attached files.
+ */
+async function planningCredits(project: Project, canvas: { nodes: CanvasNode[]; assets: Asset[] }, attached: readonly SnapshotAttachment[] = []): Promise<number | null> {
   /* The request at its longest, so the figure holds whatever is typed. */
-  const snapshot = boardSnapshot(project, canvas, "x".repeat(PLAN_LIMITS.goal));
+  const snapshot = boardSnapshot(project, canvas, "x".repeat(PLAN_LIMITS.goal), attached);
   const price = await plannerPrice("auto").catch(() => null);
   const usd = price ? plannerCeilingUsd(price.catalog, snapshot, price.direct) : null;
   return usd == null ? null : quotedCredits(usd, "text");
@@ -303,6 +309,12 @@ async function nudge(run: RunRow) {
 /** The most a person may approve for one run, in credits. */
 export const MAX_RUN_LIMIT = 1_000_000;
 
+/** The files an ask attaches, checked against this production's Library in the caller's workspace; a refusal is the ask's (400). */
+async function checkedAttachments(productionId: string, ids: readonly string[]): Promise<PlanAttachment[]> {
+  try { return await resolvePlanAttachments(productionId, ids); }
+  catch (error) { throw error instanceof PlanAttachmentError ? new RigAgentError(error.message, error.status) : error; }
+}
+
 /**
  * Ask Atomik to build: a run in `planning`, planned by the next tick. Asking
  * again with the same request id answers the same run. A proposal nobody
@@ -312,7 +324,7 @@ export const MAX_RUN_LIMIT = 1_000_000;
  * for this run") and its mode: nothing in the run — the planning turn first —
  * spends beyond it, and in Ask mode every render waits for their tap.
  */
-export async function askRigAgent(input: { productionId: string; draftId: string; userId: string; requestId: string; goal: string; model?: string; limit: number; mode?: RigAgentMode }): Promise<RigAgentRunView> {
+export async function askRigAgent(input: { productionId: string; draftId: string; userId: string; requestId: string; goal: string; model?: string; limit: number; mode?: RigAgentMode; attachments?: readonly string[] }): Promise<RigAgentRunView> {
   if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
   if (!isRunLimitAmount(input.limit, MAX_RUN_LIMIT)) throw new RigAgentError("Set a limit for this run: a number of credits, in tenths at most.", 400);
   const mode: RigAgentMode = input.mode ?? "ask";
@@ -321,6 +333,8 @@ export async function askRigAgent(input: { productionId: string; draftId: string
   const draft = await readDraft(input.userId, input.draftId);
   if (!draft) throw new RigAgentError("Open this project's Rig first.", 404);
   if (draft.project.productionProjectId !== input.productionId) throw new RigAgentError("This project is not saved to that production.", 409);
+  /* The files attached to the ask: each must be filed in this production's Library, in this workspace. */
+  const attachments = (await checkedAttachments(input.productionId, input.attachments ?? [])).map((a) => a.id);
   await rigAgentReady();
   /* The per-job line in force as the limit is approved: Auto never goes above it (nor above the line of the day). */
   const jobCeiling = await rigJobCeiling();
@@ -348,7 +362,7 @@ export async function askRigAgent(input: { productionId: string; draftId: string
     const id = newRunId();
     await insertRun(tx, {
       id, productionId: input.productionId, draftId: input.draftId, owner: input.userId, requestId: input.requestId, goal: input.goal.trim(), model: input.model ?? "auto", at,
-      limit: { credits: input.limit, mode: runMode, jobCeiling },
+      limit: { credits: input.limit, mode: runMode, jobCeiling }, attachments,
     });
     if (sampleMarked && !(await bindSampleLift(tx, { userId: input.userId, runId: id, productionId: input.productionId, at })))
       throw new RigAgentError(SAMPLE_LINE, 409);
@@ -760,9 +774,11 @@ export type PlannerPrice = { id: string; catalog: CatalogModel; direct: boolean 
 
 export type TickDeps = PaidDeps & {
   /** The planning turn (default: the Atomik model policy, or the mock planner under ENGINE_MOCK=1), on the model it was priced at. */
-  plan?: (snapshot: BoardSnapshot, model: string) => Promise<PlannerOutcome & { model: string }>;
+  plan?: (snapshot: BoardSnapshot, model: string, attachments: PlannerAttachmentContent) => Promise<PlannerOutcome & { model: string }>;
   /** The model a plan is priced at before it runs (default: Atomik's policy, or the mock planner's price under ENGINE_MOCK=1). */
   pricing?: (want: string) => Promise<PlannerPrice>;
+  /** How an attached file's bytes are read (default: the workspace's upload storage). */
+  attachmentReaders?: AttachmentReaders;
   /** Whether the person who asked may still act here; a reason when not (default: live membership and suspension). */
   access?: (owner: string) => Promise<string | null>;
   paceMs?: number;
@@ -811,7 +827,17 @@ async function planRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<Ri
   const saved = await readTeamCanvas(run.productionId);
   const nodes = saved ? orderedIds(saved.canvas).map((id) => saved.canvas.nodes[id]) : draft.project.nodes;
   const canvasAssets = saved ? Object.values(saved.canvas.assets) : [];
-  const snapshot = boardSnapshot(draft.project, { nodes, assets: canvasAssets }, run.goal);
+  /* The attached files, checked again (one taken out of the Library since is not read) and read before anything is reserved. */
+  let attached: PlanAttachment[] = [];
+  let content: PlannerAttachmentContent = NO_ATTACHMENT_CONTENT;
+  try {
+    attached = await resolvePlanAttachments(run.productionId, run.attachments);
+    content = await loadPlanAttachmentContent(attached, deps.attachmentReaders);
+  } catch (error) {
+    if (!(error instanceof PlanAttachmentError)) throw error;
+    return failRun(run.id, `${error.message} Nothing was charged.`, ["planning"]);
+  }
+  const snapshot = boardSnapshot(draft.project, { nodes, assets: canvasAssets }, run.goal, attachedOf(attached));
   /* Priced before it runs: the most this turn can use, reserved inside the run's limit. */
   let price: PlannerPrice;
   try { price = await (deps.pricing ?? plannerPrice)(run.model); }
@@ -837,7 +863,7 @@ async function planRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<Ri
     return (await getRun(db(), run.id))?.state ?? "stopped";
   }
   let outcome: PlannerOutcome & { model: string };
-  try { outcome = await (deps.plan ?? defaultPlan)(snapshot, price.id); }
+  try { outcome = await (deps.plan ?? defaultPlan)(snapshot, price.id, content); }
   catch (error) {
     /* No proposal came back: the turn is not billed (what it used, when the model said, is recorded as the platform's). */
     const used = error instanceof PlannerError ? plannerCostUsd(price.catalog, error.stepUsage, price.direct) : null;
@@ -926,10 +952,10 @@ export async function plannerPrice(want: string): Promise<PlannerPrice> {
   return { id, catalog: model, direct: textVendor(id) === "openai" };
 }
 
-async function defaultPlan(snapshot: BoardSnapshot, id: string): Promise<PlannerOutcome & { model: string }> {
-  if (engineMock() || id === MOCK_PLANNER_MODEL) return { ...(await runPlanner(snapshot, mockPlannerModel(snapshot))), model: MOCK_PLANNER_MODEL };
+async function defaultPlan(snapshot: BoardSnapshot, id: string, attachments: PlannerAttachmentContent): Promise<PlannerOutcome & { model: string }> {
+  if (engineMock() || id === MOCK_PLANNER_MODEL) return { ...(await runPlanner(snapshot, mockPlannerModel(snapshot), { attachments })), model: MOCK_PLANNER_MODEL };
   const model = languageModel(id, { auth: await languageAuth(id) });
-  return { ...(await runPlanner(snapshot, model)), model: id };
+  return { ...(await runPlanner(snapshot, model, { attachments })), model: id };
 }
 
 async function buildRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<TickResult> {

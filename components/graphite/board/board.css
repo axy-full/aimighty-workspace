@@ -229,6 +229,9 @@ button.bd-list-row:focus-visible { outline: 2px solid var(--gx-accent); outline-
 .bd-tile-meta { padding: 0 8px 8px; font-size: 12px; color: var(--gx-quiet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bd-drawer-empty { grid-column: 1 / -1; margin: 8px 4px; font-size: 13px; color: var(--gx-quiet); }
 .bd-drawer-list { flex: 1; min-height: 0; overflow: auto; padding: 0 8px 12px; }
+/* The 3D scene drawer: the render panel and the Blender package, one above the other. */
+.bd-drawer-list.bd-drawer-render { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 4px; }
+.bd-drawer-render > section:last-child { padding-inline: 0; }
 .bd .bd-history-row { width: 100%; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px; border: 0; border-radius: 8px; background: transparent; color: var(--gx-text); text-align: left; font: inherit; cursor: pointer; }
 .bd .bd-history-row:hover { background: color-mix(in srgb, var(--gx-text) 4%, transparent); }
 .bd .bd-history-row:disabled { cursor: default; }

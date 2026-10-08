@@ -12,10 +12,11 @@ import { platformDb, platformReady } from "./platform";
 import { currentTenant, requireTenant } from "./tenant";
 import { findModel, textCostUsd, textQuoteCostUsd, type CatalogModel } from "./catalog";
 import { engineFor } from "./engines";
-import { meter } from "./meter";
+import { meter, meteredCharge } from "./meter";
 import {
   reserveGenerationSpend,
   SpendReservationError,
+  STALE_CLAIM_MS,
 } from "./generationRequests";
 import type { TextRun } from "./engines/types";
 import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
@@ -47,11 +48,11 @@ async function paidTextReady() {
         await ready();
         await db()
           .execute(`CREATE TABLE IF NOT EXISTS paid_text_jobs(id TEXT PRIMARY KEY, model TEXT NOT NULL, kind TEXT NOT NULL,
-      status TEXT NOT NULL, estimate_usd REAL NOT NULL, cost_usd REAL, response_json TEXT, effort TEXT, request_body TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`);
+      status TEXT NOT NULL, estimate_usd REAL NOT NULL, cost_usd REAL, response_json TEXT, effort TEXT, request_body TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, reconcile_lease INTEGER)`);
         const columns = await db().execute("PRAGMA table_info(paid_text_jobs)");
-        for (const column of ["effort", "request_body"]) {
+        for (const [column, type] of [["effort", "TEXT"], ["request_body", "TEXT"], ["reconcile_lease", "INTEGER"]]) {
           if (columns.rows.some((row) => row.name === column)) continue;
-          try { await db().execute(`ALTER TABLE paid_text_jobs ADD COLUMN ${column} TEXT`); }
+          try { await db().execute(`ALTER TABLE paid_text_jobs ADD COLUMN ${column} ${type}`); }
           catch (error) { if (!/duplicate column/i.test(String(error))) throw error; }
         }
       })().catch((error) => {
@@ -252,6 +253,15 @@ return await withRecoveryActivity('paid-text', async () => {
     { token: currentTenant()?.token },
   );
   let submitted = false;
+  /* What becomes of an unconfirmed submission's estimate: returned by the cron's pass (reconcilePaidTextJobs),
+     or, on the workspace's own key, nothing was charged in credits to return. */
+  const afterwards = paidByPlatform(textVendor(input.model))
+    ? "its estimated credits are returned to your balance automatically, usually within a few hours"
+    : "nothing more is charged";
+  /* Every settlement below applies only to a job still in flight: one the cron's pass already refunded
+     (reconcilePaidTextJobs) is never overwritten or charged again by a request that answers late. */
+  const settle = async (sql: string, args: (string | number | null)[]) =>
+    (await db().execute({ sql: `${sql} AND status IN ('queued','running')`, args })).rowsAffected > 0;
   try {
     if (input.recordSpend !== false)
       await db().execute({
@@ -276,27 +286,20 @@ return await withRecoveryActivity('paid-text', async () => {
       const rejected = [400, 401, 402, 403, 404, 422, 429].includes(
         response.status,
       );
-      await db().execute({
-        sql: `UPDATE paid_text_jobs SET status=?,cost_usd=?,updated_at=? WHERE id=?`,
-        args: [
-          rejected ? "failed" : "uncertain",
-          rejected ? 0 : estimate,
-          now(),
-          id,
-        ],
-      });
-      if (rejected) {
+      const settled = await settle(`UPDATE paid_text_jobs SET status=?,cost_usd=?,updated_at=? WHERE id=?`,
+        [rejected ? "failed" : "uncertain", rejected ? 0 : estimate, now(), id]);
+      if (settled && rejected) {
         await db().execute({
           sql: `UPDATE atomik_spend SET cost_usd=0 WHERE id=?`,
           args: [id],
         });
         await meter({ ...event, status: "failed", engineCostUsd: 0 });
-      } else
+      } else if (settled)
         await meter({ ...event, status: "failed", engineCostUsd: estimate });
       throw new PaidTextError(
         rejected
           ? `The text provider declined this request (${response.status}). No generation credits were charged.`
-          : "The text provider returned an uncertain result. Its reserved credits are retained for reconciliation.",
+          : `The text provider returned an uncertain result. It will not be sent again, and ${afterwards}.`,
       );
     }
     let json: {
@@ -312,14 +315,14 @@ return await withRecoveryActivity('paid-text', async () => {
       json = JSON.parse(response.text);
     } catch {
       throw new PaidTextError(
-        "The text provider returned an unreadable result. Its reservation is retained.",
+        `The text provider returned an unreadable result. It will not be sent again, and ${afterwards}.`,
       );
     }
     const content = json?.choices?.[0]?.message?.content;
     const direct = textVendor(input.model) === 'openai';
     let cost = direct && !engineMock() ? directTextCostUsd(model, json?.usage) : Number(json?.usage?.cost);
     if (direct && !engineMock() && (cost == null || !Number.isFinite(cost) || cost > estimate + 0.00000001)) {
-      await db().execute({ sql: 'UPDATE paid_text_jobs SET response_json=?,updated_at=? WHERE id=?', args: [response.text, now(), id] });
+      await settle('UPDATE paid_text_jobs SET response_json=?,updated_at=? WHERE id=?', [response.text, now(), id]);
       throw new PaidTextError('Direct provider usage is missing, invalid, or outside the approved price snapshot. The paid answer is saved and its reservation is retained for review.');
     }
     if (cost == null || !Number.isFinite(cost) || cost < 0) {
@@ -341,18 +344,15 @@ return await withRecoveryActivity('paid-text', async () => {
       : overrides.accept ? overrides.accept(content) : null;
     if (verdict && !verdict.ok) {
       /* Paid to the provider, refused by the caller: saved, settled at zero for the workspace. */
-      await db().execute({
-        sql: `UPDATE paid_text_jobs SET status='refused',cost_usd=?,response_json=?,updated_at=? WHERE id=?`,
-        args: [cost, response.text, now(), id],
-      });
-      await db().execute({ sql: `UPDATE atomik_spend SET cost_usd=? WHERE id=?`, args: [cost, id] });
-      await meter({ ...event, status: "failed", engineCostUsd: 0 });
+      if (await settle(`UPDATE paid_text_jobs SET status='refused',cost_usd=?,response_json=?,updated_at=? WHERE id=?`, [cost, response.text, now(), id])) {
+        await db().execute({ sql: `UPDATE atomik_spend SET cost_usd=? WHERE id=?`, args: [cost, id] });
+        await meter({ ...event, status: "failed", engineCostUsd: 0 });
+      }
       throw new PaidTextError(`${verdict.reason} Nothing was charged.`, 502);
     }
-    await db().execute({
-      sql: `UPDATE paid_text_jobs SET status='succeeded',cost_usd=?,response_json=?,updated_at=? WHERE id=?`,
-      args: [cost, response.text, now(), id],
-    });
+    if (!(await settle(`UPDATE paid_text_jobs SET status='succeeded',cost_usd=?,response_json=?,updated_at=? WHERE id=?`, [cost, response.text, now(), id])))
+      /* Answered after the cron's pass refunded it: not charged again, and not delivered as if it had been paid for. */
+      throw new PaidTextError(`The text provider answered too late; this request had already ended. It will not be sent again, and ${afterwards}.`);
     await db().execute({
       sql: `UPDATE atomik_spend SET cost_usd=? WHERE id=?`,
       args: [cost, id],
@@ -376,14 +376,12 @@ return await withRecoveryActivity('paid-text', async () => {
         .catch(() => ({ rows: [] }))
     ).rows[0];
     if (error instanceof PaidTextError && record?.status === "running") {
-      await db()
-        .execute({
-          sql: `UPDATE paid_text_jobs SET status='uncertain',cost_usd=?,updated_at=? WHERE id=?`,
-          args: [estimate, now(), id],
-        })
-        .catch(() => {});
-      await meter({ ...event, status: "failed", engineCostUsd: estimate });
+      if (await settle(`UPDATE paid_text_jobs SET status='uncertain',cost_usd=?,updated_at=? WHERE id=?`, [estimate, now(), id]).catch(() => false))
+        await meter({ ...event, status: "failed", engineCostUsd: estimate });
     }
+    /* Already refunded by the cron's pass: nothing here may charge it again. */
+    if (!(error instanceof PaidTextError) && record?.status === "refunded")
+      throw new PaidTextError(`The text request was interrupted after submission. It will not be sent again, and ${afterwards}.`);
     if (!(error instanceof PaidTextError)) {
       const completed = record?.status === "succeeded";
       const cost = completed
@@ -391,31 +389,107 @@ return await withRecoveryActivity('paid-text', async () => {
         : submitted
           ? estimate
           : 0;
-      await db()
-        .execute({
-          sql: `UPDATE paid_text_jobs SET status=?,cost_usd=?,updated_at=? WHERE id=? AND status IN ('queued','running')`,
-          args: [submitted ? "uncertain" : "failed", cost, now(), id],
-        })
-        .catch(() => {});
+      const moved = await settle(`UPDATE paid_text_jobs SET status=?,cost_usd=?,updated_at=? WHERE id=?`, [submitted ? "uncertain" : "failed", cost, now(), id])
+        .catch(() => false);
       await db()
         .execute({
           sql: `UPDATE atomik_spend SET cost_usd=? WHERE id=?`,
           args: [cost, id],
         })
         .catch(() => {});
-      await meter({
-        ...event,
-        status: completed ? "succeeded" : "failed",
-        engineCostUsd: cost,
-      });
+      /* A job another step already settled (refused, declined, refunded) is not metered again here. */
+      if (completed || moved)
+        await meter({
+          ...event,
+          status: completed ? "succeeded" : "failed",
+          engineCostUsd: cost,
+        });
+      /* An unconfirmed submission is billed its estimate for now; reconcilePaidTextJobs returns it once no request can still be answering. */
       throw new PaidTextError(
-        submitted
-          ? "The text request was interrupted after submission. Its credits remain reserved; this request will not be sent again."
-          : "The text request could not be prepared. No generation credits were spent.",
+        completed
+          ? "The text request finished, but its answer could not be returned. It was charged what it cost and will not be sent again."
+          : submitted
+            ? `The text request was interrupted after submission. It will not be sent again, and ${afterwards}.`
+            : "The text request could not be prepared. No generation credits were spent.",
       );
     }
     throw error;
   }
 
 });
+}
+
+/**
+ * No request can still be answering a text job this long after it was last
+ * touched: the provider call is cut off at 270 s at most (runPaidText), and
+ * no function runs past 800 s (STALE_CLAIM_MS is longer than both, with more
+ * than 15 minutes to spare).
+ */
+export const PAID_TEXT_RECONCILE_AFTER_MS = STALE_CLAIM_MS;
+/** One pass's hold on a job while it settles it; a pass that dies leaves it to the next one after this. */
+const PAID_TEXT_RECONCILE_LEASE_MS = 5 * 60_000;
+
+/**
+ * The cron's pass over text jobs nothing will finish (app/api/cron/sync):
+ * one whose provider call was cut off (`uncertain`, its estimate billed), one
+ * whose process was killed mid-call (`running`, its estimate reserved) and one
+ * killed before it was sent (`queued`). No provider lookup can confirm what
+ * such a call produced (the job keeps no provider id), so each is refunded:
+ * its meter event settles as failed at 0 credits and the job reads
+ * `refunded`. A job whose answer was delivered (`succeeded`) is never
+ * touched, nor one whose provider answer is saved for review (direct usage
+ * outside the approved price, `response_json` kept).
+ *
+ * Exactly once: a pass first takes the job with a conditional UPDATE (a
+ * lease), so a concurrent pass skips it; the meter's settlement sets the
+ * event's charge (it never adds), and the job is marked under the same lease.
+ * A pass that dies in between leaves the lease to expire and the next pass
+ * settles the same event to the same figure.
+ */
+export async function reconcilePaidTextJobs(options: { limit?: number; deadlineAt?: number } = {}): Promise<{ refunded: number; released: number; failed: number }> {
+  const report = { refunded: 0, released: 0, failed: 0 };
+  await ready();
+  const table = await db().execute("SELECT name FROM sqlite_schema WHERE type='table' AND name='paid_text_jobs'");
+  if (!table.rows.length) return report;
+  await paidTextReady();
+  const at = now();
+  const cutoff = at - PAID_TEXT_RECONCILE_AFTER_MS;
+  const due = await db().execute({
+    sql: `SELECT id,model,status FROM paid_text_jobs
+          WHERE status IN ('queued','running','uncertain') AND response_json IS NULL AND updated_at < ?
+            AND (reconcile_lease IS NULL OR reconcile_lease < ?)
+          ORDER BY updated_at LIMIT ?`,
+    args: [cutoff, at, options.limit ?? 10],
+  });
+  for (const job of due.rows) {
+    if (options.deadlineAt !== undefined && Date.now() >= options.deadlineAt) break;
+    const id = String(job.id);
+    const status = String(job.status);
+    /* One job that cannot be settled now (its lease then expires) does not hold up the others. */
+    try {
+      const lease = now() + PAID_TEXT_RECONCILE_LEASE_MS;
+      const taken = await db().execute({
+        sql: `UPDATE paid_text_jobs SET reconcile_lease=?
+              WHERE id=? AND status=? AND response_json IS NULL AND updated_at < ? AND (reconcile_lease IS NULL OR reconcile_lease < ?)`,
+        args: [lease, id, status, cutoff, now()],
+      });
+      if (!taken.rowsAffected) continue;
+      const charge = await meteredCharge(id);
+      /* Billed as delivered after all: never refunded. */
+      if (charge?.status === "succeeded") continue;
+      /* No meter event: it was never reserved (killed before), so there is nothing to return. */
+      if (charge)
+        await meter({ id, kind: "text", engine: textVendor(String(job.model)) === "openai" ? "openai" : "vercel", model: String(job.model), status: "failed", engineCostUsd: 0 }, { critical: true });
+      const marked = await db().execute({
+        sql: `UPDATE paid_text_jobs SET status='refunded',updated_at=? WHERE id=? AND status=? AND reconcile_lease=?`,
+        args: [now(), id, status, lease],
+      });
+      if (!marked.rowsAffected) continue;
+      if (status === "uncertain") report.refunded++;
+      else report.released++;
+    } catch {
+      report.failed++;
+    }
+  }
+  return report;
 }

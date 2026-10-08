@@ -26,6 +26,7 @@ import { SIGN_IN_OFF } from "@/lib/higgsfield-consumer/retired";
 import { drainCanvasPushes } from "@/lib/workbench/canvas-push";
 import { drainRigAgentWakeups } from "@/lib/workbench/rig-agent";
 import { expireUnansweredCinemaTakes } from "@/lib/genjutsuVideo";
+import { reconcilePaidTextJobs } from "@/lib/paidText";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -154,6 +155,15 @@ export async function GET(req: Request) {
             await stage("cinema_unanswered", () =>
               expireUnansweredCinemaTakes({ limit: 5, deadlineAt }),
             );
+            // A text job (Enhance, Atomik) no request will finish: cut off, killed
+            // mid-call or before it was sent, 30 min on. Refunded once (lib/paidText.ts);
+            // before held_jobs, so the credits it returns can start what waits. Counts only.
+            await stage("paid_text", async () => {
+              const report = await reconcilePaidTextJobs({ limit: 10, deadlineAt });
+              if (report.refunded || report.released || report.failed)
+                console.info(JSON.stringify({ level: "info", event: "reconciliation.paid_text", ...report }));
+              if (report.failed) throw new Error("PAID_TEXT_RECONCILIATION_FAILED");
+            });
             await stage("held_jobs", () =>
               releaseHeldJobs({ defer: (fn) => afterResponse(fn) }),
             );
