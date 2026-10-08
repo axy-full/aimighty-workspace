@@ -1,3 +1,4 @@
+import { crossOriginProblem } from "@/lib/requestOrigin";
 import { Liveblocks } from "@liveblocks/node";
 import { withTenant, requireSession } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
@@ -20,8 +21,7 @@ export const POST = withTenant(async (req: Request) => {
   const tenant = requireTenant();
   const scopeError = workbenchScopeProblem(req, tenant.id, auth.user.id, true);
   if (scopeError) return Response.json({ error: scopeError }, { status: 409, headers: NO_STORE });
-  const origin = req.headers.get("origin");
-  if (origin && origin !== new URL(req.url).origin) return Response.json({ error: "Invalid request origin" }, { status: 403 });
+  if (crossOriginProblem(req)) return Response.json({ error: "Invalid request origin" }, { status: 403 });
   const body = await req.json().catch(() => null) as { room?: unknown } | null;
   const room = typeof body?.room === "string" ? body.room : "";
   const productionId = productionOfRoom(room, tenant.id);

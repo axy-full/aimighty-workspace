@@ -5,6 +5,7 @@ import ts from "typescript";
 import { z } from "zod";
 import * as requestBody from "../../lib/requestBody";
 import * as accountDb from "../../lib/accountDb";
+import * as requestOrigin from "../../lib/requestOrigin";
 import { PipelineError } from "../../lib/pipeline/schema";
 import { atomikRequestSchema } from "../../lib/workbench/atomik-server";
 
@@ -134,6 +135,7 @@ function route(file: string) {
   const auth = { user: { id: "user" } };
   const mocks: Record<string, unknown> = {
     "@/lib/requestBody": requestBody,
+    "@/lib/requestOrigin": requestOrigin,
     "@/lib/accountDb": accountDb,
     "@/lib/auth": {
       withTenant: (handler: unknown) => handler,

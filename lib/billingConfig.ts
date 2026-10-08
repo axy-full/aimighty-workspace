@@ -1,4 +1,5 @@
 import { paymentProvider } from "./payments";
+import { isProductionDeployment } from "./deployment";
 
 export type BillingCadence = "monthly" | "annual";
 export const ANNUAL_DISCOUNT_PERCENT = 20;
@@ -55,8 +56,10 @@ export function billingConfiguration() {
     };
   }
   // A production domain must never sell a plan with a sandbox checkout.
+  // Production is Vercel's production, or PARTICL_DEPLOYMENT=production off
+  // Vercel (lib/deployment.ts); staging and previews keep sandbox keys.
   if (
-    process.env.VERCEL_ENV === "production" &&
+    isProductionDeployment() &&
     !process.env.STRIPE_SECRET_KEY.startsWith("sk_live_")
   ) {
     return {

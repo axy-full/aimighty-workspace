@@ -1,4 +1,5 @@
 import { withTenant } from "@/lib/auth";
+import { linkOrigin } from "@/lib/site";
 export const dynamic = "force-dynamic";
 
 /**
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
  * names still demands a token.
  */
 export const GET = withTenant(async function GET(req: Request) {
-  const origin = new URL(req.url).origin;
+  const origin = linkOrigin(req);
 
   return Response.json({
     openapi: "3.1.0",

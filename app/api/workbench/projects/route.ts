@@ -1,3 +1,4 @@
+import { crossOriginProblem } from '@/lib/requestOrigin';
 import { gzipSync } from 'node:zlib';
 import {readProjectBody} from '@/lib/workbench/request-body';
 import { withTenant, requireSession } from '@/lib/auth';
@@ -13,8 +14,7 @@ import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
 function originProblem(req:Request) {
-  const origin=req.headers.get('origin');
-  return origin && origin!==new URL(req.url).origin;
+  return crossOriginProblem(req);
 }
 
 export const GET=withTenant(async(req:Request)=>{

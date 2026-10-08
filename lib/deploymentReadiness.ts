@@ -1,3 +1,5 @@
+import { deploymentSetting, isProductionDeployment, onVercel } from "./deployment";
+
 type Environment = Record<string, string | undefined>;
 export type ReadinessCheck = {
   id: string;
@@ -60,7 +62,8 @@ export function deploymentReadiness(
     origin,
     "APP_ORIGIN set to the canonical HTTPS application origin",
   );
-  const stripeMode = env.VERCEL_ENV === "production" ? "sk_live_" : "sk_test_";
+  const production = isProductionDeployment(env);
+  const stripeMode = production ? "sk_live_" : "sk_test_";
   add(
     "billing",
     env.PAYMENT_PROVIDER === "stripe" &&
@@ -92,8 +95,18 @@ export function deploymentReadiness(
     "generation",
     env.ENGINE_MOCK !== "1",
     "Production engine mocks disabled",
-    env.VERCEL_ENV === "production",
+    production,
   );
+  /* Off Vercel the deployment is named by PARTICL_DEPLOYMENT (lib/deployment.ts).
+     Unset means development; a value it does not recognise also means
+     development, which would leave the production guards off, so say so. Not
+     added on Vercel, where VERCEL_ENV decides and the list stays as it was. */
+  if (!onVercel(env))
+    add(
+      "deployment",
+      deploymentSetting(env) !== "invalid",
+      "PARTICL_DEPLOYMENT is production, staging or development (unset means development)",
+    );
   return {
     ready: checks.every((check) => !check.required || check.ready),
     scope: options.includeBilling === false ? "platform_configuration" : "commercial_configuration",
