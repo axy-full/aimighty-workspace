@@ -58,7 +58,7 @@ async function open(page: Page) {
 
 /** The old Business addresses and the Ads board address each is redirected to (lib/shell/ads-social.ts rows). */
 const OLD_ADDRESSES: { old: string; frame: string | null; card: string | null }[] = [
-  { old: "/suites?suite=moleculr&page=marketing&sp=ads", frame: null, card: null },
+  { old: "/suites?suite=moleculr&page=marketing&sp=ads", frame: "2", card: "image-ad" },
   { old: "/suites?suite=moleculr&page=ads&sp=ads", frame: null, card: null },
   { old: "/suites?suite=moleculr", frame: null, card: null },
   { old: "/suites?suite=moleculr&page=marketing&sp=dtc", frame: "2", card: "image-ad" },
