@@ -8,11 +8,11 @@ import type { AdmissionActor } from "../../lib/admissionTypes";
 
 /**
  * Enhance ends within 90 s on any host (docs/long-flows.md › C4): no request
- * stays silent for more than 100 s. The route gives its one text call a 90 s
- * provider timeout; a provider that stalls past it is settled exactly once as
- * `uncertain` at the reserved estimate (held for reconciliation, as Vercel's
- * 120 s cut leaves it today), and the same press sent again never calls the
- * provider a second time.
+ * stays silent for more than 100 s. The budget runs from the route's entry:
+ * the provider gets what is left of it, and with under 20 s left the press is
+ * refused before anything is reserved. A provider that stalls past it is
+ * settled exactly once as `uncertain`, its 1 cr estimate billed, and the same
+ * press sent again never calls the provider a second time.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "enhance-timeout-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -44,16 +44,34 @@ function load<T>(file: string, overrides: Record<string, unknown>): T {
 
 type Submit = (request: { timeoutMs?: number }) => Promise<{ ok: boolean; status: number; text: string }>;
 type Handler = (req: Request) => Promise<Response>;
-function enhance(submit: Submit): Handler {
+/** Time moved on by a slow catalogue read: Date.now runs this far ahead while a test lasts. */
+let skew = 0;
+const realNow = Date.now;
+test.beforeEach(() => { skew = 0; Date.now = () => realNow() + skew; });
+test.afterEach(() => { Date.now = realNow; });
+
+function enhance(submit: Submit, catalogueTakes = 0): Handler {
   const paidText = nodeRequire(path.resolve("lib/paidText.ts"));
   const signedIn = async () => OWNER;
   return load<{ POST: Handler }>("app/api/prompt/enhance/route.ts", {
     "@/lib/auth": { ...nodeRequire(path.resolve("lib/auth.ts")), withTenant: (h: unknown) => h, requireRender: signedIn },
-    "@/lib/catalog": { catalog: async () => [MODEL] },
+    /* The route's one catalogue read; the model it prices from is handed on, so paid text never reads it again. */
+    "@/lib/catalog": { catalog: async () => { skew += catalogueTakes; return [MODEL]; } },
     "@/lib/gateway": { gatewayReachable: () => true },
-    "@/lib/paidText": { ...paidText, runPaidText: (input: unknown, o: Record<string, unknown> = {}) => paidText.runPaidText(input, { ...o, model: MODEL, submit }) },
+    "@/lib/paidText": { ...paidText, runPaidText: (input: unknown, o: Record<string, unknown> = {}) => paidText.runPaidText(input, { ...o, submit }) },
     "next/server": { NextResponse: Response, after: () => { throw new Error("Nothing is continued after the response here"); } },
   }).POST;
+}
+
+async function traces(ws: string) {
+  const { db } = await import("../../lib/db");
+  const { platformDb } = await import("../../lib/platform");
+  const rows = async (run: () => Promise<{ rows: unknown[] }>) => { try { return (await run()).rows; } catch (e) { if (/no such table/i.test(String(e))) return []; throw e; } };
+  return {
+    jobs: await rows(() => db().execute("SELECT status,estimate_usd,cost_usd FROM paid_text_jobs")) as Record<string, unknown>[],
+    meters: await rows(() => platformDb().execute({ sql: "SELECT status,engine_cost_usd,billed_credits FROM meter_events WHERE workspace_id=?", args: [ws] })) as Record<string, unknown>[],
+    reservations: (await rows(() => platformDb().execute({ sql: "SELECT * FROM generation_reservations WHERE workspace_id=?", args: [ws] }))).length,
+  };
 }
 
 async function inWorkspace(ws: string, fn: () => Promise<void>) {
@@ -78,14 +96,15 @@ function press(key: string): Request {
   });
 }
 
-test("the route gives its text call a 90 s provider timeout", () => {
+test("the route's whole answer is budgeted at 90 s from entry, under its own limit", () => {
   const route = readFileSync("app/api/prompt/enhance/route.ts", "utf8");
-  expect(route).toMatch(/runPaidText\(\{ \.\.\.input, maxCredits: [^}]*timeoutMs: 90_000 \}/);
+  expect(route).toContain("const ENHANCE_BUDGET_MS = 90_000;");
+  expect(route).toMatch(/runPaidText\(\{ \.\.\.input, maxCredits: [^}]*deadline \}, \{ model,/);
   /* Under the route's own limit, so the timeout answers before the host cuts the request. */
   expect(Number(/export const maxDuration = (\d+)/.exec(route)?.[1])).toBeGreaterThan(90);
 });
 
-test("a provider that stalls past 90 s is settled once as uncertain at the estimate, and the same press is not sent again", async () => {
+test("a provider that stalls past the budget is settled once as uncertain, the 1 cr estimate billed, and the same press is not sent again", async () => {
   await inWorkspace("ws_enhance_stall", async () => {
     const timeouts: (number | undefined)[] = [];
     /* A stalled provider: the call's own AbortSignal.timeout fires (lib/gateway.ts gatewayPost) — here at once. */
@@ -98,30 +117,53 @@ test("a provider that stalls past 90 s is settled once as uncertain at the estim
     const body = await first.json();
     expect(first.status).toBe(502);
     expect(body.error).toBe("The text request was interrupted after submission. Its credits remain reserved; this request will not be sent again.");
-    expect(timeouts).toEqual([90_000]);
+    expect(timeouts).toHaveLength(1);
+    expect(timeouts[0]).toBeLessThanOrEqual(90_000);
+    expect(timeouts[0]).toBeGreaterThan(60_000);
 
-    const { db } = await import("../../lib/db");
-    const jobs = (await db().execute("SELECT status,estimate_usd,cost_usd FROM paid_text_jobs")).rows;
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0].status).toBe("uncertain");
-    expect(Number(jobs[0].cost_usd)).toBe(Number(jobs[0].estimate_usd));
-    expect(Number(jobs[0].estimate_usd)).toBeGreaterThan(0);
-
-    const { platformDb } = await import("../../lib/platform");
-    const meters = async () => (await platformDb().execute({ sql: "SELECT status,engine_cost_usd,billed_credits FROM meter_events WHERE workspace_id=?", args: ["ws_enhance_stall"] })).rows;
-    const settled = await meters();
-    expect(settled).toHaveLength(1);
-    expect(settled[0].status).toBe("failed");
-    expect(Number(settled[0].engine_cost_usd)).toBe(Number(jobs[0].estimate_usd));
-    /* The 1 cr estimate is what stays held for reconciliation. */
-    expect(Number(settled[0].billed_credits)).toBe(1);
+    const settled = await traces("ws_enhance_stall");
+    expect(settled.jobs).toHaveLength(1);
+    expect(settled.jobs[0].status).toBe("uncertain");
+    expect(Number(settled.jobs[0].cost_usd)).toBe(Number(settled.jobs[0].estimate_usd));
+    expect(Number(settled.jobs[0].estimate_usd)).toBeGreaterThan(0);
+    expect(settled.meters).toHaveLength(1);
+    expect(settled.meters[0].status).toBe("failed");
+    expect(Number(settled.meters[0].engine_cost_usd)).toBe(Number(settled.jobs[0].estimate_usd));
+    /* The 1 cr estimate is billed; nothing later reconciles an uncertain text job. */
+    expect(Number(settled.meters[0].billed_credits)).toBe(1);
 
     /* The same press again (a retry of the lost reply): answered from its claim, never a second call or charge. */
     const again = await route(press("enhance-stall-1"));
     expect(again.status).toBe(502);
     expect(await again.json()).toEqual(body);
-    expect(timeouts).toEqual([90_000]);
-    expect((await db().execute("SELECT COUNT(*) AS n FROM paid_text_jobs")).rows[0].n).toBe(1);
-    expect(await meters()).toEqual(settled);
+    expect(timeouts).toHaveLength(1);
+    expect(await traces("ws_enhance_stall")).toEqual(settled);
+  });
+});
+
+test("time spent before the provider call comes off its timeout: a slow catalogue leaves the provider the rest of the 90 s", async () => {
+  await inWorkspace("ws_enhance_slow_catalogue", async () => {
+    const timeouts: (number | undefined)[] = [];
+    const answers: Submit = async (request) => {
+      timeouts.push(request.timeoutMs);
+      return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ prompt: "A lone tree in steady rain, slow push-in, grey dusk light." }) } }], usage: { cost: 0.0004 } }) };
+    };
+    const out = await enhance(answers, 40_000)(press("enhance-slow-catalogue"));
+    expect(out.status, JSON.stringify(await out.clone().json())).toBe(200);
+    expect(timeouts).toHaveLength(1);
+    expect(timeouts[0]).toBeLessThanOrEqual(50_000);
+    expect(timeouts[0]).toBeGreaterThan(30_000);
+  });
+});
+
+test("with under 20 s of the budget left before the provider call, the press is refused with nothing written, reserved, metered or sent", async () => {
+  await inWorkspace("ws_enhance_late", async () => {
+    let sent = 0;
+    const never: Submit = async () => { sent++; throw new Error("The provider must not be called"); };
+    const out = await enhance(never, 75_000)(press("enhance-late"));
+    expect(out.status).toBe(503);
+    expect((await out.json()).error).toBe("The text provider is slow to answer right now. Nothing was charged; try again in a moment.");
+    expect(sent).toBe(0);
+    expect(await traces("ws_enhance_late")).toEqual({ jobs: [], meters: [], reservations: 0 });
   });
 });
