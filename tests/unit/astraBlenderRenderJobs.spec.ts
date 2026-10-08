@@ -13,6 +13,14 @@ process.env.KEYRING_SECRET ??= 'unit-test-keyring-secret-unit-test-keyring';
 process.env.ENGINE_MOCK = '1';
 process.env.ASTRA_BLENDER_SNAPSHOT_ID = 'snap_verified-test';
 process.env.ASTRA_BLENDER_RATE_CARD = JSON.stringify({ cpuUsdPerHour: 0.128, memoryUsdPerGbHour: 0.0212, egressUsdPerGb: 0.15, createUsd: 0.0000006 });
+// Self-hosted (off Vercel): the runtime is connected only with all three control-plane credentials.
+// Set per file and restored after it, so later spec files in this worker never see them.
+const RUNTIME_CREDENTIALS = { VERCEL_TOKEN: 'unit-test-token', VERCEL_TEAM_ID: 'team_unit_test', VERCEL_PROJECT_ID: 'prj_unit_test' };
+const RUNTIME_ENV = ['VERCEL', ...Object.keys(RUNTIME_CREDENTIALS)];
+let savedRuntimeEnv: Record<string, string | undefined> = {};
+test.beforeAll(() => { savedRuntimeEnv = Object.fromEntries(RUNTIME_ENV.map(key => [key, process.env[key]])); delete process.env.VERCEL; Object.assign(process.env, RUNTIME_CREDENTIALS); });
+test.afterAll(() => { for (const key of RUNTIME_ENV) { if (savedRuntimeEnv[key] === undefined) delete process.env[key]; else process.env[key] = savedRuntimeEnv[key]; } });
+async function withoutRuntimeToken(run: () => Promise<void>) { delete process.env.VERCEL_TOKEN; try { await run(); } finally { Object.assign(process.env, RUNTIME_CREDENTIALS); } }
 const workspace = (name: string): TenantWorkspace => ({ id: `ws_${name}`, slug: name, name, legacy: true, dbUrl: `file:${path.join(directory, `${name}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true, allowanceUsd: null, gatewayKeyId: null, ownerId: 'u_test', createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: null, rendersPerHour: null, storageQuotaBytes: null, deletedAt: null });
 async function context(name: string, run: (modules: Awaited<ReturnType<typeof setup>>) => Promise<void>) { const { runInTenant } = await import('../../lib/tenant'); await runInTenant(workspace(name), async () => run(await setup())); }
 async function setup() { const jobs = await import('../../lib/astra-blender/render-jobs'); const { db } = await import('../../lib/db'); const { newProject } = await import('../../lib/workbench/studio'); const { createAstraScene } = await import('../../lib/astra-blender/scene'); const { astraSceneDigest } = await import('../../lib/astra-blender/proposal'); await jobs.astraRenderReady(); const project = { ...newProject('Native test'), id: 'project-test', assets: [], productionProjectId: 'production-test', astraBlender: createAstraScene('product') }; await db().execute({ sql: "INSERT INTO projects(id,name,created_at) VALUES('production-test','Native test',?)", args: [Date.now()] }); await db().execute({ sql: 'INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)', args: ['draft-test', 'u_test', project.id, project.name, JSON.stringify(project), Date.now()] }); const input = { projectId: project.id, requestId: 'request-native-1', source: 'scene' as const, sourceDigest: await astraSceneDigest(project.astraBlender) }; const { quote } = await jobs.quoteAstraRender(input, 'u_test'); return { ...jobs, db, project, input: { ...input, quoteDigest: quote.quoteDigest, maxCredits: quote.estimateCredits }, quote }; }
@@ -95,4 +103,35 @@ test('short recovery windows defer visibly then refund only stale jobs that have
  await m.db().execute({sql:'UPDATE astra_render_jobs SET created_at=? WHERE id=?',args:[Date.now()-31*60000,first.job.id]});
  expect(await recoverAstraRenders({limit:1,deadlineAt:Date.now()+25000},dependencies)).toEqual({attempted:1,failed:0,deferred:0});
  job=(await m.listAstraRenderJobs('u_test',m.project.id))[0];expect(job.status).toBe('cancelled');expect(job.error).toContain('30 minutes');expect(f.charges).toEqual([0]);expect(f.creates).toBe(0);
+}));
+
+test('off Vercel without all three runtime credentials a render is refused before any credit is held',async()=>context('offvercel-admission',async m=>{
+ const f=fake();
+ await withoutRuntimeToken(async()=>{
+  const availability=m.astraRenderAvailability();expect(availability.configured).toBe(false);expect(availability.reason).toContain('not connected');
+  await expect(m.quoteAstraRender(m.input,'u_test')).rejects.toMatchObject({status:503});
+  await expect(m.prepareAstraRender(m.input,'u_test',undefined,f.deps)).rejects.toMatchObject({status:503});
+ });
+ expect(f.reserves).toBe(0);expect(f.creates).toBe(0);expect(f.charges).toEqual([]);
+ expect(Number((await m.db().execute('SELECT COUNT(*) AS n FROM astra_render_jobs')).rows[0].n)).toBe(0);
+ expect(Number((await m.db().execute('SELECT COUNT(*) AS n FROM astra_render_storage')).rows[0].n)).toBe(0);
+}));
+
+test('a funded render whose host lost its runtime credentials fails before the claim and releases the reservation',async()=>context('offvercel-run',async m=>{
+ const f=fake();const first=await m.prepareAstraRender(m.input,'u_test',undefined,f.deps);expect(f.reserves).toBe(1);
+ await withoutRuntimeToken(()=>m.runAstraRender(first.job.id,f.deps));
+ const job=(await m.listAstraRenderJobs('u_test',m.project.id))[0];expect(job.status).toBe('failed');expect(job.error).toContain('not connected');
+ expect(f.creates).toBe(0);expect(f.charges).toEqual([0]);
+ expect((await m.db().execute('SELECT runtime_id,settled FROM astra_render_jobs')).rows[0]).toMatchObject({runtime_id:null,settled:1});
+}));
+
+test('a job another host claimed between this host\'s checks and its failure is neither failed nor refunded here',async()=>context('two-host-claim',async m=>{
+ const f=fake();const first=await m.prepareAstraRender(m.input,'u_test',undefined,f.deps);
+ const hostA='astra-blender-00000000-0000-4000-8000-00000000000a';
+ // Host B passes its checks; host A claims the job; host B's funding check then fails.
+ f.deps.assertFunding=async()=>{await m.db().execute({sql:"UPDATE astra_render_jobs SET status='starting',runtime_id=?,updated_at=? WHERE id=? AND status='queued'",args:[hostA,Date.now(),first.job.id]});throw new Error('Workspace suspended before execution');};
+ await m.runAstraRender(first.job.id,f.deps);
+ expect(f.charges).toEqual([]);expect(f.creates).toBe(0);
+ expect((await m.db().execute({sql:'SELECT status,runtime_id,settled,error FROM astra_render_jobs WHERE id=?',args:[first.job.id]})).rows[0]).toMatchObject({status:'starting',runtime_id:hostA,settled:0,error:null});
+ expect(Number((await m.db().execute('SELECT COUNT(*) AS n FROM astra_render_storage')).rows[0].n)).toBe(1);
 }));
