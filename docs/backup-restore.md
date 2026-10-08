@@ -306,7 +306,7 @@ the encrypted bundle to the private bucket:
 Expired quiescence, new uncertain work, missing credentials/inventory,
 corruption, or an unsuccessful restore removes the unpublished bundle and fails
 the job before the upload step. A failed upload leaves an unfinished folder (no
-index); the lifecycle rule removes it in time, and freshness ignores it. Runner
+index); it stays until removed by hand (or by the lifecycle rule once nightly is on), and freshness ignores it. Runner
 copies are always removed. The workflow provisions no paid service and has not
 uploaded production data. Check the runner's disk before relying on it: the
 runner holds the bundle and a full decrypted verification copy at once (about
@@ -314,7 +314,7 @@ twice the databases plus media).
 
 The hourly freshness job uses the **same** bucket token today (Object Read &
 Write, that bucket only); when the nightly backup is turned on, give it its own
-Object Read only token for the bucket. It lists `bundles/`, takes the newest
+Object Read only token for the bucket (this needs a small workflow change: separate secret names or a separate environment for the freshness job). It lists `bundles/`, takes the newest
 folder that has a valid `upload-index.json`, checks every listed file exists at
 its recorded size, and fails when that index was uploaded more than 26 hours ago
 (the bucket's own timestamp). Enable GitHub Actions failure notifications for the
@@ -593,7 +593,7 @@ terminal opened only for this.
 
    Check the run's `createdAt` (UTC) is **after** the dispatch time; if not, wait
    and list again (that is an older run). While `PARTICL_BACKUP_ENABLED` is
-   `true`, the hourly scheduled freshness run (minute 47, 20:47 UTC in this
+   `true`, the hourly scheduled freshness run (minute 47 of each hour, e.g. 20:47 UTC in this
    window) may also start and **fail** because no bundle exists yet: ignore that
    failure. It shares the workflow's queue, so it can delay the capture run's
    start by a couple of minutes.
