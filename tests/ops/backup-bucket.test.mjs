@@ -121,10 +121,19 @@ function fakeBucket({ pageSize = 2 } = {}) {
       }
       if (name === "CompleteMultipartUploadCommand") {
         const upload = uploads.get(input.UploadId);
+        if (!upload) throw s3Error(404, "NoSuchUpload");
+        if (bucket.dropComplete === "before") {
+          bucket.dropComplete = null;
+          throw new Error("socket hang up");
+        }
         if (input.IfNoneMatch === "*" && objects.has(upload.key)) throw s3Error(412, "PreconditionFailed");
         const body = Buffer.concat(input.MultipartUpload.Parts.map((p) => upload.parts.get(p.PartNumber)));
         bucket.put(upload.key, body, `${md5(body)}-${input.MultipartUpload.Parts.length}`);
         uploads.delete(input.UploadId);
+        if (bucket.dropComplete === "after") {
+          bucket.dropComplete = null;
+          throw new Error("socket hang up");
+        }
         return {};
       }
       if (name === "AbortMultipartUploadCommand") {
@@ -304,4 +313,37 @@ test("download fetches a complete bundle into a new directory and refuses a chan
   bucket.objects.get(prefix + "manifest.enc").body = Buffer.from("manifest-ciphertexT");
   await assert.rejects(downloadBundle(prefix, join(root, "bad"), { env, client: bucket, retryOptions }), /did not match/);
   await assert.rejects(stat(join(root, "bad")), { code: "ENOENT" });
+});
+
+test("a dropped multipart completion is retried; read-back decides whether it landed", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "particl-bucket-complete-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { dir, files } = await fixtureBundle(root);
+  for (const when of ["before", "after"]) {
+    const bucket = fakeBucket();
+    bucket.dropComplete = when;
+    const { prefix } = await uploadBundle(dir, { env, client: bucket, now: () => at, runId: 11, retryOptions, singleMax: 100, partSize: 64 });
+    assert.deepEqual(bucket.objects.get(prefix + "00000001.enc").body, files["00000001.enc"]);
+    assert.equal(bucket.calls.filter(([name]) => name === "CompleteMultipartUploadCommand").length, 2);
+    assert.ok(bucket.objects.has(prefix + UPLOAD_INDEX));
+  }
+  // A completion that never landed and whose upload is gone fails on read-back, with no index.
+  const lost = fakeBucket();
+  const send = lost.send.bind(lost);
+  let dropped = false;
+  lost.send = async (command) => {
+    if (command.constructor.name === "CompleteMultipartUploadCommand" && !dropped) {
+      dropped = true;
+      // The upload id disappears without the object being written; the retry then sees 404.
+      await send({ constructor: { name: "AbortMultipartUploadCommand" }, input: command.input });
+      throw new Error("socket hang up");
+    }
+    return send(command);
+  };
+  await assert.rejects(
+    uploadBundle(dir, { env, client: lost, now: () => at, runId: 12, retryOptions, singleMax: 100, partSize: 64 }),
+    { name: "NoSuchKey" },
+  );
+  assert.ok(lost.calls.some(([name, key]) => name === "GetObjectCommand" && key.endsWith("00000001.enc")));
+  assert.ok(![...lost.objects.keys()].some((k) => k.endsWith(UPLOAD_INDEX)));
 });

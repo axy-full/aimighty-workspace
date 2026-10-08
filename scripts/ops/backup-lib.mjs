@@ -1206,9 +1206,19 @@ export async function putR2File(client, bucket, key, file, entry, retry, { singl
       if (!out?.ETag) fail("R2 did not acknowledge a restored part.");
       parts.push({ PartNumber: number, ETag: out.ETag });
     }
-    await client.send(
-      new s3.CompleteMultipartUploadCommand({ Bucket: bucket, Key: key, UploadId: uploadId, MultipartUpload: { Parts: parts }, IfNoneMatch: "*" }),
-    );
+    // A dropped completion is retried. On a retry, 412 (the key now exists)
+    // or 404 (the upload id is already consumed) means an earlier attempt
+    // may have landed: the caller's read-back digest decides.
+    await retry(async (attempt) => {
+      try {
+        await client.send(
+          new s3.CompleteMultipartUploadCommand({ Bucket: bucket, Key: key, UploadId: uploadId, MultipartUpload: { Parts: parts }, IfNoneMatch: "*" }),
+        );
+      } catch (error) {
+        if (attempt > 1 && [404, 412].includes(httpStatus(error))) return;
+        throw error;
+      }
+    });
   } catch (error) {
     await client.send(new s3.AbortMultipartUploadCommand({ Bucket: bucket, Key: key, UploadId: uploadId })).catch(() => {});
     if (httpStatus(error) === 412) taken();
