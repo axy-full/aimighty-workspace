@@ -1,13 +1,15 @@
 // Render worker smoke test. Run in the production app's terminal (it has
-// ASTRA_WORKER_SECRET and is on render-internal). Costs nothing: a 128 px
-// render of Blender's own default cube, then the session is deleted.
-//   node /tmp/render-smoke.mjs http://<render-1 name>:8080 [http://<render-2 name>:8080 ...]
+// ASTRA_WORKER_SECRET and ASTRA_WORKER_URLS, and can reach the workers).
+// Costs nothing: a 128 px render of Blender's own default cube, then the
+// session is deleted. Without arguments it smoke-tests every ASTRA_WORKER_URLS entry.
+//   node /tmp/render-smoke.mjs [http://<worker>:8080 ...]
 import { randomUUID } from "node:crypto";
 
 const secret = process.env.ASTRA_WORKER_SECRET ?? "";
-const workers = process.argv.slice(2);
+const listed = (process.env.ASTRA_WORKER_URLS ?? "").split(",").map((url) => url.trim()).filter(Boolean);
+const workers = process.argv.length > 2 ? process.argv.slice(2) : listed;
 if (secret.length < 32 || !workers.length) {
-  console.log("Usage: node /tmp/render-smoke.mjs http://<worker>:8080 [...] (needs ASTRA_WORKER_SECRET in the environment)");
+  console.log("Usage: node /tmp/render-smoke.mjs [http://<worker>:8080 ...] (needs ASTRA_WORKER_SECRET; the default list is ASTRA_WORKER_URLS)");
   process.exit(2);
 }
 const ROOT = "/vercel/sandbox/astra";
