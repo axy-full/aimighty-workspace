@@ -182,14 +182,18 @@ export type AstraDeps = {
   reconcile?: typeof reconcileAstraRender;
 };
 
-/** Duplicate delivery is safe: only the permanent queued→starting claim can purchase compute. */
-export async function handleAstraRender(data: AstraEventData, deps: AstraDeps = {}) {
+/**
+ * Duplicate delivery is safe: only the permanent queued→starting claim can purchase compute.
+ * `busy` says the job went back to the queue because every render worker was busy (nothing
+ * started, nothing billed); the Inngest function waits and runs it again.
+ */
+export async function handleAstraRender(data: AstraEventData, deps: AstraDeps = {}): Promise<{ jobId: string; busy?: true }> {
   const { jobId, workspaceId } = data;
   return withRecoveryJob(workspaceId, jobId, async () =>
     runInTenant(await (deps.workspaceOf ?? workspaceOf)(data), async () => {
-      await (deps.run ?? runAstraRender)(jobId);
+      const outcome = await (deps.run ?? runAstraRender)(jobId);
       await (deps.reconcile ?? reconcileAstraRender)(jobId);
-      return { jobId };
+      return outcome === "busy" ? { jobId, busy: true as const } : { jobId };
     }),
   );
 }

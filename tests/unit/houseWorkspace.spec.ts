@@ -91,6 +91,7 @@ test("the house workspace runs on the platform's engines unbilled: no credit wal
       expect(paidByPlatform("ark")).toBe(false);
       expect(paidByPlatformEngine("byteplus")).toBe(false);
       expect(paidByPlatformEngine("vercel-sandbox")).toBe(false);
+      expect(paidByPlatformEngine("selfhost-blender")).toBe(false);
       expect(allowanceUsd()).toBeNull();
       expect(await creditState()).toBeNull();
       expect(await creditCheck("ark", 50, "mock")).toEqual({ ok: true });

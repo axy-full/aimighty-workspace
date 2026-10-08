@@ -22,6 +22,8 @@ import { astraNativeDigest, validateAstraNativeBindings, type AstraNativeSource 
 import { astraRuntimeStatus, ASTRA_MAX_OUTPUT_BYTES, renderAstraScene, renderAstraNative, getAstraRenderStatus, cancelAstraRender, prepareAstraInputs, type AstraSandboxDependencies, type AstraRuntimeUsage } from './sandbox';
 import { astraComputeRates, astraComputeCost, astraComputeCredits, ASTRA_MAX_USAGE, ASTRA_COMPUTE_MODEL, type AstraComputeRates } from './render-pricing';
 import { loadAstraRenderInputs, storeAstraArtifacts, registerAstraArtifacts, type StoredAstraArtifact } from './render-storage';
+import { ASTRA_COMPUTE_ENGINES, astraBackendOfEngine, astraRenderBackend, isAstraComputeEngine, type AstraComputeEngine } from './backend';
+import { AstraWorkerBusyError, AstraWorkerRefusedError, AstraWorkerSessionMissingError } from './selfhost-sdk';
 import type { AstraRenderJob, AstraRenderRequest, AstraRenderQuote, AstraRenderStatus } from './render-contract';
 import type { Asset } from '../workbench/studio';
 const initialized = new WeakMap<Client, Promise<void>>();
@@ -36,7 +38,10 @@ type Snapshot = {
     assets: Asset[];
     productionProjectId: string;
     rates: AstraComputeRates;
-    snapshotId: string;
+    /** Vercel only. */
+    snapshotId?: string;
+    /** The meter engine the job was approved under; absent on rows from before the backend switch (Vercel). */
+    engine?: AstraComputeEngine;
 };
 type JobRecord = {
     id: string;
@@ -63,6 +68,7 @@ type JobRecord = {
     outputs_registered: number;
     usage_json: string | null;
     settled: number;
+    claimed_at: number | null;
 };
 export type AstraRenderDependencies = {
     reserve?: typeof reserveGenerationSpend;
@@ -78,7 +84,7 @@ export async function astraRenderReady() {
     const client = db();
     if (!initialized.has(client))
         initialized.set(client, client.batch([`CREATE TABLE IF NOT EXISTS astra_render_jobs (
- id TEXT PRIMARY KEY,owner TEXT NOT NULL,request_id TEXT NOT NULL,project_id TEXT NOT NULL,source TEXT NOT NULL,source_digest TEXT NOT NULL,fingerprint TEXT NOT NULL,status TEXT NOT NULL,funded INTEGER NOT NULL DEFAULT 0,source_json TEXT NOT NULL,estimate_credits INTEGER NOT NULL,max_cost_usd REAL NOT NULL,cost_usd REAL,billed_credits INTEGER,runtime_id TEXT,cancel_requested INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,error TEXT,artifacts_json TEXT NOT NULL DEFAULT '[]',assets_registered INTEGER NOT NULL DEFAULT 0,outputs_registered INTEGER NOT NULL DEFAULT 0,usage_json TEXT,settled INTEGER NOT NULL DEFAULT 0,UNIQUE(owner,request_id))`, `CREATE INDEX IF NOT EXISTS astra_render_pending ON astra_render_jobs(status,updated_at)`], 'write').then(async () => { const columns=await client.execute('PRAGMA table_info(astra_render_jobs)');if(!columns.rows.some(column=>column.name==='outputs_registered'))await client.execute('ALTER TABLE astra_render_jobs ADD COLUMN outputs_registered INTEGER NOT NULL DEFAULT 0').catch(error=>{if(!/duplicate column/i.test(String(error)))throw error;}); }).catch(error => { initialized.delete(client); throw error; }));
+ id TEXT PRIMARY KEY,owner TEXT NOT NULL,request_id TEXT NOT NULL,project_id TEXT NOT NULL,source TEXT NOT NULL,source_digest TEXT NOT NULL,fingerprint TEXT NOT NULL,status TEXT NOT NULL,funded INTEGER NOT NULL DEFAULT 0,source_json TEXT NOT NULL,estimate_credits INTEGER NOT NULL,max_cost_usd REAL NOT NULL,cost_usd REAL,billed_credits INTEGER,runtime_id TEXT,cancel_requested INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,error TEXT,artifacts_json TEXT NOT NULL DEFAULT '[]',assets_registered INTEGER NOT NULL DEFAULT 0,outputs_registered INTEGER NOT NULL DEFAULT 0,usage_json TEXT,settled INTEGER NOT NULL DEFAULT 0,UNIQUE(owner,request_id))`, `CREATE INDEX IF NOT EXISTS astra_render_pending ON astra_render_jobs(status,updated_at)`], 'write').then(async () => { const columns=await client.execute('PRAGMA table_info(astra_render_jobs)');const added=(name:string,ddl:string)=>columns.rows.some(column=>column.name===name)?null:client.execute(`ALTER TABLE astra_render_jobs ADD COLUMN ${ddl}`).catch(error=>{if(!/duplicate column/i.test(String(error)))throw error;});await added('outputs_registered','outputs_registered INTEGER NOT NULL DEFAULT 0');await added('claimed_at','claimed_at INTEGER'); }).catch(error => { initialized.delete(client); throw error; }));
     await initialized.get(client);
 }
 /* The compute vendor's dollars reach only a workspace that is not billed in credits: one that is reads
@@ -86,7 +92,11 @@ export async function astraRenderReady() {
 const computeDollars = (usd: number | null) => (creditsApply(currentTenant()?.workspace) ? {} : { costUsd: usd });
 const publicJob = (row: JobRecord): AstraRenderJob => ({ id: row.id, requestId: row.request_id, projectId: row.project_id, source: row.source as 'scene' | 'native', sourceDigest: row.source_digest, status: row.status, estimateCredits: Number(row.estimate_credits), billedCredits: row.billed_credits == null ? null : Number(row.billed_credits), ...computeDollars(row.cost_usd == null ? null : Number(row.cost_usd)), createdAt: Number(row.created_at), updatedAt: Number(row.updated_at), error: row.error, artifacts: JSON.parse(row.artifacts_json).map((artifact: StoredAstraArtifact) => ({kind:artifact.kind,assetId:artifact.assetId,uploadId:artifact.uploadId,url:artifact.url,filename:artifact.filename,mime:artifact.mime,bytes:artifact.bytes})), assetsRegistered: Boolean(row.assets_registered) });
 async function record(id: string): Promise<JobRecord | null> { await astraRenderReady(); return ((await db().execute({ sql: 'SELECT * FROM astra_render_jobs WHERE id=?', args: [id] })).rows[0] as unknown as JobRecord) ?? null; }
-const event = (row: JobRecord, status: MeterEvent['status'], cost?: number): MeterEvent => ({ id: row.id, kind: 'image', engine: 'vercel-sandbox', model: ASTRA_COMPUTE_MODEL, status, engineCostUsd: cost, projectId: (JSON.parse(row.source_json) as Snapshot).productionProjectId, createdBy: row.owner });
+/** The engine a job was approved, reserved and is settled under; it never changes with the backend switch. */
+const engineOf = (row: Pick<JobRecord, 'source_json'>): AstraComputeEngine => { const engine = (JSON.parse(row.source_json) as Snapshot).engine; return isAstraComputeEngine(engine) ? engine : ASTRA_COMPUTE_ENGINES.vercel; };
+/** Reads, stops and settles a job on the backend it started on. */
+const sandboxFor = (row: Pick<JobRecord, 'source_json'>, deps: AstraRenderDependencies): AstraSandboxDependencies => ({ ...deps.sandbox, backend: astraBackendOfEngine(engineOf(row)) });
+const event = (row: JobRecord, status: MeterEvent['status'], cost?: number): MeterEvent => ({ id: row.id, kind: 'image', engine: engineOf(row), model: ASTRA_COMPUTE_MODEL, status, engineCostUsd: cost, projectId: (JSON.parse(row.source_json) as Snapshot).productionProjectId, createdBy: row.owner });
 export function astraRenderAvailability() { const runtime = astraRuntimeStatus(); if (runtime.configured && !astraComputeRates())
     return { ...runtime, configured: false, reason: 'Native 3D compute rates must be configured before quoting a render.' }; return runtime; }
 async function snapshot(input: AstraRenderRequest, owner: string): Promise<Snapshot> {
@@ -112,9 +122,10 @@ async function snapshot(input: AstraRenderRequest, owner: string): Promise<Snaps
     const assets = Array.from(ids, id => all.find(asset => asset.id === id)!);
     if (assets.length > 64)
         throw new AstraRenderError('Use at most 64 combined scene and native inputs.', 422);
-    return { scene, ...(native ? { native } : {}), assets, productionProjectId: project.productionProjectId, rates: astraComputeRates()!, snapshotId: process.env.ASTRA_BLENDER_SNAPSHOT_ID! };
+    const backend = astraRenderBackend()!;
+    return { scene, ...(native ? { native } : {}), assets, productionProjectId: project.productionProjectId, rates: astraComputeRates()!, ...(backend === 'vercel' ? { snapshotId: process.env.ASTRA_BLENDER_SNAPSHOT_ID! } : {}), engine: ASTRA_COMPUTE_ENGINES[backend] };
 }
-function quoteFor(input: AstraRenderRequest, source: Snapshot): AstraRenderQuote & { maxCostUsd: number } { const bucket = Math.floor(Date.now() / 900000), maxCostUsd = astraComputeCost(ASTRA_MAX_USAGE, source.rates); return { estimateCredits: astraComputeCredits(maxCostUsd), maxCostUsd, sourceDigest: input.sourceDigest, quoteDigest: hash({ source, bucket }), expiresAt: (bucket + 1) * 900000, billingNote: 'Reserves the maximum 180-second CPU render and bounded output transfer. Final compute charge uses reported CPU, memory duration and transfer; unknown usage stays reserved for reconciliation.' }; }
+function quoteFor(input: AstraRenderRequest, source: Snapshot): AstraRenderQuote & { maxCostUsd: number } { const bucket = Math.floor(Date.now() / 900000), maxCostUsd = astraComputeCost(ASTRA_MAX_USAGE, source.rates); return { estimateCredits: astraComputeCredits(maxCostUsd, source.engine), maxCostUsd, sourceDigest: input.sourceDigest, quoteDigest: hash({ source, bucket }), expiresAt: (bucket + 1) * 900000, billingNote: 'Reserves the maximum 180-second CPU render and bounded output transfer. Final compute charge uses reported CPU, memory duration and transfer; unknown usage stays reserved for reconciliation.' }; }
 export async function quoteAstraRender(input: AstraRenderRequest, owner: string): Promise<{ runtime: ReturnType<typeof astraRenderAvailability>; quote: AstraRenderQuote }> { const { maxCostUsd, ...quote } = quoteFor(input, await snapshot(input, owner)); return { runtime: astraRenderAvailability(), quote: { ...quote, ...(creditsApply(currentTenant()?.workspace) ? {} : { maxCostUsd }) } }; }
 export async function listAstraRenderJobs(owner: string, projectId: string, requestId?: string) { await getAtomikProject(owner, projectId); await astraRenderReady(); const rows = (await db().execute({ sql: `SELECT * FROM astra_render_jobs WHERE owner=? AND project_id=?${requestId ? ' AND request_id=?' : ''} ORDER BY created_at DESC LIMIT 25`, args: [owner, projectId, ...(requestId ? [requestId] : [])] })).rows; return rows.map(row => publicJob(row as unknown as JobRecord)); }
 export async function prepareAstraRender(input: AstraRenderRequest, owner: string, token?: TenantToken, deps: AstraRenderDependencies = {}) {
@@ -193,11 +204,43 @@ async function settle(row: JobRecord, status: 'succeeded' | 'failed' | 'cancelle
     await releaseStorage((await record(row.id))!);
     await billingTransaction(tx => resolveRecoveryJobTx(tx, requireTenant().id, row.id));
 }
-export async function runAstraRender(id: string, deps: AstraRenderDependencies = {}) {
+/** A job left queued because every render worker was busy; it says so, and nothing is billed. */
+export const ASTRA_WORKERS_BUSY = 'Every render worker is busy. This render starts when one is free; nothing is billed until it runs.';
+/** How long a busy job waits before it asks the workers again. */
+export const ASTRA_BUSY_BACKOFF_MS = 15_000;
+/** A funded job that has not started after this long is cancelled and refunded (dispatch outage or busy workers alike). */
+export const ASTRA_START_EXPIRY_MS = 30 * 60_000;
+/** A render runs at most 180 seconds; past this from its claim, recovery stops it. */
+const ASTRA_RUN_CEILING_MS = 240_000;
+export function astraRenderInBusyBackoff(row: { error?: unknown; updated_at?: unknown }, at = Date.now()) {
+    return row.error === ASTRA_WORKERS_BUSY && at - Number(row.updated_at) < ASTRA_BUSY_BACKOFF_MS;
+}
+/* Every worker answered that it did not start this job's runtime name (busy, or a refusal), so its claim
+   bought nothing. Only that claim is undone, keyed by its own runtime name, in the statement that undoes it;
+   a cancel that arrived meanwhile ends it as cancelled. Busy goes back to the queue, charged nothing and not
+   refunded, unless it has waited past the start expiry; a refusal fails it and releases the reservation. */
+async function releaseUnstartedClaim(row: JobRecord, runtimeId: string, busy: boolean, deps: AstraRenderDependencies): Promise<'busy' | undefined> {
+    const requeue = busy && Date.now() - Number(row.created_at) < ASTRA_START_EXPIRY_MS;
+    const status = requeue ? 'queued' : busy ? 'cancelled' : 'failed';
+    const message = requeue ? ASTRA_WORKERS_BUSY : busy ? 'No render worker became free within 30 minutes. Nothing was billed.' : 'The render workers refused this render. Nothing was billed.';
+    const undone = await db().execute({ sql: "UPDATE astra_render_jobs SET status=CASE WHEN cancel_requested=1 THEN 'cancelled' ELSE ? END,runtime_id=NULL,claimed_at=NULL,error=?,updated_at=? WHERE id=? AND runtime_id=? AND status IN ('starting','uncertain') AND settled=0", args: [status, message, Date.now(), row.id, runtimeId] });
+    if (!undone.rowsAffected)
+        return undefined;
+    const current = (await record(row.id))!;
+    if (current.status === 'queued')
+        return 'busy';
+    await settle(current, current.status === 'cancelled' ? 'cancelled' : 'failed', null, deps);
+    return undefined;
+}
+/** Runs a funded queued job once. Answers 'busy' when it was left queued because every render worker was busy. */
+export async function runAstraRender(id: string, deps: AstraRenderDependencies = {}): Promise<'busy' | undefined> {
     const row = await record(id);
     if (!row || row.status !== 'queued' || !row.funded)
-        return;
-    let begun = false;
+        return undefined;
+    if (astraRenderInBusyBackoff(row))
+        return 'busy';
+    let begun = false, created = false;
+    let runtimeId: string | null = null;
     let usage: AstraRuntimeUsage | null = null;
     try {
         if (engineMock() && !deps.sandbox?.sdk)
@@ -207,15 +250,20 @@ export async function runAstraRender(id: string, deps: AstraRenderDependencies =
         if (!runtime.configured)
             throw new Error(runtime.reason!);
         const source = JSON.parse(row.source_json) as Snapshot;
+        // A job runs on the backend it was approved and reserved under, or not at all (refunded here, before the claim).
+        const backend = astraBackendOfEngine(engineOf(row));
+        if (backend !== astraRenderBackend())
+            throw new Error('The 3D render service changed after this render was approved. Nothing was billed; render it again.');
         const inputs = await (deps.loadInputs ?? loadAstraRenderInputs)(source.assets, row.owner);
         prepareAstraInputs(source.scene, inputs.bindings, inputs.inputs, source.native);
-        await (deps.assertFunding ?? assertMeterFunding)(id, 'vercel-sandbox');
-        const runtimeId = `astra-blender-${randomUUID()}`;
-        const claimed = await db().execute({ sql: "UPDATE astra_render_jobs SET status='starting',runtime_id=?,updated_at=? WHERE id=? AND status='queued' AND funded=1 AND cancel_requested=0", args: [runtimeId, Date.now(), id] });
+        await (deps.assertFunding ?? assertMeterFunding)(id, engineOf(row));
+        const name = `astra-blender-${randomUUID()}`;
+        const claimed = await db().execute({ sql: "UPDATE astra_render_jobs SET status='starting',runtime_id=?,claimed_at=?,error=NULL,updated_at=? WHERE id=? AND status='queued' AND funded=1 AND cancel_requested=0", args: [name, Date.now(), Date.now(), id] });
         if (!claimed.rowsAffected)
-            return;
+            return undefined;
         begun = true;
-        const callbacks: AstraSandboxDependencies = { ...deps.sandbox, snapshotId: source.snapshotId, runtimeId,
+        runtimeId = name;
+        const callbacks: AstraSandboxDependencies = { ...deps.sandbox, backend, snapshotId: source.snapshotId, runtimeId: name,
             onArtifacts: async (artifacts) => {
                 await db().execute({ sql: "UPDATE astra_render_jobs SET status='saving',updated_at=? WHERE id=?", args: [Date.now(), id] });
                 await (deps.storeArtifacts ?? storeAstraArtifacts)(id, artifacts, async (artifact) => { await workbenchTransaction(async (tx) => { const current = (await tx.execute({ sql: 'SELECT artifacts_json FROM astra_render_jobs WHERE id=?', args: [id] })).rows[0]; const all = JSON.parse(String(current.artifacts_json)) as StoredAstraArtifact[]; const next = [...all.filter(value => value.kind !== artifact.kind), artifact]; await tx.execute({ sql: 'UPDATE astra_render_jobs SET artifacts_json=?,updated_at=? WHERE id=?', args: [JSON.stringify(next), Date.now(), id] }); }); });
@@ -224,16 +272,19 @@ export async function runAstraRender(id: string, deps: AstraRenderDependencies =
             },
             onStopped: async (value) => { usage = value; await db().execute({ sql: 'UPDATE astra_render_jobs SET usage_json=?,updated_at=? WHERE id=?', args: [JSON.stringify(value), Date.now(), id] }); },
         };
-        const onCreated = async () => { const current = (await record(id))!; if (current.cancel_requested)
+        const onCreated = async () => { created = true; const current = (await record(id))!; if (current.cancel_requested)
             throw new Error('Render cancelled before execution.'); await db().execute({ sql: "UPDATE astra_render_jobs SET status='running',updated_at=? WHERE id=?", args: [Date.now(), id] }); };
         if (source.native)
             await renderAstraNative(source.scene, source.native, inputs.bindings, inputs.inputs, onCreated, callbacks);
         else
             await renderAstraScene(source.scene, inputs.bindings as Parameters<typeof renderAstraScene>[1], inputs.inputs, onCreated, callbacks);
         await settle((await record(id))!, 'succeeded', usage, deps);
+        return undefined;
     }
     catch (error) {
         const message = error instanceof Error ? error.message : 'Native render failed.';
+        if (begun && !created && runtimeId && (error instanceof AstraWorkerBusyError || error instanceof AstraWorkerRefusedError))
+            return releaseUnstartedClaim(row, runtimeId, error instanceof AstraWorkerBusyError, deps);
         if (!begun) {
             // Another host may have claimed this job since the checks above. Only a job that is
             // still unclaimed is ended here, in the same statement that ends it; a claimed one is left alone.
@@ -242,7 +293,7 @@ export async function runAstraRender(id: string, deps: AstraRenderDependencies =
                 const current = (await record(id))!;
                 await settle(current, current.status === 'cancelled' ? 'cancelled' : 'failed', null, deps);
             }
-            return;
+            return undefined;
         }
         const current = (await record(id))!;
         await db().execute({ sql: 'UPDATE astra_render_jobs SET error=?,updated_at=? WHERE id=?', args: [message.slice(0, 600), Date.now(), id] });
@@ -254,6 +305,7 @@ export async function runAstraRender(id: string, deps: AstraRenderDependencies =
         }
         else
             await db().execute({ sql: "UPDATE astra_render_jobs SET status='uncertain',updated_at=? WHERE id=?", args: [Date.now(), id] });
+        return undefined;
     }
 }
 /** Recovery can look up and stop an existing identity. It never creates a VM. */
@@ -285,11 +337,31 @@ export async function reconcileAstraRender(id: string, deps: AstraRenderDependen
         await settle(row, 'cancelled', null, deps);
         return;
     }
+    // Measured from the claim: a job can wait in the queue (busy workers, dispatch outage) long before it starts.
+    const startedAt = Number(row.claimed_at ?? row.created_at);
     const cachedUsage = row.usage_json ? JSON.parse(row.usage_json) as AstraRuntimeUsage | null : null;
-    const state = cachedUsage ? { status: 'stopped', usage: cachedUsage } : await getAstraRenderStatus(row.runtime_id, deps.sandbox);
+    let state: { status: string; usage: AstraRuntimeUsage | null };
+    if (cachedUsage)
+        state = { status: 'stopped', usage: cachedUsage };
+    else {
+        try {
+            state = await getAstraRenderStatus(row.runtime_id, sandboxFor(row, deps));
+        }
+        catch (error) {
+            // No self-hosted worker holds the name and every worker answered. Past the run ceiling it can only
+            // have ended (or never begun): read as stopped with no usage, which holds the reservation as uncertain.
+            if (!(error instanceof AstraWorkerSessionMissingError) || Date.now() - startedAt <= ASTRA_RUN_CEILING_MS)
+                throw error;
+            state = { status: 'stopped', usage: null };
+        }
+    }
     if (!['stopped', 'failed', 'aborted'].includes(state.status)) {
-        if (row.cancel_requested || Date.now() - row.created_at > 240000)
-            await cancelAstraRender(row.runtime_id, deps.sandbox);
+        if (row.cancel_requested || Date.now() - startedAt > ASTRA_RUN_CEILING_MS) {
+            const stopped = await cancelAstraRender(row.runtime_id, sandboxFor(row, deps));
+            // A self-hosted stop wipes the session: keep its final usage for the next pass to settle with.
+            if (stopped.usage)
+                await db().execute({ sql: 'UPDATE astra_render_jobs SET usage_json=?,updated_at=? WHERE id=? AND usage_json IS NULL', args: [JSON.stringify(stopped.usage), Date.now(), id] });
+        }
         return;
     }
     const artifacts = JSON.parse(row.artifacts_json) as StoredAstraArtifact[];
@@ -315,7 +387,7 @@ export async function cancelAstraRenderJob(owner: string, projectId: string, id:
         await settle(row, 'cancelled', null, deps);
     else if (row.runtime_id) {
         try {
-            const result = await cancelAstraRender(row.runtime_id, deps.sandbox);
+            const result = await cancelAstraRender(row.runtime_id, sandboxFor(row, deps));
             const current = (await record(id))!;
             await settle(current, current.outputs_registered ? 'succeeded' : 'cancelled', result.usage, deps);
         }
@@ -325,7 +397,7 @@ export async function cancelAstraRenderJob(owner: string, projectId: string, id:
     }
     return publicJob((await record(id))!);
 }
-export async function pendingAstraRenders(limit = 4) { await astraRenderReady(); return (await db().execute({ sql: 'SELECT id,status,owner,funded FROM astra_render_jobs WHERE settled=0 ORDER BY updated_at ASC LIMIT ?', args: [limit] })).rows as unknown as Pick<JobRecord, 'id' | 'status' | 'owner' | 'funded'>[]; }
+export async function pendingAstraRenders(limit = 4) { await astraRenderReady(); return (await db().execute({ sql: 'SELECT id,status,owner,funded,error,updated_at FROM astra_render_jobs WHERE settled=0 ORDER BY updated_at ASC LIMIT ?', args: [limit] })).rows as unknown as Pick<JobRecord, 'id' | 'status' | 'owner' | 'funded' | 'error' | 'updated_at'>[]; }
 
 /** A permanently unavailable dispatcher must not hold an unstarted reservation
  * forever. Only the same queued/no-runtime claim can expire; a concurrent
@@ -333,7 +405,7 @@ export async function pendingAstraRenders(limit = 4) { await astraRenderReady();
 export async function deferAstraRenderDispatch(id: string, deps: AstraRenderDependencies = {}): Promise<boolean> {
     const row = await record(id);
     if (!row || row.status !== 'queued' || !row.funded || row.runtime_id) return false;
-    const expired = Date.now() - Number(row.created_at) >= 30 * 60_000;
+    const expired = Date.now() - Number(row.created_at) >= ASTRA_START_EXPIRY_MS;
     const updated = await db().execute({
         sql: "UPDATE astra_render_jobs SET status=?,cancel_requested=?,error=?,updated_at=? WHERE id=? AND status='queued' AND runtime_id IS NULL AND funded=1 AND cancel_requested=0",
         args: [expired ? 'cancelled' : 'queued', expired ? 1 : 0,
