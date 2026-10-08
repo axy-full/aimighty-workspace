@@ -1,4 +1,7 @@
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
+import { Transform } from "node:stream";
 import {
   copyFile,
   mkdir,
@@ -17,6 +20,8 @@ import {
   databaseIdentity,
   databaseInventory,
   verifyPlatformCoverage,
+  verifyMediaReferences,
+  manifestMediaEntries,
   json,
 } from "./backup-lib.mjs";
 
@@ -131,6 +136,50 @@ export async function prepareRestore(
       .filter((u) => u.originalUrl && u.url)
       .map((u) => [u.originalUrl, u.url]),
   );
+  // Media target: "blob" (default; restore-blobs URL map), "r2" (restore-r2
+  // key record) or "local" (a local-disk media root built here, offline).
+  const mediaTarget = mapping.media?.kind ?? "blob";
+  if (!["blob", "r2", "local"].includes(mediaTarget))
+    throw new Error("Media target must be blob, r2 or local.");
+  const rewrites = new Map(),
+    localCopies = new Map();
+  if (mediaTarget !== "blob") {
+    if (!inventory.mediaKind)
+      throw new Error("This restore has no media inventory to map.");
+    let restoredKeys = null;
+    if (mediaTarget === "r2") {
+      let record;
+      try {
+        record = JSON.parse(await readFile(join(restored, "r2-restore-keys.json"), "utf8"));
+      } catch (e) {
+        if (e.code !== "ENOENT") throw e;
+        throw new Error("No verified R2 restore record; run restore-r2 first.");
+      }
+      restoredKeys = new Map(record.map((r) => [`${r.store}\0${r.pathname}`, r.key]));
+    }
+    await verifyMediaReferences(
+      inventory.databases.map((d) => ({ ...d, snapshot: join(restored, "databases", d.id + ".db") })),
+      manifestMediaEntries(inventory),
+      inventory.mediaKind,
+      {
+        onReference(reference) {
+          const row = `${reference.database}\0${reference.table}\0${reference.id}`;
+          if (mediaTarget === "r2") {
+            const key = restoredKeys.get(`${reference.entry.store}\0${reference.entry.pathname}`);
+            if (!key)
+              throw new Error("A referenced object is absent from the verified R2 restore record.");
+            if (reference.absolute) rewrites.set(row, key);
+          } else {
+            const previous = localCopies.get(reference.localPath);
+            if (previous && previous !== reference.entry)
+              throw new Error("Two referenced objects map to the same local media path.");
+            localCopies.set(reference.localPath, reference.entry);
+            if (reference.absolute) rewrites.set(row, reference.deterministic);
+          }
+        },
+      },
+    );
+  }
   await mkdir(dirname(resolve(destination)), { recursive: true, mode: 0o700 });
   const scratch = await mkdtemp(
     join(dirname(resolve(destination)), ".particl-prepare-"),
@@ -274,10 +323,15 @@ export async function prepareRestore(
               await tx.execute(`SELECT id,stored_url FROM ${table}`)
             ).rows) {
               if (!/^https?:/.test(row.stored_url)) continue;
-              const replacement = urlMap.get(row.stored_url);
+              const replacement =
+                mediaTarget === "blob"
+                  ? urlMap.get(row.stored_url)
+                  : rewrites.get(`${source.id}\0${table}\0${row.id}`);
               if (!replacement)
                 throw new Error(
-                  "An absolute media URL has no verified new-store mapping; restore Blob first.",
+                  mediaTarget === "blob"
+                    ? "An absolute media URL has no verified new-store mapping; restore Blob first."
+                    : "An absolute media URL has no verified new-store mapping.",
                 );
               await tx.execute({
                 sql: `UPDATE ${table} SET stored_url=? WHERE id=?`,
@@ -287,7 +341,7 @@ export async function prepareRestore(
                 database: source.id,
                 table,
                 id: row.id,
-                action: "remapped-private-blob",
+                action: mediaTarget === "blob" ? "remapped-private-blob" : `remapped-media-to-${mediaTarget}`,
               });
             }
           }
@@ -307,11 +361,33 @@ export async function prepareRestore(
         db.close();
       }
     }
+    // Local target: the app's local layout (generations/, uploads/,
+    // platform/ under the media root), every copy checked by SHA-256.
+    for (const [path, entry] of localCopies) {
+      const target = join(scratch, "local-media", path);
+      await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+      const hash = createHash("sha256");
+      let bytes = 0;
+      await pipeline(
+        createReadStream(join(restored, entry.path)),
+        new Transform({
+          transform(chunk, _, next) {
+            hash.update(chunk);
+            bytes += chunk.length;
+            next(null, chunk);
+          },
+        }),
+        createWriteStream(target, { flags: "wx", mode: 0o600 }),
+      );
+      if (bytes !== entry.bytes || hash.digest("hex") !== entry.sha256)
+        throw new Error("Restored media changed before local preparation.");
+    }
     await writeFile(
       join(scratch, "preparation.json"),
       json({
         databases,
         changes,
+        media: { target: mediaTarget, localObjects: localCopies.size, rewritten: rewrites.size },
         sourceBackup: inventory.createdAt,
         stillOffline: true,
       }),
