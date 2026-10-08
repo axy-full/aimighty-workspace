@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { useSession } from "@/lib/session";
+import { ENHANCE_NO_ANSWER, EnhanceRuns } from "./enhance-press";
 import { isRawPrompt, type EnhanceMode, type EnhancerProvider } from "./enhancer";
 
 /**
@@ -44,7 +46,7 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
   const [auto, setAuto] = useState(false);
   const [quote, setQuote] = useState<{ key: string; credits: number | null; reason: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ prompt: string; provider: EnhancerProvider; charged: number | null } | null>(null);
+  const [result, setResult] = useState<{ prompt: string; provider: EnhancerProvider; charged: number | null; body: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const words = input.prompt.trim();
@@ -81,37 +83,44 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
     : credits == null ? "Pricing…"
     : null;
 
-  const live = useRef({ key, credits });
-  useEffect(() => { live.current = { key, credits }; });
+  /* The press is sent under a key held for this exact press (lib/shell/enhance-press.ts):
+     pressed again after a lost reply, it collects the saved answer instead of paying twice. */
+  const session = useSession();
+  const scope = session.signedIn ? session.requestScope ?? null : null;
+  const live = useRef({ key, credits, scope });
+  useEffect(() => { live.current = { key, credits, scope }; });
 
+  /* A press while the same press is on its way shares its answer; a press for other words is its own, and an
+     answer that arrives after the words were replaced is dropped (EnhanceRuns), never applied over them. */
+  const runs = useRef<EnhanceRuns | null>(null);
   const enhance = useCallback(async (): Promise<string | null> => {
     const approved = live.current;
     if (approved.credits == null || off) return null;
+    const credits = approved.credits;
+    const presses = (runs.current ??= new EnhanceRuns());
     setBusy(true);
     setError(null);
     try {
-      const response = await scoped("/api/prompt/enhance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": `enhance-${crypto.randomUUID()}` },
-        body: JSON.stringify({ ...JSON.parse(approved.key), maxCredits: approved.credits }),
-      });
-      const json = await response.json().catch(() => null) as { prompt?: string; provider?: EnhancerProvider; error?: string } | null;
-      if (!response.ok || !json?.prompt || !json.provider) throw new Error(json?.error ?? "The enhancer did not answer. Your prompt is unchanged.");
-      setResult({ prompt: json.prompt, provider: json.provider, charged: approved.credits });
-      return json.prompt;
+      const pressed = await presses.run(scoped, { scope: approved.scope, body: approved.key, credits }, () => ({ scope: live.current.scope, body: live.current.key }));
+      if ("stale" in pressed) return null;
+      if (!pressed.ok) { setError(pressed.error); return null; }
+      setResult({ prompt: pressed.prompt, provider: pressed.provider, charged: credits, body: approved.key });
+      return pressed.prompt;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The enhancer did not answer. Your prompt is unchanged.");
+      setError(caught instanceof Error ? caught.message : ENHANCE_NO_ANSWER);
       return null;
     } finally {
-      setBusy(false);
+      setBusy(presses.busy);
     }
   }, [scoped, off]);
 
   const dismiss = useCallback(() => { setResult(null); setError(null); }, []);
+  /* An enhancement is offered only for the words it was written from: replaced words never take it (nor does Auto's Make). */
+  const shown = result && result.body === key ? result : null;
 
   return {
     auto: auto && !off, setAuto, credits, blocked, busy, error,
-    enhanced: result?.prompt ?? null, provider: result?.provider ?? null, charged: result?.charged ?? null,
+    enhanced: shown?.prompt ?? null, provider: shown?.provider ?? null, charged: shown?.charged ?? null,
     enhance: () => void enhance(), run: enhance, dismiss,
   };
 }
