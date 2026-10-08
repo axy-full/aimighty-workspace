@@ -10,7 +10,10 @@
  *
  *   node scripts/ops/snapshot-catalog.mjs            # write lib/modelCatalog.json
  *   node scripts/ops/snapshot-catalog.mjs --check    # print what would change; write nothing
- *   node scripts/ops/snapshot-catalog.mjs --from=<saved /v1/models JSON>
+ *   node scripts/ops/snapshot-catalog.mjs --from=<saved /v1/models JSON> --priced-at=YYYY-MM-DD
+ *
+ * It writes nothing, and exits non-zero, when an offered id is missing from
+ * the list or a model a feature can pick has no input or output price.
  */
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -23,6 +26,16 @@ const out = path.join(root, "lib/modelCatalog.json");
 const args = process.argv.slice(2);
 const check = args.includes("--check");
 const from = args.find((a) => a.startsWith("--from="))?.slice("--from=".length);
+const pricedAtArg = args.find((a) => a.startsWith("--priced-at="))?.slice("--priced-at=".length);
+const fail = (message) => { console.error(`snapshot-catalog: ${message}`); process.exit(1); };
+if (from && !pricedAtArg) fail("--from needs --priced-at=YYYY-MM-DD, the day that response was fetched");
+const realDate = (d) => {
+  const t = /^\d{4}-\d{2}-\d{2}$/.test(d) ? Date.parse(`${d}T00:00:00Z`) : NaN;
+  return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === d;
+};
+if (pricedAtArg !== undefined && !realDate(pricedAtArg))
+  fail(`--priced-at must be a real YYYY-MM-DD date, got ${pricedAtArg}`);
+if (pricedAtArg && !from) fail("--priced-at only goes with --from; a live read is priced today");
 
 const jiti = createJiti(import.meta.url, { alias: { "@": root } });
 const { buildCatalogSnapshot } = await jiti.import(path.join(root, "lib/catalog.ts"));
@@ -37,7 +50,7 @@ else {
 }
 if (!Array.isArray(body?.data) || !body.data.length) throw new Error("the model list is empty");
 
-const pricedAt = new Date().toISOString().slice(0, 10);
+const pricedAt = pricedAtArg ?? new Date().toISOString().slice(0, 10);
 const snapshot = buildCatalogSnapshot(body.data, OFFERED_CATALOG_IDS, pricedAt, SOURCE);
 const text = `${JSON.stringify(snapshot, null, 2)}\n`;
 
@@ -48,6 +61,10 @@ const unpriced = PRICED_TEXT_IDS.filter((id) => {
   return !m || m.pricing?.input == null || m.pricing?.output == null;
 });
 console.log(JSON.stringify({ pricedAt, models: snapshot.models.length, perProvider, missing: snapshot.missing, unpricedRequired: unpriced }, null, 2));
+// Never a partial snapshot: an offered id without an entry, or a pickable
+// model without both prices, stops here before anything is written.
+if (snapshot.missing.length || unpriced.length)
+  fail(`refusing to write: ${snapshot.missing.length} missing, ${unpriced.length} unpriced (listed above)`);
 
 if (check) {
   const before = await readFile(out, "utf8").catch(() => "");
