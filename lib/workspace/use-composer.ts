@@ -4,7 +4,7 @@ import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { DraftRequestError, draftRequest, draftWriter, isDraftConflict, MERGE_TRIES, writeDraft, type DraftWriter } from "../workbench/draft-request";
 import { nodeAudioBody, speechVoiceFor, type NodeAudioSetup } from "../workbench/generation-audio";
 import { mediaQuoteReferences, mediaReferenceIdentity } from "../workbench/media-reference-input";
-import { pendingGenerationKey } from "../workbench/pending-generation";
+import { pendingGenerationKey, readOwnClaim } from "../workbench/pending-generation";
 import { createSoundNode, findSoundNode } from "../workbench/sound-generate";
 import { stableId } from "../workbench/stable-id";
 import { newProject, type Asset, type CanvasNode, type Project } from "../workbench/studio";
@@ -151,8 +151,22 @@ const RESUME_KEY = (scope: string, projectId: string, take: string) => `${RESUME
 /** A record nobody took up in a week is let go (its claimed request is still settled by the dispatch: checked, never re-sent). */
 const RESUME_MS = 7 * 24 * 60 * 60 * 1000;
 function readResume(scope: string, projectId: string, take: string): ResumeRecord | null {
+  return readResumeIn(() => window.localStorage, scope, projectId, take);
+}
+/**
+ * Each record is kept in this tab's own store too (sessionStorage, as its claims are: lib/workbench/pending-generation.ts ›
+ * tabStorage). Another tab's Generate of the same take settles it and lets the shared record go; this tab, whose reply was
+ * lost, still takes up its own copy while it still holds its own copy of that shot's claim (`claimed`): the same shot, so the
+ * dispatch asks about that request, and a take that landed is followed, never sent again. A tab that never lost the take has
+ * no such copy, so its next Generate is a new take on a new shot, as before.
+ */
+function readOwnResume(scope: string, projectId: string, take: string, claimed: (node: CanvasNode) => boolean): ResumeRecord | null {
+  const own = readResumeIn(() => window.sessionStorage, scope, projectId, take);
+  return own?.node && claimed(own.node) ? own : null;
+}
+function readResumeIn(store: () => globalThis.Storage, scope: string, projectId: string, take: string): ResumeRecord | null {
   try {
-    const value = JSON.parse(window.localStorage.getItem(RESUME_KEY(scope, projectId, take)) ?? "null") as (ResumeRecord & { at?: number }) | null;
+    const value = JSON.parse(store().getItem(RESUME_KEY(scope, projectId, take)) ?? "null") as (ResumeRecord & { at?: number }) | null;
     if (!value || value.projectId !== projectId || !Number.isInteger(value.take) || value.take < 0 || typeof value.at !== "number" || Date.now() - value.at > RESUME_MS) return null;
     /* A record of a take on a signed-in account (no longer offered) is dropped: nothing takes it up. */
     return value.kind === "workspace" && (value.node === null || (value.node && typeof value.node.id === "string")) ? value : null;
@@ -161,16 +175,22 @@ function readResume(scope: string, projectId: string, take: string): ResumeRecor
   }
 }
 function writeResume(scope: string, projectId: string, take: string, value: ResumeRecord | null) {
-  try {
-    if (value) window.localStorage.setItem(RESUME_KEY(scope, projectId, take), JSON.stringify({ ...value, at: Date.now() }));
-    else window.localStorage.removeItem(RESUME_KEY(scope, projectId, take));
-    for (let i = window.localStorage.length - 1; i >= 0; i--) {
-      const key = window.localStorage.key(i);
-      if (!key?.startsWith(RESUME_PREFIX)) continue;
-      const at = (JSON.parse(window.localStorage.getItem(key) ?? "null") as { at?: number } | null)?.at;
-      if (typeof at !== "number" || Date.now() - at > RESUME_MS) window.localStorage.removeItem(key);
-    }
-  } catch { /* without storage, a lost take is not taken up again after a reload: its claimed request still is */ }
+  const write = (storage: () => globalThis.Storage) => {
+    try {
+      const store = storage();
+      if (value) store.setItem(RESUME_KEY(scope, projectId, take), JSON.stringify({ ...value, at: Date.now() }));
+      else store.removeItem(RESUME_KEY(scope, projectId, take));
+      for (let i = store.length - 1; i >= 0; i--) {
+        const key = store.key(i);
+        if (!key?.startsWith(RESUME_PREFIX)) continue;
+        const at = (JSON.parse(store.getItem(key) ?? "null") as { at?: number } | null)?.at;
+        if (typeof at !== "number" || Date.now() - at > RESUME_MS) store.removeItem(key);
+      }
+    } catch { /* without storage, a lost take is not taken up again after a reload: its claimed request still is */ }
+  };
+  write(() => window.localStorage);
+  /* This tab's copy (see readResume). */
+  write(() => window.sessionStorage);
 }
 
 function validMapping(value: unknown): value is { shotId: string; productionProjectId: string } {
@@ -597,7 +617,11 @@ export function useComposer(options: {
         /* This take — these settings and this prompt — as the resume records name it (the empty third part keeps the records already saved matching). */
         const takeKey = JSON.stringify([now.quoteKey, composer.prompt.trim(), ""]);
         /* The same take left unconfirmed, or a batch of it that stopped part way: taken up again, and the batch goes on from it. */
-        const again = readResume(scope, project.id, takeKey);
+        /* The take's own recovery key: a claimed request left unconfirmed is checked on the server, never re-sent. Sound
+           takes share their lane, so theirs is the lane's and these settings': a new prompt is a new request. */
+        const claimSlot = (projectId: string, node: CanvasNode) => pendingGenerationKey(scope, projectId, model.audioTask ? `${node.id}:${stableId("take", now.quoteKey)}` : node.id);
+        const again = readResume(scope, project.id, takeKey)
+          ?? readOwnResume(scope, project.id, takeKey, (node) => readOwnClaim(window.localStorage, claimSlot(project.id, node)) !== null);
         const start = again ? again.take : 0;
         const end = again ? Math.max(count, again.take + 1) : count;
         /* The draft the takes file into: read fresh for the first, then carried from each save to the next. */
@@ -648,9 +672,7 @@ export function useComposer(options: {
           if (!identity) throw new Error(`${reference.name} cannot be used as a reference.`);
           return { ...identity, role: referenceRole({ kind: reference.kind }) };
         });
-        /* The take's own recovery key: a claimed request left unconfirmed is checked on the server, never re-sent. Sound
-           takes share their lane, so theirs is the lane's and these settings': a new prompt is a new request. */
-        const storageId = pendingGenerationKey(scope, filed.project.id, model.audioTask ? `${shot.id}:${stableId("take", now.quoteKey)}` : shot.id);
+        const storageId = claimSlot(filed.project.id, shot);
         const outcome = await dispatchGeneration({
           scope,
           storageId,

@@ -10,7 +10,7 @@ import {
   type ConnectedJob,
 } from "../higgsfield-consumer/generation-client";
 import type { ConsumerGenerationInput } from "../higgsfield-consumer/generation-contract";
-import { readPendingGeneration } from "../workbench/pending-generation";
+import { readPendingGeneration, tabStorage } from "../workbench/pending-generation";
 import { formatCredits } from "./cost";
 import { dispatchGeneration, quoteDispatch, settlePendingGeneration, type DispatchRequest, type QuotedDispatch } from "./generate-submit";
 import { generationPhase, neutralCopy } from "./rig";
@@ -354,8 +354,15 @@ type WorkspaceBatchRecord = {
 const WS_PREFIX = "particl:workspace-batch:v1:";
 const wsKey = (scope: string, projectId: string) => `${WS_PREFIX}${JSON.stringify([scope, projectId])}`;
 
+/**
+ * Kept where every tab of this browser finds it, and in this tab's own store too (lib/workbench/pending-generation.ts ›
+ * tabStorage): another tab's press may settle the batch and remove the shared record, and this tab's next press must still
+ * ask about its own takes (each by its own claimed request) before anything new is sent.
+ */
 export function rememberWorkspaceBatch(storage: Storage, scope: string, record: Omit<WorkspaceBatchRecord, "at">) {
-  try { storage.setItem(wsKey(scope, record.projectId), JSON.stringify({ ...record, at: Date.now() })); } catch { /* each take's claim is still kept by the dispatch */ }
+  const value = JSON.stringify({ ...record, at: Date.now() });
+  try { storage.setItem(wsKey(scope, record.projectId), value); } catch { /* each take's claim is still kept by the dispatch */ }
+  try { tabStorage(storage).setItem(wsKey(scope, record.projectId), value); } catch { /* the shared record still guards */ }
 }
 function readWorkspaceBatch(storage: Storage, scope: string, projectId: string): WorkspaceBatchRecord | null {
   const raw = storage.getItem(wsKey(scope, projectId));
@@ -380,9 +387,16 @@ export type SettledWorkspaceBatch =
  */
 export async function settleWorkspaceBatch(options: { scope: string; projectId: string; storage?: Storage }): Promise<SettledWorkspaceBatch> {
   const storage = options.storage ?? window.localStorage;
+  const own = tabStorage(storage);
+  const key = wsKey(options.scope, options.projectId);
   let record: WorkspaceBatchRecord | null;
   try { record = readWorkspaceBatch(storage, options.scope, options.projectId); } catch (error) {
     return { state: "unknown", reason: error instanceof Error ? error.message : "The saved batch cannot be read." };
+  }
+  /* No shared record, but this tab's own: another tab settled that batch. This press asks about it as if it were still shared. */
+  let mine = false;
+  if (!record) {
+    try { record = readWorkspaceBatch(own, options.scope, options.projectId); mine = record != null; } catch { try { own.removeItem(key); } catch { /* nothing to drop */ } record = null; }
   }
   if (!record) return { state: "none" };
   const landed: { variation: number; jobId: string; credits: number }[] = [], lost: number[] = [], waiting: WorkspaceBatchRecord["takes"] = [];
@@ -393,10 +407,15 @@ export async function settleWorkspaceBatch(options: { scope: string; projectId: 
     else if (settled.state === "lost") lost.push(take.variation);
     else { waiting.push(take); reason ||= settled.reason; }
   }
-  try {
-    if (waiting.length) storage.setItem(wsKey(options.scope, options.projectId), JSON.stringify({ ...record, takes: waiting }));
-    else storage.removeItem(wsKey(options.scope, options.projectId));
-  } catch { /* the claims themselves are still kept */ }
+  const batchId = record.batchId;
+  const holds = (store: Storage) => { try { return (JSON.parse(store.getItem(key) ?? "null") as { batchId?: unknown } | null)?.batchId === batchId; } catch { return false; } };
+  for (const store of mine ? [own] : [storage, own]) {
+    if (store === own && !mine && !holds(own)) continue;
+    try {
+      if (waiting.length) store.setItem(key, JSON.stringify({ ...record, takes: waiting }));
+      else store.removeItem(key);
+    } catch { /* the claims themselves are still kept */ }
+  }
   if (waiting.length) return { state: "unknown", reason: `Your last batch could not be checked yet (${reason.replace(/[.\s]+$/, "")}), so nothing new was sent. Try again in a moment.` };
   return { state: "settled", batchId: record.batchId, name: record.name, model: record.model, landed, lost };
 }
