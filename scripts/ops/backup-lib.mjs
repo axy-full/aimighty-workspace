@@ -496,7 +496,7 @@ export function retrying({ attempts = 4, baseMs = 500, sleep = wait } = {}) {
     }
   };
 }
-function nodeStream(body) {
+export function nodeStream(body) {
   if (body instanceof Readable) return body;
   if (typeof body?.transformToWebStream === "function") return Readable.fromWeb(body.transformToWebStream());
   if (typeof body?.getReader === "function") return Readable.fromWeb(body);
@@ -1053,6 +1053,11 @@ export async function restoreBackup(
     return {
       databases: manifest.databases.length,
       media: manifest.files.filter((f) => f.kind === "media").length,
+      mediaKind: manifest.mediaKind ?? null,
+      // Object counts per store (r2, blob, local): no key, URL or name.
+      mediaByStore: manifest.files
+        .filter((f) => f.kind === "media")
+        .reduce((counts, f) => ({ ...counts, [f.store ?? "unknown"]: (counts[f.store ?? "unknown"] ?? 0) + 1 }), {}),
       sealedValues,
       verified: true,
     };
@@ -1154,7 +1159,7 @@ export async function restoreBlobs(
   return { verified: true, media: verified };
 }
 
-async function fileDigest(path) {
+export async function fileDigest(path) {
   const hash = createHash("sha256");
   let bytes = 0;
   for await (const chunk of createReadStream(path)) {
@@ -1165,10 +1170,12 @@ async function fileDigest(path) {
 }
 const R2_SINGLE_PUT_MAX = 100 * 1024 * 1024,
   R2_RESTORE_PART = 64 * 1024 * 1024;
-/** Conditional (If-None-Match: *) write of one restored file. A 412 on a
- * retry means an earlier attempt landed; the readback digest decides. */
-async function putR2File(client, bucket, key, file, entry, retry, { singleMax, partSize }) {
+/** Conditional (If-None-Match: *) write of one local file. A 412 on a
+ * retry means an earlier attempt landed; the caller's readback digest
+ * decides. `what` names the target in the refusal message. */
+export async function putR2File(client, bucket, key, file, entry, retry, { singleMax = R2_SINGLE_PUT_MAX, partSize = R2_RESTORE_PART, what = "R2 restore target" } = {}) {
   const s3 = await s3sdk();
+  const taken = () => fail(`${what} already holds this key. No existing object will be overwritten.`);
   const contentType = entry.contentType ? { ContentType: entry.contentType } : {};
   if (entry.bytes <= singleMax) {
     await retry(async (attempt) => {
@@ -1178,7 +1185,7 @@ async function putR2File(client, bucket, key, file, entry, retry, { singleMax, p
         );
       } catch (error) {
         if (httpStatus(error) === 412 && attempt > 1) return;
-        if (httpStatus(error) === 412) fail("R2 restore target already holds this key. No existing object will be overwritten.");
+        if (httpStatus(error) === 412) taken();
         throw error;
       }
     });
@@ -1204,11 +1211,26 @@ async function putR2File(client, bucket, key, file, entry, retry, { singleMax, p
     );
   } catch (error) {
     await client.send(new s3.AbortMultipartUploadCommand({ Bucket: bucket, Key: key, UploadId: uploadId })).catch(() => {});
-    if (httpStatus(error) === 412) fail("R2 restore target already holds this key. No existing object will be overwritten.");
+    if (httpStatus(error) === 412) taken();
     throw error;
   }
 }
 
+/** Reads one stored object back in full and returns its SHA-256 and size. */
+export async function r2ObjectDigest(client, bucket, key, retry = retrying(), missing = "R2 object cannot be read back.") {
+  const { GetObjectCommand } = await s3sdk();
+  return retry(async () => {
+    const out = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    if (!out?.Body) fail(missing);
+    const hash = createHash("sha256");
+    let bytes = 0;
+    for await (const chunk of nodeStream(out.Body)) {
+      hash.update(chunk);
+      bytes += chunk.length;
+    }
+    return { sha256: hash.digest("hex"), bytes };
+  });
+}
 /** Uploads a verified offline restore into a NEW, EMPTY R2 bucket, with the
  * keys the app reads: R2 objects at their key and Blob objects at their
  * pathname (a Blob copy shadowed by an R2 object of the same key is not read
@@ -1253,7 +1275,6 @@ export async function restoreR2(
       } else if (entry.store !== "r2") fail("Local media has no cloud key layout.");
       plan.push(entry);
     }
-    const { GetObjectCommand } = await s3sdk();
     const record = [];
     for (const entry of plan) {
       const source = join(restored, entry.path);
@@ -1261,17 +1282,7 @@ export async function restoreR2(
       if (local.sha256 !== entry.sha256 || local.bytes !== entry.bytes)
         fail("Local restored media changed before cloud upload.");
       await putR2File(client, settings.bucket, entry.pathname, source, entry, retry, { singleMax, partSize });
-      const readback = await retry(async () => {
-        const out = await client.send(new GetObjectCommand({ Bucket: settings.bucket, Key: entry.pathname }));
-        if (!out?.Body) fail("Restored R2 object cannot be read back.");
-        const hash = createHash("sha256");
-        let bytes = 0;
-        for await (const chunk of nodeStream(out.Body)) {
-          hash.update(chunk);
-          bytes += chunk.length;
-        }
-        return { sha256: hash.digest("hex"), bytes };
-      });
+      const readback = await r2ObjectDigest(client, settings.bucket, entry.pathname, retry, "Restored R2 object cannot be read back.");
       if (readback.bytes !== entry.bytes || readback.sha256 !== entry.sha256)
         fail("Restored R2 readback did not match.");
       record.push({

@@ -15,6 +15,7 @@ import {
 } from "../../scripts/ops/backup-lib.mjs";
 import { recoveryReport } from "../../scripts/ops/recovery-report.mjs";
 import { prepareRestore } from "../../scripts/ops/prepare-restore.mjs";
+import { downloadBundle, uploadBundle } from "../../scripts/ops/backup-automation.mjs";
 
 // Everything here is in-process: an S3-compatible fake behind the real
 // @aws-sdk/client-s3 command classes, and an in-memory Blob SDK fake. No
@@ -25,6 +26,7 @@ const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const s3Error = (status, name) =>
   Object.assign(new Error(name), { name, $metadata: { httpStatusCode: status } });
 async function collect(body) {
+  if (Buffer.isBuffer(body)) return body;
   const chunks = [];
   for await (const chunk of body) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks);
@@ -312,6 +314,8 @@ test("r2-only capture paginates, retries a dropped stream, encrypts and restores
   assert.deepEqual(await restoreBackup(bundle, restored, { env: f.env }), {
     databases: 2,
     media: 7,
+    mediaKind: "r2",
+    mediaByStore: { r2: 7 },
     sealedValues: 1,
     verified: true,
   });
@@ -348,6 +352,39 @@ test("dual capture covers R2 and Blob together by the app's R2-first rule and re
   assert.deepEqual(inventory.mediaCoverage, { blob: 2, r2: 5 });
   assert.equal(JSON.stringify(inventory).includes(f.env.FIXTURE_BLOB_TOKEN), false);
   assert.equal(JSON.stringify(inventory).includes(f.env.FIXTURE_R2_SECRET_ACCESS_KEY), false);
+});
+
+test("a dual bundle with old Blob media goes to the private bucket and comes back restorable", async (t) => {
+  const f = await fixture(t),
+    { r2, blob } = productionStores(f);
+  const bundle = join(f.root, "bundle");
+  await createBackup(f.config(dual), bundle, { env: f.env, r2Client: r2.factory, blobSdk: blob, retryOptions: fast });
+  const verified = await restoreBackup(bundle, join(f.root, "verification"), { env: f.env });
+  // The counts the workflow summary and upload index report: Blob media is in.
+  assert.equal(verified.mediaKind, "dual");
+  assert.deepEqual(verified.mediaByStore, { r2: 5, blob: 3 });
+  const target = fakeR2();
+  target.settings = { bucket: "particl-backups" };
+  const targetEnv = {
+    BACKUP_TARGET_R2_ACCOUNT_ID: "fixtureaccount",
+    BACKUP_TARGET_R2_ACCESS_KEY_ID: "fixture-target-key-id",
+    BACKUP_TARGET_R2_SECRET_ACCESS_KEY: "fixture-target-secret",
+    BACKUP_TARGET_R2_BUCKET: "particl-backups",
+  };
+  const summary = { verified: true, databases: verified.databases, media: verified.media, mediaKind: verified.mediaKind, mediaByStore: verified.mediaByStore };
+  const uploaded = await uploadBundle(bundle, { env: targetEnv, client: target, runId: "123", summary, retryOptions: fast });
+  // Only ciphertext reached the bucket: no media bytes, keyring or source credential.
+  for (const [key, object] of target.objects) {
+    assert.ok(key.startsWith(uploaded.prefix));
+    for (const plain of ["private old render bytes", f.env.KEYRING_SECRET, f.env.FIXTURE_BLOB_TOKEN, f.env.FIXTURE_R2_SECRET_ACCESS_KEY])
+      assert.equal(object.body.includes(Buffer.from(plain)), false);
+  }
+  const copy = join(f.root, "downloaded");
+  assert.deepEqual((await downloadBundle(uploaded.prefix, copy, { env: targetEnv, client: target, retryOptions: fast })).summary, summary);
+  const restored = join(f.root, "restored");
+  await restoreBackup(copy, restored, { env: f.env });
+  assert.deepEqual(await readFile(join(restored, "media", "blob", W, "generations", "old.png")), f.bytes("old render"));
+  assert.deepEqual((await recoveryReport(restored)).media.byStore, { blob: 2, r2: 5 });
 });
 
 test("missing objects fail coverage naming each row, never a customer's file name; r2-only does not fall back to Blob", async (t) => {

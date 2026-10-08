@@ -12,7 +12,6 @@ on:
     - cron: "47 * * * *"
 permissions:
   contents: read
-  actions: read
 concurrency:
   group: particl-encrypted-backups
   cancel-in-progress: false
@@ -43,7 +42,7 @@ jobs:
     if: vars.PARTICL_BACKUP_ENABLED == 'true' && github.ref == 'refs/heads/main' && (github.event.schedule == '17 2 * * *' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'capture'))
     environment: particl-backup
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
         with:
@@ -53,8 +52,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # The fence receipt expires 30 minutes after its last renewal; a capture
+      # still running past that point cannot verify and publishes nothing.
       - name: Capture only quiesced sources and rehearse the entire restore
         id: backup
+        timeout-minutes: 35
         run: node scripts/ops/backup-automation.mjs capture
         env:
           PARTICL_BACKUP_ENABLED: ${{ vars.PARTICL_BACKUP_ENABLED }}
@@ -62,23 +64,30 @@ jobs:
           PARTICL_BACKUP_ENV_JSON: ${{ secrets.PARTICL_BACKUP_ENV_JSON }}
           PARTICL_BACKUP_KEY: ${{ secrets.PARTICL_BACKUP_KEY }}
           PARTICL_BACKUP_QUIESCENCE_JSON: ${{ secrets.PARTICL_BACKUP_QUIESCENCE_JSON }}
-      - name: Retain only verified ciphertext
-        uses: actions/upload-artifact@v7
-        with:
-          name: particl-backup-verified-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.backup.outputs.bundle_path }}/
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: ${{ steps.backup.outputs.retention_days }}
-          overwrite: false
+      # Only the verified ciphertext leaves the runner, to the PRIVATE bucket
+      # (never a GitHub artifact: the repository is public). This step sees
+      # the bucket credentials only, not the production source credentials.
+      - name: Upload verified ciphertext to the private backup bucket
+        id: upload
+        timeout-minutes: 45
+        run: node scripts/ops/backup-automation.mjs upload "$BUNDLE_PATH"
+        env:
+          BUNDLE_PATH: ${{ steps.backup.outputs.bundle_path }}
+          PARTICL_BACKUP_SUMMARY_JSON: ${{ steps.backup.outputs.summary }}
+          BACKUP_TARGET_R2_ACCOUNT_ID: ${{ secrets.BACKUP_TARGET_R2_ACCOUNT_ID }}
+          BACKUP_TARGET_R2_ACCESS_KEY_ID: ${{ secrets.BACKUP_TARGET_R2_ACCESS_KEY_ID }}
+          BACKUP_TARGET_R2_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_TARGET_R2_SECRET_ACCESS_KEY }}
+          BACKUP_TARGET_R2_BUCKET: ${{ secrets.BACKUP_TARGET_R2_BUCKET }}
+          BACKUP_TARGET_R2_ENDPOINT: ${{ secrets.BACKUP_TARGET_R2_ENDPOINT }}
       - name: Remove decrypted verification and encrypted runner copies
         if: always()
         run: rm -rf "$RUNNER_TEMP/particl-backup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
   freshness:
-    if: always() && vars.PARTICL_BACKUP_ENABLED == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.operation == 'dry-run')
+    if: always() && vars.PARTICL_BACKUP_ENABLED == 'true' && github.ref == 'refs/heads/main' && !(github.event_name == 'workflow_dispatch' && inputs.operation == 'dry-run')
     needs: [capture]
+    environment: particl-backup
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
@@ -86,6 +95,13 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - run: node scripts/ops/backup-automation.mjs freshness
+          cache: npm
+      - run: npm ci
+      - name: Newest complete bundle in the private bucket is under 26 hours old
+        run: node scripts/ops/backup-automation.mjs freshness
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          BACKUP_TARGET_R2_ACCOUNT_ID: ${{ secrets.BACKUP_TARGET_R2_ACCOUNT_ID }}
+          BACKUP_TARGET_R2_ACCESS_KEY_ID: ${{ secrets.BACKUP_TARGET_R2_ACCESS_KEY_ID }}
+          BACKUP_TARGET_R2_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_TARGET_R2_SECRET_ACCESS_KEY }}
+          BACKUP_TARGET_R2_BUCKET: ${{ secrets.BACKUP_TARGET_R2_BUCKET }}
+          BACKUP_TARGET_R2_ENDPOINT: ${{ secrets.BACKUP_TARGET_R2_ENDPOINT }}
