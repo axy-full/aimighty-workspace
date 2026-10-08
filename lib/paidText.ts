@@ -20,6 +20,9 @@ import {
 import type { TextRun } from "./engines/types";
 import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
 
+/** The least time a deadline-bound text job must still have for its provider call (runPaidText `deadline`). */
+export const PAID_TEXT_MIN_PROVIDER_MS = 20_000;
+
 export class PaidTextError extends Error {
   constructor(
     message: string,
@@ -187,6 +190,13 @@ export async function runPaidText(
     auth?: Record<string, string>;
     mock?: TextRun["mock"];
     timeoutMs?: number;
+    /**
+     * When the caller's own request must have answered (epoch ms). The
+     * provider gets what is left of it; with less than
+     * PAID_TEXT_MIN_PROVIDER_MS left the job is refused before anything is
+     * written or reserved, so nothing is charged.
+     */
+    deadline?: number;
     /** Chat messages already keep their own cost row. Failed calls still remain in paid_text_jobs and meter_events. */
     recordSpend?: boolean;
   },
@@ -222,6 +232,8 @@ return await withRecoveryActivity('paid-text', async () => {
       "This text job already has a paid claim. Recover its saved result; it will not be submitted again.",
       409,
     );
+  if (input.deadline !== undefined && input.deadline - Date.now() < PAID_TEXT_MIN_PROVIDER_MS)
+    throw new PaidTextError("The text provider is slow to answer right now. Nothing was charged; try again in a moment.", 503);
   const ts = now();
   await db().execute({
     sql: `INSERT INTO paid_text_jobs(id,model,kind,status,estimate_usd,effort,request_body,created_at,updated_at) VALUES(?,?,?,'queued',?,?,?,?,?)`,
@@ -256,7 +268,9 @@ return await withRecoveryActivity('paid-text', async () => {
       body: requestBody,
       auth: input.auth,
       mock: input.mock,
-      timeoutMs: input.timeoutMs ?? 270_000,
+      timeoutMs: input.deadline !== undefined
+        ? Math.max(1_000, Math.min(input.timeoutMs ?? Infinity, input.deadline - Date.now()))
+        : input.timeoutMs ?? 270_000,
     });
     if (!response.ok) {
       const rejected = [400, 401, 402, 403, 404, 422, 429].includes(

@@ -1,7 +1,8 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { lstat, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createClient } from "@libsql/client";
+import { manifestMediaEntries, verifyMediaReferences } from "./backup-lib.mjs";
 
 const parse = (value) => {
   try {
@@ -25,6 +26,7 @@ export async function recoveryReport(directory) {
     actions: [],
     tombstones: [],
     meters: [],
+    media: await mediaCoverage(directory, inventory),
   };
   for (const source of inventory.databases) {
     if (!/^[a-zA-Z0-9_-]{1,80}$/.test(source.id))
@@ -288,5 +290,51 @@ export async function recoveryReport(directory) {
     actions: report.actions.length,
     tombstones: report.tombstones.length,
     meters: report.meters.length,
+    ...(report.media ? { media: report.media } : {}),
+  };
+}
+
+/** Proves every object a restored row references resolves, by the app's
+ * storage rule for the captured media kind, to a restored file of the
+ * recorded size in this offline directory. Throws naming missing objects. */
+async function mediaCoverage(directory, inventory) {
+  if (!inventory.mediaKind) return null;
+  const used = new Map();
+  const result = await verifyMediaReferences(
+    inventory.databases.map((d) => {
+      if (!/^[a-zA-Z0-9_-]{1,80}$/.test(d.id)) throw new Error("Unsafe database ID.");
+      return { ...d, snapshot: resolve(directory, "databases", d.id + ".db") };
+    }),
+    manifestMediaEntries(inventory),
+    inventory.mediaKind,
+    {
+      onReference: (reference) =>
+        used.set(reference.entry.path, {
+          entry: reference.entry,
+          // Named by row only: a restored path can carry a customer's file name.
+          row: used.get(reference.entry.path)?.row ?? `${reference.database}/${reference.table}/${reference.id}`,
+        }),
+    },
+  );
+  const absent = [];
+  for (const [path, { entry, row }] of used) {
+    try {
+      const info = await lstat(join(directory, path));
+      if (!info.isFile() || info.isSymbolicLink() || info.size !== entry.bytes) absent.push(row);
+    } catch (e) {
+      if (e.code !== "ENOENT") throw e;
+      absent.push(row);
+    }
+  }
+  if (absent.length)
+    throw new Error(
+      `Referenced media is missing or changed in the offline directory (${absent.length}): ${absent.slice(0, 20).join(", ")}`,
+    );
+  return {
+    kind: inventory.mediaKind,
+    verified: true,
+    references: result.references,
+    byStore: result.byStore,
+    objects: inventory.files.filter((f) => f.kind === "media").length,
   };
 }
