@@ -264,6 +264,10 @@ set these environment secrets:
 The quiescence record must remain valid through capture and verification. The
 enforced receipt expires when its fence lease does: 30 minutes after the last
 `renew` before `seal`. The capture step has a 35-minute limit for that reason.
+The capture checks the **live** fence in the platform database before capture,
+after capture and after the restore check, so only a sealed enforced-fence
+receipt works; a hand-written JSON of `mutationsPaused`-style assertions is
+refused.
 
 ```sh
 node scripts/ops/backup-automation.mjs fingerprint /secure/source.json
@@ -271,11 +275,12 @@ node scripts/ops/backup-automation.mjs plan
 node --test tests/ops/*.test.mjs
 ```
 
-The confirmation is a protected operational assertion, **not an application pause
-switch**. This implementation does not automatically pause Vercel, the native worker, Inngest or
-external writers. Do not activate the schedule until an operator or maintenance
-orchestrator actually fences them for the window and refreshes this record. An
-old permanent `true` setting is rejected. Read-only database preflight checks
+The fence is the application's pause switch: from `begin` until `resume`, every
+wrapped request (sign-in included, because a session lookup writes) and every
+database or storage write answers 503 "The studio is paused for a consistent
+recovery checkpoint". Nothing in the workflow begins or seals a fence; an
+operator does, for each capture. It does not stop writers outside the app
+(manual database or storage credentials). Read-only database preflight checks
 also reject queued/running/uncertain jobs, retained failed meter reservations,
 active identity training, provisioning and purge leases before and after capture.
 The checks cannot replace the fence or rule out a new writer starting later.
