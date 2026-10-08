@@ -1,6 +1,6 @@
 import { vendorKey } from "./vendorKeys";
 import { recoveryFetch } from "./recovery";
-import { engineMock } from "./mock";
+import { engineMock, mockDelay } from "./mock";
 import { fixtureBytes } from "./mockFs";
 import { XaiHttpError } from "./xaiErrors";
 import { preflight } from "./preflight";
@@ -132,6 +132,7 @@ export type Transcript = { text: string; language: string | null; seconds: numbe
 /** A transcript of an audio or video file, words timed and (asked for) speakers told apart. */
 export async function grokTranscribe(opts: { bytes: Buffer; mime: string; filename: string; language?: string; diarize?: boolean }): Promise<Transcript & { costUsd: number }> {
   if (engineMock()) {
+    await mockDelay(opts.filename);
     const words = "Not tonight. The ice will hold until morning.".split(" ").map((text, i) => ({ text, start: i * 0.5, end: i * 0.5 + 0.4, speaker: i < 2 ? 0 : 1 }));
     return { text: words.map((w) => w.text).join(" "), language: "en", seconds: 4, words, costUsd: grokTranscriptionUsd(4) };
   }
