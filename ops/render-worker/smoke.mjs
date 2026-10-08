@@ -1,15 +1,15 @@
 // Render worker smoke test. Run in the production app's terminal (it has
-// ASTRA_WORKER_SECRET and ASTRA_WORKER_URLS, and can reach the workers).
-// Costs nothing: a 128 px render of Blender's own default cube, then the
-// session is deleted. Without arguments it smoke-tests every ASTRA_WORKER_URLS entry.
-//   node /tmp/render-smoke.mjs [http://<worker>:8080 ...]
+// ASTRA_WORKER_URLS and ASTRA_WORKER_SECRETS, comma lists in the same order,
+// and can reach the workers). Costs nothing: a 128 px render of Blender's own
+// default cube on every worker, then each session is deleted.
+//   node /tmp/render-smoke.mjs
 import { randomUUID } from "node:crypto";
 
-const secret = process.env.ASTRA_WORKER_SECRET ?? "";
-const listed = (process.env.ASTRA_WORKER_URLS ?? "").split(",").map((url) => url.trim()).filter(Boolean);
-const workers = process.argv.length > 2 ? process.argv.slice(2) : listed;
-if (secret.length < 32 || !workers.length) {
-  console.log("Usage: node /tmp/render-smoke.mjs [http://<worker>:8080 ...] (needs ASTRA_WORKER_SECRET; the default list is ASTRA_WORKER_URLS)");
+const list = (name) => (process.env[name] ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+const workers = list("ASTRA_WORKER_URLS");
+const secrets = list("ASTRA_WORKER_SECRETS");
+if (!workers.length || secrets.length !== workers.length || secrets.some((secret) => secret.length < 32)) {
+  console.log("Needs ASTRA_WORKER_URLS and ASTRA_WORKER_SECRETS: comma lists of the same length, each secret at least 32 characters.");
   process.exit(2);
 }
 const ROOT = "/vercel/sandbox/astra";
@@ -40,7 +40,7 @@ resource.setrlimit(resource.RLIMIT_CPU, (330, 330))
 os.execve('/opt/astra-blender/blender', ['/opt/astra-blender/blender', '--background', '--factory-startup', '--disable-autoexec', '--python-exit-code', '1', '--threads', '2', '--python', '${ROOT}/scene.py', '--', '${ROOT}/output'], {'PATH': '/usr/bin:/bin', 'OMP_NUM_THREADS': '2', 'OPENBLAS_NUM_THREADS': '2', 'BLENDER_USER_CONFIG': '/tmp/astra-blender-config'})
 `;
 
-async function call(base, method, path, { json, body, auth = true } = {}) {
+async function call(base, secret, method, path, { json, body, auth = true } = {}) {
   const headers = auth ? { authorization: `Bearer ${secret}` } : {};
   if (json) headers["content-type"] = "application/json";
   const res = await fetch(base + path, { method, headers, body: json ? JSON.stringify(json) : body, signal: AbortSignal.timeout(200_000) });
@@ -50,20 +50,20 @@ async function call(base, method, path, { json, body, auth = true } = {}) {
   return { status: res.status, data, bytes };
 }
 
-async function smoke(base) {
-  const unauthenticated = await call(base, "GET", "/v1/sessions", { auth: false });
+async function smoke(base, secret) {
+  const unauthenticated = await call(base, secret, "GET", "/v1/sessions", { auth: false });
   if (unauthenticated.status !== 401) throw new Error(`expected 401 without the secret, got ${unauthenticated.status}`);
   const name = `astra-blender-${randomUUID()}`;
-  const created = await call(base, "POST", "/v1/sessions", { json: { name } });
+  const created = await call(base, secret, "POST", "/v1/sessions", { json: { name } });
   if (created.status !== 201) throw new Error(`create answered ${created.status} ${JSON.stringify(created.data)}`);
   const session = `/v1/sessions/${name}`;
   try {
     for (const [file, content] of [["scene.py", SCENE], ["run.py", LAUNCHER]]) {
-      const put = await call(base, "PUT", `${session}/files?path=${encodeURIComponent(`${ROOT}/${file}`)}`, { body: content });
+      const put = await call(base, secret, "PUT", `${session}/files?path=${encodeURIComponent(`${ROOT}/${file}`)}`, { body: content });
       if (put.status !== 201) throw new Error(`upload ${file} answered ${put.status}`);
     }
     const started = Date.now();
-    const run = await call(base, "POST", `${session}/run`, { json: { cmd: "/usr/bin/python3", args: ["run.py"], cwd: ROOT, timeoutMs: 170_000 } });
+    const run = await call(base, secret, "POST", `${session}/run`, { json: { cmd: "/usr/bin/python3", args: ["run.py"], cwd: ROOT, timeoutMs: 170_000 } });
     const seconds = ((Date.now() - started) / 1000).toFixed(1);
     if (run.status !== 200 || run.data.exitCode !== 0) {
       console.log(run.data?.stderr?.slice(-3000) ?? "");
@@ -71,21 +71,21 @@ async function smoke(base) {
     }
     const sizes = {};
     for (const [file, magic] of [["scene.blend", "BLENDER"], ["preview.png", "\x89PNG"], ["scene.glb", "glTF"]]) {
-      const got = await call(base, "GET", `${session}/files?path=${encodeURIComponent(`${ROOT}/output/${file}`)}`);
+      const got = await call(base, secret, "GET", `${session}/files?path=${encodeURIComponent(`${ROOT}/output/${file}`)}`);
       if (got.status !== 200 || got.bytes.subarray(0, magic.length).toString("latin1") !== magic) throw new Error(`${file}: ${got.status}`);
       sizes[file] = got.bytes.length;
     }
     return { seconds, sizes };
   } finally {
-    const stopped = await call(base, "DELETE", session);
+    const stopped = await call(base, secret, "DELETE", session);
     console.log(`  usage: ${JSON.stringify(stopped.data)}`);
   }
 }
 
 let failed = 0;
-for (const base of workers) {
+for (const [index, base] of workers.entries()) {
   try {
-    const { seconds, sizes } = await smoke(base.replace(/\/$/, ""));
+    const { seconds, sizes } = await smoke(base.replace(/\/$/, ""), secrets[index]);
     console.log(`OK   ${base}: rendered in ${seconds} s, outputs ${JSON.stringify(sizes)}`);
   } catch (error) {
     failed++;

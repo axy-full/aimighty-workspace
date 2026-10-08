@@ -20,11 +20,13 @@
 # a second network to a Dockerfile app. Whatever the option, README's egress
 # check is a hard gate before any real render.
 #
-# The production app calls the workers listed in ASTRA_WORKER_URLS (comma
-# list of http://<worker>:8080) with `Authorization: Bearer $ASTRA_WORKER_SECRET`.
-#
-# ASTRA_WORKER_SECRET: one value, at least 32 characters, set on this stack
-# (all three services read it) and on the production app. Never in git.
+# Secrets: one per worker, so code that escapes Blender and reads its own
+# worker's environment cannot drive the other two. render-N reads
+# ASTRA_WORKER_SECRET from the stack variable ASTRA_WORKER_SECRET_N (at least
+# 32 characters each, three different values, never in git). The production
+# app holds ASTRA_WORKER_URLS (comma list of http://<worker>:8080) and
+# ASTRA_WORKER_SECRETS (comma list, same order) and sends each worker its own
+# secret as `Authorization: Bearer <secret>`.
 
 services:
   render-1:
@@ -34,7 +36,7 @@ services:
     init: true                  # tini reaps orphans; the server sweeps strays per session
     restart: unless-stopped
     environment:
-      ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET:?set ASTRA_WORKER_SECRET}
+      ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET_1:?set ASTRA_WORKER_SECRET_1}
     cpus: 2
     cpuset: "12,13"
     cpu_shares: 256
@@ -57,7 +59,7 @@ services:
     init: true                  # tini reaps orphans; the server sweeps strays per session
     restart: unless-stopped
     environment:
-      ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET:?set ASTRA_WORKER_SECRET}
+      ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET_2:?set ASTRA_WORKER_SECRET_2}
     cpus: 2
     cpuset: "14,15"
     cpu_shares: 256
@@ -80,7 +82,7 @@ services:
     init: true                  # tini reaps orphans; the server sweeps strays per session
     restart: unless-stopped
     environment:
-      ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET:?set ASTRA_WORKER_SECRET}
+      ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET_3:?set ASTRA_WORKER_SECRET_3}
     cpus: 2
     cpuset: "16,17"
     cpu_shares: 256
