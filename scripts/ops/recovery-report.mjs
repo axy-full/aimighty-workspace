@@ -307,16 +307,23 @@ async function mediaCoverage(directory, inventory) {
     }),
     manifestMediaEntries(inventory),
     inventory.mediaKind,
-    { onReference: (reference) => used.set(reference.entry.path, reference.entry) },
+    {
+      onReference: (reference) =>
+        used.set(reference.entry.path, {
+          entry: reference.entry,
+          // Named by row only: a restored path can carry a customer's file name.
+          row: used.get(reference.entry.path)?.row ?? `${reference.database}/${reference.table}/${reference.id}`,
+        }),
+    },
   );
   const absent = [];
-  for (const [path, entry] of used) {
+  for (const [path, { entry, row }] of used) {
     try {
       const info = await lstat(join(directory, path));
-      if (!info.isFile() || info.isSymbolicLink() || info.size !== entry.bytes) absent.push(path);
+      if (!info.isFile() || info.isSymbolicLink() || info.size !== entry.bytes) absent.push(row);
     } catch (e) {
       if (e.code !== "ENOENT") throw e;
-      absent.push(path);
+      absent.push(row);
     }
   }
   if (absent.length)

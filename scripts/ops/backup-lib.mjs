@@ -424,6 +424,8 @@ export function mediaEnvNames(media) {
     checkR2Spec(media);
     return r2Names(media);
   }
+  if ([...R2_VALUE_FIELDS, ...R2_NAMES, "endpointEnv", "tokenEnv"].some((field) => field in media))
+    fail("Dual media takes its R2 and Blob variable names under r2 and blob, never values in configuration.");
   checkR2Spec(media.r2);
   checkBlobSpec(media.blob);
   return [...r2Names(media.r2), media.blob.tokenEnv];
@@ -731,8 +733,8 @@ export function mediaResolver(entries, kind) {
 }
 
 /** Every object a database row points at must resolve, by the app's rule,
- * to an object in the captured inventory. Missing objects are named (keys and
- * row IDs only, never a signed URL or credential). onReference receives each
+ * to an object in the captured inventory. Missing objects are named by
+ * database/table/row only: a key or URL can carry a customer's file name. onReference receives each
  * resolved reference, for restore/report/prepare. */
 export async function verifyMediaReferences(databases, entries, kind, { onReference } = {}) {
   const resolver = mediaResolver(entries, kind);
@@ -751,7 +753,7 @@ export async function verifyMediaReferences(databases, entries, kind, { onRefere
     missing = [];
   const found = (reference, entry) => {
     if (!entry) {
-      missing.push(`${reference.database}/${reference.table}/${reference.id} (${reference.key})`);
+      missing.push(`${reference.database}/${reference.table}/${reference.id}`);
       return;
     }
     references++;
