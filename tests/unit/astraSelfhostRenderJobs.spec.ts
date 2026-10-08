@@ -302,7 +302,8 @@ test('a cancel that read the job while it was claimed, then found it back in the
     const execute = client.execute.bind(client);
     let released = false;
     client.execute = (async (statement: Parameters<typeof execute>[0]) => {
-        if (!released && typeof statement === 'object' && String(statement.sql).includes('SET cancel_requested=1')) {
+        const sql = typeof statement === 'string' ? statement : String((statement as { sql: string }).sql);
+        if (!released && sql.includes('SET cancel_requested=1')) {
             released = true;
             await execute({ sql: "UPDATE astra_render_jobs SET status='queued',runtime_id=NULL,claimed_at=NULL,error=? WHERE id=?", args: [m.ASTRA_WORKERS_BUSY, first.job.id] });
         }
