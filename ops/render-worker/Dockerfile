@@ -47,13 +47,13 @@ RUN groupadd --system --gid 10001 render \
 WORKDIR /app
 COPY server.mjs /app/server.mjs
 ENV NODE_ENV=production \
-    PORT=8080 \
+    PORT=8790 \
     ASTRA_WORKER_CONTAINER=1
 USER 10001:10001
 # Internal network only; compose publishes no port.
-EXPOSE 8080
+EXPOSE 8790
 # Alive = answers an unauthenticated request with 401. Runs with an empty
 # environment (env -i) so the check itself never carries the secret.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD ["/usr/bin/env", "-i", "/usr/local/bin/node", "-e", "fetch('http://127.0.0.1:8080/v1/sessions').then(r=>process.exit(r.status===401?0:1),()=>process.exit(1))"]
+  CMD ["/usr/bin/env", "-i", "/usr/local/bin/node", "-e", "fetch('http://127.0.0.1:8790/v1/sessions').then(r=>process.exit(r.status===401?0:1),()=>process.exit(1))"]
 CMD ["node", "/app/server.mjs"]

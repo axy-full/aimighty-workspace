@@ -644,7 +644,7 @@ async function main() {
     process.exit(1);
   }
   await worker.ready();
-  const port = Number(process.env.PORT ?? 8080);
+  const port = Number(process.env.PORT ?? 8790);
   worker.server.listen(port, "0.0.0.0", () => console.log(`render worker listening on ${worker.server.address().port}`));
   const shutdown = () => { worker.close().finally(() => process.exit(0)); };
   process.once("SIGTERM", shutdown);
