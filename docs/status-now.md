@@ -1,4 +1,4 @@
-# Status now: 8 October 2026, 05:27 IST, Release 1 lead moved to "contabo"
+# Status now: 8 October 2026, 05:43 IST, Release 1 lead moved to "contabo"
 
 Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md` on branch `ops/handover-2026-10-06`. **Owner, 18:45: move off Vercel today if possible.** Report on Vercel dependencies, env names, sign-in/URL needs, the particl.app redirect and Nixpacks sent in chat. The sign-in fix is in release/1 for the owner's test (applies to main too; main only on the owner's go). Before production: the public-link fix (running), AI_GATEWAY_API_KEY, the VERCEL_ENV guards, Traefik's read timeout. The reported home-page loop was not reproduced on main or release/1 and is withdrawn; a loop on the test address would come from a layer in front of the app.
 
@@ -6,7 +6,7 @@ Governing scope: `docs/particl-sow.md` (v2). Laptop handover: `docs/HANDOVER.md`
 Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's AT RISK and WON'T MAKE IT items, with an estimate per item; (c) move prep for Coolify on a test address, files only. Then a proposed demo date and the `release/1` → main plan.
 
 **Lead:** the session on "contabo" took over from the "vps" session at about 15:50 IST. Deny rules checked: `git restore` and `docker ps` are both refused.
-**Integration preview:** `release/1` (draft #546) = 60bf3fe4. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
+**Integration preview:** `release/1` (draft #546) = 9e16cbda. The preview is mocked: no engine keys, ENGINE_MOCK set. The preview runs on the staging databases.
 
 ## In `release/1` since 15:00
 - 3D blocking part B (`build/gaps-l2` 44cda874, Opus PASS; owner yes to Q7: staging only, production only in a later train after a Turso backup branch).
@@ -42,7 +42,7 @@ Order of work: (a) CI on `release/1` fully green; (b) finish the Thursday list's
 - On "contabo", 3ca30197: typecheck clean; unit 3,950 passed, 3 failed (the same three), 7 skipped.
 - CI on 0ce3c338: 19 of 20 jobs green (all unit); one browser shard hung. Everything reviewed tonight is now in `release/1` (48193cc4); its CI run is going.
 - `bundle.spec` (a stale test after the old-screen cut; no live price path was lost; reviewed PASS) now proves the browser asks the server's quote routes and holds no vendor rate in any form. In `release/1` 60bf3fe4.
-- **CI on 60bf3fe4 (run 37692545778): all unit green; two browser specs left**, both expectations after the old-screen cut: `suites-business` expects no frame where the cut deliberately routes `sp=ads` to the image-ad card, and the new old-address spec looks for the desktop shell on phones. Fix running.
+- **CI on 60bf3fe4 (run 37692545778): all unit green; two browser specs left**, both expectations after the old-screen cut: `suites-business` expects no frame where the cut deliberately routes `sp=ads` to the image-ad card, and the new old-address spec looks for the desktop shell on phones. Fixed and reviewed; in `release/1` 9e16cbda; its CI run is going (expected green).
 - Fix lanes running since 16:20, one branch each, merged into `release/1` only after a fresh review (Opus where money, sign-in or tenancy):
   - `fix/r1-ci-make`: the Make composer specs (prices, batches, model picker).
   - `fix/r1-ci-settings`: Settings, credits, no vendor dollars, retired connected account.
