@@ -510,6 +510,55 @@ test('SDK suite steps settle using their own context tiers and the saved price, 
   });
 });
 
+test('a Claude suite step with a thinking budget stays inside its quoted ceiling: the budget is taken off maxOutputTokens', async () => {
+  const { atomikEffortOptions } = await import('../../lib/atomik-reasoning');
+  const { suiteAgentMaxOutputTokens } = await import('../../lib/workbench/suite-agent');
+  await runInTenant({ ...workspace(), keys: {}, usesPlatformKeys: true }, async () => {
+    const { input } = await fixture(), h = harness();
+    const budgeted: CatalogModel = { ...model, owner: 'anthropic', maxTokens: 64000, reasoningOptions: [{ type: 'budget_tokens', min: 1024, max: 32000 }] };
+    h.deps.models = async () => [budgeted];
+    const effort = atomikEffortOptions(budgeted).find(option => option.value.startsWith('budget:'))!.value;
+    const budget = Number(effort.slice('budget:'.length));
+    const request = { ...input, model: budgeted.id, suite: 'particl' as const, refs: [], effort, maxCredits: 10000 };
+    const { job } = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+    const envelope = JSON.parse(String((await db().execute({ sql: 'SELECT provider_body FROM workbench_atomik_jobs WHERE id=?', args: [job.id] })).rows[0].provider_body));
+    // The quote's per-step ceiling counts the thinking budget inside maxTokens.
+    expect(envelope.providerOptions.anthropic.thinking).toEqual({ type: 'enabled', budgetTokens: budget });
+    expect(envelope.maxTokens).toBeGreaterThan(budget);
+    expect(suiteAgentMaxOutputTokens(envelope)).toBe(envelope.maxTokens - budget);
+    // The SDK loop asks for the answer's share only; the Anthropic SDK adds the budget back on the wire.
+    const seen: (number | undefined)[] = [];
+    const sdkModel = new MockLanguageModelV4({ doGenerate: async options => { seen.push(options.maxOutputTokens); return {
+      content: [{ type: 'text', text: JSON.stringify(suiteProposal) }], finishReason: { unified: 'stop', raw: undefined }, warnings: [],
+      usage: { inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined }, outputTokens: { total: 10, text: 10, reasoning: undefined } } }; } });
+    await createSuiteAgent(envelope, sdkModel).generate({ messages: suiteAgentMessages(envelope) });
+    expect(seen).toEqual([envelope.maxTokens - budget]);
+    // No thinking, adaptive thinking, or a non-Claude model: unchanged. A budget that leaves no answer is refused.
+    expect(suiteAgentMaxOutputTokens({ ...envelope, providerOptions: {} })).toBe(envelope.maxTokens);
+    expect(suiteAgentMaxOutputTokens({ ...envelope, providerOptions: { anthropic: { thinking: { type: 'adaptive' } } } })).toBe(envelope.maxTokens);
+    expect(suiteAgentMaxOutputTokens({ ...envelope, model: 'openai/gpt-5-mini' })).toBe(envelope.maxTokens);
+    expect(() => suiteAgentMaxOutputTokens({ ...envelope, providerOptions: { anthropic: { thinking: { type: 'enabled', budgetTokens: envelope.maxTokens } } } })).toThrow();
+  });
+});
+
+test('on the wire, a direct Claude suite step asks Anthropic for exactly the quoted ceiling (answer + thinking budget)', async () => {
+  const saved = { direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
+  process.env.TEXT_DIRECT = 'anthropic'; process.env.ANTHROPIC_API_KEY = 'test-anthropic-key-never-sent';
+  try {
+    const { languageModel } = await import('../../lib/language-provider');
+    const bodies: Record<string, unknown>[] = [];
+    const fetch: typeof globalThis.fetch = async (_url, init) => { bodies.push(JSON.parse(String(init?.body))); return Response.json({ type: 'error', error: { type: 'invalid_request_error', message: 'Fixture stop.' } }, { status: 400 }); };
+    const envelope = { suite: 'particl' as const, model: 'anthropic/claude-sonnet-4.6', context: 'Brief.', maxTokens: 6000, inputTokenBudget: 50000, toolResultByteBudget: 20000,
+      providerOptions: { anthropic: { thinking: { type: 'enabled' as const, budgetTokens: 2048 } } }, assetIds: [], images: [] };
+    await createSuiteAgent(envelope, languageModel(envelope.model, { auth: {}, fetch })).generate({ messages: suiteAgentMessages(envelope) }).catch(() => null);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0].max_tokens).toBe(6000);
+    expect(bodies[0].thinking).toEqual({ type: 'enabled', budget_tokens: 2048 });
+  } finally {
+    for (const [name, value] of [['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+  }
+});
+
 test('suite usage above the approved quote remains held without charging the overage or replaying the loop', async () => {
   await runInTenant({ ...workspace(), keys: {}, usesPlatformKeys: true }, async () => {
     const { input } = await fixture(), h = harness();
