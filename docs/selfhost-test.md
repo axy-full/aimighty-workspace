@@ -175,7 +175,7 @@ All three `VERCEL_*` names above are needed together; see "Astra Blender renders
 
 ### Never set on the self-hosted app
 
-`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `VERCEL_GIT_COMMIT_SHA`, `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL`, `VERCEL_OIDC_TOKEN`. Vercel sets these itself; on another host they switch the app into Vercel behaviour: `VERCEL` alone makes the app read client addresses the Vercel way (anyone can then fake them) and send the AI gateway an OIDC identity it does not have. **Never bulk-paste a `vercel env pull` file into Coolify:** it contains `VERCEL=1`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_GIT_*` and `VERCEL_OIDC_TOKEN`. Copy the names in the tables above one by one. Also not added: `NODE_ENV`, `PORT`, `HOSTNAME` (the image sets them) and the script-only names (`PARTICL_BACKUP_*`, `PW_*`, `AIMIGHTY_*`, `PARTICL_URL`, `PARTICL_TOKEN`).
+`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `VERCEL_GIT_*` (any), `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL`, `VERCEL_OIDC_TOKEN`. Vercel sets these itself; on another host they switch the app into Vercel behaviour: `VERCEL` alone makes the app read client addresses the Vercel way (anyone can then fake them) and send the AI gateway an OIDC identity it does not have. **Never bulk-paste a `vercel env pull` file into Coolify:** it contains `VERCEL=1`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_GIT_*` and `VERCEL_OIDC_TOKEN`. Copy the names in the tables above one by one. Also not added: `NODE_ENV`, `PORT`, `HOSTNAME` (the image sets them) and the script-only names (`PARTICL_BACKUP_*`, `PW_*`, `AIMIGHTY_*`, `PARTICL_URL`, `PARTICL_TOKEN`).
 
 ### If Vercel will not show a value (Sensitive)
 
@@ -208,7 +208,7 @@ The one list for the production app in Coolify (app id `4dufbrykuka94cedlfjo3jxm
 | Name | Set to, or copy from | = Vercel? | Build? |
 |---|---|---|---|
 | `APP_ORIGIN` | `https://particl.si` (no slash or path after it) | yes | **yes** (`robots.txt` and `sitemap.xml` are made at build) |
-| `APP_URL` | `https://particl.si` (no code reads it once `main` has Release 1; harmless) | yes | no |
+| `APP_URL` | `https://particl.si` (read by `lib/held.ts` on `main` for held-render email links; required) | yes | no |
 | `NEXT_PUBLIC_APP_URL` | `https://particl.si` | yes | **yes** |
 | `SELFHOST_BEHIND_PROXY` | `1` | self-host only | no |
 | `PARTICL_DEPLOYMENT` | `production` | self-host only | no |
@@ -267,6 +267,7 @@ The one list for the production app in Coolify (app id `4dufbrykuka94cedlfjo3jxm
 
 **Never set on the production app:**
 - `VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_OIDC_TOKEN`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `VERCEL_GIT_COMMIT_SHA`, `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL` (Vercel's own; off Vercel they switch on Vercel behaviour, such as trusting faked client addresses). Never bulk-paste a `vercel env pull` file.
+- `BRANCH_NAME` and `BRANCH` (the Inngest SDK turns them into an environment header).
 - `TRUST_CF_CONNECTING_IP` (grey cloud: setting it lets anyone fake their address past every rate limit and the sign-in lock; it belongs to the later orange-cloud step only) and `TRUSTED_PROXY_HOPS`.
 - `ENGINE_MOCK` (`1` fakes every engine and no one is charged for real work), `PARTICL_TEST_MOCK_DELAYS` (test-only: it does nothing without `ENGINE_MOCK=1` and off a production build), `CI_DEV_SOURCE_MAPS` (CI only). The code reads no other `*_TEST_*` or mock flag.
 - `WORKSPACE_DB_DIRECTORY`, `OWNER_PRIVACY_SCRUB_LOCAL` (local development only).
@@ -283,8 +284,8 @@ The one list for the production app in Coolify (app id `4dufbrykuka94cedlfjo3jxm
 - After saving, rebuild (not just restart): `APP_ORIGIN` and the two `NEXT_PUBLIC_*` values are baked in at build.
 
 **Where this list comes from (8 Oct 2026).** A grep of every `process.env` read, `env.NAME` read through a passed-in environment, and quoted variable name (vendor key and base-URL tables, price settings) in `lib/`, `app/`, `components/`, `proxy.ts`, `instrumentation.ts`, `next.config.ts`, the build scripts (`prebuild` runs `scripts/ops/preview-seed.cjs`, which skips without `VERCEL_ENV=preview`; `postinstall` copies the PDF and OCR workers and reads nothing) and `ops/selfhost/`, on `origin/release/1` and `origin/main`, plus the names the Inngest SDK reads by itself. Every name the code reads is in the table or the "Never set" list.
-- `main` today (before Release 1 is merged into it) has **no `ops/selfhost/`** (no Dockerfile, no `cron-sync.mjs`) and does not read `NEXT_OUTPUT`, `SELFHOST_BEHIND_PROXY`, `PARTICL_DEPLOYMENT`, `TRUST_CF_CONNECTING_IP`, `TRUSTED_PROXY_HOPS` or `GIT_COMMIT_SHA`. An image built from today's `main` would not run correctly here. The switch-day image is built from `main` **after** Release 1 is merged into it (cutover step 1 checks that build on staging).
-- `main` today reads `APP_URL` and `NEXT_PUBLIC_APP_URL` (`lib/held.ts`); Release 1 reads `APP_ORIGIN` there instead. Both are set above, so either build sends correct links.
+- The switch-day image is built from `main` **after** the hotfix train (#564, #565, #562, #566); those branches were searched too and add no name missing here. `main` already reads `SELFHOST_BEHIND_PROXY` (since #563); `ops/selfhost/` (Dockerfile, `cron-sync.mjs`), `PARTICL_DEPLOYMENT`, `TRUSTED_PROXY_HOPS` and the standalone switch arrive with #562, #565 and #566. Do not build the production image before #566 is on `main`. `main` has no `prebuild` step.
+- `main` reads `APP_URL` and `NEXT_PUBLIC_APP_URL` (`lib/held.ts`); Release 1 reads `APP_ORIGIN` there instead. All are set above, so either build sends correct links. Names read only by ops scripts (for example `PARTICL_ALLOW_STAGING_REHEARSAL`, `TURSO_CLI`, `PHASE`) are not app settings and are not listed.
 - Release 1 only: `PARTICL_TEST_MOCK_DELAYS` (test-only), `OWNER_PRIVACY_SCRUB_LOCAL`, `VERCEL_BRANCH_URL` (all in "Never set").
 
 ## Traefik timeouts
