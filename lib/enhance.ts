@@ -1,4 +1,5 @@
-import { textVendor } from './openai-direct';
+import { directTextCostUsd, TEXT_LEDGER_KEY, textEngine, textVendor } from './openai-direct';
+import { findModel } from './catalog';
 import { languageAuth } from './language-provider';
 import { recoveryFetch as fetch } from "./recovery";
 /**
@@ -29,7 +30,7 @@ import {
   explainGatewayFailure,
 } from "./gateway";
 import { vendorKey } from "./vendorKeys";
-import { assertDirectBillingReady, textPost } from "./textDirect";
+import { textPost } from "./textDirect";
 import { engineMock } from "./mock";
 import { getModel } from "./models";
 import {
@@ -71,12 +72,15 @@ export const TEXT_MODEL = () => TEXT_MODELS()[0];
 /**
  * Which model writes the prompt.
  *
- *   anthropic — Claude straight from Anthropic, when a console key exists.
- *   gateway   — the same Claude through Vercel AI Gateway: billed to the
- *               Vercel account, no Anthropic console needed. Reached with an
- *               AI_GATEWAY_API_KEY, or with no key at all on Vercel, where
- *               every function carries an OIDC identity the gateway accepts.
+ *   gateway   — the text router (lib/textDirect.ts textPost): Claude, Gemini
+ *               or Grok through the gateway, or straight to its provider once
+ *               TEXT_DIRECT switches that provider on. The name is kept for
+ *               the stored setting and the engines registry.
  *   byteplus  — ByteDance's own text models on the ModelArk key.
+ *   anthropic — the legacy raw-id Claude call (refineWithClaude). Only when
+ *               REFINE_PROVIDER=anthropic forces it: an Anthropic key alone no
+ *               longer switches the writer, so adding ANTHROPIC_API_KEY changes
+ *               nothing until TEXT_DIRECT lists anthropic.
  *
  * REFINE_PROVIDER forces one; otherwise the first that can be reached wins.
  */
@@ -86,23 +90,26 @@ export function refineProvider(): RefineProvider {
   const forced = process.env.REFINE_PROVIDER;
   if (forced === "anthropic" || forced === "gateway" || forced === "byteplus")
     return forced;
-  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)
-    return "anthropic";
   if (gatewayReachable()) return "gateway";
   return "byteplus";
 }
 /** Opus 5 by default — this is the judgement step, and the studio asked for the best. */
 export const CLAUDE_MODEL = () =>
   process.env.ANTHROPIC_PROMPT_MODEL ?? "claude-opus-5";
-/** Gateway defaults when no platform routing choice exists; only the first is submitted. A dropped id in the env reads as its alias (lib/modelAliases.ts). */
-export const GATEWAY_MODELS = (): string[] =>
+/** The writer's defaults when no platform routing choice exists; only the first is submitted.
+ * `PROMPT_MODELS`; the old name `GATEWAY_PROMPT_MODELS` is still read for one release.
+ * A dropped id in the env reads as its alias (lib/modelAliases.ts). */
+export const PROMPT_MODELS = (): string[] =>
   (
+    process.env.PROMPT_MODELS ??
     process.env.GATEWAY_PROMPT_MODELS ??
     "anthropic/claude-opus-5,anthropic/claude-sonnet-5"
   )
     .split(",")
     .map((s) => aliasModel(s.trim()))
     .filter(Boolean);
+/** The old name, kept for one release with GATEWAY_PROMPT_MODELS. */
+export const GATEWAY_MODELS = PROMPT_MODELS;
 export const TEXT_RATE_FALLBACK = { input: 0.5, output: 3.0 };
 
 /** Each ByteDance text model's first 500k tokens are free on this account;
@@ -154,7 +161,8 @@ export async function activeWriter(): Promise<ActiveWriter> {
       configured: Boolean(vendorKey("ark")),
     };
   }
-  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) {
+  /* The legacy direct Claude writer only when forced (refineProvider): a key alone never switches it. */
+  if (process.env.REFINE_PROVIDER === "anthropic" && !engineMock()) {
     return {
       writer: "claude",
       provider: "anthropic",
@@ -169,16 +177,20 @@ export async function activeWriter(): Promise<ActiveWriter> {
     (await getPlatformLayer().catch(() => null))?.models ?? null,
     "enhance",
   );
-  const m = TEXT_RATES[routed] ? routed : GATEWAY_MODELS()[0];
+  const m = TEXT_RATES[routed] ? routed : PROMPT_MODELS()[0];
+  const vendor = textVendor(m);
   return {
     writer: "claude",
     provider: "gateway",
     model: m,
     label: prettyModel(m),
-    via: textVendor(m) === "openai" ? "Language account, direct" : vendorKey("gateway")
+    via: vendor === "openai" ? "Language account, direct"
+      : vendor !== "gateway" ? "Model provider, direct"
+      : vendorKey("gateway")
       ? "Model gateway (API key)"
       : "Model gateway (OIDC)",
-    configured: textVendor(m) !== "openai" && gatewayReachable(),
+    /* OpenAI is refused inline (refineThroughRouter); a direct door needs its own key; the gateway its reach. */
+    configured: vendor === "gateway" ? gatewayReachable() : vendor !== "openai" && Boolean(vendorKey(TEXT_LEDGER_KEY[vendor])),
   };
 }
 export type RefineResult = {
@@ -189,8 +201,11 @@ export type RefineResult = {
   /** The move the model chose, for the caller to attach as a module. */
   move?: string | null;
   /** What the call actually cost, when the vendor says so (the gateway
-   *  does, cache discounts included). Otherwise the caller prices tokens. */
+   *  does, cache discounts included), or a direct call's usage × the price
+   *  snapshot. Otherwise the caller prices tokens. */
   costUsd?: number | null;
+  /** Whose balance paid (generations.refine_ledger, lib/reconcile.ts PROMPT_LEDGER). */
+  ledger?: string;
 };
 
 /**
@@ -363,7 +378,8 @@ export function stripScaffolding(text: string): string {
     .trim();
 }
 
-/** Direct Claude refinement for legacy/BYOK workspaces, with bounded output and no retries. */
+/** Legacy direct Claude refinement (raw Anthropic ids, @anthropic-ai/sdk), with bounded output and no retries.
+ * Reached only when REFINE_PROVIDER=anthropic forces it (refineProvider); never because a key exists. */
 async function refineWithClaude(
   system: string,
   userMsg: string,
@@ -415,20 +431,20 @@ async function refineWithClaude(
   };
 }
 
-/** One submission using the selected writer; no model or transport retry. */
-async function refineWithGateway(
+/** One submission through the text router (textPost) using the selected writer; no model or transport retry. */
+async function refineThroughRouter(
   system: string,
   userMsg: string,
   style: string,
 ): Promise<RefineResult & { cachedIn: number }> {
   const selected = currentTenant()?.workspace ? await activeWriter() : null;
   const model =
-    selected?.provider === "gateway" ? selected.model : GATEWAY_MODELS()[0];
+    selected?.provider === "gateway" ? selected.model : PROMPT_MODELS()[0];
   // Inline refinement has only legacy static writer pricing and is skipped
   // for subscribed workspaces. OpenAI planning belongs to the durable, quoted
   // Atomik path; a manual environment override must not create an unpriced call.
   if (textVendor(model) === "openai") throw new Error("Use a quoted Atomik request for prompt development. Inline refinement is unavailable for this model.");
-  assertDirectBillingReady(model);
+  const ledger = textEngine(model);
   const auth = await languageAuth(model);
   const res = await textPost(
     JSON.stringify({
@@ -462,6 +478,11 @@ async function refineWithGateway(
     );
   }
   const usage = j.usage ?? {};
+  /* A direct reply carries no cost: its usage × the price snapshot, as the
+     quoted paths charge it. Unpriced (no snapshot, missing counts) stays null,
+     and the caller prices the tokens at its table rates, never at 0. */
+  const snapshot = ledger !== "vercel" && !engineMock() ? await findModel(model).catch(() => null) : null;
+  const direct = snapshot ? directTextCostUsd(snapshot, usage) : null;
   return {
     text: out.trim(),
     model,
@@ -470,7 +491,8 @@ async function refineWithGateway(
     cachedIn: Number(
       usage.prompt_tokens_details?.cached_tokens ?? usage.cached_tokens ?? 0,
     ),
-    costUsd: typeof usage.cost === "number" ? usage.cost : null,
+    costUsd: typeof usage.cost === "number" ? usage.cost : direct,
+    ledger,
   };
 }
 
@@ -489,6 +511,7 @@ function finishRefine(r: RefineResult & { cachedIn: number }): RefineResult {
     outTokens: r.outTokens,
     move: pick ? pick[2].toLowerCase() : null,
     costUsd: r.costUsd ?? null,
+    ...(r.ledger ? { ledger: r.ledger } : {}),
   };
 }
 
@@ -516,12 +539,12 @@ export async function enhancePrompt(opts: {
   const provider = opts.provider ?? refineProvider();
   if (provider === "anthropic") {
     return finishRefine(
-      await refineWithClaude(SYSTEM, userMsg, opts.style ?? ""),
+      { ...await refineWithClaude(SYSTEM, userMsg, opts.style ?? ""), ledger: "anthropic" },
     );
   }
   if (provider === "gateway") {
     return finishRefine(
-      await refineWithGateway(SYSTEM, userMsg, opts.style ?? ""),
+      await refineThroughRouter(SYSTEM, userMsg, opts.style ?? ""),
     );
   }
 
@@ -566,6 +589,7 @@ export async function enhancePrompt(opts: {
         model,
         inTokens: Number(j.usage?.prompt_tokens ?? 0),
         outTokens: Number(j.usage?.completion_tokens ?? 0),
+        ledger: "byteplus",
       };
     }
     throw new Error(

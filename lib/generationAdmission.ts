@@ -1730,6 +1730,8 @@ export async function executeGenerationAdmission(
       ? final.carried.rawPrompt
       : castPrompt !== prompt ? prompt : undefined;
     let refineModel: string | null = null;
+    /* Whose balance paid for the writer's text (generations.refine_ledger, lib/reconcile.ts PROMPT_LEDGER). */
+    let refineLedger: string | null = null;
     let refineIn = 0,
       refineOut = 0;
     /** How long the prompt writer held the submit up. Null when it never ran. */
@@ -1830,6 +1832,7 @@ export async function executeGenerationAdmission(
         chosenMove = r.move ?? null;
         rawPrompt = prompt; // the words a person actually typed
         refineModel = r.model;
+        refineLedger = r.ledger ?? null;
         refineIn = r.inTokens;
         refineOut = r.outTokens;
 
@@ -2228,8 +2231,8 @@ export async function executeGenerationAdmission(
         sql: `INSERT INTO generations
           (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at,
            refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd, token_id,
-           shot_id, version, provider, task, source_gen_id, refine_ms, billed_to)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           shot_id, version, provider, task, source_gen_id, refine_ms, billed_to, refine_ledger)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         args: [
           genId,
           projectId,
@@ -2253,6 +2256,7 @@ export async function executeGenerationAdmission(
           sourceGenId,
           refineMs,
           billedTo(model.provider ?? "byteplus"),
+          refineModel ? refineLedger : null,
         ],
       });
       for (const bind of binding) await tx.execute(bind);
