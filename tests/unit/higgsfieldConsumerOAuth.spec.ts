@@ -11,8 +11,13 @@ const directory = mkdtempSync(path.join(tmpdir(), "particl-consumer-oauth-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(directory, "tenant.db")}`;
 process.env.KEYRING_SECRET = "unit-test-consumer-keyring-not-a-real-secret";
-process.env.APP_ORIGIN = "https://particl.example";
 delete process.env.HF_CONSUMER_CLIENT_ID;
+/* This file's own public origin, set per test and put back after: set at load, it leaked into every spec loaded
+   after it (Playwright loads all specs before the workers fork), so their links were built on it. */
+const PUBLIC_ORIGIN = "https://particl.example";
+let savedOrigin: string | undefined;
+test.beforeEach(() => { savedOrigin = process.env.APP_ORIGIN; process.env.APP_ORIGIN = PUBLIC_ORIGIN; });
+test.afterEach(() => { if (savedOrigin === undefined) delete process.env.APP_ORIGIN; else process.env.APP_ORIGIN = savedOrigin; });
 const identity = { workspaceId: "workspace", userId: "owner" };
 let sequence = 0;
 const fresh = () => ({ ...identity, workspaceId: `workspace-${++sequence}` });
@@ -103,7 +108,7 @@ test("own HTTPS metadata, minimal scopes and S256 state store no plaintext sessi
   delete process.env.HF_CONSUMER_CLIENT_ID;
   process.env.APP_ORIGIN = "http://localhost:4765";
   expect(() => oauth.consumerConfiguration()).toThrow("not configured");
-  process.env.APP_ORIGIN = "https://particl.example";
+  process.env.APP_ORIGIN = PUBLIC_ORIGIN;
 });
 
 test("authorization checks exact account, workspace and browser session before consuming once", async () => {
