@@ -321,7 +321,7 @@ test("r2-only capture paginates, retries a dropped stream, encrypts and restores
   // The report checks the restored files themselves.
   await rm(join(restored, "media", W, "uploads", "bare.txt"));
   await rm(join(restored, "reconciliation-report.json"));
-  await assert.rejects(recoveryReport(restored), /missing or changed in the offline directory \(1\): media\/ws\/ws_fixture\/uploads\/bare\.txt/);
+  await assert.rejects(recoveryReport(restored), /missing or changed in the offline directory \(1\): tenant\/uploads\/bare$/);
 });
 
 test("dual capture covers R2 and Blob together by the app's R2-first rule and restores both trees offline", async (t) => {
@@ -350,18 +350,27 @@ test("dual capture covers R2 and Blob together by the app's R2-first rule and re
   assert.equal(JSON.stringify(inventory).includes(f.env.FIXTURE_R2_SECRET_ACCESS_KEY), false);
 });
 
-test("missing objects fail coverage naming each one; r2-only does not fall back to Blob", async (t) => {
+test("missing objects fail coverage naming each row, never a customer's file name; r2-only does not fall back to Blob", async (t) => {
   const f = await fixture(t),
     { r2, blob } = productionStores(f);
   r2.objects.delete(`${W}generations/new.mp4`);
   blob.data.delete(`${W}uploads/blobonly-Cd34.png`);
+  // A browser-direct upload keeps the customer's own file name in its URL.
+  const tenant = createClient({ url: pathToFileURL(f.tenantPath).href });
+  await tenant.execute({
+    sql: "INSERT INTO uploads VALUES('named','pdf',?)",
+    args: [`${BLOB_ORIGIN}${W}uploads/Acme%20Merger%20Contract%20FINAL-Zz99.pdf`],
+  });
+  tenant.close();
   await assert.rejects(
     createBackup(f.config(dual), join(f.root, "missing"), { env: f.env, r2Client: r2.factory, blobSdk: blob, retryOptions: fast }),
     (error) => {
-      assert.match(error.message, /referenced by a database is missing from the storage inventory \(2\)/);
-      assert.match(error.message, /tenant\/generations\/new \(ws\/ws_fixture\/generations\/new\.mp4\)/);
-      assert.match(error.message, /tenant\/uploads\/blobonly \(ws\/ws_fixture\/uploads\/blobonly-Cd34\.png\)/);
-      assert.equal(error.message.includes("vercel-storage.com"), false);
+      assert.match(
+        error.message,
+        /referenced by a database is missing from the storage inventory \(3\): tenant\/generations\/new, tenant\/uploads\/blobonly, tenant\/uploads\/named$/,
+      );
+      for (const leak of ["Acme", "Merger", "Contract", "%20", "blobonly-Cd34", "ws/ws_fixture", "vercel-storage.com", ".png", ".pdf"])
+        assert.equal(error.message.includes(leak), false, leak);
       return true;
     },
   );
@@ -369,7 +378,7 @@ test("missing objects fail coverage naming each one; r2-only does not fall back 
   const { r2: onlyR2 } = productionStores(f);
   await assert.rejects(
     createBackup(f.config({ kind: "r2", ...R2_NAMES }), join(f.root, "r2-only"), { env: f.env, r2Client: onlyR2.factory, retryOptions: fast }),
-    /missing from the storage inventory \(2\).*generations\/old\.png.*blobonly-Cd34\.png/,
+    /missing from the storage inventory \(3\): tenant\/generations\/old, tenant\/uploads\/blobonly, tenant\/uploads\/named$/,
   );
   await assert.rejects(readdir(join(f.root, "missing")), { code: "ENOENT" });
 });
@@ -418,6 +427,11 @@ test("R2 configuration takes environment variable names only and an https origin
     createBackup(f.config({ kind: "dual", r2: R2_NAMES, blob: { token: "inline" } }), join(f.root, "inline"), { env: f.env, r2Client: r2.factory, blobSdk: blob }),
     /tokenEnv/,
   );
+  for (const inline of [{ secretAccessKey: "inline" }, { token: "inline" }, { bucketEnv: "FIXTURE_R2_BUCKET" }])
+    await assert.rejects(
+      createBackup(f.config({ ...dual, ...inline }), join(f.root, "top-level"), { env: f.env, r2Client: r2.factory, blobSdk: blob }),
+      /under r2 and blob, never values/,
+    );
   await assert.rejects(
     createBackup(f.config(dual), join(f.root, "absent"), { env: { ...f.env, FIXTURE_R2_SECRET_ACCESS_KEY: "" }, r2Client: r2.factory, blobSdk: blob }),
     /secret environment variable is missing/,
