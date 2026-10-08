@@ -20,11 +20,18 @@ export function isAnswer(value: unknown): value is { agent: AgentAnswer } {
   return !!agent && typeof agent.enabled === "boolean" && (agent.run === null || (typeof agent.run === "object" && typeof agent.run.id === "string"));
 }
 
-export async function readAgent(scope: string, productionId: string, draftId: string | null): Promise<AgentAnswer> {
-  const query = `${TEAM_CANVAS}?productionId=${encodeURIComponent(productionId)}&agent=1${draftId ? `&projectId=${encodeURIComponent(draftId)}` : ""}`;
-  const value = await draftRequest<unknown>(query, scope);
+/** The run and the ask's terms; with `attachments` (`upload:<id>`), planning's figure prices those files in. */
+export async function readAgent(scope: string, productionId: string, draftId: string | null, attachments: readonly string[] = []): Promise<AgentAnswer> {
+  const params = new URLSearchParams({ productionId, agent: "1", ...(draftId ? { projectId: draftId } : {}) });
+  for (const id of attachments) params.append("attachment", id);
+  const value = await draftRequest<unknown>(`${TEAM_CANVAS}?${params}`, scope);
   if (!isAnswer(value)) throw new Error(READ_FAILED);
   return value.agent;
+}
+
+/** Why a read was refused, in the server's words when it said (an attached file it won't take), else a plain line. */
+export function readProblem(error: unknown): string {
+  return error instanceof DraftRequestError && error.status && error.status < 500 && error.status !== 401 && error.message ? error.message : READ_FAILED;
 }
 
 /** A person's call on the run (stop, undo, raise the limit, ask). Answers the run as it is now, or why not. */

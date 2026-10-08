@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { ACTIVE_STATES } from "@/lib/workbench/rig-agent-plan";
 import { approvalsChanged } from "@/lib/control-room/approve";
-import { BUSY_MS, IDLE_MS, READ_FAILED, callAgent, goalOf, readAgent, type AgentAnswer, type AskTerms } from "./agent-api";
+import { BUSY_MS, IDLE_MS, READ_FAILED, callAgent, goalOf, readAgent, readProblem, type AgentAnswer, type AskTerms } from "./agent-api";
 
 /**
  * The board agent's run, read for the docked panel and for the empty board's Start: one read per production,
@@ -66,8 +66,10 @@ export type BoardAgent = {
   refresh: () => Promise<void>;
   /** A person's call on the run or a new ask, through the team-canvas route. Answers why not, or null. */
   call: (body: Record<string, unknown>) => Promise<string | null>;
-  /** Ask Atomik to plan this board, at the limit the person pressed (the planning figure on the button). */
-  plan: (words: string, limit: number, extra?: { aspect?: string | null; seconds?: number | null }) => Promise<string | null>;
+  /** Ask Atomik to plan this board, at the limit the person pressed (the planning figure on the button), with the files attached (`upload:<id>`). */
+  plan: (words: string, limit: number, extra?: { aspect?: string | null; seconds?: number | null }, attachments?: readonly string[]) => Promise<string | null>;
+  /** Planning's figure for this board with these files attached, read now from the server (nothing is reserved); or why not. */
+  quote: (attachments: readonly string[]) => Promise<{ planning: number | null } | { error: string }>;
   ready: boolean;
   /** The planning figure as the last read holds it, for a press that must not outrun a price that moved. */
   latestPlanning: () => number | null;
@@ -115,17 +117,22 @@ export function useAgentRun(): BoardAgent {
     approvalsChanged();
     return null;
   }, [production, key, scope]);
-  const plan = useCallback((words: string, limit: number, extra?: { aspect?: string | null; seconds?: number | null }) => {
+  const plan = useCallback((words: string, limit: number, extra?: { aspect?: string | null; seconds?: number | null }, attachments: readonly string[] = []) => {
     if (!draft) return Promise.resolve("This project isn't ready for Atomik yet. Try again.");
-    return call({ action: "agent.plan", projectId: draft, requestId: crypto.randomUUID(), goal: goalOf(words, extra), limit, mode: "ask" });
+    return call({ action: "agent.plan", projectId: draft, requestId: crypto.randomUUID(), goal: goalOf(words, extra), limit, mode: "ask", ...(attachments.length ? { attachments: [...attachments] } : {}) });
   }, [call, draft]);
+  const quote = useCallback(async (attachments: readonly string[]) => {
+    if (!production) return { error: "This project has no board yet." };
+    try { return { planning: (await readAgent(scope, production, draft, attachments)).ask?.planning ?? null }; }
+    catch (error) { return { error: readProblem(error) }; }
+  }, [scope, production, draft]);
 
   return useMemo(() => ({
     answer: snapshot?.answer ?? null,
     terms: snapshot?.terms ?? null,
     readError: snapshot?.error ?? null,
-    refresh, call, plan,
+    refresh, call, plan, quote,
     ready: !!snapshot?.answer,
     latestPlanning: () => (key ? entries.get(key)?.terms?.planning ?? null : null),
-  }), [snapshot, refresh, call, plan, key]);
+  }), [snapshot, refresh, call, plan, quote, key]);
 }

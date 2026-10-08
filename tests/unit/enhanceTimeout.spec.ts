@@ -11,7 +11,7 @@ import type { AdmissionActor } from "../../lib/admissionTypes";
  * stays silent for more than 100 s. The budget runs from the route's entry:
  * the provider gets what is left of it, and with under 20 s left the press is
  * refused before anything is reserved. A provider that stalls past it is
- * settled exactly once as `uncertain`, its 1 cr estimate billed, and the same
+ * settled exactly once as `uncertain`, its 1 cr estimate billed until the cron's pass returns it, and the same
  * press sent again never calls the provider a second time.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "enhance-timeout-"));
@@ -116,7 +116,7 @@ test("a provider that stalls past the budget is settled once as uncertain, the 1
     const first = await route(press("enhance-stall-1"));
     const body = await first.json();
     expect(first.status).toBe(502);
-    expect(body.error).toBe("The text request was interrupted after submission. Its credits remain reserved; this request will not be sent again.");
+    expect(body.error).toBe("The text request was interrupted after submission. It will not be sent again, and its estimated credits are returned to your balance automatically, usually within a few hours.");
     expect(timeouts).toHaveLength(1);
     expect(timeouts[0]).toBeLessThanOrEqual(90_000);
     expect(timeouts[0]).toBeGreaterThan(60_000);
@@ -129,7 +129,7 @@ test("a provider that stalls past the budget is settled once as uncertain, the 1
     expect(settled.meters).toHaveLength(1);
     expect(settled.meters[0].status).toBe("failed");
     expect(Number(settled.meters[0].engine_cost_usd)).toBe(Number(settled.jobs[0].estimate_usd));
-    /* The 1 cr estimate is billed; nothing later reconciles an uncertain text job. */
+    /* The 1 cr estimate is billed for now; the cron's pass returns it once no request can still answer (paidTextReconcile.spec.ts). */
     expect(Number(settled.meters[0].billed_credits)).toBe(1);
 
     /* The same press again (a retry of the lost reply): answered from its claim, never a second call or charge. */

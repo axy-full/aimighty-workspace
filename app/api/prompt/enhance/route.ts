@@ -74,7 +74,7 @@ export const POST = withTenant(async function POST(req: Request) {
          The provider gets what is left of the 90 s budget; with under 20 s left the
          press is refused before anything is reserved (503, nothing charged). A provider
          that stalls past the budget settles the job as uncertain and the 1 cr estimate
-         is billed (lib/paidText.ts); no later step reconciles it. */
+         is billed (lib/paidText.ts) until the cron's pass returns it, 30 min on. */
       const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, true), deadline }, { model, accept: (text) => parseEnhanced(text, prompt) });
       const parsed = parseEnhanced(result.text, prompt);
       if (!parsed.ok) return NextResponse.json({ error: parsed.reason }, { status: 502 });

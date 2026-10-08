@@ -23,6 +23,7 @@ For the owner. The app runs in Coolify (Traefik v3 proxy) on the server **contab
 - **Paid 3D test:** not on staging. One render on production after the cutover, only on the owner's "run".
 - **Inngest app address:** the repo cannot show it (the serve route sets no address; Inngest's Vercel integration chose it). The owner checks it in step 5.
 - **Nightly encrypted backup:** high priority, ideally live before the cutover. It needs the backup hotfix on `main` and the owner's settings (see the restore section).
+- **Production app's environment (Coolify app `4dufbrykuka94cedlfjo3jxm`):** what is there now is wrong (`STORAGE_BACKEND=blob`, `DISPATCH_MODE=native`, a wrong `MAIL_FROM`). Set it from the one list in [Switch-day env for the Coolify production app](#switch-day-env-for-the-coolify-production-app), including its "remove" list, before the app is first started in step 4.
 
 **What `main` needs before it can run self-hosted:** the lead keeps that list in the description of PR #566.
 
@@ -70,7 +71,7 @@ The production app is a second Coolify app on the same server, built from `main`
 How to read the table:
 - **Copy from Vercel** means Vercel, the project, **Settings, Environment Variables**, the **Production** value.
 - **Identical** means it must be the same value Vercel production uses, because it decrypts or verifies data already stored, or because it names the same account. "Any valid" means a new key for the same account works just as well.
-- Every variable is a **runtime** variable. Only the two `NEXT_PUBLIC_*` names are build variables: in Coolify tick **Build Variable** (newer versions: "Available at Buildtime") on those two and **untick it on every other variable**, so no secret reaches the build or the image history.
+- Every variable is a **runtime** variable. Only the two `NEXT_PUBLIC_*` names and `APP_ORIGIN` (not secret; `robots.txt` and `sitemap.xml` are generated at build) are also build variables: in Coolify tick **Build Variable** (newer versions: "Available at Buildtime") on those three and **untick it on every other variable**, so no secret reaches the build or the image history.
 
 ### Address and proxy
 
@@ -83,7 +84,7 @@ How to read the table:
 | `PARTICL_DEPLOYMENT` | fixed: `production` (turns on the live-key and readiness guards Vercel gets from `VERCEL_ENV`) | self-host only |
 | `TRUST_CF_CONNECTING_IP` | **unset.** Setting it to `1` without Cloudflare in front lets anyone fake their address and dodge every rate limit and the sign-in lock. It belongs only to the later orange-cloud step. | self-host only |
 | `TRUSTED_PROXY_HOPS` | leave **unset** (means 1: the app counts the address Traefik itself saw, `lib/clientIp.ts`) | |
-| `CREDIT_USD` | fixed: `0.10` | yes |
+| `CREDIT_USD` | Vercel production's value, exactly (expected `0.10`; see the switch-day section) | **yes** |
 | `ENGINE_MOCK` | **unset** (must not be `1` on production) | |
 
 ### Databases, keys that unlock stored data, admin
@@ -174,7 +175,7 @@ All three `VERCEL_*` names above are needed together; see "Astra Blender renders
 
 ### Never set on the self-hosted app
 
-`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `VERCEL_GIT_COMMIT_SHA`, `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL`, `VERCEL_OIDC_TOKEN`. Vercel sets these itself; on another host they switch the app into Vercel behaviour: `VERCEL` alone makes the app read client addresses the Vercel way (anyone can then fake them) and send the AI gateway an OIDC identity it does not have. **Never bulk-paste a `vercel env pull` file into Coolify:** it contains `VERCEL=1`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_GIT_*` and `VERCEL_OIDC_TOKEN`. Copy the names in the tables above one by one. Also not added: `NODE_ENV`, `PORT`, `HOSTNAME` (the image sets them) and the script-only names (`PARTICL_BACKUP_*`, `PW_*`, `AIMIGHTY_*`, `PARTICL_URL`, `PARTICL_TOKEN`).
+`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `VERCEL_GIT_*` (any), `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL`, `VERCEL_OIDC_TOKEN`. Vercel sets these itself; on another host they switch the app into Vercel behaviour: `VERCEL` alone makes the app read client addresses the Vercel way (anyone can then fake them) and send the AI gateway an OIDC identity it does not have. **Never bulk-paste a `vercel env pull` file into Coolify:** it contains `VERCEL=1`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_GIT_*` and `VERCEL_OIDC_TOKEN`. Copy the names in the tables above one by one. Also not added: `NODE_ENV`, `PORT`, `HOSTNAME` (the image sets them) and the script-only names (`PARTICL_BACKUP_*`, `PW_*`, `AIMIGHTY_*`, `PARTICL_URL`, `PARTICL_TOKEN`).
 
 ### If Vercel will not show a value (Sensitive)
 
@@ -184,7 +185,7 @@ Vercel never shows a **Sensitive** variable again, and `vercel env pull --enviro
 |---|---|---|
 | `KEYRING_SECRET` | The owner's own record. Nothing else has it. | **Everything sealed with it:** every workspace's database token (workspaces cannot open their data), stored workspace keys, two-step sign-in and recovery codes, pending invitations. **If there is no record, stop.** The code has no way to re-seal under a new keyring (`lib/keyring.ts` reads one secret). Moving would first need a planned rotation: a reviewed re-seal tool, run against the databases while Vercel is still live. |
 | `VAPID_PRIVATE_KEY` (and its public key) | The owner's own record. | Notifications stop for everyone who turned them on, until they turn them on again in the new app. Not data loss. |
-| `BLOB_READ_WRITE_TOKEN` | Vercel, **Storage**, the Blob store, its token (unsure of the exact label). | No other value works (it is the store's own token). Without it, old Blob links break. If it cannot be found, do not cut over until every old Blob object is copied to R2 (`scripts/ops/migrate-media-r2.mjs`, gate 2). |
+| `BLOB_READ_WRITE_TOKEN` | Vercel, **Storage**, the Blob store, its token (unsure of the exact label). | No other value works (it is the store's own token). Without it, old Blob links break. If it cannot be found, do not cut over until every old Blob object is copied to R2 (`scripts/ops/blob-to-r2.mjs`, see "Before Vercel is cancelled"). |
 | `INNGEST_SIGNING_KEY`, `INNGEST_EVENT_KEY` | Inngest dashboard (see the table above). | Nothing; these are the same keys. |
 | `PLATFORM_AUTH_TOKEN`, `TURSO_AUTH_TOKEN`, `TURSO_API_TOKEN` | Create a new token in Turso. Creating does not cancel the old one, so Vercel keeps working. | Nothing. |
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Create a new R2 API token for the same bucket. | Nothing. |
@@ -193,6 +194,99 @@ Vercel never shows a **Sensitive** variable again, and `vercel env pull --enviro
 | `LIVEBLOCKS_SECRET_KEY` | Liveblocks dashboard, the same project. | Nothing. |
 | `SESSION_SECRET` | Generate new. | Nothing that matters (see the table). |
 | `CRON_SECRET` | Generate new. | Nothing, provided the server's scheduled task runs with it: check the cron heartbeat advances after the switch (step 13). |
+
+## Switch-day env for the Coolify production app
+
+The one list for the production app in Coolify (app id `4dufbrykuka94cedlfjo3jxm`). It holds the same names as "Live-copy settings" above, checked against every variable the code reads (the source list is at the end), and settles the values for switch day. Where the two differ, this section wins.
+
+- **Copy from Vercel** = Vercel, the project, **Settings, Environment Variables**, the **Production** value. A vendor dashboard is named where a fresh key works just as well.
+- **= Vercel?** **yes** means it must be exactly Vercel production's value. "any valid" means a new key for the same account or store works.
+- **Build?** **yes** means tick **Build Variable** ("Available at Buildtime") as well; every variable is also a runtime variable. Untick it on every other row.
+- Values in `code` are written in full and are not secrets. No secret value is written here.
+- A row that says "only if Vercel sets it" is left out when Vercel does not have it (the code then uses its default).
+
+| Name | Set to, or copy from | = Vercel? | Build? |
+|---|---|---|---|
+| `APP_ORIGIN` | `https://particl.si` (no slash or path after it) | yes | **yes** (`robots.txt` and `sitemap.xml` are made at build) |
+| `APP_URL` | `https://particl.si` (read by `lib/held.ts` on `main` for held-render email links; required) | yes | no |
+| `NEXT_PUBLIC_APP_URL` | `https://particl.si` | yes | **yes** |
+| `SELFHOST_BEHIND_PROXY` | `1` | self-host only | no |
+| `PARTICL_DEPLOYMENT` | `production` | self-host only | no |
+| `PLATFORM_DATABASE_URL` | copy from Vercel (Turso, the platform database, its URL). A `libsql://` address, never `file:` | **yes** | no |
+| `PLATFORM_AUTH_TOKEN` | copy from Vercel, or Turso, the platform database, **Create token** | any valid for that database | no |
+| `TURSO_DATABASE_URL` | copy from Vercel (Turso, the primary workspace database, its URL). Never `file:` | **yes** | no |
+| `TURSO_AUTH_TOKEN` | copy from Vercel, or Turso, that database, **Create token** | any valid for that database | no |
+| `TURSO_API_TOKEN` | copy from Vercel, or Turso, **Settings, API tokens** (creates the workspace databases) | any valid, same organisation | no |
+| `TURSO_ORG` | copy from Vercel (organisation name) | **yes** | no |
+| `TURSO_GROUP` | copy from Vercel (group name) | **yes** | no |
+| `TURSO_API_URL` | copy only if Vercel sets it | yes if set | no |
+| `KEYRING_SECRET` | the owner's own record (it is Vercel production's value) | **yes, exactly**: it decrypts every workspace's database token and stored keys | no |
+| `SESSION_SECRET` | copy from Vercel, or new: `openssl rand -base64 48` | no | no |
+| `CRON_SECRET` | copy from Vercel (new only if Sensitive) | no, but **required** | no |
+| `SUPER_ADMIN_EMAIL` | copy from Vercel | **yes** | no |
+| `CREDIT_USD` | copy from Vercel. Expected `0.10` (owner's decision of 5 Oct); particl.si ran `0.80` from 3 Oct (`lib/creditConversion.ts`), so read it, do not assume it | **yes, exactly**: a different price of a credit pauses all paid work (`lib/ledgerUnit.ts`) | no |
+| `STORAGE_BACKEND` | `r2` | yes | no |
+| `R2_ACCOUNT_ID` | copy from Vercel (Cloudflare, **R2**, account details) | **yes** | no |
+| `R2_BUCKET` | copy from Vercel (the production bucket, never staging's) | **yes** | no |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | copy from Vercel, or Cloudflare, **R2, Manage API tokens**, "Object Read & Write" for that bucket | any valid pair for that bucket | no |
+| `R2_ENDPOINT` | copy only if Vercel sets it | yes if set | no |
+| `BLOB_READ_WRITE_TOKEN` | copy from Vercel, or Vercel, **Storage**, the Blob store, its token. Keeps old links working (R2 first, then Blob) | **yes** (the store's own token) | no |
+| `BLOB_USD_PER_GB_MONTH`, `BLOB_USD_PER_GB_TRANSFER` | copy only if Vercel sets them | yes if set | no |
+| `DISPATCH_MODE` | `inngest` | yes | no |
+| `INNGEST_SIGNING_KEY` | copy from Vercel, or Inngest, the Production environment, **Manage, Signing Key** | **yes** | no |
+| `INNGEST_EVENT_KEY` | copy from Vercel, or Inngest, Production, **Manage, Event Keys** | any valid, same environment | no |
+| `INNGEST_SIGNING_KEY_FALLBACK` | copy only if Vercel sets it (only during a key rotation) | yes if set | no |
+| `INNGEST_SERVE_ORIGIN` | `https://particl.si` | self-host only | no |
+| `INNGEST_STREAMING` | `true` | self-host only | no |
+| `MAIL_FROM` | `hello@particlstudio.com`. If Vercel's value carries a display name (`Name <hello@particlstudio.com>`), copy Vercel's exactly | yes | no |
+| `RESEND_API_KEY` | copy from Vercel, or Resend, **API Keys** (sending access for `particlstudio.com`) | any valid | no |
+| `RESEND_BASE_URL` | copy only if Vercel sets it | yes if set | no |
+| `AI_GATEWAY_API_KEY` | **OWNER creates** it: Vercel, **AI Gateway, API Keys** (Vercel itself signs in with OIDC, which does not exist off Vercel) | new | no |
+| `AI_GATEWAY_BASE_URL`, `GATEWAY_PROMPT_MODELS`, `REFINE_PROVIDER` | copy only if Vercel sets them | yes if set | no |
+| `FAL_KEY`, `ELEVENLABS_API_KEY`, `ARK_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` | copy from Vercel whichever are set, or a new key in that vendor's dashboard | any valid, same vendor account | no |
+| `HF_CREDENTIALS` (or `HF_API_KEY_ID` + `HF_API_KEY_SECRET`), `HF_CREDENTIALS_PREVIOUS`, `HF_CREDENTIAL_ALIASES`, `HF_CONSUMER_CLIENT_ID` | copy only if Vercel sets them | yes if set | no |
+| `ANTHROPIC_PROMPT_MODEL`, `ANTHROPIC_PROMPT_EFFORT`, `ARK_BASE_URL`, `ARK_TEXT_MODEL`, `GEMINI_BASE_URL`, `GEMINI_IMAGE_MODEL`, `GOOGLE_SAFETY_THRESHOLD`, `XAI_BASE_URL`, `XAI_MODEL`, `FAL_BASE_URL`, `ELEVENLABS_BASE_URL`, `OPENAI_BASE_URL`, `HF_BASE_URL` | copy only if Vercel sets them | yes if set | no |
+| `HF_CINEMA_STUDIO_ENABLED`, `HF_SOUL_CHARACTER_ENABLED`, `HF_CONSUMER_VIDEO_ANALYSIS_ENABLED`, `HF_CORRELATION_HEADER`, `HF_POOL_SIZE`, `HF_POOL_WORKSPACE_SHARE`, `RIG_AGENT_ENABLED`, `LEGACY_WORKSPACE_NAME` | copy only if Vercel sets them | yes if set | no |
+| `CREDIT_MARGINS`, `CREDIT_PACKS`, `SIGNUP_CREDITS`, `PLATFORM_ALLOWANCE_USD`, `ATOMIK_MAX_REQUEST_USD`, `WORKBENCH_DEVELOPMENT_MAX_REQUEST_USD`, `WORKBENCH_ATOMIK_MAX_REQUEST_USD`, `WORKBENCH_ATOMIK_MAX_PROJECT_USD`, `XAI_RATE_USD_PER_MTOK`, `FAL_RENDER_USD_PER_MP`, `FAL_TRAINER`, `FAL_TRAIN_STEPS`, `FAL_TRAIN_USD_PER_STEP`, `ELEVEN_MUSIC_CREDITS_PER_MINUTE`, `ELEVEN_SFX_CREDITS`, `HF_SOUL_CHARACTER_USD_720P`, `HF_SOUL_CHARACTER_USD_1080P`, `HF_CINEMA_STUDIO_SOUND_PRICING`, `SOUL_TRAINING_USD_V2`, `SOUL_TRAINING_USD_CINEMA` | copy only if Vercel sets them | **yes** (customers see the same prices) | no |
+| `PAYMENT_PROVIDER` | copy from Vercel (unset means `manual`) | yes | no |
+| `STRIPE_SECRET_KEY` | copy only if Vercel sets it (Stripe, **Developers, API keys**). On production only an `sk_live_` key turns online billing on | yes if set (same Stripe account) | no |
+| `STRIPE_WEBHOOK_SECRET` | copy only if Vercel sets it (Stripe, **Developers, Webhooks**) | yes if set | no |
+| `LIVEBLOCKS_SECRET_KEY` | copy from Vercel, or Liveblocks, the project, **API keys** | same Liveblocks project | no |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | copy from Vercel | **yes** | **yes** |
+| `VAPID_PRIVATE_KEY` | copy from Vercel, or the owner's own record | **yes** (the pair must match; existing notification subscriptions are tied to it) | no |
+| `VAPID_SUBJECT` | copy only if Vercel sets it (unset means `mailto:support@particlstudio.com`) | yes if set | no |
+| `ASTRA_BLENDER_SNAPSHOT_ID` | copy from Vercel (starts `snap_`) | **yes** | no |
+| `ASTRA_BLENDER_RATE_CARD` | copy from Vercel (it prices renders) | **yes** | no |
+| `VERCEL_TOKEN` | **OWNER creates** it: Vercel, **Account Settings, Tokens**, scoped to the team | new | no |
+| `VERCEL_TEAM_ID` | Vercel, **Team Settings, General**, Team ID | the same team | no |
+| `VERCEL_PROJECT_ID` | Vercel, the project, **Settings, General**, Project ID (the project that owns the snapshot) | the same project | no |
+
+`NODE_ENV`, `PORT`, `HOSTNAME`, `NEXT_OUTPUT` and `GIT_COMMIT_SHA` are set by the image (`ops/selfhost/Dockerfile`); do not add them by hand. `GIT_COMMIT_SHA` comes from Coolify's own `SOURCE_COMMIT` (Coolify's "Include Source Commit in Build" setting); without it the error log says `unknown` for the release, nothing else changes. Coolify adds `COOLIFY_*` and `SOURCE_*` names of its own; the app reads none of them at runtime.
+
+**These depend on the Vercel account staying open after hosting moves.** `AI_GATEWAY_API_KEY` (Atomik drafts, prompt enhance, gateway stills), `VERCEL_TOKEN`, `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID` (Astra Blender renders run in Vercel Sandbox, from the snapshot in that project), and `BLOB_READ_WRITE_TOKEN` (old media links, until every old Blob object is copied to R2). Moving the site off Vercel hosting does not move these: if the Vercel team or project is closed, the project deleted, the token revoked or expired, or the bill unpaid, those features stop on the new host too. Give `VERCEL_TOKEN` no expiry, or put its expiry date in the calendar.
+
+**Never set on the production app:**
+- `VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_OIDC_TOKEN`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `VERCEL_GIT_COMMIT_SHA`, `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL` (Vercel's own; off Vercel they switch on Vercel behaviour, such as trusting faked client addresses). Never bulk-paste a `vercel env pull` file.
+- `BRANCH_NAME` and `BRANCH` (the Inngest SDK turns them into an environment header).
+- `TRUST_CF_CONNECTING_IP` (grey cloud: setting it lets anyone fake their address past every rate limit and the sign-in lock; it belongs to the later orange-cloud step only) and `TRUSTED_PROXY_HOPS`.
+- `ENGINE_MOCK` (`1` fakes every engine and no one is charged for real work), `PARTICL_TEST_MOCK_DELAYS` (test-only: it does nothing without `ENGINE_MOCK=1` and off a production build), `CI_DEV_SOURCE_MAPS` (CI only). The code reads no other `*_TEST_*` or mock flag.
+- `WORKSPACE_DB_DIRECTORY`, `OWNER_PRIVACY_SCRUB_LOCAL` (local development only).
+- Every `INNGEST_*` name not in the table, such as `INNGEST_DEV`, `INNGEST_BASE_URL`, `INNGEST_API_BASE_URL`, `INNGEST_EVENT_API_BASE_URL`, `INNGEST_DEVSERVER_URL`, `INNGEST_ENV`, `INNGEST_SERVE_HOST`, `INNGEST_SERVE_PATH`, `INNGEST_ALLOW_IN_BAND_SYNC`, `INNGEST_ENABLE_UNAUTHED_SYNC` (the SDK reads them itself; they point it away from Inngest Cloud's production environment or `/api/inngest`, or loosen its sync check).
+- Script-only names: `PARTICL_BACKUP_*`, `PW_*`, `AIMIGHTY_*`, `PARTICL_URL`, `PARTICL_TOKEN`.
+- `NODE_ENV`, `PORT`, `HOSTNAME`, `NEXT_OUTPUT`, `GIT_COMMIT_SHA` (the image sets them).
+
+**Remove or change in the current Coolify env** (app `4dufbrykuka94cedlfjo3jxm`), before its first start:
+- `STORAGE_BACKEND=blob` → `r2` (with the four `R2_*` above and `BLOB_READ_WRITE_TOKEN` kept for old links).
+- `DISPATCH_MODE=native` → `inngest` (with both Inngest keys, `INNGEST_SERVE_ORIGIN` and `INNGEST_STREAMING`).
+- `MAIL_FROM` → `hello@particlstudio.com` (or Vercel's exact form of it).
+- Anything carried over from staging: `file:` database URLs (`PLATFORM_DATABASE_URL`, `TURSO_DATABASE_URL`, including `file:/app/.data/...`), `ENGINE_MOCK`, `PARTICL_DEPLOYMENT=staging`, `CREDIT_USD` if it is not Vercel's value, the staging R2 bucket and its keys, staging's generated `KEYRING_SECRET` (must be production's), the sslip.io or any other non-`https://particl.si` address in `APP_ORIGIN`, `APP_URL`, `NEXT_PUBLIC_APP_URL`.
+- Any name in "Never set" above, and any **Build Variable** tick on a row the table marks "no".
+- After saving, rebuild (not just restart): `APP_ORIGIN` and the two `NEXT_PUBLIC_*` values are baked in at build.
+
+**Where this list comes from (8 Oct 2026).** A grep of every `process.env` read, `env.NAME` read through a passed-in environment, and quoted variable name (vendor key and base-URL tables, price settings) in `lib/`, `app/`, `components/`, `proxy.ts`, `instrumentation.ts`, `next.config.ts`, the build scripts (`prebuild` runs `scripts/ops/preview-seed.cjs`, which skips without `VERCEL_ENV=preview`; `postinstall` copies the PDF and OCR workers and reads nothing) and `ops/selfhost/`, on `origin/release/1` and `origin/main`, plus the names the Inngest SDK reads by itself. Every name the code reads is in the table or the "Never set" list.
+- The switch-day image is built from `main` **after** the hotfix train (#564, #565, #562, #566); those branches were searched too and add no name missing here. `main` already reads `SELFHOST_BEHIND_PROXY` (since #563); `ops/selfhost/` (Dockerfile, `cron-sync.mjs`), `PARTICL_DEPLOYMENT`, `TRUSTED_PROXY_HOPS` and the standalone switch arrive with #562, #565 and #566. Do not build the production image before #566 is on `main`. `main` has no `prebuild` step.
+- `main` reads `APP_URL` and `NEXT_PUBLIC_APP_URL` (`lib/held.ts`); Release 1 reads `APP_ORIGIN` there instead. All are set above, so either build sends correct links. Names read only by ops scripts (for example `PARTICL_ALLOW_STAGING_REHEARSAL`, `TURSO_CLI`, `PHASE`) are not app settings and are not listed.
+- Release 1 only: `PARTICL_TEST_MOCK_DELAYS` (test-only), `OWNER_PRIVACY_SCRUB_LOCAL`, `VERCEL_BRANCH_URL` (all in "Never set").
 
 ## Traefik timeouts
 
@@ -404,7 +498,7 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
 4. **Production app built, checked once, stopped (OWNER).**
    1. **Required first: deploy the same `main` commit on Vercel**, so the code that changes tables on first use is the same on both hosts sharing the databases.
    2. Record **restore point A** ("Restore point" above): the Turso timestamp, the `.dump` copies, and the restore test on copies. (An encrypted bundle is optional here and only on the owner's go: its fence takes the site to 503 for the window.)
-   3. Every variable in "Live-copy settings" is set. `TRUST_CF_CONNECTING_IP` and `TRUSTED_PROXY_HOPS` are **unset**.
+   3. Every variable in "Switch-day env for the Coolify production app" is set and its "remove" list is gone. `TRUST_CF_CONNECTING_IP` and `TRUSTED_PROXY_HOPS` are **unset**.
    4. Domains `https://particl.si,https://www.particl.si`, Direction redirect to non-www, stop grace period 300, labels on `letsencrypt-dns`.
    5. Scheduled task: Coolify, the production app, **Scheduled Tasks, + Add**: name `cron-sync`, command `node /app/cron-sync.mjs`, frequency `*/10 * * * *`, timeout 300 s, saved **disabled**. (The script calls `http://127.0.0.1:3000/api/cron/sync` inside the container with `CRON_SECRET`.)
    6. **Deploy** (the first start against the live databases). Check the health check goes green and the pinned certificate check names Let's Encrypt for both names ("Certificates before the switch", check 5). Then **Stop**: production workspaces must not be reconciled by two hosts before the switch.
@@ -450,7 +544,7 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
     4. **Data, ordinary rollback: nothing to copy back.** Both hosts use the **same Turso databases** (platform and workspaces), the **same R2 bucket** and the **same Blob store**. With R2 selected, the self-hosted app keeps nothing durable on its own disk (upload pieces go to R2 too). Everything written during the window is already where Vercel reads it. An upload in progress at the moment of switching may need to be retried.
     5. **Data problem (wrong or damaged rows):** go back to point B (or A) as in "Restore point". This is a hand-made restore from the Turso timestamps, with Claude's help; everything written after that time is lost. It is the owner's decision, not a reflex.
     6. **Never** use Vercel's Instant Rollback to a deployment from before #524 (it predates the credit switchover and would bill the wrong price).
-16. **After the window (OWNER).** Retire the Vercel deployment and domains, but **keep the Vercel team, project and snapshot** while Astra renders run on Vercel Sandbox. Rotate exposed keys. Retire Blob only after every old Blob object is copied to R2.
+16. **After the window (OWNER).** Retire the Vercel deployment and domains, but **keep the Vercel team, project and snapshot** while Astra renders run on Vercel Sandbox. Rotate exposed keys. Retire Blob only after every old Blob object is copied to R2. Before the Vercel account is closed, follow "Before Vercel is cancelled".
 
 ## Astra Blender renders from the self-hosted host
 
@@ -488,6 +582,59 @@ The SOW plans a **worker container** (Phase 3, P8, "many clients") that Inngest 
 - **Where:** on this server at first (2 vCPUs and 4 GB per render, so few at once next to the app), or a separate CPU or GPU host if volume grows. A GPU only matters if renders move off CPU Cycles.
 - **How it is picked up:** the existing Inngest function `astra-blender-render` and its concurrency limits stay (4 at once, 2 per workspace). Only the runtime behind the narrow boundary in `sandbox.ts` (create, write files, run, read file, stop) changes. Job identity, "never buy twice" and settlement stay as they are.
 - **What it needs:** a reviewed PR for the adapter; a new rate card for our own compute, since `ASTRA_BLENDER_RATE_CARD` prices Vercel's; the owner's approval of that price; and a host sizing check. Until then, the Vercel team, project and snapshot must stay.
+
+## Before Vercel is cancelled
+
+The owner closes the Vercel account before **27 October 2026**. Closing it deletes the Blob store and stops every other Vercel service the app uses. This section covers both. Nothing here has been run yet.
+
+### 1. Copy every Blob object to R2
+
+**Why.** Older files are still only on Vercel Blob. Today the app reads R2 first and falls back to Blob through `BLOB_READ_WRITE_TOKEN`. When the account closes, anything not on R2 is gone and its links break. The app reads an old file from R2 at the same key: the Blob pathname for a bare key, or the decoded path of an absolute Blob URL (`lib/storage/backend.ts`, `resolveStored`). `scripts/ops/blob-to-r2.mjs` copies to exactly those keys.
+
+**What the script does.**
+- It lists every Blob object (paged), then the whole R2 bucket.
+- It skips any object R2 already has at the same size. `--deep` also checks it by SHA-256.
+- It streams each missing object (memory stays at about 16 MiB per transfer) with a conditional write (`If-None-Match: *`). It never overwrites an R2 object. If R2 already holds different bytes at a key, that is reported as a **conflict**.
+- It checks each copy (R2's MD5 ETag for one-piece files, a read-back SHA-256 for multipart). Network faults, 5xx and 429 answers are retried.
+- After each verified file it writes one line to `blob-to-r2-progress.jsonl` in the private folder, so rerunning the same command carries on where it stopped.
+- The screen shows counts only. Keys, which can contain a customer's file name, go only into report files in the private folder.
+- It never deletes anything, on either store.
+
+**Who and where.** The owner or the advisor, on their own machine (or the server's terminal), never on a shared or CI machine. It needs Node 24 and a checkout of this repo with `npm ci` done. Put the production values in a private env file **outside the checkout** (for example `/private/blob-to-r2.env`, `chmod 600`) using the app's own names: `BLOB_READ_WRITE_TOKEN`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and `R2_ENDPOINT` only if production sets it. The R2 key needs Object Read & Write on the production bucket. Use one private folder (for example `/private/blob-to-r2`, `chmod 700`) for every run: it holds the progress file and the reports. The script refuses a folder inside the checkout or one that others can read.
+
+**How long.** Unknown until the dry run measures it. The dry run prints the bytes still to copy and, from a timed read of up to 64 MiB (`--probe-mib`), `probe.estimatedCopyMinutes`. That is twice the download time, to allow for the upload too. In September the store held about 404 MB, so expect minutes, not hours, but the dry run decides.
+
+**Run order (stop at any step that does not pass):**
+1. **Dry run.** No writes to R2.
+   `node --env-file=/private/blob-to-r2.env scripts/ops/blob-to-r2.mjs --dry-run --private-dir /private/blob-to-r2`
+   Read `blobObjects`, `blobBytes`, `toCopy`, `toCopyBytes`, `presentSameSize`, `conflicts` and `probe`.
+2. **Copy.**
+   `node --env-file=/private/blob-to-r2.env scripts/ops/blob-to-r2.mjs --copy --private-dir /private/blob-to-r2`
+   If it stops or exits with failures, run the same command again. It resumes. Repeat until `failed` is 0 and a run shows `copied` 0. For a final full check of files that were only matched by size (for example ones the older `migrate-media-r2.mjs` copied), run once more with `--deep`.
+   **Conflicts:** each one is a key where R2 already holds a different file. The app already shows the R2 version, so users see no change. The Blob version is lost when Vercel closes. The advisor reads the conflict list in the private report with the owner and decides whether any Blob copy must be kept (downloaded privately) first.
+3. **Verify on R2 alone.**
+   `node --env-file=/private/blob-to-r2.env --env-file=/private/backup-source.env scripts/ops/blob-to-r2.mjs --verify --private-dir /private/blob-to-r2 --config /private/backup-source.json`
+   `--config` is the backup source inventory (database ids and env-variable names, "Capture" in `docs/backup-restore.md`). Its URL/token variables are read-only here. The script snapshots each database into the private folder, checks that every media row resolves on R2 with **no Blob fallback** (the same rules as the backup's r2-only coverage, `verifyMediaReferences`), then deletes the snapshots. With the Blob token in the environment, it also checks that every Blob object is on R2 at its keys. It must print `"ok":true` and `"blobObjectsNotOnR2":0`. If it fails, it names database/table/row ids only. Copy again, then verify again.
+4. **Remove `BLOB_READ_WRITE_TOKEN` from the app** (Coolify production app; also Vercel while it still serves) and redeploy. Keep the value in the owner's private record until step 6.
+5. **Confirm old links still load.** Signed in, open an old image from before R2, download an old upload, play an old video (it should seek), and open an old review link. `/api/health` still says `r2-configured`. Expect one false alarm: the platform-admin readiness check (`lib/deploymentReadiness.ts`) still counts storage as ready only when the Blob token is set, so it shows storage as not ready. That needs a small fix (accept the R2 variables too). It does not affect the app. If an old file does not load, put the token back, redeploy, and report it.
+6. **Only then** can Vercel Blob, and Vercel, be cancelled (after section 2 below).
+
+### 2. Other Vercel services that stop when the account closes
+
+Found by searching the code for `@vercel/` packages, `api.vercel.com`, `vercel.sh` and `VERCEL_*` names. Each needs its replacement live **before** the account closes.
+
+| Service | What uses it | What stops | Replacement needed |
+|---|---|---|---|
+| **Vercel AI Gateway** (`AI_GATEWAY_API_KEY`, `AI_GATEWAY_BASE_URL`, default `https://ai-gateway.vercel.sh/v1`; `@vercel/oidc` on Vercel) | `lib/gateway.ts`, `lib/language-provider.ts`, `lib/enhance.ts`, `lib/gemini.ts`, `lib/vendorImages.ts`, `lib/catalog.ts` | All text models (Atomik, prompt enhance, suite agents, idea/script development), gateway stills, and OpenAI image/speech models when no direct key is set. The gateway credit balance shown in admin. | `openai/*` text already runs direct with `OPENAI_API_KEY` (`docs/openai-direct.md`); stills have a direct Google path with `GEMINI_API_KEY` (`lib/gemini.ts`); prompt enhance has direct Anthropic (`ANTHROPIC_API_KEY`) and BytePlus paths (`lib/enhance.ts`). **Atomik and the suite agents** on Claude, Google, xAI or ByteDance models have **no direct path in the code today**. They need a reviewed change: direct vendor adapters, or another OpenAI-compatible gateway set through `AI_GATEWAY_BASE_URL`, after checking its model ids and prices. Costs feed the rate card, so this needs the owner's approval. |
+| **Gateway key minting** (`VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `api.vercel.com`) | `lib/vercelKeys.ts`, `lib/purge.ts` | Nothing mints keys today (`mintGatewayKey` has no callers). But `revokeGatewayKey` throws once the `VERCEL_*` names are removed or dead, so deleting a workspace that still has a `gateway_key_id` stalls in purge after its files are removed. Before closing, count `SELECT count(*) FROM workspaces WHERE gateway_key_id IS NOT NULL` on the platform database; if it is not 0, ask Claude for a small fix first. | Follows from the gateway choice above: the new provider's per-workspace keys and budgets, or the platform key plus `lib/allowance.ts`. |
+| **Vercel Sandbox** (`@vercel/sandbox`; `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, `ASTRA_BLENDER_SNAPSHOT_ID`, `ASTRA_BLENDER_RATE_CARD`) | `lib/astra-blender/sandbox.ts`, `scripts/astra-blender-snapshot.mjs` | All Astra Blender (3D) renders. The snapshot is deleted with the account. **Before the account closes, while Vercel still answers:** turn 3D off by removing the three `VERCEL_*` names from the app (new renders are then refused before any charge), then wait until `SELECT count(*) FROM astra_render_jobs WHERE settled=0` is 0 in every workspace database (run it with Claude). A job still unsettled when the account closes can never be reconciled and keeps its credits held. #571 only catches missing names: with names set but dead, 3D still looks connected, and a render could be funded and then fail at `Sandbox.create`. | The worker container in "What replaces Sandbox later": a reviewed adapter PR, a new rate card for our own compute (owner approves the price), and host sizing. Until that lands, 3D is off. |
+| **Vercel Blob** (`@vercel/blob`, `BLOB_READ_WRITE_TOKEN`) | `lib/storage/blob.ts`, `scripts/ops/backup-lib.mjs`, `scripts/ops/staging-rehearsal.mjs`, `scripts/ops/migrate-media-r2.mjs` | Every file not yet on R2, and backups or rehearsals configured with `blob` or `dual` media. | Section 1 above. Then switch the nightly backup's media to `{ "kind": "r2", ... }` (`docs/backup-restore.md`). The Blob cost rates (`BLOB_USD_PER_GB_*`, `lib/storageCost.ts`) become meaningless; R2 rates are package 11 in `docs/r2-storage-plan.md`. |
+| **Inngest's Vercel integration** | Inngest dashboard (not in code) | Automatic app re-sync and key syncing to Vercel. | Cutover steps 5 and 10 already move the app URL to `https://particl.si/api/inngest`, with the keys set in Coolify. Before closing Vercel, confirm the Inngest app shows that URL and 6 functions. Then uninstall the integration (its keys in Coolify stay valid). |
+| **Vercel Cron** (`vercel.json` `crons`, `/api/cron/sync` every 10 min) | `vercel.json` | The reconciliation cron on Vercel. | Cutover step 13 (Coolify scheduled task `cron-sync`). Confirm its heartbeat advances. |
+| **Hosting, domains, deployments, previews** (`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL`, `VERCEL_GIT_COMMIT_SHA`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `VERCEL_OIDC_TOKEN`) | `lib/site.ts`, `lib/dispatch.ts`, `lib/previewSeed.ts`, `lib/deployment.ts`, `lib/recovery.ts`, `lib/workerProbe.ts`, health routes | The Vercel site, preview deployments and the rollback path in cutover step 15. | The self-hosted app (this document). Off Vercel these names are unset by design ("Never set on the self-hosted app"). Preview deployments have no replacement except the staging app. **Rollback to Vercel ends when the account closes**, so close it only after the 14-day watch (step 14) has passed. |
+| **Values only Vercel holds** | Vercel project settings | Any variable not yet copied (Sensitive values cannot be read back). | Copy every value into Coolify or the owner's private record **before** closing ("If Vercel will not show a value"). |
+
+`KEYRING_SECRET`, Turso, R2, Resend, Liveblocks, Stripe, fal, ElevenLabs, BytePlus, Higgsfield API and the other engine keys do not depend on the Vercel account.
 
 ## Gates before cutover (SOW section 4)
 

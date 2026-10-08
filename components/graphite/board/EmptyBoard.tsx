@@ -1,10 +1,13 @@
 "use client";
 import { useRef, useState } from "react";
 import { BOARD_TEMPLATES } from "@/lib/board/kind";
+import { upTo } from "@/lib/shell/price-words";
+import { spendAttrsOf } from "@/lib/spend";
 import { uploadFilesToProject } from "@/lib/workspace/library";
 import type { UploadedFile } from "@/lib/uploadClient";
 import { AttachThumbs } from "../AttachThumbs";
 import { TileMedia, uploadTile } from "../LibraryTile";
+import { Price, usePriceTitle } from "../Price";
 import { useBoardAgent } from "./agent";
 import type { BoardCtx } from "./cards/types";
 import { Glyph } from "./Rail";
@@ -17,9 +20,11 @@ import { Glyph } from "./Rail";
  * server's estimate of Atomik's thinking and the press is a person's; until
  * that seam is on the board, Start says why it waits. Aspect is the
  * project's, carried everywhere (ease rule 3); length goes into the words.
- * Attach keeps the files in the project's Library and hands them to Atomik;
- * each shows under the box as its Library tile, and pressing one takes it out
- * of what Start sends (it stays in the Library).
+ * Attach keeps the files in the project's Library and hands them to Atomik's
+ * planning call; each shows under the box as its Library tile, and pressing one
+ * takes it out of what Start sends (it stays in the Library). The files are
+ * priced in: "Start · up to N cr" is the server's figure for these words' board
+ * with these files, the same estimator the charge reserves at.
  */
 const ASPECTS = ["16:9", "9:16", "1:1"] as const;
 const LENGTHS = [6, 15, 30] as const;
@@ -29,10 +34,10 @@ const SCRIPT = "application/pdf,text/plain";
 const EXAMPLE = "A 15-second fashion film about quiet confidence. A woman in ivory crosses a sculptural desert; a mirror sphere reflects the world around her.";
 
 export function EmptyBoard({ ctx }: { ctx: BoardCtx }) {
-  const agent = useBoardAgent();
+  const [attached, setAttached] = useState<{ id: string; upload: UploadedFile }[]>([]);
+  const agent = useBoardAgent(attached.map((a) => a.id));
   const [words, setWords] = useState("");
   const [seconds, setSeconds] = useState<number | null>(15);
-  const [attached, setAttached] = useState<{ id: string; upload: UploadedFile }[]>([]);
   const [said, setSaid] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -43,8 +48,10 @@ export function EmptyBoard({ ctx }: { ctx: BoardCtx }) {
     : ctx.offline ? "Needs a connection"
     : !words.trim() ? "Say what we are making, or pick a template."
     : !price || price.state === "loading" ? "Getting the price…"
-    : price.state === "unavailable" ? "Atomik's thinking cannot be priced right now."
+    : price.state === "unavailable" ? price.problem ?? "Atomik's thinking cannot be priced right now."
     : null;
+  const figure = price?.state === "ready" && price.credits !== null ? upTo(price.credits) : null;
+  const figureTitle = usePriceTitle(figure);
 
   const attach = (accept: string) => {
     const input = files.current;
@@ -104,13 +111,16 @@ export function EmptyBoard({ ctx }: { ctx: BoardCtx }) {
               ))}
             </div>
             <span className="bd-empty-grow" />
-            <button type="button" className="gx-btn gx-btn--primary bd-start" aria-disabled={why ? true : undefined} title={why ?? undefined} onClick={() => void start()} data-testid="board-start">Start</button>
+            <button type="button" className="gx-btn gx-btn--primary bd-start" aria-disabled={why ? true : undefined} title={why ?? figureTitle ?? undefined} onClick={() => void start()} data-testid="board-start"
+              {...spendAttrsOf(figure)}>
+              {figure ? <span>Start · <Price value={figure} /></span> : "Start"}
+            </button>
           </div>
         </div>
         <AttachThumbs testId="board-attached" disabled={busy}
           items={attached.map(({ id, upload }) => { const tile = uploadTile(upload); return { key: id, name: upload.filename, picture: <TileMedia url={tile.url} media={tile.media} /> }; })}
           onRemove={(id) => setAttached((was) => was.filter((a) => a.id !== id))} />
-        {said ? <p className="bd-empty-line" role="status">{said}</p> : null}
+        {said ?? price?.problem ? <p className="bd-empty-line" role="status">{said ?? price?.problem}</p> : null}
         <div className="bd-templates" role="group" aria-label="Templates">
           {BOARD_TEMPLATES.map((t) => (
             <button key={t.id} type="button" className="gx-hbtn bd-template" onClick={() => template(t.id, t.kind)}><Glyph d={t.icon} /><span>{t.name}</span></button>
