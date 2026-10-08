@@ -104,7 +104,7 @@ test('Anthropic: request and reply fixture through the SDK, cache tokens in usag
     usage: { prompt_tokens: 200, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 40 } } });
   expect(json.usage).not.toHaveProperty('cost'); expect(json).not.toHaveProperty('cost');
   // What PR 3 will bill: uncached input, cache reads and cache writes each at their own price.
-  const priced = { id: model, owner: 'anthropic', name: 'Sonnet', type: 'language', description: '', pricing: { input: .000003, output: .000015, input_cache_read: .0000003, input_cache_write: .00000375 } } as CatalogModel;
+  const priced = { id: model, owner: 'anthropic', name: 'Sonnet', type: 'language', description: '', contextWindow: 1000000, maxTokens: 128000, pricing: { input: .000003, output: .000015, input_cache_read: .0000003, input_cache_write: .00000375 } } as CatalogModel;
   expect(directTextCostUsd(priced, json.usage)).toBeCloseTo(100 * .000003 + 60 * .0000003 + 40 * .00000375 + 25 * .000015, 12);
 });
 
