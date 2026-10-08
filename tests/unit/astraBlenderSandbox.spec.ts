@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { Sandbox } from "@vercel/sandbox";
 import { createAstraScene, type AstraObject } from "../../lib/astra-blender/scene";
-import { renderAstraScene, validateAstraGlb, getAstraRenderStatus, cancelAstraRender, ASTRA_SANDBOX_INPUT_DIR, ASTRA_SANDBOX_OUTPUT_DIR, type AstraSandboxSdk, type AstraSandboxHandle, type AstraSandboxCreateOptions, type AstraSandboxCommand } from "../../lib/astra-blender/sandbox";
+import { renderAstraScene, astraRuntimeStatus, validateAstraGlb, getAstraRenderStatus, cancelAstraRender, ASTRA_SANDBOX_INPUT_DIR, ASTRA_SANDBOX_OUTPUT_DIR, type AstraSandboxSdk, type AstraSandboxHandle, type AstraSandboxCreateOptions, type AstraSandboxCommand } from "../../lib/astra-blender/sandbox";
 
 const ID = "astra-blender-00000000-0000-4000-8000-000000000000";
 const SNAPSHOT = "snap_verified-test";
@@ -50,6 +50,33 @@ function modelScene() {
   scene.objects.push(object);
   return scene;
 }
+
+const RUNTIME_ENV = ["VERCEL", "VERCEL_TOKEN", "VERCEL_TEAM_ID", "VERCEL_PROJECT_ID", "ASTRA_BLENDER_SNAPSHOT_ID"] as const;
+function runtimeStatusWith(env: Partial<Record<(typeof RUNTIME_ENV)[number], string>>) {
+  const saved = Object.fromEntries(RUNTIME_ENV.map(key => [key, process.env[key]]));
+  try {
+    for (const key of RUNTIME_ENV) { if (env[key] === undefined) delete process.env[key]; else process.env[key] = env[key]; }
+    return astraRuntimeStatus();
+  } finally {
+    for (const key of RUNTIME_ENV) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; }
+  }
+}
+
+test("runtime status needs control-plane credentials off Vercel and keeps OIDC on Vercel", () => {
+  const snapshot = { ASTRA_BLENDER_SNAPSHOT_ID: SNAPSHOT };
+  const credentials = { VERCEL_TOKEN: "unit-token", VERCEL_TEAM_ID: "team_unit", VERCEL_PROJECT_ID: "prj_unit" };
+  expect(runtimeStatusWith({ ...snapshot, VERCEL: "1" })).toMatchObject({ configured: true, reason: null });
+  expect(runtimeStatusWith({ ...snapshot, ...credentials, VERCEL: "1" })).toMatchObject({ configured: true, reason: null });
+  expect(runtimeStatusWith({ ...snapshot, ...credentials })).toMatchObject({ configured: true, reason: null });
+  const offVercel = runtimeStatusWith(snapshot);
+  expect(offVercel.configured).toBe(false);
+  expect(offVercel.reason).toBe("Native 3D rendering is not connected. 3D runtime credentials must be configured on this host.");
+  for (const missing of Object.keys(credentials)) {
+    const partial = Object.fromEntries(Object.entries(credentials).filter(([key]) => key !== missing));
+    expect(runtimeStatusWith({ ...snapshot, ...partial }).configured).toBe(false);
+  }
+  expect(runtimeStatusWith({ ...credentials, VERCEL: "1" })).toMatchObject({ configured: false, reason: "Native 3D rendering is not connected. A 3D runtime snapshot must be configured." });
+});
 
 test("an unavailable runtime fails before creating a sandbox", async () => {
   const f = fake();

@@ -18,6 +18,8 @@ import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
+/** The whole request answers within this (no request stays silent past 100 s; docs/long-flows.md › C4). */
+const ENHANCE_BUDGET_MS = 90_000;
 
 /**
  * POST /api/prompt/enhance { prompt, provider?, model?, mode, anchored?, editing? }
@@ -33,6 +35,7 @@ export const maxDuration = 120;
  * meter settles what the provider reports, and nothing is reserved on a quote.
  */
 export const POST = withTenant(async function POST(req: Request) {
+  const deadline = Date.now() + ENHANCE_BUDGET_MS;
   const got = await requireRender();
   if (got.response) return got.response;
   const quoteOnly = (await req.clone().json().catch(() => ({}))).quoteOnly === true;
@@ -53,7 +56,8 @@ export const POST = withTenant(async function POST(req: Request) {
 
       const saved = await getSetting("promptEnhancer");
       const provider: EnhancerProvider = isEnhancerProvider(body.provider) ? body.provider : isEnhancerProvider(saved) ? saved : DEFAULT_ENHANCER;
-      const available = (await catalog()).filter((m) => m.type === "language" && isVerifiedTextModel(m.id)).map((m) => m.id);
+      const models = (await catalog()).filter((m) => m.type === "language" && isVerifiedTextModel(m.id));
+      const available = models.map((m) => m.id);
       const routed = provider === "higgsfield" ? textModelFor((await getPlatformLayer().catch(() => null))?.models ?? null, "idea") : null;
       const writer = pickEnhancerModel(provider, available, routed);
       if (!writer) return NextResponse.json({ error: `${ENHANCER_LABEL[provider]} isn't available to write prompts right now. Choose another enhancer in Workspace › General.` }, { status: 503 });
@@ -61,11 +65,17 @@ export const POST = withTenant(async function POST(req: Request) {
       const engine = typeof body.model === "string" && body.model ? displayModelName(body.model.slice(0, 120)) : null;
       const messages = enhancerMessages(prompt, { mode: body.mode, anchored: body.anchored === true, editing: body.editing === true, engine });
       const input = { model: writer, messages, maxTokens: ENHANCE_MAX_TOKENS, kind: "enhance", mock: "prompt" as const, createdBy: got.user.id };
-      if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
+      /* The catalogue read above is the one priced from: a second read could wait on the gateway again. */
+      const model = models.find((m) => m.id === writer);
+      if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input, model));
       /* The price the person saw is required: there is no unquoted enhancement.
          The answer is judged before the job settles: a rewrite that dropped a
-         citation, or that is not a prompt, is refused and the workspace is not charged. */
-      const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, true) }, { accept: (text) => parseEnhanced(text, prompt) });
+         citation, or that is not a prompt, is refused and the workspace is not charged.
+         The provider gets what is left of the 90 s budget; with under 20 s left the
+         press is refused before anything is reserved (503, nothing charged). A provider
+         that stalls past the budget settles the job as uncertain and the 1 cr estimate
+         is billed (lib/paidText.ts); no later step reconciles it. */
+      const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, true), deadline }, { model, accept: (text) => parseEnhanced(text, prompt) });
       const parsed = parseEnhanced(result.text, prompt);
       if (!parsed.ok) return NextResponse.json({ error: parsed.reason }, { status: 502 });
       return NextResponse.json({ prompt: parsed.prompt, provider, writer }, { headers: { "Cache-Control": "no-store" } });
