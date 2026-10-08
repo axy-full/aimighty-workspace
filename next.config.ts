@@ -59,6 +59,7 @@ const headers = [
 ];
 
 const nextConfig: NextConfig = {
+  ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
   // Keep framework debugging chrome from covering controls in mock browser rehearsals.
   ...(process.env.ENGINE_MOCK === "1" ? { devIndicators: false as const } : {}),
   // CI's browser jobs only: Turbopack's source maps double the native memory
