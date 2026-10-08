@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { useSession } from "./session";
+import { sendUntilAnswered } from "./pendingReplay";
 
 export type PendingPaidAction = {
   key: string;
@@ -56,6 +57,8 @@ export async function lockedClaim<T>(key: string, claim: () => T): Promise<T> {
 }
 const unreadable =
   "The saved request cannot be read. Check Activity before starting another paid action.";
+const unconfirmed =
+  "The response could not be confirmed. Recover the saved request.";
 
 /** Store one exact request before spending; a lost response can only replay that request. */
 export function usePaidAction(surface: string, active = true, workbench?: { signedIn: boolean; requestScope: string }) {
@@ -152,28 +155,30 @@ export function usePaidAction(surface: string, active = true, workbench?: { sign
         throw new Error(
           "The request is saved for recovery in its original workspace.",
         );
-      const response = await fetch(request.url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": request.key,
-          ...(requestScope
-            ? { "X-Workbench-Scope": requestScope }
-            : { "X-Workspace-Id": workspace!.id, "X-Actor-Email": email! }),
-        },
-        body: request.body,
-      });
-      const data = await response.json().catch(() => null);
+      const headers = {
+        "Content-Type": "application/json",
+        "Idempotency-Key": request.key,
+        ...(requestScope
+          ? { "X-Workbench-Scope": requestScope }
+          : { "X-Workspace-Id": workspace!.id, "X-Actor-Email": email! }),
+      };
+      /* A long paid run is answered "still being accepted" and finishes on the server: the same saved request is
+         asked again (same key, never a second run) until its reply is there, for a few minutes at most
+         (lib/pendingReplay.ts). Then it stays saved for Recover, as before. */
+      const { response, data, pending } = await sendUntilAnswered(
+        () => fetch(request.url, { method: "POST", headers, body: request.body }),
+        { stillWanted: () => current.current.active && current.current.key === storageKey },
+      );
       if (!current.current.active || current.current.key !== storageKey)
         throw new Error(
           "The request is saved for recovery in its original workspace.",
         );
+      if (pending) throw new Error(unconfirmed);
       if (!response.ok) {
         if (response.headers.get("Idempotency-Status") === "complete")
           await complete(request.key);
         throw new Error(
-          data?.error ||
-            "The response could not be confirmed. Recover the saved request.",
+          (typeof data?.error === "string" && data.error) || unconfirmed,
         );
       }
       if (
@@ -182,13 +187,11 @@ export function usePaidAction(surface: string, active = true, workbench?: { sign
         Array.isArray(data) ||
         (response.headers.get("Idempotency-Status") !== "complete" &&
           typeof data.id !== "string" &&
-          typeof data.identity?.id !== "string")
+          typeof (data.identity as { id?: unknown } | undefined)?.id !== "string")
       )
-        throw new Error(
-          "The response could not be confirmed. Recover the saved request.",
-        );
+        throw new Error(unconfirmed);
       if (!options?.keepPending) await complete(request.key);
-      return { data, request };
+      return { data: data as T, request };
     },
     [storageKey, enabled, complete, workspace, email, recoveryKey, requestScope],
   );

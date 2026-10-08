@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { useSession } from "@/lib/session";
 import { lockedClaim, paidActionStorageKey, type PendingPaidAction } from "@/lib/usePaidAction";
+import { sendUntilAnswered } from "@/lib/pendingReplay";
 
 /**
  * A planning turn's saved request, one slot per Atomik thread.
@@ -23,6 +24,7 @@ export type ThreadSave = { thread: string; pending: PendingPaidAction | null; er
 const EVENT = "particl-atomik-thread-sends";
 const PREFIX = "particl:paid-action:";
 const UNREADABLE = "The saved request cannot be read. Check Activity before starting another paid action.";
+const UNCONFIRMED = "The response could not be confirmed. Recover the saved request.";
 
 /** The slot a thread's planning turn is saved in, under its project (so a project's saved turns can be found). */
 export const threadSurface = (project: string | null, thread: string) => `/api/atomik/chat:${project ?? "unfiled"}:${thread}`;
@@ -119,20 +121,23 @@ export function useThreadSends(project: string | null) {
       throw new Error(error instanceof Error && (error.message.startsWith("Recover the saved") || error.message.startsWith("The saved request was already")) ? error.message : UNREADABLE);
     }
     if (identity.current !== sentAs) throw new Error("The request is saved for recovery in its original workspace.");
-    const response = await fetch(request.url, {
+    /* A long turn is answered "still being accepted" and finishes on the server: the same saved request is asked
+       again (same key, never a second run) until its reply is there, for a few minutes at most (lib/pendingReplay.ts). */
+    const { response, data, pending } = await sendUntilAnswered(() => fetch(request.url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": request.key, "X-Workspace-Id": ws, "X-Actor-Email": who },
       body: request.body,
-    });
-    const data = await response.json().catch(() => null);
+    }), { stillWanted: () => identity.current === sentAs });
+    if (identity.current !== sentAs) throw new Error("The request is saved for recovery in its original workspace.");
+    if (pending) throw new Error(UNCONFIRMED);
     const final = response.headers.get("Idempotency-Status") === "complete";
     if (!response.ok) {
       /* A reply the server recorded as final (a refusal, an archived thread) ends the saved request: it can only answer the same. */
       if (final) await complete(storageKey, request.key);
-      throw new Error(data?.error || "The response could not be confirmed. Recover the saved request.");
+      throw new Error((typeof data?.error === "string" && data.error) || UNCONFIRMED);
     }
-    if (!data || typeof data !== "object" || Array.isArray(data) || (!final && typeof data.id !== "string" && typeof data.identity?.id !== "string"))
-      throw new Error("The response could not be confirmed. Recover the saved request.");
+    if (!data || typeof data !== "object" || Array.isArray(data) || (!final && typeof data.id !== "string" && typeof (data.identity as { id?: unknown } | undefined)?.id !== "string"))
+      throw new Error(UNCONFIRMED);
     /* Confirmed: the request is done wherever this person now is, so its slot is cleared. */
     await complete(storageKey, request.key);
     if (identity.current !== sentAs) throw new Error("The request is saved for recovery in its original workspace.");
