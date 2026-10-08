@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { deploymentEnv, deploymentLabel, deploymentSetting, isProductionDeployment, onVercel } from "../../lib/deployment";
+import { deployedCommit, deploymentEnv, deploymentLabel, deploymentSetting, isProductionDeployment, onVercel } from "../../lib/deployment";
 import { deploymentReadiness } from "../../lib/deploymentReadiness";
 import { billingConfiguration } from "../../lib/billingConfig";
 
@@ -152,4 +152,18 @@ test("readiness on every VERCEL / VERCEL_ENV shape answers exactly as before", (
     // The setting changes nothing on Vercel.
     expect(result, label).toEqual(deploymentReadiness({ ...full, PARTICL_DEPLOYMENT: undefined }));
   }
+});
+
+test("the running commit: VERCEL_GIT_COMMIT_SHA, else GIT_COMMIT_SHA (the self-hosted image), else none", () => {
+  const rows: [Env, string | null][] = [
+    [{ VERCEL_GIT_COMMIT_SHA: "aaa1111", GIT_COMMIT_SHA: "bbb2222" }, "aaa1111"],
+    [{ VERCEL_GIT_COMMIT_SHA: "aaa1111" }, "aaa1111"],
+    [{ GIT_COMMIT_SHA: "bbb2222" }, "bbb2222"],
+    [{ GIT_COMMIT_SHA: " bbb2222 " }, "bbb2222"],
+    [{ VERCEL_GIT_COMMIT_SHA: "", GIT_COMMIT_SHA: "bbb2222" }, "bbb2222"],
+    [{ GIT_COMMIT_SHA: "unknown" }, null], // the Dockerfile's default when the platform passes no SOURCE_COMMIT
+    [{ GIT_COMMIT_SHA: "" }, null],
+    [{}, null],
+  ];
+  for (const [env, want] of rows) expect(deployedCommit(env), JSON.stringify(env)).toBe(want);
 });

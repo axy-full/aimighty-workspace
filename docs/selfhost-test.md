@@ -61,7 +61,7 @@ How to read the table:
 | Name | Value or source | Identical? |
 |---|---|---|
 | `APP_ORIGIN` | fixed: `https://particl.si` | yes |
-| `APP_URL` | fixed: `https://particl.si` (held-render email links use `APP_URL`, then `NEXT_PUBLIC_APP_URL`, not `APP_ORIGIN`) | yes |
+| `APP_URL` | fixed: `https://particl.si`. No server code reads it any more (the held-renders email now uses `APP_ORIGIN`); keep it set, harmless | yes |
 | `NEXT_PUBLIC_APP_URL` | fixed: `https://particl.si` (**build variable**) | yes |
 | `SELFHOST_BEHIND_PROXY` | fixed: `1` | self-host only; never on Vercel |
 | `PARTICL_DEPLOYMENT` | fixed: `production` (turns on the live-key and readiness guards Vercel gets from `VERCEL_ENV`) | self-host only |
@@ -338,7 +338,7 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
     - Daily: `/api/health`, 5xx in the app log, the cron heartbeat, the Inngest dashboard (failed syncs and runs), `dispatch.refused` and `[client-ip] ... one shared bucket` in the app log.
     - **OWNER:** the first real long job (an Astra render or a dubbing job) completes in the Inngest dashboard.
     - **The Vercel project, deployment and domain settings stay deployed and untouched for at least 14 days after step 8.**
-    - The commit shown by the signed-in health answer reads `local` on this host; that is cosmetic.
+    - The commit in the signed-in health answer comes from `GIT_COMMIT_SHA`, which the Dockerfile sets from Coolify's `SOURCE_COMMIT`. It reads `local` when no commit was passed to the build; that is cosmetic. Do not set `GIT_COMMIT_SHA` by hand.
 15. **Rollback (any time in the 14 days).**
     1. **OWNER:** in Cloudflare, restore `particl.si` and `www.particl.si` to the values written down in step 2 (grey cloud, as today).
     2. **OWNER:** re-enable the Vercel cron; disable `cron-sync` on the server; stop the production app.
@@ -366,10 +366,10 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
 - If anything in between cut that request, the app would keep running the render, and Inngest's retry would find the job already started and do nothing, so a second VM is never bought (`runAstraRender` only starts a job that is still queued). The person would see the result late rather than twice.
 - From this server the inputs and outputs cross the Atlantic to `iad1`; only a real render shows how long that takes.
 
-**Code change.** None is required if all five names are set. One guard is recommended, not made here:
+**Code change.** None is required if all five names are set. One guard is in **PR #571 (pending review)**: off Vercel, 3D counts as available only with all three `VERCEL_*` credentials; otherwise renders are refused before any charge. Why it is needed:
 - **The problem:** if the three `VERCEL_*` names are missing off Vercel, the panel still offers the render (`astraRuntimeStatus`, sandbox.ts lines 79 to 90, checks only the snapshot; `astraRenderAvailability`, render-jobs.ts line 90, adds only the rate card). The job is then claimed and funded, and `Sandbox.create` fails. The job is marked `uncertain` with its credits held (render-jobs.ts line 244), and reconciliation cannot clear it, because `getAstraRenderStatus` fails the same way (render-jobs.ts line 277).
-- **The fix:** in `astraRuntimeStatus`, report `configured: false` with a plain reason when `process.env.VERCEL` is unset and the three credentials are not all set. Small, its own PR, with a unit test.
-- Until that PR lands, the step 12 check (the first six names `set`) covers it.
+- **The fix (PR #571):** `astraRuntimeStatus` reports not configured, with a plain reason, when off Vercel and the three credentials are not all set.
+- Until #571 is on the branch that is deployed, the step 12 check (the first six names `set`) covers it.
 
 **Confirmed by reading code:** the sign-in rule, the five names, no callback or Vercel-address dependency, the 180 s and 165 s limits, Inngest background dispatch with a 202 to the browser, no second VM on a retry, and that `ENGINE_MOCK=1` blocks any render (so staging cannot render as it is set today).
 

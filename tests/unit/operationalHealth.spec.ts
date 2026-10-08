@@ -4,9 +4,11 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import vm from "node:vm";
 import ts from "typescript";
+import { deployedCommit } from "../../lib/deployment";
 
 const nativeRequire = createRequire(path.resolve("package.json"));
-function healthFixture(options: { signedIn?: boolean; admin?: boolean; databaseDown?: boolean; dispatchLogDown?: boolean; rangeStatus?: number; cleanupFails?: boolean } = {}) {
+function healthFixture(options: { signedIn?: boolean; admin?: boolean; databaseDown?: boolean; dispatchLogDown?: boolean; rangeStatus?: number; cleanupFails?: boolean; env?: Record<string, string> } = {}) {
+  const env = { NODE_ENV: "production", BLOB_READ_WRITE_TOKEN: "SECRET", ...options.env };
   const writes: string[] = [], deletes: string[] = [];
   const ctx = options.signedIn ? { user: { id: "account" }, workspace: { id: "workspace", name: "Workspace" } } : null;
   const database = { execute: async () => { if (options.databaseDown) throw new Error("SECRET_DATABASE_URL"); return { rows: [{ saved: 1, atrisk: 0 }] }; } };
@@ -27,6 +29,7 @@ function healthFixture(options: { signedIn?: boolean; admin?: boolean; databaseD
     "@/lib/mail": { mailConfigured: () => false, mailFrom: () => null },
     "@/lib/mock": { engineMock: () => false },
     "@/lib/dispatch": { dispatchMode: () => "native" },
+    "@/lib/deployment": { deployedCommit: () => deployedCommit(env) },
     "@/lib/dispatch-log": {
       recentDispatches: async (limit: number) => {
         if (options.dispatchLogDown) throw new Error("SECRET_DATABASE_URL");
@@ -46,7 +49,7 @@ function healthFixture(options: { signedIn?: boolean; admin?: boolean; databaseD
   }).outputText;
   const exports: { GET?: (req: Request) => Promise<Response> } = {};
   vm.runInNewContext(source, { exports, require: (name: string) => mocks[name] ?? nativeRequire(name),
-    process: { env: { NODE_ENV: "production", BLOB_READ_WRITE_TOKEN: "SECRET" } }, URL, Response, Buffer, Uint8Array, AbortSignal,
+    process: { env }, URL, Response, Buffer, Uint8Array, AbortSignal,
     fetch: async () => new Response(new Uint8Array([48, 49]), { status: options.rangeStatus ?? 206, headers: { "Content-Range": "bytes 0-1/10", "Accept-Ranges": "bytes" } }),
   });
   return { get: exports.GET!, writes, deletes };
@@ -100,4 +103,17 @@ test("deep probes use unique object names and a broken database returns a coarse
   const response = await healthFixture({ databaseDown: true }).get(new Request("https://example.test/api/health"));
   expect(response.status).toBe(503);
   expect(await response.text()).not.toContain("SECRET");
+});
+
+test("the commit: Vercel's, else the self-hosted image's GIT_COMMIT_SHA, else \"local\"; signed-in only, as before", async () => {
+  const SHA = "0123456789abcdef0123456789abcdef01234567", VERCEL_SHA = "fedcba9876543210fedcba9876543210fedcba98";
+  const health = async (env: Record<string, string>, signedIn: boolean) =>
+    (await healthFixture({ signedIn, env }).get(new Request("https://example.test/api/health"))).json();
+  expect((await health({ GIT_COMMIT_SHA: SHA }, true)).commit).toBe("0123456");
+  expect((await health({ GIT_COMMIT_SHA: SHA, VERCEL_GIT_COMMIT_SHA: VERCEL_SHA }, true)).commit).toBe("fedcba9");
+  expect((await health({}, true)).commit).toBe("local");
+  expect((await health({ GIT_COMMIT_SHA: "unknown" }, true)).commit).toBe("local");
+  const anonymous = await health({ GIT_COMMIT_SHA: SHA, VERCEL_GIT_COMMIT_SHA: VERCEL_SHA }, false);
+  expect(anonymous).not.toHaveProperty("commit");
+  expect(JSON.stringify(anonymous)).not.toMatch(/0123456|fedcba9/);
 });

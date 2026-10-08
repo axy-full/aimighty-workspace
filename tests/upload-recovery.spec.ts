@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import sharp from "sharp";
+import { randomUUID } from "node:crypto";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 
@@ -243,4 +244,216 @@ test("a paused upload requires the original file and resends only the missing im
   expect(rows.uploads).toHaveLength(1);
   expect(rows.uploads[0].filename).toBe(original.name);
   expect(rows.uploads[0].bytes).toBe(bytes.length);
+});
+
+test("a finished upload shows as done in Uploads, and only an interrupted one asks for its original file", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "customer-1440x900",
+    "real desktop uploads (the board is the desktop's); the phone's panel is below",
+  );
+  await signInLocally(page.request);
+  const me = await page.request
+    .get("/api/me")
+    .then((response) => response.json());
+  const projectId = await savedProject(
+    page,
+    `particl-active-${me.workspace.id}-${me.id}`,
+  );
+  const png = (background: string) =>
+    sharp({ create: { width: 512, height: 512, channels: 3, background } })
+      .png()
+      .toBuffer();
+  await page.goto(
+    `/suites?project=${encodeURIComponent(projectId)}&view=board`,
+  );
+  await expect(page.getByTestId("board")).toBeVisible();
+  await boardFiles(page).setInputFiles({
+    name: "finished-reference.png",
+    mimeType: "image/png",
+    buffer: await png("#2f6b4a"),
+  });
+  await expect
+    .poll(async () => (await uploadEntries(page)).map((entry) => entry.state), { timeout: 60_000 })
+    .toEqual(["complete"]);
+  const summary = page.locator("summary").filter({ hasText: "Uploads" });
+  const recovery = page.getByRole("region", { name: "Upload recovery" });
+  const hint = recovery.getByText(
+    "Choose the original file to resume an interrupted upload.",
+  );
+  await summary.click();
+  const finished = recovery.getByRole("article", {
+    name: "finished-reference.png",
+  });
+  await expect(finished.getByText("Upload ready", { exact: true })).toBeVisible();
+  await expect(hint).toHaveCount(0);
+  await expect(
+    finished.getByRole("button", { name: "Resume upload" }),
+  ).toHaveCount(0);
+  // The same after a reload: a finished receipt is never read back as interrupted.
+  await page.reload();
+  await summary.click();
+  await expect(finished.getByText("Upload ready", { exact: true })).toBeVisible();
+  await expect(hint).toHaveCount(0);
+
+  // A genuinely interrupted upload still asks for its original file.
+  await page.route("**/api/uploads/chunk", (route) =>
+    route.request().method() === "POST" ? route.abort("failed") : route.continue(),
+  );
+  await expect(page.getByTestId("board")).toBeVisible();
+  await boardFiles(page).setInputFiles({
+    name: "interrupted-reference.png",
+    mimeType: "image/png",
+    buffer: await png("#6b2f4a"),
+  });
+  await expect
+    .poll(async () =>
+      (await uploadEntries(page))
+        .map((entry) => entry.state + (entry.error ? ":error" : ""))
+        .sort(),
+      { timeout: 60_000 },
+    )
+    .toEqual(["complete", "pending:error"]);
+  await page.unroute("**/api/uploads/chunk");
+  await page.reload();
+  await summary.click();
+  await expect(hint).toBeVisible();
+  const interrupted = recovery.getByRole("article", {
+    name: "interrupted-reference.png",
+  });
+  await expect(
+    interrupted.getByRole("button", { name: "Resume upload", exact: true }),
+  ).toBeVisible();
+  await expect(finished.getByText("Upload ready", { exact: true })).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("uploads-finished-and-interrupted.png"),
+    fullPage: true,
+  });
+  // Resumed to the end, nothing is left interrupted and the hint goes.
+  await interrupted
+    .getByRole("button", { name: "Resume upload", exact: true })
+    .click();
+  await expect(
+    interrupted.getByRole("button", { name: "Resume upload", exact: true }),
+  ).toBeVisible();
+  await interrupted
+    .getByLabel("Resume interrupted-reference.png", { exact: true })
+    .setInputFiles({
+      name: "interrupted-reference.png",
+      mimeType: "image/png",
+      buffer: await png("#6b2f4a"),
+    });
+  await expect(
+    interrupted.getByText("Upload ready", { exact: true }),
+  ).toBeVisible();
+  await expect(hint).toHaveCount(0);
+});
+
+test("on the phone, Uploads shows a finished upload as done and asks for the original file only while one is interrupted", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "customer-390x844",
+    "the phone's Uploads panel; the phone has no board to upload from, so the saved records are the ones uploadFile writes",
+  );
+  await signInLocally(page.request);
+  const me = await page.request
+    .get("/api/me")
+    .then((response) => response.json());
+  const scope = `particl-active-${me.workspace.id}-${me.id}`;
+  const headers = { "X-Workbench-Scope": scope };
+  const bytes = await sharp({
+    create: { width: 512, height: 512, channels: 3, background: "#2f4a6b" },
+  })
+    .png()
+    .toBuffer();
+  // A real upload, stored and finished by the server: its receipt is what a finished upload saves.
+  const session = randomUUID();
+  const chunk = await page.request.post("/api/uploads/chunk", {
+    headers,
+    multipart: {
+      session,
+      index: "0",
+      chunk: { name: "blob", mimeType: "application/octet-stream", buffer: bytes },
+    },
+  });
+  expect(chunk.ok(), await chunk.text()).toBe(true);
+  const finish = await page.request.post("/api/uploads/finish", {
+    headers,
+    data: { session, count: 1, filename: "phone-finished.png", purpose: "reference", mime: "image/png" },
+  });
+  expect(finish.ok(), await finish.text()).toBe(true);
+  const receipt = await finish.json();
+  const envelope = (name: string, identity: string, extra: Record<string, unknown>) => ({
+    version: 1,
+    scope,
+    identity,
+    file: { name, type: "image/png", size: bytes.length, lastModified: 1 },
+    purpose: "reference",
+    chunkBytes: 3_500_000,
+    count: 1,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    ...extra,
+  });
+  const finished = envelope("phone-finished.png", "a".repeat(64), {
+    session,
+    storedChunks: [0],
+    state: "complete",
+    started: true,
+    result: receipt,
+  });
+  const interrupted = envelope("phone-interrupted.png", "b".repeat(64), {
+    session: randomUUID(),
+    storedChunks: [],
+    state: "pending",
+    started: true,
+    error: "The upload was interrupted. Resume it from Uploads.",
+  });
+  const save = (entries: object[]) =>
+    page.evaluate((entries) => {
+      for (const key of Object.keys(localStorage))
+        if (key.startsWith("particl:upload:v1:")) localStorage.removeItem(key);
+      for (const entry of entries as { scope: string; identity: string }[])
+        localStorage.setItem(
+          "particl:upload:v1:" + JSON.stringify([entry.scope, entry.identity]),
+          JSON.stringify(entry),
+        );
+    }, entries);
+  await page.goto("/suites");
+  await save([finished]);
+  await page.reload();
+  const summary = page.locator("summary").filter({ hasText: "Uploads" });
+  const recovery = page.getByRole("region", { name: "Upload recovery" });
+  const hint = recovery.getByText(
+    "Choose the original file to resume an interrupted upload.",
+  );
+  await summary.click();
+  const done = recovery.getByRole("article", { name: "phone-finished.png" });
+  await expect(done.getByText("Upload ready", { exact: true })).toBeVisible();
+  await expect(
+    done.getByRole("link", { name: "Open uploaded file" }),
+  ).toHaveAttribute("href", receipt.url);
+  await expect(hint).toHaveCount(0);
+  await expect(done.getByRole("button", { name: "Resume upload" })).toHaveCount(0);
+
+  await save([finished, interrupted]);
+  await page.reload();
+  await summary.click();
+  await expect(hint).toBeVisible();
+  await expect(
+    recovery
+      .getByRole("article", { name: "phone-interrupted.png" })
+      .getByRole("button", { name: "Resume upload", exact: true }),
+  ).toBeVisible();
+  await expect(done.getByText("Upload ready", { exact: true })).toBeVisible();
+  await expect(page.locator("body")).toHaveJSProperty(
+    "scrollWidth",
+    await page.evaluate(() => innerWidth),
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("phone-uploads-finished-and-interrupted.png"),
+    fullPage: true,
+  });
 });
