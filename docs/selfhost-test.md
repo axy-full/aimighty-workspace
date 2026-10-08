@@ -4,7 +4,7 @@ For the owner. The app runs in Coolify (Traefik v3 proxy) on the server **contab
 
 **Where things stand (8 Oct 2026).**
 - **Staging PASSED** on `release/1` at `c287f044`: Dockerfile build, served on a temporary sslip.io `https` address, `/setup` sign-in, workspace rename, an upload to the **staging R2 bucket** with its thumbnail, `/api/health` ok.
-- **Live** is `particl.si` and `www.particl.si` on Vercel. `particl.app` and `www.particl.app` are on Cloudflare and only need the redirect.
+- **Switched 8 Oct 2026, about 16:10 IST.** `particl.si` and `www.particl.si` are served by the self-hosted production app; Vercel production stays deployed, untouched, as the fallback. See [Production switch, 8 Oct 2026 (as done)](#production-switch-8-oct-2026-as-done). `particl.app` and `www.particl.app` redirect through Cloudflare.
 - **Owner's decision for the cutover:** `particl.si` and `www.particl.si` stay **DNS-only (grey cloud)**, as they are today with Vercel. Visitors reach the server directly, so Cloudflare's 100-second limit does not apply. Orange cloud comes later, only after every long flow is proven under 100 s (see the last "Later" section).
 - Production on Vercel today: storage `r2-configured` (R2 for new files, old links still on Vercel Blob), `DISPATCH_MODE=inngest`, mail from `hello@particlstudio.com`, AI through the Vercel AI Gateway, Astra Blender renders in use (Vercel Sandbox).
 
@@ -28,6 +28,39 @@ For the owner. The app runs in Coolify (Traefik v3 proxy) on the server **contab
 **What `main` needs before it can run self-hosted:** the lead keeps that list in the description of PR #566.
 
 Never write the server's IP, the sslip.io address or any secret value in the repo, a chat or a public place. This document names variables and where their values come from; it never holds a value that is secret.
+
+## Production switch, 8 Oct 2026 (as done)
+
+What actually happened, for the record and for the next switch. No secret values here; the restore-point files stay on the owner's machine.
+
+**Code.** `main` at `1b05c2ca` (#575, #563, #564, #565 and #587 = #562 + #566 + `ARG APP_ORIGIN`). Vercel production ran the same commit, healthy, before the switch.
+
+**Checks before the switch (production app, terminal).**
+- Keyring check: `KEYRING OK` (`KEYRING_SECRET` equals Vercel's).
+- Sandbox: the `node -e` SDK check cannot run in the image. `node -e` from `/app` fails with `ERR_MODULE_NOT_FOUND '@vercel/sandbox'` because Next bundles the SDK into the server chunks of the routes that use it (`/api/workbench/astra-blender/render`, `/api/inngest`, `/api/worker`, `/api/workbench/development`) instead of shipping it in `node_modules`. That is expected. Proof in a running container: `grep -rl 'v2/sandboxes/sessions' /app/.next/server | head -1` prints a chunk path. The credentials were checked instead through the Vercel API (project lookup with `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID` = 200), and the snapshot in `ASTRA_BLENDER_SNAPSHOT_ID` exists in that project.
+- `/api/health` pinned to the server: `ok:true`, `mock:false`, dispatch `inngest`, database ok, storage ok.
+- Restore point A 10:36:26 UTC and restore point B 10:37:56 UTC (`turso db shell <db> .dump` of the platform database and the one workspace database, both non-empty).
+
+**Production app settings (Coolify), as set.**
+- Source `main`, Dockerfile build pack, port 3000, as staging.
+- **Build arguments: "Managed manually in Dockerfile".** The Dockerfile declares `ARG APP_ORIGIN`, `ARG NEXT_PUBLIC_APP_URL`, `ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY`. To confirm the web-push public key was baked into the client build, run in the app's terminal: `grep -rlF "$NEXT_PUBLIC_VAPID_PUBLIC_KEY" /app/.next/static | head -1` (a path = baked; nothing = not baked, so Settings, Notifications cannot subscribe until it is rebuilt with the value passed at build).
+- **sslip.io domains removed**; the domains are `https://particl.si,https://www.particl.si` only.
+- **Auto deploy off: manual deploys only.**
+- `MAIL_FROM=hello@particl.si` (Resend domain `particl.si` verified).
+- Scheduled task `cron-sync` (`node /app/cron-sync.mjs`, every 10 minutes) enabled; first run Success at 10:41 UTC. Then **Vercel Cron Jobs disabled** (Vercel, the project, Settings, Cron Jobs).
+
+**DNS and certificates (Cloudflare).**
+- `particl.si` A to the server, `www.particl.si` CNAME to `particl.si`, both **DNS-only (grey)**, TTL 1 minute, no AAAA. Mail records untouched.
+- Let's Encrypt certificate issued for `particl.si` (valid to 6 Jan 2027). `www.particl.si` answers **302** to `https://particl.si` with the path and query kept (the plan said 301 or 308; 302 works, and can be made permanent later).
+- `particl.app` and `www.particl.app`: one Cloudflare **Redirect Rule** for all requests in the zone, dynamic `concat("https://particl.si", http.request.uri.path)`, **308**, query string kept. Their records are **proxied (orange) to `192.0.2.1`** (a documentation-only address; Cloudflare answers before any origin). `particl.app` is being removed from the Vercel project's domains.
+
+**Inngest.** The app was re-synced to `https://particl.si/api/inngest` (7 functions). The Inngest Vercel integration was never connected, so there was no integration sync to switch off.
+
+**Tests after the switch.**
+- Owner: sign-in, uploads (old Blob files and new R2 files), reset email (from `hello@particl.si`, to the inbox, link `https://particl.si/reset/…`), Plans & credits shows "—" for the house workspace (it is billed in dollars by design).
+- From outside, 11:39 UTC: DNS A only, no AAAA; Let's Encrypt certificate; `/api/health` 200 ok; home, `/login`, `/robots.txt` 200; sign-in with a wrong password 401; sign-in from a foreign origin 403; media without a session 401; `/api/inngest` without a signature 401; `particl.app` and `www.particl.app` 308 to `particl.si` with the query kept; HSTS header present.
+
+**Rollback (as of 8 Oct).** In Cloudflare, `particl.si` A back to `216.150.1.1` and `www.particl.si` CNAME back to `b619d6cc43a31b33.vercel-dns-016.com` (Vercel's values, saved before the switch; `particl.si` is still listed in the Vercel project's domains). Inngest stays synced to `https://particl.si/api/inngest`: once DNS points back at Vercel that same URL reaches Vercel, so press **Resync** on that URL to refresh it. **Do not** sync to `https://www.particl.app/api/inngest` (the old URL): it now redirects through Cloudflare to `particl.si`. Re-enable Vercel Cron Jobs, disable `cron-sync`, and stop the self-hosted app one TTL later. `particl.app` redirects through Cloudflare, not Vercel, so it needs no change.
 
 ## What is in the repo
 
@@ -71,7 +104,7 @@ The production app is a second Coolify app on the same server, built from `main`
 How to read the table:
 - **Copy from Vercel** means Vercel, the project, **Settings, Environment Variables**, the **Production** value.
 - **Identical** means it must be the same value Vercel production uses, because it decrypts or verifies data already stored, or because it names the same account. "Any valid" means a new key for the same account works just as well.
-- Every variable is a **runtime** variable. Only the two `NEXT_PUBLIC_*` names and `APP_ORIGIN` (not secret; `robots.txt` and `sitemap.xml` are generated at build) are also build variables: in Coolify tick **Build Variable** (newer versions: "Available at Buildtime") on those three and **untick it on every other variable**, so no secret reaches the build or the image history.
+- Every variable is a **runtime** variable. Only the two `NEXT_PUBLIC_*` names and `APP_ORIGIN` (not secret; `robots.txt` and `sitemap.xml` are generated at build) are also build variables: in Coolify tick **Build Variable** (newer versions: "Available at Buildtime") on those three and **untick it on every other variable**, so no secret reaches the build or the image history. On 8 Oct the production app's **Build arguments** setting was "Managed manually in Dockerfile"; see the check in [Production switch, 8 Oct 2026 (as done)](#production-switch-8-oct-2026-as-done) that the web-push key was baked in.
 
 ### Address and proxy
 
@@ -357,13 +390,13 @@ With grey cloud there is no Cloudflare limit in front, so these Traefik timeouts
 - In Coolify the production app's **Domains** field is `https://particl.si,https://www.particl.si`. In the app's **General** settings, set **Direction** to **redirect to non-www**, so Traefik sends `www` to `https://particl.si` (a 301 or 308).
 - **No AAAA record** at cutover. Docker may relay IPv6 connections so that every IPv6 visitor shows up as one address and shares one rate-limit allowance. Remove any AAAA that points at Vercel.
 - `particl.app` and `www.particl.app` only redirect. They stay **proxied** (orange) with a Cloudflare redirect rule; no app traffic passes through them, so the 100 s limit does not matter there.
-  - **Redirect rule (OWNER, can be made ahead of time).** In the `particl.app` zone: **Rules, Redirect Rules, Create rule**. If hostname is in `particl.app`, `www.particl.app`, then dynamic redirect to `concat("https://particl.si", http.request.uri.path)`, status 308, **Preserve query string** ticked.
+  - **Redirect rule (OWNER, can be made ahead of time).** In the `particl.app` zone: **Rules, Redirect Rules, Create rule**. If hostname is in `particl.app`, `www.particl.app` (or: all incoming requests, as set on 8 Oct), then dynamic redirect to `concat("https://particl.si", http.request.uri.path)`, status 308, **Preserve query string** ticked.
 
 | Name | Record | Proxy | Who answers |
 |---|---|---|---|
 | `particl.si` | A to `<server IPv4>`, no AAAA | **DNS-only** (grey) | the server (Let's Encrypt) |
 | `www.particl.si` | CNAME to `particl.si` | **DNS-only** (grey) | the server, redirects to `particl.si` |
-| `particl.app` | A to `<server IPv4>` (any address works; the rule answers first) | proxied (orange) | Cloudflare redirect rule |
+| `particl.app` | A to `192.0.2.1` as set on 8 Oct (any address works; the rule answers first) | proxied (orange) | Cloudflare redirect rule |
 | `www.particl.app` | CNAME to `particl.app` | proxied (orange) | Cloudflare redirect rule |
 
 **Do not touch** mail records on any domain (MX, SPF, DKIM, DMARC, Resend's verification records for `particl.si`, including `_dmarc` TXT `v=DMARC1; p=quarantine; adkim=r; aspf=r;`) or the `particlstudio.com` zone. The owner is adding that `_dmarc` record separately; the switch itself changes only the A/CNAME rows above. If there are CAA records on `particl.si`, they must allow Let's Encrypt.
