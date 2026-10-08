@@ -214,7 +214,10 @@ test("a press still being accepted keeps its key; one that never finished is let
 
 test("the Enhance button sends through the held key, not a fresh key per press", () => {
   const hook = readFileSync("lib/shell/use-enhancer.ts", "utf8");
-  expect(hook).toContain("pressEnhance(scoped, { scope, body: approved.key, credits: approved.credits })");
+  expect(hook).toContain("pressEnhance(scoped, { scope, body: approved.key, credits })");
   expect(hook).not.toContain("randomUUID");
   expect(hook).not.toContain("Idempotency-Key");
+  /* A press while one is on its way shares that press's answer: no second send, no stale "still being answered". */
+  expect(hook).toContain("if (inFlight.current) return inFlight.current;");
+  expect(hook).toContain("inFlight.current = pressing;");
 });

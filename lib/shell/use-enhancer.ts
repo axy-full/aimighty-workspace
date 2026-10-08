@@ -90,22 +90,32 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
      pressed again after a lost reply, it collects the saved answer instead of paying twice. */
   const session = useSession();
   const scope = session.signedIn ? session.requestScope ?? null : null;
-  const enhance = useCallback(async (): Promise<string | null> => {
+  /* One press at a time: a second press (or Auto's) while one is on its way shares its answer,
+     instead of asking under the same key and showing "still being answered" beside the result. */
+  const inFlight = useRef<Promise<string | null> | null>(null);
+  const enhance = useCallback((): Promise<string | null> => {
+    if (inFlight.current) return inFlight.current;
     const approved = live.current;
-    if (approved.credits == null || off) return null;
-    setBusy(true);
-    setError(null);
-    try {
-      const pressed = await pressEnhance(scoped, { scope, body: approved.key, credits: approved.credits });
-      if (!pressed.ok) { setError(pressed.error); return null; }
-      setResult({ prompt: pressed.prompt, provider: pressed.provider, charged: approved.credits });
-      return pressed.prompt;
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : ENHANCE_NO_ANSWER);
-      return null;
-    } finally {
-      setBusy(false);
-    }
+    if (approved.credits == null || off) return Promise.resolve(null);
+    const credits = approved.credits;
+    const pressing = (async (): Promise<string | null> => {
+      setBusy(true);
+      setError(null);
+      try {
+        const pressed = await pressEnhance(scoped, { scope, body: approved.key, credits });
+        if (!pressed.ok) { setError(pressed.error); return null; }
+        setResult({ prompt: pressed.prompt, provider: pressed.provider, charged: credits });
+        return pressed.prompt;
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : ENHANCE_NO_ANSWER);
+        return null;
+      } finally {
+        setBusy(false);
+      }
+    })();
+    inFlight.current = pressing;
+    void pressing.finally(() => { if (inFlight.current === pressing) inFlight.current = null; });
+    return pressing;
   }, [scoped, scope, off]);
 
   const dismiss = useCallback(() => { setResult(null); setError(null); }, []);
