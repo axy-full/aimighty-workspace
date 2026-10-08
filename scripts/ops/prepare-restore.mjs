@@ -22,6 +22,7 @@ import {
   verifyPlatformCoverage,
   verifyMediaReferences,
   manifestMediaEntries,
+  safePath,
   json,
 } from "./backup-lib.mjs";
 
@@ -170,6 +171,7 @@ export async function prepareRestore(
               throw new Error("A referenced object is absent from the verified R2 restore record.");
             if (reference.absolute) rewrites.set(row, key);
           } else {
+            safePath(reference.localPath);
             const previous = localCopies.get(reference.localPath);
             if (previous && previous !== reference.entry)
               throw new Error("Two referenced objects map to the same local media path.");
