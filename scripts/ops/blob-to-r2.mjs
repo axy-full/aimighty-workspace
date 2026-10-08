@@ -18,6 +18,8 @@
  *   --verify    every media row in the databases named by --config resolves on
  *               R2 alone (backup-lib verifyMediaReferences, kind "r2"); with
  *               BLOB_READ_WRITE_TOKEN set, also every Blob object is on R2.
+ *               With --live instead of --config, the database list is read
+ *               from the platform database itself (liveSourceInventory).
  *
  * Credentials come from the app's own variable names: BLOB_READ_WRITE_TOKEN,
  * R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET and
@@ -36,6 +38,7 @@ import {
   blobInventory,
   connection,
   defaultR2Client,
+  openKeyring,
   r2Inventory,
   r2Settings,
   retrying,
@@ -565,7 +568,7 @@ async function checkWorkspaceSources(databases) {
         if (row.purged_at != null || (table === "workspace_provisioning" && !row.db_url)) continue;
         const id = table === "workspaces" ? row.id : row.workspace_id;
         const source = databases.find((d) => d.workspaceIds.includes(id));
-        if (!source) fail("A workspace or pending provisioned database is missing from the --config database list.");
+        if (!source) fail("A workspace or pending provisioned database is missing from the --config (or --live) database list.");
         if (!row.legacy && row.db_url !== source.sourceUrl) fail("Workspace database source does not match its platform record.");
       }
     }
@@ -574,15 +577,109 @@ async function checkWorkspaceSources(databases) {
   }
 }
 
-export async function verifyR2Only({ privateDir, config, env = process.env, r2Client, blobSdk, retryOptions }) {
-  if (
-    config?.version !== 1 ||
-    !Array.isArray(config.databases) ||
-    config.databases.filter((d) => d.role === "platform").length !== 1 ||
-    new Set(config.databases.map((d) => d.id)).size !== config.databases.length ||
-    config.databases.some((d) => !/^[a-zA-Z0-9_-]{1,80}$/.test(d.id ?? ""))
-  )
+/* ── Live source inventory ─────────────────────────────────────────────── */
+
+/** The platform database as the app opens it (lib/platform.ts platformDb). */
+export function livePlatformSpec(env = process.env) {
+  const urlEnv = env.PLATFORM_DATABASE_URL ? "PLATFORM_DATABASE_URL" : "TURSO_DATABASE_URL";
+  if (!env[urlEnv]) fail("MISSING_CONFIGURATION: --live needs PLATFORM_DATABASE_URL (or TURSO_DATABASE_URL) in the environment.");
+  const tokenEnv = env.PLATFORM_AUTH_TOKEN ? "PLATFORM_AUTH_TOKEN" : env.TURSO_AUTH_TOKEN ? "TURSO_AUTH_TOKEN" : undefined;
+  return { id: "platform", role: "platform", urlEnv, ...(tokenEnv ? { tokenEnv } : {}) };
+}
+
+/**
+ * The version-1 source inventory (docs/backup-restore.md), built from a
+ * snapshot of the platform database instead of a hand-written file: the
+ * platform entry carries every legacy workspace (the app keeps those in
+ * TURSO_DATABASE_URL, which must be the platform database here); every other
+ * database URL in workspaces / workspace_provisioning becomes one tenant entry
+ * with its workspace ids. Tenant URLs and opened tokens go only into the
+ * returned in-process env object, under generated names; the inventory itself
+ * holds names, never values. Covers exactly the rows checkWorkspaceSources
+ * requires. Returns { config, env, counts }.
+ */
+export async function liveSourceInventory(platformSnapshot, platformSpec, env = process.env) {
+  const db = createClient({ url: pathToFileURL(platformSnapshot).href, intMode: "bigint" });
+  const legacyIds = [],
+    tenants = new Map(); // db_url -> { workspaceIds, token }
+  try {
+    const names = new Set(
+      (await db.execute("SELECT name FROM sqlite_master WHERE type='table'")).rows.map((r) => String(r.name)),
+    );
+    // A wrong env file (a database with no workspaces) must not pass as "ok".
+    if (!names.has("workspaces"))
+      fail("The platform database has no workspaces table. Check that --env-file is the production environment.");
+    for (const table of ["workspaces", "workspace_provisioning"]) {
+      if (!names.has(table)) continue;
+      for (const row of (await db.execute(`SELECT * FROM "${table}"`)).rows) {
+        if (row.purged_at != null || (table === "workspace_provisioning" && !row.db_url)) continue;
+        const id = String(table === "workspaces" ? row.id : row.workspace_id);
+        if (table === "workspaces" && Number(row.legacy ?? 0) === 1) {
+          if (!legacyIds.includes(id)) legacyIds.push(id);
+          continue;
+        }
+        if (!row.db_url) fail(`Workspace ${id} has no database URL in its platform record.`);
+        const url = String(row.db_url);
+        const tenant = tenants.get(url) ?? { workspaceIds: [], token: undefined };
+        tenants.set(url, tenant);
+        if (!tenant.workspaceIds.includes(id)) tenant.workspaceIds.push(id);
+        if (row.db_token_enc == null || row.db_token_enc === "") {
+          if (!url.startsWith("file:")) fail(`Workspace ${id} has a remote database but no stored token in its platform record.`);
+          continue;
+        }
+        if (!env.KEYRING_SECRET)
+          fail("MISSING_CONFIGURATION: --live needs KEYRING_SECRET (the deployment's own) to open workspace database tokens.");
+        let token;
+        try {
+          token = openKeyring(String(row.db_token_enc), env.KEYRING_SECRET);
+        } catch {
+          // The cause can carry nothing useful and must not carry the value.
+          token = undefined;
+        }
+        if (!token)
+          fail(
+            `Cannot open the database token of workspace ${id}: KEYRING_SECRET does not match the one that sealed it (or the stored value is damaged).`,
+          );
+        tenant.token ??= token;
+      }
+    }
+  } finally {
+    db.close();
+  }
+  if (legacyIds.length && env.TURSO_DATABASE_URL !== env[platformSpec.urlEnv])
+    fail("Legacy workspaces live in TURSO_DATABASE_URL, which is not the platform database here. --live cannot cover them; use --config.");
+  const liveEnv = { ...env },
+    databases = [{ ...platformSpec, workspaceIds: legacyIds }];
+  let n = 0;
+  for (const [url, tenant] of tenants) {
+    n++;
+    const urlEnv = `BLOB_TO_R2_LIVE_DB_${n}_URL`,
+      tokenEnv = `BLOB_TO_R2_LIVE_DB_${n}_TOKEN`;
+    liveEnv[urlEnv] = url;
+    if (tenant.token) liveEnv[tokenEnv] = tenant.token;
+    databases.push({ id: `tenant-${n}`, role: "tenant", urlEnv, ...(tenant.token ? { tokenEnv } : {}), workspaceIds: tenant.workspaceIds });
+  }
+  return {
+    config: { version: 1, databases },
+    env: liveEnv,
+    counts: { databases: databases.length, legacyWorkspaces: legacyIds.length, workspaces: databases.reduce((sum, d) => sum + d.workspaceIds.length, 0) },
+  };
+}
+
+/* ── Verify ────────────────────────────────────────────────────────────── */
+
+const validInventory = (config) =>
+  config?.version === 1 &&
+  Array.isArray(config.databases) &&
+  config.databases.filter((d) => d.role === "platform").length === 1 &&
+  new Set(config.databases.map((d) => d.id)).size === config.databases.length &&
+  !config.databases.some((d) => !/^[a-zA-Z0-9_-]{1,80}$/.test(d.id ?? ""));
+
+export async function verifyR2Only({ privateDir, config, live = false, env = process.env, r2Client, blobSdk, retryOptions }) {
+  if (live && config) fail("Use either --live or --config, not both.");
+  if (!live && !validInventory(config))
     fail("--config must be a version 1 source inventory (docs/backup-restore.md) with one platform database and unique simple ids.");
+  const platformSpec = live ? livePlatformSpec(env) : undefined;
   const dir = await privateDirectory(privateDir);
   const retry = retrying(retryOptions);
   const settings = r2Settings(r2Spec(env), env);
@@ -591,7 +688,20 @@ export async function verifyR2Only({ privateDir, config, env = process.env, r2Cl
   await chmod(scratch, 0o700);
   try {
     const databases = [];
-    for (const spec of config.databases) {
+    let liveCounts;
+    if (live) {
+      // One read-only snapshot of the platform database serves both the
+      // inventory and the checks below, so they see the same rows.
+      const source = connection(platformSpec, env),
+        snapshot = join(scratch, "platform.db");
+      const inventory = await snapshotDatabase(source, snapshot, scratch);
+      const built = await liveSourceInventory(snapshot, platformSpec, env);
+      if (!validInventory(built.config)) fail("The live source inventory is not valid.");
+      ({ config, env } = built);
+      liveCounts = built.counts;
+      databases.push({ id: "platform", role: "platform", workspaceIds: config.databases[0].workspaceIds, sourceUrl: source.url, snapshot, inventory });
+    }
+    for (const spec of live ? config.databases.slice(1) : config.databases) {
       const source = connection(spec, env),
         snapshot = join(scratch, `${spec.id}.db`);
       databases.push({
@@ -605,7 +715,7 @@ export async function verifyR2Only({ privateDir, config, env = process.env, r2Cl
     }
     await checkWorkspaceSources(databases);
     const r2Entries = await r2Inventory(client, settings.bucket, retry);
-    const result = { mode: "verify", ok: true, r2Objects: r2Entries.length };
+    const result = { mode: "verify", ok: true, ...(live ? { live: liveCounts } : {}), r2Objects: r2Entries.length };
     try {
       Object.assign(result, await verifyMediaReferences(databases, r2Entries, "r2"));
     } catch (error) {
@@ -646,7 +756,8 @@ export async function verifyR2Only({ privateDir, config, env = process.env, r2Cl
 const USAGE = `Usage (run with the production variable names in the environment):
   node scripts/ops/blob-to-r2.mjs --dry-run --private-dir DIR [--probe-mib 64] [--limit N]
   node scripts/ops/blob-to-r2.mjs --copy    --private-dir DIR [--transfers 4] [--deep] [--readback] [--limit N]
-  node scripts/ops/blob-to-r2.mjs --verify  --private-dir DIR --config SOURCE-INVENTORY.json`;
+  node scripts/ops/blob-to-r2.mjs --verify  --private-dir DIR --config SOURCE-INVENTORY.json
+  node scripts/ops/blob-to-r2.mjs --verify  --private-dir DIR --live   (databases read from the platform database; needs PLATFORM_DATABASE_URL, PLATFORM_AUTH_TOKEN, KEYRING_SECRET)`;
 
 export function parseArguments(argv) {
   const options = { flags: new Set() };
@@ -656,11 +767,13 @@ export function parseArguments(argv) {
     if (valued.has(arg)) {
       if (argv[i + 1] === undefined) fail(`${arg} needs a value.`);
       options[arg.slice(2)] = argv[++i];
-    } else if (["--dry-run", "--copy", "--verify", "--deep", "--readback"].includes(arg)) options.flags.add(arg);
+    } else if (["--dry-run", "--copy", "--verify", "--deep", "--readback", "--live"].includes(arg)) options.flags.add(arg);
     else fail(`Unknown argument ${arg.startsWith("--") ? arg : "(value)"}.`);
   }
   const modes = ["--dry-run", "--copy", "--verify"].filter((m) => options.flags.has(m));
   if (modes.length !== 1) fail("Choose exactly one of --dry-run, --copy or --verify.");
+  if (options.flags.has("--live") && !options.flags.has("--verify")) fail("--live works only with --verify.");
+  if (options.flags.has("--live") && options.config !== undefined) fail("Use either --live or --config, not both.");
   const number = (name) => (options[name] === undefined ? undefined : Number(options[name]));
   return {
     mode: modes[0].slice(2),
@@ -671,6 +784,7 @@ export function parseArguments(argv) {
     config: options.config,
     deep: options.flags.has("--deep"),
     readback: options.flags.has("--readback"),
+    live: options.flags.has("--live"),
   };
 }
 
@@ -679,9 +793,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   try {
     const options = parseArguments(argv);
     if (options.mode === "verify") {
-      if (!options.config) fail("--verify needs --config (the backup source inventory, docs/backup-restore.md).");
-      const config = JSON.parse(await readFile(options.config, "utf8"));
-      const result = await verifyR2Only({ privateDir: options.privateDir, config, env });
+      if (!options.config && !options.live)
+        fail("--verify needs --live (databases from the platform database) or --config (the backup source inventory, docs/backup-restore.md).");
+      const config = options.live ? undefined : JSON.parse(await readFile(options.config, "utf8"));
+      const result = await verifyR2Only({ privateDir: options.privateDir, config, live: options.live, env });
       print(result);
       return result.ok ? 0 : 1;
     }
@@ -691,7 +806,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   } catch (error) {
     if (error instanceof OpsError) console.error(error.message);
     else console.error(`Blob to R2 stopped (${errorCode(error)}). Nothing was deleted or overwritten; rerun to resume.`);
-    if (error instanceof OpsError && /exactly one of|Unknown argument|needs a value/.test(error.message)) console.error(USAGE);
+    if (error instanceof OpsError && /exactly one of|Unknown argument|needs a value|--live/.test(error.message)) console.error(USAGE);
     return 1;
   }
 }
