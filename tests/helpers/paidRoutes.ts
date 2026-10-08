@@ -47,6 +47,7 @@ export const NOT_SPENDING: Record<string, string> = {
   "jobs": "reads and syncs jobs, charges nothing",
   "jobs/[id]": "review state, restore and hide: nothing is charged and nothing is erased",
   "rig/elements": "creating an asset is free; training is priced on its own route (identities)",
+  "uploads/finish": "assembles an upload, in the background when slow (a recovery continuation); reserves storage, charges no credits",
 };
 
 /**
