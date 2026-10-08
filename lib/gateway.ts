@@ -1,6 +1,6 @@
 import { recoveryFetch as fetch } from "./recovery";
 import { vendorKey, deploymentIdentityAllowed } from "./vendorKeys";
-import { engineMock, mockCompletion } from "./mock";
+import { engineMock, mockCompletion, mockDelay } from "./mock";
 import { assertTextProvider, openaiDirectPost, TEXT_PROVIDER_HEADER, textVendor } from './openai-direct';
 /**
  * Vercel AI Gateway — the one door this deployment can always open.
@@ -104,7 +104,7 @@ export async function gatewayPost(
   body: string,
   opts: { auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory" } = {},
 ): Promise<GatewayReply> {
-  if (engineMock()) return mockCompletion(opts.mock ?? "prompt", body);
+  if (engineMock()) { await mockDelay(body); return mockCompletion(opts.mock ?? "prompt", body); }
   const input = JSON.parse(body) as Record<string, unknown>;
   if (typeof input.model !== 'string') throw new Error('Choose a language model before submitting.');
   assertTextProvider(input.model, opts.auth);

@@ -433,8 +433,9 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
         setChatFor({ id: made, projectId: prodKey }); setDismissed(null); remember(made);
       }
       fly(keys, { thinking: true });
-      if (viaLegacy) await paid.run(recovering!.url, requestBody);
-      else await sends.run(id, `/api/atomik/${encodeURIComponent(id)}`, requestBody, recovering?.key);
+      /* A long turn is answered "still being accepted" and finishes on the server: asked again until its reply is there. */
+      if (viaLegacy) await paid.run(recovering!.url, requestBody, { waitWhilePending: true });
+      else await sends.run(id, `/api/atomik/${encodeURIComponent(id)}`, requestBody, recovering?.key, { waitWhilePending: true });
       const done = sentScope;
       setDrafts((all) => { const next = { ...all }; delete next[done]; return next; });
     } catch (e) {

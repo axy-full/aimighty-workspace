@@ -560,7 +560,7 @@ export function AtomikRead({ scope, api, text, projectId, place, entries, open, 
   const runRead = async (input: Record<string, unknown>) => {
     setPhase("reading"); setProblem(null);
     try {
-      const { data, request } = await paid.run<ReadReply>(READ_URL, input, { keepPending: true });
+      const { data, request } = await paid.run<ReadReply>(READ_URL, input, { keepPending: true, waitWhilePending: true });
       setReply({ key: request.key, value: data });
       setTicked([]);
     } catch (error) { setProblem(failed(error, "Atomik could not read this. Nothing was kept.")); }
