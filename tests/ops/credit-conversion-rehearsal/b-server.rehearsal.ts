@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { password, signupInvite } from "../../../tests/helpers/identityAdmin";
+import { password, signupInvite } from "../../helpers/identityAdmin";
 
 /** Local mock server on :4620 only. PHASE: at080 | at010a | at010b. */
 const evidence = path.resolve(__dirname, "../../../.data/evidence");
