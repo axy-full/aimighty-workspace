@@ -4,7 +4,7 @@ import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
 import { resolveModel } from "@/lib/atomik";
 import { gatewayReachable } from "@/lib/gateway";
 import { vendorKey } from "@/lib/vendorKeys";
-import { withGenerationRequest } from "@/lib/generationRequests";
+import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
 import { PaidTextError, paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure, requestMaxCredits } from "@/lib/paidText";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 import { textRunCost } from "@/lib/textRunCost";
@@ -66,5 +66,5 @@ export const POST = withTenant(async (req: Request) => {
       return NextResponse.json({ id: result.id, model, entries: result.read.entries, skipped: result.read.skipped, ...(await textRunCost(result)) });
     } catch (error) { return paidTextFailure(error); }
   };
-  return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run);
+  return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run, { answerAfterMs: ANSWER_AFTER_MS });
 }, { requireRequestScope: true });

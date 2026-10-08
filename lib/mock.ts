@@ -18,6 +18,27 @@ import { guessKind, unfence } from "./atomikMemoryText";
  */
 export const engineMock = (): boolean => process.env.ENGINE_MOCK === "1";
 
+/**
+ * Tests only: how long a mocked text or transcript reply waits before it
+ * answers, so a test can make a paid run outlast the early answer
+ * (ANSWER_AFTER_MS, lib/generationRequests.ts). The request asks for it with
+ * `[[mock-delay:<ms>]]` in what it sends (a turn's words, a source's file
+ * name). Honoured only under ENGINE_MOCK=1 together with
+ * PARTICL_TEST_MOCK_DELAYS=1, never in a production build, and never longer
+ * than two minutes; otherwise 0.
+ */
+export function mockDelayMs(sent: string): number {
+  if (!engineMock() || process.env.PARTICL_TEST_MOCK_DELAYS !== "1" || process.env.NODE_ENV === "production") return 0;
+  const asked = /\[\[mock-delay:(\d{1,6})\]\]/.exec(sent);
+  return asked ? Math.min(Number(asked[1]), 120_000) : 0;
+}
+
+/** Waits as long as mockDelayMs says (mostly not at all). */
+export async function mockDelay(sent: string): Promise<void> {
+  const ms = mockDelayMs(sent);
+  if (ms > 0) await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** A fixture URL: the adapters hand these out; storage reads them from disk. */
 export const FIXTURE = "fixture:";
 export type FixtureName = "clip.mp4" | "astra-clip.mp4" | "tone.mp3" | "still.png";

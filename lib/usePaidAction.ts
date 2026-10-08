@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { useSession } from "./session";
+import { sendError, sendSavedRequest, UNCONFIRMED as unconfirmed } from "./pendingReplay";
 
 export type PendingPaidAction = {
   key: string;
@@ -102,7 +103,8 @@ export function usePaidAction(surface: string, active = true, workbench?: { sign
     async <T extends object = Record<string, unknown>>(
       url: string,
       body: Record<string, unknown>,
-      options?: { context?: Record<string, unknown>; keepPending?: boolean },
+      /** `waitWhilePending`: only for the long routes that answer "still being accepted" early (lib/pendingReplay.ts). */
+      options?: { context?: Record<string, unknown>; keepPending?: boolean; waitWhilePending?: boolean },
     ): Promise<{ data: T; request: PendingPaidAction }> => {
       if (
         !enabled ||
@@ -152,29 +154,30 @@ export function usePaidAction(surface: string, active = true, workbench?: { sign
         throw new Error(
           "The request is saved for recovery in its original workspace.",
         );
-      const response = await fetch(request.url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": request.key,
-          ...(requestScope
-            ? { "X-Workbench-Scope": requestScope }
-            : { "X-Workspace-Id": workspace!.id, "X-Actor-Email": email! }),
-        },
-        body: request.body,
-      });
-      const data = await response.json().catch(() => null);
+      const headers = {
+        "Content-Type": "application/json",
+        "Idempotency-Key": request.key,
+        ...(requestScope
+          ? { "X-Workbench-Scope": requestScope }
+          : { "X-Workspace-Id": workspace!.id, "X-Actor-Email": email! }),
+      };
+      /* `waitWhilePending` (a long run answered "still being accepted" that finishes on the server): the same saved
+         request is asked again (same key, never a second run) until its reply is there, for a few minutes at most
+         (lib/pendingReplay.ts), then it stays saved for Recover. Without it, sent once, as before. */
+      const sent = await sendSavedRequest(
+        () => fetch(request.url, { method: "POST", headers, body: request.body }),
+        { waitWhilePending: options?.waitWhilePending, stillWanted: () => current.current.active && current.current.key === storageKey },
+      );
+      const { response, data } = sent;
       if (!current.current.active || current.current.key !== storageKey)
         throw new Error(
           "The request is saved for recovery in its original workspace.",
         );
-      if (!response.ok) {
-        if (response.headers.get("Idempotency-Status") === "complete")
+      const failed = sendError(sent, !!options?.waitWhilePending);
+      if (failed) {
+        if (!response.ok && response.headers.get("Idempotency-Status") === "complete")
           await complete(request.key);
-        throw new Error(
-          data?.error ||
-            "The response could not be confirmed. Recover the saved request.",
-        );
+        throw new Error(failed);
       }
       if (
         !data ||
@@ -182,13 +185,11 @@ export function usePaidAction(surface: string, active = true, workbench?: { sign
         Array.isArray(data) ||
         (response.headers.get("Idempotency-Status") !== "complete" &&
           typeof data.id !== "string" &&
-          typeof data.identity?.id !== "string")
+          typeof (data.identity as { id?: unknown } | undefined)?.id !== "string")
       )
-        throw new Error(
-          "The response could not be confirmed. Recover the saved request.",
-        );
+        throw new Error(unconfirmed);
       if (!options?.keepPending) await complete(request.key);
-      return { data, request };
+      return { data: data as T, request };
     },
     [storageKey, enabled, complete, workspace, email, recoveryKey, requestScope],
   );
