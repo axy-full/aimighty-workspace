@@ -3,6 +3,7 @@ import { GATEWAY_BASE, gatewayAuth, gatewayReachable } from "./gateway";
 import { vendorKey } from './vendorKeys';
 import { openAIConnection } from './openai-models';
 import { engineMock } from './mock';
+import { isTextDirect } from './textDirectVendors';
 import modelCatalogJson from './modelCatalog.json';
 
 /**
@@ -15,7 +16,8 @@ import modelCatalogJson from './modelCatalog.json';
  *
  * MODEL_CATALOG=static serves the same entries from lib/modelCatalog.json, a
  * dated snapshot of the gateway's public list (scripts/ops/snapshot-catalog.mjs),
- * limited to providers whose key is set. The default stays the live read.
+ * limited to providers whose key is set and that can be called. The default
+ * stays the live read.
  */
 
 /* ── What the gateway says about a model ──────────────────────────────── */
@@ -193,14 +195,26 @@ const PROVIDER_KEY: Record<CatalogProviderId, () => string | null> = {
 };
 
 /**
- * Every snapshot model whose provider's key is set (all of them under
- * ENGINE_MOCK, as the live read serves everything there). Prices, limits,
- * modalities and reasoning options are the gateway's, frozen on `pricedAt`.
+ * A text model is offered only while its provider can actually be called: by
+ * the gateway, or directly once `TEXT_DIRECT` lists the provider. OpenAI text
+ * always goes direct on its key. Stills (models that output images) already
+ * go direct on their provider's key, so the key alone is enough for them.
+ */
+function callable(model: CatalogModel, providerId: CatalogProviderId): boolean {
+  if (providerId === 'openai' || model.outputModalities?.includes('image')) return true;
+  return gatewayReachable() || isTextDirect(providerId);
+}
+
+/**
+ * Every snapshot model whose provider's key is set and which can be called
+ * (all of them under ENGINE_MOCK, as the live read serves everything there).
+ * Prices, limits, modalities and reasoning options are the gateway's, frozen
+ * on `pricedAt`.
  */
 export function staticCatalog(snapshot?: CatalogSnapshot): CatalogModel[] {
   const mock = engineMock();
   return snapshotModels(snapshot).flatMap(({ providerId, ...model }) =>
-    mock || PROVIDER_KEY[providerId]() ? [model] : []);
+    mock || (PROVIDER_KEY[providerId]() && callable(model, providerId)) ? [model] : []);
 }
 
 const warnedSources = new Set<string>();
