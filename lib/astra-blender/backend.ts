@@ -36,7 +36,8 @@ export function astraRenderBackend(env: Readonly<Record<string, string | undefin
   return null;
 }
 
-export type AstraSelfhostConfig = { readonly urls: readonly string[]; readonly secret: string };
+/** `secrets[i]` is the bearer for `urls[i]`. */
+export type AstraSelfhostConfig = { readonly urls: readonly string[]; readonly secrets: readonly string[] };
 
 const SECRET = /^[\x21-\x7e]{32,512}$/;
 
@@ -44,8 +45,10 @@ const SECRET = /^[\x21-\x7e]{32,512}$/;
  * The self-hosted workers, or null when they are not fully configured.
  *
  * `ASTRA_WORKER_URLS` is one to three comma-separated http(s) origins (no
- * credentials, path, query or fragment); `ASTRA_WORKER_SECRET` is at least 32
- * printable characters. Requests go to these origins and nowhere else.
+ * credentials, path, query or fragment). `ASTRA_WORKER_SECRETS` is a comma list
+ * of one secret per worker, in the same order; unset (or blank), the single
+ * `ASTRA_WORKER_SECRET` is every worker's. Each secret is at least 32 printable
+ * characters, and the counts must match. Requests go to these origins only.
  */
 export function astraSelfhostConfig(env: Readonly<Record<string, string | undefined>> = process.env): AstraSelfhostConfig | null {
   const raw = (env.ASTRA_WORKER_URLS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
@@ -60,7 +63,8 @@ export function astraSelfhostConfig(env: Readonly<Record<string, string | undefi
     urls.push(url.origin);
   }
   if (new Set(urls).size !== urls.length) return null;
-  const secret = env.ASTRA_WORKER_SECRET ?? "";
-  if (!SECRET.test(secret)) return null;
-  return { urls, secret };
+  const list = (env.ASTRA_WORKER_SECRETS ?? "").trim();
+  const secrets = list ? list.split(",").map((value) => value.trim()) : urls.map(() => env.ASTRA_WORKER_SECRET ?? "");
+  if (secrets.length !== urls.length || !secrets.every((secret) => SECRET.test(secret))) return null;
+  return { urls, secrets };
 }

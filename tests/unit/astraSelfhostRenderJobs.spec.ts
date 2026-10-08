@@ -20,7 +20,7 @@ process.env.ASTRA_BLENDER_RATE_CARD = JSON.stringify({ cpuUsdPerHour: 0.128, mem
 const [W1, W2, W3] = WORKER_URLS;
 const SELFHOST = { ASTRA_RENDER_BACKEND: 'selfhost', ASTRA_WORKER_URLS: WORKER_URLS.join(','), ASTRA_WORKER_SECRET: WORKER_SECRET };
 const VERCEL = { ASTRA_RENDER_BACKEND: 'vercel', ASTRA_BLENDER_SNAPSHOT_ID: 'snap_verified-test', VERCEL_TOKEN: 'unit-test-token', VERCEL_TEAM_ID: 'team_unit_test', VERCEL_PROJECT_ID: 'prj_unit_test' };
-const KEYS = ['VERCEL', ...new Set([...Object.keys(SELFHOST), ...Object.keys(VERCEL)])];
+const KEYS = ['VERCEL', 'ASTRA_WORKER_SECRETS', ...new Set([...Object.keys(SELFHOST), ...Object.keys(VERCEL)])];
 let saved: Record<string, string | undefined> = {};
 function use(values: Record<string, string>) { for (const key of KEYS) delete process.env[key]; Object.assign(process.env, values); }
 test.beforeAll(() => { saved = Object.fromEntries(KEYS.map(key => [key, process.env[key]])); });
@@ -50,7 +50,7 @@ function collaborators(sdk: AstraSandboxSdk) {
     };
     return { deps, reserved, metered, funding };
 }
-async function selfhost(pool: ReturnType<typeof workerPool>) { const { createSelfhostSdk } = await import('../../lib/astra-blender/selfhost-sdk'); return collaborators(createSelfhostSdk({ config: { urls: WORKER_URLS, secret: WORKER_SECRET }, fetch: pool.fetch })); }
+async function selfhost(pool: ReturnType<typeof workerPool>) { const { createSelfhostSdk } = await import('../../lib/astra-blender/selfhost-sdk'); return collaborators(createSelfhostSdk({ config: { urls: WORKER_URLS, secrets: WORKER_URLS.map(() => WORKER_SECRET) }, fetch: pool.fetch })); }
 
 test('a self-hosted render runs on the first free worker, meters selfhost-blender, and charges what the same usage charges on Vercel', async () => {
     let selfhostCost = 0, selfhostCredits = 0, selfhostEstimate = 0;
@@ -165,7 +165,7 @@ test('a job still finding every worker busy after 30 minutes is cancelled and it
 test('workers that refuse the render outright fail it before anything starts and release the reservation', async () => context('selfhost-refused', async (m) => {
     const pool = workerPool();
     const { createSelfhostSdk } = await import('../../lib/astra-blender/selfhost-sdk');
-    const f = collaborators(createSelfhostSdk({ config: { urls: WORKER_URLS, secret: 'a-different-secret-that-is-long-enough-0' }, fetch: pool.fetch }));
+    const f = collaborators(createSelfhostSdk({ config: { urls: WORKER_URLS, secrets: WORKER_URLS.map(() => 'a-different-secret-that-is-long-enough-0') }, fetch: pool.fetch }));
     const first = await m.prepareAstraRender(m.input, 'u_test', undefined, f.deps);
     expect(await m.runAstraRender(first.job.id, f.deps)).toBeUndefined();
     const row = await m.row(first.job.id);
@@ -183,7 +183,7 @@ test('a cancel that lands while every worker is busy ends the job cancelled and 
     const fetch = pool.fetch;
     let cancelled = false;
     const { createSelfhostSdk } = await import('../../lib/astra-blender/selfhost-sdk');
-    f.deps.sandbox = { sdk: createSelfhostSdk({ config: { urls: WORKER_URLS, secret: WORKER_SECRET }, fetch: async (input, init) => { if (!cancelled) { cancelled = true; await m.db().execute({ sql: 'UPDATE astra_render_jobs SET cancel_requested=1 WHERE id=?', args: [first.job.id] }); } return fetch(input, init); } }) };
+    f.deps.sandbox = { sdk: createSelfhostSdk({ config: { urls: WORKER_URLS, secrets: WORKER_URLS.map(() => WORKER_SECRET) }, fetch: async (input, init) => { if (!cancelled) { cancelled = true; await m.db().execute({ sql: 'UPDATE astra_render_jobs SET cancel_requested=1 WHERE id=?', args: [first.job.id] }); } return fetch(input, init); } }) };
     expect(await m.runAstraRender(first.job.id, f.deps)).toBeUndefined();
     expect(await m.row(first.job.id)).toMatchObject({ status: 'cancelled', settled: 1, runtime_id: null, billed_credits: 0 });
     expect(f.metered.map(event => [event.status, event.engineCostUsd])).toEqual([['failed', 0]]);

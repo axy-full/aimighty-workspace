@@ -9,14 +9,14 @@ import { workerPool, WORKER_SECRET, WORKER_URLS } from "./astraWorkerFake";
    a stubbed fetch. Nothing here reaches a network or starts a render. */
 
 const NAME = "astra-blender-00000000-0000-4000-8000-000000000001";
-const config = { urls: WORKER_URLS, secret: WORKER_SECRET };
+const config = { urls: WORKER_URLS, secrets: WORKER_URLS.map(() => WORKER_SECRET) };
 const [W1, W2, W3] = WORKER_URLS;
 const sdkWith = (pool: ReturnType<typeof workerPool>, over: Partial<typeof config> = {}) => createSelfhostSdk({ config: { ...config, ...over }, fetch: pool.fetch });
 const create = (sdk: ReturnType<typeof createSelfhostSdk>, name = NAME) => sdk.create({ name } as Parameters<typeof sdk.create>[0]);
 
 test.beforeEach(() => forgetAstraWorkerSessions());
 
-const RUNTIME_KEYS = ["ASTRA_RENDER_BACKEND", "ASTRA_WORKER_URLS", "ASTRA_WORKER_SECRET", "ASTRA_BLENDER_SNAPSHOT_ID", "VERCEL", "VERCEL_TOKEN", "VERCEL_TEAM_ID", "VERCEL_PROJECT_ID"];
+const RUNTIME_KEYS = ["ASTRA_RENDER_BACKEND", "ASTRA_WORKER_URLS", "ASTRA_WORKER_SECRET", "ASTRA_WORKER_SECRETS", "ASTRA_BLENDER_SNAPSHOT_ID", "VERCEL", "VERCEL_TOKEN", "VERCEL_TEAM_ID", "VERCEL_PROJECT_ID"];
 function withEnv<T>(values: Record<string, string | undefined>, run: () => T): T {
   const saved = Object.fromEntries(RUNTIME_KEYS.map((key) => [key, process.env[key]]));
   try {
@@ -60,7 +60,7 @@ test("the render backend switch defaults to Vercel; selfhost is configured by it
 
 test("selfhost configuration takes one to three plain http(s) worker origins and a secret of at least 32 characters", () => {
   const ok = (urls: string, secret = WORKER_SECRET) => astraSelfhostConfig({ ASTRA_WORKER_URLS: urls, ASTRA_WORKER_SECRET: secret });
-  expect(ok("http://render-1:8080")).toEqual({ urls: ["http://render-1:8080"], secret: WORKER_SECRET });
+  expect(ok("http://render-1:8080")).toEqual({ urls: ["http://render-1:8080"], secrets: [WORKER_SECRET] });
   expect(ok(" http://render-1:8080/ , https://render-2.internal ,http://10.0.0.3:9000")?.urls).toEqual(["http://render-1:8080", "https://render-2.internal", "http://10.0.0.3:9000"]);
   for (const urls of [
     "", " , ", "http://a:1,http://b:1,http://c:1,http://d:1", "ftp://render-1:21", "render-1:8080", "http://user:pass@render-1:8080",
@@ -133,7 +133,7 @@ test("a lost create reply is cleared on that worker before the next is tried; an
 
 test("workers that refuse outright (a wrong secret) throw the typed refusal, not busy", async () => {
   const pool = workerPool();
-  const error = await create(sdkWith(pool, { secret: "a-different-secret-that-is-long-enough-0" })).catch((e) => e);
+  const error = await create(sdkWith(pool, { secrets: WORKER_URLS.map(() => "a-different-secret-that-is-long-enough-0") })).catch((e) => e);
   expect(error).toBeInstanceOf(AstraWorkerRefusedError);
   expect(error.notStarted).toBe(true);
   // A refusal beside busy workers is still busy: try again later.
@@ -205,7 +205,7 @@ test("the fetch guard sends only to configured workers, under the session API, a
   // A worker that answers with a redirect is refused even if the fetch layer would surface it.
   const seen: RequestInit[] = [];
   const redirecting = async (_input: URL, init: RequestInit) => { seen.push(init); return new Response(null, { status: 302, headers: { location: "http://evil.test/v1/sessions" } }); };
-  const error = await createSelfhostSdk({ config: { urls: [W1], secret: WORKER_SECRET }, fetch: redirecting }).get({ name: NAME, resume: false }).catch((e) => e);
+  const error = await createSelfhostSdk({ config: { urls: [W1], secrets: [WORKER_SECRET] }, fetch: redirecting }).get({ name: NAME, resume: false }).catch((e) => e);
   expect(error).toBeInstanceOf(AstraWorkerError);
   expect(seen.length).toBeGreaterThan(0);
   expect(seen.every((init) => init.redirect === "error")).toBe(true);
@@ -276,4 +276,43 @@ test("a stop answered 404 is already gone and counts as stopped; a stop reply wi
   quiet.sessions.clear();
   const third = await createSelfhostSdk({ config, fetch: refusing }).create({ name: NAME } as never);
   await expect(third.stop()).rejects.toBeInstanceOf(AstraWorkerError);
+});
+
+const PER_WORKER = ["secret-for-render-1-0123456789abcdefghij", "secret-for-render-2-0123456789abcdefghij", "secret-for-render-3-0123456789abcdefghij"];
+
+test("ASTRA_WORKER_SECRETS gives each worker its own secret, in URL order, and falls back to ASTRA_WORKER_SECRET when unset", () => {
+  const urls = WORKER_URLS.join(",");
+  // One secret per worker, same order as the URLs; the shared secret is then not used.
+  expect(astraSelfhostConfig({ ASTRA_WORKER_URLS: urls, ASTRA_WORKER_SECRETS: ` ${PER_WORKER.join(" , ")} ` })).toEqual({ urls: WORKER_URLS, secrets: PER_WORKER });
+  expect(astraSelfhostConfig({ ASTRA_WORKER_URLS: urls, ASTRA_WORKER_SECRETS: PER_WORKER.join(","), ASTRA_WORKER_SECRET: WORKER_SECRET })?.secrets).toEqual(PER_WORKER);
+  // Unset or blank: the single secret applies to every worker, as before.
+  expect(astraSelfhostConfig({ ASTRA_WORKER_URLS: urls, ASTRA_WORKER_SECRET: WORKER_SECRET })?.secrets).toEqual([WORKER_SECRET, WORKER_SECRET, WORKER_SECRET]);
+  expect(astraSelfhostConfig({ ASTRA_WORKER_URLS: urls, ASTRA_WORKER_SECRETS: " ", ASTRA_WORKER_SECRET: WORKER_SECRET })?.secrets).toEqual([WORKER_SECRET, WORKER_SECRET, WORKER_SECRET]);
+  // A count that differs from the URL count, a short or empty entry: not configured (the shared secret does not paper over it).
+  for (const list of [PER_WORKER.slice(0, 2).join(","), [...PER_WORKER, PER_WORKER[0]].join(","), `${PER_WORKER[0]},${PER_WORKER[1]},short`, `${PER_WORKER[0]},,${PER_WORKER[2]}`])
+    expect(astraSelfhostConfig({ ASTRA_WORKER_URLS: urls, ASTRA_WORKER_SECRETS: list, ASTRA_WORKER_SECRET: WORKER_SECRET }), list.length.toString()).toBeNull();
+  const mismatch = withEnv({ ASTRA_RENDER_BACKEND: "selfhost", ASTRA_WORKER_URLS: urls, ASTRA_WORKER_SECRETS: PER_WORKER.slice(0, 2).join(","), ASTRA_WORKER_SECRET: WORKER_SECRET }, () => astraRuntimeStatus());
+  expect(mismatch.configured).toBe(false);
+  expect(mismatch.reason).toContain("render workers");
+  expect(withEnv({ ASTRA_RENDER_BACKEND: "selfhost", ASTRA_WORKER_URLS: urls, ASTRA_WORKER_SECRETS: PER_WORKER.join(",") }, () => astraRuntimeStatus().configured)).toBe(true);
+});
+
+test("each worker URL is sent its own bearer and never another worker's, and no secret reaches an error", async () => {
+  const pool = workerPool(WORKER_URLS, Object.fromEntries(WORKER_URLS.map((origin, i) => [origin, PER_WORKER[i]])));
+  pool.set(W1, "busy"); pool.set(W2, "busy");
+  const sdk = createSelfhostSdk({ config: { urls: WORKER_URLS, secrets: PER_WORKER }, fetch: pool.fetch });
+  const handle = await create(sdk);
+  await handle.writeFiles([{ path: "/vercel/sandbox/astra/scene.py", content: "x" }]);
+  await handle.stop();
+  forgetAstraWorkerSessions();
+  await sdk.get({ name: NAME, resume: false });
+  expect(pool.calls.length).toBeGreaterThan(5);
+  for (const call of pool.calls) expect(call.authorization).toBe(`Bearer ${PER_WORKER[WORKER_URLS.indexOf(call.origin)]}`);
+  expect(pool.calls.filter((call) => call.origin === W3).map((call) => call.method)).toEqual(["POST", "PUT", "DELETE", "GET"]);
+  // Secrets in the wrong order: every worker refuses, and the error names none of them.
+  const swapped = createSelfhostSdk({ config: { urls: WORKER_URLS, secrets: [PER_WORKER[1], PER_WORKER[2], PER_WORKER[0]] }, fetch: workerPool(WORKER_URLS, Object.fromEntries(WORKER_URLS.map((origin, i) => [origin, PER_WORKER[i]]))).fetch });
+  const error = await create(swapped, "astra-blender-00000000-0000-4000-8000-000000000003").catch((e) => e);
+  expect(error).toBeInstanceOf(AstraWorkerRefusedError);
+  const text = `${error.message} ${error.stack} ${JSON.stringify(error)}`;
+  for (const secret of PER_WORKER) expect(text).not.toContain(secret);
 });

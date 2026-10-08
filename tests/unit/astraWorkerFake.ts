@@ -9,7 +9,8 @@ export type WorkerCall = { origin: string; method: string; path: string; query: 
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDpkAAAAASUVORK5CYII=", "base64");
 
-export function workerPool(origins: string[] = WORKER_URLS) {
+/** `secrets` gives a worker its own secret; the rest expect WORKER_SECRET. */
+export function workerPool(origins: string[] = WORKER_URLS, secrets: Record<string, string> = {}) {
   const modes = new Map<string, WorkerMode>(origins.map((origin) => [origin, "free"]));
   const sessions = new Map<string, Session>();
   const calls: WorkerCall[] = [];
@@ -24,7 +25,7 @@ export function workerPool(origins: string[] = WORKER_URLS) {
     const mode = modes.get(url.origin);
     if (!mode) throw new TypeError(`fetch failed: ENOTFOUND ${url.host}`);
     if (mode === "down") throw new TypeError(`fetch failed: ECONNREFUSED ${url.host} ${headers.get("authorization")}`);
-    if (headers.get("authorization") !== `Bearer ${WORKER_SECRET}`) return reply(401, { error: "unauthorized" });
+    if (headers.get("authorization") !== `Bearer ${secrets[url.origin] ?? WORKER_SECRET}`) return reply(401, { error: "unauthorized" });
     if (mode === "refuse") return reply(403, { error: "forbidden" });
     if (mode === "error") return reply(500, { error: "worker error" });
     const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);

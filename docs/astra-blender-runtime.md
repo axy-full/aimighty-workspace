@@ -71,11 +71,12 @@ Final billing uses SDK CPU milliseconds, wall duration for 4 GB memory (one-minu
 ```text
 ASTRA_RENDER_BACKEND=selfhost
 ASTRA_WORKER_URLS=http://<worker 1>:8080,http://<worker 2>:8080,http://<worker 3>:8080
-ASTRA_WORKER_SECRET=<the workers' secret, 32+ characters>
+ASTRA_WORKER_SECRETS=<secret 1>,<secret 2>,<secret 3>
+ASTRA_WORKER_SECRET=<one secret for every worker, used only when ASTRA_WORKER_SECRETS is unset>
 ASTRA_BLENDER_RATE_CARD=<unchanged>
 ```
 
-- `ASTRA_WORKER_URLS` takes one to three internal http(s) origins, with no credentials, path or query. `ASTRA_WORKER_SECRET` is sent as a bearer token on every call. In `selfhost` mode the snapshot and the Vercel credentials are neither needed nor read.
+- `ASTRA_WORKER_URLS` takes one to three internal http(s) origins, with no credentials, path or query. `ASTRA_WORKER_SECRETS` holds one secret per worker, in the same order as the URLs, and each worker is sent only its own as a bearer token. When it is unset, `ASTRA_WORKER_SECRET` is every worker's. A count that differs from the URL count, or any secret under 32 characters, leaves the backend not configured. In `selfhost` mode the snapshot and the Vercel credentials are neither needed nor read.
 - The client (`lib/astra-blender/selfhost-sdk.ts`) speaks only to those origins, refuses redirects, and has deadlines of 30 seconds per call and 190 seconds for the run. Its errors never carry a host, a header or the secret.
 - Create tries the workers in order and takes the first free one. When every worker answers busy, nothing has started: the job goes back to the queue with no charge and no refund, and runs when a worker is free. Inngest waits 30 seconds between attempts; native dispatch retries from the panel poll, the slot chain and the cron after a 15-second backoff. A job that still has not started 30 minutes after it was approved is cancelled and its reservation released, as for a dispatch outage. Workers that refuse the request outright (for example a wrong secret) fail the job before anything starts and release its reservation.
 - At most three native renders run at once on either backend (the Inngest function's concurrency and the native worker slots).

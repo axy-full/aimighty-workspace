@@ -17,7 +17,8 @@ import type { AstraRuntimeUsage, AstraSandboxCreateOptions, AstraSandboxHandle, 
  * (ops/render-worker/README.md.) A stopped session stays readable, with its
  * final usage, until that worker's next create.
  *
- * Every call carries `Authorization: Bearer $ASTRA_WORKER_SECRET`, goes only to
+ * Every call carries that worker's own bearer (ASTRA_WORKER_SECRETS, or the shared
+ * ASTRA_WORKER_SECRET), goes only to
  * a configured origin, never follows a redirect and has a deadline. No message
  * this module produces names a host, a header or the secret: job errors reach
  * the customer.
@@ -88,9 +89,12 @@ function safePath(path: string, under: string): boolean {
 
 async function call(ctx: Context, origin: string, method: string, path: string, options: { json?: unknown; body?: Uint8Array; timeoutMs: number; signal?: AbortSignal }): Promise<Response> {
   const url = astraWorkerUrl(ctx.config, origin, path);
+  // Each worker gets its own secret, never another's.
+  const secret = ctx.config.secrets[ctx.config.urls.indexOf(origin)];
+  if (!secret) throw new AstraWorkerError("A render worker has no secret configured.");
   const deadline = AbortSignal.timeout(options.timeoutMs);
   const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
-  const headers: Record<string, string> = { authorization: `Bearer ${ctx.config.secret}` };
+  const headers: Record<string, string> = { authorization: `Bearer ${secret}` };
   let body: BodyInit | undefined;
   if (options.json !== undefined) { headers["content-type"] = "application/json"; body = JSON.stringify(options.json); }
   else if (options.body) { headers["content-type"] = "application/octet-stream"; body = new Uint8Array(options.body); }
