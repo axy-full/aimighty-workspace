@@ -1,5 +1,5 @@
-import { textVendor, directTextCostUsd } from './openai-direct';
-import { assertDirectBillingReady, TextNotSentError } from './textDirect';
+import { directTextCostUsd, isDirectText, textEngine, textKeyName } from './openai-direct';
+import { TextNotSentError } from './textDirect';
 import { engineMock } from './mock';
 import { creditsApply } from "./credits";
 import { atomikPublicResponse } from "./workbench/atomik-response";
@@ -84,7 +84,8 @@ export function textRequestEstimate(
       "This request exceeds the selected model's context or output limit. Shorten it or choose another model.",
       400,
     );
-  const estimate = textQuoteCostUsd(model, input, maxTokens, textVendor(model.id) === 'openai');
+  // A direct call (any vendor) is quoted at its cold cache-write ceiling: it settles at usage × this snapshot.
+  const estimate = textQuoteCostUsd(model, input, maxTokens, isDirectText(model.id));
   if (estimate == null || !Number.isFinite(estimate) || estimate <= 0)
     throw new PaidTextError(
       "This model has no confirmed price. Choose a priced language model.",
@@ -104,7 +105,6 @@ export function textRequestEstimate(
 export type PaidTextQuote = { model: string; effort: string; estimateCredits: number; estimateUsd?: number };
 type QuotedTextInput = { model: string; effort?: string; maxTokens: number; messages: unknown[]; maxCredits?: number };
 async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) {
-  assertDirectBillingReady(input.model);
   const model = override ?? (await findModel(input.model));
   if (!model)
     throw new PaidTextError(
@@ -124,7 +124,7 @@ async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) 
   if (usesImages && !model.inputModalities?.includes("image"))
     throw new PaidTextError("This model cannot read image references. Choose a model with image input or remove the references.", 422);
   const estimate = textRequestEstimate(model, input.messages, reasoning.maxTokens, input.effort !== undefined);
-  const estimateCredits = paidByPlatform(textVendor(input.model)) ? billCredits(estimate, "text") : 0;
+  const estimateCredits = paidByPlatform(textKeyName(input.model)) ? billCredits(estimate, "text") : 0;
   if (input.maxCredits !== undefined && (!Number.isInteger(input.maxCredits) || input.maxCredits < 0 || estimateCredits > input.maxCredits))
     throw new PaidTextError("The writing estimate changed. Review the new quote before running.", 409);
   const requestBody = JSON.stringify({
@@ -240,12 +240,13 @@ return await withRecoveryActivity('paid-text', async () => {
   const ts = now();
   await db().execute({
     sql: `INSERT INTO paid_text_jobs(id,model,kind,status,estimate_usd,effort,request_body,created_at,updated_at) VALUES(?,?,?,'queued',?,?,?,?,?)`,
-    args: [id, input.model, input.kind, estimate, input.effort ?? null, textVendor(input.model) === 'openai' ? JSON.stringify({ ...JSON.parse(requestBody), pricingModel: model }) : requestBody, ts, ts],
+    args: [id, input.model, input.kind, estimate, input.effort ?? null, isDirectText(input.model) ? JSON.stringify({ ...JSON.parse(requestBody), pricingModel: model }) : requestBody, ts, ts],
   });
   const event = {
     id,
     kind: "text" as const,
-    engine: textVendor(input.model) === "openai" ? "openai" : "vercel",
+    /* The vendor that is paid: its own name for a direct door, 'vercel' for the gateway. */
+    engine: textEngine(input.model),
     model: input.model,
     projectId: input.projectId ?? null,
     createdBy: input.createdBy ?? currentTenant()?.user?.id ?? "",
@@ -257,7 +258,7 @@ return await withRecoveryActivity('paid-text', async () => {
   let submitted = false;
   /* What becomes of an unconfirmed submission's estimate: returned by the cron's pass (reconcilePaidTextJobs),
      or, on the workspace's own key, nothing was charged in credits to return. */
-  const afterwards = paidByPlatform(textVendor(input.model))
+  const afterwards = paidByPlatform(textKeyName(input.model))
     ? "its estimated credits are returned to your balance automatically, usually within a few hours"
     : "nothing more is charged";
   /* Every settlement below applies only to a job still in flight: one the cron's pass already refunded
@@ -267,8 +268,8 @@ return await withRecoveryActivity('paid-text', async () => {
   try {
     if (input.recordSpend !== false)
       await db().execute({
-        sql: `INSERT INTO atomik_spend(id,kind,model,cost_usd,user_id,created_at) VALUES(?,?,?,?,?,?)`,
-        args: [id, input.kind, input.model, estimate, event.createdBy, ts],
+        sql: `INSERT INTO atomik_spend(id,kind,model,cost_usd,user_id,created_at,ledger) VALUES(?,?,?,?,?,?,?)`,
+        args: [id, input.kind, input.model, estimate, event.createdBy, ts, event.engine],
       });
     await db().execute({
       sql: `UPDATE paid_text_jobs SET status='running',updated_at=? WHERE id=?`,
@@ -321,7 +322,8 @@ return await withRecoveryActivity('paid-text', async () => {
       );
     }
     const content = json?.choices?.[0]?.message?.content;
-    const direct = textVendor(input.model) === 'openai';
+    /* Every direct door (OpenAI, Anthropic, Google, xAI) replies without `usage.cost`: priced from its usage × the saved snapshot. */
+    const direct = isDirectText(input.model);
     let cost = direct && !engineMock() ? directTextCostUsd(model, json?.usage) : Number(json?.usage?.cost);
     if (direct && !engineMock() && (cost == null || !Number.isFinite(cost) || cost > estimate + 0.00000001)) {
       await settle('UPDATE paid_text_jobs SET response_json=?,updated_at=? WHERE id=?', [response.text, now(), id]);
@@ -364,9 +366,11 @@ return await withRecoveryActivity('paid-text', async () => {
       id,
       text: content as string,
       costUsd: cost,
+      /* The ledger this job was reserved and settled on (its meter engine), for the caller's own rows. */
+      engine: event.engine,
       /* What the ledger billed, for the screen that shows it: credits are
          what a workspace on credits sees, never the vendor's dollars. */
-      credits: await meteredCredits(id, paidByPlatform(textVendor(input.model)) ? billCredits(cost, "text") : 0),
+      credits: await meteredCredits(id, paidByPlatform(textKeyName(input.model)) ? billCredits(cost, "text") : 0),
     };
   } catch (error) {
     const record = (
@@ -481,7 +485,7 @@ export async function reconcilePaidTextJobs(options: { limit?: number; deadlineA
       if (charge?.status === "succeeded") continue;
       /* No meter event: it was never reserved (killed before), so there is nothing to return. */
       if (charge)
-        await meter({ id, kind: "text", engine: textVendor(String(job.model)) === "openai" ? "openai" : "vercel", model: String(job.model), status: "failed", engineCostUsd: 0 }, { critical: true });
+        await meter({ id, kind: "text", engine: textEngine(String(job.model)), model: String(job.model), status: "failed", engineCostUsd: 0 }, { critical: true });
       const marked = await db().execute({
         sql: `UPDATE paid_text_jobs SET status='refunded',updated_at=? WHERE id=? AND status=? AND reconcile_lease=?`,
         args: [now(), id, status, lease],

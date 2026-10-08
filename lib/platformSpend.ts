@@ -1,8 +1,9 @@
 import { currentTenant } from "./tenant";
-import { db } from "./db";
+import { db, ready } from "./db";
 import { billedTo, type ProviderId } from "./providers";
 import type { VendorKeyName } from "./vendorKeys";
 import { platformDb, platformReady } from './platform';
+import { TEXT_LEDGER_KEY, type TextLedger } from "./openai-direct";
 import { isHouseWorkspace } from "./houseWorkspace";
 import { allowanceUsdOf } from "./cinemaHold";
 import { isAstraComputeEngine } from "./astra-blender/backend";
@@ -20,9 +21,17 @@ const PROVIDERS_OF: Record<VendorKeyName, ProviderId[]> = {
   ark: ["byteplus"], gemini: ["google"], gateway: ["vercel", "google"], openai: ["openai"], fal: ["fal"], elevenlabs: ["elevenlabs"], higgsfield: ["higgsfield"],
   /* Crew rounds are metered events; Grok Imagine renders are product records. */
   xai: ["xai"],
-  /* Direct Claude text is metered like gateway text until the money paths move (P4b PR 3). */
+  /* Anthropic makes no renders: its spend is text, on the text ledgers below. */
   anthropic: [],
 };
+/**
+ * Text product records (atomik_messages, atomik_spend) carry the ledger that
+ * paid (lib/openai-direct.ts textEngine): the vendor once its text goes
+ * direct (Anthropic, Google's Gemini, xAI's Grok, OpenAI), 'vercel' for the
+ * gateway. A row with none predates direct text: it was gateway text.
+ */
+const TEXT_LEDGERS_OF = (name: VendorKeyName): TextLedger[] =>
+  (Object.keys(TEXT_LEDGER_KEY) as TextLedger[]).filter((ledger) => TEXT_LEDGER_KEY[ledger] === name);
 
 /**
  * Is this vendor's bill charged to the current workspace, in credits?
@@ -54,6 +63,8 @@ export async function platformSpendRecordsSince(sinceMs: number): Promise<Map<st
   const records = new Map<string, number>();
   const ws = currentTenant()?.workspace;
   if (!ws) return records;
+  /* The text records' ledger columns arrive with the workspace's schema (lib/db.ts). */
+  await ready();
   const vendors = (Object.keys(PROVIDERS_OF) as VendorKeyName[]).filter((n) => !ws.keys[n]);
   const providers = [...new Set(vendors.flatMap((n) => PROVIDERS_OF[n]))];
   if (providers.length) {
@@ -83,15 +94,18 @@ export async function platformSpendRecordsSince(sinceMs: number): Promise<Map<st
     }
   }
   // Before direct OpenAI routing, all historical text records used Gateway.
-  // Never infer their original funding from a model's routing today. New paid
-  // attempts have an authoritative, immutable funded flag in meter_events.
-  if (!ws.keys.gateway) {
+  // Never infer their original funding from a model's routing today: each row
+  // is read on the ledger it recorded (none = gateway). New paid attempts have
+  // an authoritative, immutable funded flag in meter_events.
+  const ledgers = [...new Set(vendors.flatMap(TEXT_LEDGERS_OF))];
+  if (ledgers.length) {
+    const marks = ledgers.map(() => "?").join(",");
     if (tables.has("atomik_messages")) {
-      const messages = await db().execute({ sql: "SELECT id,cost_usd FROM atomik_messages WHERE role='assistant' AND created_at >= ?", args: [sinceMs] });
+      const messages = await db().execute({ sql: `SELECT id,cost_usd FROM atomik_messages WHERE role='assistant' AND created_at >= ? AND COALESCE(ledger,'vercel') IN (${marks})`, args: [sinceMs, ...ledgers] });
       for (const row of messages.rows) records.set(String(row.id), Number(row.cost_usd ?? 0));
     }
     if (tables.has("atomik_spend")) {
-      const text = await db().execute({ sql: "SELECT id,cost_usd FROM atomik_spend WHERE created_at >= ?", args: [sinceMs] });
+      const text = await db().execute({ sql: `SELECT id,cost_usd FROM atomik_spend WHERE created_at >= ? AND COALESCE(ledger,'vercel') IN (${marks})`, args: [sinceMs, ...ledgers] });
       for (const row of text.rows) records.set(String(row.id), Math.max(records.get(String(row.id)) ?? 0, Number(row.cost_usd ?? 0)));
     }
   }
@@ -130,6 +144,8 @@ export function vendorKeyNameFor(provider: string): VendorKeyName {
     case "elevenlabs": return "elevenlabs";
     case "higgsfield": return "higgsfield";
     case "xai": return "xai";
+    /* Claude text on Anthropic's own key (TEXT_DIRECT): its meter rows carry engine 'anthropic'. */
+    case "anthropic": return "anthropic";
     default: return "ark";
   }
 }

@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { APICallError, generateText } from 'ai';
+import { APICallError, generateText, type LanguageModelUsage } from 'ai';
 import { gatewayPost, explainGatewayFailure, GATEWAY_URL } from '../../lib/gateway';
 import { languageAuth, languageModel } from '../../lib/language-provider';
 import { directTextCostUsd, TEXT_PROVIDER_HEADER, textVendor } from '../../lib/openai-direct';
 import { VERIFIED_TEXT_MODEL_IDS } from '../../lib/atomikModelPolicy';
 import { atomikReasoningRequest } from '../../lib/atomik-reasoning';
-import { assertDirectBillingReady, directTextRequest, directTextUsage, providerErrorSummary, textPost, TextNotSentError } from '../../lib/textDirect';
+import { directTextRequest, directTextUsage, providerErrorSummary, stepTextUsage, textPost } from '../../lib/textDirect';
 import committedCatalog from '../../lib/modelCatalog.json';
 import { DIRECT_MODEL_IDS, UNMAPPED_DIRECT_MODEL_IDS, directFetch, directModelId, textRoute } from '../../lib/textRoute';
 import { DROPPED_MODEL_IDS, MODEL_ALIASES, isDroppedModel } from '../../lib/modelAliases';
@@ -314,28 +314,33 @@ test('provider errors are logged and rethrown without the request body, so the p
   expect(providerErrorSummary(new APICallError({ message: 'x', url: 'https://api.x.ai/v1/responses', requestBodyValues: { input: secret }, statusCode: 400, data: { error: { code: 'bad_request' } } }))).toBe('AI_APICallError status=400 code=bad_request');
 });
 
-test('until direct text is billed (PR 3): the gate, the rig planner and the inline writer refuse before sending', async () => {
-  let calls = 0;
-  globalThis.fetch = async () => { calls++; throw new Error('must not send'); };
-  expect(() => assertDirectBillingReady('anthropic/claude-sonnet-4.6')).not.toThrow();
+test('direct text is billed (PR 3): the rig planner prices a direct turn from raw usage, and the inline writer sends and prices its call', async () => {
   process.env.TEXT_DIRECT = 'anthropic';
-  expect(() => assertDirectBillingReady('openai/gpt-5-mini')).not.toThrow();
-  expect(() => assertDirectBillingReady('google/gemini-2.5-flash')).not.toThrow();
-  expect(() => assertDirectBillingReady('anthropic/claude-sonnet-4.6')).toThrow(TextNotSentError);
-  expect(() => assertDirectBillingReady('anthropic/claude-sonnet-4.6')).toThrow('not billed yet (PR 3)');
-  // Mock runs send nothing and record mock costs only, so they are not refused.
-  process.env.ENGINE_MOCK = '1';
-  expect(() => assertDirectBillingReady('anthropic/claude-sonnet-4.6')).not.toThrow();
-  delete process.env.ENGINE_MOCK;
-
-  // The rig agent prices its planning turn first: refused there, before any reservation.
   process.env.MODEL_CATALOG = 'static';
-  const { plannerPrice } = await import('../../lib/workbench/rig-agent');
-  await expect(plannerPrice('anthropic/claude-sonnet-4.6')).rejects.toMatchObject({ name: 'TextNotSentError', status: 422 });
+  // Claude Sonnet 4.6 at the snapshot, for anthropicReply's usage: 100 uncached, 60 read, 40 written, 25 out.
+  const usd = 100 * 0.000003 + 60 * 0.0000003 + 40 * 0.00000375 + 25 * 0.000015;
 
-  // The inline writer (house workspaces) refuses its gateway-provider writer when it is routed directly.
+  // The rig agent prices its planning turn on the direct door and reads the provider's raw counts.
+  const { plannerPrice } = await import('../../lib/workbench/rig-agent');
+  const { plannerCostUsd } = await import('../../lib/workbench/rig-agent-planner');
+  const price = await plannerPrice('anthropic/claude-sonnet-4.6');
+  expect(price).toMatchObject({ id: 'anthropic/claude-sonnet-4.6', direct: true, engine: 'anthropic' });
+  // The SDK's normalised totals leave the cache out; the raw usage does not.
+  const step = { inputTokens: 100, outputTokens: 25, totalTokens: 125, raw: anthropicReply().usage } as unknown as LanguageModelUsage;
+  expect(stepTextUsage(price.id, step, true)).toMatchObject({ prompt_tokens: 200, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 40 } });
+  expect(plannerCostUsd(price.catalog, [step], price.direct)).toBeCloseTo(usd, 15);
+  // On the gateway the same turn keeps its gateway engine and the SDK's totals.
+  delete process.env.TEXT_DIRECT;
+  expect(await plannerPrice('anthropic/claude-sonnet-4.6')).toMatchObject({ direct: false, engine: 'vercel' });
+  process.env.TEXT_DIRECT = 'anthropic';
+
+  // The inline writer (house workspaces) reads PROMPT_MODELS, still under its old name, and goes through the router.
   process.env.GATEWAY_PROMPT_MODELS = 'anthropic/claude-sonnet-4.6';
+  const sent: string[] = [];
+  globalThis.fetch = async (url) => { sent.push(String(url)); return Response.json({ ...anthropicReply('A slow dolly toward the door.\nCAMERA: push') }); };
   const { enhancePrompt } = await import('../../lib/enhance');
-  await expect(enhancePrompt({ prompt: 'A slow dolly.', citations: [], provider: 'gateway' })).rejects.toMatchObject({ name: 'TextNotSentError', status: 422 });
-  expect(calls).toBe(0);
+  const refined = await enhancePrompt({ prompt: 'A slow dolly.', citations: [], provider: 'gateway' });
+  expect(sent).toEqual(['https://api.anthropic.com/v1/messages']);
+  expect(refined).toMatchObject({ text: 'A slow dolly toward the door.', move: 'push', model: 'anthropic/claude-sonnet-4.6', ledger: 'anthropic' });
+  expect(refined.costUsd).toBeCloseTo(usd, 15);
 });

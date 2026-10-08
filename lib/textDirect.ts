@@ -2,10 +2,10 @@ import { APICallError, generateText, Output, type LanguageModelUsage, type Model
 import type { JSONObject, JSONSchema7 } from '@ai-sdk/provider';
 import { gatewayPost, type GatewayReply } from './gateway';
 import { engineMock } from './mock';
-import { assertTextProvider } from './openai-direct';
+import { assertTextProvider, sdkTextUsage } from './openai-direct';
 import { languageModel } from './language-provider';
 import { recoveryFetch } from './recovery';
-import { isDirectRoute, redactProviderError, textRoute, type DirectVendor } from './textRoute';
+import { directVendorOf, isDirectRoute, redactProviderError, textRoute, type DirectVendor } from './textRoute';
 
 /**
  * The raw text seam (P4b). Callers send the OpenAI-compatible chat body they
@@ -17,8 +17,8 @@ import { isDirectRoute, redactProviderError, textRoute, type DirectVendor } from
  *   `generateText` on the router's model, one attempt, no retries. The body is
  *   mapped to native options here, never in the callers.
  *
- * The direct reply carries no `cost`: the charge is tokens × the price
- * snapshot, which is the money paths' job (P4b PR 3).
+ * The direct reply carries no `cost`: the money paths charge its usage ×
+ * the price snapshot (`directTextCostUsd`, lib/openai-direct.ts).
  */
 export type TextPostOptions = {
   auth?: Record<string, string>; timeoutMs?: number;
@@ -43,19 +43,6 @@ const int = (value: unknown): value is number => typeof value === 'number' && Nu
 /** A refusal raised before anything was sent. The money paths settle it as declined, with nothing billed. */
 export class TextNotSentError extends Error { readonly status = 422; override name = 'TextNotSentError'; }
 function notSent(message: string): never { throw new TextNotSentError(message); }
-
-/**
- * Until the money paths bill direct usage (P4b PR 3), every paid text entry
- * point refuses a model that TEXT_DIRECT routes to its provider, before a
- * quote, a reservation or a request. 422, declined, nothing charged.
- * PR 3 deletes this function and its calls. Under ENGINE_MOCK nothing is sent
- * and only mock costs are recorded, so mock runs are not refused.
- */
-export function assertDirectBillingReady(model: string): void {
-  if (engineMock()) return;
-  const route = textRoute(model);
-  if (isDirectRoute(route)) throw new TextNotSentError(`Direct text routing is not billed yet (PR 3): ${model} goes to ${route} under TEXT_DIRECT. Nothing was sent and no credits were charged.`);
-}
 
 /** What a log line may say about a provider failure: never the error object, whose request body carries the prompt. */
 export function providerErrorSummary(error: unknown): string {
@@ -226,6 +213,20 @@ export function directTextUsage(vendor: DirectVendor, usage: Pick<LanguageModelU
   return { prompt_tokens: prompt, completion_tokens: int(raw.output_tokens) ? raw.output_tokens : undefined,
     prompt_tokens_details: { cached_tokens: int(cached) ? cached : undefined, cache_write_tokens: 0 },
     ...(int(reasoningTokens) ? { completion_tokens_details: { reasoning_tokens: reasoningTokens } } : {}) };
+}
+
+/**
+ * One SDK step's usage in the OpenAI-compatible shape the money paths price,
+ * for agents (suite, 3D blocking, development, the rig planner) that call
+ * `languageModel()` themselves. `direct` is whether the call took a direct
+ * door (`isDirectText`): its vendor then follows from the app id, and the
+ * provider's own raw counts are read (cache reads and writes, thought tokens).
+ * A gateway step keeps the SDK's normalised totals, as before.
+ */
+export function stepTextUsage(model: string, usage: LanguageModelUsage, direct: boolean) {
+  if (!direct) return sdkTextUsage(usage, false);
+  const vendor = directVendorOf(model);
+  return vendor ? directTextUsage(vendor, usage) : sdkTextUsage(usage, true);
 }
 
 const FINISH: Record<string, string> = { stop: 'stop', length: 'length', 'content-filter': 'content_filter', 'tool-calls': 'tool_calls', error: 'error' };

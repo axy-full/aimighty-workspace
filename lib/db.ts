@@ -938,6 +938,11 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       // What a person handed the agent with a message, and what a step carries forward.
       await addColumn("atomik_messages", `attachments TEXT`);
       await addColumn("atomik_messages", `effort TEXT`);
+      /* Whose balance paid for a text row (lib/reconcile.ts ATOMIK_LEDGER): the
+         vendor for a direct call, 'vercel' for the gateway. Null on rows from
+         before direct text, which were all gateway text. Additive. */
+      await addColumn("atomik_messages", `ledger TEXT`);
+      await addColumn("atomik_spend", `ledger TEXT`);
       await addColumn("atomik_chats", `effort TEXT`);
       await addColumn("atomik_steps", `refs TEXT`);
       // Who took a step to render it, and which approval this is: its render's Idempotency-Key is per approval (lib/atomik.ts › stepRequestKey).
@@ -1080,6 +1085,11 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
            (lib/providerOutcome.ts). Null on older rows, which read as
            "the provider didn't say". Additive. */
         `provider_outcome TEXT`,
+        /* Whose balance paid for the prompt writer's text (lib/reconcile.ts
+           PROMPT_LEDGER): the vendor once its text goes direct, 'vercel' for the
+           gateway, 'byteplus' for ModelArk. Null on older rows, which keep the
+           rule they were always read by. Additive. */
+        `refine_ledger TEXT`,
       ]) {
         await addColumn("generations", col);
       }

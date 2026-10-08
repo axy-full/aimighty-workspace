@@ -477,7 +477,7 @@ test('direct development prices its saved per-step cache receipt and stops on un
   } } finally { if (priorKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = priorKey; if (prior === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = prior; }
 });
 
-test('until direct text is billed (PR 3), a TEXT_DIRECT model cannot be quoted or reserved for development', async () => {
+test('a TEXT_DIRECT development job is quoted at its cold cache ceiling and settled from its own usage on its vendor (PR 3)', async () => {
   const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
   delete process.env.ENGINE_MOCK; process.env.ANTHROPIC_API_KEY = 'test-anthropic-key-never-sent';
   try {
@@ -485,9 +485,28 @@ test('until direct text is billed (PR 3), a TEXT_DIRECT model cannot be quoted o
       const { request } = await fixture();
       const h = harness();
       process.env.TEXT_DIRECT = 'anthropic';
-      await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toMatchObject({ name: 'TextNotSentError', status: 422, message: expect.stringContaining('not billed yet (PR 3)') });
-      await expect(prepareDevelopmentJob({ ...request, sourceHash: 'x', maxCredits: 1, maxUsd: 1 }, 'owner', undefined, h.deps)).rejects.toMatchObject({ status: 422 });
-      expect(h.reservations()).toBe(0); expect(h.calls).toHaveLength(0); expect(h.events).toHaveLength(0);
+      // Without cache prices a direct Claude call has no ceiling: refused before any reservation.
+      await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toMatchObject({ status: 503 });
+      const priced: CatalogModel = { ...model, pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+      h.deps.models = async () => [priced];
+      const quote = await quoteDevelopmentJob(request, 'owner', h.deps);
+      delete process.env.TEXT_DIRECT;
+      const gatewayQuote = await quoteDevelopmentJob(request, 'owner', h.deps);
+      expect(quote.estimateUsd!).toBeGreaterThan(gatewayQuote.estimateUsd!);
+      process.env.TEXT_DIRECT = 'anthropic';
+      const reserved: MeterEvent[] = [];
+      h.deps.reserve = async event => { reserved.push(event as MeterEvent); };
+      const { job } = await prepareDevelopmentJob(await approve(request, h.deps), 'owner', undefined, h.deps);
+      expect(reserved[0]).toMatchObject({ engine: 'anthropic' });
+      h.deps.models = async () => { throw new Error('Must use saved model snapshot.'); };
+      h.deps.call = async input => { h.calls.push(input); return { text: JSON.stringify(input.stage === 'critique' ? { issues: ['Check.'], revisions: ['Preserve.'] } : output(input)),
+        inputTokens: 100, outputTokens: 20, directUsage: { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 40 } } }; };
+      for (let index = 0; index < 4; index++) await runDevelopmentStep(job.id, 'owner', h.deps);
+      const [done] = await listDevelopmentJobs('owner', request.projectId, undefined, h.deps);
+      expect(done.status).toBe('succeeded');
+      expect(h.calls).toHaveLength(3);
+      expect(done.costUsd).toBeCloseTo(3 * (30 * .0000001 + 30 * .00000001 + 40 * .000000125 + 20 * .0000003), 15);
+      expect(h.events.at(-1)).toMatchObject({ engine: 'anthropic', status: 'succeeded' });
     });
   } finally {
     for (const [name, value] of [['ENGINE_MOCK', saved.mock], ['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }

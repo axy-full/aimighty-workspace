@@ -1,5 +1,4 @@
 import { vendorKey } from './vendorKeys';
-import { textVendor } from './openai-direct';
 import { savedAtomikChoice, selectAtomikModel } from "./atomikModelPolicy";
 import { aliasModel } from "./modelAliases";
 import { withMediaSources } from "./mediaMutation";
@@ -1006,13 +1005,13 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
   const messageId = result.id;
   await db().execute({
     sql: `INSERT INTO atomik_messages
-            (id, chat_id, role, text, activity, ask, worked_ms, cost_usd, model, effort, created_at)
-          VALUES (?,?, 'assistant', ?,?,?,?,?,?,?,?)`,
+            (id, chat_id, role, text, activity, ask, worked_ms, cost_usd, model, effort, created_at, ledger)
+          VALUES (?,?, 'assistant', ?,?,?,?,?,?,?,?,?)`,
     args: [messageId, chatId, turn.say, JSON.stringify(turn.activity),
       turn.ask ? JSON.stringify(turn.ask) : null,
-      Date.now() - started, costUsd, model, effort ?? null, ts],
+      Date.now() - started, costUsd, model, effort ?? null, ts, result.engine],
   });
-  await meter({ id: messageId, kind: "text", engine: textVendor(model) === "openai" ? "openai" : "vercel", model, status: "succeeded", engineCostUsd: costUsd,
+  await meter({ id: messageId, kind: "text", engine: result.engine, model, status: "succeeded", engineCostUsd: costUsd,
                 projectId: chat.projectId, createdBy: chat.createdBy }, { critical: false });
 
   const saved: Step[] = [];
