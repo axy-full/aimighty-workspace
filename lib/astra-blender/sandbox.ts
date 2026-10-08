@@ -77,10 +77,15 @@ export class AstraRuntimeError extends Error {
 }
 
 export function astraRuntimeStatus() {
-  const configured = /^snap_[A-Za-z0-9_-]{3,160}$/.test(process.env.ASTRA_BLENDER_SNAPSHOT_ID ?? "");
+  const snapshot = /^snap_[A-Za-z0-9_-]{3,160}$/.test(process.env.ASTRA_BLENDER_SNAPSHOT_ID ?? "");
+  // Off Vercel the SDK has no OIDC context to fall back on: without all three
+  // control-plane credentials a funded render could never start or be reconciled.
+  const credentialed = Boolean(process.env.VERCEL) || Object.keys(credentials()).length > 0;
+  const configured = snapshot && credentialed;
   return {
     configured,
-    reason: configured ? null : "Native 3D rendering is not connected. A 3D runtime snapshot must be configured.",
+    reason: configured ? null : !snapshot ? "Native 3D rendering is not connected. A 3D runtime snapshot must be configured."
+      : "Native 3D rendering is not connected. 3D runtime credentials must be configured on this host.",
     blenderVersion: ASTRA_BLENDER_VERSION,
     timeoutMs: ASTRA_BLENDER_RUNTIME_LIMITS.timeoutMs,
     vcpus: 2,

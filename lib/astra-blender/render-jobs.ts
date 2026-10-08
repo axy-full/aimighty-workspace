@@ -202,6 +202,10 @@ export async function runAstraRender(id: string, deps: AstraRenderDependencies =
     try {
         if (engineMock() && !deps.sandbox?.sdk)
             throw new Error('Native 3D compute is disabled while ENGINE_MOCK=1.');
+        // Before the claim: an unconnected runtime fails here and the reservation is released.
+        const runtime = astraRuntimeStatus();
+        if (!runtime.configured)
+            throw new Error(runtime.reason!);
         const source = JSON.parse(row.source_json) as Snapshot;
         const inputs = await (deps.loadInputs ?? loadAstraRenderInputs)(source.assets, row.owner);
         prepareAstraInputs(source.scene, inputs.bindings, inputs.inputs, source.native);
