@@ -5,6 +5,7 @@ import type { VendorKeyName } from "./vendorKeys";
 import { platformDb, platformReady } from './platform';
 import { isHouseWorkspace } from "./houseWorkspace";
 import { allowanceUsdOf } from "./cinemaHold";
+import { isAstraComputeEngine } from "./astra-blender/backend";
 
 /**
  * What the platform has paid for a workspace.
@@ -39,9 +40,9 @@ export function paidByPlatform(name: VendorKeyName): boolean {
   return Boolean(ws) && !isHouseWorkspace(ws);
 }
 
-/** Native compute has no workspace BYOK credentials. Disabled platform funding fails admission. */
+/** Native compute (a Vercel Sandbox or the self-hosted render workers) has no workspace BYOK credentials. Disabled platform funding fails admission. */
 export function paidByPlatformEngine(engine: string): boolean {
-  if (engine === "vercel-sandbox") {
+  if (isAstraComputeEngine(engine)) {
     const ws = currentTenant()?.workspace;
     return Boolean(ws) && !isHouseWorkspace(ws);
   }
