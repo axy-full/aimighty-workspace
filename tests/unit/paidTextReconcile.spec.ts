@@ -29,20 +29,28 @@ const cutOff: Submit = async () => ({ ok: false, status: 504, text: "" });
 const killed: Submit = () => new Promise(() => {});
 const answers: Submit = async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: "A lone tree in steady rain." } }], usage: { cost: 0.0004 } }) });
 
-async function job(id: string, submit: Submit): Promise<void> {
+/** A provider whose answer the test releases when it likes: a call that answers after the pass has run. */
+function late() {
+  let answer: (reply: { ok: boolean; status: number; text: string }) => void = () => {};
+  const submit: Submit = () => new Promise((resolve) => { answer = resolve; });
+  return { submit, answer: (reply: { ok: boolean; status: number; text: string }) => answer(reply) };
+}
+
+async function job(id: string, submit: Submit, inFlight = submit === killed): Promise<{ outcome: Promise<unknown> }> {
   const { runPaidText } = await import("../../lib/paidText");
   const run = runPaidText({ id, model: WRITER, messages: [{ role: "user", content: "a tree in rain" }], maxTokens: 400, kind: "enhance", mock: "prompt", createdBy: "owner" }, { model: MODEL as never, submit });
-  if (submit === killed) {
-    run.catch(() => {});
+  const outcome = run.then(() => null, (error: unknown) => error);
+  if (inFlight) {
     const { db } = await import("../../lib/db");
     for (let i = 0; i < 200; i++) {
       const row = (await db().execute({ sql: "SELECT status FROM paid_text_jobs WHERE id=?", args: [id] }).catch(() => ({ rows: [] }))).rows[0];
-      if (row?.status === "running") return;
+      if (row?.status === "running") return { outcome };
       await new Promise((r) => setTimeout(r, 25));
     }
     throw new Error("the job never started");
   }
-  await run.catch(() => {});
+  await outcome;
+  return { outcome };
 }
 
 async function age(id: string, ms = OLD) {
@@ -87,12 +95,12 @@ test("an old cut-off job is refunded once: its billed estimate comes back and a 
     expect(await balance("ws_ptr_uncertain")).toBe(before - 1);
     await age("text_uncertain");
 
-    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 1, released: 0 });
+    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 1, released: 0, failed: 0 });
     const settled = await state("ws_ptr_uncertain", "text_uncertain");
     expect(settled).toMatchObject({ job: "refunded", meter: "failed", billed: 0, debit: 0 });
     expect(await balance("ws_ptr_uncertain")).toBe(before);
 
-    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 0, released: 0 });
+    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 0, released: 0, failed: 0 });
     expect(await state("ws_ptr_uncertain", "text_uncertain")).toEqual(settled);
     expect(await balance("ws_ptr_uncertain")).toBe(before);
   });
@@ -106,10 +114,10 @@ test("an old job killed mid-call has its reservation released once", async () =>
     expect(await state("ws_ptr_running", "text_running")).toMatchObject({ job: "running", meter: "running", billed: 1 });
     await age("text_running");
 
-    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 0, released: 1 });
+    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 0, released: 1, failed: 0 });
     expect(await state("ws_ptr_running", "text_running")).toMatchObject({ job: "refunded", meter: "failed", billed: 0, debit: 0 });
     expect(await balance("ws_ptr_running")).toBe(before);
-    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 0, released: 0 });
+    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 0, released: 0, failed: 0 });
   });
 });
 
@@ -125,7 +133,7 @@ test("a recent job and a delivered one are left alone", async () => {
     const delivered = await state("ws_ptr_untouched", "text_delivered");
     expect(delivered).toMatchObject({ job: "succeeded", meter: "succeeded", billed: 1 });
 
-    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 0, released: 0 });
+    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 0, released: 0, failed: 0 });
     expect(await state("ws_ptr_untouched", "text_recent")).toEqual(recent);
     expect(recent).toMatchObject({ job: "uncertain", billed: 1 });
     expect(await state("ws_ptr_untouched", "text_delivered")).toEqual(delivered);
@@ -154,7 +162,85 @@ test("the cron heartbeat runs the pass, and the interrupted reply says what now 
   const cron = readFileSync("app/api/cron/sync/route.ts", "utf8");
   expect(cron).toContain('await stage("paid_text", async () => {');
   expect(cron).toContain("reconcilePaidTextJobs({ limit: 10, deadlineAt })");
+  expect(cron).toContain('if (report.failed) throw new Error("PAID_TEXT_RECONCILIATION_FAILED");');
   const paidText = readFileSync("lib/paidText.ts", "utf8");
   expect(paidText).not.toContain("Its credits remain reserved");
-  expect(paidText).toContain("The text request was interrupted after submission. It will not be sent again, and its estimated credits are returned to your balance within the hour.");
+  expect(paidText).not.toContain("within the hour");
+  /* On credits the estimate comes back; on the workspace's own key nothing was charged in credits, so nothing is promised back. */
+  expect(paidText).toContain('? "its estimated credits are returned to your balance automatically, usually within a few hours"');
+  expect(paidText).toContain(': "nothing more is charged";');
+  expect(paidText).toContain("`The text request was interrupted after submission. It will not be sent again, and ${afterwards}.`");
+});
+
+test("a provider that answers after the pass refunded its job does not charge it again, success or failure", async () => {
+  await inWorkspace("ws_ptr_late", async () => {
+    const { reconcilePaidTextJobs } = await import("../../lib/paidText");
+    const before = await balance("ws_ptr_late");
+    const ok = late();
+    const okRun = await job("text_late_ok", ok.submit, true);
+    const bad = late();
+    const badRun = await job("text_late_bad", bad.submit, true);
+    await age("text_late_ok");
+    await age("text_late_bad");
+    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 0, released: 2, failed: 0 });
+    const refunded = { job: "refunded", meter: "failed", billed: 0, debit: 0 };
+    expect(await state("ws_ptr_late", "text_late_ok")).toMatchObject(refunded);
+
+    ok.answer({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: "A lone tree in steady rain." } }], usage: { cost: 0.0004 } }) });
+    expect(String(await okRun.outcome)).toContain("answered too late");
+    bad.answer({ ok: false, status: 504, text: "" });
+    expect(String(await badRun.outcome)).toContain("uncertain result");
+
+    expect(await state("ws_ptr_late", "text_late_ok")).toMatchObject(refunded);
+    expect(await state("ws_ptr_late", "text_late_bad")).toMatchObject(refunded);
+    expect(await balance("ws_ptr_late")).toBe(before);
+    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 0, released: 0, failed: 0 });
+  });
+});
+
+test("a job whose provider answer is saved for review is left for review", async () => {
+  await inWorkspace("ws_ptr_review", async () => {
+    const { reconcilePaidTextJobs } = await import("../../lib/paidText");
+    const { db } = await import("../../lib/db");
+    await job("text_review", cutOff);
+    /* As the direct-usage check leaves it: the paid answer saved, the job uncertain, its estimate billed. */
+    await db().execute({ sql: "UPDATE paid_text_jobs SET response_json=? WHERE id=?", args: [JSON.stringify({ choices: [] }), "text_review"] });
+    await age("text_review");
+    const held = await state("ws_ptr_review", "text_review");
+    expect(held).toMatchObject({ job: "uncertain", billed: 1 });
+    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 0, released: 0, failed: 0 });
+    expect(await state("ws_ptr_review", "text_review")).toEqual(held);
+  });
+});
+
+test("a pass that settled the meter but could not mark the job is finished by a later pass, once its lease has run out", async () => {
+  await inWorkspace("ws_ptr_partial", async () => {
+    const { reconcilePaidTextJobs } = await import("../../lib/paidText");
+    const { db } = await import("../../lib/db");
+    const before = await balance("ws_ptr_partial");
+    await job("text_partial", cutOff);
+    await age("text_partial");
+
+    const client = db();
+    const execute = client.execute.bind(client);
+    client.execute = ((statement: Parameters<typeof execute>[0]) => {
+      const sql = typeof statement === "string" ? statement : (statement as { sql: string }).sql;
+      if (sql.includes("SET status='refunded'")) return Promise.reject(new Error("database went away"));
+      return execute(statement);
+    }) as typeof client.execute;
+    try {
+      expect(await reconcilePaidTextJobs()).toEqual({ refunded: 0, released: 0, failed: 1 });
+    } finally {
+      client.execute = execute;
+    }
+    /* The estimate is already back; the job still reads uncertain under the dead pass's lease. */
+    expect(await state("ws_ptr_partial", "text_partial")).toMatchObject({ job: "uncertain", meter: "failed", billed: 0, debit: 0 });
+    expect(await balance("ws_ptr_partial")).toBe(before);
+    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 0, released: 0, failed: 0 });
+
+    await db().execute({ sql: "UPDATE paid_text_jobs SET reconcile_lease=? WHERE id=?", args: [Date.now() - 1, "text_partial"] });
+    expect(await reconcilePaidTextJobs()).toEqual({ refunded: 1, released: 0, failed: 0 });
+    expect(await state("ws_ptr_partial", "text_partial")).toMatchObject({ job: "refunded", meter: "failed", billed: 0, debit: 0 });
+    expect(await balance("ws_ptr_partial")).toBe(before);
+  });
 });

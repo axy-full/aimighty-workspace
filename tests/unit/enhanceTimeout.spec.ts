@@ -116,7 +116,7 @@ test("a provider that stalls past the budget is settled once as uncertain, the 1
     const first = await route(press("enhance-stall-1"));
     const body = await first.json();
     expect(first.status).toBe(502);
-    expect(body.error).toBe("The text request was interrupted after submission. It will not be sent again, and its estimated credits are returned to your balance within the hour.");
+    expect(body.error).toBe("The text request was interrupted after submission. It will not be sent again, and its estimated credits are returned to your balance automatically, usually within a few hours.");
     expect(timeouts).toHaveLength(1);
     expect(timeouts[0]).toBeLessThanOrEqual(90_000);
     expect(timeouts[0]).toBeGreaterThan(60_000);

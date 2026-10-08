@@ -123,7 +123,7 @@ async function cron(failing: string | null, signInOff = true) {
     "@/lib/workbench/canvas-push": { drainCanvasPushes: step("canvas_pushes") },
     "@/lib/workbench/rig-agent": { drainRigAgentWakeups: step("rig_agents") },
     "@/lib/genjutsuVideo": { expireUnansweredCinemaTakes: step("cinema_unanswered", { expired: [] }) },
-    "@/lib/paidText": { reconcilePaidTextJobs: step("paid_text", { refunded: 0, released: 0 }) },
+    "@/lib/paidText": { reconcilePaidTextJobs: step("paid_text", { refunded: 0, released: 0, failed: 0 }) },
   });
   const reply = await route.GET(new Request("http://localhost/api/cron/sync"));
   return { ran, settings, status: reply.status };

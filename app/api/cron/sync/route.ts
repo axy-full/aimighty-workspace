@@ -160,8 +160,9 @@ export async function GET(req: Request) {
             // before held_jobs, so the credits it returns can start what waits. Counts only.
             await stage("paid_text", async () => {
               const report = await reconcilePaidTextJobs({ limit: 10, deadlineAt });
-              if (report.refunded || report.released)
+              if (report.refunded || report.released || report.failed)
                 console.info(JSON.stringify({ level: "info", event: "reconciliation.paid_text", ...report }));
+              if (report.failed) throw new Error("PAID_TEXT_RECONCILIATION_FAILED");
             });
             await stage("held_jobs", () =>
               releaseHeldJobs({ defer: (fn) => afterResponse(fn) }),

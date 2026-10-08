@@ -132,7 +132,7 @@ async function runSync(retiredModule: Record<string, unknown>) {
     "@/lib/uploadReservations": { cleanupExpiredUploads: work("expired_uploads", {}) },
     "@/lib/held": { releaseHeldJobs: work("held_jobs", {}) },
     "@/lib/genjutsuVideo": { expireUnansweredCinemaTakes: work("cinema_unanswered", { expired: [] }) },
-    "@/lib/paidText": { reconcilePaidTextJobs: work("paid_text", { refunded: 0, released: 0 }) },
+    "@/lib/paidText": { reconcilePaidTextJobs: work("paid_text", { refunded: 0, released: 0, failed: 0 }) },
     "@/lib/settings": { setSetting: async (key: string, value: string) => { settings[key] = value; } },
     "@/lib/platform": { platformReady: async () => {}, platformDb: () => ({}), getWorkspace: async (id: string) => ({ id, deletedAt: null }) },
     "@/lib/tenant": { runInTenant: async (_workspace: unknown, fn: () => Promise<unknown>) => fn() },
