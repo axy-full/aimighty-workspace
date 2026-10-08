@@ -8,6 +8,7 @@ import { runWithStore, NoTenantError } from "../../lib/tenant";
 import { MediaSourceError } from "../../lib/mediaBindings";
 import { workbenchScopeFor } from "../../lib/workbench/request-scope";
 import { AccountError } from "../../lib/accountDb";
+import { crossOriginProblem } from "../../lib/requestOrigin";
 
 const directory = mkdtempSync(
   path.join(tmpdir(), "particl-higgsfield-verify-"),
@@ -271,6 +272,7 @@ async function routeFixture() {
     "MediaSourceError",
     "workbenchScopeFor",
     "recoveryRoute",
+    "crossOriginProblem",
     compiled,
   )(
     wrapperExports,
@@ -280,6 +282,7 @@ async function routeFixture() {
     MediaSourceError,
     workbenchScopeFor,
     (handler: unknown) => handler,
+    crossOriginProblem,
   );
   let checks = 0,
     limited = false;

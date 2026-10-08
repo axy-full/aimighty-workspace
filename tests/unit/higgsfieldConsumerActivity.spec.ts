@@ -10,6 +10,7 @@ import {
   workbenchScopeProblem,
 } from "../../lib/workbench/request-scope";
 import { MediaSourceError } from "../../lib/mediaBindings";
+import { crossOriginProblem } from "../../lib/requestOrigin";
 
 const directory = mkdtempSync(
   path.join(tmpdir(), "particl-consumer-activity-"),
@@ -258,6 +259,7 @@ async function routeFixture() {
     "MediaSourceError",
     "workbenchScopeFor",
     "recoveryRoute",
+    "crossOriginProblem",
     wrapper,
   )(
     wrapperExports,
@@ -267,6 +269,7 @@ async function routeFixture() {
     MediaSourceError,
     workbenchScopeFor,
     (fn: unknown) => fn,
+    crossOriginProblem,
   );
   const reads: string[] = [],
     limits: unknown[][] = [];

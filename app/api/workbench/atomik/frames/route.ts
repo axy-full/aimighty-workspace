@@ -1,3 +1,4 @@
+import { crossOriginProblem } from "@/lib/requestOrigin";
 import sharp from "sharp";
 import { requireUser, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
@@ -27,7 +28,7 @@ export const POST = withTenant(async (req: Request) => {
       409,
     );
   const url = new URL(req.url);
-  if (req.headers.get("origin") && req.headers.get("origin") !== url.origin)
+  if (crossOriginProblem(req))
     return json({ error: "Invalid request origin." }, 403);
   const projectId = url.searchParams.get("projectId") ?? "",
     assetId = url.searchParams.get("assetId") ?? "";

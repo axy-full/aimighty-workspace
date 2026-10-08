@@ -1,3 +1,4 @@
+import { crossOriginProblem } from "@/lib/requestOrigin";
 import { z } from "zod";
 import { withTenant, requireSession } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
@@ -74,8 +75,7 @@ export const GET = withTenant(async (req: Request) => {
 export const PATCH = withTenant(async (req: Request) => {
   const who = await caller(req, true);
   if (who.response) return who.response;
-  const origin = req.headers.get("origin");
-  if (origin && origin !== new URL(req.url).origin) return Response.json({ error: "Invalid request origin" }, { status: 403 });
+  if (crossOriginProblem(req)) return Response.json({ error: "Invalid request origin" }, { status: 403 });
   const body = await readProjectBody(req);
   if (!body.ok) return Response.json({ error: body.error }, { status: body.status, headers: NO_STORE });
   const parsed = teamPatchSchema.safeParse(body.value);
@@ -144,8 +144,7 @@ const actionSchema = z.discriminatedUnion("action", [
 export const POST = withTenant(async (req: Request) => {
   const who = await caller(req, true);
   if (who.response) return who.response;
-  const origin = req.headers.get("origin");
-  if (origin && origin !== new URL(req.url).origin) return Response.json({ error: "Invalid request origin" }, { status: 403 });
+  if (crossOriginProblem(req)) return Response.json({ error: "Invalid request origin" }, { status: 403 });
   const parsed = actionSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Check the canvas action before sending it." }, { status: 400, headers: NO_STORE });
   const action = parsed.data;
