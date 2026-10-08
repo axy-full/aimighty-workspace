@@ -332,9 +332,9 @@ Plain `ufw` is **not enough** for Docker ports: Docker publishes 80, 443, 8000, 
 
 The app creates and changes tables on first use. So **before the production app first starts** against the live Turso databases (its first deploy, step 4), and **again just before the DNS switch** (step 8), the owner records a way back.
 
-**Today production has no automated encrypted backup.** The scheduled capture in `.github/workflows/backup.yml` never runs (a manual dry run only plans and tests) because the repository variable `PARTICL_BACKUP_ENABLED` is not `true`. Even switched on, it would fail on R2 coverage until the tooling PR below lands.
+**Today production has no automated encrypted backup.** The scheduled capture in `.github/workflows/backup.yml` never runs (a manual dry run only plans and tests) because the repository variable `PARTICL_BACKUP_ENABLED` is not `true`. The tooling now supports production's R2 + Blob layout (media `dual`, see 2), so turning it on is the owner's settings change, not code. **OWNER, only when deciding to:** in the GitHub environment `particl-backup` (restricted to `main`), set the secrets `PARTICL_BACKUP_SOURCE_JSON` (the source inventory, with `media` as in 2: names only), `PARTICL_BACKUP_ENV_JSON` (a JSON object with the values of every variable that inventory names: the database URLs/tokens, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT` if used, `BLOB_READ_WRITE_TOKEN`, and the original `KEYRING_SECRET`), `PARTICL_BACKUP_KEY` and `PARTICL_BACKUP_QUIESCENCE_JSON`; then the repository variable `PARTICL_BACKUP_ENABLED=true`. A read-only R2 token scoped to the bucket is enough. Each capture still needs a real maintenance fence (`docs/backup-restore.md`, "Prepared daily workflow"), and the job's 45-minute limit and artifact size must fit R2 and Blob together.
 
-**Point A = Turso timestamp plus `.dump` copies; point B = Turso timestamp (a second set of `.dump` copies is optional but recommended).** The full encrypted bundle is **not available yet** (see 2). Do **not** run the recovery fence on production for this.
+**Point A = Turso timestamp plus `.dump` copies; point B = Turso timestamp (a second set of `.dump` copies is optional but recommended).** The full encrypted bundle (see 2) now works with production's layout, but it takes the site down for its window: do **not** run the recovery fence on production without the owner's explicit go.
 
 **1. Turso point-in-time timestamps and `.dump` copies (no tooling).**
 - **OWNER:** write down the exact UTC time (for example `2026-10-20T09:00:00Z`) for **point A** (before the first deploy) and **point B** (before the switch). It covers the platform database and **every workspace database** (all databases in the production Turso group).
@@ -348,11 +348,24 @@ The app creates and changes tables on first use. So **before the production app 
   - `turso db shell` is **not** read-only: on any database, run only `.dump` or `SELECT`.
   - Each copy counts toward the plan's database quota while it exists.
 
-**2. The full encrypted bundle (later, after the tooling PR).** It is the only scripted path, but it cannot capture production today:
-- The tool reads media only from a Blob store or local disk (`scripts/ops/backup-lib.mjs`, lines 561 to 562) and checks that every referenced file is in that store. Files written since production moved to R2 are not, so a capture stops with a coverage error.
-- The lead is starting a tooling PR that adds R2 as a media source. Until it lands, do not attempt a production bundle.
-- **When it is available, it needs a maintenance window.** Writes are paused with the recovery fence (`docs/enforced-recovery-fence.md`). While the fence is draining or closed, **every API request and `/api/health` answer 503** (Retry-After 60): the site is effectively down, not read-only. The gate never reopens on its own.
-  - `node scripts/ops/recovery-fence.mjs begin NEW_PRIVATE_DIRECTORY INPUT.json`. `INPUT.json` holds `preconditions` (`deployments: [{id, protocol: "particl-recovery-fence-v1"}]`, `oldDeploymentsStopped: true`, `externalWritersExcluded: true`, and an `evidence` string) and `media` (for example `{kind: "blob", tokenEnv: "BLOB_READ_WRITE_TOKEN"}`). On Vercel, "old deployments stopped" is hard to make true: plan it with Claude.
+**2. The full encrypted bundle.** It is the only scripted path. It captures every database and production's media as it is laid out today: new objects on R2, older ones still on Blob, read R2 first (media kind `dual`, `docs/backup-restore.md`). It checks that every file a database row points at exists in one of the two stores, by the app's own rule.
+- **OWNER's go first.** Do not run it on production without the owner's explicit go for that window.
+- **It needs a maintenance window.** Writes are paused with the recovery fence (`docs/enforced-recovery-fence.md`). While the fence is draining or closed, **every API request and `/api/health` answer 503** (Retry-After 60): the site is effectively down, not read-only. The gate never reopens on its own.
+  - `node scripts/ops/recovery-fence.mjs begin NEW_PRIVATE_DIRECTORY INPUT.json`. `INPUT.json` holds `preconditions` (`deployments: [{id, protocol: "particl-recovery-fence-v1"}]`, `oldDeploymentsStopped: true`, `externalWritersExcluded: true`, and an `evidence` string) and `media`, which names the app's own variables (names only, never values):
+    ```json
+    {
+      "kind": "dual",
+      "r2": {
+        "accountIdEnv": "R2_ACCOUNT_ID",
+        "accessKeyIdEnv": "R2_ACCESS_KEY_ID",
+        "secretAccessKeyEnv": "R2_SECRET_ACCESS_KEY",
+        "bucketEnv": "R2_BUCKET",
+        "endpointEnv": "R2_ENDPOINT"
+      },
+      "blob": { "tokenEnv": "BLOB_READ_WRITE_TOKEN" }
+    }
+    ```
+    Leave out `endpointEnv` if production does not set `R2_ENDPOINT`. Those variables must be set in the operator shell for `seal` (it copies their values into the private `source-env.json`). On Vercel, "old deployments stopped" is hard to make true: plan it with Claude.
   - `status NEW_PRIVATE_DIRECTORY` until nothing is outstanding, then `seal NEW_PRIVATE_DIRECTORY`. It writes `sources.json`, `source-env.json` and `receipt.json` into that directory.
   - Capture: `node scripts/ops/backup-restore.mjs backup <that directory>/sources.json NEW_BUNDLE_DIRECTORY`. Variables come from the operator shell, never the command line: `PARTICL_BACKUP_KEY` (32 random bytes, base64, kept in the password manager), the **original** `KEYRING_SECRET`, and the credentials named in `source-env.json`. Then `restore NEW_BUNDLE_DIRECTORY NEW_OFFLINE_DIRECTORY` and `report NEW_OFFLINE_DIRECTORY` prove it reads back.
   - `node scripts/ops/recovery-fence.mjs resume NEW_PRIVATE_DIRECTORY` to reopen. **On any failure, run `resume` immediately**, so the site is not left down.
@@ -372,7 +385,7 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
 3. **Firewall and certificate resolver (OWNER, with the advisor).** As in "Firewall on the server" (including the outside checks) and "Certificates before the switch" (a), steps 1 to 3 (step 4, the labels, is done in cutover step 4).
 4. **Production app built, checked once, stopped (OWNER).**
    1. **Required first: deploy the same `main` commit on Vercel**, so the code that changes tables on first use is the same on both hosts sharing the databases.
-   2. Record **restore point A** ("Restore point" above): the Turso timestamp, the `.dump` copies, and the restore test on copies. (No encrypted bundle yet.)
+   2. Record **restore point A** ("Restore point" above): the Turso timestamp, the `.dump` copies, and the restore test on copies. (An encrypted bundle is optional here and only on the owner's go: its fence takes the site to 503 for the window.)
    3. Every variable in "Live-copy settings" is set. `TRUST_CF_CONNECTING_IP` and `TRUSTED_PROXY_HOPS` are **unset**.
    4. Domains `https://particl.si,https://www.particl.si`, Direction redirect to non-www, stop grace period 300, labels on `letsencrypt-dns`.
    5. Scheduled task: Coolify, the production app, **Scheduled Tasks, + Add**: name `cron-sync`, command `node /app/cron-sync.mjs`, frequency `*/10 * * * *`, timeout 300 s, saved **disabled**. (The script calls `http://127.0.0.1:3000/api/cron/sync` inside the container with `CRON_SECRET`.)
