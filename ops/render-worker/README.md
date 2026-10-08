@@ -5,7 +5,7 @@ CPU Blender 5.2.2 on our own server, in place of the Vercel Sandbox VM for Astra
 | File | What |
 |---|---|
 | `Dockerfile` | Node 22 (Debian bookworm slim, pinned by digest), Blender 5.2.2 from the official archive (SHA256 checked at build), `python3`, non-root user `render` (uid 10001), healthcheck. A tiny offline Cycles render runs at build time. |
-| `server.mjs` | The worker API on port 8080 (plain Node, no dependencies). |
+| `server.mjs` | The worker API on port 8790 (plain Node, no dependencies). Not 8080: the host firewall drops 8080 in DOCKER-USER, which can also catch container-to-container traffic. |
 | `compose.yaml` | The three workers and the `render-internal` network. |
 | `smoke.mjs` | The no-cost smoke render (same text as in "Verify", step 3). |
 | `build-check.py` | The build-time Blender check. |
@@ -17,7 +17,7 @@ Tests: `node --test tests/ops/render-worker.test.mjs` (a fake Blender; no Docker
 | Variable | Where | Value |
 |---|---|---|
 | `ASTRA_WORKER_SECRET_1`, `_2`, `_3` | the worker stack | Three **different** random values, at least 32 characters each (`openssl rand -hex 32` three times, on your own machine). `render-N` reads `ASTRA_WORKER_SECRET_N` as its `ASTRA_WORKER_SECRET`. One secret per worker means code that escapes Blender and reads its own worker's environment cannot drive the other two. Runtime only: never a build variable, never in git or chat. |
-| `ASTRA_WORKER_URLS` | the production app only | Comma list of the three worker base URLs, for example `http://<render-1 name>:8080,http://<render-2 name>:8080,http://<render-3 name>:8080`. The names depend on the networking option (below). |
+| `ASTRA_WORKER_URLS` | the production app only | Comma list of the three worker base URLs, for example `http://<render-1 name>:8790,http://<render-2 name>:8790,http://<render-3 name>:8790`. The names depend on the networking option (below). |
 | `ASTRA_WORKER_SECRETS` | the production app only | Comma list of the three secrets **in the same order** as `ASTRA_WORKER_URLS` (`ASTRA_WORKER_SECRET_1,ASTRA_WORKER_SECRET_2,ASTRA_WORKER_SECRET_3` values). Runtime only. |
 
 ## Networking: owner decision

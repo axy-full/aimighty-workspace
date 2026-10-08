@@ -70,7 +70,7 @@ Final billing uses SDK CPU milliseconds, wall duration for 4 GB memory (one-minu
 
 ```text
 ASTRA_RENDER_BACKEND=selfhost
-ASTRA_WORKER_URLS=http://<worker 1>:8080,http://<worker 2>:8080,http://<worker 3>:8080
+ASTRA_WORKER_URLS=http://<worker 1>:8790,http://<worker 2>:8790,http://<worker 3>:8790
 ASTRA_WORKER_SECRETS=<secret 1>,<secret 2>,<secret 3>
 ASTRA_WORKER_SECRET=<one secret for every worker, used only when ASTRA_WORKER_SECRETS is unset>
 ASTRA_BLENDER_RATE_CARD=<unchanged>

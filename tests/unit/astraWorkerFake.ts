@@ -1,7 +1,7 @@
 /* An in-memory pool of self-hosted render workers speaking the worker protocol
    (lib/astra-blender/selfhost-sdk.ts), behind a stubbed fetch. No network. */
 export const WORKER_SECRET = "unit-worker-secret-0123456789-abcdefghij";
-export const WORKER_URLS = ["http://render-1:8080", "http://render-2:8080", "http://render-3:8080"];
+export const WORKER_URLS = ["http://render-1:8790", "http://render-2:8790", "http://render-3:8790"];
 
 export type WorkerMode = "free" | "busy" | "down" | "refuse" | "error";
 type Session = { name: string; status: "running" | "stopped"; files: Map<string, Buffer>; createdAt?: number; stoppedAt?: number };

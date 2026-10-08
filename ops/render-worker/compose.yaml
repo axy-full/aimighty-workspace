@@ -24,7 +24,7 @@
 # worker's environment cannot drive the other two. render-N reads
 # ASTRA_WORKER_SECRET from the stack variable ASTRA_WORKER_SECRET_N (at least
 # 32 characters each, three different values, never in git). The production
-# app holds ASTRA_WORKER_URLS (comma list of http://<worker>:8080) and
+# app holds ASTRA_WORKER_URLS (comma list of http://<worker>:8790) and
 # ASTRA_WORKER_SECRETS (comma list, same order) and sends each worker its own
 # secret as `Authorization: Bearer <secret>`.
 
