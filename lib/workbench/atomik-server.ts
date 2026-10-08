@@ -1,4 +1,5 @@
 import { vendorKey } from '../vendorKeys';
+import { assertDirectBillingReady } from '../textDirect';
 import { textVendor, directTextCostUsd } from '../openai-direct';
 import { languageAuth } from '../language-provider';
 import { ASTRA_BLENDER_MODEL, createAstraScene } from '../astra-blender/scene';
@@ -294,6 +295,7 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   const model = models.find(m => m.id === selectedId && menu.some(c => c.id === m.id));
   if (!model && references.images.length) throw new AtomikError('Choose Auto or a connected vision-capable model to inspect the selected images and video frames.', 422);
   if (!model) throw new AtomikError('No priced language model is connected for this selection. Refresh the model menu or check the provider connection in Workspace → Engines.', 503);
+  assertDirectBillingReady(model.id);
   const system = input.astraBlender ? astraAgentInstructions(input.astraBlender.mode) : input.referenceAd ? referenceAnalysisInstructions() : input.suite ? suiteAgentInstructions(input.suite) : atomikSystem(input);
   const user = input.astraBlender ? JSON.stringify({ request: input.request, project: project.name, brief: project.brief.slice(0, 4000), direction: project.direction.slice(0, 4000) }) : atomikContext(project, input, references.text, references.images, memory);
   // UTF-8 byte count is a conservative token upper bound, including non-Latin scripts.
@@ -476,6 +478,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
   let raw = '';
   let usage: unknown = null;
   try {
+    assertDirectBillingReady(job.model);
     const auth = await deps.auth(job.model);
     await deps.assertFunding(id, textVendor(job.model) === "openai" ? "openai" : "vercel");
     submitted = true;

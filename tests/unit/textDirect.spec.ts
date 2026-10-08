@@ -1,18 +1,19 @@
 import { test, expect } from '@playwright/test';
-import { generateText } from 'ai';
+import { APICallError, generateText } from 'ai';
 import { gatewayPost, explainGatewayFailure, GATEWAY_URL } from '../../lib/gateway';
 import { languageAuth, languageModel } from '../../lib/language-provider';
 import { directTextCostUsd, TEXT_PROVIDER_HEADER, textVendor } from '../../lib/openai-direct';
 import { VERIFIED_TEXT_MODEL_IDS } from '../../lib/atomikModelPolicy';
 import { atomikReasoningRequest } from '../../lib/atomik-reasoning';
-import { directTextRequest, directTextUsage, textPost } from '../../lib/textDirect';
+import { assertDirectBillingReady, directTextRequest, directTextUsage, providerErrorSummary, textPost, TextNotSentError } from '../../lib/textDirect';
+import committedCatalog from '../../lib/modelCatalog.json';
 import { DIRECT_MODEL_IDS, UNMAPPED_DIRECT_MODEL_IDS, directFetch, directModelId, textRoute } from '../../lib/textRoute';
 import { textDirectVendors } from '../../lib/textDirectVendors';
 import type { CatalogModel } from '../../lib/catalog';
 
 /* Every provider call in this file goes to a stubbed fetch. Keys are fixtures and never leave the process. */
 const KEYS = { ANTHROPIC_API_KEY: 'test-anthropic-key-never-sent', GEMINI_API_KEY: 'test-gemini-key-never-sent', XAI_API_KEY: 'test-xai-key-never-sent', AI_GATEWAY_API_KEY: 'test-gateway-key-never-sent' };
-const ENV = ['ENGINE_MOCK', 'TEXT_DIRECT', 'OPENAI_API_KEY', 'ANTHROPIC_BASE_URL', ...Object.keys(KEYS)] as const;
+const ENV = ['ENGINE_MOCK', 'TEXT_DIRECT', 'OPENAI_API_KEY', 'ANTHROPIC_BASE_URL', 'MODEL_CATALOG', 'GATEWAY_PROMPT_MODELS', ...Object.keys(KEYS)] as const;
 const saved = Object.fromEntries(ENV.map(name => [name, process.env[name]]));
 const originalFetch = globalThis.fetch;
 test.beforeEach(() => {
@@ -71,7 +72,11 @@ test('TEXT_DIRECT empty keeps every non-OpenAI model on the gateway, unchanged',
 
 test('every offered Claude, Gemini and Grok id is mapped explicitly or listed as unmapped', () => {
   const unmapped = new Set<string>(UNMAPPED_DIRECT_MODEL_IDS);
-  for (const id of VERIFIED_TEXT_MODEL_IDS.filter(id => !id.startsWith('openai/'))) {
+  // Text models in the policy lists and in the checked-in catalogue (its image models are stills, not text routing).
+  const catalogued = (committedCatalog as { models: { id: string; type: string; providerId: string; outputModalities?: string[] }[] }).models
+    .filter(model => model.type === 'language' && model.providerId !== 'openai' && !model.outputModalities?.includes('image')).map(model => model.id);
+  expect(catalogued.length).toBeGreaterThan(30);
+  for (const id of new Set([...VERIFIED_TEXT_MODEL_IDS.filter(id => !id.startsWith('openai/')), ...catalogued])) {
     expect(Object.hasOwn(DIRECT_MODEL_IDS, id) !== unmapped.has(id), id).toBe(true);
   }
   expect(directModelId('anthropic/claude-sonnet-4.6')).toBe('claude-sonnet-4-6');
@@ -186,6 +191,9 @@ test('usage maps from the provider\'s raw usage; an unreported count stays unkno
   expect(directTextUsage('anthropic', { raw: { input_tokens: 10, output_tokens: 3 } })).toMatchObject({ prompt_tokens: undefined, prompt_tokens_details: { cached_tokens: undefined, cache_write_tokens: undefined } });
   expect(directTextUsage('google', { raw: { promptTokenCount: 50, toolUsePromptTokenCount: 5, candidatesTokenCount: 7 } })).toEqual({ prompt_tokens: 55, completion_tokens: 7, prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 }, completion_tokens_details: { reasoning_tokens: 0 } });
   expect(directTextUsage('google', { raw: {} }).prompt_tokens).toBeUndefined();
+  // A missing candidates count is unknown output, never zero (thinking or not).
+  expect(directTextUsage('google', { raw: { promptTokenCount: 50, thoughtsTokenCount: 9 } }).completion_tokens).toBeUndefined();
+  expect(directTextUsage('google', { raw: { promptTokenCount: 50 } }).completion_tokens).toBeUndefined();
   expect(directTextUsage('xai', { raw: { input_tokens: 20, output_tokens: 4 } })).toEqual({ prompt_tokens: 20, completion_tokens: 4, prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 } });
   expect(directTextUsage('xai', { raw: undefined }).completion_tokens).toBeUndefined();
 });
@@ -259,4 +267,69 @@ test('SDK callers get the provider\'s own model with the guard and the mapped id
   expect(result.text).toBe('Hello.');
   expect(calls.map(call => call.url)).toEqual(['https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent']);
   expect(directTextUsage('google', result.steps[0].usage)).toMatchObject({ prompt_tokens: 200, completion_tokens: 80 });
+});
+
+test('a Gemini reply without a candidates count reports unknown output, so the caller cannot bill it as zero', async () => {
+  process.env.TEXT_DIRECT = 'google';
+  const model = 'google/gemini-2.5-flash';
+  const { usageMetadata, ...rest } = googleReply('Hello.');
+  const { candidatesTokenCount: _dropped, ...partial } = usageMetadata; void _dropped;
+  const { fetch } = stub(() => Response.json({ ...rest, usageMetadata: partial }));
+  const json = JSON.parse((await textPost(body(model), { auth: await languageAuth(model), fetch })).text);
+  expect(json.usage.completion_tokens).toBeUndefined();
+  expect(json.usage.prompt_tokens).toBe(200);
+});
+
+test('provider errors are logged and rethrown without the request body, so the prompt never reaches a log', async () => {
+  process.env.TEXT_DIRECT = 'anthropic';
+  const secret = 'PROMPT-THAT-MUST-NOT-BE-LOGGED';
+  const lines: string[] = [];
+  const realWarn = console.warn, realError = console.error;
+  console.warn = (...args: unknown[]) => { lines.push(args.map(String).join(' ')); };
+  console.error = (...args: unknown[]) => { lines.push(args.map(String).join(' ')); };
+  try {
+    const raw = JSON.stringify({ model: 'anthropic/claude-sonnet-4.6', max_tokens: 100, messages: [{ role: 'user', content: secret }] });
+    // Refused by the provider: status returned, one summary line.
+    const refused = await textPost(raw, { fetch: async () => Response.json({ type: 'error', error: { type: 'overloaded_error', message: 'Fixture.' } }, { status: 529 }) });
+    expect(refused.status).toBe(529);
+    // Lost after sending: rethrown, and the thrown error carries no request body.
+    const thrown = await textPost(raw, { fetch: async () => { throw new TypeError('fetch failed'); } }).catch((error: unknown) => error);
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as { requestBodyValues?: unknown }).requestBodyValues).toBeUndefined();
+    expect(JSON.stringify(thrown)).not.toContain(secret);
+    // The SDK path (agents) gets the same redacted error from languageModel().
+    const sdk = await generateText({ model: languageModel('anthropic/claude-sonnet-4.6', { auth: {}, fetch: async () => Response.json({ type: 'error', error: { type: 'rate_limit_error', message: 'Fixture.' } }, { status: 429 }) }), prompt: secret, maxOutputTokens: 50, maxRetries: 0 }).catch((error: unknown) => error);
+    expect((sdk as APICallError).statusCode).toBe(429);
+    expect((sdk as APICallError).requestBodyValues).toBeUndefined();
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.join('\n')).not.toContain(secret);
+    expect(lines.some(line => /AI_APICallError status=529 code=overloaded_error/.test(line))).toBe(true);
+  } finally { console.warn = realWarn; console.error = realError; }
+  expect(providerErrorSummary(new APICallError({ message: 'x', url: 'https://api.x.ai/v1/responses', requestBodyValues: { input: secret }, statusCode: 400, data: { error: { code: 'bad_request' } } }))).toBe('AI_APICallError status=400 code=bad_request');
+});
+
+test('until direct text is billed (PR 3): the gate, the rig planner and the inline writer refuse before sending', async () => {
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error('must not send'); };
+  expect(() => assertDirectBillingReady('anthropic/claude-sonnet-4.6')).not.toThrow();
+  process.env.TEXT_DIRECT = 'anthropic';
+  expect(() => assertDirectBillingReady('openai/gpt-5-mini')).not.toThrow();
+  expect(() => assertDirectBillingReady('google/gemini-2.5-flash')).not.toThrow();
+  expect(() => assertDirectBillingReady('anthropic/claude-sonnet-4.6')).toThrow(TextNotSentError);
+  expect(() => assertDirectBillingReady('anthropic/claude-sonnet-4.6')).toThrow('not billed yet (PR 3)');
+  // Mock runs send nothing and record mock costs only, so they are not refused.
+  process.env.ENGINE_MOCK = '1';
+  expect(() => assertDirectBillingReady('anthropic/claude-sonnet-4.6')).not.toThrow();
+  delete process.env.ENGINE_MOCK;
+
+  // The rig agent prices its planning turn first: refused there, before any reservation.
+  process.env.MODEL_CATALOG = 'static';
+  const { plannerPrice } = await import('../../lib/workbench/rig-agent');
+  await expect(plannerPrice('anthropic/claude-sonnet-4.6')).rejects.toMatchObject({ name: 'TextNotSentError', status: 422 });
+
+  // The inline writer (house workspaces) refuses its gateway-provider writer when it is routed directly.
+  process.env.GATEWAY_PROMPT_MODELS = 'anthropic/claude-sonnet-4.6';
+  const { enhancePrompt } = await import('../../lib/enhance');
+  await expect(enhancePrompt({ prompt: 'A slow dolly.', citations: [], provider: 'gateway' })).rejects.toMatchObject({ name: 'TextNotSentError', status: 422 });
+  expect(calls).toBe(0);
 });

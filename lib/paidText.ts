@@ -1,4 +1,5 @@
 import { textVendor, directTextCostUsd } from './openai-direct';
+import { assertDirectBillingReady, TextNotSentError } from './textDirect';
 import { engineMock } from './mock';
 import { creditsApply } from "./credits";
 import { atomikPublicResponse } from "./workbench/atomik-response";
@@ -34,7 +35,7 @@ export class PaidTextError extends Error {
   }
 }
 export function paidTextFailure(error: unknown): Response {
-  if (error instanceof PaidTextError || error instanceof SpendReservationError)
+  if (error instanceof PaidTextError || error instanceof SpendReservationError || error instanceof TextNotSentError)
     return Response.json({ error: error.message }, { status: error.status });
   throw error;
 }
@@ -103,6 +104,7 @@ export function textRequestEstimate(
 export type PaidTextQuote = { model: string; effort: string; estimateCredits: number; estimateUsd?: number };
 type QuotedTextInput = { model: string; effort?: string; maxTokens: number; messages: unknown[]; maxCredits?: number };
 async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) {
+  assertDirectBillingReady(input.model);
   const model = override ?? (await findModel(input.model));
   if (!model)
     throw new PaidTextError(

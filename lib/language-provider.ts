@@ -8,7 +8,7 @@ import { gatewayAuth, gatewayReachable, GATEWAY_BASE } from './gateway';
 import { vendorKey } from './vendorKeys';
 import { recoveryFetch } from './recovery';
 import { assertTextProvider, directOpenAIKey, OPENAI_BASE, openAIFetch, openAIModelId, TEXT_PROVIDER_HEADER, usesOpenAIResponses } from './openai-direct';
-import { DIRECT_BASE_URL, DIRECT_KEY, directFetch, directKey, directModelId, isDirectRoute, textRoute, type DirectVendor } from './textRoute';
+import { DIRECT_BASE_URL, DIRECT_KEY, directFetch, directKey, directModelId, isDirectRoute, redactProviderError, textRoute, type DirectVendor } from './textRoute';
 import { textDirectVendors } from './textDirectVendors';
 export function languageReachable() {
   return gatewayReachable() || !!vendorKey('openai') || [...textDirectVendors()].some(vendor => !!vendorKey(DIRECT_KEY[vendor]));
@@ -24,9 +24,14 @@ export async function languageAuth(model: string): Promise<Record<string, string
 function directLanguageModel(vendor: DirectVendor, model: string, fetcher: typeof fetch): LanguageModel {
   const id = directModelId(model), apiKey = directKey(vendor);
   const settings = { apiKey, baseURL: DIRECT_BASE_URL[vendor], fetch: directFetch(vendor, fetcher) };
-  if (vendor === 'anthropic') return createAnthropic(settings).languageModel(id);
-  if (vendor === 'google') return createGoogleGenerativeAI(settings).languageModel(id);
-  return createXai(settings).languageModel(id);
+  const native = vendor === 'anthropic' ? createAnthropic(settings).languageModel(id)
+    : vendor === 'google' ? createGoogleGenerativeAI(settings).languageModel(id)
+    : createXai(settings).languageModel(id);
+  // Provider errors leave without the request body, so no caller's log can print the prompt.
+  return wrapLanguageModel({ model: native, middleware: {
+    wrapGenerate: async ({ doGenerate }) => { try { return await doGenerate(); } catch (error) { throw redactProviderError(error); } },
+    wrapStream: async ({ doStream }) => { try { return await doStream(); } catch (error) { throw redactProviderError(error); } },
+  } });
 }
 /** Provider choice is made once before the first SDK call. A failed direct
  * attempt never falls back to Gateway or another provider, and never silently

@@ -1,3 +1,4 @@
+import { APICallError } from "ai";
 import { vendorKey, vendorKeyEnv, type VendorKeyName } from "./vendorKeys";
 import { isTextDirect, type TextDirectVendor } from "./textDirectVendors";
 
@@ -135,4 +136,15 @@ export function directFetch(vendor: DirectVendor, fetcher: typeof fetch): typeof
     if (url.origin !== origin || !DIRECT_PATHS[vendor].test(url.pathname)) throw new Error("The language endpoint is not supported.");
     return fetcher(input, { ...init, redirect: "error" });
   };
+}
+
+/**
+ * The same provider error without `requestBodyValues` (the prompt) or a cause
+ * that could hold it. Status, headers, response body and retryability stay, so
+ * failure classification (lib/providerFailure.ts) reads it as before.
+ */
+export function redactProviderError(error: unknown): unknown {
+  if (!APICallError.isInstance(error)) return error;
+  return new APICallError({ message: error.message, url: error.url, requestBodyValues: undefined, statusCode: error.statusCode,
+    responseHeaders: error.responseHeaders, responseBody: error.responseBody, isRetryable: error.isRetryable, data: error.data });
 }

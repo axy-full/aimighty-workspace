@@ -5,7 +5,7 @@ import { engineMock } from './mock';
 import { assertTextProvider } from './openai-direct';
 import { languageModel } from './language-provider';
 import { recoveryFetch } from './recovery';
-import { isDirectRoute, textRoute, type DirectVendor } from './textRoute';
+import { isDirectRoute, redactProviderError, textRoute, type DirectVendor } from './textRoute';
 
 /**
  * The raw text seam (P4b). Callers send the OpenAI-compatible chat body they
@@ -41,8 +41,29 @@ function record(value: unknown): Record<string, unknown> { return value && typeo
 const int = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
 /** A refusal raised before anything was sent. The money paths settle it as declined, with nothing billed. */
-export class TextNotSentError extends Error { status = 422; }
+export class TextNotSentError extends Error { readonly status = 422; override name = 'TextNotSentError'; }
 function notSent(message: string): never { throw new TextNotSentError(message); }
+
+/**
+ * Until the money paths bill direct usage (P4b PR 3), every paid text entry
+ * point refuses a model that TEXT_DIRECT routes to its provider, before a
+ * quote, a reservation or a request. 422, declined, nothing charged.
+ * PR 3 deletes this function and its calls. Under ENGINE_MOCK nothing is sent
+ * and only mock costs are recorded, so mock runs are not refused.
+ */
+export function assertDirectBillingReady(model: string): void {
+  if (engineMock()) return;
+  const route = textRoute(model);
+  if (isDirectRoute(route)) throw new TextNotSentError(`Direct text routing is not billed yet (PR 3): ${model} goes to ${route} under TEXT_DIRECT. Nothing was sent and no credits were charged.`);
+}
+
+/** What a log line may say about a provider failure: never the error object, whose request body carries the prompt. */
+export function providerErrorSummary(error: unknown): string {
+  const value = error && typeof error === 'object' ? error as { name?: unknown; statusCode?: unknown; code?: unknown; data?: unknown } : {};
+  const nested = record(record(value.data).error);
+  const code = value.code ?? nested.type ?? nested.code;
+  return `${typeof value.name === 'string' ? value.name : 'Error'} status=${typeof value.statusCode === 'number' ? value.statusCode : '-'} code=${typeof code === 'string' || typeof code === 'number' ? code : '-'}`;
+}
 
 /** Claude models that take `effort` without adaptive thinking (as in developmentProviderOptions). */
 const CLAUDE_EFFORT_ONLY = /^anthropic\/claude-(?:sonnet|opus|haiku)-(?:4|4\.5)$/;
@@ -177,7 +198,8 @@ export function directTextRequest(vendor: DirectVendor, input: Record<string, un
  * stays undefined, so pricing it returns null rather than a guess.
  * - Anthropic: `input_tokens` excludes cache reads and writes; prompt = all three.
  * - Google: `promptTokenCount` already includes cached tokens; thought tokens are
- *   billed as output, so completion = candidates + thoughts. No cache writes.
+ *   billed as output, so completion = candidates + thoughts (a missing candidates
+ *   count leaves completion unknown). No cache writes.
  * - xAI: `input_tokens` includes cached tokens; `output_tokens` includes
  *   reasoning. No cache writes. `cost_in_usd_ticks` is kept for comparison only.
  */
@@ -193,7 +215,8 @@ export function directTextUsage(vendor: DirectVendor, usage: Pick<LanguageModelU
   if (vendor === 'google') {
     const cached = raw.cachedContentTokenCount ?? 0;
     const thoughts = raw.thoughtsTokenCount ?? 0;
-    return { prompt_tokens: sum(raw.promptTokenCount, raw.toolUsePromptTokenCount ?? 0), completion_tokens: sum(raw.candidatesTokenCount ?? 0, thoughts),
+    // A missing candidates count is unknown output, never zero: the caller then follows its uncertain-usage rule.
+    return { prompt_tokens: sum(raw.promptTokenCount, raw.toolUsePromptTokenCount ?? 0), completion_tokens: sum(raw.candidatesTokenCount, thoughts),
       prompt_tokens_details: { cached_tokens: int(cached) ? cached : undefined, cache_write_tokens: 0 },
       completion_tokens_details: { reasoning_tokens: int(thoughts) ? thoughts : undefined } };
   }
@@ -234,6 +257,8 @@ async function directTextPost(vendor: DirectVendor, input: Record<string, unknow
       provider_usage: usage.raw ?? null,
     }) };
   } catch (error) {
+    // Name, status and code only: an APICallError carries the request body, prompt included.
+    console.warn(`direct text ${vendor}: ${sent ? 'failed' : 'not sent'} ${providerErrorSummary(error)}`);
     if (!sent) {
       if (error instanceof TextNotSentError) return reply(error.status, error.message);
       // Missing key, unmapped id, refused endpoint or a request the SDK rejected locally: nothing left the process.
@@ -242,6 +267,7 @@ async function directTextPost(vendor: DirectVendor, input: Record<string, unknow
     if (APICallError.isInstance(error) && typeof error.statusCode === 'number' && error.statusCode >= 400)
       return reply(error.statusCode, error.message);
     // Sent, with no readable provider status (timeout, network, redirect): the caller treats it as uncertain.
-    throw error;
+    // Rethrown without the request body, so an upstream log of the whole error cannot print the prompt.
+    throw redactProviderError(error);
   }
 }

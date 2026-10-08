@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { assertDirectBillingReady, TextNotSentError } from "@/lib/textDirect";
 import { after } from "next/server";
 import { db, now } from "@/lib/db";
 import { EVENTS, RIG_AGENT_STOPPED, RIG_RENDER_SETTLED, type WorkerEvent } from "@/lib/dispatch";
@@ -841,7 +842,7 @@ async function planRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<Ri
   /* Priced before it runs: the most this turn can use, reserved inside the run's limit. */
   let price: PlannerPrice;
   try { price = await (deps.pricing ?? plannerPrice)(run.model); }
-  catch (error) { return failRun(run.id, error instanceof PlannerError ? error.message : "Atomik could not price this plan. Ask again.", ["planning"]); }
+  catch (error) { return failRun(run.id, error instanceof PlannerError || error instanceof TextNotSentError ? error.message : "Atomik could not price this plan. Ask again.", ["planning"]); }
   const ceiling = plannerCeilingUsd(price.catalog, snapshot, price.direct);
   if (ceiling == null) return failRun(run.id, "This thinking model has no confirmed price, so Atomik does not plan with it. Choose another, or Auto.", ["planning"]);
   if (run.capCredits == null) return failRun(run.id, "This request has no approved limit, so Atomik does not plan it. Ask again.", ["planning"]);
@@ -949,11 +950,13 @@ export async function plannerPrice(want: string): Promise<PlannerPrice> {
   const id = selectPlannerModel(want, atomikModels(models));
   const model = models.find((m) => m.id === id);
   if (!model) throw new PlannerError("That thinking model is not available right now. Choose another, or Auto.");
+  assertDirectBillingReady(id);
   return { id, catalog: model, direct: textVendor(id) === "openai" };
 }
 
 async function defaultPlan(snapshot: BoardSnapshot, id: string, attachments: PlannerAttachmentContent): Promise<PlannerOutcome & { model: string }> {
   if (engineMock() || id === MOCK_PLANNER_MODEL) return { ...(await runPlanner(snapshot, mockPlannerModel(snapshot), { attachments })), model: MOCK_PLANNER_MODEL };
+  assertDirectBillingReady(id);
   const model = languageModel(id, { auth: await languageAuth(id) });
   return { ...(await runPlanner(snapshot, model, { attachments })), model: id };
 }
