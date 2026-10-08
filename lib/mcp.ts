@@ -12,13 +12,15 @@
 import { displayModelName, getModel } from "./models";
 
 /**
- * The longest wait_for_render may hold its request open. The route ends at
- * 300 seconds (app/api/mcp/route.ts › maxDuration), and a request killed
- * there answers with a platform error page instead of a reply the client can
- * read, so the wait stops well short of it and says "call again".
+ * The longest wait_for_render may hold its request open. No request stays
+ * silent for more than 100 seconds (owner decision, docs/long-flows.md › C5:
+ * a proxy such as Cloudflare cuts a silent request there), and the route
+ * itself ends at 300 seconds (app/api/mcp/route.ts › maxDuration). A request
+ * cut off answers with an error page instead of a reply the client can read,
+ * so the wait stops well short of both and says "call again".
  */
-export const WAIT_MAX_SECONDS = 270;
-export const WAIT_DEFAULT_SECONDS = 240;
+export const WAIT_MAX_SECONDS = 85;
+export const WAIT_DEFAULT_SECONDS = 60;
 /** How long one wait_for_render call waits: what was asked for, within 5 seconds and WAIT_MAX_SECONDS. */
 export function waitSeconds(requested: unknown): number {
   const asked = Number(requested ?? WAIT_DEFAULT_SECONDS);
@@ -79,12 +81,13 @@ export const TOOLS: ToolDef[] = [
     name: "wait_for_render",
     description:
       "Wait for a render to finish and report what it cost. Returns as soon as it succeeds or " +
-      "fails, or when the timeout is reached — it keeps rendering either way.",
+      `fails, or when the timeout is reached (at most ${WAIT_MAX_SECONDS} seconds) — it keeps rendering either way. ` +
+      "A reply that starts with \"Still\" means it is still rendering: call wait_for_render again with the same id.",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "string", description: "The render id from render_shot." },
-        timeout_seconds: { type: "number", description: `How long to wait. Default ${WAIT_DEFAULT_SECONDS}, max ${WAIT_MAX_SECONDS}; if it is still rendering, call again.` },
+        timeout_seconds: { type: "number", description: `Seconds to wait. Default ${WAIT_DEFAULT_SECONDS}, max ${WAIT_MAX_SECONDS} (a longer value waits ${WAIT_MAX_SECONDS}); if it is still rendering, call again.` },
       },
       required: ["id"],
     },

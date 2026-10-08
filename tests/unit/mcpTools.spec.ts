@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { runTool, TOOLS, WAIT_MAX_SECONDS, waitSeconds } from "../../lib/mcp";
+import { runTool, TOOLS, WAIT_DEFAULT_SECONDS, WAIT_MAX_SECONDS, waitSeconds } from "../../lib/mcp";
 
 /**
  * The workspace's MCP tools (audit, 25 September): a wait answers before the
@@ -24,17 +24,25 @@ test("a wait is bounded well inside the route's own limit, and says so", () => {
   const route = readFileSync("app/api/mcp/route.ts", "utf8");
   const maxDuration = Number(/export const maxDuration = (\d+)/.exec(route)?.[1]);
   expect(maxDuration).toBeGreaterThanOrEqual(WAIT_MAX_SECONDS + 20);
-  expect(waitSeconds(600)).toBe(WAIT_MAX_SECONDS);
-  expect(waitSeconds(480)).toBe(WAIT_MAX_SECONDS);
-  expect(waitSeconds(undefined)).toBe(240);
+  /* No request stays silent for more than 100 s (owner decision, docs/long-flows.md › C5). */
+  expect(WAIT_MAX_SECONDS).toBe(85);
+  expect(WAIT_DEFAULT_SECONDS).toBe(60);
+  expect(waitSeconds(600)).toBe(85);
+  expect(waitSeconds(240)).toBe(85);
+  expect(waitSeconds(85)).toBe(85);
+  expect(waitSeconds(30)).toBe(30);
+  expect(waitSeconds(undefined)).toBe(60);
   expect(waitSeconds(1)).toBe(5);
-  expect(waitSeconds("nonsense")).toBe(240);
+  expect(waitSeconds("nonsense")).toBe(60);
   const described = JSON.stringify(TOOLS.find((t) => t.name === "wait_for_render"));
-  expect(described).toContain(`max ${WAIT_MAX_SECONDS}`);
-  expect(described).not.toContain("600");
+  expect(described).toContain("max 85");
+  expect(described).toContain("at most 85 seconds");
+  expect(described).toContain("call wait_for_render again with the same id");
+  expect(described).not.toMatch(/600|270|240/);
   for (const file of ["mcp/particl-mcp.mjs", "public/particl-mcp.mjs", "public/aimighty-mcp.mjs"]) {
     const cli = readFileSync(file, "utf8");
     expect(cli).not.toContain("timeout_seconds: 480");
+    expect(cli).toContain("timeout_seconds: 85");
     expect(cli).toContain('reply.startsWith("Still ")');
   }
 });
@@ -43,6 +51,33 @@ test("a finished render is reported without waiting out the timeout", async () =
   const { call } = caller([], (path) => path.startsWith("/api/jobs/") ? { generation: { id: "g1", status: "succeeded", prompt: "p", costUsd: 1 } } : undefined);
   const text = await runTool("wait_for_render", { id: "g1", timeout_seconds: 600 }, call as never, "https://example.invalid");
   expect(text).toContain("Done in");
+});
+
+test("a render still going when the wait ends is a normal 'call again' reply, sent within 85 s", async () => {
+  /* A fake clock: every pause returns at once and moves time on by its length. */
+  const realNow = Date.now, realTimeout = globalThis.setTimeout;
+  let now = 1_000_000;
+  const pauses: number[] = [];
+  Date.now = () => now;
+  globalThis.setTimeout = ((fn: () => void, ms = 0) => { pauses.push(ms); now += ms; return realTimeout(fn, 0); }) as typeof setTimeout;
+  try {
+    const { call, calls } = caller([], (path) => path.startsWith("/api/jobs/") ? { generation: { id: "g1", status: "running", prompt: "p" } } : undefined);
+    const started = now;
+    const text = await runTool("wait_for_render", { id: "g1", timeout_seconds: 600 }, call as never, "https://example.invalid");
+    expect(text.startsWith("Still running after 85s")).toBe(true);
+    expect(text).toContain("Call wait_for_render again with the same id.");
+    expect(now - started).toBe(85_000);
+    expect(Math.max(...pauses)).toBeLessThanOrEqual(5000);
+    expect(calls.length).toBeGreaterThan(1);
+
+    now = 2_000_000; pauses.length = 0;
+    const byDefault = await runTool("wait_for_render", { id: "g1" }, call as never, "https://example.invalid");
+    expect(byDefault.startsWith("Still running after 60s")).toBe(true);
+    expect(now - 2_000_000).toBe(60_000);
+  } finally {
+    Date.now = realNow;
+    globalThis.setTimeout = realTimeout;
+  }
 });
 
 test("a render names its project exactly; a partial name is never guessed for a paid call", async () => {
