@@ -8,6 +8,7 @@ node_modules
 **/*.pem
 npm-debug.log*
 coverage
+tests
 test-results
 playwright-report
 playwright*.config.ts
