@@ -1,10 +1,11 @@
-# Self-hosted Particl: staging, production settings and the Cloudflare cutover
+# Self-hosted Particl: staging, production settings and the cutover
 
-For the owner. The app runs in Coolify (Traefik v3 proxy) on the server **contabo**, behind Cloudflare. **Files only:** nothing in Vercel, Cloudflare, DNS, Turso, Inngest, Stripe or the server is changed by this document. The owner runs every step, and **nothing in "Cloudflare cutover order" happens without the owner's "go".**
+For the owner. The app runs in Coolify (Traefik v3 proxy) on the server **contabo**. DNS is on Cloudflare. **Files only:** nothing in Vercel, Cloudflare, DNS, Turso, Inngest, Stripe or the server is changed by this document. The owner runs every step, and **nothing in "Cutover order" happens without the owner's "go".**
 
 **Where things stand (8 Oct 2026).**
 - **Staging PASSED** on `release/1` at `c287f044`: Dockerfile build, served on a temporary sslip.io `https` address, `/setup` sign-in, workspace rename, an upload to the **staging R2 bucket** with its thumbnail, `/api/health` ok.
 - **Live** is `particl.si` and `www.particl.si` on Vercel. `particl.app` and `www.particl.app` are on Cloudflare and only need the redirect.
+- **Owner's decision for the cutover:** `particl.si` and `www.particl.si` stay **DNS-only (grey cloud)**, as they are today with Vercel. Visitors reach the server directly, so Cloudflare's 100-second limit does not apply. Orange cloud comes later, only after every long flow is proven under 100 s (see the last "Later" section).
 - Production on Vercel today: storage `r2-configured` (R2 for new files, old links still on Vercel Blob), `DISPATCH_MODE=inngest`, mail from `hello@particlstudio.com`, AI through the Vercel AI Gateway, Astra Blender renders in use (Vercel Sandbox).
 
 **What `main` needs before it can run self-hosted:** the lead keeps that list in the description of PR #566.
@@ -48,7 +49,7 @@ Staging is public. Keep it stopped when not in use, or put Traefik basic auth in
 
 ## Live-copy settings for the production app
 
-The production app is a second Coolify app on the same server, built from `main` exactly like staging, with domain `https://particl.si`. It stays **stopped** until cutover step 9.
+The production app is a second Coolify app on the same server, built from `main` exactly like staging, with domain `https://particl.si`. It is first started, then stopped, in cutover step 4 and runs from step 8.
 
 How to read the table:
 - **Copy from Vercel** means Vercel, the project, **Settings, Environment Variables**, the **Production** value.
@@ -64,8 +65,8 @@ How to read the table:
 | `NEXT_PUBLIC_APP_URL` | fixed: `https://particl.si` (**build variable**) | yes |
 | `SELFHOST_BEHIND_PROXY` | fixed: `1` | self-host only; never on Vercel |
 | `PARTICL_DEPLOYMENT` | fixed: `production` (turns on the live-key and readiness guards Vercel gets from `VERCEL_ENV`) | self-host only |
-| `TRUST_CF_CONNECTING_IP` | fixed: `1`, **only after** the firewall check (cutover step 5) passes; until then unset | self-host only |
-| `TRUSTED_PROXY_HOPS` | leave **unset** (means 1) | |
+| `TRUST_CF_CONNECTING_IP` | **unset.** Setting it to `1` without Cloudflare in front lets anyone fake their address and dodge every rate limit and the sign-in lock. It belongs only to the later orange-cloud step. | self-host only |
+| `TRUSTED_PROXY_HOPS` | leave **unset** (means 1: the app counts the address Traefik itself saw, `lib/clientIp.ts`) | |
 | `CREDIT_USD` | fixed: `0.10` | yes |
 | `ENGINE_MOCK` | **unset** (must not be `1` on production) | |
 
@@ -79,7 +80,7 @@ How to read the table:
 | `TURSO_ORG`, `TURSO_GROUP`, `TURSO_API_URL` | copy from Vercel (names, not secrets; `TURSO_API_URL` only if set) | **yes** |
 | `KEYRING_SECRET` | copy from Vercel, or the owner's own record | **yes, exactly.** It decrypts every workspace's database token and stored keys, two-step sign-in secrets and recovery codes, and pending invitation proofs. A different value makes all of those unreadable. |
 | `SESSION_SECRET` | copy from Vercel, or generate `openssl rand -base64 48` | no. It only salts the anonymous labels used by rate limits and the sign-in lock; sign-in sessions are database tokens and survive a new value. A new value just restarts those counters. |
-| `CRON_SECRET` | generate `openssl rand -base64 48` (or copy) | no, but **required**: without it `/api/cron/sync` answers 401 in production and the health check's cron status goes stale. The server's own scheduled task reads it from the container. |
+| `CRON_SECRET` | **copy from Vercel** (generate a new one only if it is Sensitive; then check after the switch that the cron heartbeat still advances) | not strictly, but **required**: without it `/api/cron/sync` answers 401 in production and the health check's cron status goes stale. The server's own scheduled task reads it from the container. |
 | `SUPER_ADMIN_EMAIL` | copy from Vercel | **yes** |
 | `WORKSPACE_DB_DIRECTORY`, `OWNER_PRIVACY_SCRUB_LOCAL` | leave **unset** | |
 
@@ -106,7 +107,7 @@ Check the bucket's CORS list contains `https://particl.si`. The origin does not 
 | `INNGEST_EVENT_KEY` | copy from Vercel, or **Inngest dashboard**, Production, **Manage, Event Keys** (a new event key is fine) | any valid key in the same environment |
 | `INNGEST_SIGNING_KEY_FALLBACK` | copy only if Vercel has it (only during a signing-key rotation) | yes if set |
 | `INNGEST_SERVE_ORIGIN` | fixed: `https://particl.si` (behind the proxy the SDK must not guess its own address) | |
-| `INNGEST_STREAMING` | fixed: `true` (keeps long steps under Cloudflare's 100 s limit; see "Traefik timeouts") | |
+| `INNGEST_STREAMING` | fixed: `true` (harmless with grey cloud; it keeps long steps under Cloudflare's 100 s limit once the names go orange later) | |
 | `INNGEST_SERVE_PATH`, `INNGEST_ENV`, `INNGEST_DEV`, `INNGEST_BASE_URL` | leave **unset** (the route is `/api/inngest`) | |
 
 `DISPATCH_MODE=inngest` only takes effect when both keys are set. The re-sync is cutover step 10.
@@ -153,11 +154,11 @@ Nothing changes in the `particlstudio.com` DNS; it is not one of the domains bei
 | `VERCEL_TEAM_ID` | Vercel, **Team Settings, General**, Team ID | yes |
 | `VERCEL_PROJECT_ID` | Vercel, the project, **Settings, General**, Project ID (the project that owns the snapshot) | yes |
 
-All three `VERCEL_*` above are needed together; see "Astra Blender renders from the self-hosted host". The same token and team id also let workspace deletion revoke that workspace's gateway key (`lib/purge.ts`).
+All three `VERCEL_*` names above are needed together; see "Astra Blender renders from the self-hosted host". The same token and team id also let workspace deletion revoke that workspace's gateway key (`lib/purge.ts`).
 
 ### Never set on the self-hosted app
 
-`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `VERCEL_GIT_COMMIT_SHA`, `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL`, `VERCEL_OIDC_TOKEN`. Vercel sets these itself; on another host they switch the app into Vercel behaviour (client addresses, the gateway, the production flag). A `vercel env pull` file contains `VERCEL_OIDC_TOKEN`: delete that line. Also not added: `NODE_ENV`, `PORT`, `HOSTNAME` (the image sets them) and the script-only names (`PARTICL_BACKUP_*`, `PW_*`, `AIMIGHTY_*`, `PARTICL_URL`, `PARTICL_TOKEN`).
+`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `VERCEL_GIT_COMMIT_SHA`, `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL`, `VERCEL_OIDC_TOKEN`. Vercel sets these itself; on another host they switch the app into Vercel behaviour: `VERCEL` alone makes the app read client addresses the Vercel way (anyone can then fake them) and send the AI gateway an OIDC identity it does not have. **Never bulk-paste a `vercel env pull` file into Coolify:** it contains `VERCEL=1`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_GIT_*` and `VERCEL_OIDC_TOKEN`. Copy the names in the tables above one by one. Also not added: `NODE_ENV`, `PORT`, `HOSTNAME` (the image sets them) and the script-only names (`PARTICL_BACKUP_*`, `PW_*`, `AIMIGHTY_*`, `PARTICL_URL`, `PARTICL_TOKEN`).
 
 ### If Vercel will not show a value (Sensitive)
 
@@ -174,13 +175,16 @@ Vercel never shows a **Sensitive** variable again, and `vercel env pull --enviro
 | `RESEND_API_KEY`, `AI_GATEWAY_API_KEY`, engine keys | Create a new key in that vendor's dashboard. Do not **roll** or delete the old one while Vercel is the live site. | Nothing. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Stripe dashboard, **Developers** (API keys, Webhooks). If Stripe only offers to roll the key, set an expiry for the old key so Vercel keeps working through the watch window. | Nothing today (card checkout is not wired). |
 | `LIVEBLOCKS_SECRET_KEY` | Liveblocks dashboard, the same project. | Nothing. |
-| `SESSION_SECRET`, `CRON_SECRET` | Generate new. | Nothing that matters (see the table). |
+| `SESSION_SECRET` | Generate new. | Nothing that matters (see the table). |
+| `CRON_SECRET` | Generate new. | Nothing, provided the server's scheduled task runs with it: check the cron heartbeat advances after the switch (step 13). |
 
 ## Traefik timeouts
 
-**Why.** Some routes run long: uploads finish and media streams declare up to 800 s, Inngest steps up to 300 s. Traefik v3 cuts any request whose **body** takes longer than 60 s to arrive (`readTimeout`, default 60 s). Uploads arrive in 3.5 MB pieces, so a slow phone connection can pass 60 s on one piece. `writeTimeout` defaults to **0 (no limit)** in Traefik v3, so leave it alone: setting it would cut long downloads. `idleTimeout` stays at its default (180 s).
+**Why.** Some routes run long: finishing an upload and streaming media are allowed up to 800 s, and Inngest steps up to 300 s. Traefik v3 cuts any request whose **body** takes longer than 60 s to arrive (`readTimeout`, default 60 s). Uploads arrive in 3.5 MB pieces, so one piece on a slow phone connection can pass 60 s.
+- `writeTimeout` defaults to **0 (no limit)** in Traefik v3. Leave it alone: setting it would cut long downloads.
+- `idleTimeout` stays at its default (180 s).
 
-**Where (OWNER).** Coolify, **Servers**, the server, **Proxy**, **Configuration** (the proxy's docker-compose). In the Traefik service's `command:` list, next to the existing `--entrypoints.http.address=:80` and `--entrypoints.https.address=:443`, add exactly:
+**Where (OWNER).** Coolify, **Servers**, the server, **Proxy**, **Configuration** (the proxy's docker-compose). In the Traefik service's `command:` list, next to the existing `--entrypoints.http.address=:80` and `--entrypoints.https.address=:443`, add exactly these two lines:
 
 ```yaml
       - '--entrypoints.http.transport.respondingTimeouts.readTimeout=900s'
@@ -189,77 +193,159 @@ Vercel never shows a **Sensitive** variable again, and `vercel env pull --enviro
 
 900 s is above the longest route (800 s). Coolify names its entrypoints `http` and `https`; if your file uses other names, use those. If the file already has a `writeTimeout` line, raise it to `900s` or remove it.
 
-**Restart.** Save, then **Restart Proxy** on the same page. Every app on the server drops its connections for a few seconds, so do it when quiet. Afterwards the proxy shows running and staging still answers 200. Do it on staging first; it is the same proxy for both apps.
+**Restart.** Save, then click **Restart Proxy** on the same page. Every app on the server drops its connections for a few seconds, so do it when quiet. Afterwards the proxy shows running and staging still answers 200. It is one proxy for both apps, so doing it once covers staging and production.
 
-**Cloudflare still cuts at about 100 s.** On a proxied (orange-cloud) name, Cloudflare (Free, Pro and Business plans) returns a **524** when the server sends **no bytes for about 100 s**. Traefik cannot change that.
-- Chunked uploads and streamed downloads are fine: bytes keep flowing.
-- **Inngest steps** (an Astra render, a dubbing poll) can run past 100 s. `INNGEST_STREAMING=true` makes the route answer at once and send a byte every few seconds, so Cloudflare never sees 100 s of silence. Only a real long run after the switch proves it (cutover step 12).
-- **Requests that wait silently can pass 100 s** and show the person a 524: `POST /api/uploads/finish` (assembles up to 2 GB before it answers; a retry recovers), `/api/audio/transcribe` (waits for the whole transcription), the model calls under `/api/atomik/` (ideas, shot and scene drafts, memory read), `/api/prompt/enhance`, `/api/mcp`, and starting identity training. Most finish well under 100 s; long inputs may not. Options, all later and each its own decision: answer at once and let the browser poll (product change), direct-to-storage uploads (product change), or serve those paths from a DNS-only name (conflicts with the Cloudflare-only firewall). The owner accepts this as a known risk, or picks an option, before the switch.
+With grey cloud there is no Cloudflare limit in front, so these Traefik timeouts are the only ones that apply. The 100 s problem only comes back with orange cloud (see the "Later" section).
 
-**Forwarded headers.** Keep Traefik's default of appending to `X-Forwarded-For` (never set `notAppendXForwardedFor`), leave `forwardedHeaders.trustedIPs` unset, and never publish the app's port 3000 on the host. Behind Cloudflare the app takes the visitor's address from `CF-Connecting-IP` once `TRUST_CF_CONNECTING_IP=1` is set, which is safe only after the firewall below. If the app logs `[client-ip] ... one shared bucket`, one of these settings is wrong.
+**Forwarded headers.**
+- Keep Traefik's default of appending to `X-Forwarded-For` (never set `notAppendXForwardedFor`).
+- Leave `forwardedHeaders.trustedIPs` unset.
+- Never publish the app's port 3000 on the host.
+- The app then counts the address Traefik saw (`TRUSTED_PROXY_HOPS` unset = 1).
+- If the app logs `[client-ip] ... one shared bucket`, one of these settings is wrong.
+
+**Stop grace period (OWNER).** Coolify, the production app, **Advanced** tab, **Operations**, **Stop grace period (seconds)**: `300`.
+- The field needs **Coolify v4.1.0 or newer**. Older versions have no field and wait a fixed 30 s. "Custom Docker Options" does not accept `--stop-timeout`.
+- On stop, Next 16 stops taking new requests and finishes in-flight requests and their background work (`after`) before it exits (`next/dist/server/lib/start-server.js`). The Dockerfile's `CMD` is exec form, so Node receives the signal.
+- Anything still cut off is picked up by the cron's recovery sweep. Still, redeploy when quiet.
 
 ## Domains and DNS
 
-- `particl.si` stays the primary name. `www.particl.si`, `particl.app` and `www.particl.app` answer with a **308** to `https://particl.si`, keeping path and query. Today Vercel does this as a domain setting (no code does); after the move Cloudflare does it.
-- **Redirect rules (OWNER, can be made ahead of time).** In the `particl.app` zone: **Rules, Redirect Rules, Create rule**: if hostname is in `particl.app`, `www.particl.app`, then dynamic redirect to `concat("https://particl.si", http.request.uri.path)`, status 308, **Preserve query string** ticked. In the `particl.si` zone the same rule for hostname `www.particl.si`.
-- In Coolify the production app's **Domains** field lists only `https://particl.si`.
+- `particl.si` stays the primary name.
+- **`particl.si` and `www.particl.si` are DNS-only (grey cloud)** and point straight at the server, like Vercel's records today. Traefik gets **Let's Encrypt** certificates for both (HTTP-01 works with grey cloud).
+- In Coolify the production app's **Domains** field is `https://particl.si,https://www.particl.si`. In the app's **General** settings, set **Direction** to **redirect to non-www**, so Traefik sends `www` to `https://particl.si` (a 301 or 308).
+- **No AAAA record** at cutover. Docker may relay IPv6 connections so that every IPv6 visitor shows up as one address and shares one rate-limit allowance. Remove any AAAA that points at Vercel.
+- `particl.app` and `www.particl.app` only redirect. They stay **proxied** (orange) with a Cloudflare redirect rule; no app traffic passes through them, so the 100 s limit does not matter there.
+  - **Redirect rule (OWNER, can be made ahead of time).** In the `particl.app` zone: **Rules, Redirect Rules, Create rule**. If hostname is in `particl.app`, `www.particl.app`, then dynamic redirect to `concat("https://particl.si", http.request.uri.path)`, status 308, **Preserve query string** ticked.
 
-| Name | Record (all **proxied**, orange cloud) | Who answers |
-|---|---|---|
-| `particl.si` | A to `<server IPv4>`; **no AAAA** unless IPv6 is filtered too (step 5) | the server |
-| `www.particl.si` | CNAME to `particl.si` | redirect rule |
-| `particl.app` | A to `<server IPv4>` (any address works; the rule answers first) | redirect rule |
-| `www.particl.app` | CNAME to `particl.app` | redirect rule |
+| Name | Record | Proxy | Who answers |
+|---|---|---|---|
+| `particl.si` | A to `<server IPv4>`, no AAAA | **DNS-only** (grey) | the server (Let's Encrypt) |
+| `www.particl.si` | CNAME to `particl.si` | **DNS-only** (grey) | the server, redirects to `particl.si` |
+| `particl.app` | A to `<server IPv4>` (any address works; the rule answers first) | proxied (orange) | Cloudflare redirect rule |
+| `www.particl.app` | CNAME to `particl.app` | proxied (orange) | Cloudflare redirect rule |
 
-**Do not touch** mail records on any domain (MX, SPF, DKIM, DMARC, the mail sender's verification records) or the `particlstudio.com` zone. Mail names must stay DNS-only (grey cloud). CAA records, if any, must allow Cloudflare's certificate issuer.
+**Do not touch** mail records on any domain (MX, SPF, DKIM, DMARC, the mail sender's verification records) or the `particlstudio.com` zone. If there are CAA records on `particl.si`, they must allow Let's Encrypt.
 
-## Cloudflare cutover order
+## Firewall on the server (main path, grey cloud)
 
-Steps 1 to 8 do not move live traffic. From step 9 the live site is affected. Do not start a step until the one above has passed. Steps marked **OWNER** are done by the owner (with the advisor where noted); unmarked steps are checks anyone with the commands can run.
+With grey cloud everyone reaches the server directly, so **80 and 443 stay open to everyone**: TCP 80, TCP 443, and **UDP 443** if HTTP/3 is on (Coolify's proxy may publish `443/udp` and set `--entrypoints.https.http3`). Coolify's own ports and SSH are limited to the owner's addresses.
+
+Plain `ufw` is **not enough** for Docker ports: Docker publishes 80, 443, 8000, 6001, 6002 and 8080 through its own rules, ahead of ufw. Two ways; **the owner confirms which one he uses**:
+
+- **(a) Contabo's control-panel firewall**, if the plan has it (preferred: it filters before traffic reaches the server, so Docker cannot bypass it):
+  - allow TCP 80, TCP 443 and UDP 443 from anywhere;
+  - allow TCP 22, 8000, 6001, 6002 and 8080 only from the owner's own addresses;
+  - deny everything else inbound.
+- **(b) Rules on the server**, if (a) is not available. The advisor runs this as root, after filling in the two values at the top. It refuses to run with the placeholders left in:
+  ```sh
+  #!/bin/sh
+  set -eu
+  IF="<public interface>"    # shown by: ip route get 1.1.1.1
+  ADMIN="<owner IPv4>"       # the owner's own address(es), space separated
+  case "$IF$ADMIN" in *"<"*|"") echo "fill in IF and ADMIN first"; exit 1;; esac
+  # Coolify and Traefik dashboard ports (published by Docker): owner only.
+  iptables -N ADMIN-ONLY 2>/dev/null || iptables -F ADMIN-ONLY
+  for a in $ADMIN; do iptables -A ADMIN-ONLY -s "$a" -j RETURN; done
+  iptables -A ADMIN-ONLY -j DROP
+  for p in 8000 6001 6002 8080; do
+    iptables -C DOCKER-USER -i "$IF" -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j ADMIN-ONLY 2>/dev/null ||
+    iptables -I DOCKER-USER -i "$IF" -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j ADMIN-ONLY
+  done
+  # The same ports over IPv6: closed (the owner uses IPv4).
+  for p in 8000 6001 6002 8080; do
+    ip6tables -C INPUT -p tcp --dport "$p" -j DROP 2>/dev/null || ip6tables -I INPUT -p tcp --dport "$p" -j DROP
+    if ip6tables -L DOCKER-USER >/dev/null 2>&1; then
+      ip6tables -C DOCKER-USER -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j DROP 2>/dev/null ||
+      ip6tables -I DOCKER-USER -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j DROP
+    fi
+  done
+  ```
+  - Matching only **new inbound** connections keeps the containers' own outgoing calls (Turso, R2, the engines) working.
+  - **SSH (22)** is a host port, so `ufw` covers it: `ufw allow from <owner IPv4> to any port 22 proto tcp`, then remove any general "allow 22" rule.
+  - **Trap:** Coolify reaches its own server over SSH from its Docker network. Also allow SSH from the Docker bridge range (`ufw allow from 10.0.0.0/8 to any port 22 proto tcp`; the advisor checks the range with `docker network inspect coolify`). Otherwise Coolify loses the server.
+  - Make the rules survive a reboot (for example `apt install iptables-persistent`, then `netfilter-persistent save`). The advisor confirms.
+- If the owner's home address changes, he is locked out of Coolify; Contabo's **VNC console** still works. Once the Coolify dashboard has its own domain over 443 (gate 1), 8000, 6001 and 6002 can be closed to everyone.
+- **Check from an outside network** (a phone on mobile data, not the owner's allowed address):
+  - `curl -m 10 http://<server IPv4>:8000/`, and the same for `:6001`, `:6002` and `:8080`: each **times out**;
+  - `curl -6 -m 10 http://[<server IPv6>]:8000/`: **times out** (if the server has IPv6);
+  - staging still answers on its https address.
+
+## Restore point before production code touches the live databases
+
+The app creates and changes tables on first use. So **before the production app first starts** against the live Turso databases (its first deploy, step 4), and **again just before the DNS switch** (step 8), the owner records a way back.
+
+1. **OWNER: write down the exact UTC time** (for example `2026-10-20T09:00:00Z`) for **restore point A** (before the first deploy) and **restore point B** (before the switch). Do this for the platform database and **every workspace database**: all databases in the production Turso group, as listed in the Turso dashboard.
+2. **OWNER: check the Turso plan's point-in-time window** (Turso dashboard, the organisation's plan): Free 24 hours, Developer 10 days, Scaler 30 days, Pro 90 days.
+   - If the window is shorter than the 14-day watch window, also take a full encrypted backup with `scripts/ops/backup-restore.mjs backup` (see `docs/backup-restore.md`, "Capture"). That tool needs a short maintenance window with writes paused, so do it in the same quiet window.
+3. **Prove a restore works, on a copy:**
+   - Create a copy of the platform database and one workspace database at restore point A: `turso db create <new name> --from-db <database> --timestamp <time>`.
+   - Open each copy read-only (`turso db shell <new name> "SELECT count(*) FROM workspaces"` on the platform copy) and see that the rows are there.
+   - Delete the copies.
+   - Never paste database URLs or tokens into chat.
+4. A restore creates **new** databases with new addresses. The platform database stores each workspace's database address, so a real restore also needs those rows repointed (`scripts/ops/prepare-restore.mjs`, "Restore into new infrastructure" in `docs/backup-restore.md`). Claude prepares the exact steps on the day if it is ever needed.
+
+## Cutover order (grey cloud)
+
+Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do not start a step until the one above has passed. Steps marked **OWNER** are done by the owner (with the advisor where noted); unmarked steps are checks.
 
 0. **Gates.** Each gate in "Gates before cutover" is passed, or waived by the owner in writing. Otherwise stop.
-1. **`main` is ready and staging runs it.** **OWNER:** switch the staging app's branch to `main`, rebuild, sign in, run `smoke.sh` on staging. Do not go on until a build of `main` passes. (What `main` needs: PR #566's description.)
-2. **Lower the TTL (OWNER, a day ahead).** Write down the current records for all four names (type, value, TTL, proxy status: Vercel's are usually DNS-only, grey cloud). Lower their TTL to the minimum. If `particl.si` is not yet a Cloudflare zone, stop and say so.
-3. **Origin Certificate in Coolify (OWNER).** Cloudflare, `particl.si` zone, **SSL/TLS, Origin Server, Create Certificate** for `particl.si` and `*.particl.si`. On the server, save the certificate and key as files under `/data/coolify/proxy/certs/` and, in Coolify, **Servers, Proxy, Dynamic Configurations**, add a file that makes them Traefik's **default certificate** (`tls.stores.default.defaultCertificate` with `certFile` and `keyFile` under `/traefik/certs/`; verify the mount path in your proxy compose). Never paste the private key into chat, the repo or this file. Check from the server itself, with the production app still stopped: `openssl s_client -connect 127.0.0.1:443 -servername particl.si </dev/null 2>/dev/null | openssl x509 -noout -issuer` names Cloudflare.
-4. **SSL/TLS mode Full (strict) (OWNER).** In the `particl.si` zone: **SSL/TLS, Overview, Full (strict)**; **Always Use HTTPS** on. Prove it on staging first if staging has a `particl.si` name: proxy that record and confirm it answers 200, not 526.
-5. **Firewall: only Cloudflare reaches ports 80 and 443 (OWNER, with the advisor).** This host is **Contabo**. Plain `ufw` is **not enough**: Docker publishes Traefik's 80 and 443 (and Coolify's 8000, 6001, 6002) through its own rules, ahead of ufw. Two ways; **the owner confirms which one his plan allows**:
-   - **(a) Contabo's control-panel firewall**, if the plan has it: default-deny inbound; allow 80 and 443 only from Cloudflare's ranges (https://www.cloudflare.com/ips-v4 and https://www.cloudflare.com/ips-v6); allow 22, 8000, 6001, 6002 only from the owner's own addresses (or close 6001/6002). This filters before traffic reaches the server, so Docker cannot bypass it.
-   - **(b) The `DOCKER-USER` iptables chain** on the server, if (a) is not available. Run as root, IPv4 shown; repeat with `ip6tables` and the ips-v6 list if the server has IPv6. Replace `eth0` with the public interface (`ip route get 1.1.1.1` shows it). Matching only **new inbound** connections keeps the containers' own outgoing calls (Turso, R2, the engines) working:
-     ```sh
-     iptables -N CF-ONLY 2>/dev/null || iptables -F CF-ONLY
-     for r in $(curl -s https://www.cloudflare.com/ips-v4); do iptables -A CF-ONLY -s "$r" -j RETURN; done
-     iptables -A CF-ONLY -j DROP
-     iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctstate NEW --ctorigdstport 443 -j CF-ONLY
-     iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctstate NEW --ctorigdstport 80 -j CF-ONLY
-     ```
-     These rules are lost on reboot unless saved (for example with `netfilter-persistent`); the advisor confirms how. Coolify's 8000/6001/6002 need the same treatment with the owner's own addresses. SSH (22) is a host port, so `ufw` does cover it.
-   - **IPv6:** if the server has an IPv6 address and it is not filtered the same way, add **no AAAA record** and block IPv6 inbound on 80 and 443.
-   - Keep Contabo's VNC console at hand in case a rule locks the owner out.
-   - **Check from an outside network** (a phone on mobile data): `curl -m 10 -skI https://<server IPv4>/` and `curl -m 10 http://<server IPv4>:8000/` both **time out**; staging through Cloudflare still answers.
-6. **Bot Fight Mode off (OWNER).** Cloudflare, `particl.si` zone, **Security, Bots**: **Bot Fight Mode off**. It challenges Inngest's server-to-server calls to `/api/inngest`, and on the free plan no WAF rule can exempt a path from it. Turn it off if it is on, or if Inngest syncs or runs fail with a challenge. Also add a WAF custom rule that **skips** the other security rules for paths `/api/inngest` and `/api/worker`: if the Inngest keys were ever missing, the app hands work to itself at `https://particl.si/api/worker`, through Cloudflare.
-7. **Production app ready, still stopped (OWNER).** Every variable in "Live-copy settings" is set, and `TRUST_CF_CONNECTING_IP=1` now that step 5 passed. Scheduled task: Coolify, the production app, **Scheduled Tasks, + Add**: name `cron-sync`, command `node /app/cron-sync.mjs`, frequency `*/10 * * * *`, timeout 300 s; save it **disabled**. (The script calls `http://127.0.0.1:3000/api/cron/sync` inside the container with `CRON_SECRET`.) Deploy so the image is built, then keep it stopped: production workspaces must not be reconciled by two hosts before the switch.
-   - **Redeploys:** the app is one Node process, so a redeploy cuts background work that is still running; the cron's recovery sweep picks it up. If your Coolify version offers a stop timeout (or a custom Docker option such as `--stop-timeout 300`; unsure of the label), set it to 300 s, and redeploy when quiet.
+1. **Staging runs `main` (OWNER).** Switch the staging app's branch to `main`, rebuild, sign in, run `smoke.sh` on staging. Do not go on until a build of `main` passes. (What `main` needs: PR #566's description.)
+   - **Per-address limits check (OWNER, on staging).** Use a test account.
+     - From network A (home): enter a wrong password **8 times** until staging says "Too many attempts. Try again in 15 minutes."
+     - Then from a phone on mobile data (network B): sign in to the same account with the right password. It must work: limits are counted per address.
+     - If network B is blocked too, every visitor shares one address: **stop** and report it.
+2. **Lower the TTL (OWNER, a day ahead).** Write down the current records for `particl.si` and `www.particl.si` (type, value, TTL, proxy status) and lower their TTL to the minimum. If `particl.si` is not yet a Cloudflare zone, stop and say so.
+3. **Firewall (OWNER, with the advisor).** As in "Firewall on the server", including the outside checks.
+4. **Production app built and stopped (OWNER).** First record **restore point A** ("Restore point" above), including the restore test on a copy. Then:
+   - Every variable in "Live-copy settings" is set. `TRUST_CF_CONNECTING_IP` and `TRUSTED_PROXY_HOPS` are **unset**.
+   - Domains `https://particl.si,https://www.particl.si`, Direction redirect to non-www, stop grace period 300.
+   - Scheduled task: Coolify, the production app, **Scheduled Tasks, + Add**: name `cron-sync`, command `node /app/cron-sync.mjs`, frequency `*/10 * * * *`, timeout 300 s, saved **disabled**. (The script calls `http://127.0.0.1:3000/api/cron/sync` inside the container with `CRON_SECRET`.)
+   - **Deploy** (this is the first start against the live databases), check the health check goes green, then **Stop**. Production workspaces must not be reconciled by two hosts before the switch.
+   - Traefik will fail to get a certificate at this point (the names still point at Vercel); that is expected.
    - **Recommended:** deploy the same `main` commit on Vercel too, so both hosts run identical code against the same databases during the window.
-8. **Inngest: stop Vercel re-syncing (OWNER).** In the Inngest dashboard, check the app's URL (**Apps**, the app): note whether it is `https://particl.si/api/inngest` or a `*.vercel.app` address. Then in Inngest's **Vercel integration** settings, **turn off sync for this project** (do not uninstall: that can remove the keys from Vercel). Confirm Vercel Production still lists both Inngest keys.
-9. **Switch DNS (OWNER's "go").** Start the production app and wait for its health check to be green. In Cloudflare set the four records from "Domains and DNS", all **proxied**. Mail records untouched.
-10. **Inngest re-sync (OWNER).** Inngest dashboard, **Apps**, **Sync new app** (or **Resync**) with URL `https://particl.si/api/inngest`; or run `curl -X PUT https://particl.si/api/inngest` once. The app must then show URL `https://particl.si/api/inngest` and **6 functions**. If the URL was a `*.vercel.app` address in step 8, this step is what moves the work: until it is done, Inngest keeps running jobs on Vercel. A failed sync usually means Bot Fight Mode or the firewall is blocking it.
-11. **Stripe webhook check (OWNER).** Stripe dashboard, **Developers, Webhooks**: this code has no Stripe webhook route, so if an endpoint for `particl.si` exists it already fails today and nothing changes. Note it; there is nothing to repoint.
+5. **Inngest: stop Vercel re-syncing (OWNER).**
+   - In the Inngest dashboard, check the app's URL (**Apps**, the app): note whether it is `https://particl.si/api/inngest` or a `*.vercel.app` address.
+   - In Inngest's **Vercel integration** settings, **turn off sync for this project**. Do not uninstall: that can remove the keys from Vercel.
+   - Confirm Vercel Production still lists both Inngest keys.
+6. **Redirect rule for `particl.app` (OWNER).** Created and proxied as in "Domains and DNS" (it can already exist).
+7. **Restore point B (OWNER).** Write down the UTC time just before step 8.
+8. **Switch DNS (OWNER's "go").**
+   - Start the production app; wait for its health check to be green.
+   - In Cloudflare: `particl.si` A to `<server IPv4>` and `www.particl.si` CNAME to `particl.si`, both **DNS-only (grey)**, no AAAA.
+   - Mail records untouched.
+9. **Certificates.** Within a few minutes, `curl -sI https://particl.si/` answers 200 **without** `-k`, and `openssl s_client -connect particl.si:443 -servername particl.si </dev/null 2>/dev/null | openssl x509 -noout -issuer` names Let's Encrypt. The same for `www.particl.si`. For the first minutes, visitors may see a certificate warning until Let's Encrypt issues. If there is still no certificate after 10 minutes: **OWNER:** Coolify, **Servers, Proxy, Restart Proxy**.
+10. **Inngest re-sync (OWNER).**
+    - Inngest dashboard, **Apps**, **Sync new app** (or **Resync**) with URL `https://particl.si/api/inngest`; or run `curl -X PUT https://particl.si/api/inngest` once.
+    - The app must then show URL `https://particl.si/api/inngest` and **6 functions**. Inngest reaches the server directly (grey cloud).
+    - If the URL was a `*.vercel.app` address in step 5, this step is what moves the work: until it is done, Inngest keeps running jobs on Vercel.
+11. **Stripe webhook check (OWNER).** Stripe dashboard, **Developers, Webhooks**. This code has no Stripe webhook route, so if an endpoint for `particl.si` exists, it already fails today and nothing changes. Note it; there is nothing to repoint.
 12. **Smoke (right after).**
-    - `curl -sI https://particl.si/` answers 200; `curl -sI 'https://particl.app/pricing?x=1'` (and the same for `www.particl.app` and `www.particl.si`) answers **308** with `location: https://particl.si/pricing?x=1`.
+    - `curl -sI 'https://www.particl.si/pricing?x=1'` answers 301 or 308 to `https://particl.si/pricing?x=1`.
+    - `curl -sI 'https://particl.app/pricing?x=1'` and `www.particl.app` answer **308** to `https://particl.si/pricing?x=1`.
     - `bash ops/selfhost/smoke.sh https://particl.si` passes.
-    - Sign in in a browser; a price shows as `N cr`; an existing old image (from Blob) and a new upload (R2) both display.
+    - Sign in in a browser; a price shows as `N cr`; an old image (from Blob) and a new upload (R2) both display.
     - `curl -s https://particl.si/api/inngest` answers 200 with a function count above 0 and a signing key present (not the 503 "not configured").
-    - **No paid press.** In the app's terminal, `node -e 'console.log(["VERCEL_TOKEN","VERCEL_TEAM_ID","VERCEL_PROJECT_ID","ASTRA_BLENDER_SNAPSHOT_ID","ASTRA_BLENDER_RATE_CARD","AI_GATEWAY_API_KEY"].map(k=>k+": "+(process.env[k]?"set":"MISSING")).join("  "))'` prints `set` for all six.
-    - From the outside network again: direct requests to the server's address time out.
-    - **OWNER:** the first real long job (an Astra render or a dubbing job) completes without a 524 in the Inngest dashboard. Until then, keep the Vercel deployment as it is.
-13. **Cron moves (OWNER).** Enable `cron-sync` on the server; its log shows `cron-sync: 200` on two runs. Only then disable the Vercel cron. The brief overlap is safe (the heartbeat is leased); do not leave both on.
-14. **Watch window: 14 days.** (The commit shown by the signed-in health answer reads `local` on this host; that is cosmetic.) Daily: `/api/health`, 5xx in the app log, the cron heartbeat, the Inngest dashboard (failed syncs and runs), `dispatch.refused` and `[client-ip] ... one shared bucket` in the app log. **The Vercel project, deployment and domain settings stay deployed and untouched for at least 14 days after step 9.**
+    - **No paid press.** In the app's terminal, run:
+      `node -e 'console.log(["VERCEL_TOKEN","VERCEL_TEAM_ID","VERCEL_PROJECT_ID","ASTRA_BLENDER_SNAPSHOT_ID","ASTRA_BLENDER_RATE_CARD","AI_GATEWAY_API_KEY","VERCEL","VERCEL_ENV","TRUST_CF_CONNECTING_IP"].map(k=>k+": "+(process.env[k]?"set":"MISSING")).join("  "))'`
+      The first six must print `set`; `VERCEL`, `VERCEL_ENV` and `TRUST_CF_CONNECTING_IP` must print **MISSING**.
+    - From the outside network: Coolify's ports still time out.
+13. **Cron moves (OWNER).**
+    - Enable `cron-sync` on the server. Its log shows `cron-sync: 200` on two runs, and the cron time in the signed-in `/api/health` answer keeps advancing.
+    - Only then disable the Vercel cron. Vercel's cron runs on Vercel until then, so there is no gap.
+    - The brief overlap is safe (the heartbeat is leased); do not leave both on.
+14. **Watch window: 14 days.**
+    - Daily: `/api/health`, 5xx in the app log, the cron heartbeat, the Inngest dashboard (failed syncs and runs), `dispatch.refused` and `[client-ip] ... one shared bucket` in the app log.
+    - **OWNER:** the first real long job (an Astra render or a dubbing job) completes in the Inngest dashboard.
+    - **The Vercel project, deployment and domain settings stay deployed and untouched for at least 14 days after step 8.**
+    - The commit shown by the signed-in health answer reads `local` on this host; that is cosmetic.
 15. **Rollback (any time in the 14 days).**
-    1. **OWNER:** in Cloudflare, restore the four records to the values written down in step 2, **including their proxy status** (Vercel's are usually grey cloud).
+    1. **OWNER:** in Cloudflare, restore `particl.si` and `www.particl.si` to the values written down in step 2 (grey cloud, as today).
     2. **OWNER:** re-enable the Vercel cron; disable `cron-sync` on the server; stop the production app.
-    3. **OWNER:** re-enable the Inngest Vercel integration's sync for the project and resync, so Inngest's app URL points at the Vercel deployment again; check it shows 6 functions.
-    4. **Data:** nothing to copy back. Both hosts use the **same Turso databases** (platform and workspaces), the **same R2 bucket** and the **same Blob store**, and with R2 selected the self-hosted app keeps nothing durable on its own disk (upload pieces go to R2 too). Everything written during the window is already where Vercel reads it. An upload in progress at the moment of switching may need to be retried.
-    5. **Never** use Vercel's Instant Rollback to a deployment from before #524 (it predates the credit switchover and would bill the wrong price).
+    3. **OWNER:** re-enable the Inngest Vercel integration's sync for the project and resync, so Inngest's app URL points at Vercel again; check it shows 6 functions.
+    4. **Data, ordinary rollback: nothing to copy back.** Both hosts use the **same Turso databases** (platform and workspaces), the **same R2 bucket** and the **same Blob store**. With R2 selected, the self-hosted app keeps nothing durable on its own disk (upload pieces go to R2 too). Everything written during the window is already where Vercel reads it. An upload in progress at the moment of switching may need to be retried.
+    5. **Data problem (wrong or damaged rows):** restore from restore point B (or A) as in "Restore point". Everything written after that time is lost, so this is the owner's decision, made with Claude, not a reflex.
+    6. **Never** use Vercel's Instant Rollback to a deployment from before #524 (it predates the credit switchover and would bill the wrong price).
 16. **After the window (OWNER).** Retire the Vercel deployment and domains, but **keep the Vercel team, project and snapshot** while Astra renders run on Vercel Sandbox. Rotate exposed keys. Retire Blob only after every old Blob object is copied to R2.
 
 ## Astra Blender renders from the self-hosted host
@@ -276,23 +362,23 @@ Steps 1 to 8 do not move live traffic. From step 9 the live site is affected. Do
 **How long, and where it waits.**
 - One render: a 180 s ceiling on the VM, 165 s on the Blender command, plus moving inputs (up to 100 MiB) and outputs (up to 320 MiB). The 18 Sep test render took about 8 s.
 - The browser never waits on it: the render request answers **202** at once, and the panel polls every 5 s.
-- The work runs in the background as the Inngest function `astra-blender-render` (step `render-persist-and-account`, up to 2 retries). That one step is one request from Inngest to `/api/inngest` through Cloudflare. It can pass Cloudflare's 100 s, which is why `INNGEST_STREAMING=true` is set.
-- If Cloudflare still cut it, the app would keep running the render, and Inngest's retry would find the job already started and do nothing, so a second VM is never bought (`runAstraRender` only starts a job that is still queued). The person would see the result late rather than twice.
+- The work runs in the background as the Inngest function `astra-blender-render` (step `render-persist-and-account`, up to 2 retries). That one step is one request from Inngest to `/api/inngest`. With grey cloud it goes straight to the server, so no 100 s limit applies; `INNGEST_STREAMING=true` is already set for the later orange cloud.
+- If anything in between cut that request, the app would keep running the render, and Inngest's retry would find the job already started and do nothing, so a second VM is never bought (`runAstraRender` only starts a job that is still queued). The person would see the result late rather than twice.
 - From this server the inputs and outputs cross the Atlantic to `iad1`; only a real render shows how long that takes.
 
 **Code change.** None is required if all five names are set. One guard is recommended, not made here:
 - **The problem:** if the three `VERCEL_*` names are missing off Vercel, the panel still offers the render (`astraRuntimeStatus`, sandbox.ts lines 79 to 90, checks only the snapshot; `astraRenderAvailability`, render-jobs.ts line 90, adds only the rate card). The job is then claimed and funded, and `Sandbox.create` fails. The job is marked `uncertain` with its credits held (render-jobs.ts line 244), and reconciliation cannot clear it, because `getAstraRenderStatus` fails the same way (render-jobs.ts line 277).
 - **The fix:** in `astraRuntimeStatus`, report `configured: false` with a plain reason when `process.env.VERCEL` is unset and the three credentials are not all set. Small, its own PR, with a unit test.
-- Until that PR lands, the step 12 check (all six names `set`) covers it.
+- Until that PR lands, the step 12 check (the first six names `set`) covers it.
 
 **Confirmed by reading code:** the sign-in rule, the five names, no callback or Vercel-address dependency, the 180 s and 165 s limits, Inngest background dispatch with a 202 to the browser, no second VM on a retry, and that `ENGINE_MOCK=1` blocks any render (so staging cannot render as it is set today).
 
-**Only a real render confirms:** that the owner's token, team and project are accepted and can start the snapshot, the transfer time from this server, and that `INNGEST_STREAMING` keeps the step clear of a 524.
+**Only a real render confirms:** that the owner's token, team and project are accepted and can start the snapshot, and the transfer time from this server. (Whether `INNGEST_STREAMING` keeps a long step clear of Cloudflare's 524 only matters for the later orange cloud.)
 
 **Proposed render test (only on the owner's "run"; it costs money).**
 1. Free check first: on staging, add the three `VERCEL_*` names. In staging's terminal, `node -e 'import("@vercel/sandbox").then(({Sandbox})=>Sandbox.get({token:process.env.VERCEL_TOKEN,teamId:process.env.VERCEL_TEAM_ID,projectId:process.env.VERCEL_PROJECT_ID,name:"astra-blender-00000000-0000-0000-0000-000000000000",resume:false})).then(()=>console.log("unexpected: found")).catch(e=>console.log("answer:",e?.response?.status??e?.name))'` looks up a VM that does not exist, so nothing is bought. A not-found answer (404) means the credentials are accepted; 401 or 403 means the token, team or project is wrong. The exact error shape is unverified, so read it with Claude, without pasting values.
 2. Real render: on staging, add `ASTRA_BLENDER_SNAPSHOT_ID` and `ASTRA_BLENDER_RATE_CARD`, and remove `ENGINE_MOCK` for the test only. Staging has no engine keys, so nothing else can spend. Grant the staging workspace a few credits, run **one** render of a template scene, check that the outputs appear, then set `ENGINE_MOCK=1` again and remove the five names.
-3. Cost: at the sample `iad1` rate card in `docs/astra-blender-runtime.md`, at most about US$0.10 for one render, billed to the Vercel team. Staging dispatches natively, so this does not test Inngest streaming: that is the first real render after the switch (step 12).
+3. Cost: at the sample `iad1` rate card in `docs/astra-blender-runtime.md`, at most about US$0.10 for one render, billed to the Vercel team. Staging dispatches natively, so this does not test the Inngest path: that is the first real render after the switch (step 14).
 
 ### What replaces Sandbox later
 
@@ -305,9 +391,70 @@ The SOW plans a **worker container** (Phase 3, P8, "many clients") that Inngest 
 ## Gates before cutover (SOW section 4)
 
 Each is passed, or waived by the owner in writing (cutover step 0).
-1. **P2 finish:** Coolify keys saved, dashboard domain, GitHub App, real visitor addresses, outside monitor, server snapshots. (The Cloudflare certificate and firewall are cutover steps 3 and 5.)
+1. **P2 finish:** Coolify keys saved, dashboard domain, GitHub App, real visitor addresses, outside monitor, server snapshots. (The server firewall is cutover step 3; the Cloudflare certificate belongs to the later orange-cloud section.)
 2. **P3 media:** R2 on (`r2-configured`), media domain with signed links, thumbnails and posters; Blob downloads near zero.
 3. **P4 beside Vercel:** the `main` fixes (PR #566's list); self-hosted Inngest sized for 1,000 jobs with per-plan limits; staging with all 12 smoke checks.
 4. **The 1,000-job load test** passes on staging.
 5. **The credit switchover** (`CREDIT_USD` 0.10) is done on Vercel first, and that database is the one the new host uses.
 6. After cutover (not a blocker): cron moved, 14 days of watching, Vercel deployment and domains retired (keep the team, project and snapshot), exposed keys rotated, Blob retired only after every old object is in R2.
+
+## Later: orange cloud (only after every long flow is proven under 100 s)
+
+**Not part of the cutover.** Do this only when the owner decides, after every long flow is proven under 100 s on the live site. Until then `particl.si` and `www.particl.si` stay grey.
+
+**Why it waits.** On a proxied (orange) name, Cloudflare (Free, Pro and Business) returns a **524** when the server sends **no bytes for about 100 s**. Traefik cannot change that.
+- Chunked uploads and streamed downloads are fine: bytes keep flowing.
+- Inngest steps (an Astra render, a dubbing poll) can pass 100 s. `INNGEST_STREAMING=true` (already set) makes the route answer at once and send a byte every few seconds.
+- **Requests that wait silently can pass 100 s:**
+  - `POST /api/uploads/finish` (assembles up to 2 GB before it answers; a retry recovers);
+  - `/api/audio/transcribe` (waits for the whole transcription);
+  - the model calls under `/api/atomik/` (ideas, shot and scene drafts, memory read);
+  - `/api/prompt/enhance`, `/api/mcp`, and starting identity training.
+- **Proving it:** in the watch window, read how long these took (app log, Inngest run times). If any can pass 100 s, it needs a product change first (answer at once and let the browser poll, or direct-to-storage uploads), each its own PR.
+
+**Steps (OWNER, with the advisor), in this order:**
+1. **Staging first.** Put staging on `staging.particl.si`, proxied, and run all of the steps below on it. Staging must stay reachable and its certificate must stay valid through this. The **Coolify dashboard's own domain** must stay reachable too: proxied with the same certificate, or allowed in the firewall for the owner's address.
+2. **Origin Certificate.**
+   - Cloudflare, `particl.si` zone, **SSL/TLS, Origin Server, Create Certificate** for `particl.si` and `*.particl.si`.
+   - On the server, save the certificate and key as files under `/data/coolify/proxy/certs/`.
+   - In Coolify, **Servers, Proxy, Dynamic Configurations**, add a file that makes them Traefik's **default certificate**: `tls.stores.default.defaultCertificate`, with `certFile` and `keyFile` under `/traefik/certs/`. Verify that mount path in the proxy compose.
+   - Never paste the private key anywhere.
+   - Check from the server itself: `openssl s_client -connect 127.0.0.1:443 -servername particl.si </dev/null 2>/dev/null | openssl x509 -noout -issuer` names Cloudflare.
+3. **SSL/TLS mode Full (strict)** and **Always Use HTTPS** in the `particl.si` zone. The proxied staging name answers 200, not 526.
+4. **Bot Fight Mode off** (**Security, Bots**). It challenges Inngest's calls to `/api/inngest`, and on the free plan no rule can exempt a path from it. Add a WAF custom rule that **skips** the other security rules for `/api/inngest` and `/api/worker` (the app hands work to itself at `/api/worker` if the Inngest keys were ever missing).
+5. **Cloudflare-only firewall.** Ports 80 and 443 accept only Cloudflare.
+   - **(a)** Contabo's control-panel firewall, if the plan has it: TCP 80 and 443 only from https://www.cloudflare.com/ips-v4 and https://www.cloudflare.com/ips-v6. **Close UDP 443:** Cloudflare talks to the server over TCP only, so HTTP/3 to the server is no longer needed. Admin ports stay owner-only as before.
+   - **(b)** Rules on the server, as root. The script stops if the downloaded list looks empty, so it never installs a DROP with nothing allowed:
+     ```sh
+     #!/bin/sh
+     set -eu
+     IF="<public interface>"    # shown by: ip route get 1.1.1.1
+     case "$IF" in *"<"*|"") echo "fill in IF first"; exit 1;; esac
+     CF4=$(curl -fsS https://www.cloudflare.com/ips-v4)
+     [ "$(printf '%s\n' "$CF4" | grep -c /)" -ge 10 ] || { echo "Cloudflare list looks empty: nothing changed"; exit 1; }
+     iptables -N CF-ONLY 2>/dev/null || iptables -F CF-ONLY
+     for r in $CF4; do iptables -A CF-ONLY -s "$r" -j RETURN; done
+     iptables -A CF-ONLY -j DROP
+     for p in 80 443; do
+       iptables -C DOCKER-USER -i "$IF" -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j CF-ONLY 2>/dev/null ||
+       iptables -I DOCKER-USER -i "$IF" -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j CF-ONLY
+     done
+     # HTTP/3 (UDP 443): closed to everyone.
+     iptables -C DOCKER-USER -i "$IF" -p udp -m conntrack --ctstate NEW --ctorigdstport 443 -j DROP 2>/dev/null ||
+     iptables -I DOCKER-USER -i "$IF" -p udp -m conntrack --ctstate NEW --ctorigdstport 443 -j DROP
+     # IPv6: no AAAA record, so close 80 and 443 over IPv6.
+     for p in 80 443; do
+       ip6tables -C INPUT -p tcp --dport "$p" -j DROP 2>/dev/null || ip6tables -I INPUT -p tcp --dport "$p" -j DROP
+     done
+     ip6tables -C INPUT -p udp --dport 443 -j DROP 2>/dev/null || ip6tables -I INPUT -p udp --dport 443 -j DROP
+     ```
+     If `ip6tables -L DOCKER-USER` exists, the advisor adds the same IPv6 drops there. Save the rules so they survive a reboot. Cloudflare's list changes now and then, so re-run the script when it does.
+   - Or remove HTTP/3 from the proxy instead: delete the `--entrypoints.https.http3` line and the `443:443/udp` port in the proxy compose, then restart the proxy.
+   - **Check from an outside network:**
+     - `curl -m 10 -skI https://<server IPv4>/`: **times out**;
+     - `curl -6 -m 10 -skI https://[<server IPv6>]/`: **times out**;
+     - `curl --http3-only -m 10 -skI https://<server IPv4>/`: **times out** (needs a curl built with HTTP/3);
+     - a proxied name still answers.
+6. **Switch `particl.si` and `www.particl.si` to proxied (orange).**
+7. **Only now**, with TCP **and** UDP both filtered: set `TRUST_CF_CONNECTING_IP=1` on the production app and redeploy. Then repeat the per-address limits check (network A locked, network B still signs in).
+8. **Rollback:** set the two records back to grey and unset `TRUST_CF_CONNECTING_IP` (redeploy). The firewall must let everyone reach 80 and 443 again, as in the main path.
