@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { BoardHistoryEntry, HistoryWho } from "@/lib/board/history";
 import { draftRequest } from "@/lib/workbench/draft-request";
-import LazyMedia from "@/components/LazyMedia";
+import { TileMedia } from "../../LibraryTile";
 import { nodeRole } from "@/lib/board/regions";
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import type { Project } from "@/lib/workbench/studio";
@@ -55,11 +55,7 @@ export function LibraryDrawer({ items, project, onClose }: { items: readonly Lib
         {shown.length ? shown.map((entry) => (
           <div key={entry.take.id} className="bd-tile" draggable data-ctx={`asset:${entry.take.id}`} onClick={() => shell.selectAsset(entry.take.id, { reason: "pick" })} title={`${entry.take.name} · drag onto a shot to use it as a reference`}
             onDragStart={(e) => { e.dataTransfer.setData("text/plain", entry.take.id); e.dataTransfer.effectAllowed = "copy"; }}>
-            <span className="bd-tile-media">
-              {entry.media === "video" && entry.url ? <LazyMedia url={entry.url} kind="video" preview={false} />
-                /* eslint-disable-next-line @next/next/no-img-element */
-                : entry.media === "image" && entry.url ? <img src={entry.url} alt="" loading="lazy" decoding="async" draggable={false} /> : null}
-            </span>
+            <TileMedia url={entry.url} media={entry.media} />
             <span className="bd-tile-name">{entry.take.name}</span>
             <span className="bd-tile-meta">{entry.take.meta}</span>
           </div>
