@@ -1,4 +1,6 @@
-import { acceptRecoveryJobTx } from "./recovery";
+import { after } from "next/server";
+import { acceptRecoveryJobTx, movableRecoveryRun } from "./recovery";
+import { detachable } from "./requestAttachment";
 import type { Client, InStatement, Transaction } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import { db, ready, now } from "./db";
@@ -82,8 +84,37 @@ export async function bindGenerationRequest(claim: GenerationRequest, genId: str
   await db().execute(bindGenerationRequestStatement(claim, genId));
 }
 
-/** `atomicBinding`: every job this request can create binds its claim in the same write as the row. */
-export type GenerationRequestOptions = { atomicBinding?: boolean };
+/**
+ * How long a paid request that opts in (`answerAfterMs`) waits for its run
+ * before it answers "still being accepted" and finishes after the reply. Well
+ * under the 100 s a proxy allows a request to stay silent.
+ */
+export const ANSWER_AFTER_MS = 25_000;
+
+/**
+ * `atomicBinding`: every job this request can create binds its claim in the same write as the row.
+ *
+ * `answerAfterMs`: a run still going after this long is answered with the
+ * claim's own "still being accepted" (409, `pending`, Retry-After), the same
+ * answer a replay of a running claim gets, and it goes on after the reply
+ * (Next's after(), reserved as a recovery continuation first, which is the
+ * parent of what the run admits after the reply). It saves its
+ * reply on the claim exactly as it would have, so a replay under the same key
+ * is answered with that reply once it is there, and it never runs twice: one
+ * claim, one run, one reservation and one settlement per key. The run must
+ * take what it needs from the request before it starts (lib/requestAttachment.ts
+ * refuses the session's cookies and headers after the reply). Where no reply
+ * can be deferred (no request scope, the recovery fence closed), the request
+ * waits for its run as before.
+ *
+ * `afterReply`: tests only; Next's after() otherwise.
+ */
+export type GenerationRequestOptions = { atomicBinding?: boolean; answerAfterMs?: number; afterReply?: (work: () => Promise<unknown>) => void };
+
+const STILL_ACCEPTING = "This request is still being accepted. Retry with the same Idempotency-Key; it will not submit another generation.";
+/** The answer for a claim whose run has not finished: not final, so the client keeps the request and asks again. */
+const stillAccepting = (headers: Record<string, string> = {}) =>
+  Response.json({ error: STILL_ACCEPTING, pending: true }, { status: 409, headers: { ...headers, "Retry-After": "2" } });
 
 const UNADMITTED = "The request was interrupted before a job was created. Nothing was charged; try again.";
 /** Longer than any function may run (800 s), so the request that made a claim this old is gone. */
@@ -175,26 +206,59 @@ export async function withGenerationRequestData(
         return settled;
       }
     }
-    return Response.json({ error: "This request is still being accepted. Retry with the same Idempotency-Key; it will not submit another generation.", pending: true }, { status: 409, headers: { ...headers, "Retry-After": "2" } });
+    return stillAccepting(headers);
   }
   const claim = { userId, key };
-  try {
-    const response = await run(claim);
-    const json = await response.clone().text();
-    await db().execute({ sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=? WHERE user_id=? AND request_key=?`, args: [json, response.status, now(), userId, key] });
-    response.headers.set("Idempotency-Status", "complete");
-    return response;
-  } catch (error) {
-    /* Paused for a price change (lib/ledgerUnit.ts): nothing was reserved or sent, and the person is told so. */
-    if ((error as Error)?.message === LEDGER_UNIT_PAUSED) return Response.json({ error: LEDGER_UNIT_PAUSED }, { status: 503 });
-    // Keep the durable claim: a provider might have accepted an interrupted request.
-    console.error("Generation request interrupted:", (error as Error).message);
-    if (options.atomicBinding) {
-      const settled = await completeUnadmitted(userId, key).catch(() => null);
-      if (settled) return settled;
+  const settle = async (): Promise<Response> => {
+    try {
+      const response = await run(claim);
+      const json = await response.clone().text();
+      await db().execute({ sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=? WHERE user_id=? AND request_key=?`, args: [json, response.status, now(), userId, key] });
+      response.headers.set("Idempotency-Status", "complete");
+      return response;
+    } catch (error) {
+      /* Paused for a price change (lib/ledgerUnit.ts): nothing was reserved or sent, and the person is told so. */
+      if ((error as Error)?.message === LEDGER_UNIT_PAUSED) return Response.json({ error: LEDGER_UNIT_PAUSED }, { status: 503 });
+      // Keep the durable claim: a provider might have accepted an interrupted request.
+      console.error("Generation request interrupted:", (error as Error)?.message);
+      if (options.atomicBinding) {
+        const settled = await completeUnadmitted(userId, key).catch(() => null);
+        if (settled) return settled;
+      }
+      return Response.json({ error: "The request was interrupted. Retry with the same Idempotency-Key to recover its job; it will not be submitted twice." }, { status: 503 });
     }
-    return Response.json({ error: "The request was interrupted. Retry with the same Idempotency-Key to recover its job; it will not be submitted twice." }, { status: 503 });
-  }
+  };
+  if (!options.answerAfterMs) return settle();
+  return answerByDeadline(settle, options.answerAfterMs, options.afterReply ?? after);
+}
+
+/**
+ * The claim's run, answered by `ms` (GenerationRequestOptions.answerAfterMs):
+ * its own reply when it finishes in time, otherwise "still being accepted"
+ * with the run handed to after(). The run was started once, here, and only
+ * ever awaited after that: deferring it never starts it again.
+ */
+async function answerByDeadline(settle: () => Promise<Response>, ms: number, afterReply: (work: () => Promise<unknown>) => void): Promise<Response> {
+  /* Its own recovery parent, so its later admissions can hang off the continuation once the request is over. */
+  let moving!: ReturnType<typeof movableRecoveryRun<Response>>;
+  const run = detachable(() => { moving = movableRecoveryRun(settle); return moving.result; });
+  const ended: { response?: Response } = {};
+  void run.result.then((response) => { ended.response = response; }, () => {});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), ms); });
+  const first = await Promise.race([run.result, deadline]).finally(() => clearTimeout(timer));
+  if (first) return first;
+  /* after() first: outside a request it throws, and nothing is then reserved for a continuation that would never run. */
+  let continuation: (() => Promise<unknown>) | null = null;
+  try { afterReply(async () => { await continuation?.(); }); } catch { return run.result; }
+  /* Reserved before the reply, under the still-open request, so a deploy that drains sees the run until it ends and
+     admits what the run does after the reply (its parent from then on). Refused (the fence is closed): the request waits for it. */
+  try { continuation = await moving.reserveContinuation("paid-request"); } catch { return run.result; }
+  /* It finished while the continuation was reserved: its own reply, as if in time. */
+  if (ended.response) return ended.response;
+  /* From here the request is answered: nothing in the run may read its cookies or headers. */
+  run.detach();
+  return stillAccepting();
 }
 
 /**
