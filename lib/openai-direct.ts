@@ -3,7 +3,11 @@ import type { LanguageModelUsage } from 'ai';
 import { vendorKey } from './vendorKeys';
 import { recoveryFetch } from './recovery';
 import type { GatewayReply } from './gateway';
+import { textRoute } from './textRoute';
 
+/** The billing vendor the money paths read. Direct Anthropic, Google and xAI
+ * text still reads 'gateway' here until those paths move (P4b PR 3); the door
+ * a call actually takes is `textRoute` (lib/textRoute.ts). */
 export type TextVendor = 'openai' | 'gateway';
 export const TEXT_PROVIDER_HEADER = 'X-Particl-Text-Provider';
 export const OPENAI_BASE = () => 'https://api.openai.com/v1';
@@ -19,7 +23,7 @@ export function openAIModelId(model: string) {
 export function usesOpenAIResponses(model: string) { return !/^gpt-(?:3\.5(?:-|$)|4(?:-|$))/.test(openAIModelId(model)); }
 export function assertTextProvider(model: string, auth?: Record<string, string>) {
   const expected = auth?.[TEXT_PROVIDER_HEADER];
-  if (expected && expected !== textVendor(model)) throw new Error('The selected provider connection changed after approval. Review a new request before continuing.');
+  if (expected && expected !== textRoute(model)) throw new Error('The selected provider connection changed after approval. Review a new request before continuing.');
 }
 /** Credentials are sent only to the two official language endpoints. Redirects
  * are rejected before a client can forward an authenticated request elsewhere. */

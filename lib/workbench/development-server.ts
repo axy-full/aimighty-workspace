@@ -9,6 +9,7 @@ import { atomikModels, getAtomikProject } from './atomik-server';
 import { atomikReasoningAllowance, atomikReasoningRequest } from '../atomik-reasoning';
 import { gatewayReachable } from '../gateway';
 import { languageAuth, languageModel } from '../language-provider';
+import type { TextRoute } from '../textRoute';
 import { allowanceCheck } from '../allowance';
 import { reserveGenerationSpend } from '../generationRequests';
 import { assertMeterFunding, meter, type MeterEvent } from '../meter';
@@ -65,7 +66,7 @@ export type DevelopmentDependencies = {
   funding: (id: string, model?: string) => Promise<void>;
   reservation: (id: string) => Promise<boolean>;
 };
-export type DevelopmentAuth = { token: string; method: 'api-key' | 'oidc'; vendor?: TextVendor };
+export type DevelopmentAuth = { token: string; method: 'api-key' | 'oidc'; vendor?: TextVendor | TextRoute };
 async function developmentAuth(model: string): Promise<DevelopmentAuth> {
   if (engineMock()) return { token: 'mock-not-sent', method: 'api-key' };
   const vendor = textVendor(model);
@@ -73,7 +74,8 @@ async function developmentAuth(model: string): Promise<DevelopmentAuth> {
   const auth = await languageAuth(model);
   const token = auth.Authorization?.replace(/^Bearer\s+/i, '');
   if (!token) throw new DevelopmentError('This workspace has no connected development provider.', 503);
-  return { token, method, vendor };
+  // The door the auth was issued for (a direct vendor under TEXT_DIRECT), so languageModel checks the same one.
+  return { token, method, vendor: (auth[TEXT_PROVIDER_HEADER] as TextRoute | undefined) ?? vendor };
 }
 async function reservationExists(id: string) {
   await platformReady();
