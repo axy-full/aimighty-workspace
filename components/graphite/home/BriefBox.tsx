@@ -2,10 +2,16 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ASPECTS, BRIEF_MAX, GLYPHS, LENGTHS, appendBrief, draftAspect, draftLength, withAspect, withLength, type HomeDraft } from "./home-model";
 import { BRIEF_ACCEPT, BriefFileError, readBriefFile } from "./brief-file";
+import { AttachThumbs } from "../AttachThumbs";
+import { LocalTileMedia } from "../LibraryTile";
 
 /** The references a person can add before a project exists (uploadFilesToProject's own limit). */
 export const MAX_FILES = 20;
 const REF_ACCEPT = "image/*,video/*";
+/** A stable key per added file (the same picture added twice is two files). */
+const fileKeys = new WeakMap<File, string>();
+let nextKey = 0;
+const keyOf = (file: File) => { let key = fileKeys.get(file); if (!key) { key = `ref:${++nextKey}`; fileKeys.set(file, key); } return key; };
 
 export function HomeGlyph({ d }: { d: string }) {
   return (
@@ -15,33 +21,12 @@ export function HomeGlyph({ d }: { d: string }) {
   );
 }
 
-/** An added file as a chip: its picture when it is a still, its name, and Remove. The picture's object URL lives as long as the chip. */
-function FileChip({ file, kind, onRemove, disabled }: { file: File; kind: "brief" | "ref"; onRemove: () => void; disabled: boolean }) {
-  const still = kind === "ref" && file.type.startsWith("image/");
-  return (
-    <span className="gx-hm-file" data-testid={kind === "brief" ? "home-brief-file" : "home-ref"}>
-      <span className="gx-hm-file-pic" aria-hidden="true">
-        {still ? (
-          /* A local file's preview (an object URL), not a served image: next/image has nothing to optimise. */
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img alt="" ref={(img) => {
-            if (!img) return;
-            const url = URL.createObjectURL(file);
-            img.src = url;
-            return () => URL.revokeObjectURL(url);
-          }} />
-        ) : <HomeGlyph d={kind === "brief" ? GLYPHS.doc : GLYPHS.video} />}
-      </span>
-      <span className="gx-hm-file-name" title={file.name}>{file.name}</span>
-      <button type="button" className="gx-hm-file-x" onClick={onRemove} disabled={disabled} aria-label={`Remove ${file.name}`}>×</button>
-    </span>
-  );
-}
-
 /**
  * "What are we making?" (the master's Home): the brief, Attach a brief (PDF or text, read on this device),
  * Add references, and the aspect and length chips. Everything here is carried into the project a template
- * makes. The footer (Atomik's thinking line and Start) is PR b's.
+ * makes. The footer (Atomik's thinking line and Start) is PR b's. The added files show under the box as Library tiles
+ * (components/graphite/AttachThumbs), each an object URL on this device until Start or a template uploads it; pressing one
+ * removes it.
  */
 export function BriefBox({ draft, onDraft, refs, onRefs, briefFile, onBriefFile, busy, footer = null }: {
   draft: HomeDraft;
@@ -98,19 +83,21 @@ export function BriefBox({ draft, onDraft, refs, onRefs, briefFile, onBriefFile,
     setStatus(picked.length > room ? { tone: "problem", text: `Added ${room}; up to ${MAX_FILES} files.` } : null);
   };
 
+  const files = [
+    ...(briefFile ? [{ key: "brief", name: briefFile.name, picture: <LocalTileMedia file={briefFile} />, testId: "home-brief-file" }] : []),
+    ...refs.map((file) => ({ key: keyOf(file), name: file.name, picture: <LocalTileMedia file={file} />, testId: "home-ref" })),
+  ];
+  const remove = (key: string) => {
+    if (key === "brief") onBriefFile(null);
+    else onRefs(refs.filter((file) => keyOf(file) !== key));
+  };
+
   return (
+    <>
     <div className="gx-hm-box" data-filled={draft.text.trim() ? "" : undefined} data-testid="home-box">
       <textarea className="gx-hm-text" value={draft.text} maxLength={BRIEF_MAX} disabled={busy} aria-label="What are we making?" data-testid="home-brief"
         placeholder="A 15-second fashion film about quiet confidence. A woman crosses a sculptural desert; a mirror sphere reflects the world around her."
         onChange={(e) => onDraft({ ...draft, text: e.target.value })} />
-      {briefFile || refs.length ? (
-        <div className="gx-hm-files" aria-label="Added files">
-          {briefFile ? <FileChip file={briefFile} kind="brief" disabled={locked} onRemove={() => onBriefFile(null)} /> : null}
-          {refs.map((file, i) => (
-            <FileChip key={`${file.name}:${file.size}:${file.lastModified}:${i}`} file={file} kind="ref" disabled={locked} onRemove={() => onRefs(refs.filter((_, j) => j !== i))} />
-          ))}
-        </div>
-      ) : null}
       <div className="gx-hm-row">
         <button type="button" className="gx-hm-btn" onClick={() => briefInput.current?.click()} disabled={locked} aria-busy={readingName ? true : undefined} data-testid="home-attach">
           <HomeGlyph d={GLYPHS.doc} />{readingName ? "Reading…" : "Attach a brief"}
@@ -142,5 +129,7 @@ export function BriefBox({ draft, onDraft, refs, onRefs, briefFile, onBriefFile,
       ) : null}
       {footer}
     </div>
+    <AttachThumbs testId="home-files" items={files} disabled={locked} onRemove={remove} />
+    </>
   );
 }
