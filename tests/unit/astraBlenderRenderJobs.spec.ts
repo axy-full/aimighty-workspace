@@ -121,3 +121,14 @@ test('a funded render whose host lost its runtime credentials fails before the c
  expect(f.creates).toBe(0);expect(f.charges).toEqual([0]);
  expect((await m.db().execute('SELECT runtime_id,settled FROM astra_render_jobs')).rows[0]).toMatchObject({runtime_id:null,settled:1});
 }));
+
+test('a job another host claimed between this host\'s checks and its failure is neither failed nor refunded here',async()=>context('two-host-claim',async m=>{
+ const f=fake();const first=await m.prepareAstraRender(m.input,'u_test',undefined,f.deps);
+ const hostA='astra-blender-00000000-0000-4000-8000-00000000000a';
+ // Host B passes its checks; host A claims the job; host B's funding check then fails.
+ f.deps.assertFunding=async()=>{await m.db().execute({sql:"UPDATE astra_render_jobs SET status='starting',runtime_id=?,updated_at=? WHERE id=? AND status='queued'",args:[hostA,Date.now(),first.job.id]});throw new Error('Workspace suspended before execution');};
+ await m.runAstraRender(first.job.id,f.deps);
+ expect(f.charges).toEqual([]);expect(f.creates).toBe(0);
+ expect((await m.db().execute({sql:'SELECT status,runtime_id,settled,error FROM astra_render_jobs WHERE id=?',args:[first.job.id]})).rows[0]).toMatchObject({status:'starting',runtime_id:hostA,settled:0,error:null});
+ expect(Number((await m.db().execute('SELECT COUNT(*) AS n FROM astra_render_storage')).rows[0].n)).toBe(1);
+}));

@@ -233,12 +233,20 @@ export async function runAstraRender(id: string, deps: AstraRenderDependencies =
         await settle((await record(id))!, 'succeeded', usage, deps);
     }
     catch (error) {
-        const current = (await record(id))!;
         const message = error instanceof Error ? error.message : 'Native render failed.';
+        if (!begun) {
+            // Another host may have claimed this job since the checks above. Only a job that is
+            // still unclaimed is ended here, in the same statement that ends it; a claimed one is left alone.
+            const ended = await db().execute({ sql: "UPDATE astra_render_jobs SET status=CASE WHEN cancel_requested=1 THEN 'cancelled' ELSE 'failed' END,error=?,updated_at=? WHERE id=? AND status='queued' AND runtime_id IS NULL", args: [message.slice(0, 600), Date.now(), id] });
+            if (ended.rowsAffected) {
+                const current = (await record(id))!;
+                await settle(current, current.status === 'cancelled' ? 'cancelled' : 'failed', null, deps);
+            }
+            return;
+        }
+        const current = (await record(id))!;
         await db().execute({ sql: 'UPDATE astra_render_jobs SET error=?,updated_at=? WHERE id=?', args: [message.slice(0, 600), Date.now(), id] });
-        if (!begun)
-            await settle(current, current.cancel_requested ? 'cancelled' : 'failed', null, deps);
-        else if (usage) {
+        if (usage) {
             const receipts=JSON.parse(current.artifacts_json) as StoredAstraArtifact[];
             if(!current.outputs_registered && receipts.some(a=>a.kind==='blend') && receipts.some(a=>a.kind==='preview'))
                 await db().execute({sql: "UPDATE astra_render_jobs SET status='uncertain',error=?,updated_at=? WHERE id=?",args:['Native outputs are stored; project registration will resume without a new render.',Date.now(),id]});
