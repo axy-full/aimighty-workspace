@@ -16,32 +16,61 @@ import { useAgentRun } from "./use-board-agent";
  */
 export type BoardStartInput = { words: string; aspect: string; seconds: number | null; attachments: string[] };
 export type BoardAgentSeam = {
-  /** What "Start" costs (Atomik's thinking), from the server's estimate; null while the board has no Atomik. */
-  startPrice: { credits: number | null; state: "loading" | "ready" | "unavailable" } | null;
+  /** What "Start" costs (Atomik's thinking), from the server's estimate with the attached files priced in; null while the board has no Atomik. `problem`: why it can't be priced (the server's words). */
+  startPrice: { credits: number | null; state: "loading" | "ready" | "unavailable"; problem?: string } | null;
   /** Starts Atomik on this board (a person pressed Start at the price shown); null while the board has no Atomik. Resolves to a refusal, or null. */
   start: ((input: BoardStartInput) => Promise<string | null>) | null;
   /** The board agent's durable run, as the server holds it (null: none yet, or not read yet). */
   run: BoardAgentView | null;
 };
 
-export function useBoardAgent(): BoardAgentSeam {
+type Priced = { key: string; planning: number | null; problem: string | null };
+const keyOf = (attachments: readonly string[]) => attachments.join(" ");
+
+/**
+ * The board's Atomik seam. `attachments` (`upload:<id>`): the files Start will hand Atomik. They go into the
+ * planning call, so they are priced in: with files attached the figure is the server's for those files (the same
+ * estimator the charge reserves at), read again on the press; without, the board's shared read.
+ */
+export function useBoardAgent(attachments: readonly string[] = []): BoardAgentSeam {
   const agent = useAgentRun();
   const answer = agent.answer;
-  const planning = agent.terms?.planning ?? null;
+  const enabled = !!answer?.enabled;
+  const { quote } = agent;
+  const key = keyOf(attachments);
+  const [priced, setPriced] = useState<Priced | null>(null);
+  useEffect(() => {
+    if (!key || !enabled) return;
+    let live = true;
+    void quote(key.split(" ")).then((got) => { if (live) setPriced({ key, planning: "error" in got ? null : got.planning, problem: "error" in got ? got.error : null }); });
+    return () => { live = false; };
+  }, [key, enabled, quote]);
+  const own = key && priced?.key === key ? priced : null;
+  const planning = key ? own?.planning ?? null : agent.terms?.planning ?? null;
   const start = async (input: BoardStartInput): Promise<string | null> => {
     if (planning === null) return "Atomik’s thinking can’t be priced right now.";
+    const files = input.attachments;
+    if (keyOf(files) !== key) return "The attached files changed. Press Start again at the price shown.";
     /* Start is the person's press at this figure: if it has moved, nothing is asked and the button shows the new one. */
-    await agent.refresh();
-    const now = agent.latestPlanning();
+    let now: number | null;
+    if (files.length) {
+      const got = await quote(files);
+      if ("error" in got) { setPriced({ key, planning: null, problem: got.error }); return got.error; }
+      now = got.planning;
+      if (now !== null) setPriced({ key, planning: now, problem: null });
+    } else {
+      await agent.refresh();
+      now = agent.latestPlanning();
+    }
     if (now !== null && now > planning) return `Atomik’s thinking now costs up to ${now} cr, not ${planning} cr. Press Start again at the new price.`;
-    return agent.plan(input.words, planning, { aspect: input.aspect, seconds: input.seconds });
+    return agent.plan(input.words, planning, { aspect: input.aspect, seconds: input.seconds }, files);
   };
   if (!answer || !answer.enabled) return { startPrice: null, start: null, run: answer?.run ?? null };
-  return {
-    startPrice: planning !== null ? { credits: planning, state: "ready" } : agent.ready ? { credits: null, state: "unavailable" } : { credits: null, state: "loading" },
-    start,
-    run: answer.run,
-  };
+  const startPrice: NonNullable<BoardAgentSeam["startPrice"]> =
+    planning !== null ? { credits: planning, state: "ready" }
+    : key ? (own ? { credits: null, state: "unavailable", ...(own.problem ? { problem: own.problem } : {}) } : { credits: null, state: "loading" })
+    : agent.ready ? { credits: null, state: "unavailable" } : { credits: null, state: "loading" };
+  return { startPrice, start, run: answer.run };
 }
 
 export type BoardAgentDockProps = { ctx: BoardCtx; open: boolean; onOpenChange: (open: boolean) => void };
