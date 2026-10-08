@@ -174,7 +174,7 @@ test("the attached files reach the planning call: an image as a picture, a text 
     const got = seen!;
     expect(got.snapshot.attached).toEqual([
       { id: "upload:up-still", name: "still.png", kind: "image" },
-      { id: "upload:up-brief", name: "brief.txt", kind: "text" },
+      { id: "upload:up-brief", name: "brief.txt", kind: "text", bytes: BRIEF.length },
       { id: "upload:up-script", name: "script.pdf", kind: "file" },
     ]);
     expect(got.content.texts).toEqual([{ id: "upload:up-brief", text: BRIEF }]);
@@ -249,6 +249,15 @@ test("quote = charge with files attached: Start's figure prices them in by the c
     expect((await agent.advanceRigAgentRun(runId, deps)).state).toBe("failed");
     expect(await meterRow(agent.planEventId(runId))).toBeNull();
     expect(await balance(ws)).toBe(start - settled.credits);
+
+    /* A text file is priced at the most its excerpt can come to: a short one adds less than a long one, and never more than the excerpt's cap. */
+    const { attachmentAllowanceTokens, PLANNER_TEXT_CHARS } = await import("../../lib/workbench/rig-agent-planner");
+    const short = attachmentAllowanceTokens([{ id: "t", name: "t.txt", kind: "text", bytes: 300 }]);
+    const long = attachmentAllowanceTokens([{ id: "t", name: "t.txt", kind: "text", bytes: 90_000 }]);
+    expect(short).toBeLessThan(long);
+    expect(long).toBe(attachmentAllowanceTokens([{ id: "t", name: "t.txt", kind: "text" }]));
+    expect(long - short).toBe(PLANNER_TEXT_CHARS * 3 - 900);
+    expect(attachmentAllowanceTokens([{ id: "f", name: "f.pdf", kind: "file" }])).toBe(0);
 
     /* No files, no change: the figure is the board's as before. */
     const { boardSnapshot } = await import("../../lib/workbench/rig-agent-plan");
