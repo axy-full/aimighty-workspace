@@ -666,7 +666,7 @@ for (const agentKind of ['raw', 'suite', 'astra'] as const) test(`direct ${agent
   } } finally { if (priorKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = priorKey; if (previousMock === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = previousMock; }
 });
 
-test('until direct text is billed (PR 3), a TEXT_DIRECT model is refused before a quote, a reservation or a call', async () => {
+for (const agentKind of ['raw', 'suite'] as const) test(`a TEXT_DIRECT ${agentKind} job is quoted at its cold cache ceiling, settled from its own usage on its vendor, and a route changed after approval is refused before sending (PR 3)`, async () => {
   const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
   delete process.env.ENGINE_MOCK; process.env.ANTHROPIC_API_KEY = 'test-anthropic-key-never-sent';
   const realFetch = globalThis.fetch;
@@ -675,24 +675,50 @@ test('until direct text is billed (PR 3), a TEXT_DIRECT model is refused before 
     await runInTenant(workspace(), async () => {
       const { input } = await fixture();
       const h = harness();
+      const request = { ...input, model: model.id, refs: [], ...(agentKind === 'suite' ? { suite: 'particl' as const } : {}) };
       process.env.TEXT_DIRECT = 'anthropic';
-      await expect(quoteAtomikJob(input, 'owner', h.deps)).rejects.toMatchObject({ name: 'TextNotSentError', status: 422, message: expect.stringContaining('not billed yet (PR 3)') });
-      await expect(prepareAtomikJob(input, 'owner', undefined, h.deps)).rejects.toMatchObject({ status: 422 });
-      expect(h.reservations()).toBe(0); expect(h.events).toHaveLength(0);
-      // A job approved before the switch is refused at run time, before the provider: failed, nothing charged.
+      // Without cache prices a direct Claude call has no ceiling: refused before any reservation.
+      await expect(quoteAtomikJob(request, 'owner', h.deps)).rejects.toMatchObject({ status: 503 });
+      const priced: CatalogModel = { ...model, pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+      h.deps.models = async () => [priced];
+      const quote = await quoteAtomikJob(request, 'owner', h.deps);
       delete process.env.TEXT_DIRECT;
-      const prepared = await prepareAtomikJob({ ...input, requestId: randomUUID() }, 'owner', undefined, h.deps);
+      const gatewayQuote = await quoteAtomikJob(request, 'owner', h.deps);
+      expect(quote.estimateUsd).toBeGreaterThan(gatewayQuote.estimateUsd);
       process.env.TEXT_DIRECT = 'anthropic';
+      let reservedEngine = '';
+      h.deps.reserve = async event => { reservedEngine = event.engine; };
+      h.deps.assertFunding = async (_id, engine) => { if (engine !== reservedEngine) throw new Error('The funding source changed. No paid request was sent.'); };
+      const prepared = await prepareAtomikJob({ ...request, maxCredits: quote.estimateCredits }, 'owner', undefined, h.deps);
+      expect(reservedEngine).toBe('anthropic');
+      const row = (await db().execute({ sql: 'SELECT provider_body FROM workbench_atomik_jobs WHERE id=?', args: [prepared.job.id] })).rows[0];
+      expect(JSON.parse(String(row.provider_body)).pricingModel.pricing).toEqual(priced.pricing);
+      expect((await db().execute({ sql: 'SELECT ledger FROM atomik_spend WHERE id=?', args: [prepared.job.id] })).rows[0].ledger).toBe('anthropic');
+      const usage = { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 40 } };
+      const result = agentKind === 'suite' ? { ...validReply, actions: [{ kind: 'image', title: 'Hero', prompt: 'Motivated soft light.', referenceIds: [] }], hooks: [], assumptions: [] } : validReply;
+      let sent = 0;
+      const reply = async () => { sent++; return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(result) } }], usage: agentKind === 'raw' ? usage : { steps: [usage, usage] } }) }; };
+      h.deps.run = async req => { expect(req.body).not.toContain('pricingModel'); return reply(); };
+      h.deps.runSuite = reply;
+      h.deps.models = async () => { throw new Error('Must use the saved price, never a new catalog lookup.'); };
       await runAtomikJob(prepared.job.id, 'owner', h.deps);
-      expect(h.calls()).toBe(0);
-      const [job] = await listAtomikJobs('owner', input.projectId);
-      expect(job).toMatchObject({ status: 'failed', costUsd: 0 });
-      expect(h.events.at(-1)).toMatchObject({ status: 'failed', engineCostUsd: 0 });
+      expect(sent).toBe(1);
+      const [done] = await listAtomikJobs('owner', input.projectId, { meter: h.deps.meter }, request.requestId);
+      expect(done.status).toBe('succeeded');
+      expect(done.costUsd).toBeCloseTo((30 * .0000001 + 30 * .00000001 + 40 * .000000125 + 20 * .0000003) * (agentKind === 'raw' ? 1 : 2), 15);
+      expect(h.events.at(-1)).toMatchObject({ engine: 'anthropic', status: 'succeeded' });
+      // Approved on the gateway, then TEXT_DIRECT switched Claude to Anthropic: refused before the provider, nothing charged.
+      h.deps.models = async () => [priced];
+      delete process.env.TEXT_DIRECT;
+      const earlier = await prepareAtomikJob({ ...request, requestId: randomUUID(), maxCredits: gatewayQuote.estimateCredits }, 'owner', undefined, h.deps);
+      expect(reservedEngine).toBe('vercel');
+      process.env.TEXT_DIRECT = 'anthropic';
+      await runAtomikJob(earlier.job.id, 'owner', h.deps);
+      expect(sent).toBe(1);
+      const [refused] = await listAtomikJobs('owner', input.projectId, { meter: h.deps.meter }, earlier.job.requestId);
+      expect(refused).toMatchObject({ status: 'failed', costUsd: 0 });
+      expect(h.events.at(-1)).toMatchObject({ engine: 'anthropic', status: 'failed', engineCostUsd: 0 });
     });
-    // The suite agent's own door refuses too, before building a model.
-    process.env.TEXT_DIRECT = 'anthropic';
-    const { runSuiteAgent } = await import('../../lib/workbench/suite-agent');
-    await expect(runSuiteAgent({ model: 'anthropic/claude-sonnet-4.6' } as Parameters<typeof runSuiteAgent>[0], {})).rejects.toMatchObject({ name: 'TextNotSentError', status: 422 });
   } finally {
     globalThis.fetch = realFetch;
     for (const [name, value] of [['ENGINE_MOCK', saved.mock], ['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }

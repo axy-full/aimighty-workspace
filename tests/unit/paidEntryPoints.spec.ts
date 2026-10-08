@@ -641,22 +641,36 @@ test('legacy direct OpenAI saves cache receipts and price snapshot, retaining un
   }
 });
 
-test("until direct text is billed (PR 3), paid text refuses a TEXT_DIRECT model before quoting, reserving or sending: 422, nothing charged", async () =>
-  scope("text_direct_gate", async () => {
-    const { runPaidText, quotePaidText, paidTextFailure } = await import("../../lib/paidText");
+test("a TEXT_DIRECT model is quoted at its cold cache ceiling and settled from its usage on its vendor's ledger (PR 3: no longer refused)", async () =>
+  scope("text_direct_billed", async () => {
+    const { runPaidText, quotePaidText } = await import("../../lib/paidText");
+    const { db } = await import("../../lib/db");
+    const { billCredits } = await import("../../lib/creditTerms");
     const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
-    delete process.env.ENGINE_MOCK; process.env.TEXT_DIRECT = "anthropic"; process.env.ANTHROPIC_API_KEY = "test-anthropic-key-never-sent";
+    delete process.env.ENGINE_MOCK; process.env.ANTHROPIC_API_KEY = "test-anthropic-key-never-sent";
     try {
-      const claude = { ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic" };
-      const direct = { ...call, model: claude.id };
+      const claude: CatalogModel = { ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic", pricing: { input: .000003, output: .000015, input_cache_read: .0000003, input_cache_write: .00000375 } };
+      const direct = { ...call, model: claude.id, id: "text_direct_billed" };
+      const gatewayQuote = await quotePaidText(direct, claude);
+      process.env.TEXT_DIRECT = "anthropic";
+      const quote = await quotePaidText(direct, claude);
+      // A cold cache write (1.25× input) is the most a direct Claude call can cost.
+      expect(quote.estimateUsd!).toBeGreaterThan(gatewayQuote.estimateUsd!);
       let calls = 0;
-      await expect(quotePaidText(direct, claude)).rejects.toMatchObject({ name: "TextNotSentError", status: 422 });
-      const refused = await runPaidText(direct, { model: claude, submit: async () => { calls++; return { ok: true, status: 200, text: "{}" }; } }).catch((error: unknown) => error);
-      expect(refused).toMatchObject({ name: "TextNotSentError", status: 422, message: expect.stringContaining("not billed yet (PR 3)") });
-      const response = paidTextFailure(refused);
-      expect(response.status).toBe(422);
-      expect(calls).toBe(0);
-      expect(await metered("text_direct_gate")).toHaveLength(0);
+      const submit = async (request: { body: string }) => {
+        calls++; expect(request.body).not.toContain("pricingModel");
+        return { ok: true, status: 200, text: JSON.stringify({ provider: "anthropic", choices: [{ message: { content: "A written idea." } }],
+          usage: { prompt_tokens: 200, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 40 } } }) };
+      };
+      const result = await runPaidText(direct, { model: claude, submit });
+      const usd = 100 * .000003 + 60 * .0000003 + 40 * .00000375 + 25 * .000015;
+      expect(calls).toBe(1);
+      expect(result.costUsd).toBeCloseTo(usd, 15);
+      expect(quote.estimateUsd!).toBeGreaterThanOrEqual(result.costUsd);
+      const [event] = await metered("text_direct_billed");
+      expect(event).toMatchObject({ engine: "anthropic", status: "succeeded", billed_credits: billCredits(usd, "text") });
+      const job = (await db().execute({ sql: "SELECT request_body FROM paid_text_jobs WHERE id=?", args: [direct.id] })).rows[0];
+      expect(JSON.parse(String(job.request_body)).pricingModel.pricing).toEqual(claude.pricing);
     } finally {
       for (const [name, value] of [["ENGINE_MOCK", saved.mock], ["TEXT_DIRECT", saved.direct], ["ANTHROPIC_API_KEY", saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
     }
