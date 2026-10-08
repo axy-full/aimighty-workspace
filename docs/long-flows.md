@@ -116,5 +116,5 @@ Neither option needs a new worker event. `/api/generate` already finishes its wo
 After 1–4 the longest silent wait on any of these routes is ~25 s (PR 3), 85 s (MCP) or 90 s (enhance stall). The chunk and status requests are short.
 
 ## Method and clean-up
-- Scripts lived in the session scratchpad. Files were written to `/tmp/particl-suites/long-flows/files` and the server wrote to `~/wt/long-flows/.data`; both were deleted after the run. The mock server was stopped and the slot released. ENGINE_MOCK=1; no provider, R2, Blob, Turso, Vercel or particl.si call.
+- Scripts lived in the session scratchpad. Files were written to a scratch folder under `/tmp` and the server wrote to `~/wt/long-flows/.data`; both were deleted after the run. The mock server was stopped and the slot released. ENGINE_MOCK=1; no provider, R2, Blob, Turso, Vercel or particl.si call.
 - Measured on `next dev`, so production `next start` should be equal or faster.
