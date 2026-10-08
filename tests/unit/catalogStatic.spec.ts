@@ -11,7 +11,8 @@ import { ATOMIK_MODEL_IDS } from "../../lib/atomikModelPolicy";
 import { ENHANCER_MODELS } from "../../lib/shell/enhancer";
 import { DEFAULT_TEXT_MODELS } from "../../lib/platformLayer";
 import { ASTRA_BLENDER_MODEL } from "../../lib/astra-blender/scene";
-import { OFFERED_CATALOG_IDS, PRICED_TEXT_IDS, STILL_CATALOG_IDS } from "../../lib/catalogOffered";
+import { OFFERED_CATALOG_IDS, PRICED_TEXT_IDS, SNAPSHOT_CATALOG_IDS, STILL_CATALOG_IDS } from "../../lib/catalogOffered";
+import { DROPPED_MODEL_IDS } from "../../lib/modelAliases";
 import committedJson from "../../lib/modelCatalog.json";
 
 /*
@@ -96,17 +97,21 @@ test("every model a feature can pick has input and output prices and a provider 
     const m = byId.get(id);
     return m?.owner === "openai" && textQuoteCostUsd(m, 10_000, 1_000, true) == null;
   });
-  expect(directUnquoted.sort()).toEqual([
-    "openai/gpt-5-pro", "openai/gpt-5.2-pro", "openai/gpt-5.4-pro", "openai/gpt-5.5-pro", "openai/gpt-oss-20b", "openai/o3-pro",
-  ]);
+  // Those were the Pro models and gpt-oss-20b, which no feature offers since
+  // 8 October 2026 (lib/modelAliases.ts): every OpenAI model a feature can pick
+  // now quotes on the direct key.
+  expect(directUnquoted.sort()).toEqual([]);
 });
 
 test("the snapshot is dated, covers every offered id, and names a provider for each", () => {
   expect(committed.source).toBe(SOURCE);
+  // Offered, plus the dropped ids kept only so old ledger rows keep a price.
+  expect([...SNAPSHOT_CATALOG_IDS].sort()).toEqual([...new Set([...OFFERED_CATALOG_IDS, ...DROPPED_MODEL_IDS])].sort());
+  for (const id of DROPPED_MODEL_IDS) expect(OFFERED_CATALOG_IDS, id).not.toContain(id);
   expect(committed.pricedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   const ids = committed.models.map((m) => m.id);
   expect(new Set(ids).size).toBe(ids.length);
-  expect([...ids, ...committed.missing].sort()).toEqual([...OFFERED_CATALOG_IDS].sort());
+  expect([...ids, ...committed.missing].sort()).toEqual([...SNAPSHOT_CATALOG_IDS].sort());
   for (const m of committed.models) {
     expect(m.pricedAt, m.id).toBe(committed.pricedAt);
     expect(m.providerId, m.id).toBe(CATALOG_PROVIDER_OF_OWNER[m.owner]);
@@ -128,11 +133,11 @@ test(`the snapshot's prices are at most ${MAX_AGE_DAYS} days old`, () => {
 
 test("the static catalogue serves exactly what the gateway read serves", async () => {
   const live = await gatewayCatalog(true);
-  const offered = live.filter((m) => OFFERED_CATALOG_IDS.includes(m.id));
+  const offered = live.filter((m) => SNAPSHOT_CATALOG_IDS.includes(m.id));
   expect(live.length).toBe(offered.length + UNOFFERED.length);
   // Every priced entry is compared, not a sample.
   expect(offered.map((m) => m.id).sort()).toEqual(committed.models.map((m) => m.id).sort());
-  const snapshot = JSON.parse(JSON.stringify(buildCatalogSnapshot(gatewayData, OFFERED_CATALOG_IDS, "2026-10-08", SOURCE))) as CatalogSnapshot;
+  const snapshot = JSON.parse(JSON.stringify(buildCatalogSnapshot(gatewayData, SNAPSHOT_CATALOG_IDS, "2026-10-08", SOURCE))) as CatalogSnapshot;
   const served = staticCatalog(snapshot);
   expect(served).toEqual(offered);
   expect(JSON.stringify(served)).toBe(JSON.stringify(offered));
@@ -145,12 +150,12 @@ test("the static catalogue serves exactly what the gateway read serves", async (
   const viaGateway = await catalog(true);
   process.env.MODEL_CATALOG = "static";
   const viaStatic = new Map((await catalog(true)).map((m) => [m.id, m]));
-  for (const m of viaGateway.filter((x) => OFFERED_CATALOG_IDS.includes(x.id)))
+  for (const m of viaGateway.filter((x) => SNAPSHOT_CATALOG_IDS.includes(x.id)))
     expect(JSON.stringify(viaStatic.get(m.id)), m.id).toBe(JSON.stringify(m));
 });
 
 test("OpenAI models and stills are served on their provider's key; ENGINE_MOCK serves everything", async () => {
-  const snapshot = buildCatalogSnapshot(gatewayData, OFFERED_CATALOG_IDS, "2026-10-08", SOURCE);
+  const snapshot = buildCatalogSnapshot(gatewayData, SNAPSHOT_CATALOG_IDS, "2026-10-08", SOURCE);
   const ids = () => new Set(staticCatalog(snapshot).map((m) => m.id));
   expect(ids()).toEqual(new Set(snapshot.models.map((m) => m.id)));
   delete process.env.OPENAI_API_KEY;
@@ -192,7 +197,7 @@ test("with the static catalogue, OpenAI text still needs an id the key can list;
 });
 
 test("in static mode Claude, Gemini and Grok text is offered where its calls will go: direct needs the key, the gateway needs only the gateway", () => {
-  const snapshot = buildCatalogSnapshot(gatewayData, OFFERED_CATALOG_IDS, "2026-10-08", SOURCE);
+  const snapshot = buildCatalogSnapshot(gatewayData, SNAPSHOT_CATALOG_IDS, "2026-10-08", SOURCE);
   const textOf = (owner: string) => snapshot.models.filter((m) => m.owner === owner && !m.outputModalities?.includes("image")).map((m) => m.id);
   const claude = textOf("anthropic"), gemini = textOf("google"), grok = textOf("spacexai");
   expect(claude.length && gemini.length && grok.length).toBeTruthy();
@@ -254,9 +259,9 @@ test("MODEL_CATALOG: only the exact value static reads the snapshot; an unknown 
 });
 
 test("textCostUsd and the quote functions give the same numbers on both catalogues", async () => {
-  const live = (await gatewayCatalog(true)).filter((m) => m.type === "language" && OFFERED_CATALOG_IDS.includes(m.id));
+  const live = (await gatewayCatalog(true)).filter((m) => m.type === "language" && SNAPSHOT_CATALOG_IDS.includes(m.id));
   const committedById = new Map(staticCatalog().map((m) => [m.id, m]));
-  const fromFixture = new Map(staticCatalog(JSON.parse(JSON.stringify(buildCatalogSnapshot(gatewayData, OFFERED_CATALOG_IDS, "2026-10-08", SOURCE)))).map((m) => [m.id, m]));
+  const fromFixture = new Map(staticCatalog(JSON.parse(JSON.stringify(buildCatalogSnapshot(gatewayData, SNAPSHOT_CATALOG_IDS, "2026-10-08", SOURCE)))).map((m) => [m.id, m]));
   expect(live.length).toBeGreaterThan(8);
   const sizes: [number, number][] = [[0, 0], [1, 1], [8_000, 1_800], [199_999, 4_000], [200_000, 4_000], [200_001, 4_000], [271_999, 1_000], [272_000, 1_000], [272_001, 1_000], [1_000_000, 32_000]];
   const numbers = (m: CatalogModel) => sizes.flatMap(([i, o]) => {

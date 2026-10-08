@@ -1,6 +1,7 @@
 import { vendorKey } from './vendorKeys';
 import { textVendor } from './openai-direct';
 import { savedAtomikChoice, selectAtomikModel } from "./atomikModelPolicy";
+import { aliasModel } from "./modelAliases";
 import { withMediaSources } from "./mediaMutation";
 import { MediaSourceError } from "./mediaBindings";
 import { db, ready, now, id as newId } from "./db";
@@ -147,7 +148,8 @@ const toMessage = (r: Row): Message => ({
 const toChat = (r: Row): Chat => {
   /* A chat saved on a model Atomik no longer offers reads as Auto, with the
      note that says so; the stored row is left as it was. Its effort was that
-     model's, so it goes too. */
+     model's, so it goes too. One saved on a dropped id reads as its alias and
+     keeps its effort, which the alias also offers (tests/unit/modelAliases.spec.ts). */
   const saved = savedAtomikChoice(String(r.model ?? "auto"));
   return {
     id: String(r.id), projectId: r.project_id ? String(r.project_id) : null,
@@ -314,7 +316,8 @@ export async function patchChat(chatId: string, patch: {
   const sets: string[] = [];
   const args: (string | number | null)[] = [];
   if (patch.title != null) { sets.push("title = ?"); args.push(patch.title.slice(0, 80)); }
-  if (patch.model != null) { sets.push("model = ?"); args.push(patch.model); }
+  /* A dropped id is saved as its alias, the model that will run (lib/modelAliases.ts). */
+  if (patch.model != null) { sets.push("model = ?"); args.push(aliasModel(patch.model)); }
   if (patch.effort != null) { sets.push("effort = ?"); args.push(patch.effort); }
   if (patch.agentMode != null) { sets.push("agent_mode = ?"); args.push(patch.agentMode); }
   if (patch.status != null) { sets.push("status = ?"); args.push(patch.status); }

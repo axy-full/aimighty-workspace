@@ -3,7 +3,7 @@
  * One-off: freeze the gateway's public model list into lib/modelCatalog.json.
  *
  * Reads GET https://ai-gateway.vercel.sh/v1/models (public metadata: no key,
- * no cost), keeps only the ids Particl offers (lib/catalogOffered.ts) and maps
+ * no cost), keeps only the ids Particl offers, and the dropped ids old ledger rows name (lib/catalogOffered.ts SNAPSHOT_CATALOG_IDS), and maps
  * each with the same function the live read uses (toCatalogModel in
  * lib/catalog.ts), so prices, limits, modalities and reasoning options are
  * exactly what is billed today. Nothing here runs at request time.
@@ -39,7 +39,7 @@ if (pricedAtArg && !from) fail("--priced-at only goes with --from; a live read i
 
 const jiti = createJiti(import.meta.url, { alias: { "@": root } });
 const { buildCatalogSnapshot } = await jiti.import(path.join(root, "lib/catalog.ts"));
-const { OFFERED_CATALOG_IDS, PRICED_TEXT_IDS } = await jiti.import(path.join(root, "lib/catalogOffered.ts"));
+const { SNAPSHOT_CATALOG_IDS, PRICED_TEXT_IDS } = await jiti.import(path.join(root, "lib/catalogOffered.ts"));
 
 let body;
 if (from) body = JSON.parse(await readFile(path.resolve(from), "utf8"));
@@ -51,7 +51,7 @@ else {
 if (!Array.isArray(body?.data) || !body.data.length) throw new Error("the model list is empty");
 
 const pricedAt = pricedAtArg ?? new Date().toISOString().slice(0, 10);
-const snapshot = buildCatalogSnapshot(body.data, OFFERED_CATALOG_IDS, pricedAt, SOURCE);
+const snapshot = buildCatalogSnapshot(body.data, SNAPSHOT_CATALOG_IDS, pricedAt, SOURCE);
 const text = `${JSON.stringify(snapshot, null, 2)}\n`;
 
 const perProvider = {};

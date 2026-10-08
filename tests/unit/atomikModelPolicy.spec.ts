@@ -14,14 +14,16 @@ test("an explicit retired or unapproved thinking model cannot silently become a 
   expect(() => selectAtomikModel("google/gemini-3-pro-image", available)).toThrow("not offered");
   /* A model Atomik used to offer is refused with the reason, never swapped for another paid model. */
   expect(() => selectAtomikModel("google/gemini-3.1-pro-preview", [...available, "google/gemini-3.1-pro-preview"])).toThrow("no longer offered in Atomik");
-  expect(() => selectAtomikModel("openai/gpt-5.5-pro", available)).toThrow("currently unavailable");
+  expect(() => selectAtomikModel("openai/gpt-5.4", available)).toThrow("currently unavailable");
+  /* A dropped id is not refused: it is its alias, the nearest offered model (lib/modelAliases.ts). */
+  expect(selectAtomikModel("openai/gpt-5.5-pro", available)).toBe("openai/gpt-5.5");
   expect(selectAtomikModel("anthropic/claude-sonnet-4.6", available)).toBe("anthropic/claude-sonnet-4.6");
 });
 
 test("the planner catalogue is the Claude, OpenAI and Grok part of the verified text catalogue, and excludes media and classifiers", async () => {
   const { ATOMIK_MODEL_IDS, VERIFIED_TEXT_MODEL_IDS, isAtomikModel, isVerifiedTextModel, isRetiredAtomikModel } = await import('../../lib/atomikModelPolicy');
-  expect(VERIFIED_TEXT_MODEL_IDS.length).toBe(89);
-  expect(ATOMIK_MODEL_IDS.length).toBe(78);
+  expect(VERIFIED_TEXT_MODEL_IDS.length).toBe(80);
+  expect(ATOMIK_MODEL_IDS.length).toBe(69);
   for (const id of ['openai/gpt-6-astra', 'anthropic/claude-opus-5', 'openai/gpt-4o-mini', 'spacexai/grok-4.7', 'spacexai/grok-4.1-fast-reasoning']) expect(isAtomikModel(id)).toBe(true);
   /* Gemini is verified text, used by the prompt enhancer, and no longer Atomik's. */
   for (const id of ['google/gemini-3.8-flash', 'google/gemini-3.1-pro-preview']) {
