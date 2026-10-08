@@ -1,6 +1,7 @@
 # Status now: 8 October 2026, 06:34 IST, Release 1 lead moved to "contabo"
 
-**PAUSED at the owner's request (8 Oct, about 06:15 IST).** No agents or servers running; all work pushed. Resume from this file.
+**Resumed 10:41 IST (owner): staging on the self-hosted server PASSED on release/1 c287f044** (/setup sign-in, rename, upload to staging R2 with thumbnail; health ok).
+Now running (files and PRs only, nothing live): (1) prompt-box file thumbnails, `feat/r1-attach-thumbs`; (2) Uploads panel says "interrupted" after a finished upload, `fix/r1-upload-done-state`; (3a/c/d) production runbook: live-copy settings, Traefik lines, Cloudflare cutover and rollback, Astra via Sandbox, `docs/r1-prod-runbook`; (3b) #566 gets the tests/ops fix plus a list of what main needs to run self-hosted. No merge to main without the owner's "go".
 
 **09:58 IST, one fix while paused:** the staging Docker build failed on 0e7bbe5 (TS2307: a rehearsal script imported tests/). PR #567 moves the rehearsal to tests/ops/ and keeps tests/ out of the image. Proof build without the .dockerignore paths passed; fresh review PASS. Merged: release/1 = c287f044. Owner to redeploy staging.
 
