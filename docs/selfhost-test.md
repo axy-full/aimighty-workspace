@@ -608,12 +608,12 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
     - `cron-sync` (enabled in step 8) shows `cron-sync: 200` in its log on two runs, and the cron time in the signed-in `/api/health` answer keeps advancing.
     - Vercel, the project, **Settings, Cron Jobs** shows the cron jobs disabled (step 8).
     - If `cron-sync` does not answer 200 (for example 401: `CRON_SECRET` missing in the container), fix it in the app's env. Meanwhile re-enabling Vercel Cron Jobs is safe (the lease, step 8); disable it again once `cron-sync` answers 200.
-14. **Watch window: 14 days.**
+14. **Watch window: 14 days; Vercel fallback: owner's choice, at least 1–2 days.**
     - Daily: `/api/health`, 5xx in the app log, the cron heartbeat, the Inngest dashboard (failed syncs and runs), `dispatch.refused` and `[client-ip] ... one shared bucket` in the app log.
     - **OWNER:** the first real long job (an Astra render or a dubbing job) completes in the Inngest dashboard.
-    - **The Vercel project, deployment and domain settings stay deployed and untouched for at least 14 days after step 8.**
+    - **The Vercel production deployment stays deployed and untouched as the DNS fallback for at least 1–2 days after step 8 (owner, 8 Oct); keep it longer if anything looks wrong.** The Vercel team and project stay in any case (Sandbox renders and its snapshot belong to them). Turso point-in-time restore (30 days) covers the whole 14-day watch.
     - The commit in the signed-in health answer comes from `GIT_COMMIT_SHA`, which the Dockerfile sets from Coolify's `SOURCE_COMMIT`. It reads `local` when no commit was passed to the build; that is cosmetic. Do not set `GIT_COMMIT_SHA` by hand.
-15. **Rollback (any time in the 14 days).**
+15. **Rollback (by DNS while Vercel production is still deployed; by restore point within the 14-day watch).**
     1. **OWNER:** in Cloudflare, restore `particl.si` and `www.particl.si` to the values written down in step 2 (grey cloud, as today).
     2. **OWNER:** re-enable Vercel Cron Jobs (Vercel, the project, **Settings, Cron Jobs**, the enable button in place of **Disable Cron Jobs**; its exact label is not in Vercel's docs: check) and disable `cron-sync` on the server. **Keep the production app running** until at least the TTL has passed since the DNS change (plus a few minutes) and `dig +short particl.si @1.1.1.1` and `@8.8.8.8` show Vercel again, so visitors still on the old answer are served. Then stop it.
     3. **OWNER:** re-enable the Inngest Vercel integration's sync for the project and resync, so Inngest's app URL points at Vercel again; check it shows 6 functions.
