@@ -2,10 +2,10 @@ import { currentTenant } from "./tenant";
 
 /** Shared provider credentials stay on the server. Workspace keys from the
  * previous billing mode are retained for history but never fund new work. */
-export type VendorKeyName = "ark" | "gemini" | "gateway" | "openai" | "fal" | "elevenlabs" | "higgsfield" | "xai";
+export type VendorKeyName = "ark" | "gemini" | "gateway" | "openai" | "anthropic" | "fal" | "elevenlabs" | "higgsfield" | "xai";
 
 const ENV: Record<VendorKeyName, string> = {
-  ark: "ARK_API_KEY", gemini: "GEMINI_API_KEY", gateway: "AI_GATEWAY_API_KEY", openai: "OPENAI_API_KEY",
+  ark: "ARK_API_KEY", gemini: "GEMINI_API_KEY", gateway: "AI_GATEWAY_API_KEY", openai: "OPENAI_API_KEY", anthropic: "ANTHROPIC_API_KEY",
   fal: "FAL_KEY", elevenlabs: "ELEVENLABS_API_KEY", higgsfield: "HF_CREDENTIALS", xai: "XAI_API_KEY",
 };
 
@@ -13,6 +13,7 @@ export const VENDOR_KEYS: { name: VendorKeyName; label: string; does: string }[]
   { name: "ark", label: "Connected video account", does: "Seedance video · prompt writer" },
   { name: "gateway", label: "Connected model gateway", does: "Prompt writer · Nano Banana stills" },
   { name: "openai", label: "Connected language account", does: "Thinking models · Atomik · script development · Astra, direct" },
+  { name: "anthropic", label: "Anthropic · Claude", does: "Claude text models, direct (when switched on)" },
   { name: "gemini", label: "Connected image account", does: "Nano Banana stills, direct" },
   { name: "fal", label: "Connected render account", does: "Kling 3.0 video · motion control · Topaz upscale · identity training" },
   { name: "elevenlabs", label: "Connected audio account", does: "Voice · sound effects · music" },
@@ -29,6 +30,9 @@ export function vendorKey(name: VendorKeyName): string | null {
     return `${process.env.HF_API_KEY_ID}:${process.env.HF_API_KEY_SECRET}`;
   return process.env[ENV[name]] || null;
 }
+
+/** The environment variable a vendor key is read from, for error messages that name it. */
+export function vendorKeyEnv(name: VendorKeyName): string { return ENV[name]; }
 
 /** The same lookup by environment-variable name, for code that speaks in those. */
 export function vendorKeyForEnv(envName: string): string | null {

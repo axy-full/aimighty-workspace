@@ -29,7 +29,7 @@ import {
   explainGatewayFailure,
 } from "./gateway";
 import { vendorKey } from "./vendorKeys";
-import { gatewayPost } from "./gateway";
+import { assertDirectBillingReady, textPost } from "./textDirect";
 import { engineMock } from "./mock";
 import { getModel } from "./models";
 import {
@@ -428,8 +428,9 @@ async function refineWithGateway(
   // for subscribed workspaces. OpenAI planning belongs to the durable, quoted
   // Atomik path; a manual environment override must not create an unpriced call.
   if (textVendor(model) === "openai") throw new Error("Use a quoted Atomik request for prompt development. Inline refinement is unavailable for this model.");
+  assertDirectBillingReady(model);
   const auth = await languageAuth(model);
-  const res = await gatewayPost(
+  const res = await textPost(
     JSON.stringify({
       model,
       max_tokens: 1200,

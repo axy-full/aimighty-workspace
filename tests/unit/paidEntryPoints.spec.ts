@@ -640,3 +640,24 @@ test('legacy direct OpenAI saves cache receipts and price snapshot, retaining un
     if (priorKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = priorKey;
   }
 });
+
+test("until direct text is billed (PR 3), paid text refuses a TEXT_DIRECT model before quoting, reserving or sending: 422, nothing charged", async () =>
+  scope("text_direct_gate", async () => {
+    const { runPaidText, quotePaidText, paidTextFailure } = await import("../../lib/paidText");
+    const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
+    delete process.env.ENGINE_MOCK; process.env.TEXT_DIRECT = "anthropic"; process.env.ANTHROPIC_API_KEY = "test-anthropic-key-never-sent";
+    try {
+      const claude = { ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic" };
+      const direct = { ...call, model: claude.id };
+      let calls = 0;
+      await expect(quotePaidText(direct, claude)).rejects.toMatchObject({ name: "TextNotSentError", status: 422 });
+      const refused = await runPaidText(direct, { model: claude, submit: async () => { calls++; return { ok: true, status: 200, text: "{}" }; } }).catch((error: unknown) => error);
+      expect(refused).toMatchObject({ name: "TextNotSentError", status: 422, message: expect.stringContaining("not billed yet (PR 3)") });
+      const response = paidTextFailure(refused);
+      expect(response.status).toBe(422);
+      expect(calls).toBe(0);
+      expect(await metered("text_direct_gate")).toHaveLength(0);
+    } finally {
+      for (const [name, value] of [["ENGINE_MOCK", saved.mock], ["TEXT_DIRECT", saved.direct], ["ANTHROPIC_API_KEY", saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+    }
+  }));

@@ -476,3 +476,20 @@ test('direct development prices its saved per-step cache receipt and stops on un
     });
   } } finally { if (priorKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = priorKey; if (prior === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = prior; }
 });
+
+test('until direct text is billed (PR 3), a TEXT_DIRECT model cannot be quoted or reserved for development', async () => {
+  const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
+  delete process.env.ENGINE_MOCK; process.env.ANTHROPIC_API_KEY = 'test-anthropic-key-never-sent';
+  try {
+    await runInTenant(workspace(), async () => {
+      const { request } = await fixture();
+      const h = harness();
+      process.env.TEXT_DIRECT = 'anthropic';
+      await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toMatchObject({ name: 'TextNotSentError', status: 422, message: expect.stringContaining('not billed yet (PR 3)') });
+      await expect(prepareDevelopmentJob({ ...request, sourceHash: 'x', maxCredits: 1, maxUsd: 1 }, 'owner', undefined, h.deps)).rejects.toMatchObject({ status: 422 });
+      expect(h.reservations()).toBe(0); expect(h.calls).toHaveLength(0); expect(h.events).toHaveLength(0);
+    });
+  } finally {
+    for (const [name, value] of [['ENGINE_MOCK', saved.mock], ['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+  }
+});

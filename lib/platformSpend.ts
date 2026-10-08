@@ -19,6 +19,8 @@ const PROVIDERS_OF: Record<VendorKeyName, ProviderId[]> = {
   ark: ["byteplus"], gemini: ["google"], gateway: ["vercel", "google"], openai: ["openai"], fal: ["fal"], elevenlabs: ["elevenlabs"], higgsfield: ["higgsfield"],
   /* Crew rounds are metered events; Grok Imagine renders are product records. */
   xai: ["xai"],
+  /* Direct Claude text is metered like gateway text until the money paths move (P4b PR 3). */
+  anthropic: [],
 };
 
 /**

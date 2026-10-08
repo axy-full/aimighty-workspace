@@ -1,4 +1,5 @@
 import { sdkTextUsage, textVendor } from '../openai-direct';
+import { assertDirectBillingReady } from '../textDirect';
 import { ToolLoopAgent, Output, isStepCount, tool, type ModelMessage, type LanguageModel } from 'ai';
 import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
 import { z } from 'zod';
@@ -157,6 +158,7 @@ export async function runSuiteAgent(envelope: SuiteAgentEnvelope, auth: Record<s
     };
     return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(result) } }], usage: { cost: 0, prompt_tokens: 0, completion_tokens: 0 }, agentTrace: [{ tool: 'inspect_project' }, { tool: 'check_plan' }] }) };
   }
+  assertDirectBillingReady(envelope.model);
   const model = languageModel(envelope.model, { auth });
   const trace: { step: number; tools: string[]; inputTokens?: number; outputTokens?: number }[] = [];
   const agent = createSuiteAgent(envelope, model, async step => {

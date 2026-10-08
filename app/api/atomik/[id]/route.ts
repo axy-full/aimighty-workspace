@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { TextNotSentError } from "@/lib/textDirect";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import {
   getChat, patchChat, deleteChat, addUserMessage, runTurn, projectContext, requestEffort, reconcileRunningSteps,
@@ -115,7 +116,7 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
       priceKeyStep: (body) => priceKeyStep(body, got) });
   } catch (e) {
     if (!quoteOnly) await patchChat(id, { status: "failed" });
-    const known = e instanceof PaidTextError || e instanceof SpendReservationError;
+    const known = e instanceof PaidTextError || e instanceof SpendReservationError || e instanceof TextNotSentError;
     return NextResponse.json(
       { error: known ? e.message : "The planning request could not finish. Recover this request before starting another.", chat: await getChat(id) },
       { status: known ? e.status : 502 },
