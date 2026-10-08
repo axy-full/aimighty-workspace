@@ -14,9 +14,12 @@ process.env.ENGINE_MOCK = '1';
 process.env.ASTRA_BLENDER_SNAPSHOT_ID = 'snap_verified-test';
 process.env.ASTRA_BLENDER_RATE_CARD = JSON.stringify({ cpuUsdPerHour: 0.128, memoryUsdPerGbHour: 0.0212, egressUsdPerGb: 0.15, createUsd: 0.0000006 });
 // Self-hosted (off Vercel): the runtime is connected only with all three control-plane credentials.
-delete process.env.VERCEL;
+// Set per file and restored after it, so later spec files in this worker never see them.
 const RUNTIME_CREDENTIALS = { VERCEL_TOKEN: 'unit-test-token', VERCEL_TEAM_ID: 'team_unit_test', VERCEL_PROJECT_ID: 'prj_unit_test' };
-Object.assign(process.env, RUNTIME_CREDENTIALS);
+const RUNTIME_ENV = ['VERCEL', ...Object.keys(RUNTIME_CREDENTIALS)];
+let savedRuntimeEnv: Record<string, string | undefined> = {};
+test.beforeAll(() => { savedRuntimeEnv = Object.fromEntries(RUNTIME_ENV.map(key => [key, process.env[key]])); delete process.env.VERCEL; Object.assign(process.env, RUNTIME_CREDENTIALS); });
+test.afterAll(() => { for (const key of RUNTIME_ENV) { if (savedRuntimeEnv[key] === undefined) delete process.env[key]; else process.env[key] = savedRuntimeEnv[key]; } });
 async function withoutRuntimeToken(run: () => Promise<void>) { delete process.env.VERCEL_TOKEN; try { await run(); } finally { Object.assign(process.env, RUNTIME_CREDENTIALS); } }
 const workspace = (name: string): TenantWorkspace => ({ id: `ws_${name}`, slug: name, name, legacy: true, dbUrl: `file:${path.join(directory, `${name}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true, allowanceUsd: null, gatewayKeyId: null, ownerId: 'u_test', createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: null, rendersPerHour: null, storageQuotaBytes: null, deletedAt: null });
 async function context(name: string, run: (modules: Awaited<ReturnType<typeof setup>>) => Promise<void>) { const { runInTenant } = await import('../../lib/tenant'); await runInTenant(workspace(name), async () => run(await setup())); }
