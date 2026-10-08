@@ -17,7 +17,7 @@ import {
   mailWorkspaceInvite,
   MailboxProofNeeded,
 } from "@/lib/teamInvitations";
-import { mailConfigured, sendMail, inviteEmail, inviteOrigin } from "@/lib/mail";
+import { mailConfigured, sendMail, inviteEmail, inviteOrigin, MAIL_LINK_UNSET } from "@/lib/mail";
 import { policyAccepted } from "@/lib/policyAccept";
 import {
   accountFailure,
@@ -106,6 +106,8 @@ async function emailLink(req: Request, body: Record<string, unknown>) {
     })
   ).rows[0];
   const origin = inviteOrigin(req);
+  if (origin === null)
+    return Response.json({ error: MAIL_LINK_UNSET }, { status: 503 });
   try {
     await mailWorkspaceInvite({
       ws: got.ws,
