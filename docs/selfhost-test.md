@@ -23,7 +23,7 @@ For the owner. The app runs in Coolify (Traefik v3 proxy) on the server **contab
 - **Paid 3D test:** not on staging. One render on production after the cutover, only on the owner's "run".
 - **Inngest app address:** the repo cannot show it (the serve route sets no address; Inngest's Vercel integration chose it). The owner checks it in step 5.
 - **Nightly encrypted backup:** high priority, ideally live before the cutover. It needs the backup hotfix on `main` and the owner's settings (see the restore section).
-- **Production app's environment (Coolify app `4dufbrykuka94cedlfjo3jxm`):** what is there now is wrong (`STORAGE_BACKEND=blob`, `DISPATCH_MODE=native`, a wrong `MAIL_FROM`). Set it from the one list in [Switch-day env for the Coolify production app](#switch-day-env-for-the-coolify-production-app), including its "remove" list, before the app is first started in step 4.
+- **Production app's environment (Coolify app `4dufbrykuka94cedlfjo3jxm`):** what is there now is wrong (`STORAGE_BACKEND=blob`, `DISPATCH_MODE=native`). Set it from the one list in [Switch-day env for the Coolify production app](#switch-day-env-for-the-coolify-production-app), including its "remove" list, before the app is first started in step 4.
 
 **What `main` needs before it can run self-hosted:** the lead keeps that list in the description of PR #566.
 
@@ -133,11 +133,11 @@ Check the bucket's CORS list contains `https://particl.si`. The origin does not 
 
 | Name | Value or source | Identical? |
 |---|---|---|
-| `MAIL_FROM` | fixed: `hello@particlstudio.com` | yes |
-| `RESEND_API_KEY` | copy from Vercel, or Resend, **API Keys**, create one with sending access for `particlstudio.com` | any valid |
+| `MAIL_FROM` | fixed: `hello@particl.si` (changed 8 Oct; Vercel still sends from `hello@particlstudio.com`) | no, self-host value |
+| `RESEND_API_KEY` | copy from Vercel, or Resend, **API Keys**, create one with sending access for `particl.si` (or **All domains**) | any valid |
 | `RESEND_BASE_URL` | copy only if Vercel sets it | yes if set |
 
-Nothing changes in the `particlstudio.com` DNS; it is not one of the domains being moved.
+`particl.si` is **Verified** in Resend, **Domains** (8 Oct). Keep its Resend records, and the `_dmarc` TXT once the owner adds it, in the `particl.si` zone. Nothing changes in the `particlstudio.com` DNS.
 
 ### AI, engines, pricing
 
@@ -248,8 +248,8 @@ How to read the table:
 | `INNGEST_SIGNING_KEY_FALLBACK` | only if Inngest shows a rotation in progress | (b) same page | equal if set | no |
 | `INNGEST_SERVE_ORIGIN` | `https://particl.si` | written here | self-host only | no |
 | `INNGEST_STREAMING` | `true` | written here | self-host only | no |
-| `MAIL_FROM` | `hello@particlstudio.com`. If Vercel's value carries a display name (`Name <hello@particlstudio.com>`), copy Vercel's exactly | written here, or (c) | fixed | no |
-| `RESEND_API_KEY` | secret | (b) Resend, **API Keys**, **Create API Key**: permission **Sending access**, domain `particlstudio.com`. Shown once | **fresh is fine**, same Resend account. The sending domain `particlstudio.com` must stay **Verified** in Resend, **Domains** (nothing about it changes tonight) | no |
+| `MAIL_FROM` | `hello@particl.si` (set 8 Oct; reset email tested: from `hello@particl.si`, inbox, link `https://particl.si/reset/…`). A display name is optional: `Name <hello@particl.si>` | written here | self-host only (Vercel keeps `hello@particlstudio.com`) | no |
+| `RESEND_API_KEY` | secret | (b) Resend, **API Keys**, **Create API Key**: permission **Sending access**, domain `particl.si` or **All domains** (in use: the "Onboarding" key, All domains). Shown once | **fresh is fine**, same Resend account. The sending domain `particl.si` must stay **Verified** in Resend, **Domains**; so must `particlstudio.com` while Vercel is the fallback | no |
 | `RESEND_BASE_URL` | only if Vercel sets it | (c) | equal if set | no |
 | `AI_GATEWAY_API_KEY` | secret | (b) **OWNER creates it**: Vercel, the team, **AI Gateway**, **API Keys**, **Create key** | **new** (Vercel itself signs in with OIDC, which does not exist off Vercel) | no |
 | `AI_GATEWAY_BASE_URL`, `GATEWAY_PROMPT_MODELS`, `REFINE_PROVIDER` | only if Vercel sets them | (c) | equal if set | no |
@@ -288,7 +288,7 @@ How to read the table:
 **Remove or change in the current Coolify env** (app `4dufbrykuka94cedlfjo3jxm`), before its first start:
 - `STORAGE_BACKEND=blob` → `r2` (with the four `R2_*` above and `BLOB_READ_WRITE_TOKEN` kept for old links).
 - `DISPATCH_MODE=native` → `inngest` (with both Inngest keys, `INNGEST_SERVE_ORIGIN` and `INNGEST_STREAMING`).
-- `MAIL_FROM` → `hello@particlstudio.com` (or Vercel's exact form of it).
+- `MAIL_FROM` → `hello@particl.si` (done 8 Oct).
 - Anything carried over from staging: `file:` database URLs (`PLATFORM_DATABASE_URL`, `TURSO_DATABASE_URL`, including `file:/app/.data/...`), `ENGINE_MOCK`, `PARTICL_DEPLOYMENT=staging`, `CREDIT_USD` if it is not Vercel's value, the staging R2 bucket and its keys, staging's generated `KEYRING_SECRET` (must be production's), the sslip.io or any other non-`https://particl.si` address in `APP_ORIGIN`, `APP_URL`, `NEXT_PUBLIC_APP_URL`.
 - Any name in "Never set" above, and any **Build Variable** tick on a row the table marks "no".
 - After saving, rebuild (not just restart): `APP_ORIGIN` and the two `NEXT_PUBLIC_*` values are baked in at build.
@@ -366,7 +366,7 @@ With grey cloud there is no Cloudflare limit in front, so these Traefik timeouts
 | `particl.app` | A to `<server IPv4>` (any address works; the rule answers first) | proxied (orange) | Cloudflare redirect rule |
 | `www.particl.app` | CNAME to `particl.app` | proxied (orange) | Cloudflare redirect rule |
 
-**Do not touch** mail records on any domain (MX, SPF, DKIM, DMARC, the mail sender's verification records) or the `particlstudio.com` zone. If there are CAA records on `particl.si`, they must allow Let's Encrypt.
+**Do not touch** mail records on any domain (MX, SPF, DKIM, DMARC, Resend's verification records for `particl.si`, including `_dmarc` TXT `v=DMARC1; p=quarantine; adkim=r; aspf=r;`) or the `particlstudio.com` zone. The owner is adding that `_dmarc` record separately; the switch itself changes only the A/CNAME rows above. If there are CAA records on `particl.si`, they must allow Let's Encrypt.
 
 **Checks must reach the server, not Vercel.** While DNS may still point at Vercel (or a resolver still caches it), a plain `curl https://particl.si/` can pass against Vercel. Pin every check to the server:
 - `curl -sI --resolve particl.si:443:<server IPv4> https://particl.si/` (and the same with `www.particl.si`);
