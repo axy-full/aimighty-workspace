@@ -240,7 +240,8 @@ test("a signed-in account with no workspace is told so by the shell: no old Stud
   await expect(create).toHaveAttribute("href", "/billing?new=1");
   for (const control of [create, page.getByTestId("no-workspace-sign-out")]) {
     const box = (await control.boundingBox())!;
-    if ((page.viewportSize()?.width ?? 1440) < 768) expect(box.height).toBeGreaterThanOrEqual(44);
+    /* Rounded: layout can land a 44px control at 43.99997px. */
+    if ((page.viewportSize()?.width ?? 1440) < 768) expect(Math.round(box.height)).toBeGreaterThanOrEqual(44);
   }
   await noHorizontalOverflow(page);
   await page.screenshot({ path: info.outputPath("no-workspace.png") });

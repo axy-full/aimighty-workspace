@@ -8,6 +8,18 @@ For the owner. The app runs in Coolify (Traefik v3 proxy) on the server **contab
 - **Owner's decision for the cutover:** `particl.si` and `www.particl.si` stay **DNS-only (grey cloud)**, as they are today with Vercel. Visitors reach the server directly, so Cloudflare's 100-second limit does not apply. Orange cloud comes later, only after every long flow is proven under 100 s (see the last "Later" section).
 - Production on Vercel today: storage `r2-configured` (R2 for new files, old links still on Vercel Blob), `DISPATCH_MODE=inngest`, mail from `hello@particlstudio.com`, AI through the Vercel AI Gateway, Astra Blender renders in use (Vercel Sandbox).
 
+**Owner's choices (8 Oct 2026). These settle the options further down; where a section offers (a) or (b), use what is written here.**
+- **DNS:** grey cloud at cutover. Request durations are measured only before any later orange-cloud change.
+- **Certificates:** no Cloudflare token. Skip the `letsencrypt-dns` resolver (Certificates (a)) and the label change in step 4.4; the production app keeps Coolify's own `letsencrypt` resolver. Use path **(b)**: on the owner's "go" the advisor changes DNS in the owner's browser, waits until `dig +short particl.si @1.1.1.1` and `@8.8.8.8` both show the server, then restarts the proxy (Coolify, Servers, Proxy, Restart) so Traefik asks Let's Encrypt again. Expect about a minute of certificate warnings. No redeploys between steps 4 and 8 (Let's Encrypt allows 5 failed checks per name per hour).
+- **Firewall:** option **(a)**, Contabo's control-panel firewall, is **ON and verified**: inbound only TCP 22, 80 and 443 from anywhere; everything else is dropped (so UDP 443, 8000, 6001, 6002 and 8080 are closed; the Coolify dashboard is reached through the SSH connection). Skip option (b), its script and its systemd unit. Because port 22 is open to everyone, keep SSH on keys only (`PasswordAuthentication no` in `/etc/ssh/sshd_config`), and later consider limiting 22 to the owner's and advisor's addresses in the same Contabo firewall. Coolify's own SSH connection to this server stays on the server, so the Contabo firewall does not affect it.
+- **Coolify v4.4.1:** the stop grace period field exists (needs 4.1.0 or newer). The advisor sets **Stop grace period = 300** and the Traefik read-timeout line on switch day.
+- **Turso plan: Scaler.** Point-in-time restore window: **30 days** (Turso docs; check the figure once in the dashboard). That covers the 14-day watch, so restore points A and B stay usable for the whole rollback window.
+- **`KEYRING_SECRET`:** the owner has production's exact value.
+- **`AI_GATEWAY_API_KEY`:** the owner creates it.
+- **Paid 3D test:** not on staging. One render on production after the cutover, only on the owner's "run".
+- **Inngest app address:** the repo cannot show it (the serve route sets no address; Inngest's Vercel integration chose it). The owner checks it in step 5.
+- **Nightly encrypted backup:** high priority, ideally live before the cutover. It needs the backup hotfix on `main` and the owner's settings (see the restore section).
+
 **What `main` needs before it can run self-hosted:** the lead keeps that list in the description of PR #566.
 
 Never write the server's IP, the sslip.io address or any secret value in the repo, a chat or a public place. This document names variables and where their values come from; it never holds a value that is secret.
