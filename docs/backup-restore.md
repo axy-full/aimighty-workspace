@@ -293,6 +293,8 @@ key and assume an old archive will decrypt.
 
 ### Switching it on for production (owner settings)
 
+> **Every capture puts production into maintenance:** from the fence `begin` until `resume`, every API request, sign-in included, answers 503. Plan a quiet window each time.
+
 Production today: Vercel, Turso, media `dual` (R2 first, Blob fallback). Every
 value below is set by the owner; none is in this repository.
 
@@ -367,7 +369,7 @@ docs/enforced-recovery-fence.md for the preconditions):
 1. **Dry run.** Actions → "Encrypted Particl backups" → Run workflow → branch
    `main`, operation `dry-run`. It reads no secrets; expect the plan JSON and
    every `tests/ops` test passing.
-2. **Pick a quiet window** and tell users: signed-in work answers 503 from
+2. **Pick a quiet window** and tell users: every API request, sign-in included, answers 503 from
    `begin` until `resume` (expect about 30 minutes; the first run measures it).
 3. **Fence.** `recovery-fence.mjs begin /private/checkpoint-<date>
    /private/checkpoint-input.json`, then `status` until it shows no activities
@@ -392,7 +394,7 @@ docs/enforced-recovery-fence.md for the preconditions):
    count from step 5. Remove the decrypted directory afterwards.
 9. **Record** the run id, capture time, key version, duration and size in the
    recovery inventory.
-10. **Between attended runs**, the 02:17 schedule fails a minute or two in, at
+10. **Between attended runs**, the 02:17 schedule fails a minute or two in (or waits for approval first, if the environment has a required reviewer), at
     the receipt check (the receipt has expired; it touches nothing) and hourly freshness turns red 26
     hours after the last capture. Set `PARTICL_BACKUP_ENABLED` back to `false`
     until the next attended checkpoint if that noise is not wanted.
