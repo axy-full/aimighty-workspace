@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { appendFile, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,8 @@ import { createClient } from "@libsql/client";
 import {
   PROGRESS_FILE,
   copyBlobToR2,
+  liveSourceInventory,
+  livePlatformSpec,
   loadProgress,
   parseArguments,
   privateDirectory,
@@ -399,8 +401,11 @@ test("the private directory must be outside the checkout and owner-only; argumen
   assert.throws(() => parseArguments(["--copy", "--dry-run"]), /exactly one of/);
   assert.deepEqual(
     { ...parseArguments(["--copy", "--private-dir", "/x", "--transfers", "8", "--deep"]) },
-    { mode: "copy", privateDir: "/x", transfers: 8, limit: undefined, probeBytes: 64 * MiB, config: undefined, deep: true, readback: false },
+    { mode: "copy", privateDir: "/x", transfers: 8, limit: undefined, probeBytes: 64 * MiB, config: undefined, deep: true, readback: false, live: false },
   );
+  assert.equal(parseArguments(["--verify", "--private-dir", "/x", "--live"]).live, true);
+  assert.throws(() => parseArguments(["--verify", "--private-dir", "/x", "--live", "--config", "c.json"]), /either --live or --config/);
+  assert.throws(() => parseArguments(["--copy", "--private-dir", "/x", "--live"]), /only with --verify/);
 });
 
 /* ── verify r2-only ──────────────────────────────────────────────────── */
@@ -475,6 +480,122 @@ test("verify fails naming rows only: no Blob fallback, no file names in the resu
   // A workspace without a database in the config is refused rather than silently skipped.
   await assert.rejects(
     verifyR2Only({ privateDir: dir, config: { ...config, databases: [config.databases[0]] }, env: ENV, r2Client: r2.factory, blobSdk: blob }),
-    /missing from the --config database list/,
+    /missing from the --config \(or --live\) database list/,
   );
+});
+
+/* ── verify --live ───────────────────────────────────────────────────── */
+
+const KEYRING = "fixture-keyring-secret-of-32-characters-at-least";
+// The app's own format (lib/keyring.ts seal): v1.iv.tag.ct, base64url, AES-256-GCM under sha256(KEYRING_SECRET).
+function seal(plain, secret = KEYRING) {
+  const iv = randomBytes(12),
+    cipher = createCipheriv("aes-256-gcm", createHash("sha256").update(secret).digest(), iv);
+  const ct = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
+  return ["v1", iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), ct.toString("base64url")].join(".");
+}
+const TENANT_TOKEN = "fixture-tenant-token-value-AAA",
+  PENDING_TOKEN = "fixture-pending-token-value-BBB";
+
+/** Platform with a legacy workspace (its media in the platform database), a
+ * tenant workspace with a sealed token, a purged one, and a pending
+ * provisioned database. Returns the env the owner's file would provide. */
+async function liveDatabases(root, { tokenSecret = KEYRING } = {}) {
+  const href = (name) => pathToFileURL(join(root, name)).href;
+  const platform = createClient({ url: href("platform.db") }),
+    tenant = createClient({ url: href("tenant.db") }),
+    pending = createClient({ url: href("pending.db") });
+  await platform.executeMultiple(`CREATE TABLE workspaces(id TEXT PRIMARY KEY,db_url TEXT NOT NULL,db_token_enc TEXT,legacy INTEGER NOT NULL DEFAULT 0,purged_at INTEGER);
+    CREATE TABLE workspace_provisioning(request_id TEXT PRIMARY KEY,workspace_id TEXT,db_url TEXT,db_token_enc TEXT);
+    CREATE TABLE uploads(id TEXT PRIMARY KEY,ext TEXT,stored_url TEXT);
+    INSERT INTO uploads VALUES('legacyfile','txt','uploads/legacy.txt');`);
+  await platform.execute({
+    sql: `INSERT INTO workspaces VALUES('ws_legacy','unused',NULL,1,NULL),('ws_fixture',?,?,0,NULL),('ws_gone','libsql://gone.example',?,0,5)`,
+    args: [href("tenant.db"), seal(TENANT_TOKEN, tokenSecret), seal("x", "another-secret")],
+  });
+  await platform.execute({
+    sql: `INSERT INTO workspace_provisioning VALUES('r1','ws_pending',?,?),('r2','ws_waiting',NULL,NULL)`,
+    args: [href("pending.db"), seal(PENDING_TOKEN, tokenSecret)],
+  });
+  await tenant.executeMultiple(`CREATE TABLE uploads(id TEXT PRIMARY KEY,ext TEXT,stored_url TEXT);
+    INSERT INTO uploads VALUES('bare','txt','${W}uploads/bare.txt');`);
+  await pending.executeMultiple(`CREATE TABLE uploads(id TEXT PRIMARY KEY,ext TEXT,stored_url TEXT);`);
+  for (const db of [platform, tenant, pending]) db.close();
+  return { ...ENV, PLATFORM_DATABASE_URL: href("platform.db"), TURSO_DATABASE_URL: href("platform.db"), KEYRING_SECRET: KEYRING };
+}
+
+test("verify --live: the inventory comes from the platform database, tokens opened in process only", async (t) => {
+  const root = await privateRoot(t);
+  const env = await liveDatabases(root);
+  const dir = join(root, "private");
+  // The inventory names variables only; values live in the returned env object.
+  const spec = livePlatformSpec(env);
+  assert.deepEqual(spec, { id: "platform", role: "platform", urlEnv: "PLATFORM_DATABASE_URL" });
+  const built = await liveSourceInventory(join(root, "platform.db"), spec, env);
+  assert.deepEqual(built.config, {
+    version: 1,
+    databases: [
+      { id: "platform", role: "platform", urlEnv: "PLATFORM_DATABASE_URL", workspaceIds: ["ws_legacy"] },
+      { id: "tenant-1", role: "tenant", urlEnv: "BLOB_TO_R2_LIVE_DB_1_URL", tokenEnv: "BLOB_TO_R2_LIVE_DB_1_TOKEN", workspaceIds: ["ws_fixture"] },
+      { id: "tenant-2", role: "tenant", urlEnv: "BLOB_TO_R2_LIVE_DB_2_URL", tokenEnv: "BLOB_TO_R2_LIVE_DB_2_TOKEN", workspaceIds: ["ws_pending"] },
+    ],
+  });
+  assert.equal(built.env.BLOB_TO_R2_LIVE_DB_1_TOKEN, TENANT_TOKEN);
+  assert.equal(built.env.BLOB_TO_R2_LIVE_DB_2_TOKEN, PENDING_TOKEN);
+  assert.equal(env.BLOB_TO_R2_LIVE_DB_1_TOKEN, undefined, "the caller's env is not changed");
+  assert.deepEqual(built.counts, { databases: 3, legacyWorkspaces: 1, workspaces: 3 });
+  const inventoryText = JSON.stringify(built.config) + JSON.stringify(built.counts);
+  for (const leak of [TENANT_TOKEN, PENDING_TOKEN, "tenant.db", "pending.db", KEYRING]) assert.equal(inventoryText.includes(leak), false, leak);
+
+  const r2 = fakeR2(new Map([[`uploads/legacy.txt`, bytes("legacy")], [`${W}uploads/bare.txt`, bytes("bare")]]));
+  const result = await verifyR2Only({ privateDir: dir, live: true, env, r2Client: r2.factory, blobSdk: fakeBlob(new Map()), retryOptions: fast });
+  assert.deepEqual(result, {
+    mode: "verify",
+    ok: true,
+    live: { databases: 3, legacyWorkspaces: 1, workspaces: 3 },
+    r2Objects: 2,
+    references: 2,
+    byStore: { r2: 2 },
+    blobObjects: 0,
+    blobObjectsNotOnR2: 0,
+  });
+  assert.equal(writes(r2).length, 0);
+  assert.deepEqual((await readdir(dir)).filter((n) => n.startsWith("verify-")), []);
+  const printed = JSON.stringify(result);
+  for (const leak of [TENANT_TOKEN, PENDING_TOKEN, "tenant.db", "ws_fixture", "BLOB_TO_R2_LIVE"]) assert.equal(printed.includes(leak), false, leak);
+
+  // A missing row on R2 is named by generated database id and row id only.
+  r2.objects.delete(`${W}uploads/bare.txt`);
+  const missing = await verifyR2Only({ privateDir: dir, live: true, env, r2Client: r2.factory, blobSdk: fakeBlob(new Map()), retryOptions: fast });
+  assert.equal(missing.ok, false);
+  assert.match(missing.missingReferences, /tenant-1\/uploads\/bare$/);
+
+  // --live and --config are exclusive.
+  await assert.rejects(verifyR2Only({ privateDir: dir, live: true, config: { version: 1, databases: [] }, env, r2Client: r2.factory }), /either --live or --config/);
+});
+
+test("verify --live refuses, naming only the workspace, when KEYRING_SECRET does not open a token; and refuses a separate legacy database", async (t) => {
+  const root = await privateRoot(t);
+  const env = await liveDatabases(root, { tokenSecret: "the-secret-the-deployment-really-used" });
+  const dir = join(root, "private");
+  const r2 = fakeR2();
+  let message = "";
+  await verifyR2Only({ privateDir: dir, live: true, env, r2Client: r2.factory, retryOptions: fast }).catch((error) => (message = error.message));
+  assert.match(message, /^Cannot open the database token of workspace ws_fixture: KEYRING_SECRET does not match/);
+  for (const leak of [TENANT_TOKEN, "tenant.db", KEYRING, "the-secret"]) assert.equal(message.includes(leak), false, leak);
+  assert.deepEqual((await readdir(dir)).filter((n) => n.startsWith("verify-")), [], "snapshots removed after a refusal");
+
+  const good = await liveDatabases(await privateRoot(t));
+  await assert.rejects(
+    verifyR2Only({ privateDir: dir, live: true, env: { ...good, KEYRING_SECRET: undefined }, r2Client: r2.factory }),
+    /needs KEYRING_SECRET/,
+  );
+  await assert.rejects(
+    verifyR2Only({ privateDir: dir, live: true, env: { ...good, TURSO_DATABASE_URL: "libsql://other.example" }, r2Client: r2.factory }),
+    /Legacy workspaces live in TURSO_DATABASE_URL/,
+  );
+  const noPlatform = { ...good };
+  delete noPlatform.PLATFORM_DATABASE_URL;
+  delete noPlatform.TURSO_DATABASE_URL;
+  await assert.rejects(verifyR2Only({ privateDir: dir, live: true, env: noPlatform, r2Client: r2.factory }), /needs PLATFORM_DATABASE_URL/);
 });
