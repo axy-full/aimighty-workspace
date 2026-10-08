@@ -221,7 +221,7 @@ export function astraRenderInBusyBackoff(row: { error?: unknown; updated_at?: un
    a cancel that arrived meanwhile ends it as cancelled. Busy goes back to the queue, charged nothing and not
    refunded, unless it has waited past the start expiry; a refusal fails it and releases the reservation. */
 async function releaseUnstartedClaim(row: JobRecord, runtimeId: string, busy: boolean, deps: AstraRenderDependencies): Promise<'busy' | undefined> {
-    const requeue = busy && Date.now() - Number(row.created_at) < ASTRA_START_EXPIRY_MS;
+    const requeue = busy && Date.now() - Number(((await record(row.id)) ?? row).created_at) < ASTRA_START_EXPIRY_MS;
     const status = requeue ? 'queued' : busy ? 'cancelled' : 'failed';
     const message = requeue ? ASTRA_WORKERS_BUSY : busy ? 'No render worker became free within 30 minutes. Nothing was billed.' : 'The render workers refused this render. Nothing was billed.';
     const undone = await db().execute({ sql: "UPDATE astra_render_jobs SET status=CASE WHEN cancel_requested=1 THEN 'cancelled' ELSE ? END,runtime_id=NULL,claimed_at=NULL,error=?,updated_at=? WHERE id=? AND runtime_id=? AND status IN ('starting','uncertain') AND settled=0", args: [status, message, Date.now(), row.id, runtimeId] });
@@ -238,6 +238,14 @@ export async function runAstraRender(id: string, deps: AstraRenderDependencies =
     const row = await record(id);
     if (!row || row.status !== 'queued' || !row.funded)
         return undefined;
+    // Past its start expiry a queued job is cancelled and refunded, never claimed, so nothing (a late cron, an
+    // Inngest event held back by its 24-hour dedup) can start a render long after it was approved.
+    if (Date.now() - Number(row.created_at) >= ASTRA_START_EXPIRY_MS) {
+        const expired = await db().execute({ sql: "UPDATE astra_render_jobs SET status='cancelled',cancel_requested=1,error=?,updated_at=? WHERE id=? AND status='queued' AND runtime_id IS NULL AND funded=1 AND settled=0", args: ['This render did not start within 30 minutes of its approval. Nothing was billed.', Date.now(), id] });
+        if (expired.rowsAffected)
+            await settle((await record(id))!, 'cancelled', null, deps);
+        return undefined;
+    }
     if (astraRenderInBusyBackoff(row))
         return 'busy';
     let begun = false, created = false;

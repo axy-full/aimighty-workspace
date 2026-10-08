@@ -152,14 +152,29 @@ test('the worker handler reports busy so the Inngest function waits and runs it 
     expect(steps).toEqual(['run render-persist-and-account', `sleep wait-for-a-render-worker-1 ${ASTRA_BUSY_WAIT}`, 'run render-persist-and-account-1', `sleep wait-for-a-render-worker-2 ${ASTRA_BUSY_WAIT}`, 'run render-persist-and-account-2']);
 }));
 
-test('a job still finding every worker busy after 30 minutes is cancelled and its reservation released, never charged', async () => context('selfhost-busy-expiry', async (m) => {
-    const pool = workerPool(); for (const origin of WORKER_URLS) pool.set(origin, 'busy');
+test('a queued job past 30 minutes from approval is cancelled and refunded before any claim, and one that crosses it while every worker is busy is too', async () => context('selfhost-busy-expiry', async (m) => {
+    const pool = workerPool();
     const f = await selfhost(pool);
+    // Before the claim: no worker is asked, nothing is claimed, the reservation is released.
     const first = await m.prepareAstraRender(m.input, 'u_test', undefined, f.deps);
-    await m.db().execute({ sql: 'UPDATE astra_render_jobs SET created_at=? WHERE id=?', args: [Date.now() - m.ASTRA_START_EXPIRY_MS - 1, first.job.id] });
+    await m.db().execute({ sql: 'UPDATE astra_render_jobs SET created_at=?,error=?,updated_at=? WHERE id=?', args: [Date.now() - m.ASTRA_START_EXPIRY_MS - 1, m.ASTRA_WORKERS_BUSY, Date.now(), first.job.id] });
     expect(await m.runAstraRender(first.job.id, f.deps)).toBeUndefined();
-    expect(await m.row(first.job.id)).toMatchObject({ status: 'cancelled', settled: 1, runtime_id: null, billed_credits: 0 });
+    const row = await m.row(first.job.id);
+    expect(row).toMatchObject({ status: 'cancelled', settled: 1, runtime_id: null, claimed_at: null, billed_credits: 0 });
+    expect(String(row.error)).toContain('did not start within 30 minutes');
+    expect(pool.calls).toEqual([]);
     expect(f.metered.map(event => [event.engine, event.status, event.engineCostUsd])).toEqual([['selfhost-blender', 'failed', 0]]);
+    expect(await m.runAstraRender(first.job.id, f.deps)).toBeUndefined();
+    expect(f.metered).toHaveLength(1);
+    // Crossing the expiry during a busy attempt: the released claim is cancelled and refunded, not requeued.
+    for (const origin of WORKER_URLS) pool.set(origin, 'busy');
+    const second = await m.prepareAstraRender({ ...m.input, requestId: 'request-native-2' }, 'u_test', undefined, f.deps);
+    const { createSelfhostSdk } = await import('../../lib/astra-blender/selfhost-sdk');
+    let aged = false;
+    f.deps.sandbox = { sdk: createSelfhostSdk({ config: { urls: WORKER_URLS, secrets: WORKER_URLS.map(() => WORKER_SECRET) }, fetch: async (input, init) => { if (!aged) { aged = true; await m.db().execute({ sql: 'UPDATE astra_render_jobs SET created_at=? WHERE id=?', args: [Date.now() - m.ASTRA_START_EXPIRY_MS - 1, second.job.id] }); } return pool.fetch(input, init); } }) };
+    expect(await m.runAstraRender(second.job.id, f.deps)).toBeUndefined();
+    expect(await m.row(second.job.id)).toMatchObject({ status: 'cancelled', settled: 1, runtime_id: null, billed_credits: 0 });
+    expect(f.metered.at(-1)).toMatchObject({ status: 'failed', engineCostUsd: 0 });
 }));
 
 test('workers that refuse the render outright fail it before anything starts and release the reservation', async () => context('selfhost-refused', async (m) => {
