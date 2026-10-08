@@ -8,6 +8,22 @@ For the owner. The app runs in Coolify (Traefik v3 proxy) on the server **contab
 - **Owner's decision for the cutover:** `particl.si` and `www.particl.si` stay **DNS-only (grey cloud)**, as they are today with Vercel. Visitors reach the server directly, so Cloudflare's 100-second limit does not apply. Orange cloud comes later, only after every long flow is proven under 100 s (see the last "Later" section).
 - Production on Vercel today: storage `r2-configured` (R2 for new files, old links still on Vercel Blob), `DISPATCH_MODE=inngest`, mail from `hello@particlstudio.com`, AI through the Vercel AI Gateway, Astra Blender renders in use (Vercel Sandbox).
 
+**Owner's choices (8 Oct 2026). These settle the options further down; where a section offers (a) or (b), use what is written here.**
+- **DNS:** grey cloud at cutover. Request durations are measured only before any later orange-cloud change.
+- **Certificates:** no Cloudflare token. Skip the `letsencrypt-dns` resolver (Certificates (a)) and the label change in step 4.4; the production app keeps Coolify's own `letsencrypt` resolver. Use path **(b)**: on the owner's "go" the advisor changes DNS in the owner's browser, waits until `dig +short particl.si @1.1.1.1` and `@8.8.8.8` both show the server, then restarts the proxy (Coolify, Servers, Proxy, Restart) so Traefik asks Let's Encrypt again. Expect about a minute of certificate warnings. No redeploys between steps 4 and 8 (Let's Encrypt allows 5 failed checks per name per hour). On this path, before the DNS switch Traefik serves its own self-signed certificate, so: step 4.6 checks health only (no Let's Encrypt check); the pinned check in step 8 uses `curl -skI --resolve …` and looks only at the status; in step 9 restart the proxy **first** (do the switch-day Traefik read-timeout edit in the same restart), wait at least the lowered TTL, then run the `openssl` Let's Encrypt checks.
+- **Firewall:** option **(a)**, Contabo's control-panel firewall, is **ON and verified**: inbound only TCP 22, 80 and 443 from anywhere; everything else is dropped (so UDP 443, 8000, 6001, 6002 and 8080 are closed). Skip option (b), its script and its systemd unit; firewall text further down that opens UDP 443 or limits 22 to the owner is superseded by this box.
+  - **Dashboard through SSH:** `ssh -L 8000:localhost:8000 -L 6001:localhost:6001 -L 6002:localhost:6002 <user>@<server>`, then open `http://localhost:8000`. All three ports are needed: 6001 carries live updates and 6002 the terminal used in step 12 and the 3D test.
+  - **Keys-only SSH (port 22 is open to everyone):** check `/etc/ssh/sshd_config.d/*.conf` first (a cloud-init file there may say `PasswordAuthentication yes`, and the first value read wins), set `PasswordAuthentication no` and `KbdInteractiveAuthentication no`, reload ssh, confirm with `sshd -T | grep -iE 'passwordauth|kbdinteractive|permitrootlogin'`, and test a key login in a second session before closing the first. Do **not** set `PermitRootLogin no`: Coolify signs in to this server as root with its key (`prohibit-password` is fine). Later, consider limiting 22 to the owner's and advisor's addresses in the same Contabo firewall.
+  - **IPv6:** confirm from outside that `curl -6 -m 5 http://[<server IPv6>]:8000` does not answer (Docker publishes ports on IPv6 too; the Contabo rules must cover it).
+  - Coolify's own SSH connection to this server stays on the server, so the Contabo firewall does not affect it.
+- **Coolify (owner reports v4.4.1):** the advisor confirms the **Stop grace period** field is there (Advanced, Operations) and sets **Stop grace period = 300** and the Traefik read-timeout line on switch day.
+- **Turso plan: Scaler.** Point-in-time restore window: **30 days** (Turso docs; check the figure once in the dashboard). That covers the 14-day watch, so restore points A and B stay usable for the whole rollback window.
+- **`KEYRING_SECRET`:** the owner has production's exact value.
+- **`AI_GATEWAY_API_KEY`:** the owner creates it.
+- **Paid 3D test:** not on staging. One render on production after the cutover, only on the owner's "run".
+- **Inngest app address:** the repo cannot show it (the serve route sets no address; Inngest's Vercel integration chose it). The owner checks it in step 5.
+- **Nightly encrypted backup:** high priority, ideally live before the cutover. It needs the backup hotfix on `main` and the owner's settings (see the restore section).
+
 **What `main` needs before it can run self-hosted:** the lead keeps that list in the description of PR #566.
 
 Never write the server's IP, the sslip.io address or any secret value in the repo, a chat or a public place. This document names variables and where their values come from; it never holds a value that is secret.
@@ -196,6 +212,8 @@ Vercel never shows a **Sensitive** variable again, and `vercel env pull --enviro
 **Restart.** Save, then click **Restart Proxy** on the same page. Every app on the server drops its connections for a few seconds, so do it when quiet. Afterwards the proxy shows running and staging still answers 200. It is one proxy for both apps, so doing it once covers staging and production.
 
 With grey cloud there is no Cloudflare limit in front, so these Traefik timeouts are the only ones that apply. The 100 s problem only comes back with orange cloud (see the "Later" section).
+
+**Paid text and transcription answer within 25 s.** `POST /api/audio/transcribe`, `/api/atomik/[id]` (a planning turn), `/api/atomik/memory/read`, `/api/atomik/ideas/draft`, `/api/atomik/shots/draft` and `/api/atomik/treatment/scene` answer "still being accepted" (409, `pending`, `Retry-After`) when their run is still going after 25 s, and the run finishes after the reply in `after()` (`answerAfterMs`, `lib/generationRequests.ts`). For a planning turn and a Memory read the browser sends the same saved request again (same Idempotency-Key) until the saved reply is there, for up to 6 minutes (`waitWhilePending`, `lib/pendingReplay.ts`); a transcription asks `/api/generate/check`, as it already did; every other paid send is sent once, as before. The run's continuation is the recovery parent of what it does after the reply, so a deploy that drains after the request has answered still admits it. A replay never starts a second run or a second charge. On SIGTERM, `next start` finishes pending `after()` work before it exits, so give the app container a **stop grace of at least 300 s** (the longest run: 270 s of text, 280 s of transcription). If the process stops before a run ends anyway (a shorter grace, a crash, out of memory), nothing new happens to money; it falls back to what a killed function leaves today: the claim keeps no reply, so every replay is answered "pending" and nothing is sent again; a planning turn's reservation stays held for review (`paid_text_jobs` and its meter row stay `running`); a transcription's check answers from the meter after 10 minutes (`TRANSCRIPTION_STALE_MS`); the run's recovery activities (`paid-request`, `paid-text`) stay open, so a deploy drain sees them; and after 6 minutes the browser shows "Recover the saved request".
 
 **Forwarded headers.**
 - Keep Traefik's default of appending to `X-Forwarded-For` (never set `notAppendXForwardedFor`).
@@ -487,9 +505,9 @@ Each is passed, or waived by the owner in writing (cutover step 0).
 
 **Why it waits.** On a proxied (orange) name, Cloudflare (Free, Pro and Business) returns a **524** when the server sends **no bytes for about 100 s**. Traefik cannot change that.
 - Chunked uploads and streamed downloads are fine: bytes keep flowing.
+- `POST /api/uploads/finish` no longer risks a 524: it answers within about 10 s (the receipt, or `202` while it assembles in the background), and the browser polls `/api/uploads/session`.
 - Inngest steps (an Astra render, a dubbing poll) can pass 100 s. `INNGEST_STREAMING=true` (already set) makes the route answer at once and send a byte every few seconds.
 - **Requests that wait silently can pass 100 s:**
-  - `POST /api/uploads/finish` (assembles up to 2 GB before it answers; a retry recovers);
   - `/api/audio/transcribe` (waits for the whole transcription);
   - the model calls under `/api/atomik/` (ideas, shot and scene drafts, memory read);
   - `/api/prompt/enhance`, `/api/mcp`, and starting identity training.
@@ -508,7 +526,7 @@ Each is passed, or waived by the owner in writing (cutover step 0).
 3. **SSL/TLS mode Full (strict)** and **Always Use HTTPS** in the `particl.si` zone. The proxied staging name answers 200, not 526.
 4. **Bot Fight Mode off** (**Security, Bots**). It challenges Inngest's calls to `/api/inngest`, and on the free plan no rule can exempt a path from it. Add a WAF custom rule that **skips** the other security rules for `/api/inngest` and `/api/worker` (the app hands work to itself at `/api/worker` if the Inngest keys were ever missing).
 5. **Cloudflare-only firewall.** Ports 80 and 443 accept only Cloudflare.
-   - **(a)** Contabo's control-panel firewall, if the plan has it: TCP 80 and 443 only from https://www.cloudflare.com/ips-v4 and https://www.cloudflare.com/ips-v6. **Close UDP 443:** Cloudflare talks to the server over TCP only, so HTTP/3 to the server is no longer needed. Admin ports stay owner-only as before.
+   - **(a)** Contabo's control-panel firewall, if the plan has it: TCP 80 and 443 only from https://www.cloudflare.com/ips-v4 and https://www.cloudflare.com/ips-v6. **Close UDP 443:** Cloudflare talks to the server over TCP only, so HTTP/3 to the server is no longer needed. Admin ports stay closed as in the 8 Oct box (22 open, keys only).
    - **(b)** Rules on the server, as root. Save as `/usr/local/sbin/particl-cf-only.sh` (root, mode `700`). It keeps a copy of Cloudflare's list, refreshes it only when the download looks complete, and stops without changing anything if it has no usable list, so it never installs a DROP with nothing allowed:
      ```sh
      #!/bin/sh

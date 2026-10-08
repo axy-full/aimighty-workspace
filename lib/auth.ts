@@ -6,6 +6,7 @@ import { MediaSourceError } from "./mediaBindings";
 import { workbenchScopeFor } from "./workbench/request-scope";
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
 import { cookies, headers } from "next/headers";
+import { assertRequestAttached } from "./requestAttachment";
 import { db, ready, now } from "./db";
 import { creditsApply } from "./credits";
 import { billedCreditsSum } from "./creditSql";
@@ -116,6 +117,8 @@ export type Context = {
  * layout (which renders outside any route) and by the route wrapper.
  */
 export async function currentContext(): Promise<Context | null> {
+  /* Never the cookies of a request already answered (lib/requestAttachment.ts). */
+  assertRequestAttached("The session cookie");
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const found = await sessionLookup(token);
@@ -169,6 +172,7 @@ async function workspaceForToken(raw: string): Promise<TenantWorkspace | null> {
 }
 
 async function callerFromBearer(): Promise<TenantStore | null> {
+  assertRequestAttached("The Authorization header");
   const header = (await headers()).get("authorization");
   const raw = header?.match(/^Bearer\s+(\S+)$/i)?.[1];
   return raw ? callerFromToken(raw) : null;
