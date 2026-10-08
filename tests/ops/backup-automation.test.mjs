@@ -13,14 +13,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createClient } from "@libsql/client";
 import {
-  ARTIFACT_PREFIX,
-  FRESHNESS_MS,
   sourceFingerprint,
-  retentionDays,
   assertQuiescence,
   assertNoActiveOrUncertain,
-  freshness,
-  githubFreshness,
   captureVerified,
 } from "../../scripts/ops/backup-automation.mjs";
 
@@ -59,86 +54,7 @@ test("quiescence is fresh, source-bound, and covers every mutating service", () 
       /mutating service/,
     );
 });
-test("daily retention is 30 days and a Sunday backup is retained for 12 weeks", () => {
-  assert.equal(retentionDays(at), 30);
-  assert.equal(retentionDays(Date.parse("2026-09-13T02:17:00Z")), 84);
-});
-test("freshness ignores unrelated, expired, empty and future artifacts; missing/stale backup fails", () => {
-  const record = {
-    name: ARTIFACT_PREFIX + "fixture",
-    created_at: new Date(at - 3600_000).toISOString(),
-    expired: false,
-    size_in_bytes: 1024,
-  };
-  assert.equal(freshness([record], at).fresh, true);
-  assert.throws(
-    () =>
-      freshness(
-        [
-          {
-            ...record,
-            created_at: new Date(at - FRESHNESS_MS - 1).toISOString(),
-          },
-        ],
-        at,
-      ),
-    /older/,
-  );
-  for (const change of [
-    { expired: true },
-    { size_in_bytes: 0 },
-    { name: "browser-evidence" },
-    { created_at: new Date(at + 1000).toISOString() },
-  ])
-    assert.throws(
-      () => freshness([{ ...record, ...change }], at),
-      /No retained/,
-    );
-});
-test("freshness paginates read-only artifact metadata and refuses API failures", async () => {
-  let calls = 0;
-  const fetcher = async (url, options) => {
-    calls++;
-    assert.match(
-      url,
-      /^https:\/\/api.github.com\/repos\/fixture\/repo\/actions\/artifacts/,
-    );
-    assert.equal(options.headers.Authorization, "Bearer fixture-token");
-    return {
-      ok: true,
-      json: async () => ({
-        artifacts:
-          calls === 1
-            ? Array.from({ length: 100 }, () => ({ name: "unrelated" }))
-            : [
-                {
-                  name: ARTIFACT_PREFIX + "fixture",
-                  created_at: new Date().toISOString(),
-                  expired: false,
-                  size_in_bytes: 10,
-                },
-              ],
-      }),
-    };
-  };
-  assert.equal(
-    (
-      await githubFreshness(
-        { GITHUB_REPOSITORY: "fixture/repo", GITHUB_TOKEN: "fixture-token" },
-        fetcher,
-      )
-    ).fresh,
-    true,
-  );
-  assert.equal(calls, 2);
-  await assert.rejects(
-    githubFreshness(
-      { GITHUB_REPOSITORY: "fixture/repo", GITHUB_TOKEN: "fixture-token" },
-      async () => ({ ok: false }),
-    ),
-    /Could not read/,
-  );
-});
+// Freshness and the private-bucket upload are in backup-bucket.test.mjs.
 test("preflight rejects actual live/uncertain rows without modifying them", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "particl-backup-gate-"));
   t.after(() => rm(root, { recursive: true, force: true }));
