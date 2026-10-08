@@ -4,6 +4,7 @@ import {
   createBackup,
   restoreBackup,
   restoreBlobs,
+  restoreR2,
   verifyDatabase,
   OpsError,
 } from "./backup-lib.mjs";
@@ -21,10 +22,13 @@ Secrets are read only from named environment variables; .env files are not loade
   prepare OFFLINE_DIRECTORY TARGET_MAPPING.json NEW_PREPARED_DIRECTORY
   verify-db SQLITE_SNAPSHOT TARGET_DB.json
   restore-blobs OFFLINE_DIRECTORY EMPTY_PRIVATE_STORE.json
+  restore-r2 OFFLINE_DIRECTORY EMPTY_R2_BUCKET.json
 
 Backup/restore require PARTICL_BACKUP_KEY (32 random bytes, base64).
 Backup also requires the ORIGINAL KEYRING_SECRET. See docs/backup-restore.md.
-Remote capture is read only; restore-blobs writes to an explicitly empty store.
+Media: local, private Blob, R2, or dual (R2 first, Blob fallback, as production).
+Remote capture is read only; restore-blobs/restore-r2 write only to an
+explicitly confirmed empty store.
 The tool never starts the app, creates a paid job, calls email or changes billing.
 `;
 try {
@@ -41,6 +45,8 @@ try {
     result = await verifyDatabase(args[0], await config(args[1]));
   else if (command === "restore-blobs" && args.length === 2)
     result = await restoreBlobs(args[0], await config(args[1]));
+  else if (command === "restore-r2" && args.length === 2)
+    result = await restoreR2(args[0], await config(args[1]));
   else {
     console.log(usage);
     process.exitCode = command === "--help" || !command ? 0 : 2;

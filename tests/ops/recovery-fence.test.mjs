@@ -308,3 +308,44 @@ test("configured legacy primary is inventoried before legacy import and canonica
   );
   assert.equal(alias.config.databases.length, 4);
 });
+test("fence input accepts R2 and dual R2+Blob media by variable name and binds the credential values", async (t) => {
+  const f = await fixture(t);
+  const r2 = {
+    accountIdEnv: "FIXTURE_R2_ACCOUNT_ID",
+    accessKeyIdEnv: "FIXTURE_R2_ACCESS_KEY_ID",
+    secretAccessKeyEnv: "FIXTURE_R2_SECRET_ACCESS_KEY",
+    bucketEnv: "FIXTURE_R2_BUCKET",
+  };
+  const env = {
+    ...f.env,
+    FIXTURE_R2_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+    FIXTURE_R2_ACCESS_KEY_ID: "fixture-access-key",
+    FIXTURE_R2_SECRET_ACCESS_KEY: "fixture-secret-key",
+    FIXTURE_R2_BUCKET: "fixture-bucket",
+    FIXTURE_BLOB_TOKEN: "fixture-blob-token",
+  };
+  const dual = { kind: "dual", r2, blob: { tokenEnv: "FIXTURE_BLOB_TOKEN" } };
+  const found = await discoverRecoverySources(f.client, env, dual);
+  assert.deepEqual(found.config.media, dual);
+  for (const name of [...Object.values(r2), "FIXTURE_BLOB_TOKEN"])
+    assert.equal(found.env[name], env[name]);
+  assert.equal(JSON.stringify(found.config).includes("fixture-secret-key"), false);
+  const onlyR2 = await discoverRecoverySources(f.client, env, { kind: "r2", ...r2 });
+  assert.equal(onlyR2.env.FIXTURE_BLOB_TOKEN, undefined);
+  // A substituted credential under the same names changes the bound inventory.
+  const rotated = await discoverRecoverySources(f.client, { ...env, FIXTURE_R2_SECRET_ACCESS_KEY: "other" }, dual);
+  assert.notEqual(rotated.inventoryHash, found.inventoryHash);
+  await assert.rejects(discoverRecoverySources(f.client, { ...env, FIXTURE_BLOB_TOKEN: "" }, dual));
+  await assert.rejects(discoverRecoverySources(f.client, env, { kind: "r2", ...r2, secretAccessKey: "inline" }), /named environment variables/);
+  await assert.rejects(discoverRecoverySources(f.client, env, { kind: "s3" }), /complete media inventory/);
+  await assert.rejects(discoverRecoverySources(f.client, env, { ...dual, secretAccessKey: "inline" }), /never values/);
+  // A media variable named like a discovered database variable cannot replace its value.
+  await assert.rejects(
+    discoverRecoverySources(
+      f.client,
+      { ...env, RECOVERY_DB_0_URL: "substituted-value" },
+      { ...dual, r2: { ...r2, accountIdEnv: "RECOVERY_DB_0_URL" } },
+    ),
+    /collides with a database or keyring variable/,
+  );
+});
