@@ -6,7 +6,8 @@ submissions. It changes no price, entitlement or billing integration. The tool
 never calls an engine, sends mail, starts the app, releases held jobs or runs purge.
 
 Use `node scripts/ops/backup-restore.mjs --help` from the repository. Node 20+
-and the installed `@libsql/client` and `@vercel/blob` dependencies are required.
+and the installed `@libsql/client`, `@vercel/blob` and `@aws-sdk/client-s3`
+(R2) dependencies are required.
 No `.env` file is loaded automatically. Do not put credentials in JSON files,
 shell arguments, logs, CI artifacts or the repository.
 
@@ -46,6 +47,14 @@ Only use a store dedicated to this Particl environment. The backup does not fetc
 external provider URLs: temporary provider output is not a durable master. Owned
 upload URLs outside the selected store fail coverage validation and must be
 accounted for separately before a complete backup can be recorded.
+
+R2 capture (`r2` or `dual`) likewise includes the **entire bucket**. Production
+runs `STORAGE_BACKEND=r2` with `BLOB_READ_WRITE_TOKEN` kept: new objects are on
+R2 and older ones remain on Blob, read through the app's dual backend. Capture
+that layout with `"kind": "dual"`, which inventories and archives **both** whole
+stores. Objects already copied to R2 by the migration exist in both and are kept
+twice in the archive (the R2 copy is the one the app reads); size the runner and
+artifact limits for both stores together.
 
 ## Keys and retention
 
@@ -137,11 +146,70 @@ and set media to:
 The directory allowlist excludes unrelated `.data` databases. Missing empty media
 directories are allowed; missing referenced masters/uploads are not.
 
+### R2 and production's dual R2 + Blob layout
+
+Every R2 field is the **name** of an environment variable, as with Blob's
+`tokenEnv`; a value written into the JSON is refused. `endpointEnv` is optional
+(the app's `R2_ENDPOINT`); without it the endpoint is
+`https://<account>.r2.cloudflarestorage.com`. It must be a bare `https` origin.
+Use a read-only API token scoped to the one bucket: capture only lists and reads.
+
+R2 only (every object on R2; an absolute Blob URL in a row is then read from R2
+at its decoded pathname, with no Blob fallback, exactly as the app does without
+a Blob token):
+
+```json
+{
+  "kind": "r2",
+  "accountIdEnv": "BACKUP_R2_ACCOUNT_ID",
+  "accessKeyIdEnv": "BACKUP_R2_ACCESS_KEY_ID",
+  "secretAccessKeyEnv": "BACKUP_R2_SECRET_ACCESS_KEY",
+  "bucketEnv": "BACKUP_R2_BUCKET"
+}
+```
+
+Production today (R2 first, Blob fallback):
+
+```json
+{
+  "kind": "dual",
+  "r2": {
+    "accountIdEnv": "BACKUP_R2_ACCOUNT_ID",
+    "accessKeyIdEnv": "BACKUP_R2_ACCESS_KEY_ID",
+    "secretAccessKeyEnv": "BACKUP_R2_SECRET_ACCESS_KEY",
+    "bucketEnv": "BACKUP_R2_BUCKET",
+    "endpointEnv": "BACKUP_R2_ENDPOINT"
+  },
+  "blob": { "tokenEnv": "BACKUP_BLOB_TOKEN" }
+}
+```
+
+Coverage follows `lib/storage/backend.ts`: a referenced key (renders, uploads,
+platform assets, a bare stored key) must exist on R2 or, failing that, on Blob
+under the same key; an absolute Blob URL must exist on R2 at its decoded
+pathname or on Blob at that exact URL. Any other absolute URL fails. A failure
+names up to 20 missing objects as `database/table/row` only, never a key, URL,
+file name or credential (an upload's key can carry the customer's file name).
+
+Each R2 object is read pinned to its listed ETag (`If-Match`), its length is
+checked, and a single-part ETag is checked as the MD5 of the bytes. Objects
+stream straight into the encrypted archive (bounded memory). A dropped
+connection, 408/429 or 5xx is retried up to four times with backoff, restarting
+that object; integrity failures are never retried. Like Blob capture, a run is
+not resumable: a failed run publishes nothing; repeat it into a new directory.
+The archive stores single-store media at `media/<key>`; `dual` stores
+`media/r2/<key>` and `media/blob/<pathname>` so a migrated key keeps both copies.
+
 ```sh
 node scripts/ops/backup-restore.mjs backup /secure/source.json /secure/backups/unique-capture
 node scripts/ops/backup-restore.mjs restore /secure/backups/unique-capture /secure/rehearsals/unique-restore
 node scripts/ops/backup-restore.mjs report /secure/rehearsals/unique-restore
 ```
+
+`restore` re-checks that every referenced object resolves to a restored,
+digest-verified file; `report` proves it again against the offline directory
+and prints `media: { kind, verified, references, byStore, objects }`, naming
+(by database/table/row) any referenced file that is missing or changed.
 
 Both destination directories must not exist. Keep the complete archive directory,
 including `header.json`, `manifest.enc` and every numbered encrypted object.
@@ -177,7 +245,7 @@ policy, and escrow these environment secrets:
 | Secret                           | Contents                                                                                                                                                                      |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PARTICL_BACKUP_SOURCE_JSON`     | The complete source JSON inventory from this runbook. Keep it synchronized with newly provisioned workspaces; omissions cause failure.                                        |
-| `PARTICL_BACKUP_ENV_JSON`        | A JSON object of the scoped URL/token variables referenced by that inventory, plus the original `KEYRING_SECRET`. Do not include a Turso organization/provisioning API token. |
+| `PARTICL_BACKUP_ENV_JSON`        | A JSON object of the scoped URL/token variables referenced by that inventory (for `dual` media: every R2 variable named and the Blob token), plus the original `KEYRING_SECRET`. Do not include a Turso organization/provisioning API token. |
 | `PARTICL_BACKUP_KEY`             | The independent 32-byte base64 archive key, also retained outside GitHub by recovery custodians.                                                                              |
 | `PARTICL_BACKUP_QUIESCENCE_JSON` | Fresh confirmation from the operator or maintenance orchestrator that the exact sources are fenced and all mutating services are paused.                                      |
 
@@ -261,6 +329,32 @@ key and assume an old archive will decrypt.
    A partial failure leaves the new store quarantined; it is not silently resumed
    or cleared. Investigate it and use a new empty store for a full rerun.
 
+   **Or into a new empty R2 bucket** (any `blob`, `r2` or `dual` archive). Inject
+   its variables, then use a target config of names only:
+
+   ```json
+   {
+     "accountIdEnv": "RESTORE_R2_ACCOUNT_ID",
+     "accessKeyIdEnv": "RESTORE_R2_ACCESS_KEY_ID",
+     "secretAccessKeyEnv": "RESTORE_R2_SECRET_ACCESS_KEY",
+     "bucketEnv": "RESTORE_R2_BUCKET",
+     "confirmEmptyBucket": true
+   }
+   ```
+
+   ```sh
+   node scripts/ops/backup-restore.mjs restore-r2 /secure/rehearsals/unique-restore /secure/new-r2.json
+   ```
+
+   The bucket must be empty. R2 objects keep their key and Blob objects go to
+   their pathname; a Blob copy shadowed by an R2 object of the same key (one the
+   app never reads) stays only in the offline directory. Writes use
+   `If-None-Match: *` (multipart above 100 MiB), every object is read back and
+   checked by SHA-256 and size, and `r2-restore-keys.json` records the result for
+   `prepare`. A partial failure quarantines the bucket, as for Blob.
+
+   **Or onto local disk**: no upload step; `prepare` builds the media root (below).
+
 4. Plan new target Turso database names in an isolated group.
    Build a target mapping with the same database IDs as the archive and
    `invalidateAccess: true`. Each remote tenant entry uses `urlEnv`, `tokenEnv`, and
@@ -294,6 +388,19 @@ key and assume an old archive will decrypt.
    ```sh
    node scripts/ops/backup-restore.mjs prepare /secure/rehearsals/unique-restore /secure/targets.json /secure/prepared-copy
    ```
+
+   Add `"media": { "kind": "r2" }` or `"media": { "kind": "local" }` to the
+   mapping to point media somewhere other than a restored Blob store (the
+   default, `"blob"`, is unchanged). `r2` requires the `restore-r2` record and
+   rewrites absolute Blob URLs in upload rows to the bare R2 keys they were
+   restored to. `local` writes `local-media/` in the app's local layout
+   (`generations/<id>.<ext>`, `uploads/<id>.<ext>`, `platform/...`; use it as the
+   app's `.data` directory) with every referenced object copied and checked by
+   SHA-256, and rewrites absolute upload URLs to the upload's own key. `local`
+   copies **only referenced objects** (renders, uploads, platform assets);
+   identity zips, consent recordings, pending chunks and any unreferenced object
+   stay in the offline directory under `media/` for the operator to place. Both
+   check every reference first and refuse if one cannot be placed.
 
    `prepare` creates new local copies, remaps workspace and provisioning database
    URLs/tokens (sealed with the original keyring), replaces absolute upload URLs
