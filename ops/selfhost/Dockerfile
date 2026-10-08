@@ -22,6 +22,8 @@ COPY --from=deps /app/public/vendor ./public/vendor
 COPY . .
 # NEXT_PUBLIC_* values are baked in at build time: tick "Build Variable" on
 # NEXT_PUBLIC_APP_URL and NEXT_PUBLIC_VAPID_PUBLIC_KEY in the platform.
+# APP_ORIGIN is read at build too (robots.txt, sitemap.xml, link previews): tick "Build Variable".
+ARG APP_ORIGIN
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY
 ARG SOURCE_COMMIT=unknown
