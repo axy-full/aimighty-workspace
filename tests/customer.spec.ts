@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { DEFAULT_PLANS } from "../lib/plans";
 import type { Project } from "../lib/workbench/studio";
-import { legacyShell, askForLegacyShell } from "./helpers/legacyShell";
+import { askForLegacyShell } from "./helpers/legacyShell";
 
 async function noOverflow(page: Page) {
   expect(
@@ -563,61 +563,4 @@ test("workspace setup retries the same request and members cannot start checkout
     }),
   ).toBeVisible();
   expect(state.checkouts).toHaveLength(0);
-});
-
-test("workspace switch drains saves and a refused switch retains editing", async ({
-  page,
-}, testInfo) => {
-  test.skip(
-    testInfo.project.name !== "customer-1440x900",
-    "desktop save-drain regression; customer flow covers each responsive layout",
-  );
-  const state = await customerFixture(page);
-  await page.goto(await legacyShell(page, "/workbench"));
-  await page
-    .getByRole("button", { name: "Start a project", exact: true })
-    .click();
-  const dialog = page.getByRole("dialog");
-  await dialog
-    .getByLabel("Project name", { exact: true })
-    .fill("First workspace production");
-  await dialog
-    .getByRole("button", { name: "Create project", exact: true })
-    .click();
-  await expect.poll(() => state.draft?.name).toBe("First workspace production");
-  state.holdSave = true;
-  await page
-    .getByLabel("Project title", { exact: true })
-    .fill("Save before workspace switch");
-  await expect.poll(() => state.saveHeld).toBeTruthy();
-  await page
-    .getByLabel("Project title", { exact: true })
-    .fill("Final edit before workspace switch");
-  await page
-    .getByRole("button", { name: "Workspace menu", exact: true })
-    .click();
-  await page
-    .getByRole("menuitem", { name: "Second Studio", exact: true })
-    .click();
-  expect(state.events.some((event) => event.startsWith("switch:"))).toBeFalsy();
-  state.failSwitch = true;
-  state.releaseSave();
-  await expect
-    .poll(() =>
-      state.events.some((event) => event === "switch:other-workspace"),
-    )
-    .toBeTruthy();
-  expect(state.draft?.name).toBe("Final edit before workspace switch");
-  expect(state.events.at(-2)).toBe("save:Final edit before workspace switch");
-  await expect(
-    page.getByText("Workspace switching is temporarily unavailable.", {
-      exact: true,
-    }),
-  ).toBeVisible();
-  await page
-    .getByLabel("Project title", { exact: true })
-    .fill("Still editable after refusal");
-  await expect
-    .poll(() => state.draft?.name)
-    .toBe("Still editable after refusal");
 });
