@@ -132,7 +132,6 @@ export const GET = withTenant(async function GET(req: Request) {
        conversation was still paid for. */
     atomikTextSpend(),
   ]);
-  const atomikUsd = atomikText.usd;
   const atomikChats = atomikText.chats;
 
   /* The only cost here that is rent rather than a purchase. */
@@ -179,9 +178,10 @@ export const GET = withTenant(async function GET(req: Request) {
     const r = renderBy.get(p.id);
     const pr: any = promptBy.get(p.id) ?? {};
     const renderSpend = r?.usd ?? 0;
-    /* Atomik's conversations are gateway text, so they land on the gateway's
-       own line beside the prompt writer's. */
-    const promptSpend = Number(pr.prompt_spend ?? 0) + (p.id === "vercel" ? atomikUsd : 0);
+    /* Atomik's conversations land on the line of the balance that paid for
+       them, beside the prompt writer's: the gateway's for every row before
+       direct text, the vendor's own (Anthropic, Google, xAI, OpenAI) after. */
+    const promptSpend = Number(pr.prompt_spend ?? 0) + (atomikText.byLedger[p.id] ?? 0);
     const added = addedBy.get(p.id) ?? 0;
     const computedSpent = renderSpend + promptSpend;
     /* Anchored where a reading exists: the vendor's own spend, plus ours
@@ -251,8 +251,10 @@ export const GET = withTenant(async function GET(req: Request) {
           ? { kind: "credits" as const, used: eleven.used, limit: eleven.limit, tier: eleven.tier, resetAt: eleven.resetAt }
           : null,
       note: p.id === "vercel"
-        ? `Every text call: Atomik's ${atomikChats === 1 ? "conversation" : "conversations"} and the prompt writer. ` +
+        ? `Text through the gateway: Atomik's ${atomikChats === 1 ? "conversation" : "conversations"} and the prompt writer, for every vendor not switched to its own API. ` +
           "Stills bill here too while the gateway is the route to the image engine."
+        : p.id === "anthropic"
+        ? "Claude text, once it goes straight to Anthropic: Atomik and the prompt writer."
         : p.id === "google"
         ? "Stills, when they go direct on GEMINI_API_KEY. While the model gateway is the route, they bill to the gateway instead."
         : p.id === "byteplus" ? "Seedance video and its own prompt writer."

@@ -94,17 +94,24 @@ export async function deleteCheck(id: string): Promise<void> {
 }
 
 /**
- * Whose balance the prompt writer's text came out of. Every gateway model is
- * named vendor/model and is paid for in gateway credit, whoever built it;
- * ByteDance's own text models are bare ids and are paid for on the ModelArk
- * key. The Usage ledger and the reading-anchored figures below both use this,
- * so the two cannot attribute the same prompt to different balances.
+ * Whose balance the prompt writer's text came out of. A row written since
+ * direct text records it (`refine_ledger`: the vendor for a direct door,
+ * 'vercel' for the gateway, 'byteplus' for ModelArk). An older row keeps the
+ * rule it was always read by: every gateway model is named vendor/model and
+ * was paid for in gateway credit, whoever built it; ByteDance's own text
+ * models are bare ids, paid for on the ModelArk key. The Usage ledger and the
+ * reading-anchored figures below both use this, so the two cannot attribute
+ * the same prompt to different balances.
  */
-export const PROMPT_LEDGER = `CASE WHEN refine_model LIKE '%/%' THEN 'vercel' ELSE 'byteplus' END`;
+export const PROMPT_LEDGER = `COALESCE(refine_ledger, CASE WHEN refine_model LIKE '%/%' THEN 'vercel' ELSE 'byteplus' END)`;
 /** Renders are charged where the money actually left — see billed_to in lib/db.ts. */
 export const PAID_BY = `COALESCE(billed_to, provider)`;
-/** Atomik's conversations and write-ups are gateway text, on the gateway's line. */
-export const ATOMIK_LEDGER = "vercel";
+/**
+ * Atomik's conversations and write-ups, by the balance that paid: the row's
+ * `ledger` (the vendor for a direct door, 'vercel' for the gateway). A row
+ * with none predates direct text and was gateway text, on the gateway's line.
+ */
+export const ATOMIK_LEDGER = `COALESCE(ledger, 'vercel')`;
 
 /**
  * Every render's spend, by the balance that paid for it. The money (dollars,
@@ -133,18 +140,25 @@ export async function renderSpendByPayer(): Promise<{ provider: string; attempts
  * way the reading-anchored figure sums them (textSpend, below). A hidden
  * conversation was still paid for; only visible ones are counted as chats.
  */
-export async function atomikTextSpend(): Promise<{ usd: number; chats: number }> {
+export async function atomikTextSpend(): Promise<{ usd: number; chats: number; byLedger: Record<string, number> }> {
   await ready();
   const rs = await db().execute(`SELECT (SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) FROM atomik_messages)
                                       + (SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) FROM atomik_spend) AS spend,
                                         (SELECT COUNT(*) FROM atomik_chats WHERE deleted = 0) AS chats`);
+  /* The same spend on each balance that paid it (ATOMIK_LEDGER). */
+  const lines = await db().execute(`SELECT ledger, SUM(spend) AS spend FROM (
+      SELECT ${ATOMIK_LEDGER} AS ledger, COALESCE(cost_usd,0) AS spend FROM atomik_messages
+      UNION ALL SELECT ${ATOMIK_LEDGER} AS ledger, COALESCE(cost_usd,0) AS spend FROM atomik_spend) GROUP BY ledger`);
+  const byLedger: Record<string, number> = {};
+  for (const row of lines.rows as any[]) byLedger[String(row.ledger)] = Number(row.spend ?? 0);
   const r: any = rs.rows[0];
-  return { usd: Number(r?.spend ?? 0), chats: Number(r?.chats ?? 0) };
+  return { usd: Number(r?.spend ?? 0), chats: Number(r?.chats ?? 0), byLedger };
 }
 
 /**
- * Text a ledger paid for in a window: the prompt writer on renders, and for
- * the gateway every Atomik turn and write-up. Atomik is summed per message
+ * Text a ledger paid for in a window: the prompt writer on renders, and every
+ * Atomik turn and write-up that ledger paid for (the gateway's for every row
+ * before direct text, the vendor's own after). Atomik is summed per message
  * and per write-up here, not per conversation, because a reading lands
  * between two turns of the same conversation.
  */
@@ -154,15 +168,12 @@ async function textSpend(provider: string, op: ">" | "<=", at: number): Promise<
           FROM generations WHERE refine_model IS NOT NULL AND ${PROMPT_LEDGER} = ? AND created_at ${op} ?`,
     args: [provider, at],
   });
-  let atomik = 0;
-  if (provider === ATOMIK_LEDGER) {
-    const rs = await db().execute({
-      sql: `SELECT (SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) FROM atomik_messages WHERE created_at ${op} ?)
-                 + (SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) FROM atomik_spend WHERE created_at ${op} ?) AS spend`,
-      args: [at, at],
-    });
-    atomik = Number((rs.rows[0] as any)?.spend ?? 0);
-  }
+  const rs = await db().execute({
+    sql: `SELECT (SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) FROM atomik_messages WHERE ${ATOMIK_LEDGER} = ? AND created_at ${op} ?)
+               + (SELECT COALESCE(SUM(COALESCE(cost_usd,0)),0) FROM atomik_spend WHERE ${ATOMIK_LEDGER} = ? AND created_at ${op} ?) AS spend`,
+    args: [provider, at, provider, at],
+  });
+  const atomik = Number((rs.rows[0] as any)?.spend ?? 0);
   return Number((prompt.rows[0] as any)?.spend ?? 0) + atomik;
 }
 
