@@ -108,11 +108,12 @@ const inAtomikFamily = (id: string) => (ATOMIK_FAMILIES as readonly string[]).in
 /** Atomik's planner and agent models: the verified catalogue, Claude, OpenAI and Grok only. The first is the default. */
 export const ATOMIK_MODEL_IDS: readonly string[] = VERIFIED_TEXT_MODEL_IDS.filter(inAtomikFamily);
 
-/** Keep Auto's established production choices stable as the full picker expands. GPT-5.5 Pro left with the dropped ids (lib/modelAliases.ts). */
+/** Keep Auto's established production choices stable as the full picker expands. GPT-5.5 Pro left with the dropped ids; its alias, GPT-5.5, takes its place (lib/modelAliases.ts). */
 export const ATOMIK_AUTO_MODEL_IDS = [
   "anthropic/claude-sonnet-4.6",
   "anthropic/claude-opus-4.7",
-  "anthropic/claude-opus-4.6"
+  "anthropic/claude-opus-4.6",
+  "openai/gpt-5.5"
 ] as const;
 
 /** What Auto plans with when nothing else routes it: the first Atomik model. */

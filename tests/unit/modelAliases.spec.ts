@@ -106,8 +106,16 @@ test("no offered list, default or Auto list names a dropped id; the catalogue ke
   }
 });
 
-test("Auto keeps its Claude choices without GPT-5.5 Pro, and never plans on a dropped id", async () => {
-  expect([...ATOMIK_AUTO_MODEL_IDS]).toEqual(["anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.7", "anthropic/claude-opus-4.6"]);
+test("Auto keeps its choices with GPT-5.5 where GPT-5.5 Pro was, and never plans on a dropped id", async () => {
+  expect([...ATOMIK_AUTO_MODEL_IDS]).toEqual(["anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.7", "anthropic/claude-opus-4.6", "openai/gpt-5.5"]);
+  /* An OpenAI-only workspace keeps an OpenAI Auto choice, not the cheapest model on the menu. */
+  {
+    const { atomikModels } = await import("../../lib/workbench/atomik-server");
+    const { selectPlannerModel } = await import("../../lib/workbench/rig-agent-planner");
+    const menu = atomikModels(["openai/gpt-5-nano", "openai/gpt-4.1-nano", "openai/gpt-5.5", "openai/gpt-5.5-pro"].map(entry));
+    expect(menu[0].id).not.toBe("openai/gpt-5.5");
+    expect(selectPlannerModel("auto", menu)).toBe("openai/gpt-5.5");
+  }
   const { selectPlannerModel } = await import("../../lib/workbench/rig-agent-planner");
   const { atomikModels } = await import("../../lib/workbench/atomik-server");
   const openaiOnly = atomikModels(["openai/gpt-5.5-pro", "openai/gpt-5.5"].map(entry));
