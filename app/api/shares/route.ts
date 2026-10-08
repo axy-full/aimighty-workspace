@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
 import { currentTenant } from "@/lib/tenant";
 import { mintShare, listShares, revokeShare, shareLive, SHARE_DAYS, MAX_SHARE_DAYS } from "@/lib/shares";
+import { linkOrigin } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const projectId = String(body.projectId ?? "");
   if (!ws || !projectId) return NextResponse.json({ error: "Which production?" }, { status: 400 });
   const { share, token } = await mintShare({ workspaceId: ws.id, projectId, label: String(body.label ?? ""), days: Number(body.days) || SHARE_DAYS, by: got.user.name, actorId: got.user.id });
-  return NextResponse.json({ share: { ...share, live: true }, url: `${new URL(req.url).origin}/review/${token}` }, { status: 201 });
+  return NextResponse.json({ share: { ...share, live: true }, url: `${linkOrigin(req)}/review/${token}` }, { status: 201 });
 });
 
 export const DELETE = withTenant(async function DELETE(req: Request) {
