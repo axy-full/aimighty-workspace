@@ -151,49 +151,21 @@ export async function findModel(id: string): Promise<CatalogModel | null> {
 /* ── The shortlist ────────────────────────────────────────────────────── */
 
 /**
- * The models put at the top of a menu, in order.
- *
- * A list of 369 is not a choice, it is a search problem, and most of that
- * list is embeddings and rerankers nobody picks by hand. These are the ones
- * worth naming. Anything here that the gateway is not currently serving is
- * silently dropped, so a retirement costs nothing; anything the gateway
- * serves that is NOT here is still reachable under "everything else".
+ * The models put at the top of a menu, in order. Only Atomik's planner menu
+ * is drawn from this catalogue; anything listed here that is not being served
+ * is silently dropped, so a retirement costs nothing.
  */
 export const FEATURED = {
   /** Atomik's planning catalogue: the verified Claude, OpenAI and Grok models (lib/atomikModelPolicy). */
   planner: ATOMIK_MODEL_IDS,
-  video: [
-    "bytedance/seedance-2.5",
-    "google/veo-3.1-generate-001",
-    "google/veo-3.1-fast-generate-001",
-    "klingai/kling-v3.0-t2v",
-    "klingai/kling-v3.0-i2v",
-    "alibaba/wan-v3.0-video",
-    "minimax/minimax-h3",
-    "spacexai/grok-imagine-video-1.5",
-  ],
-  image: [
-    "google/gemini-3-pro-image",
-    "bytedance/seedream-5.0-pro",
-    "bfl/flux-2-pro",
-    "openai/gpt-image-2",
-    "recraft/recraft-v4",
-    "spacexai/grok-imagine-image-2.0",
-  ],
-  speech: [
-    "openai/tts-1-hd",
-    "fish-audio/s2.1-pro",
-    "spacexai/grok-tts",
-  ],
 } as const;
 
-/** The featured models of one kind that the gateway is actually serving,
+/** The featured models of one kind that are actually being served,
  *  in the order above, followed by everything else of that kind. */
 export async function menuFor(kind: keyof typeof FEATURED): Promise<{
   featured: CatalogModel[]; rest: CatalogModel[];
 }> {
-  const type: CatalogType = kind === "planner" ? "language" : kind;
-  const all = (await byType(type)).filter(m => kind !== "planner" || isAtomikModel(m.id));
+  const all = (await byType("language")).filter(m => isAtomikModel(m.id));
   const want = FEATURED[kind] as readonly string[];
   const featured = want
     .map((id) => all.find((m) => m.id === id))
