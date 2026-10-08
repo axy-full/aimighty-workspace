@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { useSession } from "@/lib/session";
 import { lockedClaim, paidActionStorageKey, type PendingPaidAction } from "@/lib/usePaidAction";
-import { sendUntilAnswered } from "@/lib/pendingReplay";
+import { sendError, sendSavedRequest, UNCONFIRMED } from "@/lib/pendingReplay";
 
 /**
  * A planning turn's saved request, one slot per Atomik thread.
@@ -24,7 +24,6 @@ export type ThreadSave = { thread: string; pending: PendingPaidAction | null; er
 const EVENT = "particl-atomik-thread-sends";
 const PREFIX = "particl:paid-action:";
 const UNREADABLE = "The saved request cannot be read. Check Activity before starting another paid action.";
-const UNCONFIRMED = "The response could not be confirmed. Recover the saved request.";
 
 /** The slot a thread's planning turn is saved in, under its project (so a project's saved turns can be found). */
 export const threadSurface = (project: string | null, thread: string) => `/api/atomik/chat:${project ?? "unfiled"}:${thread}`;
@@ -101,7 +100,7 @@ export function useThreadSends(project: string | null) {
    * Send a thread's planning turn, saved first. `recovering` is the key of the
    * saved request being replayed: the replay is that exact request, or nothing.
    */
-  const run = useCallback(async (thread: string, url: string, body: Record<string, unknown>, recovering?: string) => {
+  const run = useCallback(async (thread: string, url: string, body: Record<string, unknown>, recovering?: string, options: { waitWhilePending?: boolean } = {}) => {
     if (!enabled) throw new Error("Sign in to the original workspace before starting this request.");
     const sentAs = JSON.stringify([ws, who]);
     const storageKey = paidActionStorageKey(ws, who, threadSurface(project, thread));
@@ -121,20 +120,22 @@ export function useThreadSends(project: string | null) {
       throw new Error(error instanceof Error && (error.message.startsWith("Recover the saved") || error.message.startsWith("The saved request was already")) ? error.message : UNREADABLE);
     }
     if (identity.current !== sentAs) throw new Error("The request is saved for recovery in its original workspace.");
-    /* A long turn is answered "still being accepted" and finishes on the server: the same saved request is asked
-       again (same key, never a second run) until its reply is there, for a few minutes at most (lib/pendingReplay.ts). */
-    const { response, data, pending } = await sendUntilAnswered(() => fetch(request.url, {
+    /* `waitWhilePending` (a planning turn): a long turn is answered "still being accepted" and finishes on the server,
+       so the same saved request is asked again (same key, never a second run) until its reply is there, for a few
+       minutes at most (lib/pendingReplay.ts). Without it, sent once, as before. */
+    const sent = await sendSavedRequest(() => fetch(request.url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": request.key, "X-Workspace-Id": ws, "X-Actor-Email": who },
       body: request.body,
-    }), { stillWanted: () => identity.current === sentAs });
+    }), { waitWhilePending: options.waitWhilePending, stillWanted: () => identity.current === sentAs });
+    const { response, data } = sent;
     if (identity.current !== sentAs) throw new Error("The request is saved for recovery in its original workspace.");
-    if (pending) throw new Error(UNCONFIRMED);
     const final = response.headers.get("Idempotency-Status") === "complete";
-    if (!response.ok) {
+    const failed = sendError(sent, !!options.waitWhilePending);
+    if (failed) {
       /* A reply the server recorded as final (a refusal, an archived thread) ends the saved request: it can only answer the same. */
-      if (final) await complete(storageKey, request.key);
-      throw new Error((typeof data?.error === "string" && data.error) || UNCONFIRMED);
+      if (!response.ok && final) await complete(storageKey, request.key);
+      throw new Error(failed);
     }
     if (!data || typeof data !== "object" || Array.isArray(data) || (!final && typeof data.id !== "string" && typeof (data.identity as { id?: unknown } | undefined)?.id !== "string"))
       throw new Error(UNCONFIRMED);

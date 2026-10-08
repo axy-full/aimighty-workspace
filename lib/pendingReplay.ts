@@ -14,6 +14,11 @@
  * PENDING_WAIT_MS. Then, or when the caller no longer wants the answer (a
  * switch of account or workspace), the last answer stands and the caller keeps
  * the saved request for Recover, as before.
+ *
+ * Only the long paid routes that answer early wait (`waitWhilePending`: an
+ * Atomik turn, a Memory read; a transcription asks its own check). Every other
+ * paid send is sent once, and a pending answer is shown at once with Recover,
+ * as it always was.
  */
 
 /** How long a saved request is asked about before it is handed back to Recover. */
@@ -71,4 +76,28 @@ export async function sendUntilAnswered(send: () => Promise<Response>, options: 
     await sleep(wait);
     if (!wanted()) return { response, data, pending: true };
   }
+}
+
+/** What a send that could not be confirmed says; the saved request stays for Recover. */
+export const UNCONFIRMED = "The response could not be confirmed. Recover the saved request.";
+
+/**
+ * The saved request, sent once, or — `waitWhilePending`, for the routes that
+ * answer early — asked about again while it is pending (sendUntilAnswered).
+ */
+export function sendSavedRequest(send: () => Promise<Response>, options: PendingReplayOptions & { waitWhilePending?: boolean } = {}): Promise<PendingReplayResult> {
+  const { waitWhilePending, ...rest } = options;
+  return sendUntilAnswered(send, waitWhilePending ? rest : { ...rest, waitMs: 0 });
+}
+
+/**
+ * The error a send's last answer leaves, or null when it was answered for
+ * good with success. Still pending after waiting: the Recover line. Any other
+ * refusal, a pending answer that was not waited on included: the server's own
+ * words, as before.
+ */
+export function sendError(result: PendingReplayResult, waited: boolean): string | null {
+  if (result.pending && waited) return UNCONFIRMED;
+  if (!result.response.ok) return typeof result.data?.error === "string" && result.data.error ? result.data.error : UNCONFIRMED;
+  return null;
 }

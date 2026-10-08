@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { acceptRecoveryJobTx, reserveRecoveryContinuation } from "./recovery";
+import { acceptRecoveryJobTx, movableRecoveryRun } from "./recovery";
 import { detachable } from "./requestAttachment";
 import type { Client, InStatement, Transaction } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
@@ -97,14 +97,15 @@ export const ANSWER_AFTER_MS = 25_000;
  * `answerAfterMs`: a run still going after this long is answered with the
  * claim's own "still being accepted" (409, `pending`, Retry-After), the same
  * answer a replay of a running claim gets, and it goes on after the reply
- * (Next's after(), reserved as a recovery continuation first). It saves its
+ * (Next's after(), reserved as a recovery continuation first, which is the
+ * parent of what the run admits after the reply). It saves its
  * reply on the claim exactly as it would have, so a replay under the same key
  * is answered with that reply once it is there, and it never runs twice: one
  * claim, one run, one reservation and one settlement per key. The run must
  * take what it needs from the request before it starts (lib/requestAttachment.ts
  * refuses the session's cookies and headers after the reply). Where no reply
- * can be deferred (no request scope, a deploy draining), the request waits for
- * its run as before.
+ * can be deferred (no request scope, the recovery fence closed), the request
+ * waits for its run as before.
  *
  * `afterReply`: tests only; Next's after() otherwise.
  */
@@ -238,7 +239,9 @@ export async function withGenerationRequestData(
  * ever awaited after that: deferring it never starts it again.
  */
 async function answerByDeadline(settle: () => Promise<Response>, ms: number, afterReply: (work: () => Promise<unknown>) => void): Promise<Response> {
-  const run = detachable(settle);
+  /* Its own recovery parent, so its later admissions can hang off the continuation once the request is over. */
+  let moving!: ReturnType<typeof movableRecoveryRun<Response>>;
+  const run = detachable(() => { moving = movableRecoveryRun(settle); return moving.result; });
   const ended: { response?: Response } = {};
   void run.result.then((response) => { ended.response = response; }, () => {});
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -248,8 +251,9 @@ async function answerByDeadline(settle: () => Promise<Response>, ms: number, aft
   /* after() first: outside a request it throws, and nothing is then reserved for a continuation that would never run. */
   let continuation: (() => Promise<unknown>) | null = null;
   try { afterReply(async () => { await continuation?.(); }); } catch { return run.result; }
-  /* Reserved before the reply, so a deploy that drains sees the run until it ends. Refused (draining): the request waits for it. */
-  try { continuation = await reserveRecoveryContinuation("paid-request", () => run.result); } catch { return run.result; }
+  /* Reserved before the reply, under the still-open request, so a deploy that drains sees the run until it ends and
+     admits what the run does after the reply (its parent from then on). Refused (the fence is closed): the request waits for it. */
+  try { continuation = await moving.reserveContinuation("paid-request"); } catch { return run.result; }
   /* It finished while the continuation was reserved: its own reply, as if in time. */
   if (ended.response) return ended.response;
   /* From here the request is answered: nothing in the run may read its cookies or headers. */

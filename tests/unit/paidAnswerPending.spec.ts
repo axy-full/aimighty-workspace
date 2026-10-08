@@ -84,9 +84,16 @@ async function textJobs(ws: TenantWorkspace) {
   const { db } = await import("../../lib/db");
   return inTenant(ws, async () => (await db().execute("SELECT id,status FROM paid_text_jobs")).rows.map((r) => ({ id: String(r.id), status: String(r.status) })));
 }
+/** Recovery activities, read through the fence's own client: the database recoveryFence() writes now, whatever an earlier spec in this worker left platformDb() opened on. */
+async function fenceRows(kind: string) {
+  const { recoveryFence } = await import("../../lib/recovery");
+  const fence = recoveryFence() as unknown as { client: { execute(s: { sql: string; args: string[] }): Promise<{ rows: Record<string, unknown>[] }> }; ready(): Promise<void> };
+  await fence.ready();
+  return (await fence.client.execute({ sql: "SELECT id,parent_id,state FROM recovery_activities WHERE kind=?", args: [kind] })).rows
+    .map((r) => ({ id: String(r.id), parent: r.parent_id == null ? null : String(r.parent_id), state: String(r.state) }));
+}
 async function activities(kind: string) {
-  const { platformDb } = await import("../../lib/platform");
-  return (await platformDb().execute({ sql: "SELECT state FROM recovery_activities WHERE kind=?", args: [kind] })).rows.map((r) => String(r.state));
+  return (await fenceRows(kind)).map((r) => r.state);
 }
 
 /** The model Atomik's Auto picks for writing, as the routes resolve it (inside the workspace). */
@@ -243,6 +250,38 @@ test("money, failure: a run that fails after the reply releases its reservation 
   expect((await final.json()).error).toMatch(/No generation credits were charged/);
   expect(await books(ws.id)).toEqual(after);
   expect([runs, submits]).toEqual([1, 1]);
+});
+
+test("what the run admits after the reply hangs off its continuation, not off the request that is over", async () => {
+  const { withGenerationRequest } = await import("../../lib/generationRequests");
+  const { withRecoveryActivity } = await import("../../lib/recovery");
+  const ws = await funded("handover");
+  const later = afterReplies();
+  const kinds = { request: `request-${randomUUID()}`, late: `late-${randomUUID()}` };
+  const seen: { request?: { id: string }[]; continuation?: { id: string; parent: string | null }[]; late?: { parent: string | null }[] } = {};
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  /* As recoveryRoute admits every request (lib/auth.ts withTenant), and finishes it when the reply goes. */
+  const response = await withRecoveryActivity(kinds.request, async () => {
+    seen.request = await fenceRows(kinds.request);
+    return inTenant(ws, () => withGenerationRequest(post("http://localhost/api/atomik/ideas/draft", "handover-key", { brief: "x" }), person.id, async () => {
+      await gate;
+      /* After the reply, as a provider call or a price check would be admitted. */
+      await withRecoveryActivity(kinds.late, async () => {
+        seen.continuation = (await fenceRows("paid-request")).map(({ id, parent }) => ({ id, parent }));
+        seen.late = (await fenceRows(kinds.late)).map(({ parent }) => ({ parent }));
+      });
+      return Response.json({ ok: true });
+    }, { answerAfterMs: DEADLINE_MS, afterReply: later.add }));
+  });
+  await expectPending(response);
+  /* The request's own activity is over once it has answered. */
+  expect(await fenceRows(kinds.request)).toEqual([]);
+  release();
+  await later.flush();
+  const continuation = seen.continuation!.find((c) => c.parent === seen.request![0].id);
+  expect(continuation, "the continuation was admitted under the open request").toBeTruthy();
+  expect(seen.late).toEqual([{ parent: continuation!.id }]);
 });
 
 test("the request's cookies and headers are refused to a run once its request is answered, and read normally before", async () => {
