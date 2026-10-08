@@ -515,7 +515,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const drawerEl = drawer === "library" ? <LibraryDrawer items={items} project={project} onClose={() => setDrawer(null)} />
           : drawer === "history" && board.HistoryDrawer ? <board.HistoryDrawer ctx={ctx} items={items} onClose={() => setDrawer(null)} />
           : drawer === "history" ? <HistoryDrawer scope={scope} productionId={project.productionProjectId ?? null} jobs={rig.jobs} project={project} onClose={() => setDrawer(null)} onOpen={(nodeId) => { glide({ card: nodeId }); select(nodeId); }} />
-          : drawer === "render" && kind === "studio" ? <RenderDrawer scope={scope} project={project} save={rig.save} onClose={() => setDrawer(null)} /> : null;
+          : drawer === "render" && kind === "studio" ? <RenderDrawer scope={scope} project={project} save={rig.save} blocked={gate.readOnly ?? gate.exploreOnly ?? null} onClose={() => setDrawer(null)} /> : null;
   if (compact) {
     return (
       <BoardInternalsProvider value={internals}>
