@@ -275,10 +275,11 @@ node scripts/ops/backup-automation.mjs plan
 node --test tests/ops/*.test.mjs
 ```
 
-The fence is the application's pause switch: from `begin` until `resume`, every
-wrapped request (sign-in included, because a session lookup writes) and every
-database or storage write answers 503 "The studio is paused for a consistent
-recovery checkpoint". Nothing in the workflow begins or seals a fence; an
+The fence is the application's pause switch. From `begin`, every new wrapped
+request (sign-in included, because a session lookup writes) answers 503 "The
+studio is paused for a consistent recovery checkpoint"; work already admitted
+may finish while the fence drains. After `seal`, every database or storage
+write is refused until `resume`. Nothing in the workflow begins or seals a fence; an
 operator does, for each capture. It does not stop writers outside the app
 (manual database or storage credentials). Read-only database preflight checks
 also reject queued/running/uncertain jobs, retained failed meter reservations,
