@@ -599,3 +599,24 @@ test("verify --live refuses, naming only the workspace, when KEYRING_SECRET does
   delete noPlatform.TURSO_DATABASE_URL;
   await assert.rejects(verifyR2Only({ privateDir: dir, live: true, env: noPlatform, r2Client: r2.factory }), /needs PLATFORM_DATABASE_URL/);
 });
+
+test("verify --live: a database without workspaces, or a remote workspace without a token, is refused", async (t) => {
+  const root = await privateRoot(t);
+  const href = (name) => pathToFileURL(join(root, name)).href;
+  const spec = { id: "platform", role: "platform", urlEnv: "PLATFORM_DATABASE_URL" };
+  const empty = createClient({ url: href("empty.db") });
+  await empty.execute("CREATE TABLE other(id TEXT)");
+  empty.close();
+  await assert.rejects(
+    liveSourceInventory(join(root, "empty.db"), spec, { ...ENV, PLATFORM_DATABASE_URL: href("empty.db"), KEYRING_SECRET: KEYRING }),
+    /no workspaces table/,
+  );
+  const bare = createClient({ url: href("bare.db") });
+  await bare.executeMultiple(`CREATE TABLE workspaces(id TEXT PRIMARY KEY,db_url TEXT NOT NULL,db_token_enc TEXT,legacy INTEGER NOT NULL DEFAULT 0,purged_at INTEGER);
+    INSERT INTO workspaces VALUES('ws_tokenless','libsql://tokenless.example',NULL,0,NULL);`);
+  bare.close();
+  await assert.rejects(
+    liveSourceInventory(join(root, "bare.db"), spec, { ...ENV, PLATFORM_DATABASE_URL: href("bare.db"), KEYRING_SECRET: KEYRING }),
+    (error) => /ws_tokenless/.test(error.message) && !error.message.includes("tokenless.example"),
+  );
+});

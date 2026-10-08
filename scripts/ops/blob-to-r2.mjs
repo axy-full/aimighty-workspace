@@ -606,6 +606,9 @@ export async function liveSourceInventory(platformSnapshot, platformSpec, env = 
     const names = new Set(
       (await db.execute("SELECT name FROM sqlite_master WHERE type='table'")).rows.map((r) => String(r.name)),
     );
+    // A wrong env file (a database with no workspaces) must not pass as "ok".
+    if (!names.has("workspaces"))
+      fail("The platform database has no workspaces table. Check that --env-file is the production environment.");
     for (const table of ["workspaces", "workspace_provisioning"]) {
       if (!names.has(table)) continue;
       for (const row of (await db.execute(`SELECT * FROM "${table}"`)).rows) {
@@ -620,7 +623,10 @@ export async function liveSourceInventory(platformSnapshot, platformSpec, env = 
         const tenant = tenants.get(url) ?? { workspaceIds: [], token: undefined };
         tenants.set(url, tenant);
         if (!tenant.workspaceIds.includes(id)) tenant.workspaceIds.push(id);
-        if (row.db_token_enc == null || row.db_token_enc === "") continue;
+        if (row.db_token_enc == null || row.db_token_enc === "") {
+          if (!url.startsWith("file:")) fail(`Workspace ${id} has a remote database but no stored token in its platform record.`);
+          continue;
+        }
         if (!env.KEYRING_SECRET)
           fail("MISSING_CONFIGURATION: --live needs KEYRING_SECRET (the deployment's own) to open workspace database tokens.");
         let token;
