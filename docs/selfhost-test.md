@@ -212,7 +212,7 @@ With grey cloud there is no Cloudflare limit in front, so these Traefik timeouts
 ## Domains and DNS
 
 - `particl.si` stays the primary name.
-- **`particl.si` and `www.particl.si` are DNS-only (grey cloud)** and point straight at the server, like Vercel's records today. Traefik gets **Let's Encrypt** certificates for both (HTTP-01 works with grey cloud).
+- **`particl.si` and `www.particl.si` are DNS-only (grey cloud)** and point straight at the server, like Vercel's records today. Traefik serves **Let's Encrypt** certificates for both, issued **before** the switch (see "Certificates before the switch").
 - In Coolify the production app's **Domains** field is `https://particl.si,https://www.particl.si`. In the app's **General** settings, set **Direction** to **redirect to non-www**, so Traefik sends `www` to `https://particl.si` (a 301 or 308).
 - **No AAAA record** at cutover. Docker may relay IPv6 connections so that every IPv6 visitor shows up as one address and shares one rate-limit allowance. Remove any AAAA that points at Vercel.
 - `particl.app` and `www.particl.app` only redirect. They stay **proxied** (orange) with a Cloudflare redirect rule; no app traffic passes through them, so the 100 s limit does not matter there.
@@ -227,63 +227,120 @@ With grey cloud there is no Cloudflare limit in front, so these Traefik timeouts
 
 **Do not touch** mail records on any domain (MX, SPF, DKIM, DMARC, the mail sender's verification records) or the `particlstudio.com` zone. If there are CAA records on `particl.si`, they must allow Let's Encrypt.
 
+**Checks must reach the server, not Vercel.** While DNS may still point at Vercel (or a resolver still caches it), a plain `curl https://particl.si/` can pass against Vercel. Pin every check to the server:
+- `curl -sI --resolve particl.si:443:<server IPv4> https://particl.si/` (and the same with `www.particl.si`);
+- `openssl s_client -connect <server IPv4>:443 -servername particl.si </dev/null 2>/dev/null | openssl x509 -noout -issuer -dates` (and with `-servername www.particl.si`): the issuer is Let's Encrypt and the dates are current;
+- before trusting any unpinned check after the switch: `dig +short particl.si @1.1.1.1` and `dig +short particl.si @8.8.8.8` both print the server's address.
+
+## Certificates before the switch
+
+Traefik asks Let's Encrypt for a certificate as soon as the app's route appears. With the normal method (HTTP-01), that attempt fails while the names still point at Vercel. Traefik does not retry until its configuration changes, so visitors would get Traefik's self-signed certificate after the switch, and each failed attempt counts against Let's Encrypt's limit of 5 failures per name per hour. So the main path gets the certificates **before** the switch, with a DNS challenge.
+
+**(a) Main path: a DNS-challenge resolver (OWNER, with the advisor), before cutover step 4.**
+1. **Cloudflare token.** **My Profile, API Tokens, Create Token**, custom token with permissions **Zone, DNS, Edit** and **Zone, Zone, Read**, zone resources **Include, Specific zone, `particl.si`** only. It is shown once; it never goes into the repo, a chat or a note.
+2. **Token file on the server.** Save it as `/data/coolify/proxy/cf-dns-token` (one line, no trailing space), owner root, mode `600`. Coolify mounts `/data/coolify/proxy` into Traefik at `/traefik` (check the `volumes:` of the proxy compose).
+3. **Proxy configuration.** Coolify, **Servers**, the server, **Proxy**, **Configuration**. In the Traefik service add, under `environment:`:
+   ```yaml
+         - CF_DNS_API_TOKEN_FILE=/traefik/cf-dns-token
+   ```
+   and, in `command:`, a **second** resolver next to Coolify's own `letsencrypt` one (leave that one as it is: staging's sslip.io address keeps using it):
+   ```yaml
+         - '--certificatesresolvers.letsencrypt-dns.acme.email=<owner email>'
+         - '--certificatesresolvers.letsencrypt-dns.acme.storage=/traefik/acme-dns.json'
+         - '--certificatesresolvers.letsencrypt-dns.acme.dnschallenge.provider=cloudflare'
+         - '--certificatesresolvers.letsencrypt-dns.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53'
+   ```
+   Save, then **Restart Proxy** (when quiet).
+4. **Point the production app at it.** Coolify, the production app, **Configuration, General, Container Labels**. Untick **Readonly labels** if shown. On every `traefik.http.routers.https-…` line ending in `.tls.certresolver=letsencrypt`, change the value to `letsencrypt-dns` (one router for `particl.si`, one for `www.particl.si`). Save. Coolify regenerates labels when Domains or Direction change, so re-check this after any such change.
+5. **Check (during step 4, while the app runs once):** the pinned `openssl s_client … -servername particl.si` and `-servername www.particl.si` both name **Let's Encrypt** with current dates, although DNS still points at Vercel. The certificates are stored in `acme-dns.json` and stay valid when the app is stopped and started again. This resolver also keeps renewing behind an orange cloud later.
+
+**(b) Fallback, only if (a) cannot be set up.** No redeploys or domain changes between steps 4 and 8. Switch DNS (step 8), wait until `dig +short particl.si @1.1.1.1` and `@8.8.8.8` both return the server, then immediately **Restart Proxy** so Traefik asks again. Expect about a minute of certificate warnings for visitors who already reach the server. Check with the pinned `openssl` command.
+
 ## Firewall on the server (main path, grey cloud)
 
 With grey cloud everyone reaches the server directly, so **80 and 443 stay open to everyone**: TCP 80, TCP 443, and **UDP 443** if HTTP/3 is on (Coolify's proxy may publish `443/udp` and set `--entrypoints.https.http3`). Coolify's own ports and SSH are limited to the owner's addresses.
 
-Plain `ufw` is **not enough** for Docker ports: Docker publishes 80, 443, 8000, 6001, 6002 and 8080 through its own rules, ahead of ufw. Two ways; **the owner confirms which one he uses**:
+Plain `ufw` is **not enough** for Docker ports: Docker publishes 80, 443, 8000, 6001, 6002 and 8080 through its own rules, ahead of ufw. Two ways; **the owner confirms which one he uses**.
 
-- **(a) Contabo's control-panel firewall**, if the plan has it (preferred: it filters before traffic reaches the server, so Docker cannot bypass it):
-  - allow TCP 80, TCP 443 and UDP 443 from anywhere;
-  - allow TCP 22, 8000, 6001, 6002 and 8080 only from the owner's own addresses;
-  - deny everything else inbound.
-- **(b) Rules on the server**, if (a) is not available. The advisor runs this as root, after filling in the two values at the top. It refuses to run with the placeholders left in:
-  ```sh
-  #!/bin/sh
-  set -eu
-  IF="<public interface>"    # shown by: ip route get 1.1.1.1
-  ADMIN="<owner IPv4>"       # the owner's own address(es), space separated
-  case "$IF$ADMIN" in *"<"*|"") echo "fill in IF and ADMIN first"; exit 1;; esac
-  # Coolify and Traefik dashboard ports (published by Docker): owner only.
-  iptables -N ADMIN-ONLY 2>/dev/null || iptables -F ADMIN-ONLY
-  for a in $ADMIN; do iptables -A ADMIN-ONLY -s "$a" -j RETURN; done
-  iptables -A ADMIN-ONLY -j DROP
-  for p in 8000 6001 6002 8080; do
-    iptables -C DOCKER-USER -i "$IF" -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j ADMIN-ONLY 2>/dev/null ||
-    iptables -I DOCKER-USER -i "$IF" -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j ADMIN-ONLY
-  done
-  # The same ports over IPv6: closed (the owner uses IPv4).
-  for p in 8000 6001 6002 8080; do
-    ip6tables -C INPUT -p tcp --dport "$p" -j DROP 2>/dev/null || ip6tables -I INPUT -p tcp --dport "$p" -j DROP
-    if ip6tables -L DOCKER-USER >/dev/null 2>&1; then
-      ip6tables -C DOCKER-USER -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j DROP 2>/dev/null ||
-      ip6tables -I DOCKER-USER -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j DROP
-    fi
-  done
-  ```
-  - Matching only **new inbound** connections keeps the containers' own outgoing calls (Turso, R2, the engines) working.
-  - **SSH (22)** is a host port, so `ufw` covers it: `ufw allow from <owner IPv4> to any port 22 proto tcp`, then remove any general "allow 22" rule.
-  - **Trap:** Coolify reaches its own server over SSH from its Docker network. Also allow SSH from the Docker bridge range (`ufw allow from 10.0.0.0/8 to any port 22 proto tcp`; the advisor checks the range with `docker network inspect coolify`). Otherwise Coolify loses the server.
-  - Make the rules survive a reboot (for example `apt install iptables-persistent`, then `netfilter-persistent save`). The advisor confirms.
-- If the owner's home address changes, he is locked out of Coolify; Contabo's **VNC console** still works. Once the Coolify dashboard has its own domain over 443 (gate 1), 8000, 6001 and 6002 can be closed to everyone.
-- **Check from an outside network** (a phone on mobile data, not the owner's allowed address):
-  - `curl -m 10 http://<server IPv4>:8000/`, and the same for `:6001`, `:6002` and `:8080`: each **times out**;
-  - `curl -6 -m 10 http://[<server IPv6>]:8000/`: **times out** (if the server has IPv6);
-  - staging still answers on its https address.
+**(a) Contabo's control-panel firewall**, if the plan has it. Preferred: it filters before traffic reaches the server, so Docker cannot bypass it.
+- Allow TCP 80, TCP 443 and UDP 443 from anywhere.
+- Allow TCP 22, 8000, 6001, 6002 and 8080 only from the owner's own addresses.
+- Deny everything else inbound.
+
+**(b) Rules on the server**, if (a) is not available. The advisor does this as root.
+1. **Docker ports.** Save this as `/usr/local/sbin/particl-firewall.sh` (owner root, mode `700`) after filling in the two values at the top. It refuses to run with a placeholder left in, and running it twice changes nothing:
+   ```sh
+   #!/bin/sh
+   set -eu
+   IF="<public interface>"    # shown by: ip route get 1.1.1.1
+   ADMIN="<owner IPv4>"       # the owner's own address(es), space separated
+   [ -n "$IF" ] && [ -n "$ADMIN" ] || { echo "fill in IF and ADMIN"; exit 1; }
+   case "$IF" in *"<"*) echo "fill in IF"; exit 1;; esac
+   case "$ADMIN" in *"<"*) echo "fill in ADMIN"; exit 1;; esac
+   # Coolify and Traefik dashboard ports (published by Docker): owner only.
+   iptables -N ADMIN-ONLY 2>/dev/null || iptables -F ADMIN-ONLY
+   for a in $ADMIN; do iptables -A ADMIN-ONLY -s "$a" -j RETURN; done
+   iptables -A ADMIN-ONLY -j DROP
+   for p in 8000 6001 6002 8080; do
+     iptables -C DOCKER-USER -i "$IF" -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j ADMIN-ONLY 2>/dev/null ||
+     iptables -I DOCKER-USER -i "$IF" -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j ADMIN-ONLY
+   done
+   # The same ports over IPv6: closed (the owner uses IPv4).
+   for p in 8000 6001 6002 8080; do
+     ip6tables -C INPUT -p tcp --dport "$p" -j DROP 2>/dev/null || ip6tables -I INPUT -p tcp --dport "$p" -j DROP
+     if ip6tables -L DOCKER-USER >/dev/null 2>&1; then
+       ip6tables -C DOCKER-USER -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j DROP 2>/dev/null ||
+       ip6tables -I DOCKER-USER -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j DROP
+     fi
+   done
+   ```
+   Matching only **new inbound** connections keeps the containers' own outgoing calls (Turso, R2, the engines) working.
+2. **Keep it after a reboot** with a systemd unit that re-runs the script once Docker is up. Do **not** use `iptables-persistent` / `netfilter-persistent`: it conflicts with ufw (installing it removes ufw) and would also save Docker's own chains. Save as `/etc/systemd/system/particl-firewall.service`:
+   ```ini
+   [Unit]
+   Description=Particl firewall rules for Docker-published ports
+   After=docker.service
+   Requires=docker.service
+
+   [Service]
+   Type=oneshot
+   ExecStart=/usr/local/sbin/particl-firewall.sh
+   RemainAfterExit=yes
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   Then `systemctl daemon-reload && systemctl enable --now particl-firewall.service`, and `systemctl status particl-firewall.service` shows it ran without error.
+3. **SSH (22)** is a host port, so `ufw` covers it. **Order matters:** add the allows first, then enable.
+   - Find Coolify's network: `docker network inspect coolify --format '{{(index .IPAM.Config 0).Subnet}}'`. Coolify reaches its own server over SSH from that network; without this allow, Coolify loses the server.
+   - `ufw allow from <owner IPv4> to any port 22 proto tcp`
+   - `ufw allow from <coolify subnet> to any port 22 proto tcp`
+   - Remove any general "allow 22" rule (`ufw status numbered`, then `ufw delete <number>`).
+   - `ufw enable` (only now), then `ufw status verbose`: default incoming **deny**, and the two SSH allows listed.
+- If the owner's home address changes, he is locked out of Coolify; Contabo's **VNC console** still works (edit `ADMIN`, re-run the script). Once the Coolify dashboard has its own domain over 443 (gate 1), 8000, 6001 and 6002 can be closed to everyone.
+
+**Check from an outside network** (a phone on mobile data, not the owner's allowed address), now and again **after a reboot** of the server:
+- `curl -m 10 http://<server IPv4>:8000/`, and the same for `:6001`, `:6002` and `:8080`: each **times out**;
+- `curl -6 -m 10 http://[<server IPv6>]:8000/`: **times out** (if the server has IPv6);
+- staging still answers on its https address.
 
 ## Restore point before production code touches the live databases
 
-The app creates and changes tables on first use. So **before the production app first starts** against the live Turso databases (its first deploy, step 4), and **again just before the DNS switch** (step 8), the owner records a way back.
+The app creates and changes tables on first use. So **before the production app first starts** against the live Turso databases (its first deploy, step 4), and **again just before the DNS switch** (step 8), the owner records a way back. Take both of the following at restore point A; at point B the Turso timestamp is enough.
 
-1. **OWNER: write down the exact UTC time** (for example `2026-10-20T09:00:00Z`) for **restore point A** (before the first deploy) and **restore point B** (before the switch). Do this for the platform database and **every workspace database**: all databases in the production Turso group, as listed in the Turso dashboard.
-2. **OWNER: check the Turso plan's point-in-time window** (Turso dashboard, the organisation's plan): Free 24 hours, Developer 10 days, Scaler 30 days, Pro 90 days.
-   - If the window is shorter than the 14-day watch window, also take a full encrypted backup with `scripts/ops/backup-restore.mjs backup` (see `docs/backup-restore.md`, "Capture"). That tool needs a short maintenance window with writes paused, so do it in the same quiet window.
-3. **Prove a restore works, on a copy:**
-   - Create a copy of the platform database and one workspace database at restore point A: `turso db create <new name> --from-db <database> --timestamp <time>`.
-   - Open each copy read-only (`turso db shell <new name> "SELECT count(*) FROM workspaces"` on the platform copy) and see that the rows are there.
-   - Delete the copies.
-   - Never paste database URLs or tokens into chat.
-4. A restore creates **new** databases with new addresses. The platform database stores each workspace's database address, so a real restore also needs those rows repointed (`scripts/ops/prepare-restore.mjs`, "Restore into new infrastructure" in `docs/backup-restore.md`). Claude prepares the exact steps on the day if it is ever needed.
+**1. Turso point-in-time timestamps (always; no tooling).**
+- **OWNER:** write down the exact UTC time (for example `2026-10-20T09:00:00Z`) for **point A** (before the first deploy) and **point B** (before the switch). It covers the platform database and **every workspace database** (all databases in the production Turso group).
+- Check the plan's window in the Turso dashboard: Free 24 hours, Developer 10 days, Scaler 30 days, Pro 90 days. A point older than the window is gone.
+- **There is no tooling for this path.** A restore means: `turso db create <new name> --from-db <database> --timestamp <time>` for each database, then, by hand with Claude's help, repointing every workspace's database address and token in the platform database. Those tokens are sealed with `KEYRING_SECRET`, so this needs the original keyring and care. It loses everything written after that time.
+- **Prove it once, on copies:** create a copy of the platform database and of one workspace database at point A, open them read-only (`turso db shell <new name> "SELECT count(*) FROM workspaces"` on the platform copy), see the rows, delete the copies.
+- As a plain extra copy, `turso db shell <database> .dump > <database>-pointA.sql` for each database saves a readable SQL file on the owner's machine (keep it private: it holds sealed tokens and password hashes).
+
+**2. A full encrypted bundle at point A (recommended, whatever the plan window).** The only scripted path:
+- Variables in the operator shell, never typed on the command line: `PARTICL_BACKUP_KEY` (32 random bytes, base64, kept in the password manager), the **original** `KEYRING_SECRET`, and the database and media tokens named in `SOURCE.json` (format in `docs/backup-restore.md`, "Capture").
+- Command: `node scripts/ops/backup-restore.mjs backup SOURCE.json NEW_BUNDLE_DIRECTORY`, then `restore NEW_BUNDLE_DIRECTORY NEW_OFFLINE_DIRECTORY` and `report NEW_OFFLINE_DIRECTORY` to prove it reads back.
+- **Writes must be paused on the live Vercel site** during capture; the backup tool cannot do that. The pause is the recovery fence (`docs/enforced-recovery-fence.md`): `node scripts/ops/recovery-fence.mjs begin …`, wait until `status` shows nothing outstanding, `seal`, capture, then `resume`. While paused, the live site refuses new writes (uploads, renders, edits) but stays readable. Without the pause, each database is copied at a slightly different moment, so rows written during the capture can be in one copy and missing from another.
+- **Expected blocker: media in R2.** The tool reads media only from a Blob store or local disk (`scripts/ops/backup-lib.mjs`, lines 561 to 562) and checks that every referenced file is in that store. Files written since production moved to R2 are not, so a production capture is expected to stop with a coverage error. If it does, a full bundle needs a tooling PR first (R2 as a media source); until then the Turso timestamps and SQL dumps are the way back.
+- Restoring a bundle into new databases goes through `prepare`. It takes only the offline directory that `restore` produced, and it always invalidates access: it **signs everyone out**, and removes API tokens, review links, password-reset links and consumer sign-in grants. That is right after a real restore, but it is not a quiet rollback.
 
 ## Cutover order (grey cloud)
 
@@ -296,14 +353,14 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
      - Then from a phone on mobile data (network B): sign in to the same account with the right password. It must work: limits are counted per address.
      - If network B is blocked too, every visitor shares one address: **stop** and report it.
 2. **Lower the TTL (OWNER, a day ahead).** Write down the current records for `particl.si` and `www.particl.si` (type, value, TTL, proxy status) and lower their TTL to the minimum. If `particl.si` is not yet a Cloudflare zone, stop and say so.
-3. **Firewall (OWNER, with the advisor).** As in "Firewall on the server", including the outside checks.
-4. **Production app built and stopped (OWNER).** First record **restore point A** ("Restore point" above), including the restore test on a copy. Then:
-   - Every variable in "Live-copy settings" is set. `TRUST_CF_CONNECTING_IP` and `TRUSTED_PROXY_HOPS` are **unset**.
-   - Domains `https://particl.si,https://www.particl.si`, Direction redirect to non-www, stop grace period 300.
-   - Scheduled task: Coolify, the production app, **Scheduled Tasks, + Add**: name `cron-sync`, command `node /app/cron-sync.mjs`, frequency `*/10 * * * *`, timeout 300 s, saved **disabled**. (The script calls `http://127.0.0.1:3000/api/cron/sync` inside the container with `CRON_SECRET`.)
-   - **Deploy** (this is the first start against the live databases), check the health check goes green, then **Stop**. Production workspaces must not be reconciled by two hosts before the switch.
-   - Traefik will fail to get a certificate at this point (the names still point at Vercel); that is expected.
-   - **Recommended:** deploy the same `main` commit on Vercel too, so both hosts run identical code against the same databases during the window.
+3. **Firewall and certificate resolver (OWNER, with the advisor).** As in "Firewall on the server" (including the outside checks) and "Certificates before the switch" (a), steps 1 to 4.
+4. **Production app built, checked once, stopped (OWNER).**
+   1. **Required first: deploy the same `main` commit on Vercel**, so the code that changes tables on first use is the same on both hosts sharing the databases.
+   2. Record **restore point A** ("Restore point" above): the Turso timestamp, the restore test on copies, and the full bundle if it can be taken.
+   3. Every variable in "Live-copy settings" is set. `TRUST_CF_CONNECTING_IP` and `TRUSTED_PROXY_HOPS` are **unset**.
+   4. Domains `https://particl.si,https://www.particl.si`, Direction redirect to non-www, stop grace period 300, labels on `letsencrypt-dns`.
+   5. Scheduled task: Coolify, the production app, **Scheduled Tasks, + Add**: name `cron-sync`, command `node /app/cron-sync.mjs`, frequency `*/10 * * * *`, timeout 300 s, saved **disabled**. (The script calls `http://127.0.0.1:3000/api/cron/sync` inside the container with `CRON_SECRET`.)
+   6. **Deploy** (the first start against the live databases). Check the health check goes green and the pinned certificate check names Let's Encrypt for both names ("Certificates before the switch", check 5). Then **Stop**: production workspaces must not be reconciled by two hosts before the switch.
 5. **Inngest: stop Vercel re-syncing (OWNER).**
    - In the Inngest dashboard, check the app's URL (**Apps**, the app): note whether it is `https://particl.si/api/inngest` or a `*.vercel.app` address.
    - In Inngest's **Vercel integration** settings, **turn off sync for this project**. Do not uninstall: that can remove the keys from Vercel.
@@ -311,21 +368,21 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
 6. **Redirect rule for `particl.app` (OWNER).** Created and proxied as in "Domains and DNS" (it can already exist).
 7. **Restore point B (OWNER).** Write down the UTC time just before step 8.
 8. **Switch DNS (OWNER's "go").**
-   - Start the production app; wait for its health check to be green.
+   - Start the production app; wait for its health check to be green; the pinned `curl --resolve` check answers 200.
    - In Cloudflare: `particl.si` A to `<server IPv4>` and `www.particl.si` CNAME to `particl.si`, both **DNS-only (grey)**, no AAAA.
    - Mail records untouched.
-9. **Certificates.** Within a few minutes, `curl -sI https://particl.si/` answers 200 **without** `-k`, and `openssl s_client -connect particl.si:443 -servername particl.si </dev/null 2>/dev/null | openssl x509 -noout -issuer` names Let's Encrypt. The same for `www.particl.si`. For the first minutes, visitors may see a certificate warning until Let's Encrypt issues. If there is still no certificate after 10 minutes: **OWNER:** Coolify, **Servers, Proxy, Restart Proxy**.
+9. **DNS and certificates.** `dig +short particl.si @1.1.1.1` and `@8.8.8.8` both print the server's address (within the old TTL). The pinned `openssl` checks name Let's Encrypt for both names. Only on fallback (b): restart the proxy now, as described there.
 10. **Inngest re-sync (OWNER).**
-    - Inngest dashboard, **Apps**, **Sync new app** (or **Resync**) with URL `https://particl.si/api/inngest`; or run `curl -X PUT https://particl.si/api/inngest` once.
+    - Inngest dashboard, **Apps**, **Sync new app** (or **Resync**) with URL `https://particl.si/api/inngest`; or run `curl -X PUT https://particl.si/api/inngest` once (only after step 9's `dig` shows the server).
     - The app must then show URL `https://particl.si/api/inngest` and **6 functions**. Inngest reaches the server directly (grey cloud).
     - If the URL was a `*.vercel.app` address in step 5, this step is what moves the work: until it is done, Inngest keeps running jobs on Vercel.
 11. **Stripe webhook check (OWNER).** Stripe dashboard, **Developers, Webhooks**. This code has no Stripe webhook route, so if an endpoint for `particl.si` exists, it already fails today and nothing changes. Note it; there is nothing to repoint.
-12. **Smoke (right after).**
-    - `curl -sI 'https://www.particl.si/pricing?x=1'` answers 301 or 308 to `https://particl.si/pricing?x=1`.
-    - `curl -sI 'https://particl.app/pricing?x=1'` and `www.particl.app` answer **308** to `https://particl.si/pricing?x=1`.
-    - `bash ops/selfhost/smoke.sh https://particl.si` passes.
+12. **Smoke (right after; pinned to the server).**
+    - `curl -sI --resolve www.particl.si:443:<server IPv4> 'https://www.particl.si/pricing?x=1'` answers 301 or 308 to `https://particl.si/pricing?x=1`.
+    - `curl -sI 'https://particl.app/pricing?x=1'` and `www.particl.app` answer **308** to `https://particl.si/pricing?x=1` (Cloudflare answers these).
+    - `bash ops/selfhost/smoke.sh https://particl.si`, **only after** step 9's `dig` shows the server from this machine too (`dig +short particl.si`): otherwise it may be testing Vercel.
     - Sign in in a browser; a price shows as `N cr`; an old image (from Blob) and a new upload (R2) both display.
-    - `curl -s https://particl.si/api/inngest` answers 200 with a function count above 0 and a signing key present (not the 503 "not configured").
+    - `curl -s --resolve particl.si:443:<server IPv4> https://particl.si/api/inngest` answers 200 with a function count above 0 and a signing key present (not the 503 "not configured").
     - **No paid press.** In the app's terminal, run:
       `node -e 'console.log(["VERCEL_TOKEN","VERCEL_TEAM_ID","VERCEL_PROJECT_ID","ASTRA_BLENDER_SNAPSHOT_ID","ASTRA_BLENDER_RATE_CARD","AI_GATEWAY_API_KEY","VERCEL","VERCEL_ENV","TRUST_CF_CONNECTING_IP"].map(k=>k+": "+(process.env[k]?"set":"MISSING")).join("  "))'`
       The first six must print `set`; `VERCEL`, `VERCEL_ENV` and `TRUST_CF_CONNECTING_IP` must print **MISSING**.
@@ -341,10 +398,10 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
     - The commit in the signed-in health answer comes from `GIT_COMMIT_SHA`, which the Dockerfile sets from Coolify's `SOURCE_COMMIT`. It reads `local` when no commit was passed to the build; that is cosmetic. Do not set `GIT_COMMIT_SHA` by hand.
 15. **Rollback (any time in the 14 days).**
     1. **OWNER:** in Cloudflare, restore `particl.si` and `www.particl.si` to the values written down in step 2 (grey cloud, as today).
-    2. **OWNER:** re-enable the Vercel cron; disable `cron-sync` on the server; stop the production app.
+    2. **OWNER:** re-enable the Vercel cron and disable `cron-sync` on the server. **Keep the production app running** until at least the TTL has passed since the DNS change (plus a few minutes) and `dig +short particl.si @1.1.1.1` and `@8.8.8.8` show Vercel again, so visitors still on the old answer are served. Then stop it.
     3. **OWNER:** re-enable the Inngest Vercel integration's sync for the project and resync, so Inngest's app URL points at Vercel again; check it shows 6 functions.
     4. **Data, ordinary rollback: nothing to copy back.** Both hosts use the **same Turso databases** (platform and workspaces), the **same R2 bucket** and the **same Blob store**. With R2 selected, the self-hosted app keeps nothing durable on its own disk (upload pieces go to R2 too). Everything written during the window is already where Vercel reads it. An upload in progress at the moment of switching may need to be retried.
-    5. **Data problem (wrong or damaged rows):** restore from restore point B (or A) as in "Restore point". Everything written after that time is lost, so this is the owner's decision, made with Claude, not a reflex.
+    5. **Data problem (wrong or damaged rows):** go back to point B (or A) as in "Restore point". With the Turso timestamps this is a hand-made restore with Claude's help; everything written after that time is lost. It is the owner's decision, not a reflex.
     6. **Never** use Vercel's Instant Rollback to a deployment from before #524 (it predates the credit switchover and would bill the wrong price).
 16. **After the window (OWNER).** Retire the Vercel deployment and domains, but **keep the Vercel team, project and snapshot** while Astra renders run on Vercel Sandbox. Rotate exposed keys. Retire Blob only after every old Blob object is copied to R2.
 
@@ -414,7 +471,9 @@ Each is passed, or waived by the owner in writing (cutover step 0).
 
 **Steps (OWNER, with the advisor), in this order:**
 1. **Staging first.** Put staging on `staging.particl.si`, proxied, and run all of the steps below on it. Staging must stay reachable and its certificate must stay valid through this. The **Coolify dashboard's own domain** must stay reachable too: proxied with the same certificate, or allowed in the firewall for the owner's address.
-2. **Origin Certificate.**
+2. **Certificate behind the orange cloud.**
+   - **If the DNS-challenge resolver (`letsencrypt-dns`, main path (a)) is in place, keep it.** It keeps renewing behind the orange cloud, and Full (strict) accepts a Let's Encrypt certificate, so the Origin Certificate below is optional.
+   - Otherwise use the Origin Certificate, and **take these names off the HTTP-01 resolver** (`certresolver=letsencrypt` in the app's labels): HTTP-01 renewals can fail behind the orange cloud and Always Use HTTPS.
    - Cloudflare, `particl.si` zone, **SSL/TLS, Origin Server, Create Certificate** for `particl.si` and `*.particl.si`.
    - On the server, save the certificate and key as files under `/data/coolify/proxy/certs/`.
    - In Coolify, **Servers, Proxy, Dynamic Configurations**, add a file that makes them Traefik's **default certificate**: `tls.stores.default.defaultCertificate`, with `certFile` and `keyFile` under `/traefik/certs/`. Verify that mount path in the proxy compose.
@@ -424,14 +483,19 @@ Each is passed, or waived by the owner in writing (cutover step 0).
 4. **Bot Fight Mode off** (**Security, Bots**). It challenges Inngest's calls to `/api/inngest`, and on the free plan no rule can exempt a path from it. Add a WAF custom rule that **skips** the other security rules for `/api/inngest` and `/api/worker` (the app hands work to itself at `/api/worker` if the Inngest keys were ever missing).
 5. **Cloudflare-only firewall.** Ports 80 and 443 accept only Cloudflare.
    - **(a)** Contabo's control-panel firewall, if the plan has it: TCP 80 and 443 only from https://www.cloudflare.com/ips-v4 and https://www.cloudflare.com/ips-v6. **Close UDP 443:** Cloudflare talks to the server over TCP only, so HTTP/3 to the server is no longer needed. Admin ports stay owner-only as before.
-   - **(b)** Rules on the server, as root. The script stops if the downloaded list looks empty, so it never installs a DROP with nothing allowed:
+   - **(b)** Rules on the server, as root. Save as `/usr/local/sbin/particl-cf-only.sh` (root, mode `700`). It keeps a copy of Cloudflare's list, refreshes it only when the download looks complete, and stops without changing anything if it has no usable list, so it never installs a DROP with nothing allowed:
      ```sh
      #!/bin/sh
      set -eu
      IF="<public interface>"    # shown by: ip route get 1.1.1.1
-     case "$IF" in *"<"*|"") echo "fill in IF first"; exit 1;; esac
-     CF4=$(curl -fsS https://www.cloudflare.com/ips-v4)
-     [ "$(printf '%s\n' "$CF4" | grep -c /)" -ge 10 ] || { echo "Cloudflare list looks empty: nothing changed"; exit 1; }
+     [ -n "$IF" ] || { echo "fill in IF"; exit 1; }
+     case "$IF" in *"<"*) echo "fill in IF"; exit 1;; esac
+     LIST=/etc/particl/cf-ips-v4
+     mkdir -p /etc/particl
+     NEW=$(curl -fsS -m 20 https://www.cloudflare.com/ips-v4 || true)
+     if [ "$(printf '%s\n' "$NEW" | grep -c /)" -ge 10 ]; then printf '%s\n' "$NEW" > "$LIST"; fi
+     [ -s "$LIST" ] && [ "$(grep -c / "$LIST")" -ge 10 ] || { echo "no usable Cloudflare list: nothing changed"; exit 1; }
+     CF4=$(cat "$LIST")
      iptables -N CF-ONLY 2>/dev/null || iptables -F CF-ONLY
      for r in $CF4; do iptables -A CF-ONLY -s "$r" -j RETURN; done
      iptables -A CF-ONLY -j DROP
@@ -448,13 +512,14 @@ Each is passed, or waived by the owner in writing (cutover step 0).
      done
      ip6tables -C INPUT -p udp --dport 443 -j DROP 2>/dev/null || ip6tables -I INPUT -p udp --dport 443 -j DROP
      ```
-     If `ip6tables -L DOCKER-USER` exists, the advisor adds the same IPv6 drops there. Save the rules so they survive a reboot. Cloudflare's list changes now and then, so re-run the script when it does.
+     If `ip6tables -L DOCKER-USER` exists, the advisor adds the same IPv6 drops there. **After a reboot:** add `ExecStart=/usr/local/sbin/particl-cf-only.sh` as a second `ExecStart` line in `particl-firewall.service` (main path (b)), then `systemctl daemon-reload` and `systemctl restart particl-firewall.service`. No `netfilter-persistent`. Cloudflare's list changes now and then; re-running the script picks up the new list.
    - Or remove HTTP/3 from the proxy instead: delete the `--entrypoints.https.http3` line and the `443:443/udp` port in the proxy compose, then restart the proxy.
    - **Check from an outside network:**
      - `curl -m 10 -skI https://<server IPv4>/`: **times out**;
      - `curl -6 -m 10 -skI https://[<server IPv6>]/`: **times out**;
      - `curl --http3-only -m 10 -skI https://<server IPv4>/`: **times out** (needs a curl built with HTTP/3);
-     - a proxied name still answers.
-6. **Switch `particl.si` and `www.particl.si` to proxied (orange).**
+     - a proxied name still answers;
+     - the same after a reboot of the server.
+6. **Switch `particl.si` and `www.particl.si` to proxied (orange).** `dig +short particl.si @1.1.1.1` then shows Cloudflare's addresses, not the server's. Pinned checks go through Cloudflare from now on: `curl -sI https://particl.si/` answers 200 with a `cf-ray` header.
 7. **Only now**, with TCP **and** UDP both filtered: set `TRUST_CF_CONNECTING_IP=1` on the production app and redeploy. Then repeat the per-address limits check (network A locked, network B still signs in).
-8. **Rollback:** set the two records back to grey and unset `TRUST_CF_CONNECTING_IP` (redeploy). The firewall must let everyone reach 80 and 443 again, as in the main path.
+8. **Rollback:** first unset `TRUST_CF_CONNECTING_IP` (redeploy), then set the two records back to grey. Open 80 and 443 to everyone again: remove the `particl-cf-only.sh` `ExecStart` line, delete its `DOCKER-USER` rules (`iptables -S DOCKER-USER`, then `iptables -D` each `CF-ONLY` and UDP 443 line), and restore the main path's firewall (a).
