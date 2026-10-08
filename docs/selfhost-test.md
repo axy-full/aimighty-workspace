@@ -4,9 +4,9 @@ For the owner. The app runs in Coolify (Traefik v3 proxy) on the server **contab
 
 **Where things stand (8 Oct 2026).**
 - **Staging PASSED** on `release/1` at `c287f044`: Dockerfile build, served on a temporary sslip.io `https` address, `/setup` sign-in, workspace rename, an upload to the **staging R2 bucket** with its thumbnail, `/api/health` ok.
-- **Live** is `particl.si` and `www.particl.si` on Vercel. `particl.app` and `www.particl.app` are on Cloudflare and only need the redirect.
+- **Switched 8 Oct 2026, about 16:10 IST.** `particl.si` and `www.particl.si` are served by the self-hosted production app; Vercel production stays deployed, untouched, as the fallback. See [Production switch, 8 Oct 2026 (as done)](#production-switch-8-oct-2026-as-done). `particl.app` and `www.particl.app` redirect through Cloudflare.
 - **Owner's decision for the cutover:** `particl.si` and `www.particl.si` stay **DNS-only (grey cloud)**, as they are today with Vercel. Visitors reach the server directly, so Cloudflare's 100-second limit does not apply. Orange cloud comes later, only after every long flow is proven under 100 s (see the last "Later" section).
-- Production on Vercel today: storage `r2-configured` (R2 for new files, old links still on Vercel Blob), `DISPATCH_MODE=inngest`, mail from `hello@particlstudio.com`, AI through the Vercel AI Gateway, Astra Blender renders in use (Vercel Sandbox).
+- Production on Vercel before the switch (and the fallback now): storage `r2-configured` (R2 for new files, old links still on Vercel Blob), `DISPATCH_MODE=inngest`, mail from `hello@particlstudio.com`, AI through the Vercel AI Gateway, Astra Blender renders in use (Vercel Sandbox).
 
 **Owner's choices (8 Oct 2026). These settle the options further down; where a section offers (a) or (b), use what is written here.**
 - **DNS:** grey cloud at cutover. Request durations are measured only before any later orange-cloud change.
@@ -28,6 +28,41 @@ For the owner. The app runs in Coolify (Traefik v3 proxy) on the server **contab
 **What `main` needs before it can run self-hosted:** the lead keeps that list in the description of PR #566.
 
 Never write the server's IP, the sslip.io address or any secret value in the repo, a chat or a public place. This document names variables and where their values come from; it never holds a value that is secret.
+
+## Production switch, 8 Oct 2026 (as done)
+
+What actually happened, for the record and for the next switch. No secret values here; the restore-point files stay on the owner's machine.
+
+**Certificate path (b)** was used (no Cloudflare token): DNS first, then a proxy restart.
+
+**Code.** `main` at `1b05c2ca` (#575, #563, #564, #565 and #587 = #562 + #566 + `ARG APP_ORIGIN`). Vercel production ran the same commit, healthy, before the switch.
+
+**Checks before the switch (production app, terminal).**
+- Keyring check: `KEYRING OK` (`KEYRING_SECRET` equals Vercel's).
+- Sandbox: the `node -e` SDK check cannot run in the image. `node -e` from `/app` fails with `ERR_MODULE_NOT_FOUND '@vercel/sandbox'` because Next bundles the SDK into the server chunks of the routes that use it (`/api/workbench/astra-blender/render`, `/api/inngest`, `/api/worker`, `/api/workbench/development`) instead of shipping it in `node_modules`. That is expected. Proof in a running container: `grep -rl 'v2/sandboxes/sessions' /app/.next/server | head -1` prints a chunk path. The credentials were checked instead through the Vercel API (project lookup with `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID` = 200), and the snapshot in `ASTRA_BLENDER_SNAPSHOT_ID` exists in that project.
+- `/api/health` pinned to the server: `ok:true`, `mock:false`, dispatch `inngest`, database ok, storage ok.
+- Restore point A 10:36:26 UTC and restore point B 10:37:56 UTC (`turso db shell <db> .dump` of the platform database and the one workspace database, both non-empty).
+
+**Production app settings (Coolify), as set.**
+- Source `main`, Dockerfile build pack, port 3000, as staging.
+- **Build arguments: "Managed manually in Dockerfile".** The Dockerfile declares `ARG APP_ORIGIN`, `ARG NEXT_PUBLIC_APP_URL`, `ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY`. To confirm the web-push public key was baked into the client build, run in the app's terminal: `grep -rlF "$NEXT_PUBLIC_VAPID_PUBLIC_KEY" /app/.next/static | head -1` (a path = baked; nothing = not baked, so Settings, Notifications cannot subscribe until it is rebuilt with the value passed at build).
+- **sslip.io domains removed**; the domains are `https://particl.si,https://www.particl.si` only.
+- **Auto deploy off: manual deploys only.**
+- `MAIL_FROM=hello@particl.si` (Resend domain `particl.si` verified).
+- Scheduled task `cron-sync` (`node /app/cron-sync.mjs`, every 10 minutes) enabled; first run Success at 10:41 UTC. Then **Vercel Cron Jobs disabled** (Vercel, the project, Settings, Cron Jobs).
+
+**DNS and certificates (Cloudflare).**
+- `particl.si` A to the server, `www.particl.si` CNAME to `particl.si`, both **DNS-only (grey)**, TTL 1 minute, no AAAA. Mail records untouched.
+- Let's Encrypt certificate issued for `particl.si` (valid to 6 Jan 2027). `www.particl.si` answers **302** to `https://particl.si` with the path and query kept (the plan said 301 or 308; 302 works, and can be made permanent later).
+- `particl.app` and `www.particl.app`: one Cloudflare **Redirect Rule** for all requests in the zone, dynamic `concat("https://particl.si", http.request.uri.path)`, **308**, query string kept. Their records are **proxied (orange) to `192.0.2.1`** (a documentation-only address; Cloudflare answers before any origin). `particl.app` is being removed from the Vercel project's domains.
+
+**Inngest.** The app was re-synced to `https://particl.si/api/inngest` (7 functions). The Inngest Vercel integration was never connected, so there was no integration sync to switch off.
+
+**Tests after the switch.**
+- Owner: sign-in, uploads (old Blob files and new R2 files), reset email (from `hello@particl.si`, to the inbox, link `https://particl.si/reset/…`), Plans & credits shows "—" for the house workspace (it is billed in dollars by design).
+- From outside, 11:39 UTC: DNS A only, no AAAA; Let's Encrypt certificate; `/api/health` 200 ok; home, `/login`, `/robots.txt` 200; sign-in with a wrong password 401; sign-in from a foreign origin 403; media without a session 401; `/api/inngest` without a signature 401; `particl.app` and `www.particl.app` 308 to `particl.si` with the query kept; HSTS header present.
+
+**Rollback (as of 8 Oct).** In Cloudflare, `particl.si` A back to `216.150.1.1` and `www.particl.si` CNAME back to `b619d6cc43a31b33.vercel-dns-016.com` (Vercel's values, saved before the switch; `particl.si` is still listed in the Vercel project's domains). Inngest stays synced to `https://particl.si/api/inngest`: once DNS points back at Vercel that same URL reaches Vercel, so press **Resync** on that URL to refresh it. **Do not** sync to `https://www.particl.app/api/inngest` (the old URL): it now redirects through Cloudflare to `particl.si`. Re-enable Vercel Cron Jobs, disable `cron-sync`, and stop the self-hosted app one TTL later. `particl.app` redirects through Cloudflare, not Vercel, so it needs no change.
 
 ## What is in the repo
 
@@ -71,7 +106,7 @@ The production app is a second Coolify app on the same server, built from `main`
 How to read the table:
 - **Copy from Vercel** means Vercel, the project, **Settings, Environment Variables**, the **Production** value.
 - **Identical** means it must be the same value Vercel production uses, because it decrypts or verifies data already stored, or because it names the same account. "Any valid" means a new key for the same account works just as well.
-- Every variable is a **runtime** variable. Only the two `NEXT_PUBLIC_*` names and `APP_ORIGIN` (not secret; `robots.txt` and `sitemap.xml` are generated at build) are also build variables: in Coolify tick **Build Variable** (newer versions: "Available at Buildtime") on those three and **untick it on every other variable**, so no secret reaches the build or the image history.
+- Every variable is a **runtime** variable. Only the two `NEXT_PUBLIC_*` names and `APP_ORIGIN` (not secret; `robots.txt` and `sitemap.xml` are generated at build) are also build variables: in Coolify tick **Build Variable** (newer versions: "Available at Buildtime") on those three and **untick it on every other variable**, so no secret reaches the build or the image history. On 8 Oct the production app's **Build arguments** setting was "Managed manually in Dockerfile"; see the check in [Production switch, 8 Oct 2026 (as done)](#production-switch-8-oct-2026-as-done) that the web-push key was baked in.
 
 ### Address and proxy
 
@@ -354,16 +389,16 @@ With grey cloud there is no Cloudflare limit in front, so these Traefik timeouts
 
 - `particl.si` stays the primary name.
 - **`particl.si` and `www.particl.si` are DNS-only (grey cloud)** and point straight at the server, like Vercel's records today. Traefik serves **Let's Encrypt** certificates for both, issued **before** the switch (see "Certificates before the switch").
-- In Coolify the production app's **Domains** field is `https://particl.si,https://www.particl.si`. In the app's **General** settings, set **Direction** to **redirect to non-www**, so Traefik sends `www` to `https://particl.si` (a 301 or 308).
+- In Coolify the production app's **Domains** field is `https://particl.si,https://www.particl.si`. In the app's **General** settings, set **Direction** to **redirect to non-www**, so Traefik sends `www` to `https://particl.si` (a 301 or 308 was planned; on 8 Oct it answers 302, which works).
 - **No AAAA record** at cutover. Docker may relay IPv6 connections so that every IPv6 visitor shows up as one address and shares one rate-limit allowance. Remove any AAAA that points at Vercel.
 - `particl.app` and `www.particl.app` only redirect. They stay **proxied** (orange) with a Cloudflare redirect rule; no app traffic passes through them, so the 100 s limit does not matter there.
-  - **Redirect rule (OWNER, can be made ahead of time).** In the `particl.app` zone: **Rules, Redirect Rules, Create rule**. If hostname is in `particl.app`, `www.particl.app`, then dynamic redirect to `concat("https://particl.si", http.request.uri.path)`, status 308, **Preserve query string** ticked.
+  - **Redirect rule (OWNER, can be made ahead of time).** In the `particl.app` zone: **Rules, Redirect Rules, Create rule**. If hostname is in `particl.app`, `www.particl.app` (or: all incoming requests, as set on 8 Oct), then dynamic redirect to `concat("https://particl.si", http.request.uri.path)`, status 308, **Preserve query string** ticked.
 
 | Name | Record | Proxy | Who answers |
 |---|---|---|---|
 | `particl.si` | A to `<server IPv4>`, no AAAA | **DNS-only** (grey) | the server (Let's Encrypt) |
 | `www.particl.si` | CNAME to `particl.si` | **DNS-only** (grey) | the server, redirects to `particl.si` |
-| `particl.app` | A to `<server IPv4>` (any address works; the rule answers first) | proxied (orange) | Cloudflare redirect rule |
+| `particl.app` | A to `192.0.2.1` as set on 8 Oct (any address works; the rule answers first) | proxied (orange) | Cloudflare redirect rule |
 | `www.particl.app` | CNAME to `particl.app` | proxied (orange) | Cloudflare redirect rule |
 
 **Do not touch** mail records on any domain (MX, SPF, DKIM, DMARC, Resend's verification records for `particl.si`, including `_dmarc` TXT `v=DMARC1; p=quarantine; adkim=r; aspf=r;`) or the `particlstudio.com` zone. The owner is adding that `_dmarc` record separately; the switch itself changes only the A/CNAME rows above. If there are CAA records on `particl.si`, they must allow Let's Encrypt.
@@ -597,11 +632,11 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
 9. **DNS and certificates.** `dig +short particl.si @1.1.1.1` and `@8.8.8.8` both print the server's address (within the old TTL). The pinned `openssl` checks name Let's Encrypt for both names. Only on fallback (b): restart the proxy now, as described there.
 10. **Inngest re-sync (OWNER).**
     - Inngest dashboard, **Apps**, **Sync new app** (or **Resync**) with URL `https://particl.si/api/inngest`; or run `curl -X PUT https://particl.si/api/inngest` once (only after step 9's `dig` shows the server).
-    - The app must then show URL `https://particl.si/api/inngest` and **6 functions**. Inngest reaches the server directly (grey cloud).
+    - The app must then show URL `https://particl.si/api/inngest` and **7 functions** (as on 8 Oct). Inngest reaches the server directly (grey cloud).
     - If the URL was a `*.vercel.app` address in step 5, this step is what moves the work: until it is done, Inngest keeps running jobs on Vercel.
 11. **Stripe webhook check (OWNER).** Stripe dashboard, **Developers, Webhooks**. This code has no Stripe webhook route, so if an endpoint for `particl.si` exists, it already fails today and nothing changes. Note it; there is nothing to repoint.
 12. **Smoke (right after; pinned to the server).**
-    - `curl -sI --resolve www.particl.si:443:<server IPv4> 'https://www.particl.si/pricing?x=1'` answers 301 or 308 to `https://particl.si/pricing?x=1`.
+    - `curl -sI --resolve www.particl.si:443:<server IPv4> 'https://www.particl.si/pricing?x=1'` answers 301, 302 or 308 to `https://particl.si/pricing?x=1` (302 on 8 Oct).
     - `curl -sI 'https://particl.app/pricing?x=1'` and `www.particl.app` answer **308** to `https://particl.si/pricing?x=1` (Cloudflare answers these).
     - `bash ops/selfhost/smoke.sh https://particl.si`, **only after** step 9's `dig` shows the server from this machine too (`dig +short particl.si`): otherwise it may be testing Vercel.
     - Sign in in a browser; a price shows as `N cr`; an old image (from Blob) and a new upload (R2) both display.
@@ -622,7 +657,7 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
 15. **Rollback (by DNS while Vercel production is still deployed; by restore point within the 14-day watch).**
     1. **OWNER:** in Cloudflare, restore `particl.si` and `www.particl.si` to the values written down in step 2 (grey cloud, as today).
     2. **OWNER:** re-enable Vercel Cron Jobs (Vercel, the project, **Settings, Cron Jobs**, the enable button in place of **Disable Cron Jobs**; its exact label is not in Vercel's docs: check) and disable `cron-sync` on the server. **Keep the production app running** until at least the TTL has passed since the DNS change (plus a few minutes) and `dig +short particl.si @1.1.1.1` and `@8.8.8.8` show Vercel again, so visitors still on the old answer are served. Then stop it.
-    3. **OWNER:** re-enable the Inngest Vercel integration's sync for the project and resync, so Inngest's app URL points at Vercel again; check it shows 6 functions.
+    3. **OWNER:** once DNS points back at Vercel, press **Resync** on `https://particl.si/api/inngest` in the Inngest dashboard (that URL then reaches Vercel); check it shows 7 functions. The Inngest Vercel integration was never connected (8 Oct), so there is no integration sync to re-enable. Never sync to `https://www.particl.app/api/inngest`: it redirects to `particl.si`.
     4. **Data, ordinary rollback: nothing to copy back.** Both hosts use the **same Turso databases** (platform and workspaces), the **same R2 bucket** and the **same Blob store**. With R2 selected, the self-hosted app keeps nothing durable on its own disk (upload pieces go to R2 too). Everything written during the window is already where Vercel reads it. An upload in progress at the moment of switching may need to be retried.
     5. **Data problem (wrong or damaged rows):** go back to point B (or A) as in "Restore point". This is a hand-made restore from the Turso timestamps, with Claude's help; everything written after that time is lost. It is the owner's decision, not a reflex.
     6. **Never** use Vercel's Instant Rollback to a deployment from before #524 (it predates the credit switchover and would bill the wrong price).
@@ -712,7 +747,7 @@ Found by searching the code for `@vercel/` packages, `api.vercel.com`, `vercel.s
 | **Gateway key minting** (`VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `api.vercel.com`) | `lib/vercelKeys.ts`, `lib/purge.ts` | Nothing mints keys today (`mintGatewayKey` has no callers). But `revokeGatewayKey` throws once the `VERCEL_*` names are removed or dead, so deleting a workspace that still has a `gateway_key_id` stalls in purge after its files are removed. Before closing, count `SELECT count(*) FROM workspaces WHERE gateway_key_id IS NOT NULL` on the platform database; if it is not 0, ask Claude for a small fix first. | Follows from the gateway choice above: the new provider's per-workspace keys and budgets, or the platform key plus `lib/allowance.ts`. |
 | **Vercel Sandbox** (`@vercel/sandbox`; `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, `ASTRA_BLENDER_SNAPSHOT_ID`, `ASTRA_BLENDER_RATE_CARD`) | `lib/astra-blender/sandbox.ts`, `scripts/astra-blender-snapshot.mjs` | All Astra Blender (3D) renders. The snapshot is deleted with the account. **Before the account closes, while Vercel still answers:** turn 3D off by removing the three `VERCEL_*` names from the app (new renders are then refused before any charge), then wait until `SELECT count(*) FROM astra_render_jobs WHERE settled=0` is 0 in every workspace database (run it with Claude). A job still unsettled when the account closes can never be reconciled and keeps its credits held. #571 only catches missing names: with names set but dead, 3D still looks connected, and a render could be funded and then fail at `Sandbox.create`. | The worker container in "What replaces Sandbox later": a reviewed adapter PR, a new rate card for our own compute (owner approves the price), and host sizing. Until that lands, 3D is off. |
 | **Vercel Blob** (`@vercel/blob`, `BLOB_READ_WRITE_TOKEN`) | `lib/storage/blob.ts`, `scripts/ops/backup-lib.mjs`, `scripts/ops/staging-rehearsal.mjs`, `scripts/ops/migrate-media-r2.mjs` | Every file not yet on R2, and backups or rehearsals configured with `blob` or `dual` media. | Section 1 above. Then switch the nightly backup's media to `{ "kind": "r2", ... }` (`docs/backup-restore.md`). The Blob cost rates (`BLOB_USD_PER_GB_*`, `lib/storageCost.ts`) become meaningless; R2 rates are package 11 in `docs/r2-storage-plan.md`. |
-| **Inngest's Vercel integration** | Inngest dashboard (not in code) | Automatic app re-sync and key syncing to Vercel. | Cutover steps 5 and 10 already move the app URL to `https://particl.si/api/inngest`, with the keys set in Coolify. Before closing Vercel, confirm the Inngest app shows that URL and 6 functions. Then uninstall the integration (its keys in Coolify stay valid). |
+| **Inngest's Vercel integration** | Inngest dashboard (not in code) | Automatic app re-sync and key syncing to Vercel. | Cutover steps 5 and 10 already move the app URL to `https://particl.si/api/inngest`, with the keys set in Coolify. Before closing Vercel, confirm the Inngest app shows that URL and 7 functions. The integration was never connected (8 Oct), so there is nothing to uninstall. |
 | **Vercel Cron** (`vercel.json` `crons`, `/api/cron/sync` every 10 min) | `vercel.json` | The reconciliation cron on Vercel. | Cutover step 13 (Coolify scheduled task `cron-sync`). Confirm its heartbeat advances. |
 | **Hosting, domains, deployments, previews** (`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL`, `VERCEL_GIT_COMMIT_SHA`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `VERCEL_OIDC_TOKEN`) | `lib/site.ts`, `lib/dispatch.ts`, `lib/previewSeed.ts`, `lib/deployment.ts`, `lib/recovery.ts`, `lib/workerProbe.ts`, health routes | The Vercel site, preview deployments and the rollback path in cutover step 15. | The self-hosted app (this document). Off Vercel these names are unset by design ("Never set on the self-hosted app"). Preview deployments have no replacement except the staging app. **Rollback to Vercel ends when the account closes**, so close it only after the 14-day watch (step 14) has passed. |
 | **Values only Vercel holds** | Vercel project settings | Any variable not yet copied (Sensitive values cannot be read back). | Copy every value into Coolify or the owner's private record **before** closing ("If Vercel will not show a value"). |
