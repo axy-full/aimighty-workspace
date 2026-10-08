@@ -87,3 +87,40 @@ export async function pressEnhance(
   if (!response.ok || !json?.prompt || !json.provider) return { ok: false, error: json?.error ?? ENHANCE_NO_ANSWER };
   return { ok: true, prompt: json.prompt, provider: json.provider };
 }
+
+/** A press whose words, settings or account changed while it was on its way: its answer is for words no longer there. */
+export type EnhanceOutcome = EnhancePress | { ok: false; stale: true };
+/** What the composer holds now: compared with a press when its answer arrives. */
+export type EnhanceNow = { scope: string | null | undefined; body: string } | null;
+
+/**
+ * The presses of one Enhance control. A press made while the SAME press
+ * (same account, workspace, words, settings and price) is on its way shares
+ * that press's answer: nothing is sent twice. A press for anything else is a
+ * press of its own. And an answer is handed back only while the composer
+ * still holds the words it was asked for: one that arrives after the words
+ * were replaced comes back `stale`, never to be applied over the new words.
+ */
+export class EnhanceRuns {
+  private inFlight = new Map<string, Promise<EnhancePress>>();
+  constructor(private readonly keys: EnhanceKeys = enhanceKeys, private readonly clock: () => number = Date.now) {}
+  get busy(): boolean { return this.inFlight.size > 0; }
+  async run(
+    fetcher: (url: string, init: RequestInit) => Promise<Response>,
+    press: { scope: string | null | undefined; body: string; credits: number },
+    now: () => EnhanceNow,
+  ): Promise<EnhanceOutcome> {
+    const signature = enhanceSignature(press.scope, press.body, press.credits);
+    let pressing = this.inFlight.get(signature);
+    if (!pressing) {
+      const started = pressEnhance(fetcher, press, this.keys, this.clock);
+      pressing = started;
+      this.inFlight.set(signature, started);
+      void started.finally(() => { if (this.inFlight.get(signature) === started) this.inFlight.delete(signature); });
+    }
+    const answer = await pressing;
+    const held = now();
+    if (!held || (held.scope ?? "") !== (press.scope ?? "") || held.body !== press.body) return { ok: false, stale: true };
+    return answer;
+  }
+}

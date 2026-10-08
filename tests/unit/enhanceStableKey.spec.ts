@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import ts from "typescript";
 import type { AdmissionActor } from "../../lib/admissionTypes";
 import {
-  ENHANCE_ABANDONED, ENHANCE_KEY_ABANDON_MS, ENHANCE_LOST, ENHANCE_PENDING, EnhanceKeys, enhanceSignature, pressEnhance,
+  ENHANCE_ABANDONED, ENHANCE_KEY_ABANDON_MS, ENHANCE_LOST, ENHANCE_PENDING, EnhanceKeys, EnhanceRuns, enhanceSignature, pressEnhance,
 } from "../../lib/shell/enhance-press";
 
 /**
@@ -214,10 +214,84 @@ test("a press still being accepted keeps its key; one that never finished is let
 
 test("the Enhance button sends through the held key, not a fresh key per press", () => {
   const hook = readFileSync("lib/shell/use-enhancer.ts", "utf8");
-  expect(hook).toContain("pressEnhance(scoped, { scope, body: approved.key, credits })");
+  expect(hook).toContain("presses.run(scoped, { scope: approved.scope, body: approved.key, credits }, () => ({ scope: live.current.scope, body: live.current.key }))");
+  expect(hook).toContain('if ("stale" in pressed) return null;');
+  expect(hook).toContain("const shown = result && result.body === key ? result : null;");
   expect(hook).not.toContain("randomUUID");
   expect(hook).not.toContain("Idempotency-Key");
-  /* A press while one is on its way shares that press's answer: no second send, no stale "still being answered". */
-  expect(hook).toContain("if (inFlight.current) return inFlight.current;");
-  expect(hook).toContain("inFlight.current = pressing;");
+});
+
+/** A provider that holds its answer for words containing `hold` until released, and answers anything else at once. */
+function heldProvider(hold: string) {
+  const calls: string[] = [];
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const submit = async (request: { body: string }) => {
+    const words = JSON.parse(request.body).messages.at(-1).content as string;
+    calls.push(words);
+    if (words.includes(hold)) await gate;
+    return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ prompt: `Enhanced: ${words}.` }) } }], usage: { cost: 0.0004 } }) };
+  };
+  return { calls, submit: submit as unknown as Submit, release: () => release() };
+}
+
+async function until(check: () => boolean) {
+  for (let i = 0; i < 400 && !check(); i++) await new Promise((r) => setTimeout(r, 25));
+  expect(check()).toBe(true);
+}
+
+test("the same press while one is on its way shares its answer: one send, one charge", async () => {
+  await inWorkspace("ws_enhance_shared", async () => {
+    const provider = heldProvider("rain");
+    const { fetcher, sent } = browser(enhance(provider.submit));
+    const runs = new EnhanceRuns(new EnhanceKeys());
+    const press = { scope: SCOPE, body: body("a tree in rain"), credits: 5 };
+    const now = () => ({ scope: SCOPE, body: press.body });
+
+    const first = runs.run(fetcher, press, now);
+    await until(() => provider.calls.length === 1);
+    expect(runs.busy).toBe(true);
+    const second = runs.run(fetcher, press, now);
+    provider.release();
+    const answers = await Promise.all([first, second]);
+    expect(answers[0]).toEqual({ ok: true, prompt: "Enhanced: a tree in rain.", provider: "claude" });
+    expect(answers[1]).toEqual(answers[0]);
+    expect(sent).toHaveLength(1);
+    expect(provider.calls).toHaveLength(1);
+    expect(await charges("ws_enhance_shared")).toHaveLength(1);
+    expect(runs.busy).toBe(false);
+  });
+});
+
+test("words replaced while a press is on its way: the new words get their own press and answer, the old answer is never handed back", async () => {
+  await inWorkspace("ws_enhance_replaced", async () => {
+    const provider = heldProvider("rain");
+    const { fetcher, sent } = browser(enhance(provider.submit));
+    const runs = new EnhanceRuns(new EnhanceKeys());
+    const a = { scope: SCOPE, body: body("a tree in rain"), credits: 5 };
+    const b = { scope: SCOPE, body: body("a tree in snow"), credits: 5 };
+    /* What the composer holds: A, then (while A is on its way) the person's new words B. */
+    let holding = a.body;
+    const now = () => ({ scope: SCOPE, body: holding });
+
+    const first = runs.run(fetcher, a, now);
+    await until(() => provider.calls.length === 1);
+    holding = b.body;
+    /* Auto's Make on the new words: not A's answer, a press of its own. */
+    const second = await runs.run(fetcher, b, now);
+    expect(second).toEqual({ ok: true, prompt: "Enhanced: a tree in snow.", provider: "claude" });
+    expect(sent.map((s) => s.body.prompt)).toEqual(["a tree in rain", "a tree in snow"]);
+    expect(sent[1].key).not.toBe(sent[0].key);
+
+    provider.release();
+    /* A's answer arrives for words no longer there: dropped, never applied over B. */
+    expect(await first).toEqual({ ok: false, stale: true });
+    expect(runs.busy).toBe(false);
+
+    /* The same after the account or workspace changed underneath a press. */
+    const c = { scope: SCOPE, body: body("a tree in fog"), credits: 5 };
+    holding = c.body;
+    const moved = await runs.run(fetcher, c, () => ({ scope: "particl-active-ws2-owner", body: c.body }));
+    expect(moved).toEqual({ ok: false, stale: true });
+  });
 });
