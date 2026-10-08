@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
+import { onPhone } from "./helpers/businessOwn";
 
 const ADDRESSES = [
   "/suites?view=crew", "/suites?view=crew&cp=members", "/suites?view=crew&cp=sessions",
@@ -10,7 +11,8 @@ const ADDRESSES = [
   "/suites?make=motion", "/suites?sp=stages",
 ];
 
-test("each old address 30x to its new place, and the landing is never an empty shell", async ({ page }) => {
+test("each old address 30x to its new place, and the landing is never an empty shell", async ({ page }, info) => {
+  const phone = onPhone(info.project.name);
   await signInLocally(page.request);
   const rows: string[] = [];
   for (const path of ADDRESSES) {
@@ -33,7 +35,19 @@ test("each old address 30x to its new place, and the landing is never an empty s
   /* One browser landing per family: the shell mounts a screen, not an empty body. */
   for (const path of ["/suites?view=crew", "/suites?suite=viral&page=history", "/suites?suite=business&page=hooks", "/suites?suite=studio&page=stages", "/suites?view=gen", "/suites?asset=generation%3Aabc"]) {
     await page.goto(path);
-    await expect(page.locator('[data-testid="screen"], [data-testid="shell-body"]').first(), path).toBeVisible({ timeout: 45_000 });
+    if (phone) {
+      /* A phone mounts its own app, not the desktop shell: its root and a non-empty page inside it. */
+      if (path.startsWith("/suites?asset=")) {
+        /* A take link opens the link card (here: "not one of yours"), which the phone shows instead of the app. */
+        await expect(page.getByTestId("link-card"), path).toContainText(/\S/, { timeout: 45_000 });
+      } else {
+        await expect(page.getByTestId("phone-app"), path).toBeVisible({ timeout: 45_000 });
+        await expect(page.getByTestId("mobile-scroll").first(), path).toBeVisible({ timeout: 45_000 });
+        await expect(page.getByTestId("mobile-scroll").first(), `${path}: not blank`).toContainText(/\S/);
+      }
+    } else {
+      await expect(page.locator('[data-testid="screen"], [data-testid="shell-body"]').first(), path).toBeVisible({ timeout: 45_000 });
+    }
     const url = new URL(page.url());
     expect(url.search, path).not.toMatch(/view=crew|sp=(stages|home)/);
   }
