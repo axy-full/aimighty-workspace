@@ -23,7 +23,7 @@ For the owner. The app runs in Coolify (Traefik v3 proxy) on the server **contab
 - **Paid 3D test:** not on staging. One render on production after the cutover, only on the owner's "run".
 - **Inngest app address:** the repo cannot show it (the serve route sets no address; Inngest's Vercel integration chose it). The owner checks it in step 5.
 - **Nightly encrypted backup:** high priority, ideally live before the cutover. It needs the backup hotfix on `main` and the owner's settings (see the restore section).
-- **Production app's environment (Coolify app `4dufbrykuka94cedlfjo3jxm`):** what is there now is wrong (`STORAGE_BACKEND=blob`, `DISPATCH_MODE=native`, a wrong `MAIL_FROM`). Set it from the one list in [Switch-day env for the Coolify production app](#switch-day-env-for-the-coolify-production-app), including its "remove" list, before the app is first started in step 4.
+- **Production app's environment (Coolify app `4dufbrykuka94cedlfjo3jxm`):** what is there now is wrong (`STORAGE_BACKEND=blob`, `DISPATCH_MODE=native`). Set it from the one list in [Switch-day env for the Coolify production app](#switch-day-env-for-the-coolify-production-app), including its "remove" list, before the app is first started in step 4.
 
 **What `main` needs before it can run self-hosted:** the lead keeps that list in the description of PR #566.
 
@@ -137,7 +137,7 @@ Check the bucket's CORS list contains `https://particl.si`. The origin does not 
 | `RESEND_API_KEY` | copy from Vercel, or Resend, **API Keys**, create one with sending access for `particl.si` (or **All domains**) | any valid |
 | `RESEND_BASE_URL` | copy only if Vercel sets it | yes if set |
 
-`particl.si` is **Verified** in Resend, **Domains** (8 Oct). Keep its Resend records (and the `_dmarc` TXT) in the `particl.si` zone. Nothing changes in the `particlstudio.com` DNS.
+`particl.si` is **Verified** in Resend, **Domains** (8 Oct). Keep its Resend records, and the `_dmarc` TXT once the owner adds it, in the `particl.si` zone. Nothing changes in the `particlstudio.com` DNS.
 
 ### AI, engines, pricing
 
@@ -366,7 +366,7 @@ With grey cloud there is no Cloudflare limit in front, so these Traefik timeouts
 | `particl.app` | A to `<server IPv4>` (any address works; the rule answers first) | proxied (orange) | Cloudflare redirect rule |
 | `www.particl.app` | CNAME to `particl.app` | proxied (orange) | Cloudflare redirect rule |
 
-**Do not touch** mail records on any domain (MX, SPF, DKIM, DMARC, Resend's verification records for `particl.si`, including `_dmarc` TXT `v=DMARC1; p=quarantine; adkim=r; aspf=r;`) or the `particlstudio.com` zone. They are not part of the A/CNAME change. If there are CAA records on `particl.si`, they must allow Let's Encrypt.
+**Do not touch** mail records on any domain (MX, SPF, DKIM, DMARC, Resend's verification records for `particl.si`, including `_dmarc` TXT `v=DMARC1; p=quarantine; adkim=r; aspf=r;`) or the `particlstudio.com` zone. The owner is adding that `_dmarc` record separately; the switch itself changes only the A/CNAME rows above. If there are CAA records on `particl.si`, they must allow Let's Encrypt.
 
 **Checks must reach the server, not Vercel.** While DNS may still point at Vercel (or a resolver still caches it), a plain `curl https://particl.si/` can pass against Vercel. Pin every check to the server:
 - `curl -sI --resolve particl.si:443:<server IPv4> https://particl.si/` (and the same with `www.particl.si`);
