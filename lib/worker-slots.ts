@@ -2,19 +2,25 @@ import { randomUUID } from "node:crypto";
 import { platformDb, platformReady, getWorkspace } from "./platform";
 import { runInTenant } from "./tenant";
 import { EVENTS, type WorkerEventName } from "./dispatch";
+import { ASTRA_RENDER_CONCURRENCY } from "./astra-blender/backend";
 
 /**
  * Concurrency for native dispatch, kept in the platform database.
  *
  * Inngest enforced `[{ limit: 4 }, { limit: 2, key: workspaceId }]` on every
  * worker; the same two numbers live here so moving off Inngest changes no
- * capacity promise. A slot is one running invocation of /api/worker. Its TTL
+ * capacity promise. Native 3D renders are capped lower, at three platform-wide
+ * (ASTRA_RENDER_CONCURRENCY, the same number lib/workers.ts gives Inngest).
+ * A slot is one running invocation of /api/worker. Its TTL
  * outlives Vercel's 300-second function ceiling, so a crashed function frees
  * its slot by expiry rather than leaking it, and a slot is never held longer
  * than the work it fronts could possibly run.
  */
 export const WORKER_SLOT_LIMIT = 4;
 export const WORKER_SLOT_WORKSPACE_LIMIT = 2;
+/** Kinds with a platform-wide ceiling below WORKER_SLOT_LIMIT. */
+export const WORKER_SLOT_KIND_LIMITS: Readonly<Partial<Record<string, number>>> = { [EVENTS.astraRender]: ASTRA_RENDER_CONCURRENCY };
+export const workerSlotLimit = (kind: string) => WORKER_SLOT_KIND_LIMITS[kind] ?? WORKER_SLOT_LIMIT;
 export const WORKER_SLOT_TTL_MS = 330_000;
 
 export type WorkerSlot = { id: string; kind: string; workspaceId: string; jobId: string };
@@ -54,7 +60,7 @@ export async function acquireSlot(
         })
       ).rows[0];
       if (
-        Number(counts?.total ?? 0) >= WORKER_SLOT_LIMIT ||
+        Number(counts?.total ?? 0) >= workerSlotLimit(input.kind) ||
         Number(counts?.workspace ?? 0) >= WORKER_SLOT_WORKSPACE_LIMIT
       ) {
         await tx.commit();
@@ -136,8 +142,9 @@ export async function chainDispatch(
 
 async function defaultFindQueued(kind: WorkerEventName): Promise<string | null> {
   if (kind === EVENTS.astraRender) {
-    const { pendingAstraRenders } = await import("./astra-blender/render-jobs");
-    const next = (await pendingAstraRenders(4)).find((job) => job.status === "queued" && job.funded);
+    const { pendingAstraRenders, astraRenderInBusyBackoff } = await import("./astra-blender/render-jobs");
+    // A job that just found every render worker busy waits out its backoff; chaining it at once would spin.
+    const next = (await pendingAstraRenders(4)).find((job) => job.status === "queued" && job.funded && !astraRenderInBusyBackoff(job));
     return next ? String(next.id) : null;
   }
   const { db, ready, now } = await import("./db");
