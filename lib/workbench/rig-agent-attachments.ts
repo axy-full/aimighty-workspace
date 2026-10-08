@@ -60,8 +60,8 @@ export async function resolvePlanAttachments(productionId: string, ids: readonly
   });
 }
 
-/** What the planner is told of each file (no bytes, no storage address): the snapshot's list. */
-export const attachedOf = (list: readonly PlanAttachment[]): SnapshotAttachment[] => list.map(({ id, name, kind }) => ({ id, name, kind }));
+/** What the planner is told of each file (no storage address; a text file's size, which bounds its excerpt): the snapshot's list. */
+export const attachedOf = (list: readonly PlanAttachment[]): SnapshotAttachment[] => list.map(({ id, name, kind, bytes }) => ({ id, name, kind, ...(kind === "text" ? { bytes } : {}) }));
 
 export type AttachmentReaders = { upload: typeof readUploadBytes };
 
@@ -78,6 +78,8 @@ export async function loadPlanAttachmentContent(list: readonly PlanAttachment[],
     catch { throw new PlanAttachmentError(`${a.name} could not be read for Atomik. Attach it again.`, 422); }
     if (a.kind === "text") {
       if (bytes.length > TEXT_MAX_BYTES) throw new PlanAttachmentError(`${a.name} is over 100 KB. Attach a shorter text file, or put an excerpt in the box.`);
+      /* Its size is what its excerpt was priced at: a stored copy longer than the Library says is not sent. */
+      if (bytes.length > a.bytes) throw new PlanAttachmentError(`${a.name} changed since it was attached. Attach it again.`, 422);
       content.texts.push({ id: a.id, text: bytes.toString("utf8").slice(0, PLANNER_TEXT_CHARS) });
       continue;
     }

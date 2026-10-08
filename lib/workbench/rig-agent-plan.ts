@@ -58,7 +58,7 @@ export type SnapshotAsset = { id: string; name: string; kind: "image" | "video";
  * as a picture, a text file is quoted, anything else is named. Only what it is, never its bytes: the planning
  * figure and the charge read the same list.
  */
-export type SnapshotAttachment = { id: string; name: string; kind: "image" | "text" | "file" };
+export type SnapshotAttachment = { id: string; name: string; kind: "image" | "text" | "file"; /** A text file's stored size, in bytes: what its excerpt can come to. */ bytes?: number };
 export type BoardSnapshot = {
   production: string;
   brief: string;
@@ -107,7 +107,7 @@ export function boardSnapshot(project: Project, canvas: { nodes: CanvasNode[]; a
     assets: ordered.slice(0, SNAPSHOT_LIMITS.assets).map((a) => ({ id: a.id, name: clip(a.name || a.id, 80), kind: a.kind as "image" | "video", category: clip(a.category || "", 40) })),
     cast, places,
     boardShots: boardShots(project.production?.beats).slice(0, SNAPSHOT_LIMITS.boardShots).map((s) => ({ number: s.number, title: clip(s.shot.description || s.scene || "Shot", 160) })),
-    ...(attached.length ? { attached: attached.map((a) => ({ id: a.id, name: clip(a.name || "Attached file", 80), kind: a.kind })) } : {}),
+    ...(attached.length ? { attached: attached.map((a) => ({ id: a.id, name: clip(a.name || "Attached file", 80), kind: a.kind, ...(a.kind === "text" && a.bytes !== undefined ? { bytes: a.bytes } : {}) })) } : {}),
   };
 }
 
