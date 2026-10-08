@@ -237,7 +237,7 @@ With grey cloud there is no Cloudflare limit in front, so these Traefik timeouts
 Traefik asks Let's Encrypt for a certificate as soon as the app's route appears. With the normal method (HTTP-01), that attempt fails while the names still point at Vercel. Traefik does not retry until its configuration changes, so visitors would get Traefik's self-signed certificate after the switch, and each failed attempt counts against Let's Encrypt's limit of 5 failures per name per hour. So the main path gets the certificates **before** the switch, with a DNS challenge.
 
 **(a) Main path: a DNS-challenge resolver (OWNER, with the advisor), before cutover step 4.**
-1. **Cloudflare token.** **My Profile, API Tokens, Create Token**, custom token with permissions **Zone, DNS, Edit** and **Zone, Zone, Read**, zone resources **Include, Specific zone, `particl.si`** only. It is shown once; it never goes into the repo, a chat or a note. If issuance later fails with a zone-lookup error, widen **Zone, Zone, Read** to all zones, or create a second token with only that permission and add it as `CF_ZONE_API_TOKEN_FILE` next to the one below.
+1. **Cloudflare token.** **My Profile, API Tokens, Create Token**, custom token with permissions **Zone, DNS, Edit** and **Zone, Zone, Read**, zone resources **Include, Specific zone, `particl.si`** only. It is shown once; it never goes into the repo, a chat or a note. If issuance later fails with a zone-lookup error, do **not** widen this token (zone resources apply to every permission in it, so that would also give DNS Edit on every zone); instead create a second token with only **Zone, Zone, Read** and add it as `CF_ZONE_API_TOKEN_FILE` next to the one below.
 2. **Token file on the server.** Save it as `/data/coolify/proxy/cf-dns-token` (one line, no trailing space), owner root, mode `600`. Coolify mounts `/data/coolify/proxy` into Traefik at `/traefik` (check the `volumes:` of the proxy compose).
 3. **Proxy configuration.** Coolify, **Servers**, the server, **Proxy**, **Configuration**. In the Traefik service add, under `environment:` (add the `environment:` key at the same level as `command:` if the service has none):
    ```yaml
@@ -332,9 +332,9 @@ Plain `ufw` is **not enough** for Docker ports: Docker publishes 80, 443, 8000, 
 
 The app creates and changes tables on first use. So **before the production app first starts** against the live Turso databases (its first deploy, step 4), and **again just before the DNS switch** (step 8), the owner records a way back.
 
-**Today production has no automated encrypted backup.** `.github/workflows/backup.yml` skips on every run because the repository variable `PARTICL_BACKUP_ENABLED` is not `true`. Even switched on, it would fail on R2 coverage until the tooling PR below lands.
+**Today production has no automated encrypted backup.** The scheduled capture in `.github/workflows/backup.yml` never runs (a manual dry run only plans and tests) because the repository variable `PARTICL_BACKUP_ENABLED` is not `true`. Even switched on, it would fail on R2 coverage until the tooling PR below lands.
 
-**Point A and point B = Turso timestamps plus `.dump` copies.** The full encrypted bundle is **not available yet** (see 2). Do **not** run the recovery fence on production for this.
+**Point A = Turso timestamp plus `.dump` copies; point B = Turso timestamp (a second set of `.dump` copies is optional but recommended).** The full encrypted bundle is **not available yet** (see 2). Do **not** run the recovery fence on production for this.
 
 **1. Turso point-in-time timestamps and `.dump` copies (no tooling).**
 - **OWNER:** write down the exact UTC time (for example `2026-10-20T09:00:00Z`) for **point A** (before the first deploy) and **point B** (before the switch). It covers the platform database and **every workspace database** (all databases in the production Turso group).
