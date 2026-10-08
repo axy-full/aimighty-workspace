@@ -384,6 +384,259 @@ export async function blobInventory(token, sdk) {
     fail("Duplicate media path.");
   return entries;
 }
+/* ── Media configuration ───────────────────────────────────────────────
+ * Every credential and location is an environment-variable NAME in the
+ * config, never a value, exactly like blob's tokenEnv. */
+const ENV_NAME = /^[A-Z][A-Z0-9_]*$/;
+const R2_NAMES = ["accountIdEnv", "accessKeyIdEnv", "secretAccessKeyEnv", "bucketEnv"];
+const R2_VALUE_FIELDS = ["accountId", "accessKeyId", "secretAccessKey", "bucket", "endpoint", "token"];
+export const MEDIA_KINDS = ["local", "blob", "r2", "dual"];
+
+function checkR2Spec(spec) {
+  if (!spec || typeof spec !== "object" || Array.isArray(spec))
+    fail("R2 media requires accountIdEnv, accessKeyIdEnv, secretAccessKeyEnv and bucketEnv.");
+  if (R2_VALUE_FIELDS.some((field) => field in spec))
+    fail("R2 credentials and locations must be named environment variables, never values in configuration.");
+  for (const field of R2_NAMES)
+    if (!ENV_NAME.test(spec[field] ?? ""))
+      fail("R2 media requires accountIdEnv, accessKeyIdEnv, secretAccessKeyEnv and bucketEnv.");
+  if (spec.endpointEnv !== undefined && !ENV_NAME.test(spec.endpointEnv))
+    fail("R2 endpointEnv must name an environment variable.");
+}
+function checkBlobSpec(spec) {
+  if (!spec || typeof spec !== "object" || !ENV_NAME.test(spec.tokenEnv ?? ""))
+    fail("Private Blob media requires tokenEnv.");
+  if ("token" in spec) fail("The Blob token must be a named environment variable.");
+}
+/** Shape check only (no values read). Returns the env var names the media
+ * configuration depends on, so callers can export exactly those. */
+export function mediaEnvNames(media) {
+  if (!media || !MEDIA_KINDS.includes(media.kind))
+    fail("An explicit local media root, private Blob store, R2 bucket or dual R2+Blob store is required.");
+  const r2Names = (spec) => [...R2_NAMES.map((n) => spec[n]), ...(spec.endpointEnv ? [spec.endpointEnv] : [])];
+  if (media.kind === "local") return [];
+  if (media.kind === "blob") {
+    checkBlobSpec(media);
+    return [media.tokenEnv];
+  }
+  if (media.kind === "r2") {
+    checkR2Spec(media);
+    return r2Names(media);
+  }
+  checkR2Spec(media.r2);
+  checkBlobSpec(media.blob);
+  return [...r2Names(media.r2), media.blob.tokenEnv];
+}
+
+/** Resolves R2 names to values, the same way lib/storage/backend.ts reads
+ * R2_* (endpoint defaults to https://<account>.r2.cloudflarestorage.com). */
+export function r2Settings(spec, env = process.env) {
+  checkR2Spec(spec);
+  const accountId = secret(spec.accountIdEnv, env),
+    bucket = secret(spec.bucketEnv, env);
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(accountId)) fail("Invalid R2 account ID.");
+  if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) fail("Invalid R2 bucket name.");
+  const endpoint = (
+    spec.endpointEnv ? secret(spec.endpointEnv, env) : `https://${accountId}.r2.cloudflarestorage.com`
+  ).replace(/\/+$/, "");
+  let parsed;
+  try {
+    parsed = new URL(endpoint);
+  } catch {
+    fail("Invalid R2 endpoint.");
+  }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash || (parsed.pathname && parsed.pathname !== "/"))
+    fail("The R2 endpoint must be a bare https origin without credentials.");
+  return {
+    accountId,
+    accessKeyId: secret(spec.accessKeyIdEnv, env),
+    secretAccessKey: secret(spec.secretAccessKeyEnv, env),
+    bucket,
+    endpoint: parsed.origin,
+  };
+}
+const s3sdk = () => import("@aws-sdk/client-s3");
+/** The app's R2 client settings (lib/storage/r2.ts): path-style, region auto,
+ * no SDK retries (ours restart a whole object), checksums only when required. */
+export async function defaultR2Client(settings) {
+  const { S3Client } = await s3sdk();
+  return new S3Client({
+    region: "auto",
+    endpoint: settings.endpoint,
+    forcePathStyle: true,
+    credentials: { accessKeyId: settings.accessKeyId, secretAccessKey: settings.secretAccessKey },
+    maxAttempts: 1,
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
+  });
+}
+const httpStatus = (error) => error?.$metadata?.httpStatusCode;
+const unquote = (etag) => (typeof etag === "string" ? etag.replace(/^"|"$/g, "") : undefined);
+/** Integrity failures (OpsError) and definite 4xx answers are never retried;
+ * network faults, broken streams, 408/429 and 5xx are. */
+function transient(error) {
+  if (error instanceof OpsError) return false;
+  const status = httpStatus(error);
+  if (status == null) return true;
+  return status >= 500 || status === 429 || status === 408;
+}
+const wait = (ms) => new Promise((done) => setTimeout(done, ms));
+export function retrying({ attempts = 4, baseMs = 500, sleep = wait } = {}) {
+  return async (operation) => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await operation(attempt);
+      } catch (error) {
+        if (attempt >= attempts || !transient(error)) throw error;
+        await sleep(baseMs * 2 ** (attempt - 1));
+      }
+    }
+  };
+}
+function nodeStream(body) {
+  if (body instanceof Readable) return body;
+  if (typeof body?.transformToWebStream === "function") return Readable.fromWeb(body.transformToWebStream());
+  if (typeof body?.getReader === "function") return Readable.fromWeb(body);
+  return Readable.from(body);
+}
+export async function r2Inventory(client, bucket, retry = retrying()) {
+  const { ListObjectsV2Command } = await s3sdk();
+  const entries = [];
+  let token;
+  do {
+    const page = await retry(() =>
+      client.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1000, ...(token ? { ContinuationToken: token } : {}) })),
+    );
+    for (const item of page?.Contents ?? []) {
+      if (typeof item.Key !== "string" || !Number.isSafeInteger(item.Size) || item.Size < 0)
+        fail("R2 returned an invalid object listing.");
+      entries.push({
+        store: "r2",
+        pathname: safePath(item.Key),
+        size: item.Size,
+        etag: unquote(item.ETag),
+        uploadedAt: item.LastModified ? new Date(item.LastModified).toISOString() : null,
+      });
+    }
+    if (page?.IsTruncated && (!page.NextContinuationToken || page.NextContinuationToken === token))
+      fail("R2 pagination did not advance.");
+    token = page?.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (token);
+  entries.sort((a, b) => a.pathname.localeCompare(b.pathname));
+  if (new Set(entries.map((e) => e.pathname)).size !== entries.length) fail("Duplicate media path.");
+  return entries;
+}
+const PLAIN_MD5 = /^[0-9a-f]{32}$/i;
+/** One R2 object as a stream, pinned to the listed ETag (If-Match), so an
+ * object replaced after the inventory fails instead of mixing versions. */
+async function openR2Object(client, bucket, entry) {
+  const { GetObjectCommand } = await s3sdk();
+  let out;
+  try {
+    out = await client.send(
+      new GetObjectCommand({ Bucket: bucket, Key: entry.pathname, ...(entry.etag ? { IfMatch: `"${entry.etag}"` } : {}) }),
+    );
+  } catch (error) {
+    if ([404, 412].includes(httpStatus(error))) fail("R2 object changed or disappeared during backup.");
+    throw error;
+  }
+  if (!out?.Body || out.ContentLength !== entry.size || (entry.etag && unquote(out.ETag) !== entry.etag)) {
+    out?.Body?.destroy?.();
+    fail("R2 object changed or disappeared during backup.");
+  }
+  // A single-part R2 ETag is the object's MD5: check the bytes against it.
+  const expectMd5 = PLAIN_MD5.test(entry.etag ?? "") ? entry.etag.toLowerCase() : null;
+  const md5 = createHash("md5");
+  const input = nodeStream(out.Body).pipe(
+    new Transform({
+      transform(chunk, _, next) {
+        md5.update(chunk);
+        next(null, chunk);
+      },
+    }),
+  );
+  return {
+    input,
+    contentType: out.ContentType,
+    check() {
+      if (expectMd5 && md5.digest("hex") !== expectMd5) fail("R2 object bytes do not match its ETag.");
+    },
+  };
+}
+async function openBlobObject(sdk, token, entry) {
+  const result = await sdk.get(entry.pathname, { token, access: "private", useCache: false });
+  if (
+    !result ||
+    result.statusCode !== 200 ||
+    result.blob.size !== entry.size ||
+    (entry.etag && result.blob.etag !== entry.etag)
+  )
+    fail("Private Blob changed or disappeared during backup.");
+  return { input: Readable.fromWeb(result.stream), contentType: result.blob.contentType };
+}
+
+/** The media stores a config captures. Dual = the production layout under
+ * STORAGE_BACKEND=r2 with BLOB_READ_WRITE_TOKEN kept: R2 first, Blob fallback. */
+async function mediaStores(media, env, destination, { blobSdk, r2Client } = {}) {
+  mediaEnvNames(media);
+  const stores = [];
+  const blobSpec = media.kind === "blob" ? media : media.kind === "dual" ? media.blob : null;
+  const r2Spec = media.kind === "r2" ? media : media.kind === "dual" ? media.r2 : null;
+  if (r2Spec) {
+    const settings = r2Settings(r2Spec, env);
+    const client = await (r2Client ?? defaultR2Client)(settings);
+    stores.push({
+      store: "r2",
+      remote: true,
+      inventory: (retry) => r2Inventory(client, settings.bucket, retry),
+      open: (entry) => openR2Object(client, settings.bucket, entry),
+      close: () => client.destroy?.(),
+    });
+  }
+  if (blobSpec) {
+    const sdk = blobSdk ?? (await import("@vercel/blob"));
+    const token = secret(blobSpec.tokenEnv, env);
+    stores.push({
+      store: "blob",
+      remote: true,
+      inventory: async () => (await blobInventory(token, sdk)).map((e) => ({ store: "blob", ...e })),
+      open: (entry) => openBlobObject(sdk, token, entry),
+    });
+  }
+  if (media.kind === "local") {
+    if (typeof media.root !== "string" || !media.root) fail("Local media requires an explicit root.");
+    const root = resolve(media.root);
+    if (resolve(destination) === root || resolve(destination).startsWith(root + sep))
+      fail("Backup destination cannot be inside its media source.");
+    stores.push({
+      store: "local",
+      remote: false,
+      inventory: async () => (await localMedia(root, media.directories)).map((e) => ({ store: "local", ...e })),
+      open: async (entry) => ({ input: createReadStream(join(root, entry.pathname)) }),
+    });
+  }
+  return stores;
+}
+/** Archive path of a media object. Single-store layouts keep media/<key>;
+ * dual keeps both stores apart because a migrated key exists in each. */
+const mediaArchivePath = (kind, entry) =>
+  kind === "dual" ? `media/${entry.store}/${entry.pathname}` : `media/${entry.pathname}`;
+
+/** Media entries as recorded in a manifest (or a restored inventory.json). */
+export function manifestMediaEntries(manifest) {
+  return manifest.files
+    .filter((f) => f.kind === "media")
+    .map((f) => ({
+      store: f.store ?? manifest.mediaKind,
+      pathname: safePath(f.pathname),
+      url: f.originalUrl,
+      path: safePath(f.path),
+      bytes: f.bytes,
+      sha256: f.sha256,
+      contentType: f.contentType,
+    }));
+}
+
 export async function verifyPlatformCoverage(databases, keyring) {
   const platform = databases.find((d) => d.role === "platform");
   const db = createClient({
@@ -433,8 +686,55 @@ export async function verifyPlatformCoverage(databases, keyring) {
   return sealedValues;
 }
 
-async function verifyMediaReferences(databases, entries, kind) {
-  const paths = new Set(entries.map((e) => e.pathname));
+const BLOB_HOST = ".vercel-storage.com";
+const GENERATION_EXT = { image: "png", audio: "mp3", model: "glb" };
+const outside = () =>
+  fail("Media referenced by an absolute URL is outside this private store inventory.");
+
+/** How lib/storage resolves a stored value to an object, per media kind.
+ * blob: keys and URLs on the Blob store. r2: keys on R2; an absolute Blob URL
+ * is read from R2 at its decoded pathname (no fallback without a Blob token).
+ * dual (STORAGE_BACKEND=r2 with the Blob token kept): R2 first, then Blob at
+ * the same key, or at the original URL for an absolute Blob URL. */
+export function mediaResolver(entries, kind) {
+  if (!MEDIA_KINDS.includes(kind)) fail("Unknown media kind in the inventory.");
+  const stores = { local: new Map(), blob: new Map(), r2: new Map() },
+    blobUrls = new Map();
+  for (const entry of entries) {
+    const store = stores[entry.store];
+    if (!store || store.has(entry.pathname)) fail("Duplicate or unknown media store entry.");
+    store.set(entry.pathname, entry);
+    if (entry.store === "blob" && entry.url) blobUrls.set(entry.url, entry);
+  }
+  return {
+    cloud: kind !== "local",
+    key(key) {
+      if (kind === "dual") return stores.r2.get(key) ?? stores.blob.get(key) ?? null;
+      return stores[kind].get(key) ?? null;
+    },
+    /** { key, entry } for an absolute URL; unknown hosts are refused like the app does. */
+    url(stored) {
+      let parsed, key;
+      try {
+        parsed = new URL(stored);
+        key = decodeURIComponent(parsed.pathname.slice(1));
+      } catch {
+        outside();
+      }
+      if (kind === "blob") return { key, entry: blobUrls.get(stored) ?? outside() };
+      if (!parsed.hostname.toLowerCase().endsWith(BLOB_HOST)) outside();
+      const entry = stores.r2.get(key) ?? (kind === "dual" ? blobUrls.get(stored) : null) ?? null;
+      return { key, entry };
+    },
+  };
+}
+
+/** Every object a database row points at must resolve, by the app's rule,
+ * to an object in the captured inventory. Missing objects are named (keys and
+ * row IDs only, never a signed URL or credential). onReference receives each
+ * resolved reference, for restore/report/prepare. */
+export async function verifyMediaReferences(databases, entries, kind, { onReference } = {}) {
+  const resolver = mediaResolver(entries, kind);
   const platform = databases.find((d) => d.role === "platform");
   const p = createClient({ url: pathToFileURL(platform.snapshot).href });
   let workspaces;
@@ -446,66 +746,80 @@ async function verifyMediaReferences(databases, entries, kind) {
     p.close();
   }
   let references = 0;
-  const need = (path) => {
-    if (!paths.has(path))
-      fail(
-        "Media referenced by a database is missing from the storage inventory.",
-      );
+  const byStore = {},
+    missing = [];
+  const found = (reference, entry) => {
+    if (!entry) {
+      missing.push(`${reference.database}/${reference.table}/${reference.id} (${reference.key})`);
+      return;
+    }
     references++;
+    byStore[entry.store] = (byStore[entry.store] ?? 0) + 1;
+    onReference?.({ ...reference, entry });
   };
   for (const source of databases) {
     const names = new Set(source.inventory.tables.map((t) => t.name));
     const workspace = workspaces.find((w) =>
       source.workspaceIds.includes(w.id),
     );
+    // Local disk keeps its own flat layout; cloud keys carry the workspace prefix.
     const prefix =
-      kind === "blob" && workspace && !workspace.legacy
+      resolver.cloud && workspace && !workspace.legacy
         ? `ws/${workspace.id}/`
         : "";
     const db = createClient({ url: pathToFileURL(source.snapshot).href });
     try {
       if (names.has("platform_assets"))
         for (const row of (await db.execute("SELECT path FROM platform_assets"))
-          .rows)
-          need(row.path);
+          .rows) {
+          const key = String(row.path);
+          found({ database: source.id, table: "platform_assets", id: key, key, localPath: key }, resolver.key(key));
+        }
       if (names.has("generations"))
         for (const row of (
           await db.execute("SELECT * FROM generations WHERE status='succeeded'")
         ).rows) {
           if (!row.stored_url || row.deleted) continue;
-          const ext =
-            row.kind === "image" ? "png" : row.kind === "audio" ? "mp3" : "mp4";
-          need(`${prefix}generations/${row.id}.${ext}`);
+          const file = `generations/${row.id}.${GENERATION_EXT[row.kind] ?? "mp4"}`;
+          found({ database: source.id, table: "generations", id: String(row.id), key: prefix + file, localPath: file }, resolver.key(prefix + file));
         }
       for (const table of ["uploads", "workbench_media"]) {
         if (!names.has(table)) continue;
         for (const row of (await db.execute(`SELECT * FROM ${q(table)}`))
           .rows) {
-          if (kind === "blob" && /^https?:/.test(row.stored_url)) {
-            const entry = entries.find((e) => e.url === row.stored_url);
-            if (!entry)
-              fail(
-                "Media referenced by an absolute URL is outside this private store inventory.",
-              );
-            need(entry.pathname);
-          } else need(`${prefix}uploads/${row.id}.${row.ext}`);
+          const file = `uploads/${row.id}.${row.ext}`,
+            deterministic = prefix + file,
+            stored = row.stored_url == null ? "" : String(row.stored_url);
+          const reference = { database: source.id, table, id: String(row.id), localPath: file, deterministic };
+          if (resolver.cloud && /^https?:/.test(stored)) {
+            const { key, entry } = resolver.url(stored);
+            found({ ...reference, key, absolute: stored }, entry);
+          } else if (resolver.cloud && stored && !stored.startsWith("/api/")) {
+            // A bare stored key is read as-is by the app (resolveStored).
+            found({ ...reference, key: stored }, resolver.key(stored));
+          } else found({ ...reference, key: deterministic }, resolver.key(deterministic));
         }
       }
     } finally {
       db.close();
     }
   }
-  return references;
+  if (missing.length)
+    fail(
+      `Media referenced by a database is missing from the storage inventory (${missing.length}): ${missing.slice(0, 20).join(", ")}${missing.length > 20 ? ", ..." : ""}`,
+    );
+  return { references, byStore };
 }
 
 export async function createBackup(
   config,
   destination,
-  { env = process.env, blobSdk } = {},
+  { env = process.env, blobSdk, r2Client, retryOptions } = {},
 ) {
   await absent(destination);
   const key = backupKey(env),
     keyring = secret("KEYRING_SECRET", env);
+  mediaEnvNames(config.media);
   if (
     config.version !== 1 ||
     config.quiesced !== true ||
@@ -542,76 +856,59 @@ export async function createBackup(
     }
     const sealedValues = await verifyPlatformCoverage(databases, keyring);
     const files = [];
-    async function add(input, path, extra = {}) {
-      const object = String(files.length).padStart(8, "0") + ".enc";
-      const meta = await encryptStream(
-        input,
-        join(bundle, object),
-        key,
-        `${FORMAT}:${object}:${path}`,
-      );
+    const retry = retrying(retryOptions);
+    /** open() yields { input, contentType?, check? }. Cloud media is retried
+     * whole: a failed attempt's partial ciphertext is removed and the object
+     * is fetched again from the start (memory stays one stream chunk). */
+    async function add(open, path, extra = {}, { retried = false, size } = {}) {
+      const object = String(files.length).padStart(8, "0") + ".enc",
+        output = join(bundle, object);
+      const attempt = async () => {
+        await rm(output, { force: true });
+        const { input, contentType, check } = await open();
+        const meta = await encryptStream(input, output, key, `${FORMAT}:${object}:${path}`);
+        if (size !== undefined && meta.bytes !== size) fail("Media size changed during backup.");
+        check?.();
+        return { ...(contentType ? { contentType } : {}), ...meta };
+      };
+      const meta = retried ? await retry(attempt) : await attempt();
       files.push({ object, path, ...extra, ...meta });
     }
     for (const db of databases)
-      await add(createReadStream(db.snapshot), `databases/${db.id}.db`, {
+      await add(async () => ({ input: createReadStream(db.snapshot) }), `databases/${db.id}.db`, {
         kind: "database",
         databaseId: db.id,
       });
     const media = config.media;
-    if (!media || !["local", "blob"].includes(media.kind))
-      fail("An explicit local media root or private Blob store is required.");
-    const sdk =
-      media.kind === "blob"
-        ? (blobSdk ?? (await import("@vercel/blob")))
-        : null;
-    const token = sdk ? secret(media.tokenEnv, env) : null;
-    const root = media.kind === "local" ? resolve(media.root) : null;
-    if (
-      root &&
-      (resolve(destination) === root ||
-        resolve(destination).startsWith(root + sep))
-    )
-      fail("Backup destination cannot be inside its media source.");
-    const mediaBefore = sdk
-      ? await blobInventory(token, sdk)
-      : await localMedia(root, media.directories);
-    const mediaReferences = await verifyMediaReferences(
-      databases,
-      mediaBefore,
-      media.kind,
-    );
-    for (const entry of mediaBefore) {
-      let input, contentType;
-      if (sdk) {
-        const result = await sdk.get(entry.pathname, {
-          token,
-          access: "private",
-          useCache: false,
-        });
-        if (
-          !result ||
-          result.statusCode !== 200 ||
-          result.blob.size !== entry.size ||
-          (entry.etag && result.blob.etag !== entry.etag)
-        )
-          fail("Private Blob changed or disappeared during backup.");
-        input = Readable.fromWeb(result.stream);
-        contentType = result.blob.contentType;
-      } else input = createReadStream(join(root, entry.pathname));
-      await add(input, `media/${entry.pathname}`, {
-        kind: "media",
-        pathname: entry.pathname,
-        originalUrl: entry.url,
-        contentType,
-      });
-      if (files.at(-1).bytes !== entry.size)
-        fail("Media size changed during backup.");
+    const stores = await mediaStores(media, env, destination, { blobSdk, r2Client });
+    let mediaReferences, mediaCoverage, mediaCount;
+    try {
+      const inventory = async () => {
+        const entries = [];
+        for (const store of stores) entries.push(...(await store.inventory(retry)));
+        return entries;
+      };
+      const mediaBefore = await inventory();
+      const coverage = await verifyMediaReferences(databases, mediaBefore, media.kind);
+      const byStore = new Map(stores.map((s) => [s.store, s]));
+      for (const entry of mediaBefore) {
+        const store = byStore.get(entry.store);
+        await add(() => store.open(entry), mediaArchivePath(media.kind, entry), {
+          kind: "media",
+          store: entry.store,
+          pathname: entry.pathname,
+          originalUrl: entry.url,
+        }, { retried: store.remote, size: entry.size });
+      }
+      const mediaAfter = await inventory();
+      if (json(mediaBefore) !== json(mediaAfter))
+        fail("Media inventory changed; quiesce writers and repeat the backup.");
+      mediaReferences = coverage.references;
+      mediaCoverage = coverage.byStore;
+      mediaCount = mediaBefore.length;
+    } finally {
+      for (const store of stores) store.close?.();
     }
-    const mediaAfter = sdk
-      ? await blobInventory(token, sdk)
-      : await localMedia(root, media.directories);
-    if (json(mediaBefore) !== json(mediaAfter))
-      fail("Media inventory changed; quiesce writers and repeat the backup.");
     const createdAt = new Date().toISOString();
     const manifest = {
       format: FORMAT,
@@ -622,6 +919,7 @@ export async function createBackup(
       keyringSecret: keyring,
       sealedValues,
       mediaReferences,
+      mediaCoverage,
       mediaKind: media.kind,
       databases: databases.map((d) => ({
         id: d.id,
@@ -645,7 +943,7 @@ export async function createBackup(
     await rename(bundle, resolve(destination));
     return {
       databases: databases.length,
-      media: mediaBefore.length,
+      media: mediaCount,
       sealedValues,
       bytes: files.reduce((n, f) => n + f.bytes, 0),
       createdAt,
@@ -729,6 +1027,14 @@ export async function restoreBackup(
       })),
       manifest.keyringSecret,
     );
+    // Every referenced object resolves (by the app's rule) to a restored,
+    // digest-checked file. Older manifests without a media kind predate this.
+    if (manifest.mediaKind)
+      await verifyMediaReferences(
+        manifest.databases.map((d) => ({ ...d, snapshot: join(output, "databases", d.id + ".db") })),
+        manifestMediaEntries(manifest),
+        manifest.mediaKind,
+      );
     await privateFile(
       join(output, "recovery-secrets.json"),
       json({ KEYRING_SECRET: manifest.keyringSecret }),
@@ -843,4 +1149,142 @@ export async function restoreBlobs(
     fail("Blob target inventory changed during restore.");
   await privateFile(join(restored, "blob-restore-urls.json"), json(urls));
   return { verified: true, media: verified };
+}
+
+async function fileDigest(path) {
+  const hash = createHash("sha256");
+  let bytes = 0;
+  for await (const chunk of createReadStream(path)) {
+    hash.update(chunk);
+    bytes += chunk.length;
+  }
+  return { sha256: hash.digest("hex"), bytes };
+}
+const R2_SINGLE_PUT_MAX = 100 * 1024 * 1024,
+  R2_RESTORE_PART = 64 * 1024 * 1024;
+/** Conditional (If-None-Match: *) write of one restored file. A 412 on a
+ * retry means an earlier attempt landed; the readback digest decides. */
+async function putR2File(client, bucket, key, file, entry, retry, { singleMax, partSize }) {
+  const s3 = await s3sdk();
+  const contentType = entry.contentType ? { ContentType: entry.contentType } : {};
+  if (entry.bytes <= singleMax) {
+    await retry(async (attempt) => {
+      try {
+        await client.send(
+          new s3.PutObjectCommand({ Bucket: bucket, Key: key, Body: createReadStream(file), ContentLength: entry.bytes, IfNoneMatch: "*", ...contentType }),
+        );
+      } catch (error) {
+        if (httpStatus(error) === 412 && attempt > 1) return;
+        if (httpStatus(error) === 412) fail("R2 restore target already holds this key. No existing object will be overwritten.");
+        throw error;
+      }
+    });
+    return;
+  }
+  const created = await retry(() => client.send(new s3.CreateMultipartUploadCommand({ Bucket: bucket, Key: key, ...contentType })));
+  const uploadId = created?.UploadId;
+  if (!uploadId) fail("R2 did not acknowledge the multipart restore upload.");
+  try {
+    const parts = [];
+    for (let start = 0, number = 1; start < entry.bytes; start += partSize, number++) {
+      const end = Math.min(entry.bytes, start + partSize) - 1;
+      const out = await retry(() =>
+        client.send(
+          new s3.UploadPartCommand({ Bucket: bucket, Key: key, UploadId: uploadId, PartNumber: number, Body: createReadStream(file, { start, end }), ContentLength: end - start + 1 }),
+        ),
+      );
+      if (!out?.ETag) fail("R2 did not acknowledge a restored part.");
+      parts.push({ PartNumber: number, ETag: out.ETag });
+    }
+    await client.send(
+      new s3.CompleteMultipartUploadCommand({ Bucket: bucket, Key: key, UploadId: uploadId, MultipartUpload: { Parts: parts }, IfNoneMatch: "*" }),
+    );
+  } catch (error) {
+    await client.send(new s3.AbortMultipartUploadCommand({ Bucket: bucket, Key: key, UploadId: uploadId })).catch(() => {});
+    if (httpStatus(error) === 412) fail("R2 restore target already holds this key. No existing object will be overwritten.");
+    throw error;
+  }
+}
+
+/** Uploads a verified offline restore into a NEW, EMPTY R2 bucket, with the
+ * keys the app reads: R2 objects at their key and Blob objects at their
+ * pathname (a Blob copy shadowed by an R2 object of the same key is not read
+ * by the app and is not uploaded). Every object is read back and checked by
+ * SHA-256 and size. Writes r2-restore-keys.json for prepare. */
+export async function restoreR2(
+  restored,
+  spec,
+  { env = process.env, r2Client, retryOptions, singleMax = R2_SINGLE_PUT_MAX, partSize = R2_RESTORE_PART } = {},
+) {
+  if (spec?.confirmEmptyBucket !== true)
+    fail("Confirm a dedicated empty private restore bucket in the target config.");
+  const settings = r2Settings(spec, env);
+  const inventory = await readJson(join(restored, "inventory.json"));
+  if (!["blob", "r2", "dual"].includes(inventory.mediaKind))
+    fail("Only a Blob, R2 or dual backup has cloud-compatible media keys.");
+  const retry = retrying(retryOptions);
+  const client = await (r2Client ?? defaultR2Client)(settings);
+  try {
+    if ((await r2Inventory(client, settings.bucket, retry)).length)
+      fail("R2 restore target is not empty. No existing object will be overwritten.");
+    const entries = manifestMediaEntries(inventory);
+    const r2Keys = new Set(entries.filter((e) => e.store === "r2").map((e) => e.pathname));
+    const plan = [];
+    let shadowed = 0;
+    for (const entry of entries) {
+      if (entry.store === "blob") {
+        if (entry.url) {
+          let key;
+          try {
+            key = decodeURIComponent(new URL(entry.url).pathname.slice(1));
+          } catch {
+            key = null;
+          }
+          if (key !== entry.pathname)
+            fail("A Blob URL does not match its pathname; it cannot be mapped to an R2 key.");
+        }
+        if (r2Keys.has(entry.pathname)) {
+          shadowed++;
+          continue;
+        }
+      } else if (entry.store !== "r2") fail("Local media has no cloud key layout.");
+      plan.push(entry);
+    }
+    const { GetObjectCommand } = await s3sdk();
+    const record = [];
+    for (const entry of plan) {
+      const source = join(restored, entry.path);
+      const local = await fileDigest(source);
+      if (local.sha256 !== entry.sha256 || local.bytes !== entry.bytes)
+        fail("Local restored media changed before cloud upload.");
+      await putR2File(client, settings.bucket, entry.pathname, source, entry, retry, { singleMax, partSize });
+      const readback = await retry(async () => {
+        const out = await client.send(new GetObjectCommand({ Bucket: settings.bucket, Key: entry.pathname }));
+        if (!out?.Body) fail("Restored R2 object cannot be read back.");
+        const hash = createHash("sha256");
+        let bytes = 0;
+        for await (const chunk of nodeStream(out.Body)) {
+          hash.update(chunk);
+          bytes += chunk.length;
+        }
+        return { sha256: hash.digest("hex"), bytes };
+      });
+      if (readback.bytes !== entry.bytes || readback.sha256 !== entry.sha256)
+        fail("Restored R2 readback did not match.");
+      record.push({
+        key: entry.pathname,
+        store: entry.store,
+        pathname: entry.pathname,
+        originalUrl: entry.url ?? null,
+        bytes: entry.bytes,
+        sha256: entry.sha256,
+      });
+    }
+    if ((await r2Inventory(client, settings.bucket, retry)).length !== record.length)
+      fail("R2 target inventory changed during restore.");
+    await privateFile(join(restored, "r2-restore-keys.json"), json(record));
+    return { verified: true, media: record.length, shadowedBlobCopies: shadowed };
+  } finally {
+    client.destroy?.();
+  }
 }
