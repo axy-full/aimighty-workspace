@@ -474,9 +474,9 @@ Each is passed, or waived by the owner in writing (cutover step 0).
 
 **Why it waits.** On a proxied (orange) name, Cloudflare (Free, Pro and Business) returns a **524** when the server sends **no bytes for about 100 s**. Traefik cannot change that.
 - Chunked uploads and streamed downloads are fine: bytes keep flowing.
+- `POST /api/uploads/finish` no longer risks a 524: it answers within about 10 s (the receipt, or `202` while it assembles in the background), and the browser polls `/api/uploads/session`.
 - Inngest steps (an Astra render, a dubbing poll) can pass 100 s. `INNGEST_STREAMING=true` (already set) makes the route answer at once and send a byte every few seconds.
 - **Requests that wait silently can pass 100 s:**
-  - `POST /api/uploads/finish` (assembles up to 2 GB before it answers; a retry recovers);
   - `/api/audio/transcribe` (waits for the whole transcription);
   - the model calls under `/api/atomik/` (ideas, shot and scene drafts, memory read);
   - `/api/prompt/enhance`, `/api/mcp`, and starting identity training.
