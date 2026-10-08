@@ -66,7 +66,11 @@ export const GET = withTenant(async (req: Request) => {
       return Response.json({ agent: await newBoardAskTerms() }, { headers: NO_STORE });
     if (url.searchParams.get("agent") === "1") {
       const draftId = url.searchParams.get("projectId");
-      return Response.json({ agent: await rigAgentState(productionId, who.userId!, draftId && /^[a-zA-Z0-9-]{1,100}$/.test(draftId) ? draftId : null) }, { headers: NO_STORE });
+      /* `attachment` (repeated): the files the ask would attach, priced into planning's figure (each checked as the ask checks it). */
+      const attachments = url.searchParams.getAll("attachment");
+      if (attachments.length > ATTACHMENTS_SENT || attachments.some((a) => a.length > 200))
+        return Response.json({ error: "Check the attached files before asking." }, { status: 400, headers: NO_STORE });
+      return Response.json({ agent: await rigAgentState(productionId, who.userId!, draftId && /^[a-zA-Z0-9-]{1,100}$/.test(draftId) ? draftId : null, attachments) }, { headers: NO_STORE });
     }
     await requireProduction(productionId);
     /* The board's History (stream 3; lead decision 26): this production's canvas changes and who made them, read only. */
@@ -125,6 +129,8 @@ const runAction = <A extends string>(action: A) => z.object({ action: z.literal(
 const LIMIT = z.number().positive().max(MAX_RUN_LIMIT);
 const SEQ = z.number().int().min(1).max(10_000);
 const FINGERPRINT = z.string().regex(/^[a-f0-9]{64}$/);
+/** The most attachment ids a request may carry to be read at all; how many Atomik takes for a plan is checked by name (lib/workbench/rig-agent-attachments.ts). */
+const ATTACHMENTS_SENT = 50;
 const actionSchema = z.discriminatedUnion("action", [
   tidySchema,
   /* Ask Atomik to build: the project (draft) it is asked from, a request id (asking twice asks once), the request,
@@ -133,6 +139,8 @@ const actionSchema = z.discriminatedUnion("action", [
     action: z.literal("agent.plan"), productionId: PRODUCTION, projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/),
     requestId: z.string().regex(ACTION_ID), goal: z.string().trim().min(3).max(2000), model: z.string().min(1).max(120).optional(),
     limit: LIMIT, mode: z.enum(["ask", "auto"]).optional(),
+    /* Files attached to the ask (`upload:<id>`), each checked against this production's Library in this workspace. */
+    attachments: z.array(z.string().max(200)).max(ATTACHMENTS_SENT).optional(),
   }),
   runAction("agent.approve").extend({ fingerprint: FINGERPRINT }),
   runAction("agent.decline"),
@@ -196,7 +204,7 @@ export const POST = withTenant(async (req: Request) => {
     }
     const { productionId } = action;
     const run =
-      action.action === "agent.plan" ? await askRigAgent({ productionId, draftId: action.projectId, userId, requestId: action.requestId, goal: action.goal, model: action.model, limit: action.limit, mode: action.mode })
+      action.action === "agent.plan" ? await askRigAgent({ productionId, draftId: action.projectId, userId, requestId: action.requestId, goal: action.goal, model: action.model, limit: action.limit, mode: action.mode, attachments: action.attachments })
       : action.action === "agent.approve" ? await approveRigAgent({ productionId, runId: action.runId, fingerprint: action.fingerprint, userId })
       : action.action === "agent.decline" ? await declineRigAgent({ productionId, runId: action.runId, userId })
       : action.action === "agent.stop" ? await stopRigAgent({ productionId, runId: action.runId, userId })
