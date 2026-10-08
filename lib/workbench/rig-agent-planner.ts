@@ -2,6 +2,7 @@ import { ToolLoopAgent, Output, isStepCount, tool, type LanguageModel, type Lang
 import type { LanguageModelV4, LanguageModelV4Content, LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import { z } from "zod";
 import { ATOMIK_AUTO_MODEL_IDS, isAtomikModel } from "../atomikModelPolicy";
+import { aliasModel } from "../modelAliases";
 import { textCostUsd, textQuoteCostUsd, type CatalogModel } from "../catalog";
 import { ATOMIK_IMAGE_TOKENS, ATOMIK_MAX_VISUALS } from "./atomik-reference-types";
 import { directTextCostUsd, sdkTextUsage } from "../openai-direct";
@@ -257,7 +258,9 @@ export async function runPlanner(snapshot: BoardSnapshot, model: LanguageModel, 
  * three families, never swapped for another; Auto takes Atomik's own economy
  * choice among them, else the first priced one.
  */
-export function selectPlannerModel(want: string, menu: readonly { id: string }[]): string {
+export function selectPlannerModel(wanted: string, menu: readonly { id: string }[]): string {
+  /* A run saved on a dropped id is priced and run on its alias (lib/modelAliases.ts). */
+  const want = aliasModel(wanted);
   const offered = menu.filter((m) => RIG_AGENT_FAMILIES.test(m.id) && isAtomikModel(m.id));
   if (want && want !== "auto") {
     if (!RIG_AGENT_FAMILIES.test(want) || !isAtomikModel(want)) throw new PlannerError("Atomik builds boards with Claude, OpenAI or Grok models. Choose one of those, or Auto.");

@@ -2,6 +2,7 @@ import { CATEGORIES, type ShotSpec } from "./studio";
 import { MODELS, DEFAULT_MODEL_ID } from "./models";
 import { TEXT_RATES } from "./refineGate";
 import { DEFAULT_PLANS, cleanPlans, type PlanDef } from "./plans";
+import { aliasModel } from "./modelAliases";
 
 /**
  * The platform layer: what every new workspace inherits and may change.
@@ -117,7 +118,9 @@ function cleanTextModels(v: unknown): TextModels {
   const out = { ...DEFAULT_TEXT_MODELS };
   if (!isObj(v)) return out;
   for (const job of TEXT_JOBS) {
-    const id = (v as Record<string, unknown>)[job];
+    /* A dropped id is its alias before the check, so a saved routing moves to the nearest model rather than to the default (lib/modelAliases.ts). */
+    const raw = (v as Record<string, unknown>)[job];
+    const id = typeof raw === "string" ? aliasModel(raw) : raw;
     if (typeof id === "string" && TEXT_MODEL_IDS.includes(id)) out[job] = id;
   }
   return out;
@@ -126,7 +129,7 @@ function cleanTextModels(v: unknown): TextModels {
 /** The model a text job runs on, from the layer's pair — never empty. */
 export function textModelFor(models: { text?: Partial<TextModels> } | null | undefined, job: TextJob): string {
   const id = models?.text?.[job];
-  return typeof id === "string" && id ? id : DEFAULT_TEXT_MODELS[job];
+  return typeof id === "string" && id ? aliasModel(id) : DEFAULT_TEXT_MODELS[job];
 }
 
 /** A real, visible engine of the kind — or nothing. */

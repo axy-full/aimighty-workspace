@@ -8,6 +8,7 @@ import { atomikReasoningRequest } from '../../lib/atomik-reasoning';
 import { assertDirectBillingReady, directTextRequest, directTextUsage, providerErrorSummary, textPost, TextNotSentError } from '../../lib/textDirect';
 import committedCatalog from '../../lib/modelCatalog.json';
 import { DIRECT_MODEL_IDS, UNMAPPED_DIRECT_MODEL_IDS, directFetch, directModelId, textRoute } from '../../lib/textRoute';
+import { DROPPED_MODEL_IDS, MODEL_ALIASES, isDroppedModel } from '../../lib/modelAliases';
 import { textDirectVendors } from '../../lib/textDirectVendors';
 import type { CatalogModel } from '../../lib/catalog';
 
@@ -76,7 +77,8 @@ test('every offered Claude, Gemini and Grok id is mapped explicitly or listed as
   const catalogued = (committedCatalog as { models: { id: string; type: string; providerId: string; outputModalities?: string[] }[] }).models
     .filter(model => model.type === 'language' && model.providerId !== 'openai' && !model.outputModalities?.includes('image')).map(model => model.id);
   expect(catalogued.length).toBeGreaterThan(30);
-  for (const id of new Set([...VERIFIED_TEXT_MODEL_IDS.filter(id => !id.startsWith('openai/')), ...catalogued])) {
+  /* Dropped ids keep their catalogue prices for old ledger rows but are offered nowhere; they reach the router only as their alias. */
+  for (const id of new Set([...VERIFIED_TEXT_MODEL_IDS.filter(id => !id.startsWith('openai/')), ...catalogued.filter(id => !isDroppedModel(id))])) {
     expect(Object.hasOwn(DIRECT_MODEL_IDS, id) !== unmapped.has(id), id).toBe(true);
   }
   expect(directModelId('anthropic/claude-sonnet-4.6')).toBe('claude-sonnet-4-6');
@@ -84,6 +86,10 @@ test('every offered Claude, Gemini and Grok id is mapped explicitly or listed as
   expect(directModelId('spacexai/grok-4.7')).toBe('grok-4.7');
   expect(directModelId('xai/grok-4.7')).toBe('grok-4.7');
   for (const id of UNMAPPED_DIRECT_MODEL_IDS) expect(() => directModelId(id)).toThrow('no direct provider model');
+  for (const id of DROPPED_MODEL_IDS.filter(id => !id.startsWith('openai/'))) {
+    expect(() => directModelId(id), id).toThrow('no direct provider model');
+    expect(Object.hasOwn(DIRECT_MODEL_IDS, MODEL_ALIASES[id]), id).toBe(true);
+  }
   expect(() => directModelId('anthropic/claude-sonnet-9')).toThrow('no direct provider model');
 });
 

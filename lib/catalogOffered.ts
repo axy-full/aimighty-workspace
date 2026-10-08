@@ -3,10 +3,11 @@ import { ENHANCER_MODELS } from "./shell/enhancer";
 import { DEFAULT_TEXT_MODELS } from "./platformLayer";
 import { ASTRA_BLENDER_MODEL } from "./astra-blender/scene";
 import { MODELS } from "./models";
+import { DROPPED_MODEL_IDS } from "./modelAliases";
 
 /**
- * The catalogue ids Particl offers, for lib/modelCatalog.json
- * (scripts/ops/snapshot-catalog.mjs) and its price-presence test.
+ * The catalogue ids Particl offers, and those lib/modelCatalog.json keeps
+ * (scripts/ops/snapshot-catalog.mjs), for its price-presence test.
  */
 const unique = (ids: Iterable<string>): string[] => [...new Set(ids)];
 
@@ -26,3 +27,10 @@ export const STILL_CATALOG_IDS: readonly string[] = unique(MODELS
 export const OFFERED_CATALOG_IDS: readonly string[] = unique([
   ...VERIFIED_TEXT_MODEL_IDS, ...PRICED_TEXT_IDS, ...STILL_CATALOG_IDS,
 ]);
+
+/**
+ * What lib/modelCatalog.json holds: everything offered, and the dropped ids
+ * (lib/modelAliases.ts), which no menu offers but whose prices old ledger rows
+ * still name.
+ */
+export const SNAPSHOT_CATALOG_IDS: readonly string[] = unique([...OFFERED_CATALOG_IDS, ...DROPPED_MODEL_IDS]);

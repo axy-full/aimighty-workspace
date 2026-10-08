@@ -79,17 +79,13 @@ export const DIRECT_MODEL_IDS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Offered ids with no direct equivalent. The router refuses them; the owner's
- * default is to drop them from the menus (a separate change).
- * - The `-fast` listings are a gateway product; Anthropic's fast mode is a beta
- *   request option at a different price, not a model id.
- * - Claude 3 Haiku was retired by Anthropic on 2026-04-19.
+ * Offered ids with no direct equivalent; the router refuses them. None today:
+ * the three there were (the `-fast` listings, a gateway product, and Claude 3
+ * Haiku, retired by Anthropic on 2026-04-19) left every menu on 8 October 2026,
+ * and a choice saved on one reads as its alias before it reaches the router
+ * (lib/modelAliases.ts).
  */
-export const UNMAPPED_DIRECT_MODEL_IDS = [
-  "anthropic/claude-3-haiku",
-  "anthropic/claude-opus-4.8-fast",
-  "anthropic/claude-opus-5-fast",
-] as const;
+export const UNMAPPED_DIRECT_MODEL_IDS: readonly string[] = [];
 
 /** The vendor a model belongs to by its app prefix, whether or not it is switched on. */
 export function directVendorOf(model: string): DirectVendor | null {

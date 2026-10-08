@@ -42,6 +42,7 @@ import { getPlatformLayer } from "./platform";
 import { prettyModel } from "./models";
 import { textModelFor } from "./platformLayer";
 import { currentTenant } from "./tenant";
+import { aliasModel } from "./modelAliases";
 export { TEXT_RATES, promptRichness, shouldRefine };
 export type { Richness };
 export {
@@ -93,14 +94,14 @@ export function refineProvider(): RefineProvider {
 /** Opus 5 by default — this is the judgement step, and the studio asked for the best. */
 export const CLAUDE_MODEL = () =>
   process.env.ANTHROPIC_PROMPT_MODEL ?? "claude-opus-5";
-/** Gateway defaults when no platform routing choice exists; only the first is submitted. */
+/** Gateway defaults when no platform routing choice exists; only the first is submitted. A dropped id in the env reads as its alias (lib/modelAliases.ts). */
 export const GATEWAY_MODELS = (): string[] =>
   (
     process.env.GATEWAY_PROMPT_MODELS ??
     "anthropic/claude-opus-5,anthropic/claude-sonnet-5"
   )
     .split(",")
-    .map((s) => s.trim())
+    .map((s) => aliasModel(s.trim()))
     .filter(Boolean);
 export const TEXT_RATE_FALLBACK = { input: 0.5, output: 3.0 };
 

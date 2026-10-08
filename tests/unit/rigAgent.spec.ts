@@ -171,8 +171,11 @@ test("the planner stays inside its bounds: a turn that answers nothing proposes 
 });
 
 test("the planner thinks with Claude, OpenAI or Grok from Atomik's policy: Auto picks among them, an explicit choice is never swapped", () => {
-  const menu = [{ id: "google/gemini-3.1-pro-preview" }, { id: "spacexai/grok-4.7" }, { id: "openai/gpt-5.5" }, { id: "anthropic/claude-sonnet-4.6" }];
+  /* Cheapest first, as atomikModels orders a priced menu: Auto takes the first of its choices. */
+  const menu = [{ id: "google/gemini-3.1-pro-preview" }, { id: "spacexai/grok-4.7" }, { id: "anthropic/claude-sonnet-4.6" }, { id: "openai/gpt-5.5" }];
   expect(selectPlannerModel("auto", menu)).toBe("anthropic/claude-sonnet-4.6");
+  /* With only OpenAI connected, Auto keeps an OpenAI choice of its own (GPT-5.5, where GPT-5.5 Pro was). */
+  expect(selectPlannerModel("auto", [{ id: "openai/gpt-5-nano" }, { id: "openai/gpt-5.5" }])).toBe("openai/gpt-5.5");
   expect(selectPlannerModel("auto", [{ id: "google/gemini-3.1-pro-preview" }, { id: "spacexai/grok-4.7" }])).toBe("spacexai/grok-4.7");
   expect(selectPlannerModel("openai/gpt-5.5", menu)).toBe("openai/gpt-5.5");
   expect(() => selectPlannerModel("google/gemini-3.1-pro-preview", menu)).toThrow(/Claude, OpenAI or Grok/);

@@ -12,6 +12,7 @@ import { suiteAgentResultSchema } from './suite-agent-plan';
 import { REFERENCE_AD_FRAMES, referenceAnalysisWireSchema, referenceAnalysisSourceSchema, referenceAnalysisResultSchema, referenceAnalysisEvidenceSchema, referenceAnalysisInstructions, referenceAdAnalysisSchema } from './reference-ad-analysis';
 import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
 import { ATOMIK_AUTO_MODEL_IDS, isAtomikModel, isRetiredAtomikModel } from "../atomikModelPolicy";
+import { aliasModel } from "../modelAliases";
 import { atomikEffortOptions, atomikReasoningRequest } from "../atomik-reasoning";
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -273,8 +274,10 @@ const eventFor = (job: AtomikJob, owner: string, status: MeterEvent['status'], c
 async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: AtomikDependencies) {
   if (input.astraBlender && (input.suite || input.referenceAd || input.model !== ASTRA_BLENDER_MODEL || input.refs.length || input.videoFrames?.length)) throw new AtomikError('A 3D blocking request uses its own thinking model and the saved 3D scene. Start it from 3D blocking.', 422);
   if (input.referenceAd && input.suite) throw new AtomikError('Reference-ad analysis is a separate bounded review, not a suite-agent run.', 422);
-  if (input.model !== 'auto' && isRetiredAtomikModel(input.model)) throw new AtomikError('That thinking model is no longer offered in Atomik, which now plans with Claude, OpenAI and Grok. Choose one of those, or Auto.', 422);
-  if (input.model !== 'auto' && !isAtomikModel(input.model)) throw new AtomikError('That thinking model is not offered in Atomik. Choose a supported model.', 422);
+  /* A dropped id (a pending request saved by an older page) is its alias before any check: the model quoted and run (lib/modelAliases.ts). */
+  const want = aliasModel(input.model);
+  if (want !== 'auto' && isRetiredAtomikModel(want)) throw new AtomikError('That thinking model is no longer offered in Atomik, which now plans with Claude, OpenAI and Grok. Choose one of those, or Auto.', 422);
+  if (want !== 'auto' && !isAtomikModel(want)) throw new AtomikError('That thinking model is not offered in Atomik. Choose a supported model.', 422);
   const project = await getAtomikProject(owner, input.projectId);
   if (!project.productionProjectId) throw new AtomikError('Save this project to link its budget before starting Atomik.', 409);
   const astraScene = input.astraBlender ? project.astraBlender ?? createAstraScene('product') : null;
@@ -289,9 +292,9 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   const memory = input.astraBlender || input.referenceAd ? [] : await plannerMemory({ projectId: project.productionProjectId, query: input.request }).catch(() => []);
   const models = await deps.models();
   const menu = atomikModels(models).filter(model => (!input.suite || /^(anthropic|openai)\//.test(model.id)) && (!references.images.length || model.vision));
-  if (input.model === 'auto' && input.effort && input.effort !== 'auto') throw new AtomikError('Choose a model before setting its reasoning effort.', 422);
+  if (want === 'auto' && input.effort && input.effort !== 'auto') throw new AtomikError('Choose a model before setting its reasoning effort.', 422);
   const economy = menu.find(m => (ATOMIK_AUTO_MODEL_IDS as readonly string[]).includes(m.id)) ?? menu[0];
-  const selectedId = input.model === 'auto' ? economy?.id : input.model;
+  const selectedId = want === 'auto' ? economy?.id : want;
   const model = models.find(m => m.id === selectedId && menu.some(c => c.id === m.id));
   if (!model && references.images.length) throw new AtomikError('Choose Auto or a connected vision-capable model to inspect the selected images and video frames.', 422);
   if (!model) throw new AtomikError('No priced language model is connected for this selection. Refresh the model menu or check the provider connection in Workspace → Engines.', 503);
