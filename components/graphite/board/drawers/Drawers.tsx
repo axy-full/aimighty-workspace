@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import type { BoardHistoryEntry, HistoryWho } from "@/lib/board/history";
 import { draftRequest } from "@/lib/workbench/draft-request";
 import { TileMedia } from "../../LibraryTile";
@@ -114,6 +115,28 @@ export function HistoryDrawer({ scope, productionId, jobs, project, onClose, onO
             </button>
           );
         }) : failed === productionId ? null : <p className="bd-drawer-empty">Nothing yet.</p>}
+      </div>
+    </Drawer>
+  );
+}
+
+const opening = () => <p className="bd-drawer-empty" role="status">Opening the 3D scene…</p>;
+const AstraRenderPanel = dynamic(() => import("@/components/astra-blender/AstraRenderPanel").then((m) => m.AstraRenderPanel), { ssr: false, loading: opening });
+const AstraExportPanel = dynamic(() => import("@/components/astra-blender/AstraExportPanel").then((m) => m.AstraExportPanel), { ssr: false });
+
+/**
+ * The 3D scene's renders (owner Q19): production renders in 3D, and Release 1 deleted the Studio page that started them.
+ * Until renders get a new home this drawer hosts the old render panel and the Blender package exactly as production has
+ * them (components/astra-blender): a quote first, the same confirm with its credit ceiling, the runtime's own "unavailable"
+ * words when it is not connected, and the saved request recovered after a lost answer. It renders the project's saved scene.
+ * `blocked` is the board's sample-workspace line (S12): with it every paid press here is disabled and says it.
+ */
+export function RenderDrawer({ scope, project, save, blocked, onClose }: { scope: string; project: Project; save: () => Promise<boolean>; blocked: string | null; onClose: () => void }) {
+  return (
+    <Drawer title="3D scene" onClose={onClose} testId="board-render">
+      <div className="bd-drawer-list bd-drawer-render">
+        <AstraRenderPanel key={`render-${scope}-${project.id}`} project={project} scope={scope} enabled blocked={blocked} onSave={save} />
+        <AstraExportPanel key={`export-${scope}-${project.id}`} project={project} scope={scope} enabled onSave={save} />
       </div>
     </Drawer>
   );
