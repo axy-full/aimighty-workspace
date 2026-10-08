@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { useSession } from "@/lib/session";
+import { ENHANCE_NO_ANSWER, pressEnhance } from "./enhance-press";
 import { isRawPrompt, type EnhanceMode, type EnhancerProvider } from "./enhancer";
 
 /**
@@ -84,28 +86,27 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
   const live = useRef({ key, credits });
   useEffect(() => { live.current = { key, credits }; });
 
+  /* The press is sent under a key held for this exact press (lib/shell/enhance-press.ts):
+     pressed again after a lost reply, it collects the saved answer instead of paying twice. */
+  const session = useSession();
+  const scope = session.signedIn ? session.requestScope ?? null : null;
   const enhance = useCallback(async (): Promise<string | null> => {
     const approved = live.current;
     if (approved.credits == null || off) return null;
     setBusy(true);
     setError(null);
     try {
-      const response = await scoped("/api/prompt/enhance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": `enhance-${crypto.randomUUID()}` },
-        body: JSON.stringify({ ...JSON.parse(approved.key), maxCredits: approved.credits }),
-      });
-      const json = await response.json().catch(() => null) as { prompt?: string; provider?: EnhancerProvider; error?: string } | null;
-      if (!response.ok || !json?.prompt || !json.provider) throw new Error(json?.error ?? "The enhancer did not answer. Your prompt is unchanged.");
-      setResult({ prompt: json.prompt, provider: json.provider, charged: approved.credits });
-      return json.prompt;
+      const pressed = await pressEnhance(scoped, { scope, body: approved.key, credits: approved.credits });
+      if (!pressed.ok) { setError(pressed.error); return null; }
+      setResult({ prompt: pressed.prompt, provider: pressed.provider, charged: approved.credits });
+      return pressed.prompt;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The enhancer did not answer. Your prompt is unchanged.");
+      setError(caught instanceof Error ? caught.message : ENHANCE_NO_ANSWER);
       return null;
     } finally {
       setBusy(false);
     }
-  }, [scoped, off]);
+  }, [scoped, scope, off]);
 
   const dismiss = useCallback(() => { setResult(null); setError(null); }, []);
 
