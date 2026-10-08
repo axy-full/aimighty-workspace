@@ -204,6 +204,7 @@ test("full encrypted WAL snapshot restores private drafts, mappings, ledger, cla
     actions: 5,
     tombstones: 0,
     meters: 1,
+    media: { kind: "local", verified: true, references: 0, byStore: {}, objects: 2 },
   });
   const report = JSON.parse(
     await readFile(join(restored, "reconciliation-report.json"), "utf8"),
