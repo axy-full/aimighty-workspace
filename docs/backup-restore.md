@@ -85,8 +85,9 @@ secure erase on SSDs or snapshots.
 
 The prepared, **disabled** workflow below copies each verified encrypted backup
 to a **private R2 bucket** (never a GitHub artifact: the repository is public).
-Retention is the bucket's own lifecycle rule, set by the owner (for example: delete
-`bundles/` objects after 90 days); the code never deletes anything there. Every
+Retention is the bucket's own lifecycle rule, set by the owner when the nightly
+backup is turned on (for example: delete `bundles/` objects after 90 days); the
+code never deletes anything there. Every
 capture includes a complete offline restore verification; continue a monthly
 independent operator/cloud restore rehearsal. The bucket holds only ciphertext;
 record the backup-key version and capture time in the separately held recovery
@@ -311,8 +312,9 @@ uploaded production data. Check the runner's disk before relying on it: the
 runner holds the bundle and a full decrypted verification copy at once (about
 twice the databases plus media).
 
-The hourly freshness job uses the **same** bucket token (Object Read & Write,
-that bucket only; no separate read token). It lists `bundles/`, takes the newest
+The hourly freshness job uses the **same** bucket token today (Object Read &
+Write, that bucket only); when the nightly backup is turned on, give it its own
+Object Read only token for the bucket. It lists `bundles/`, takes the newest
 folder that has a valid `upload-index.json`, checks every listed file exists at
 its recorded size, and fails when that index was uploaded more than 26 hours ago
 (the bucket's own timestamp). Enable GitHub Actions failure notifications for the
@@ -376,7 +378,16 @@ prompt, below). Dashboard labels may differ slightly from these words.
      page, "Account ID").
    Ignore the "Token value" (it is for Cloudflare's own API, not used here).
 
-### 3. Lifecycle rule (retention)
+### 3. Lifecycle rule (retention): only when the nightly backup is turned on
+
+**Do not create this rule for the attended capture.** With attended captures
+only, nothing needs deleting automatically, and the attended bundle is the last
+copy of media that lives only on Vercel Blob once Vercel is cancelled: it must
+never be deleted by a rule. Create the rule on the day the nightly backup is
+enabled, and decide then how the attended bundle is kept (for example a rule
+limited to nightly folders, or a longer period).
+
+When that day comes:
 
 1. **R2 Object Storage**, `particl-backups`, **Settings**, **Object lifecycle
    rules**, **Add rule**.
@@ -389,10 +400,9 @@ Cost guide: R2 charges for storage (about US$0.015 per GB-month after the free
 10 GB) and write operations, not for downloads. Ninety nightly bundles of 1 GB
 is about 90 GB, roughly US$1.20 a month.
 
-**Caution for the attended capture:** it is the last copy of media that lives
-only on Vercel Blob once Vercel is cancelled. The 90-day rule deletes it too.
-Download it once to the owner's encrypted backup disk (the `download` command in
-"Confirm the bundle landed") and keep that copy.
+**Keep a second copy of the attended capture:** download it once to the owner's
+encrypted backup disk (the `download` command in "Confirm the bundle landed") and
+keep that copy, whatever the bucket's rules become later.
 
 ### 4. The production media READ token (Object Read only, the media bucket only)
 
@@ -434,7 +444,7 @@ read-only token).
    | `BACKUP_TARGET_R2_ACCESS_KEY_ID`     | Access Key ID of `particl-backups-write`                                                       |
    | `BACKUP_TARGET_R2_SECRET_ACCESS_KEY` | Secret Access Key of `particl-backups-write`                                                   |
    | `BACKUP_TARGET_R2_BUCKET`            | `particl-backups`                                                                              |
-   | `PARTICL_BACKUP_KEY`                 | the archive key: run `openssl rand -base64 32` once on your own machine, save it in the password manager as "Particl backup key v1 (date)", then paste it here |
+   | `PARTICL_BACKUP_KEY`                 | the archive key: run `openssl rand -base64 32` once on your own machine, save it in the password manager as "Particl backup key v1 (date)", then paste it here (removed again after the attended run, runbook step 9) |
 
    Do **not** add `BACKUP_TARGET_R2_ENDPOINT` (the bucket has no jurisdiction).
    `PARTICL_BACKUP_SOURCE_JSON`, `PARTICL_BACKUP_ENV_JSON` and
@@ -568,14 +578,25 @@ terminal opened only for this.
    gh secret set PARTICL_BACKUP_QUIESCENCE_JSON --env particl-backup --repo "$REPO" < "$CP/receipt.json"
    gh variable set PARTICL_BACKUP_ENABLED --body true --repo "$REPO"
    gh workflow run backup.yml --repo "$REPO" --ref main -f operation=capture
+   date -u +%H:%M:%S   # the dispatch time
    ```
 
 6. **Watch.**
 
+   Wait about 10 seconds (the run takes a moment to appear), then:
+
    ```sh
-   gh run list --workflow backup.yml --repo "$REPO" --limit 1   # note the run id
+   gh run list --workflow backup.yml --event workflow_dispatch --repo "$REPO" --limit 1 \
+     --json databaseId,createdAt,status
    gh run watch <run id> --repo "$REPO"
    ```
+
+   Check the run's `createdAt` (UTC) is **after** the dispatch time; if not, wait
+   and list again (that is an older run). While `PARTICL_BACKUP_ENABLED` is
+   `true`, the hourly scheduled freshness run (minute 47, 20:47 UTC in this
+   window) may also start and **fail** because no bundle exists yet: ignore that
+   failure. It shares the workflow's queue, so it can delay the capture run's
+   start by a couple of minutes.
 
    The job is `capture`; its steps are "Capture only quiesced sources and
    rehearse the entire restore" (the part that needs the site down), then "Upload
@@ -603,9 +624,16 @@ terminal opened only for this.
    gh secret delete PARTICL_BACKUP_QUIESCENCE_JSON --env particl-backup --repo "$REPO"
    gh secret delete PARTICL_BACKUP_ENV_JSON --env particl-backup --repo "$REPO"
    gh secret delete PARTICL_BACKUP_SOURCE_JSON --env particl-backup --repo "$REPO"
+   gh secret delete PARTICL_BACKUP_KEY --env particl-backup --repo "$REPO"
    rm -rf "$CP"        # only after status said "open": it holds production credentials
    ```
 
+   `PARTICL_BACKUP_KEY` stays in the password manager (the full proof below and
+   any restore use it from there); it goes back into the environment only when
+   the nightly backup is turned on. The bucket token secrets
+   (`BACKUP_TARGET_R2_*`) stay. When the nightly backup is turned on, also give
+   the hourly freshness check its own **Object Read only** token for
+   `particl-backups`, so the job that runs every hour cannot write.
    Close the terminal (the values loaded in step 1 go with it). A failed run:
    nothing was published; fix the cause in daylight and repeat on another night.
 
