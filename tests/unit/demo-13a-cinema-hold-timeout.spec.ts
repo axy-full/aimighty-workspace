@@ -123,13 +123,14 @@ async function cron(failing: string | null, signInOff = true) {
     "@/lib/workbench/canvas-push": { drainCanvasPushes: step("canvas_pushes") },
     "@/lib/workbench/rig-agent": { drainRigAgentWakeups: step("rig_agents") },
     "@/lib/genjutsuVideo": { expireUnansweredCinemaTakes: step("cinema_unanswered", { expired: [] }) },
+    "@/lib/paidText": { reconcilePaidTextJobs: step("paid_text", { refunded: 0, released: 0, failed: 0 }) },
   });
   const reply = await route.GET(new Request("http://localhost/api/cron/sync"));
   return { ran, settings, status: reply.status };
 }
 
 test("the cron sync runs the time limit as a stage of its own, before held takes, and every other stage still runs", async () => {
-  const all = ["generations", "pipelines", "training", "soul_training", "canvas_pushes", "rig_agents", "storage_sizes", "expired_uploads", "cinema_unanswered", "held_jobs"];
+  const all = ["generations", "pipelines", "training", "soul_training", "canvas_pushes", "rig_agents", "storage_sizes", "expired_uploads", "cinema_unanswered", "paid_text", "held_jobs"];
   const ok = await cron(null);
   expect(ok.ran).toEqual(all);
   expect(ok.status).toBe(200);
