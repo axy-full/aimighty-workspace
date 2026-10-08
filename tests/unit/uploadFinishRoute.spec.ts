@@ -19,7 +19,16 @@ const dir = mkdtempSync(path.join(tmpdir(), "particl-upload-finish-route-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
-process.env.ENGINE_MOCK = "1";
+/* The test-only answer window is live only under the mock; set for these tests alone. */
+let engineMock: string | undefined;
+test.beforeAll(() => {
+  engineMock = process.env.ENGINE_MOCK;
+  process.env.ENGINE_MOCK = "1";
+});
+test.afterAll(() => {
+  if (engineMock === undefined) delete process.env.ENGINE_MOCK;
+  else process.env.ENGINE_MOCK = engineMock;
+});
 
 function workspace(name: string): TenantWorkspace {
   return {
@@ -196,8 +205,18 @@ test("a background failure releases the reservation exactly once and the session
   h.assembly.gate = new Promise((resolve) => (open = resolve));
   h.assembly.fail = new Error("R2 connection reset (internal detail)");
   expect((await h.finish(session, 2, quick)).status).toBe(202);
-  open();
-  await h.settled();
+  const logged: string[] = [];
+  const consoleError = console.error;
+  console.error = (...args: unknown[]) => void logged.push(args.map(String).join(" "));
+  try {
+    open();
+    await h.settled();
+  } finally {
+    console.error = consoleError;
+  }
+  // Logged on the server with the session id and the error's class only.
+  expect(logged.map((line) => JSON.parse(line))).toEqual([{ event: "upload_finish_failed", session, error: "Error", status: 503 }]);
+  expect(logged.join(" ")).not.toMatch(/long\.mov|internal detail|owner\//);
   const failed = await h.status(session);
   // The planned final object may have been accepted remotely: its lease holds the bytes until cleanup.
   expect(failed?.state).toBe("aborting");

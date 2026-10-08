@@ -34,6 +34,16 @@ function finishTiming(req: Request) {
     answerWithinMs: read("x-particl-test-finish-answer-ms", ANSWER_WITHIN_MS) ?? ANSWER_WITHIN_MS,
   };
 }
+/** A background failure has no response to carry it: log it with the session id and the error's
+ *  class only (never a filename, storage key or message, which can name the customer's file). */
+function logFinishFailure(event: string, claim: FinishClaim, error: unknown, status?: number) {
+  console.error(JSON.stringify({
+    event,
+    session: claim.key.slice(claim.key.lastIndexOf("/") + 1),
+    error: error instanceof Error ? error.name : typeof error,
+    ...(status ? { status } : {}),
+  }));
+}
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Everything after the claim: assemble, store, prepare and publish the upload under the claim's lease. */
@@ -89,7 +99,11 @@ export const POST = withTenant(async function POST(req: Request) {
         return { receipt: await assemble(owned, count, filename, purpose) };
       } catch (error) {
         // The reservation is released exactly as a failed synchronous finish released it.
-        await abandonUpload(owned, uploadFailureBody(error)).catch(() => {});
+        const failure = uploadFailureBody(error);
+        logFinishFailure("upload_finish_failed", owned, error, failure.status);
+        await abandonUpload(owned, failure).catch((abandonError: unknown) =>
+          logFinishFailure("upload_finish_release_failed", owned, abandonError),
+        );
         return { error };
       }
     });
