@@ -1,5 +1,5 @@
-import { sdkTextUsage, textVendor } from '../openai-direct';
-import { assertDirectBillingReady } from '../textDirect';
+import { isDirectText } from '../openai-direct';
+import { stepTextUsage } from '../textDirect';
 import { ToolLoopAgent, Output, isStepCount, tool, type ModelMessage, type LanguageModel } from 'ai';
 import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
 import { z } from 'zod';
@@ -158,7 +158,6 @@ export async function runSuiteAgent(envelope: SuiteAgentEnvelope, auth: Record<s
     };
     return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(result) } }], usage: { cost: 0, prompt_tokens: 0, completion_tokens: 0 }, agentTrace: [{ tool: 'inspect_project' }, { tool: 'check_plan' }] }) };
   }
-  assertDirectBillingReady(envelope.model);
   const model = languageModel(envelope.model, { auth });
   const trace: { step: number; tools: string[]; inputTokens?: number; outputTokens?: number }[] = [];
   const agent = createSuiteAgent(envelope, model, async step => {
@@ -172,5 +171,5 @@ export async function runSuiteAgent(envelope: SuiteAgentEnvelope, auth: Record<s
   if (!validation.valid) throw new Error('The agent proposal referenced unavailable assets. This attempt is saved and will not be repeated automatically.');
   return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(output) } }],
     usage: { prompt_tokens: result.totalUsage.inputTokens, completion_tokens: result.totalUsage.outputTokens,
-      steps: result.steps.map(step => sdkTextUsage(step.usage, textVendor(envelope.model) === 'openai')) }, agentTrace: trace }) };
+      steps: result.steps.map(step => stepTextUsage(envelope.model, step.usage, isDirectText(envelope.model))) }, agentTrace: trace }) };
 }

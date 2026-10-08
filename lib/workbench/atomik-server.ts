@@ -1,6 +1,5 @@
 import { vendorKey } from '../vendorKeys';
-import { assertDirectBillingReady } from '../textDirect';
-import { textVendor, directTextCostUsd } from '../openai-direct';
+import { directTextCostUsd, isDirectText, textEngine, textKeyName } from '../openai-direct';
 import { languageAuth } from '../language-provider';
 import { ASTRA_BLENDER_MODEL, createAstraScene } from '../astra-blender/scene';
 import { astraRequestSchema, astraAgentResultSchema, serializeAstraScene, validateAstraProposal, astraAssetKind } from '../astra-blender/proposal';
@@ -267,7 +266,7 @@ export async function getAtomikProject(owner: string, projectId: string) {
   return parsed.data as Project;
 }
 const eventFor = (job: AtomikJob, owner: string, status: MeterEvent['status'], cost?: number): MeterEvent => ({
-  id: job.id, kind: 'text', engine: textVendor(job.model) === 'openai' ? 'openai' : 'vercel', model: job.model, status, engineCostUsd: cost,
+  id: job.id, kind: 'text', engine: textEngine(job.model), model: job.model, status, engineCostUsd: cost,
   projectId: job.productionProjectId, createdBy: owner,
 });
 
@@ -298,7 +297,6 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   const model = models.find(m => m.id === selectedId && menu.some(c => c.id === m.id));
   if (!model && references.images.length) throw new AtomikError('Choose Auto or a connected vision-capable model to inspect the selected images and video frames.', 422);
   if (!model) throw new AtomikError('No priced language model is connected for this selection. Refresh the model menu or check the provider connection in Workspace → Engines.', 503);
-  assertDirectBillingReady(model.id);
   const system = input.astraBlender ? astraAgentInstructions(input.astraBlender.mode) : input.referenceAd ? referenceAnalysisInstructions() : input.suite ? suiteAgentInstructions(input.suite) : atomikSystem(input);
   const user = input.astraBlender ? JSON.stringify({ request: input.request, project: project.name, brief: project.brief.slice(0, 4000), direction: project.direction.slice(0, 4000) }) : atomikContext(project, input, references.text, references.images, memory);
   // UTF-8 byte count is a conservative token upper bound, including non-Latin scripts.
@@ -311,13 +309,13 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   // Bound repeated context, tool schemas/results and prior generated text for all three calls.
   const bounds = suiteAgentBounds(inputTokens, maxTokens);
   if (input.suite && model.contextWindow && bounds.perStepInputTokens + maxTokens > model.contextWindow) throw new AtomikError('Choose a larger-context model or lower effort for this multi-step agent.', 422);
-  const perCallEstimate = textQuoteCostUsd(model, input.astraBlender ? ASTRA_AGENT_INPUT_TOKENS : input.suite ? bounds.perStepInputTokens : inputTokens, maxTokens, textVendor(model.id) === 'openai');
+  const perCallEstimate = textQuoteCostUsd(model, input.astraBlender ? ASTRA_AGENT_INPUT_TOKENS : input.suite ? bounds.perStepInputTokens : inputTokens, maxTokens, isDirectText(model.id));
   const estimateUsd = perCallEstimate == null ? null : perCallEstimate * (input.astraBlender ? ASTRA_AGENT_STEPS : input.suite ? SUITE_AGENT_STEPS : 1);
   if (estimateUsd == null || !Number.isFinite(estimateUsd) || estimateUsd < 0) throw new AtomikError('This model has no confirmed price for the current context. Choose another model or refresh the catalogue.', 503);
   const budgets = atomikBudgets(input.effort !== undefined || !!input.astraBlender);
   if (estimateUsd > budgets.maxRequestUsd) throw new AtomikError('This request exceeds the Atomik spending limit. Choose a less expensive model, lower effort, shorter response detail, or fewer references.', 409);
   let providerBody = JSON.stringify({
-    model: model.id, max_tokens: maxTokens, ...(textVendor(model.id) === 'openai' ? { pricingModel: model } : {}),
+    model: model.id, max_tokens: maxTokens, ...(isDirectText(model.id) ? { pricingModel: model } : {}),
     ...reasoning.requestFields,
     ...(Object.keys(reasoning.providerOptions).length ? { providerOptions: reasoning.providerOptions } : {}),
     messages: [{ role: 'system', content: system }, { role: 'user', content: references.images.length ? [
@@ -362,7 +360,7 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
     if (astraAgentInputTokens(envelope, astraAgentMessages(envelope)) > ASTRA_AGENT_INPUT_TOKENS || (model.contextWindow && ASTRA_AGENT_INPUT_TOKENS + maxTokens > model.contextWindow)) throw new AtomikError('This scene is too large to change in one request. Simplify the scene before requesting a change.', 422);
     providerBody = JSON.stringify(envelope);
   }
-  const estimateCredits = paidByPlatform(textVendor(model.id)) ? billCredits(estimateUsd, 'text') : 0;
+  const estimateCredits = paidByPlatform(textKeyName(model.id)) ? billCredits(estimateUsd, 'text') : 0;
   if (input.maxCredits != null && estimateCredits > input.maxCredits) {
     throw new AtomikError('The estimate changed since it was shown. Review the new quote before starting this request.', 409);
   }
@@ -389,7 +387,7 @@ async function prepareAtomikJobUnlocked(input: AtomikRequest, owner: string, tok
   }
   if ((input.effort !== undefined || input.suite || input.referenceAd || input.astraBlender) && input.maxCredits === undefined) throw new AtomikError('Review the credit estimate before starting this request.', 400);
   const { project, model, providerBody, estimateUsd, estimateCredits, budgets } = await compileAtomikRequest(input, owner, deps);
-  const wall = await deps.allowance(textVendor(model.id), estimateUsd, model.id);
+  const wall = await deps.allowance(textKeyName(model.id), estimateUsd, model.id);
   if (!wall.ok) throw new AtomikError(wall.error, wall.status);
   const lim = await deps.limits();
   if (!lim.allow) throw new AtomikError(lim.error, lim.why === 'rate' ? 429 : 409);
@@ -418,7 +416,7 @@ async function prepareAtomikJobUnlocked(input: AtomikRequest, owner: string, tok
   try {
     await deps.reserve(eventFor(job, owner, 'running', estimateUsd), { token, projectId: job.productionProjectId });
     reserved = true;
-    await db().execute({ sql: 'INSERT INTO atomik_spend(id,kind,model,cost_usd,user_id,created_at) VALUES (?,?,?,?,?,?)', args: [id, 'workbench', model.id, estimateUsd, owner, ts] });
+    await db().execute({ sql: 'INSERT INTO atomik_spend(id,kind,model,cost_usd,user_id,created_at,ledger) VALUES (?,?,?,?,?,?,?)', args: [id, 'workbench', model.id, estimateUsd, owner, ts, eventFor(job, owner, 'running').engine] });
   } catch (error) {
     if (reserved) await deps.meter(eventFor(job, owner, 'failed', 0), { critical: false });
     await db().execute({ sql: "UPDATE workbench_atomik_jobs SET status='failed',cost_usd=0,credits=0,error=?,updated_at=? WHERE id=?", args: [(error as Error).message, now(), id] });
@@ -456,7 +454,7 @@ function suiteStepCost(steps: unknown, providerBody: string, modelId: string, as
     if (!step || typeof step !== 'object') return null;
     const { prompt_tokens: input, completion_tokens: output } = step;
     if (![input, output].every(value => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)) return null;
-    const cost = textVendor(modelId) === 'openai' ? directTextCostUsd(model, step) : textCostUsd(model, input, output);
+    const cost = isDirectText(modelId) ? directTextCostUsd(model, step) : textCostUsd(model, input, output);
     if (cost == null || !Number.isFinite(cost) || cost < 0) return null;
     if (astra && (input > snapshot.inputTokenBudget || output > snapshot.maxTokens)) return null;
     total += cost;
@@ -481,9 +479,9 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
   let raw = '';
   let usage: unknown = null;
   try {
-    assertDirectBillingReady(job.model);
     const auth = await deps.auth(job.model);
-    await deps.assertFunding(id, textVendor(job.model) === "openai" ? "openai" : "vercel");
+    /* The door is decided again here: one that changed since the reservation (TEXT_DIRECT, a key) is refused before sending. */
+    await deps.assertFunding(id, textEngine(job.model));
     submitted = true;
     const input = atomikRequestSchema.parse(JSON.parse(String(row.request_body)));
     const response = input.astraBlender
@@ -504,7 +502,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
       throw new AtomikError(explainGatewayFailure(response.status, raw) ?? `The model could not complete this request (${response.status}). This attempt will not be retried automatically.`, 502);
     }
     const reply = JSON.parse(raw) as { choices?: { message?: { content?: string }; finish_reason?: string }[]; usage?: { cost?: number; prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: unknown; steps?: unknown } };
-    const direct = textVendor(job.model) === 'openai';
+    const direct = isDirectText(job.model);
     usage = reply.usage ?? null;
     if ((!direct || engineMock()) && typeof reply.usage?.cost === 'number' && Number.isFinite(reply.usage.cost) && reply.usage.cost >= 0) cost = reply.usage.cost;
     else if (input.suite || input.astraBlender) {
@@ -548,7 +546,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
     const role = CREW.find(c => c.id === job.role);
     const plan: Plan = { id: job.id, request: job.request, model: job.model, depth: job.depth, ...(job.effort == null ? {} : { effort: job.effort }), refs: job.refs,
       role: job.role === 'marketing' ? 'marketing' : role?.name, applied: false, ...result };
-    const credits = paidByPlatform(textVendor(job.model)) ? billCredits(cost, 'text') : 0;
+    const credits = paidByPlatform(textKeyName(job.model)) ? billCredits(cost, 'text') : 0;
     await db().batch([
       { sql: "UPDATE workbench_atomik_jobs SET status='succeeded',result=?,cost_usd=?,credits=?,provider_response=?,usage=?,updated_at=? WHERE id=? AND owner=?", args: [JSON.stringify(plan), cost, credits, raw.slice(0, 150000), JSON.stringify(usage), now(), id, owner] },
       { sql: 'UPDATE atomik_spend SET cost_usd=? WHERE id=?', args: [cost, id] },
@@ -565,7 +563,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
       raw = partial?.provider_response ? String(partial.provider_response) : '';
     }
     await db().batch([
-      { sql: 'UPDATE workbench_atomik_jobs SET status=?,error=?,cost_usd=?,credits=?,provider_response=?,usage=?,updated_at=? WHERE id=? AND owner=?', args: [uncertain ? 'uncertain' : 'failed', errorText, uncertain ? null : cost, uncertain ? null : paidByPlatform(textVendor(job.model)) ? billCredits(cost, 'text') : 0, raw.slice(0, 150000), JSON.stringify(usage), now(), id, owner] },
+      { sql: 'UPDATE workbench_atomik_jobs SET status=?,error=?,cost_usd=?,credits=?,provider_response=?,usage=?,updated_at=? WHERE id=? AND owner=?', args: [uncertain ? 'uncertain' : 'failed', errorText, uncertain ? null : cost, uncertain ? null : paidByPlatform(textKeyName(job.model)) ? billCredits(cost, 'text') : 0, raw.slice(0, 150000), JSON.stringify(usage), now(), id, owner] },
       { sql: 'UPDATE atomik_spend SET cost_usd=? WHERE id=?', args: [cost, id] },
     ], 'write');
     await deps.meter(eventFor(job, owner, 'failed', cost), { critical: false });

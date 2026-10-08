@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { assertDirectBillingReady, TextNotSentError } from "@/lib/textDirect";
+import { TextNotSentError } from "@/lib/textDirect";
 import { after } from "next/server";
 import { db, now } from "@/lib/db";
 import { EVENTS, RIG_AGENT_STOPPED, RIG_RENDER_SETTLED, type WorkerEvent } from "@/lib/dispatch";
@@ -14,7 +14,7 @@ import { creditState, quotedCredits } from "@/lib/credits";
 import { reserveGenerationSpend, runCharges, RUN_LIMIT_REACHED, SpendReservationError } from "@/lib/generationRequests";
 import { languageAuth, languageModel } from "@/lib/language-provider";
 import { meter } from "@/lib/meter";
-import { textVendor } from "@/lib/openai-direct";
+import { isDirectText, textEngine } from "@/lib/openai-direct";
 import { fromTenths, isRunLimitAmount, runTally, toTenths, type RunCharge } from "@/lib/runLimit";
 import { applyCanvasOps } from "./canvas-ops";
 import type { OpOutcome } from "./canvas-ops-model";
@@ -771,7 +771,8 @@ async function waitForLease(runId: string, waitMs: number): Promise<RunLease | n
 /* ── The tick ─────────────────────────────────────────────────────────── */
 
 /** The thinking model a plan is priced at before it runs: its id, its catalogue price, and whether its words go to OpenAI directly. */
-export type PlannerPrice = { id: string; catalog: CatalogModel; direct: boolean };
+/** `engine`: the ledger the turn is reserved and settled on (lib/openai-direct.ts textEngine); older callers pass `direct` alone. */
+export type PlannerPrice = { id: string; catalog: CatalogModel; direct: boolean; engine?: string };
 
 export type TickDeps = PaidDeps & {
   /** The planning turn (default: the Atomik model policy, or the mock planner under ENGINE_MOCK=1), on the model it was priced at. */
@@ -892,7 +893,7 @@ async function planRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<Ri
 /** The planning turn's meter event: text, on the thinking model, for the production, by the person who asked. */
 function planEvent(run: RunRow, price: PlannerPrice, status: "running" | "succeeded" | "failed", costUsd: number) {
   return {
-    id: planEventId(run.id), kind: "text" as const, engine: price.direct ? "openai" : "vercel", model: price.id, status,
+    id: planEventId(run.id), kind: "text" as const, engine: price.engine ?? (price.direct ? "openai" : "vercel"), model: price.id, status,
     engineCostUsd: costUsd, projectId: run.productionId, createdBy: run.owner,
   };
 }
@@ -950,13 +951,12 @@ export async function plannerPrice(want: string): Promise<PlannerPrice> {
   const id = selectPlannerModel(want, atomikModels(models));
   const model = models.find((m) => m.id === id);
   if (!model) throw new PlannerError("That thinking model is not available right now. Choose another, or Auto.");
-  assertDirectBillingReady(id);
-  return { id, catalog: model, direct: textVendor(id) === "openai" };
+  /* A direct door (any vendor) is quoted at its cold cache-write ceiling and settled at its usage × this snapshot. */
+  return { id, catalog: model, direct: isDirectText(id), engine: textEngine(id) };
 }
 
 async function defaultPlan(snapshot: BoardSnapshot, id: string, attachments: PlannerAttachmentContent): Promise<PlannerOutcome & { model: string }> {
   if (engineMock() || id === MOCK_PLANNER_MODEL) return { ...(await runPlanner(snapshot, mockPlannerModel(snapshot), { attachments })), model: MOCK_PLANNER_MODEL };
-  assertDirectBillingReady(id);
   const model = languageModel(id, { auth: await languageAuth(id) });
   return { ...(await runPlanner(snapshot, model, { attachments })), model: id };
 }

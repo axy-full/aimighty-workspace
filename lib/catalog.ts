@@ -391,6 +391,22 @@ export function openAIHasCacheWrites(model: string): boolean {
   return !!version && (Number(version[1]) > 5 || (Number(version[1]) === 5 && Number(version[2] ?? 0) >= 6));
 }
 
+/**
+ * Which prompt-cache categories a vendor bills on its own API, by app id.
+ * - OpenAI: reads on modern models, writes from GPT-5.6 (the two rules above).
+ * - Anthropic: reads, and writes at a premium whenever a request carries a cache mark.
+ * - Google Gemini: implicit cache reads; writes are ordinary input (no explicit caches are made).
+ * - xAI Grok: automatic cache reads; no separate write charge.
+ * A direct quote needs a price for every category the vendor can bill, and a
+ * direct settlement needs the vendor's count of each (directTextCostUsd).
+ */
+export function textCacheBilling(model: string): { read: boolean; write: boolean } {
+  if (model.startsWith('openai/')) return { read: openAIHasCacheReads(model), write: openAIHasCacheWrites(model) };
+  if (model.startsWith('anthropic/')) return { read: true, write: true };
+  if (model.startsWith('google/') || model.startsWith('spacexai/') || model.startsWith('xai/')) return { read: true, write: false };
+  return { read: false, write: false };
+}
+
 /** Actual call cost. Cache counts partition total input; reasoning is already
  * included in total output and must not be billed a second time. Omit cache
  * counts to retain the existing Gateway fallback calculation. */
@@ -412,11 +428,14 @@ export function textCostUsd(m: CatalogModel, inTokens: number, outTokens: number
   return Number.isFinite(cost) ? cost : null;
 }
 
-/** Direct OpenAI's quote covers a cold cache write as well as ordinary input.
- * Missing modern write prices cannot establish an approved spending ceiling. */
-export function textQuoteCostUsd(m: CatalogModel, inTokens: number, outTokens: number, directOpenAI = false): number | null {
+/** A direct call's quote (any vendor) covers a cold cache write as well as
+ * ordinary input: the most the call can cost at the snapshot. A cache price
+ * the vendor can bill but the snapshot lacks cannot establish an approved
+ * spending ceiling, so the model is unpriced (null). */
+export function textQuoteCostUsd(m: CatalogModel, inTokens: number, outTokens: number, direct = false): number | null {
   const baseline = textCostUsd(m, inTokens, outTokens);
-  if (!directOpenAI || baseline == null) return baseline;
+  if (!direct || baseline == null) return baseline;
+  const bills = textCacheBilling(m.id);
   const p = m.pricing!;
   if ((inTokens > 0 && textRate(m, inTokens, 'input') == null) || (outTokens > 0 && textRate(m, inTokens, 'output') == null)) return null;
   const costs = [baseline];
@@ -426,7 +445,7 @@ export function textQuoteCostUsd(m: CatalogModel, inTokens: number, outTokens: n
   ] as const) {
     const hasRate = Object.prototype.hasOwnProperty.call(p, key) || Object.prototype.hasOwnProperty.call(p, `${key}_tiers`);
     if (!hasRate) {
-      if ((key === 'input_cache_write' && openAIHasCacheWrites(m.id)) || (key === 'input_cache_read' && openAIHasCacheReads(m.id))) return null;
+      if ((key === 'input_cache_write' && bills.write) || (key === 'input_cache_read' && bills.read)) return null;
       continue;
     }
     if (textRate(m, inTokens, key) == null) return null;

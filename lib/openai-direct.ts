@@ -1,18 +1,31 @@
-import { openAIHasCacheReads, openAIHasCacheWrites, textCostUsd, type CatalogModel } from './catalog';
+import { textCacheBilling, textCostUsd, type CatalogModel } from './catalog';
 import type { LanguageModelUsage } from 'ai';
-import { vendorKey } from './vendorKeys';
+import { vendorKey, type VendorKeyName } from './vendorKeys';
 import { recoveryFetch } from './recovery';
 import type { GatewayReply } from './gateway';
-import { textRoute } from './textRoute';
+import { textRoute, type TextRoute } from './textRoute';
 
-/** The billing vendor the money paths read. Direct Anthropic, Google and xAI
- * text still reads 'gateway' here until those paths move (P4b PR 3); the door
- * a call actually takes is `textRoute` (lib/textRoute.ts). */
-export type TextVendor = 'openai' | 'gateway';
+/**
+ * The billing vendor the money paths read: the door the call takes
+ * (`textRoute`, lib/textRoute.ts). OpenAI when its key is set, Anthropic,
+ * Google or xAI once `TEXT_DIRECT` switches them on, the gateway otherwise.
+ */
+export type TextVendor = TextRoute;
 export const TEXT_PROVIDER_HEADER = 'X-Particl-Text-Provider';
 export const OPENAI_BASE = () => 'https://api.openai.com/v1';
 export function directOpenAIKey(model: string) { return model.startsWith('openai/') ? vendorKey('openai') : null; }
-export function textVendor(model: string): TextVendor { return directOpenAIKey(model) ? 'openai' : 'gateway'; }
+export function textVendor(model: string): TextVendor { return textRoute(model); }
+/** Sent to the vendor's own API, so charged at its usage × the price snapshot (no `usage.cost` in the reply). */
+export function isDirectText(model: string): boolean { return textVendor(model) !== 'gateway'; }
+/** The text ledgers: who was paid for a text call. 'vercel' is the gateway's, and every text row before direct routing. */
+export type TextLedger = 'openai' | 'anthropic' | 'google' | 'xai' | 'vercel';
+export const GATEWAY_TEXT_LEDGER = 'vercel' as const;
+/** The meter `engine` and the ledger of a text call: the vendor for a direct door, the gateway otherwise. */
+export function textEngine(model: string): TextLedger { const vendor = textVendor(model); return vendor === 'gateway' ? GATEWAY_TEXT_LEDGER : vendor; }
+/** The key a text ledger draws on. */
+export const TEXT_LEDGER_KEY: Record<TextLedger, VendorKeyName> = { openai: 'openai', anthropic: 'anthropic', google: 'gemini', xai: 'xai', vercel: 'gateway' };
+/** The vendor key a text call draws on (paidByPlatform, allowanceCheck). */
+export function textKeyName(model: string): VendorKeyName { return TEXT_LEDGER_KEY[textEngine(model)]; }
 /** Strip only the catalog owner. Aliases are never translated into another model. */
 export function openAIModelId(model: string) {
   if (!model.startsWith('openai/') || !model.slice(7) || model.slice(7).includes('/')) throw new Error('Choose an exact language model ID.');
@@ -59,15 +72,21 @@ export function sdkTextUsage(usage: LanguageModelUsage, directOpenAI: boolean) {
   return { prompt_tokens: usage.inputTokens, completion_tokens: usage.outputTokens };
 }
 
-/** Price direct OpenAI usage against the pre-submission catalog snapshot.
- * Unknown applicable cache categories remain unknown instead of becoming zero. */
+/** Price direct usage (any vendor) against the pre-submission catalog snapshot.
+ * `value` is the OpenAI-compatible usage every direct door returns
+ * (openaiDirectPost, `directTextUsage`): prompt tokens include cache reads and
+ * writes, completion tokens include reasoning and Gemini's thought tokens.
+ * A cache category the vendor can bill, or the snapshot prices, must be
+ * reported: unknown stays unknown (null) instead of becoming zero. A call that
+ * used a cache the snapshot has no price for is unpriced (null), never 0. */
 export function directTextCostUsd(model: CatalogModel, value: unknown): number | null {
   const usage = record(value), details = record(usage.prompt_tokens_details);
   const input = usage.prompt_tokens, output = usage.completion_tokens;
   if (![input, output].every(n => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0)) return null;
   const p = model.pricing ?? {};
-  const readRequired = openAIHasCacheReads(model.id) || 'input_cache_read' in p || 'input_cache_read_tiers' in p;
-  const writeRequired = openAIHasCacheWrites(model.id) || 'input_cache_write' in p || 'input_cache_write_tiers' in p;
+  const bills = textCacheBilling(model.id);
+  const readRequired = bills.read || 'input_cache_read' in p || 'input_cache_read_tiers' in p;
+  const writeRequired = bills.write || 'input_cache_write' in p || 'input_cache_write_tiers' in p;
   const read = details.cached_tokens === undefined && !readRequired ? 0 : details.cached_tokens;
   const write = details.cache_write_tokens === undefined && !writeRequired ? 0 : details.cache_write_tokens;
   if (![read, write].every(n => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0)) return null;
