@@ -60,3 +60,7 @@ Neither source objects nor destination-only objects are deleted.
 After R2 accepts new writes, switching back to Blob alone would hide those new
 objects. Prefer fixing forward with the dual-read adapter; reverting the selector
 requires verifying that all new R2 objects are available to the old deployment.
+
+## Final copy before Vercel closes
+
+`scripts/ops/blob-to-r2.mjs` is the tool for the last copy before the Vercel account (and its Blob store) closes. It adds what this operator lacks: it copies to the absolute-URL key as well when that differs from the pathname, resumes from a progress file, retries transient faults, gives a dry run with byte counts and a time estimate, and checks with `--verify` that every database media row resolves on R2 with no Blob fallback. Run order, owner steps and the other Vercel services that stop: "Before Vercel is cancelled" in `docs/selfhost-test.md`. Tests: `node --test tests/ops/blob-to-r2.test.mjs`.

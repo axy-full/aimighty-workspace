@@ -184,7 +184,7 @@ Vercel never shows a **Sensitive** variable again, and `vercel env pull --enviro
 |---|---|---|
 | `KEYRING_SECRET` | The owner's own record. Nothing else has it. | **Everything sealed with it:** every workspace's database token (workspaces cannot open their data), stored workspace keys, two-step sign-in and recovery codes, pending invitations. **If there is no record, stop.** The code has no way to re-seal under a new keyring (`lib/keyring.ts` reads one secret). Moving would first need a planned rotation: a reviewed re-seal tool, run against the databases while Vercel is still live. |
 | `VAPID_PRIVATE_KEY` (and its public key) | The owner's own record. | Notifications stop for everyone who turned them on, until they turn them on again in the new app. Not data loss. |
-| `BLOB_READ_WRITE_TOKEN` | Vercel, **Storage**, the Blob store, its token (unsure of the exact label). | No other value works (it is the store's own token). Without it, old Blob links break. If it cannot be found, do not cut over until every old Blob object is copied to R2 (`scripts/ops/migrate-media-r2.mjs`, gate 2). |
+| `BLOB_READ_WRITE_TOKEN` | Vercel, **Storage**, the Blob store, its token (unsure of the exact label). | No other value works (it is the store's own token). Without it, old Blob links break. If it cannot be found, do not cut over until every old Blob object is copied to R2 (`scripts/ops/blob-to-r2.mjs`, see "Before Vercel is cancelled"). |
 | `INNGEST_SIGNING_KEY`, `INNGEST_EVENT_KEY` | Inngest dashboard (see the table above). | Nothing; these are the same keys. |
 | `PLATFORM_AUTH_TOKEN`, `TURSO_AUTH_TOKEN`, `TURSO_API_TOKEN` | Create a new token in Turso. Creating does not cancel the old one, so Vercel keeps working. | Nothing. |
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Create a new R2 API token for the same bucket. | Nothing. |
@@ -450,7 +450,7 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
     4. **Data, ordinary rollback: nothing to copy back.** Both hosts use the **same Turso databases** (platform and workspaces), the **same R2 bucket** and the **same Blob store**. With R2 selected, the self-hosted app keeps nothing durable on its own disk (upload pieces go to R2 too). Everything written during the window is already where Vercel reads it. An upload in progress at the moment of switching may need to be retried.
     5. **Data problem (wrong or damaged rows):** go back to point B (or A) as in "Restore point". This is a hand-made restore from the Turso timestamps, with Claude's help; everything written after that time is lost. It is the owner's decision, not a reflex.
     6. **Never** use Vercel's Instant Rollback to a deployment from before #524 (it predates the credit switchover and would bill the wrong price).
-16. **After the window (OWNER).** Retire the Vercel deployment and domains, but **keep the Vercel team, project and snapshot** while Astra renders run on Vercel Sandbox. Rotate exposed keys. Retire Blob only after every old Blob object is copied to R2.
+16. **After the window (OWNER).** Retire the Vercel deployment and domains, but **keep the Vercel team, project and snapshot** while Astra renders run on Vercel Sandbox. Rotate exposed keys. Retire Blob only after every old Blob object is copied to R2. Before the Vercel account is closed, follow "Before Vercel is cancelled".
 
 ## Astra Blender renders from the self-hosted host
 
@@ -488,6 +488,59 @@ The SOW plans a **worker container** (Phase 3, P8, "many clients") that Inngest 
 - **Where:** on this server at first (2 vCPUs and 4 GB per render, so few at once next to the app), or a separate CPU or GPU host if volume grows. A GPU only matters if renders move off CPU Cycles.
 - **How it is picked up:** the existing Inngest function `astra-blender-render` and its concurrency limits stay (4 at once, 2 per workspace). Only the runtime behind the narrow boundary in `sandbox.ts` (create, write files, run, read file, stop) changes. Job identity, "never buy twice" and settlement stay as they are.
 - **What it needs:** a reviewed PR for the adapter; a new rate card for our own compute, since `ASTRA_BLENDER_RATE_CARD` prices Vercel's; the owner's approval of that price; and a host sizing check. Until then, the Vercel team, project and snapshot must stay.
+
+## Before Vercel is cancelled
+
+The owner closes the Vercel account before **27 October 2026**. Closing it deletes the Blob store and stops every other Vercel service the app uses. This section covers both. Nothing here has been run yet.
+
+### 1. Copy every Blob object to R2
+
+**Why.** Older files are still only on Vercel Blob. Today the app reads R2 first and falls back to Blob through `BLOB_READ_WRITE_TOKEN`. When the account closes, anything not on R2 is gone and its links break. The app reads an old file from R2 at the same key: the Blob pathname for a bare key, or the decoded path of an absolute Blob URL (`lib/storage/backend.ts`, `resolveStored`). `scripts/ops/blob-to-r2.mjs` copies to exactly those keys.
+
+**What the script does.**
+- It lists every Blob object (paged), then the whole R2 bucket.
+- It skips any object R2 already has at the same size. `--deep` also checks it by SHA-256.
+- It streams each missing object (memory stays at about 16 MiB per transfer) with a conditional write (`If-None-Match: *`). It never overwrites an R2 object. If R2 already holds different bytes at a key, that is reported as a **conflict**.
+- It checks each copy (R2's MD5 ETag for one-piece files, a read-back SHA-256 for multipart). Network faults, 5xx and 429 answers are retried.
+- After each verified file it writes one line to `blob-to-r2-progress.jsonl` in the private folder, so rerunning the same command carries on where it stopped.
+- The screen shows counts only. Keys, which can contain a customer's file name, go only into report files in the private folder.
+- It never deletes anything, on either store.
+
+**Who and where.** The owner or the advisor, on their own machine (or the server's terminal), never on a shared or CI machine. It needs Node 24 and a checkout of this repo with `npm ci` done. Put the production values in a private env file **outside the checkout** (for example `/private/blob-to-r2.env`, `chmod 600`) using the app's own names: `BLOB_READ_WRITE_TOKEN`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and `R2_ENDPOINT` only if production sets it. The R2 key needs Object Read & Write on the production bucket. Use one private folder (for example `/private/blob-to-r2`, `chmod 700`) for every run: it holds the progress file and the reports. The script refuses a folder inside the checkout or one that others can read.
+
+**How long.** Unknown until the dry run measures it. The dry run prints the bytes still to copy and, from a timed read of up to 64 MiB (`--probe-mib`), `probe.estimatedCopyMinutes`. That is twice the download time, to allow for the upload too. In September the store held about 404 MB, so expect minutes, not hours, but the dry run decides.
+
+**Run order (stop at any step that does not pass):**
+1. **Dry run.** No writes to R2.
+   `node --env-file=/private/blob-to-r2.env scripts/ops/blob-to-r2.mjs --dry-run --private-dir /private/blob-to-r2`
+   Read `blobObjects`, `blobBytes`, `toCopy`, `toCopyBytes`, `presentSameSize`, `conflicts` and `probe`.
+2. **Copy.**
+   `node --env-file=/private/blob-to-r2.env scripts/ops/blob-to-r2.mjs --copy --private-dir /private/blob-to-r2`
+   If it stops or exits with failures, run the same command again. It resumes. Repeat until `failed` is 0 and a run shows `copied` 0. For a final full check of files that were only matched by size (for example ones the older `migrate-media-r2.mjs` copied), run once more with `--deep`.
+   **Conflicts:** each one is a key where R2 already holds a different file. The app already shows the R2 version, so users see no change. The Blob version is lost when Vercel closes. The advisor reads the conflict list in the private report with the owner and decides whether any Blob copy must be kept (downloaded privately) first.
+3. **Verify on R2 alone.**
+   `node --env-file=/private/blob-to-r2.env --env-file=/private/backup-source.env scripts/ops/blob-to-r2.mjs --verify --private-dir /private/blob-to-r2 --config /private/backup-source.json`
+   `--config` is the backup source inventory (database ids and env-variable names, "Capture" in `docs/backup-restore.md`). Its URL/token variables are read-only here. The script snapshots each database into the private folder, checks that every media row resolves on R2 with **no Blob fallback** (the same rules as the backup's r2-only coverage, `verifyMediaReferences`), then deletes the snapshots. With the Blob token in the environment, it also checks that every Blob object is on R2 at its keys. It must print `"ok":true` and `"blobObjectsNotOnR2":0`. If it fails, it names database/table/row ids only. Copy again, then verify again.
+4. **Remove `BLOB_READ_WRITE_TOKEN` from the app** (Coolify production app; also Vercel while it still serves) and redeploy. Keep the value in the owner's private record until step 6.
+5. **Confirm old links still load.** Signed in, open an old image from before R2, download an old upload, play an old video (it should seek), and open an old review link. `/api/health` still says `r2-configured`. Expect one false alarm: the platform-admin readiness check (`lib/deploymentReadiness.ts`) still counts storage as ready only when the Blob token is set, so it shows storage as not ready. That needs a small fix (accept the R2 variables too). It does not affect the app. If an old file does not load, put the token back, redeploy, and report it.
+6. **Only then** can Vercel Blob, and Vercel, be cancelled (after section 2 below).
+
+### 2. Other Vercel services that stop when the account closes
+
+Found by searching the code for `@vercel/` packages, `api.vercel.com`, `vercel.sh` and `VERCEL_*` names. Each needs its replacement live **before** the account closes.
+
+| Service | What uses it | What stops | Replacement needed |
+|---|---|---|---|
+| **Vercel AI Gateway** (`AI_GATEWAY_API_KEY`, `AI_GATEWAY_BASE_URL`, default `https://ai-gateway.vercel.sh/v1`; `@vercel/oidc` on Vercel) | `lib/gateway.ts`, `lib/language-provider.ts`, `lib/enhance.ts`, `lib/gemini.ts`, `lib/vendorImages.ts`, `lib/catalog.ts` | All text models (Atomik, prompt enhance, suite agents, idea/script development), gateway stills, and OpenAI image/speech models when no direct key is set. The gateway credit balance shown in admin. | `openai/*` text already runs direct with `OPENAI_API_KEY` (`docs/openai-direct.md`). Claude, Google, xAI and ByteDance text, and the gateway stills, have **no direct path in the code today**. They need a reviewed change: direct vendor adapters, or another OpenAI-compatible gateway set through `AI_GATEWAY_BASE_URL`, after checking its model ids and prices. Costs feed the rate card, so this needs the owner's approval. |
+| **Gateway key minting** (`VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `api.vercel.com`) | `lib/vercelKeys.ts`, `lib/purge.ts` | New workspaces get no gateway key of their own. Workspace deletion cannot revoke its key, but with the account closed those keys are dead anyway. | Follows from the gateway choice above: the new provider's per-workspace keys and budgets, or the platform key plus `lib/allowance.ts`. |
+| **Vercel Sandbox** (`@vercel/sandbox`; `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, `ASTRA_BLENDER_SNAPSHOT_ID`, `ASTRA_BLENDER_RATE_CARD`) | `lib/astra-blender/sandbox.ts`, `scripts/astra-blender-snapshot.mjs` | All Astra Blender (3D) renders. The snapshot is deleted with the account. **Remove the three `VERCEL_*` names from the app when the account closes.** #571 only catches missing names: with names set but dead, 3D still looks connected, and a render could be funded and then fail at `Sandbox.create`. | The worker container in "What replaces Sandbox later": a reviewed adapter PR, a new rate card for our own compute (owner approves the price), and host sizing. Until that lands, 3D is off. |
+| **Vercel Blob** (`@vercel/blob`, `BLOB_READ_WRITE_TOKEN`) | `lib/storage/blob.ts`, `scripts/ops/backup-lib.mjs`, `scripts/ops/staging-rehearsal.mjs`, `scripts/ops/migrate-media-r2.mjs` | Every file not yet on R2, and backups or rehearsals configured with `blob` or `dual` media. | Section 1 above. Then switch the nightly backup's media to `{ "kind": "r2", ... }` (`docs/backup-restore.md`). The Blob cost rates (`BLOB_USD_PER_GB_*`, `lib/storageCost.ts`) become meaningless; R2 rates are package 11 in `docs/r2-storage-plan.md`. |
+| **Inngest's Vercel integration** | Inngest dashboard (not in code) | Automatic app re-sync and key syncing to Vercel. | Cutover steps 5 and 10 already move the app URL to `https://particl.si/api/inngest`, with the keys set in Coolify. Before closing Vercel, confirm the Inngest app shows that URL and 6 functions. Then uninstall the integration (its keys in Coolify stay valid). |
+| **Vercel Cron** (`vercel.json` `crons`, `/api/cron/sync` every 10 min) | `vercel.json` | The reconciliation cron on Vercel. | Cutover step 13 (Coolify scheduled task `cron-sync`). Confirm its heartbeat advances. |
+| **Hosting, domains, deployments, previews** (`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL`, `VERCEL_GIT_COMMIT_SHA`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `VERCEL_OIDC_TOKEN`) | `lib/site.ts`, `lib/dispatch.ts`, `lib/previewSeed.ts`, `lib/deployment.ts`, `lib/recovery.ts`, `lib/workerProbe.ts`, health routes | The Vercel site, preview deployments and the rollback path in cutover step 15. | The self-hosted app (this document). Off Vercel these names are unset by design ("Never set on the self-hosted app"). Preview deployments have no replacement except the staging app. **Rollback to Vercel ends when the account closes**, so close it only after the 14-day watch (step 14) has passed. |
+| **Values only Vercel holds** | Vercel project settings | Any variable not yet copied (Sensitive values cannot be read back). | Copy every value into Coolify or the owner's private record **before** closing ("If Vercel will not show a value"). |
+
+`KEYRING_SECRET`, Turso, R2, Resend, Liveblocks, Stripe, fal, ElevenLabs, BytePlus, Higgsfield API and the other engine keys do not depend on the Vercel account.
 
 ## Gates before cutover (SOW section 4)
 
