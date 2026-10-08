@@ -1,5 +1,5 @@
 import type { Instrumentation } from "next";
-import { deploymentLabel } from "./lib/deployment";
+import { deployedCommit, deploymentLabel } from "./lib/deployment";
 
 /** Emit only framework route templates and deployment metadata. Request
  * URLs, headers and exception text may contain private media or secrets. */
@@ -11,7 +11,7 @@ export const onRequestError: Instrumentation.onRequestError = (_error, request, 
     routeType: context.routeType,
     method: request.method,
     environment: deploymentLabel(), // VERCEL_ENV on Vercel, PARTICL_DEPLOYMENT off it
-    release: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 40) ?? "local",
+    release: deployedCommit()?.slice(0, 40) ?? "local", // VERCEL_GIT_COMMIT_SHA, else GIT_COMMIT_SHA off Vercel
     at: new Date().toISOString(),
   }));
 };
