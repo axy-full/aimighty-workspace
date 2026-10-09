@@ -10,6 +10,7 @@ import { shellEntryRedirect } from "@/lib/signIn";
 import { searchStringOf } from "@/lib/shell/raw-search";
 import { publicActorName } from "@/lib/platformOwnerPrivacy";
 import { newInterfaceFor } from "@/lib/newInterface.server";
+import { lowCreditBaseFor } from "@/lib/v12/lowCredit.server";
 
 /**
  * Who runs the connected Higgsfield account in this workspace, by name, for a
@@ -51,6 +52,7 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
   };
   const scope = workbenchScopeFor(ctx.workspace.id, ctx.user.id);
   const owner = ctx.role === "owner";
+  const newInterface = await newInterfaceFor(ctx.workspace);
   const session = {
     signedIn: true,
     requestScope: scope,
@@ -59,7 +61,7 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
     userId: ctx.user.id,
     workspace: {
       id: ctx.workspace.id, name: ctx.workspace.name, slug: ctx.workspace.slug, suspended: Boolean(ctx.workspace.suspendedAt), suspendedReason: ctx.workspace.suspendedReason, internalTest: Boolean(ctx.workspace.internalTest),
-      newInterface: await newInterfaceFor(ctx.workspace),
+      newInterface,
       /* A member's owner-run card names who runs the connected account; the owner needs no such line. */
       ownerName: owner ? null : await ownerNameOf(ctx.workspace.id).catch(() => null),
     },
@@ -67,7 +69,9 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
     owner,
     superAdmin: await isPlatformOwner(ctx.user),
     workspaces: ctx.workspaces ?? [],
-    credits,
+    /* The balance; with the new interface on, also what its low-credit chip measures it against (read-only; none if it
+       can't be read). Off, nothing more is read: customers don't pay for the new queries. */
+    credits: credits && newInterface ? { ...credits, ...(await lowCreditBaseFor(ctx.workspace).catch(() => null)) } : credits,
     models: await runInTenant(ctx.workspace, () => effectiveModels()).catch(() => null),
     setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
     rates: buildRateTable(creditsApply(ctx.workspace) ? "cr" : "usd"),
