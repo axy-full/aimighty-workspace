@@ -5,7 +5,7 @@ import { Cols, Fact, Grid, Section, SuiteHeader, Tile, Window } from "@/componen
 import { ACCESS_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
 
 export const metadata: Metadata = {
-  title: "Viral Studio",
+  title: "Social",
   description: "Recast motion and swap elements in footage you own: one 4–30 s source, ordered references, 480p to 1080p.",
 };
 
@@ -40,20 +40,20 @@ export default function ViralPage() {
   return (
     <SitePage active="viral">
       <SuiteHeader
-        eyebrow="04 · Subatomik Viral Studio"
+        eyebrow="04 · Social"
         title="Recast motion and swap elements in footage you own."
         lead="Take the motion from a source video and recast it with your own cast, location and product, or swap one element and leave the rest exactly as filmed. One source of 4 to 30 seconds, ordered references, 480p to 1080p."
         pages={viral.pages}
         cta={(
           <>
             <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>
-            <Link href="/" className="mk-btn mk-btn--secondary">Open Gen</Link>
+            <Link href="/" className="mk-btn mk-btn--secondary">Open Make</Link>
           </>
         )}
       />
 
       {/* The suite header already draws the hairline above this section. */}
-      <Section id="viral-studio" panel label="Viral Studio" style={{ borderTop: 0 }}>
+      <Section id="viral-studio" panel label="Social" style={{ borderTop: 0 }}>
         <Cols col={420} style={{ gap: "clamp(32px, 5vw, 72px)" }}>
           <Grid col={200}>
             {TILES.map(({ tag, name, body }) => (

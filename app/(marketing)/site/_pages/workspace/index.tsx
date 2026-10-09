@@ -41,7 +41,7 @@ export default async function WorkspacePage() {
         cta={(
           <>
             <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>
-            <Link href="/" className="mk-btn mk-btn--secondary">Open Gen</Link>
+            <Link href="/" className="mk-btn mk-btn--secondary">Open Make</Link>
           </>
         )}
       />

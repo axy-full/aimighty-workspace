@@ -101,10 +101,10 @@ test("⌘K opens from inside an input; ↑ ↓ move; Enter runs the highlighted 
   await expect(rows.nth(1)).toContainText("Brief & Script");
   if (info.project.name === "workbench-1440x900") await page.screenshot({ path: info.outputPath("palette.png") });
 
-  /* The query filters; typing i/g/a inside the palette fires nothing. */
-  await input.pressSequentially("ri");
-  await expect(rows.nth(0)).toHaveText(/STUDIO\s*Brief & Script/);
-  await expect(rows.nth(1)).toHaveText(/STUDIO\s*Rig/);
+  /* The query filters; typing b/o/a inside the palette fires nothing. */
+  await input.pressSequentially("board");
+  await expect(rows.nth(0)).toHaveText(/STUDIO\s*Boards/);
+  await expect(rows.nth(1)).toHaveText(/STUDIO\s*Board$/);
   await expect(rows.nth(0)).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
@@ -114,7 +114,7 @@ test("⌘K opens from inside an input; ↑ ↓ move; Enter runs the highlighted 
   await expect(rows.nth(0)).toHaveAttribute("aria-selected", "false");
   await page.keyboard.press("Enter");
   await expect(palette).toHaveCount(0);
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
   await expect(inspector).toBeVisible();
 
@@ -163,7 +163,7 @@ test("the keyboard map: Enter on home, 1–9, A, I, G, Esc, and the status-bar l
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
 
   await page.keyboard.press("5");
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await page.keyboard.press("a");
   await expect(page.getByTestId("atomik-panel")).toBeVisible();
   await page.keyboard.press("Escape");

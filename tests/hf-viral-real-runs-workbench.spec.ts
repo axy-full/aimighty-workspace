@@ -134,8 +134,11 @@ test("older takes page in by the Library's own cursor, and Recent beside a compo
   await page.getByTestId("history-more").click();
   await expect(page.getByTestId("history-result")).toHaveCount(5);
   await expect(page.getByTestId("history-more")).toHaveCount(0);
-  /* Recent beside Object Swap: its own takes only, each a way into Takes. */
-  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Object Swap/ }).click();
+  /* Recent under Object swap (Make's quick tool, opened from ⌘K over History): its own takes only, each a way into Takes. */
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.getByRole("dialog", { name: "Search" }).getByRole("combobox").or(page.getByRole("dialog", { name: "Search" }).getByRole("textbox")).first().fill("object swap");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "swap");
   const recent = page.getByTestId("viral-recent").getByTestId("viral-take");
   await expect(recent).toHaveCount(2);
   await expect(recent.getByTestId("viral-take-status")).toHaveText(["Done", "Done"]);
@@ -148,6 +151,7 @@ test("with no takes yet, History says so and starts one; Recent says which varia
   const { errors, asked } = await open(page, "history", []);
   await expect(page.getByTestId("history-empty")).toContainText("No takes in this project yet.");
   await page.getByTestId("history-empty").getByRole("button", { name: "Object Swap" }).click();
+  await expect(page.getByTestId("make-title")).toHaveText("Object swap");
   await expect(page.getByTestId("viral-recent-empty")).toHaveText("No Object Swap takes yet.");
   await noOverflow(page);
   expect(viralAsked(asked)).toEqual([]);
@@ -165,7 +169,7 @@ test("Recreate from an earlier account run loads what the key carries and says w
   expect(cancels).toHaveLength(1);
   expect(cancels[0]).toContain("/api/generations/t_queue/cancel");
   /* Twelve stills on the account; this route takes eight. */
-  await page.getByTestId("history-result").getByRole("button", { name: "Recreate" }).click();
+  await page.getByTestId("history-result").getByRole("button", { name: "Open in Make" }).click();
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "swap");
   await expect(page.getByTestId("toast")).toContainText("Loaded the first 8 of 12 references; this route takes up to 8.");
   await expect(page.getByTestId("viral-source")).toContainText("walk.mp4");

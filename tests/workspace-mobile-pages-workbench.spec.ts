@@ -236,7 +236,7 @@ test("the shot list and the flow: the same shots, and the Inspector sheet", asyn
   await expect(primary).not.toContainText("cr");
   await expect(page.getByTestId("mobile-action-reason")).toContainText(/engine/i);
   /* The derived sub is the desktop's: counted, never stored. */
-  await expect(page.getByTestId("mobile-page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("mobile-page-title")).toHaveText("Board");
   await expect(page.locator(".pxm-page-sub")).toHaveText("4 shots · 1 approved");
   await floors(page, "shot list");
 
@@ -423,7 +423,7 @@ test("above the breakpoint the desktop pages are unchanged", async ({ page }, in
 
   await goTo(page, "rig");
   await expect(page.getByTestId("rig-list")).toBeVisible();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await expect(page.locator(".pxw-rig-row")).toHaveCount(4);
   /* Nothing of the phone exists here. */
   await expect(page.getByTestId("phone-shell")).toHaveCount(0);

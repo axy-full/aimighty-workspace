@@ -33,23 +33,23 @@ export default async function GenHome() {
 
   return (
     <SitePage active="gen">
-      <section className="mk-hero" aria-label="Gen">
+      <section className="mk-hero" aria-label="Make">
         {/* eslint-disable-next-line @next/next/no-img-element -- the campaign still, full bleed */}
         <img className="mk-hero-img" src="/campaign/hero.webp" alt="" width={1672} height={941} fetchPriority="high" />
         <div className="mk-hero-shade" aria-hidden="true" />
         <div className="mk-hero-in">
-          <div className="mk-eyebrow">Gen · Video · Images · Audio</div>
+          <div className="mk-eyebrow">Make · Video · Images · Audio</div>
           <h1 className="mk-h1 mk-hero-title">The studio&rsquo;s own room for making shots.</h1>
-          <p className="mk-hero-lead">Five suites in one shell: Gen, the Production Studio, the Business Suite, the Viral Studio and the Atomik agent. Seedance, Kling and Nano Banana behind them.</p>
+          <p className="mk-hero-lead">One board for the whole production: Studio, Ads, Social, Make and the Atomik agent. Seedance, Kling and Nano Banana behind them.</p>
           <HeroPrompt model={hero.id} label={hero.name} short={hero.short} />
         </div>
       </section>
 
-      <Section id="gen-composer" label="Gen composer">
-        <Head eyebrow="Gen · one composer" title="One composer for video, images and audio."
+      <Section id="gen-composer" label="Make composer">
+        <Head eyebrow="Make · one composer" title="One composer for video, images and audio."
           lead="Every tool in every suite is a preset that opens it pre-configured; there is never a second interface." />
         <Cols col={420}>
-          <Window path="particl.app / gen" src={shot("gen-composer-blank")} alt="The Gen composer" width={924} height={540} />
+          <Window path="particl.app / gen" src={shot("gen-composer-blank")} alt="The Make composer" width={924} height={540} />
           <Grid col={220}>
             <Stat figure="4–30 s" name="Length by the second" body="Any whole second a video engine accepts. Ratio, resolution and audio clamp when you switch engines." />
             <Stat figure="SHA-256" name="References stay byte-identical" body="No resize, no re-encode, no metadata stripping. The rail shows ✓ BYTE-IDENTICAL when the hash matches." />

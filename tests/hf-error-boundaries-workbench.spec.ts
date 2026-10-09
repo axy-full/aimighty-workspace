@@ -3,7 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets, smallText } from "./phoneFloors";
 import { DESKTOP, PHONE, forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
-import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
+import { closeSuitesMenu, goCrewReview, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * Error boundaries per panel (components/Boundary.tsx — Next's catchError —
@@ -287,46 +287,62 @@ test("phones: a Library overlay that throws still closes, and its card meets the
 
 test("Gen: one bad take costs its tile, a failing results grid keeps the composer and its prompt", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?view=gen");
+  const errors = await open(page, "/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("project-name")).toHaveText("Coastal light study");
-  const results = page.getByRole("region", { name: "Results" });
-  await expect(results.getByText("Wide on the water")).toBeVisible();
   const prompt = page.getByTestId("gen-prompt");
   await prompt.fill("a fox crossing a frozen harbour");
+  /* Make's results are its Recent tab; the composer keeps its words across the switch. */
+  const recent = () => page.getByTestId("make-tab-recent").click();
+  const compose = () => page.getByTestId("make-tab-make").click();
+  await recent();
+  const results = page.getByRole("region", { name: "Results" });
+  await expect(results.getByText("Wide on the water")).toBeVisible();
 
   /* One take throws: its tile keeps its place, the others render. */
   await arm(page, ["take:generation:gen_wide"]);
-  await results.getByRole("button", { name: "Images", exact: true }).click();
+  await results.getByRole("button", { name: "Takes", exact: true }).click();
   const tile = results.getByTestId("take-fault");
   await expect(tile).toHaveCount(1);
   await expect(tile).toContainText("Wide on the water");
   await expect(results.getByText("Close on the rope")).toBeVisible();
   await refIsReadable(tile.locator(".gx-asset-meta"));
 
-  /* Its Try again brings it back once fixed; failing again later on its own does not take focus from the prompt. */
+  /* Its Try again brings it back once fixed; failing again later does not cost the prompt its focus or its words. */
   await arm(page, []);
   await tile.getByRole("button", { name: /Wide on the water could not be shown/ }).click();
   await expect(results.getByTestId("take-fault")).toHaveCount(0);
+  await compose();
   await prompt.focus();
+  /* The tab's words are drawn again: the caret goes back to their end, where a person carries on typing. */
+  await prompt.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(el.value.length, el.value.length));
   await arm(page, ["take:generation:gen_wide"]);
   await prompt.pressSequentially(" at dawn");
-  await expect(results.getByTestId("take-fault")).toHaveCount(1);
   await expect(prompt, "a panel failing on its own never steals the keyboard").toBeFocused();
   await expect(prompt).toHaveValue("a fox crossing a frozen harbour at dawn");
+  await recent();
+  await expect(results.getByTestId("take-fault")).toHaveCount(1);
 
   /* The whole grid throws: the card replaces the grid, the composer and the prompt stay. */
   await arm(page, ["gen-results"]);
   await results.getByRole("button", { name: "All", exact: true }).click();
   const fault = page.locator('[data-testid="panel-fault"][data-fault="gen-results"]');
   await expect(fault).toContainText("Results stopped");
-  await expect(prompt).toHaveValue("a fox crossing a frozen harbour at dawn");
-  await expect(page.getByTestId("gen-generate")).toBeVisible();
   await settled(page);
   if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-fault="gen-results"]'), "targets under 44×44").toEqual([]);
-
   await arm(page, []);
   await fault.getByTestId("fault-retry").click();
+  await expect(fault).toHaveCount(0);
+  await arm(page, ["gen-results"]);
+  await results.getByRole("button", { name: "Takes", exact: true }).click();
+  await expect(fault).toContainText("Results stopped");
+  await compose();
+  await expect(prompt).toHaveValue("a fox crossing a frozen harbour at dawn");
+  await expect(page.getByTestId("gen-generate")).toBeVisible();
+
+  /* Fixed, Recent opens on a fresh grid (its wall is new each time the tab is). */
+  await arm(page, []);
+  await recent();
   await expect(fault).toHaveCount(0);
   await expect(results.getByText("Wide on the water")).toBeVisible();
   await expect(results.getByTestId("take-fault")).toHaveCount(0);
@@ -379,9 +395,8 @@ test("search and a whole view fail on their own: the sheet takes focus and still
   await reachable(page, fault.getByTestId("fault-retry"));
   await noHorizontalScroll(page);
 
-  /* Crew is walled off the same way, and its room strip stays. */
-  await openSuitesMenu(page);
-  await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: /Crew/ }).click();
+  /* Crew is walled off the same way, and its room strip stays. Crew is reached from ⌘K (header option B). */
+  await goCrewReview(page);
   const crew = page.locator('[data-testid="panel-fault"][data-fault="crew"]');
   await expect(crew).toContainText("Crew stopped");
   await reachable(page, crew.getByTestId("fault-retry"));
@@ -389,7 +404,9 @@ test("search and a whole view fail on their own: the sheet takes focus and still
   await crew.getByTestId("fault-retry").click();
   await expect(crew).toHaveCount(0);
 
+  /* The avatar opens Settings; Team is Workspace's People until Settings ships (D1). */
   await page.getByTestId("workspace-avatar").click();
+  await page.getByTestId("settings-team").click();
   await expect(page.getByTestId("workspace-view")).toBeVisible();
   await expect(page.locator('[data-fault="workspace"]')).toHaveCount(0);
   expect(errors).toEqual([]);
@@ -441,8 +458,9 @@ test("the shell's own chrome throws: the Suites error page keeps the header, Try
   await expect(screen.getByRole("heading", { name: "This screen stopped" })).toBeVisible();
   await expect(screen).toContainText("Your work is safe. Takes in progress keep generating.");
   const suites = screen.getByRole("navigation", { name: "Suites" });
-  await expect(suites.getByRole("link")).toHaveText(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
-  await expect(suites.getByRole("link", { name: "Business" })).toHaveAttribute("href", "/suites?suite=moleculr");
+  await expect(suites.getByRole("link")).toHaveText(["Home", "Project", "Make", "Atomik"]);
+  await expect(suites.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/suites?suite=particl&page=brief&sp=stages");
+  await expect(suites.getByRole("link", { name: "Make" })).toHaveAttribute("href", "/suites?make=video");
   await expect(screen.getByTestId("fault-studio")).toHaveAttribute("href", "/suites");
   await expect(screen.getByTestId("header-search")).toHaveAttribute("href", "/suites?find=1");
   await refIsReadable(screen.getByTestId("fault-ref"));

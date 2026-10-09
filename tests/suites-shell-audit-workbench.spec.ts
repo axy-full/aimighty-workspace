@@ -3,7 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
-import { openSuitesMenu } from "./helpers/suitesMenu";
+import { goViaSearch, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * The Suites shell, audited (September 2026): a Recreate pressed on Gen lands
@@ -43,11 +43,12 @@ async function open(page: Page, path: string, store = { current: fixture() }) {
 
 test("Recreate pressed on Gen lands at once, with the take's own references, and nothing replays when Gen opens again", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?view=gen");
+  const errors = await open(page, "/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
+  await page.getByTestId("make-tab-recent").click();
   await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_wide']").click();
   await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
-  await expect(page.getByTestId("toast")).toContainText("Wide on the water’s recipe is in Gen.");
+  await expect(page.getByTestId("toast")).toContainText("Wide on the water’s recipe is in Make.");
   /* No Open: Gen is where it landed (lib/shell/confirmations). */
   await expect(page.getByTestId("toast-open")).toHaveCount(0);
   /* Already in Gen, the Inspector's overlay closes by itself so the composer is what is seen. */
@@ -56,14 +57,13 @@ test("Recreate pressed on Gen lands at once, with the take's own references, and
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Wide on the water");
   await expect(page.getByTestId("gen-well")).toContainText("harbour-plate.webp");
 
-  /* Leave and come back: the composer starts as it should, not with the old recipe laid over it. */
+  /* Close Make and open it again: the composer starts as it should, not with the old recipe laid over it. */
   await page.getByTestId("gen-prompt").fill("my own words");
   const suites = page.getByRole("tablist", { name: "Suites" });
-  await openSuitesMenu(page);
-  await suites.getByRole("tab", { name: "Studio" }).click();
+  await page.getByTestId("make-close").click();
   await expect(page.getByTestId("gen-view")).toHaveCount(0);
   await openSuitesMenu(page);
-  await suites.getByRole("tab", { name: "Gen" }).click();
+  await suites.getByRole("tab", { name: "Make" }).click();
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).not.toHaveValue("wide on the water, raw");
   await expect(page.getByTestId("gen-recipe")).toHaveCount(0);
@@ -71,16 +71,46 @@ test("Recreate pressed on Gen lands at once, with the take's own references, and
   expect(errors).toEqual([]);
 });
 
-test("phone: Assets from More (Workspace) opens the Library over the suite page", async ({ page }, info) => {
+test("phone: the bar reads Home · Record · Make · Atomik on every screen, lights the tab the screen belongs to, and points nowhere old", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "phone widths");
   const errors = await open(page, "/suites?suite=particl&page=boards&sp=boards");
-  await page.getByTestId("tabbar-more").click();
-  await expect(page.getByTestId("tabbar-more")).toHaveAttribute("aria-current", "page");
-  await page.getByTestId("tabbar-assets").click();
-  await expect(page.getByTestId("tabbar-assets")).toHaveAttribute("aria-current", "page");
-  const library = page.getByTestId("library");
-  await expect(library).toBeVisible();
-  await expect(library.getByTestId("library-assets")).toContainText("harbour-plate.webp");
+  const bar = page.getByTestId("tabbar");
+  await expect(bar.getByRole("button")).toHaveText(["Home", "Record", "Make", "Atomik"]);
+  /* A Studio page is the project's: Record is lit. */
+  await expect(page.getByTestId("tabbar-record")).toHaveAttribute("aria-current", "page");
+  /* Record opens the project's own page (today the Studio overview) with the project's name for its title. */
+  await page.getByTestId("tabbar-home").click();
+  await expect(page.getByTestId("tabbar-home")).toHaveAttribute("aria-current", "page");
+  await expect(page.getByTestId("suite-home")).toBeVisible();
+  await page.getByTestId("tabbar-record").click();
+  await expect(page.getByTestId("studio-home")).toBeVisible();
+  await expect(page.getByTestId("tabbar-record")).toHaveAttribute("aria-current", "page");
+  await page.getByTestId("tabbar-make").click();
+  await expect(page.getByTestId("tabbar-make")).toHaveAttribute("aria-current", "page");
+  await expect(bar).toBeVisible();
+  await page.getByTestId("tabbar-atomik").click();
+  await expect(page.getByTestId("tabbar-atomik")).toHaveAttribute("aria-current", "page");
+  await expect(bar.getByRole("button")).toHaveText(["Home", "Record", "Make", "Atomik"]);
+  /* Settings sit behind the avatar: no tab is lit there, and the bar stays. */
+  await page.getByTestId("workspace-avatar").click();
+  await page.getByRole("menuitem", { name: "Plan & credits" }).click();
+  await expect(page.getByTestId("workspace-view")).toBeVisible();
+  await expect(bar.locator("[aria-current='page']")).toHaveCount(0);
+  await expect(bar).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("phone: the bar hides over a plan's approval and stays everywhere else", async ({ page }, info) => {
+  test.skip(!PHONES.includes(info.project.name), "phone widths");
+  const errors = await open(page, "/suites?suite=particl&page=deliver&sp=deliver");
+  const bar = page.getByTestId("tabbar");
+  await expect(bar).toBeVisible();
+  await page.getByTestId("primary-action").click();
+  await expect(page.getByTestId("atomik-panel")).toBeVisible();
+  await expect(bar).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("atomik-panel")).toHaveCount(0);
+  await expect(bar).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -115,8 +145,14 @@ test("Library › Tools: a Deliver row opens its tool; Business and Viral offer 
   await library.getByRole("button", { name: /^Master/ }).click();
   await expect(page.getByTestId("stage-work")).toHaveAttribute("data-tool", "movie");
 
-  await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Viral" }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Motion Transfer");
+  /* Viral left the header (option B); from ⌘K it opens on Motion transfer, Make's quick tool, over the page: the
+     Library shows what can be dragged into it. */
+  await goViaSearch(page, "motion transfer", /Make › Motion transfer/);
+  await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "motion");
+  await expect(library.getByTestId("library-assets")).toBeVisible();
+  /* Viral's page, History, offers Assets only too. */
+  await page.goto("/suites?suite=subatomik&page=history&sp=history");
+  await expect(page.getByTestId("page-title")).toHaveText("History");
   await expect(library.getByRole("tab", { name: /Tools/ })).toHaveCount(0);
   await expect(library.getByTestId("library-assets")).toBeVisible();
   expect(errors).toEqual([]);

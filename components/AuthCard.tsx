@@ -47,5 +47,5 @@ export function Submit({ busy, children }: { busy: boolean; children: React.Reac
 }
 
 export function ErrorLine({ children }: { children: React.ReactNode }) {
-  return <p className="rail-help mt-3 text-lift">{children}</p>;
+  return <p className="rail-help mt-3 !text-[12px] text-lift">{children}</p>;
 }

@@ -54,7 +54,7 @@ export function SuiteHome({ project: loaded, items }: { project: Project | null;
   });
   const go = (id: (typeof tiles)[number]["id"]) => {
     if (id === "studio") shell.goSuite("studio", "stages");
-    else if (id === "gen") shell.goGen();
+    else if (id === "gen") shell.openMake();
     else if (id === "crew") shell.goCrew();
     /* A plan waiting on approval opens its gate (the Atomik panel), not a page that cannot approve it. */
     else if (id === "atomik" && awaiting) dispatch({ type: "patch", patch: { agentOpen: true } });

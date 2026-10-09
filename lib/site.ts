@@ -62,7 +62,7 @@ export function mailLinkOrigin(req: Request, env: Env = process.env): string | n
 }
 
 export const SITE_NAME = "Particl";
-export const SITE_TITLE = "Particl Production Studio";
+export const SITE_TITLE = "Particl Studio";
 export const SITE_DESCRIPTION = "A production studio for generated film: brief, shots, takes and delivery.";
 
 /** The pages anyone may open without an account, for the sitemap. */

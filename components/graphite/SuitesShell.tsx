@@ -18,6 +18,9 @@ import type { ShellSeams } from "@/components/workspace/WorkspaceShell";
 import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
 import { useShell } from "@/lib/shell/state";
+import { useRecreatePrice } from "@/lib/shell/use-recreate-price";
+import { ctxPrice } from "@/lib/shell/recreate-price";
+import type { RecipeSource } from "@/lib/shell/recipe";
 import { JobsTrayProvider } from "@/lib/shell/use-jobs-tray";
 import { boundUndo, splitUndoHint } from "@/lib/shell/undo";
 import { AtomikSheet } from "./AtomikSheet";
@@ -25,7 +28,7 @@ import { ContextMenu } from "./ContextMenu";
 import { AtomikGate } from "./AtomikGate";
 import { BusinessSuite } from "./business/BusinessSuite";
 import { CrewStrip, CrewView, useCrew } from "./crew/CrewView";
-import { GenView } from "./GenView";
+import { MakePanel } from "./MakePanel";
 import { ASSET_LABEL, assetCapabilities, assetRef, type AssetRef } from "@/lib/shell/assets";
 import { setShotDropHandler } from "@/lib/shell/drop-targets";
 import { useAssetActions } from "@/lib/shell/use-asset-actions";
@@ -45,7 +48,6 @@ import { Palette } from "./Palette";
 import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { useCompact } from "@/lib/shell/use-compact";
-import { Glyph } from "./icons";
 import { StudioHome } from "./mobile/StudioHome";
 import { SuiteHome } from "./mobile/SuiteHome";
 import { STAGE_VIEW_PAGES, StageView } from "./StageView";
@@ -102,20 +104,27 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
 
   const clipPayload = shell.clip?.payload as { asset: AssetRef; fromProjectId: string } | undefined;
   const selectedAsset = (() => { const s = selection(); const e = s.kind === "asset" ? items.find((i) => i.take.id === s.id) : null; return e ? assetRef(e) : null; })();
+  /* The take under an open right-click menu, when Recreate can run for it: its price is read here (lib/shell/use-recreate-price.ts). */
+  const ctxTarget = shell.ctx?.target;
+  const ctxEntry = ctxTarget?.kind === "asset" ? items.find((i) => i.take.id === ctxTarget.id) ?? null : null;
+  const recreatable = ctxEntry && ctxEntry.asset.origin === "generation" && !assetRef(ctxEntry).noRecreate ? ctxEntry : null;
+  const recreatePrice = useRecreatePrice(session.requestScope ?? scope, recreatable?.take.id ?? null, recreatable ? (recreatable.asset.value as RecipeSource) : null, project?.aspect);
   const caps: CtxCapabilities = (() => {
     const target = shell.ctx?.target;
     /* A Rig shot: Delete (with ⌘Z) while the Rig is on screen; the asset commands do not apply. */
-    if (target?.kind === "node") return { can: rigDeleteHandler() ? { delete: true } : {}, why: { delete: "Open the Rig to delete a shot." }, hasClipboard: Boolean(shell.clip), canUndo: shell.canUndo };
+    if (target?.kind === "node") return { can: rigDeleteHandler() ? { delete: true } : {}, why: { delete: "Open the Board to delete a shot." }, hasClipboard: Boolean(shell.clip), canUndo: shell.canUndo };
     const entry = target?.kind === "asset" ? items.find((i) => i.take.id === target.id) : null;
-    return assetCapabilities({
+    const base = assetCapabilities({
       asset: entry ? assetRef(entry) : selectedAsset, clip: shell.clip && clipPayload ? { mode: shell.clip.mode, asset: clipPayload.asset } : null,
       projectId: project?.id ?? null, otherProjects: data.projects.filter((p) => p.id !== project?.id).length, canUndo: shell.canUndo,
     });
+    /* Recreate spends once Make is pressed: its price is Make's own, read from the server's quote while the menu is open. */
+    return base.can.retry && recreatePrice ? { ...base, price: { retry: ctxPrice(recreatePrice, session.rates.creditUsd) } } : base;
   })();
 
   const command = (cmd: CtxCommand, target: CtxTarget) => {
     switch (cmd) {
-      case "generate-here": shell.goGen(); return;
+      case "generate-here": shell.openMake(); return;
       case "open-library": shell.openLibrary("assets"); return;
       case "toggle-inspector": shell.toggleInspector(); return;
       case "undo": void shell.undo(); return;
@@ -124,7 +133,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     if (target.kind === "node") {
       const remove = rigDeleteHandler();
       if (cmd !== "delete") { toast("Not available for a shot."); return; }
-      if (!remove) { toast("Open the Rig to delete a shot."); return; }
+      if (!remove) { toast("Open the Board to delete a shot."); return; }
       const why = remove(target.id);
       if (why) toast(why);
       return;
@@ -154,7 +163,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const rigProject = useRef(rigProjectId);
   useEffect(() => { rigProject.current = rigProjectId; }, [rigProjectId]);
   const sinkRigUndo = (entry: RigUndo) =>
-    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Rig is still opening this project."));
+    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Board is still opening this project."));
   /* The Inspector's buttons and the Rig's drop use the same path. */
   useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink(sinkRigUndo); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
 
@@ -229,7 +238,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     return () => window.removeEventListener("pointerdown", onPress, true);
   }, []);
 
-  /* One keymap: ⌘K, ⌘J, Esc, and the menu's shortcuts on the selection when focus is not in a field. */
+  /* One keymap: ⌘K, ⌘J, ⌥M, Esc, and the menu's shortcuts on the selection when focus is not in a field. */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
@@ -243,8 +252,12 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
         else if (state.composer) dispatch({ type: "patch", patch: { composer: false } });
         else if (state.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
         else if (shell.libOpen || shell.inspOpen) shell.closePanels();
+        /* Make closes with Esc, except from a field (Esc there closes the field's own list first) or while a sheet is open over it. */
+        else if (shell.make && !inField(event.target) && !document.querySelector(".gx-veil")) shell.closeMake();
         return;
       }
+      /* ⌥M opens and closes Make (README § 6), from anywhere, a field included: ⌥M types nothing a prompt needs. */
+      if (event.altKey && !mod && event.code === "KeyM") { event.preventDefault(); if (shell.make) shell.closeMake(); else shell.openMake(); return; }
       if (shell.palette || state.composer || state.agentOpen || inField(event.target)) return;
       const cmd = shortcutCommand(event);
       if (!cmd) return;
@@ -330,21 +343,10 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError}
       onPick={pickProject} onCreate={createProject} />
   );
-  const genHead = (
-    <div className="gx-pagehead" data-row="page">
-      <h1 className="gx-h1" data-testid="page-title">Generate</h1>
-      <span className="gx-hint">Video · Images · Audio</span>
-      <span className="gx-spacer" />
-      {!shell.wide ? (<>
-        <button type="button" className="gx-hbtn gx-hbtn--glyph" aria-pressed={shell.libOpen} onClick={shell.toggleLibrary} data-testid="toggle-library"><span className="gx-hbtn-glyph" aria-hidden="true"><Glyph name="stack" size={18} /></span><span className="gx-hbtn-label">Library</span></button>
-        <button type="button" className="gx-hbtn gx-hbtn--glyph" aria-pressed={shell.inspOpen} onClick={shell.toggleInspector} data-testid="toggle-inspector"><span className="gx-hbtn-glyph" aria-hidden="true"><Glyph name="info" size={18} /></span><span className="gx-hbtn-label">Inspector</span></button>
-      </>) : null}
-    </div>
-  );
-  /* A phone's top bar carries the project switcher in its second row, beside the page strip (or Gen's own buttons):
+  /* A phone's top bar carries the project switcher in its second row, beside the page strip:
      one bar instead of four rows between the screen's edge and the page (components/graphite/phone.css). */
   const compact = useCompact();
-  const bar = compact && (shell.view === "suite" || shell.view === "gen") ? <>{projectHead}{shell.view === "gen" ? genHead : <StageStrip />}</> : null;
+  const bar = compact && shell.view === "suite" ? <>{projectHead}<StageStrip /></> : null;
   /* Each panel is walled off (components/Boundary.tsx): one that throws shows its own fault card and the rest keeps working.
      Moving to another page, project or selection gives it a fresh go. */
   const stageKey = `${shell.suite.id}:${shell.page.id}:${project?.id ?? ""}`;
@@ -359,7 +361,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             This workspace is suspended{session.workspace.suspendedReason ? ` — ${session.workspace.suspendedReason}` : ""}. Rendering is paused; everything already made is still here.
           </div>
         ) : null}
-        <Header account={account} bar={bar} />
+        <Header account={account} project={project?.name ?? null} bar={bar} />
         {bar ? null : <StageStrip />}
         {/* The gate row approves a run at its quote; one that throws keeps its row, and the run waits in the engine. */}
         <Boundary what="The Atomik gate" probe="atomik-gate" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="atomik-gate" variant="inline" /></div>}>
@@ -381,23 +383,10 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                 <Library project={project} items={items} library={library} projects={data.status} overlay={overlay} now={now} onUseAsReference={actions.useAsReference} cutId={shell.clip?.mode === "cut" && shell.clip.target.kind === "asset" ? shell.clip.target.id : null} />
               </Boundary>
             ) : null}
-            <main className="gx-main" data-screen-label={shell.view === "gen" ? "gen" : shell.page.id}>
+            <main className="gx-main" data-screen-label={shell.page.id}>
               {bar ? null : projectHead}
-              {/* Keep Gen's draft editable while generation waits for the project list to recover.
-                  "Try again", never "Retry": that word is a take's own action (⌘R, Recreate in Gen). */}
-              {shell.view === "gen" && projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" /> : null}
               {linkCard ? (
                 <div className="gx-stage gx-scroll" data-testid="content">{linkCard}</div>
-              ) : shell.view === "gen" ? (
-                <>
-                  {bar ? null : genHead}
-                  {/* Its own scroller: arriving in Gen (Open in Gen from a page scrolled down) starts at the composer's top. */}
-                  <div className="gx-stage gx-scroll" data-testid="content" key="gen-stage">
-                    <Boundary what="Generate" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <PanelFault fault={fault} name="gen" />}>
-                      <GenView scope={scope} project={project} items={items} library={library} projects={data.status} workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} />
-                    </Boundary>
-                  </div>
-                </>
               ) : (
                 <>
                   {/* The phone's Home and Studio stage grid carry their own titles; the page head is the stage's. */}
@@ -405,7 +394,8 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                   <div className="gx-stage gx-scroll" data-testid="content">
                     <Boundary what={shell.page.title} probe={stageProbe} resetKey={stageKey} fallback={(fault) => <PanelFault fault={fault} name={stageProbe} />}>
                     {projectsError && !project ? (
-                      <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" />
+                      /* With Make open the banner (and its one Try again) is Make's, where the draft waits. */
+                      shell.make ? null : <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={data.retry} testId="projects-error" />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "home" ? (
                       <SuiteHome key="home" project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "studio" && shell.page.id === "stages" ? (
@@ -431,7 +421,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
                     ) : shell.page.own && shell.suite.id === "business" ? (
                       <BusinessSuite key={shell.page.id} scope={scope} project={project} page={shell.page.id} />
                     ) : shell.page.own && shell.suite.id === "viral" ? (
-                      <ViralView key={shell.page.id} scope={scope} project={project} page={shell.page.id as "motion" | "swap" | "history"} items={items} />
+                      <ViralView key={shell.page.id} scope={scope} project={project} items={items} />
                     ) : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "skills" ? <ToolsView />
                     : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "memory" ? <MemoryView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} />
                     : shell.page.own && shell.suite.id === "atomik" && shell.page.id === "saved-skills" ? <SkillsView key={project?.productionProjectId ?? "workspace"} scope={scope} project={project} /> : (<>
@@ -457,6 +447,15 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             ) : null}
           </div>
         )}
+        {/* Make (README § 3.2): a panel over whatever is on screen, beside the Inspector's column when that is open. Its draft
+            stays editable while the project list recovers ("Try again", never "Retry": that word is a take's own action). */}
+        {shell.make ? (
+          <Boundary what="Make" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <aside className="gx-make" aria-label="Make"><PanelFault fault={fault} name="gen" actions={<button type="button" className="gx-hbtn" onClick={shell.closeMake}>Close</button>} /></aside>}>
+            <MakePanel scope={scope} project={project} items={items} library={library} projects={data.status} projectsError={projectsError} onRetry={data.retry}
+              workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })}
+              aspect={aspect} beside={shell.wide && showInspector && state.selKind === "take" && Boolean(state.selId) && shell.view !== "crew" && shell.view !== "workspace"} />
+          </Boundary>
+        ) : null}
         <Boundary what="Search" probe="palette" resetKey={shell.palette ? "open" : "closed"} fallback={(fault) => !shell.palette ? null : (
           <div className="gx-veil" onClick={() => shell.setPalette(false)} data-testid="palette-veil">
             <div className="gx-fault-dialog" role="dialog" aria-modal="true" aria-label="Search" onClick={(e) => e.stopPropagation()}>

@@ -23,8 +23,8 @@ export function ContextMenu({ caps, onCommand, labels }: { caps: CtxCapabilities
       <div className="gx-ctx-title">{ctx.title}</div>
       {items.map((entry, i) => entry.sep ? <span key={i} className="gx-ctx-sep" role="separator" /> : (
         <button key={entry.command} type="button" role="menuitem" className="gx-ctx-item" data-danger={entry.danger ? "true" : undefined}
-          disabled={entry.disabled} title={entry.reason} onClick={() => { shell.closeCtx(); onCommand(entry.command); }}>
-          <span>{labels?.[entry.command] ?? entry.label}</span>
+          disabled={entry.disabled} title={entry.reason ?? entry.hover} data-spend={entry.spend} data-spend-price={entry.spend === "priced" ? entry.price : undefined} onClick={() => { shell.closeCtx(); onCommand(entry.command); }}>
+          <span>{labels?.[entry.command] ?? entry.label}{entry.price ? ` · ${entry.price}` : ""}</span>
           {entry.key ? <span className="gx-ctx-key">{entry.key}</span> : null}
         </button>
       ))}

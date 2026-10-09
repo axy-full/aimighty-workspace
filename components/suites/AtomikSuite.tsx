@@ -525,7 +525,7 @@ function MappedAtomik({
         <section className={styles.empty} aria-label="Generate" data-testid="atomik-generate-moved">
           <h2>Generate in Gen</h2>
           <p>{GENERATE_MOVED}</p>
-          <Link href="/suites?view=gen">Open Gen</Link>
+          <Link href="/suites?make=video">Open Gen</Link>
         </section>
       ) : page === "budget" ? (
         <Budget productionId={productionId} />

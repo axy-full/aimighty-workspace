@@ -6,8 +6,8 @@ import { ACCESS_HREF, shot } from "@/lib/marketing/site";
 import styles from "./studio.module.css";
 
 export const metadata: Metadata = {
-  title: "Production Studio",
-  description: "The Particl Production Studio: ten stages from brief to delivery, each agentic step run by the agent you pick.",
+  title: "Studio",
+  description: "Particl Studio: ten stages from brief to delivery, each agentic step run by the agent you pick.",
 };
 
 /*
@@ -32,9 +32,9 @@ const STAGES: Stage[] = [
     chips: ["Scenes", "Beats", "Shots", "Acts", "Board · Graph", "Beat sheet PDF", "Redraft from beats"] },
   { title: "Storyboards",
     text: "A frame for every shot on the beat sheet. The agent writes the prompts; frames render as live action, a coloured sketch or a black-and-white sketch. Upload a rough drawing and the agent reads it, so the frame keeps its blocking.",
-    chips: ["Frame prompts", "Live action", "Coloured sketch", "B&W sketch", "Line drawings", "Revise selected", "Frames → Rig"] },
+    chips: ["Frame prompts", "Live action", "Coloured sketch", "B&W sketch", "Line drawings", "Revise selected", "Frames → Board"] },
   { title: "Environment",
-    text: "Where the world is built, before the cast. The rules every place shares, then each place, from the beat sheet, the agent or by hand, with plates rendered here, uploaded or taken from the library. Plates are filed as Environment for the Rig and Gen.",
+    text: "Where the world is built, before the cast. The rules every place shares, then each place, from the beat sheet, the agent or by hand, with plates rendered here, uploaded or taken from the library. Plates are filed as Environment for the Board and Make.",
     chips: ["World rules", "Places", "Plates", "Render · Upload · Library", "References · up to 6", "Filed as Environment"] },
   { title: "Cast & Elements",
     text: "The cast list comes from the beat sheet, or from the agent with a prompt per entry. Characters, environments and props keep their names, prompts and reference images in one list.",
@@ -45,10 +45,10 @@ const STAGES: Stage[] = [
       { tag: "ELEMENTS · ENVIRONMENT", text: "Environments and props, listed the same way.",
         chips: ["Environment", "Prop"] },
     ] },
-  { title: "Astra 3D",
-    text: "Blocking before rendering. A 3D scene editor, with objects, project pictures and GLB models, lights, the camera and keyframes, plus bounded planner proposals, reviewed native Blender scripts and cloud renders: a PNG still, the .blend and, where it exports, a GLB. Send a render to the Rig as a new shot’s first frame.",
-    chips: ["Scene editor", "Templates", "GLB in", "Proposals", "Native Blender", "Render · PNG · .blend · GLB", "Portable export", "Send to Rig"] },
-  { title: "Rig",
+  { title: "3D blocking",
+    text: "Blocking before rendering. A 3D scene editor, with objects, project pictures and GLB models, lights, the camera and keyframes, plus bounded planner proposals, reviewed native Blender scripts and cloud renders: a PNG still, the .blend and, where it exports, a GLB. Send a render to the Board as a new shot’s first frame.",
+    chips: ["Scene editor", "Templates", "GLB in", "Proposals", "Native Blender", "Render · PNG · .blend · GLB", "Portable export", "Send to the Board"] },
+  { title: "Board",
     text: "Resolves references and dispatches each shot to a video engine. Build one shot per storyboard frame; each takes a prompt of up to 20,000 characters, notes, inputs from uploads, the library, earlier shots and the cast, and a first frame. List or canvas; the canvas is shared with the team.",
     chips: ["Build from Storyboards", "Prompt · 20,000 characters", "Inputs", "First frame", "List · Canvas", "Team canvas", "Build another rig"] },
   { title: "Takes",
@@ -85,13 +85,13 @@ export default function StudioPage() {
   return (
     <SitePage active="studio">
       <SuiteHeader
-        eyebrow="02 · Particl Production Studio"
+        eyebrow="02 · Studio"
         title="Ten stages from brief to delivery."
         lead="The production studio. Every stage reads and writes the same project, from the brief to the final cut."
         pages={STAGES.map((stage) => stage.title)}
         cta={<>
           <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>
-          <Link href="/" className="mk-btn mk-btn--secondary">Open Gen</Link>
+          <Link href="/" className="mk-btn mk-btn--secondary">Open Make</Link>
         </>}
       />
 
@@ -126,7 +126,7 @@ export default function StudioPage() {
           </div>
 
           <div className={styles.aside}>
-            <Window path="particl.app / dune-studies / rig" src={shot("studio-rig-canvas")} alt="Rig, the node graph of a shot" width={924} height={540} />
+            <Window path="particl.app / dune-studies / rig" src={shot("studio-rig-canvas")} alt="The Board, the node graph of a shot" width={924} height={540} />
             <Grid col={220} style={{ gap: 10 }}>
               {ASSETS.map((asset) => (
                 <div key={asset.name} className={styles.asset}>

@@ -77,7 +77,7 @@ test("Studio pages carry no connected workflows: Edit keeps Particl's own Dub an
 
 test("Gen has no Analysis tab, for the owner too: its four output tabs keep one row", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors, consumer } = await open(page, "/suites?view=gen");
+  const { errors, consumer } = await open(page, "/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
   const output = page.getByRole("tablist", { name: "Output" });
   await expect(output.getByRole("tab")).toHaveText(["Video", "Images", "Audio", "Edit"]);

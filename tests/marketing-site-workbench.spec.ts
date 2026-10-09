@@ -11,10 +11,12 @@ import { signInLocally } from "./helpers/workbenchLocal";
  * the take itself.
  */
 
-const PAGES: [string, string][] = [
-  ["/", "Gen"], ["/studio", "Studio"], ["/business", "Business"], ["/viral", "Viral"],
-  ["/atomik", "Atomik"], ["/workspace", "Workspace"], ["/pricing", "Pricing"],
+/* Each path and its current tab; Settings (/workspace) has no tab of its own. */
+const PAGES: [string, string | null][] = [
+  ["/", "Make"], ["/studio", "Studio"], ["/business", "Ads"], ["/viral", "Social"],
+  ["/atomik", "Atomik"], ["/workspace", null], ["/pricing", "Pricing"],
 ];
+const TABS = ["Studio", "Ads", "Social", "Make", "Atomik", "Pricing"];
 const DESKTOP = "workbench-1440x900";
 
 async function fits(page: Page) {
@@ -37,7 +39,9 @@ for (const [path, tab] of PAGES) {
     const res = await page.goto(path);
     expect(res?.status()).toBe(200);
     const nav = page.getByRole("navigation", { name: "Suites" }).first();
-    await expect(nav.getByRole("link", { name: tab, exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(nav.getByRole("link")).toHaveText(TABS);
+    if (tab) await expect(nav.getByRole("link", { name: tab, exact: true })).toHaveAttribute("aria-current", "page");
+    else await expect(nav.locator('[aria-current="page"]')).toHaveCount(0);
     await expect(page.locator("#access form")).toBeVisible();
     const { overflow, small } = await fits(page);
     expect(overflow, `${path} is wider than the window`).toBe(false);
@@ -104,15 +108,28 @@ test("the hero keeps a visitor's prompt and opens it in Gen, which prices the ta
   await page.getByLabel("Describe the shot").fill("A lighthouse keeper walks the gallery in a storm.");
   await go.click();
   const signIn = page.locator(".mk-take").getByRole("link", { name: "Sign in" });
-  await expect(signIn).toHaveAttribute("href", "/login?next=%2Fsuites%3Fview%3Dgen");
-  await expect(page.locator(".mk-take-meta")).toHaveText("Sign in and it opens in Gen.");
+  await expect(signIn).toHaveAttribute("href", "/login?next=%2Fsuites%3Fmake%3Dvideo");
+  await expect(page.locator(".mk-take-meta")).toHaveText("Sign in and it opens in Make.");
 
   await signInLocally(page.request);
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("A lighthouse keeper walks the gallery in a storm.");
   await expect(page.getByTestId("gen-preset-note")).toContainText("From the site");
   await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-length")).toHaveValue("5");
   /* The live quote needs the workspace's rates; a cold dev server can take a while to answer. */
   await expect(page.getByTestId("gen-generate")).toContainText(/\d[\d,]* cr/, { timeout: 30_000 });
+});
+
+test("sign-in offers Request access, not a new workspace, and the existing request opens", async ({ page }) => {
+  await page.goto("/login");
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await expect(page.getByText("Create a workspace")).toHaveCount(0);
+  await expect(page.locator('a[href="/signup"]')).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "View plans" })).toHaveAttribute("href", "/pricing");
+  await page.getByRole("button", { name: "Request access", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Request an invitation" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel(/email/i).first()).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
 });

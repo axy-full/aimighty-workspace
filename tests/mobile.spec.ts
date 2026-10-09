@@ -89,14 +89,14 @@ test.describe("the app shell", () => {
          instead, and the dock only where it exists. */
       const width = await page.evaluate(() => window.innerWidth);
       if (width >= 768) {
-        await expect(page.getByRole("banner").getByRole("navigation", { name: "Sections" }).getByRole("link")).toHaveText(["Make", "Projects", "Rig", "Library"]);
+        await expect(page.getByRole("banner").getByRole("navigation", { name: "Sections" }).getByRole("link")).toHaveText(["Make", "Projects", "Board", "Library"]);
         await expect(page.locator(".shell-dock")).toBeHidden();
         return;
       }
       const bar = page.locator(".shell-dock");
       await expect(bar).toBeVisible();
       /* design/particl-graphite (M1): Make · PRODS · Rig · Library — a 22px line icon over a 12px mono label. */
-      await expect(bar.getByRole("link")).toHaveText(["Make", "Prods", "Rig", "Library"]);
+      await expect(bar.getByRole("link")).toHaveText(["Make", "Prods", "Board", "Library"]);
       const icons = await bar.getByRole("link").evaluateAll((els) => els.map((a) => { const s = a.querySelector("svg")!; const r = s.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), s.getAttribute("stroke-width")]; }));
       for (const [w, h, sw] of icons) { expect([w, h]).toEqual([22, 22]); expect(sw).toBe("1.6"); }
       const info = await page.evaluate(() => {

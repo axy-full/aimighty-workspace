@@ -23,7 +23,7 @@ function SuitesStrip() {
   return (
     <Section id="suites" panel label="Suites">
       <Head
-        eyebrow="Five suites · one workspace · one shell"
+        eyebrow="Studio · Ads · Social · Make · Atomik"
         title="One room. One composer."
         aside={<p className="mk-lead" style={{ fontSize: 15, maxWidth: "46ch" }}>Every tool is a preset that opens the same composer. Assets are visible and draggable on every page.</p>}
       />
@@ -44,7 +44,7 @@ function SuitesStrip() {
 const SHELL_TILES: [string, string, string][] = [
   ["Projects", "Home opens on your projects", "Recent projects, saved projects, a new one. A project is one brief and one cast across every suite; switching suites waits for pending saves."],
   ["⌘K", "Palette", "Generate, suites, every page, Workspace, models, assets and “Ask Atomik: …”. Enter runs the top hit."],
-  ["Library", "Tools | Assets", "On every stage. Every tile drags onto any reference well or Rig node. Download original is always the original bytes."],
+  ["Library", "Tools | Assets", "On every stage. Every tile drags onto any reference well or Board node. Download original is always the original bytes."],
   ["⌘J", "Inspector", "Controls, Inputs and Versions for whatever is selected: asset, take, run, node, item or stage."],
   ["Right-click", "Menu everywhere", "Copy, cut, paste, duplicate, move to, retry, and a 20-deep undo."],
   ["Enhancer", "One prompt enhancer", "One provider, chosen in Workspace › General. Never on raw: prompts."],
