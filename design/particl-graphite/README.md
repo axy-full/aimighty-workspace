@@ -1,6 +1,6 @@
 # Handoff: Particl · "the board, made easy" — master design for `axy-full/aimighty-workspace`
 
-Written 4 October 2026 against repo `main`. The master design is `Particl Suites.dc.html` (open it with `support.js` and `assets/` beside it; every screen has a URL below). The six `… frames.dc.html` files show each step's screens side by side. `PROMPT.md` holds the brief this design answers; `github.md` maps each screen to the repo source it replaces or extends.
+Written 4 October 2026 against repo `main`. The master design is `Particl Suites.dc.html` (open it with `support.js` and `assets/` beside it; every screen has a URL below). The seven `… frames.dc.html` files show each step's screens side by side (`Guest Home frames.dc.html` is the signed-out Home, § 3.7). `PROMPT.md` holds the brief this design answers; `github.md` maps each screen to the repo source it replaces or extends.
 
 The `.dc.html` files are **design references built in HTML** — click-through prototypes of the intended look and behaviour, not production code. Recreate them in the Next.js app with its existing primitives, routes and data. Do not ship the HTML. `CLAUDE.md § Pricing` is the only source of prices; `lib/shell/ia.ts` is replaced by § 1 below.
 
@@ -42,6 +42,8 @@ Apply on every screen:
 | Atomik control room | Approvals · Activity · Skills · Memory | `?suite=atomik&page=approvals \| runs \| saved-skills \| memory` |
 | Settings | Team · Plan & credits · Spending rules · Connections · Advanced (+ Models open) | `?view=workspace&ws=team \| credits \| rules \| connections \| advanced` · `&open=models` |
 | Phone | Screens a–h (§ 3.6) | `?device=phone&screen=home \| plan \| review \| fix \| record \| make \| atomik \| states` (+ `&from=notification`, `&credits=short`, `&paused=1`) |
+| Guest (signed out) | Home · the sample production · Sign up with and without an invitation link (§ 3.7) | `?guest=1&view=home` · `?guest=1&view=board&frame=s` · `?guest=1&view=home&signup=1&invite=1&brief=…` · `?guest=1&view=home&signup=1&brief=…` |
+| Guest phone | The same four at 390 × 844 (§ 3.7) | `?device=phone&guest=1&screen=home \| sample` · `?device=phone&guest=1&screen=signup&invite=1&brief=…` · `?device=phone&guest=1&screen=signup&brief=…` |
 
 Board rail sections — Studio: Brief · Looks · Storyboard · Shots · Cast · Cut · Deliver. Ads: Brand · Product · Hooks · Formats · Ads · Adapt · Deliver. Social: Source · Clips · Hooks · Effects · Posts. Each rail entry has an icon, a 12 px label and a status (empty · working · needs you with a count · done); the section in view is highlighted; hovering shows a one-line summary; clicking glides the board there. Library and History sit at the bottom of the rail as 280 px drawers, closed by default.
 
@@ -102,7 +104,7 @@ Board rail sections — Studio: Brief · Looks · Storyboard · Shots · Cast ·
 | b | Atomik's panel asks ≤ 3 questions as chips + free field, "Use your judgement" | loading (thinking) |
 | c | Looks group: four look frames (3 cr each) after **Show me looks · 12 cr**; tick to pick | needs review |
 | d | Brief document card + storyboard strip (**Draw the storyboard · 9 cr**); Outline rail: Brief, Looks done, Storyboard needs you | needs review |
-| e | Approval card on the storyboard: **Make 3 shots · 93 cr**, "Fixes if needed: up to 2 per shot, at most 114 cr", balance after, steps folded, Approve · Change · Hold | waiting for approval |
+| e | Approval card on the storyboard: **Make 3 shots · 93 cr**, "Fixes if needed: up to 2 per shot, at most 186 cr", balance after, steps folded, Approve · Change · Hold | waiting for approval |
 | f | Shots rendering in place, Shot 1 "Look anchor", header "Rendering 1 of 3 · cost so far · Stop" | rendering |
 | f2 | Pause card at 80 % of the budget: Continue or Stop | paused at 80 % |
 | g | Take card in review: v1/v2, Approve, Reject, Atomik's note "Feet slide; reflection wrong" | needs review |
@@ -137,6 +139,18 @@ Team · Plan & credits (balance in cr and $, held and settled, **Top up · 500 c
 ### 3.6 Phone (`?device=phone&screen=…`, 390 × 844)
 
 `home` (Needs you: approvals with the price as the button — a multi-step plan opens the approval screen, a single item approves from Home; renders with live progress; takes to review; then projects) · `plan` (+ `&from=notification`; `&credits=short` shows Top up beside a waiting Approve) · `review` (swipe right approve, left reject, Undo toast; swiping never spends) · `fix` (Change with words · 43 cr · fix 1 of 2) · `record` (+ `&paused=1`: 160 of 200 cr settled, Shot 3 waiting) · `make` · `atomik` (sheet; Ask · free / up to 4 cr) · `states` (rendering; failed · Nothing billed · Retry · 7 cr; insufficient credits · Top up with the header at 40 cr; offline: judging queues, spending reads "Needs a connection").
+
+### 3.7 Guest Home (signed out; `Guest Home frames.dc.html` shows all eight)
+
+| Frame | URL | What it shows |
+|---|---|---|
+| 1 | `?guest=1&view=home` | Home signed out: **Sign in** (outlined) and **Sign up** (the one filled button) in the header; "What are we making?" with Attach a brief, Add references, the aspect and length chips and an outlined **Start** with no price and no thinking line; the templates; the sample production card "A 15-second film". No projects, no Waiting for you, no balance. Make, Atomik, Search, Add references, Start and the templates open the sign-up sheet. |
+| 2 | `?guest=1&view=board&frame=s` | The sample production, read-only: the slim line "A sample production. Sign up to make your own."; brief, looks, storyboard, the plan card **Make 3 shots · 93 cr** (Shot 1 · hero take · Seedance 2.5 · 5 s · 1080p · 43 cr; Shot 2 · hero take · 43 cr; Shot 3 · draft take · Kling 3.0 Standard · 5 s · 7 cr; "Fixes if needed: up to 2 per shot, at most 186 cr"); Shot 3 in review (v1 · Kling 3.0 Standard · 5 s · needs review, Atomik: "the sphere drifts off axis late"); the cast card "Lead · ivory suit, short dark bob" with no consent record; Cut and deliver "2 approved takes · 0:10", every shot 5 s, Shot 3 waiting, delivery checks pending. Every action (Approve, Reject, Hold, Change, priced buttons) reads "Sign up to make this" and opens the sheet; Lock as master, Measure loudness, Render master, Open Edit & Sound, Library and History are hidden. |
+| 3a | `?guest=1&view=home&signup=1&invite=1&brief=…` | Sign up with an invitation link, centred: the brief kept (3 lines), email, **Create account**, the Invite plan line. |
+| 3b | `?guest=1&view=home&signup=1&brief=…` | Sign up without a link, centred: "Particl is invite-only for now." Name, email, what you make, **Request access**, the brief kept, "Already have an account? Sign in". |
+| P1 · P2 · P3a · P3b | `?device=phone&guest=1&screen=home \| sample \| signup` (+ `&invite=1`, `&brief=…`) | The same four on a phone: 44 px controls; the sample's plan shows exactly the three shot lines and the 93 cr total; the sheet's brief clamps to 3 lines. |
+
+The sample's title is the real production's name once it exists, and "A 15-second film" until then. No person's name, project name or consent record appears signed out.
 
 ## 4 · Actions (paid or state-changing)
 
@@ -205,4 +219,4 @@ Rig → **Board** · Astra → **3D blocking** · Genjutsu → **Motion transfer
 
 ## Files
 
-`Particl Suites.dc.html` (master) · `Studio board frames.dc.html` · `Make frames.dc.html` · `Ads and Social frames.dc.html` · `Atomik frames.dc.html` · `Phone frames.dc.html` · `Home and header options.dc.html` · `support.js` · `assets/` (stills, local React/Babel) · `PROMPT.md` · `github.md` · `CHANGES.txt`.
+`Particl Suites.dc.html` (master) · `Studio board frames.dc.html` · `Make frames.dc.html` · `Ads and Social frames.dc.html` · `Atomik frames.dc.html` · `Phone frames.dc.html` · `Home and header options.dc.html` · `Guest Home frames.dc.html` · `support.js` · `assets/` (stills, local React/Babel) · `PROMPT.md` · `github.md` · `CHANGES.txt`.
