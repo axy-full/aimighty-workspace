@@ -96,6 +96,16 @@ export function invalidateSettings(): void {
 export async function allSettings(): Promise<Record<string, string>> {
   const hit = memoGet<Record<string, string>>("settings", TTL);
   if (hit) return hit;
+  return freshSettings();
+}
+
+/**
+ * Every setting as the database holds it now, past the memo (which it then
+ * refreshes). For a decision that must not act on a value changed in the last
+ * 10 s by another server process, whose own write only invalidated its own
+ * memo: a spend reservation's caps and rules (lib/generationRequests.ts).
+ */
+export async function freshSettings(): Promise<Record<string, string>> {
   await ready();
   const rs = await db().execute(`SELECT key, value FROM settings`);
   const out: Record<string, string> = { ...DEFAULTS };
