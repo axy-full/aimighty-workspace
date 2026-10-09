@@ -12,7 +12,7 @@ import { creditsApply } from "./credits";
 import { LEDGER_UNIT_PAUSED, ledgerOpenTx, restateFactor, workspaceUnitTx } from "./ledgerUnit";
 import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
-import { getSetting } from "./settings";
+import { freshSettings } from "./settings";
 import { workspaceLimits } from "./limits";
 import { cleanRule, cleanShotCap } from "./approvalRule";
 import type { MeterEvent } from "./meter";
@@ -368,15 +368,18 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   /* A still or video on the platform's shared provider key also takes a slot of its pool, in this same write. */
   const pool = sharedPoolOf(event);
   if (pool) await providerPoolReady();
+  /* The caps and rules below as the database holds them now, never the 10 s memo: a cap an admin lowered, or a
+     per-shot cap switched on, on another server process a moment ago applies to this reservation. */
+  const settings = projectId || event.shotId ? await freshSettings() : null;
   const cap = projectId ? await projectCap(projectId) : null;
   // Retain a pre-migration spending ceiling until the owner sets a credit cap.
   // Its private unit never appears in the refusal sent to customers.
   const legacyCap = projectId ? (await db().execute({ sql: "SELECT cap_usd,cap_credits,cap_unlocked FROM projects WHERE id=?", args: [projectId] })).rows[0] : null;
   const limits = await workspaceLimits();
   const shotCapExempt = options.shotCapExempt ?? currentTenant()?.user?.role === "admin";
-  const shotCap = event.shotId && !shotCapExempt && cleanRule(await getSetting("approvalRule")) === "cap"
-    ? cleanShotCap(await getSetting("shotCapCredits")) : null;
-  const ruleRaw = cap ? await getSetting("atCap") : null;
+  const shotCap = event.shotId && !shotCapExempt && cleanRule(settings!.approvalRule) === "cap"
+    ? cleanShotCap(settings!.shotCapCredits) : null;
+  const ruleRaw = cap ? settings!.atCap : null;
   const rule: CapRule = ruleRaw === "stop" || ruleRaw === "warn" ? ruleRaw : "producer";
   const monthlyCap = paid ? allowanceUsd() : null;
   const since = cycleBounds(1, now()).start;
