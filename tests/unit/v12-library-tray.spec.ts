@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { STUB_KINDS, TRAY_KINDS, filterTray, masonry, readTrayParams, trayItems, writeTrayParams, type TrayItem } from "../../lib/v12/library";
+import { STUB_KINDS, TRAY_KINDS, castKindsOf, filterTray, masonry, readTrayParams, trayItems, writeTrayParams, type TrayItem } from "../../lib/v12/library";
+import { newProject, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import { libraryEntries } from "../../lib/workspace/library";
 import { onMention, requestMention } from "../../lib/v12/mention";
 
@@ -14,7 +15,7 @@ const generation = (id: string, extra: Record<string, unknown> = {}) => ({ id, k
 
 const entries = libraryEntries({
   uploads: [upload("u1"), upload("u2", { librarySource: "generation" })] as never,
-  generations: [generation("g1")] as never,
+  generations: [generation("g1"), generation("grun", { status: "running" })] as never,
 });
 
 test("Uploaded or Generated comes from where the item lives: an upload, an upload made from a generation, a generation", () => {
@@ -67,4 +68,20 @@ test("a click hands the tile to the bar when one listens; with none, the caller 
   stop();
   expect(heard).toEqual(["u1"]);
   expect(requestMention({ id: "upload:u1", name: "u1" })).toBe(false);
+});
+
+test("only finished takes are tiles: one rendering has nothing to drag yet", () => {
+  expect(trayItems(entries).map((i) => i.id)).not.toContain("generation:grun");
+});
+
+test("castKindsOf reads what the board's reference cards say their files are", () => {
+  const node = (id: string, type: CanvasNode["type"], refKind: CanvasNode["refKind"], assetId: string) => ({ id, title: id, type, refKind, assetId, x: 0, y: 0, width: 240, linked: [] }) as CanvasNode;
+  const asset = (id: string, extra: Record<string, string>) => ({ id, name: id, kind: "image", category: "", url: "", description: "", prompt: "", status: "Selected", locked: false, version: 1, refs: [], ...extra });
+  const project: Project = {
+    ...newProject("Board"),
+    assets: [asset("a1", { uploadId: "u1" }), asset("a2", { uploadId: "u2" }), asset("a3", { generationId: "g3" }), asset("a4", { uploadId: "u4" })] as Project["assets"],
+    nodes: [node("n1", "character", "cast", "a1"), node("n2", "element", "environment", "a2"), node("n3", "element", "element", "a3"), node("n4", "media", "ref", "a4")],
+  };
+  expect(Object.fromEntries(castKindsOf(project))).toEqual({ "upload:u1": "Characters", "upload:u2": "Locations", "generation:g3": "Props" });
+  expect(castKindsOf({ ...project, nodes: [] }).size).toBe(0);
 });

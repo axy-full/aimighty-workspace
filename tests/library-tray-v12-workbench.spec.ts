@@ -87,17 +87,68 @@ test.describe("desktop, switch on", () => {
     await expect(page).toHaveURL(/make=recent/);
   });
 
-  test("a tile drags the one asset payload every drop target reads", async ({ page }) => {
+  test("a tile dropped on the canvas becomes a card; a search hit past the loaded pages too; another board's tiles do not drag", async ({ page }) => {
     await openLibrary(page);
-    const tile = page.getByTestId("v12-library-tile").first();
-    await expect(tile).toBeVisible({ timeout: 60_000 });
-    const id = await tile.getAttribute("data-id");
-    const carried = await tile.evaluate((el) => {
+    const tray = page.getByTestId("v12-library");
+    await expect(page.getByTestId("v12-library-tile")).toHaveCount(7, { timeout: 60_000 });
+    const nodes = page.locator(".react-flow__node");
+    const pane = page.locator(".react-flow__pane");
+    const box = (await pane.boundingBox())!;
+    const target = { x: box.width - 260, y: box.height - 220 };
+    /* The payload every drop target reads. */
+    const first = page.getByTestId("v12-library-tile").first();
+    const id = await first.getAttribute("data-id");
+    const carried = await first.evaluate((el) => {
       const dt = new DataTransfer();
       el.dispatchEvent(new DragEvent("dragstart", { dataTransfer: dt, bubbles: true }));
       return { id: dt.getData("application/x-particl-id"), text: dt.getData("text/plain") };
     });
     expect(carried).toEqual({ id, text: id });
+    /* A loaded tile: dropped on empty canvas, it is a card. */
+    const before = await nodes.count();
+    await tray.locator('[data-id="upload:uharbour"]').dragTo(pane, { targetPosition: target });
+    await expect(nodes).toHaveCount(before + 1);
+    /* A search hit the board's loaded Library does not hold: looked up by id, then placed. */
+    await page.getByTestId("v12-library-search").fill("archive");
+    await expect(page.getByTestId("v12-library-tile")).toHaveCount(1);
+    await tray.locator('[data-id="upload:uarchive"]').dragTo(pane, { targetPosition: { x: target.x - 200, y: target.y } });
+    await expect(nodes).toHaveCount(before + 2);
+    /* Another board's library: browsable, not draggable onto this board. */
+    await page.getByTestId("v12-library-search").fill("");
+    await page.getByTestId("v12-library-picker").click();
+    await page.getByRole("menuitem", { name: "Spring campaign" }).click();
+    await expect(page.getByTestId("v12-library-tile")).toHaveCount(1);
+    await expect(page.getByTestId("v12-library-tile").first()).toHaveAttribute("draggable", "false");
+  });
+
+  test("Esc and × give focus back; the search has it on open; L is ignored while a menu is open", async ({ page }) => {
+    await openLibrary(page, "/suites?view=board");
+    const button = page.getByTestId("v12-library-button");
+    await expect(button).toBeVisible({ timeout: 60_000 });
+    await button.click();
+    await expect(page.getByTestId("v12-library-search")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("v12-library")).toHaveCount(0);
+    await expect(button).toBeFocused();
+    await button.click();
+    await page.getByTestId("v12-library-close").click();
+    await expect(button).toBeFocused();
+    await button.click();
+    await page.getByTestId("v12-library-picker").click();
+    await expect(page.getByRole("menu")).toBeVisible();
+    await page.getByRole("menu").press("l");
+    await expect(page.getByTestId("v12-library")).toBeVisible();
+  });
+
+  test("switch off: L still toggles the board's list, and there is no tray", async ({ page }) => {
+    await openLibrary(page, "/suites?view=board", { on: false });
+    const toggle = page.getByTestId("board-list-toggle");
+    await expect(toggle).toHaveAttribute("aria-selected", "false", { timeout: 60_000 });
+    await page.locator(".react-flow__pane").click({ position: { x: 300, y: 300 } });
+    await page.keyboard.press("l");
+    await expect(toggle).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("v12-library")).toHaveCount(0);
+    await expect(page.getByTestId("v12-library-button")).toHaveCount(0);
   });
 });
 
