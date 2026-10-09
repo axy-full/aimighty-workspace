@@ -1,0 +1,89 @@
+/* The board frame in the new interface (design/particl-prototype-12 L254–L353; docs/redesign/inventory.md § 6.2–§ 6.5). Tokens only. */
+
+/* ── Stage rail ── */
+.v12 .v12-rail {
+  flex: none; width: var(--gx-w-rail); border-right: 1px solid var(--gx-hair-strong); display: flex; flex-direction: column;
+  padding: 14px 0 70px; background: var(--gx-root); z-index: 30; position: relative; font-family: var(--gx-font); color: var(--gx-text);
+}
+.v12 .v12-rail-kind {
+  margin: 0 6px 8px; min-height: 22px; border-radius: var(--gx-r-xs); color: var(--gx-text-2); font-size: var(--gx-fs-label); font-weight: 600;
+  letter-spacing: 0.06em; line-height: 1.2; text-align: center; padding: 2px 4px; display: block;
+}
+.v12 .v12-rail-rows { position: relative; display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+.v12 .v12-rail-line { position: absolute; left: 43px; top: 22px; bottom: 60px; width: 1px; background: rgba(255, 255, 255, 0.12); pointer-events: none; }
+.v12 .v12-rail-row { position: relative; margin: 0 6px; border-radius: var(--gx-r-btn); border-top: 2px solid transparent; cursor: grab; }
+.v12 .v12-rail-row[data-insert] { border-top-color: var(--gx-accent); }
+.v12 .v12-rail-row:hover { background: rgba(255, 255, 255, 0.04); }
+.v12 .v12-rail-row[data-current] { background: rgba(255, 255, 255, 0.08); }
+.v12 .v12-rail-btn {
+  width: 100%; border: 0; background: transparent; color: var(--gx-text); border-radius: var(--gx-r-btn); padding: 8px 0; display: flex;
+  flex-direction: column; align-items: center; gap: 5px; font: inherit; font-size: var(--gx-fs-label); font-weight: 500; cursor: pointer;
+}
+.v12 .v12-rail-row[data-state="empty"]:not([data-current]) .v12-rail-btn, .v12 .v12-rail-row[data-state="skip"] .v12-rail-btn { color: var(--gx-text-sec); }
+.v12 .v12-rail-row[data-state="skip"] .v12-rail-label { text-decoration: line-through; }
+.v12 .v12-rail-label { max-width: 76px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v12 .v12-rail-mark {
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; position: relative; background: var(--gx-root);
+  border: 1.5px solid rgba(235, 235, 245, 0.35); font-family: var(--gx-mono); font-size: var(--gx-fs-label); font-weight: 600; color: var(--gx-accent-text);
+}
+.v12 .v12-rail-mark[data-state="done"] { background: var(--gx-text); border-color: var(--gx-text); color: #000; }
+.v12 .v12-rail-mark[data-state="needs"] { background: rgba(10, 132, 255, 0.16); border-color: var(--gx-accent); }
+.v12 .v12-rail-mark[data-state="working"] { border-color: var(--gx-accent); animation: v12-rail-pulse 1.4s ease-in-out infinite; }
+.v12 .v12-rail-mark[data-state="skip"] { color: var(--gx-text-half); }
+.v12 .v12-rail-mark[data-current] { border-color: var(--gx-accent); animation: none; }
+@keyframes v12-rail-pulse { 50% { box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.18); } }
+@media (prefers-reduced-motion: reduce) { .v12 .v12-rail-mark[data-state="working"] { animation: none; } }
+.v12 .v12-rail-acts { position: absolute; right: 2px; top: 2px; display: none; gap: 2px; }
+.v12 .v12-rail-row:hover .v12-rail-acts, .v12 .v12-rail-row:focus-within .v12-rail-acts { display: flex; }
+.v12 .v12-rail-act { width: 20px; height: 20px; border: 0; border-radius: var(--gx-r-xs); background: var(--gx-seg-on); color: rgba(235, 235, 245, 0.85); display: grid; place-items: center; padding: 0; font-size: var(--gx-fs-label); line-height: 1; cursor: pointer; }
+.v12 .v12-rail-rename { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); width: 72px; height: 24px; border: 1px solid var(--gx-accent); background: var(--gx-input); border-radius: var(--gx-r-xs); color: var(--gx-text); font: inherit; font-size: var(--gx-fs-label); padding: 0 6px; text-align: center; }
+.v12 .v12-rail-add { position: relative; border: 0; background: transparent; color: var(--gx-text-sec); border-radius: var(--gx-r-btn); margin: 4px 6px 0; padding: 8px 0; display: flex; flex-direction: column; align-items: center; gap: 5px; font: inherit; font-size: var(--gx-fs-label); font-weight: 500; cursor: pointer; }
+.v12 .v12-rail-add:hover { background: rgba(255, 255, 255, 0.04); }
+.v12 .v12-rail-add-mark { width: 22px; height: 22px; border-radius: 50%; border: 1.5px dashed rgba(235, 235, 245, 0.4); display: grid; place-items: center; font-size: 14px; line-height: 1; background: var(--gx-root); }
+
+/* ── Stage header and the stage column ── */
+.v12 .bd[data-v12] .bd-main { display: flex; flex-direction: column; container-type: inline-size; }
+.v12 .v12-stagehead {
+  height: 44px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 20px;
+  border-bottom: 1px solid var(--gx-hair-strong); font-size: 14px; font-family: var(--gx-font); background: var(--gx-root); position: relative; z-index: 21;
+}
+.v12 .v12-stagehead-left { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; overflow: hidden; }
+.v12 .v12-crumbs { display: flex; align-items: center; gap: 6px; flex: none; min-width: 0; }
+.v12 .v12-crumb { border: 0; background: transparent; padding: 0; white-space: nowrap; letter-spacing: -0.01em; font: inherit; cursor: pointer; color: var(--gx-text); }
+.v12 .v12-crumb-board { font-size: 14px; font-weight: 500; color: var(--gx-text-muted); max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.v12 .v12-crumb-stage { font-size: 15px; font-weight: 600; }
+.v12 span.v12-crumb { cursor: default; }
+.v12 .v12-crumb-sep { color: rgba(235, 235, 245, 0.4); }
+.v12 .v12-stagehead-meta { flex: none; color: rgba(235, 235, 245, 0.65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@container (max-width: 1119px) { .v12 .v12-stagehead-meta { display: none; } }
+.v12 .v12-stagehead-right { display: flex; align-items: center; gap: 10px; flex: none; justify-content: flex-end; }
+.v12 .v12-primary { flex: none; height: 32px; padding: 0 14px; border-radius: var(--gx-r-btn); border: 0; background: var(--gx-accent); color: var(--gx-on-accent); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.v12 .v12-primary:hover { background: var(--gx-accent-hover); }
+.v12 .v12-stagehead-menu { width: 30px; height: 30px; border: 1px solid var(--gx-line-control); background: transparent; color: var(--gx-text); border-radius: var(--gx-r-tab); font-size: 16px; line-height: 1; cursor: pointer; }
+.v12 .v12-stage-canvas { position: relative; flex: 1 1 auto; min-height: 0; }
+
+/* ── Right toolbar ── */
+.v12 .v12-tools {
+  position: absolute; right: 16px; top: 50%; transform: translateY(-50%); z-index: 25; display: flex; flex-direction: column; gap: 2px; padding: 4px;
+  background: var(--gx-card); border: 1px solid var(--gx-line-control); border-radius: 12px; box-shadow: var(--gx-shadow-float);
+}
+.v12 .v12-tool { height: 40px; min-width: 40px; border: 0; background: transparent; color: var(--gx-text-muted); border-radius: 9px; display: flex; align-items: center; gap: 10px; padding: 0 11px; justify-content: flex-start; font: inherit; cursor: pointer; }
+.v12 .v12-tool:hover { color: var(--gx-text); }
+.v12 .v12-tool[aria-pressed="true"] { background: var(--gx-seg-on); color: var(--gx-text); }
+.v12 .v12-tool[aria-disabled="true"] { color: var(--gx-disabled); cursor: not-allowed; }
+.v12 .v12-tool > svg { flex: none; }
+.v12 .v12-tool-label { font-size: 13px; font-weight: 500; white-space: nowrap; }
+.v12 .v12-tools-got { margin-top: 4px; height: 32px; border: 1px solid var(--gx-line-control); background: transparent; color: var(--gx-text); border-radius: var(--gx-r-btn); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+
+/* ── View switch, beside the Library button (left = rail + 16 + the button) ── */
+.v12 .v12-viewswitch { position: absolute; left: 150px; bottom: 16px; z-index: 45; background: var(--gx-card); border: 1px solid var(--gx-line-control); border-radius: 10px; padding: 3px; box-shadow: var(--gx-shadow-float); }
+.v12 .v12-viewswitch .v12-seg { background: transparent; padding: 0; }
+/* Today's minimap, zoom and Tidy: hover-revealed above the bottom-left controls. */
+.v12 .bd[data-v12] .bd-cluster { bottom: 52px; }
+
+/* ── An empty stage ── */
+.v12 .v12-stage-empty { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); width: min(440px, calc(100% - 160px)); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 5; font-family: var(--gx-font); }
+.v12 .v12-stage-empty-title { margin: 0; font-size: 17px; font-weight: 600; color: var(--gx-text); }
+.v12 .v12-stage-empty-line { margin: 0; font-size: 14px; line-height: 1.5; color: var(--gx-text-sec); }
+.v12 .v12-btn { height: 32px; padding: 0 14px; border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-btn); background: transparent; color: var(--gx-text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+html[data-v12-tray] .v12 .v12-viewswitch { left: calc(var(--gx-w-tray) + 16px); }

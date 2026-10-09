@@ -6,6 +6,9 @@ import type { LibraryUpload } from "@/lib/genLibrary";
 import type { Generation } from "@/lib/jobs";
 import { readTrayParams, writeTrayParams, type TrayKind, type TrayParams, type TraySource } from "./library";
 
+/** Opens the Library tray from anywhere: `window.dispatchEvent(new Event(LIBRARY_OPEN_EVENT))`. */
+export const LIBRARY_OPEN_EVENT = "particl:v12-library-open";
+
 /**
  * The tray's open state, source and kind: read from the address once (`drawer=Library`, `lib=1`, `src=`, `libkind=`),
  * then kept here and mirrored back into the address (replace, never a new history entry). The shell's own moves may
@@ -18,6 +21,18 @@ export function useTrayState() {
     if (next !== window.location.search) window.history.replaceState(window.history.state, "", `${window.location.pathname}${next}${window.location.hash}`);
   }, [state]);
   const setOpen = useCallback((open: boolean | ((was: boolean) => boolean)) => setState((s) => ({ ...s, open: typeof open === "function" ? open(s.open) : open })), []);
+  /* Anything may open the tray (the board menu, ⌘K): LIBRARY_OPEN_EVENT on the window. */
+  useEffect(() => {
+    const open = () => setOpen(true);
+    window.addEventListener(LIBRARY_OPEN_EVENT, open);
+    return () => window.removeEventListener(LIBRARY_OPEN_EVENT, open);
+  }, [setOpen]);
+  /* The board's bottom-left controls move aside while the tray is open. */
+  useEffect(() => {
+    const root = document.documentElement;
+    if (state.open) root.dataset.v12Tray = "open"; else delete root.dataset.v12Tray;
+    return () => { delete root.dataset.v12Tray; };
+  }, [state.open]);
   const setSource = useCallback((source: TraySource) => setState((s) => ({ ...s, source })), []);
   const setKind = useCallback((kind: TrayKind) => setState((s) => ({ ...s, kind })), []);
   return { ...state, setOpen, setSource, setKind };

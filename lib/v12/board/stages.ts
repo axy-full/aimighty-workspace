@@ -98,7 +98,10 @@ export function stageCards(stage: Pick<Stage, "id" | "regions">, cards: readonly
 
 /** A stage's marker and hover summary, rolled up from its cards (today's rail status rules). */
 export function stageStatus(stage: Pick<Stage, "id" | "regions">, cards: readonly BoardCard[], kind: BoardKind, rail: readonly RailEntry[]): RegionStatus {
-  return regionStatus(stageCards(stage, cards, kind, rail).filter((card) => card.kind !== "group" || card.state !== "empty"));
+  /* A group frame shared by two stages (Cast and Elements share today's cast frame) speaks for both: there, only the
+     stage's own cards count. Elsewhere the frame's state is the region's (the storyboard's "approve to make shots"). */
+  const shared = Boolean(builtInStages(kind, rail).find((d) => d.id === stage.id)?.holds);
+  return regionStatus(stageCards(stage, cards, kind, rail).filter((card) => card.kind !== "group" || (!shared && card.state !== "empty")));
 }
 
 /** The stage to show: the address's, if the rail has it; else the kind's opening stage; else the first. */
