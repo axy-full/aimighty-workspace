@@ -2,7 +2,7 @@
 import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { IconButton } from "./IconButton";
-import { useOverlay, v12PortalRoot } from "./overlay";
+import { useOverlay, useV12PortalRoot } from "./overlay";
 import type { OverlayLayer } from "./overlay-stack";
 import { useFocusReturn } from "./Popover";
 
@@ -53,7 +53,8 @@ export function Dialog({ open, onClose, label, title, children, footer, variant 
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
 
-  const root = open ? v12PortalRoot() : null;
+  const portal = useV12PortalRoot();
+  const root = open ? portal : null;
   if (!root) return null;
   return createPortal(
     <div className="v12-scrim" data-scrim={scrim} data-variant={variant} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>

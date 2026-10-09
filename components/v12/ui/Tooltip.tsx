@@ -2,7 +2,7 @@
 import { cloneElement, isValidElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Kbd } from "./Kbd";
-import { v12PortalRoot } from "./overlay";
+import { useV12PortalRoot } from "./overlay";
 import { place, type Side } from "./place";
 
 /**
@@ -21,6 +21,13 @@ export type TooltipContent = {
 export const TIP_DELAY_MS = 450;
 const WARM_MS = 400;
 let lastHidden = 0;
+
+/** The tooltip as one sentence run for a screen reader: "Home. Your boards and what needs you. G H or ⌘1". */
+export function described(...parts: [string, string | undefined, string | undefined, boolean]): string {
+  const [name, line, keys, more] = parts;
+  const words = [name, line, keys].filter((p): p is string => Boolean(p));
+  return words.map((p, i) => (i < words.length - 1 || more) && !/[.!?…]$/.test(p) ? `${p}.` : p).join(" ");
+}
 
 export function TooltipBody({ name, line, shortcut, price }: TooltipContent) {
   const runs = shortcut === undefined ? [] : typeof shortcut === "string" ? [shortcut] : shortcut;
@@ -70,10 +77,11 @@ export function Tooltip({ children, side = "bottom", delay = TIP_DELAY_MS, disab
   useEffect(() => clear, []);
   useEffect(() => {
     if (!open) return;
+    /* In the capture phase, so an Esc the overlay stack spends on a layer still hides the tooltip. */
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") hide(); };
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     window.addEventListener("scroll", hide, true);
-    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("scroll", hide, true); };
+    return () => { window.removeEventListener("keydown", onKey, true); window.removeEventListener("scroll", hide, true); };
   }, [open, hide]);
 
   useLayoutEffect(() => {
@@ -87,9 +95,11 @@ export function Tooltip({ children, side = "bottom", delay = TIP_DELAY_MS, disab
   }, [open, side, content.name, content.line]);
 
   const child = isValidElement(children)
-    ? cloneElement(children, { "aria-describedby": [children.props["aria-describedby"], open ? id : null].filter(Boolean).join(" ") || undefined })
+    ? cloneElement(children, { "aria-describedby": [children.props["aria-describedby"], id].filter(Boolean).join(" ") })
     : children;
-  const root = open && !disabled ? v12PortalRoot() : null;
+  const portal = useV12PortalRoot();
+  const root = open && !disabled ? portal : null;
+  const runs = content.shortcut === undefined ? [] : typeof content.shortcut === "string" ? [content.shortcut] : content.shortcut;
 
   return (
     <>
@@ -100,9 +110,13 @@ export function Tooltip({ children, side = "bottom", delay = TIP_DELAY_MS, disab
         onFocus={(e) => { if ((e.target as Element).matches?.(":focus-visible")) show(); }}
         onBlur={hide}>
         {child}
+        {/* The description is always there, so focus announces it at once; the drawn tooltip is for the eye. */}
+        <span id={id} className="v12-sr">
+          {described(content.name, content.line, runs.length ? runs.join(" or ") : undefined, Boolean(content.price))}{content.price ? <> {content.price}</> : null}
+        </span>
       </span>
       {root ? createPortal(
-        <div ref={tip} id={id} role="tooltip" className="v12-tip" data-side={at?.side ?? side} data-testid="v12-tooltip"
+        <div ref={tip} role="tooltip" aria-hidden="true" className="v12-tip" data-side={at?.side ?? side} data-testid="v12-tooltip"
           style={at ? { left: at.left, top: at.top } : { left: 0, top: 0, visibility: "hidden" }}>
           <TooltipBody {...content} />
         </div>,

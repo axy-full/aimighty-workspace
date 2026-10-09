@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import { createOverlayStack, type OverlayLayer, type OverlayStack } from "./overlay-stack";
 
 /**
@@ -60,12 +60,21 @@ export function useOverlay(layer: OverlayLayer, open: boolean, onClose: () => vo
  * new interface's rules reach it (components/v12/v12.css) and the page's overflow never clips it.
  */
 let portalRoot: HTMLElement | null = null;
-export function v12PortalRoot(): HTMLElement | null {
-  if (typeof document === "undefined") return null;
-  if (portalRoot && portalRoot.isConnected) return portalRoot;
+const portalListeners = new Set<() => void>();
+const connected = () => (portalRoot && portalRoot.isConnected ? portalRoot : null);
+function ensurePortalRoot() {
+  if (connected()) return;
   portalRoot = document.createElement("div");
   portalRoot.className = "v12 v12-portal";
   portalRoot.dataset.testid = "v12-portal";
   document.body.appendChild(portalRoot);
-  return portalRoot;
+  portalListeners.forEach((notify) => notify());
+}
+const subscribePortal = (notify: () => void) => { portalListeners.add(notify); return () => { portalListeners.delete(notify); }; };
+
+/** The portal root, made in an effect (never during render): null on the first render, then the layer. */
+export function useV12PortalRoot(): HTMLElement | null {
+  const root = useSyncExternalStore(subscribePortal, connected, () => null);
+  useEffect(ensurePortalRoot, []);
+  return root;
 }
