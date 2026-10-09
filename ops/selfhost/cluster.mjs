@@ -9,6 +9,13 @@
 //   CLUSTER_STOP_GRACE_MS  on SIGTERM/SIGINT, how long workers get to finish
 //                          in-flight requests before they are killed; default
 //                          290000, under the platform's 300 s stop grace.
+//   WORKER_HEAP_MB         each worker's V8 old-space cap (--max-old-space-size),
+//                          an integer 128..16384; default 896. Anything else is
+//                          logged and 896 is used. Not applied when NODE_OPTIONS
+//                          or this process's own flags already set
+//                          --max-old-space-size (that setting wins), and not
+//                          with WEB_CONCURRENCY=1: the single process keeps
+//                          Node's default heap (or NODE_OPTIONS), as before.
 //
 // A worker that exits on its own is started again after a back-off (1 s doubling
 // to 30 s; back to 1 s once a worker has been up 60 s). More than 10 such exits
@@ -39,6 +46,16 @@ export function parseConcurrency(raw) {
   const n = /^\d+$/.test(text) ? Number(text) : NaN;
   if (Number.isInteger(n) && n >= 1 && n <= MAX_CONCURRENCY) return { workers: n, invalid: false };
   return { workers: DEFAULT_CONCURRENCY, invalid: true };
+}
+
+export const DEFAULT_HEAP_MB = 896;
+/** WORKER_HEAP_MB as a heap cap in MB: an integer 128..16384, else the default (and why). */
+export function parseHeapMb(raw) {
+  if (raw == null || String(raw).trim() === "") return { mb: DEFAULT_HEAP_MB, invalid: false };
+  const text = String(raw).trim();
+  const n = /^\d+$/.test(text) ? Number(text) : NaN;
+  if (Number.isInteger(n) && n >= 128 && n <= 16_384) return { mb: n, invalid: false };
+  return { mb: DEFAULT_HEAP_MB, invalid: true };
 }
 
 /** A positive integer setting, else its default. */
@@ -76,8 +93,15 @@ export async function main(env = process.env) {
   const crashLimit = positive(env.CLUSTER_CRASH_LIMIT, 10);
   const crashWindowMs = positive(env.CLUSTER_CRASH_WINDOW_MS, 60_000);
 
-  cluster.setupPrimary({ exec: server });
-  log("start", { mode: "cluster", workers, graceMs });
+  const heap = parseHeapMb(env.WORKER_HEAP_MB);
+  if (heap.invalid) log("invalid-heap", { allowed: "128..16384", using: heap.mb });
+  /* A heap size someone already chose (NODE_OPTIONS reaches the workers too, or a flag on this process) wins. */
+  const chosen = /--max-old-space-size/.test(env.NODE_OPTIONS ?? "") || process.execArgv.some((arg) => arg.includes("--max-old-space-size"));
+  cluster.setupPrimary({
+    exec: server,
+    execArgv: chosen ? process.execArgv : [...process.execArgv, `--max-old-space-size=${heap.mb}`],
+  });
+  log("start", { mode: "cluster", workers, graceMs, heapMb: chosen ? "inherited" : heap.mb });
 
   /** slot -> { worker, startedAt, failures, timer } */
   const slots = new Map();

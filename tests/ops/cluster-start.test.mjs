@@ -7,7 +7,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseConcurrency } from "../../ops/selfhost/cluster.mjs";
+import { parseConcurrency, parseHeapMb } from "../../ops/selfhost/cluster.mjs";
 
 // ops/selfhost/cluster.mjs is copied next to a tiny fake server.js in a scratch
 // directory, as the Dockerfile places it next to Next's standalone server.js.
@@ -20,6 +20,7 @@ const SECRET = "cluster-test-secret-value-0123456789";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const FAKE_SERVER = `const http = require("node:http");
+const v8 = require("node:v8");
 if (process.env.FAKE_CRASH === "1") process.exit(3);
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
@@ -28,6 +29,7 @@ const server = http.createServer((req, res) => {
     setTimeout(() => res.end(JSON.stringify({ pid: process.pid, slow: true })), Number(url.searchParams.get("ms") || 1000));
     return;
   }
+  if (url.pathname === "/heap") { res.end(JSON.stringify({ pid: process.pid, heapLimit: v8.getHeapStatistics().heap_size_limit })); return; }
   res.end(JSON.stringify({ pid: process.pid }));
 });
 server.listen(Number(process.env.PORT), "127.0.0.1");
@@ -236,5 +238,58 @@ test("WEB_CONCURRENCY=1 is today's single process: server.js serves in the start
     assert.equal(run.events("fork").length, 0);
     run.child.kill("SIGTERM");
     assert.equal((await run.exited).code, 143);
+  } finally { await run.stop(); }
+});
+
+test("WORKER_HEAP_MB: an integer 128..16384, else 896 and flagged", () => {
+  for (const [raw, mb, invalid] of [
+    [undefined, 896, false], ["", 896, false], ["128", 128, false], [" 2048 ", 2048, false], ["16384", 16384, false],
+    ["127", 896, true], ["16385", 896, true], ["1.5", 896, true], ["1g", 896, true], ["-512", 896, true],
+  ]) assert.deepEqual(parseHeapMb(raw), { mb, invalid }, String(raw));
+});
+
+const MB = 1024 * 1024;
+/** Every worker's V8 heap limit, once `count` workers have answered. */
+async function heapLimits(run, count) {
+  const limits = new Map();
+  await waitFor(async () => {
+    try { const { body } = await get(run.port, "/heap"); limits.set(body.pid, body.heapLimit); } catch { /* not listening yet */ }
+    return limits.size >= count;
+  }, `${count} heap answers`);
+  return [...limits.values()];
+}
+/* heap_size_limit is the old-space cap plus the young generation (192 MB on Node 24 here). */
+const about = (limit, mb) => limit >= mb * MB && limit <= (mb + 256) * MB;
+
+test("each worker's heap is capped at WORKER_HEAP_MB, 896 MB by default", { timeout: 30_000 }, async () => {
+  const run = await start({ WEB_CONCURRENCY: "2" });
+  try {
+    for (const limit of await heapLimits(run, 2)) assert.ok(about(limit, 896), `${limit / MB} MB`);
+    assert.deepEqual(run.events("start").map((l) => l.heapMb), [896]);
+  } finally { await run.stop(); }
+  const small = await start({ WEB_CONCURRENCY: "2", WORKER_HEAP_MB: "256" });
+  try {
+    for (const limit of await heapLimits(small, 2)) assert.ok(about(limit, 256), `${limit / MB} MB`);
+  } finally { await small.stop(); }
+  const invalid = await start({ WEB_CONCURRENCY: "2", WORKER_HEAP_MB: "64" });
+  try {
+    for (const limit of await heapLimits(invalid, 2)) assert.ok(about(limit, 896), `${limit / MB} MB`);
+    assert.equal(invalid.events("invalid-heap").length, 1);
+  } finally { await invalid.stop(); }
+});
+
+test("a heap size already set in NODE_OPTIONS wins over WORKER_HEAP_MB", { timeout: 30_000 }, async () => {
+  const run = await start({ WEB_CONCURRENCY: "2", WORKER_HEAP_MB: "512", NODE_OPTIONS: "--max-old-space-size=200" });
+  try {
+    for (const limit of await heapLimits(run, 2)) assert.ok(about(limit, 200), `${limit / MB} MB`);
+    assert.deepEqual(run.events("start").map((l) => l.heapMb), ["inherited"]);
+  } finally { await run.stop(); }
+});
+
+test("WEB_CONCURRENCY=1 leaves the single process's heap as it was", { timeout: 30_000 }, async () => {
+  const run = await start({ WEB_CONCURRENCY: "1", WORKER_HEAP_MB: "256" });
+  try {
+    const [limit] = await heapLimits(run, 1);
+    assert.ok(!about(limit, 256), `${limit / MB} MB: no cap was added`);
   } finally { await run.stop(); }
 });
