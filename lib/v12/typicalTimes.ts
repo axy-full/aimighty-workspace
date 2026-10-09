@@ -1,5 +1,5 @@
 /**
- * Typical render times, measured (redesign plan, decision 8).
+ * Typical render times, measured (redesign plan, decision 9).
  *
  * How long a finished take of one engine usually took, as the middle half of
  * its recent history: the 25th to the 75th percentile of `duration_ms`, the
@@ -12,6 +12,7 @@
  * browser resolves one take's range from that reply with `typicalFor`. The
  * reply carries durations and nothing else — no workspace, count or cost.
  */
+import { AUDIO_LABELS, findModel } from "../models";
 import { MIN_TYPICAL_SAMPLES, defaultTypical, type TypicalBounds } from "./typicalTimeDefaults";
 
 export type TypicalSource = "history" | "default";
@@ -53,11 +54,17 @@ export function typicalTable(
   return out;
 }
 
-/** Group (model, duration) rows by model. */
+/**
+ * An engine a person can run here (the product's own catalogue): only these engines' history is shared, as durations.
+ * Any other id on a row (an old connected-account workflow, anything a workspace could name) is left out.
+ */
+export const catalogued = (model: string): boolean => findModel(model) != null || Object.hasOwn(AUDIO_LABELS, model);
+
+/** Group (model, duration) rows by model, catalogue engines only. */
 export function samplesByModel(rows: readonly { model: string; ms: number }[]): Map<string, number[]> {
   const out = new Map<string, number[]>();
   for (const r of rows) {
-    if (!r.model || !Number.isFinite(r.ms) || r.ms <= 0) continue;
+    if (!r.model || !catalogued(r.model) || !Number.isFinite(r.ms) || r.ms <= 0) continue;
     const list = out.get(r.model);
     if (list) list.push(r.ms);
     else out.set(r.model, [r.ms]);

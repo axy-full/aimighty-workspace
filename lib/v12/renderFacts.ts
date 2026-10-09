@@ -11,18 +11,15 @@
  *   lib/jobs.ts holds a store lease (`storeUntil`) while it downloads; an
  *   API-key video has collected its original (`genjutsuOriginal`) and is
  *   storing it. Any other path stores inside one step and is never "Saving".
- * - `startedAt`: when its work began (created_at + queue_ms, written at
- *   submit), else null.
  * - `discarded`: cancelled by discarding it while held.
  *
  * Pure.
  */
-export type RenderFacts = { atProvider: boolean; saving: boolean; startedAt: number | null; discarded: boolean };
+export type RenderFacts = { atProvider: boolean; saving: boolean; discarded: boolean };
 
 export type RawRenderRow = {
   status: string;
   created_at: number | string | bigint;
-  queue_ms?: number | string | bigint | null;
   ark_task_id?: string | null;
   params?: string | Record<string, unknown> | null;
 };
@@ -40,12 +37,9 @@ export function renderFactsFromRow(row: RawRenderRow, now: number): RenderFacts 
     || (text(handle?.ref) && params.paidClaim != null) || text(stillHandle?.ref);
   const lease = Number(params.storeUntil);
   const saving = row.status === "running" && ((Number.isFinite(lease) && lease > now) || (params.genjutsuOriginal != null && typeof params.genjutsuOriginal === "object"));
-  const created = Number(row.created_at);
-  const queue = row.queue_ms == null ? NaN : Number(row.queue_ms);
   return {
     atProvider: Boolean(atProvider),
     saving,
-    startedAt: Number.isFinite(created) && Number.isFinite(queue) && queue >= 0 ? created + queue : null,
     discarded: row.status === "cancelled" && params.discardedAt != null,
   };
 }

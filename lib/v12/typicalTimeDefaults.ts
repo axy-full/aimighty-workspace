@@ -1,5 +1,5 @@
 /**
- * The one place the fallback render times live (redesign plan, decision 8).
+ * The one place the fallback render times live (redesign plan, decision 9).
  *
  * A render card says how long a take usually takes ("Seedance 2.5 · usually
  * 2–4 min · 1:12 so far"). The figure comes from real job history

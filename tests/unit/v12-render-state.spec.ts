@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
-  BAR_CAP, BAR_WAITING, CANCEL_FREE, CANCEL_NOT_YOURS, CANCEL_PREPARING, CANCEL_PROVIDER_QUEUE, CANCEL_RUNNING, SLOW_SHORT, SLOW_TEXT,
+  BAR_CAP, BAR_WAITING, CANCELLED_FREE_TOAST, CANCEL_FREE, CANCEL_MAY_CHARGE, CANCEL_NOT_YOURS, CANCEL_PREPARING, CANCEL_PROVIDER_QUEUE, CANCEL_RUNNING, SLOW_SHORT, SLOW_TEXT,
   batchSummary, cancelOf, engineShort, fmtElapsed, fmtTimeLeft, renderState, stageOf, type RenderPrice, type RenderTake,
 } from "../../lib/v12/renderState";
 import { renderFactsFromRow } from "../../lib/v12/renderFacts";
@@ -58,7 +58,7 @@ test.describe("stages", () => {
       { status: "queued" },
       { status: "running" },
       { status: "running", saving: true },
-      { status: "succeeded", charged: 43 },
+      { status: "succeeded", charged: { amount: 43, unit: "cr" } },
     ];
     const seen = steps.map((s, i) => renderState(take(s), at(i * 20 * S)));
     expect(seen.map((s) => s.stage)).toEqual(["queue", "preparing", "rendering", "saving", "ready"]);
@@ -97,9 +97,15 @@ test.describe("the time line", () => {
     expect(s.line?.short).toBe("Kling 3.0 · 1–2 min · not started");
   });
 
-  test("elapsed counts from when the work began, when that is known", () => {
-    const s = renderState(take({ status: "running", startedAt: at(40 * S) }), at(112 * S));
-    expect(s.line?.full).toBe("Seedance 2.5 · usually 2–4 min · 1:12 so far");
+  test("elapsed counts from when it was asked for, the basis of the typical times, so the bar never jumps back between stages", () => {
+    const stages: Partial<RenderTake>[] = [{ status: "queued" }, { status: "running" }, { status: "running", saving: false }];
+    let last = 0;
+    stages.forEach((fields, i) => {
+      const s = renderState(take(fields), at((i + 1) * 30 * S));
+      expect(s.elapsedMs).toBe((i + 1) * 30 * S);
+      expect(s.bar!.pct).toBeGreaterThanOrEqual(last);
+      last = s.bar!.pct;
+    });
   });
 
   test("FIX: the short form fits one line on a 260 px card (about 36 characters at 12 px)", () => {
@@ -221,72 +227,101 @@ test.describe("money", () => {
     expect(renderState(take({ status: "running", price: { amount: 0, unit: "cr" } }), at(MIN)).money?.text).toBe("Charged only when it’s ready");
   });
 
-  test("failed with nothing charged: Didn't finish · nothing billed · Retry · price", () => {
-    const s = renderState(take({ status: "failed", charged: 0, price: SEVEN, model: KLING }), at(MIN));
+  test("failed with nothing charged: Didn't finish · nothing billed · Retry · the fresh quote", () => {
+    const s = renderState(take({ status: "failed", charged: { amount: 0, unit: "cr" }, price: SEVEN, retryPrice: SEVEN, model: KLING }), at(MIN));
     expect(s).toMatchObject({ stage: "failed", label: "Didn’t finish", tone: "red", failed: true, nothingBilled: true, line: null, bar: null, cancel: null });
     expect(s.money).toEqual({ text: "Didn’t finish · nothing billed · Retry · 7 cr", short: "Didn’t finish · nothing billed" });
     expect(s.retry).toEqual({ label: "Retry · 7 cr", price: SEVEN });
   });
 
-  test("Retry uses a fresh quote when one is passed", () => {
-    const s = renderState(take({ status: "failed", charged: 0, price: SEVEN, retryPrice: { amount: 8, unit: "cr" } }), at(MIN));
-    expect(s.money?.text).toBe("Didn’t finish · nothing billed · Retry · 8 cr");
+  test("Retry shows a figure only from a fresh quote, never the take's own price (which may be a hold)", () => {
+    const s = renderState(take({ status: "failed", charged: { amount: 0, unit: "cr" }, price: SEVEN }), at(MIN));
+    expect(s.retry).toEqual({ label: "Retry", price: null });
+    expect(s.money?.text).toBe("Didn’t finish · nothing billed · Retry");
+    const quoted = renderState(take({ status: "failed", charged: { amount: 0, unit: "cr" }, price: SEVEN, retryPrice: { amount: 8, unit: "cr" } }), at(MIN));
+    expect(quoted.money?.text).toBe("Didn’t finish · nothing billed · Retry · 8 cr");
   });
 
   test("a failure that was charged says what it cost (rule 14); an unknown charge claims nothing", () => {
-    expect(renderState(take({ status: "failed", charged: 43 }), at(MIN)).money?.text).toBe("Didn’t finish · 43 cr charged · Retry · 43 cr");
+    expect(renderState(take({ status: "failed", charged: { amount: 43, unit: "cr" }, retryPrice: HELD }), at(MIN)).money?.text).toBe("Didn’t finish · 43 cr charged · Retry · 43 cr");
+    expect(renderState(take({ status: "failed", charged: { amount: 0.42, unit: "usd" } }), at(MIN)).money?.text).toBe("Didn’t finish · $0.420 charged · Retry");
     const unknown = renderState(take({ status: "failed", charged: null }), at(MIN));
-    expect(unknown.money?.text).toBe("Didn’t finish · Retry · 43 cr");
+    expect(unknown.money?.text).toBe("Didn’t finish · Retry");
     expect(unknown.nothingBilled).toBe(false);
-    expect(renderState(take({ status: "failed", charged: 0, price: null }), at(MIN)).retry).toEqual({ label: "Retry", price: null });
+    expect(renderState(take({ status: "failed", charged: { amount: 0, unit: "cr" }, price: null }), at(MIN)).retry).toEqual({ label: "Retry", price: null });
   });
 
   test("cancelled and discarded takes say nothing was billed only when that is so", () => {
-    expect(renderState(take({ status: "cancelled", charged: 0 }), at(MIN)).money?.text).toBe("Cancelled · nothing billed");
+    expect(renderState(take({ status: "cancelled", charged: { amount: 0, unit: "cr" } }), at(MIN)).money?.text).toBe("Cancelled · nothing billed");
     expect(renderState(take({ status: "cancelled", discarded: true, charged: null }), at(MIN)).money?.text).toBe("Cancelled · nothing billed");
     expect(renderState(take({ status: "cancelled", charged: null }), at(MIN)).money?.text).toBe("Cancelled");
   });
 
+  test("Cinema Studio holds a band over its quote and is charged what its engine reports, up to the hold", () => {
+    const cinema = (fields: Partial<RenderTake>) => take({ provider: "higgsfield", model: CINEMA, price: { amount: 129, unit: "cr" }, ...fields });
+    expect(renderState(cinema({ status: "running" }), at(MIN)).money).toEqual({ text: "up to 129 cr held · charged what the engine reports", short: "up to 129 cr held" });
+    expect(renderState(cinema({ status: "queued", atProvider: true }), at(MIN)).money?.text).toBe("up to 129 cr held · charged what the engine reports");
+    expect(renderState(cinema({ status: "held", held: { why: "slots" } }), at(MIN)).money?.text).toBe("up to 129 cr · charged what the engine reports");
+    expect(renderState(cinema({ status: "running", price: null }), at(MIN)).money?.text).toBe("Charged what the engine reports");
+    expect(renderState(cinema({ status: "running" }), at(MIN)).tile).toBe("Rendering · 1:00 so far · up to 129 cr held");
+    for (const status of ["held", "queued", "running"]) expect(renderState(cinema({ status, held: status === "held" ? { why: "slots" } : null }), at(MIN)).money?.text).not.toMatch(/only when it’s ready/);
+    /* A failed Cinema take says what the ledger charged; nothing billed only when it shows zero. */
+    expect(renderState(cinema({ status: "failed", charged: { amount: 12, unit: "cr" } }), at(MIN)).money?.text).toBe("Didn’t finish · 12 cr charged · Retry");
+    expect(renderState(cinema({ status: "failed", charged: { amount: 0, unit: "cr" } }), at(MIN)).money?.text).toBe("Didn’t finish · nothing billed · Retry");
+    /* Other engines keep the plain promise. */
+    expect(renderState(take({ status: "running", provider: "higgsfield", model: TRANSFORM }), at(MIN)).money?.text).toBe("43 cr held · charged only when it’s ready");
+  });
+
   test("ready carries no money line", () => {
-    expect(renderState(take({ status: "succeeded", charged: 43 }), at(MIN)).money).toBeNull();
+    expect(renderState(take({ status: "succeeded", charged: { amount: 43, unit: "cr" } }), at(MIN)).money).toBeNull();
   });
 });
 
-test.describe("Cancel (plan decision 7)", () => {
+test.describe("Cancel (plan decision 8)", () => {
   test("a held take is discarded: nothing reserved, nothing billed", () => {
     for (const held of [{ why: "slots" }, { why: "credits", needs: 43 }, { why: "slots", pool: "shared" }]) {
-      expect(cancelOf(take({ status: "held", held }))).toEqual({ cancellable: true, via: "discard", tooltip: CANCEL_FREE });
+      expect(cancelOf(take({ status: "held", held }))).toEqual({ cancellable: true, via: "discard", tooltip: CANCEL_FREE, toast: CANCELLED_FREE_TOAST });
     }
+    /* Held, even a Cinema take is discarded free: nothing was reserved or sent. */
+    expect(cancelOf(take({ status: "held", held: { why: "credits" }, provider: "higgsfield", model: CINEMA }))?.cancellable).toBe(true);
+    expect(CANCELLED_FREE_TOAST).toBe("Cancelled · nothing billed · the frame stays");
     expect(CANCEL_FREE).toBe("Cancel this take — nothing is billed for a cancelled take");
   });
 
-  test("API-key video in its provider's queue is cancelled there; the same take running is not", () => {
-    for (const model of [CINEMA, TRANSFORM]) {
+  test("a motion transfer or object swap in its provider's queue is cancelled there; the same take running is not", () => {
+    for (const model of [TRANSFORM, "higgsfield-genjutsu-object-swap"]) {
       const queued = take({ status: "queued", atProvider: true, provider: "higgsfield", model });
-      expect(cancelOf(queued)).toEqual({ cancellable: true, via: "provider-queue", tooltip: CANCEL_FREE });
-      expect(cancelOf({ ...queued, status: "running" })).toEqual({ cancellable: false, via: null, tooltip: CANCEL_RUNNING });
+      expect(cancelOf(queued)).toEqual({ cancellable: true, via: "provider-queue", tooltip: CANCEL_FREE, toast: CANCELLED_FREE_TOAST });
+      expect(cancelOf({ ...queued, status: "running" })).toEqual({ cancellable: false, via: null, tooltip: CANCEL_RUNNING, toast: null });
       /* Not yet accepted (no request handle): there is nothing to cancel there yet. */
-      expect(cancelOf({ ...queued, atProvider: false })).toEqual({ cancellable: false, via: null, tooltip: CANCEL_PREPARING });
+      expect(cancelOf({ ...queued, atProvider: false })).toEqual({ cancellable: false, via: null, tooltip: CANCEL_PREPARING, toast: null });
     }
   });
 
+  test("Cinema Studio in its provider's queue: not offered, and the tooltip never promises nothing is billed", () => {
+    const queued = take({ status: "queued", atProvider: true, provider: "higgsfield", model: CINEMA });
+    expect(cancelOf(queued)).toEqual({ cancellable: false, via: null, tooltip: CANCEL_MAY_CHARGE, toast: null });
+    expect(CANCEL_MAY_CHARGE).not.toMatch(/nothing is billed|not billed|free/i);
+    expect(renderState(queued, at(MIN)).cancel?.cancellable).toBe(false);
+  });
+
   test("Ark and fal queues: their docs allow it, but our code cannot cancel there yet (NEEDS AKSHAY)", () => {
-    expect(cancelOf(take({ status: "queued", atProvider: true, provider: "byteplus", model: SEEDANCE }))).toEqual({ cancellable: false, via: null, tooltip: CANCEL_PROVIDER_QUEUE });
-    expect(cancelOf(take({ status: "queued", atProvider: true, provider: "fal", model: KLING }))).toEqual({ cancellable: false, via: null, tooltip: CANCEL_PROVIDER_QUEUE });
+    expect(cancelOf(take({ status: "queued", atProvider: true, provider: "byteplus", model: SEEDANCE }))).toEqual({ cancellable: false, via: null, tooltip: CANCEL_PROVIDER_QUEUE, toast: null });
+    expect(cancelOf(take({ status: "queued", atProvider: true, provider: "fal", model: KLING }))).toEqual({ cancellable: false, via: null, tooltip: CANCEL_PROVIDER_QUEUE, toast: null });
     /* A still on the same provider is not the video cancel path. */
     expect(cancelOf(take({ status: "queued", atProvider: true, provider: "higgsfield", kind: "image", model: "higgsfield/marketing-studio-image" }))?.cancellable).toBe(false);
   });
 
   test("never once rendering, saving or slow, on any provider", () => {
     for (const provider of ["byteplus", "fal", "higgsfield", "google", "xai", "elevenlabs"]) {
-      expect(cancelOf(take({ status: "running", provider, model: provider === "higgsfield" ? CINEMA : SEEDANCE }))).toEqual({ cancellable: false, via: null, tooltip: CANCEL_RUNNING });
+      expect(cancelOf(take({ status: "running", provider, model: provider === "higgsfield" ? CINEMA : SEEDANCE }))).toEqual({ cancellable: false, via: null, tooltip: CANCEL_RUNNING, toast: null });
       expect(renderState(take({ status: "running", saving: true, provider }), at(MIN)).cancel?.cancellable).toBe(false);
       expect(renderState(take({ status: "running", provider }), at(30 * MIN)).cancel?.cancellable).toBe(false);
     }
   });
 
   test("someone else's take cannot be cancelled by this viewer", () => {
-    expect(cancelOf(take({ status: "held", held: { why: "slots" }, mayCancel: false }))).toEqual({ cancellable: false, via: null, tooltip: CANCEL_NOT_YOURS });
+    expect(cancelOf(take({ status: "held", held: { why: "slots" }, mayCancel: false }))).toEqual({ cancellable: false, via: null, tooltip: CANCEL_NOT_YOURS, toast: null });
     expect(cancelOf(take({ status: "queued", atProvider: true, provider: "higgsfield", model: CINEMA, mayCancel: false }))?.cancellable).toBe(false);
   });
 
@@ -301,7 +336,7 @@ test.describe("Make tiles", () => {
     expect(rendering.tile).toBe("Rendering · 0:21 so far · 2 cr held");
     const preparing = renderState(take({ status: "queued", kind: "image", model: NANO, provider: "google" }), at(5 * S));
     expect(preparing.tile).toBe("Preparing · Nano Banana 2 · usually 20–40 s");
-    expect(renderState(take({ status: "failed", charged: 0 }), at(MIN)).tile).toBe("Didn’t finish · nothing billed");
+    expect(renderState(take({ status: "failed", charged: { amount: 0, unit: "cr" } }), at(MIN)).tile).toBe("Didn’t finish · nothing billed");
     expect(renderState(take({ status: "succeeded" }), at(MIN)).tile).toBeNull();
   });
 });
@@ -326,14 +361,14 @@ test.describe("batch summary", () => {
   test("slow and failed takes are named in plain words", () => {
     expect(batchSummary([item("Shot 1", { status: "succeeded" }), item("Shot 2", { status: "succeeded" }), item("Shot 3", { status: "running" }, 9 * MIN)]))
       .toBe("2 of 3 ready · Shot 3 is taking longer than usual");
-    expect(batchSummary([item("Shot 1", { status: "succeeded" }), item("Shot 2", { status: "succeeded" }), item("Shot 3", { status: "failed", charged: 0 })]))
+    expect(batchSummary([item("Shot 1", { status: "succeeded" }), item("Shot 2", { status: "succeeded" }), item("Shot 3", { status: "failed", charged: { amount: 0, unit: "cr" } })]))
       .toBe("2 of 3 ready · Shot 3 didn’t finish · nothing billed");
-    expect(batchSummary([item("Shot 1", { status: "succeeded" }), item("Shot 2", { status: "failed", charged: 43 }), item("Shot 3", { status: "failed", charged: 0 })]))
+    expect(batchSummary([item("Shot 1", { status: "succeeded" }), item("Shot 2", { status: "failed", charged: { amount: 43, unit: "cr" } }), item("Shot 3", { status: "failed", charged: { amount: 0, unit: "cr" } })]))
       .toBe("1 of 3 ready · 2 didn’t finish");
   });
 
   test("nothing running: ready to review", () => {
-    expect(batchSummary([item("Shot 1", { status: "succeeded" }), item("Shot 2", { status: "succeeded" }), item("Shot 3", { status: "cancelled", charged: 0 })]))
+    expect(batchSummary([item("Shot 1", { status: "succeeded" }), item("Shot 2", { status: "succeeded" }), item("Shot 3", { status: "cancelled", charged: { amount: 0, unit: "cr" } })]))
       .toBe("2 of 3 ready to review");
     expect(batchSummary([])).toBeNull();
   });
@@ -361,16 +396,14 @@ test.describe("facts from a stored row (server side)", () => {
     expect(renderFactsFromRow({ status: "succeeded", created_at: T0, params: { genjutsuOriginal: { bytes: 1 } } }, now).saving).toBe(false);
   });
 
-  test("started at created_at + queue_ms; discarded from discardedAt", () => {
-    expect(renderFactsFromRow({ status: "running", created_at: T0, queue_ms: 4_000 }, now).startedAt).toBe(T0 + 4_000);
-    expect(renderFactsFromRow({ status: "running", created_at: T0, queue_ms: null }, now).startedAt).toBeNull();
+  test("discarded from discardedAt", () => {
     expect(renderFactsFromRow({ status: "cancelled", created_at: T0, params: { discardedAt: T0 } }, now).discarded).toBe(true);
     expect(renderFactsFromRow({ status: "cancelled", created_at: T0, params: {} }, now).discarded).toBe(false);
   });
 
   test("the facts carry no id, handle, lease or figure", () => {
-    const facts = renderFactsFromRow({ status: "running", created_at: T0, queue_ms: 1, ark_task_id: "secret-task", params: { storeUntil: now + S, paidClaim: "claim", falRequestId: "req" } }, now);
-    expect(Object.keys(facts).sort()).toEqual(["atProvider", "discarded", "saving", "startedAt"]);
+    const facts = renderFactsFromRow({ status: "running", created_at: T0, ark_task_id: "secret-task", params: { storeUntil: now + S, paidClaim: "claim", falRequestId: "req" } }, now);
+    expect(Object.keys(facts).sort()).toEqual(["atProvider", "discarded", "saving"]);
     expect(JSON.stringify(facts)).not.toMatch(/secret-task|claim|req/);
   });
 });

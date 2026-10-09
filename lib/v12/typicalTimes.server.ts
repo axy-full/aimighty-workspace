@@ -1,11 +1,10 @@
 import { db, ready } from "../db";
 import { platformDb, platformReady } from "../platform";
 import { cached, putCache } from "../cache";
-import { AUDIO_LABELS, findModel } from "../models";
 import { samplesByModel, typicalTable, type TypicalTimesReply } from "./typicalTimes";
 
 /**
- * Typical render times from real job history (redesign plan, decision 8), for
+ * Typical render times from real job history (redesign plan, decision 9), for
  * GET /api/v12/typical-times.
  *
  * Two sources, the platform's first so a small workspace still gets figures:
@@ -30,17 +29,15 @@ export const HISTORY_MS = 30 * 24 * 3_600_000;
 /** The newest meter rows visited (across every workspace) and the newest takes of this workspace read. */
 export const METER_WINDOW = 20_000;
 export const WORKSPACE_LIMIT = 2_000;
-/** How long an answer is reused. */
+/** How long an answer is reused. A local mock server (ENGINE_MOCK=1) reads afresh every time, so its specs see their own rows. */
 export const TYPICAL_TTL_MS = 5 * 60_000;
+const ttl = () => (process.env.ENGINE_MOCK === "1" ? 0 : TYPICAL_TTL_MS);
 const KEY = "v12:typical-times";
-
-/** Engines a person can run here: their history may be shared as durations. */
-const catalogued = (model: string) => findModel(model) != null || Object.hasOwn(AUDIO_LABELS, model);
 
 let platformMemo: { at: number; samples: Map<string, number[]> } | null = null;
 
 async function platformSamples(at: number): Promise<Map<string, number[]>> {
-  if (platformMemo && at - platformMemo.at < TYPICAL_TTL_MS) return platformMemo.samples;
+  if (platformMemo && at - platformMemo.at < ttl()) return platformMemo.samples;
   await platformReady();
   const rs = await platformDb().execute({
     sql: `SELECT model, duration_ms FROM meter_events
@@ -50,8 +47,7 @@ async function platformSamples(at: number): Promise<Map<string, number[]>> {
     args: [METER_WINDOW, at - HISTORY_MS],
   });
   const samples = samplesByModel((rs.rows as unknown as { model: unknown; duration_ms: unknown }[])
-    .map((r) => ({ model: String(r.model ?? ""), ms: Number(r.duration_ms) }))
-    .filter((r) => catalogued(r.model)));
+    .map((r) => ({ model: String(r.model ?? ""), ms: Number(r.duration_ms) })));
   platformMemo = { at, samples };
   return samples;
 }
@@ -65,13 +61,12 @@ async function workspaceSamples(at: number): Promise<Map<string, number[]>> {
     args: [at - HISTORY_MS, WORKSPACE_LIMIT],
   });
   return samplesByModel((rs.rows as unknown as { model: unknown; duration_ms: unknown }[])
-    .map((r) => ({ model: String(r.model ?? ""), ms: Number(r.duration_ms) }))
-    .filter((r) => catalogued(r.model)));
+    .map((r) => ({ model: String(r.model ?? ""), ms: Number(r.duration_ms) })));
 }
 
 /** The reply for the workspace in scope. */
 export async function typicalTimes(at = Date.now()): Promise<TypicalTimesReply> {
-  const hit = cached<TypicalTimesReply>(KEY, TYPICAL_TTL_MS);
+  const hit = ttl() > 0 ? cached<TypicalTimesReply>(KEY, ttl()) : null;
   if (hit) return hit;
   const [platform, workspace] = await Promise.all([
     platformSamples(at).catch((error: unknown) => { console.error("typical times (platform):", (error as Error).message); return new Map<string, number[]>(); }),

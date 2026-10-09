@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  fmtTypical, parseTypicalTimes, quantile, rangeFromSamples, samplesByModel, typicalFor, typicalTable,
+  catalogued, fmtTypical, parseTypicalTimes, quantile, rangeFromSamples, samplesByModel, typicalFor, typicalTable,
 } from "../../lib/v12/typicalTimes";
 import { MIN_TYPICAL_SAMPLES, TYPICAL_DEFAULTS_BY_KIND, TYPICAL_DEFAULTS_BY_MODEL, defaultTypical } from "../../lib/v12/typicalTimeDefaults";
 
@@ -40,6 +40,21 @@ test.describe("measuring", () => {
     expect(rangeFromSamples(range(9, 100 * S, 20 * S))).toBeNull();
     expect(rangeFromSamples(range(9, 100 * S, 20 * S).concat([0, NaN]))).toBeNull();
     expect(rangeFromSamples(range(10, 100 * S, 20 * S))).not.toBeNull();
+  });
+
+  test("an engine id outside the product's catalogue is left out, whatever its samples", () => {
+    expect(catalogued(SEEDANCE)).toBe(true);
+    expect(catalogued("eleven_v3")).toBe(true);
+    expect(catalogued("ws-private/finetune-123")).toBe(false);
+    expect(catalogued("veo3_1")).toBe(false);
+    expect(catalogued("constructor")).toBe(false);
+    const samples = samplesByModel([
+      ...range(20, 60 * S, S).map((ms) => ({ model: "ws-private/finetune-123", ms })),
+      ...range(20, 60 * S, S).map((ms) => ({ model: "veo3_1", ms })),
+      ...range(12, 60 * S, S).map((ms) => ({ model: KLING, ms })),
+    ]);
+    expect([...samples.keys()]).toEqual([KLING]);
+    expect(Object.keys(typicalTable(samples))).toEqual([KLING]);
   });
 
   test("the platform's history first, the workspace's own for an engine the platform has too little of", () => {

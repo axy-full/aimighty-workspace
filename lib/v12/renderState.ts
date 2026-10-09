@@ -21,7 +21,9 @@
  * needs to start, what the ledger charged) passed in; none is written here.
  */
 import { displayModelName } from "../models";
-import { isHiggsfieldVideoModel } from "../cinemaStudioTypes";
+import { isGenjutsuModel } from "../genjutsuTypes";
+import { isCinemaStudioModel } from "../cinemaStudioTypes";
+import { holdBandOf } from "../cinemaHold";
 import { POOL_MARK } from "../sharedKeyTerms";
 import { fmtLedgerCredits, fmtLedgerUsd } from "../usageLedgerTerms";
 import { fmtTypical, typicalFor, type TypicalRange, type TypicalTimesReply } from "./typicalTimes";
@@ -38,9 +40,8 @@ export type RenderTake = {
   model: string;
   /** The provider id that runs it (generations.provider: byteplus, fal, higgsfield, google, …). */
   provider?: string | null;
+  /** When it was asked for. Elapsed time counts from here, as the typical times (duration_ms) do. */
   createdAt: number;
-  /** When its work began, when known (created_at + queue_ms); else createdAt. */
-  startedAt?: number | null;
   /** params.held as the browser sees it (lib/jobs heldForBrowser): why it waits, and what it needs to start. */
   held?: { why?: string; pool?: string; needs?: number } | null;
   /** The provider has accepted it (a task id or request handle is on the row). */
@@ -54,9 +55,12 @@ export type RenderTake = {
    * row has none.
    */
   price?: RenderPrice | null;
-  /** Settled: what the ledger charged — 0 is "nothing billed" — or null when it has no settled figure. */
-  charged?: number | null;
-  /** Retry's figure, a fresh quote of the same request; the take's own price when no fresh quote has come back. */
+  /** Settled: what the ledger charged, in its unit — an amount of 0 is "nothing billed" — or null when it has no settled figure. */
+  charged?: RenderPrice | null;
+  /**
+   * Retry's figure: a fresh quote of the same request. Without one, Retry shows no figure (the take's own price may be a
+   * hold, not a quote, and prices move).
+   */
   retryPrice?: RenderPrice | null;
   /** Whether this viewer may cancel it at all (its author, or an admin). Defaults to true. */
   mayCancel?: boolean;
@@ -90,7 +94,7 @@ export type RenderState = {
   failed: boolean;
   /** Settled with the ledger showing nothing charged (or discarded before it was reserved). */
   nothingBilled: boolean;
-  /** Time spent working (from startedAt), or waiting while it has not started; null once settled. */
+  /** Time since it was asked for (createdAt, the same basis as the typical times); null once settled. */
   elapsedMs: number | null;
   typical: TypicalRange;
   /** About how long until it is ready; null when settled, slow, or held for a person. */
@@ -101,8 +105,11 @@ export type RenderState = {
   money: { text: string; short: string } | null;
   /** A failed take's one action. */
   retry: { label: string; price: RenderPrice | null } | null;
-  /** Null once settled; otherwise whether Cancel is offered, how, and its tooltip either way. Esc never cancels. */
-  cancel: { cancellable: boolean; via: CancelVia | null; tooltip: string } | null;
+  /**
+   * Null once settled; otherwise whether Cancel is offered, how, its tooltip either way, and the toast once it is done
+   * (null when it is not offered). Esc never cancels.
+   */
+  cancel: { cancellable: boolean; via: CancelVia | null; tooltip: string; toast: string | null } | null;
   /** A Make tile's one line: "Rendering · 0:21 so far · 2 cr held", "Preparing · Nano Banana 2 · usually 20–40 s". */
   tile: string | null;
 };
@@ -123,7 +130,10 @@ export const CANCEL_PREPARING = "It’s being sent to the engine now, so it can�
 export const CANCEL_PROVIDER_QUEUE = "This engine’s queue can’t be cancelled from here yet. It’s charged only when it’s ready.";
 export const CANCEL_RUNNING = "It has started rendering, so it can’t be cancelled.";
 export const CANCEL_NOT_YOURS = "Only the person who made this take, or an admin, can cancel it.";
-export const CANCELLED_TOAST = "Cancelled · nothing billed · the frame stays";
+/** An engine that may charge for a take cancelled in its queue (Cinema Studio charges what its provider reports). */
+export const CANCEL_MAY_CHARGE = "This engine may charge for a take cancelled in its queue, so it can’t be cancelled here.";
+/** The toast after a cancel that bills nothing (the only cancels offered). */
+export const CANCELLED_FREE_TOAST = "Cancelled · nothing billed · the frame stays";
 
 /** A take's price in the unit its workspace pays in: "43 cr", "$0.840". */
 export const fmtRenderPrice = (p: RenderPrice): string => (p.unit === "usd" ? fmtLedgerUsd(p.amount) : fmtLedgerCredits(p.amount));
@@ -170,22 +180,28 @@ export function stageOf(take: Pick<RenderTake, "status" | "held" | "atProvider" 
 }
 
 /**
- * Whether Cancel is offered (plan decision 7): only while nothing can be
+ * Whether Cancel is offered (plan decision 8): only while nothing can be
  * billed and our code can do it today — a held take (discarded; nothing was
- * reserved or sent), or a video waiting in the queue of the one provider whose
- * cancel we call (the API-key video engines on POST /api/generations/:id/
- * cancel, lib/genjutsuVideo.ts). Ark and fal document a queued cancel too, but
- * calling them is new money-adjacent code (NEEDS AKSHAY), so not yet. Once a
- * take is rendering, no provider promises a stopped job is not billed.
+ * reserved or sent), or a motion transfer or object swap waiting in its
+ * provider's queue (POST /api/generations/:id/cancel, lib/genjutsuVideo.ts;
+ * its provider refunds a cancelled request). Cinema Studio goes through the
+ * same cancel, but a cancelled Cinema take is charged what its provider
+ * reports (lib/genjutsuVideo.ts, lib/meter.ts heldSettlement), so it is not
+ * offered. Ark and fal document a queued cancel too, but calling them is new
+ * money-adjacent code (NEEDS AKSHAY), so not yet. Once a take is rendering, no
+ * provider promises a stopped job is not billed.
  */
 export function cancelOf(take: RenderTake, stage: RenderStage = stageOf(take)): RenderState["cancel"] {
   if (stage === "ready" || stage === "failed" || stage === "cancelled") return null;
-  const refuse = (tooltip: string) => ({ cancellable: false, via: null, tooltip });
-  if (take.status === "held") return take.mayCancel === false ? refuse(CANCEL_NOT_YOURS) : { cancellable: true, via: "discard", tooltip: CANCEL_FREE };
+  const refuse = (tooltip: string) => ({ cancellable: false, via: null, tooltip, toast: null });
+  const free = (via: CancelVia) => ({ cancellable: true, via, tooltip: CANCEL_FREE, toast: CANCELLED_FREE_TOAST });
+  /* Held: nothing was reserved or sent, whatever the engine. */
+  if (take.status === "held") return take.mayCancel === false ? refuse(CANCEL_NOT_YOURS) : free("discard");
   if (stage === "queue") {
-    const ours = take.provider === "higgsfield" && take.kind === "video" && isHiggsfieldVideoModel(take.model);
-    if (!ours) return refuse(CANCEL_PROVIDER_QUEUE);
-    return take.mayCancel === false ? refuse(CANCEL_NOT_YOURS) : { cancellable: true, via: "provider-queue", tooltip: CANCEL_FREE };
+    const higgsVideo = take.provider === "higgsfield" && take.kind === "video";
+    if (higgsVideo && isCinemaStudioModel(take.model)) return refuse(CANCEL_MAY_CHARGE);
+    if (!(higgsVideo && isGenjutsuModel(take.model))) return refuse(CANCEL_PROVIDER_QUEUE);
+    return take.mayCancel === false ? refuse(CANCEL_NOT_YOURS) : free("provider-queue");
   }
   if (stage === "preparing") return refuse(CANCEL_PREPARING);
   return refuse(CANCEL_RUNNING);
@@ -204,12 +220,13 @@ export function renderState(take: RenderTake, now: number, typicalTimes?: Typica
   const settled = stage === "ready" || stage === "failed" || stage === "cancelled";
   const waiting = stage === "queue" || stage === "held";
   const working = stage === "preparing" || stage === "rendering" || stage === "saving";
-  const since = working && take.startedAt != null && Number.isFinite(take.startedAt) ? take.startedAt : take.createdAt;
-  const elapsedMs = settled ? null : Math.max(0, now - since);
+  const elapsedMs = settled ? null : Math.max(0, now - take.createdAt);
   const slow = working && elapsedMs != null && elapsedMs > SLOW_FACTOR * typical.highMs;
   const price = priced(take.price);
-  const charged = typeof take.charged === "number" && Number.isFinite(take.charged) ? take.charged : null;
-  const nothingBilled = settled && stage !== "ready" && (charged === 0 || (stage === "cancelled" && take.discarded === true));
+  const charged = take.charged && Number.isFinite(take.charged.amount) && take.charged.amount >= 0 && (take.charged.unit === "cr" || take.charged.unit === "usd") ? take.charged : null;
+  const nothingBilled = settled && stage !== "ready" && (charged?.amount === 0 || (stage === "cancelled" && take.discarded === true));
+  /* A take that holds a band over its quote (Cinema Studio, lib/cinemaHold.ts) is charged what its engine reports, up to the hold. */
+  const banded = holdBandOf(take.model) > 1;
 
   const engine = engineName(take.model);
   const range = fmtTypical(typical);
@@ -243,11 +260,11 @@ export function renderState(take: RenderTake, now: number, typicalTimes?: Typica
         : Math.max(0, typical.highMs - (elapsedMs ?? 0));
 
   /* Money, once. Reserved takes say "held"; a take waiting for a slot has nothing reserved yet, so it does not. */
-  const retryPrice = priced(take.retryPrice) ?? price;
+  const retryPrice = priced(take.retryPrice);
   let money: RenderState["money"] = null;
   let retry: RenderState["retry"] = null;
   if (stage === "failed") {
-    const billed = charged != null && charged > 0 ? fmtRenderPrice({ amount: charged, unit: price?.unit ?? retryPrice?.unit ?? "cr" }) : null;
+    const billed = charged && charged.amount > 0 ? fmtRenderPrice(charged) : null;
     retry = { label: retryPrice ? `Retry · ${fmtRenderPrice(retryPrice)}` : "Retry", price: retryPrice };
     const what = nothingBilled ? "nothing billed" : billed ? `${billed} charged` : null;
     const head = ["Didn’t finish", what].filter(Boolean).join(" · ");
@@ -259,17 +276,19 @@ export function renderState(take: RenderTake, now: number, typicalTimes?: Typica
     money = { text: "Nothing charged yet", short: "Nothing charged yet" };
   } else if (stage !== "ready") {
     const reserved = take.status !== "held";
-    const tail = "charged only when it’s ready";
-    money = price
-      ? { text: `${fmtRenderPrice(price)}${reserved ? " held" : ""} · ${tail}`, short: `${fmtRenderPrice(price)}${reserved ? " held" : ""}` }
-      : { text: "Charged only when it’s ready", short: "Charged when ready" };
+    const figure = price ? `${banded ? "up to " : ""}${fmtRenderPrice(price)}${reserved ? " held" : ""}` : null;
+    const tail = banded ? "charged what the engine reports" : "charged only when it’s ready";
+    money = figure
+      ? { text: `${figure} · ${tail}`, short: figure }
+      : banded ? { text: "Charged what the engine reports", short: "Charged what the engine reports" }
+        : { text: "Charged only when it’s ready", short: "Charged when ready" };
   }
 
   const tile = stage === "ready" ? null
     : stage === "failed" || stage === "cancelled" ? money?.short ?? label
       : slow ? `${label} · taking longer than usual`
         : stage === "rendering" || stage === "saving"
-          ? [label, `${fmtElapsed(elapsedMs ?? 0)} so far`, price && take.status !== "held" ? `${fmtRenderPrice(price)} held` : null].filter(Boolean).join(" · ")
+          ? [label, `${fmtElapsed(elapsedMs ?? 0)} so far`, price && take.status !== "held" ? `${banded ? "up to " : ""}${fmtRenderPrice(price)} held` : null].filter(Boolean).join(" · ")
           : `${label} · ${engine} · usually ${range}`;
 
   return {

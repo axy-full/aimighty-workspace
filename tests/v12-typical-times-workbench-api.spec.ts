@@ -10,9 +10,10 @@ import { joinLocallyAsMember, localPlatformDbUrl, signInLocally } from "./helper
  * gets durations only — no workspace, take, cost, count or person of anyone's.
  */
 const BASE = process.env.PW_BASE_URL || "http://localhost:4551";
-/* A catalogue engine the mock suites rarely run, so these rows are its history. The same 40 durations every run:
-   a rerun inside the reply's five-minute memo reads the same middle half. */
+/* A catalogue engine the mock suites rarely run, so these 40 rows dominate its history; a mock server reads afresh
+   on every request (no memo under ENGINE_MOCK). And an id outside the catalogue, which must never come back. */
 const MODEL = "fal-ai/luma-dream-machine/ray-2-flash/reframe";
+const PRIVATE_MODEL = "ws-private/finetune-secret-b";
 const MS = 123_000;
 
 test("signed-out callers are refused; a member gets durations only, measured across workspaces", async ({ request, playwright }) => {
@@ -20,16 +21,21 @@ test("signed-out callers are refused; a member gets durations only, measured acr
   const other = await playwright.request.newContext({ baseURL: BASE });
   const member = await playwright.request.newContext({ baseURL: BASE });
   const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  const added: string[] = [];
   try {
     /* Workspace B's settled takes, written to the platform's meter as its engines would. */
     const b = (await signInLocally(other, "Typical Times Other")).workspace;
     const t = Date.now();
-    for (let i = 0; i < 40; i++)
-      await platform.execute({
-        sql: `INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,duration_ms,created_by,created_at,updated_at)
-              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        args: [`gen_tt_${randomUUID()}`, b.id, "proj-secret-b", "video", "fal", MODEL, "succeeded", 1.2345, 0, 0, MS, "person-secret-b", t - i * 1_000, t - i * 1_000],
-      });
+    for (const [model, n] of [[MODEL, 40], [PRIVATE_MODEL, 20]] as const)
+      for (let i = 0; i < n; i++) {
+        const id = `gen_tt_${randomUUID()}`;
+        added.push(id);
+        await platform.execute({
+          sql: `INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,duration_ms,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          args: [id, b.id, "proj-secret-b", "video", "fal", model, "succeeded", 1.2345, 0, 0, MS, "person-secret-b", t - i * 1_000, t - i * 1_000],
+        });
+      }
 
     expect((await anonymous.get("/api/v12/typical-times")).status()).toBe(401);
 
@@ -51,13 +57,19 @@ test("signed-out callers are refused; a member gets durations only, measured acr
     expect(body.models[MODEL]).toEqual({ lowMs: MS, highMs: MS, source: "history" });
 
     const text = JSON.stringify(body);
-    for (const secret of [b.id, b.slug, "proj-secret-b", "person-secret-b", "gen_tt_", "1.2345", "workspace", "cost", "credits", "samples"])
+    expect(body.models[PRIVATE_MODEL], "an engine outside the catalogue is never listed").toBeUndefined();
+    for (const secret of [b.id, b.slug, PRIVATE_MODEL, "finetune", "proj-secret-b", "person-secret-b", "gen_tt_", "1.2345", "workspace", "cost", "credits", "samples"])
       expect(text, secret).not.toContain(secret);
 
     /* Workspace B reads the same platform figure: one shared measure, nobody's rows. */
     const own = await other.get("/api/v12/typical-times").then((r) => r.json());
     expect(own.models[MODEL]).toEqual({ lowMs: MS, highMs: MS, source: "history" });
   } finally {
+    /* The rows this spec added, and their receipts (written by the meter's insert trigger), go again. */
+    for (const id of added) {
+      await platform.execute({ sql: "DELETE FROM meter_credit_receipts WHERE event_id = ?", args: [id] }).catch(() => {});
+      await platform.execute({ sql: "DELETE FROM meter_events WHERE id = ?", args: [id] }).catch(() => {});
+    }
     platform.close();
     await Promise.all([anonymous.dispose(), other.dispose(), member.dispose()]);
   }
