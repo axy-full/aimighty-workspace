@@ -33,9 +33,9 @@ export function libraryProject(): Project {
   return {
     ...base, id: "ws-library", productionProjectId: "prod-library", shotMappings: {},
     assets: [
-      { id: "a-lead", name: "Lead actor", kind: "image", category: "cast", url: "/api/uploads/ulead", description: "", prompt: "", status: "ready", locked: false, version: 1, refs: [], uploadId: "ulead" },
-      { id: "a-harbour", name: "Harbour at dusk", kind: "image", category: "environment", url: "/api/uploads/uharbour", description: "", prompt: "", status: "ready", locked: false, version: 1, refs: [], uploadId: "uharbour" },
-      { id: "a-lamp", name: "Brass lamp", kind: "image", category: "element", url: "/api/media/glamp", description: "", prompt: "", status: "ready", locked: false, version: 1, refs: [], generationId: "glamp" },
+      { id: "a-lead", name: "Lead actor", kind: "image", category: "cast", url: "/api/uploads/ulead", description: "", prompt: "", status: "Selected", locked: false, version: 1, refs: [], uploadId: "ulead" },
+      { id: "a-harbour", name: "Harbour at dusk", kind: "image", category: "environment", url: "/api/uploads/uharbour", description: "", prompt: "", status: "Selected", locked: false, version: 1, refs: [], uploadId: "uharbour" },
+      { id: "a-lamp", name: "Brass lamp", kind: "image", category: "element", url: "/api/media/glamp", description: "", prompt: "", status: "Selected", locked: false, version: 1, refs: [], generationId: "glamp" },
     ] as Project["assets"],
     nodes: [node("cast-1", "character", "cast", "a-lead", 0), node("place-1", "element", "environment", "a-harbour", 300), node("prop-1", "element", "element", "a-lamp", 600)],
   };
