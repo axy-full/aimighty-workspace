@@ -1,7 +1,7 @@
 name: Verify Particl
 on:
   pull_request:
-    branches: [main]
+    branches: [main, release/1]
   push:
     branches: [main]
 permissions:
