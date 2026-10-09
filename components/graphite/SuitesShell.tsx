@@ -105,7 +105,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const caps: CtxCapabilities = (() => {
     const target = shell.ctx?.target;
     /* A Rig shot: Delete (with ⌘Z) while the Rig is on screen; the asset commands do not apply. */
-    if (target?.kind === "node") return { can: rigDeleteHandler() ? { delete: true } : {}, why: { delete: "Open the Rig to delete a shot." }, hasClipboard: Boolean(shell.clip), canUndo: shell.canUndo };
+    if (target?.kind === "node") return { can: rigDeleteHandler() ? { delete: true } : {}, why: { delete: "Open the Board to delete a shot." }, hasClipboard: Boolean(shell.clip), canUndo: shell.canUndo };
     const entry = target?.kind === "asset" ? items.find((i) => i.take.id === target.id) : null;
     return assetCapabilities({
       asset: entry ? assetRef(entry) : selectedAsset, clip: shell.clip && clipPayload ? { mode: shell.clip.mode, asset: clipPayload.asset } : null,
@@ -124,7 +124,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     if (target.kind === "node") {
       const remove = rigDeleteHandler();
       if (cmd !== "delete") { toast("Not available for a shot."); return; }
-      if (!remove) { toast("Open the Rig to delete a shot."); return; }
+      if (!remove) { toast("Open the Board to delete a shot."); return; }
       const why = remove(target.id);
       if (why) toast(why);
       return;
@@ -154,7 +154,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
   const rigProject = useRef(rigProjectId);
   useEffect(() => { rigProject.current = rigProjectId; }, [rigProjectId]);
   const sinkRigUndo = (entry: RigUndo) =>
-    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Rig is still opening this project."));
+    shell.pushUndo(boundUndo(entry, rigProject.current ?? state.projectId, () => rigProject.current, "the Board is still opening this project."));
   /* The Inspector's buttons and the Rig's drop use the same path. */
   useEffect(() => { shell.setRunCommand(command); setShotDropHandler((id, shot) => void actions.fileOnShot(id, shot)); setRigUndoSink(sinkRigUndo); return () => { shell.setRunCommand(null); setShotDropHandler(null); setRigUndoSink(null); }; });
 
@@ -229,13 +229,15 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
     return () => window.removeEventListener("pointerdown", onPress, true);
   }, []);
 
-  /* One keymap: ⌘K, ⌘J, Esc, and the menu's shortcuts on the selection when focus is not in a field. */
+  /* One keymap: ⌘K, ⌘J, ⌥M, Esc, and the menu's shortcuts on the selection when focus is not in a field. */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
       if (mod && key === "k") { event.preventDefault(); shell.setPalette(!shell.palette); return; }
       if (mod && key === "j") { event.preventDefault(); shell.toggleInspector(); return; }
+      /* ⌥M opens Make (README § 6; today's Gen). By the key's place, not its letter: on a Mac ⌥M types µ. Never from a field, where it is that letter. */
+      if (event.altKey && !mod && !event.shiftKey && event.code === "KeyM" && !inField(event.target)) { event.preventDefault(); shell.goGen(); return; }
       if (event.key === "Escape") {
         if (shell.ctx) shell.closeCtx();
         else if (shell.palette) shell.setPalette(false);
@@ -359,7 +361,7 @@ export function SuitesShell({ scope, initialAccount, seams = {}, planBridge }: {
             This workspace is suspended{session.workspace.suspendedReason ? ` — ${session.workspace.suspendedReason}` : ""}. Rendering is paused; everything already made is still here.
           </div>
         ) : null}
-        <Header account={account} bar={bar} />
+        <Header account={account} project={project?.name ?? null} bar={bar} />
         {bar ? null : <StageStrip />}
         {/* The gate row approves a run at its quote; one that throws keeps its row, and the run waits in the engine. */}
         <Boundary what="The Atomik gate" probe="atomik-gate" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="atomik-gate" variant="inline" /></div>}>

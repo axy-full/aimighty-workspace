@@ -30,7 +30,7 @@ export type ViewOption = { id: string; label: string };
 
 /** What the blue primary button in the page header does. */
 export type PrimaryAction =
-  | { kind: "generate"; label: "Generate"; key: "G" }
+  | { kind: "generate"; label: "Make"; key: "G" }
   | { kind: "upload"; label: "+ Upload"; key: null }
   | { kind: "add-cast"; label: "+ Add cast"; key: null }
   | { kind: "run-stage"; label: "+ Run stage"; key: "A" };
@@ -57,8 +57,8 @@ export const PAGES: Record<Suite, PageDef[]> = {
     page("particl", "brief", "Brief", "Brief & Script", lead("brief")),
     page("particl", "boards", "Boards", "Boards", lead("boards")),
     page("particl", "cast", "Cast", "Cast & Elements", "Groups references, builds each identity and binds it to the shots that cite it."),
-    page("particl", "astra", "Astra", "Astra 3D", lead("astra")),
-    page("particl", "rig", "Rig", "Rig", "Resolves references, quotes each shot and dispatches it to a video engine."),
+    page("particl", "astra", "3D blocking", "3D blocking", lead("astra")),
+    page("particl", "rig", "Board", "Board", "Resolves references, quotes each shot and dispatches it to a video engine."),
     page("particl", "takes", "Takes", "Takes", "Compares versions against the director’s note and marks what is worth cutting with."),
     page("particl", "edit", "Edit", "Edit & Sound", "Assembles the approved takes, then writes dialogue, effects and music against the cut."),
     page("particl", "deliver", "Deliver", "Deliver", lead("deliver")),
@@ -66,7 +66,7 @@ export const PAGES: Record<Suite, PageDef[]> = {
   atomik: [
     page("atomik", "agent", "Agent", "Agent", lead("agent")),
     page("atomik", "runs", "Runs", "Runs", lead("runs")),
-    page("atomik", "generate", "Generate", "Generate", "Single generations run in Gen, on Particl’s own engines."),
+    page("atomik", "generate", "Make", "Make", "Single generations run in Make, on Particl’s own engines."),
     page("atomik", "recipes", "Recipes", "Recipes", lead("recipes")),
     page("atomik", "builds", "Builds", "Builds", lead("builds")),
     page("atomik", "skills", "Skills", "Skills", lead("skills")),
@@ -161,7 +161,7 @@ export function pageKind(id: PageId): SelKind {
 }
 
 export function primaryAction(id: PageId): PrimaryAction {
-  if (id === "rig") return { kind: "generate", label: "Generate", key: "G" };
+  if (id === "rig") return { kind: "generate", label: "Make", key: "G" };
   if (id === "takes") return { kind: "upload", label: "+ Upload", key: null };
   if (id === "cast") return { kind: "add-cast", label: "+ Add cast", key: null };
   return { kind: "run-stage", label: "+ Run stage", key: "A" };
@@ -195,7 +195,7 @@ const g = (title: string, items: [string, string][]): LibraryGroup =>
 export const LIBRARY: Partial<Record<PageId, LibraryGroup[]>> = {
   rig: [
     g("REFERENCES", [["Brief", "Write · Annotate"], ["Look board", "Collect · Grade"], ["Character", "Identity · Wardrobe"], ["World & element", "Reference · Transform"], ["Media", "Import · Preview"]]),
-    g("CREATE", [["Scene", "Compose · Direct"], ["Generate", "Prompt · References"]]),
+    g("CREATE", [["Scene", "Compose · Direct"], ["Make", "Prompt · References"]]),
     g("FINISH", [["Composite", "Blend · Mask"], ["Colour", "Grade · Compare"], ["Transform", "Scale · Rotate"], ["Sound", "Listen · Gain"]]),
     g("FLOW", [["Switch", "Route · Compare"], ["Version", "Branch · Pin"], ["Approve", "Price · Gate"], ["Export", "Package · Send"]]),
   ],

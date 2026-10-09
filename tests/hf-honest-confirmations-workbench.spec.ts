@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { newProject, type Project } from "../lib/workbench/studio";
-import { openSuitesMenu } from "./helpers/suitesMenu";
+import { goViaSearch } from "./helpers/suitesMenu";
 
 /**
  * Idea 18 — confirmations say exactly what happened and link to it, in the
@@ -83,10 +83,10 @@ async function roomWithSolutions(page: Page, overRig = false) {
   page.on("console", (m) => { if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) errors.push(m.text().slice(0, 200)); });
   if (overRig) {
     await page.goto(`/suites?project=${project.id}&suite=particl&page=rig`);
-    await expect(page.getByTestId("page-title")).toHaveText("Rig");
+    await expect(page.getByTestId("page-title")).toHaveText("Board");
     await expect(page.getByTestId("rig-list")).toBeVisible();
-    await openSuitesMenu(page);
-    await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Crew" }).click();
+    /* Crew is reached from ⌘K (header option B). */
+    await goViaSearch(page, "crew room", /Crew room/);
   } else await page.goto(`/suites?project=${project.id}&view=crew`);
   await expect(page.getByTestId("crew-view")).toBeVisible();
   await expect(page.locator(".cw-project")).toContainText("Dune Studies");
@@ -172,11 +172,11 @@ test("Crew › → Rig says Rig, and its Open lands on that shot, selected, on a
   expect(reply).toMatchObject({ status: "boarded", title: "Cut on the drop" });
 
   /* The toast names the Rig and the shot; nothing about Boards or frames. The room stays where it was. */
-  await expect(toast).toContainText("Added to Rig · Cut on the drop");
-  await expect(toast).not.toContainText(/Board|frame/);
+  await expect(toast).toContainText("Added to the Board · Cut on the drop");
+  await expect(toast).not.toContainText(/Storyboard|frame/);
   const open = page.getByTestId("toast-open");
-  await expect(open).toHaveText("Open Rig");
-  await expect(second.getByTestId("crew-solution-status")).toHaveText("Added to Rig");
+  await expect(open).toHaveText("Open Board");
+  await expect(second.getByTestId("crew-solution-status")).toHaveText("Added to the Board");
   /* A second press would add a second shot: the button says so. */
   await expect(second.getByRole("button", { name: "→ Rig again" })).toBeVisible();
   await expect(page.getByTestId("crew-view")).toBeVisible();
@@ -191,7 +191,7 @@ test("Crew › → Rig says Rig, and its Open lands on that shot, selected, on a
   expect(saved.nodes.find((n) => n.id === reply.nodeId)).toMatchObject({ title: "Cut on the drop", type: "scene" });
 
   await open.click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await expect(toast).toHaveCount(0);
   await expect.poll(() => new URL(page.url()).searchParams.get("sel")).toBe(`shot:${reply.nodeId}`);
   /* The Rig read the saved draft again: the shot is listed, and it is the one selected. */
@@ -236,8 +236,7 @@ test("Crew › → Brief confirms with an Open to Brief; Open in Gen fills Gen's
   await expect(library).toContainText("crew-min");
   expect(new URL(page.url()).searchParams.get("view")).toBeNull();
   if (info.project.name === "workbench-390x844") await library.getByRole("button", { name: "Close" }).click();
-  await openSuitesMenu(page);
-  await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Crew" }).click();
+  await goViaSearch(page, "crew room", /Crew room/);
   await expect(solutions).toHaveCount(3);
 
   /* Open in Gen goes to Gen: the solution is the prompt, and the toast does not ask for a paste. */
@@ -247,7 +246,7 @@ test("Crew › → Brief confirms with an Open to Brief; Open in Gen fills Gen's
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).toHaveValue(text);
   await expect(page.getByTestId("gen-preset-note")).toHaveText("Crew · solution");
-  await expect(page.getByTestId("toast")).toHaveText("The solution is Gen’s prompt");
+  await expect(page.getByTestId("toast")).toHaveText("The solution is Make’s prompt");
   await expect(page.getByTestId("toast-open"), "already there: no Open").toHaveCount(0);
   await noSideScroll(page);
   await settle(page);
@@ -273,7 +272,7 @@ test("Crew › Open in Gen while the browser refuses to store anything for the s
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).toHaveValue(text);
   await expect(page.getByTestId("gen-preset-note")).toHaveText("Crew · solution");
-  await expect(page.getByTestId("toast")).toHaveText("The solution is Gen’s prompt");
+  await expect(page.getByTestId("toast")).toHaveText("The solution is Make’s prompt");
   await noSideScroll(page);
   await settle(page);
   await shot(page, "gen-storage-refused", info.project.name);
@@ -290,7 +289,7 @@ test("Crew › Open Rig on a phone whose page head stands taller: the shot still
   await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
   const reply = await (await routed).json() as { nodeId: string };
   await page.getByTestId("toast-open").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   const row = page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`);
   await expect(row).toHaveAttribute("aria-pressed", "true");
   await stopped(page, row);
@@ -317,7 +316,7 @@ test("Crew › → Rig with a long pinned line: the shot is named to a word with
   expect(saved.nodes.find((n) => n.id === reply.nodeId)).toMatchObject({ title: reply.title, text: expect.stringContaining("fills with colour over four seconds") });
 
   const text = page.getByTestId("toast").locator(".gx-toast-text");
-  await expect(text).toHaveText(`Added to Rig · ${reply.title}`);
+  await expect(text).toHaveText(`Added to the Board · ${reply.title}`);
   await reachable(page, page.getByTestId("toast-open"), info.project.name);
   const lines = await text.evaluate((el) => Math.round(el.clientHeight / parseFloat(getComputedStyle(el).lineHeight)));
   expect(lines, "two lines at most").toBeLessThanOrEqual(2);
@@ -335,9 +334,9 @@ test("Crew › → Rig over the Rig page: the Rig reads the new shot when it is 
   const routed = page.waitForResponse((r) => /\/api\/crew\/solutions\/[^/]+\/route$/.test(new URL(r.url()).pathname) && r.request().method() === "POST");
   await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
   const reply = await (await routed).json() as { nodeId: string };
-  await expect(page.getByTestId("toast")).toContainText("Added to Rig · Cut on the drop");
+  await expect(page.getByTestId("toast")).toContainText("Added to the Board · Cut on the drop");
   await page.getByTestId("toast-open").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   const row = page.locator(`.pxw-rig-row[data-shot-id="${reply.nodeId}"]`);
   await expect(row).toContainText("Cut on the drop");
   await expect(row).toHaveAttribute("aria-pressed", "true");
@@ -360,9 +359,9 @@ test("Crew › → Rig, then an edit on the Rig while it is still reading the sa
   const routed = page.waitForResponse((r) => /\/api\/crew\/solutions\/[^/]+\/route$/.test(new URL(r.url()).pathname) && r.request().method() === "POST");
   await solutions.nth(1).getByRole("button", { name: "→ Rig" }).click();
   const reply = await (await routed).json() as { nodeId: string };
-  await expect(page.getByTestId("toast")).toContainText("Added to Rig · Cut on the drop");
+  await expect(page.getByTestId("toast")).toContainText("Added to the Board · Cut on the drop");
   await page.getByTestId("toast-open").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   const rows = page.locator(".pxw-rig-row");
   await expect(rows, "the Rig has not read the new shot yet").toHaveCount(0);
   expect(reads, "the Rig is reading the saved draft again").toBeGreaterThan(0);

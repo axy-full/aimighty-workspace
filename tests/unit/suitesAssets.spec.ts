@@ -60,7 +60,7 @@ test("Recreate hands Gen the render's recipe, through Gen's one letterbox", () =
   const preset = recreatePreset({ id: "g1", prompt: "a fox, enhanced", model: "seedance-2.5", kind: "video", params: { rawPrompt: "a fox" }, provider: "byteplus", task: "generate" }, { name: "Fox" });
   expect(preset).toMatchObject({ prompt: "a fox", model: "seedance-2.5", type: "video", billing: "workspace", from: { id: "g1", name: "Fox" }, note: "Recreate · Fox" });
   expect(recreatePreset({ id: "g2", prompt: "p", model: "m", kind: "model", params: {}, provider: "fal", task: "generate" }, { name: "Mesh" }).type).toBeUndefined();
-  expect(SAY.recreate("Fox")).toBe("Fox’s recipe is in Gen.");
+  expect(SAY.recreate("Fox")).toBe("Fox’s recipe is in Make.");
   /* A recipe travels the same letterbox as Crew's words and Soul ID's identity, and arrives whole. */
   const got: GenPreset[] = [];
   const stop = readGenPresets((p) => got.push(p));

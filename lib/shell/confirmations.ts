@@ -4,7 +4,7 @@ import { restorePage, shellPage, type ShellPage, type ShellSuiteId } from "./ia"
  * Confirmations that say what was done and where it is (idea 18). Pure: the
  * words of each toast, and the one place it opens — a page of the shell, Gen
  * or the Library. A toast names its destination by the label that place goes
- * by on screen, so "Added to Rig" opens Rig and nothing else.
+ * by on screen, so "Added to the Board" opens the Board and nothing else.
  */
 export type Destination =
   | { to: "page"; suite: ShellSuiteId; page: string; /** What to select once there: a Rig shot or a take. */ select?: { kind: "shot" | "take"; id: string } }
@@ -15,7 +15,7 @@ export type Confirmation = { text: string; open?: Destination };
 
 /** The name a destination goes by on screen: the stage strip's label, Gen, or Library. */
 export function destinationName(d: Destination): string {
-  if (d.to === "gen") return "Gen";
+  if (d.to === "gen") return "Make";
   if (d.to === "library") return "Library";
   const page = shellPage(d.suite, d.page);
   if (!page || page.phoneOnly) throw new Error(`No stage ${d.suite}:${d.page}`);
@@ -48,9 +48,9 @@ export const CONFIRM = {
   /** Crew › → Brief appends the solution to the saved Brief. */
   crewBrief: (): Confirmation => ({ text: "Added to the Brief", open: page("studio", "brief") }),
   /** Crew › → Rig writes a draft scene node on the Rig (not a Storyboards frame, which comes from the beat sheet). */
-  crewRig: (title: string, nodeId?: string): Confirmation => ({ text: `Added to Rig · ${title}`, open: page("studio", "rig", nodeId ? { kind: "shot", id: nodeId } : undefined) }),
+  crewRig: (title: string, nodeId?: string): Confirmation => ({ text: `Added to the Board · ${title}`, open: page("studio", "rig", nodeId ? { kind: "shot", id: nodeId } : undefined) }),
   /** Crew › Open in Gen puts the solution in Gen's prompt; nothing is copied or written. */
-  crewGen: (): Confirmation => ({ text: "The solution is Gen’s prompt", open: { to: "gen" } }),
+  crewGen: (): Confirmation => ({ text: "The solution is Make’s prompt", open: { to: "gen" } }),
   /** Crew › File minutes: the markdown is stored in this project's Library. */
   minutesFiled: (): Confirmation => ({ text: "Minutes filed in the Library", open: { to: "library" } }),
   /** Cast › the agent's list, counted from what was added rather than what was proposed. */
@@ -67,7 +67,7 @@ export const CONFIRM = {
   /** Environment › a plate that landed is stored in the Library. */
   plateBuilt: (name: string): Confirmation => ({ text: `${name || "The plate"} is in the Library as Environment`, open: { to: "library" } }),
   /** Brief › a breakdown's scenes became Rig nodes. */
-  breakdownToRig: (nodes?: number): Confirmation => ({ text: nodes == null ? "Scene breakdown added to Rig" : `${plural(nodes, "scene node", "scene nodes")} added to Rig`, open: page("studio", "rig") }),
+  breakdownToRig: (nodes?: number): Confirmation => ({ text: nodes == null ? "Scene breakdown added to the Board" : `${plural(nodes, "scene node", "scene nodes")} added to the Board`, open: page("studio", "rig") }),
   /** Business › a finished take opens in Takes, selected. */
   take: (generationId: string): Destination => page("studio", "takes", { kind: "take", id: `generation:${generationId}` }),
 };
@@ -75,7 +75,7 @@ export const CONFIRM = {
 /** A Crew solution's line once it has gone somewhere — where it went, in the destination's own name. */
 export function solutionStatusLabel(status: "open" | "sent_to_brief" | "boarded" | "generated"): string | null {
   if (status === "sent_to_brief") return `Added to the ${destinationName(page("studio", "brief"))}`;
-  if (status === "boarded") return `Added to ${destinationName(page("studio", "rig"))}`;
+  if (status === "boarded") return `Added to the ${destinationName(page("studio", "rig"))}`;
   if (status === "generated") return `Opened in ${destinationName({ to: "gen" })}`;
   return null;
 }

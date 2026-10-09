@@ -218,7 +218,7 @@ test("spec pages: cards, working tool, title and layout", async ({ page }, info)
 
   /* Generate keeps its existing body, inside the shell. */
   await page.goto(url("generate"));
-  await expect(page.getByTestId("page-title")).toHaveText("Generate");
+  await expect(page.getByTestId("page-title")).toHaveText("Make");
   await expect(page.locator('[data-page-body="generate"] [data-tool-body="generate"]')).toBeVisible({ timeout: 30_000 });
   await assertNoClipping(page);
 
@@ -255,7 +255,7 @@ test("Generate points to Gen: no account form, its Atomik plan refuses with the 
     return route.continue();
   });
   await page.goto(`/workspace?project=${project.id}&suite=atomik&page=generate`);
-  await expect(page.getByTestId("page-title")).toHaveText("Generate");
+  await expect(page.getByTestId("page-title")).toHaveText("Make");
   const moved = page.getByTestId("atomik-generate-moved");
   await expect(moved).toContainText("Single generations run in Gen, on Particl’s own engines", { timeout: 30_000 });
   await expect(moved.getByRole("link", { name: "Open Gen" })).toHaveAttribute("href", "/suites?view=gen");

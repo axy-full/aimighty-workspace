@@ -69,7 +69,7 @@ test("the phone header shows a credit figure on Projects, Suite and Page, at eve
 
     /* Page. */
     await page.locator('[data-screen="suite"] [data-page="rig"]').click();
-    await expect(page.getByTestId("mobile-page-title")).toHaveText("Rig");
+    await expect(page.getByTestId("mobile-page-title")).toHaveText("Board");
     seen = (await credits(page))!;
     expect(seen.text, `${width}×${height} Page`).toMatch(FIGURE);
 
