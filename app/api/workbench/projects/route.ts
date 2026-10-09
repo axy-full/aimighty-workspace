@@ -33,7 +33,8 @@ export const GET=withTenant(async(req:Request)=>{
     return Response.json({id:row?String(row.id):null},{headers:noStore});
   }
   const [list,productions,draft]=await Promise.all([
-    db().execute({sql:'SELECT project_id AS id,name,revision,updated_at AS updatedAt FROM workbench_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 100',args:[auth.user.id]}),
+    /* `kind`: the board each opens on, read the way lib/board/kind.ts boardKindOf reads it (an older Ads draft carries its marketing brief). */
+    db().execute({sql:"SELECT project_id AS id,name,revision,updated_at AS updatedAt,CASE WHEN json_valid(body) THEN COALESCE(json_extract(body,'$.boardKind'),CASE WHEN json_extract(body,'$.marketingBrief') IS NOT NULL OR json_extract(body,'$.moleculr') IS NOT NULL THEN 'ads' END) END AS kind FROM workbench_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 100",args:[auth.user.id]}),
     db().execute('SELECT id,name FROM projects ORDER BY created_at DESC LIMIT 100'),
     id?readDraft(auth.user.id,id):null,
   ]);
