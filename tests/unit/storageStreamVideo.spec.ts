@@ -206,7 +206,7 @@ test("a save asked to start past its queue deadline makes no request", async () 
     .rejects.toThrow(/too little time is left/);
   expect(provider.requests).toBe(before);
   expect(stored("stream-late")).toBeNull();
-  expect(storage.PROVIDER_VIDEO_QUEUE_WAIT_MS + storage.PROVIDER_VIDEO_TIMEOUT_MS + 20_000).toBeLessThanOrEqual(180_000); // fits the store lease
+  expect(storage.PROVIDER_VIDEO_QUEUE_WAIT_MS).toBe(35_000); // the lease maths: tests/unit/heartbeatSaveDeadline.spec.ts
 });
 
 test("concurrent saves of one take share one transfer and one slot", async () => {

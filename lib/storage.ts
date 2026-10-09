@@ -106,11 +106,12 @@ function assertWorkspaceKey(key: string) {
     own the heartbeat's window. The budget covers the whole stream, download
     and upload together, since they now happen at once. */
 export const PROVIDER_VIDEO_TIMEOUT_MS = 120_000;
-/** The longest a save waits for a transfer slot by default. 40 s of waiting,
-    the two-minute transfer and R2's 20 s multipart abort add up to the 180 s
-    store lease (lib/jobs.ts), so a waiting save never outlives the lease that
-    keeps another poller from repeating it. */
-export const PROVIDER_VIDEO_QUEUE_WAIT_MS = 40_000;
+/** The longest a save waits for a transfer slot by default. 35 s of waiting,
+    the two-minute transfer and R2's 20 s multipart abort come to 175 s, inside
+    the 180 s store lease (STORE_LEASE_MS, lib/jobs.ts) with 5 s left for the
+    row write and inspectOriginalVideo after the save, so a waiting save never
+    outlives the lease that keeps another poller from repeating it. */
+export const PROVIDER_VIDEO_QUEUE_WAIT_MS = 35_000;
 /** For a save run inside a person's request (a job poll, the usage page):
     a busy store means skip, and the next poll tries again. */
 export const REQUEST_PATH_QUEUE_WAIT_MS = 5_000;
@@ -147,7 +148,7 @@ export type StoreVideoOptions = {
  *
  * Concurrency: at most STORAGE_TRANSFER_CONCURRENCY (default 4) of these run
  * per process (lib/storage/transfers.ts); the rest wait, for at most
- * `maxQueueMs` (40 s by default, 5 s on request paths), until `deadlineAt`
+ * `maxQueueMs` (35 s by default, 5 s on request paths), until `deadlineAt`
  * or until `signal` aborts, whichever is first, and then fail with
  * TransferQueueTimeoutError without starting. The
  * callers treat that like any failed save: the row keeps no stored_url and

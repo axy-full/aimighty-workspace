@@ -395,7 +395,7 @@ export async function getGeneration(genId: string): Promise<Generation | null> {
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
 /** Long enough for storeVideo's two-minute download budget, short enough to recover a crash. */
-const STORE_LEASE_MS = 180_000;
+export const STORE_LEASE_MS = 180_000;
 /** A connected-account still sent with no acknowledgement: its receipt is written the moment the POST answers. */
 const HIGGSFIELD_UNCONFIRMED_MS = 2 * 60 * 60_000;
 /** A connected-account still whose collection has failed, without a break, for a day will not be collected. */
