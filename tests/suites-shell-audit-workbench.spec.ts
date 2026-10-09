@@ -3,7 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
-import { openSuitesMenu } from "./helpers/suitesMenu";
+import { goViaSearch, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * The Suites shell, audited (September 2026): a Recreate pressed on Gen lands
@@ -43,8 +43,9 @@ async function open(page: Page, path: string, store = { current: fixture() }) {
 
 test("Recreate pressed on Gen lands at once, with the take's own references, and nothing replays when Gen opens again", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?view=gen");
+  const errors = await open(page, "/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
+  await page.getByTestId("make-tab-recent").click();
   await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_wide']").click();
   await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
   await expect(page.getByTestId("toast")).toContainText("Wide on the water’s recipe is in Gen.");
@@ -56,14 +57,13 @@ test("Recreate pressed on Gen lands at once, with the take's own references, and
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Wide on the water");
   await expect(page.getByTestId("gen-well")).toContainText("harbour-plate.webp");
 
-  /* Leave and come back: the composer starts as it should, not with the old recipe laid over it. */
+  /* Close Make and open it again: the composer starts as it should, not with the old recipe laid over it. */
   await page.getByTestId("gen-prompt").fill("my own words");
   const suites = page.getByRole("tablist", { name: "Suites" });
-  await openSuitesMenu(page);
-  await suites.getByRole("tab", { name: "Studio" }).click();
+  await page.getByTestId("make-close").click();
   await expect(page.getByTestId("gen-view")).toHaveCount(0);
   await openSuitesMenu(page);
-  await suites.getByRole("tab", { name: "Gen" }).click();
+  await suites.getByRole("tab", { name: "Make" }).click();
   await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("gen-prompt")).not.toHaveValue("wide on the water, raw");
   await expect(page.getByTestId("gen-recipe")).toHaveCount(0);
@@ -115,8 +115,14 @@ test("Library › Tools: a Deliver row opens its tool; Business and Viral offer 
   await library.getByRole("button", { name: /^Master/ }).click();
   await expect(page.getByTestId("stage-work")).toHaveAttribute("data-tool", "movie");
 
-  await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Viral" }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Motion Transfer");
+  /* Viral left the header (option B); from ⌘K it opens on Motion transfer, Make's quick tool, over the page: the
+     Library shows what can be dragged into it. */
+  await goViaSearch(page, "viral", /Subatomik Viral Studio/);
+  await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "motion");
+  await expect(library.getByTestId("library-assets")).toBeVisible();
+  /* Viral's page, History, offers Assets only too. */
+  await page.goto("/suites?suite=subatomik&page=history&sp=history");
+  await expect(page.getByTestId("page-title")).toHaveText("History");
   await expect(library.getByRole("tab", { name: /Tools/ })).toHaveCount(0);
   await expect(library.getByTestId("library-assets")).toBeVisible();
   expect(errors).toEqual([]);

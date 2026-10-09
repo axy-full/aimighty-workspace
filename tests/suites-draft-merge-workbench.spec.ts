@@ -108,7 +108,7 @@ async function controls(page: Page) {
 const directionNote = (page: Page) => page.getByRole("textbox", { name: "Direction note" });
 const rigSaved = (page: Page) => expect(page.getByTestId("rig-list")).toHaveAttribute("data-save-state", "saved", { timeout: 60_000 });
 const UNDO = process.platform === "darwin" ? "Meta+z" : "Control+z";
-const castEntry = (p: Project) => { p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] }; };
+const castEntry = (p: Project) => { p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Keeper", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] }; };
 
 /** Every toast the page shows, in order. */
 async function watchToasts(page: Page) {
@@ -183,7 +183,7 @@ for (const race of ["the Rig's save lands second", "the stage's save lands secon
   test(`Rig, then Cast (${race}): the Rig's note and the Cast edit are both saved`, async ({ page }) => {
     const { project, errors, read } = await setup(page, (p) => {
       p.nodes = [scene("n1", { title: "Opening" })];
-      p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] };
+      p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Keeper", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] };
     });
     const refusals = await watchRefusals(page);
     const saves = watchSaves(page);
@@ -218,7 +218,7 @@ for (const race of ["the Rig's save lands second", "the stage's save lands secon
     await directionNote(page).fill(NOTE);
     /* Straight to Cast, the Rig's edit not yet saved. */
     await strip(page, /Cast/).click();
-    const description = page.getByLabel("Mara description");
+    const description = page.getByLabel("Keeper description");
     await expect(description).toBeVisible({ timeout: 60_000 });
     await hydrated(description);
     await description.fill(DESCRIPTION);
@@ -320,7 +320,7 @@ for (const gate of ["the cut's save lands first", "the Rig's save lands first"] 
 test("two windows on Cast: each window's edit is kept, and a window that saves after the other shows both", async ({ page, context }) => {
   const { project, read } = await setup(page, (p) => {
     p.production = { cast: { entries: [
-      { id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] },
+      { id: "cast-1", kind: "character", name: "Keeper", description: "", prompt: "", takes: [] },
       { id: "cast-2", kind: "character", name: "Tom", description: "The harbour master", prompt: "", takes: [] },
     ] } as NonNullable<Project["production"]>["cast"] };
   });
@@ -330,10 +330,10 @@ test("two windows on Cast: each window's edit is kept, and a window that saves a
   b.on("pageerror", (e) => errors.push(`B: ${e.message}`));
   const savesA = watchSaves(page), savesB = watchSaves(b);
   const url = `/suites?suite=studio&page=cast&sp=cast&project=${project.id}`;
-  const maraDescription = (p: Page) => p.getByRole("textbox", { name: "Mara description", exact: true });
-  const maraPrompt = (p: Page) => p.getByRole("textbox", { name: "Mara prompt", exact: true });
+  const keeperDescription = (p: Page) => p.getByRole("textbox", { name: "Keeper description", exact: true });
+  const keeperPrompt = (p: Page) => p.getByRole("textbox", { name: "Keeper prompt", exact: true });
   const tomPrompt = (p: Page) => p.getByRole("textbox", { name: "Tom prompt", exact: true });
-  for (const [tab, field] of [[page, maraDescription(page)], [b, tomPrompt(b)]] as const) {
+  for (const [tab, field] of [[page, keeperDescription(page)], [b, tomPrompt(b)]] as const) {
     await tab.goto(url);
     await expect(tab.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
     await expect(tab.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 60_000 });
@@ -342,28 +342,28 @@ test("two windows on Cast: each window's edit is kept, and a window that saves a
 
   /* A saves; B, never reloaded, edits another entry; then A again, from its own older copy. */
   const D1 = "A fox-eyed deckhand.", D2 = "A fox-eyed deckhand, twenty, always cold.", PROMPT = "An old harbour master in an oilskin coat.";
-  await maraDescription(page).fill(D1);
+  await keeperDescription(page).fill(D1);
   await expect.poll(async () => (await read()).project.production?.cast?.entries[0]?.description, { timeout: 20_000 }).toBe(D1);
   await tomPrompt(b).fill(PROMPT);
   await expect.poll(async () => (await read()).project.production?.cast?.entries.map((e) => [e.description, e.prompt]), { timeout: 20_000 }).toEqual([[D1, ""], ["The harbour master", PROMPT]]);
   await expect(b.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 20_000 });
   /* B's save merged A's: B now shows A's description too. */
-  await expect(maraDescription(b)).toHaveValue(D1);
-  await maraDescription(page).fill(D2);
+  await expect(keeperDescription(b)).toHaveValue(D1);
+  await keeperDescription(page).fill(D2);
   await expect.poll(async () => (await read()).project.production?.cast?.entries.map((e) => [e.id, e.name, e.description, e.prompt]), { timeout: 20_000 })
-    .toEqual([["cast-1", "Mara", D2, ""], ["cast-2", "Tom", "The harbour master", PROMPT]]);
+    .toEqual([["cast-1", "Keeper", D2, ""], ["cast-2", "Tom", "The harbour master", PROMPT]]);
   await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 20_000 });
   await expect(tomPrompt(page)).toHaveValue(PROMPT);
   expect(savesB.some((s) => s.status === 409 && s.code === "revision_conflict"), "B's stale save was beaten and merged").toBe(true);
   expect(savesA.some((s) => s.status === 409 && s.code === "revision_conflict"), "A's second save was beaten and merged").toBe(true);
 
   /* Both at once, on the same entry: each window's field survives. */
-  const DESCRIPTION = "Salt in her hair.", MARA_PROMPT = "A young deckhand in a wool cap, breath fogging.";
-  await Promise.all([maraDescription(page).fill(DESCRIPTION), maraPrompt(b).fill(MARA_PROMPT)]);
-  await expect.poll(async () => { const e = (await read()).project.production?.cast?.entries[0]; return [e?.description, e?.prompt]; }, { timeout: 25_000 }).toEqual([DESCRIPTION, MARA_PROMPT]);
+  const DESCRIPTION = "Salt in her hair.", KEEPER_PROMPT = "A young deckhand in a wool cap, breath fogging.";
+  await Promise.all([keeperDescription(page).fill(DESCRIPTION), keeperPrompt(b).fill(KEEPER_PROMPT)]);
+  await expect.poll(async () => { const e = (await read()).project.production?.cast?.entries[0]; return [e?.description, e?.prompt]; }, { timeout: 25_000 }).toEqual([DESCRIPTION, KEEPER_PROMPT]);
   await page.waitForTimeout(2000);
   const settled = (await read()).project.production!.cast!.entries;
-  expect(settled.map((e) => [e.id, e.description, e.prompt])).toEqual([["cast-1", DESCRIPTION, MARA_PROMPT], ["cast-2", "The harbour master", PROMPT]]);
+  expect(settled.map((e) => [e.id, e.description, e.prompt])).toEqual([["cast-1", DESCRIPTION, KEEPER_PROMPT], ["cast-2", "The harbour master", PROMPT]]);
   for (const tab of [page, b]) await expect(tab.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 20_000 });
   expect(errors).toEqual([]);
 });
@@ -438,7 +438,7 @@ test("an input attached after another window saved is one input on the shot, in 
 
 test("+ Character after another window saved: the typed name is saved, once, beside the other window's edit", async ({ page }) => {
   const { project, errors, read, elsewhere } = await setup(page, (p) => {
-    p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] };
+    p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Keeper", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] };
   });
   const refusals = await watchRefusals(page);
   await page.goto(`/suites?suite=studio&page=cast&sp=cast&project=${project.id}`);
@@ -450,13 +450,13 @@ test("+ Character after another window saved: the typed name is saved, once, bes
   const name = page.getByTestId("cast-entry").nth(1).locator("input.pd-cast-name");
   await name.click();
   await name.pressSequentially("Nova", { delay: 60 });
-  await expect.poll(async () => (await read()).project.production?.cast?.entries.map((e) => e.name), { timeout: 30_000 }).toEqual(["Mara", "Nova"]);
+  await expect.poll(async () => (await read()).project.production?.cast?.entries.map((e) => e.name), { timeout: 30_000 }).toEqual(["Keeper", "Nova"]);
   await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 20_000 });
   await page.waitForTimeout(2000);
   const saved = (await read()).project;
   expect(saved.brief).toBe("Another window's brief");
   expect(repeated(ids(saved.production!.cast!.entries))).toEqual([]);
-  expect(await page.getByTestId("cast-entry").locator("input.pd-cast-name").evaluateAll((inputs) => inputs.map((i) => (i as HTMLInputElement).value))).toEqual(["Mara", "Nova"]);
+  expect(await page.getByTestId("cast-entry").locator("input.pd-cast-name").evaluateAll((inputs) => inputs.map((i) => (i as HTMLInputElement).value))).toEqual(["Keeper", "Nova"]);
   expect(await refusals()).toEqual([]);
   expect(errors).toEqual([]);
 });
@@ -511,7 +511,7 @@ test("a plate filed by two tabs following the same render is filed once", async 
 test("Marketing › Build storyboard after a Rig save keeps the Rig's input, and the storyboard", async ({ page }) => {
   const { project, errors, read, elsewhere } = await setup(page, (p) => {
     p.nodes = [scene("n1", { title: "Opening" })];
-    p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] };
+    p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Keeper", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] };
     p.moleculr = { ...EMPTY_MOLECULR, productName: "Still Water", hooks: ["Quiet mornings"], creative: { path: "template", category: "ugc", templateId: "ugc-faceless", direction: "", aspect: "9:16", seconds: 15 } };
   });
   const saves = watchSaves(page);
@@ -525,7 +525,7 @@ test("Marketing › Build storyboard after a Rig save keeps the Rig's input, and
     p.assets.push(input);
     p.nodes.push({ id: "rig-input", title: "blocking.png", type: "media", assetId: input.id, x: -300, y: 0, width: 220, linked: [] } as Node);
     p.nodes = p.nodes.map((n) => (n.id === "n1" ? { ...n, linked: ["rig-input"] } : n));
-    p.production!.cast!.entries[0].name = "Mara Vey";
+    p.production!.cast!.entries[0].name = "Keeper Vey";
   });
   const toggle = tool.getByRole("button", { name: /Find the right expression/ });
   await toggle.scrollIntoViewIfNeeded();
@@ -542,7 +542,7 @@ test("Marketing › Build storyboard after a Rig save keeps the Rig's input, and
   expect(saved.nodes.find((n) => n.id === "n1")?.linked).toEqual(["rig-input"]);
   expect(saved.nodes.some((n) => n.id === "rig-input")).toBe(true);
   expect(saved.assets.some((a) => a.id === input.id)).toBe(true);
-  expect(saved.production?.cast?.entries[0]?.name).toBe("Mara Vey");
+  expect(saved.production?.cast?.entries[0]?.name).toBe("Keeper Vey");
   for (const variant of saved.moleculr!.variants) expect(saved.nodes.some((n) => n.id === variant.nodeId), `variant ${variant.nodeId} has its node`).toBe(true);
   expect(repeated(ids(saved.nodes))).toEqual([]);
   expect(errors).toEqual([]);
@@ -586,7 +586,7 @@ test("Rig: + Add shot whose reply was lost (and the check too) is saved once, wi
 
 test("Cast: + Character whose reply was lost after another save built on it is saved once", async ({ page }) => {
   const { project, errors, read, put } = await setup(page, (p) => {
-    p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] };
+    p.production = { cast: { entries: [{ id: "cast-1", kind: "character", name: "Keeper", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"] };
   });
   let armed = false;
   await page.route((url) => url.pathname === "/api/workbench/projects", async (route: Route) => {
@@ -677,7 +677,7 @@ test("Gen: a batch of two takes after a Brief edit elsewhere keeps the Brief edi
   const saves = watchSaves(page);
   const paid: { batchId?: string; variation?: number; shotId?: string }[] = [];
   page.on("request", (request) => { if (request.method() === "POST" && ["/api/generate", "/api/audio"].includes(new URL(request.url()).pathname)) paid.push(request.postDataJSON() as (typeof paid)[number]); });
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   await expect(page.getByTestId("gen-view")).toBeVisible();
   /* The page holds the project as it opened; the Brief is then written elsewhere. */
@@ -727,7 +727,7 @@ test("Cast: a description whose reply was lost, then rewritten in another window
     return landed;
   });
   await page.goto(`/suites?suite=studio&page=cast&sp=cast&project=${project.id}`);
-  const description = page.getByRole("textbox", { name: "Mara description", exact: true });
+  const description = page.getByRole("textbox", { name: "Keeper description", exact: true });
   await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 60_000 });
   await hydrated(description);
   lost.armed = true;
@@ -757,7 +757,7 @@ test("Cast: a description saved as the connection dropped, then rewritten on ano
     return route.continue();
   });
   await page.goto(`/suites?suite=studio&page=cast&sp=cast&project=${project.id}`);
-  const description = page.getByRole("textbox", { name: "Mara description", exact: true });
+  const description = page.getByRole("textbox", { name: "Keeper description", exact: true });
   await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 60_000 });
   await hydrated(description);
   mode = "drop-put";
@@ -855,7 +855,7 @@ test("Cast: clearing a description while its save is unconfirmed saves the clear
     return route.continue();
   });
   await page.goto(`/suites?suite=studio&page=cast&sp=cast&project=${project.id}`);
-  const field = page.getByRole("textbox", { name: "Mara description", exact: true });
+  const field = page.getByRole("textbox", { name: "Keeper description", exact: true });
   await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 60_000 });
   await hydrated(field);
   await field.fill(TYPED);
@@ -1272,7 +1272,7 @@ for (const leave of ["stays on Gen", "leaves Gen for Studio and comes back", "re
     const prompt = "A red fox crosses the frozen harbour at dusk.";
     const press = async (open: boolean) => {
       if (open) {
-        await page.goto(`/suites?view=gen&project=${project.id}`);
+        await page.goto(`/suites?make=video&project=${project.id}`);
         await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
       }
       const box = page.getByTestId("gen-prompt");
@@ -1287,9 +1287,10 @@ for (const leave of ["stays on Gen", "leaves Gen for Studio and comes back", "re
     await expect.poll(() => reached.length, { timeout: 60_000 }).toBe(1);
     await expect(page.locator(".gx-gen-note[role=status]").first()).toBeVisible({ timeout: 30_000 });
     if (leave === "leaves Gen for Studio and comes back") {
-      await page.locator("[data-suite-tab=studio]").click();
+      /* Make is a panel now: leaving it is closing it (Studio stays under it). */
+      await page.getByTestId("make-close").click();
       await expect(page.getByTestId("gen-view")).toHaveCount(0, { timeout: 30_000 });
-      await page.locator("[data-suite-tab=gen]").click();
+      await page.locator("[data-suite-tab=make]").click();
       await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 30_000 });
       await press(false);
     } else await press(leave === "reloads");
@@ -1326,19 +1327,19 @@ test("Gen sound: a new prompt at a new price is what is sent, never the lane's e
   const { project, errors, scope } = await setup(page, () => {});
   await page.addInitScript(({ scope, id }) => localStorage.setItem(scope, id), { scope, id: project.id });
   const submits = await mockAudio(page);
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   await page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Audio" }).click();
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
   const go = page.getByTestId("gen-generate");
   await box.fill("Thunder rolls over the frozen harbour while the ice cracks and gulls cry.");
-  await expect(go).toHaveText(/Generate · 40 cr/, { timeout: 60_000 });
+  await expect(go).toHaveText(/Make · 40 cr/, { timeout: 60_000 });
   await go.click();
   await expect.poll(() => submits.length, { timeout: 60_000 }).toBe(1);
   await expect(page.locator(".gx-gen-note[role=status]").first()).toBeVisible({ timeout: 30_000 });
   await box.fill("Short click.");
-  await expect(go).toHaveText(/Generate · 2 cr/, { timeout: 60_000 });
+  await expect(go).toHaveText(/Make · 2 cr/, { timeout: 60_000 });
   await go.click();
   await expect.poll(() => submits.length, { timeout: 60_000 }).toBe(2);
   expect(submits[1].body.text).toBe("Short click.");
@@ -1361,14 +1362,14 @@ test("Gen sound: when Edit & Sound makes the sound lane while Gen's save is out,
     expect(answer.ok(), await answer.text()).toBe(true);
     return route.continue();
   });
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   await page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Audio" }).click();
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
   await box.fill("Short click.");
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText(/Generate · 2 cr/, { timeout: 60_000 });
+  await expect(go).toHaveText(/Make · 2 cr/, { timeout: 60_000 });
   await go.click();
   await expect.poll(() => submits.length, { timeout: 60_000 }).toBe(1);
   await page.waitForTimeout(1000);
@@ -1389,7 +1390,7 @@ test("Gen, two takes: take 2's request cut off stops the batch; the next Generat
     return route.continue();
   });
   const checks = checkedKeys(page);
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
@@ -1447,7 +1448,7 @@ test("Gen: a batch's shot saved while other saves land before and on top of it �
   });
   const paid: string[] = [];
   page.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/generate") paid.push(request.headers()["idempotency-key"] ?? ""); });
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
@@ -1684,7 +1685,7 @@ for (const when of ["after it shows the save unconfirmed", "before its save goes
       return route.continue();
     });
     await page.goto(`/suites?suite=studio&page=cast&sp=cast&project=${project.id}`);
-    const description = page.getByRole("textbox", { name: "Mara description", exact: true });
+    const description = page.getByRole("textbox", { name: "Keeper description", exact: true });
     await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 60_000 });
     await hydrated(description);
     const TYPED = `A fox-eyed deckhand ${randomUUID().slice(0, 6)}`;
@@ -1692,13 +1693,13 @@ for (const when of ["after it shows the save unconfirmed", "before its save goes
     await description.fill(TYPED);
     if (when === "after it shows the save unconfirmed") await expect(page.locator(".pd-save")).toHaveText(/unconfirmed|Not saved/, { timeout: 30_000 });
     await strip(page, /Environment/).click();
-    await expect(page.getByRole("textbox", { name: "Mara description", exact: true })).toHaveCount(0, { timeout: 60_000 });
+    await expect(page.getByRole("textbox", { name: "Keeper description", exact: true })).toHaveCount(0, { timeout: 60_000 });
     await page.waitForTimeout(1500);
     offline = false;
     await expect.poll(async () => (await read()).project.production!.cast!.entries[0].description, { timeout: 45_000 }).toBe(TYPED);
     await strip(page, /Cast/).click();
     await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 60_000 });
-    await expect(page.getByRole("textbox", { name: "Mara description", exact: true })).toHaveValue(TYPED);
+    await expect(page.getByRole("textbox", { name: "Keeper description", exact: true })).toHaveValue(TYPED);
     expect(errors).toEqual([]);
   });
 
@@ -1803,9 +1804,9 @@ test("Brief: line 1 typed here, line 2 rewritten and saved in another window jus
   expect(errors).toEqual([]);
 });
 
-test("Script editor: one word typed here while another window renamed MARA to NORA on 600 lines of a feature — both are saved", async ({ page }) => {
-  /* 3,000 lines, MARA's cue on 600 of them: the rename is past what a line-by-line alignment of the whole script takes. */
-  const SCRIPT = Array.from({ length: 3000 }, (_, i) => (i % 5 === 0 ? "MARA" : i % 5 === 1 ? `Line ${i}.` : i % 5 === 2 ? "" : i % 5 === 3 ? "JONAS" : `Reply ${i}.`)).join("\n");
+test("Script editor: one word typed here while another window renamed KEEPER to NORA on 600 lines of a feature — both are saved", async ({ page }) => {
+  /* 3,000 lines, KEEPER's cue on 600 of them: the rename is past what a line-by-line alignment of the whole script takes. */
+  const SCRIPT = Array.from({ length: 3000 }, (_, i) => (i % 5 === 0 ? "KEEPER" : i % 5 === 1 ? `Line ${i}.` : i % 5 === 2 ? "" : i % 5 === 3 ? "JONAS" : `Reply ${i}.`)).join("\n");
   const cues = (text: string, cue: string) => (text.match(new RegExp(`^${cue}$`, "gm")) ?? []).length;
   const { project, errors, read, put } = await setup(page, (p) => { p.script = SCRIPT; });
   const saves = watchSaves(page);
@@ -1817,7 +1818,7 @@ test("Script editor: one word typed here while another window renamed MARA to NO
     held = true;
     /* The other window's rename lands while this window's save is on its way. */
     const now = await read();
-    expect((await put({ ...now.project, script: now.project.script!.replace(/^MARA$/gm, "NORA") }, now.revision)).ok()).toBe(true);
+    expect((await put({ ...now.project, script: now.project.script!.replace(/^KEEPER$/gm, "NORA") }, now.revision)).ok()).toBe(true);
     await route.continue();
   });
   await page.goto(`/suites?suite=studio&page=brief&project=${project.id}`);
@@ -1832,7 +1833,7 @@ test("Script editor: one word typed here while another window renamed MARA to NO
   await expect(page.getByTestId("brief-save")).toHaveText(/^Saved/, { timeout: 30_000 });
   await page.waitForTimeout(1500);
   const saved = (await read()).project.script ?? "";
-  expect({ MARA: cues(saved, "MARA"), NORA: cues(saved, "NORA"), typed: saved.includes(MARK) }).toEqual({ MARA: 0, NORA: 600, typed: true });
+  expect({ KEEPER: cues(saved, "KEEPER"), NORA: cues(saved, "NORA"), typed: saved.includes(MARK) }).toEqual({ KEEPER: 0, NORA: 600, typed: true });
   expect(cues(await editor.inputValue(), "NORA")).toBe(600);
   expect(errors).toEqual([]);
 });
@@ -1881,7 +1882,7 @@ test("Cast: a description whose fourth try landed with its reply lost, then rewr
   const MINE = "A fox-eyed deckhand.", LATER = "Rewritten in another window after reading the deckhand line.";
   const lost = await flakyThenLost(page, read, put, (landed) => { expect(landed.production!.cast!.entries[0].description).toBe(MINE); landed.production!.cast!.entries[0].description = LATER; return landed; });
   await page.goto(`/suites?suite=studio&page=cast&sp=cast&project=${project.id}`);
-  const description = page.getByRole("textbox", { name: "Mara description", exact: true });
+  const description = page.getByRole("textbox", { name: "Keeper description", exact: true });
   await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 60_000 });
   await hydrated(description);
   lost.armed = true;
@@ -2100,7 +2101,7 @@ test("a canvas edit to A that could not be sent before switching to B goes to A'
 
 const FOX = "A red fox crosses the frozen harbour at dusk.";
 async function openGen(page: Page, project: Project) {
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 60_000 });
   const box = page.getByTestId("gen-prompt");
   await hydrated(box);
@@ -2324,7 +2325,7 @@ test("back on the Rig after another page of this tab saved the draft: the Rig sh
   await openRig(page, project);
   await expect(page.getByTestId("rig-library-Briefs")).toHaveText("Briefs · 1", { timeout: 30_000 });
   await strip(page, /Cast/).click();
-  const description = page.getByLabel("Mara description");
+  const description = page.getByLabel("Keeper description");
   await expect(description).toBeVisible({ timeout: 60_000 });
   await hydrated(description);
   const DESCRIPTION = `A deckhand ${randomUUID().slice(0, 8)}`;
@@ -2333,7 +2334,7 @@ test("back on the Rig after another page of this tab saved the draft: the Rig sh
   await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 30_000 });
   const sent = saves.length;
   await strip(page, /Rig$/).click();
-  /* Mara's description is one of the Rig's briefs at once: read, not waited for from a save of the Rig's own. */
+  /* Keeper's description is one of the Rig's briefs at once: read, not waited for from a save of the Rig's own. */
   await expect(page.getByTestId("rig-library-Briefs")).toHaveText("Briefs · 2", { timeout: 15_000 });
   expect(saves.length, "the Rig sent nothing to catch up").toBe(sent);
   await page.locator(".pxw-rig-row[data-shot-id='n1']").click();

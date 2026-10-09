@@ -17,7 +17,7 @@ const efforts = [
   { value: "xhigh", label: "Extra high", description: "Explore difficult decisions more thoroughly." },
 ];
 const models = [{ id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", vision: true, efforts }];
-const fixture = (): Project => ({ ...newProject("Dune Studies"), id: "ws-effort", productionProjectId: "prod-effort", shotMappings: {}, brief: "A fox crosses a frozen harbour at dusk" });
+const fixture = (): Project => ({ ...newProject("Harbour film"), id: "ws-effort", productionProjectId: "prod-effort", shotMappings: {}, brief: "A fox crosses a frozen harbour at dusk" });
 
 async function open(page: Page) {
   await signInLocally(page.request);
@@ -30,7 +30,7 @@ async function open(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/suites?suite=studio&page=brief");
-  await expect(page.getByTestId("project-name")).toHaveText("Dune Studies");
+  await expect(page.getByTestId("project-name")).toHaveText("Harbour film");
   return errors;
 }
 

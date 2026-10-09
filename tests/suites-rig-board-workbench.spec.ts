@@ -35,14 +35,14 @@ const section = (id: string, name: string, x: number, y: number): CanvasNode => 
 function fixture(name: string, id: string): Project {
   return {
     ...newProject(name), id,
-    assets: [still("face", "Mira study", "Character", "character"), still("plate", "Dunes plate", "Environment", "environment"), still("frame", "Harbour still", "Reference", "hero")],
+    assets: [still("face", "Wren study", "Character", "character"), still("plate", "Dunes plate", "Environment", "environment"), still("frame", "Harbour still", "Reference", "hero")],
     nodes: [
-      card("mira", "Mira", "character", 0, 0, { assetId: "face" }),
+      card("wren", "Wren", "character", 0, 0, { assetId: "face" }),
       card("dunes", "The mirrored dunes", "element", 0, 320, { assetId: "plate" }),
       card("board", "Harbour board", "media", 300, 0, { assetId: "frame" }),
       card("empty", "Pickup plate", "media", 300, 320),
       card("say", "Director's note", "note", 600, 320, { width: 254, role: "Director", text: "Hold the frame.\nLet the fabric move." }),
-      shot("open", "The opening", 600, 0, ["mira", "dunes", "board"]),
+      shot("open", "The opening", 600, 0, ["wren", "dunes", "board"]),
       card("tone", "Warm grade", "grade", 900, 0, { width: 254, linked: ["open"] }),
     ],
   };
@@ -249,10 +249,10 @@ test("cards read at a glance: preview, kind or type (a shot its number), state a
     expect(box.bottom <= zoom.y || box.right <= zoom.x, `${box.id} is clear of the zoom cluster`).toBe(true);
   }
   /* A reference: its kind, its version, its picture, and that it has a source. */
-  await expect(node(page, "mira").locator(".pxw-graph-kind")).toHaveText("CAST");
-  await expect(node(page, "mira").locator(".pxw-graph-kicker")).toContainText("v1");
-  await expect(node(page, "mira").locator(".pxw-graph-media img")).toHaveCount(1);
-  await expect(node(page, "mira").locator(".pxw-graph-state")).toHaveText("Ready");
+  await expect(node(page, "wren").locator(".pxw-graph-kind")).toHaveText("CAST");
+  await expect(node(page, "wren").locator(".pxw-graph-kicker")).toContainText("v1");
+  await expect(node(page, "wren").locator(".pxw-graph-media img")).toHaveCount(1);
+  await expect(node(page, "wren").locator(".pxw-graph-state")).toHaveText("Ready");
   await expect(node(page, "dunes").locator(".pxw-graph-kind")).toHaveText("ENVIRONMENT");
   await expect(node(page, "empty").locator(".pxw-graph-state")).toHaveText("No source yet");
   /* A shot: its type and its number in the list, its state as the shot list reads it, its version. */
@@ -300,7 +300,7 @@ test("a Verify card: its verdict and what it found stand where a description wou
   const words = "Compare the face and the wardrobe with the masters before the edit.";
   const verify = { rubric: 1, frames: { videoAt: [0.1, 0.5, 0.9], max: 3 } };
   const { errors } = await openMocked(page, [...base.nodes,
-    card("check", "Verify · The opening", "review", 1200, 0, { width: 254, text: words, linked: ["open", "mira"], verify }),
+    card("check", "Verify · The opening", "review", 1200, 0, { width: 254, text: words, linked: ["open", "wren"], verify }),
     card("loose", "Verify · nothing wired yet", "review", 1200, 320, { width: 220, text: words, verify }),
   ]);
   const graph = page.getByTestId("rig-graph");
@@ -551,7 +551,7 @@ test("Tidy lays the board out by sections for everyone: the other window folds i
   /* The team canvas: each kind's block left to right on the 20 px grid, shots down their column in canvas order. */
   const nodes = (await canvasOf(page.request, headers, productionId)).canvas!.nodes;
   const at = (id: string) => [nodes[id].x, nodes[id].y];
-  expect([at("mira"), at("dunes"), at("board"), at("empty"), at("say"), at("open"), at("close"), at("tone")]).toEqual([
+  expect([at("wren"), at("dunes"), at("board"), at("empty"), at("say"), at("open"), at("close"), at("tone")]).toEqual([
     [60, 140], [420, 140], [780, 140], [780, 380], [1140, 140], [1500, 140], [1500, 400], [1860, 140],
   ]);
   expect([nodes[kindSectionId("cast")], nodes[kindSectionId("shots")]].map((t) => [t.title, t.mode, t.x, t.y])).toEqual([["Cast", "section", 60, 60], ["Shots", "section", 1500, 60]]);
@@ -594,7 +594,7 @@ test("on the phone's flow the board's section titles read as headings, each abov
   /* The scene and its inputs first; then the colour card it feeds; then the rest under their titles. Cast's only card
      is read with the scene, so its title is not repeated with nothing under it. */
   const read = await flow.locator("[data-node-id]").evaluateAll((els) => els.map((el) => (el.hasAttribute("data-section") ? `# ${el.querySelector(".pxm-flow-section-name")!.textContent}` : (el as HTMLElement).dataset.nodeId)));
-  expect(read).toEqual(["mira", "dunes", "board", "open", "tone", "# Pickups", "empty", "# Notes", "say"]);
+  expect(read).toEqual(["wren", "dunes", "board", "open", "tone", "# Pickups", "empty", "# Notes", "say"]);
   await expect(flow.locator(".pxm-flow-section")).toHaveCount(2);
   await expect(flow.locator('.pxm-flow-section:has-text("Pickups") .pxm-flow-section-count')).toHaveText("1 card");
   expect(await smallTextIn(flow), "flow text under 12px").toEqual([]);

@@ -17,7 +17,7 @@ export const PHONES = ["workbench-360x640", "workbench-390x844", "workbench-844x
 export const png = (background = "#2b4f6e", width = 640, height = 480) => sharp({ create: { width, height, channels: 3, background } }).png().toBuffer();
 
 export const still = (id: string, fields: Partial<Asset> = {}): Asset => ({ id, uploadId: id, url: `/api/uploads/${id}`, kind: "image", category: "Product", name: `${id}.webp`, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [], ...fields });
-export const fixture = (fields: Partial<Project> = {}): Project => ({ ...newProject("Northline launch"), id: "ws-northline", productionProjectId: "prod-northline", shotMappings: {}, ...fields });
+export const fixture = (fields: Partial<Project> = {}): Project => ({ ...newProject("Granite launch"), id: "ws-granite", productionProjectId: "prod-granite", shotMappings: {}, ...fields });
 
 export type Store = { project: Project; revision: number; saves: number; refused: string[] };
 /** The project store as the route keeps it: every save checked against the real schema, revision by revision. */

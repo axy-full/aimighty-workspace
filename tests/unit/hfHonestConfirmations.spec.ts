@@ -20,7 +20,7 @@ const EVERY: [string, Confirmation][] = [
   ["minutes filed", CONFIRM.minutesFiled()],
   ["cast taken", CONFIRM.castTaken({ added: 3, known: 2, overLimit: 0 })],
   ["cast taken, nothing new", CONFIRM.castTaken({ added: 0, known: 4, overLimit: 0 })],
-  ["cast built · character", CONFIRM.castBuilt("Mira", "character")],
+  ["cast built · character", CONFIRM.castBuilt("Wren", "character")],
   ["cast built · element", CONFIRM.castBuilt("Chrome sphere", "element")],
   ["plate built", CONFIRM.plateBuilt("Harbour at dawn")],
   ["plate built, unnamed", CONFIRM.plateBuilt("")],
@@ -111,7 +111,9 @@ test("a toast shown where its result already is carries no Open", () => {
   expect(isHere(cast, at({}))).toBe(true);
   expect(isHere(cast, at({ page: "rig" }))).toBe(false);
   expect(isHere(cast, at({ view: "crew" })), "Crew's view is not the Cast stage").toBe(false);
-  expect(isHere({ to: "gen" }, at({ view: "gen" }))).toBe(true);
+  /* Gen is Make's panel, open over any page: there is where it is open. */
+  expect(isHere({ to: "gen" }, at({ make: true }))).toBe(true);
+  expect(isHere({ to: "gen" }, at({ view: "crew", make: true }))).toBe(true);
   expect(isHere({ to: "gen" }, at({}))).toBe(false);
   expect(isHere({ to: "library" }, at({ library: true }))).toBe(true);
   expect(isHere({ to: "library" }, at({ library: false }))).toBe(false);
@@ -122,11 +124,11 @@ test("a toast shown where its result already is carries no Open", () => {
 
 test("Cast counts what the agent's list added, not what it proposed", () => {
   const p = (name: string, kind: CastProposal["kind"] = "character"): CastProposal => ({ kind, name, description: "", prompt: `${name}, reference` });
-  const cast = { entries: [newEntry("character", "Mira"), newEntry("element", "Chrome sphere")] };
-  const merged = mergeAgentCast(cast, [p("Mira"), p(" mira "), p("Idris"), p("Idris"), p("Kettle", "element"), p("Chrome Sphere", "element"), p("  ")], "job-1");
+  const cast = { entries: [newEntry("character", "Wren"), newEntry("element", "Chrome sphere")] };
+  const merged = mergeAgentCast(cast, [p("Wren"), p(" wren "), p("Idris"), p("Idris"), p("Kettle", "element"), p("Chrome Sphere", "element"), p("  ")], "job-1");
   expect(merged).toMatchObject({ added: 2, known: 2, overLimit: 0 });
   expect(merged.cast.agentJobId).toBe("job-1");
-  expect(merged.cast.entries.map((e) => e.name)).toEqual(["Mira", "Chrome sphere", "Idris", "Kettle"]);
+  expect(merged.cast.entries.map((e) => e.name)).toEqual(["Wren", "Chrome sphere", "Idris", "Kettle"]);
   expect(merged.cast.entries[2]).toMatchObject({ kind: "character", prompt: "Idris, reference" });
   /* Each entry's id comes from the run and its name: another tab taking the same run holds it once, even renamed since. */
   expect(merged.cast.entries[2].id).toBe(sourcedCastId("job-1", "Idris"));

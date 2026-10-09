@@ -20,7 +20,7 @@ export function useConfirm() {
 
   const open = useCallback((to: Destination) => {
     const shell = live(), ws = latest.current;
-    if (to.to === "gen") { shell.goGen(); return; }
+    if (to.to === "gen") { shell.openMake(); return; }
     if (to.to === "library") { shell.openLibrary("assets"); return; }
     shell.goSuite(to.suite, to.page);
     if (to.select) {
@@ -44,7 +44,7 @@ export function useConfirm() {
 
 /** Where the person is, and whether the Library's assets are already on screen there. */
 function hereOf(shell: Shell): Here {
-  return { view: shell.view, suite: shell.suite.id, page: shell.page.id, library: (shell.view === "suite" || shell.view === "gen") && (shell.wide || shell.libOpen) && shell.libTab === "assets" };
+  return { view: shell.view === "board" || shell.view === "home" ? "suite" : shell.view, suite: shell.suite.id, page: shell.page.id, make: shell.make !== null, library: shell.view === "suite" && (shell.wide || shell.libOpen) && shell.libTab === "assets" };
 }
 
 /**

@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { dimLabels, smallTargets, smallText } from "./phoneFloors";
-import { openSuitesMenu } from "./helpers/suitesMenu";
+import { closeSuitesMenu, goViaSearch, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * Crew in the browser (design/particl-graphite/README.md), against the
@@ -18,23 +18,26 @@ async function open(page: Page) {
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
-  const project = { ...newProject("Dune Studies"), brief: "One kitchen, one rainy dawn. The bottle is never held up to camera.", script: "INT. KITCHEN - DAWN\n\nRain on the window." };
+  const project = { ...newProject("Harbour film"), brief: "One kitchen, one rainy dawn. The bottle is never held up to camera.", script: "INT. KITCHEN - DAWN\n\nRain on the window." };
   expect((await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } })).ok()).toBe(true);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`/suites?project=${project.id}`);
-  await expect(page.getByTestId("project-name")).toHaveText("Dune Studies");
+  await expect(page.getByTestId("project-name")).toHaveText("Harbour film");
   return { errors, project, headers };
 }
 
-test("Crew is the sixth tab; a round streams in at the price on the button and leaves three solutions", async ({ page }, info) => {
+test("Crew opens from ⌘K under the project; a round streams in at the price on the button and leaves three solutions", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, project, headers } = await open(page);
   const suites = page.getByRole("tablist", { name: "Suites" });
-  await openSuitesMenu(page);
-  await expect(suites.getByRole("tab")).toHaveText(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
-  await suites.getByRole("tab", { name: "Crew" }).click();
+  /* Crew left the header (option B): ⌘K reaches it, and the project's segment stays lit over it. */
+  await goViaSearch(page, "crew room", /Crew room/);
   await expect(page.getByTestId("suite-mark")).toHaveText("CREW");
+  await openSuitesMenu(page);
+  await expect(suites.getByRole("tab", { includeHidden: true })).toHaveText(["Home", "Harbour film", "Make", "Atomik"]);
+  await expect(suites.locator('[data-suite-tab="project"]')).toHaveAttribute("aria-selected", "true");
+  await closeSuitesMenu(page);
   expect(new URL(page.url()).searchParams.get("view")).toBe("crew");
   await expect(page.getByRole("navigation", { name: "Pages" }).getByRole("button")).toHaveText([/^01\s*Room$/, /^02\s*Members$/, /^03\s*Sessions$/]);
   await expect(page.getByTestId("crew-engine")).toContainText("multi-agent · xAI key connected");
@@ -87,8 +90,7 @@ test("Crew is the sixth tab; a round streams in at the price on the button and l
   expect(saved.brief).toContain("Crew · Locked dawn frame — ");
 
   /* Coming back reopens the same room; Sessions lists it. */
-  await openSuitesMenu(page);
-  await suites.getByRole("tab", { name: "Crew" }).click();
+  await goViaSearch(page, "crew room", /Crew room/);
   await expect(messages).toHaveCount(10);
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Sessions/ }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Sessions");

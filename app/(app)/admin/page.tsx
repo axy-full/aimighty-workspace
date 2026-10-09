@@ -31,6 +31,8 @@ type Admin = {
   requests: { id: string; name: string; email: string; note: string; mailed: boolean; createdAt: number }[];
   platformKeysByDefault: boolean; defaultAllowanceUsd: number | null;
   creditUsd: number; welcomeCredits: number | null;
+  /** The new interface is on for every workspace (the owner's last switch). */
+  interfaceEveryone?: boolean;
   plans: PlanDef[];
   concurrency: { byEngine: { engine: string; peak: number; at: number; jobs: number }[]; overall: { peak: number; at: number }; days: number } | null;
   workspaces: Ws[];
@@ -49,6 +51,8 @@ type Ws = {
   suspended: boolean; suspendedReason: string | null; flagged: boolean; flagNote: string | null;
   limits: { concurrency: number | null; rendersPerHour: number | null; storageGb: number | null };
   internalTest?: boolean;
+  /** The per-workspace "new interface" switch (lib/shell/new-interface.ts), on for this workspace in particular. */
+  newInterface?: boolean;
   planId: PlanId | null;
 };
 
@@ -103,7 +107,7 @@ export default function AdminPage() {
         </div>
         {!data ? <Waiting label="Reading the platform" /> : (
           <>
-            {!data.ready && <p className="rail-help text-lift">Sign-up isn&rsquo;t open yet: set TURSO_API_TOKEN, TURSO_ORG and KEYRING_SECRET in the hosting environment so new workspaces can be given a database and hold keys.</p>}
+            {!data.ready && <p className="rail-help !text-lift !text-[12px]">Sign-up isn&rsquo;t open yet: set TURSO_API_TOKEN, TURSO_ORG and KEYRING_SECRET in the hosting environment so new workspaces can be given a database and hold keys.</p>}
 
             <section className="scard">
               <div className="scard-h"><span>Invite someone to sign up</span><span>An invitation lets one address create an account and a workspace of its own. {data.mail ? "It is emailed at once." : "Email isn't set up, so copy the link and send it yourself."}</span></div>
@@ -113,18 +117,18 @@ export default function AdminPage() {
                 <label className="wl-field !gap-1">NOTE<input className="ctl !h-9 w-[260px]" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="who they are, for your own record" /></label>
                 <button type="submit" className="btn-primary" disabled={busy || !data.ready}>Invite</button>
               </form>
-              {last && <p className="rail-help">{last.sent ? "Sent." : last.mailError ? `Not emailed (${last.mailError}).` : "Not emailed."} Link: <code className="font-mono text-[11px] text-ink">{last.link}</code></p>}
+              {last && <p className="rail-help !text-[12px] !text-lead">{last.sent ? "Sent." : last.mailError ? `Not emailed (${last.mailError}).` : "Not emailed."} Link: <code className="font-mono text-[12px] text-ink">{last.link}</code></p>}
               <div className="flex flex-col">
-                <div className="steam is-head"><span>INVITED</span><span>STATE</span><span>NOTE</span><span className="text-right">EXPIRES</span></div>
+                <div className="steam is-head !text-[12px] !text-lead"><span>INVITED</span><span>STATE</span><span>NOTE</span><span className="text-right">EXPIRES</span></div>
                 {data.invites.map((i) => (
                   <div key={i.code} className="steam">
-                    <span className="flex flex-col gap-0.5"><span className="font-medium">{i.name || i.email}</span><span className="text-[11.5px] text-dim">{i.email}</span></span>
-                    <span className="mono-s">{i.sentAt ? `SENT ${timeAgo(i.sentAt).toUpperCase()}` : "NOT SENT"}</span>
+                    <span className="flex flex-col gap-0.5"><span className="font-medium">{i.name || i.email}</span><span className="text-[12px] text-lead">{i.email}</span></span>
+                    <span className="mono-s !text-[12px] !text-lead">{i.sentAt ? `SENT ${timeAgo(i.sentAt).toUpperCase()}` : "NOT SENT"}</span>
                     <span className="text-lead">{i.note || "—"}</span>
-                    <span className="flex items-center justify-end gap-3"><span className="mono-s">{timeAgo(i.expiresAt).replace(" ago", "")}</span><button type="button" className="ak-act is-muted" onClick={() => withdraw(i.code)}>WITHDRAW</button></span>
+                    <span className="flex items-center justify-end gap-3"><span className="mono-s !text-[12px] !text-lead">{timeAgo(i.expiresAt).replace(" ago", "")}</span><button type="button" className="ak-act is-muted" onClick={() => withdraw(i.code)}>WITHDRAW</button></span>
                   </div>
                 ))}
-                {data.invites.length === 0 && <span className="rail-help pt-2">No open invitations.</span>}
+                {data.invites.length === 0 && <span className="rail-help pt-2 !text-[12px] !text-lead">No open invitations.</span>}
               </div>
             </section>
 
@@ -133,7 +137,7 @@ export default function AdminPage() {
               <div className="flex flex-col">
                 {data.requests.map((r) => (
                   <div key={r.id} className="steam !grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_180px]">
-                    <span className="flex flex-col gap-0.5"><span className="font-medium">{r.name || r.email}</span><span className="text-[11.5px] text-dim">{r.email} · {timeAgo(r.createdAt)}</span></span>
+                    <span className="flex flex-col gap-0.5"><span className="font-medium">{r.name || r.email}</span><span className="text-[12px] text-lead">{r.email} · {timeAgo(r.createdAt)}</span></span>
                     <span className="text-lead">{r.note || "—"}</span>
                     <span className="flex justify-end gap-2">
                       <button type="button" className="btn-secondary !h-8 !text-[12px]" onClick={() => invite({ email: r.email, name: r.name, requestId: r.id })} disabled={busy || !data.ready}>Invite</button>
@@ -141,7 +145,7 @@ export default function AdminPage() {
                     </span>
                   </div>
                 ))}
-                {data.requests.length === 0 && <span className="rail-help pt-2">Nobody waiting.</span>}
+                {data.requests.length === 0 && <span className="rail-help pt-2 !text-[12px] !text-lead">Nobody waiting.</span>}
               </div>
             </section>
 
@@ -159,16 +163,17 @@ export default function AdminPage() {
             <PreviewsCard />
 
             <section className="scard">
+              <InterfaceEveryone everyone={Boolean(data.interfaceEveryone)} onChanged={refresh} />
               <div className="scard-h"><span>Workspaces</span><span>{live} on this deployment{deleted ? `, ${deleted} deleted` : ""}. Every organisation uses Particl credits. Approved invitations start with {data.welcomeCredits ?? "—"} credits; self-serve sign-ups start with 0. Click a balance to add credits. The house workspace is never billed in credits; its spend reads at cost.</span></div>
               <div className="flex flex-col">
-                <div className="steam is-head !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px]"><span>WORKSPACE</span><span>OWNER</span><span>30 DAYS</span><span>KEYS</span><span className="text-right">STATE</span></div>
+                <div className="steam is-head !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px] !text-[12px] !text-lead"><span>WORKSPACE</span><span>OWNER</span><span>30 DAYS</span><span>KEYS</span><span className="text-right">STATE</span></div>
                 {data.workspaces.map((w) => (
                   <div key={w.id} className={`steam !grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_170px_150px_190px] ${w.deletedAt ? "opacity-60" : w.suspended ? "opacity-70" : ""}`}>
-                    <span className="flex flex-col gap-0.5"><span className="font-medium">{w.name}{w.deletedAt ? <span className="ml-2 text-[11px] text-lift">DELETED</span> : w.flagged ? <span className="ml-2 text-[11px] text-lift" title={w.flagNote ?? ""}>FLAGGED</span> : null}</span><span className="text-[11.5px] text-dim">{w.slug}{w.legacy ? " · the studio's own" : ""} · {w.members} member{w.members === 1 ? "" : "s"} · {timeAgo(w.createdAt)}</span></span>
-                    <span className="flex flex-col gap-0.5"><span>{w.owner?.name ?? "—"}</span><span className="text-[11.5px] text-dim">{w.owner?.email ?? ""}</span></span>
+                    <span className="flex flex-col gap-0.5"><span className="font-medium">{w.name}{w.deletedAt ? <span className="ml-2 text-[12px] text-lift">DELETED</span> : w.flagged ? <span className="ml-2 text-[12px] text-lift" title={w.flagNote ?? ""}>FLAGGED</span> : null}</span><span className="text-[12px] text-lead">{w.slug}{w.legacy ? " · the studio's own" : ""} · {w.members} member{w.members === 1 ? "" : "s"} · {timeAgo(w.createdAt)}</span></span>
+                    <span className="flex flex-col gap-0.5"><span>{w.owner?.name ?? "—"}</span><span className="text-[12px] text-lead">{w.owner?.email ?? ""}</span></span>
                     <SpendCell s={w.spend30} grants={w.grants} />
                     <CreditsCell w={w} onChanged={refresh} />
-                    <StateCell w={w} plans={data.plans ?? DEFAULT_PLANS} onChanged={refresh} />
+                    <StateCell w={w} plans={data.plans ?? DEFAULT_PLANS} everyone={Boolean(data.interfaceEveryone)} onChanged={refresh} />
                   </div>
                 ))}
               </div>
@@ -189,9 +194,9 @@ function CreditsCell({ w, onChanged }: {
   const [val, setVal] = useState("");
   const [busy, setBusy] = useState(false);
   // The house workspace has no balance and takes no credits: nothing to add here.
-  if (w.house) return <span className="mono-s" title="Runs on the platform's engines and is never billed in credits">HOUSE · NOT BILLED</span>;
+  if (w.house) return <span className="mono-s !text-[12px] !text-lead" title="Runs on the platform's engines and is never billed in credits">HOUSE · NOT BILLED</span>;
   // Nobody can open a deleted workspace, so its balance is read, not topped up.
-  if (w.deletedAt) return <span className="mono-s">PLATFORM · {w.credits ? `${creditsNumber(w.credits.balance)} CR` : "—"}</span>;
+  if (w.deletedAt) return <span className="mono-s !text-[12px] !text-lead">PLATFORM · {w.credits ? `${creditsNumber(w.credits.balance)} CR` : "—"}</span>;
   async function grant() {
     const n = Number(val);
     if (!Number.isFinite(n) || n === 0) return;
@@ -213,12 +218,12 @@ function CreditsCell({ w, onChanged }: {
       <span className="flex items-center gap-1">
         <input className="ctl !h-7 !w-[84px] !px-2 !text-[12px]" value={val} onChange={(e) => setVal(e.target.value)} placeholder="+ credits" autoFocus
           onKeyDown={(e) => { if (e.key === "Enter") grant(); if (e.key === "Escape") setEditing(false); }} aria-label="Credits to add" />
-        <button type="button" className="btn-primary !h-7 !px-2 !text-[11px]" onClick={grant} disabled={busy || !val.trim()}>Add</button>
+        <button type="button" className="btn-primary !h-7 !px-2 !text-[12px]" onClick={grant} disabled={busy || !val.trim()}>Add</button>
       </span>
     );
   }
   return (
-    <button type="button" className="mono-s text-left hover:text-ink" title={c ? `${creditsNumber(c.used)} used of ${creditsNumber(c.granted)} granted — click to add credits` : "Click to add credits"} onClick={() => setEditing(true)}>
+    <button type="button" className="mono-s text-left hover:!text-ink !text-[12px] !text-lead" title={c ? `${creditsNumber(c.used)} used of ${creditsNumber(c.granted)} granted — click to add credits` : "Click to add credits"} onClick={() => setEditing(true)}>
       PLATFORM · {c ? `${creditsNumber(c.balance)} CR` : "—"}{w.gatewayKey ? " · OWN GATEWAY KEY" : ""}
     </button>
   );
@@ -262,27 +267,27 @@ function TopupsCard({ onChanged }: { onChanged: () => void }) {
         ? "Packs workspaces have asked for. Take payment your own way, then approve: the credits go in at once and anything held releases itself."
         : `Card checkout through ${data.provider} approves these on its own; this is the record.`}</span></div>
       <div className="flex flex-col">
-        <div className="steam is-head !grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_110px_90px_170px]"><span>WORKSPACE</span><span>ASKED BY</span><span>PACK</span><span className="text-right">WHEN</span><span className="text-right">ANSWER</span></div>
+        <div className="steam is-head !grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_110px_90px_170px] !text-[12px] !text-lead"><span>WORKSPACE</span><span>ASKED BY</span><span>PACK</span><span className="text-right">WHEN</span><span className="text-right">ANSWER</span></div>
         {data.open.map((r) => (
           <div key={r.id} className="steam !grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_110px_90px_170px]">
-            <span className="flex flex-col gap-0.5"><span className="font-medium">{r.workspaceName}</span><span className="text-[11.5px] text-dim">{r.note || r.workspaceSlug}</span></span>
-            <span className="flex flex-col gap-0.5"><span>{r.requesterName ?? "—"}</span><span className="text-[11.5px] text-dim">{r.requesterEmail ?? ""}</span></span>
-            <span className="flex flex-col gap-0.5"><span className="mono-v">{(r.credits + r.bonus).toLocaleString()} cr</span><span className="text-[11.5px] text-dim">{r.label} · ${r.usd.toLocaleString()}{r.bonus > 0 ? ` · ${r.bonus.toLocaleString()} free` : ""}</span></span>
-            <span className="mono-s text-right">{when(r.createdAt)}</span>
+            <span className="flex flex-col gap-0.5"><span className="font-medium">{r.workspaceName}</span><span className="text-[12px] text-lead">{r.note || r.workspaceSlug}</span></span>
+            <span className="flex flex-col gap-0.5"><span>{r.requesterName ?? "—"}</span><span className="text-[12px] text-lead">{r.requesterEmail ?? ""}</span></span>
+            <span className="flex flex-col gap-0.5"><span className="mono-v">{(r.credits + r.bonus).toLocaleString()} cr</span><span className="text-[12px] text-lead">{r.label} · ${r.usd.toLocaleString()}{r.bonus > 0 ? ` · ${r.bonus.toLocaleString()} free` : ""}</span></span>
+            <span className="mono-s text-right !text-[12px] !text-lead">{when(r.createdAt)}</span>
             <span className="flex justify-end gap-1.5">
               <button type="button" className="btn-secondary !h-7 !px-2.5 !text-[12px]" disabled={busy != null} onClick={() => decide(r.id, "decline")}>Decline</button>
               <button type="button" className="btn-primary !h-7 !px-2.5 !text-[12px]" disabled={busy != null} onClick={() => decide(r.id, "approve")}>{busy === r.id ? "…" : "Approve"}</button>
             </span>
           </div>
         ))}
-        {data.open.length === 0 && <span className="rail-help pt-2">Nothing waiting.</span>}
+        {data.open.length === 0 && <span className="rail-help pt-2 !text-[12px] !text-lead">Nothing waiting.</span>}
         {data.decided.slice(0, 8).map((r) => (
           <div key={r.id} className="steam !grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_110px_90px_170px] opacity-60">
-            <span className="flex flex-col gap-0.5"><span>{r.workspaceName}</span><span className="text-[11.5px] text-dim">{r.workspaceSlug}</span></span>
-            <span className="text-dim">{r.requesterName ?? "—"}</span>
+            <span className="flex flex-col gap-0.5"><span>{r.workspaceName}</span><span className="text-[12px] text-lead">{r.workspaceSlug}</span></span>
+            <span className="text-lead">{r.requesterName ?? "—"}</span>
             <span className="mono-v">{(r.credits + r.bonus).toLocaleString()} cr</span>
-            <span className="mono-s text-right">{r.decidedAt ? when(r.decidedAt) : ""}</span>
-            <span className="mono-s text-right">{r.status.toUpperCase()}</span>
+            <span className="mono-s text-right !text-[12px] !text-lead">{r.decidedAt ? when(r.decidedAt) : ""}</span>
+            <span className="mono-s text-right !text-[12px] !text-lead">{r.status.toUpperCase()}</span>
           </div>
         ))}
       </div>
@@ -301,12 +306,12 @@ function TopupsCard({ onChanged }: { onChanged: () => void }) {
  * expensively, which is a different problem with a different answer.
  */
 function SpendCell({ s, grants }: { s: Ws["spend30"]; grants: Ws["grants"] }) {
-  if (!s || !s.jobs) return <span className="mono-s">—</span>;
+  if (!s || !s.jobs) return <span className="mono-s !text-[12px] !text-lead">—</span>;
   /* The house workspace: what its jobs cost the engines, and no credits or margin, since it is never billed. */
   if (s.atCost || s.marginUsd == null) return (
     <span className="flex flex-col gap-0.5">
       <span className="mono-v">{usd(s.engineCostUsd, 2)} at cost</span>
-      <span className="text-[11.5px] text-dim">{s.jobs} job{s.jobs === 1 ? "" : "s"}{s.failed ? ` · ${s.failed} failed` : ""}{s.running ? ` · ${s.running} running` : ""}</span>
+      <span className="text-[12px] text-lead">{s.jobs} job{s.jobs === 1 ? "" : "s"}{s.failed ? ` · ${s.failed} failed` : ""}{s.running ? ` · ${s.running} running` : ""}</span>
     </span>
   );
   const m = s.marginUsd;
@@ -314,14 +319,47 @@ function SpendCell({ s, grants }: { s: Ws["spend30"]; grants: Ws["grants"] }) {
   return (
     <span className="flex flex-col gap-0.5">
       <span className="mono-v">{usd(s.engineCostUsd, 2)} · {Math.round(s.billedCredits).toLocaleString()} CR</span>
-      <span className={`text-[11.5px] ${m < 0 ? "text-lift" : "text-dim"}`}>margin {m < 0 ? "−" : "+"}{usd(Math.abs(m), 2)} · {s.jobs} job{s.jobs === 1 ? "" : "s"}{s.failed ? ` · ${s.failed} failed` : ""}{s.running ? ` · ${s.running} running` : ""}</span>
-      {free > 0 && <span className="text-[11.5px] text-mute">{Math.round(free).toLocaleString()} of {Math.round(free + (grants?.paid ?? 0)).toLocaleString()} CR given, not sold</span>}
+      <span className={`text-[12px] ${m < 0 ? "text-lift" : "text-lead"}`}>margin {m < 0 ? "−" : "+"}{usd(Math.abs(m), 2)} · {s.jobs} job{s.jobs === 1 ? "" : "s"}{s.failed ? ` · ${s.failed} failed` : ""}{s.running ? ` · ${s.running} running` : ""}</span>
+      {free > 0 && <span className="text-[12px] text-lead">{Math.round(free).toLocaleString()} of {Math.round(free + (grants?.paid ?? 0)).toLocaleString()} CR given, not sold</span>}
     </span>
   );
 }
 
+/**
+ * The new interface for every workspace at once (lib/shell/new-interface.ts): the owner's last switch, flipped only after
+ * the old screens are gone (docs/old-shells.md). One press asks first; it changes which screens are drawn, nothing a
+ * workspace is charged.
+ */
+function InterfaceEveryone({ everyone, onChanged }: { everyone: boolean; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function flip() {
+    const next = !everyone;
+    const ok = await appConfirm(next ? "Turn the new interface on for every workspace?" : "Turn the new interface off for every workspace?",
+      next ? "Every workspace, including customers', then sees the new screens on its next page load." : "Workspaces you turned on one by one keep it; everyone else goes back to today's screens.",
+      { confirmLabel: next ? "Turn on for everyone" : "Turn off for everyone", danger: next });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/interface", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ everyone: next }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `The server answered ${res.status}.`);
+      onChanged();
+    } catch (e) { await appAlert("Not changed", (e as Error).message); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="scard-h" data-testid="new-interface-everyone">
+      <span>New interface</span>
+      <span className="flex items-center gap-2">
+        <span>{everyone ? "On for every workspace." : "Off by default. Turn it on per workspace below (State column), or for everyone at once."}</span>
+        <button type="button" className={`chip !py-0.5 !text-[12px] ${everyone ? "is-on" : ""}`} disabled={busy} onClick={flip} aria-pressed={everyone}>{everyone ? "Everyone · on" : "Everyone · off"}</button>
+      </span>
+    </div>
+  );
+}
+
 /** Active, flagged for review, or suspended — and the two levers. */
-function StateCell({ w, plans, onChanged }: { w: Ws; plans: PlanDef[]; onChanged: () => void }) {
+function StateCell({ w, plans, everyone, onChanged }: { w: Ws; plans: PlanDef[]; everyone: boolean; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
@@ -355,34 +393,48 @@ function StateCell({ w, plans, onChanged }: { w: Ws; plans: PlanDef[]; onChanged
     if (!(await appConfirm("Restore this workspace?", "Its owner gets access back and turns the rest of the team on from People.", { confirmLabel: "Restore" }))) return;
     await patch({ restore: true });
   }
-  if (w.legacy) return <span className="mono-s text-right">THE PLATFORM</span>;
+  /* The new interface for this workspace (lib/shell/new-interface.ts): off by default; the platform owner turns it on for his own and the demo workspace. */
+  const interfaceChip = (
+    <button type="button" className={`chip !py-0.5 !text-[12px] ${w.newInterface || everyone ? "is-on" : ""}`} disabled={busy || everyone} data-testid="new-interface-chip" aria-pressed={Boolean(w.newInterface || everyone)}
+      onClick={() => patch({ newInterface: !w.newInterface })}
+      title={everyone ? "On for every workspace. Turn that off first to choose workspaces one by one." : "The new interface for this workspace only. Off, the workspace keeps today's screens."}>
+      {`New interface · ${w.newInterface || everyone ? "on" : "off"}`}
+    </button>
+  );
+  if (w.legacy) return (
+    <span className="flex flex-col items-end gap-1">
+      <span className="mono-s text-right !text-[12px] !text-lead">THE PLATFORM</span>
+      {interfaceChip}
+    </span>
+  );
   // Suspending and flagging mark a workspace, so they apply to a deleted one too.
   const marks = (
     <>
       {w.suspended
-        ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ suspended: false })}>Resume</button>
-        : <button type="button" className="chip !py-0.5 !text-[11.5px] !text-lift" disabled={busy} onClick={suspend}>Suspend</button>}
+        ? <button type="button" className="chip !py-0.5 !text-[12px]" disabled={busy} onClick={() => patch({ suspended: false })}>Resume</button>
+        : <button type="button" className="chip !py-0.5 !text-[12px] !text-lift" disabled={busy} onClick={suspend}>Suspend</button>}
       {w.flagged
-        ? <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={() => patch({ flagged: false })}>Clear flag</button>
-        : <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={flag}>Flag</button>}
+        ? <button type="button" className="chip !py-0.5 !text-[12px]" disabled={busy} onClick={() => patch({ flagged: false })}>Clear flag</button>
+        : <button type="button" className="chip !py-0.5 !text-[12px]" disabled={busy} onClick={flag}>Flag</button>}
     </>
   );
   if (w.deletedAt) return (
     <span className="flex flex-col items-end gap-1">
-      <span className="mono-s text-lift" title={w.suspended ? w.suspendedReason ?? "" : w.flagNote ?? ""}>DELETED {timeAgo(w.deletedAt).toUpperCase()}{w.suspended ? " · SUSPENDED" : w.flagged ? " · FLAGGED" : ""}</span>
+      <span className="mono-s !text-lift !text-[12px]" title={w.suspended ? w.suspendedReason ?? "" : w.flagNote ?? ""}>DELETED {timeAgo(w.deletedAt).toUpperCase()}{w.suspended ? " · SUSPENDED" : w.flagged ? " · FLAGGED" : ""}</span>
       <span className="flex gap-1.5">
         {marks}
-        <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={restore}>Restore</button>
+        <button type="button" className="chip !py-0.5 !text-[12px]" disabled={busy} onClick={restore}>Restore</button>
       </span>
     </span>
   );
   return (
     <span className="flex flex-col items-end gap-1">
-      <span className={`mono-s ${w.suspended ? "text-lift" : ""}`} title={w.suspended ? w.suspendedReason ?? "" : w.flagNote ?? ""}>{w.suspended ? "SUSPENDED" : w.flagged ? "FLAGGED" : "ACTIVE"}</span>
+      <span className={`mono-s !text-[12px] ${w.suspended ? "!text-lift" : "!text-lead"}`} title={w.suspended ? w.suspendedReason ?? "" : w.flagNote ?? ""}>{w.suspended ? "SUSPENDED" : w.flagged ? "FLAGGED" : "ACTIVE"}</span>
       <span className="flex gap-1.5">
         {marks}
-        <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy} onClick={setLimits} title={`Own limits: ${w.limits.concurrency ?? "—"} at once · ${w.limits.rendersPerHour ?? "—"} an hour · ${w.limits.storageGb ?? "—"} GB`}>Limits</button>
-        <button type="button" className={`chip !py-0.5 !text-[11.5px] ${w.internalTest ? "is-on" : ""}`} disabled={busy} onClick={() => patch({ internalTest: !w.internalTest })} title="The platform's own internal test workspace: the one place a real engine call may be made for the platform's sake">{w.internalTest ? "Test workspace" : "Make test"}</button>
+        <button type="button" className="chip !py-0.5 !text-[12px]" disabled={busy} onClick={setLimits} title={`Own limits: ${w.limits.concurrency ?? "—"} at once · ${w.limits.rendersPerHour ?? "—"} an hour · ${w.limits.storageGb ?? "—"} GB`}>Limits</button>
+        <button type="button" className={`chip !py-0.5 !text-[12px] ${w.internalTest ? "is-on" : ""}`} disabled={busy} onClick={() => patch({ internalTest: !w.internalTest })} title="The platform's own internal test workspace: the one place a real engine call may be made for the platform's sake">{w.internalTest ? "Test workspace" : "Make test"}</button>
+        {interfaceChip}
         <PlanChip w={w} plans={plans} busy={busy} patch={patch} />
       </span>
     </span>
@@ -407,7 +459,7 @@ function PlanChip({ w, plans, busy, patch }: {
   const on = plans.find((p) => p.id === w.planId) ?? null;
   const label = on ? `${on.label}${on.priceUsd ? ` · $${on.priceUsd}/mo` : ""}` : "No plan";
   return (
-    <label className={`chip !py-0.5 !text-[11.5px] ${on ? "is-on" : ""}`} title={on
+    <label className={`chip !py-0.5 !text-[12px] ${on ? "is-on" : ""}`} title={on
       ? `${on.label}: ${on.includedCredits.toLocaleString()} credits a cycle${on.maxProductions ? `, ${on.maxProductions} project${on.maxProductions === 1 ? "" : "s"}` : ""}${on.maxMembers ? `, ${on.maxMembers} members` : ""}. Included credits are not granted yet.`
       : "On no plan. Not the same as Invite, which carries its own ceilings."}>
       <select
@@ -447,25 +499,25 @@ function ConcurrencyCard({ c }: { c: Admin["concurrency"] }) {
         <span>The most that ever ran at once on each engine, over {c.days} days, on the platform&rsquo;s keys. Read from the meter&rsquo;s own intervals, so it is exact rather than sampled — this is the figure to quote when asking a provider for a higher limit.</span>
       </div>
       <div className="flex flex-col">
-        <div className="steam is-head !grid-cols-[minmax(0,1fr)_90px_90px_190px]">
+        <div className="steam is-head !grid-cols-[minmax(0,1fr)_90px_90px_190px] !text-[12px] !text-lead">
           <span>ENGINE</span><span className="text-right">PEAK</span><span className="text-right">JOBS</span><span className="text-right">WHEN</span>
         </div>
         {c.byEngine.map((e: { engine: string; peak: number; at: number; jobs: number }) => (
           <div key={e.engine} className="steam !grid-cols-[minmax(0,1fr)_90px_90px_190px]">
             <span className="font-medium">{e.engine}</span>
             <span className="mono-v text-right">{e.peak}</span>
-            <span className="mono-s text-right text-dim">{e.jobs}</span>
-            <span className="mono-s text-right text-dim">{when(e.at)}</span>
+            <span className="mono-s text-right !text-lead !text-[12px]">{e.jobs}</span>
+            <span className="mono-s text-right !text-lead !text-[12px]">{when(e.at)}</span>
           </div>
         ))}
         <div className="steam !grid-cols-[minmax(0,1fr)_90px_90px_190px] opacity-70">
           <span>Everything at once</span>
           <span className="mono-v text-right">{c.overall.peak}</span>
-          <span className="mono-s text-right text-dim">—</span>
-          <span className="mono-s text-right text-dim">{when(c.overall.at)}</span>
+          <span className="mono-s text-right !text-lead !text-[12px]">—</span>
+          <span className="mono-s text-right !text-lead !text-[12px]">{when(c.overall.at)}</span>
         </div>
       </div>
-      <span className="rail-help">The platform figure is not the engines&rsquo; added together: those peaks happen at different moments.</span>
+      <span className="rail-help !text-[12px] !text-lead">The platform figure is not the engines&rsquo; added together: those peaks happen at different moments.</span>
     </section>
   );
 }
@@ -483,21 +535,21 @@ function EnginesCard() {
   return (
     <section className="scard">
       <div className="scard-h"><span>Engines</span><span>Across every workspace, from the meter: jobs, failure rate and the average wait for a finished job, over a day and a week.</span></div>
-      {rows.length === 0 ? <span className="rail-help">Nothing has run in the last week.</span> : (
+      {rows.length === 0 ? <span className="rail-help !text-[12px] !text-lead">Nothing has run in the last week.</span> : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-[13px]">
-            <thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-2 font-medium">Engine</th><th className="pb-2 font-medium">Model</th><th className="pb-2 text-right font-medium">24h jobs</th><th className="pb-2 text-right font-medium">Failed</th><th className="pb-2 text-right font-medium">7d jobs</th><th className="pb-2 text-right font-medium">Failed</th><th className="pb-2 text-right font-medium">Avg wait</th><th className="pb-2 text-right font-medium">7d cost</th></tr></thead>
+            <thead><tr className="text-left text-[12px] uppercase tracking-wide text-lead"><th className="pb-2 font-medium">Engine</th><th className="pb-2 font-medium">Model</th><th className="pb-2 text-right font-medium">24h jobs</th><th className="pb-2 text-right font-medium">Failed</th><th className="pb-2 text-right font-medium">7d jobs</th><th className="pb-2 text-right font-medium">Failed</th><th className="pb-2 text-right font-medium">Avg wait</th><th className="pb-2 text-right font-medium">7d cost</th></tr></thead>
             <tbody>
               {rows.map(({ w, d }) => (
                 <tr key={`${w.engine}/${w.model}`} className="border-t border-hair">
                   <td className="py-2 pr-3">{w.engine}</td>
-                  <td className="py-2 pr-3 text-dim">{w.model}</td>
+                  <td className="py-2 pr-3 text-lead">{w.model}</td>
                   <td className="py-2 text-right tabular-nums">{d?.jobs ?? 0}</td>
-                  <td className={`py-2 text-right tabular-nums ${d && d.failRate > 0.2 ? "text-lift" : "text-dim"}`}>{pct(d)}</td>
+                  <td className={`py-2 text-right tabular-nums ${d && d.failRate > 0.2 ? "text-lift" : "text-lead"}`}>{pct(d)}</td>
                   <td className="py-2 text-right tabular-nums">{w.jobs}</td>
-                  <td className={`py-2 text-right tabular-nums ${w.failRate > 0.2 ? "text-lift" : "text-dim"}`}>{pct(w)}</td>
-                  <td className="py-2 text-right tabular-nums text-dim">{wait(w)}</td>
-                  <td className="py-2 text-right tabular-nums text-dim">{usd(w.engineCostUsd, 2)}</td>
+                  <td className={`py-2 text-right tabular-nums ${w.failRate > 0.2 ? "text-lift" : "text-lead"}`}>{pct(w)}</td>
+                  <td className="py-2 text-right tabular-nums text-lead">{wait(w)}</td>
+                  <td className="py-2 text-right tabular-nums text-lead">{usd(w.engineCostUsd, 2)}</td>
                 </tr>
               ))}
             </tbody>
@@ -526,33 +578,33 @@ function ProviderChargesCard() {
   return (
     <section className="scard" data-testid="admin-provider-charges">
       <div className="scard-h"><span>Failed takes · provider charges</span><span>Latest 1,000 recorded failures in the last 7 days, across every workspace using the platform&rsquo;s own keys: what each provider said about the charge.</span></div>
-      {failures.summary.length === 0 ? <span className="rail-help">No provider outcome recorded for a failed take on the platform&rsquo;s keys in the last week.</span> : (
+      {failures.summary.length === 0 ? <span className="rail-help !text-[12px] !text-lead">No provider outcome recorded for a failed take on the platform&rsquo;s keys in the last week.</span> : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-[13px]">
-            <thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-2 font-medium">Engine</th><th className="pb-2 text-right font-medium">Failed</th><th className="pb-2 text-right font-medium">Charged</th><th className="pb-2 text-right font-medium">Refunded</th><th className="pb-2 text-right font-medium">Not charged</th><th className="pb-2 text-right font-medium">Didn&rsquo;t say</th><th className="pb-2 text-right font-medium">Charged, by the provider</th></tr></thead>
+            <thead><tr className="text-left text-[12px] uppercase tracking-wide text-lead"><th className="pb-2 font-medium">Engine</th><th className="pb-2 text-right font-medium">Failed</th><th className="pb-2 text-right font-medium">Charged</th><th className="pb-2 text-right font-medium">Refunded</th><th className="pb-2 text-right font-medium">Not charged</th><th className="pb-2 text-right font-medium">Didn&rsquo;t say</th><th className="pb-2 text-right font-medium">Charged, by the provider</th></tr></thead>
             <tbody>
               {failures.summary.map((s) => (
                 <tr key={s.engine} className="border-t border-hair">
                   <td className="py-2 pr-3">{s.engine}</td>
                   <td className="py-2 text-right tabular-nums">{s.failed}</td>
-                  <td className={`py-2 text-right tabular-nums ${s.byState.billed ? "text-lift" : "text-dim"}`}>{s.byState.billed}</td>
-                  <td className="py-2 text-right tabular-nums text-dim">{s.byState.refunded}</td>
-                  <td className="py-2 text-right tabular-nums text-dim">{s.byState.not_charged}</td>
-                  <td className="py-2 text-right tabular-nums text-dim">{s.byState.unknown}</td>
-                  <td className="py-2 text-right tabular-nums text-dim">{s.billed.length ? s.billed.map((b) => billingAmount(b)).join(" · ") : "—"}</td>
+                  <td className={`py-2 text-right tabular-nums ${s.byState.billed ? "text-lift" : "text-lead"}`}>{s.byState.billed}</td>
+                  <td className="py-2 text-right tabular-nums text-lead">{s.byState.refunded}</td>
+                  <td className="py-2 text-right tabular-nums text-lead">{s.byState.not_charged}</td>
+                  <td className="py-2 text-right tabular-nums text-lead">{s.byState.unknown}</td>
+                  <td className="py-2 text-right tabular-nums text-lead">{s.billed.length ? s.billed.map((b) => billingAmount(b)).join(" · ") : "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <table className="mt-3 w-full min-w-[640px] text-[13px]" data-testid="admin-provider-charges-recent">
-            <thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-2 font-medium">When</th><th className="pb-2 font-medium">Engine · model</th><th className="pb-2 font-medium">What happened</th><th className="pb-2 font-medium">Provider&rsquo;s code</th><th className="pb-2 font-medium">The charge</th></tr></thead>
+            <thead><tr className="text-left text-[12px] uppercase tracking-wide text-lead"><th className="pb-2 font-medium">When</th><th className="pb-2 font-medium">Engine · model</th><th className="pb-2 font-medium">What happened</th><th className="pb-2 font-medium">Provider&rsquo;s code</th><th className="pb-2 font-medium">The charge</th></tr></thead>
             <tbody>
               {failures.recent.map((r) => (
                 <tr key={r.id} className="border-t border-hair">
-                  <td className="py-2 pr-3 text-dim">{timeAgo(r.at)}</td>
-                  <td className="py-2 pr-3">{r.engine} · <span className="text-dim">{r.model}</span></td>
+                  <td className="py-2 pr-3 text-lead">{timeAgo(r.at)}</td>
+                  <td className="py-2 pr-3">{r.engine} · <span className="text-lead">{r.model}</span></td>
                   <td className="py-2 pr-3" title={r.message ?? undefined}>{failureCopy(r.kind).what}</td>
-                  <td className="py-2 pr-3 mono-s text-dim">{r.code}</td>
+                  <td className="py-2 pr-3 mono-s !text-lead !text-[12px]">{r.code}</td>
                   <td className="py-2">{said(r)}</td>
                 </tr>
               ))}
@@ -598,8 +650,8 @@ function PlatformLayerCard() {
   }
   const actions = (k: keyof Layer) => (
     <span className="flex items-center gap-2">
-      {stored.has(k) && <span className="mono-s">OVERRIDDEN</span>}
-      <button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy != null} onClick={() => save(k, true)}>Default</button>
+      {stored.has(k) && <span className="mono-s !text-[12px] !text-lead">OVERRIDDEN</span>}
+      <button type="button" className="chip !py-0.5 !text-[12px]" disabled={busy != null} onClick={() => save(k, true)}>Default</button>
       <button type="button" className="btn-primary !h-7 !px-2.5 !text-[12px]" disabled={busy != null} onClick={() => save(k)}>{busy === k ? "…" : "Save"}</button>
     </span>
   );
@@ -609,10 +661,10 @@ function PlatformLayerCard() {
       <div className="scard-h"><span>Platform layer</span><span>What every new workspace inherits: the default Setup, the starter project, the rules the compiler applies, and the numbers a workspace starts with. Each part has a default; Save keeps your version, Default puts it back.</span></div>
 
       <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Default Setup</p>{actions("setup")}</div>
+        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0 !text-[12px] !text-lead">Default Setup</p>{actions("setup")}</div>
         <div className="grid grid-cols-2 gap-x-6 gap-y-2 md:grid-cols-3 lg:grid-cols-4">
           {CATEGORIES.map((c) => (
-            <label key={c.key} className="flex flex-col gap-1 text-[12px] text-dim">
+            <label key={c.key} className="flex flex-col gap-1 text-[12px] text-lead">
               {c.label}
               <select className="ctl !h-8 !text-[13px]" value={layer.setup[c.key] ?? ""} onChange={(e) => { const next = { ...layer.setup }; if (e.target.value) next[c.key] = e.target.value; else delete next[c.key]; set({ setup: next }); }}>
                 <option value="">—</option>
@@ -624,7 +676,7 @@ function PlatformLayerCard() {
       </div>
 
       <div className="mt-6 flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Starter project</p>{actions("starter")}</div>
+        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0 !text-[12px] !text-lead">Starter project</p>{actions("starter")}</div>
         <div className="grid gap-2 md:grid-cols-[1fr_120px]">
           <input className="ctl !h-8 !text-[13px]" value={layer.starter.name} aria-label="Project name" onChange={(e) => set({ starter: { ...layer.starter, name: e.target.value } })} />
           <input className="ctl !h-8 !text-[13px]" value={layer.starter.code} aria-label="Code" onChange={(e) => set({ starter: { ...layer.starter, code: e.target.value } })} />
@@ -635,12 +687,12 @@ function PlatformLayerCard() {
             <input className="ctl !h-8 !text-[13px]" value={s.code} aria-label="Shot code" onChange={(e) => set({ starter: { ...layer.starter, shots: shots.map((x, j) => j === i ? { ...x, code: e.target.value } : x) } })} />
             <input className="ctl !h-8 !text-[13px]" value={s.title} aria-label="Shot title" onChange={(e) => set({ starter: { ...layer.starter, shots: shots.map((x, j) => j === i ? { ...x, title: e.target.value } : x) } })} />
             <input className="ctl !h-8 !text-[13px]" type="number" min={1} max={60} value={s.planned} aria-label="Planned seconds" onChange={(e) => set({ starter: { ...layer.starter, shots: shots.map((x, j) => j === i ? { ...x, planned: Number(e.target.value) } : x) } })} />
-            <button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => set({ starter: { ...layer.starter, shots: shots.filter((_, j) => j !== i) } })}>Remove</button>
+            <button type="button" className="chip !py-0.5 !text-[12px]" onClick={() => set({ starter: { ...layer.starter, shots: shots.filter((_, j) => j !== i) } })}>Remove</button>
             <textarea className="ctl !h-16 !text-[13px] md:col-span-4" value={s.description} aria-label="Shot description" onChange={(e) => set({ starter: { ...layer.starter, shots: shots.map((x, j) => j === i ? { ...x, description: e.target.value } : x) } })} />
           </div>
         ))}
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => set({ starter: { ...layer.starter, shots: [...shots, { code: `SH0${(shots.length + 1) * 10}`, title: "", description: "", planned: 5, setup: {}, cast: [] }] } })}>+ Shot</button>
+          <button type="button" className="chip !py-0.5 !text-[12px]" onClick={() => set({ starter: { ...layer.starter, shots: [...shots, { code: `SH0${(shots.length + 1) * 10}`, title: "", description: "", planned: 5, setup: {}, cast: [] }] } })}>+ Shot</button>
         </div>
         {layer.starter.cast.map((c, i) => (
           <div key={i} className="grid gap-2 md:grid-cols-[140px_120px_1fr_auto]">
@@ -649,15 +701,15 @@ function PlatformLayerCard() {
               {["character", "location", "prop", "style"].map((k) => <option key={k} value={k}>{k}</option>)}
             </select>
             <input className="ctl !h-8 !text-[13px]" value={c.description} aria-label="Cast description" onChange={(e) => set({ starter: { ...layer.starter, cast: layer.starter.cast.map((x, j) => j === i ? { ...x, description: e.target.value } : x) } })} />
-            <button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => set({ starter: { ...layer.starter, cast: layer.starter.cast.filter((_, j) => j !== i) } })}>Remove</button>
+            <button type="button" className="chip !py-0.5 !text-[12px]" onClick={() => set({ starter: { ...layer.starter, cast: layer.starter.cast.filter((_, j) => j !== i) } })}>Remove</button>
           </div>
         ))}
-        <div><button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => set({ starter: { ...layer.starter, cast: [...layer.starter.cast, { name: "", kind: "character", description: "" }] } })}>+ Cast</button></div>
+        <div><button type="button" className="chip !py-0.5 !text-[12px]" onClick={() => set({ starter: { ...layer.starter, cast: [...layer.starter.cast, { name: "", kind: "character", description: "" }] } })}>+ Cast</button></div>
       </div>
 
       <div className="mt-6 flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Rules</p>{actions("rules")}</div>
-        <p className="text-[12.5px] text-dim">A rule for the writer steers the prompt writer; a rule for the prompt is appended to the prompt itself, in scope. An engine-only rule is that engine&rsquo;s dialect. Every workspace inherits these; switching one off here switches it off everywhere.</p>
+        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0 !text-[12px] !text-lead">Rules</p>{actions("rules")}</div>
+        <p className="text-[12.5px] text-lead">A rule for the writer steers the prompt writer; a rule for the prompt is appended to the prompt itself, in scope. An engine-only rule is that engine&rsquo;s dialect. Every workspace inherits these; switching one off here switches it off everywhere.</p>
         {layer.rules.map((r, i) => (
           <div key={r.id} className="grid items-center gap-2 md:grid-cols-[auto_110px_120px_1fr_auto]">
             <input type="checkbox" checked={r.on} aria-label="On" onChange={(e) => set({ rules: layer.rules.map((x, j) => j === i ? { ...x, on: e.target.checked } : x) })} />
@@ -668,25 +720,25 @@ function PlatformLayerCard() {
               <option value="writer">for the writer</option><option value="prompt">in the prompt</option>
             </select>
             <input className="ctl !h-8 !text-[13px]" value={r.text} aria-label="Rule" onChange={(e) => set({ rules: layer.rules.map((x, j) => j === i ? { ...x, text: e.target.value } : x) })} />
-            <button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => set({ rules: layer.rules.filter((_, j) => j !== i) })}>Remove</button>
+            <button type="button" className="chip !py-0.5 !text-[12px]" onClick={() => set({ rules: layer.rules.filter((_, j) => j !== i) })}>Remove</button>
           </div>
         ))}
-        <div><button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => set({ rules: [...layer.rules, { id: `rule-${Date.now().toString(36)}`, text: "", scope: "all", apply: "writer", on: true }] })}>+ Rule</button></div>
+        <div><button type="button" className="chip !py-0.5 !text-[12px]" onClick={() => set({ rules: [...layer.rules, { id: `rule-${Date.now().toString(36)}`, text: "", scope: "all", apply: "writer", on: true }] })}>+ Rule</button></div>
       </div>
 
       <div className="mt-6 flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Default engines</p>{actions("models")}</div>
+        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0 !text-[12px] !text-lead">Default engines</p>{actions("models")}</div>
         <div className="grid gap-3 md:grid-cols-3">
-          <label className="flex flex-col gap-1 text-[12px] text-dim">Default video engine
+          <label className="flex flex-col gap-1 text-[12px] text-lead">Default video engine
             <select className="ctl !h-8 !text-[13px]" value={layer.models.video} onChange={(e) => set({ models: { ...layer.models, video: e.target.value } })}>
               {MODELS.filter((m) => m.kind === "video" && !m.hidden).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select></label>
-          <label className="flex flex-col gap-1 text-[12px] text-dim">Default still engine
+          <label className="flex flex-col gap-1 text-[12px] text-lead">Default still engine
             <select className="ctl !h-8 !text-[13px]" value={layer.models.image} onChange={(e) => set({ models: { ...layer.models, image: e.target.value } })}>
               {MODELS.filter((m) => m.kind === "image" && !m.hidden).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select></label>
           {TEXT_JOBS.map((job) => (
-            <label key={job} className="flex flex-col gap-1 text-[12px] text-dim">{TEXT_JOB_LABELS[job]} — model
+            <label key={job} className="flex flex-col gap-1 text-[12px] text-lead">{TEXT_JOB_LABELS[job]} — model
               <select className="ctl !h-8 !text-[13px]" value={textModelFor(layer.models, job)} onChange={(e) => set({ models: { ...layer.models, text: { ...(layer.models.text ?? {}), [job]: e.target.value } } })}>
                 {TEXT_MODEL_IDS.map((id) => <option key={id} value={id}>{id.split("/").pop()}</option>)}
               </select></label>
@@ -695,30 +747,30 @@ function PlatformLayerCard() {
       </div>
 
       <div className="mt-6 flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Default caps</p>{actions("caps")}</div>
+        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0 !text-[12px] !text-lead">Default caps</p>{actions("caps")}</div>
         <div className="grid gap-3 md:grid-cols-3">
-          <label className="flex flex-col gap-1 text-[12px] text-dim">Welcome credits (blank = the deployment&rsquo;s)
+          <label className="flex flex-col gap-1 text-[12px] text-lead">Welcome credits (blank = the deployment&rsquo;s)
             <input className="ctl !h-8 !text-[13px]" type="number" min={0} value={layer.caps.signupCredits ?? ""} onChange={(e) => set({ caps: { ...layer.caps, signupCredits: e.target.value === "" ? null : Number(e.target.value) } })} /></label>
-          <label className="flex flex-col gap-1 text-[12px] text-dim">A new project&rsquo;s cap, in credits (blank = none)
+          <label className="flex flex-col gap-1 text-[12px] text-lead">A new project&rsquo;s cap, in credits (blank = none)
             <input className="ctl !h-8 !text-[13px]" type="number" min={0} value={layer.caps.defaultCapCredits ?? ""} onChange={(e) => set({ caps: { ...layer.caps, defaultCapCredits: e.target.value === "" ? null : Number(e.target.value) } })} /></label>
-          <label className="flex flex-col gap-1 text-[12px] text-dim">Warn the producer at, % of cap
+          <label className="flex flex-col gap-1 text-[12px] text-lead">Warn the producer at, % of cap
             <input className="ctl !h-8 !text-[13px]" type="number" min={1} max={100} value={layer.caps.warnPct} onChange={(e) => set({ caps: { ...layer.caps, warnPct: Number(e.target.value) } })} /></label>
-          <label className="flex flex-col gap-1 text-[12px] text-dim">Renders at once (past it a take waits)
+          <label className="flex flex-col gap-1 text-[12px] text-lead">Renders at once (past it a take waits)
             <input className="ctl !h-8 !text-[13px]" type="number" min={1} max={100} value={layer.caps.concurrency} onChange={(e) => set({ caps: { ...layer.caps, concurrency: Number(e.target.value) } })} /></label>
-          <label className="flex flex-col gap-1 text-[12px] text-dim">Renders an hour
+          <label className="flex flex-col gap-1 text-[12px] text-lead">Renders an hour
             <input className="ctl !h-8 !text-[13px]" type="number" min={1} max={10000} value={layer.caps.rendersPerHour} onChange={(e) => set({ caps: { ...layer.caps, rendersPerHour: Number(e.target.value) } })} /></label>
-          <label className="flex flex-col gap-1 text-[12px] text-dim">Storage kept, GB
+          <label className="flex flex-col gap-1 text-[12px] text-lead">Storage kept, GB
             <input className="ctl !h-8 !text-[13px]" type="number" min={1} max={100000} value={layer.caps.storageGb} onChange={(e) => set({ caps: { ...layer.caps, storageGb: Number(e.target.value) } })} /></label>
         </div>
       </div>
 
       <div className="mt-6 flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0">Camera bank</p><button type="button" className="chip !py-0.5 !text-[11.5px]" onClick={() => setShowBank((v) => !v)}>{showBank ? "Hide" : `Show ${data.cameraBank.length} modules`}</button></div>
-        <p className="text-[12.5px] text-dim">The moves and techniques every workspace renders with, as the compiler writes them today. Their wording is edited with the rule library (2.5); this is the bank as it reads.</p>
+        <div className="flex items-center justify-between gap-3"><p className="grouplabel !pb-0 !text-[12px] !text-lead">Camera bank</p><button type="button" className="chip !py-0.5 !text-[12px]" onClick={() => setShowBank((v) => !v)}>{showBank ? "Hide" : `Show ${data.cameraBank.length} modules`}</button></div>
+        <p className="text-[12.5px] text-lead">The moves and techniques every workspace renders with, as the compiler writes them today. Their wording is edited with the rule library (2.5); this is the bank as it reads.</p>
         {showBank && (
           <div className="flex flex-col gap-1.5">
             {data.cameraBank.map((m) => (
-              <div key={`${m.kind}/${m.value}`} className="rounded-[10px] bg-panel2 px-3 py-2 text-[12.5px]"><span className="font-medium">{m.label}</span> <span className="mono-s">{m.kind.toUpperCase()}</span><p className="mt-1 text-dim">{m.module || "—"}</p></div>
+              <div key={`${m.kind}/${m.value}`} className="rounded-[10px] bg-panel2 px-3 py-2 text-[12.5px]"><span className="font-medium">{m.label}</span> <span className="mono-s !text-[12px] !text-lead">{m.kind.toUpperCase()}</span><p className="mt-1 text-lead">{m.module || "—"}</p></div>
             ))}
           </div>
         )}
@@ -750,19 +802,19 @@ function ReportsCard() {
       <div className="flex flex-col">
         {data.open.map((r) => (
           <div key={r.id} className="steam !grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_90px_110px]">
-            <span className="flex flex-col gap-0.5"><span className="font-medium">{label(r.reason)}</span><span className="break-all text-[11.5px] text-dim">{r.url}</span>{r.details && <span className="text-[12px] text-dim">{r.details}</span>}</span>
-            <span className="flex flex-col gap-0.5"><span>{r.workspace?.name ?? "—"}</span><span className="text-[11.5px] text-dim">{r.email ?? r.accountEmail ?? "no reply address"}</span></span>
-            <span className="mono-s text-right">{timeAgo(r.createdAt).toUpperCase()}</span>
-            <span className="flex justify-end"><button type="button" className="chip !py-0.5 !text-[11.5px]" disabled={busy != null} onClick={() => handled(r.id)}>{busy === r.id ? "…" : "Handled"}</button></span>
+            <span className="flex flex-col gap-0.5"><span className="font-medium">{label(r.reason)}</span><span className="break-all text-[12px] text-lead">{r.url}</span>{r.details && <span className="text-[12px] text-lead">{r.details}</span>}</span>
+            <span className="flex flex-col gap-0.5"><span>{r.workspace?.name ?? "—"}</span><span className="text-[12px] text-lead">{r.email ?? r.accountEmail ?? "no reply address"}</span></span>
+            <span className="mono-s text-right !text-[12px] !text-lead">{timeAgo(r.createdAt).toUpperCase()}</span>
+            <span className="flex justify-end"><button type="button" className="chip !py-0.5 !text-[12px]" disabled={busy != null} onClick={() => handled(r.id)}>{busy === r.id ? "…" : "Handled"}</button></span>
           </div>
         ))}
-        {data.open.length === 0 && <span className="rail-help pt-2">Nothing reported.</span>}
+        {data.open.length === 0 && <span className="rail-help pt-2 !text-[12px] !text-lead">Nothing reported.</span>}
         {data.handled.slice(0, 5).map((r) => (
           <div key={r.id} className="steam !grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_90px_110px] opacity-60">
-            <span className="flex flex-col gap-0.5"><span>{label(r.reason)}</span><span className="break-all text-[11.5px] text-dim">{r.url}</span></span>
+            <span className="flex flex-col gap-0.5"><span>{label(r.reason)}</span><span className="break-all text-[12px] text-lead">{r.url}</span></span>
             <span>{r.workspace?.name ?? "—"}</span>
-            <span className="mono-s text-right">{r.handledAt ? timeAgo(r.handledAt).toUpperCase() : ""}</span>
-            <span className="mono-s text-right">HANDLED</span>
+            <span className="mono-s text-right !text-[12px] !text-lead">{r.handledAt ? timeAgo(r.handledAt).toUpperCase() : ""}</span>
+            <span className="mono-s text-right !text-[12px] !text-lead">HANDLED</span>
           </div>
         ))}
       </div>
@@ -840,34 +892,34 @@ function PreviewsCard() {
     <section className="scard">
       <div className="scard-h"><span>Camera previews</span><span>One neutral clip per move and technique, rendered once from the test workspace and served to every workspace.</span></div>
       <div className="grid gap-3 md:grid-cols-3">
-        <label className="flex flex-col gap-1 text-[12px] text-dim">Engine
+        <label className="flex flex-col gap-1 text-[12px] text-lead">Engine
           <select className="ctl !h-8 !text-[13px]" value={model} onChange={(e) => setModel(e.target.value)}>
             {PREVIEW_MODELS.map((m) => <option key={m} value={m}>{getModel(m).label}</option>)}
           </select></label>
-        <label className="flex flex-col gap-1 text-[12px] text-dim">Resolution
+        <label className="flex flex-col gap-1 text-[12px] text-lead">Resolution
           <select className="ctl !h-8 !text-[13px]" value={resolution} onChange={(e) => setResolution(e.target.value)}>
             {PREVIEW_RESOLUTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
           </select></label>
-        <label className="flex flex-col gap-1 text-[12px] text-dim">Seconds
+        <label className="flex flex-col gap-1 text-[12px] text-lead">Seconds
           <select className="ctl !h-8 !text-[13px]" value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
             {PREVIEW_DURATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
           </select></label>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
         <span className="font-semibold text-ink">{plan.count} clips × ${plan.perClipUsd.toFixed(3)} = ${plan.totalUsd.toFixed(2)}</span>
-        <span className="text-mute">≈ {credits.toLocaleString("en-US")} cr at the engine&rsquo;s margin</span>
-        <span className="text-mute">{workspace ? (testOk ? `From ${workspace.name} (test workspace)` : `${workspace.name} is not a test workspace — switch to one, or mark one above`) : "No workspace"}</span>
+        <span className="text-lead">≈ {credits.toLocaleString("en-US")} cr at the engine&rsquo;s margin</span>
+        <span className="text-lead">{workspace ? (testOk ? `From ${workspace.name} (test workspace)` : `${workspace.name} is not a test workspace — switch to one, or mark one above`) : "No workspace"}</span>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button type="button" className="btn-primary !h-8 !px-3 !text-[12.5px]" disabled={!testOk || busy != null} onClick={generate}>
           {busy === "generate" && progress ? `Rendering… ${progress.done + progress.failed} of ${plan.count}` : `Render ${plan.count} previews`}
         </button>
         <button type="button" className="chip" disabled={!testOk || busy != null || !ready} onClick={publish}>{busy === "publish" ? "Publishing…" : `Publish ${ready} ready`}</button>
-        {running > 0 && <span className="text-[12.5px] text-mute">{running} still rendering</span>}
-        <span className="ml-auto text-[12.5px] text-mute">{assets.length} of {plan.count} published</span>
+        {running > 0 && <span className="text-[12.5px] text-lead">{running} still rendering</span>}
+        <span className="ml-auto text-[12.5px] text-lead">{assets.length} of {plan.count} published</span>
       </div>
       {assets.length > 0 && (
-        <p className="mt-2 text-[12px] text-mute">Published: {assets.map((a) => a.key).join(" · ")}</p>
+        <p className="mt-2 text-[12px] text-lead">Published: {assets.map((a) => a.key).join(" · ")}</p>
       )}
     </section>
   );

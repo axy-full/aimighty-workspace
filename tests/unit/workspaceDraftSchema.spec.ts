@@ -72,7 +72,7 @@ test("shot fields persist through the existing revision-checked draft save", asy
     await saveDraft("alice", p, 0);
     const loaded = (await readDraft("alice", p.id))!;
     expect(loaded.project.nodes.find((n) => n.id === "scene")).not.toHaveProperty("engine");
-    const edited = shotPatch(loaded.project, "scene", { engine: "dreamina-seedance-2-0-260128", durationS: 40, look: "look", note: "Mira enters." });
+    const edited = shotPatch(loaded.project, "scene", { engine: "dreamina-seedance-2-0-260128", durationS: 40, look: "look", note: "Wren enters." });
     const body = saveSchema.parse({ project: edited, revision: loaded.revision });
     await saveDraft("alice", body.project as Project, body.revision);
     const again = (await readDraft("alice", p.id))!;

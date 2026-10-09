@@ -68,7 +68,7 @@ test("Grok transcribes a take: priced by its length, words and speakers, subtitl
   test.setTimeout(180_000);
   const { headers, project, production, row, meterRow } = await setup(page);
   /* A real (mock) Grok Imagine Video take in the project. */
-  const body = { prompt: "Mara on the ice, speaking", model: "grok-imagine-video", projectId: production, shotId: "", ratio: "16:9", resolution: "480p", duration: 5, refine: false, references: [], firstFrameAssetId: "" };
+  const body = { prompt: "Keeper on the ice, speaking", model: "grok-imagine-video", projectId: production, shotId: "", ratio: "16:9", resolution: "480p", duration: 5, refine: false, references: [], firstFrameAssetId: "" };
   const quote = await page.request.post("/api/generate/quote", { headers, data: body }).then((r) => r.json());
   const made = await page.request.post("/api/generate", { headers: { ...headers, "Idempotency-Key": `grok-take-${randomUUID()}` }, data: { ...body, maxCredits: quote.estimatedCredits, quoteFingerprint: quote.fingerprint } });
   expect(made.ok(), await made.text()).toBe(true);
@@ -85,7 +85,7 @@ test("Grok transcribes a take: priced by its length, words and speakers, subtitl
   await page.goto(`/suites?suite=studio&page=takes&project=${project.id}`);
   await expect(page.getByTestId("edit-stage")).toBeVisible();
   await page.waitForLoadState("networkidle");
-  await page.getByTestId("edit-take").filter({ hasText: /Mara on the ice/i }).first().click();
+  await page.getByTestId("edit-take").filter({ hasText: /Keeper on the ice/i }).first().click();
   const panel = page.getByTestId("transcribe");
   await expect(async () => {
     await expect(panel.getByTestId("transcribe-run")).toContainText(/Transcribe · about \d+ credits?/, { timeout: 5_000 });

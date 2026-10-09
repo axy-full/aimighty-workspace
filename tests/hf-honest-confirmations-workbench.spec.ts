@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
 import { newProject, type Project } from "../lib/workbench/studio";
-import { openSuitesMenu } from "./helpers/suitesMenu";
+import { goViaSearch } from "./helpers/suitesMenu";
 
 /**
  * Idea 18 — confirmations say exactly what happened and link to it, in the
@@ -73,7 +73,7 @@ async function roomWithSolutions(page: Page, overRig = false) {
   const account = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
-  const project = { ...newProject("Dune Studies"), brief: "One kitchen, one rainy dawn.", script: "INT. KITCHEN - DAWN\n\nRain on the window." };
+  const project = { ...newProject("Harbour film"), brief: "One kitchen, one rainy dawn.", script: "INT. KITCHEN - DAWN\n\nRain on the window." };
   expect((await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } })).ok()).toBe(true);
   /* The Brief page reads this route. On a cold dev server its first read compiles it, and the dev client can then reload the
      page, dropping the preset Gen holds in memory (lib/shell/gen-preset) mid-test: compile it before the page opens. */
@@ -85,11 +85,11 @@ async function roomWithSolutions(page: Page, overRig = false) {
     await page.goto(`/suites?project=${project.id}&suite=particl&page=rig`);
     await expect(page.getByTestId("page-title")).toHaveText("Rig");
     await expect(page.getByTestId("rig-list")).toBeVisible();
-    await openSuitesMenu(page);
-    await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Crew" }).click();
+    /* Crew is reached from ⌘K (header option B). */
+    await goViaSearch(page, "crew room", /Crew room/);
   } else await page.goto(`/suites?project=${project.id}&view=crew`);
   await expect(page.getByTestId("crew-view")).toBeVisible();
-  await expect(page.locator(".cw-project")).toContainText("Dune Studies");
+  await expect(page.locator(".cw-project")).toContainText("Harbour film");
   /* The shell writes its own params into the URL once it settles (cp=room); on a cold server that lands after hydration and
      resets the room, so a goal typed before it is lost. Wait for it, and type again if it still went. */
   await page.waitForURL(/[?&]cp=room\b/);
@@ -236,8 +236,7 @@ test("Crew › → Brief confirms with an Open to Brief; Open in Gen fills Gen's
   await expect(library).toContainText("crew-min");
   expect(new URL(page.url()).searchParams.get("view")).toBeNull();
   if (info.project.name === "workbench-390x844") await library.getByRole("button", { name: "Close" }).click();
-  await openSuitesMenu(page);
-  await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: "Crew" }).click();
+  await goViaSearch(page, "crew room", /Crew room/);
   await expect(solutions).toHaveCount(3);
 
   /* Open in Gen goes to Gen: the solution is the prompt, and the toast does not ask for a paste. */

@@ -139,7 +139,7 @@ test("the Make wall groups the unfiled takes by day and derives every count", as
   });
   await page.clock.setFixedTime(now);
   await mockLibrary(page, [
-    generation({ id: "g-today-1", createdAt: now - 12 * 60_000, creditsBilled: 19, prompt: "Mira enters. The landscape becomes a reflection." }),
+    generation({ id: "g-today-1", createdAt: now - 12 * 60_000, creditsBilled: 19, prompt: "Wren enters. The landscape becomes a reflection." }),
     /* Still rendering: the ring goes over its well, and it carries no price. */
     generation({ id: "g-today-2", createdAt: now - 26 * 60_000, status: "queued", creditsBilled: null }),
     generation({ id: "g-yesterday", createdAt: now - DAY, creditsBilled: 11 }),

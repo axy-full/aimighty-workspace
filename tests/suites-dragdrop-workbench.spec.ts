@@ -81,7 +81,7 @@ test("a file dropped anywhere is kept in the Library; its tile then drags with t
 test("Gen's well takes a picture straight from the desktop as a reference", async ({ page }, info) => {
   test.skip(!DESKTOPS.includes(info.project.name), "one desktop: HTML drag and drop");
   const { project, errors } = await setup(page);
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   /* The composer settles on the project first (it starts that project's own composer state). */
   await expect(page.getByTestId("project-name")).toHaveText(project.name);
   await expect(page.getByTestId("gen-well")).toBeVisible();

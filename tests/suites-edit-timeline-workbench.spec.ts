@@ -19,7 +19,7 @@ async function open(page: Page) {
   const store = { current: fixture() };
   await mockProjects(page, store);
   await mockLibrary(page, { uploads: [], generations: [
-    generation({ id: "gen_still", title: "Mara at the window", prompt: "Mara at the window", projectId: "prod-edit" }),
+    generation({ id: "gen_still", title: "Keeper at the window", prompt: "Keeper at the window", projectId: "prod-edit" }),
     generation({ id: "gen_clip", title: "The crossing", prompt: "The crossing", kind: "video", model: "dreamina-seedance-2-5-260628", durationS: 5, projectId: "prod-edit" }),
   ] });
   const posts: { url: string; body: Record<string, unknown> }[] = [];
@@ -47,7 +47,7 @@ test("Takes lists every take once, re-edits a still at its price and sends takes
   await expect(page.getByTestId("takes-shot")).toHaveText([/Not on a shot\s*2/]);
 
   /* The still: an instruction, a price, then the re-edit with the take as its reference. */
-  await takes.filter({ hasText: "Mara at the window" }).click();
+  await takes.filter({ hasText: "Keeper at the window" }).click();
   await expect(page.getByTestId("edit-blocked")).toHaveText("Write what should change.");
   await page.getByTestId("edit-instruction").fill("Make it night, rain on the glass");
   await expect(page.getByTestId("edit-render")).toHaveText("Re-edit · 4 credits");
@@ -64,7 +64,7 @@ test("Takes lists every take once, re-edits a still at its price and sends takes
   await takes.filter({ hasText: "The crossing" }).click();
   await expect(page.getByTestId("gen-edit")).toBeVisible();
   await page.getByTestId("edit-to-timeline").click();
-  await expect.poll(() => store.current.shots.map((s) => [s.name, s.duration]), { timeout: 10_000 }).toEqual([["01 — Mara at the window", 72], ["02 — The crossing", 120]]);
+  await expect.poll(() => store.current.shots.map((s) => [s.name, s.duration]), { timeout: 10_000 }).toEqual([["01 — Keeper at the window", 72], ["02 — The crossing", 120]]);
 
   /* Edit & Sound: the cut, re-ordered, re-timed, trimmed, and one more take from the tray. */
   await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Edit & Sound/ }).click();
@@ -72,12 +72,12 @@ test("Takes lists every take once, re-edits a still at its price and sends takes
   const shots = page.getByTestId("timeline-shot");
   await expect(shots).toHaveCount(2);
   await page.getByLabel("Move 02 — The crossing earlier").click();
-  await page.getByLabel("01 — Mara at the window seconds").fill("2");
+  await page.getByLabel("01 — Keeper at the window seconds").fill("2");
   await page.getByTestId("timeline-cut").locator("summary").click();
   await page.getByTestId("timeline-add").first().click();
   await expect(shots).toHaveCount(3);
   await page.getByLabel(/Take 03 — .* out of the cut/).click();
-  await expect.poll(() => store.current.shots.map((s) => [s.name, s.duration]), { timeout: 10_000 }).toEqual([["02 — The crossing", 120], ["01 — Mara at the window", 48]]);
+  await expect.poll(() => store.current.shots.map((s) => [s.name, s.duration]), { timeout: 10_000 }).toEqual([["02 — The crossing", 120], ["01 — Keeper at the window", 48]]);
   expect(store.current.assets.map((a) => [a.id, a.category])).toEqual([["gen_still", "Take"], ["gen_clip", "Take"]]);
   await page.screenshot({ path: info.outputPath("timeline.png") });
   expect(errors).toEqual([]);

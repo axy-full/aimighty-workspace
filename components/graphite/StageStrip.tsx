@@ -4,7 +4,7 @@ import { isOwnerRunSuite } from "@/lib/shell/connected-capability";
 import { useConnectedCapability } from "@/lib/shell/use-connected-capability";
 import { useShell } from "@/lib/shell/state";
 
-/** 46px. The active suite's pages as `01 Label`, a hairline before each group. Hidden in Gen and Workspace, and in an owner-run suite for a member. */
+/** 46px. The active suite's pages as `01 Label`, 14px of space before each group (the master's strip). Hidden in Gen and Workspace, and in an owner-run suite for a member. */
 export function StageStrip() {
   const shell = useShell();
   const { owner } = useConnectedCapability(undefined, { read: false });
@@ -44,7 +44,6 @@ export function StageStrip() {
         <Fragment key={p.id}>
           {p.gapBefore ? <span className="gx-strip-gap" aria-hidden="true" data-testid="strip-gap" /> : null}
           <button type="button" className="gx-tab" aria-current={p.id === shell.page.id ? "page" : undefined} title={p.title} onClick={() => shell.goSuite(shell.suite.id, p.id)}>
-            <span className="gx-tab-dot" aria-hidden="true" />
             <span className="gx-tab-n">{p.n}</span>
             <span>{p.label}</span>
           </button>

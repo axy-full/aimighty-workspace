@@ -4,7 +4,7 @@
  * References used to be checked once, at the moment they arrived from the
  * browser — which is before the cast block runs. `expandCast` pushes a still
  * for every cited name, so attaching two images to a two-image model and then
- * writing "@Mara rides @Mule" passed the check with two and left with four,
+ * writing "@Courier rides @Mule" passed the check with two and left with four,
  * and nothing anywhere said so.
  *
  * What happens next is not a refusal but a silent change of meaning. On fal,

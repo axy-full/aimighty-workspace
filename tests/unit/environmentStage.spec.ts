@@ -6,7 +6,7 @@ import { projectSchema } from "../../lib/workbench/studio-schema";
 
 /* Production › Environment (owner, 24 September): the world, place by place, before Cast. */
 const sheet = { scriptSha256: "a".repeat(64), updatedAt: new Date().toISOString(), scenes: [
-  { id: "s1", heading: "EXT. HARBOUR - DUSK", summary: "", beats: [], shots: [], characters: ["Mara"], locations: ["Harbour"], props: [] },
+  { id: "s1", heading: "EXT. HARBOUR - DUSK", summary: "", beats: [], shots: [], characters: ["Keeper"], locations: ["Harbour"], props: [] },
   { id: "s2", heading: "INT. HUT - NIGHT", summary: "", beats: [], shots: [], characters: [], locations: ["Hut", "harbour"], props: [] },
 ] };
 

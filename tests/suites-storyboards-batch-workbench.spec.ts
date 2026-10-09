@@ -29,7 +29,7 @@ test("Storyboards: pick frames and storyboard them together, revise one with a f
   project.script = SCRIPT;
   project.production = {
     scriptApproval: { at, source: "hand", sha256 },
-    beats: { scriptSha256: sha256, updatedAt: at, scenes: [{ id: "scene-a", heading: "EXT. FROZEN HARBOUR - DUSK", summary: "The crossing", beats: [], shots: [shot("shot-a1", "The fox on the ice"), shot("shot-a2", "Mara at the window"), shot("shot-a3", "The lamp goes out")], characters: [], locations: [], props: [] }] },
+    beats: { scriptSha256: sha256, updatedAt: at, scenes: [{ id: "scene-a", heading: "EXT. FROZEN HARBOUR - DUSK", summary: "The crossing", beats: [], shots: [shot("shot-a1", "The fox on the ice"), shot("shot-a2", "Keeper at the window"), shot("shot-a3", "The lamp goes out")], characters: [], locations: [], props: [] }] },
     boards: { style: "live", model: "gemini-3.1-flash-image", frames: { "shot-a1": { prompt: "A red fox crosses the frozen harbour at dusk, wide.", takes: [] } } },
   };
   const saved = await page.request.put("/api/workbench/projects", { headers, data: { project, revision: 0 } });
@@ -67,15 +67,15 @@ test("Storyboards: pick frames and storyboard them together, revise one with a f
 
   /* A line drawing: uploaded, put on beat 1.2, then deleted — gone from the project and off its beat. */
   const png = await sharp({ create: { width: 800, height: 450, channels: 3, background: "#eee" } }).png().toBuffer();
-  await page.getByTestId("drawings-upload").setInputFiles({ name: "mara-window.png", mimeType: "image/png", buffer: png });
+  await page.getByTestId("drawings-upload").setInputFiles({ name: "keeper-window.png", mimeType: "image/png", buffer: png });
   const drawing = page.getByTestId("line-drawing");
   await expect(drawing).toHaveCount(1, { timeout: 30_000 });
   await drawing.getByTestId("drawing-shot").selectOption("shot-a2");
-  await expect.poll(async () => (await boards()).production.boards.frames["shot-a2"]?.sketch?.name ?? null, { timeout: 15_000 }).toBe("mara-window.png");
+  await expect.poll(async () => (await boards()).production.boards.frames["shot-a2"]?.sketch?.name ?? null, { timeout: 15_000 }).toBe("keeper-window.png");
   await drawing.getByTestId("drawing-delete").click();
   await drawing.getByTestId("drawing-delete-confirm").click();
   await expect(drawing).toHaveCount(0);
-  await expect.poll(async () => { const p = await boards(); return [p.assets.some((a: { name: string }) => a.name === "mara-window.png"), p.production.boards.frames["shot-a2"]?.sketch ?? null]; }, { timeout: 15_000 }).toEqual([false, null]);
+  await expect.poll(async () => { const p = await boards(); return [p.assets.some((a: { name: string }) => a.name === "keeper-window.png"), p.production.boards.frames["shot-a2"]?.sketch ?? null]; }, { timeout: 15_000 }).toEqual([false, null]);
   if (info.project.name === "workbench-390x844") await page.getByTestId("boards-selection").screenshot({ path: info.outputPath("selection-390.png") });
   expect(errors).toEqual([]);
 });

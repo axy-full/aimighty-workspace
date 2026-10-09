@@ -41,7 +41,7 @@ async function mockAgent(page: Page, estimate: number, failing = false): Promise
     if (body.quoteOnly) { agent.quotes.push(body); return route.fulfill({ json: { model: MODEL, effort: body.effort, estimateCredits: estimate } }); }
     agent.paid.push(body);
     if (body.maxCredits !== estimate) return route.fulfill({ status: 409, json: { error: "Review the credit estimate before starting this request." } });
-    const base = { requestId: body.requestId, projectId: body.projectId, productionProjectId: "prod-northline", request: body.request, model: MODEL, depth: body.depth, effort: body.effort, role: "marketing", refs: body.refs, estimateCredits: estimate, credits: estimate - 1, error: null, createdAt: Date.now(), updatedAt: Date.now() };
+    const base = { requestId: body.requestId, projectId: body.projectId, productionProjectId: "prod-granite", request: body.request, model: MODEL, depth: body.depth, effort: body.effort, role: "marketing", refs: body.refs, estimateCredits: estimate, credits: estimate - 1, error: null, createdAt: Date.now(), updatedAt: Date.now() };
     if (body.suite === "moleculr") {
       const job = { ...base, id: "job-hooks", suite: "moleculr", status: "succeeded", plan: {
         id: "job-hooks", request: body.request, model: MODEL, depth: body.depth, effort: body.effort, refs: [], role: "marketing", intent: "campaign", summary: "Opening lines against the brief.", steps: ["Hooks written against the approved facts."], applied: false,
@@ -71,7 +71,7 @@ test("Hooks: twelve lines kept by hand; the Campaign agent is priced at about N 
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(150_000);
   let agent: Agent | null = null;
-  const brief = { ...EMPTY_MOLECULR, productName: "Salt bottle", productDescription: "Hand-blown glass, 500 ml.", hooks: ["Stop scrolling"], brandKit: { ...EMPTY_BRAND_KIT, name: "Northline" } };
+  const brief = { ...EMPTY_MOLECULR, productName: "Salt bottle", productDescription: "Hand-blown glass, 500 ml.", hooks: ["Stop scrolling"], brandKit: { ...EMPTY_BRAND_KIT, name: "Granite" } };
   const seen = await openBusiness(page, "hooks", fixture({ moleculr: brief }), { routes: async () => { agent = await mockAgent(page, 3, true); } });
   await expect(page.getByTestId("page-title")).toHaveText("Hooks");
   /* The agent's runs could not be read: nothing can be priced until they are, and Try again reads them once more. */
@@ -97,7 +97,7 @@ test("Hooks: twelve lines kept by hand; the Campaign agent is priced at about N 
   await expect(run).toBeEnabled({ timeout: 30_000 });
   await expect(dialog.getByTestId("atomik-run-estimate")).toContainText("about 3 cr · up to 3 cr reserved");
   expect(agent!.quotes.length).toBeGreaterThan(0);
-  expect(agent!.quotes[0]).toMatchObject({ suite: "moleculr", role: "marketing", projectId: "ws-northline", refs: [] });
+  expect(agent!.quotes[0]).toMatchObject({ suite: "moleculr", role: "marketing", projectId: "ws-granite", refs: [] });
   expect(String(agent!.quotes[0].request)).toMatch(/^\[moleculr\] Write 12 distinct opening lines/);
   expect(seen.paid).toEqual([]);
   await run.click();
@@ -169,7 +169,7 @@ test("Reference: a project video is chosen; its review of twelve stills is price
 test("Design: a poster of editable text, shape and image layers is saved with the project, exported as a full-size PNG and filed as a new original", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(180_000);
-  const seen = await openBusiness(page, "design", fixture({ moleculr: { ...EMPTY_MOLECULR, productName: "Salt bottle", brandKit: { ...EMPTY_BRAND_KIT, name: "Northline", tagline: "Salt of the north", colors: ["#102030", "#F4F1EA"] } } }));
+  const seen = await openBusiness(page, "design", fixture({ moleculr: { ...EMPTY_MOLECULR, productName: "Salt bottle", brandKit: { ...EMPTY_BRAND_KIT, name: "Granite", tagline: "Salt of the north", colors: ["#102030", "#F4F1EA"] } } }));
   await expect(page.getByTestId("page-title")).toHaveText("Poster designer");
   await page.getByTestId("design-create").click();
   await expect(page.getByTestId("design-layers").locator("li")).toHaveCount(2);

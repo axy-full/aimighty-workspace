@@ -61,13 +61,13 @@ export function focusSection(section: string) {
 }
 
 /**
- * Where the Library has Tools at all. Gen is not a stage; the Business and
+ * Where the Library has Tools at all. Make open over a page (`make`) is not a stage; the Business and
  * Viral composers keep every control on the page (their spec cards describe
  * the old bodies, so a row there would lead nowhere); the phone's Home and
  * Studio grid are pickers. There the Library is its Assets.
  */
 export function libraryHasTools(view: string, suite: string, page: string): boolean {
-  if (view === "gen") return false;
+  if (view === "make" || view === "gen") return false;
   if (suite === "business" || suite === "viral") return false;
   return !(suite === "studio" && (page === "home" || page === "stages"));
 }

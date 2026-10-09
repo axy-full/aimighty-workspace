@@ -506,6 +506,9 @@ export function shownTotal(quote: ComposerQuote | null, quoteKey: string, count:
   return count > 1 ? batchTotal(credits, count, quote?.takes) : credits;
 }
 
+/** Why Generate waits with no words; Make says it in its own verb (components/graphite/MakePanel.tsx). */
+export const EMPTY_PROMPT = "Write what to generate.";
+
 /** The reason that means "still loading", not "refused" — the model sheet draws it as a loading list. */
 export const READING_MODELS = "Reading the available models…";
 
@@ -534,7 +537,7 @@ export function composerBlock(input: {
   if (input.catalogue.error) return input.catalogue.error;
   if (input.catalogue.loading && !model) return READING_MODELS;
   if (!model) return `No ${TYPE_LABELS[state.type].toLowerCase()} model is available on this account.`;
-  if (!state.prompt.trim()) return "Write what to generate.";
+  if (!state.prompt.trim()) return EMPTY_PROMPT;
   if (model.audioTask === "speech" && !state.voiceId) return `${model.label} has no voice to read in here. Choose another model.`;
   if ((input.soundReferences ?? 0) > 0 && !isCinemaStudioModel(model.id))
     return `${model.label} takes pictures and video as references, not sound. Remove the sound, or choose Cinema Studio 4.0.`;
@@ -552,6 +555,8 @@ type ButtonInput = {
   count?: number;
   /** A draft first (one take, 480p): the button says so. */
   draft?: boolean;
+  /** What the button does, in its own word: "Generate" (the default) or Make's "Make". */
+  verb?: string;
 };
 
 /**
@@ -565,7 +570,8 @@ export function composerButtonParts(input: ButtonInput): { action: string; price
   if (input.submitting) return { action: "Submitting…", price: null };
   const count = input.draft ? 1 : Math.max(1, input.count ?? 1);
   const total = shownTotal(input.quote, input.quoteKey, count);
-  const action = input.draft ? "Generate draft" : count > 1 ? `Generate ${count} takes` : "Generate";
+  const verb = input.verb ?? "Generate";
+  const action = input.draft ? `${verb} draft` : count > 1 ? `${verb} ${count} takes` : verb;
   if (total === null) return { action, price: null };
   const about = input.quote?.approximate ? "about " : "";
   return { action, price: `${about}${total.toLocaleString("en-US")} cr` };

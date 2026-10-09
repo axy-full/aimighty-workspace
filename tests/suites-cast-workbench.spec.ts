@@ -232,8 +232,8 @@ test("a render the estimate cannot price stays unsent: the reason, Try again, an
 test("Add from the beat sheet clicked from a render before the agent's cast landed lists each name once", async ({ page }, info) => {
   test.skip(info.project.name !== "workbench-1440x900", "one desktop width");
   test.setTimeout(150_000);
-  /* The beat sheet names the agent's two (Mara, the mooring rope) and two it does not. */
-  const { errors, read, project } = await setup(page, { cast: false, scene: { characters: ["Fox", "Mara"], props: ["Lantern", "Mooring rope"] } });
+  /* The beat sheet names the agent's two (Keeper, the mooring rope) and two it does not. */
+  const { errors, read, project } = await setup(page, { cast: false, scene: { characters: ["Fox", "Keeper"], props: ["Lantern", "Mooring rope"] } });
   await page.goto(`/suites?suite=studio&page=cast&project=${project.id}`);
   await expect(page.getByTestId("cast-stage")).toBeVisible({ timeout: 60_000 });
   const add = page.getByTestId("cast-from-beats");
@@ -250,7 +250,7 @@ test("Add from the beat sheet clicked from a render before the agent's cast land
   await page.getByTestId("cast-agent-estimate").click();
   await expect(page.getByTestId("cast-agent-quote")).toContainText("3 agent steps");
   await page.getByTestId("cast-agent-start").click();
-  await expect.poll(names, { timeout: 60_000 }).toEqual(["Mara", "Mooring rope"]);
+  await expect.poll(names, { timeout: 60_000 }).toEqual(["Keeper", "Mooring rope"]);
   /* The button counts only what is still missing. */
   await expect(add).toHaveText("Add 2 from the beat sheet");
   await expect(status).toHaveText(/^Saved/);
@@ -258,7 +258,7 @@ test("Add from the beat sheet clicked from a render before the agent's cast land
   /* The click lands now, with that earlier render's list of four: only the two still missing are added. */
   await page.evaluate(() => (window as unknown as { staleAdd: () => void }).staleAdd());
   await expect(page.getByTestId("cast-entry")).toHaveCount(4);
-  await expect.poll(names).toEqual(["Mara", "Mooring rope", "Fox", "Lantern"]);
+  await expect.poll(names).toEqual(["Keeper", "Mooring rope", "Fox", "Lantern"]);
   await expect(add).toHaveText("Add 0 from the beat sheet");
   await expect(add).toBeDisabled();
   await expect(status).toHaveText(/^Saved/);
@@ -271,7 +271,7 @@ test("Add from the beat sheet clicked from a render before the agent's cast land
   });
   expect(after).toMatch(/^Saved/);
   await expect(page.getByTestId("cast-entry")).toHaveCount(4);
-  expect(await names()).toEqual(["Mara", "Mooring rope", "Fox", "Lantern"]);
+  expect(await names()).toEqual(["Keeper", "Mooring rope", "Fox", "Lantern"]);
   expect(errors).toEqual([]);
 });
 

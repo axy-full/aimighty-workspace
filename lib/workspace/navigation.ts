@@ -156,6 +156,23 @@ export function toSearch(state: Pick<AppState, "projectId" | "suite" | "page" | 
   return "?" + query.toString();
 }
 
+/**
+ * Params no screen reads but an old link may carry, which the Suites shell's
+ * URL writes keep rather than drop: Subatomik's connected-account override
+ * (`account=particl`), so the address still says what the link said.
+ */
+export const CARRIED_PARAMS = ["account"] as const;
+
+/** A written query (`toSearch`) with each `keep` param the current one has laid over it. */
+export function withKept(search: string, current: string, keep: readonly string[]): string {
+  if (!keep.length) return search;
+  const next = new URLSearchParams(search);
+  const now = new URLSearchParams(current);
+  for (const key of keep) { const v = now.get(key); if (v != null) next.set(key, v); }
+  const text = next.toString();
+  return text ? "?" + text : "";
+}
+
 export function toHref(state: Parameters<typeof toSearch>[0]) {
   return WORKSPACE_PATH + toSearch(state);
 }

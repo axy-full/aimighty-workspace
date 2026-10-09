@@ -17,8 +17,8 @@ import { screenplayPdf } from "./helpers/screenplayPdf";
 const SIZES = ["workbench-1440x900", "workbench-390x844"];
 /** An original synthetic beat board export: acts, cards and beats, over two pages. */
 const SHEET = [
-  ["THE CROSSING - Beat Board", "", "ACT ONE", "EXT. FROZEN HARBOUR - DUSK", "A red fox crosses the ice.", "Mara sees it from the hut.", "INT. HARBOUR HUT - NIGHT", "Mara loads the old rifle.", "1"],
-  ["ACT TWO", "EXT. LIGHTHOUSE ROAD - DAWN", "Mara tracks the fox along the road.", "The fox leads her to the wreck.", "ACT THREE", "EXT. FROZEN HARBOUR - DAY", "Mara lets the fox go.", "2"],
+  ["THE CROSSING - Beat Board", "", "ACT ONE", "EXT. FROZEN HARBOUR - DUSK", "A red fox crosses the ice.", "Keeper sees it from the hut.", "INT. HARBOUR HUT - NIGHT", "Keeper loads the old rifle.", "1"],
+  ["ACT TWO", "EXT. LIGHTHOUSE ROAD - DAWN", "Keeper tracks the fox along the road.", "The fox leads her to the wreck.", "ACT THREE", "EXT. FROZEN HARBOUR - DAY", "Keeper lets the fox go.", "2"],
 ];
 
 async function setup(page: Page, production: Record<string, unknown> = {}, script = "") {
@@ -58,7 +58,7 @@ test("a Final Draft beat sheet PDF is read, priced, and summarised by the agent 
   await expect.poll(async () => (await read()).production?.beatSource?.name, { timeout: 15_000 }).toBe("The Crossing - Beat Board.pdf");
   const source = (await read()).production.beatSource;
   expect(source).toMatchObject({ name: "The Crossing - Beat Board.pdf", pages: 2 });
-  expect(source.text).toContain("Mara lets the fox go.");
+  expect(source.text).toContain("Keeper lets the fox go.");
 
   /* Priced first: nothing runs until the start. */
   await page.getByTestId("beats-import-estimate").click();
@@ -80,7 +80,7 @@ test("a Final Draft beat sheet PDF is read, priced, and summarised by the agent 
   expect(beats.scenes.map((s: BeatScene) => [s.heading, s.act])).toEqual([
     ["EXT. FROZEN HARBOUR - DUSK", 1], ["INT. HARBOUR HUT - NIGHT", 1], ["EXT. LIGHTHOUSE ROAD - DAWN", 2], ["EXT. FROZEN HARBOUR - DAY", 3],
   ]);
-  expect(beats.scenes[0].beats.map((b: { text: string }) => b.text)).toEqual(["A red fox crosses the ice.", "Mara sees it from the hut."]);
+  expect(beats.scenes[0].beats.map((b: { text: string }) => b.text)).toEqual(["A red fox crosses the ice.", "Keeper sees it from the hut."]);
   expect(errors).toEqual([]);
 });
 
@@ -105,8 +105,8 @@ test("the beat graph: act lanes, the story spine and beats; it zooms and fits; a
   const { errors, read } = await setup(page, {
     scriptApproval: { at: new Date().toISOString(), source: "hand", sha256: sha },
     beats: { scriptSha256: sha, updatedAt: new Date().toISOString(), scenes: [
-      scene("scene-a", "EXT. HARBOUR - DUSK", ["The fox crosses", "Mara sees it"], 1),
-      scene("scene-b", "INT. HUT - NIGHT", ["Mara loads the rifle"], 2),
+      scene("scene-a", "EXT. HARBOUR - DUSK", ["The fox crosses", "Keeper sees it"], 1),
+      scene("scene-b", "INT. HUT - NIGHT", ["Keeper loads the rifle"], 2),
       scene("scene-c", "EXT. ROAD - DAWN", ["She follows"], 2),
       scene("scene-d", "EXT. HARBOUR - DAY", ["She lets it go"], 3),
     ] },

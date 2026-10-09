@@ -104,11 +104,11 @@ test("the hero keeps a visitor's prompt and opens it in Gen, which prices the ta
   await page.getByLabel("Describe the shot").fill("A lighthouse keeper walks the gallery in a storm.");
   await go.click();
   const signIn = page.locator(".mk-take").getByRole("link", { name: "Sign in" });
-  await expect(signIn).toHaveAttribute("href", "/login?next=%2Fsuites%3Fview%3Dgen");
+  await expect(signIn).toHaveAttribute("href", "/login?next=%2Fsuites%3Fmake%3Dvideo");
   await expect(page.locator(".mk-take-meta")).toHaveText("Sign in and it opens in Gen.");
 
   await signInLocally(page.request);
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("A lighthouse keeper walks the gallery in a storm.");
   await expect(page.getByTestId("gen-preset-note")).toContainText("From the site");
   await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toHaveAttribute("aria-pressed", "true");
