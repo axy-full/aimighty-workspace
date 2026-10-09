@@ -1,6 +1,6 @@
 "use client";
 import { useId, useState } from "react";
-import { nextActions, notOfferedLine, pricedActions, NEXT_SECTION, type NextActionId, type PricedActionId } from "@/lib/shell/next-actions";
+import { nextActions, notOfferedLine, pricedActions, type NextActionId, type PricedActionId } from "@/lib/shell/next-actions";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { NextActionPanel } from "./NextActionPanel";
 
@@ -59,33 +59,4 @@ export function AssetNextActions({ entry, saved, onAction, scope, project, onOpe
       ) : null}
     </div>
   );
-}
-
-/**
- * Bring a tool's section of the Takes desk into view once it is on the page
- * (after a page change it mounts when the project's library has the take);
- * `focus` puts the cursor in its first field. The desk brings a newly opened
- * take's panel into view on its own, a frame or two later: for a moment after
- * landing, the section is put back at the top if that moved it. Gives up
- * quietly after a few seconds.
- */
-export function revealNext(id: NextActionId, focus = id === "re-edit", within = 4000, hold = 800) {
-  const section = NEXT_SECTION[id];
-  if (!section || typeof window === "undefined") return;
-  const until = performance.now() + within;
-  const look = () => {
-    const found = document.querySelector<HTMLElement>(`[data-section="${section}"]`);
-    if (!found) { if (performance.now() < until) requestAnimationFrame(look); return; }
-    found.scrollIntoView({ block: "start" });
-    if (focus) found.querySelector<HTMLElement>("textarea")?.focus({ preventScroll: true });
-    const settled = performance.now() + hold;
-    const keep = () => {
-      if (!found.isConnected) return;
-      const top = found.getBoundingClientRect().top;
-      if (top < 0 || top > window.innerHeight / 2) found.scrollIntoView({ block: "start" });
-      if (performance.now() < settled) requestAnimationFrame(keep);
-    };
-    requestAnimationFrame(keep);
-  };
-  requestAnimationFrame(look);
 }

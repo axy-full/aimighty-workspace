@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page, type PlaywrightWorkerArgs } from "@playwright/test";
+import { test, expect, type Page, type PlaywrightWorkerArgs } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -39,26 +39,10 @@ async function shot(page: Page, name: string, project: string) {
   mkdirSync(SHOTS, { recursive: true });
   await settle(page);
   await page.screenshot({ path: join(SHOTS, `role-${name}-${size}.png`) });
-}
-/** React has attached to the element: a click before that is lost on a cold server. */
-async function hydrated(target: Locator) {
-  await expect.poll(() => target.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps"))), { timeout: 30_000 }).toBe(true);
-}
-async function noSideScroll(page: Page) {
+}async function noSideScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
   for (const card of await page.locator(".gx-owner-run").all()) expect(await card.evaluate((el) => el.scrollWidth - el.clientWidth), "owner card keeps its content inside").toBeLessThanOrEqual(1);
-}
-/** On a phone every button in `scope` is a whole 44px target. */
-async function fingerSized(scope: Locator, project: string) {
-  if (!PHONES.includes(project)) return;
-  for (const button of await scope.getByRole("button").all()) {
-    const box = await button.boundingBox();
-    expect(box, await button.innerText()).not.toBeNull();
-    expect(Math.round(box!.height), await button.innerText()).toBeGreaterThanOrEqual(44);
-    expect(Math.round(box!.width), await button.innerText()).toBeGreaterThanOrEqual(44);
-  }
-}
-function watch(page: Page) {
+}function watch(page: Page) {
   const consumer: string[] = [];
   const errors: string[] = [];
   page.on("request", (request) => { if (CONSUMER.test(request.url())) consumer.push(`${request.method()} ${new URL(request.url()).pathname}`); });
@@ -106,26 +90,26 @@ async function noBadges(page: Page) {
   await openSuitesMenu(page);
   await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
   for (const suite of ["business", "viral", "studio", "gen", "atomik", "crew"]) await expect(page.getByTestId(`owner-badge-${suite}`)).toHaveCount(0);
-  for (const suite of ["business", "viral"]) expect(await page.locator(`[data-suite-tab="${suite}"]`).getAttribute("aria-describedby")).toBeNull();
+  for (const tab of await page.locator("[data-suite-tab]").all()) expect(await tab.getAttribute("aria-describedby")).toBeNull();
   await closeSuitesMenu(page);
 }
 
-/** An old link to Business › Ads: Image ads, the address rewritten to name it, and nothing of the removed page or the retired card. */
+/** An old link to Business › Ads: the Ads board (Business's pages are the board's cards, for everyone), and nothing of the removed page or the retired card. */
 async function oldAdsLink(page: Page, projectId: string) {
   await page.goto(`/suites?suite=moleculr&page=ads&sp=ads&project=${projectId}`);
-  await expect(page.getByTestId("image-ads-view")).toBeVisible();
-  await expect(page.getByTestId("page-title")).toHaveText("Image ads");
-  await expect.poll(() => new URL(page.url()).searchParams.get("sp")).toBe("dtc");
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads", { timeout: 60_000 });
+  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
+  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("kind")]; }).toEqual(["board", "ads"]);
   for (const gone of ["ads-view", "owner-run-business"]) await expect(page.getByTestId(gone)).toHaveCount(0);
   await expect(page.getByText(/Connect the account|Reconnect the account|Only the workspace owner|Higgsfield/)).toHaveCount(0);
 }
-/** Business › Setup: what Particl made in this project, and nothing of the connected account. */
+/** Business › Setup: the Ads board's brand and product cards, and nothing of the connected account. */
 async function setupIsParticls(page: Page, projectId: string) {
   await page.goto(`/suites?suite=moleculr&page=setup&sp=setup&project=${projectId}`);
-  await expect(page.getByTestId("particl-setup")).toBeVisible();
-  await expect(page.getByTestId("page-hint")).toHaveText("Saved products, brand kit and reference ad");
-  for (const gone of ["owner-run-business", "setup-view", "setup-connect", "primary-action"]) await expect(page.getByTestId(gone)).toHaveCount(0);
-  await expect(page.getByTestId("business-setup")).not.toContainText(/Higgsfield|Open Ads|Use in Ads|run by/i);
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads", { timeout: 60_000 });
+  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
+  for (const gone of ["owner-run-business", "setup-view", "setup-connect"]) await expect(page.getByTestId(gone)).toHaveCount(0);
+  await expect(page.getByTestId("board")).not.toContainText(/Higgsfield|Open Ads|Use in Ads|run by/i);
 }
 
 test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's own list, Gen offers Studio engines only; Viral and Image ads run on the API key, Cast on the platform's key", async ({ page }, info) => {
@@ -139,20 +123,18 @@ test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's 
   await noSideScroll(page);
   await shot(page, "business-owner", project);
 
-  /* Business's pages are listed; Setup is what Particl made in the project. */
-  await expect(page.getByRole("navigation", { name: "Pages" })).toBeVisible();
+  /* Setup is the board's brand and product cards: what Particl made in the project. */
   await setupIsParticls(page, film.id);
   await noSideScroll(page);
-  /* Image ads runs on Particl's API key: the composer, not a card. */
+  /* Image ads is the board's ads group (Particl's API key): a card, never an account's. */
   await page.goto(`/suites?suite=moleculr&page=dtc&sp=dtc&project=${film.id}`);
-  await expect(page.getByTestId("image-ads-view")).toBeVisible();
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads", { timeout: 60_000 });
   await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
-  await expect(page.getByTestId("image-ad-blocked")).toHaveText("Write the prompt.");
   await noSideScroll(page);
   await shot(page, "image-ads-owner", project);
 
   /* Gen on Images: Studio engines only — no Higgsfield catalogue, no Analysis, for the owner too. */
-  await page.goto(`/suites?view=gen&project=${film.id}`);
+  await page.goto(`/suites?make=video&project=${film.id}`);
   await expect(page.getByTestId("gen-view")).toBeVisible();
   const output = page.getByRole("tablist", { name: "Output" });
   await output.getByRole("tab", { name: "Images" }).click();
@@ -164,7 +146,7 @@ test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's 
   await expect(sheet).toBeVisible();
   await expect(sheet.getByRole("tab", { name: "Higgsfield catalogue" })).toHaveCount(0);
   await expect(sheet.getByTestId("gen-sheet-catalogue")).toHaveText("Studio engines");
-  await expect(page.getByTestId("gen-model")).toContainText("Studio engine");
+  await expect(page.getByTestId("gen-model")).toHaveAttribute("title", "Studio engine · Change");
   await noSideScroll(page);
   await shot(page, "gen-owner-sheet", project);
   await sheet.getByRole("button", { name: "Close" }).click();
@@ -175,50 +157,18 @@ test("an old sp=ads link shows image-ads-view for the owner, Setup is Particl's 
   expect(new Set(tops.map((y) => Math.round(y))).size, "one row of tabs").toBe(1);
   if (PHONES.includes(project)) for (const tab of tabs) expect((await tab.boundingBox())!.width).toBeGreaterThanOrEqual(44);
 
-  /* Viral runs on Particl's API key: the page is the composer, with its stage's plan to run too. */
+  /* Viral runs on Particl's API key: Motion transfer is Make's quick tool (the old page's link lands on it), the composer
+     with its button; nothing says the account runs it. */
   await page.goto(`/suites?suite=subatomik&page=motion&sp=motion&project=${film.id}`);
   await expect(page.getByTestId("viral-view")).toBeVisible();
   await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
   await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
-  await expect(page.getByTestId("primary-action")).toBeVisible();
-  if (WIDE.includes(project)) {
-    /* The stage's Atomik plan is on the key (#470): the Inspector offers it, and nothing says the account runs it. */
-    await expect(page.getByTestId("spec-plan")).toBeVisible();
-    await expect(page.getByTestId("spec-plan-owner")).toHaveCount(0);
-  }
+  await expect(page.getByTestId("viral-generate")).toBeVisible();
+  await expect(page.getByTestId("spec-plan-owner")).toHaveCount(0);
   await noSideScroll(page);
   await shot(page, "viral-owner", project);
 
-  /* Cast runs on the platform's key (28 September): no retired card and no connect prompt. The list, Build identity and
-     each character's render are this workspace's, on its credits, and each entry's still can be made in Gen. */
-  await page.goto(`/suites?suite=studio&page=cast&project=${film.id}`);
-  await expect(page.getByTestId("cast-stage")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("owner-run-cast")).toHaveCount(0);
-  for (const gone of ["cast-connect", "cast-price", "cast-blocked", "cast-elements", "page-soul"]) await expect(page.getByTestId(gone)).toHaveCount(0);
-  const soul = page.getByTestId("soul-card");
-  await expect(soul).toBeVisible();
-  await expect(soul.getByRole("heading", { name: "Build identity" })).toBeVisible();
-  const fox = page.getByTestId("cast-entry");
-  await expect(fox).toHaveCount(1);
-  await expect(fox.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Fox");
-  await expect(fox.getByLabel("Fox prompt", { exact: true })).toHaveValue("A red fox on ice at dusk");
-  /* Cast renders with an identity built here, on the platform's key: none yet, so the reason says so. */
-  await expect(fox.getByTestId("cast-render-why")).toHaveText("Build an identity below to render it.", { timeout: 30_000 });
-  await expect(fox.getByTestId("cast-render-run")).toBeDisabled();
-  await noSideScroll(page);
-  await fingerSized(soul.locator(".gx-gen-enhance"), project);
-  await shot(page, "cast-owner", project);
-  const still = fox.getByTestId("cast-still-gen");
-  await still.scrollIntoViewIfNeeded();
-  await hydrated(still);
-  await fingerSized(fox.locator(".gx-gen-enhance"), project);
-  await still.click();
-  await expect(page.getByTestId("gen-view")).toBeVisible();
-  await expect(page.getByRole("tablist", { name: "Output" }).getByRole("tab", { name: "Images" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByTestId("gen-prompt")).toHaveValue("A red fox on ice at dusk");
-  await expect(page.getByTestId("gen-preset-note")).toHaveText("Reference still · Fox");
-  await expect(page.getByTestId("gen-preset-note")).toBeInViewport();
-  await shot(page, "gen-owner-still", project);
+  /* Cast (a stage page until the board replaced it) is the board's Cast region now; its card has its own specs (tests/demo-s05-cast-workbench.spec.ts). */
 
   /* The phone's Home: no suite ran on the account as a whole any more (Viral is on the key), so none says retired or who
      runs it; Business names the page it opens on. */
@@ -246,21 +196,20 @@ test("an old sp=ads link shows image-ads-view for a member too, Setup names no o
   await noBadges(page);
   await noSideScroll(page);
   await setupIsParticls(page, film.id);
-  await expect(page.getByTestId("business-setup")).not.toContainText(ownerName);
+  await expect(page.getByTestId("board")).not.toContainText(ownerName);
   await noBadges(page);
   await noSideScroll(page);
   await shot(page, "business-member", info.project.name);
   /* Image ads and Viral run on Particl's API key for a member as for anyone: the composers, not a card. */
   await page.goto(`/suites?suite=moleculr&page=dtc&sp=dtc&project=${film.id}`);
-  await expect(page.getByTestId("image-ads-view")).toBeVisible();
+  await expect(page.locator(".gx")).toHaveAttribute("data-screen", "board-ads", { timeout: 60_000 });
   await expect(page.getByTestId("owner-run-business")).toHaveCount(0);
-  await expect(page.getByTestId("image-ad-blocked")).toHaveText("Write the prompt.");
   await noSideScroll(page);
   await page.goto(`/suites?suite=subatomik&page=motion&sp=motion&project=${film.id}`);
   await expect(page.getByTestId("viral-view")).toBeVisible();
   await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
   await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
-  await expect(page.getByTestId("primary-action")).toBeVisible();
+  await expect(page.getByTestId("viral-generate")).toBeVisible();
   await noBadges(page);
   await noSideScroll(page);
   await shot(page, "viral-member", info.project.name);

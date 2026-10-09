@@ -174,7 +174,7 @@ test("the jobs tray says what a take on the shared key is doing: Queued — star
     await mockLibrary(page, { uploads: [], generations: [] });
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    await page.goto("/suites?suite=studio&page=rig");
+    await page.goto("/suites?suite=atomik&page=agent&sp=agent");
     await expect(page.getByTestId("project-name").first()).toHaveText("Bottle launch");
     const pill = page.getByTestId("running-jobs");
     await expect(pill).toBeVisible();

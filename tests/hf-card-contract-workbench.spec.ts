@@ -99,7 +99,7 @@ async function shot(page: Page, info: TestInfo, name: string, focus?: Locator) {
 
 test("Gen › Results: skeletons while reading, a failed read with Try again, a status on every take, Refresh, and takes that settle", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors, state, hold } = await open(page, "/suites?view=gen", "fail");
+  const { errors, state, hold } = await open(page, "/suites?make=recent", "fail");
   const results = page.getByRole("region", { name: "Results" });
 
   /* A failed read is a banner, never "nothing generated". */
@@ -189,79 +189,6 @@ test("Gen › Results: skeletons while reading, a failed read with Try again, a 
   expect(errors).toEqual([]);
 });
 
-test("Library › Assets and Studio › Takes wear the same card; their failed reads say so", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const wide = WIDE.includes(info.project.name);
-  const { errors, state } = await open(page, "/suites?suite=studio&page=takes", "fail");
-
-  /* Takes: the failed read is a banner, not "Nothing generated yet". */
-  const takesBanner = page.getByTestId("takes-error");
-  await expect(takesBanner).toContainText(OFFLINE);
-  await expect(page.getByTestId("edit-takes")).not.toContainText("Nothing generated yet");
-  /* Said once: the list's end does not repeat it. */
-  await expect(page.getByTestId("takes-more-error")).toHaveCount(0);
-  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="takes-error"]'), "Try again under 44×44").toEqual([]);
-  await shot(page, info, "takes-error", takesBanner);
-
-  /* The Library says it too, above its filters: on a phone, never behind the tab bar. */
-  if (!wide) await page.getByTestId("toggle-library").click();
-  const library = page.getByTestId("library");
-  await library.getByRole("tab", { name: /Assets/ }).click();
-  const libraryBanner = library.getByTestId("library-error");
-  await expect(libraryBanner).toContainText(OFFLINE);
-  await expect(library.getByTestId("library-more-error")).toHaveCount(0);
-  const tabbar = page.getByTestId("tabbar");
-  if (await tabbar.isVisible()) {
-    const [bannerBox, barBox] = [(await libraryBanner.boundingBox())!, (await tabbar.boundingBox())!];
-    expect(bannerBox.y + bannerBox.height, "the Library's banner clears the tab bar").toBeLessThanOrEqual(barBox.y);
-  }
-  await shot(page, info, "library-error", libraryBanner);
-  if (!wide) await page.getByTestId("close-library").click();
-
-  state.mode = "ok";
-  await takesBanner.getByRole("button", { name: "Try again" }).click();
-  await expect(takesBanner).toHaveCount(0);
-
-  const takes = page.getByTestId("edit-takes");
-  await expect(takes.getByTestId("take-tile")).toHaveCount(8);
-  await expect(tile(takes, "Night swim").getByTestId("take-chip")).toHaveText("Failed");
-  await expect(tile(takes, "Night swim").getByTestId("take-reason")).toHaveText("Refused by the content filter");
-  await expect(tile(takes, "Storm front").getByTestId("take-chip")).toHaveText("Held · needs 12 cr");
-  await expect(tile(takes, "Harbour at dusk").getByTestId("take-reason")).toHaveText("Preview unavailable");
-  await shot(page, info, "takes-cards", tile(takes, "Storm front"));
-  /* A take that did not render, waits or has no copy says why and what happens next, instead of opening an empty editor. */
-  const toast = page.getByTestId("toast");
-  await tile(takes, "Night swim").getByTestId("edit-take").click();
-  await expect(toast).toHaveText("Night swim did not render · Refused by the content filter.");
-  await tile(takes, "Tide timelapse").getByTestId("edit-take").click();
-  await expect(toast).toHaveText("Tide timelapse is still queued; it opens here when it lands.");
-  await tile(takes, "Storm front").getByTestId("edit-take").click();
-  await expect(toast).toHaveText("Storm front is held · Needs 12 cr. It starts on its own when credits arrive.");
-  await tile(takes, "Harbour at dusk").getByTestId("edit-take").click();
-  await expect(toast).toHaveText("Harbour at dusk rendered, but its stored copy is not here yet. Refresh on its card reads it again.");
-  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="edit-takes"] .gx-tile-over'), "Refresh under 44×44").toEqual([]);
-
-  /* Library › Assets: the 2-up tile shortens the chip and moves the billing note under the name. */
-  if (!wide) await page.getByTestId("toggle-library").click();
-  await expect(library.getByTestId("library-error")).toHaveCount(0);
-  const assets = page.getByTestId("library-assets");
-  await expect(tile(assets, "Night swim").getByTestId("take-chip")).toHaveText("Failed");
-  await expect(tile(assets, "Night swim").getByTestId("take-reason")).toHaveText("Refused by the content filter");
-  await expect(tile(assets, "Pier in fog").getByTestId("take-chip")).toHaveText("Cancelled");
-  await expect(tile(assets, "Storm front").getByTestId("take-reason")).toHaveText("Needs 12 cr");
-  await expect(tile(assets, "Pier at first light").getByTestId("take-chip")).toHaveText("Approved");
-  await library.getByRole("button", { name: "Video", exact: true }).click();
-  await expect(assets.getByTestId("take-tile")).toHaveCount(4);
-  await shot(page, info, "library-cards");
-  /* The smallest tile still opens from its middle: Refresh keeps to its corner. */
-  await library.getByRole("button", { name: "All", exact: true }).click();
-  const gone = tile(assets, "Harbour at dusk");
-  if (PHONES.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="library-assets"] .gx-tile-over'), "Refresh under 44×44").toEqual([]);
-  await gone.locator(".gx-asset-thumb").click();
-  await expect(page.getByTestId("inspector-title")).toHaveText("Harbour at dusk");
-  await noSideScroll(page);
-  expect(errors).toEqual([]);
-});
 
 test("a project list that will not load says so once, with one Try again, and Try again opens the project", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
@@ -277,7 +204,7 @@ test("a project list that will not load says so once, with one Try again, and Tr
     : route.fallback()));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=recent");
   const banner = page.getByTestId("projects-error");
   await expect(banner).toContainText("Projects are not answering right now.");
   await expect(page.getByTestId("project-name")).toHaveText("Projects didn’t load");
@@ -299,13 +226,13 @@ test("a project list that will not load says so once, with one Try again, and Tr
 test("a failed Load more stays at the list's end; a re-read that fails with cards on screen says they were not refreshed", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const wide = WIDE.includes(info.project.name);
-  const { errors, state } = await open(page, "/suites?view=gen", "ok", { pageSize: 5 });
+  const { errors, state } = await open(page, "/suites?make=recent", "ok", { pageSize: 5 });
   const results = page.getByRole("region", { name: "Results" });
   await expect(results.getByTestId("take-tile")).toHaveCount(5);
   const library = page.getByTestId("library");
   /* Gen's Library has no Tools tab: it is the assets list itself. */
   const openLibrary = async () => {
-    if (!wide) await page.getByTestId("toggle-library").click();
+    if (!wide) await page.getByTestId("make-open-library").click();
     await expect(library.getByTestId("library-assets")).toBeVisible();
   };
   const closeLibrary = async () => { if (!wide) await page.getByTestId("close-library").click(); };
@@ -358,7 +285,7 @@ test("long names and long messages stay inside their cards and banners", async (
     generation({ id: "gen_long_fail", title: name, kind: "image", status: "failed", storedUrl: null, creditsBilled: 0, error: words, projectId: "prod-cards", createdAt: BASE, updatedAt: BASE }),
     generation({ id: "gen_long_ok", title: `${name} (take two)`, kind: "image", creditsBilled: 1, projectId: "prod-cards", createdAt: BASE - 1, updatedAt: BASE - 1 }),
   ];
-  const { errors, state } = await open(page, "/suites?view=gen", "ok", { rows });
+  const { errors, state } = await open(page, "/suites?make=recent", "ok", { rows });
   const results = page.getByRole("region", { name: "Results" });
   await expect(results.getByTestId("take-tile")).toHaveCount(2);
   const card = results.getByTestId("take-tile").first();
@@ -382,35 +309,5 @@ test("long names and long messages stay inside their cards and banners", async (
   expect(bannerBox.x + bannerBox.width).toBeLessThanOrEqual(viewport.width + 1);
   await noSideScroll(page);
   await shot(page, info, "long-banner", banner);
-  expect(errors).toEqual([]);
-});
-
-test("a held take that cannot open yet says what holds it and what starts it: credits, a cap, a moved or incomplete price, a token's ceiling", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  /* All held for credits. The first only waits for them; each other's release was refused for a reason of its own,
-     which lib/held.ts writes on the row in these words. */
-  const held = { params: { held: { why: "credits", needs: 12 } }, kind: "video" as const, status: "held", storedUrl: null, creditsBilled: null, projectId: "prod-cards" };
-  const blocked = (i: number, id: string, title: string, error: string) => generation({ ...held, id, title, error, createdAt: BASE - i, updatedAt: BASE - i });
-  const rows = () => [
-    generation({ ...held, id: "gen_short", title: "Storm front", createdAt: BASE, updatedAt: BASE }),
-    blocked(1, "gen_capped", "Crane over the quay", "At this production's cap of 100 cr (100 cr spent, this needs 12 cr). An admin can unlock it or raise it."),
-    blocked(2, "gen_moved", "Pier crossing", "The price is now 14 cr. Release it at that price to start it."),
-    blocked(3, "gen_stale", "Gull line", "This take's saved price is incomplete. Recreate it to get a current quote; this take is kept."),
-    blocked(4, "gen_ceiling", "Night ferry", "This job and the reserved jobs would pass this token's 500 cr monthly ceiling."),
-  ];
-  const { errors } = await open(page, "/suites?suite=studio&page=takes", "ok", { rows });
-  const takes = page.getByTestId("edit-takes");
-  await expect(takes.getByTestId("take-tile")).toHaveCount(5);
-  const toast = page.getByTestId("toast");
-  const says = async (name: string, words: string) => {
-    await tile(takes, name).getByTestId("edit-take").click();
-    await expect(toast).toHaveText(words);
-  };
-  await says("Storm front", "Storm front is held · Needs 12 cr. It starts on its own when credits arrive.");
-  /* None of the others is a shortfall: credits arriving start none of them, so each says what does. */
-  await says("Crane over the quay", "Crane over the quay is held · At this production's cap of 100 cr (100 cr spent, this needs 12 cr). It starts on its own when the cap allows it or an admin raises the cap.");
-  await says("Pier crossing", "Pier crossing is held · The price is now 14 cr. Release it at that price to start it.");
-  await says("Gull line", "Gull line is held · This take's saved price is incomplete. Recreate it to get a current quote; this take is kept.");
-  await says("Night ferry", "Night ferry is held · This job and the reserved jobs would pass this token's 500 cr monthly ceiling. It starts on its own when the token's monthly ceiling resets.");
   expect(errors).toEqual([]);
 });

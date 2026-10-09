@@ -56,24 +56,10 @@ async function scrollUntil(list: Locator, target: Locator) {
   }
 }
 
-test("the Rig list mounts a window of a 1,500-shot project and scrolls to the last shot", async ({ page }, info) => {
-  test.skip(!DESKTOP.includes(info.project.name), "one desktop");
-  const errors = await open(page, "/suites?suite=studio&page=rig");
-  const list = page.getByRole("list", { name: "Shots" });
-  await expect(list.getByRole("listitem").first()).toContainText("Shot 0001");
-  await expect(list).toHaveAttribute("data-virtual", "on");
-  expect(await list.locator(".pxw-rig-row").count()).toBeLessThan(80);
-  await scrollUntil(list, list.getByText("Shot 1500", { exact: true }));
-  await expect(list.getByText("Shot 1500", { exact: true })).toBeVisible();
-  expect(await list.locator(".pxw-rig-row").count()).toBeLessThan(80);
-  await list.getByText("Shot 1500", { exact: true }).click();
-  await expect(page.getByTestId("inspector-title")).toHaveText("Shot 1500");
-  expect(errors).toEqual([]);
-});
 
 test("the Library and the Gen results mount a window of 1,500 renders", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "one desktop");
-  const errors = await open(page, "/suites?view=gen");
+  const errors = await open(page, "/suites?make=recent");
   const grid = page.locator(".gx-gen-grid");
   await expect(grid).toHaveAttribute("data-virtual", "on");
   await expect(grid.locator(".gx-asset").first()).toContainText("Take 0001");
@@ -105,24 +91,5 @@ test("the Takes grid mounts a window of 1,500 renders; arrow keys still walk eve
   const selected = grid.locator('.pxw-take-card[aria-pressed="true"]');
   await expect(selected).toHaveAttribute("data-take-id", "generation:gen_30");
   await expect(selected).toBeInViewport();
-  expect(errors).toEqual([]);
-});
-
-test("Library › Tools on the Rig reach their sections across the 1,500-shot list: down to Build from Storyboards, back up to the Shots", async ({ page }, info) => {
-  test.skip(!DESKTOP.includes(info.project.name), "one desktop");
-  /* On CI's Linux path: virtual-core corrects the scroll at once while a page scrolls, which cut a smooth move short. */
-  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "platform", { get: () => "Linux x86_64", configurable: true }));
-  const errors = await open(page, "/suites?suite=studio&page=rig");
-  const list = page.getByRole("list", { name: "Shots" });
-  await expect(list).toHaveAttribute("data-virtual", "on");
-  const build = page.locator('[data-section="rig-build"]');
-  await expect(build).not.toBeInViewport();
-  const library = page.getByTestId("library");
-  await library.getByRole("tab", { name: /Tools/ }).click();
-  /* Build from Storyboards sits under the whole list, which grows as its rows are measured on the way. */
-  await library.locator('[data-tool="Build from Storyboards"]').click();
-  await expect(build).toBeInViewport();
-  await library.locator('[data-tool="Shots"]').click();
-  await expect(page.getByTestId("rig-list").locator(".pxw-rig-head")).toBeInViewport();
   expect(errors).toEqual([]);
 });

@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import type { Generation } from "../../lib/jobs";
 import type { LibraryUpload } from "../../lib/genLibrary";
 import { libraryEntries, type LibraryEntry } from "../../lib/workspace/library";
-import { NEXT_SECTION, nextActions } from "../../lib/shell/next-actions";
+import { nextActions } from "../../lib/shell/next-actions";
 
 /* Idea 12, first slice: which existing tool each take goes on to — navigation only, never a price. */
 const gen = (id: string, over: Partial<Generation> = {}) => ({
@@ -14,15 +14,14 @@ const one = (generations: Generation[], uploads: LibraryUpload[] = []): LibraryE
 const saved = { saved: true };
 
 test("a still is re-edited, a clip edited, a sound opens Edit & Sound — generated or uploaded alike", () => {
-  expect(nextActions(one([gen("g_still")]), saved)).toEqual([{ id: "re-edit", label: "Re-edit", opens: "the re-edit form in Takes", enabled: true, why: null }]);
-  expect(nextActions(one([gen("g_clip", { kind: "video" })]), saved)).toEqual([{ id: "edit", label: "Edit", opens: "Seedance Edit in Takes", enabled: true, why: null }]);
+  expect(nextActions(one([gen("g_still")]), saved)).toEqual([{ id: "re-edit", label: "Re-edit", opens: "the take in Shots, on the board", enabled: true, why: null }]);
+  expect(nextActions(one([gen("g_clip", { kind: "video" })]), saved)).toEqual([{ id: "edit", label: "Edit", opens: "the take in Shots, on the board", enabled: true, why: null }]);
   expect(nextActions(one([gen("g_voice", { kind: "audio" })]), saved)).toEqual([{ id: "edit-sound", label: "Edit & Sound", opens: "Edit & Sound", enabled: true, why: null }]);
   expect(nextActions(one([], [up("u_plate")]), saved).map((a) => [a.id, a.enabled])).toEqual([["re-edit", true]]);
   expect(nextActions(one([], [up("u_clip", { mime: "video/mp4", kind: "video", filename: "clip.mp4" })]), saved).map((a) => [a.id, a.enabled])).toEqual([["edit", true]]);
   expect(nextActions(one([], [up("u_tone", { mime: "audio/mpeg", kind: "audio", filename: "tone.mp3" })]), saved).map((a) => a.id)).toEqual(["edit-sound"]);
   /* No label carries a price; each names what it opens. */
   for (const a of [...nextActions(one([gen("g")]), saved), ...nextActions(one([gen("v", { kind: "video" })]), saved)]) expect(`${a.label} ${a.opens}`).not.toMatch(/\d|credit|\$/i);
-  expect(NEXT_SECTION).toEqual({ "re-edit": "image", edit: "video" });
 });
 
 test("only a stored original is actionable: a take in flight, held, failed, stopped or without its copy says why", () => {

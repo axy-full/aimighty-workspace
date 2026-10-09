@@ -23,7 +23,7 @@ import { copyAssetLink } from "@/lib/shell/copy-asset-link";
 import { useSession } from "@/lib/session";
 import { LoadBanner } from "./TakeTile";
 import { ReleaseTake } from "./ReleaseTake";
-import { AssetNextActions, revealNext } from "./AssetNextActions";
+import { AssetNextActions } from "./AssetNextActions";
 import { madeFrom as toolSource, type NextActionId } from "@/lib/shell/next-actions";
 import { RememberAsset } from "./atomik/MemoryView";
 
@@ -112,15 +112,12 @@ export function AssetInspector({ scope, project, id }: { scope: string; project:
   /* Preview walks the page's list from this take (lib/shell/preview-bridge); a link names the workspace, the production and the take. */
   const preview = entryPreview(entry);
   const copyLink = async () => toast(await copyAssetLink({ workspace: session.workspace?.id, production: project?.productionProjectId, asset: take.id }));
-  /* Next opens the tool on this take: the take is selected first, so Takes opens on it (a page change is the history entry;
-     already on Takes, opening it is). Nothing is quoted or sent here. */
+  /* Next opens the tool on this take: the take is selected first, and the board opens on the region that holds the tool
+     (Edit & Sound is the Cut region, every other tool the Shots region). Nothing is quoted or sent here. */
   const openNext = (next: NextActionId) => {
     if (next === "edit-sound") { shell.goSuite("studio", "edit"); return; }
-    const onTakes = shell.view === "suite" && shell.suite.id === "studio" && shell.page.id === "takes";
-    shell.selectAsset(take.id, { reason: onTakes ? "open" : "pick" });
-    if (!onTakes) shell.goSuite("studio", "takes");
-    else if (!shell.wide) shell.closePanels();
-    revealNext(next);
+    shell.selectAsset(take.id, { reason: "pick" });
+    shell.goSuite("studio", "takes");
   };
   return (
     <div className="gx-insp-asset" data-testid="asset-inspector">

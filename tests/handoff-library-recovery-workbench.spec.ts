@@ -46,7 +46,7 @@ test("Gen waits for the project list to recover before creating or generating an
     return route.fulfill({ json: { id: "gen_recovered", status: "succeeded" }, headers: { "Idempotency-Status": "complete" } });
   });
   await page.route(/\/api\/jobs\/gen_recovered(\?.*)?$/, (route) => route.fulfill({ json: { generation: generation({ id: "gen_recovered", projectId: project.productionProjectId }) } }));
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=video");
   const banner = page.getByTestId("projects-error");
   await expect(banner).toContainText("Projects are unavailable right now.");
   await page.getByTestId("gen-prompt").fill("A lighthouse above calm water");
@@ -68,7 +68,7 @@ test("Gen waits for the project list to recover before creating or generating an
   await expect(page.getByTestId("project-name")).toHaveText(project.name);
   await expect(banner).toHaveCount(0);
   await expect(generate).toBeEnabled();
-  await expect(generate).toHaveText("Generate · 3 cr");
+  await expect(generate).toHaveText("Make · 3 cr");
   expect(writes).toEqual([]);
   expect(sends).toEqual([]);
   await generate.click();
@@ -92,7 +92,7 @@ test("an automatic Library retry keeps the same failure banner until its read su
     await gate;
     return route.fallback();
   });
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=recent");
   const banner = page.getByTestId("gen-results-error");
   await expect(banner).toContainText(OFFLINE);
   await banner.evaluate((el) => el.setAttribute("data-same-banner", "true"));

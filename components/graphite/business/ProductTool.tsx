@@ -17,15 +17,17 @@ const BLANK: Partial<MoleculrBrief> = { activeProductId: undefined, productName:
  * extract route: free, one page, nothing added until you choose). The profile
  * being edited is the one every brief is about.
  */
-export function ProductTool({ scope, editor, items }: { scope: string; editor: OwnEditor; items: LibraryEntry[] }) {
+export function ProductTool({ scope, editor, items, initial }: { scope: string; editor: OwnEditor; items: LibraryEntry[]; /** A read of the page already made (the Ads board's), opened for review. */ initial?: ProductExtraction | null }) {
   const p = editor.project!;
   const latest = useLatest(p);
   const brief = briefOf(p);
   const profiles = brief.products ?? [];
   const work = useWork();
-  const [extraction, setExtraction] = useState<ProductExtraction | null>(null);
-  const [reviewFor, setReviewFor] = useState("");
-  const [review, setReview] = useState({ name: "", brand: "", description: "" });
+  const [extraction, setExtraction] = useState<ProductExtraction | null>(initial ?? null);
+  const [reviewFor, setReviewFor] = useState(initial ? brief.productUrl.trim() : "");
+  const [review, setReview] = useState(() => (initial
+    ? { name: String(initial.product.name ?? "").slice(0, 200), brand: String(initial.product.brand ?? "").slice(0, 200), description: String(initial.product.description ?? "").slice(0, 4000) }
+    : { name: "", brand: "", description: "" }));
   const [imported, setImported] = useState<string[]>([]);
   const reading = useRef<AbortController | null>(null);
   const set = (patch: Partial<MoleculrBrief>) => changeBrief(editor, (b) => ({ ...b, ...patch }));

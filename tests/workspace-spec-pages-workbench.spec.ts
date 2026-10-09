@@ -258,7 +258,7 @@ test("Generate points to Gen: no account form, its Atomik plan refuses with the 
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
   const moved = page.getByTestId("atomik-generate-moved");
   await expect(moved).toContainText("Single generations run in Gen, on Particl’s own engines", { timeout: 30_000 });
-  await expect(moved.getByRole("link", { name: "Open Gen" })).toHaveAttribute("href", "/suites?view=gen");
+  await expect(moved.getByRole("link", { name: "Open Gen" })).toHaveAttribute("href", "/suites?make=video");
   await expect(page.getByRole("region", { name: "Generate on the connected account", exact: true })).toHaveCount(0);
 
   const nav = page.getByRole("navigation", { name: "Pages" });

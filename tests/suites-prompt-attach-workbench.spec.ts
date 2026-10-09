@@ -48,30 +48,11 @@ async function pasteFile(target: Locator, name: string, type: string, bytes: Buf
   }, { name, type, b64: bytes.toString("base64") });
 }
 
-test("Brief: a picture attached to the prompt goes to the writer — priced with it, and seen by it", async ({ page }, info) => {
-  test.skip(!DESKTOPS.includes(info.project.name), "one desktop");
-  test.setTimeout(120_000);
-  const { project, errors, bodies, read } = await setup(page);
-  await page.goto(`/suites?suite=studio&page=brief&project=${project.id}`);
-  await page.getByTestId("agent-bar").getByRole("radio", { name: "Claude" }).click();
-  await page.getByTestId("brief-attach-file").setInputFiles({ name: "mood.png", mimeType: "image/png", buffer: await png("#6a3d2b") });
-  await expect(page.getByTestId("agent-attachments")).toContainText("mood.png", { timeout: 30_000 });
-  await expect(page.getByTestId("brief-attach-note")).toContainText("The agent sees mood.png on its next run.");
-  const asset = (await read()).assets.find((a) => a.name === "mood.png");
-  expect(asset).toMatchObject({ kind: "image", category: "Reference" });
-
-  await page.getByTestId("brief-estimate").click();
-  await expect(page.getByTestId("brief-quote")).toContainText("agent steps");
-  expect(bodies.at(-1)).toMatchObject({ kind: "write", quoteOnly: true, attachmentAssetIds: [asset!.id] });
-  await page.getByTestId("brief-write").click();
-  await expect(page.getByTestId("brief-review")).toContainText("Mock: saw 1 attached picture and 0 text files.", { timeout: 60_000 });
-  expect(errors).toEqual([]);
-});
 
 test("Gen: a pasted picture becomes a reference; a sound file is kept in the Library, and the box says why", async ({ page }, info) => {
   test.skip(!DESKTOPS.includes(info.project.name), "one desktop");
   const { project, errors } = await setup(page);
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   /* The composer settles on the project first (it starts that project's own composer state). */
   await expect(page.getByTestId("project-name")).toHaveText(project.name);
   const box = page.getByTestId("gen-attach");
@@ -82,40 +63,6 @@ test("Gen: a pasted picture becomes a reference; a sound file is kept in the Lib
   expect(errors).toEqual([]);
 });
 
-test("Rig, Environment and Cast: attachments land where each engine takes them", async ({ page }, info) => {
-  test.skip(!DESKTOPS.includes(info.project.name), "one desktop");
-  test.setTimeout(120_000);
-  const { project, errors, read } = await setup(page, (p) => {
-    p.nodes = [{ id: "n1", title: "Opening", type: "scene", x: 0, y: 0, width: 238, linked: [], role: "Director", status: "draft", mode: "Video", durationS: 5, ratio: "16:9", resolution: "720p" } as Project["nodes"][number]];
-    p.production = {
-      environment: { world: "", model: "gemini-3.1-flash-image", entries: [{ id: "env-1", name: "Harbour", notes: "", prompt: "", references: [], plates: [] }] },
-      cast: { entries: [{ id: "cast-1", kind: "character", name: "Mara", description: "", prompt: "", takes: [] }] } as NonNullable<Project["production"]>["cast"],
-    };
-  });
-
-  /* Environment: the plate prompt's attachment is the place's reference. */
-  await page.goto(`/suites?suite=studio&page=boards&sp=environment&project=${project.id}`);
-  const place = page.getByTestId("environment-entry").first();
-  await place.getByTestId("environment-prompt-attach-file").setInputFiles({ name: "quay.png", mimeType: "image/png", buffer: await png("#556677") });
-  await expect(place.getByTestId("environment-references")).toContainText("References 1/6", { timeout: 30_000 });
-  /* Saved before the next page opens, as anyone moving on would find it. */
-  await expect(page.locator(".pd-save")).toHaveText(/^Saved/, { timeout: 15_000 });
-
-  /* Cast: the prompt's picture is the entry's reference image. */
-  await page.goto(`/suites?suite=studio&page=cast&sp=cast&project=${project.id}`);
-  const mara = page.getByTestId("cast-entry").first();
-  await mara.getByTestId("cast-prompt-attach-file").setInputFiles({ name: "mara.png", mimeType: "image/png", buffer: await png("#775544") });
-  await expect(mara.getByTestId("cast-reference")).toContainText("mara.png", { timeout: 30_000 });
-
-  /* The Rig last (its team canvas saves on the way out): the shot prompt's attachment is an input of the shot. */
-  await page.goto(`/suites?suite=studio&page=rig&project=${project.id}`);
-  await page.locator(".pxw-rig-row[data-shot-id='n1']").click();
-  await page.getByTestId("rig-prompt-attach-file").setInputFiles({ name: "blocking.png", mimeType: "image/png", buffer: await png("#224466") });
-  await expect(page.getByTestId("rig-prompt-attach-note")).toContainText("blocking.png is an input of Opening", { timeout: 30_000 });
-
-  await expect.poll(async () => { const p = await read(); return [p.production?.environment?.entries[0].references.length, p.production?.cast?.entries[0].referenceAssetId ? 1 : 0]; }, { timeout: 15_000 }).toEqual([1, 1]);
-  expect(errors).toEqual([]);
-});
 
 /** A tenth of a second of silence, as a WAV. */
 function wav() {

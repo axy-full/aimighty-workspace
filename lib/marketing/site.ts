@@ -1,4 +1,4 @@
-import { SHELL_SUITES, WORKSPACE_TABS } from "@/lib/shell/ia";
+import { WORKSPACE_TABS } from "@/lib/shell/ia";
 
 /**
  * The public site's map: its tabs and the six places it describes. Copy is
@@ -18,10 +18,10 @@ export type SiteSuite = {
   pages: string[];
 };
 
-/* Studio's stages and Workspace's tabs are read from the shell, so the site
-   cannot fall behind the product (ten stages since 24 September). */
-const STUDIO_PAGES = SHELL_SUITES.find((suite) => suite.id === "studio")!.pages
-  .filter((page) => !page.phoneOnly).map((page) => page.label);
+/* Workspace's tabs are read from the shell, so the site cannot fall behind the product. The Studio's stages are the page's own copy now:
+   the shell's ten stage pages are gone (the board is the whole production), and the public pages keep what they said until stream 15
+   replaces them (lib/shell/stage-redirects.ts lists the ten). */
+const STUDIO_PAGES = ["Brief", "Beats", "Storyboards", "Environment", "Cast", "3D blocking", "Board", "Takes", "Edit & Sound", "Deliver"];
 const COUNT: Record<number, string> = { 8: "Eight", 9: "Nine", 10: "Ten", 11: "Eleven", 12: "Twelve" };
 
 export const SITE_SUITES: SiteSuite[] = [

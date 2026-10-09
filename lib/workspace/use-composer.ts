@@ -229,6 +229,14 @@ export type ComposerHost = {
   batches: BatchView[];
 };
 
+/**
+ * What a press sent, told to the host once the server has accepted it (`onSent`): where the take is filed (the shot node in
+ * the project's draft), its job or batch, what it was approved at, and whether admission held it or any take of a batch
+ * ("held": it starts when credits arrive, or a take was not accepted: the host keeps its panel open and says so). Told after
+ * the send, never before: nothing here sends, prices or approves anything.
+ */
+export type ComposerSent = { projectId: string; nodeId: string; name: string; jobId: string | null; batchId: string | null; credits: number; takes: number; held: boolean };
+
 export function useComposer(options: {
   scope: string;
   open: boolean;
@@ -253,9 +261,15 @@ export function useComposer(options: {
    * the others; without it the words go as typed.
    */
   compose?: (prompt: string, shot: Record<string, string>, type: ComposerType) => { prompt: string; shotSpec: Record<string, string> | null };
+  /** The button's verb ("Generate" unless the host says otherwise: Make says "Make"). */
+  verb?: string;
+  /** Told once a press has been accepted by the server (see ComposerSent). Optional; nothing depends on it. */
+  onSent?: (sent: ComposerSent) => void;
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
+  const sentRef = useRef(options.onSent);
+  useEffect(() => { sentRef.current = options.onSent; });
   const [state, dispatch] = useReducer(
     composerReducer,
     options.initialType,
@@ -551,6 +565,12 @@ export function useComposer(options: {
             });
           followBatch({ id: batchId, source: "workspace", projectId: filed.project.id, name: base, model: model.label, takes: outcome.takes });
           dispatch({ type: "notice", value: `${before}${batchNotice(outcome.takes, "cr")}` });
+          if (outcome.takes.some((take) => take.state === "queued" || take.state === "held"))
+            sentRef.current?.({
+              projectId: filed.project.id, nodeId: node.id, name: base, jobId: null, batchId,
+              credits: outcome.takes.reduce((sum, take) => sum + (take.state === "queued" || take.state === "held" ? take.credits : 0), 0), takes: outcome.takes.length,
+              held: outcome.takes.some((take) => take.state !== "queued"),
+            });
           return;
         }
         /* This take — these settings and this prompt — as the resume records name it. */
@@ -564,6 +584,7 @@ export function useComposer(options: {
         let draft: SavedDraft | null = null;
         if (writer.current?.projectId !== project.id) writer.current = { projectId: project.id, writer: draftWriter() };
         const saves = writer.current.writer;
+        let sent: ComposerSent | null = null;
         for (let take = start; take < end; take++) {
         const name = end > 1 ? `${base} · take ${take + 1}` : base;
         /* The take needs a shot to live in, so the composer adds one to the draft the way Rig does (sound: its
@@ -652,7 +673,9 @@ export function useComposer(options: {
         /* Taken: the next Generate of this batch goes on from the take after it. */
         writeResume(scope, project.id, takeKey, take + 1 < end ? { kind: "workspace", projectId: project.id, take: take + 1, node: null } : null);
         setRun({ source: "workspace", name, meta: [name, model.label, formatCredits(outcome.credits)].join(" · "), jobId: outcome.jobId, projectId: project.id });
+        sent = { projectId: project.id, nodeId: shot.id, name, jobId: outcome.jobId, batchId: null, credits: outcome.credits, takes: take - start + 1, held: outcome.status === "held" };
         }
+        if (sent) sentRef.current?.(sent);
         if (end > 1) dispatch({ type: "notice", value: start === 0 ? `${end} takes submitted, each at the price shown. They file into Takes as they land.`
           : start + 1 === end ? `Take ${end} submitted at the price shown. It files into Takes as it lands.`
           : `Takes ${start + 1}–${end} submitted, each at the price shown. They file into Takes as they land.` });
@@ -781,8 +804,8 @@ export function useComposer(options: {
 
   return {
     state, dispatch, models, offered, model, quote, quoteKey, settings, credits,
-    buttonLabel: composerButtonLabel({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
-    buttonParts: composerButtonParts({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
+    buttonLabel: composerButtonLabel({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft), verb: options.verb }),
+    buttonParts: composerButtonParts({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft), verb: options.verb }),
     blocked, submitting,
     wording: billingWording({ workspaceName: options.workspaceName }),
     audio, voices, voice, seconds, project: target, projectNotice, generate, retryEngines, scope,

@@ -319,7 +319,7 @@ function Signup() {
             onChange={(e) => setConfirm(e.target.value)}
           />
         </Field>
-        <label className="mt-3 flex items-start gap-2 text-[13px] leading-relaxed text-dim">
+        <label className="mt-3 flex min-h-[44px] items-start gap-2 text-[13px] leading-relaxed text-lead">
           <input
             className="mt-1"
             type="checkbox"

@@ -9,7 +9,7 @@ import { aboutCredits, type OwnPage } from "@/lib/shell/business-own";
 import { CardHead, Field, PicturePicker, Said, SaveLine, adoptEntry, briefOf, changeBrief, refreshLibrary, uploadToDraft, useLatest, useWork, type OwnEditor } from "./own-kit";
 import { useOwnAgent } from "./use-own-agent";
 
-const ASK = "Analyze the visible beats, framing, inferred pacing and colors of this reference ad. Propose an original matching direction for my supplied product and brand. Distinguish sampled evidence from inference.";
+export const REFERENCE_REVIEW_ASK = "Analyze the visible beats, framing, inferred pacing and colors of this reference ad. Propose an original matching direction for my supplied product and brand. Distinguish sampled evidence from inference.";
 
 /**
  * Business › Reference: a video ad you own, chosen from this project (or
@@ -54,7 +54,7 @@ export function ReferenceTool({ scope, editor, items, onOpen }: { scope: string;
   const analysis = history.find((a) => a.jobId === chosenJob) ?? history[0] ?? null;
   const reviewed = analysis ? edits[analysis.jobId] ?? analysis.result.direction : "";
   /* A review in flight has no plan yet: it is known by the request this page sends. */
-  const running = (agent.data?.jobs ?? []).find((job) => (job.status === "queued" || job.status === "running") && job.request === ASK) ?? null;
+  const running = (agent.data?.jobs ?? []).find((job) => (job.status === "queued" || job.status === "running") && job.request === REFERENCE_REVIEW_ASK) ?? null;
   const reviewing = Boolean(running);
 
   const choose = (assetId: string) => { setValue((current) => selectReferenceAd(latest.current, current, assetId)); setPicking(false); void editor.ensureSaved(); };
@@ -162,7 +162,7 @@ export function ReferenceTool({ scope, editor, items, onOpen }: { scope: string;
       <SaveLine editor={editor} testId="reference-save" />
       {dialog && selected ? (
         <AtomikRunDialog key={`${scope}:${p.id}:${selected.asset.id}`} approximate scope={scope} project={p} models={models}
-          target={{ referenceAd: referenceAdBinding(p, value)!, role: "marketing", request: ASK, model: "auto", effort: "auto", depth: "Considered", refs: [selected.asset.id] }}
+          target={{ referenceAd: referenceAdBinding(p, value)!, role: "marketing", request: REFERENCE_REVIEW_ASK, model: "auto", effort: "auto", depth: "Considered", refs: [selected.asset.id] }}
           onSave={editor.ensureSaved} onClose={() => setDialog(false)} onQueued={(id) => { setDialog(false); setChosenJob(id); void agent.refresh(); }} />
       ) : null}
     </div>

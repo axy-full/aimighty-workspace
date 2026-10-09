@@ -77,24 +77,34 @@ async function production(sender: Person) {
   return { draft, production: productionProjectId, take, asset: `generation:${take}`, privateUpload: privateUpload.id };
 }
 
-/** The sender opens the take and copies its link from the Inspector. */
-async function copyLink(sender: Person, draftId: string, info: TestInfo) {
+/** The sender picks the take in the Library and copies its link from the Inspector. */
+async function copyLink(sender: Person, draftId: string, asset: string, info: TestInfo) {
   const { page } = sender;
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: process.env.PW_BASE_URL });
-  await page.goto(`/suites?project=${draftId}&page=takes&sp=takes`);
-  await page.getByTestId("take-tile").filter({ hasText: TAKE_TITLE }).getByTestId("edit-take").click();
-  await expect(page.getByTestId("takes-selected")).toContainText(`Selected · ${TAKE_TITLE}`);
-  if (!WIDE.includes(info.project.name)) await page.getByTestId("toggle-inspector").click();
+  /* The Takes page is deleted: a page that still has the Library and the Inspector columns is where a take is picked. */
+  await page.goto(`/suites?project=${draftId}&suite=atomik&page=agent&sp=agent`);
+  const wide = WIDE.includes(info.project.name);
+  if (!wide) await page.getByTestId("toggle-library").click();
+  await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
+  await page.getByTestId("library").locator(`.gx-asset-thumb[data-ctx='asset:${asset}']`).click();
+  /* On a phone, picking the asset opens the Inspector over the Library by itself. */
+  if (!wide && !(await page.getByTestId("inspector").isVisible())) await page.getByTestId("toggle-inspector").click();
   await page.getByTestId("inspector-copy-link").click();
   await expect(page.getByTestId("toast")).toHaveText(/^Link copied/);
   return new URL(await page.evaluate(() => navigator.clipboard.readText()));
+}
+
+/** The board is up on its Shots region (where the Takes page went), the link's own params gone from the address. The fixture's take is filed on no shot, so no shot card holds it to select. */
+async function takeOpened(page: Page, _asset: string) {
+  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
+  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region"), q.has("ws"), q.has("production")]; }).toEqual(["board", "shots", false, false]);
 }
 
 /** Nothing about the take was shown or asked for. */
 async function nothingOfTheTake(who: Person, take: string) {
   await expect(who.page.getByText(TAKE_TITLE)).toHaveCount(0);
   expect(who.apiCalls.filter((call) => call.includes(take)), "no request names the take").toEqual([]);
-  await expect(who.page.getByTestId("takes-selected")).toHaveCount(0);
+  await expect(who.page.getByTestId("board"), "the board waits behind the link's card").toHaveCount(0);
 }
 
 /** The card's floors: thumb-sized, inside the screen, above the tab bar. With LINK_SHOTS_DIR set, a picture of it. */
@@ -117,8 +127,8 @@ test("a teammate's link opens the reader's own draft of the production — offer
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const sender = await person(browser, info, "Sender");
   const made = await production(sender);
-  const link = await copyLink(sender, made.draft.id, info);
-  expect(Object.fromEntries(link.searchParams)).toEqual({ page: "takes", sp: "takes", ws: sender.workspace.id, production: made.production, asset: made.asset });
+  const link = await copyLink(sender, made.draft.id, made.asset, info);
+  expect(Object.fromEntries(link.searchParams)).toEqual({ view: "board", region: "shots", ws: sender.workspace.id, production: made.production, asset: made.asset });
 
   const reader = await person(browser, info, "Teammate");
   await join(reader, sender.workspace);
@@ -133,9 +143,8 @@ test("a teammate's link opens the reader's own draft of the production — offer
     await cardFloors(reader.page, info);
 
     await reader.page.getByTestId("link-open").click();
-    await expect(reader.page.getByTestId("takes-selected")).toContainText(`Selected · ${TAKE_TITLE}`);
+    await takeOpened(reader.page, made.asset);
     const url = new URL(reader.page.url());
-    expect(url.searchParams.get("asset")).toBe(made.asset);
     expect(url.searchParams.has("ws")).toBe(false);
     expect(url.searchParams.has("production")).toBe(false);
     const own = (await reader.page.request.get(`/api/workbench/projects?production=${made.production}`, { headers: reader.headers }).then((r) => r.json())) as { id: string };
@@ -151,7 +160,7 @@ test("a teammate's link opens the reader's own draft of the production — offer
 
     /* With a draft of their own, the same link goes straight to the take. */
     await reader.page.goto(link.pathname + link.search);
-    await expect(reader.page.getByTestId("takes-selected")).toContainText(`Selected · ${TAKE_TITLE}`);
+    await takeOpened(reader.page, made.asset);
     await expect(reader.page.getByTestId("link-card")).toHaveCount(0);
 
     /* An address-bar URL naming the sender's draft opens nothing in its place — not the reader's own project either. */
@@ -164,7 +173,7 @@ test("a teammate's link opens the reader's own draft of the production — offer
     await reader.page.getByTestId("link-dismiss").click();
     await expect(reader.page.getByTestId("link-card")).toHaveCount(0);
     await expect.poll(() => new URL(reader.page.url()).searchParams.get("asset")).toBeNull();
-    await expect(reader.page.getByTestId("takes-selected")).toHaveCount(0);
+    await expect(reader.page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
   } finally {
     await reader.page.context().close();
     await sender.page.context().close();
@@ -175,7 +184,7 @@ test("a link from a workspace the reader is not in resolves nothing there; one o
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const sender = await person(browser, info, "Sender");
   const made = await production(sender);
-  const link = await copyLink(sender, made.draft.id, info);
+  const link = await copyLink(sender, made.draft.id, made.asset, info);
   const outsider = await person(browser, info, "Outsider");
   const member = await person(browser, info, "Member of both");
   try {
@@ -204,7 +213,7 @@ test("a link from a workspace the reader is not in resolves nothing there; one o
     await member.page.getByTestId("link-switch").click();
     await expect(member.page.getByTestId("link-card")).toHaveAttribute("data-phase", "no-draft");
     await member.page.getByTestId("link-open").click();
-    await expect(member.page.getByTestId("takes-selected")).toContainText(`Selected · ${TAKE_TITLE}`);
+    await takeOpened(member.page, made.asset);
   } finally {
     await outsider.page.context().close();
     await member.page.context().close();

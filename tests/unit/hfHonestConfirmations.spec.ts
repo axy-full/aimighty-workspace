@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { CONFIRM, destinationName, isHere, landingPage, openLabel, solutionStatusLabel, type Confirmation, type Destination, type Here } from "../../lib/shell/confirmations";
+import { CONFIRM, boardPlace, destinationName, isHere, openLabel, solutionStatusLabel, type Confirmation, type Destination, type Here } from "../../lib/shell/confirmations";
 import { SAY, type GenPreset } from "../../lib/shell/assets";
 import { readGenPresets, sendGenPreset } from "../../lib/shell/gen-preset";
 import { CAST_LIMITS, mergeAgentCast, newEntry, sourcedCastId, type CastProposal } from "../../lib/production/cast";
@@ -18,14 +18,6 @@ const EVERY: [string, Confirmation][] = [
   ["crew → Rig, no node named", CONFIRM.crewRig("Cut on the drop")],
   ["crew → Gen", CONFIRM.crewGen()],
   ["minutes filed", CONFIRM.minutesFiled()],
-  ["cast taken", CONFIRM.castTaken({ added: 3, known: 2, overLimit: 0 })],
-  ["cast taken, nothing new", CONFIRM.castTaken({ added: 0, known: 4, overLimit: 0 })],
-  ["cast built · character", CONFIRM.castBuilt("Mira", "character")],
-  ["cast built · element", CONFIRM.castBuilt("Chrome sphere", "element")],
-  ["plate built", CONFIRM.plateBuilt("Harbour at dawn")],
-  ["plate built, unnamed", CONFIRM.plateBuilt("")],
-  ["breakdown to Rig", CONFIRM.breakdownToRig()],
-  ["scene nodes to Rig", CONFIRM.breakdownToRig(4)],
 ];
 
 test("every confirmation opens a real place, the one its words name, under that place's own label", () => {
@@ -35,26 +27,22 @@ test("every confirmation opens a real place, the one its words name, under that 
     const place = destinationName(to);
     expect(c.text, `${name} names where it opens`).toContain(place);
     expect(openLabel(to), name).toBe(`Open ${place}`);
-    if (to.to === "page") {
-      const landed = landingPage(to);
-      expect(landed.id, `${name} lands on the page it asks for`).toBe(to.page);
-      expect(landed.label, name).toBe(place);
-      expect(landed.phoneOnly ?? false, name).toBe(false);
-    }
+    /* A Studio stage is a place on the board now (the stage pages are gone): it opens the board, on the region that took its job. */
+    if (to.to === "page") expect(boardPlace(to), `${name} opens the board`).toMatch(/^\?view=board/);
   }
-  /* The take Business opens is a stage too: Takes, with that take selected. */
+  /* The take Business opens is a place on the board too: Shots, with that take selected. */
   const take = CONFIRM.take("gen_hfc_" + "a".repeat(40));
   expect(take).toEqual({ to: "page", suite: "studio", page: "takes", select: { kind: "take", id: "generation:gen_hfc_" + "a".repeat(40) } });
-  expect(destinationName(take)).toBe("Takes");
-  expect(landingPage(take as Extract<Destination, { to: "page" }>).id).toBe("takes");
+  expect(destinationName(take)).toBe("Shots");
+  expect(boardPlace(take as Extract<Destination, { to: "page" }>)).toBe("?view=board&region=shots");
 });
 
-test("a destination that is not a stage is refused rather than quietly landing on Brief", () => {
+test("a destination that is not a place is refused rather than quietly landing on Brief", () => {
   expect(() => destinationName({ to: "page", suite: "studio", page: "frames" })).toThrow("No stage studio:frames");
   /* The phone's Home is not a place a confirmation can name. */
   expect(() => destinationName({ to: "page", suite: "studio", page: "home" })).toThrow();
-  /* …which is exactly what goSuite would otherwise have done with it. */
-  expect(landingPage({ to: "page", suite: "studio", page: "frames" }).id).toBe("brief");
+  /* Nor does an unknown page become a place on the board. */
+  expect(boardPlace({ to: "page", suite: "studio", page: "frames" })).toBeNull();
 });
 
 test("Open in Gen and Retry hand Gen what they carry in memory, so their toasts never rest on the browser storing it", () => {
@@ -85,10 +73,10 @@ test("a Crew solution becomes a shot named by its words before the dash, cut at 
   expect(solutionShot(" — just the text").title).toBe("Crew solution");
 });
 
-test("Crew › → Rig says Rig and opens that shot; it never claims a Storyboards frame", () => {
+test("Crew › → Board says the Board and opens that shot; it never claims a Storyboard frame", () => {
   const rig = CONFIRM.crewRig("Cut on the drop", "node-abc");
-  expect(rig.text).toBe("Added to Rig · Cut on the drop");
-  expect(rig.text).not.toMatch(/board|frame/i);
+  expect(rig.text).toBe("Added to the Board · Cut on the drop");
+  expect(rig.text).not.toMatch(/frame/i);
   expect(rig.open).toEqual({ to: "page", suite: "studio", page: "rig", select: { kind: "shot", id: "node-abc" } });
   expect(CONFIRM.crewRig("Cut on the drop").open).toEqual({ to: "page", suite: "studio", page: "rig" });
   /* Open in Gen: Gen fills its prompt, so nothing is said about pasting or copying. */
@@ -100,24 +88,29 @@ test("a solution's line names the same place its route's confirmation opens", ()
   expect(solutionStatusLabel("open")).toBeNull();
   const routes: ["sent_to_brief" | "boarded" | "generated", Confirmation][] = [["sent_to_brief", CONFIRM.crewBrief()], ["boarded", CONFIRM.crewRig("x")], ["generated", CONFIRM.crewGen()]];
   for (const [status, c] of routes) expect(solutionStatusLabel(status), status).toContain(destinationName(c.open!));
-  expect(solutionStatusLabel("boarded")).toBe("Added to Rig");
+  expect(solutionStatusLabel("boarded")).toBe("Added to the Board");
   expect(solutionStatusLabel("sent_to_brief")).toBe("Added to the Brief");
   expect(solutionStatusLabel("generated")).toBe("Opened in Gen");
 });
 
 test("a toast shown where its result already is carries no Open", () => {
-  const at = (h: Partial<Here>): Here => ({ view: "suite", suite: "studio", page: "cast", library: false, ...h });
-  const cast = CONFIRM.castTaken({ added: 1, known: 0, overLimit: 0 }).open!;
-  expect(isHere(cast, at({}))).toBe(true);
-  expect(isHere(cast, at({ page: "rig" }))).toBe(false);
-  expect(isHere(cast, at({ view: "crew" })), "Crew's view is not the Cast stage").toBe(false);
-  expect(isHere({ to: "gen" }, at({ view: "gen" }))).toBe(true);
+  const at = (h: Partial<Here>): Here => ({ view: "suite", suite: "studio", page: "stages", library: false, ...h });
+  const brief = CONFIRM.crewBrief().open!;
+  /* On the board the place is the board's own address: the Brief region. */
+  expect(isHere(brief, at({ board: "?view=board&region=brief" }))).toBe(true);
+  expect(isHere(brief, at({ board: "?view=board&region=cut" }))).toBe(false);
+  expect(isHere(brief, at({ board: "?view=board" })), "the whole board is not the Brief region").toBe(false);
+  expect(isHere(brief, at({ board: null })), "off the board, the Brief region is somewhere else").toBe(false);
+  expect(isHere(brief, at({ view: "crew" })), "Crew's view is not the board").toBe(false);
+  /* Gen is Make's panel, open over any page: there is where it is open. */
+  expect(isHere({ to: "gen" }, at({ make: true }))).toBe(true);
+  expect(isHere({ to: "gen" }, at({ view: "crew", make: true }))).toBe(true);
   expect(isHere({ to: "gen" }, at({}))).toBe(false);
   expect(isHere({ to: "library" }, at({ library: true }))).toBe(true);
   expect(isHere({ to: "library" }, at({ library: false }))).toBe(false);
   /* Opening a particular shot or take is never "already there": the selection is the point. */
-  expect(isHere(CONFIRM.crewRig("x", "node-1").open!, at({ page: "rig" }))).toBe(false);
-  expect(isHere(CONFIRM.crewRig("x").open!, at({ page: "rig" }))).toBe(true);
+  expect(isHere(CONFIRM.crewRig("x", "node-1").open!, at({ board: "?view=board" }))).toBe(false);
+  expect(isHere(CONFIRM.crewRig("x").open!, at({ board: "?view=board" }))).toBe(true);
 });
 
 test("Cast counts what the agent's list added, not what it proposed", () => {
@@ -132,17 +125,13 @@ test("Cast counts what the agent's list added, not what it proposed", () => {
   expect(merged.cast.entries[2].id).toBe(sourcedCastId("job-1", "Idris"));
   const elsewhere = mergeAgentCast({ entries: [newEntry("character", "Idris Varga", "", "", {}, sourcedCastId("job-1", "Idris"))] }, [p("Idris")], "job-1");
   expect(elsewhere).toMatchObject({ added: 0, known: 1, overLimit: 0 });
-  /* Seven proposals, two added: the toast says two. */
-  expect(CONFIRM.castTaken(merged).text).toBe("The agent added 2 entries to Cast · 2 already listed");
-  expect(CONFIRM.castTaken({ added: 1, known: 0, overLimit: 0 }).text).toBe("The agent added 1 entry to Cast");
-  expect(CONFIRM.castTaken({ added: 0, known: 3, overLimit: 0 }).text).toBe("The agent added nothing new to Cast · 3 already listed");
+  /* Seven proposals, two added: the count says two. */
 
   /* A full list: what does not fit is left out, and said to be. */
   const full = { entries: Array.from({ length: CAST_LIMITS.entries - 1 }, (_, i) => newEntry("element", `Prop ${i}`)) };
   const capped = mergeAgentCast(full, [p("A"), p("B"), p("C")], "job-2");
   expect(capped).toMatchObject({ added: 1, known: 0, overLimit: 2 });
   expect(capped.cast.entries).toHaveLength(CAST_LIMITS.entries);
-  expect(CONFIRM.castTaken(capped).text).toBe("The agent added 1 entry to Cast · 2 left out · the list is full");
 });
 
 test("Recreate's toasts say what reached Gen, in one line, naming Gen, where they land", () => {

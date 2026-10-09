@@ -61,7 +61,7 @@ async function seeded(page: Page) {
 type Seeded = Awaited<ReturnType<typeof seeded>>;
 
 async function openGen(page: Page, project: Project) {
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 30_000 });
 }
@@ -171,7 +171,7 @@ async function floors(page: Page, info: TestInfo, strip: Locator) {
   const bar = page.getByTestId("tabbar");
   if (await bar.isVisible()) {
     const gap = await strip.evaluate((el) => {
-      const scroller = document.querySelector<HTMLElement>('[data-testid="content"]')!;
+      const scroller = document.querySelector<HTMLElement>('[data-testid="gen-view"]')!;
       scroller.scrollTop = scroller.scrollHeight;
       const last = Array.from(el.querySelectorAll<HTMLElement>("*")).filter((n) => n.getClientRects().length).reduce((a, b) => (b.getBoundingClientRect().bottom > a.getBoundingClientRect().bottom ? b : a), el as HTMLElement);
       return document.querySelector('[data-testid="tabbar"]')!.getBoundingClientRect().top - last.getBoundingClientRect().bottom;
@@ -215,13 +215,14 @@ test("Draft first, then the 1080p final: approved at the price on each button, c
   await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toBeDisabled();
   await expect(page.getByTestId("gen-takes-count")).toHaveText("1");
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveAttribute("aria-label", /^Generate draft · \d[\d,]* cr$/, { timeout: 60_000 });
+  await expect(go).toHaveAttribute("aria-label", /^Make draft · \d[\d,]* cr$/, { timeout: 60_000 });
   const draftPrice = creditsIn(await go.getAttribute("aria-label"));
   /* Exactly what any 480p take of these words costs. */
   expect(draftPrice).toBe(await quoted(page, s, take(s, "480p")));
   await go.click();
 
   /* The draft lands as its own strip, with its watermark, its date and its final's price. */
+  await page.getByTestId("make-tab-recent").click();
   const strip = page.getByTestId("gen-draft").first();
   await expect(strip.getByTestId("draft-final-facts")).toHaveText(/^Watermarked 480p draft · Final available until \w{3} \d{1,2}, \d{1,2}:\d{2}\s?[AP]M$/, { timeout: 120_000 });
   const make = strip.getByTestId("draft-final-make");
@@ -269,17 +270,10 @@ test("Draft first, then the 1080p final: approved at the price on each button, c
   await floors(page, info, strip);
   await shot(page, info, strip, "draft-final");
 
-  /* Studio › Takes, the review desk, files the pair under their one shot (a final is filed on its draft's), each card
-     named as the final or the draft, newest first. */
-  await page.goto(`/suites?suite=studio&page=takes&project=${s.project.id}`);
-  const grid = page.getByTestId("takes-grid");
-  await expect(grid.getByTestId("take-pair")).toHaveText(["FINAL", "DRAFT"], { timeout: 60_000 });
-  await expect(grid.locator("[data-pair]")).toHaveCount(2);
-  await expect(grid.getByTestId("takes-shot")).toHaveCount(1);
-
+  /* (The Takes desk that filed the pair under its shot is deleted with the stage pages: the board's Shots region draws it.) */
   /* The Library's flat grid keeps the pair together, each card named as the draft or the final. */
   await openGen(page, s.project);
-  if (await page.getByTestId("toggle-library").isVisible()) await page.getByTestId("toggle-library").click();
+  if (await page.getByTestId("make-open-library").isVisible()) await page.getByTestId("make-open-library").click();
   await expect(page.getByTestId("library").getByTestId("take-pair")).toHaveText(["FINAL", "DRAFT"], { timeout: 60_000 });
   expect(s.errors).toEqual([]);
 });
@@ -299,12 +293,12 @@ test("a draft is one take at its button's price: takes set before Draft first do
   const pill = page.getByTestId("workspace-credits");
   const go = page.getByTestId("gen-generate");
   await page.getByRole("group", { name: "Takes per generate" }).getByRole("button", { name: "More" }).click();
-  await expect(go).toHaveText(`Generate 2 takes · ${(2 * price).toLocaleString("en-US")} cr`, { timeout: 60_000 });
+  await expect(go).toHaveText(`Make 2 takes · ${(2 * price).toLocaleString("en-US")} cr`, { timeout: 60_000 });
   await expect(pill).toHaveAttribute("data-low", "true");
   /* Draft first: one take, at one take's price, and that is the last quote the pill measures the balance against. */
   await page.getByTestId("gen-draft-toggle").click();
   await expect(page.getByTestId("gen-takes-count")).toHaveText("1");
-  await expect(go).toHaveAttribute("aria-label", `Generate draft · ${price.toLocaleString("en-US")} cr`);
+  await expect(go).toHaveAttribute("aria-label", `Make draft · ${price.toLocaleString("en-US")} cr`);
   await expect(pill).not.toHaveAttribute("data-low");
   expect(s.sent.filter((x) => x.path === "/api/generate")).toHaveLength(0);
   expect(s.errors).toEqual([]);
@@ -323,6 +317,7 @@ test("a draft past its seven days cannot make a final: the button is off, it say
     tenant.close();
   }
   await openGen(page, s.project);
+  await page.getByTestId("make-tab-recent").click();
   const strip = page.getByTestId("gen-draft").first();
   await expect(strip).toHaveAttribute("data-batch-id", `draft:${draftId}`, { timeout: 60_000 });
   const status = strip.getByTestId("draft-final-status");
@@ -354,6 +349,7 @@ test("a final refused at moderation is not charged on the books, its card says w
   const s = await seeded(page);
   const draftId = await draftByApi(page, s, `${WORDS} [mock:final-refused]`);
   await openGen(page, s.project);
+  await page.getByTestId("make-tab-recent").click();
   const strip = page.getByTestId("gen-draft").first();
   await expect(strip).toHaveAttribute("data-batch-id", `draft:${draftId}`, { timeout: 60_000 });
   const make = strip.getByTestId("draft-final-make");
@@ -391,6 +387,7 @@ test("a final that never reached the server is checked on the next press, never 
   const s = await seeded(page);
   const draftId = await draftByApi(page, s, WORDS);
   await openGen(page, s.project);
+  await page.getByTestId("make-tab-recent").click();
   const strip = page.getByTestId("gen-draft").first();
   await expect(strip).toHaveAttribute("data-batch-id", `draft:${draftId}`, { timeout: 60_000 });
   const make = strip.getByTestId("draft-final-make");
@@ -412,6 +409,7 @@ test("a final that never reached the server is checked on the next press, never 
 
   /* The next press asks after the lost request by its key first: it never arrived, so it is set aside, and this press goes. */
   await page.reload();
+  await page.getByTestId("make-tab-recent").click();
   const again = page.getByTestId("gen-draft").first();
   await expect(again.getByTestId("draft-final-make")).toHaveAttribute("aria-label", `Make the 1080p final · ${finalPrice.toLocaleString("en-US")} cr`, { timeout: 60_000 });
   const mark = s.sent.length;
@@ -449,6 +447,7 @@ test("a moved final quote needs fresh approval and sends no render", async ({ pa
     return route.fulfill({ json: { ...data, estimatedCredits: Number(data.estimatedCredits) + (moved ? 1 : 0) } });
   });
   await openGen(page, s.project);
+  await page.getByTestId("make-tab-recent").click();
   const strip = page.getByTestId("gen-draft").first();
   const make = strip.getByTestId("draft-final-make");
   await expect(make).toHaveAttribute("aria-label", /^Make the 1080p final · \d[\d,]* cr$/, { timeout: 60_000 });

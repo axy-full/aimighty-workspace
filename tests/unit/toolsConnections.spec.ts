@@ -7,6 +7,7 @@ import { MARKETING_TEMPLATE_TOOLS } from "../../lib/higgsfield-consumer/marketin
 import { VOICE_TOOLS } from "../../lib/higgsfield-consumer/voice-tools";
 import { TOOLS } from "../../lib/mcp";
 import { shellPage } from "../../lib/shell/ia";
+import { isStageId } from "../../lib/shell/stage-redirects";
 import {
   CLIENTS, DEFAULT_CEILING, MCP_TOOL_LINES, PARTICL_REACH, STATUS_LABEL, ceilingShare, mcpTools, parseTokens, reachRows,
   readCeiling, setupGuide, tokenBody, tokenFacts, type ApiToken, type ReachOpen,
@@ -51,6 +52,8 @@ test("every connected row names the tools Particl's own code calls for it", () =
 test("every row is Particl's own and opens a Suites page that exists; none reaches a signed-in account", () => {
   const exists = (open: ReachOpen) => {
     if ("gen" in open || "tab" in open) return true;
+    /* A Studio stage id opens the board's region for it (the stage pages are deleted). */
+    if (open.suite === "studio" && isStageId(open.page)) return true;
     const page = shellPage(open.suite, open.page);
     return Boolean(page && !page.phoneOnly);
   };

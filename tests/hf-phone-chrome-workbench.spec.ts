@@ -25,8 +25,6 @@ const SHOTS = process.env.PHONE_CHROME_SHOTS;
 const REPORT = process.env.PHONE_CHROME_REPORT;
 const PORTRAIT = ["workbench-360x640", "workbench-390x844"];
 const PHONES = [...PORTRAIT, "workbench-844x390"];
-const DESKTOPS = ["workbench-1440x900", "workbench-1920x1080"];
-
 /* CI and Android fallback faces can be wider than the local macOS font: PHONE_CHROME_WIDE_FONT sets a wide sans on
    everything. An init script can run before the document has its root element, so the face goes in as soon as there
    is one. */
@@ -171,7 +169,15 @@ function measure(page: Page, target: string): Promise<Measure> {
       const bar = document.querySelector(".gx-tabbar");
       if (shown(bar) && getComputedStyle(bar).position === "fixed") bottom = Math.min(bottom, bar.getBoundingClientRect().top);
       const band = document.querySelector(".gx-gen-cta");
-      if (shown(band) && getComputedStyle(band).position === "sticky") bottom = Math.min(bottom, band.getBoundingClientRect().top);
+      /* A sticky band covers the page where it is stuck at the foot (Make's row sits in the flow until it sticks). */
+      const stuck = (el: HTMLElement) => {
+        let s = el.parentElement;
+        while (s && !/(auto|scroll)/.test(getComputedStyle(s).overflowY)) s = s.parentElement;
+        if (!s) return true;
+        const end = s.getBoundingClientRect().bottom - (Number.parseFloat(getComputedStyle(s).paddingBottom) || 0);
+        return el.getBoundingClientRect().bottom >= end - 2;
+      };
+      if (shown(band) && getComputedStyle(band).position === "sticky" && stuck(band)) bottom = Math.min(bottom, band.getBoundingClientRect().top);
     }
     const height = Math.max(0, Math.round(bottom - top));
     return { layers, safe, content: { top: Math.round(top), bottom: Math.round(bottom), height, share: Math.round((height / vh) * 1000) / 10 }, overflowX: Math.max(0, document.documentElement.scrollWidth - window.innerWidth) };
@@ -181,14 +187,7 @@ function measure(page: Page, target: string): Promise<Measure> {
 type Screen = { id: string; path?: string; named?: false; atomik?: true; target: string; pane: string; ready: (page: Page) => Promise<void> };
 const SCREENS: Screen[] = [
   { id: "home", path: "/suites?suite=studio&page=brief&sp=home", target: "[data-testid='content']", pane: "[data-testid='content']", ready: async (page) => { await expect(page.getByTestId("suite-home")).toBeVisible(); } },
-  { id: "takes", path: "/suites?suite=particl&page=takes&sp=takes", target: "[data-testid='content']", pane: "[data-testid='content']", ready: async (page) => { await expect(page.getByTestId("edit-takes")).toBeVisible(); } },
-  { id: "gen", path: "/suites?view=gen", target: "[data-testid='content']", pane: "[data-testid='content']", ready: async (page) => { await expect(page.getByTestId("gen-view")).toBeVisible(); await expect(page.locator(".gx-gen-go")).toBeVisible(); } },
-  { id: "rig-list", path: "/suites?suite=studio&page=rig", target: "[data-testid='content']", pane: "[data-testid='content']", ready: async (page) => { await expect(page.getByTestId("rig-list").locator(".pxw-rig-row")).toHaveCount(3); } },
-  { id: "rig-canvas", target: "[data-testid='rig-graph-surface']", pane: "[data-testid='content']", ready: async (page) => {
-    await page.locator(".gx-pagehead").getByRole("tab", { name: "Canvas" }).click();
-    await expect(page.getByTestId("rig-graph-surface")).toBeVisible();
-  } },
-  { id: "brief", path: "/suites?suite=studio&page=brief&sp=brief", target: "[data-testid='content']", pane: "[data-testid='content']", ready: async (page) => { await expect(page.getByTestId("brief-stage")).toBeVisible(); } },
+  { id: "gen", path: "/suites?make=video", target: "[data-testid='gen-view']", pane: "[data-testid='gen-view']", ready: async (page) => { await expect(page.getByTestId("gen-view")).toBeVisible(); await expect(page.locator(".gx-gen-go")).toBeVisible(); } },
   { id: "library", target: "[data-testid='library-assets']", pane: "[data-testid='library-assets']", ready: async (page) => {
     await openAssets(page);
     await expect(page.getByTestId("library-assets").locator(".gx-asset").first()).toBeVisible();
@@ -200,12 +199,12 @@ const SCREENS: Screen[] = [
 /** What main left for the page (px), measured with this spec on 28 September 2026 (with the Takes desk, the jobs tray
     and Tools & connections): the floor nothing may fall under. */
 const BEFORE: Record<string, Record<string, number>> = {
-  "360x640": { home: 365, takes: 184, gen: 150, "rig-list": 180, "rig-canvas": 0, brief: 187, library: 8, plans: 370, "atomik-gate": 0 },
-  "390x844": { home: 569, takes: 388, gen: 351, "rig-list": 384, "rig-canvas": 0, brief: 388, library: 212, plans: 626, "atomik-gate": 165 },
-  "844x390": { home: 255, takes: 130, gen: 182, "rig-list": 124, "rig-canvas": 0, brief: 130, library: 0, plans: 330, "atomik-gate": 69 },
+  "360x640": { home: 365, gen: 150, library: 8, plans: 370, "atomik-gate": 0 },
+  "390x844": { home: 569, gen: 351, library: 212, plans: 626, "atomik-gate": 165 },
+  "844x390": { home: 255, gen: 182, library: 0, plans: 330, "atomik-gate": 69 },
 };
 /** On a portrait phone these pages get at least 60% of the screen; with Atomik's approval row up (itself something to press), at least half. */
-const TARGETS = ["takes", "gen", "rig-list", "rig-canvas", "brief"];
+const TARGETS = ["gen"];
 const WITH_GATE = ["atomik-gate"];
 
 test("phone chrome: every layer measured, and the page gets most of the screen", async ({ page }, info) => {
@@ -223,7 +222,7 @@ test("phone chrome: every layer measured, and the page gets most of the screen",
     if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: join(SHOTS, `${size}-${screen.id}.png`), animations: "disabled" }); }
   }
   /* A toast, where it sits: the Library's + sends a still to Gen and says so. */
-  await open(page, "/suites?suite=particl&page=takes&sp=takes");
+  await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   await openAssets(page);
   await page.getByTestId("library-assets").locator(".gx-asset-add:not(:disabled)").first().click();
   await expect(page.getByTestId("toast")).toBeVisible();
@@ -246,8 +245,6 @@ test("phone chrome: every layer measured, and the page gets most of the screen",
     if (PORTRAIT.includes(info.project.name) && screen.id === "library")
       expect.soft(content.height, "files stay visible below the Library controls").toBeGreaterThanOrEqual(Math.ceil(vh * 0.25));
   }
-  /* The owner's measure: Takes at 360×640 showed 127px of its page when it was asked for (184px on main now). */
-  if (size === "360x640") expect(report.takes.content.height).toBeGreaterThanOrEqual(380);
   /* The toast rests above the tab bar, never on it. */
   const { toast, tabBar } = report.toast.layers;
   expect(toast, "the toast is up").not.toBeNull();
@@ -398,8 +395,9 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   test.skip(!PHONES.includes(info.project.name), "the phone sizes");
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await open(page, "/suites?suite=studio&page=rig");
-  await expect(page.getByTestId("rig-list")).toBeVisible();
+  /* Studio has no stage pages any more: the overview is where the badge reads STUDIO and the project is lit. */
+  await open(page, "/suites?suite=studio&page=brief&sp=stages");
+  await expect(page.getByTestId("studio-home")).toBeVisible();
   const badge = page.getByTestId("suites-menu");
   const suites = page.getByRole("tablist", { name: "Suites" });
   /* Closed: the badge names where you are; the Suites and Search take no room. */
@@ -409,11 +407,11 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   await expect(suites).toBeHidden();
   await expect(page.getByTestId("header-search")).toBeHidden();
 
-  /* One tap: all six suites and Search, each a 44px target on screen; the one you are in is lit. */
+  /* One tap: Home, the project, Make, Atomik and Search, each a 44px target on screen; the project is lit on its stage. */
   await badge.click();
   await expect(badge).toHaveAttribute("aria-expanded", "true");
-  await expect(suites.getByRole("tab")).toHaveText(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
-  await expect(suites.getByRole("tab", { name: "Studio" })).toHaveAttribute("aria-selected", "true");
+  await expect(suites.getByRole("tab")).toHaveText(["Home", "Harbour at dusk", "Make", "Atomik"]);
+  await expect(suites.locator('[data-suite-tab="project"]')).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("header-search")).toBeVisible();
   await settle(page);
   for (const target of [...await suites.getByRole("tab").all(), page.getByTestId("header-search")]) await expect(target).toBeInViewport();
@@ -424,8 +422,8 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: join(SHOTS, `${info.project.name.replace("workbench-", "")}-menu.png`), animations: "disabled" }); }
 
   /* A pick goes there and closes the menu. */
-  await suites.getByRole("tab", { name: "Business" }).click();
-  await expect(page.getByTestId("suite-mark")).toHaveText("BUSINESS");
+  await suites.getByRole("tab", { name: "Atomik" }).click();
+  await expect(page.getByTestId("suite-mark")).toHaveText("AGENT");
   await expect(badge).toHaveAttribute("aria-expanded", "false");
   await expect(suites).toBeHidden();
 
@@ -446,7 +444,7 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   await badge.click();
   await page.keyboard.press("Escape");
   await expect(suites).toBeHidden();
-  await expect(page.getByTestId("suite-mark")).toHaveText("BUSINESS");
+  await expect(page.getByTestId("suite-mark")).toHaveText("AGENT");
   /* Going anywhere from the header itself (the credits) leaves it closed where you land. */
   await badge.click();
   await page.getByTestId("workspace-credits").click();
@@ -455,7 +453,7 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   await expect(suites).toBeHidden();
 
   /* The page head's Library and Inspector are their glyphs, named in words, and open their panels. */
-  await open(page, "/suites?suite=studio&page=rig");
+  await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   await expect(page.getByRole("button", { name: "Library", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Library", exact: true }).click();
   await expect(page.getByTestId("library")).toBeVisible();
@@ -486,9 +484,9 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   expect(errors).toEqual([]);
 });
 
-test("phone: rotation keeps the current stage visible without moving the page sideways", async ({ page }, info) => {
+test("phone: rotation keeps the current page visible without moving the page sideways", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "the phone sizes");
-  await open(page, "/suites?suite=studio&page=deliver&sp=deliver");
+  await open(page, "/suites?suite=atomik&page=runs&sp=runs");
   const original = page.viewportSize()!;
   const rotated = original.width < 768 ? { width: 844, height: 390 } : { width: 390, height: 844 };
   for (const viewport of [original, rotated, original]) {
@@ -503,75 +501,4 @@ test("phone: rotation keeps the current stage visible without moving the page si
   }
 });
 
-/** Where the desktop chrome sits: the parts that do not depend on a font's widths. */
-function desktopChrome(page: Page) {
-  return page.evaluate(() => {
-    const out: Record<string, number[] | null> = {};
-    const r1 = (n: number) => Math.round(n * 10) / 10;
-    for (const [name, selector, whole] of [
-      ["header", ".gx-header", true], ["strip", ".gx-strip", true], ["project", ".gx-project", true], ["pagehead", ".gx-main > .gx-pagehead", true],
-      ["content", "[data-testid='content']", true], ["library", "[data-testid='library']", true], ["avatar", "[data-testid='workspace-avatar']", true],
-      ["brand", ".gx-brand", false], ["badge", "[data-testid='suite-mark']", false], ["suites", ".gx-header .gx-seg", false], ["search", "[data-testid='header-search']", false],
-      ["credits", "[data-testid='workspace-credits']", false], ["title", "[data-testid='page-title']", false], ["views", ".gx-pagehead .gx-seg", false],
-      ["inspector", "[data-testid='toggle-inspector']", false], ["primary", "[data-testid='primary-action']", false],
-    ] as const) {
-      const el = document.querySelector<HTMLElement>(selector);
-      const r = el && el.getClientRects().length ? el.getBoundingClientRect() : null;
-      /* A box whose width is its words' is pinned by its top and height only. */
-      out[name] = r ? (whole ? [r1(r.left), r1(r.top), r1(r.width), r1(r.height)] : [r1(r.top), r1(r.height)]) : null;
-    }
-    return out;
-  });
-}
 
-/* The desktop chrome on Graphite's hairline grid, for the two desktops: a 56px header and a 46px strip edge to edge,
-   then Library 280 | stage | Inspector 320 with 1px gaps. W and H are the viewport. */
-const desktopGrid = (W: number, H: number): Record<string, Record<string, number[] | null>> => {
-  const suite = {
-    header: [0, 0, W, 56], strip: [0, 56, W, 46], project: [281, 102, W - 602, 75], pagehead: [281, 177, W - 602, 66.7],
-    content: [281, 243.7, W - 602, H - 243.7], library: [0, 102, 280, H - 102], avatar: [W - 50, 12.5, 30, 30],
-    brand: [16.6, 21.8], badge: [17.5, 20], suites: [9.5, 36], search: [11.5, 32], credits: [11.5, 32], title: [191, 37.7],
-  };
-  return {
-    rig: { ...suite, views: [192.8, 34], inspector: [193.8, 32], primary: [192.8, 34] },
-    /* Studio › Takes filters on its own desk, so its page head has no view segment. */
-    takes: { ...suite, views: null, inspector: [193.8, 32], primary: null },
-    gen: {
-      ...suite, strip: null, project: [281, 56, W - 602, 75], pagehead: [281, 131, W - 602, 66.7], content: [281, 197.7, W - 602, H - 197.7], library: [0, 56, 280, H - 56],
-      title: [145, 37.7], views: null, inspector: null, primary: null,
-    },
-  };
-};
-
-test("desktop: the chrome is the hairline grid — header, strip, the heads, words on the toggles, the price on one line", async ({ page }, info) => {
-  test.skip(!DESKTOPS.includes(info.project.name), "the two desktops");
-  const { width, height } = page.viewportSize()!;
-  const size = info.project.name.replace("workbench-", "");
-  const expected = desktopGrid(width, height);
-  const seen: Record<string, Record<string, number[] | null>> = {};
-  for (const [id, path] of [["rig", "/suites?suite=studio&page=rig"], ["takes", "/suites?suite=particl&page=takes&sp=takes"], ["gen", "/suites?view=gen"]] as const) {
-    await open(page, path);
-    if (id === "rig") await expect(page.getByTestId("primary-action")).toHaveText("Generate · 18 cr");
-    if (id === "gen") await expect(page.getByTestId("gen-view")).toBeVisible();
-    await settle(page);
-    seen[id] = await desktopChrome(page);
-    for (const [name, box] of Object.entries(expected[id])) {
-      if (box === null) { expect.soft(seen[id][name], `${id} › ${name}: absent`).toBeNull(); continue; }
-      const got = seen[id][name];
-      expect.soft(got, `${id} › ${name}`).not.toBeNull();
-      if (got) box.forEach((n, i) => expect.soft(Math.abs(got[i] - n), `${id} › ${name}[${i}]: ${got[i]} vs ${n}`).toBeLessThanOrEqual(0.5));
-    }
-    /* The phone's parts stay out of a desktop: no badge button, the Suites inline, Search in the header, words on the toggles. */
-    await expect(page.getByTestId("suites-menu")).toHaveCount(0);
-    await expect(page.locator(".gx-brand [data-testid='suite-mark']")).toBeVisible();
-    await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab")).toHaveCount(6);
-    await expect(page.getByTestId("header-search")).toContainText("Search");
-    await expect(page.locator(".gx-bar")).toHaveCount(0);
-    for (const toggle of await page.locator(".gx-hbtn--glyph").all()) {
-      await expect(toggle.locator(".gx-hbtn-glyph")).toBeHidden();
-      expect((await toggle.locator(".gx-hbtn-label").boundingBox())!.width).toBeGreaterThan(20);
-    }
-    if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: join(SHOTS, `${size}-${id}.png`), animations: "disabled" }); }
-  }
-  if (REPORT) { mkdirSync(REPORT, { recursive: true }); writeFileSync(join(REPORT, `${size}-desktop.json`), JSON.stringify(seen, null, 2)); }
-});

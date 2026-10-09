@@ -136,9 +136,7 @@ const assets = async (page: Page, info: TestInfo) => {
   if (!WIDE.includes(info.project.name)) await page.getByTestId("toggle-library").click();
   await page.getByTestId("library").getByRole("tab", { name: /Assets/ }).click();
 };
-const tile = (page: Page, id: string) => page.getByTestId("library").locator(`.gx-asset-thumb[data-ctx='asset:${id}']`);
-const deskTile = (page: Page, name: string) => page.getByTestId("takes-grid").getByTestId("take-tile").filter({ has: page.getByText(name, { exact: true }) });
-async function inspect(page: Page, info: TestInfo, id: string) {
+const tile = (page: Page, id: string) => page.getByTestId("library").locator(`.gx-asset-thumb[data-ctx='asset:${id}']`);async function inspect(page: Page, info: TestInfo, id: string) {
   await assets(page, info);
   await tile(page, id).click();
   return page.getByTestId("inspector");
@@ -199,7 +197,7 @@ async function run(page: Page, info: TestInfo, server: Server, where: string, ro
 
 test("the Inspector prices a still's Upscale, Outpaint and Animate, sends each once at its estimate, and files each new take with the still", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { server, library, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards");
+  const { server, library, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   const inspector = await inspect(page, info, "generation:gen_still");
   const row = inspector.getByTestId("next-actions");
   await expect(row.getByRole("button")).toHaveText(["Re-edit ›", "Upscale", "Outpaint", "Animate"]);
@@ -247,43 +245,10 @@ test("the Inspector prices a still's Upscale, Outpaint and Animate, sends each o
   expect(errors).toEqual([]);
 });
 
-test("on the Takes desk a clip's Upscale, Reframe and Extend are priced and sent from the selected take, and the new take opens there", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { server, errors } = await open(page, "/suites?suite=studio&page=takes");
-  await deskTile(page, "Ferry turning").getByTestId("edit-take").click();
-  const selected = page.getByTestId("takes-selected");
-  const row = selected.getByTestId("next-actions");
-  await expect(row.getByRole("button")).toHaveText(["Edit ›", "Upscale", "Reframe", "Extend"]);
-  const where = '[data-testid="takes-selected"]';
-
-  const up = await run(page, info, server, where, row, "upscale", "Upscale", 44, async (panel) => {
-    await expect(panel).toContainText("Topaz Astra 2");
-    await panel.getByTestId("next-fps").getByRole("radio", { name: "60 fps" }).click();
-  });
-  expect(up.sent).toMatchObject({ model: ASTRA, task: "upscale", prompt: "", resolution: "4k", fps60: true, astra: { fps: 60 }, sourceGenId: "gen_clip", shotId: "shot_ferry", references: [] });
-  await up.panel.getByTestId("next-close").click();
-
-  const re = await run(page, info, server, where, row, "reframe", "Reframe", 9, async (panel) => {
-    await expect(panel.getByTestId("next-ratio")).toHaveValue("9:16");
-  });
-  expect(re.sent).toMatchObject({ model: LUMA_REFRAME, task: "reframe", ratio: "9:16", sourceGenId: "gen_clip", shotId: "shot_ferry" });
-  await re.panel.getByTestId("next-close").click();
-
-  const ext = await run(page, info, server, where, row, "extend", "Extend", 31, async (panel) => {
-    await panel.getByTestId("next-direction").getByRole("radio", { name: "Go back" }).click();
-    await panel.getByTestId("next-words").fill("she walks up to the pier");
-  });
-  expect(ext.sent).toMatchObject({ model: SEEDANCE_25, task: "extend", prompt: "Extend backward: she walks up to the pier", ratio: "adaptive", resolution: "720p", duration: 5, generateAudio: true, sourceGenId: "gen_clip", shotId: "shot_ferry" });
-  await expect(ext.panel.getByTestId("next-landed")).toContainText("SH020 v4");
-  await ext.panel.getByTestId("next-open-result").click();
-  await expect(selected).toContainText("Selected · Extend backward: she walks up to the pier");
-  expect(server.writes).toEqual([]);
-  expect(errors).toEqual([]);
-});
 
 test("a moved estimate is asked about again: nothing is sent until the new one is pressed, and then it goes at the new one", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { server, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards");
+  const { server, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   const row = (await inspect(page, info, "generation:gen_still")).getByTestId("next-actions");
   await row.getByTestId("next-upscale").click();
   const panel = row.getByTestId("next-panel");
@@ -303,7 +268,7 @@ test("a moved estimate is asked about again: nothing is sent until the new one i
 
 test("short of credits: the estimate turns the credits pill amber, and the take sent is held, charged nothing until it runs", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { server, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards");
+  const { server, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   const pill = page.getByTestId("workspace-credits");
   await expect(pill).toContainText(/\d/);
   await expect(pill).not.toHaveAttribute("data-low");
@@ -332,7 +297,7 @@ test("short of credits: the estimate turns the credits pill amber, and the take 
 
 test("a failed action says what happened and what its provider did with the charge, and Retry is priced again before it sends", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { server, library, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards");
+  const { server, library, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   const row = (await inspect(page, info, "generation:gen_clip")).getByTestId("next-actions");
   await row.getByTestId("next-extend").click();
   const panel = row.getByTestId("next-panel");
@@ -356,7 +321,7 @@ test("a failed action says what happened and what its provider did with the char
 
 test("what cannot go says why and sends nothing: a sound's actions are not offered, a 1080p clip cannot be extended, an unsaved project waits", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { server, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards");
+  const { server, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   let inspector = await inspect(page, info, "generation:gen_voice");
   await expect(inspector.getByTestId("next-upscale")).toBeDisabled();
   await expect(inspector.getByTestId("next-extend")).toBeDisabled();
@@ -369,7 +334,7 @@ test("what cannot go says why and sends nothing: a sound's actions are not offer
   expect(server.quotes, "no quote without an open action").toEqual([]);
   expect(server.sent).toEqual([]);
 
-  const unsaved = await open(page, "/suites?suite=particl&page=boards&sp=boards", false);
+  const unsaved = await open(page, "/suites?suite=atomik&page=agent&sp=agent", false);
   const still = await inspect(page, info, "generation:gen_still");
   for (const id of ["re-edit", "upscale", "outpaint", "animate"]) await expect(still.getByTestId(`next-${id}`)).toBeDisabled();
   await expect(still.getByTestId("next-why")).toHaveText("Save the project first.");
@@ -379,7 +344,7 @@ test("what cannot go says why and sends nothing: a sound's actions are not offer
 
 test("the workspace's rules hold in the panel: an approved shot asks why before it is priced; past the shot's cap, an admin has to press it", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { server, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards");
+  const { server, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   const row = (await inspect(page, info, "generation:gen_still")).getByTestId("next-actions");
   const panel = row.getByTestId("next-panel");
   /* SH010's v1 is approved: the quote asks why first, and nothing is priced until the reason is written. */
@@ -411,7 +376,7 @@ test("the workspace's rules hold in the panel: an approved shot asks why before 
 
 test("on a phone the Inspector's Next panel keeps the floors for a clip's actions, and its button clears the tab bar", async ({ page }, info) => {
   test.skip(!PHONES.includes(info.project.name), "the phone sizes");
-  const { server, errors } = await open(page, "/suites?suite=particl&page=boards&sp=boards");
+  const { server, errors } = await open(page, "/suites?suite=atomik&page=agent&sp=agent");
   const inspector = await inspect(page, info, "generation:gen_clip");
   const row = inspector.getByTestId("next-actions");
   const where = '[data-testid="inspector"]';

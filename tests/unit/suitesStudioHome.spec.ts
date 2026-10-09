@@ -12,7 +12,8 @@ test("the home is a Studio page outside the strip; the cards are the stages in o
   const home = shellSuite("studio").pages.find((p) => p.id === "home");
   expect(home).toMatchObject({ own: true, phoneOnly: true, n: "" });
   expect(home?.legacy).toEqual({ suite: "particl", page: "brief" });
-  expect(shellSuite("studio").pages[0].id).toBe("brief");
+  /* The ten stage pages are deleted: Studio's pages are the overview and the phone's Home, and the cards are the stages in order. */
+  expect(shellSuite("studio").pages.map((p) => p.id)).toEqual(["stages", "home"]);
   expect(studioStages().map((p) => p.id)).toEqual(["brief", "beats", "boards", "environment", "cast", "astra", "rig", "takes", "edit", "deliver"]);
 });
 

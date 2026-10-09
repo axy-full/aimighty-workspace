@@ -3,7 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project, type Asset } from "../lib/workbench/studio";
 import { ASTRA_BLENDER_MODEL, createAstraScene } from "../lib/astra-blender/scene";
 import type { AstraRenderJob, AstraRenderRuntime } from "../lib/astra-blender/render-contract";
-import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
+import { forbidPaidWork, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { legacyShell } from "./helpers/legacyShell";
 
 /**
@@ -60,22 +60,9 @@ async function mockAstra(page: Page, current: Project) {
   await page.route("**/api/workbench/astra-blender/render**", (route) => (route.request().method() === "GET" ? route.fulfill({ json: { runtime: READY, jobs: history } }) : route.fulfill({ status: 409, json: { error: "No render is started from the floors fixture." } })));
 }
 
-type Host = { root: string; pane: string | null };
-const SUITES: Host = { root: "[data-tool-body='astra']", pane: "[data-testid='content']" };
-/* AstraStudio's own root in the old shell: its toolbar and the workspace. */
+type Host = { root: string; pane: string | null };/* AstraStudio's own root in the old shell: its toolbar and the workspace. */
 const LEGACY: Host = { root: ".stage-scroll:has(> section[aria-label='Astra'])", pane: null };
 
-async function openSuites(page: Page) {
-  await signInLocally(page.request);
-  await forbidPaidWork(page);
-  await mockMedia(page);
-  const current = project();
-  await mockProjects(page, { current });
-  await mockLibrary(page, { uploads: [], generations: [] });
-  await mockAstra(page, current);
-  await page.goto(`/suites?suite=studio&page=astra&project=${current.id}`);
-  await expect(page.getByTestId("stage-view")).toHaveAttribute("data-page", "astra");
-}
 
 async function openLegacy(page: Page) {
   await signInLocally(page.request);
@@ -272,20 +259,6 @@ async function walk(page: Page, host: Host, size: string) {
   await expectFloors(page, host, `${size} Output`, touch, portrait);
 }
 
-test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
-
-test("Astra 3D in the Studio suite: 44px targets and 12px text on touch, labels at the floor, nothing sideways, the last row above the tab bar", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await openSuites(page);
-  await walk(page, SUITES, info.project.name);
-  /* The page's own card of the scene's renders and files, above the tool. */
-  await expect(page.getByTestId("astra-outputs").getByTestId("astra-output")).toHaveCount(1);
-  await expectFloors(page, { root: "[data-testid='astra-outputs']", pane: null }, `${info.project.name} Renders & files`, TOUCH.includes(info.project.name), false);
-  await page.screenshot({ path: info.outputPath("astra-suites-output.png"), fullPage: true });
-  expect(errors).toEqual([]);
-});
 
 test("Astra in the old shell's stage holds the same floors inside its own tool", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");

@@ -34,6 +34,7 @@ import {
   type LimitRecord, type RunLease, type RunRow, type StepRow,
 } from "./rig-agent-store";
 import { orderedIds } from "./team-canvas-model";
+import { newProject, type Asset, type CanvasNode, type Project } from "./studio";
 import { readTeamCanvas, requireProduction } from "./team-canvas";
 
 /*
@@ -195,13 +196,30 @@ async function askTerms(productionId: string, draftId: string, viewer: string): 
   if (draft && draft.project.productionProjectId === productionId) {
     const saved = await readTeamCanvas(productionId);
     const nodes = saved ? orderedIds(saved.canvas).map((id) => saved.canvas.nodes[id]) : draft.project.nodes;
-    /* The request at its longest, so the figure holds whatever is typed. */
-    const snapshot = boardSnapshot(draft.project, { nodes, assets: saved ? Object.values(saved.canvas.assets) : [] }, "x".repeat(PLAN_LIMITS.goal));
-    const price = await plannerPrice("auto").catch(() => null);
-    const usd = price ? plannerCeilingUsd(price.catalog, snapshot, price.direct) : null;
-    planning = usd == null ? null : quotedCredits(usd, "text");
+    planning = await planningCredits(draft.project, { nodes, assets: saved ? Object.values(saved.canvas.assets) : [] });
   }
   return { limit, jobCeiling, planning };
+}
+
+/** Planning's approximate ceiling for a board, in credits; null when the planner's price can't be read. */
+async function planningCredits(project: Project, canvas: { nodes: CanvasNode[]; assets: Asset[] }): Promise<number | null> {
+  /* The request at its longest, so the figure holds whatever is typed. */
+  const snapshot = boardSnapshot(project, canvas, "x".repeat(PLAN_LIMITS.goal));
+  const price = await plannerPrice("auto").catch(() => null);
+  const usd = price ? plannerCeilingUsd(price.catalog, snapshot, price.direct) : null;
+  return usd == null ? null : quotedCredits(usd, "text");
+}
+
+/**
+ * What asking would cost on a new, empty board: Home's "Start · up to N cr", shown before its project
+ * exists. The same figures askTerms gives a saved empty project. It reads prices only: nothing is
+ * reserved, asked or written, and asking still goes through `askRigAgent` with its own checks.
+ */
+export async function newBoardAskTerms(): Promise<{ enabled: boolean; run: null; ask: RigAgentAskTerms | null }> {
+  const enabled = rigAgentEnabled();
+  if (!enabled) return { enabled, run: null, ask: null };
+  const [limit, jobCeiling, planning] = await Promise.all([suggestedRunLimit(), rigJobCeiling(), planningCredits(newProject(""), { nodes: [], assets: [] })]);
+  return { enabled, run: null, ask: { limit, jobCeiling, planning } };
 }
 
 /** A running run whose wake is due and that nobody holds: one reader claims the wake and dispatches a tick. */

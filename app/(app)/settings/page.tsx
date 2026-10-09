@@ -18,6 +18,7 @@ import {
   type NotifyKind,
 } from "@/lib/notifyPrefs";
 import { appAlert, appPrompt } from "@/components/dialog";
+import { usePushSubscription } from "@/lib/push-client";
 import ManagementPage, {
   ManagementCard,
   ManagementNotice,
@@ -59,13 +60,6 @@ const tabs = [
 ] as const;
 const gb = (n: number) =>
   n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${Math.round(n / 1e6)} MB`;
-const PUSH_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-function urlB64ToUint8Array(value: string) {
-  const b64 = (value + "=".repeat((4 - (value.length % 4)) % 4))
-    .replace(/-/g, "+")
-    .replace(/_/g, "/");
-  return Uint8Array.from([...atob(b64)].map((c) => c.charCodeAt(0)));
-}
 function Row({
   label,
   description,
@@ -865,96 +859,16 @@ function SettingsContent() {
   );
 }
 
-/** Push on this device — a switch, or the one-line reason it can't be. */
+/** Push on this device — a switch, or the one-line reason it can't be (lib/push-client.ts, shared with the phone). */
 function PushRow() {
-  const scopedFetch = useScopedFetch();
-  type PushState =
-    | "off"
-    | "on"
-    | "busy"
-    | "denied"
-    | "install"
-    | "unconfigured"
-    | "unsupported";
-  const [state, setState] = useState<PushState>("off");
-  useEffect(() => {
-    let alive = true;
-    Promise.resolve().then(async () => {
-      if (!("serviceWorker" in navigator && "PushManager" in window)) {
-        const ios =
-          /iP(hone|ad|od)/.test(navigator.userAgent) &&
-          !matchMedia("(display-mode: standalone)").matches;
-        if (alive) setState(ios ? "install" : "unsupported");
-        return;
-      }
-      if (!PUSH_KEY) {
-        if (alive) setState("unconfigured");
-        return;
-      }
-      if (Notification.permission === "denied") {
-        if (alive) setState("denied");
-        return;
-      }
-      const reg = await navigator.serviceWorker
-        .getRegistration()
-        .catch(() => null);
-      const on = Boolean(reg && (await reg.pushManager.getSubscription()));
-      if (alive && on) setState("on");
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const { state, enable: subscribe, disable: unsubscribe } = usePushSubscription();
   async function enable() {
-    setState("busy");
-    try {
-      if (!PUSH_KEY) throw new Error("The push keys aren't in this build yet.");
-      const reg = await navigator.serviceWorker.register("/sw.js");
-      const perm = await Notification.requestPermission();
-      if (perm !== "granted") {
-        setState(perm === "denied" ? "denied" : "off");
-        return;
-      }
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlB64ToUint8Array(PUSH_KEY),
-      });
-      const res = await scopedFetch("/api/push/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: sub.toJSON() }),
-      });
-      if (!res.ok)
-        throw new Error(
-          (await res.json().catch(() => ({}))).error ??
-            "The server rejected it.",
-        );
-      setState("on");
-    } catch (e) {
-      appAlert("Couldn't turn on notifications", (e as Error).message);
-      setState(PUSH_KEY ? "off" : "unconfigured");
-    }
+    const out = await subscribe();
+    if (!out.ok && !out.refused) appAlert("Couldn't turn on notifications", out.error);
   }
   async function disable() {
-    setState("busy");
-    try {
-      const reg = await navigator.serviceWorker.getRegistration();
-      const sub = reg && (await reg.pushManager.getSubscription());
-      if (sub) {
-        const response = await scopedFetch("/api/push/unsubscribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint: sub.endpoint }),
-        });
-        if (!response.ok)
-          throw new Error((await response.json().catch(() => ({}))).error || "Notification settings could not be changed.");
-        await sub.unsubscribe();
-      }
-      setState("off");
-    } catch (e) {
-      setState("on");
-      await appAlert("Notifications are still on", (e as Error).message);
-    }
+    const out = await unsubscribe();
+    if (!out.ok) await appAlert("Notifications are still on", out.error);
   }
   if (state === "unsupported") return null;
   const note =

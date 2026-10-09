@@ -12,7 +12,7 @@ import { isDraft } from "@/lib/draftFinal";
 
 /**
  * Idea 12, first slice: what a take can go on to next, as a way INTO the
- * existing tool that does it — the Takes desk's Re-edit for a still, Seedance
+ * existing tool that does it — the Shots region's Re-edit for a still, Seedance
  * Edit for a clip, Edit & Sound for a sound. Navigation only: nothing here
  * quotes, prices or sends; the tool's own button is the only paid control,
  * after its own quote. No price is ever attached to one of these. Pure.
@@ -41,14 +41,11 @@ function gate(entry: Entry, saved: boolean): Pick<NextAction, "enabled" | "why">
 
 export function nextActions(entry: Entry, context: { saved: boolean }): NextAction[] {
   const kind = entryKind(entry);
-  if (kind === "image") return [{ id: "re-edit", label: "Re-edit", opens: "the re-edit form in Takes", ...gate(entry, context.saved) }];
-  if (kind === "video") return [{ id: "edit", label: "Edit", opens: "Seedance Edit in Takes", ...gate(entry, context.saved) }];
+  if (kind === "image") return [{ id: "re-edit", label: "Re-edit", opens: "the take in Shots, on the board", ...gate(entry, context.saved) }];
+  if (kind === "video") return [{ id: "edit", label: "Edit", opens: "the take in Shots, on the board", ...gate(entry, context.saved) }];
   if (kind === "audio") return [{ id: "edit-sound", label: "Edit & Sound", opens: "Edit & Sound", enabled: true, why: null }];
   return [];
 }
-
-/** The section of the Takes desk each tool is (components/graphite/production/EditStage.tsx). */
-export const NEXT_SECTION: Partial<Record<NextActionId, string>> = { "re-edit": "image", edit: "video" };
 
 /* ── Idea 12, second slice: the priced Next actions ─────────────────────── */
 
@@ -69,7 +66,7 @@ export const NEXT_SECTION: Partial<Record<NextActionId, string>> = { "re-edit": 
  * here edits, replaces or deletes it. An action no engine here does for a
  * kind of take is listed as not offered, with why; it is never faked.
  *
- * Pure: the Inspector's and the Takes desk's Next row read it, and the unit
+ * Pure: the Inspector's Next row reads it, and the unit
  * tests read the bodies it builds.
  */
 export type PricedActionId = "upscale" | "outpaint" | "animate" | "reframe" | "extend";

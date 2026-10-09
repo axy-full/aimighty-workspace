@@ -7,7 +7,7 @@
 import type { Project } from "@/lib/workbench/studio";
 import type { ProjectSummary } from "@/lib/workspace/data";
 import type { LibraryEntry } from "@/lib/workspace/library";
-import { shellSuite, type ShellPage } from "./ia";
+import { STAGE_REDIRECTS, type StageId } from "./stage-redirects";
 
 export type StageStatus = "done" | "progress" | "ready" | "waiting";
 export type StageCard = { id: string; n: string; label: string; meta: string; status: StageStatus };
@@ -15,9 +15,12 @@ export type StageCard = { id: string; n: string; label: string; meta: string; st
 const words = (text: string | undefined) => (text ?? "").trim().split(/\s+/).filter(Boolean).length;
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
-/** The studio pages that have a card: every page of the strip, never the home itself. */
-export function studioStages(): ShellPage[] {
-  return shellSuite("studio").pages.filter((p) => !p.phoneOnly);
+/**
+ * The overview's cards, in production order. Each opens the board on the region that took the stage's job
+ * (lib/shell/stage-redirects.ts): the ten stage pages are gone, and these are Home's shortcuts into the one board.
+ */
+export function studioStages(): { id: StageId; n: string; label: string }[] {
+  return STAGE_REDIRECTS.map((stage, i) => ({ id: stage.id, n: String(i + 1).padStart(2, "0"), label: stage.label }));
 }
 
 const COUNT_WORDS: Record<number, string> = { 8: "eight", 9: "nine", 10: "ten", 11: "eleven" };
