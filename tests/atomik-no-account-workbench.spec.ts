@@ -94,7 +94,7 @@ test("an older plan made on the connected account is shown read-only: no Continu
   /* Atomik › Generate points to Gen; it no longer generates on an account. */
   const moved = page.getByTestId("atomik-generate-moved");
   await expect(moved).toContainText("Single generations run in Gen, on Particl’s own engines");
-  await expect(moved.getByRole("link", { name: "Open Gen" })).toHaveAttribute("href", "/suites?view=gen");
+  await expect(moved.getByRole("link", { name: "Open Gen" })).toHaveAttribute("href", "/suites?make=video");
 
   const surface = await openAtomik(page);
   await expect(surface).toContainText("Read-only");

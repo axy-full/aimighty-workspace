@@ -332,7 +332,7 @@ test("Generate has no reason of the connected account's left: a composer state s
   expect(composerBlock(base)).toBe("No image model is available on this account.");
   expect(composerBlock({ ...base, catalogue: { loading: true, error: null } })).toBe("Reading the available models…");
   /* Gen's composer reads nothing of the account: no capability, no catalogue, no quote, no status. */
-  const source = readFileSync("lib/workspace/use-composer.ts", "utf8") + readFileSync("lib/workspace/composer.ts", "utf8") + readFileSync("components/graphite/GenView.tsx", "utf8");
+  const source = readFileSync("lib/workspace/use-composer.ts", "utf8") + readFileSync("lib/workspace/composer.ts", "utf8") + readFileSync("components/graphite/MakePanel.tsx", "utf8");
   expect(source).not.toMatch(/\/api\/higgsfield\/consumer\/|CONNECTED_GENERATION_ENDPOINT|useConnectedCapability|higgsfield-consumer\/catalogue/);
 });
 

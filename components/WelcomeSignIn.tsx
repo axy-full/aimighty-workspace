@@ -167,7 +167,7 @@ function SignInForm({ next, notice = null }: { next: string; notice?: string | n
         <p className="page-sub !m-0">Open your studio workspace.</p>
       </div>
       {notice && (
-        <p role="status" className="rail-help">
+        <p role="status" className="rail-help !text-[12px] !text-lead">
           {notice}
         </p>
       )}
@@ -214,7 +214,7 @@ function SignInForm({ next, notice = null }: { next: string; notice?: string | n
             value={code}
             onChange={(e) => setCode(e.target.value)}
           />
-          <span className="rail-help">
+          <span className="rail-help !text-[12px] !text-lead">
             Enter your authenticator code or one unused recovery code.
           </span>
         </label>
@@ -227,7 +227,7 @@ function SignInForm({ next, notice = null }: { next: string; notice?: string | n
         {busy ? "…" : "Sign in"}
       </button>
       {err && (
-        <p role="alert" className="rail-help text-lift">
+        <p role="alert" className="rail-help !text-[12px] text-lift">
           {err}
         </p>
       )}

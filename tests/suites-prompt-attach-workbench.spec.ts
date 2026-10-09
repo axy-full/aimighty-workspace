@@ -71,7 +71,7 @@ test("Brief: a picture attached to the prompt goes to the writer — priced with
 test("Gen: a pasted picture becomes a reference; a sound file is kept in the Library, and the box says why", async ({ page }, info) => {
   test.skip(!DESKTOPS.includes(info.project.name), "one desktop");
   const { project, errors } = await setup(page);
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   /* The composer settles on the project first (it starts that project's own composer state). */
   await expect(page.getByTestId("project-name")).toHaveText(project.name);
   const box = page.getByTestId("gen-attach");
