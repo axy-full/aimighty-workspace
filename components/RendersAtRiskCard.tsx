@@ -19,22 +19,22 @@ export function RendersAtRiskCard() {
       </div>
       {!data && error ? (
         <div className="flex flex-wrap items-center gap-3">
-          <span className="rail-help">Renders at risk could not be read.</span>
+          <span className="rail-help !text-[12px]">Renders at risk could not be read.</span>
           <button type="button" className="btn-secondary min-h-[44px]" onClick={() => void refresh()}>Try again</button>
         </div>
       ) : !data ? (
-        <span className="rail-help">Reading renders at risk…</span>
+        <span className="rail-help !text-[12px]">Reading renders at risk…</span>
       ) : (
         <div className="flex flex-col gap-1.5">
           <span className={`font-medium ${data.count ? "text-lift" : ""}`} data-testid="renders-at-risk-line">{atRiskLine(data, data.at)}</span>
           {data.renders.map((r) => (
-            <span key={`${r.workspaceId}:${r.generationId}`} className="rail-help break-all">
+            <span key={`${r.workspaceId}:${r.generationId}`} className="rail-help !text-[12px] break-all">
               {r.workspace} · {r.generationId} · {r.provider} {r.model} · {ageText(data.at - r.since)}
               {r.billed ? "" : " · provider finished, not billed yet"}
               {r.lastError ? ` · last save error: ${r.lastError}` : ""}
             </span>
           ))}
-          {data.count > data.renders.length && <span className="rail-help">…and {data.count - data.renders.length} more.</span>}
+          {data.count > data.renders.length && <span className="rail-help !text-[12px]">…and {data.count - data.renders.length} more.</span>}
         </div>
       )}
     </section>
