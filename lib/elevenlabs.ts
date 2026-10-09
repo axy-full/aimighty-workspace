@@ -4,7 +4,13 @@ import { vendorKey } from "./vendorKeys";
 import { memoDrop, memoGet, memoPut } from "./memo";
 import { engineMock } from "./mock";
 import { fixtureBytes } from "./mockFs";
+import { readBodyCapped } from "./boundedBody";
 import { ELEVENLABS_RATES, ELEVENLABS_SOURCE_LIMIT_BYTES, type DubbingMode } from "./vendorRates";
+
+/** Audio that comes back is kept whole, so it is capped: no output of these
+ *  endpoints legitimately outgrows the largest source they accept. */
+const ELEVENLABS_OUTPUT_LIMIT_BYTES = ELEVENLABS_SOURCE_LIMIT_BYTES;
+const ELEVENLABS_OUTPUT_TOO_LARGE = "ElevenLabs returned more audio than the 100 MB limit; nothing was saved.";
 
 /**
  * ElevenLabs — voices, sound effects and music.
@@ -242,7 +248,7 @@ async function callAudio(
     }
     throw new ElevenLabsError(res.status, explain(res.status, json), json);
   }
-  const bytes = Buffer.from(await res.arrayBuffer());
+  const bytes = await readBodyCapped(res, ELEVENLABS_OUTPUT_LIMIT_BYTES, ELEVENLABS_OUTPUT_TOO_LARGE);
   // The API documents no cost header, so the caller prices from the
   // request by the published rates; the request id is kept for support.
   return {
@@ -548,7 +554,7 @@ async function callAudioMultipart(
     throw new ElevenLabsError(res.status, explain(res.status, json), json);
   }
   return {
-    bytes: Buffer.from(await res.arrayBuffer()),
+    bytes: await readBodyCapped(res, ELEVENLABS_OUTPUT_LIMIT_BYTES, ELEVENLABS_OUTPUT_TOO_LARGE),
     mime: res.headers.get("content-type") ?? "audio/mpeg",
     credits: null,
     requestId: res.headers.get("request-id") ?? res.headers.get("x-request-id"),

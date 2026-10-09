@@ -6,6 +6,7 @@ import { Readable } from "node:stream";
 import { currentTenant } from "./tenant";
 import { isFixtureUrl } from "./mock";
 import { fetchBytes } from "./mockFs";
+import { readBodyCapped } from "./boundedBody";
 import type { ByteRange } from './mediaRange';
 import { cloudBackend, r2Backend, resolveStored, usingCloud, type ResolvedObject, type StorageBackend } from "./storage/backend";
 import { transferLimiter } from "./storage/transfers";
@@ -457,7 +458,12 @@ return await withRecoveryActivity('storage', async () => {
 });
 }
 
-export async function readUploadBytes(uploadId: string, ext: string, storedUrl: string): Promise<Buffer> {
+/** The largest reference upload accepted (MAX_REFERENCE_BYTES in
+ *  lib/uploadReservations.ts, which imports this module); a public read past it
+ *  is not one of our uploads. */
+export const PUBLIC_UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
+
+export async function readUploadBytes(uploadId: string, ext: string, storedUrl: string, maxBytes = PUBLIC_UPLOAD_MAX_BYTES): Promise<Buffer> {
   if (!/^[A-Za-z0-9_-]+$/.test(uploadId)) throw new Error("bad upload id");
   if (usingCloud()) {
     const stored = storedObject(storedUrl);
@@ -466,8 +472,8 @@ export async function readUploadBytes(uploadId: string, ext: string, storedUrl: 
       // anything else goes through the authorized private read.
       if (stored.publicUrl) {
         const res = await fetch(stored.key);
-        if (!res.ok) throw new Error(`Could not read upload ${uploadId} (${res.status})`);
-        return Buffer.from(await res.arrayBuffer());
+        if (!res.ok) { await res.body?.cancel().catch(() => {}); throw new Error(`Could not read upload ${uploadId} (${res.status})`); }
+        return readBodyCapped(res, maxBytes, `Upload ${uploadId} is larger than the ${Math.round(maxBytes / (1024 * 1024))} MB upload limit.`);
       }
       return readCloud(stored.key, stored.backend);
     }
