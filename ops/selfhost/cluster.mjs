@@ -13,9 +13,10 @@
 //                          an integer 128..16384; default 896. Anything else is
 //                          logged and 896 is used. Not applied when NODE_OPTIONS
 //                          or this process's own flags already set
-//                          --max-old-space-size (that setting wins), and not
-//                          with WEB_CONCURRENCY=1: the single process keeps
-//                          Node's default heap (or NODE_OPTIONS), as before.
+//                          --max-old-space-size or --max_old_space_size (that
+//                          setting wins), and not with WEB_CONCURRENCY=1: the
+//                          single process keeps Node's default heap (or
+//                          NODE_OPTIONS), as before.
 //
 // A worker that exits on its own is started again after a back-off (1 s doubling
 // to 30 s; back to 1 s once a worker has been up 60 s). More than 10 such exits
@@ -96,7 +97,9 @@ export async function main(env = process.env) {
   const heap = parseHeapMb(env.WORKER_HEAP_MB);
   if (heap.invalid) log("invalid-heap", { allowed: "128..16384", using: heap.mb });
   /* A heap size someone already chose (NODE_OPTIONS reaches the workers too, or a flag on this process) wins. */
-  const chosen = /--max-old-space-size/.test(env.NODE_OPTIONS ?? "") || process.execArgv.some((arg) => arg.includes("--max-old-space-size"));
+  /* Node accepts dashes or underscores in V8 flags: --max-old-space-size and --max_old_space_size are one flag. */
+  const heapFlag = /--max[-_]old[-_]space[-_]size/;
+  const chosen = heapFlag.test(env.NODE_OPTIONS ?? "") || process.execArgv.some((arg) => heapFlag.test(arg));
   cluster.setupPrimary({
     exec: server,
     execArgv: chosen ? process.execArgv : [...process.execArgv, `--max-old-space-size=${heap.mb}`],
