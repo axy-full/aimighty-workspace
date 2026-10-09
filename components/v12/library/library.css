@@ -4,6 +4,7 @@
   background: var(--gx-root); border-right: 1px solid var(--gx-hair-strong); box-shadow: 12px 0 32px rgba(0, 0, 0, 0.55);
   display: flex; flex-direction: column; overflow: hidden; font-family: var(--gx-font); color: var(--gx-text);
 }
+.v12 .v12-lib[data-on-board] { left: var(--gx-w-rail); }
 .v12 .v12-lib-head { padding: 14px 16px 10px; display: flex; align-items: center; justify-content: space-between; }
 .v12 .v12-lib-title { font-size: var(--gx-fs-panel); font-weight: 600; letter-spacing: -0.01em; }
 .v12 .v12-lib-head-acts { display: flex; align-items: center; gap: var(--gx-sp-8); }
@@ -44,5 +45,6 @@
   border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-panel, 10px); background: var(--gx-card); color: var(--gx-text);
   font-family: var(--gx-font); font-size: var(--gx-fs-meta); font-weight: 500; box-shadow: var(--gx-shadow-float); cursor: pointer; transition: left var(--gx-t) var(--gx-ease);
 }
-.v12 .v12-lib-btn[data-open] { left: calc(var(--gx-w-tray) + 24px); border-color: var(--gx-tint-border-50); background: var(--gx-tint); color: var(--gx-accent-text); }
+/* On a board the button sits beside the board's rail, as the tray does (prototype blLeft: rail + 16). */
+.v12 .v12-lib-btn[data-on-board] { left: calc(var(--gx-w-rail) + 16px); }
 @media (prefers-reduced-motion: reduce) { .v12 .v12-lib-btn { transition: none; } }

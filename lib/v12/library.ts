@@ -92,7 +92,8 @@ export function trayItems(entries: readonly LibraryEntry[], castOf: (libraryId: 
     const cast = castOf(entry.take.id);
     return {
       id: entry.take.id,
-      name: entry.take.name,
+      /* A file's name reads without its extension ("Lead actor", not "Lead actor.webp"); the kind line says what it is. */
+      name: entry.asset.origin === "upload" ? entry.take.name.replace(/\.[a-z0-9]{2,5}$/i, "") || entry.take.name : entry.take.name,
       kindLine: cast ? SINGULAR[cast] : MEDIA_WORD[entry.media ?? ""] ?? "File",
       cast,
       source: librarySource(entry.asset) === "generations" ? "Generated" : "Uploaded",

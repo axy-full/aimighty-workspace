@@ -26,6 +26,8 @@ test("Uploaded or Generated comes from where the item lives: an upload, an uploa
   /* The tile keeps the item's own shape (a 9:16 take stands tall), and its kind line says what it is. */
   expect(by["generation:g1"].aspect).toBe(`${Math.round((9 / 16) * 1000)} / 1000`);
   expect(by["upload:u1"].kindLine).toBe("Still");
+  /* A file's name reads without its extension. */
+  expect(by["upload:u1"].name).toBe("u1");
 });
 
 test("kinds: the open board's cards say Characters, Locations and Props; Everything made is every generated item; Products and Mandatories are stubs", () => {

@@ -49,10 +49,12 @@ export function LibraryTray({ project, projects, library }: { project: Project |
 
   return (
     <>
-      {tray.open ? <Tray project={project} projects={projects} library={library} tray={tray} onBoard={onBoard} onClose={() => { tray.setOpen(false); button.current?.focus(); }} /> : null}
-      {shell.make ? null : (
+      {tray.open ? <Tray project={project} projects={projects} library={library} tray={tray} onBoard={onBoard} onClose={() => { tray.setOpen(false); requestAnimationFrame(() => button.current?.focus()); }} /> : null}
+      {/* Hidden on Make (prototype blDisplay) and while the tray is open, where the tray's own × and L close it: on today's
+          board the button beside an open tray would sit on the board's bottom toolbar. */}
+      {shell.make || tray.open ? null : (
         <Tooltip name="Library" shortcut="L" side="top">
-          <button ref={button} type="button" className="v12-lib-btn" data-open={tray.open || undefined} aria-pressed={tray.open} aria-label="Library"
+          <button ref={button} type="button" className="v12-lib-btn" data-on-board={onBoard || undefined} aria-pressed={tray.open} aria-label="Library"
             data-testid="v12-library-button" onClick={() => tray.setOpen((was) => !was)}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 3h12v10H2zM2 7h12M6 7v6" /></svg>
             Library<Kbd keys="L" />
