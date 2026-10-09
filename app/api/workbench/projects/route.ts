@@ -35,7 +35,7 @@ export const GET=withTenant(async(req:Request)=>{
   /* `?kinds=1` (the new Home's boards): each board's kind, read the way lib/board/kind.ts boardKindOf reads it (an older
      Ads draft carries a marketing brief; an empty one is not one). Only when asked: it parses each listed draft. */
   const kinds=new URL(req.url).searchParams.get('kinds')==='1';
-  const KIND="CASE WHEN json_valid(body) THEN COALESCE(NULLIF(json_extract(body,'$.boardKind'),''),CASE WHEN NULLIF(NULLIF(json_extract(body,'$.marketingBrief'),''),'{}') IS NOT NULL OR NULLIF(NULLIF(json_extract(body,'$.moleculr'),''),'{}') IS NOT NULL THEN 'ads' END) END AS kind";
+  const KIND="CASE WHEN json_valid(body) THEN COALESCE(NULLIF(json_extract(body,'$.boardKind'),''),CASE WHEN NULLIF(json_extract(body,'$.marketingBrief'),'') IS NOT NULL OR NULLIF(json_extract(body,'$.moleculr'),'') IS NOT NULL THEN 'ads' END) END AS kind";
   const [list,productions,draft]=await Promise.all([
     db().execute({sql:`SELECT project_id AS id,name,revision,updated_at AS updatedAt${kinds?`,${KIND}`:''} FROM workbench_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 100`,args:[auth.user.id]}),
     db().execute('SELECT id,name FROM projects ORDER BY created_at DESC LIMIT 100'),
