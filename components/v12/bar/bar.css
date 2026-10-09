@@ -27,7 +27,9 @@
 .v12-bar-send:disabled { opacity: 0.55; cursor: default; }
 .v12-bar-send-outlined { background: transparent; border: 1px solid var(--gx-tint-border-50); color: var(--gx-accent-text); }
 .v12-bar-send-outlined:hover:not(:disabled) { background: var(--gx-tint-10); }
+.v12-bar-send-quiet, .v12-bar-send-quiet:disabled { background: var(--gx-seg-on); color: var(--gx-text-2); opacity: 1; }
 .v12-bar-send .v12-price { color: inherit; }
+.v12-bar-docked .v12-bar-card { box-shadow: none; border-color: var(--gx-btn-border); }
 .v12-bar button:focus-visible, .v12-bar-input:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
 
 .v12-bar-chip {

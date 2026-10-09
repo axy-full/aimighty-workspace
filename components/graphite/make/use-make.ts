@@ -121,6 +121,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   /* As the master draws it: `make=1` (Video, the default) is Auto's; Image or Audio named by the address was picked. */
   const [picked, setPicked] = useState(() => initialType !== "video");
   const pickType = useCallback((type: ComposerType) => { setPicked(true); dispatch({ type: "type", value: type }); }, [dispatch]);
+  const unpick = useCallback(() => setPicked(false), []);
   const { setMake } = shell;
   const asked = shell.make;
   const follow = useRef({ dispatch, setMake });
@@ -407,7 +408,10 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
 
   return {
     composer, state, model, settings, offered, tool, recent, submitting,
-    picked, pickType, typeNote: tool ? null : typeNote(state.prompt, picked),
+    picked, pickType,
+    /** Back to Auto: the type follows the words again (the new interface's Auto mode). */
+    unpick,
+    typeNote: tool ? null : typeNote(state.prompt, picked),
     setPrompt, setShot, setCinema, cinemaModel,
     references: state.references, tags, takesReferences, addReference, dropOnWell, removeReference, wellError,
     listOpen, openList, closeList, pickEngine, rowValue, readingRates, recentEngines,

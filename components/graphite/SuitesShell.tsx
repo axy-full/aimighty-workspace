@@ -39,10 +39,13 @@ import { Palette } from "./Palette";
 import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { useCompact } from "@/lib/shell/use-compact";
+import { isMakeTool } from "@/lib/shell/make";
 import dynamic from "next/dynamic";
 /* The new interface's frame loads only for a workspace that has it (lib/newInterface.ts): customers never download it.
    SuitesApp draws nothing until the browser is there, so the frame's own chunk is the only wait, and only for them. */
 const V12Shell = dynamic(() => import("@/components/v12/V12Shell").then((m) => m.V12Shell));
+/* Make as a page (redesign C3): only with the switch on at desktop sizes, so a customer never downloads it. */
+const V12Make = dynamic(() => import("@/components/v12/make/V12Make").then((m) => m.V12Make));
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { SwitchingVeil } from "./SwitchingVeil";
@@ -249,8 +252,9 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
         else if (state.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
         /* Atomik's panel (new interface) closes after ⌘K and the menus, before Make, unless a sheet is open over it. */
         else if (shell.atomik && !document.querySelector(".gx-veil")) shell.closeAtomik();
-        /* Make closes with Esc, except from a field (Esc there closes the field's own list first) or while a sheet is open over it. */
-        else if (shell.make && !inField(event.target) && !document.querySelector(".gx-veil")) shell.closeMake();
+        /* Make closes with Esc, except from a field (Esc there closes the field's own list first) or while a sheet is open over it.
+           Make as a page (the new interface's, [data-v12-make]) is a place, not a panel: Esc does not leave it. */
+        else if (shell.make && !inField(event.target) && !document.querySelector(".gx-veil") && !document.querySelector("[data-v12-make]")) shell.closeMake();
         return;
       }
       /* ⌥M opens and closes Make (README § 6), from anywhere, a field included: ⌥M types nothing a prompt needs. */
@@ -364,6 +368,10 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
      With the switch off the header and body below render exactly as they always have. */
   const newInterface = useNewInterface();
   const v12 = newInterface && !compact && !phoneOn;
+  /* With the switch on at desktop sizes, Make is a page in the frame's body (components/v12/make), not a panel; its quick
+     tools (Motion transfer, Object swap, Upscale) still open as today's panel over that page. */
+  const v12Make = v12 && Boolean(shell.make);
+  const makePanel = Boolean(shell.make) && !phoneOn && !(v12Make && !isMakeTool(shell.make));
   const header = <Header account={account} project={project?.name ?? null} bar={bar} />;
   const desktopBody = <>
         {bar ? null : <StageStrip />}
@@ -424,11 +432,16 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
           /* A link to a take that cannot show it yet says what it is doing on a phone too: the phone's own screens draw nothing for it. */
           <div className="gx-screen gx-scroll" data-testid="screen" data-screen="link"><div className="gx-stage" data-testid="content">{linkCard}</div></div>
         ) : <PhoneMount ctx={screenCtx} page={phonePage} />) : v12 ? (
-          <V12Shell header={header}>{desktopBody}</V12Shell>
+          <V12Shell header={header}>{v12Make ? (
+            <Boundary what="Make" probe="gen" resetKey={`v12-make:${scope}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="gen" /></div>}>
+              <V12Make scope={scope} project={project} projects={data.status} projectsError={projectsError} onRetry={data.retry}
+                workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} balance={account?.credits?.balance ?? null} />
+            </Boundary>
+          ) : desktopBody}</V12Shell>
         ) : <>{header}{desktopBody}</>}
         {/* Make (README § 3.2): a panel over whatever is on screen, beside the Inspector's column when that is open. Its draft
             stays editable while the project list recovers ("Try again", never "Retry": that word is a take's own action). */}
-        {shell.make && !phoneOn ? (
+        {makePanel ? (
           <Boundary what="Make" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <aside className="gx-make" aria-label="Make"><PanelFault fault={fault} name="gen" actions={<button type="button" className="gx-hbtn" onClick={shell.closeMake}>Close</button>} /></aside>}>
             <MakePanel scope={scope} project={project} items={items} library={library} projects={data.status} projectsError={projectsError} onRetry={data.retry}
               workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })}

@@ -26,7 +26,7 @@ export type MakeProps = {
 };
 
 /**
- * Make with the new interface switched on (design/particl-graphite/README.md § 3.2; "Make frames.dc.html" 1–8):
+ * Make with the new interface switched on (design/particl-graphite/README.md § 3.2; the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12) 1–8):
  * a 440 px panel over any screen, full width on a phone. Its head is the title, Make | Recent and Close; its body is
  * the composer as the handoff draws it (Compose), Recent, or a quick tool. Left of whatever is docked at the right
  * edge (`--board-dock`, set by the shell from the board's dock).

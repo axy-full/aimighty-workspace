@@ -21,7 +21,7 @@ export const UPSCALE_NAME = "Upscale";
 const CHOOSE = "Choose a picture or a clip.";
 
 /**
- * Make › Upscale (design/particl-graphite, Make frames: the third quick tool beside Motion transfer and Object swap; `make=upscale`).
+ * Make › Upscale (the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12): the third quick tool beside Motion transfer and Object swap; `make=upscale`).
  * One source from this project's Library, a clip (Topaz Astra 2, to 4K at 30 or 60 fps) or a still (Topaz image upscale, 2× or
  * 4×), and Upscale at the server's quote for exactly that request: the button is off until the quote is in, and says "up to N cr"
  * when the charge settles on what is delivered. The quote and the one send are the existing routes through the existing paid
