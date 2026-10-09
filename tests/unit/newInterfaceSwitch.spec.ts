@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { newInterfaceOn } from "../../lib/newInterface";
+import { HOUSE_WORKSPACE_ID } from "../../lib/houseWorkspace";
 import { DEFAULT_SITE, cleanSite, sitePatch } from "../../lib/site/settings";
 
 /* The redesign switch (lib/newInterface.ts): off for every customer workspace, on for the house workspace and for
@@ -8,8 +9,8 @@ import { DEFAULT_SITE, cleanSite, sitePatch } from "../../lib/site/settings";
 test("the new interface is on for the house workspace and listed workspaces only", () => {
   expect(newInterfaceOn(null)).toBe(false);
   expect(newInterfaceOn({ id: "ws_customer" })).toBe(false);
-  expect(newInterfaceOn({ id: "ws_customer", legacy: false }, DEFAULT_SITE.newInterfaceWorkspaces)).toBe(false);
-  expect(newInterfaceOn({ id: "ws_legacy", legacy: true })).toBe(true);
+  expect(newInterfaceOn({ id: "ws_customer" }, DEFAULT_SITE.newInterfaceWorkspaces)).toBe(false);
+  expect(newInterfaceOn({ id: HOUSE_WORKSPACE_ID })).toBe(true);
   expect(newInterfaceOn({ id: "ws_listed" }, ["ws_listed"])).toBe(true);
   expect(newInterfaceOn({ id: "ws_other" }, ["ws_listed"])).toBe(false);
 });
