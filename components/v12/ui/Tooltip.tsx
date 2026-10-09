@@ -81,7 +81,8 @@ export function Tooltip({ children, side = "bottom", delay = TIP_DELAY_MS, disab
     const target = (anchor.current?.firstElementChild ?? anchor.current) as HTMLElement | null;
     if (!target) return;
     const a = target.getBoundingClientRect();
-    const b = tip.current.getBoundingClientRect();
+    /* offsetWidth, not the bounding box: the box is mid-animation (scale .97) when it is measured. */
+    const b = { width: tip.current.offsetWidth, height: tip.current.offsetHeight };
     setAt(place({ left: a.left, top: a.top, width: a.width, height: a.height }, { width: b.width, height: b.height }, { width: window.innerWidth, height: window.innerHeight }, side));
   }, [open, side, content.name, content.line]);
 

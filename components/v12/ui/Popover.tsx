@@ -51,7 +51,8 @@ export function Popover({ open, onClose, anchor, label, children, align = "start
     const measure = () => {
       if (!panel.current || !anchor.current) return;
       const a = anchor.current.getBoundingClientRect();
-      const b = panel.current.getBoundingClientRect();
+      /* offsetWidth, not the bounding box: the box is mid-animation (scale .97) when it is measured. */
+      const b = { width: panel.current.offsetWidth, height: panel.current.offsetHeight };
       const rect = { left: a.left, top: a.top, width: a.width, height: a.height };
       const box = { width: b.width, height: b.height };
       const view = { width: window.innerWidth, height: window.innerHeight };

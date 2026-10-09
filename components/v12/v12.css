@@ -140,6 +140,7 @@
 .v12 .v12-in { animation: gx-in var(--gx-t-toast) var(--gx-ease) both; }
 .v12 .v12-pop, .v12 .v12-tip { animation: gx-pop var(--gx-t-menu) var(--gx-ease) both; }
 .v12 .v12-dialog { animation: gx-pop var(--gx-t-pop) var(--gx-ease) both; }
+.v12 .v12-dialog[data-variant="sheet"] { animation-name: gx-in; }
 .v12 .v12-toast { animation: v12-toast-in var(--gx-t-toast) var(--gx-ease) both; }
 .v12 .v12-pulse, .v12 .v12-pill-dot[data-pulse] { animation: gx-pulse var(--gx-t-pulse) ease-in-out infinite; }
 .v12 .v12-drift { animation: gx-drift var(--gx-t-drift) ease-in-out infinite; }

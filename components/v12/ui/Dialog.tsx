@@ -37,7 +37,9 @@ export function Dialog({ open, onClose, label, title, children, footer, variant 
   useFocusReturn(open, panel);
   useEffect(() => {
     if (!open || !panel.current) return;
-    (panel.current.querySelector<HTMLElement>("[autofocus], [data-autofocus]") ?? panel.current.querySelector<HTMLElement>(FOCUSABLE) ?? panel.current).focus({ preventScroll: true });
+    /* What was asked for, else the first field or button in the body, else the × in the head. */
+    const p = panel.current;
+    (p.querySelector<HTMLElement>("[autofocus], [data-autofocus]") ?? p.querySelector<HTMLElement>(`.v12-dialog-body :is(${FOCUSABLE})`) ?? p.querySelector<HTMLElement>(FOCUSABLE) ?? p).focus({ preventScroll: true });
   }, [open]);
 
   /* Tab stays inside. */
