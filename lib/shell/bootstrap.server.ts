@@ -10,6 +10,7 @@ import { shellEntryRedirect } from "@/lib/signIn";
 import { searchStringOf } from "@/lib/shell/raw-search";
 import { publicActorName } from "@/lib/platformOwnerPrivacy";
 import { newInterfaceFor } from "@/lib/newInterface.server";
+import { lowCreditBaseFor } from "@/lib/v12/lowCredit.server";
 
 /**
  * Who runs the connected Higgsfield account in this workspace, by name, for a
@@ -67,7 +68,8 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
     owner,
     superAdmin: await isPlatformOwner(ctx.user),
     workspaces: ctx.workspaces ?? [],
-    credits,
+    /* The balance, plus what the new header's low-credit chip measures it against (read-only; none if it can't be read). */
+    credits: credits ? { ...credits, ...(await lowCreditBaseFor(ctx.workspace).catch(() => null)) } : null,
     models: await runInTenant(ctx.workspace, () => effectiveModels()).catch(() => null),
     setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
     rates: buildRateTable(creditsApply(ctx.workspace) ? "cr" : "usd"),
