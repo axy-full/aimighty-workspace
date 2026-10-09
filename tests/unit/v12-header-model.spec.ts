@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { EMPTY_TABS, afterClose, closeOthers, closeTab, headerKey, openTab, parseTabs, pruneTabs, restoreTab, visibleTabs } from "../../components/v12/shell/tabs";
-import { activityGroups, activityLabel, activityTone, boardStates } from "../../components/v12/shell/activity";
+import { LOOK_MS, activityGroups, activityLabel, activityTone, boardStates, heldPrice } from "../../components/v12/shell/activity";
 import type { TrayJob } from "../../lib/jobsTray";
 import type { QueueItem } from "../../lib/control-room/queue";
 
@@ -82,4 +82,27 @@ test("Activity: the pill's words and dot, the two groups, and the scope to this 
   const board = activityGroups(jobs, [item({})], { scope: "board", draftId: "b1", now: 0, heldWord: () => null });
   expect([board.needs.length, board.running.map((r) => r.id)]).toEqual([0, ["j1"]]);
   expect([...boardStates(jobs, [item({})])]).toEqual([["b1", "live"], ["b2", "waiting"]]);
+});
+
+test("Activity keeps today's failed and unconfirmed takes under Needs a look, for a day", () => {
+  const now = 10 * LOOK_MS;
+  const jobs = [
+    job({ id: "f1", stage: "failed", label: "Failed · not billed", settledAt: now - 1000 }),
+    job({ id: "u1", stage: "unconfirmed", label: "Not confirmed yet", settledAt: null }),
+    job({ id: "old", stage: "failed", settledAt: now - LOOK_MS - 1 }),
+    job({ id: "done", stage: "complete", settledAt: now - 1000 }),
+  ];
+  const groups = activityGroups(jobs, [], { scope: "all", draftId: null, now, heldWord: () => null });
+  expect(groups.look.map((row) => row.id)).toEqual(["f1", "u1"]);
+  expect(groups.look[0].meta).toContain("Failed · not billed");
+  expect(groups.running.map((row) => row.id)).not.toContain("f1");
+});
+
+test("'held' is said only of the ledger's own reservation, never a connected account's quote", () => {
+  const label = (price: { amount: number; unit: string }) => `${price.amount} ${price.unit}`;
+  expect(heldPrice({ source: "engine", price: { amount: 7, unit: "cr" } }, label)).toBe("7 cr");
+  expect(heldPrice({ source: "engine", price: { amount: 0.7, unit: "usd" } }, label)).toBe("0.7 usd");
+  expect(heldPrice({ source: "account", price: { amount: 7, unit: "account-cr" } }, label)).toBeNull();
+  expect(heldPrice({ source: "engine", price: { amount: 7, unit: "account-cr" } }, label)).toBeNull();
+  expect(heldPrice({ source: "engine", price: null }, label)).toBeNull();
 });
