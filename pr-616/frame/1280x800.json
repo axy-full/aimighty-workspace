@@ -1,0 +1,9 @@
+{
+  "name": "frame",
+  "app": "/suites?suite=particl&page=brief&view=home",
+  "prototype": "?",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}
