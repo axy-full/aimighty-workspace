@@ -199,6 +199,37 @@ test("the fifth concurrent transfer waits for a slot, then completes", async () 
   for (let i = 0; i < 5; i++) expect(stored(`stream-queue-${i}`)?.sha256).toBe(generatedSha256(MiB + i));
 });
 
+test("every transfer logs its queue wait, outcome and slot use", async () => {
+  const storage = r2Storage({ VIDEO_TRANSFER_CONCURRENCY: "1" });
+  const lines: Record<string, unknown>[] = [];
+  const original = console.info;
+  const fresh = await startFakeProvider();
+  console.info = (line: unknown) => {
+    try { const parsed = JSON.parse(String(line)); if (parsed.event === "storage.video_transfer") lines.push(parsed); } catch { /* not ours */ }
+  };
+  try {
+    const before = fresh.requests;
+    const first = storage.storeVideo("stream-log-a", fresh.url(MiB, { hold: true }));
+    await expect.poll(() => fresh.requests - before).toBe(1);
+    const second = storage.storeVideo("stream-log-b", fresh.url(MiB + 1));
+    const busy = storage.storeVideo("stream-log-c", fresh.url(MiB), { maxQueueMs: 50 });
+    await expect(busy).rejects.toThrow(/busy with other transfers/);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    fresh.release();
+    await Promise.all([first, second]);
+    await expect(storage.storeVideo("stream-log-d", fresh.url(MiB), { timeoutMs: 1 })).rejects.toThrow(/did not finish downloading/);
+  } finally { console.info = original; await fresh.close(); }
+  const byId = Object.fromEntries(lines.map((l) => [l.genId, l]));
+  expect(byId["stream-log-c"]).toMatchObject({ outcome: "queue_timeout", limit: 1 });
+  expect(byId["stream-log-a"]).toMatchObject({ outcome: "stored", bytes: MiB, limit: 1 });
+  expect(byId["stream-log-b"]).toMatchObject({ outcome: "stored", bytes: MiB + 1 });
+  // The second save queued behind the held first one for at least the 200 ms pause.
+  expect(byId["stream-log-b"].queueWaitMs as number).toBeGreaterThanOrEqual(200);
+  expect(byId["stream-log-a"].queueWaitMs as number).toBeLessThan(100);
+  expect(byId["stream-log-d"]).toMatchObject({ outcome: "failed" });
+  expect(lines).toHaveLength(4);
+});
+
 test("a save asked to start past its queue deadline makes no request", async () => {
   const storage = r2Storage();
   const before = provider.requests;
@@ -210,7 +241,7 @@ test("a save asked to start past its queue deadline makes no request", async () 
 });
 
 test("concurrent saves of one take share one transfer and one slot", async () => {
-  const storage = r2Storage({ STORAGE_TRANSFER_CONCURRENCY: "2" });
+  const storage = r2Storage({ VIDEO_TRANSFER_CONCURRENCY: "2" });
   const fresh = await startFakeProvider();
   try {
     const url = fresh.url(2 * MiB + 9, { hold: true });
@@ -231,7 +262,7 @@ test("concurrent saves of one take share one transfer and one slot", async () =>
 });
 
 test("a joiner whose leader found the store busy retries once under its own wait", async () => {
-  const storage = r2Storage({ STORAGE_TRANSFER_CONCURRENCY: "1" });
+  const storage = r2Storage({ VIDEO_TRANSFER_CONCURRENCY: "1" });
   const fresh = await startFakeProvider();
   try {
     const holder = storage.storeVideo("stream-holder", fresh.url(MiB, { hold: true }));
@@ -265,7 +296,7 @@ test("a caller past its deadline neither joins a running save nor starts one", a
 });
 
 test("a queued transfer gives up at its wait bound, deadline or signal without starting", async () => {
-  const storage = r2Storage({ STORAGE_TRANSFER_CONCURRENCY: "1" });
+  const storage = r2Storage({ VIDEO_TRANSFER_CONCURRENCY: "1" });
   const held = provider.url(MiB, { hold: true });
   const before = provider.requests;
   // Re-arm the hold for this test's first transfer.
@@ -308,9 +339,9 @@ test("local disk streams through a temporary file and keeps nothing partial", as
 
 test("transfer limiter: FIFO slots, bounded waits, configured size", async () => {
   expect(transferConcurrency({})).toBe(4);
-  expect(transferConcurrency({ STORAGE_TRANSFER_CONCURRENCY: "2" })).toBe(2);
-  expect(transferConcurrency({ STORAGE_TRANSFER_CONCURRENCY: "0" })).toBe(4);
-  expect(transferConcurrency({ STORAGE_TRANSFER_CONCURRENCY: "nope" })).toBe(4);
+  expect(transferConcurrency({ VIDEO_TRANSFER_CONCURRENCY: "2" })).toBe(2);
+  expect(transferConcurrency({ VIDEO_TRANSFER_CONCURRENCY: "0" })).toBe(4);
+  expect(transferConcurrency({ VIDEO_TRANSFER_CONCURRENCY: "nope" })).toBe(4);
   const limiter = createTransferLimiter(2);
   const a = await limiter.acquire(), b = await limiter.acquire();
   const order: string[] = [];

@@ -146,7 +146,7 @@ export type StoreVideoOptions = {
 /**
  * Copy a finished render from the provider's URL into storage.
  *
- * Concurrency: at most STORAGE_TRANSFER_CONCURRENCY (default 4) of these run
+ * Concurrency: at most VIDEO_TRANSFER_CONCURRENCY (default 4) of these run
  * per process (lib/storage/transfers.ts); the rest wait, for at most
  * `maxQueueMs` (35 s by default, 5 s on request paths), until `deadlineAt`
  * or until `signal` aborts, whichever is first, and then fail with
@@ -215,13 +215,35 @@ async function saveVideo(genId: string, sourceUrl: string, options: StoreVideoOp
       return { url: originalPath("video", genId), bytes: buf.length };
     });
   }
-  const release = await transferLimiter().acquire({
-    maxWaitMs: options.maxQueueMs ?? PROVIDER_VIDEO_QUEUE_WAIT_MS,
-    deadlineAt: options.deadlineAt,
-    signal: options.signal,
-  });
+  /* One log line per transfer, with how long it queued for a slot: the
+     number that says whether VIDEO_TRANSFER_CONCURRENCY is too low. */
+  const limiter = transferLimiter();
+  const queued = Date.now();
+  let queuedFor: number | undefined;
+  const log = (outcome: string, extra: Record<string, unknown> = {}) => console.info(JSON.stringify({
+    level: "info", event: "storage.video_transfer", genId, outcome, queueWaitMs: queuedFor ?? Date.now() - queued,
+    limit: limiter.limit, active: limiter.active, waiting: limiter.waiting, ...extra,
+  }));
+  let release: () => void;
   try {
-    return await withRecoveryActivity('storage', () => streamVideo(genId, sourceUrl, options));
+    release = await limiter.acquire({
+      maxWaitMs: options.maxQueueMs ?? PROVIDER_VIDEO_QUEUE_WAIT_MS,
+      deadlineAt: options.deadlineAt,
+      signal: options.signal,
+    });
+  } catch (error) {
+    log(isTransferQueueTimeout(error) ? "queue_timeout" : "cancelled");
+    throw error;
+  }
+  queuedFor = Date.now() - queued;
+  const started = Date.now();
+  try {
+    const saved = await withRecoveryActivity('storage', () => streamVideo(genId, sourceUrl, options));
+    log("stored", { bytes: saved.bytes, transferMs: Date.now() - started });
+    return saved;
+  } catch (error) {
+    log("failed", { transferMs: Date.now() - started, error: (error as Error).message?.slice(0, 200) });
+    throw error;
   } finally { release(); }
 }
 

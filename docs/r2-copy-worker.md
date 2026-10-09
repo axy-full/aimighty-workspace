@@ -4,7 +4,7 @@ Status: proposal, 9 October 2026. Nothing here is deployed; the app streams prov
 
 ## Why
 
-Since the streaming change, a 500 MiB save holds a live peak of about 45–55 MiB (measured: 32 MiB of buffers and 44 MiB RSS growth on the merged code, against about 1 GiB of buffers and 1.5 GiB RSS before), and the server allows 4 transfers at a time (`STORAGE_TRANSFER_CONCURRENCY`). Every byte still crosses our server twice, though (in from the provider, out to R2), and it uses the CPU and bandwidth that production shares. A Cloudflare Worker next to R2 can do the copy instead, and our server only records the result.
+Since the streaming change, a 500 MiB save holds a live peak of about 45–55 MiB (measured: 32 MiB of buffers and 44 MiB RSS growth on the merged code, against about 1 GiB of buffers and 1.5 GiB RSS before), and the server allows 4 transfers at a time (`VIDEO_TRANSFER_CONCURRENCY`). Every byte still crosses our server twice, though (in from the provider, out to R2), and it uses the CPU and bandwidth that production shares. A Cloudflare Worker next to R2 can do the copy instead, and our server only records the result.
 
 ## Shape
 

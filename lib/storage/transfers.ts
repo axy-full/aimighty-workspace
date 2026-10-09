@@ -4,7 +4,7 @@
  * The heartbeat reconciles many workspaces at once, and every finished render
  * it sees is copied into storage. Each copy holds a socket to the provider,
  * one to the store and a multipart part buffer (8 MiB on R2), so thirty at
- * once is thirty of each. With the limit (STORAGE_TRANSFER_CONCURRENCY,
+ * once is thirty of each. With the limit (VIDEO_TRANSFER_CONCURRENCY,
  * default 4) the rest wait their turn here instead.
  *
  * Waiting is never silent and never longer than the caller can afford: every
@@ -21,7 +21,7 @@ const MAX_TRANSFER_CONCURRENCY = 64;
 
 /** The configured limit; a missing or unusable value falls back to the default. */
 export function transferConcurrency(env: Record<string, string | undefined> = process.env): number {
-  const raw = env.STORAGE_TRANSFER_CONCURRENCY?.trim();
+  const raw = env.VIDEO_TRANSFER_CONCURRENCY?.trim();
   if (!raw) return DEFAULT_TRANSFER_CONCURRENCY;
   const value = Number(raw);
   if (!Number.isSafeInteger(value) || value < 1) return DEFAULT_TRANSFER_CONCURRENCY;
