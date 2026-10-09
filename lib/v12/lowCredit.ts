@@ -1,5 +1,5 @@
 /**
- * When the new header shows the low-credit chip (docs/redesign-plan.md, decision 5).
+ * When the new header shows the low-credit chip (docs/redesign-plan.md, decision 6).
  *
  *  - Low when the balance is below 20% of the plan's included credits for the cycle.
  *  - On a plan that includes no credits (Invite, lib/plans.ts), the base is the workspace's welcome grant.

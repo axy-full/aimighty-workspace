@@ -14,7 +14,7 @@ import type { UnpricedId } from "@/lib/v12/unpriced";
  * (`knownQuote`). While it loads the price reads "…", and when it fails "—" with the reason on hover: never a number.
  *
  * An action with no quote path says so in code: `<Price quote={null} reason="lipSync" />` reads "quoted", and the reason
- * must be an entry of lib/v12/unpriced.ts, which lists every such action and why (docs/redesign-plan.md, decision 4).
+ * must be an entry of lib/v12/unpriced.ts, which lists every such action and why (docs/redesign-plan.md, decision 5).
  *
  * One unbreakable run: a narrow row moves the price whole onto the next line and never cuts it.
  */

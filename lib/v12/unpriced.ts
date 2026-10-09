@@ -1,5 +1,5 @@
 /**
- * Every action in the new interface that has no quote path today, and why (docs/redesign-plan.md, decision 4).
+ * Every action in the new interface that has no quote path today, and why (docs/redesign-plan.md, decision 5).
  *
  * Such an action's price reads "quoted". `<Price quote={null} reason="…" />` (components/v12/ui/Price.tsx) only takes a
  * reason from this list, so every unpriced use is visible in code and listed here. When an action gets a quote path, its

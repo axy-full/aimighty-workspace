@@ -7,7 +7,7 @@ import { useGoSettings } from "@/components/graphite/settings/navigate";
 /**
  * The header's low-credit chip (docs/redesign/inventory.md § 5.1, § 5.7; prototype L53).
  *
- * Shown only when the balance is below 20% of the plan's credits (lib/v12/lowCredit.ts, decision 5); never in the house
+ * Shown only when the balance is below 20% of the plan's credits (lib/v12/lowCredit.ts, decision 6); never in the house
  * workspace, which pays in dollars. Its hover names the balance; a click opens Settings › Credits & billing, which for
  * now is today's Plan & credits screen. The header (item A2) places it between Activity and the avatar.
  *

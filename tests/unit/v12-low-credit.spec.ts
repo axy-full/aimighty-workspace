@@ -5,7 +5,7 @@ import { signupCredits } from "../../lib/creditTerms";
 import { LowCreditChipView, lowCreditHover } from "../../components/v12/shell/LowCreditChip";
 
 /**
- * The low-credit rule (docs/redesign-plan.md, decision 5; lib/v12/lowCredit.ts): low below 20% of the plan's included
+ * The low-credit rule (docs/redesign-plan.md, decision 6; lib/v12/lowCredit.ts): low below 20% of the plan's included
  * credits for the cycle; on Invite (no included credits) the base is the welcome grant; never for the house workspace,
  * which pays in dollars. The plans and the grant are read from the code that defines them, never typed here.
  */
