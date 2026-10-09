@@ -159,15 +159,32 @@ export async function storeVideo(genId: string, sourceUrl: string, options: Stor
      lease; without this they would fill the transfer slots with copies of
      one file. A later caller shares the running save's outcome (its own
      signal still lets it stop waiting; its deadline does not bind the save
-     already running). */
+     already running), except a busy-store refusal, which it retries once
+     under its own bounds. */
+  return storeVideoShared(genId, sourceUrl, options, false);
+}
+
+async function storeVideoShared(genId: string, sourceUrl: string, options: StoreVideoOptions, retried: boolean): Promise<{ url: string; bytes: number }> {
   const key = videoPath(genId);
   const running = savesInFlight.get(key);
-  if (running) return options.signal ? untilAborted(running, options.signal) : running;
+  if (running) {
+    try { return await (options.signal ? untilAborted(running, options.signal) : running); }
+    catch (error) {
+      /* The save joined never started: it found the store busy under ITS
+         caller's bounds (a request path waits only 5 s). That
+         says nothing about this caller's, so try once under our own. */
+      if (retried || !isTransferQueueTimeout(error)) throw error;
+      return storeVideoShared(genId, sourceUrl, options, true);
+    }
+  }
   const saving = saveVideo(genId, sourceUrl, options);
   savesInFlight.set(key, saving);
   try { return await saving; }
   finally { if (savesInFlight.get(key) === saving) savesInFlight.delete(key); }
 }
+
+const isTransferQueueTimeout = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && (error as { code?: unknown }).code === "TRANSFER_QUEUE_TIMEOUT";
 
 const savesInFlight = new Map<string, Promise<{ url: string; bytes: number }>>();
 

@@ -230,6 +230,25 @@ test("concurrent saves of one take share one transfer and one slot", async () =>
   } finally { await fresh.close(); }
 });
 
+test("a joiner whose leader found the store busy retries once under its own wait", async () => {
+  const storage = r2Storage({ STORAGE_TRANSFER_CONCURRENCY: "1" });
+  const fresh = await startFakeProvider();
+  try {
+    const holder = storage.storeVideo("stream-holder", fresh.url(MiB, { hold: true }));
+    await expect.poll(() => fresh.requests).toBe(1);
+    // A request-path leader that waits 100 ms, and a heartbeat-like joiner that would wait 10 s.
+    const leader = storage.storeVideo("stream-join", fresh.url(2 * MiB), { maxQueueMs: 100 });
+    const joiner = storage.storeVideo("stream-join", fresh.url(2 * MiB), { maxQueueMs: 10_000 });
+    await expect(leader).rejects.toThrow(/Storage is busy/);
+    expect(fresh.requests).toBe(1); // neither has started
+    fresh.release();
+    expect((await joiner).bytes).toBe(2 * MiB);
+    await holder;
+    expect(fresh.requests).toBe(2);
+    expect(stored("stream-join")?.sha256).toBe(generatedSha256(2 * MiB));
+  } finally { await fresh.close(); }
+});
+
 test("a queued transfer gives up at its wait bound, deadline or signal without starting", async () => {
   const storage = r2Storage({ STORAGE_TRANSFER_CONCURRENCY: "1" });
   const held = provider.url(MiB, { hold: true });
