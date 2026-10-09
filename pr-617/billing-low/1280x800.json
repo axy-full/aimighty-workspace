@@ -1,0 +1,9 @@
+{
+  "name": "billing-low",
+  "app": "/suites?project=ws-billing&suite=particl&page=brief&view=workspace&tab=credits&sp=board",
+  "prototype": "?view=billing&credits=low",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}
