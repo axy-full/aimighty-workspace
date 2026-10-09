@@ -33,7 +33,7 @@ const { values: opt } = parseArgs({
     "fake-s3": { type: "string" },           // tests/helpers/fake-s3-server.mjs
     "inngest-cli": { type: "string" },       // pinned inngest-cli binary
     "autocannon-dir": { type: "string" },    // a folder with autocannon installed (not a repo dependency)
-    scenarios: { type: "string", default: "health,quote,generate,upload,inngest" },
+    scenarios: { type: "string", default: "page,health,quote,generate,upload,inngest" },
     duration: { type: "string", default: "30" },
     connections: { type: "string", default: "20" },
     "big-upload-mib": { type: "string", default: "0" },
@@ -253,6 +253,7 @@ try {
   }
 
   const json = (h = {}) => ({ "content-type": "application/json", ...bearer, ...h });
+  if (scenarios.has("page")) await burst("page", { path: "/review/scale-proof-unknown-link" }); // a real server render on every request (about 11 KB, one indexed lookup): the CPU-bound case
   if (scenarios.has("health")) await burst("health", { path: "/api/health" });
   if (scenarios.has("quote")) await burst("quote", { path: "/api/generate/quote", method: "POST", headers: json(), body: JSON.stringify(still) });
   if (scenarios.has("generate")) await loop("generate-settle", Math.min(CONNECTIONS, 10), async (timed, record) => {
@@ -358,5 +359,6 @@ try {
   await writeFile(file, JSON.stringify(results, null, 2));
   if (results.error) await writeFile(file.replace(/\.json$/, ".app.log"), app.logs());
   log("written", { file });
-  process.exitCode = results.error ? 1 : 0;
+  // Open database clients and keep-alive sockets would hold the process for minutes.
+  process.exit(results.error ? 1 : 0);
 }
