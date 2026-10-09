@@ -1,5 +1,6 @@
 "use client";
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useOverlay } from "@/components/v12/ui/overlay";
 import "./bar.css";
 
 /**
@@ -9,8 +10,9 @@ import "./bar.css";
  * row (Home's picked tile: Length and Aspect). The bar holds no money of its own: the screen passes the price and says
  * whether the button can be pressed.
  *
- * Keys: Enter sends, Escape closes the mention list first. "@" typed at the start of a word, or the @ button, opens the
- * list of things to mention; picking one puts "@Name " into the words.
+ * Keys: Enter sends. "@" typed at the start of a word, or the @ button, opens the list of things to mention, a menu on
+ * the overlay stack (Esc or a click outside closes it): ↑/↓ move through it, Enter picks, and picking puts "@Name " into
+ * the words (or, with `onMention`, hands the item to the screen, as Make's references do).
  */
 export type BarMention = { id: string; name: string; kind: string; thumb?: string | null; media?: "image" | "video" | null };
 
@@ -44,6 +46,8 @@ export type BarProps = {
   /** What [@] lists. Absent: the button is not drawn. */
   mentions?: readonly BarMention[];
   mentionsTitle?: string;
+  /** Instead of "@Name " in the words, the screen takes the picked item (Make adds it as a reference). */
+  onMention?: (mention: BarMention) => void;
   /** Chips between [@] and the words (BarChip). */
   chips?: ReactNode;
   /** Above the row, inside the bar. */
@@ -56,22 +60,35 @@ export type BarProps = {
 };
 
 export function Bar(props: BarProps) {
-  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, attachAccept, mentions, mentionsTitle = "From the library", chips, sheet, note, disabled, maxLength, testId = "v12-bar" } = props;
+  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, attachAccept, mentions, mentionsTitle = "From the library", onMention, chips, sheet, note, disabled, maxLength, testId = "v12-bar" } = props;
   const input = useRef<HTMLInputElement>(null);
   const files = useRef<HTMLInputElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  const at = useRef<HTMLButtonElement>(null);
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [active, setActive] = useState(0);
   const listId = useId();
   /* The list closes on its own when there is nothing in it. */
   const listOpen = mentionOpen && Boolean(mentions?.length);
+  const count = mentions?.length ?? 0;
+  const current = Math.min(active, Math.max(0, count - 1));
+  const openList = () => { setActive(0); setMentionOpen(true); };
+  const close = () => setMentionOpen(false);
+  /* A menu on the overlay stack: Esc closes it before anything under it, and so does a click outside the list, the @ and the words. */
+  useOverlay("menu", listOpen, close, { refs: [pop, at, input], outside: true });
 
   const mention = (m: BarMention) => {
-    const base = /(^|\s)@$/.test(value) ? value.slice(0, -1) : value.length && !/\s$/.test(value) ? `${value} ` : value;
-    onChange(`${base}@${m.name} `);
+    const typed = /(^|\s)@$/.test(value) ? value.slice(0, -1) : value;
+    if (onMention) { if (typed !== value) onChange(typed); onMention(m); }
+    else onChange(`${typed.length && !/\s$/.test(typed) ? `${typed} ` : typed}@${m.name} `);
     setMentionOpen(false);
     input.current?.focus();
   };
+  const step = (by: number) => setActive((n) => (Math.min(n, count - 1) + by + count) % count);
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Escape" && listOpen) { e.preventDefault(); e.stopPropagation(); setMentionOpen(false); return; }
+    if (listOpen && mentions && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); step(e.key === "ArrowDown" ? 1 : -1); return; }
+    if (listOpen && mentions && e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); mention(mentions[current]); return; }
+    if (e.key === "Escape" && listOpen) { e.preventDefault(); e.stopPropagation(); close(); return; }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (!send.disabled && !send.busy && !disabled) onSubmit();
@@ -82,10 +99,18 @@ export function Bar(props: BarProps) {
   return (
     <div className="v12-bar" data-testid={testId}>
       {listOpen && mentions ? (
-        <div className="v12-bar-pop" role="listbox" id={listId} aria-label={mentionsTitle} data-testid={`${testId}-mentions`}>
+        <div ref={pop} className="v12-bar-pop" role="listbox" id={listId} aria-label={mentionsTitle} data-testid={`${testId}-mentions`}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+            e.preventDefault();
+            const next = (current + (e.key === "ArrowDown" ? 1 : -1) + count) % count;
+            setActive(next);
+            pop.current?.querySelector<HTMLElement>(`[data-index="${next}"]`)?.focus();
+          }}>
           <div className="v12-bar-pop-head">{mentionsTitle}</div>
-          {mentions.map((m) => (
-            <button key={m.id} type="button" role="option" aria-selected={false} className="v12-bar-pop-row" onClick={() => mention(m)} data-testid={`${testId}-mention`}>
+          {mentions.map((m, i) => (
+            <button key={m.id} id={`${listId}-${i}`} type="button" role="option" aria-selected={i === current} data-index={i} data-active={i === current ? "" : undefined}
+              tabIndex={i === current ? 0 : -1} className="v12-bar-pop-row" onClick={() => mention(m)} onFocus={() => setActive(i)} data-testid={`${testId}-mention`}>
               <span className="v12-bar-pop-thumb" aria-hidden="true">
                 {/* eslint-disable-next-line @next/next/no-img-element -- Particl's own media route, already sized */}
                 {m.thumb ? (m.media === "video" ? <video src={m.thumb} muted playsInline preload="metadata" /> : <img src={m.thumb} alt="" />) : null}
@@ -108,13 +133,15 @@ export function Bar(props: BarProps) {
             </>
           ) : null}
           {mentions ? (
-            <button type="button" className="v12-bar-icon v12-bar-at" onClick={() => setMentionOpen((open) => !open)} disabled={disabled || !mentions.length}
+            <button ref={at} type="button" className="v12-bar-icon v12-bar-at" onClick={() => { if (listOpen) close(); else { openList(); input.current?.focus(); } }} disabled={disabled || !mentions.length}
               title={mentions.length ? "Mention something from the library" : "Nothing in the library to mention yet"} aria-label="Mention something from the library"
               aria-expanded={listOpen} aria-controls={listOpen ? listId : undefined} data-testid={`${testId}-mention-button`}>@</button>
           ) : null}
           {chips}
           <input ref={input} className="v12-bar-input" value={value} placeholder={placeholder} aria-label={label} maxLength={maxLength} disabled={disabled}
-            onChange={(e) => { const next = e.target.value; onChange(next); if (mentions?.length && /(^|\s)@$/.test(next)) setMentionOpen(true); }}
+            role={mentions ? "combobox" : undefined} aria-expanded={mentions ? listOpen : undefined} aria-controls={listOpen ? listId : undefined}
+            aria-activedescendant={listOpen ? `${listId}-${current}` : undefined} aria-autocomplete={mentions ? "list" : undefined}
+            onChange={(e) => { const next = e.target.value; onChange(next); if (mentions?.length && /(^|\s)@$/.test(next)) openList(); }}
             onKeyDown={onKey} data-testid={`${testId}-input`} />
           <button type="button" className={send.variant === "outlined" ? "v12-bar-send v12-bar-send-outlined" : "v12-bar-send"} onClick={() => canSend && onSubmit()}
             disabled={!canSend} aria-busy={send.busy || undefined} title={send.title} data-testid={send.testId ?? `${testId}-send`} {...send.attrs}>

@@ -8,6 +8,8 @@ import type { ProjectSummary } from "@/lib/workspace/data";
 import { displayModelName } from "@/lib/models";
 import { recipePrompt, recreateBlock } from "@/lib/shell/recipe";
 import { GOAL_MAX, type BoardKind } from "@/components/graphite/home/home-model";
+import { upTo } from "@/lib/shell/price-words";
+import { IDLE, LOADING, NO_DOLLAR_PRICE, knownQuote, type Quote } from "./quote";
 
 /* ── The wall ─────────────────────────────────────────────────────────── */
 
@@ -105,6 +107,29 @@ export function pickedBrief(tile: Pick<WallTile, "title" | "prompt">, added: str
   const text = own ? `${own}\n\n${like}` : like;
   const room = GOAL_MAX - 40;
   return text.length <= room ? text : cut(text, room);
+}
+
+/* ── Start's price ───────────────────────────────────────────────────── */
+
+/**
+ * Start's price as the quote layer draws it, from the one figure Start approves when pressed (use-home-start
+ * `figureFor`): "up to N cr", or for the house workspace, which pays in dollars, that figure's dollars (N × the price
+ * of a credit, the same sum the board-start quote makes, lib/v12/quote.ts). One figure, so shown always equals approved.
+ */
+export function startQuote({ spendOff, figure, thinking, dollars, creditUsd }: {
+  spendOff: boolean;
+  figure: number | null;
+  thinking: { state: string; message?: string };
+  dollars: boolean;
+  creditUsd: number | null;
+}): Quote {
+  if (spendOff) return IDLE;
+  if (figure != null) {
+    if (!dollars) return knownQuote(upTo(figure));
+    return creditUsd ? { state: "ready", price: { unit: "usd", usd: figure * creditUsd, upTo: true } } : { state: "error", message: NO_DOLLAR_PRICE };
+  }
+  if (thinking.state === "loading") return LOADING;
+  return { state: "error", message: thinking.state === "error" && thinking.message ? thinking.message : thinking.state === "off" ? "Atomik isn't on for this workspace yet." : "Atomik's thinking can't be priced right now." };
 }
 
 /* ── Your boards ──────────────────────────────────────────────────────── */

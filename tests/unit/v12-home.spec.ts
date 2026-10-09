@@ -1,9 +1,9 @@
 import { test, expect } from "@playwright/test";
 import type { Generation } from "../../lib/jobs";
 import {
-  BOARD_FILTERS, FIRST_BOARDS, WALL_TILES, boardKindIn, filterBoards, pickedBrief, waitingShown, wallLayout, wallRow, wallTile, wallTiles,
+  BOARD_FILTERS, FIRST_BOARDS, WALL_TILES, boardKindIn, filterBoards, pickedBrief, startQuote, waitingShown, wallLayout, wallRow, wallTile, wallTiles,
 } from "../../lib/v12/home";
-import { GOAL_MAX } from "../../components/graphite/home/home-model";
+import { GOAL_MAX, startFigure } from "../../components/graphite/home/home-model";
 
 /**
  * Home in the new interface (lib/v12/home.ts): the wall is the workspace's own stored stills and clips on the
@@ -98,4 +98,41 @@ test.describe("your boards", () => {
 test("Waiting for you shows two items from 1400 px, else one", () => {
   expect(waitingShown(true)).toBe(2);
   expect(waitingShown(false)).toBe(1);
+});
+
+test.describe("Start's figure: shown equals approved", () => {
+  const ready = { state: "ready", credits: 9 };
+  test("the planner's figure for a new board, or the newer one the server gave for the same words", () => {
+    expect(startFigure(null, ready, "a film")).toBe(9);
+    /* After "Press Start again to approve it": the higher figure, for those words only. */
+    expect(startFigure({ text: "a film", figure: 14 }, ready, "a film")).toBe(14);
+    expect(startFigure({ text: "a film", figure: 14 }, ready, "another film")).toBe(9);
+    expect(startFigure({ text: "a film", figure: null }, ready, "a film")).toBe(9);
+    expect(startFigure(null, { state: "loading" }, "a film")).toBeNull();
+    expect(startFigure({ text: "a film", figure: 14 }, { state: "error" }, "a film")).toBe(14);
+  });
+
+  test("credits read up to N cr from that one figure", () => {
+    expect(startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: false, creditUsd: 0.1 }))
+      .toEqual({ state: "ready", price: { unit: "cr", value: { kind: "up-to", credits: 14 } } });
+  });
+
+  test("the house workspace sees the same figure in dollars (N × the price of a credit), never a second quote", () => {
+    const q = startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: true, creditUsd: 0.1 });
+    expect(q.state).toBe("ready");
+    if (q.state !== "ready" || q.price.unit !== "usd") throw new Error("expected dollars");
+    expect(q.price.usd).toBeCloseTo(1.4, 10);
+    expect(q.price.upTo).toBe(true);
+    /* The newer figure moves the dollars with it. */
+    const after = startQuote({ spendOff: false, figure: startFigure({ text: "w", figure: 20 }, ready, "w"), thinking: ready, dollars: true, creditUsd: 0.1 });
+    expect(after.state === "ready" && after.price.unit === "usd" ? after.price.usd : null).toBeCloseTo(2, 10);
+    expect(startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: true, creditUsd: null }).state).toBe("error");
+  });
+
+  test("no figure: loading, or why not; the sample workspace shows none", () => {
+    expect(startQuote({ spendOff: false, figure: null, thinking: { state: "loading" }, dollars: false, creditUsd: 0.1 }).state).toBe("loading");
+    expect(startQuote({ spendOff: false, figure: null, thinking: { state: "error", message: "No read." }, dollars: false, creditUsd: 0.1 })).toEqual({ state: "error", message: "No read." });
+    expect(startQuote({ spendOff: false, figure: null, thinking: { state: "off" }, dollars: false, creditUsd: 0.1 })).toEqual({ state: "error", message: "Atomik isn't on for this workspace yet." });
+    expect(startQuote({ spendOff: true, figure: 14, thinking: ready, dollars: false, creditUsd: 0.1 }).state).toBe("idle");
+  });
 });
