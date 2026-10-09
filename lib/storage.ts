@@ -188,7 +188,8 @@ async function streamVideo(genId: string, sourceUrl: string, options: StoreVideo
 
   let res: Response;
   try {
-    res = await fetch(sourceUrl, { signal });
+    // The stored master must be the file itself, and Content-Length must count its bytes.
+    res = await fetch(sourceUrl, { signal, headers: { "accept-encoding": "identity" } });
   } catch (e) {
     if (timeout.aborted || options.signal?.aborted) throw explain(e);
     throw new Error(`Could not download the render: ${(e as Error).message}`);
@@ -197,7 +198,11 @@ async function streamVideo(genId: string, sourceUrl: string, options: StoreVideo
     await res.body?.cancel().catch(() => {});
     throw new Error(`Could not download render (${res.status})`);
   }
-  const header = res.headers.get("content-length");
+  /* A host that compresses anyway (fetch decodes it) declares the ENCODED
+     length: neither the cap nor the completeness check can use it, so only
+     the decoded bytes, counted as they flow, are held to the cap. */
+  const encoding = res.headers.get("content-encoding")?.trim().toLowerCase();
+  const header = encoding && encoding !== "identity" ? null : res.headers.get("content-length");
   const declared = header != null && /^\d+$/.test(header.trim()) ? Number(header) : null;
   if (declared != null && declared > limit) {
     await res.body.cancel().catch(() => {});

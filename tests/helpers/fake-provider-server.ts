@@ -1,5 +1,6 @@
 import http from "node:http";
 import { createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import type { AddressInfo } from "node:net";
 
 /**
@@ -11,6 +12,9 @@ import type { AddressInfo } from "node:net";
  *     &declare=0              chunked, no Content-Length
  *     &stallAfter=M           send M bytes, then hold the connection open
  *     &truncateAt=M           send M bytes of the declared N, then close
+ *     &gzip=1                 gzip the body whatever Accept-Encoding says, and
+ *                             declare the compressed length (built in memory:
+ *                             small bodies only)
  *     &hold=1                 wait for release() before sending anything
  *     &status=404             answer that status with no body
  */
@@ -51,9 +55,11 @@ export function generatedSha256(bytes: number): string {
 }
 
 export type FakeProvider = {
-  url: (bytes: number, options?: { declare?: boolean; stallAfter?: number; truncateAt?: number; hold?: boolean; status?: number }) => string;
+  url: (bytes: number, options?: { declare?: boolean; stallAfter?: number; truncateAt?: number; hold?: boolean; status?: number; gzip?: boolean }) => string;
   /** Requests received so far (including held ones). */
   readonly requests: number;
+  /** The headers of the most recent request. */
+  readonly lastHeaders: http.IncomingHttpHeaders;
   /** Lets every held request start sending. */
   release(): void;
   close(): Promise<void>;
@@ -61,10 +67,12 @@ export type FakeProvider = {
 
 export async function startFakeProvider(): Promise<FakeProvider> {
   let requests = 0;
+  let lastHeaders: http.IncomingHttpHeaders = {};
   let releaseAll: () => void = () => {};
   let released = new Promise<void>((resolve) => { releaseAll = resolve; });
   const server = http.createServer(async (req, res) => {
     requests++;
+    lastHeaders = req.headers;
     const url = new URL(req.url ?? "/", "http://provider");
     const status = Number(url.searchParams.get("status") ?? 200);
     if (status !== 200) { res.writeHead(status); res.end(); return; }
@@ -73,6 +81,12 @@ export async function startFakeProvider(): Promise<FakeProvider> {
     const stallAfter = url.searchParams.has("stallAfter") ? Number(url.searchParams.get("stallAfter")) : null;
     const truncateAt = url.searchParams.has("truncateAt") ? Number(url.searchParams.get("truncateAt")) : null;
     if (url.searchParams.get("hold") === "1") await released;
+    if (url.searchParams.get("gzip") === "1") {
+      const zipped = gzipSync(Buffer.concat([...generatedBody(bytes)]));
+      res.writeHead(200, { "content-type": "video/mp4", "content-encoding": "gzip", "content-length": String(zipped.length) });
+      res.end(zipped);
+      return;
+    }
     res.writeHead(200, { "content-type": "video/mp4", ...(declare ? { "content-length": String(bytes) } : {}) });
     let sent = 0;
     for (const chunk of generatedBody(bytes)) {
@@ -109,10 +123,12 @@ export async function startFakeProvider(): Promise<FakeProvider> {
       if (options.stallAfter != null) q.set("stallAfter", String(options.stallAfter));
       if (options.truncateAt != null) q.set("truncateAt", String(options.truncateAt));
       if (options.hold) q.set("hold", "1");
+      if (options.gzip) q.set("gzip", "1");
       if (options.status) q.set("status", String(options.status));
       return `http://127.0.0.1:${port}/file?${q}`;
     },
     get requests() { return requests; },
+    get lastHeaders() { return lastHeaders; },
     release() { releaseAll(); released = Promise.resolve(); },
     close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }),
   };
