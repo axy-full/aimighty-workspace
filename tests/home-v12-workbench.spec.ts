@@ -31,9 +31,11 @@ test("desktop: the new Home — waiting strip, the wall, boards by kind, and the
   page.on("pageerror", (error) => errors.push(error.message));
   const seeded = await seedHome(page);
 
-  /* The boards list says what kind each board is, read from its own draft. */
-  const listed = await page.request.get("/api/workbench/projects", { headers: seeded.headers }).then((r) => r.json()) as { projects: { name: string; kind: string | null }[] };
+  /* Asked with ?kinds=1, the boards list says what kind each board is, read from its own draft; today's plain list does not. */
+  const listed = await page.request.get("/api/workbench/projects?kinds=1", { headers: seeded.headers }).then((r) => r.json()) as { projects: { name: string; kind?: string | null }[] };
   for (const board of HOME_BOARDS) expect(listed.projects.find((p) => p.name === board.name)?.kind).toBe(board.kind);
+  const plain = await page.request.get("/api/workbench/projects", { headers: seeded.headers }).then((r) => r.json()) as { projects: { kind?: unknown }[] };
+  expect(plain.projects.every((p) => !("kind" in p))).toBe(true);
 
   let items = [
     item({ id: "held:gen_held_1", title: "Keyframe · retake" }),
@@ -104,10 +106,24 @@ test("desktop: the new Home — waiting strip, the wall, boards by kind, and the
 
   /* The bar: @ lists this workspace's own work and puts "@Name " into the words; Enter with nothing said asks for words. */
   const input = page.getByTestId("v12-home-bar-input");
+  const list = page.getByTestId("v12-home-bar-mentions");
   await page.getByTestId("v12-home-bar-mention-button").click();
-  await expect(page.getByTestId("v12-home-bar-mentions")).toContainText("From your work");
-  await page.getByTestId("v12-home-bar-mention").first().click();
-  await expect(input).toHaveValue(/^@.+ $/);
+  await expect(list).toContainText("From your work");
+  /* A menu on the overlay stack: Esc closes it, and so does a click outside. */
+  await page.keyboard.press("Escape");
+  await expect(list).toHaveCount(0);
+  await page.getByTestId("v12-home-bar-mention-button").click();
+  await expect(list).toBeVisible();
+  await page.getByTestId("v12-home-boards").click({ position: { x: 4, y: 4 } });
+  await expect(list).toHaveCount(0);
+  /* Typed "@" opens it; ↓ moves, Enter picks: the second of the workspace's own takes. */
+  await input.fill("@");
+  await expect(list).toBeVisible();
+  const second = (await page.getByTestId("v12-home-bar-mention").nth(1).locator(".v12-bar-pop-name").innerText()).trim();
+  await input.press("ArrowDown");
+  await expect(page.getByTestId("v12-home-bar-mention").nth(1)).toHaveAttribute("aria-selected", "true");
+  await input.press("Enter");
+  await expect(input).toHaveValue(`@${second} `);
   await input.fill("");
   await input.press("Enter");
   await expect(page.getByTestId("v12-home-bar-note")).toHaveText("Describe a film, ad or idea, or pick one above.");
@@ -165,4 +181,54 @@ test("phone sizes: the phone app is unchanged with the switch on", async ({ page
   await expect(page.getByTestId("phone-app")).toBeVisible({ timeout: 90_000 });
   await expect(page.getByTestId("v12-home")).toHaveCount(0);
   await noOverflow(page);
+});
+
+test("desktop: Remix opens Make with the take; Start with a picked tile asks Atomik with its words, at exactly the figure shown", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
+  test.setTimeout(300_000);
+  await seedHome(page, { takes: 2 });
+  await page.route((url) => url.pathname === "/api/control-room/approvals", (route) => route.fulfill({ json: { items: [], decided: [], inCredits: true } }));
+  /* Atomik's ask is the one paid step here: it is answered locally and its body read, so nothing is planned or spent. */
+  const asks: { goal: string; limit: number; action: string }[] = [];
+  await page.route((url) => url.pathname === "/api/workbench/team-canvas", (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    asks.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto("/suites?view=home");
+  const tiles = page.getByTestId("v12-home-tile");
+  await expect(tiles).toHaveCount(2, { timeout: 90_000 });
+
+  /* Remix: Make opens with the take's own recipe (Make shows its own price). */
+  await tiles.first().hover();
+  await tiles.first().getByTestId("v12-home-tile-remix").click();
+  await expect(page.getByTestId("make-panel")).toBeVisible({ timeout: 30_000 });
+  await expect(page).toHaveURL(/make=image/);
+  await page.getByTestId("make-close").click();
+  await expect(page.getByTestId("make-panel")).toHaveCount(0);
+
+  /* Pick, add words, press Start: the ask carries the tile's words and the figure on the button as its limit. */
+  await tiles.first().getByTestId("v12-home-tile-pick").click();
+  const title = (await tiles.first().locator(".v12-hm-tile-title").innerText()).trim();
+  await page.getByTestId("v12-home-bar-input").fill("but at night");
+  const start = page.getByTestId("v12-home-start");
+  await expect(start).toHaveText(/^Start · up to \d[\d,]* cr$/, { timeout: 60_000 });
+  const figureOn = async () => Number((await start.innerText()).match(/up to ([\d,]+) cr/)![1].replace(/,/g, ""));
+  let shown = await figureOn();
+  await expect(start).toHaveAttribute("data-spend-price", `up to ${shown} cr`);
+  await start.click();
+  /* If the made board's figure is higher, nothing is asked: the button shows the new figure, and a second press approves that. */
+  const note = page.getByTestId("v12-home-bar-note");
+  await expect.poll(async () => asks.length || ((await note.count()) && /Press Start again/.test(await note.innerText()) ? -1 : 0), { timeout: 60_000 }).not.toBe(0);
+  if (!asks.length) {
+    await expect(start).toBeEnabled();
+    shown = await figureOn();
+    await start.click();
+  }
+  await expect.poll(() => asks.length, { timeout: 60_000 }).toBe(1);
+  expect(asks[0].action).toBe("agent.plan");
+  expect(asks[0].limit).toBe(shown);
+  expect(asks[0].goal).toContain("but at night");
+  expect(asks[0].goal).toContain(`Make one like “${title}”`);
+  await expect(page).toHaveURL(/view=board/, { timeout: 30_000 });
 });

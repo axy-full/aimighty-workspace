@@ -5,6 +5,7 @@ import { posterOf } from "@/components/graphite/icons";
 import { useProjectCards, useProjectCover, type ProjectCardModel } from "@/components/graphite/home/use-project-cards";
 import type { ProjectSummary } from "@/lib/workspace/data";
 import { BOARD_FILTERS, FIRST_BOARDS, filterBoards, type BoardFilter } from "@/lib/v12/home";
+import { useBoardKinds } from "./use-board-kinds";
 
 /** A card's picture: its board's newest take once it nears the screen (today's cover read), else a swatch. */
 function Cover({ scope, id, name }: { scope: string; id: string; name: string }) {
@@ -60,7 +61,8 @@ export function YourBoards({ scope, projects, status, error, onRetry, now, appro
 }) {
   const [filter, setFilter] = useState<BoardFilter>("all");
   const [all, setAll] = useState(false);
-  const listed = filterBoards(projects, filter);
+  const kinds = useBoardKinds(scope, projects);
+  const listed = filterBoards(projects.map((p) => ({ ...p, kind: kinds.get(p.id) ?? p.kind })), filter);
   const cards = useProjectCards(listed, now, approvals);
   const shown = all ? cards : cards.slice(0, FIRST_BOARDS);
   return (

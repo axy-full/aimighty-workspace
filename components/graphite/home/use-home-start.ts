@@ -6,7 +6,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import type { ProjectSummary } from "@/lib/workspace/data";
 import { uploadFilesToProject } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
-import { EMPTY_DRAFT, TEMPLATES, cleanDraft, goalFor, newProjectFor, reusable, type BoardKind, type HomeDraft, type HomeSeed, type MadeHere, type Template, type TemplateId } from "./home-model";
+import { EMPTY_DRAFT, TEMPLATES, cleanDraft, goalFor, startFigure, newProjectFor, reusable, type BoardKind, type HomeDraft, type HomeSeed, type MadeHere, type Template, type TemplateId } from "./home-model";
 import { askAtomik, planningFor, productionOf } from "./start";
 import { useThinkingPrice } from "./use-thinking-price";
 
@@ -67,8 +67,7 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
   const { thinking, retry: retryThinking } = useThinkingPrice(scope);
 
   /* The figure on Start: the server's for a new board, or the newer one it gave for the project Start already made. */
-  const figureFor = (text: string): number | null =>
-    (started && started.text === text ? started.figure : null) ?? (thinking.state === "ready" ? thinking.credits : null);
+  const figureFor = (text: string): number | null => startFigure(started, thinking, text);
   const figure = figureFor(draft.text);
 
   const onDraft = useCallback((next: HomeDraft | ((now: HomeDraft) => HomeDraft)) => {

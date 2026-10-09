@@ -4,14 +4,13 @@ import { countsByDraft } from "@/lib/control-room/queue";
 import { useApprovals } from "@/lib/control-room/use-approvals";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { throwIfArmed } from "@/lib/shell/fault";
-import { upTo } from "@/lib/shell/price-words";
+import { creditRate, upTo } from "@/lib/shell/price-words";
 import { recreatePreset } from "@/lib/shell/recipe";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { spendAttrsOf } from "@/lib/spend";
-import { IDLE, LOADING, knownQuote, type Quote } from "@/lib/v12/quote";
-import { useQuote } from "@/lib/v12/useQuote";
-import { pickedBrief, waitingShown, wallRow, type WallTile } from "@/lib/v12/home";
+import { pickedBrief, startQuote, waitingShown, wallRow, type WallTile } from "@/lib/v12/home";
+import { useOverlay } from "@/components/v12/ui/overlay";
 import { ASPECTS, BLANK, BRIEF_MAX, LENGTHS, appendBrief, draftAspect, draftLength, withAspect, withLength } from "@/components/graphite/home/home-model";
 import { BriefFileError, briefKind, readBriefFile } from "@/components/graphite/home/brief-file";
 import type { HomeViewProps } from "@/components/graphite/home/HomeView";
@@ -80,29 +79,19 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
   const [pickedId, setPickedId] = useState<string | null>(null);
   const picked = wall.tiles.find((tile) => tile.id === pickedId) ?? null;
   const pick = (tile: WallTile) => setPickedId((now) => (now === tile.id ? null : tile.id));
-  useEffect(() => {
-    if (!picked) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented) setPickedId(null); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [picked]);
+  /* A picked tile is a selection on the overlay stack: Esc clears it after any menu or dialog above it. */
+  useOverlay("selection", Boolean(picked), () => setPickedId(null));
 
   const remix = (tile: WallTile) => {
     if (tile.remixBlock) return;
     shell.openMake(recreatePreset(tile.source, { name: tile.title }));
   };
 
-  /* Start's price: the planner's figure for these words (the server's), worded by the quote layer. The house workspace
-     pays in dollars, so its figure comes through the board-start quote, which words it in dollars. */
+  /* Start's price: the one figure a press approves for these words (use-home-start figureFor), worded by the quote
+     layer; the house workspace sees that same figure in dollars. */
   const words = picked ? pickedBrief(picked, s.draft.text) : s.draft.text;
   const figure = s.figureFor(words);
-  const dollars = session.rates.unit === "usd";
-  const houseQuote = useQuote(dollars && !spendOff ? { route: "board-start" } : null);
-  const quote: Quote = spendOff ? IDLE
-    : dollars ? houseQuote
-      : figure != null ? knownQuote(upTo(figure))
-        : s.thinking.state === "loading" ? LOADING
-          : { state: "error", message: s.thinking.state === "error" ? s.thinking.message : s.thinking.state === "off" ? "Atomik isn't on for this workspace yet." : "Atomik's thinking can't be priced right now." };
+  const quote = startQuote({ spendOff: Boolean(spendOff), figure, thinking: s.thinking, dollars: session.rates.unit === "usd", creditUsd: creditRate(session.rates.creditUsd) });
 
   /* Attach: a brief (PDF or text) is read into the words; pictures and clips go with the new board as references. */
   const [note, setNote] = useState<{ tone: "note" | "problem"; text: string } | null>(null);
