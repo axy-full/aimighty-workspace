@@ -2,6 +2,7 @@ import { db, ready } from "../db";
 import { platformDb, platformReady } from "../platform";
 import { cached, putCache } from "../cache";
 import { samplesByModel, typicalTable, type TypicalTimesReply } from "./typicalTimes";
+import { engineMock } from "../mock";
 
 /**
  * Typical render times from real job history (redesign plan, decision 9), for
@@ -31,7 +32,7 @@ export const METER_WINDOW = 20_000;
 export const WORKSPACE_LIMIT = 2_000;
 /** How long an answer is reused. A local mock server (ENGINE_MOCK=1) reads afresh every time, so its specs see their own rows. */
 export const TYPICAL_TTL_MS = 5 * 60_000;
-const ttl = () => (process.env.ENGINE_MOCK === "1" ? 0 : TYPICAL_TTL_MS);
+const ttl = () => (engineMock() ? 0 : TYPICAL_TTL_MS);
 const KEY = "v12:typical-times";
 
 let platformMemo: { at: number; samples: Map<string, number[]> } | null = null;
