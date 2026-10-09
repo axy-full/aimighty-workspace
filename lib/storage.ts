@@ -169,7 +169,10 @@ async function storeVideoShared(genId: string, sourceUrl: string, options: Store
   /* Past its deadline a caller may neither start a save nor join one: a
      running save can last a whole transfer more, which would carry this
      caller (the heartbeat, say) past its route's ceiling. */
-  if (options.deadlineAt != null && options.deadlineAt <= Date.now()) throw new TransferQueueTimeoutError(0, true);
+  if (options.deadlineAt != null && options.deadlineAt <= Date.now()) {
+    logVideoTransfer(genId, "queue_timeout", { queueWaitMs: 0, pastDeadline: true });
+    throw new TransferQueueTimeoutError(0, true);
+  }
   const key = videoPath(genId);
   const running = savesInFlight.get(key);
   if (running) {
@@ -186,6 +189,12 @@ async function storeVideoShared(genId: string, sourceUrl: string, options: Store
   savesInFlight.set(key, saving);
   try { return await saving; }
   finally { if (savesInFlight.get(key) === saving) savesInFlight.delete(key); }
+}
+
+/** One storage.video_transfer line; logging never changes a save's outcome. */
+function logVideoTransfer(genId: string, outcome: string, fields: Record<string, unknown>): void {
+  try { console.info(JSON.stringify({ level: "info", event: "storage.video_transfer", genId, outcome, ...fields })); }
+  catch { /* a log line is not worth a save */ }
 }
 
 const isTransferQueueTimeout = (error: unknown): boolean =>
@@ -220,10 +229,9 @@ async function saveVideo(genId: string, sourceUrl: string, options: StoreVideoOp
   const limiter = transferLimiter();
   const queued = Date.now();
   let queuedFor: number | undefined;
-  const log = (outcome: string, extra: Record<string, unknown> = {}) => console.info(JSON.stringify({
-    level: "info", event: "storage.video_transfer", genId, outcome, queueWaitMs: queuedFor ?? Date.now() - queued,
-    limit: limiter.limit, active: limiter.active, waiting: limiter.waiting, ...extra,
-  }));
+  const log = (outcome: string, extra: Record<string, unknown> = {}) => logVideoTransfer(genId, outcome, {
+    queueWaitMs: queuedFor ?? Date.now() - queued, limit: limiter.limit, active: limiter.active, waiting: limiter.waiting, ...extra,
+  });
   let release: () => void;
   try {
     release = await limiter.acquire({
@@ -242,7 +250,7 @@ async function saveVideo(genId: string, sourceUrl: string, options: StoreVideoOp
     log("stored", { bytes: saved.bytes, transferMs: Date.now() - started });
     return saved;
   } catch (error) {
-    log("failed", { transferMs: Date.now() - started, error: (error as Error).message?.slice(0, 200) });
+    log("failed", { transferMs: Date.now() - started, error: String((error as Error)?.message ?? error).slice(0, 200) });
     throw error;
   } finally { release(); }
 }

@@ -228,6 +228,12 @@ test("every transfer logs its queue wait, outcome and slot use", async () => {
   expect(byId["stream-log-a"].queueWaitMs as number).toBeLessThan(100);
   expect(byId["stream-log-d"]).toMatchObject({ outcome: "failed" });
   expect(lines).toHaveLength(4);
+  // A save refused for being past its deadline also leaves a line.
+  const late: Record<string, unknown>[] = [];
+  console.info = (line: unknown) => { try { late.push(JSON.parse(String(line))); } catch { /* not ours */ } };
+  try { await expect(storage.storeVideo("stream-log-e", "http://127.0.0.1:9/never", { deadlineAt: Date.now() - 1 })).rejects.toThrow(/too little time/); }
+  finally { console.info = original; }
+  expect(late).toEqual([expect.objectContaining({ event: "storage.video_transfer", genId: "stream-log-e", outcome: "queue_timeout", pastDeadline: true })]);
 });
 
 test("a save asked to start past its queue deadline makes no request", async () => {
