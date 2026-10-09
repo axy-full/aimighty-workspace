@@ -1,5 +1,6 @@
 import { isHouseWorkspace } from "./houseWorkspace";
 import { newInterfaceOn } from "./newInterface";
+import { engineMock } from "./mock";
 import { readSite } from "./site/settings.server";
 
 /* The list, held for 10 s per process (as the platform layer is), so the shell and /api/me don't each add a read. */
@@ -7,6 +8,8 @@ const HOLD_MS = 10_000;
 let held: { at: number; ids: Promise<string[]> } | null = null;
 
 function listed(): Promise<string[]> {
+  /* A local mock server (the browser specs) reads afresh, so a workspace a spec has just listed sees the switch at once. */
+  if (engineMock()) return readSite().then((s) => s.newInterfaceWorkspaces, () => []);
   if (!held || Date.now() - held.at > HOLD_MS) held = { at: Date.now(), ids: readSite().then((s) => s.newInterfaceWorkspaces, () => []) };
   return held.ids;
 }
