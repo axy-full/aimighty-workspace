@@ -106,10 +106,18 @@ function assertWorkspaceKey(key: string) {
     own the heartbeat's window. The budget covers the whole stream, download
     and upload together, since they now happen at once. */
 export const PROVIDER_VIDEO_TIMEOUT_MS = 120_000;
-/** The longest a save waits for a transfer slot. With the two-minute
-    transfer this stays inside the 180 s store lease (lib/jobs.ts), so a
-    waiting save never outlives the lease that keeps others from repeating it. */
-export const PROVIDER_VIDEO_QUEUE_WAIT_MS = 45_000;
+/** The longest a save waits for a transfer slot by default. 40 s of waiting,
+    the two-minute transfer and R2's 20 s multipart abort add up to the 180 s
+    store lease (lib/jobs.ts), so a waiting save never outlives the lease that
+    keeps another poller from repeating it. */
+export const PROVIDER_VIDEO_QUEUE_WAIT_MS = 40_000;
+/** For a save run inside a person's request (a job poll, the usage page):
+    a busy store means skip, and the next poll tries again. */
+export const REQUEST_PATH_QUEUE_WAIT_MS = 5_000;
+/** The queue deadline for work with an absolute deadline (the heartbeat's
+    admission budget): a transfer may only start while a whole transfer still
+    fits before it. */
+export const queueDeadlineFor = (deadlineAt: number): number => deadlineAt - PROVIDER_VIDEO_TIMEOUT_MS;
 export const DEFAULT_MAX_PROVIDER_VIDEO_BYTES = 1024 * 1024 * 1024;
 
 export function maxProviderVideoBytes(env: Record<string, string | undefined> = process.env): number {
@@ -129,7 +137,8 @@ export class ProviderFileTooLargeError extends Error {
 export type StoreVideoOptions = {
   /** Cancels a waiting or running transfer; the caller's reason is rethrown. */
   signal?: AbortSignal;
-  /** Absolute epoch ms: waiting for a transfer slot never runs past it. */
+  /** Absolute epoch ms: no transfer starts after it, and waiting for a slot
+   *  never runs past it (see queueDeadlineFor). */
   deadlineAt?: number;
   /** Overrides PROVIDER_VIDEO_TIMEOUT_MS (tests, or a caller with less time). */
   timeoutMs?: number;
@@ -142,8 +151,9 @@ export type StoreVideoOptions = {
  *
  * Concurrency: at most STORAGE_TRANSFER_CONCURRENCY (default 4) of these run
  * per process (lib/storage/transfers.ts); the rest wait, for at most
- * `maxQueueMs` (45 s), `deadlineAt` or until `signal` aborts, whichever is
- * first, and then fail with TransferQueueTimeoutError without starting. The
+ * `maxQueueMs` (40 s by default, 5 s on request paths), until `deadlineAt`
+ * or until `signal` aborts, whichever is first, and then fail with
+ * TransferQueueTimeoutError without starting. The
  * callers treat that like any failed save: the row keeps no stored_url and
  * the next poll or heartbeat tries again.
  */

@@ -7,7 +7,7 @@ import { reconcileGenjutsuVideo } from "./genjutsuVideo";
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
-import { storeVideo } from "./storage";
+import { queueDeadlineFor, REQUEST_PATH_QUEUE_WAIT_MS, storeVideo, type StoreVideoOptions } from "./storage";
 import { inspectOriginalVideo } from "./videoMetadata.server";
 import { costUsd, isSoulIdentityModel } from "./models";
 import { draftExpiresAt, draftSentAt, isDraft } from "./draftFinal";
@@ -413,8 +413,12 @@ function collectionAbandoned(run: StillCollection | undefined, at: number): bool
  */
 export async function syncGeneration(
   gen: Generation,
-  options: { strict?: boolean } = {},
+  /** `store` bounds the wait for a storage transfer slot (lib/storage.ts
+   *  storeVideo); `requestPath` is a person's request waiting on the answer:
+   *  a busy store skips the save for the next poll. */
+  options: { strict?: boolean; store?: StoreVideoOptions; requestPath?: boolean } = {},
 ): Promise<Generation> {
+  if (options.requestPath) options = { ...options, store: { maxQueueMs: REQUEST_PATH_QUEUE_WAIT_MS, ...options.store } };
   if (gen.status === "succeeded" && gen.provider === "higgsfield" && (isConsumerVideoModel(gen.model) || isConsumerOriginalParams(gen.params)) && gen.storedUrl && await hasRetainedConsumerOriginal(gen.id)) return gen;
 return await withRecoveryJob(requireTenant().id, gen.id, async () => {
 
@@ -507,7 +511,7 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
         storeLease = lease;
         const storeStart = now();
         try {
-          const put = await storeVideo(gen.id, task.videoUrl);
+          const put = await storeVideo(gen.id, task.videoUrl, options.store);
           storedUrl = put.url;
           storedBytes = put.bytes;
           storeMs = now() - storeStart;
@@ -720,7 +724,7 @@ export async function hasActiveGenerations(): Promise<boolean> {
  * old version ran a write plus a wide scan on every poll from every open tab,
  * so a workspace that was merely *open* paid for reconciliation forever.
  */
-export async function syncActive(limit = 12): Promise<void> {
+export async function syncActive(limit = 12, options: { store?: StoreVideoOptions; requestPath?: boolean } = {}): Promise<void> {
   await ready();
   await syncCreditReceipts();
   const rs = await db().execute({
@@ -729,7 +733,7 @@ export async function syncActive(limit = 12): Promise<void> {
     args: [limit],
   });
   if (!rs.rows.length) return;
-  await inChunks(rows(rs), 6, (r) => syncGeneration(rowToGeneration(r)));
+  await inChunks(rows(rs), 6, (r) => syncGeneration(rowToGeneration(r), options));
 }
 
 /**
@@ -922,7 +926,8 @@ export async function syncPending(
             await deliverGenerationSettlement(gen.id);
             return;
           }
-          await syncGeneration(gen, { strict: true });
+          // A save starts only while a whole transfer still fits before the run's deadline.
+          await syncGeneration(gen, { strict: true, ...(options.deadlineAt != null ? { store: { deadlineAt: queueDeadlineFor(options.deadlineAt) } } : {}) });
         }),
     );
     results.attempted += batch.length;

@@ -45,7 +45,7 @@ export const GET = withTenant(async function GET(req: Request, { params }: Ctx) 
   // Drag resolution only needs persisted metadata. It must not poll a provider,
   // copy a master or advance accounting merely because someone selected a take.
   const synced = new URL(req.url).searchParams.get("sync") === "0"
-    ? gen : await syncGeneration(gen);
+    ? gen : await syncGeneration(gen, { requestPath: true }); // a busy store: the next poll saves it
   const [generation] = await withLedgerCharges([synced]);
   return NextResponse.json({ generation }, {
     headers: { "Cache-Control": "private, no-store" },

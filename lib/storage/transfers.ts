@@ -8,10 +8,12 @@
  * default 4) the rest wait their turn here instead.
  *
  * Waiting is never silent and never longer than the caller can afford: every
- * wait is bounded by `maxWaitMs`, by an absolute `deadlineAt` and by an abort
- * `signal`, whichever comes first, and ends in a TransferQueueTimeoutError
- * (or the signal's own reason). A caller that gets one has not started a
- * transfer and can retry on its next pass, exactly as after a failed save.
+ * wait is bounded by `maxWaitMs`, by an absolute `deadlineAt` (the last moment
+ * the caller can start a transfer; past it even a free slot is refused) and
+ * by an abort `signal`, whichever comes first, and ends in a
+ * TransferQueueTimeoutError (or the signal's own reason). A caller that gets
+ * one has not started a transfer and can retry on its next pass, exactly as
+ * after a failed save.
  */
 
 export const DEFAULT_TRANSFER_CONCURRENCY = 4;
@@ -28,8 +30,10 @@ export function transferConcurrency(env: Record<string, string | undefined> = pr
 
 export class TransferQueueTimeoutError extends Error {
   readonly code = "TRANSFER_QUEUE_TIMEOUT";
-  constructor(waitedMs: number) {
-    super(`Storage is busy with other transfers; this one waited ${Math.round(waitedMs / 1000)}s and will be retried on the next pass.`);
+  constructor(waitedMs: number, pastDeadline = false) {
+    super(pastDeadline
+      ? "Storage is busy: too little time is left to finish this transfer; it will be retried on the next pass."
+      : `Storage is busy with other transfers; this one waited ${Math.round(waitedMs / 1000)}s and will be retried on the next pass.`);
     this.name = "TransferQueueTimeoutError";
   }
 }
@@ -37,7 +41,8 @@ export class TransferQueueTimeoutError extends Error {
 export type TransferWaitOptions = {
   /** Longest wait for a slot, in ms. */
   maxWaitMs?: number;
-  /** Absolute epoch ms after which waiting is pointless for the caller. */
+  /** Absolute epoch ms after which the caller cannot afford to START a
+   *  transfer: no slot is granted after it, even a free one. */
   deadlineAt?: number;
   signal?: AbortSignal;
 };
@@ -75,6 +80,7 @@ export function createTransferLimiter(limit: number): TransferLimiter {
     acquire(options = {}) {
       const { signal } = options;
       if (signal?.aborted) return Promise.reject(signal.reason);
+      if (options.deadlineAt != null && options.deadlineAt <= Date.now()) return Promise.reject(new TransferQueueTimeoutError(0, true));
       if (active < limit && !queue.length) {
         active++;
         return Promise.resolve(releaser());
@@ -97,7 +103,7 @@ export function createTransferLimiter(limit: number): TransferLimiter {
           grant: () => { leave(); resolve(releaser()); },
         };
         queue.push(waiter);
-        if (waitMs != null) timer = setTimeout(() => { leave(); reject(new TransferQueueTimeoutError(Date.now() - started)); }, waitMs);
+        if (waitMs != null) timer = setTimeout(() => { leave(); reject(new TransferQueueTimeoutError(Date.now() - started, options.deadlineAt != null && Date.now() >= options.deadlineAt)); }, waitMs);
         signal?.addEventListener("abort", onAbort, { once: true });
       });
     },

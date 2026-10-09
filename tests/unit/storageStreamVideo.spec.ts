@@ -177,6 +177,16 @@ test("the fifth concurrent transfer waits for a slot, then completes", async () 
   for (let i = 0; i < 5; i++) expect(stored(`stream-queue-${i}`)?.sha256).toBe(generatedSha256(MiB + i));
 });
 
+test("a save asked to start past its queue deadline makes no request", async () => {
+  const storage = r2Storage();
+  const before = provider.requests;
+  await expect(storage.storeVideo("stream-late", provider.url(MiB), { deadlineAt: storage.queueDeadlineFor(Date.now() + 60_000) }))
+    .rejects.toThrow(/too little time is left/);
+  expect(provider.requests).toBe(before);
+  expect(stored("stream-late")).toBeNull();
+  expect(storage.PROVIDER_VIDEO_QUEUE_WAIT_MS + storage.PROVIDER_VIDEO_TIMEOUT_MS + 20_000).toBeLessThanOrEqual(180_000); // fits the store lease
+});
+
 test("concurrent saves of one take share one transfer and one slot", async () => {
   const storage = r2Storage({ STORAGE_TRANSFER_CONCURRENCY: "2" });
   const fresh = await startFakeProvider();
@@ -263,6 +273,9 @@ test("transfer limiter: FIFO slots, bounded waits, configured size", async () =>
   releaseC(); releaseD();
   expect(limiter.active).toBe(0);
   expect(limiter.waiting).toBe(0);
+  // Past its deadline a caller cannot finish a transfer: even a free slot is refused.
+  await expect(limiter.acquire({ deadlineAt: Date.now() - 1 })).rejects.toThrow(/too little time is left/);
+  expect(limiter.active).toBe(0);
 });
 
 test("small provider files are read whole only up to their cap", async () => {
