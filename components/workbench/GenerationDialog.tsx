@@ -26,6 +26,7 @@ import {
   type PendingGeneration,
 } from "@/lib/workbench/pending-generation";
 import { settlePendingGeneration } from "@/lib/workspace/generate-submit";
+import { SaveFailedError, saveMessage } from '@/lib/workbench/save-then-continue';
 
 type Model = {
   id: string;
@@ -70,7 +71,7 @@ export async function studioRequest<T>(
     .catch(() => ({ error: "Unable to read the server response." }));
   if (!res.ok)
     throw new StudioRequestError(
-      data.error || `Request failed (${res.status})`,
+      saveMessage(data.error || `Request failed (${res.status})`),
       res.status,
       data,
       res.headers.get("Idempotency-Status") === "complete",
@@ -267,7 +268,7 @@ function TakeDialog({
     if (!model?.marketing || pending || mapped) return;
     let active = true;
     void (async () => {
-      if (!(await callbacks.current.onSave())) throw new Error("Save this campaign before requesting its quote.");
+      if (!(await callbacks.current.onSave())) throw new SaveFailedError();
       if (!active) return;
       const value = await studioRequest<{ shotId: string; productionProjectId: string }>("/api/workbench/projects", {
         method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
@@ -338,7 +339,7 @@ function TakeDialog({
       /* Recover never spends. Let go, the node as it is now is priced afresh before anything can go. */
       if (pending) { onLetGo(settled.state === "lost" ? settled.reason : ""); return; }
       if (!(await onSave()))
-        throw new Error("Save your latest work before generating.");
+        throw new SaveFailedError();
       const mapping = await studioRequest<{
         shotId: string;
         productionProjectId: string;

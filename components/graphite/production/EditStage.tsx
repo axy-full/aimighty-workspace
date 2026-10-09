@@ -39,6 +39,7 @@ import { KIND_DOT } from "../icons";
 import { TranscribePanel } from "./TranscribePanel";
 import { useStageFacts } from "./use-stage-facts";
 import { useStageQuotes } from "./use-stage-quotes";
+import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
 
 const EDIT_LIMIT = 4000;
 type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null };
@@ -326,7 +327,7 @@ export function EditStage({ scope, projectId, items, onTimeline }: { scope: stri
   /* A take of a batch is named by its number too: the strip's siblings share one prompt. */
   const selectedBatch = entry ? entryBatch(entry) : undefined;
   const selectedTake = selectedBatch && typeof selectedBatch.batchId === "string" && isVariation(selectedBatch.variation) ? selectedBatch.variation : null;
-  const blocked = !entry ? "Choose a take." : !project.productionProjectId ? "Save the project first." : !instruction.trim() ? "Write what should change." : null;
+  const blocked = !entry ? "Choose a take." : !project.productionProjectId ? SAVING_NOW : !instruction.trim() ? "Write what should change." : null;
   const more = library.hasMore;
   const total = `${items.length.toLocaleString("en-US")}${more ? "+" : ""}`;
   const hint = view.skeletons ? "Reading this project…" : failed ? `${project.shots.length} in the cut`

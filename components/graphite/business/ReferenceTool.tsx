@@ -8,6 +8,8 @@ import { useWorkspace } from "@/lib/workspace/state";
 import { aboutCredits, type OwnPage } from "@/lib/shell/business-own";
 import { CardHead, Field, PicturePicker, Said, SaveLine, adoptEntry, briefOf, changeBrief, refreshLibrary, uploadToDraft, useLatest, useWork, type OwnEditor } from "./own-kit";
 import { useOwnAgent } from "./use-own-agent";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
+import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
 
 const ASK = "Analyze the visible beats, framing, inferred pacing and colors of this reference ad. Propose an original matching direction for my supplied product and brand. Distinguish sampled evidence from inference.";
 
@@ -77,7 +79,7 @@ export function ReferenceTool({ scope, editor, items, onOpen }: { scope: string;
   });
   const openReview = () => work.run("prepare", async () => {
     if (!selected) throw new Error("Choose the reference video first.");
-    if (!(await editor.ensureSaved())) throw new Error("Save this project before reviewing its reference.");
+    if (!(await editor.ensureSaved())) throw new SaveFailedError();
     assertReferenceAnalysisSource(latest.current, referenceAdBinding(latest.current, briefOf(latest.current).referenceAd)!);
     setDialog(true);
   });
@@ -91,7 +93,7 @@ export function ReferenceTool({ scope, editor, items, onOpen }: { scope: string;
       toast("The reviewed direction is on the reference. Video briefs in Format carry it.");
     } catch (cause) { work.setError(cause instanceof Error ? cause.message : "The direction could not be applied."); }
   };
-  const blocked = !selected ? "Choose the reference video first." : !saved ? "Save the project first: the review reads its saved brief." : !agent.data ? (agent.error ? "The agent’s runs could not be read. Try again below." : "Reading the agent’s runs…")
+  const blocked = !selected ? "Choose the reference video first." : !saved ? SAVING_NOW : !agent.data ? (agent.error ? "The agent’s runs could not be read. Try again below." : "Reading the agent’s runs…")
     : !agent.data.configured || !models.length ? "No priced thinking model that reads images is set up for this workspace. Ask an admin to add one in Workspace › Engines." : reviewing ? "A review is running." : null;
 
   return (

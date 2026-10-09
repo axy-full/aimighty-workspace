@@ -26,6 +26,7 @@ import { AgentBar, useAgentChoice } from "./AgentBar";
 import { useAgentRuns } from "./use-agent-runs";
 import { useStageFacts } from "./use-stage-facts";
 import { useStageQuotes } from "./use-stage-quotes";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 type Generation = { id: string; status: string; error?: string | null; failure?: TakeFailure | null };
 const DONE = new Set(["succeeded", "failed", "cancelled"]);
@@ -212,7 +213,7 @@ function BoardsBody({ editor, scope, onBeats, onRig }: { editor: ReturnType<type
     /* A new send replaces what the last attempt said. */
     setWorking((w) => ({ ...w, [shot.id]: "Sending…" })); setErrors((e) => ({ ...e, [shot.id]: "" }));
     try {
-      if (!(await editor.ensureSaved())) throw new Error("Save the project before rendering a frame.");
+      if (!(await editor.ensureSaved())) throw new SaveFailedError();
       const outcome = await dispatchGeneration({ scope, storageId: pendingGenerationKey(scope, p.id, `board-${shot.id}`), shown, request: { endpoint: "/api/generate", input } });
       if (outcome.state === "repriced") { pricing.reprice(quoteId, outcome.credits); setErrors((e) => ({ ...e, [shot.id]: outcome.reason })); return false; }
       if (outcome.state === "refused") { setErrors((e) => ({ ...e, [shot.id]: outcome.reason })); return false; }

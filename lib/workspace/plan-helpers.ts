@@ -4,6 +4,7 @@
  */
 
 import type { ApprovedQuote, NamedBody, PlanContext, QuotePart } from "./plan-types";
+import { saveMessage } from "../workbench/save-then-continue";
 
 export class PlanRequestError extends Error {
   constructor(
@@ -38,7 +39,7 @@ export async function call<T = Record<string, unknown>>(
   if (!response.ok || !data) {
     const text =
       data && typeof data.error === "string" && data.error
-        ? data.error
+        ? saveMessage(data.error)
         : `The request failed (${response.status}).`;
     throw new PlanRequestError(
       text,
