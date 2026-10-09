@@ -1,0 +1,51 @@
+/* The Library tray (design/particl-prototype-12 L77–L95; docs/redesign/inventory.md § 5.10). Tokens only. */
+.v12 .v12-lib {
+  position: fixed; left: 0; top: var(--gx-h-header); bottom: 0; width: var(--gx-w-tray); max-width: 100vw; z-index: 40;
+  background: var(--gx-root); border-right: 1px solid var(--gx-hair-strong); box-shadow: 12px 0 32px rgba(0, 0, 0, 0.55);
+  display: flex; flex-direction: column; overflow: hidden; font-family: var(--gx-font); color: var(--gx-text);
+}
+.v12 .v12-lib[data-on-board] { left: var(--gx-w-rail); }
+.v12 .v12-lib-head { padding: 14px 16px 10px; display: flex; align-items: center; justify-content: space-between; }
+.v12 .v12-lib-title { font-size: var(--gx-fs-panel); font-weight: 600; letter-spacing: -0.01em; }
+.v12 .v12-lib-head-acts { display: flex; align-items: center; gap: var(--gx-sp-8); }
+.v12 .v12-lib-expand { height: 24px; padding: 0 8px; border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-tab); background: transparent; color: var(--gx-text); font: inherit; font-size: var(--gx-fs-label); font-weight: 500; cursor: pointer; }
+.v12 .v12-lib-close { border: 0; background: transparent; color: var(--gx-text-muted); font-size: 16px; line-height: 1; padding: 2px 4px; cursor: pointer; }
+.v12 .v12-lib-search { padding: 0 12px 8px; display: flex; gap: var(--gx-sp-6); align-items: center; }
+.v12 .v12-lib-input { flex: 1; min-width: 0; height: var(--gx-h-input); background: var(--gx-input); border: 1px solid var(--gx-input-border); border-radius: var(--gx-r-btn); color: var(--gx-text); font: inherit; font-size: var(--gx-fs-meta); padding: 0 10px; }
+.v12 .v12-lib-input::placeholder { color: var(--gx-placeholder); }
+.v12 .v12-lib-input:focus { outline: none; border-color: var(--gx-accent); }
+.v12 .v12-lib-brand { flex: none; max-width: 140px; height: var(--gx-h-input); padding: 0 10px; border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-btn); background: transparent; color: var(--gx-text); font: inherit; font-size: var(--gx-fs-meta); font-weight: 500; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.v12 .v12-lib-brand-name { overflow: hidden; text-overflow: ellipsis; }
+.v12 .v12-lib-seg { margin: 0 12px 8px; }
+.v12 .v12-lib-seg .v12-seg { display: flex; width: 100%; }
+.v12 .v12-lib-seg .v12-seg-btn { flex: 1; }
+.v12 .v12-lib-chips { padding: 0 12px 10px; display: flex; gap: 4px; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+.v12 .v12-lib-chip { flex: none; height: var(--gx-h-filter); padding: 0 10px; border-radius: var(--gx-r-tab); border: 1px solid var(--gx-line-control); background: transparent; color: var(--gx-text); font: inherit; font-size: var(--gx-fs-label); font-weight: 500; white-space: nowrap; cursor: pointer; }
+.v12 .v12-lib-chip[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border-50); color: var(--gx-accent-text); }
+.v12 .v12-lib-grid { flex: 1; min-height: 0; overflow: auto; padding: 0 12px 12px; }
+.v12 .v12-lib-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: start; }
+.v12 .v12-lib-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.v12 .v12-lib-tile { border: 1px solid var(--gx-card-border); background: var(--gx-card); border-radius: var(--gx-r-btn); overflow: hidden; padding: 0; text-align: left; color: var(--gx-text); cursor: grab; width: 100%; font: inherit; display: block; }
+.v12 .v12-lib-tile:hover { border-color: var(--gx-hover-border); }
+.v12 .v12-lib-pic { display: block; background: var(--gx-sunken); position: relative; }
+/* The picture fills its box at the tile's aspect whatever its own size, so a still or a clip never leaves a band. */
+.v12 .v12-lib-pic > img, .v12 .v12-lib-pic > video { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; object-fit: cover; display: block; pointer-events: none; }
+.v12 .v12-lib-glyph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 20px; color: var(--gx-text-muted); }
+.v12 .v12-lib-badge { position: absolute; left: 6px; top: 6px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: var(--gx-r-tab); background: var(--gx-on-media-strong); font-size: var(--gx-fs-label); font-weight: 600; color: rgba(255, 255, 255, 0.85); }
+.v12 .v12-lib-badge[data-source="Generated"] { color: var(--gx-accent-text); }
+.v12 .v12-lib-cap { display: block; padding: 6px 8px 8px; }
+.v12 .v12-lib-name { display: block; font-size: var(--gx-fs-meta); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v12 .v12-lib-kind { display: block; font-size: var(--gx-fs-label); color: var(--gx-text-2); }
+.v12 .v12-lib-empty { margin: 8px 4px; font-size: var(--gx-fs-meta); color: var(--gx-text-2); line-height: 1.5; }
+.v12 .v12-lib-link { border: 0; background: transparent; padding: 0; color: var(--gx-accent-text); font: inherit; font-weight: 600; cursor: pointer; }
+.v12 .v12-lib-hint { padding: 10px 16px 66px; border-top: 1px solid var(--gx-hair); font-size: var(--gx-fs-label); line-height: 1.5; color: var(--gx-text-sec); }
+
+/* The bottom-left "Library L" button: beside the tray when it is open. */
+.v12 .v12-lib-btn {
+  position: fixed; left: 16px; bottom: 16px; z-index: 45; height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+  border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-panel, 10px); background: var(--gx-card); color: var(--gx-text);
+  font-family: var(--gx-font); font-size: var(--gx-fs-meta); font-weight: 500; box-shadow: var(--gx-shadow-float); cursor: pointer; transition: left var(--gx-t) var(--gx-ease);
+}
+/* On a board the button sits beside the board's rail, as the tray does (prototype blLeft: rail + 16). */
+.v12 .v12-lib-btn[data-on-board] { left: calc(var(--gx-w-rail) + 16px); }
+@media (prefers-reduced-motion: reduce) { .v12 .v12-lib-btn { transition: none; } }

@@ -43,6 +43,7 @@ import dynamic from "next/dynamic";
 /* The new interface's frame loads only for a workspace that has it (lib/newInterface.ts): customers never download it.
    SuitesApp draws nothing until the browser is there, so the frame's own chunk is the only wait, and only for them. */
 const V12Shell = dynamic(() => import("@/components/v12/V12Shell").then((m) => m.V12Shell));
+const LibraryTray = dynamic(() => import("@/components/v12/library/LibraryTray").then((m) => m.LibraryTray), { ssr: false });
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { SwitchingVeil } from "./SwitchingVeil";
@@ -424,7 +425,7 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
           /* A link to a take that cannot show it yet says what it is doing on a phone too: the phone's own screens draw nothing for it. */
           <div className="gx-screen gx-scroll" data-testid="screen" data-screen="link"><div className="gx-stage" data-testid="content">{linkCard}</div></div>
         ) : <PhoneMount ctx={screenCtx} page={phonePage} />) : v12 ? (
-          <V12Shell header={header}>{desktopBody}</V12Shell>
+          <V12Shell header={header}>{desktopBody}<LibraryTray project={project} projects={data.projects} library={library} /></V12Shell>
         ) : <>{header}{desktopBody}</>}
         {/* Make (README § 3.2): a panel over whatever is on screen, beside the Inspector's column when that is open. Its draft
             stays editable while the project list recovers ("Try again", never "Retry": that word is a take's own action). */}
