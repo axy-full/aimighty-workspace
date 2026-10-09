@@ -4,7 +4,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { uiWordsIn } from "../helpers/uiStrings";
 
 /**
- * One design: design/particl-graphite/ is the only design and app/graphite.css the only token set.
+ * One design: design/particl-prototype-12/ is the design (owner, 10 Oct 2026; docs/redesign-plan.md) and
+ * app/graphite.css the only token set. design/particl-graphite/ is the outgoing design: its files are deleted screen
+ * by screen as the redesign rebuilds them, so it may only shrink (OUTGOING below), never gain a file.
  * The inventory of what is still left of the older designs is docs/old-design-inventory.md; this
  * spec is the guard that keeps that inventory from growing.
  *
@@ -31,7 +33,37 @@ const INVENTORY = "docs/old-design-inventory.md";
 const TOKEN_SET = "app/graphite.css";
 const FONTS = "app/fonts.css";
 /* The same exemptions as the clean slate's guard: the design folder names what it replaced, and two documents are history. */
-const EXEMPT = ["design/particl-graphite/", "docs/handoff-diff.md", "docs/handover-2026-10-05.md"];
+const EXEMPT = ["design/particl-graphite/", "design/particl-prototype-12/", "docs/handoff-diff.md", "docs/handover-2026-10-05.md"];
+const DESIGN = "design/particl-prototype-12/";
+/* Every file the outgoing design had when the redesign began. A screen PR deletes the ones it replaces; none is added. */
+const OUTGOING = new Set([
+  "design/particl-graphite/Ads and Social frames.dc.html",
+  "design/particl-graphite/Atomik frames.dc.html",
+  "design/particl-graphite/CHANGES.txt",
+  "design/particl-graphite/Gaps A CHANGES.txt",
+  "design/particl-graphite/Gaps A README.txt",
+  "design/particl-graphite/Gaps A frames.dc.html",
+  "design/particl-graphite/Gaps B CHANGES.txt",
+  "design/particl-graphite/Gaps B README.txt",
+  "design/particl-graphite/Gaps B frames.dc.html",
+  "design/particl-graphite/Guest Home frames.dc.html",
+  "design/particl-graphite/Home and header options.dc.html",
+  "design/particl-graphite/Make frames.dc.html",
+  "design/particl-graphite/PROMPT.md",
+  "design/particl-graphite/Particl Suites.dc.html",
+  "design/particl-graphite/Phone frames.dc.html",
+  "design/particl-graphite/README.md",
+  "design/particl-graphite/Studio board frames.dc.html",
+  "design/particl-graphite/assets/README.txt",
+  "design/particl-graphite/assets/character.webp",
+  "design/particl-graphite/assets/environment.webp",
+  "design/particl-graphite/assets/hero.webp",
+  "design/particl-graphite/assets/vendor/babel.min.js",
+  "design/particl-graphite/assets/vendor/react-dom.production.min.js",
+  "design/particl-graphite/assets/vendor/react.production.min.js",
+  "design/particl-graphite/github.md",
+  "design/particl-graphite/support.js",
+]);
 /* UI text lives here (brief: components/, app/ and lib/shell/). */
 const UI_ROOTS = ["components/", "app/", "lib/shell/"];
 
@@ -119,16 +151,16 @@ test("(a) nothing the clean slate deleted comes back, and design/ holds one desi
   const back = files.filter((path) => TOMBSTONES.some((stone) => path === stone || (stone.endsWith("/") && path.startsWith(stone))));
   expect(back, "deleted by the clean slate, so they stay deleted").toEqual([]);
 
-  const otherDesigns = files.filter((path) => path.startsWith("design/") && !path.startsWith("design/particl-graphite/"));
-  expect(otherDesigns, "design/particl-graphite/ is the only design").toEqual([]);
+  const otherDesigns = files.filter((path) => path.startsWith("design/") && !path.startsWith(DESIGN) && !OUTGOING.has(path));
+  expect(otherDesigns, "design/particl-prototype-12/ is the design; design/particl-graphite/ only shrinks").toEqual([]);
 
   /* Round 1 of the guest Home is never committed, in any folder. */
   const roundOne = files.filter((path) => /(^|[/_ .-])round[-_ ]?1([/_ .-]|$)/i.test(path));
   expect(roundOne, "no file of an earlier design round").toEqual([]);
 
   /* A Claude Design export (.dc.html, support.js) belongs to the design folder only. */
-  const exports = files.filter((path) => /\.dc\.html$|(^|\/)support\.js$/.test(path) && !path.startsWith("design/particl-graphite/"));
-  expect(exports, "design exports live in design/particl-graphite/").toEqual([]);
+  const exports = files.filter((path) => /\.dc\.html$|(^|\/)support\.js$/.test(path) && !path.startsWith(DESIGN) && !OUTGOING.has(path));
+  expect(exports, "design exports live in design/particl-prototype-12/").toEqual([]);
 });
 
 /** The custom properties app/graphite.css defines. */
