@@ -7,7 +7,8 @@
 //
 // It shares a server with production, so it is careful by construction:
 // - run it through ~/ops/heavy.sh (nice 19, idle I/O); children inherit that;
-// - every load burst is at most 60 s;
+// - every load burst is at most 60 s (the optional big upload is one
+//   transfer, not a burst: it runs as long as 500 MiB takes, about 20 s here);
 // - before each burst it checks the 1-minute load average;
 // - during each burst it polls the production health URL every 2 s and
 //   aborts the burst when the p95 of the last 10 samples passes 1 s.
@@ -16,7 +17,7 @@
 // call is the anonymous GET of --prod-health.
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, readFile, readdir, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, writeFile, mkdir, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import http from "node:http";
 import { tmpdir } from "node:os";
@@ -65,9 +66,18 @@ function start(name, cmd, args, options) {
   const sink = [];
   child.stdout.on("data", (d) => sink.push(d)); child.stderr.on("data", (d) => sink.push(d));
   child.on("exit", (code, signal) => log("child-exit", { name, code, signal }));
+  child.on("error", (error) => { log("child-error", { name, error: String(error?.message ?? error) }); stopAll().finally(() => process.exit(1)); });
   child.logs = () => Buffer.concat(sink).toString();
   return child;
 }
+/* Never leave a server behind on a box that serves production: a failed start or a
+   signal to this harness stops every child and removes the data folder. */
+let dataDir = null;
+async function stopAll() {
+  await Promise.all(children.map((c) => stopChild(c, 10_000).catch(() => {})));
+  if (dataDir) await rm(dataDir, { recursive: true, force: true }).catch(() => {});
+}
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(sig, () => { log("signal", { sig }); stopAll().finally(() => process.exit(130)); });
 async function stopChild(child, graceMs = 60_000) {
   if (child.exitCode != null || child.signalCode != null) return { code: child.exitCode, signal: child.signalCode, ms: 0 };
   const t0 = Date.now();
@@ -140,13 +150,15 @@ async function preflight(label) {
 
 /* ---------- boot ---------- */
 const data = await mkdtemp(join(tmpdir(), "particl-scaleproof-"));
+dataDir = data;
 await mkdir(join(data, "tenants"), { recursive: true }); await mkdir(join(data, "s3"), { recursive: true });
 const S3_PORT = PORT + 1, INNGEST_PORT = PORT + 2;
-const fakeS3 = start("fake-s3", process.execPath, [resolve(opt["fake-s3"]), "--port", String(S3_PORT), "--dir", join(data, "s3")]);
+const helperEnv = { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR ?? tmpdir(), LANG: process.env.LANG ?? "C.UTF-8" };
+const fakeS3 = start("fake-s3", process.execPath, [resolve(opt["fake-s3"]), "--port", String(S3_PORT), "--dir", join(data, "s3")], { env: helperEnv });
 const scenarios = new Set(opt.scenarios.split(",").map((s) => s.trim()).filter(Boolean));
 const useInngest = Boolean(opt["inngest-cli"]);
 const inngest = useInngest
-  ? start("inngest", resolve(opt["inngest-cli"]), ["dev", "--no-discovery", "-u", `${BASE}/api/inngest`, "--port", String(INNGEST_PORT)])
+  ? start("inngest", resolve(opt["inngest-cli"]), ["dev", "--no-discovery", "--host", "127.0.0.1", "-u", `${BASE}/api/inngest`, "--port", String(INNGEST_PORT)], { env: helperEnv })
   : null;
 const env = {
   PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR ?? tmpdir(), LANG: process.env.LANG ?? "C.UTF-8",
@@ -354,6 +366,7 @@ try {
   results.shutdown = await stopChild(app, 300_000);
   if (inngest) await stopChild(inngest, 10_000);
   await stopChild(fakeS3, 10_000);
+  await rm(data, { recursive: true, force: true }).catch(() => {});
   results.finishedAt = new Date().toISOString();
   const file = join(out, `scale-proof-${MODE}${MODE === "cluster" ? opt.workers : ""}-${Date.now()}.json`);
   await writeFile(file, JSON.stringify(results, null, 2));
