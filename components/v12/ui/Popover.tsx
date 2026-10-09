@@ -25,14 +25,15 @@ export function useFocusReturn(open: boolean, panel: RefObject<HTMLElement | nul
  * A popover beside the control that opened it: on the overlay stack (Esc, outside click), drawn above the page and
  * kept on screen. Focus moves into it and comes back to the control when it closes.
  */
-export function Popover({ open, onClose, anchor, label, children, align = "start", side = "bottom", layer = "menu", role = "dialog", width, className, onKeyDown, autoFocus = true }: {
+export function Popover({ open, onClose, anchor, label, children, align = "start", side = "bottom", layer = "menu", role = "dialog", width, className, onKeyDown, autoFocus = true, testId }: {
   open: boolean;
   onClose: () => void;
   anchor: RefObject<HTMLElement | null>;
   label: string;
   children: ReactNode;
-  /** "start" lines it up with the control's start edge (menus); "center" centres it (popovers). */
-  align?: "start" | "center";
+  /** "start" lines it up with the control's start edge (menus), "end" with its end edge; "center" centres it (popovers). */
+  align?: "start" | "center" | "end";
+  testId?: string;
   side?: Side;
   layer?: OverlayLayer;
   role?: "dialog" | "menu";
@@ -57,7 +58,9 @@ export function Popover({ open, onClose, anchor, label, children, align = "start
       const rect = { left: a.left, top: a.top, width: a.width, height: a.height };
       const box = { width: b.width, height: b.height };
       const view = { width: window.innerWidth, height: window.innerHeight };
-      setAt(align === "start" && (side === "bottom" || side === "top") ? placeStart(rect, box, view) : place(rect, box, view, side));
+      if (align === "center" || side === "left" || side === "right") { setAt(place(rect, box, view, side)); return; }
+      const start = placeStart(rect, box, view);
+      setAt(align === "end" ? { ...start, left: Math.round(Math.max(8, Math.min(rect.left + rect.width - box.width, view.width - 8 - box.width))) } : start);
     };
     measure();
     window.addEventListener("resize", measure);
@@ -79,7 +82,7 @@ export function Popover({ open, onClose, anchor, label, children, align = "start
   if (width) style.width = width;
   return createPortal(
     <div ref={panel} role={role} aria-label={label} tabIndex={-1} className={["v12-pop", className].filter(Boolean).join(" ")}
-      data-side={at?.side ?? side} style={style} onKeyDown={onKeyDown}>
+      data-side={at?.side ?? side} data-testid={testId} style={style} onKeyDown={onKeyDown}>
       {children}
     </div>,
     root,
@@ -87,22 +90,25 @@ export function Popover({ open, onClose, anchor, label, children, align = "start
 }
 
 export type MenuItem =
-  | { id: string; label: string; shortcut?: string; onSelect: () => void; disabled?: boolean; tone?: "danger"; hint?: ReactNode }
+  | { id: string; label: string; shortcut?: string; onSelect: () => void; disabled?: boolean; tone?: "danger" | "quiet"; hint?: ReactNode; testId?: string }
   | { separator: true; id: string };
 
 /**
  * A menu: a popover of commands (role menu). ↑/↓, Home and End move, Enter or Space runs one and closes the menu, Tab
  * and Esc close it. A shortcut shown here is one that works (docs/redesign/inventory.md § 4.2: none drawn unwired).
  */
-export function Menu({ open, onClose, anchor, label, items, side = "bottom", align = "start", width = 220 }: {
+export function Menu({ open, onClose, anchor, label, items, side = "bottom", align = "start", width = 220, head, testId }: {
   open: boolean;
   onClose: () => void;
   anchor: RefObject<HTMLElement | null>;
   label: string;
   items: readonly MenuItem[];
   side?: Side;
-  align?: "start" | "center";
+  align?: "start" | "center" | "end";
   width?: number;
+  /** Drawn above the items (the account menu's balance row); its controls are reached with Tab, the items with ↑/↓. */
+  head?: ReactNode;
+  testId?: string;
 }) {
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const all = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])'));
@@ -116,9 +122,10 @@ export function Menu({ open, onClose, anchor, label, items, side = "bottom", ali
     else if (event.key === "Tab") { event.preventDefault(); event.stopPropagation(); onClose(); anchor.current?.focus(); }
   };
   return (
-    <Popover open={open} onClose={onClose} anchor={anchor} label={label} role="menu" side={side} align={align} width={width} onKeyDown={onKeyDown} className="v12-menu">
+    <Popover open={open} onClose={onClose} anchor={anchor} label={label} role="menu" side={side} align={align} width={width} onKeyDown={onKeyDown} className="v12-menu" testId={testId}>
+      {head}
       {items.map((item) => "separator" in item ? <div key={item.id} role="separator" className="v12-menu-sep" /> : (
-        <button key={item.id} type="button" role="menuitem" className="v12-menu-item" data-tone={item.tone} aria-disabled={item.disabled || undefined}
+        <button key={item.id} type="button" role="menuitem" className="v12-menu-item" data-tone={item.tone} data-testid={item.testId} aria-disabled={item.disabled || undefined}
           tabIndex={-1} onClick={() => { if (item.disabled) return; onClose(); item.onSelect(); }}>
           <span className="v12-menu-label">{item.label}</span>
           {item.hint ? <span className="v12-menu-hint">{item.hint}</span> : null}
