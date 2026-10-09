@@ -28,10 +28,11 @@ function desk(count: number): AtRiskDesk {
     model: i === 2 ? "fal-ai/kling-video/v3/standard/text-to-video" : "dreamina-seedance-2-5-260628",
     since: at - (50 - i * 20) * HOUR,
     billed: i !== 2,
+    lost: i === 0,
     lastError: i === 1 ? null : "storage refused the upload (503): the bucket answered SlowDown after three attempts",
     alertedAt: at - HOUR,
   }));
-  return { at, count, oldestSince: count ? at - 50 * HOUR : null, lastMailAt: count ? at - HOUR : null, renders };
+  return { at, count, lost: count ? 1 : 0, oldestSince: count ? at - 50 * HOUR : null, lastMailAt: count ? at - HOUR : null, renders };
 }
 
 /** The platform's owner, as the local server names it (SUPER_ADMIN_EMAIL): signed in, or signed up once through an invitation. */
@@ -109,10 +110,10 @@ test("the platform desk's Renders at risk card: the line, the list, empty and fa
   await expect(card).toBeVisible();
   await card.scrollIntoViewIfNeeded();
   await expect(card.getByText("Renders at risk", { exact: true })).toBeVisible();
-  await expect(card.getByTestId("renders-at-risk-line")).toHaveText("24 renders with no stored copy · oldest 2 d 2 h");
+  await expect(card.getByTestId("renders-at-risk-line")).toHaveText("24 renders with no stored copy · 1 lost · oldest 2 d 2 h");
   /* The list: each render readable on the screen, the fal one marked not billed, the count of the rest. */
   const items = card.locator("span.rail-help");
-  await expect(items.filter({ hasText: "Harbour Films International Productions Limited · gen_0_" })).toContainText("byteplus dreamina-seedance-2-5-260628 · 2 d 2 h · last save error: storage refused");
+  await expect(items.filter({ hasText: "Harbour Films International Productions Limited · gen_0_" })).toContainText("byteplus dreamina-seedance-2-5-260628 · 2 d 2 h · lost: no longer retried · last save error: storage refused");
   await expect(items.filter({ hasText: "Studio 2" })).toContainText("fal fal-ai/kling-video/v3/standard/text-to-video · 10 h · provider finished, not billed yet");
   await expect(card.getByText("…and 21 more.")).toBeVisible();
   const width = page.viewportSize()!.width;
@@ -146,7 +147,7 @@ test("the platform desk's Renders at risk card: the line, the list, empty and fa
   expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
   reply = { status: 200, body: desk(1) };
   await again.click();
-  await expect(page.getByTestId("renders-at-risk-line")).toHaveText("1 render with no stored copy · oldest 2 d 2 h");
+  await expect(page.getByTestId("renders-at-risk-line")).toHaveText("1 render with no stored copy · 1 lost · oldest 2 d 2 h");
   expect(errors).toEqual([]);
   await page.unroute(ROUTE);
 

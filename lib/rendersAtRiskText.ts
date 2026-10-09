@@ -13,6 +13,8 @@ export type AtRiskRender = {
   since: number;
   /** False for a take the provider finished whose save failed before it was billed (it is still running). */
   billed: boolean;
+  /** Past the 3-day window in which the cron tries to save it (lib/rendersAtRisk.ts RETRY_WINDOW_MS). */
+  lost: boolean;
   lastError: string | null;
   alertedAt: number | null;
 };
@@ -21,6 +23,8 @@ export type AtRiskDesk = {
   /** The server's clock when the desk was read: ages are measured from it. */
   at: number;
   count: number;
+  /** How many of `count` are past the 3-day window. */
+  lost: number;
   oldestSince: number | null;
   /** When the platform owner was last emailed about the renders now open. */
   lastMailAt: number | null;
@@ -40,15 +44,25 @@ export function ageText(ms: number): string {
 
 const plural = (n: number) => `${n} render${n === 1 ? "" : "s"}`;
 
-/** The admin line: how many, and how old the oldest is. */
-export function atRiskLine(desk: Pick<AtRiskDesk, "count" | "oldestSince">, at = Date.now()): string {
+/** The admin line: how many, how many of them are lost, and how old the oldest is. */
+export function atRiskLine(desk: Pick<AtRiskDesk, "count" | "lost" | "oldestSince">, at = Date.now()): string {
   if (!desk.count || desk.oldestSince == null) return "No render is waiting for a stored copy.";
-  return `${plural(desk.count)} with no stored copy · oldest ${ageText(at - desk.oldestSince)}`;
+  const lost = desk.lost ? ` · ${desk.lost} lost` : "";
+  return `${plural(desk.count)} with no stored copy${lost} · oldest ${ageText(at - desk.oldestSince)}`;
 }
 
-/** One render, as the email and the desk list it. Ids, names and timings only: no link, no prompt. */
+/** What is true of a render beyond its ids: not billed yet, and lost (past its window). */
+export function atRiskState(r: Pick<AtRiskRender, "billed" | "lost">): string {
+  const parts: string[] = [];
+  if (!r.billed) parts.push("provider finished, not billed yet");
+  if (r.lost) parts.push(r.billed
+    ? "lost: no longer retried"
+    : "lost: 3 days since the first failed save; tried until the provider no longer has the job");
+  return parts.map((p) => ` · ${p}`).join("");
+}
+
+/** One render, as the email lists it. Ids, names and timings only: no link, no prompt. */
 export function atRiskItem(r: AtRiskRender, at = Date.now()): string {
-  const state = r.billed ? "" : " · provider finished, not billed yet";
   const error = r.lastError ? ` · last save error: ${r.lastError}` : "";
-  return `${r.workspace} (${r.workspaceId}) · ${r.generationId} · ${r.provider} ${r.model} · ${ageText(at - r.since)}${state}${error}`;
+  return `${r.workspace} (${r.workspaceId}) · ${r.generationId} · ${r.provider} ${r.model} · ${ageText(at - r.since)}${atRiskState(r)}${error}`;
 }

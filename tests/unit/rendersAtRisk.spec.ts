@@ -87,7 +87,7 @@ async function put(id: string, o: { status: string; settledAt?: number; createdA
 
 const visit = async (id: string, at: number) => inTenant(id, async () => (await import("../../lib/rendersAtRisk")).recordRendersAtRisk({ at }));
 const alert = async (at: number) => (await import("../../lib/rendersAtRisk")).alertRendersAtRisk({ at });
-const desk = async () => (await import("../../lib/rendersAtRisk")).rendersAtRiskDesk();
+const desk = async (at?: number) => (await import("../../lib/rendersAtRisk")).rendersAtRiskDesk({ at });
 
 /* Well in the past, so the cron test (on the real clock) never re-reads these as new. */
 const T0 = Date.UTC(2026, 0, 5, 12, 0, 0);
@@ -102,6 +102,12 @@ test("none at risk: nothing recorded, no email", async () => {
   expect(await alert(T0)).toEqual({ open: 0, sent: null });
   expect(sent).toHaveLength(0);
   expect(await desk()).toMatchObject({ count: 0, oldestSince: null, renders: [] });
+  /* The partial index the check reads by is in the workspace's database. */
+  await inTenant("ws_quiet", async () => {
+    const { db } = await import("../../lib/db");
+    const index = (await db().execute("SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_gen_unstored'")).rows[0];
+    expect(String(index?.sql)).toMatch(/ON generations\(created_at\) WHERE stored_url IS NULL AND deleted=0/);
+  });
 });
 
 test("one email per newly at-risk set, none 10 minutes later, one more for a new render, a stored one drops out, a daily reminder", async () => {
@@ -134,8 +140,19 @@ test("one email per newly at-risk set, none 10 minutes later, one more for a new
     expect(body).not.toContain("g_recent");
   }
 
-  /* The next sweep, 10 minutes on: the same set, no email. */
+  /* The next sweep, 10 minutes on: the same set, no row written, no email. */
+  /* A counter the test adds to its own temporary database: every row written to the table. */
+  const { platformDb } = await import("../../lib/platform");
+  await platformDb().batch([
+    "CREATE TABLE IF NOT EXISTS test_row_writes(n INTEGER NOT NULL)",
+    "INSERT INTO test_row_writes(n) SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM test_row_writes)",
+    "CREATE TRIGGER IF NOT EXISTS test_at_risk_insert AFTER INSERT ON render_at_risk BEGIN UPDATE test_row_writes SET n=n+1; END",
+    "CREATE TRIGGER IF NOT EXISTS test_at_risk_update AFTER UPDATE ON render_at_risk BEGIN UPDATE test_row_writes SET n=n+1; END",
+  ], "write");
+  const writes = async () => Number((await platformDb().execute("SELECT n FROM test_row_writes")).rows[0].n);
+  const written = await writes();
   expect(await visit("ws_a", T0 + 10 * MIN)).toEqual({ open: 1 });
+  expect(await writes()).toBe(written);
   expect(await alert(T0 + 10 * MIN)).toEqual({ open: 1, sent: null });
   expect(sent).toHaveLength(1);
 
@@ -151,7 +168,7 @@ test("one email per newly at-risk set, none 10 minutes later, one more for a new
 
   /* The admin line: the count and the oldest. */
   const { atRiskLine } = await import("../../lib/rendersAtRiskText");
-  const two = await desk();
+  const two = await desk(T0 + 60 * MIN);
   expect(two).toMatchObject({ count: 2, oldestSince: T0 - 2 * HOUR, lastMailAt: T0 + 40 * MIN });
   expect(two.renders.map((r) => r.generationId)).toEqual(["g_old", "g_recent"]);
   expect(JSON.stringify(two)).not.toMatch(/https?:\/\/|SECRET|harbour at dawn/);
@@ -163,7 +180,7 @@ test("one email per newly at-risk set, none 10 minutes later, one more for a new
     await db().execute("UPDATE generations SET stored_url='ws/generations/g_old.mp4' WHERE id='g_old'");
   });
   expect(await visit("ws_a", T0 + 60 * MIN)).toEqual({ open: 1 });
-  expect(await desk()).toMatchObject({ count: 1, oldestSince: T0 - 30 * MIN });
+  expect(await desk(T0 + 60 * MIN)).toMatchObject({ count: 1, lost: 0, oldestSince: T0 - 30 * MIN });
   expect(await alert(T0 + 60 * MIN)).toEqual({ open: 1, sent: null });
   expect(sent).toHaveLength(2);
 
@@ -186,7 +203,7 @@ test("one email per newly at-risk set, none 10 minutes later, one more for a new
   expect(await visit("ws_a", T0 + 3 * 24 * HOUR)).toEqual({ open: 0 });
   expect(await alert(T0 + 3 * 24 * HOUR)).toEqual({ open: 0, sent: null });
   expect(sent).toHaveLength(3);
-  expect(atRiskLine(await desk(), T0 + 3 * 24 * HOUR)).toBe("No render is waiting for a stored copy.");
+  expect(atRiskLine(await desk(T0 + 3 * 24 * HOUR), T0 + 3 * 24 * HOUR)).toBe("No render is waiting for a stored copy.");
 });
 
 test("a provider-finished fal take whose save failed is at risk an hour after the first failure, marked not billed; the note keeps no link", async () => {
@@ -206,7 +223,7 @@ test("a provider-finished fal take whose save failed is at risk an hour after th
   });
   expect(await visit("ws_fal", T0 + 11 * HOUR + 30 * MIN)).toEqual({ open: 0 });
   expect(await visit("ws_fal", T0 + 12 * HOUR)).toEqual({ open: 1 });
-  expect((await desk()).renders).toEqual([expect.objectContaining({ generationId: "f_failed_save", provider: "fal", billed: false, since: T0 + 11 * HOUR, lastError: "storage refused (503)" })]);
+  expect((await desk(T0 + 12 * HOUR)).renders).toEqual([expect.objectContaining({ lost: false, generationId: "f_failed_save", provider: "fal", billed: false, since: T0 + 11 * HOUR, lastError: "storage refused (503)" })]);
   expect(await alert(T0 + 12 * HOUR)).toEqual({ open: 1, sent: "new" });
   expect(sent).toHaveLength(before + 1);
   expect(sent.at(-1)!.text).toContain("Fal Studio (ws_fal) · f_failed_save · fal seedance-test · 1 h · provider finished, not billed yet · last save error: storage refused (503)");
@@ -217,6 +234,130 @@ test("a provider-finished fal take whose save failed is at risk an hour after th
     await db().execute("UPDATE generations SET status='succeeded', stored_url='ws/generations/f_failed_save.mp4' WHERE id='f_failed_save'");
   });
   expect(await visit("ws_fal", T0 + 13 * HOUR)).toEqual({ open: 0 });
+});
+
+const DAY = 24 * HOUR;
+const retire = async (id: string, at: number) => {
+  const { platformDb } = await import("../../lib/platform");
+  await platformDb().execute({ sql: "UPDATE workspaces SET deleted_at=? WHERE id=?", args: [at, id] });
+  expect(await alert(at)).toMatchObject({ sent: null });
+};
+
+test("first run with historic renders: one email, the lost ones labelled, no reminder about them; reminders stop when only lost ones remain", async () => {
+  const TA = T0 + 20 * DAY;
+  await workspace("ws_hist", "Archive Studio");
+  await inTenant("ws_hist", async () => {
+    await put("h_lost_10d", { status: "succeeded", createdAt: TA - 10 * DAY, settledAt: TA - 10 * DAY });
+    await put("h_lost_5d", { status: "succeeded", createdAt: TA - 5 * DAY, settledAt: TA - 5 * DAY });
+    await put("h_window", { status: "succeeded", createdAt: TA - 2 * HOUR, settledAt: TA - 90 * MIN });
+  });
+  const before = sent.length;
+  expect(await visit("ws_hist", TA)).toEqual({ open: 3 });
+  expect(await alert(TA)).toEqual({ open: 3, sent: "new" });
+  expect(sent).toHaveLength(before + 1);
+  const first = sent.at(-1)!;
+  expect(first.subject).toBe("Particl: 3 renders with no stored copy");
+  const line = (id: string, text: string) => text.split("\n").find((l) => l.includes(id)) ?? "";
+  expect(line("h_lost_10d", first.text)).toContain("· 10 d · lost: no longer retried");
+  expect(line("h_lost_5d", first.text)).toContain("· 5 d · lost: no longer retried");
+  expect(line("h_window", first.text)).not.toContain("lost");
+  expect(first.text).toContain('2 renders marked "lost" are past the 3-day window. This email is the only one about them.');
+  expect(first.text).toContain("The cron tries to save a render every 10 minutes until 3 days after the render was created. A fal take is tried until fal no longer has the job.");
+  expect(await alert(TA + 10 * MIN)).toEqual({ open: 3, sent: null });
+
+  /* A day on: the reminder names only the render still inside its window. */
+  expect(await visit("ws_hist", TA + DAY)).toEqual({ open: 3 });
+  expect(await alert(TA + DAY)).toEqual({ open: 3, sent: "reminder" });
+  const reminder = sent.at(-1)!;
+  expect(reminder.subject).toBe("Particl reminder: 1 render still with no stored copy");
+  expect(reminder.text).toContain("h_window");
+  expect(reminder.text).not.toMatch(/h_lost_/);
+  expect(reminder.text).toContain("2 renders already reported as lost are not in this email.");
+
+  /* The desk still lists all three, the lost ones labelled. */
+  const { atRiskLine, atRiskState } = await import("../../lib/rendersAtRiskText");
+  const view = await desk(TA + DAY);
+  expect(view).toMatchObject({ count: 3, lost: 2 });
+  expect(view.renders.filter((r) => r.lost).map((r) => r.generationId)).toEqual(["h_lost_10d", "h_lost_5d"]);
+  expect(atRiskState(view.renders[0])).toBe(" · lost: no longer retried");
+  expect(atRiskLine({ count: 3, lost: 2, oldestSince: TA - 10 * DAY }, TA + DAY)).toBe("3 renders with no stored copy · 2 lost · oldest 11 d");
+
+  /* The one inside its window is saved: only lost ones remain, and no reminder comes again. */
+  await inTenant("ws_hist", async () => {
+    const { db } = await import("../../lib/db");
+    await db().execute("UPDATE generations SET stored_url='ws/generations/h_window.mp4' WHERE id='h_window'");
+  });
+  expect(await visit("ws_hist", TA + DAY + HOUR)).toEqual({ open: 2 });
+  const quiet = sent.length;
+  for (const later of [2 * DAY + HOUR, 3 * DAY, 10 * DAY]) {
+    expect(await visit("ws_hist", TA + later)).toEqual({ open: 2 });
+    expect(await alert(TA + later)).toEqual({ open: 2, sent: null });
+  }
+  expect(sent).toHaveLength(quiet);
+  expect((await desk(TA + 10 * DAY)).renders.map((r) => [r.generationId, r.lost])).toEqual([["h_lost_10d", true], ["h_lost_5d", true]]);
+
+  /* Rows that dropped out are deleted 30 days on. */
+  await retire("ws_hist", TA + 11 * DAY);
+  const { platformDb } = await import("../../lib/platform");
+  const rows = async () => Number((await platformDb().execute("SELECT COUNT(*) AS n FROM render_at_risk WHERE workspace_id='ws_hist'")).rows[0].n);
+  expect(await rows()).toBe(3);
+  /* 29 days after the workspace went: the two lost rows stay; the one saved on day 1 dropped out 39 days ago and is gone. */
+  await alert(TA + 11 * DAY + 29 * DAY);
+  expect(await rows()).toBe(2);
+  await alert(TA + 11 * DAY + 31 * DAY);
+  expect(await rows()).toBe(0);
+});
+
+test("a render that passes its 3-day window: one lost mention, then silence", async () => {
+  const TB = T0 + 80 * DAY;
+  await workspace("ws_pass", "Window Studio");
+  await inTenant("ws_pass", async () => put("p_take", { status: "succeeded", createdAt: TB - 2 * HOUR, settledAt: TB - 2 * HOUR }));
+  const before = sent.length;
+  expect(await visit("ws_pass", TB)).toEqual({ open: 1 });
+  expect(await alert(TB)).toEqual({ open: 1, sent: "new" });
+  expect(sent.at(-1)!.text).not.toContain("lost");
+  expect(await alert(TB + DAY)).toEqual({ open: 1, sent: "reminder" });
+  expect(await alert(TB + 2 * DAY)).toEqual({ open: 1, sent: "reminder" });
+  /* Created TB − 2 h: its window closes at TB + 70 h. */
+  expect(await visit("ws_pass", TB + 71 * HOUR)).toEqual({ open: 1 });
+  expect(await alert(TB + 71 * HOUR)).toEqual({ open: 1, sent: "new" });
+  const lost = sent.at(-1)!;
+  expect(lost.subject).toBe("Particl: 1 render with no stored copy");
+  expect(lost.text).toContain("p_take");
+  expect(lost.text).toContain("lost: no longer retried");
+  expect(lost.text).toContain('1 render marked "lost" is past the 3-day window. This email is the only one about it.');
+  expect(sent).toHaveLength(before + 4);
+  for (const later of [71 * HOUR + 10 * MIN, 4 * DAY, 5 * DAY, 30 * DAY]) {
+    expect(await visit("ws_pass", TB + later)).toEqual({ open: 1 });
+    expect(await alert(TB + later)).toEqual({ open: 1, sent: null });
+  }
+  expect(sent).toHaveLength(before + 4);
+  await retire("ws_pass", TB + 31 * DAY);
+});
+
+test("an email marks only the renders it names: past the first 20, the rest go in the next sweep's email", async () => {
+  const TC = T0 + 150 * DAY;
+  await workspace("ws_many", "Many Studio");
+  await inTenant("ws_many", async () => {
+    for (let i = 0; i < 22; i++)
+      await put(`m_${String(i).padStart(2, "0")}`, { status: "succeeded", createdAt: TC - 3 * HOUR + i * MIN, settledAt: TC - 2 * HOUR + i * MIN });
+  });
+  const before = sent.length;
+  expect(await visit("ws_many", TC)).toEqual({ open: 22 });
+  expect(await alert(TC)).toEqual({ open: 22, sent: "new" });
+  expect(sent.at(-1)!.text).toContain("…and 2 more.");
+  expect(sent.at(-1)!.text).not.toMatch(/m_2[01]/);
+  const { platformDb } = await import("../../lib/platform");
+  const unmarked = async () => (await platformDb().execute("SELECT generation_id FROM render_at_risk WHERE workspace_id='ws_many' AND alerted_at IS NULL ORDER BY generation_id")).rows.map((r) => r.generation_id);
+  expect(await unmarked()).toEqual(["m_20", "m_21"]);
+  expect(await alert(TC + 10 * MIN)).toEqual({ open: 22, sent: "new" });
+  const second = sent.at(-1)!.text;
+  expect(second).toContain("New since the last email: 2.");
+  expect(second.indexOf("m_20")).toBeLessThan(second.indexOf("m_00"));
+  expect(await unmarked()).toEqual([]);
+  expect(await alert(TC + 20 * MIN)).toEqual({ open: 22, sent: null });
+  expect(sent).toHaveLength(before + 2);
+  await retire("ws_many", TC + HOUR);
 });
 
 test("the fal collector notes a failed save on the take it leaves running (mocked poll, nothing sent)", async () => {

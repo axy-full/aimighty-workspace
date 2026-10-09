@@ -1188,6 +1188,9 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
         `CREATE INDEX IF NOT EXISTS idx_gen_shot ON generations(shot_id)`,
         `CREATE INDEX IF NOT EXISTS idx_gen_kind ON generations(kind)`,
         `CREATE INDEX IF NOT EXISTS idx_gen_billed ON generations(billed_to)`,
+        /* Renders with no stored copy, for the cron's at-risk check (lib/rendersAtRisk.ts): a partial
+           index, so it holds only the few rows still missing their master. */
+        `CREATE INDEX IF NOT EXISTS idx_gen_unstored ON generations(created_at) WHERE stored_url IS NULL AND deleted=0`,
       ]) {
         await addIndex(c, stmt);
       }
