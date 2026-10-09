@@ -249,6 +249,21 @@ test("a joiner whose leader found the store busy retries once under its own wait
   } finally { await fresh.close(); }
 });
 
+test("a caller past its deadline neither joins a running save nor starts one", async () => {
+  const storage = r2Storage();
+  const fresh = await startFakeProvider();
+  try {
+    const leader = storage.storeVideo("stream-past", fresh.url(MiB, { hold: true }));
+    await expect.poll(() => fresh.requests).toBe(1);
+    const started = Date.now();
+    await expect(storage.storeVideo("stream-past", fresh.url(MiB), { deadlineAt: Date.now() - 1 })).rejects.toThrow(/too little time is left/);
+    expect(Date.now() - started).toBeLessThan(1000); // refused at once, not after the running save
+    fresh.release();
+    expect((await leader).bytes).toBe(MiB);
+    expect(fresh.requests).toBe(1);
+  } finally { await fresh.close(); }
+});
+
 test("a queued transfer gives up at its wait bound, deadline or signal without starting", async () => {
   const storage = r2Storage({ STORAGE_TRANSFER_CONCURRENCY: "1" });
   const held = provider.url(MiB, { hold: true });

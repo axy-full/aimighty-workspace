@@ -9,7 +9,7 @@ import { fetchBytes } from "./mockFs";
 import { readBodyCapped } from "./boundedBody";
 import type { ByteRange } from './mediaRange';
 import { cloudBackend, r2Backend, resolveStored, usingCloud, type ResolvedObject, type StorageBackend } from "./storage/backend";
-import { transferLimiter } from "./storage/transfers";
+import { transferLimiter, TransferQueueTimeoutError } from "./storage/transfers";
 
 export { backendKind, usingCloud, type StorageBackendKind } from "./storage/backend";
 
@@ -165,6 +165,10 @@ export async function storeVideo(genId: string, sourceUrl: string, options: Stor
 }
 
 async function storeVideoShared(genId: string, sourceUrl: string, options: StoreVideoOptions, retried: boolean): Promise<{ url: string; bytes: number }> {
+  /* Past its deadline a caller may neither start a save nor join one: a
+     running save can last a whole transfer more, which would carry this
+     caller (the heartbeat, say) past its route's ceiling. */
+  if (options.deadlineAt != null && options.deadlineAt <= Date.now()) throw new TransferQueueTimeoutError(0, true);
   const key = videoPath(genId);
   const running = savesInFlight.get(key);
   if (running) {
