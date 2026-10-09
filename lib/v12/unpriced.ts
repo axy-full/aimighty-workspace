@@ -34,10 +34,20 @@ export const UNPRICED = {
     why: "A plan fix is drawn from the plan's allowance and priced only when its turn comes (lib/workbench/plan-approval.ts, rig-agent.ts agent.fix); POST /api/rig/runs/[id]/fix carries no price.",
     hover: "This fix is priced when its turn comes in the plan.",
   },
-  skill: {
-    action: "A \"/\" skill",
-    why: "Skills (prototype § 10.4) have no definition or quote route yet; each is priced once it is built on an existing quote route (P6).",
+  builtInSkill: {
+    action: "A built-in \"/\" skill (Unboxing, Try-on, Tutorial, Photoshoot, Narrated video and the rest of the prototype's list)",
+    why: "The prototype's built-in skills (inventory § 10.4) have no definition or quote route yet; each is priced once it is built on an existing quote route (P6). A saved Atomik skill is NOT this: it is priced by POST /api/atomik/skills/[id]/run {dryRun:true}.",
     hover: "This skill has no price yet.",
+  },
+  hookReview: {
+    action: "Hook review",
+    why: "No code path reviews a clip's hook (prototype Make viewer and Social clips, inventory § 5.12 and § 10.2): no tool, route or engine exists to quote.",
+    hover: "Hook review has no price yet.",
+  },
+  finishPanel: {
+    action: "Finish panel",
+    why: "No code path finishes a storyboard panel (clean lines and the final look; inventory § 4.3 card toolbar). Storyboard redraws exist (lib/production/boards.ts) but nothing defines a finish step to quote.",
+    hover: "Finishing a panel has no price yet.",
   },
 } as const satisfies Record<string, Unpriced>;
 

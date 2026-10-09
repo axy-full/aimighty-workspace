@@ -15,7 +15,9 @@
  *  - "quoted": an action with no quote path, given as `quote={null}` with a reason from lib/v12/unpriced.ts.
  */
 import { FREE, exact, priceView, upTo, type PriceKind, type PriceValue } from "@/lib/shell/price-words";
-import { thinkingFrom } from "@/components/graphite/home/use-thinking-price";
+import { thinkingFrom } from "@/lib/shell/thinking-price";
+import { heldCredits } from "@/lib/cinemaHold";
+import { batchTotal } from "@/lib/workspace/composer";
 import { UNPRICED, type UnpricedId } from "./unpriced";
 
 /** A price in the unit this workspace pays in: credits, or (the house workspace alone) dollars. */
@@ -27,7 +29,8 @@ export type Quote =
   | { state: "idle" }
   | { state: "loading" }
   | { state: "ready"; price: QuotedPrice }
-  | { state: "error"; message: string };
+  /** `retry`: asks the route again (useQuote sets it). */
+  | { state: "error"; message: string; retry?: () => void };
 
 export const IDLE: Quote = Object.freeze({ state: "idle" });
 export const LOADING: Quote = Object.freeze({ state: "loading" });
@@ -44,15 +47,22 @@ export const NO_DOLLAR_PRICE = "This price is not available in dollars yet.";
 
 /**
  * Where a price comes from: one of the existing quote routes. Each asks for a price and reserves nothing.
- *  - generate: POST /api/generate/quote, the same body as the send (stills, video, upscale, edits, variations).
- *  - engine: GET /api/workbench/engines?model=…: one engine at given settings, before anything is written.
+ *  - generate: POST /api/generate/quote, the same body as the send (stills, video, upscale, edits, variations). The route
+ *    prices one take; `count` takes are totalled as the composer totals a batch (lib/workspace/composer.ts batchTotal).
+ *  - engine: GET /api/workbench/engines?model=…: one engine at given settings and references, before anything is written.
  *  - audio: POST /api/audio {quoteOnly}: speech, sound, music, dialogue, voice change.
  *  - atomik: POST /api/atomik {quoteOnly}: one Atomik chat turn.
  *  - board-start: GET /api/workbench/team-canvas?agent=1&board=new: Atomik's planning ceiling for a new board.
  */
 export type QuoteSource =
-  | { route: "generate"; body: Record<string, unknown> }
-  | { route: "engine"; model: string; resolution: string; ratio: string; duration?: number; audio?: boolean }
+  | { route: "generate"; body: Record<string, unknown>; count?: number }
+  | {
+      route: "engine"; model: string; resolution: string; ratio: string; duration?: number; audio?: boolean;
+      /** The node's references, as the engines route reads them: saved uploads and generations, and image references. */
+      uploadIds?: readonly string[]; genIds?: readonly string[]; imageRefs?: number;
+      /** An identity engine's identity, checked against the project. */
+      soulIdentityId?: string; projectId?: string;
+    }
   | { route: "audio"; body: Record<string, unknown> }
   | { route: "atomik"; body: Record<string, unknown> }
   | { route: "board-start" };
@@ -70,6 +80,11 @@ export function quoteRequest(source: QuoteSource): { url: string; init: RequestI
       const q = new URLSearchParams({ model: source.model, resolution: source.resolution, ratio: source.ratio });
       if (source.duration != null) q.set("duration", String(source.duration));
       if (source.audio) q.set("audio", "1");
+      for (const id of source.uploadIds ?? []) q.append("uploadId", id);
+      for (const id of source.genIds ?? []) q.append("genId", id);
+      if (source.imageRefs) q.set("imageRefs", String(source.imageRefs));
+      if (source.soulIdentityId) q.set("soulIdentityId", source.soulIdentityId);
+      if (source.projectId) q.set("projectId", source.projectId);
       return { url: `/api/workbench/engines?${q}`, init: { cache: "no-store" } };
     }
   }
@@ -99,24 +114,32 @@ export function quoteFromResponse(source: QuoteSource, ok: boolean, body: unknow
   switch (source.route) {
     case "generate":
     case "audio": {
-      /* AdmissionQuote (lib/admissionTypes.ts) and the audio quote share these fields. Cinema Studio holds its
-         ceiling (`ceilingCredits`); an approximate figure settles on what was delivered and cannot go over it. */
+      /* AdmissionQuote (lib/admissionTypes.ts) and the audio quote share these fields. A Cinema Studio take holds its
+         ceiling (`ceilingCredits`, lib/cinemaHold.ts); an approximate figure settles on what was delivered and cannot
+         pass it. Sound is a live estimate the charge cannot pass (lib/shell/make-price.ts makeQuoteValue). */
+      const count = source.route === "generate" && Number.isInteger(source.count) && source.count! > 1 ? source.count! : 1;
+      const times = (n: number) => batchTotal(n, count);
+      const ceiling = figure(b.ceilingCredits) ? b.ceilingCredits : null;
+      const estimate = source.route === "audio" || b.approximate === true || ceiling !== null;
       const unit = b.unit;
       if (unit === "usd") {
         if (!terms.paysInDollars || !figure(b.price)) return errorOf(null);
-        return dollars(b.price, b.approximate === true || source.route === "audio");
+        /* The house is quoted the estimate in dollars; a held take may settle at its ceiling, so its dollars scale the same way. */
+        const scale = ceiling !== null ? (figure(b.estimatedCredits) && b.estimatedCredits > 0 ? ceiling / b.estimatedCredits : null) : 1;
+        const usd = scale === null ? null : times(b.price * scale);
+        return usd === null ? errorOf(null) : dollars(usd, estimate);
       }
       if (unit !== "cr" || terms.paysInDollars) return errorOf(null);
-      if (figure(b.ceilingCredits)) return credits(b.ceilingCredits, "up-to");
-      if (!figure(b.estimatedCredits)) return errorOf(null);
-      /* Sound is a live estimate the charge cannot pass (lib/shell/make-price.ts makeQuoteValue). */
-      return credits(b.estimatedCredits, b.approximate === true || source.route === "audio" ? "up-to" : "exact");
+      const credit = ceiling ?? (figure(b.estimatedCredits) ? b.estimatedCredits : null);
+      const total = credit === null ? null : times(credit);
+      return total === null ? errorOf(null) : credits(total, estimate ? "up-to" : "exact");
     }
     case "engine": {
       /* Credits only, at the platform's margin: the house reads its engines in dollars, which this route does not give. */
       if (terms.paysInDollars) return { state: "error", message: NO_DOLLAR_PRICE };
       if (!figure(b.credits)) return errorOf(b);
-      return credits(b.credits, b.approximate === true ? "up-to" : "exact");
+      /* Cinema Studio answers its estimate, marked approximate; the take holds, and may settle at, its band times that. */
+      return b.approximate === true ? credits(heldCredits(b.credits, source.model), "up-to") : credits(b.credits, "exact");
     }
     case "atomik": {
       /* A chat turn is reserved at its estimate and settled at what it used: a ceiling. The house keeps its dollars

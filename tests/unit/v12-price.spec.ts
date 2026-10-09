@@ -3,6 +3,9 @@ import { FREE_QUOTE, IDLE, LOADING, NO_DOLLAR_PRICE, QUOTE_FAULT, knownQuote, pr
 import { UNPRICED, isUnpricedId } from "../../lib/v12/unpriced";
 import { exact, upTo } from "../../lib/shell/price-words";
 import { creditUsd } from "../../lib/creditTerms";
+import { heldCredits, holdBandOf } from "../../lib/cinemaHold";
+import { CINEMA_STUDIO_MODEL_ID } from "../../lib/cinemaStudioTypes";
+import { batchTotal } from "../../lib/workspace/composer";
 import { usd } from "../../lib/format";
 import { PriceView } from "../../components/v12/ui/Price";
 
@@ -65,6 +68,11 @@ test("the house workspace sees dollars as today's screens word them, and no cred
   expect(show(house)).toEqual({ text: "$2.87", title: null, state: "ready", kind: "exact" });
   const approximate = quoteFromResponse(generate, true, { estimatedCredits: 43, price: 2.87, unit: "usd", approximate: true }, HOUSE);
   expect(show(approximate)!.text).toBe("up to $2.87");
+  /* A held take in the house: its dollars scale to its ceiling, as its credits do. */
+  const held = quoteFromResponse(generate, true, { estimatedCredits: 31, price: 2.1, unit: "usd", approximate: true, ceilingCredits: 93 }, HOUSE);
+  expect(show(held)!.text).toBe(`up to ${houseDollars((2.1 * 93) / 31)}`);
+  expect(quoteFromResponse(generate, true, { estimatedCredits: 0, price: 2.1, unit: "usd", ceilingCredits: 93 }, HOUSE).state).toBe("error");
+  expect(show(quoteFromResponse({ route: "generate", body: {}, count: 2 }, true, { estimatedCredits: 43, price: 2.87, unit: "usd" }, HOUSE))!.text).toBe(houseDollars(batchTotal(2.87, 2)!));
   expect(show(quoteFromResponse(generate, true, { estimatedCredits: 0, price: 0.001, unit: "usd" }, HOUSE))!.text).toBe("<1¢");
   /* A credit answer in the house, or a dollar answer in a credit workspace, is refused rather than relabelled. */
   expect(quoteFromResponse(generate, true, { estimatedCredits: 43, price: 43, unit: "cr" }, HOUSE).state).toBe("error");
@@ -82,13 +90,22 @@ test("each quote route's answer becomes the right form", () => {
   expect(quoteFromResponse(generate, true, { estimatedCredits: 31, price: 31, unit: "cr", approximate: true }, CREDITS)).toEqual(knownQuote(upTo(31)));
   /* A take that holds its ceiling is shown at the ceiling: the charge cannot pass it. */
   expect(quoteFromResponse(generate, true, { estimatedCredits: 31, price: 31, unit: "cr", approximate: true, ceilingCredits: 93 }, CREDITS)).toEqual(knownQuote(upTo(93)));
+  /* A batch: the route prices one take, and `count` takes are totalled as the composer totals them. */
+  const four: QuoteSource = { route: "generate", body: {}, count: 4 };
+  expect(quoteFromResponse(four, true, { estimatedCredits: 2, price: 2, unit: "cr" }, CREDITS)).toEqual(knownQuote(exact(batchTotal(2, 4))));
+  expect(quoteFromResponse(four, true, { estimatedCredits: 31, price: 31, unit: "cr", approximate: true, ceilingCredits: 93 }, CREDITS)).toEqual(knownQuote(upTo(batchTotal(93, 4))));
+  expect(quoteFromResponse({ route: "generate", body: {}, count: 1 }, true, { estimatedCredits: 2, price: 2, unit: "cr" }, CREDITS)).toEqual(knownQuote(exact(2)));
   expect(quoteFromResponse(generate, false, { error: "Out of credits." }, CREDITS)).toEqual({ state: "error", message: "Out of credits." });
   expect(quoteFromResponse(generate, true, null, CREDITS)).toEqual({ state: "error", message: QUOTE_FAULT });
   expect(quoteFromResponse(generate, true, { estimatedCredits: Number.NaN, unit: "cr" }, CREDITS).state).toBe("error");
 
   const engine: QuoteSource = { route: "engine", model: "m", resolution: "1080p", ratio: "16:9", duration: 5 };
   expect(quoteFromResponse(engine, true, { models: [], credits: 7 }, CREDITS)).toEqual(knownQuote(exact(7)));
-  expect(quoteFromResponse(engine, true, { models: [], credits: 7, approximate: true }, CREDITS)).toEqual(knownQuote(upTo(7)));
+  /* Cinema Studio: the engines route answers its estimate, marked approximate; the take holds, and may settle at, its band times it. */
+  expect(holdBandOf(CINEMA_STUDIO_MODEL_ID)).toBeGreaterThan(1);
+  const cinema: QuoteSource = { route: "engine", model: CINEMA_STUDIO_MODEL_ID, resolution: "720p", ratio: "16:9", duration: 5 };
+  expect(quoteFromResponse(cinema, true, { models: [], credits: 31, approximate: true }, CREDITS)).toEqual(knownQuote(upTo(heldCredits(31, CINEMA_STUDIO_MODEL_ID))));
+  expect(show(quoteFromResponse(cinema, true, { models: [], credits: 31, approximate: true }, CREDITS))!.text).toBe(`up to ${heldCredits(31, CINEMA_STUDIO_MODEL_ID)} cr`);
   expect(quoteFromResponse(engine, true, { models: [], credits: null }, CREDITS).state).toBe("error");
 
   /* Sound is a live estimate: "up to". */
@@ -106,6 +123,13 @@ test("each source asks its existing quote route, and reserves nothing", () => {
   expect(quoteRequest({ route: "board-start" }).url).toBe("/api/workbench/team-canvas?agent=1&board=new");
   expect(quoteRequest({ route: "engine", model: "a/b", resolution: "1080p", ratio: "16:9", duration: 5, audio: true }).url)
     .toBe("/api/workbench/engines?model=a%2Fb&resolution=1080p&ratio=16%3A9&duration=5&audio=1");
+  /* A node with references, or an identity, is priced with them: the exact price, not the bare engine's. */
+  const withRefs = new URL(quoteRequest({ route: "engine", model: "m", resolution: "1080p", ratio: "16:9", uploadIds: ["u1", "u2"], genIds: ["g1"], imageRefs: 2, soulIdentityId: "id1", projectId: "p1" }).url, "http://x").searchParams;
+  expect(withRefs.getAll("uploadId")).toEqual(["u1", "u2"]);
+  expect(withRefs.getAll("genId")).toEqual(["g1"]);
+  expect(withRefs.get("imageRefs")).toBe("2");
+  expect(withRefs.get("soulIdentityId")).toBe("id1");
+  expect(withRefs.get("projectId")).toBe("p1");
 });
 
 test("Price draws one unbreakable run with its dollars as the hover, and marks its state", () => {
