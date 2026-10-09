@@ -1,0 +1,9 @@
+{
+  "name": "library",
+  "app": "/suites?project=ws-library&suite=particl&page=brief&view=board&drawer=Library",
+  "prototype": "?view=board&drawer=Library",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}
