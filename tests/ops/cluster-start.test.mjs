@@ -286,6 +286,14 @@ test("a heap size already set in NODE_OPTIONS wins over WORKER_HEAP_MB", { timeo
   } finally { await run.stop(); }
 });
 
+test("the underscore spelling, NODE_OPTIONS=--max_old_space_size, also wins over WORKER_HEAP_MB", { timeout: 30_000 }, async () => {
+  const run = await start({ WEB_CONCURRENCY: "2", WORKER_HEAP_MB: "512", NODE_OPTIONS: "--max_old_space_size=300" });
+  try {
+    for (const limit of await heapLimits(run, 2)) assert.ok(about(limit, 300), `${limit / MB} MB`);
+    assert.deepEqual(run.events("start").map((l) => l.heapMb), ["inherited"]);
+  } finally { await run.stop(); }
+});
+
 test("WEB_CONCURRENCY=1 leaves the single process's heap as it was", { timeout: 30_000 }, async () => {
   const run = await start({ WEB_CONCURRENCY: "1", WORKER_HEAP_MB: "256" });
   try {
