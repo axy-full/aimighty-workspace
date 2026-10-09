@@ -6,7 +6,7 @@ import { stashGenPreset } from "@/lib/shell/gen-preset";
 import { APP_HREF, SIGN_IN_HREF } from "@/lib/marketing/links";
 
 const SAMPLE = "A woman in an ivory suit crosses a dune at golden hour; a chrome sphere reflects the sky. Slow dolly in, 35mm.";
-const GEN_HREF = `${APP_HREF}?view=gen`;
+const GEN_HREF = `${APP_HREF}?make=video`;
 
 /**
  * The hero's prompt bar. Nothing renders here and nothing is charged: the

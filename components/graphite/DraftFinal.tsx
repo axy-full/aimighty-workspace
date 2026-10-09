@@ -191,7 +191,7 @@ export function DraftFinalBar({ scope, projectId, draft, finals }: {
       {status ? <p className="gx-draft-status" id={statusId} data-tone={view.state === "expired" || view.state === "failed" || view.state === "finalFailed" ? "red" : view.state === "final" ? "green" : undefined} data-testid="draft-final-status">{status}</p> : null}
       {(view.state === "ready" || view.state === "expired") && !approving ? (
         <button ref={makeButton} type="button" className="gx-primary gx-gen-go gx-draft-go" disabled={view.state === "expired" || !price || sending}
-          aria-describedby={view.state === "expired" ? statusId : undefined} data-priced={price && view.state === "ready" ? "" : undefined}
+          aria-describedby={view.state === "expired" ? statusId : undefined} data-priced={price && view.state === "ready" ? "" : undefined} data-spend={price && view.state === "ready" ? "priced" : "unpriced"}
           onClick={() => { setNote(null); setApproving(true); }} data-testid="draft-final-make"
           aria-label={view.state === "ready" && price ? `Make the ${FINAL_RESOLUTION} final · ${price.credits.toLocaleString("en-US")} cr` : `Make the ${FINAL_RESOLUTION} final`}>
           <span className="gx-go-act">{pricing ? `Pricing the ${FINAL_RESOLUTION} final…` : `Make the ${FINAL_RESOLUTION} final`}</span>
@@ -212,7 +212,7 @@ export function DraftFinalBar({ scope, projectId, draft, finals }: {
             <li>{FINE_DETAIL}</li>
           </ul>
           <div className="gx-draft-row">
-            <button type="button" className="gx-primary gx-gen-go gx-draft-go" disabled={sending} data-priced={sending ? undefined : ""} onClick={() => void approve()} data-testid="draft-final-approve-send"
+            <button type="button" className="gx-primary gx-gen-go gx-draft-go" disabled={sending} data-priced={sending ? undefined : ""} data-spend="priced" onClick={() => void approve()} data-testid="draft-final-approve-send"
               aria-label={sending ? "Sending…" : `Approve · ${price.credits.toLocaleString("en-US")} cr`}>
               {sending ? "Sending…" : <><span className="gx-go-act">Approve</span><span className="gx-go-price"><span className="gx-go-sep">{" · "}</span>{price.credits.toLocaleString("en-US")} cr</span></>}
             </button>

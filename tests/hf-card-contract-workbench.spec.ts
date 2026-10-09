@@ -99,7 +99,7 @@ async function shot(page: Page, info: TestInfo, name: string, focus?: Locator) {
 
 test("Gen › Results: skeletons while reading, a failed read with Try again, a status on every take, Refresh, and takes that settle", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const { errors, state, hold } = await open(page, "/suites?view=gen", "fail");
+  const { errors, state, hold } = await open(page, "/suites?make=recent", "fail");
   const results = page.getByRole("region", { name: "Results" });
 
   /* A failed read is a banner, never "nothing generated". */
@@ -147,9 +147,10 @@ test("Gen › Results: skeletons while reading, a failed read with Try again, a 
   const failedThumb = (await tile(results, "Night swim").locator(".gx-asset-thumb").boundingBox())!;
   const okThumb = (await tile(results, "Pier at first light").locator(".gx-asset-thumb").boundingBox())!;
   expect(Math.abs(failedThumb.height - okThumb.height)).toBeLessThan(1);
-  /* Filed by what it is: the failed and the cancelled clip are under Video with the other clips. */
-  await results.getByRole("button", { name: "Video", exact: true }).click();
-  await expect(results.getByTestId("take-tile")).toHaveCount(4);
+  /* Recent's filters are All · Takes · Unfiled · Filed (README § 3.2): the failed and the cancelled take are takes like the others. */
+  await results.getByRole("button", { name: "Takes", exact: true }).click();
+  await expect(tile(results, "Night swim")).toBeVisible();
+  await expect(tile(results, "Pier in fog")).toBeVisible();
   await results.getByRole("button", { name: "All", exact: true }).click();
 
   /* A finished take with no stored copy: Preview unavailable, and Refresh reads it again. */
@@ -277,7 +278,7 @@ test("a project list that will not load says so once, with one Try again, and Tr
     : route.fallback()));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=recent");
   const banner = page.getByTestId("projects-error");
   await expect(banner).toContainText("Projects are not answering right now.");
   await expect(page.getByTestId("project-name")).toHaveText("Projects didn’t load");
@@ -299,13 +300,13 @@ test("a project list that will not load says so once, with one Try again, and Tr
 test("a failed Load more stays at the list's end; a re-read that fails with cards on screen says they were not refreshed", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const wide = WIDE.includes(info.project.name);
-  const { errors, state } = await open(page, "/suites?view=gen", "ok", { pageSize: 5 });
+  const { errors, state } = await open(page, "/suites?make=recent", "ok", { pageSize: 5 });
   const results = page.getByRole("region", { name: "Results" });
   await expect(results.getByTestId("take-tile")).toHaveCount(5);
   const library = page.getByTestId("library");
   /* Gen's Library has no Tools tab: it is the assets list itself. */
   const openLibrary = async () => {
-    if (!wide) await page.getByTestId("toggle-library").click();
+    if (!wide) await page.getByTestId("make-open-library").click();
     await expect(library.getByTestId("library-assets")).toBeVisible();
   };
   const closeLibrary = async () => { if (!wide) await page.getByTestId("close-library").click(); };
@@ -358,7 +359,7 @@ test("long names and long messages stay inside their cards and banners", async (
     generation({ id: "gen_long_fail", title: name, kind: "image", status: "failed", storedUrl: null, creditsBilled: 0, error: words, projectId: "prod-cards", createdAt: BASE, updatedAt: BASE }),
     generation({ id: "gen_long_ok", title: `${name} (take two)`, kind: "image", creditsBilled: 1, projectId: "prod-cards", createdAt: BASE - 1, updatedAt: BASE - 1 }),
   ];
-  const { errors, state } = await open(page, "/suites?view=gen", "ok", { rows });
+  const { errors, state } = await open(page, "/suites?make=recent", "ok", { rows });
   const results = page.getByRole("region", { name: "Results" });
   await expect(results.getByTestId("take-tile")).toHaveCount(2);
   const card = results.getByTestId("take-tile").first();

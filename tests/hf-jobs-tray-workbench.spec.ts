@@ -224,7 +224,10 @@ test("the pill counts the rows the way they are labelled, fits the header, and o
   await expect(rows.nth(4).getByTestId("jobs-reason")).toHaveText("Refused by the content filter");
   /* Release carries the figure it approves. */
   await expect(rows.getByTestId("jobs-action")).toHaveText(["Release · 43 cr", "Recreate", "Open in Takes", "Recreate"]);
-  await expect(rows.nth(5).locator(".gx-jobs-thumb img")).toBeVisible();
+  /* The master's row leads with a dot in the job's tone (it replaced the 52px thumbnail): pulsing blue only while it renders. */
+  await expect(rows.getByTestId("jobs-dot")).toHaveCount(7);
+  await expect(rows.nth(1)).toHaveAttribute("data-moving", "");
+  await expect(rows.nth(5)).not.toHaveAttribute("data-moving", /.*/);
   await expect(rows.nth(6)).toHaveAttribute("data-tone", "idle");
   expect(errors).toEqual([]);
 
@@ -387,9 +390,11 @@ test("Open in Takes opens the take that was clicked — also when Takes is alrea
   await page.getByTestId("running-jobs").click();
   await page.getByRole("button", { name: "Recreate: Lighthouse at dusk" }).click();
   await expect(page.getByRole("dialog", { name: "Jobs" })).toHaveCount(0);
-  await expect(page.getByTestId("page-title")).toHaveText("Generate");
+  /* Make opens over the page that was open; the page stays put underneath. */
+  await expect(page.getByTestId("make-panel")).toBeVisible();
+  await expect(page.getByTestId("page-title")).toHaveText("Takes");
   await expect(page.getByTestId("gen-prompt")).toHaveValue("A slow push-in on a lighthouse at dusk");
-  await expect(page.getByTestId("toast")).toHaveText("Lighthouse at dusk’s recipe is in Gen.");
+  await expect(page.getByTestId("toast")).toHaveText("Lighthouse at dusk’s recipe is in Make.");
   await expect(page.getByTestId("gen-recipe-name")).toHaveText("Lighthouse at dusk");
   expect(paid).toEqual([]);
   expect(errors).toEqual([]);
@@ -472,7 +477,7 @@ test("the tray reads at the server's pace, not while the tab is hidden, and soon
   await page.getByTestId("running-jobs").click();
   await expect(page.getByTestId("jobs-empty").locator("p")).toHaveText("Nothing is rendering or waiting, and nothing finished in the last 6 hours.");
   await expect(page.getByTestId("jobs-summary")).toHaveCount(0);
-  await expect(page.getByTestId("jobs-generate")).toHaveText("Generate");
+  await expect(page.getByTestId("jobs-generate")).toHaveText("Open Make");
   await expect(page.getByTestId("running-jobs")).toHaveAccessibleName("Jobs");
 
   /* A failed read says so, keeps asking on its own, and Try again asks at once. */
@@ -582,7 +587,8 @@ test("with nothing running, what finished is news until it is seen; then the pil
   await page.getByTestId("running-jobs").click();
   /* The failed one can still be made again from here. */
   await page.getByRole("button", { name: "Recreate: Lighthouse at dusk" }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Generate");
+  await expect(page.getByTestId("make-panel")).toBeVisible();
+  await expect(page.getByTestId("gen-recipe-name")).toHaveText("Lighthouse at dusk");
 });
 
 test("a failed first jobs read keeps recovery reachable without inventing an empty queue", async ({ page }, info) => {

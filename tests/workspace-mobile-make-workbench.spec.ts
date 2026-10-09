@@ -402,7 +402,7 @@ test("the Inspector sheet is the desktop Inspector, and an edit made in it persi
 
   const rigLink = pageUrl(project.id, "particl", "rig", "shot:rig-b");
   await page.goto(rigLink);
-  await expect(page.getByTestId("mobile-page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("mobile-page-title")).toHaveText("Board");
 
   /* The Library sheet first, from the dock. */
   await page.locator('[data-tab="library"]').click();
@@ -514,7 +514,7 @@ test("the desktop surfaces above the breakpoint are unchanged", async ({ page },
   await page.goto(pageUrl(project.id, "particl", "rig", "shot:rig-b"));
   /* The desktop shell, its rows, its Library rail and its Inspector. */
   await expect(page.getByTestId("studio-row")).toBeVisible();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   await expect(page.getByTestId("inspector")).toBeVisible();
   await expect(page.locator(".pxw-library")).toBeVisible();
   await expect(page.getByTestId("inspector-title")).toHaveText("The encounter");
