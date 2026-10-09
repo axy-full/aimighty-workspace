@@ -67,8 +67,9 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
   const { thinking, retry: retryThinking } = useThinkingPrice(scope);
 
   /* The figure on Start: the server's for a new board, or the newer one it gave for the project Start already made. */
-  const own = started && started.text === draft.text ? started : null;
-  const figure = own?.figure ?? (thinking.state === "ready" ? thinking.credits : null);
+  const figureFor = (text: string): number | null =>
+    (started && started.text === text ? started.figure : null) ?? (thinking.state === "ready" ? thinking.credits : null);
+  const figure = figureFor(draft.text);
 
   const onDraft = useCallback((next: HomeDraft | ((now: HomeDraft) => HomeDraft)) => {
     setDraft((before) => cleanDraft(typeof next === "function" ? next(cleanDraft(before)) : next));
@@ -77,8 +78,8 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
   const forget = () => { clearDraft(); setRefs([]); setBriefFile(null); setStarted(null); };
 
   /** Makes the project with what the box holds and files its files: its id and production, or the refusal (said by the caller). */
-  const make = async (template: Template): Promise<{ id: string; productionId: string | null } | { error: string }> => {
-    const { name, seed } = newProjectFor(template, draft);
+  const make = async (template: Template, from: HomeDraft = draft): Promise<{ id: string; productionId: string | null } | { error: string }> => {
+    const { name, seed } = newProjectFor(template, from);
     const made = await onCreate(name, seed).catch(() => ({ error: "The project could not be created. Try again." }));
     if ("error" in made) return made;
     rememberMade(scope, { id: made.id, template: template.id, at: Date.now() });
@@ -120,32 +121,37 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
   /**
    * Start · up to N cr: a person's press approves Atomik's thinking up to N. The project is made (free), its
    * figure read again; a higher one is shown for another press, never spent. Then today's ask, with a limit of N.
+   * `brief`: the words to start from instead of the box's (the new Home's picked tile adds its own words to them);
+   * the box's aspect and length still apply.
    */
-  const start = async () => {
-    if (busy.current || figure == null) return;
+  const start = async (brief?: string) => {
+    const from: HomeDraft = brief == null ? draft : { ...draft, text: brief };
+    /* The figure the person pressed: the one shown for these words. */
+    const limit = figureFor(from.text);
+    if (busy.current || limit == null) return;
     setStartProblem("");
-    const goal = goalFor(draft);
+    const goal = goalFor(from);
     if (!goal) { setStartProblem("Say what we are making, or pick a template."); return; }
     busy.current = true;
     setPending("start");
     try {
-      let project: Started | null = own;
+      let project: Started | null = started && started.text === from.text ? started : null;
       if (!project) {
-        const made = await make(FILM);
+        const made = await make(FILM, from);
         if ("error" in made) { setStartProblem(made.error); return; }
-        project = { ...made, text: draft.text, figure: null };
+        project = { ...made, text: from.text, figure: null };
       }
       const production = project.productionId ? { productionId: project.productionId } : await productionOf(fetcher, project.id);
       if ("error" in production) { setStarted(project); setStartProblem(production.error); return; }
       project = { ...project, productionId: production.productionId };
       const terms = await planningFor(fetcher, production.productionId, project.id);
       if ("error" in terms) { setStarted(project); setStartProblem(terms.error); return; }
-      if (terms.planning > figure) {
+      if (terms.planning > limit) {
         setStarted({ ...project, figure: terms.planning });
         setStartProblem(`For this brief, Atomik's thinking may cost ${priceWords(upTo(terms.planning))}. Press Start again to approve it.`);
         return;
       }
-      const asked = await askAtomik(fetcher, { productionId: production.productionId, draftId: project.id, goal, limit: figure, requestId: crypto.randomUUID() });
+      const asked = await askAtomik(fetcher, { productionId: production.productionId, draftId: project.id, goal, limit, requestId: crypto.randomUUID() });
       if ("error" in asked) { setStarted(project); setStartProblem(asked.error); return; }
       forget();
       /* One move: the board with Atomik's panel docked beside it (two writes in a row would leave the second reading the address as it was). */
@@ -177,5 +183,5 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
     }
   };
 
-  return { draft, onDraft, refs, setRefs, briefFile, setBriefFile, pending, problem, startProblem, thinking, retryThinking, figure, create, start, open, openSample };
+  return { draft, onDraft, refs, setRefs, briefFile, setBriefFile, pending, problem, startProblem, thinking, retryThinking, figure, figureFor, create, start, open, openSample };
 }
