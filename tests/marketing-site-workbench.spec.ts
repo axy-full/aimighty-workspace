@@ -7,14 +7,16 @@ import { signInLocally } from "./helpers/workbenchLocal";
  * it at the product's own paths; a member at / still gets the app. Every
  * page is checked at the five sizes for overflow, phone targets, copy about
  * charging, and anything that needs a Higgsfield sign-in, none of which the
- * public site carries. The hero's handoff is followed into Gen, which prices
- * the take itself.
+ * public site carries. The hero's handoff is followed into Make (the code's
+ * Gen), which prices the take itself.
  */
 
-const PAGES: [string, string][] = [
-  ["/", "Gen"], ["/studio", "Studio"], ["/business", "Business"], ["/viral", "Viral"],
-  ["/atomik", "Atomik"], ["/workspace", "Workspace"], ["/pricing", "Pricing"],
+/* Each path and its current tab; Settings (/workspace) has no tab of its own. */
+const PAGES: [string, string | null][] = [
+  ["/", "Make"], ["/studio", "Studio"], ["/business", "Ads"], ["/viral", "Social"],
+  ["/atomik", "Atomik"], ["/workspace", null], ["/pricing", "Pricing"],
 ];
+const TABS = ["Studio", "Ads", "Social", "Make", "Atomik", "Pricing"];
 const DESKTOP = "workbench-1440x900";
 
 async function fits(page: Page) {
@@ -37,8 +39,14 @@ for (const [path, tab] of PAGES) {
     const res = await page.goto(path);
     expect(res?.status()).toBe(200);
     const nav = page.getByRole("navigation", { name: "Suites" }).first();
-    await expect(nav.getByRole("link", { name: tab, exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(nav.getByRole("link")).toHaveText(TABS);
+    if (tab) await expect(nav.getByRole("link", { name: tab, exact: true })).toHaveAttribute("aria-current", "page");
+    else await expect(nav.locator('[aria-current="page"]')).toHaveCount(0);
+    /* Every way in says Sign up and opens /signup; the invitation request stays at the foot. */
+    await expect(page.locator(".mk-header").getByRole("link", { name: "Sign up", exact: true })).toHaveAttribute("href", "/signup");
+    await expect(page.locator("#access").getByRole("link", { name: "Sign up", exact: true })).toHaveAttribute("href", "/signup");
     await expect(page.locator("#access form")).toBeVisible();
+    expect(await page.locator("body").innerText(), `${path} still says Request access`).not.toMatch(/Request access/i);
     const { overflow, small } = await fits(page);
     expect(overflow, `${path} is wider than the window`).toBe(false);
     expect(small, `${path} has phone targets under 44px`).toEqual([]);
@@ -68,7 +76,7 @@ test("the internal /site path redirects to the public one", async ({ page }, inf
   expect(res.headers().location).toMatch(/\/studio$/);
 });
 
-test("request access posts to the real endpoint and confirms", async ({ page }, info) => {
+test("the invitation request posts to the real endpoint and confirms", async ({ page }, info) => {
   test.skip(info.project.name !== DESKTOP, "one post");
   let body: Record<string, unknown> | null = null;
   await page.route("**/api/access-request", async (route) => {
@@ -77,7 +85,7 @@ test("request access posts to the real endpoint and confirms", async ({ page }, 
   });
   await page.goto("/pricing");
   await page.locator("#access").getByLabel("Work email").fill("someone@example.test");
-  await page.locator("#access").getByRole("button", { name: "Request access" }).click();
+  await page.locator("#access").getByRole("button", { name: "Ask for an invitation" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Noted." })).toBeVisible();
   expect(body).toMatchObject({ email: "someone@example.test", company: "" });
 });
@@ -95,7 +103,7 @@ test("a member keeps the app at /, and the site offers the app instead of sign-i
   await expect(page.locator(".mk-header").getByRole("link", { name: "Sign in" })).toHaveCount(0);
 });
 
-test("the hero keeps a visitor's prompt and opens it in Gen, which prices the take live", async ({ page }, info) => {
+test("the hero keeps a visitor's prompt and opens it in Make, which prices the take live", async ({ page }, info) => {
   test.skip(info.project.name !== DESKTOP, "one handoff");
   await page.goto("/");
   const go = page.locator(".mk-go");
@@ -105,7 +113,8 @@ test("the hero keeps a visitor's prompt and opens it in Gen, which prices the ta
   await go.click();
   const signIn = page.locator(".mk-take").getByRole("link", { name: "Sign in" });
   await expect(signIn).toHaveAttribute("href", "/login?next=%2Fsuites%3Fview%3Dgen");
-  await expect(page.locator(".mk-take-meta")).toHaveText("Sign in and it opens in Gen.");
+  await expect(page.locator(".mk-take-meta")).toHaveText("Sign in and it opens in Make.");
+  await expect(page.locator(".mk-take").getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/signup");
 
   await signInLocally(page.request);
   await page.goto("/suites?view=gen");

@@ -3,11 +3,11 @@ import { ParticlMark } from "@/components/ParticlMark";
 import type { SitePrices } from "@/lib/marketing/prices.server";
 import { planLines } from "@/lib/marketing/plans";
 import { usd } from "@/lib/marketing/format";
-import { APP_HREF, PRICING_HREF, SIGN_IN_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
+import { APP_HREF, PRICING_HREF, SIGN_IN_HREF, SIGN_UP_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
 import AccessForm from "./AccessForm";
 import { Chips, Cols, Grid, Head, Section, Tile, Window } from "./ui";
 
-/** Suites strip → Shell → Pricing teaser → Request access: the end of every page. */
+/** The six places → Shell → Pricing teaser → Sign up: the end of every page. */
 export default function SharedBottom({ prices, member }: { prices: SitePrices; member: boolean }) {
   return (
     <>
@@ -21,11 +21,11 @@ export default function SharedBottom({ prices, member }: { prices: SitePrices; m
 
 function SuitesStrip() {
   return (
-    <Section id="suites" panel label="Suites">
+    <Section id="suites" panel label="Particl">
       <Head
-        eyebrow="Five suites · one workspace · one shell"
-        title="One room. One composer."
-        aside={<p className="mk-lead" style={{ fontSize: 15, maxWidth: "46ch" }}>Every tool is a preset that opens the same composer. Assets are visible and draggable on every page.</p>}
+        eyebrow="Studio · Ads · Social · Make · Atomik"
+        title="One board per production."
+        aside={<p className="mk-lead" style={{ fontSize: 15, maxWidth: "46ch" }}>Set the look first, with a look board and storyboard frames before any video. Every price is on the button, and a person approves the spend.</p>}
       />
       <div className="mk-suites-grid">
         {SITE_SUITES.map((suite) => (
@@ -42,12 +42,12 @@ function SuitesStrip() {
 }
 
 const SHELL_TILES: [string, string, string][] = [
-  ["Projects", "Home opens on your projects", "Recent projects, saved projects, a new one. A project is one brief and one cast across every suite; switching suites waits for pending saves."],
-  ["⌘K", "Palette", "Generate, suites, every page, Workspace, models, assets and “Ask Atomik: …”. Enter runs the top hit."],
-  ["Library", "Tools | Assets", "On every stage. Every tile drags onto any reference well or Rig node. Download original is always the original bytes."],
+  ["Projects", "Home opens on your projects", "Recent projects, saved projects, a new one. A project is one brief and one cast across Studio, Ads and Social; switching waits for pending saves."],
+  ["⌘K", "Palette", "Make, every page, Settings, models, assets and “Ask Atomik: …”. Enter runs the top hit."],
+  ["Library", "Tools | Assets", "On every stage. Every tile drags onto any reference well or Board node. Download original is always the original bytes."],
   ["⌘J", "Inspector", "Controls, Inputs and Versions for whatever is selected: asset, take, run, node, item or stage."],
   ["Right-click", "Menu everywhere", "Copy, cut, paste, duplicate, move to, retry, and a 20-deep undo."],
-  ["Enhancer", "One prompt enhancer", "One provider, chosen in Workspace › General. Never on raw: prompts."],
+  ["Enhancer", "One prompt enhancer", "One provider, chosen once in Settings. Never on raw: prompts."],
 ];
 
 function Shell() {
@@ -94,7 +94,7 @@ function PricingTeaser({ prices }: { prices: SitePrices }) {
 
 function RequestAccess({ member }: { member: boolean }) {
   return (
-    <section id="access" className="mk-section mk-access" aria-label="Request access">
+    <section id="access" className="mk-section mk-access" aria-label="Sign up">
       <div className="mk-wrap">
         <span style={{ color: "var(--gx-accent-text)" }}><ParticlMark size={24} /></span>
         <h2 className="mk-h2">Invite-only, built for small teams.</h2>
@@ -103,8 +103,10 @@ function RequestAccess({ member }: { member: boolean }) {
           <a href={APP_HREF} className="mk-btn gx-primary" style={{ height: 44 }}>Open Particl</a>
         ) : (
           <>
+            <a href={SIGN_UP_HREF} className="mk-btn gx-primary" style={{ height: 44 }}>Sign up</a>
+            <p className="mk-body">No invitation yet? Ask for one.</p>
             <AccessForm />
-            <p className="mk-body">Already invited? <a href={SIGN_IN_HREF}>Sign in</a></p>
+            <p className="mk-body">Already have an account? <a href={SIGN_IN_HREF}>Sign in</a></p>
           </>
         )}
       </div>

@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import SitePage from "@/components/marketing/SitePage";
-import { Amber, Fact, Grid, Group, Note, Section, SuiteHeader } from "@/components/marketing/ui";
-import { ACCESS_HREF, SITE_SUITES } from "@/lib/marketing/site";
+import { Fact, Grid, Group, Note, Section, SuiteHeader } from "@/components/marketing/ui";
+import { SIGN_UP_HREF, SITE_SUITES } from "@/lib/marketing/site";
 
 export const metadata: Metadata = {
-  title: "Business Suite",
-  description: "The Moleculr Business Suite: product, brand, cast, format, variants, design and publishing in one marketing studio.",
+  title: "Ads",
+  description: "Particl Ads: product, brand, cast, format, variants, design and publishing in one place.",
 };
 
 /* Limits as the code enforces them: lib/workbench/studio-schema.ts (moleculrSchema),
@@ -26,9 +26,8 @@ const GROUPS: { tag: string; note?: string; rows: Row[] }[] = [
     { name: "Product details", chip: "saved", desc: "Name, brand, offer and approved claims, saved with the project." },
     { name: "Product images", chip: "5 max", desc: "Up to five originals, kept byte-identical." },
     { name: "Product URL", chip: "reference", desc: "A saved reference. On request one public page is read, and nothing is added until you review it." },
-    /* The cut-out still tool (lib/stillTools.ts, Bria Cutout) is built, but no
-       screen passes Theatre an onStillTool handler, so nothing in the app opens it. */
-    { name: "Cut-out", badge: <Amber>NOT YET RUNNABLE</Amber>, desc: "Pull a clean product cut-out from one of your own photos." },
+    /* No cut-out row: the still tool (lib/stillTools.ts, Bria Cutout) is built, but no
+       screen passes Theatre an onStillTool handler, so nothing in the app opens it yet. */
   ] },
   { tag: "Brand & cast", rows: [
     { name: "Brand", chip: "inherited", desc: "Import a brand kit from your own site URL, then edit voice, palette and type; every variant inherits it." },
@@ -55,17 +54,17 @@ export default function BusinessPage() {
   return (
     <SitePage active="business">
       <SuiteHeader
-        eyebrow="03 · Moleculr Business Suite"
+        eyebrow="02 · Ads"
         title="Build and grow your brand from one marketing studio."
-        lead="One studio: a product, who presents it, what it says and where it runs. Configure a variant and it becomes a generation node bound to your saved originals, so a reload or a handoff to Rig keeps every reference."
+        lead="One studio: a product, who presents it, what it says and where it runs. Configure a variant and it becomes a generation node bound to your saved originals, so a reload or a handoff to the Board keeps every reference."
         pages={suite.pages}
         cta={<>
-          <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>
-          <Link href="/" className="mk-btn mk-btn--secondary">Open Gen</Link>
+          <a href={SIGN_UP_HREF} className="mk-btn gx-primary">Sign up</a>
+          <Link href="/" className="mk-btn mk-btn--secondary">Open Make</Link>
         </>}
       />
 
-      <Section id="business-studio" panel label="Marketing Studio">
+      <Section id="business-studio" panel label="Ads">
         <Grid col={180} style={{ gap: 10 }}>
           {FACTS.map(([k, v]) => <Fact key={k} k={k} v={v} />)}
         </Grid>

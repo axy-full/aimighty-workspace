@@ -2,12 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import SitePage, { sitePrices } from "@/components/marketing/SitePage";
 import { Fact, Grid, Group, Note, Section, SuiteHeader, Window } from "@/components/marketing/ui";
-import { ACCESS_HREF, shot } from "@/lib/marketing/site";
-import { WORKSPACE_TABS } from "@/lib/shell/ia";
+import { SIGN_UP_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
 
 export const metadata: Metadata = {
-  title: "Workspace",
-  description: "One isolated database per workspace, and every account, session and policy change on an append-only audit trail.",
+  title: "Settings",
+  description: "Settings: one isolated database per workspace, and every account, session and policy change on an append-only audit trail.",
 };
 
 /* Sources: lib/shell/ia.ts (the tabs), components/graphite/WorkspaceView.tsx,
@@ -34,45 +33,43 @@ export default async function WorkspacePage() {
   return (
     <SitePage active="workspace">
       <SuiteHeader
-        eyebrow="06 · Workspace"
-        title="One workspace. Every action attributed."
+        eyebrow="06 · Settings"
+        title="Your team's own space. Every action attributed."
         lead="A production house gets its own isolated database and private storage. Every account and session change writes an audit receipt."
-        pages={WORKSPACE_TABS.map((tab) => tab.label)}
+        pages={SITE_SUITES.find((s) => s.id === "workspace")!.pages}
         cta={(
           <>
-            <a href={ACCESS_HREF} className="mk-btn gx-primary">Request access</a>
-            <Link href="/" className="mk-btn mk-btn--secondary">Open Gen</Link>
+            <a href={SIGN_UP_HREF} className="mk-btn gx-primary">Sign up</a>
+            <Link href="/" className="mk-btn mk-btn--secondary">Open Make</Link>
           </>
         )}
       />
 
       {/* The suite header already draws the hairline above this section. */}
-      <Section id="workspace-management" panel label="Workspace management" style={{ borderTop: 0 }}>
+      <Section id="workspace-management" panel label="Settings" style={{ borderTop: 0 }}>
         <Grid col={180} style={{ gap: 10 }}>
           {FACTS.map(([k, v]) => <Fact key={k} k={k} v={v} />)}
         </Grid>
 
         <Grid col={300} style={{ gap: 20 }}>
-          <Window path="particl.app / workspace / plans" src={shot("workspace-plans-credits")} alt="Workspace, Plans and credits: the balance, the plan, credit packs and monthly statements" width={924} height={540} />
+          <Window path="particl.app / settings / plan & credits" src={shot("workspace-plans-credits")} alt="Settings, Plan and credits: the balance, the plan, credit packs and monthly statements" width={924} height={540} />
         </Grid>
 
         <Grid col={270} style={{ alignItems: "start" }}>
-          <Group tag="General" note="workspace-wide defaults" rows={[
-            { name: "Workspace identity", chip: "owner", desc: "The name your team sees everywhere; only the owner renames it." },
-            { name: "Production defaults", chip: "workspace-wide", desc: "Default video and still engine, and take approvals." },
-            { name: "Prompt enhancer", chip: "workspace-wide", desc: "One provider for every suite, chosen here. Never applied to raw: prompts." },
-          ]} />
-          <Group tag="People" rows={[
+          <Group tag="Team" rows={[
             { name: "Invite", chip: "7 days", desc: "One-time links an admin creates; they expire after seven days and are consumed in the same transaction as the seat." },
             { name: "Roles", chip: "owner · admin · member", desc: "Only the owner changes roles; admins invite, disable and unlock from the member row." },
             { name: "Access requests", chip: "reviewed", desc: "Requests from this site wait for the platform administrator; nothing is granted automatically." },
             { name: "Sign-in policy", chip: "optional by default", desc: "The owner can require an authenticator for everyone; until they enrol, members keep only account security, onboarding and workspace switching." },
           ]} />
-          <Group tag="Usage" rows={[
-            { name: "By project · person · month", chip: "CSV", desc: "Completed generations, attempts and failures, with a CSV export." },
+          <Group tag="Plan & credits" rows={[
+            { name: "Usage by project · person · month", chip: "CSV", desc: "Completed generations, attempts and failures, with a CSV export." },
             { name: "Dashboard", chip: "by period", desc: "Revisions per shot and where generations stall; filter and export." },
           ]} />
-          <Group tag="Engines" rows={[
+          <Group tag="Advanced" note="workspace-wide defaults" rows={[
+            { name: "Team name", chip: "owner", desc: "The name your team sees everywhere; only the owner renames it." },
+            { name: "Production defaults", chip: "workspace-wide", desc: "Default video and still engine, and take approvals." },
+            { name: "Prompt enhancer", chip: "workspace-wide", desc: "One provider for every board, chosen here. Never applied to raw: prompts." },
             { name: "Atomik allowlist", chip: "per engine", desc: "Choose which engines Atomik may propose." },
           ]} />
           <Group tag="Security" note="account-wide" rows={[

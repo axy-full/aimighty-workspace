@@ -1,7 +1,7 @@
 import { getPlatformLayer } from "@/lib/platform";
 import { DEFAULT_PLANS, type PlanDef } from "@/lib/plans";
-import { packs, type Pack } from "@/lib/packs";
-import { billCredits, creditUsd, signupCredits } from "@/lib/creditTerms";
+import { packs, pricePack, type Pack } from "@/lib/packs";
+import { billCreditsWith, marginFor, signupCredits } from "@/lib/creditTerms";
 import { ANNUAL_DISCOUNT_PERCENT } from "@/lib/billingConfig";
 import { buildRateTable } from "@/lib/rateTable.server";
 import { charged, estimateImage, estimateVideo, writerCall, type RateTable } from "@/lib/rateTable";
@@ -16,7 +16,16 @@ import { TRAIN_STEPS, trainCostUsd } from "@/lib/identityPricing";
  * the composer's own estimator. Nothing here is typed in by hand, so the site
  * cannot drift from what a workspace is charged. A figure that cannot be
  * computed is null and the page says "Live quote" rather than guess.
+ *
+ * One input is fixed: the price of a credit. The site states the published
+ * rate card, CLAUDE.md § Pricing, at its public price, so it never moves with
+ * the unit the ledger counts in on a given day. Every credit figure and pack
+ * price below is computed at SITE_CREDIT_USD; plans, the Invite grant and the
+ * margin table still come from where the app reads them.
  */
+
+/** The public price of a credit (CLAUDE.md § Pricing: "1 credit = US$0.10, fixed"). */
+export const SITE_CREDIT_USD = 0.10;
 
 export type RateRow = { action: string; spec: string; credits: number | null };
 export type EngineQuote = { id: string; name: string; short: string; credits: number | null; basis: string };
@@ -63,9 +72,11 @@ async function planLayer(): Promise<{ plans: PlanDef[]; inviteCredits: number }>
   }
 }
 
-export async function sitePrices(): Promise<SitePrices> {
-  const t = buildRateTable("cr");
-  const { plans, inviteCredits } = await planLayer();
+/** Everything priced in credits or pack dollars: pure, at the public rate. */
+export type SiteRates = Omit<SitePrices, "plans" | "inviteCredits" | "annualDiscountPercent">;
+
+export function siteRates(): SiteRates {
+  const t = buildRateTable("cr", SITE_CREDIT_USD);
 
   /* The prompt writer: the dearest text model, so the card never under-states it. */
   const writer = Object.keys(t.text).reduce<number | null>((max, id) => {
@@ -73,18 +84,16 @@ export async function sitePrices(): Promise<SitePrices> {
     return each == null ? max : Math.max(max ?? 0, each);
   }, null);
   let training: number | null = null;
-  try { training = billCredits(trainCostUsd(), "identity-training"); } catch { training = null; }
+  try { training = billCreditsWith(trainCostUsd(), marginFor("identity-training"), SITE_CREDIT_USD); } catch { training = null; }
 
   const hero = quote(SEEDANCE_25, video(t, SEEDANCE_25, "1080p", 5, true), "5 s · 1080p");
   const gptLow = still(t, GPT_IMAGE, "Low");
   const gptHigh = still(t, GPT_IMAGE, "High");
 
   return {
-    perCredit: creditUsd(),
-    annualDiscountPercent: ANNUAL_DISCOUNT_PERCENT,
-    plans,
-    inviteCredits,
-    packs: packs(),
+    perCredit: SITE_CREDIT_USD,
+    /* The pack table the app sells (CREDIT_PACKS may override it), priced at the public rate. */
+    packs: packs().map(({ id, label, credits, bonus }) => pricePack({ id, label, credits, bonus }, SITE_CREDIT_USD)),
     rateCard: [
       { action: "Standard still", spec: "Nano Banana 2 · 512", credits: still(t, NANO_2, "512") },
       { action: "Keyframe still", spec: "Nano Banana Pro · 1K", credits: still(t, NANO_PRO, "1K") },
@@ -109,9 +118,14 @@ export async function sitePrices(): Promise<SitePrices> {
         ...quote(GPT_IMAGE, gptLow, "Low to High"),
         basis: gptLow != null && gptHigh != null && gptHigh !== gptLow ? `to ${gptHigh} cr · Low to High` : "a still",
       },
-      [TOPAZ]: quote(TOPAZ, perSecond(t, TOPAZ, "4k", 5), "5 s · to 4K"),
+      /* The UI name (design README § 7): "Topaz upscale", never the model's retired "Astra". */
+      [TOPAZ]: { ...quote(TOPAZ, perSecond(t, TOPAZ, "4k", 5), "5 s · to 4K"), name: "Topaz upscale", short: "TOPAZ" },
     },
     hero,
   };
 }
 
+export async function sitePrices(): Promise<SitePrices> {
+  const { plans, inviteCredits } = await planLayer();
+  return { ...siteRates(), annualDiscountPercent: ANNUAL_DISCOUNT_PERCENT, plans, inviteCredits };
+}
