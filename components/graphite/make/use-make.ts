@@ -48,6 +48,8 @@ export type MakeInput = {
   onBoard?: boolean;
   /** Start with the engine list open (`make=change`). */
   listOpen?: boolean;
+  /** Make is a page here, not a panel (the new interface's Make, components/v12/make): a press that went through keeps it open, its result in the grid. */
+  keepOpen?: boolean;
 };
 
 /**
@@ -73,7 +75,7 @@ const CINEMA_SOUND_ONLY = "Cinema Studio takes sound references as WAV files upl
 /** How long the words rest before Make infers a type from them. */
 const INFER_AFTER_MS = 350;
 
-export function useMake({ scope, project, projects = "ready", workspaceName, onProject, balance, onBoard = false, listOpen: startOpen = false }: MakeInput) {
+export function useMake({ scope, project, projects = "ready", workspaceName, onProject, balance, onBoard = false, listOpen: startOpen = false, keepOpen = false }: MakeInput) {
   const shell = useShell();
   const session = useSession();
   /* The words survive leaving Make (lib/draft.ts): closing the panel, a reload or Try again on a failed tile unmounts it, and a person
@@ -91,8 +93,8 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
        tells the board about is there to glide to (the Rig only catches up on arriving at a page, and Make is a panel over it). */
     announceDraftWritten(made.projectId);
     announceMade({ projectId: made.projectId, nodeId: made.nodeId, name: made.name });
-    shell.closeMake();
-  }, [ws, shell, surface]);
+    if (!keepOpen) shell.closeMake();
+  }, [ws, shell, surface, keepOpen]);
   const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent, hide: hiddenInMake,
     preference: MAKE_MODEL_PREFERENCE, initialPicks: MAKE_PICKS });
   const { state, model, offered, settings, submitting } = composer;
