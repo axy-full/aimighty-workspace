@@ -1,0 +1,9 @@
+{
+  "name": "billing",
+  "app": "/suites?project=ws-billing&suite=particl&page=brief&view=workspace&tab=credits&sp=board",
+  "prototype": "?view=billing",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}
