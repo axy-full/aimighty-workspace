@@ -7,7 +7,9 @@ import { reconcileGenjutsuVideo } from "./genjutsuVideo";
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
-import { queueDeadlineFor, REQUEST_PATH_QUEUE_WAIT_MS, storeVideo, type StoreVideoOptions } from "./storage";
+import { PROVIDER_VIDEO_TIMEOUT_MS, REQUEST_PATH_QUEUE_WAIT_MS, storeVideo, type StoreVideoOptions } from "./storage";
+import { R2_ABORT_TIMEOUT_MS } from "./storage/r2";
+import { HEARTBEAT_MAX_DURATION_MS, RECONCILIATION_BUDGET_MS } from "./reconciliation";
 import { inspectOriginalVideo } from "./videoMetadata.server";
 import { costUsd, isSoulIdentityModel } from "./models";
 import { draftExpiresAt, draftSentAt, isDraft } from "./draftFinal";
@@ -737,6 +739,22 @@ export async function syncActive(limit = 12, options: { store?: StoreVideoOption
 }
 
 /**
+ * The last moment the heartbeat may START a provider → storage save.
+ *
+ * The sweep starts at S and stops admitting work at its deadlineAt,
+ * S + RECONCILIATION_BUDGET_MS (140 s). The route itself may run until
+ * S + HEARTBEAT_MAX_DURATION_MS (300 s). A save can take
+ * PROVIDER_VIDEO_TIMEOUT_MS (120 s) and then R2_ABORT_TIMEOUT_MS (20 s) to
+ * abort, so the last safe start is
+ *   S + 300 s − 120 s − 20 s = S + 160 s = deadlineAt + 20 s.
+ * Saves queued or admitted after it fail fast and go to the next run.
+ */
+export function heartbeatSaveDeadline(deadlineAt: number): number {
+  const sweepStart = deadlineAt - RECONCILIATION_BUDGET_MS;
+  return sweepStart + HEARTBEAT_MAX_DURATION_MS - PROVIDER_VIDEO_TIMEOUT_MS - R2_ABORT_TIMEOUT_MS;
+}
+
+/**
  * The thorough sync, for the 10-minute cron: in-flight jobs, plus repairs for
  * anything that finished but never landed in our storage or never recorded a
  * cost, plus the stuck-image janitor.
@@ -926,8 +944,8 @@ export async function syncPending(
             await deliverGenerationSettlement(gen.id);
             return;
           }
-          // A save starts only while a whole transfer still fits before the run's deadline.
-          await syncGeneration(gen, { strict: true, ...(options.deadlineAt != null ? { store: { deadlineAt: queueDeadlineFor(options.deadlineAt) } } : {}) });
+          // A save starts only while a whole transfer still fits inside the route (heartbeatSaveDeadline).
+          await syncGeneration(gen, { strict: true, ...(options.deadlineAt != null ? { store: { deadlineAt: heartbeatSaveDeadline(options.deadlineAt) } } : {}) });
         }),
     );
     results.attempted += batch.length;

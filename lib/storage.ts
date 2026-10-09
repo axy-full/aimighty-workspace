@@ -114,10 +114,6 @@ export const PROVIDER_VIDEO_QUEUE_WAIT_MS = 40_000;
 /** For a save run inside a person's request (a job poll, the usage page):
     a busy store means skip, and the next poll tries again. */
 export const REQUEST_PATH_QUEUE_WAIT_MS = 5_000;
-/** The queue deadline for work with an absolute deadline (the heartbeat's
-    admission budget): a transfer may only start while a whole transfer still
-    fits before it. */
-export const queueDeadlineFor = (deadlineAt: number): number => deadlineAt - PROVIDER_VIDEO_TIMEOUT_MS;
 export const DEFAULT_MAX_PROVIDER_VIDEO_BYTES = 1024 * 1024 * 1024;
 
 export function maxProviderVideoBytes(env: Record<string, string | undefined> = process.env): number {
@@ -138,7 +134,7 @@ export type StoreVideoOptions = {
   /** Cancels a waiting or running transfer; the caller's reason is rethrown. */
   signal?: AbortSignal;
   /** Absolute epoch ms: no transfer starts after it, and waiting for a slot
-   *  never runs past it (see queueDeadlineFor). */
+   *  never runs past it (the heartbeat's is heartbeatSaveDeadline in lib/jobs.ts). */
   deadlineAt?: number;
   /** Overrides PROVIDER_VIDEO_TIMEOUT_MS (tests, or a caller with less time). */
   timeoutMs?: number;

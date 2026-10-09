@@ -197,7 +197,7 @@ test("the fifth concurrent transfer waits for a slot, then completes", async () 
 test("a save asked to start past its queue deadline makes no request", async () => {
   const storage = r2Storage();
   const before = provider.requests;
-  await expect(storage.storeVideo("stream-late", provider.url(MiB), { deadlineAt: storage.queueDeadlineFor(Date.now() + 60_000) }))
+  await expect(storage.storeVideo("stream-late", provider.url(MiB), { deadlineAt: Date.now() - 1 }))
     .rejects.toThrow(/too little time is left/);
   expect(provider.requests).toBe(before);
   expect(stored("stream-late")).toBeNull();

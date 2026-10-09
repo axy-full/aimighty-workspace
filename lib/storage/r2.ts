@@ -41,6 +41,8 @@ export const R2_MAX_PARTS = 10_000;
 const DELETE_BATCH = 1000;
 const PRESIGN_MAX_SECONDS = 15 * 60;
 export const R2_MULTIPART_THRESHOLD = 100 * 1024 * 1024;
+/** How long a failed multipart upload's AbortMultipartUpload may take. */
+export const R2_ABORT_TIMEOUT_MS = 20_000;
 const PRIVATE_CACHE_CONTROL = "private, max-age=31536000, immutable";
 
 /* ── SigV4 ─────────────────────────────────────────────────────────────── */
@@ -244,7 +246,7 @@ export function createR2Backend(config: R2Config, deps: R2Dependencies = {}): St
        a failure no longer proves nothing was written. */
     let committing = false;
     const abort = async () => {
-      if (uploadId) await s3.send(new AbortMultipartUploadCommand({ Bucket: config.bucket, Key: key, UploadId: uploadId }), { abortSignal: AbortSignal.timeout(20_000) });
+      if (uploadId) await s3.send(new AbortMultipartUploadCommand({ Bucket: config.bucket, Key: key, UploadId: uploadId }), { abortSignal: AbortSignal.timeout(R2_ABORT_TIMEOUT_MS) });
     };
     try {
       const created = await s3.send(new CreateMultipartUploadCommand({ Bucket: config.bucket, Key: key, ContentType: options.contentType, CacheControl: PRIVATE_CACHE_CONTROL }), { abortSignal: options.signal });
