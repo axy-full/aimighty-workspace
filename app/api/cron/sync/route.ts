@@ -27,6 +27,7 @@ import { drainCanvasPushes } from "@/lib/workbench/canvas-push";
 import { drainRigAgentWakeups } from "@/lib/workbench/rig-agent";
 import { expireUnansweredCinemaTakes } from "@/lib/genjutsuVideo";
 import { reconcilePaidTextJobs } from "@/lib/paidText";
+import { alertRendersAtRisk, recordRendersAtRisk } from "@/lib/rendersAtRisk";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -167,6 +168,10 @@ export async function GET(req: Request) {
             await stage("held_jobs", () =>
               releaseHeldJobs({ defer: (fn) => afterResponse(fn) }),
             );
+            // Renders at risk (no stored copy an hour on), recorded for the
+            // platform owner's alert, sent after the visits (lib/rendersAtRisk.ts).
+            // Not a stage: it never fails or defers the visit, and logs its own failures.
+            if (Date.now() < deadlineAt) await recordRendersAtRisk();
             const after = await counts();
             const completed = Math.max(0, before.pending - after.pending);
             // Record attempts separately; only fully successful visits advance
@@ -195,7 +200,15 @@ export async function GET(req: Request) {
             return { failed, completed, deferred };
           });
         },
-        cleanup: () => retireDeletedWorkspaces(1),
+        // Still under the reconciliation lease: one process emails, and the
+        // marks it leaves are in the platform database. Never throws.
+        cleanup: async () => {
+          try {
+            return await retireDeletedWorkspaces(1);
+          } finally {
+            await alertRendersAtRisk();
+          }
+        },
       });
       console[result.ok ? "info" : "error"](
         JSON.stringify({

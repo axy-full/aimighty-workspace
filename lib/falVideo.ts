@@ -25,6 +25,7 @@ import { getModel, type ModelDef } from "./models";
 import { estimateCostUsd } from "./vendorPricing";
 import { type TaskDef, type TaskId } from "./tasks";
 import { db, now } from "./db";
+import { noteStoreFailure } from "./storeFailure";
 import { inspectOriginalVideo, type VideoMetadata } from "./videoMetadata.server";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import type { Reference, VideoParams } from "./ark";
@@ -286,6 +287,9 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
   } catch (e) {
     // fal's URL lives for a while; the next pass stores it. Loud, though.
     console.error(`storeVideo failed for ${gen.id}:`, (e as Error).message);
+    /* The provider finished and charged; the take stays running, unbilled, until the save sticks. The note is
+       what lets the at-risk alert (lib/rendersAtRisk.ts) find it: running alone does not say the provider finished. */
+    await noteStoreFailure(gen.id, e);
     if (options.strict) throw e;
     return { ...gen, error: (e as Error).message };
   }
