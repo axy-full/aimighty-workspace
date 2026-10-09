@@ -15,6 +15,13 @@ const noSideways = (page: import("@playwright/test").Page) => page.evaluate(() =
 test.describe("desktop, switch on", () => {
   test.beforeEach(({}, info) => test.skip(!DESKTOP.includes(info.project.name), "desktop sizes"));
 
+  test("a member who can't request credits sees who can, and no Top up", async ({ page }) => {
+    await openBilling(page, { canRequest: false });
+    await expect(page.getByTestId("v12-billing")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("v12-billing-ask-admin")).toHaveText("Ask an admin: the owner or an admin requests credits.");
+    await expect(page.getByTestId("v12-billing-top-up")).toHaveCount(0);
+  });
+
   test("the new Credits & billing: balance, plan, cycle, month, low-balance rule, placeholder plans, per board, history", async ({ page }) => {
     const { errors } = await openBilling(page);
     const screen = page.getByTestId("v12-billing");

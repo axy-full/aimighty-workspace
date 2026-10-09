@@ -52,7 +52,9 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
   const plan = planNowOf(billing.data);
   const sub = planView(billing.data?.plans, billing.data?.subscription);
   const cycle = cycleNow(billing.data?.cycles, now);
-  const pack = topups.data?.applies ? topUpPack(topups.data.packs) : null;
+  /* As today's screen: only an owner or admin requests credits; a member is told who can. */
+  const pack = topups.data?.applies && topups.data.canRequest ? topUpPack(topups.data.packs) : null;
+  const askAdmin = Boolean(topups.data?.applies && !topups.data.canRequest);
   const history = historyRows(ledger.data?.unit === "credits" ? ledger.data.rows : [], topups.data?.history ?? [], now);
   const perBoard = boardRows(boards.data);
   const perTake = hero.state === "ready" && hero.price.unit === "cr" && hero.price.value.kind !== "free" ? hero.price.value.credits : null;
@@ -103,6 +105,8 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
                 <div className="v12-bill-act">
                   <button type="button" className="v12-bill-primary" onClick={onTopUp} title={`$${pack.usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} data-testid="v12-billing-top-up">{topUpLabel(pack)}</button>
                 </div>
+              ) : askAdmin ? (
+                <div className="v12-bill-act"><span className="v12-bill-quiet" data-testid="v12-billing-ask-admin">Ask an admin: the owner or an admin requests credits.</span></div>
               ) : null}
             </>
           )}

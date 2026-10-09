@@ -201,7 +201,7 @@ export async function creditsByBoard(range: { from: number; to: number }, limit 
   const ws = requireTenant();
   const [rows, names] = await Promise.all([
     platformDb().execute({
-      sql: `SELECT project_id,SUM(status='succeeded') AS n,SUM(${charge}) AS credits FROM meter_events
+      sql: `SELECT project_id,SUM(status='succeeded' AND kind IN ('video','image','audio')) AS n,SUM(${charge}) AS credits FROM meter_events
             WHERE workspace_id=? AND created_at>=? AND created_at<? GROUP BY project_id HAVING credits>0 ORDER BY credits DESC LIMIT ?`,
       args: [ws.id, range.from, range.to, limit],
     }),

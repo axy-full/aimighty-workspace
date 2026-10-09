@@ -14,7 +14,7 @@ export const BILLING_PATH = "/suites?view=workspace&tab=credits";
 const MIN = 60_000;
 const DAY = 86_400_000;
 
-export async function openBilling(page: Page, opts: { on?: boolean; low?: boolean } = {}) {
+export async function openBilling(page: Page, opts: { on?: boolean; low?: boolean; canRequest?: boolean } = {}) {
   if (opts.on === false) await signInLocally(page.request);
   else {
     await signInToRedesign(page.request);
@@ -38,7 +38,7 @@ export async function openBilling(page: Page, opts: { on?: boolean; low?: boolea
     cycles: [{ id: "c1", startsAt: monthStart, endsAt: nextMonth, credits: 400, invoiceId: "i1" }],
   } }));
   await page.route(/\/api\/workspaces\/topups(\?.*)?$/, (route) => route.fulfill({ json: {
-    applies: true, provider: "manual", canRequest: true, openLimit: 3, creditUsd: 0.1, credits: null,
+    applies: true, provider: "manual", canRequest: opts.canRequest ?? true, openLimit: 3, creditUsd: 0.1, credits: null,
     packs: [{ id: "starter", label: "Starter", credits: 500, bonus: 0, total: 500, usd: 50, perCredit: 0.1 }, { id: "team", label: "Team", credits: 2000, bonus: 200, total: 2200, usd: 200, perCredit: 0.091 }],
     requests: [], history: [{ id: "g1", credits: 500, note: "Top up · Starter pack", createdAt: now - DAY - 3 * MIN }],
   } }));
