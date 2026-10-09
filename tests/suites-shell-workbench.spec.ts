@@ -3,7 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { dimLabels, smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
-import { closeSuitesMenu, openSuitesMenu, tapSuiteTab } from "./helpers/suitesMenu";
+import { closeSuitesMenu, goViaSearch, openSuitesMenu, tapSuiteTab } from "./helpers/suitesMenu";
 
 /**
  * The Suites shell, build step 1 (design/particl-graphite/README.md): one
@@ -47,15 +47,17 @@ test("the shell lands on Studio with the README's header, strip and columns", as
   const wide = WIDE.includes(info.project.name);
   const errors = await open(page);
 
+  /* Header option B: Home · the open project (its name) · Make · Atomik; a Studio stage lights the project. */
   const suites = page.getByRole("tablist", { name: "Suites" });
   await openSuitesMenu(page);
-  await expect(suites.getByRole("tab")).toHaveText(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
-  await expect(suites.getByRole("tab", { name: "Studio" })).toHaveAttribute("aria-selected", "true");
+  await expect(suites.getByRole("tab")).toHaveText(["Home", "Coastal light study", "Make", "Atomik"]);
+  await expect(suites.getByRole("tab", { name: "Coastal light study" })).toHaveAttribute("aria-selected", "true");
+  await expect(suites.getByRole("tab", { name: "Make" })).toHaveAttribute("aria-keyshortcuts", "Alt+M");
   await closeSuitesMenu(page);
   await expect(page.getByTestId("workspace-credits")).toContainText(/cr|—/);
 
   const strip = page.getByRole("navigation", { name: "Pages" });
-  await expect(strip.getByRole("button")).toHaveText([/^01\s*Brief$/, /^02\s*Beats$/, /^03\s*Storyboards$/, /^04\s*Environment$/, /^05\s*Cast$/, /^06\s*Astra$/, /^07\s*Rig$/, /^08\s*Takes$/, /^09\s*Edit & Sound$/, /^10\s*Deliver$/]);
+  await expect(strip.getByRole("button")).toHaveText([/^01\s*Brief$/, /^02\s*Beats$/, /^03\s*Storyboards$/, /^04\s*Environment$/, /^05\s*Cast$/, /^06\s*3D blocking$/, /^07\s*Board$/, /^08\s*Takes$/, /^09\s*Edit & Sound$/, /^10\s*Deliver$/]);
   await expect(strip.getByTestId("strip-gap")).toHaveCount(2);
   await expect(strip.getByRole("button", { name: /Brief/ })).toHaveAttribute("aria-current", "page");
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
@@ -86,14 +88,14 @@ test("the shell lands on Studio with the README's header, strip and columns", as
   expect(errors).toEqual([]);
 });
 
-test("suites remember their page, Gen and Workspace are views, and Back retraces all of it", async ({ page }, info) => {
+test("suites remember their page, Make (Gen) and Workspace are views, and Back retraces all of it", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const errors = await open(page);
   const suites = page.getByRole("tablist", { name: "Suites" });
   const strip = page.getByRole("navigation", { name: "Pages" });
 
-  await strip.getByRole("button", { name: /Rig/ }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await strip.getByRole("button", { name: /Board/ }).click();
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   expect([param(page, "page"), param(page, "sp")]).toEqual(["rig", "rig"]);
 
   await tapSuiteTab(page, "Atomik");
@@ -102,11 +104,11 @@ test("suites remember their page, Gen and Workspace are views, and Back retraces
   await strip.getByRole("button", { name: /Budget/ }).click();
   await expect(page.getByTestId("page-title")).toHaveText("Budget");
 
-  /* Studio comes back on Rig, not on Brief. */
-  await tapSuiteTab(page, "Studio");
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  /* The project comes back on Rig, its Studio page, not on Brief. */
+  await tapSuiteTab(page, "Coastal light study");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
 
-  await tapSuiteTab(page, "Gen");
+  await tapSuiteTab(page, "Make");
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
   await expect(strip).toHaveCount(0);
   expect(param(page, "view")).toBe("gen");
@@ -119,17 +121,106 @@ test("suites remember their page, Gen and Workspace are views, and Back retraces
   await page.goBack();
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
   await page.goBack();
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
 
-  /* A pasted link opens the same place. */
+  /* A pasted link opens the same place; a Viral page is the project's, so the project is lit. */
   await page.goto("/suites?suite=subatomik&page=swap&sp=swap");
-  await expect(page.getByTestId("page-title")).toHaveText("Object Swap");
+  await expect(page.getByTestId("page-title")).toHaveText("Object swap");
+  await expect(page.getByTestId("suite-mark")).toHaveText("SOCIAL");
   await openSuitesMenu(page);
-  await expect(suites.getByRole("tab", { name: "Viral" })).toHaveAttribute("aria-selected", "true");
+  await expect(suites.locator('[data-suite-tab="project"]')).toHaveAttribute("aria-selected", "true");
   expect(errors).toEqual([]);
 });
 
-test("⌘K finds a page, runs the top hit on Enter and closes on Escape", async ({ page }, info) => {
+test("header B: Home is the Studio overview, Atomik its suite, ⌥M opens Make; the old suites are a ⌘K away", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const wide = WIDE.includes(info.project.name);
+  const errors = await open(page);
+  const suites = page.getByRole("tablist", { name: "Suites" });
+
+  /* Home: the Studio overview on a desktop (Home of its own is U1), Home's "Where to?" on a phone. */
+  await tapSuiteTab(page, "Home");
+  await expect(page.getByTestId("suite-mark")).toHaveText("HOME");
+  expect(param(page, "sp")).toBe(wide ? "stages" : "home");
+  await openSuitesMenu(page);
+  await expect(suites.getByRole("tab", { name: "Coastal light study" })).toHaveAttribute("aria-selected", "false");
+  await closeSuitesMenu(page);
+
+  /* The project: its Studio page (the board is S3), Brief until another was opened. */
+  await tapSuiteTab(page, "Coastal light study");
+  await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
+
+  /* Atomik: today's Atomik suite under its own mark. */
+  await tapSuiteTab(page, "Atomik");
+  await expect(page.getByTestId("suite-mark")).toHaveText("AGENT");
+  expect(param(page, "suite")).toBe("atomik");
+
+  /* ⌥M is Make (README § 6), from anywhere but a field. */
+  await page.keyboard.press("Alt+KeyM");
+  await expect(page.getByTestId("gen-view")).toBeVisible();
+  expect(param(page, "view")).toBe("gen");
+  await expect(page.getByTestId("suite-mark")).toHaveText("MAKE");
+
+  /* Business, Viral and Crew left the header; ⌘K still reaches each of them. */
+  await goViaSearch(page, "ads", /Ads/);
+  await expect(page.getByTestId("page-title")).toHaveText("Image ads");
+  await expect(page.getByTestId("suite-mark")).toHaveText("ADS");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal page scroll").toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("the avatar opens Settings: who you are, then Team · Plan & credits · Spending rules · Connections · Advanced · Sign out", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const errors = await open(page);
+  const avatar = page.getByTestId("workspace-avatar");
+  const menu = page.getByRole("menu", { name: "Settings" });
+  await avatar.click();
+  await expect(avatar).toHaveAttribute("aria-expanded", "true");
+  await expect(menu.getByRole("menuitem")).toHaveText(["Team", "Plan & credits", "Spending rules", "Connections", "Advanced", "Sign out"]);
+  await expect(menu.getByRole("menuitem", { name: "Team" })).toBeFocused();
+  await expect(menu).toBeInViewport({ ratio: 1 });
+  /* Escape closes it, back onto the avatar, and goes nowhere. */
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(avatar).toBeFocused();
+  expect(param(page, "view")).toBeNull();
+
+  /* Until Settings ships (D1), each item opens the page that holds it today. */
+  for (const [item, check] of [
+    ["Team", async () => expect([param(page, "view"), param(page, "tab")]).toEqual(["workspace", "people"])],
+    ["Plan & credits", async () => expect([param(page, "view"), param(page, "tab")]).toEqual(["workspace", "credits"])],
+    ["Spending rules", async () => { await expect(page.getByTestId("page-title")).toHaveText("Budget"); expect(param(page, "sp")).toBe("budget"); }],
+    ["Connections", async () => { await expect(page.getByTestId("page-title")).toHaveText("Tools & connections"); expect(param(page, "sp")).toBe("skills"); }],
+    ["Advanced", async () => expect([param(page, "view"), param(page, "tab")]).toEqual(["workspace", "engines"])],
+  ] as const) {
+    await avatar.click();
+    await menu.getByRole("menuitem", { name: item }).click();
+    await expect(menu).toHaveCount(0);
+    await expect(async () => { await check(); }).toPass({ timeout: 15_000 });
+  }
+  await expect(page.getByTestId("suite-mark")).toHaveText("SETTINGS");
+  expect(errors).toEqual([]);
+});
+
+test("an old link in the design file's spelling is sent, with a 307, to the app's page; its other params ride along", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  const errors = await open(page);
+  const sent = await page.request.get("/suites?suite=business&page=hooks&project=ws-suites", { maxRedirects: 0 });
+  expect(sent.status()).toBe(307);
+  expect(new URL(sent.headers()["location"], "http://x").search).toBe("?suite=moleculr&page=marketing&project=ws-suites&sp=hooks");
+  await page.goto("/suites?suite=business&page=hooks&project=ws-suites");
+  await expect(page.getByTestId("page-title")).toHaveText("Hooks");
+  expect([param(page, "suite"), param(page, "page"), param(page, "sp"), param(page, "project")]).toEqual(["moleculr", "marketing", "hooks", "ws-suites"]);
+  await page.goto("/suites?suite=atomik&page=memory&palette=1&lib=0");
+  await expect(page.getByTestId("page-title")).toHaveText("Memory");
+  await expect(page.getByRole("dialog", { name: "Search" })).toBeVisible();
+  for (const gone of ["palette", "lib", "find"]) expect(param(page, gone), gone).toBeNull();
+  /* The app's own links are served where they are. */
+  expect((await page.request.get("/suites?suite=moleculr&page=marketing&sp=hooks", { maxRedirects: 0 })).status()).toBe(200);
+  expect(errors).toEqual([]);
+});
+
+test("⌘K finds a board region, runs the top hit on Enter and closes on Escape", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   await open(page);
   await openSuitesMenu(page);
@@ -137,7 +228,7 @@ test("⌘K finds a page, runs the top hit on Enter and closes on Escape", async 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await dialog.getByRole("combobox").or(dialog.getByRole("textbox")).first().fill("deliver");
-  await expect(dialog.getByRole("option").first()).toContainText("10 Deliver");
+  await expect(dialog.getByRole("option").first()).toContainText("Deliver");
   await expect(dialog.getByRole("option").last()).toContainText("Ask Atomik: deliver");
   await page.keyboard.press("Enter");
   await expect(dialog).toHaveCount(0);

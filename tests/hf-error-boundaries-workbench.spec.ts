@@ -3,7 +3,7 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets, smallText } from "./phoneFloors";
 import { DESKTOP, PHONE, forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload } from "./helpers/workspaceFixtures";
-import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
+import { closeSuitesMenu, goCrewReview, openSuitesMenu } from "./helpers/suitesMenu";
 
 /**
  * Error boundaries per panel (components/Boundary.tsx — Next's catchError —
@@ -379,9 +379,8 @@ test("search and a whole view fail on their own: the sheet takes focus and still
   await reachable(page, fault.getByTestId("fault-retry"));
   await noHorizontalScroll(page);
 
-  /* Crew is walled off the same way, and its room strip stays. */
-  await openSuitesMenu(page);
-  await page.getByRole("tablist", { name: "Suites" }).getByRole("tab", { name: /Crew/ }).click();
+  /* Crew is walled off the same way, and its room strip stays. Crew is reached from ⌘K (header option B). */
+  await goCrewReview(page);
   const crew = page.locator('[data-testid="panel-fault"][data-fault="crew"]');
   await expect(crew).toContainText("Crew stopped");
   await reachable(page, crew.getByTestId("fault-retry"));
@@ -389,7 +388,9 @@ test("search and a whole view fail on their own: the sheet takes focus and still
   await crew.getByTestId("fault-retry").click();
   await expect(crew).toHaveCount(0);
 
+  /* The avatar opens Settings; Team is Workspace's People until Settings ships (D1). */
   await page.getByTestId("workspace-avatar").click();
+  await page.getByTestId("settings-team").click();
   await expect(page.getByTestId("workspace-view")).toBeVisible();
   await expect(page.locator('[data-fault="workspace"]')).toHaveCount(0);
   expect(errors).toEqual([]);
@@ -441,8 +442,9 @@ test("the shell's own chrome throws: the Suites error page keeps the header, Try
   await expect(screen.getByRole("heading", { name: "This screen stopped" })).toBeVisible();
   await expect(screen).toContainText("Your work is safe. Takes in progress keep generating.");
   const suites = screen.getByRole("navigation", { name: "Suites" });
-  await expect(suites.getByRole("link")).toHaveText(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
-  await expect(suites.getByRole("link", { name: "Business" })).toHaveAttribute("href", "/suites?suite=moleculr");
+  await expect(suites.getByRole("link")).toHaveText(["Home", "Project", "Make", "Atomik"]);
+  await expect(suites.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/suites?suite=particl&page=brief&sp=stages");
+  await expect(suites.getByRole("link", { name: "Make" })).toHaveAttribute("href", "/suites?view=gen");
   await expect(screen.getByTestId("fault-studio")).toHaveAttribute("href", "/suites");
   await expect(screen.getByTestId("header-search")).toHaveAttribute("href", "/suites?find=1");
   await refIsReadable(screen.getByTestId("fault-ref"));

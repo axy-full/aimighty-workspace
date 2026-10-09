@@ -69,7 +69,7 @@ test("the phone shell: screens, dock, sheet, drill-down and the floors", async (
 
   /* 5 — drill down again: a stage row opens its page, through go(). */
   await page.locator('[data-screen="suite"] [data-page="rig"]').click();
-  await expect(page.getByTestId("mobile-page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("mobile-page-title")).toHaveText("Board");
   await expect(page).toHaveURL(/page=rig/);
   await expect(page.getByTestId("mobile-actions")).toBeVisible();
   expect(await lastRowClearsPinned(page)).toEqual([]);
@@ -136,7 +136,7 @@ test("the phone shell: screens, dock, sheet, drill-down and the floors", async (
   await expect(page.getByTestId("mobile-stage-count")).toBeVisible();
   /* An alias still resolves, and still lands on the page it became. */
   await page.goto("/workspace?project=" + primary.id + "&page=canvas");
-  await expect(page.getByTestId("mobile-page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("mobile-page-title")).toHaveText("Board");
 
   /* 13 — no horizontal overflow at any phone width. */
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

@@ -1,7 +1,10 @@
 import DialogHost from "@/components/dialog";
 import UploadRecovery from "@/components/UploadRecovery";
 import SuitesApp from "@/components/graphite/SuitesApp";
+import { redirect } from "next/navigation";
 import { shellBootstrap } from "@/lib/shell/bootstrap.server";
+import { SHELL_PATH, redirectFor } from "@/lib/shell/ia";
+import { searchStringOf } from "@/lib/workspace/switchover";
 import { SessionProvider } from "@/lib/session";
 import "@/components/workspace/workspace.css";
 import "@/components/graphite/shell.css";
@@ -20,8 +23,12 @@ export const metadata = { title: "Particl" };
  * every old entry point lands on since 22 September 2026
  * (lib/workspace/switchover.ts › SHELL_PATH). workspace.css rides along because
  * the page bodies it mounts today are the existing ones, inside the new chrome.
+ * An old link in the design file's spelling is sent to the app's first
+ * (lib/shell/ia.ts › redirectFor; a 307, the server redirect()'s own).
  */
 export default async function Suites({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const to = redirectFor(SHELL_PATH, searchStringOf(await searchParams));
+  if (to) redirect(to);
   const { scope, session, initialAccount } = await shellBootstrap(searchParams);
   return (
     <SessionProvider key={scope} value={session}>

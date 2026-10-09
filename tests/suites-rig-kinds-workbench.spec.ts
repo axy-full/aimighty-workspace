@@ -217,8 +217,8 @@ test("any card can be picked; the Card Inspector sets a reference's kind for the
   await expect(body.getByTestId("card-source")).toContainText("Image · Sample · Reference");
   await expect(body.getByTestId("card-versions").locator(".pxw-insp-version")).toHaveText([/v1\s*Current · Harbour still/]);
   await expect(body.getByRole("button", { name: "The opening" })).toBeVisible();
-  /* The shot's Generate asks for a shot while a card is picked; nothing is sent. */
-  await expect(page.locator(".gx-pagehead").getByRole("button", { name: /^Generate/ })).toBeDisabled();
+  /* The shot's Make asks for a shot while a card is picked; nothing is sent. */
+  await expect(page.locator(".gx-pagehead").getByRole("button", { name: /^Make/ })).toBeDisabled();
   if (phone) {
     expect(await smallTextIn(body), "Card Inspector text under 12px").toEqual([]);
     expect(await smallTargets(page, '[data-inspector-body="node"]'), "Card Inspector targets under 44×44").toEqual([]);

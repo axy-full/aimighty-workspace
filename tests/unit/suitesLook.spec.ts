@@ -1,14 +1,15 @@
 import { test, expect } from "@playwright/test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEPT_COLORS, KIND_DOT, SUITE_LOOK, posterOf } from "../../components/graphite/icons";
+import { DEPT_COLORS, KIND_DOT, SEGMENT_LOOK, SUITE_LOOK, posterOf } from "../../components/graphite/icons";
 import { HEADER_SEGMENT } from "../../lib/shell/ia";
 
 /** The Suites shell's fixed colours (components/graphite/icons.tsx), and that its sheets stay flat. */
 const read = (...path: string[]) => readFileSync(join(process.cwd(), ...path), "utf8");
 
-test("every header tab has a suite colour and glyph", () => {
-  for (const s of HEADER_SEGMENT) expect(SUITE_LOOK[s.id], s.id).toBeTruthy();
+test("every header tab has a glyph (the project its swatch), and only Atomik a suite colour; the suites keep theirs", () => {
+  for (const s of HEADER_SEGMENT) if (s.id !== "project") expect(SEGMENT_LOOK[s.id], s.id).toBeTruthy();
+  expect(SEGMENT_LOOK).toEqual({ home: { glyph: "home", color: null }, make: { glyph: "spark", color: null }, atomik: { glyph: "atom", color: "#30D158" } });
   expect(SUITE_LOOK.studio).toEqual({ color: "#0A84FF", glyph: "clap" });
   expect(SUITE_LOOK.business).toEqual({ color: "#FF9F0A", glyph: "tag" });
   expect(SUITE_LOOK.viral).toEqual({ color: "#FF453A", glyph: "bolt" });

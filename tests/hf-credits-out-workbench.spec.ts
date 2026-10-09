@@ -229,7 +229,7 @@ test("owner: a held take says what it needs and releases at that price, once; st
   await normal();
   /* Gen's results wear the same card: the whole label on the chip where the tile is wide enough. */
   await openSuitesMenu(page);
-  await page.locator('[data-suite-tab="gen"]').click();
+  await page.locator('[data-suite-tab="make"]').click();
   const results = page.getByRole("region", { name: "Results" });
   await expect(tile(results, "Night ferry").getByTestId("take-chip")).toHaveText("Held · needs 12,345 cr");
   await expect(tile(results, "Night ferry").getByTestId("take-release")).toBeVisible();
@@ -238,7 +238,7 @@ test("owner: a held take says what it needs and releases at that price, once; st
   await whole(page, PRICES);
   await normal();
   await openSuitesMenu(page);
-  await page.locator('[data-suite-tab="studio"]').click();
+  await page.locator('[data-suite-tab="project"]').click();
   if (!(await takes.isVisible())) await page.goto("/suites?suite=studio&page=takes");
   await expect(tile(takes, "Harbour dawn").getByTestId("take-release")).toBeVisible();
 

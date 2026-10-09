@@ -111,7 +111,6 @@ async function gateRowUp(page: Page) {
 
 /** The Library's Assets: the tab bar's Assets on a portrait phone; elsewhere the page head's Library, then its Assets tab. */
 async function openAssets(page: Page) {
-  if (await page.getByTestId("tabbar-assets").isVisible()) { await page.getByTestId("tabbar-assets").click(); return; }
   await page.getByTestId("toggle-library").click();
   const tab = page.getByTestId("library").getByRole("tab", { name: /Assets/ });
   if (await tab.count()) await tab.click();
@@ -409,11 +408,11 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   await expect(suites).toBeHidden();
   await expect(page.getByTestId("header-search")).toBeHidden();
 
-  /* One tap: all six suites and Search, each a 44px target on screen; the one you are in is lit. */
+  /* One tap: Home, the project, Make, Atomik and Search, each a 44px target on screen; the project is lit on its stage. */
   await badge.click();
   await expect(badge).toHaveAttribute("aria-expanded", "true");
-  await expect(suites.getByRole("tab")).toHaveText(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
-  await expect(suites.getByRole("tab", { name: "Studio" })).toHaveAttribute("aria-selected", "true");
+  await expect(suites.getByRole("tab")).toHaveText(["Home", "Harbour at dusk", "Make", "Atomik"]);
+  await expect(suites.locator('[data-suite-tab="project"]')).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("header-search")).toBeVisible();
   await settle(page);
   for (const target of [...await suites.getByRole("tab").all(), page.getByTestId("header-search")]) await expect(target).toBeInViewport();
@@ -424,8 +423,8 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: join(SHOTS, `${info.project.name.replace("workbench-", "")}-menu.png`), animations: "disabled" }); }
 
   /* A pick goes there and closes the menu. */
-  await suites.getByRole("tab", { name: "Business" }).click();
-  await expect(page.getByTestId("suite-mark")).toHaveText("BUSINESS");
+  await suites.getByRole("tab", { name: "Atomik" }).click();
+  await expect(page.getByTestId("suite-mark")).toHaveText("AGENT");
   await expect(badge).toHaveAttribute("aria-expanded", "false");
   await expect(suites).toBeHidden();
 
@@ -446,7 +445,7 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   await badge.click();
   await page.keyboard.press("Escape");
   await expect(suites).toBeHidden();
-  await expect(page.getByTestId("suite-mark")).toHaveText("BUSINESS");
+  await expect(page.getByTestId("suite-mark")).toHaveText("AGENT");
   /* Going anywhere from the header itself (the credits) leaves it closed where you land. */
   await badge.click();
   await page.getByTestId("workspace-credits").click();
@@ -467,7 +466,7 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
 
   /* The primary keeps its price whole, under its action. */
   const primary = page.getByTestId("primary-action");
-  await expect(primary).toHaveText("Generate · 18 cr");
+  await expect(primary).toHaveText("Make · 18 cr");
   const [act, price] = await Promise.all([primary.locator(".gx-go-act").boundingBox(), primary.locator(".gx-go-price").boundingBox()]);
   expect(price!.y).toBeGreaterThan(act!.y + act!.height - 1);
 
@@ -479,8 +478,8 @@ test("phone: the Suites and Search wait behind the context badge, one tap away; 
   if (SHOTS) { await settle(page); await page.screenshot({ path: join(SHOTS, `${info.project.name.replace("workbench-", "")}-projects.png`), animations: "disabled" }); }
   await page.keyboard.press("Escape");
   const strip = page.getByRole("navigation", { name: "Pages" });
-  await expect(strip.getByRole("button", { name: /Rig/ })).toHaveAttribute("aria-current", "page");
-  const [bar, tab] = await Promise.all([strip.boundingBox(), strip.getByRole("button", { name: /Rig/ }).boundingBox()]);
+  await expect(strip.getByRole("button", { name: /Board/ })).toHaveAttribute("aria-current", "page");
+  const [bar, tab] = await Promise.all([strip.boundingBox(), strip.getByRole("button", { name: /Board/ }).boundingBox()]);
   expect(tab!.x).toBeGreaterThanOrEqual(bar!.x - 0.5);
   expect(tab!.x + tab!.width).toBeLessThanOrEqual(bar!.x + bar!.width + 0.5);
   expect(errors).toEqual([]);
@@ -529,7 +528,7 @@ function desktopChrome(page: Page) {
 const desktopGrid = (W: number, H: number): Record<string, Record<string, number[] | null>> => {
   const suite = {
     header: [0, 0, W, 56], strip: [0, 56, W, 46], project: [281, 102, W - 602, 75], pagehead: [281, 177, W - 602, 66.7],
-    content: [281, 243.7, W - 602, H - 243.7], library: [0, 102, 280, H - 102], avatar: [W - 50, 12.5, 30, 30],
+    content: [281, 243.7, W - 602, H - 243.7], library: [0, 102, 280, H - 102], avatar: [W - 46, 11.5, 32, 32],
     brand: [16.6, 21.8], badge: [17.5, 20], suites: [9.5, 36], search: [11.5, 32], credits: [11.5, 32], title: [191, 37.7],
   };
   return {
@@ -551,7 +550,7 @@ test("desktop: the chrome is the hairline grid — header, strip, the heads, wor
   const seen: Record<string, Record<string, number[] | null>> = {};
   for (const [id, path] of [["rig", "/suites?suite=studio&page=rig"], ["takes", "/suites?suite=particl&page=takes&sp=takes"], ["gen", "/suites?view=gen"]] as const) {
     await open(page, path);
-    if (id === "rig") await expect(page.getByTestId("primary-action")).toHaveText("Generate · 18 cr");
+    if (id === "rig") await expect(page.getByTestId("primary-action")).toHaveText("Make · 18 cr");
     if (id === "gen") await expect(page.getByTestId("gen-view")).toBeVisible();
     await settle(page);
     seen[id] = await desktopChrome(page);
@@ -564,7 +563,7 @@ test("desktop: the chrome is the hairline grid — header, strip, the heads, wor
     /* The phone's parts stay out of a desktop: no badge button, the Suites inline, Search in the header, words on the toggles. */
     await expect(page.getByTestId("suites-menu")).toHaveCount(0);
     await expect(page.locator(".gx-brand [data-testid='suite-mark']")).toBeVisible();
-    await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab")).toHaveCount(6);
+    await expect(page.getByRole("tablist", { name: "Suites" }).getByRole("tab")).toHaveCount(4);
     await expect(page.getByTestId("header-search")).toContainText("Search");
     await expect(page.locator(".gx-bar")).toHaveCount(0);
     for (const toggle of await page.locator(".gx-hbtn--glyph").all()) {

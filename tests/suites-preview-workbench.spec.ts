@@ -323,7 +323,7 @@ test("the Inspector's Preview starts at its take in the page's list; Recreate an
   await page.getByTestId("preview-recreate").click();
   await expect(page.getByTestId("preview-dialog")).toHaveCount(0);
   await expect(page.getByTestId("page-title")).toHaveText("Generate");
-  await expect(page.getByTestId("toast")).toContainText(`${frameName(4)}’s recipe is in Gen.`);
+  await expect(page.getByTestId("toast")).toContainText(`${frameName(4)}’s recipe is in Make.`);
 
   /* Use as reference, from the Inspector's own list again. */
   await tile(page, "generation:gen_005").click();

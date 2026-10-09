@@ -51,7 +51,7 @@ test("the Home tiles carry the prototype's lines and live facts; the Assets row 
   expect(tiles.map((t) => t.id)).toEqual(["studio", "gen", "business", "viral", "atomik", "crew"]);
   expect(tiles.map((t) => t.line)).toEqual([
     "Brief to delivery, ten stages.", "Video, images, audio — one composer.", "Image ads, brand kit, product, briefs.",
-    "Genjutsu: motion transfer, object swap.", "Plans, prices, waits for your word.", "One Grok agent per department.",
+    "Motion transfer, object swap.", "Plans, prices, waits for your word.", "One Grok agent per department.",
   ]);
   /* The Gen fact is the workspace's default engine, not an unchecked "ready". */
   expect(tiles.map((t) => t.fact)).toEqual(["1 of 10 done", "Seedance 2.5 · default", "Opens on Image ads", "720p · quoted on the source", "2 awaiting approval", "7 seats"]);

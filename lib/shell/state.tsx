@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "@/lib/workspace/state";
-import { isCrewPage, pageAlias, pageOfLegacy, restorePage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
+import { firstShellPage, isCrewPage, pageAlias, pageOfLegacy, redirectFor, restorePage, shellPage, shellSuite, suiteOfLegacy, type CrewPageId, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
 import { canUndo, popUndo, pushUndo, undoneLabel, type UndoEntry } from "./undo";
 import { libraryHasTools } from "./production-tools";
 import { findRequested, withoutFind } from "./fault";
@@ -54,6 +54,8 @@ export type Shell = {
   clip: Clip | null;
   canUndo: boolean;
   goSuite: (suite: ShellSuiteId, page?: string) => void;
+  /** The header's project segment: the Studio page last shown (never the overview or the phone's Home), else Brief. */
+  goProject: () => void;
   goGen: () => void;
   goCrew: (page?: CrewPageId) => void;
   goWorkspace: (tab?: WorkspaceTabId) => void;
@@ -212,11 +214,26 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     apply({ view: "suite", tab: "general", sp: target.id, cp: "room" }, pushed ? "replace" : "push");
   }, [ws, memory, apply]);
 
+  /* The Studio page the project segment returns to: the last one shown that is a stage, not the overview or the phone's Home. */
+  const lastStage = useRef<string | null>(null);
+  useEffect(() => {
+    if (params.view === "suite" && suiteId === "studio" && !page.phoneOnly) lastStage.current = page.id;
+  }, [params.view, suiteId, page]);
+  const goProject = useCallback(() => {
+    const stage = shellPage("studio", lastStage.current ?? memory.studio);
+    goSuite("studio", stage && !stage.phoneOnly ? stage.id : firstShellPage("studio").id);
+  }, [goSuite, memory]);
+
   /* A page the new IA has no tab for (an old deep link) opens its suite's first page. */
   const landed = useRef(false);
   useEffect(() => {
     if (landed.current) return;
     landed.current = true;
+    /* An old link in the design file's spelling (lib/shell/ia.ts › normalize): the server already rewrote it on the
+       way in, so this only meets one the client reached by itself. The address names the app's form from here on;
+       the providers above were handed that form too (components/graphite/SuitesApp.tsx). */
+    const fixed = redirectFor(window.location.pathname, window.location.search);
+    if (fixed) window.history.replaceState(null, "", fixed + window.location.hash);
     if (ws.state.view !== "studio" || !mapped) {
       const target = mapped ?? suite.pages[0];
       /* The landing replaces the entry URL: Back leaves /suites instead of re-opening the same page. */
@@ -258,6 +275,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     view: params.view, suite, page, wsTab: params.tab, crewPage: params.cp, wide, libTab: libraryHasTools(params.view, suite.id, page.id) ? libTab : "assets", libOpen, inspOpen,
     inspector: ws.state.inspector, palette, ctx, clip, canUndo: canUndo(undoStack, ws.state.projectId),
     goSuite,
+    goProject,
     goGen: () => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "gen" }, "push"); },
     goCrew: (page) => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "crew", cp: page ?? params.cp }, "push"); },
     goWorkspace: (tab) => { setLibOpen(false); setInspOpen(false); setPaletteOpen(false); apply({ ...params, view: "workspace", tab: tab ?? params.tab }, "push"); },
@@ -324,7 +342,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       }
     },
     live,
-  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, apply, ws, setUndoStack, live, link, take]);
+  }), [params, suite, page, wide, libTab, libOpen, inspOpen, palette, ctx, clip, undoStack, goSuite, goProject, apply, ws, setUndoStack, live, link, take]);
   useEffect(() => { liveRef.current = value; }, [value]);
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;

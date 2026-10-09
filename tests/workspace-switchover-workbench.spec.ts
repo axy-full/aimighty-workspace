@@ -58,19 +58,19 @@ test("every old deep link lands on the page that now holds its work", async ({ p
   await signedIn(page);
 
   const cases: { from: string; page: RegExp; title: string; suite: string }[] = [
-    { from: `/workbench?project=${PROJECT}&stage=canvas`, page: /[?&]page=rig(&|$)/, title: "Rig", suite: "particl" },
+    { from: `/workbench?project=${PROJECT}&stage=canvas`, page: /[?&]page=rig(&|$)/, title: "Board", suite: "particl" },
     { from: `/workbench?project=${PROJECT}&stage=storyboard`, page: /[?&]page=boards(&|$)/, title: "Storyboards", suite: "particl" },
     { from: `/workbench?project=${PROJECT}&stage=characters`, page: /[?&]page=cast(&|$)/, title: "Cast & Elements", suite: "particl" },
-    { from: `/workbench?project=${PROJECT}&stage=astra-blender`, page: /[?&]page=astra(&|$)/, title: "Astra 3D", suite: "particl" },
+    { from: `/workbench?project=${PROJECT}&stage=astra-blender`, page: /[?&]page=astra(&|$)/, title: "3D blocking", suite: "particl" },
     { from: `/workbench?project=${PROJECT}&stage=assets`, page: /[?&]page=takes(&|$)/, title: "Takes", suite: "particl" },
     { from: `/workbench?project=${PROJECT}&stage=export`, page: /[?&]page=deliver(&|$)/, title: "Deliver", suite: "particl" },
     /* Stage ids retired before this change still resolve. */
     { from: `/workbench?project=${PROJECT}&stage=script`, page: /[?&]page=brief(&|$)/, title: "Brief & Script", suite: "particl" },
     /* The Suites shell folds the old Generate page into Agent (lib/shell/ia.ts). */
     { from: `/atomik?project=${PROJECT}&page=generate`, page: /[?&]page=generate(&|$)/, title: "Agent", suite: "atomik" },
-    { from: `/atomik?project=${PROJECT}&page=runs`, page: /[?&]page=runs(&|$)/, title: "Runs", suite: "atomik" },
-    { from: `/subatomik?project=${PROJECT}&page=motion-transfer`, page: /[?&]page=motion(&|$)/, title: "Motion Transfer", suite: "subatomik" },
-    { from: `/subatomik?project=${PROJECT}&page=object-swap`, page: /[?&]page=swap(&|$)/, title: "Object Swap", suite: "subatomik" },
+    { from: `/atomik?project=${PROJECT}&page=runs`, page: /[?&]page=runs(&|$)/, title: "Activity", suite: "atomik" },
+    { from: `/subatomik?project=${PROJECT}&page=motion-transfer`, page: /[?&]page=motion(&|$)/, title: "Motion transfer", suite: "subatomik" },
+    { from: `/subatomik?project=${PROJECT}&page=object-swap`, page: /[?&]page=swap(&|$)/, title: "Object swap", suite: "subatomik" },
     { from: `/workbench?project=${PROJECT}&suite=moleculr&page=marketing`, page: /[?&]page=marketing(&|$)/, title: "Image ads", suite: "moleculr" },
   ];
 
@@ -132,7 +132,7 @@ test("a selection and any other query param survive the switch", async ({ page }
   const target = await switched;
   expect(target).toMatch(/[?&]page=swap(&|$)/);
   expect(target).toMatch(/[?&]account=particl(&|$)/);
-  await expect(page.getByTestId("page-title")).toHaveText("Object Swap");
+  await expect(page.getByTestId("page-title")).toHaveText("Object swap");
 });
 
 test("the back button leaves the redirect alone instead of bouncing", async ({ page }, info) => {
@@ -143,7 +143,7 @@ test("the back button leaves the redirect alone instead of bouncing", async ({ p
   await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
   /* An old bookmark, arriving over the top of it. */
   await page.goto(`/workbench?project=${PROJECT}&stage=canvas`);
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
   /* Back returns to where the person was, not to /workbench and forward again. */
   await page.goBack();
   await expect(page).toHaveURL(/[?&]page=brief(&|$)/);
@@ -157,8 +157,8 @@ test("phones land on the Suites shell as well, at the same mapped URLs", async (
   await signedIn(page);
 
   for (const [from, title] of [
-    [`/workbench?project=${PROJECT}&stage=canvas`, "Rig"],
-    [`/subatomik?project=${PROJECT}&page=motion-transfer`, "Motion Transfer"],
+    [`/workbench?project=${PROJECT}&stage=canvas`, "Board"],
+    [`/subatomik?project=${PROJECT}&page=motion-transfer`, "Motion transfer"],
     ["/", "Brief & Script"],
   ] as const) {
     await page.goto(from);
@@ -201,7 +201,7 @@ test("the escape hatch opens the old shell, is remembered, and can be cancelled"
   await expect.poll(shellCookie).toBeUndefined();
   await page.goto(`/workbench?project=${PROJECT}&stage=canvas`);
   await expect(page).toHaveURL(/[?&]page=rig(&|$)/);
-  await expect(page.getByTestId("page-title")).toHaveText("Rig");
+  await expect(page.getByTestId("page-title")).toHaveText("Board");
 });
 
 test("the account menu carries the person back to the previous workspace", async ({ page }, info) => {
