@@ -1,0 +1,9 @@
+{
+  "name": "header-activity",
+  "app": "/suites?project=project-d360f32a&suite=particl&page=brief&view=home",
+  "prototype": "?activity=1",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
