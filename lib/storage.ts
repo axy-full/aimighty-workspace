@@ -1,5 +1,5 @@
 import { withRecoveryActivity } from './recovery';
-import { mkdir, writeFile, readFile, stat, link, unlink } from "node:fs/promises";
+import { mkdir, writeFile, readFile, stat, link, unlink, rename } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -89,44 +89,137 @@ function assertWorkspaceKey(key: string) {
   if (ws && !ws.legacy && !key.startsWith(`ws/${ws.id}/`) && !key.startsWith("platform/")) throw new Error("The stored asset does not belong to this workspace.");
 }
 
-async function download(sourceUrl: string): Promise<Buffer> {
-  let res: Response;
-  try {
-    res = await fetch(sourceUrl, { signal: AbortSignal.timeout(120_000) });
-  } catch (e) {
-    const err = e as Error;
-    if (err.name === "TimeoutError" || err.name === "AbortError") {
-      throw new Error("The render's file did not finish downloading in 120s.");
-    }
-    throw new Error(`Could not download the render: ${err.message}`);
-  }
-  if (!res.ok) throw new Error(`Could not download render (${res.status})`);
-  return Buffer.from(await res.arrayBuffer());
+/* ── Provider → storage, streamed ─────────────────────────────────────────
+ * A finished render's file flows from the provider's URL straight into the
+ * store: R2/Blob as a multipart upload, local disk through a write stream.
+ * It is never held whole in memory; at most one part buffer (8 MiB on R2) and
+ * the sockets' own buffers are. Bytes are counted as they pass, and a file
+ * past MAX_PROVIDER_VIDEO_BYTES (default 1 GiB) stops the transfer: the
+ * multipart upload is aborted, so no object is left behind.
+ * -------------------------------------------------------------------- */
+
+/** Two minutes, and no less: a 200 MB master over a slow link legitimately
+    needs it, and abandoning one early would strand the very render the cron
+    exists to rescue. But not unbounded either: one stalled transfer must not
+    own the heartbeat's window. The budget covers the whole stream, download
+    and upload together, since they now happen at once. */
+export const PROVIDER_VIDEO_TIMEOUT_MS = 120_000;
+export const DEFAULT_MAX_PROVIDER_VIDEO_BYTES = 1024 * 1024 * 1024;
+
+export function maxProviderVideoBytes(env: Record<string, string | undefined> = process.env): number {
+  const raw = env.MAX_PROVIDER_VIDEO_BYTES?.trim();
+  const value = raw ? Number(raw) : NaN;
+  return Number.isSafeInteger(value) && value > 0 ? value : DEFAULT_MAX_PROVIDER_VIDEO_BYTES;
 }
 
-export async function storeVideo(genId: string, sourceUrl: string): Promise<{ url: string; bytes: number }> {
-return await withRecoveryActivity('storage', async () => {
+export class ProviderFileTooLargeError extends Error {
+  readonly code = "PROVIDER_FILE_TOO_LARGE";
+  constructor(readonly limit: number) {
+    super(`The render's file is larger than the ${Math.round(limit / (1024 * 1024))} MB storage limit; it was not saved.`);
+    this.name = "ProviderFileTooLargeError";
+  }
+}
 
-  /* Two minutes, and no less: a 200 MB master over a slow link legitimately
-     needs it, and abandoning one early would strand the very render the cron
-     exists to rescue. But not unbounded either — this runs 30-wide inside a
-     300s cron, where one stalled download could own the whole window. */
-  const buf = isFixtureUrl(sourceUrl) ? await fetchBytes(sourceUrl) : await download(sourceUrl);
+export type StoreVideoOptions = {
+  /** Cancels a running transfer; the caller's reason is rethrown. */
+  signal?: AbortSignal;
+  /** Overrides PROVIDER_VIDEO_TIMEOUT_MS (tests, or a caller with less time). */
+  timeoutMs?: number;
+};
 
-  if (usingCloud()) {
-    // Saves are retried by every poll until they stick. Without overwrite, a
-    // partial first attempt leaves an object behind and every retry then dies
-    // on "already exists" — the video never records as saved.
-    await cloudBackend().put(videoPath(genId), buf, { contentType: "video/mp4", overwrite: true });
-    // Persist the stable object key; response serializers expose authenticated routes.
-    return { url: originalPath("video", genId), bytes: buf.length };
+/**
+ * Copy a finished render from the provider's URL into storage.
+
+ */
+export async function storeVideo(genId: string, sourceUrl: string, options: StoreVideoOptions = {}): Promise<{ url: string; bytes: number }> {
+  if (isFixtureUrl(sourceUrl)) {
+    const buf = await fetchBytes(sourceUrl);
+    return await withRecoveryActivity('storage', async () => {
+      if (usingCloud()) {
+        await cloudBackend().put(videoPath(genId), buf, { contentType: "video/mp4", overwrite: true });
+        return { url: originalPath("video", genId), bytes: buf.length };
+      }
+      await mkdir(LOCAL_DIR, { recursive: true });
+      await writeFile(path.join(LOCAL_DIR, `${genId}.mp4`), buf);
+      return { url: originalPath("video", genId), bytes: buf.length };
+    });
+  }
+  return await withRecoveryActivity('storage', () => streamVideo(genId, sourceUrl, options));
+}
+
+async function streamVideo(genId: string, sourceUrl: string, options: StoreVideoOptions): Promise<{ url: string; bytes: number }> {
+  const limit = maxProviderVideoBytes();
+  const timeoutMs = options.timeoutMs ?? PROVIDER_VIDEO_TIMEOUT_MS;
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+  /* The first reason the transfer stopped, in words a person can act on.
+     A backend wraps whatever its body threw in its own error, so the cause
+     is kept here and rethrown in place of the wrapper. */
+  let stopped: Error | null = null;
+  const explain = (error: unknown): Error => {
+    if (stopped) return stopped;
+    if (timeout.aborted) return new Error(`The render's file did not finish downloading in ${Math.round(timeoutMs / 1000)}s.`);
+    if (options.signal?.aborted) return options.signal.reason instanceof Error ? options.signal.reason : new Error("The save was cancelled.");
+    return error instanceof Error ? error : new Error(String(error));
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(sourceUrl, { signal });
+  } catch (e) {
+    if (timeout.aborted || options.signal?.aborted) throw explain(e);
+    throw new Error(`Could not download the render: ${(e as Error).message}`);
+  }
+  if (!res.ok || !res.body) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error(`Could not download render (${res.status})`);
+  }
+  const header = res.headers.get("content-length");
+  const declared = header != null && /^\d+$/.test(header.trim()) ? Number(header) : null;
+  if (declared != null && declared > limit) {
+    await res.body.cancel().catch(() => {});
+    throw new ProviderFileTooLargeError(limit);
   }
 
-  await mkdir(LOCAL_DIR, { recursive: true });
-  await writeFile(path.join(LOCAL_DIR, `${genId}.mp4`), buf);
-  return { url: originalPath("video", genId), bytes: buf.length };
+  let bytes = 0;
+  const body = res.body;
+  async function* counted(): AsyncGenerator<Buffer> {
+    try {
+      for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {
+        bytes += chunk.byteLength;
+        if (bytes > limit) throw (stopped = new ProviderFileTooLargeError(limit));
+        yield Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+      }
+      // Checked before the upload is completed: a short file never becomes the stored master.
+      if (declared != null && bytes !== declared) throw (stopped = new Error(`The render's file ended early (${bytes} of ${declared} bytes); it was not saved.`));
+    } catch (error) {
+      stopped ??= explain(error);
+      throw stopped;
+    }
+  }
 
-});
+  try {
+    if (usingCloud()) {
+      // Saves are retried by every poll until they stick. Without overwrite, a
+      // partial first attempt leaves an object behind and every retry then dies
+      // on "already exists" — the video never records as saved.
+      await cloudBackend().put(videoPath(genId), counted(), { contentType: "video/mp4", overwrite: true, multipart: true, signal });
+    } else {
+      await mkdir(LOCAL_DIR, { recursive: true });
+      const destination = path.join(LOCAL_DIR, `${genId}.mp4`), temporary = path.join(LOCAL_DIR, `.${genId}.${randomUUID()}.tmp`);
+      const { createWriteStream } = await import("node:fs");
+      const { pipeline } = await import("node:stream/promises");
+      try {
+        await pipeline(Readable.from(counted()), createWriteStream(temporary), { signal });
+        await rename(temporary, destination);
+      } finally { await unlink(temporary).catch(() => {}); }
+    }
+  } catch (error) {
+    await body.cancel().catch(() => {});
+    throw explain(error);
+  }
+  // Persist the stable object key; response serializers expose authenticated routes.
+  return { url: originalPath("video", genId), bytes };
 }
 
 /** Reads a private object back as bytes, from the active backend or the one a stored URL names. */
