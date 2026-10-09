@@ -1,5 +1,6 @@
 import { cleanRule, cleanShotCap } from "../approvalRule";
 import { db } from "../db";
+import { takeOncePerWindow } from "../operationLease";
 import { workspaceAdmins } from "../platform";
 import { notify } from "../push";
 import { getSetting } from "../settings";
@@ -43,9 +44,10 @@ export const askedRecently = (minutes: number) => `You asked about this ${minute
 
 /*
  * One ask per person and subject (a step, or the rules) every ten minutes, counted whether it was refused or not.
- * Kept on this server instance: asking spends nothing and changes nothing, so a lost count only lets one more through.
+ * Kept in the workspace's database (lib/operationLease.ts takeOncePerWindow), so every server process counts the
+ * same asks: one person is not let through once per process.
  */
-const asked = new Map<string, number>();
+const askMark = (key: string) => `ask-admin:${key}`;
 
 /**
  * Whether this render is over the workspace's per-shot cap, judged on the figure the gate and admission use
@@ -83,10 +85,9 @@ export async function askAdmin(actor: AskActor, ask: AskAbout, deps: AskDeps = {
   const ws = requireTenant();
   const at = (deps.now ?? Date.now)();
   const key = [ws.id, actor.id, ask.about, ask.about === "step" ? `${ask.productionId}:${ask.runId}:${ask.seq}` : ""].join("|");
-  const last = asked.get(key);
-  if (last != null && at - last < ASK_AGAIN_MS) throw new AskAdminError(askedRecently(Math.max(1, Math.round((at - last) / 60_000))), 429);
   /* Every ask counts, refused or not: the step is judged (and priced) at most once per person and subject in the window. */
-  asked.set(key, at);
+  const mark = await takeOncePerWindow(db(), askMark(key), ASK_AGAIN_MS, at);
+  if (!mark.taken) throw new AskAdminError(askedRecently(Math.max(1, Math.round((at - mark.since) / 60_000))), 429);
   let title: string, body: string, url: string;
   if (ask.about === "step") {
     if (cleanRule(await getSetting("approvalRule")) !== "cap") throw new AskAdminError(ASK_NO_CAP, 409);
