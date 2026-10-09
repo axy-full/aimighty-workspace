@@ -245,9 +245,14 @@ async function streamVideo(genId: string, sourceUrl: string, options: StoreVideo
     await res.body.cancel().catch(() => {});
     throw new ProviderFileTooLargeError(limit);
   }
+  const empty = () => new Error("The render's file is empty; it was not saved.");
+  if (declared === 0) { await res.body.cancel().catch(() => {}); throw empty(); }
 
   let bytes = 0;
   const body = res.body;
+  const shortFile = () => new Error(declared != null
+    ? `The render's file ended early (${bytes} of ${declared} bytes); it was not saved.`
+    : `The render's file broke off after ${bytes} bytes; it was not saved.`);
   async function* counted(): AsyncGenerator<Buffer> {
     try {
       for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {
@@ -255,9 +260,13 @@ async function streamVideo(genId: string, sourceUrl: string, options: StoreVideo
         if (bytes > limit) throw (stopped = new ProviderFileTooLargeError(limit));
         yield Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
       }
-      // Checked before the upload is completed: a short file never becomes the stored master.
-      if (declared != null && bytes !== declared) throw (stopped = new Error(`The render's file ended early (${bytes} of ${declared} bytes); it was not saved.`));
+      // Checked before the upload is completed: a short or empty file never
+      // replaces the stored master (a retry's good object stays as it was).
+      if (declared != null && bytes !== declared) throw (stopped = shortFile());
+      if (bytes === 0) throw (stopped = empty());
     } catch (error) {
+      // Only the body read throws in here: a connection that broke mid-file.
+      if (!stopped && !timeout.aborted && !options.signal?.aborted) stopped = shortFile();
       stopped ??= explain(error);
       throw stopped;
     }

@@ -122,10 +122,27 @@ test("a stalled provider times out, aborts the upload and leaves no object", asy
   expect(await unsettledActivities()).toEqual([]);
 });
 
-test("a file that ends before its declared length is not completed", async () => {
+test("a file that ends before its declared length never replaces the stored one", async () => {
   const storage = r2Storage();
-  await expect(storage.storeVideo("stream-short", provider.url(20 * MiB, { truncateAt: 17 * MiB }))).rejects.toThrow();
-  expect(stored("stream-short")).toBeNull();
+  await storage.storeVideo("stream-short", provider.url(3 * MiB));
+  const good = stored("stream-short");
+  expect(good?.sha256).toBe(generatedSha256(3 * MiB));
+  await expect(storage.storeVideo("stream-short", provider.url(20 * MiB, { truncateAt: 17 * MiB })))
+    .rejects.toThrow(/^The render's file ended early \(\d+ of 20971520 bytes\); it was not saved\.$/);
+  expect(stored("stream-short")).toEqual(good);
+  expect(openUploads()).toEqual([]);
+  expect(await unsettledActivities()).toEqual([]);
+});
+
+test("an empty provider file is refused and the stored one is kept", async () => {
+  const storage = r2Storage();
+  await storage.storeVideo("stream-empty", provider.url(MiB));
+  const good = stored("stream-empty");
+  const requestsBefore = s3.state().requests;
+  await expect(storage.storeVideo("stream-empty", provider.url(0))).rejects.toThrow("The render's file is empty; it was not saved.");
+  expect(s3.state().requests).toBe(requestsBefore); // declared empty: no upload begun
+  await expect(storage.storeVideo("stream-empty", provider.url(0, { declare: false }))).rejects.toThrow("The render's file is empty; it was not saved.");
+  expect(stored("stream-empty")).toEqual(good);
   expect(openUploads()).toEqual([]);
   expect(await unsettledActivities()).toEqual([]);
 });
