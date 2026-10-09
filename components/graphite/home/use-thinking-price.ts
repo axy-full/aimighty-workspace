@@ -1,22 +1,16 @@
 "use client";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { useScopedFetch } from "@/lib/useScopedFetch";
+import { THINKING_READ_FAILED, thinkingFrom, type Thinking } from "@/lib/shell/thinking-price";
+
+export { THINKING_READ_FAILED, thinkingFrom, type Thinking };
 
 /**
  * Atomik's thinking on a new board, as "Start · up to N cr" shows it before its project exists: the
  * server's own planning figure (GET /api/workbench/team-canvas?agent=1&board=new, the same pricing a
  * saved empty project gets; it prices and nothing else). Read once Home is open, kept a minute.
- *
- * `off`: building with Atomik is switched off for this workspace (RIG_AGENT_ENABLED): no figure, no Start.
- * `unpriced`: the planner's price could not be read: no figure, so Start can't be pressed.
+ * What the answer means is lib/shell/thinking-price.ts.
  */
-export type Thinking =
-  | { state: "loading" }
-  | { state: "ready"; credits: number }
-  | { state: "off" }
-  | { state: "unpriced" }
-  | { state: "error"; message: string };
-
 type Entry = { value: Thinking; at: number; reading: boolean };
 const KEEP_MS = 60_000;
 const entries = new Map<string, Entry>();
@@ -26,17 +20,6 @@ const tell = () => listeners.forEach((notify) => notify());
 const LOADING: Thinking = { state: "loading" };
 
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
-export const THINKING_READ_FAILED = "Atomik's thinking price didn't load.";
-
-/** The answer of the agent read, as Home words it. Exported for the unit spec. */
-export function thinkingFrom(body: unknown): Thinking {
-  const agent = (body as { agent?: { enabled?: unknown; ask?: { planning?: unknown } | null } } | null)?.agent;
-  if (!agent || typeof agent.enabled !== "boolean") return { state: "error", message: THINKING_READ_FAILED };
-  if (!agent.enabled) return { state: "off" };
-  const planning = agent.ask?.planning;
-  return typeof planning === "number" && Number.isFinite(planning) && planning > 0 ? { state: "ready", credits: planning } : { state: "unpriced" };
-}
-
 async function read(fetcher: Fetcher): Promise<Thinking> {
   try {
     const response = await fetcher("/api/workbench/team-canvas?agent=1&board=new", { cache: "no-store" });

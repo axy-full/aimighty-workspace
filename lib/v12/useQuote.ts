@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditRate } from "@/lib/shell/price-words";
@@ -11,6 +11,7 @@ import { IDLE, LOADING, QUOTE_FAULT, quoteFromResponse, quoteRequest, type Money
  * Asked a moment after the source stops changing (as today's useBodyQuote and useAtomikQuote do), through the session's
  * scoped fetch, so an answer for another workspace or account is refused by the server. Only the answer to the current
  * source is shown: while a newer one is asked, the state is "loading", never the old figure. Null source: "idle".
+ * An error carries `retry`, which asks the route again.
  */
 export function useQuote(source: QuoteSource | null, { debounceMs = 400 }: { debounceMs?: number } = {}): Quote {
   const session = useSession();
@@ -21,6 +22,8 @@ export function useQuote(source: QuoteSource | null, { debounceMs = 400 }: { deb
   }), [session.rates.unit, session.rates.creditUsd]);
   const key = source ? JSON.stringify(source) : null;
   const [answer, setAnswer] = useState<{ key: string; quote: Quote } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => { setAnswer(null); setAttempt((n) => n + 1); }, []);
 
   useEffect(() => {
     if (!key) return;
@@ -39,8 +42,9 @@ export function useQuote(source: QuoteSource | null, { debounceMs = 400 }: { deb
         });
     }, debounceMs);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [key, fetcher, terms, debounceMs]);
+  }, [key, fetcher, terms, debounceMs, attempt]);
 
   if (!key) return IDLE;
-  return answer?.key === key ? answer.quote : LOADING;
+  if (answer?.key !== key) return LOADING;
+  return answer.quote.state === "error" ? { ...answer.quote, retry } : answer.quote;
 }
