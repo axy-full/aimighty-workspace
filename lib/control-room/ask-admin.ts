@@ -40,6 +40,7 @@ export const ASK_NO_CAP = "This workspace has no per-shot cap: anyone on the tea
 export const ASK_NO_STEP = "That step is not on this board's plan.";
 export const ASK_NOT_OVER = "That step is not over the per-shot cap: it needs no admin.";
 export const ASK_AGAIN_MS = 10 * 60_000;
+export const ASK_TRY_AGAIN = "Try again in a moment.";
 export const askedRecently = (minutes: number) => `You asked about this ${minutes <= 1 ? "a minute" : `${minutes} minutes`} ago. Ask again in a little while.`;
 
 /*
@@ -86,8 +87,16 @@ export async function askAdmin(actor: AskActor, ask: AskAbout, deps: AskDeps = {
   const at = (deps.now ?? Date.now)();
   const key = [ws.id, actor.id, ask.about, ask.about === "step" ? `${ask.productionId}:${ask.runId}:${ask.seq}` : ""].join("|");
   /* Every ask counts, refused or not: the step is judged (and priced) at most once per person and subject in the window. */
-  const mark = await takeOncePerWindow(db(), askMark(key), ASK_AGAIN_MS, at);
+  let mark: Awaited<ReturnType<typeof takeOncePerWindow>>;
+  try { mark = await takeOncePerWindow(db(), askMark(key), ASK_AGAIN_MS, at); }
+  catch (error) {
+    /* Maintenance keeps its own answer (lib/recovery.ts recoveryRoute); any other database trouble is a moment's wait. */
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "RECOVERY_FENCED") throw error;
+    throw new AskAdminError(ASK_TRY_AGAIN, 503);
+  }
   if (!mark.taken) throw new AskAdminError(askedRecently(Math.max(1, Math.round((at - mark.since) / 60_000))), 429);
+  /* Marks whose window has ended say nothing any more: cleared while taking one, never in the way of the ask. */
+  await db().execute({ sql: "DELETE FROM operation_leases WHERE name GLOB 'ask-admin:*' AND lease_until<=?", args: [at] }).catch(() => {});
   let title: string, body: string, url: string;
   if (ask.about === "step") {
     if (cleanRule(await getSetting("approvalRule")) !== "cap") throw new AskAdminError(ASK_NO_CAP, 409);

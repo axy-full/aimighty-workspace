@@ -79,9 +79,32 @@ test("Ask an admin counts one ask per person and subject every ten minutes acros
   await expect(one.askAdmin(me, rules, at(T + one.ASK_AGAIN_MS + 1))).rejects.toMatchObject({ status: 429, message: one.askedRecently(1) });
   expect(told).toHaveLength(3);
   /* Kept in the workspace's own database, by ids only. */
-  const marks = (await a.execute("SELECT name FROM operation_leases WHERE name GLOB 'ask-admin:*' ORDER BY name")).rows.map((r) => String(r.name));
-  expect(marks).toEqual(["ask-admin:ws_multi|mem2|rules|", "ask-admin:ws_multi|mem|rules|"]);
+  const marks = async () => (await a.execute("SELECT name FROM operation_leases WHERE name GLOB 'ask-admin:*' ORDER BY name")).rows.map((r) => String(r.name));
+  expect(await marks()).toEqual(["ask-admin:ws_multi|mem2|rules|", "ask-admin:ws_multi|mem|rules|"]);
+  /* Marks whose window ended are cleared when the next one is taken; live ones stay. */
+  expect(await one.askAdmin({ ...me, id: "mem3" }, rules, at(T + 13 * 60_000))).toMatchObject({ asked: 1 });
+  expect(await marks()).toEqual(["ask-admin:ws_multi|mem3|rules|", "ask-admin:ws_multi|mem|rules|"]);
   a.close(); b.close();
+});
+
+test("Ask an admin answers 503 \"try again\" when the database cannot take the mark, and keeps maintenance's own answer", async () => {
+  type AskAdmin = typeof import("../../lib/control-room/ask-admin");
+  const failing = (error: Error) => ({ execute: async () => { throw error; } });
+  const process = (client: unknown) => load<AskAdmin>("lib/control-room/ask-admin.ts", {
+    "../db": { db: () => client },
+    "../tenant": { requireTenant: () => ({ id: "ws_down" }) },
+    "../platform": { workspaceAdmins: async () => [] },
+    "../push": { notify: async () => {} },
+    "../settings": { getSetting: async () => "" },
+    "../workbench/rig-agent-runs": { priceRender: async () => ({ ok: false }), stepTitle: () => "" },
+    "../shotCap": { shotCreditsSoFar: async () => 0 },
+    "../workbench/rig-agent-store": { rigAgentExists: async () => false, runOfProduction: async () => null, stepsOf: async () => [] },
+  });
+  const me = { id: "mem", name: "Member", admin: false };
+  const down = process(failing(new Error("SQLITE_IOERR: secret detail")));
+  await expect(down.askAdmin(me, { about: "rules" }, { admins: async () => [] })).rejects.toMatchObject({ status: 503, message: down.ASK_TRY_AGAIN });
+  const fenced = Object.assign(new Error("fenced"), { code: "RECOVERY_FENCED" });
+  await expect(process(failing(fenced)).askAdmin(me, { about: "rules" }, { admins: async () => [] })).rejects.toBe(fenced);
 });
 
 test("the presets-stale attempt is one per workspace and key every ten minutes across processes, and never marked while presets are fresh", async () => {
