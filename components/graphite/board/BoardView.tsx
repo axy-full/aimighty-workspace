@@ -21,7 +21,7 @@ import { rigUndoSink } from "@/lib/shell/rig-commands";
 import { withUndoHint } from "@/lib/shell/undo";
 import { useShell } from "@/lib/shell/state";
 import { useCompact } from "@/lib/shell/use-compact";
-import { uploadFilesToProject, type LibraryEntry } from "@/lib/workspace/library";
+import { findProjectTake, libraryEntries, projectLibraryState, uploadFilesToProject, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { uid, type Asset, type Project } from "@/lib/workbench/studio";
 import { assetFromUpload } from "@/lib/workspace/draft-editor";
@@ -344,12 +344,21 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     pick(new Set([ids[ids.length - 1]]), ids[ids.length - 1]);
     return wanted.length;
   }, [pick, rig, undoable, ws]);
-  const dropFile = useCallback((key: string, at: BoardPoint) => {
-    const entry = items.find((e) => e.take.id === key);
-    if (!entry) return;
+  /* A dropped take this board's loaded Library does not hold yet (a search hit past the loaded pages): loaded by id first
+     (lib/workspace/library.ts findProjectTake). One that is not this board's at all says so instead of doing nothing. */
+  const entryFor = useCallback(async (key: string): Promise<LibraryEntry | null> => {
+    const found = items.find((e) => e.take.id === key);
+    if (found || !projectId) return found ?? null;
+    if (!(await findProjectTake(scope, projectId, key))) return null;
+    return libraryEntries(projectLibraryState(scope, projectId)).find((e) => e.take.id === key) ?? null;
+  }, [items, projectId, scope]);
+  const NOT_HERE = "That file is not in this board's Library. Open its own board to use it, or upload it here.";
+  const dropFile = useCallback(async (key: string, at: BoardPoint) => {
+    const entry = await entryFor(key);
+    if (!entry) { ws.toast(NOT_HERE); return; }
     if (entry.media !== "image" && entry.media !== "video") { ws.toast("Only pictures and videos go on the board. Other files stay in the Library."); return; }
     addMedia([entryAsset(entry)], { x: at.x - FREE_MEDIA_WIDTH / 2, y: at.y - 114 });
-  }, [addMedia, items, ws]);
+  }, [addMedia, entryFor, ws]);
   const upload = useCallback(async (list: FileList | null) => {
     if (!list?.length || !project) return;
     const picked = [...list];
@@ -497,13 +506,14 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   }
 
   const takesDrops = (cardId: string) => { const card = placed.byId.get(cardId); return !offline && !!card && !!registry.defs.get(card.kind)?.accepts; };
-  const dropOn = (cardId: string, data: DataTransfer) => {
+  const dropOn = async (cardId: string, data: DataTransfer) => {
     const card = placed.byId.get(cardId);
     const def = card ? registry.defs.get(card.kind) : undefined;
     let key = "";
     try { key = data.getData("text/plain"); } catch { /* unreadable */ }
-    const entry = items.find((e) => e.take.id === key);
-    if (!card || !def?.accepts || !entry) return;
+    if (!card || !def?.accepts || !key) return;
+    const entry = await entryFor(key);
+    if (!entry) { ws.toast(NOT_HERE); return; }
     const action = def.accepts({ type: "asset", assetId: entry.take.id, media: entry.media }, card);
     if (!action) { ws.toast("That card does not take this file."); return; }
     const shot = project.nodes.find((n) => n.id === action.shotId);
