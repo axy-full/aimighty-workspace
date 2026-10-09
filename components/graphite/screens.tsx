@@ -56,9 +56,8 @@ const BOARD_KINDS: readonly string[] = ["studio", "ads", "social"];
 const boardKind = (value: string | undefined): BoardKindId | null => (value && BOARD_KINDS.includes(value) ? (value as BoardKindId) : null);
 
 /**
- * Home's slot: with the new-interface switch on (lib/newInterface.ts), the new Home; otherwise today's. Phone sizes never
- * reach it (PhoneApp replaces the body). Until the new frame (components/v12/V12Shell.tsx, redesign A1) lands, the new
- * Home sits inside today's header.
+ * Home's slot: with the new-interface switch on (lib/newInterface.ts), the new Home, inside the new frame's body
+ * (components/v12/V12Shell.tsx); otherwise today's. Phone sizes never reach it (PhoneApp replaces the body).
  */
 function HomeSlot(props: HomeViewProps) {
   return useNewInterface() ? <V12HomeEntry {...props} /> : <HomeEntry {...props} />;
