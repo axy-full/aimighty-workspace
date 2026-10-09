@@ -148,6 +148,33 @@ export type StoreVideoOptions = {
  * the next poll or heartbeat tries again.
  */
 export async function storeVideo(genId: string, sourceUrl: string, options: StoreVideoOptions = {}): Promise<{ url: string; bytes: number }> {
+  /* One save per stored object at a time, in this process. Every open tab
+     and the heartbeat poll the same render, and a fal video has no store
+     lease; without this they would fill the transfer slots with copies of
+     one file. A later caller shares the running save's outcome (its own
+     signal still lets it stop waiting; its deadline does not bind the save
+     already running). */
+  const key = videoPath(genId);
+  const running = savesInFlight.get(key);
+  if (running) return options.signal ? untilAborted(running, options.signal) : running;
+  const saving = saveVideo(genId, sourceUrl, options);
+  savesInFlight.set(key, saving);
+  try { return await saving; }
+  finally { if (savesInFlight.get(key) === saving) savesInFlight.delete(key); }
+}
+
+const savesInFlight = new Map<string, Promise<{ url: string; bytes: number }>>();
+
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+async function saveVideo(genId: string, sourceUrl: string, options: StoreVideoOptions): Promise<{ url: string; bytes: number }> {
   if (isFixtureUrl(sourceUrl)) {
     const buf = await fetchBytes(sourceUrl);
     return await withRecoveryActivity('storage', async () => {

@@ -177,6 +177,27 @@ test("the fifth concurrent transfer waits for a slot, then completes", async () 
   for (let i = 0; i < 5; i++) expect(stored(`stream-queue-${i}`)?.sha256).toBe(generatedSha256(MiB + i));
 });
 
+test("concurrent saves of one take share one transfer and one slot", async () => {
+  const storage = r2Storage({ STORAGE_TRANSFER_CONCURRENCY: "2" });
+  const fresh = await startFakeProvider();
+  try {
+    const url = fresh.url(2 * MiB + 9, { hold: true });
+    const same = [0, 1, 2].map(() => storage.storeVideo("stream-once", url));
+    // If each copy took a slot, this other take would be queued behind them.
+    const other = storage.storeVideo("stream-other", fresh.url(MiB, { hold: true }));
+    await expect.poll(() => fresh.requests, { timeout: 5000 }).toBe(2);
+    fresh.release();
+    const results = await Promise.all(same);
+    expect(results).toEqual([0, 1, 2].map(() => ({ url: "generations/stream-once.mp4", bytes: 2 * MiB + 9 })));
+    expect((await other).bytes).toBe(MiB);
+    expect(fresh.requests).toBe(2);
+    expect(stored("stream-once")?.sha256).toBe(generatedSha256(2 * MiB + 9));
+    // Once it has finished, the next save of the same take runs again.
+    await storage.storeVideo("stream-once", fresh.url(MiB));
+    expect(fresh.requests).toBe(3);
+  } finally { await fresh.close(); }
+});
+
 test("a queued transfer gives up at its wait bound, deadline or signal without starting", async () => {
   const storage = r2Storage({ STORAGE_TRANSFER_CONCURRENCY: "1" });
   const held = provider.url(MiB, { hold: true });
