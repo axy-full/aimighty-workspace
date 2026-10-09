@@ -13,7 +13,7 @@ import sharp from "sharp";
  * Output: <REDESIGN_SHOTS_DIR or ../redesign-shots>/<name>/<width>x<height>-{app,proto,beside}.png
  */
 
-const ROOT = path.resolve("design/particl-prototype-12");
+const ROOT = path.resolve(__dirname, "../../design/particl-prototype-12");
 const PAGE = "Particl prototype.dc.html";
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".webp": "image/webp", ".css": "text/css", ".txt": "text/plain" };
 
@@ -22,7 +22,9 @@ let served: { server: Server; origin: string } | null = null;
 async function prototypeOrigin(): Promise<string> {
   if (served) return served.origin;
   const server = createServer(async (req, res) => {
-    const pathname = decodeURIComponent(new URL(req.url ?? "/", "http://x").pathname);
+    let pathname: string;
+    try { pathname = decodeURIComponent(new URL(req.url ?? "/", "http://x").pathname); }
+    catch { res.writeHead(400).end(); return; }
     const file = path.resolve(ROOT, "." + pathname);
     if (!file.startsWith(ROOT + path.sep)) { res.writeHead(403).end(); return; }
     try {
@@ -31,6 +33,7 @@ async function prototypeOrigin(): Promise<string> {
     } catch { res.writeHead(404).end(); }
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  server.unref();
   const port = (server.address() as { port: number }).port;
   served = { server, origin: `http://127.0.0.1:${port}` };
   return served.origin;
@@ -60,7 +63,7 @@ export async function openPrototype(page: Page, query: string): Promise<void> {
   });
   await page.goto(await prototypeUrl(query), { waitUntil: "load" });
   /* The prototype compiles its React source in the page (Babel): wait for the app root to have content. */
-  await page.waitForFunction(() => (document.querySelector("#root, [data-dc-root], body > div")?.textContent ?? "").trim().length > 20, null, { timeout: 30_000 }).catch(() => {});
+  await page.waitForFunction(() => (document.querySelector("#root, [data-dc-root], body > div")?.textContent ?? "").trim().length > 20, null, { timeout: 30_000 });
   await page.waitForTimeout(800);
 }
 

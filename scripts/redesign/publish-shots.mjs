@@ -9,7 +9,7 @@
  * prototype URL beside it, at every size captured.
  */
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 
 const args = process.argv.slice(2);
@@ -30,17 +30,24 @@ if (!existsSync(tree)) {
   if (remote) execFileSync("git", ["worktree", "add", "-q", tree, `origin/${BRANCH}`], { stdio: "inherit" });
   else execFileSync("git", ["worktree", "add", "-q", "--orphan", "-b", BRANCH, tree], { stdio: "inherit" });
   if (remote) git("switch", "-q", "-C", BRANCH, `origin/${BRANCH}`);
-} else {
-  git("fetch", "-q", "origin");
-  if (git("ls-remote", "--heads", "origin", BRANCH)) git("rebase", "-q", `origin/${BRANCH}`);
 }
+/* Never act on any other checkout: the folder must be its own worktree root, on the screenshots branch, with
+   nothing uncommitted, before anything is fetched, rebased, added or pushed. */
+if (realpathSync(git("rev-parse", "--show-toplevel")) !== realpathSync(tree)) throw new Error(`${tree} is not a worktree root.`);
+if (git("branch", "--show-current") !== BRANCH) throw new Error(`${tree} is not on ${BRANCH}.`);
+if (git("status", "--porcelain")) throw new Error(`${tree} has uncommitted changes; publish nothing.`);
+git("fetch", "-q", "origin");
+if (git("ls-remote", "--heads", "origin", BRANCH)) git("rebase", "-q", `origin/${BRANCH}`);
 
 const lines = [];
 for (const from of froms) {
   const screen = path.basename(path.resolve(from));
   const dest = path.join(tree, `pr-${pr}`, screen);
   mkdirSync(dest, { recursive: true });
-  cpSync(from, dest, { recursive: true });
+  /* Only the tool's own output: the PNGs and their JSON notes, top level, nothing else from --from. */
+  const picked = readdirSync(from, { withFileTypes: true }).filter((e) => e.isFile() && /^\d+x\d+(-(app|proto|beside))?\.(png|json)$/.test(e.name));
+  if (!picked.length) throw new Error(`${from} holds no screenshots.`);
+  for (const e of picked) copyFileSync(path.join(from, e.name), path.join(dest, e.name));
   const metas = readdirSync(dest).filter((f) => f.endsWith(".json")).sort().reverse();
   lines.push(`#### ${screen}`, "");
   for (const meta of metas) {
@@ -50,7 +57,7 @@ for (const from of froms) {
     lines.push(`**${tag}** · build \`${info.app}\` · prototype \`${info.prototype}\``, "", `| Build | Prototype |`, `|---|---|`, `| ![build ${tag}](${raw(`${tag}-app.png`)}) | ![prototype ${tag}](${raw(`${tag}-proto.png`)}) |`, "");
   }
 }
-git("add", "-A");
+git("add", "--", `pr-${pr}`);
 if (git("status", "--porcelain")) {
   git("commit", "-q", "-m", `Screenshots for PR #${pr}`);
   git("push", "-q", "origin", `HEAD:${BRANCH}`);

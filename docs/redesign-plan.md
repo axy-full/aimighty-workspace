@@ -52,20 +52,21 @@ Each one is listed for the owner in the morning report.
 1. **Font order:** keep the repo's (system font first, Geist as fallback, `app/fonts.css`). The prototype's assets README says "no web font".
 2. **Toasts:** bottom-centre everywhere, as the README says. The prototype puts some at the top.
 3. **Keys:** `A` approves the selected card, and ⌘J toggles the Atomik panel. The prototype also binds `A` to the panel, which clashes with its own "Approve · A" tooltips.
-4. **No live quote path:** the price reads "quoted", per the owner's instruction, which overrides CLAUDE.md rule 14's "never the bare word quoted" for this build. Each case is listed in the progress log.
-5. **Low-credit chip:** shows when `balance < 20%` of the plan's included credits for the cycle.
+4. **Placeholder names stay in the prototype.** The prototype's brands, studio, people and invite codes are samples. Under CLAUDE.md rule 3 they never appear in components, copy or seed data; screens use the workspace's own data, and tests use neutral names.
+5. **No live quote path:** the price reads "quoted", per the owner's instruction, which overrides CLAUDE.md rule 14's "never the bare word quoted" for this build. Each case is listed in the progress log.
+6. **Low-credit chip:** shows when `balance < 20%` of the plan's included credits for the cycle.
    - On the Invite plan, whose included credits are 0, the base is the welcome grant.
    - The house workspace pays in dollars, so it never shows the chip, and it sees dollar prices. Screenshots are taken in test workspaces that pay in credits.
-6. **Plans on screen:**
+7. **Plans on screen:**
    - Starter, Studio and Team, with placeholder credits and prices from one display-only config (`lib/marketing/plans.ts` or a sibling).
    - Checkout keeps today's plans (`lib/plans.ts`), untouched. Mapping the two is NEEDS AKSHAY.
-7. **Cancel on a render card** (docs/redesign/cancel-billing.md):
+8. **Cancel on a render card** (docs/redesign/cancel-billing.md):
    - It is offered only while the provider still holds the job in its queue, where the provider's docs say nothing is billed. Today that's held takes and Higgsfield API video. Ark and fal cancel APIs exist, but calling them is new money-adjacent code, so that's NEEDS AKSHAY.
    - Once a job is running, the card shows no Cancel: no provider promises a running job isn't billed.
    - Esc never cancels.
-8. **Typical times** come from real job history per engine (`generations.duration_ms`, grouped by model), with the prototype's ranges as the fallback when there are fewer than 10 jobs.
-9. **The Activity pill** reads today's jobs tray API (`/api/jobs?view=tray`) and approvals.
-10. **Library "Uploaded / Generated"** is derived from where an item lives (uploads vs generations), if today's library API can tell them apart. If it can't, that's a migration PR (NEEDS AKSHAY).
+9. **Typical times** come from real job history per engine (`generations.duration_ms`, grouped by model), with the prototype's ranges as the fallback when there are fewer than 10 jobs.
+10. **The Activity pill** reads today's jobs tray API (`/api/jobs?view=tray`) and approvals.
+11. **Library "Uploaded / Generated"** is derived from where an item lives (uploads vs generations), if today's library API can tell them apart. If it can't, that's a migration PR (NEEDS AKSHAY).
 
 ## Merge rule
 

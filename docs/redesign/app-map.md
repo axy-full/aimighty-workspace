@@ -484,7 +484,6 @@ All paths are relative to the repo root. Nothing was edited. No .env files or pr
     --project=workbench-1440x900 [-g "<title>"]   # PW_CHANNEL=chrome if no bundled chromium
   ```
   - `PW_PLATFORM_DATABASE_URL` must match the server's platform DB.
-  - On the shared droplet: heavy.sh slots, nice 19, at most 2–3 browser lanes (memory note).
 - **Rule 7 viewports** (CLAUDE.md:13): 360×640, 390×844, 844×390, 1440×900, 1920×1080. Requirements: no horizontal overflow, primary actions reachable, sheets clear of the home indicator, no stranded whitespace above 1600 px. 360/390/844x390 render the **phone app**.
 
 ---
