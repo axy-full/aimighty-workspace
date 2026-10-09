@@ -53,7 +53,20 @@ export function V12Header({ account, project, projects, onPick }: {
   const nameOf = (id: string) => projects.find((p) => p.id === id)?.name ?? (project?.id === id ? project.name : "Board");
   const states = useMemo(() => boardStates(tray?.jobs ?? [], approvals.items), [tray?.jobs, approvals.items]);
 
-  const goHome = () => { if (shell.make) shell.closeMake(); shell.goHome(); };
+  /* Home as a tab shows Home: Make closes. The shell's goHome keeps Make over the page it moves to, so Make closes once
+     Home is the screen (one address write each, never two from the same old address). */
+  const closeMakeOnHome = useRef(false);
+  const goHome = () => {
+    if (shell.screen === "home") { if (shell.make) shell.closeMake(); return; }
+    closeMakeOnHome.current = Boolean(shell.make);
+    shell.goHome();
+  };
+  const { screen: shownScreen, make: makeOpen, closeMake } = shell;
+  useEffect(() => {
+    if (shownScreen !== "home" || !closeMakeOnHome.current) return;
+    closeMakeOnHome.current = false;
+    if (makeOpen) closeMake();
+  }, [shownScreen, makeOpen, closeMake]);
   const goMake = () => shell.openMake();
   const goBoard = (id: string) => { if (id !== project?.id) onPick(id); shell.goBoard({ closeMake: true }); };
   const atomikOpen = shell.atomik !== null;
@@ -196,7 +209,7 @@ export function V12Header({ account, project, projects, onPick }: {
         </IconButton>
       </div>
 
-      <ActivityPill approvals={approvals} draftId={project?.id ?? null} onBoard={goBoard} />
+      <ActivityPill approvals={approvals} draftId={onBoard && project ? project.id : null} onBoard={goBoard} />
       <LowCreditChip balance={account?.credits?.balance ?? null} />
       <AccountMenu account={account} />
 

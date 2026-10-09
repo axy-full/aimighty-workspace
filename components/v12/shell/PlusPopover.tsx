@@ -40,12 +40,15 @@ export function PlusPopover({ open, onClose, anchor, projects, closed, onOpen }:
   const found = q ? projects.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 6) : projects.slice(0, 3);
   const closedRows = closed.map((id) => projects.find((p) => p.id === id)).filter((p): p is ProjectSummary => Boolean(p));
 
+  /* The Enter that picked a board is spent here (preventDefault), so it never reaches the + button focus returns to. */
+  const go = (id: string) => { setQuery(""); onOpen(id); };
   const make = async (kind: Kind) => {
     if (making || !shell.createProject) return;
     setMaking(kind.id);
     const made = await shell.createProject(kind.untitled, { boardKind: kind.kind }).catch(() => ({ error: "The board could not be made. Try again." }));
     setMaking(null);
     if ("error" in made) { toast({ text: made.error }); return; }
+    setQuery("");
     onClose();
     shell.goBoard({ ...(kind.kind !== "studio" ? { kind: kind.kind } : {}), closeMake: true });
   };
@@ -54,19 +57,19 @@ export function PlusPopover({ open, onClose, anchor, projects, closed, onOpen }:
     <Popover open={open} onClose={() => { setQuery(""); onClose(); }} anchor={anchor} label="New tab" width={560} testId="v12-plus">
       <div className="v12-plus">
         <input className="v12-plus-find" aria-label="Find a board" placeholder="Find a board…" value={query} onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && found[0]) onOpen(found[0].id); }} data-testid="v12-plus-find" />
+          onKeyDown={(e) => { if (e.key === "Enter" && found[0]) { e.preventDefault(); go(found[0].id); } }} data-testid="v12-plus-find" />
         {found.length ? (
           <section aria-label={q ? "Boards" : "Recent boards"}>
             <div className="v12-plus-label">{q ? "Boards" : "Recent boards"}</div>
             <div className="v12-plus-grid">
-              {found.map((p) => <BoardCard key={p.id} project={p} meta={editedLine(p, now) || "Board"} visible={open} onOpen={() => onOpen(p.id)} />)}
+              {found.map((p) => <BoardCard key={p.id} project={p} meta={editedLine(p, now) || "Board"} visible={open} onOpen={() => go(p.id)} />)}
             </div>
           </section>
         ) : q ? <p className="v12-plus-none">No board is called that.</p> : null}
         {closedRows.length && !q ? (
           <section aria-label="Recently closed">
             <div className="v12-plus-label">Recently closed</div>
-            {closedRows.map((p) => <ClosedRow key={p.id} project={p} visible={open} onOpen={() => onOpen(p.id)} />)}
+            {closedRows.map((p) => <ClosedRow key={p.id} project={p} visible={open} onOpen={() => go(p.id)} />)}
           </section>
         ) : null}
         <section aria-label="New board">

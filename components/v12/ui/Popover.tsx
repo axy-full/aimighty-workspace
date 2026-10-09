@@ -64,8 +64,19 @@ export function Popover({ open, onClose, anchor, label, children, align = "start
     };
     measure();
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [open, align, side, anchor]);
+    /* The control can move while the popover is open (a header still filling in its tabs): follow it, checking its
+       place once a frame (one read, and a re-place only when it moved). */
+    let frame = 0;
+    let last = "";
+    const follow = () => {
+      const r = anchor.current?.getBoundingClientRect();
+      const key = r ? `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)}` : "";
+      if (key !== last) { last = key; measure(); }
+      frame = requestAnimationFrame(follow);
+    };
+    frame = requestAnimationFrame(follow);
+    return () => { window.removeEventListener("resize", measure); cancelAnimationFrame(frame); };
+  }, [open, align, side, anchor, portal]);
 
   useEffect(() => {
     if (!open || !at || !autoFocus || !panel.current) return;

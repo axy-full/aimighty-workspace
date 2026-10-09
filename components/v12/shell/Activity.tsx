@@ -1,6 +1,5 @@
 "use client";
 import { useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { useShell } from "@/lib/shell/state";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useJobsTray } from "@/lib/shell/use-jobs-tray";
@@ -25,9 +24,9 @@ export function ActivityPill({ approvals, draftId, onBoard }: { approvals: Appro
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [scope, setScope] = useState<ActivityScope>("all");
-  /* `?activity=1` opens it on landing, as the prototype's address does. */
-  const asked = useSearchParams().get("activity") === "1";
-  const [landed, setLanded] = useState(asked);
+  /* `?activity=1` opens it on landing, as the prototype's address does. Read from the address the page loaded with: the
+     shell rewrites the address to its own params before the header draws. */
+  const [landed, setLanded] = useState(landedWithActivity);
   const shown = open || landed;
   const close = () => { setOpen(false); setLanded(false); };
 
@@ -79,6 +78,15 @@ export function ActivityPill({ approvals, draftId, onBoard }: { approvals: Appro
       </Popover>
     </>
   );
+}
+
+function landedWithActivity(): boolean {
+  try {
+    const entry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    return new URL(entry?.name ?? window.location.href).searchParams.get("activity") === "1";
+  } catch {
+    return false;
+  }
 }
 
 function Group({ title, rows, onOpen }: { title: string; rows: readonly (NeedsRow | RunningRow)[]; onOpen: (row: NeedsRow | RunningRow) => void }) {
