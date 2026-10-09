@@ -368,6 +368,8 @@ From README §4. Basis: **card** = a rate-card row in `CLAUDE.md § Pricing`; **
 
 From README §5, with what is new.
 
+**Prices.** The handoff's sample prices are at US$0.10 a credit, the price `CLAUDE.md` § Pricing and the code use, and they stand (owner, 5 October 2026): Seedance 2.5 1080p 5 s 43 cr, Kling 3.0 Standard 5 s 7 cr, Nano Banana Pro 3 cr, Nano Banana 2 1 cr, identity training 54 cr, the 66 cr and 93 cr plans with fix allowances of 114 cr and 186 cr, the 200 cr line, Top up 500 cr · $50, hover 1 cr = $0.10.
+
 | Rule | New handoff | Previous handoff |
 |---|---|---|
 | Per-shot admin rule | Over **40 cr** on a shot needs an admin; marked on the step; left out of one-tap batch approvals | **New.** Not in `CLAUDE.md § Pricing`; README §5 attributes it to "this round" |
@@ -420,29 +422,48 @@ Also in the master but not in README §8: the voice "Avery"; the MCP token prefi
 
 ## 11. Open decisions
 
-From README §9. These are listed, not decided:
+From README §9, with the owner's answers of 5 October 2026 where given:
 
-1. Cinema Studio price display (no rate-card row today; "up to N cr" until one exists).
-2. Final product names (Board, 3D blocking, Make, Ads and Social are the design's proposals).
-3. The default for spend without asking (Ask in this design).
-4. Sample production content (the desert film is a stand-in).
-5. Atomik's thinking cost beyond how-to answers (4 cr per plan in the samples; per-request against per-plan billing is open).
+1. Cinema Studio price display: **decided** — "about N cr, at most 3N cr" in Make.
+2. Final product names (Board, 3D blocking, Make, Ads and Social are the design's proposals). Open.
+3. The default for spend without asking: **decided** — Ask (see a).
+4. Sample production content (the desert film is a stand-in). Open.
+5. Atomik's thinking: **decided** — "Start · up to N cr" may be pressed by any member (a person); the price on the button is the approval. Agents and MCP never press it (see e).
+
+### The owner's answers, 5 October 2026
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | Auto per-job line | Stays `RIG_AGENT_JOB_CEILING_CREDITS` for now; a workspace setting comes in U1 only if asked for. |
+| 2 | "Start · up to N cr" | Any member (a person) may press it; the price on the button is the approval. Agents and MCP never. |
+| 3 | Fix allowance | 2 × the plan's shot prices. 114 on board frame e is a design error. Build the formula, with the handoff's $0.10 figures: 186 cr for the 93 cr plan, 114 cr for the 66 cr plan. |
+| 4 | 80 % budget pause with Continue / Stop | Build it in U1. Money: waits for the owner's review before merge. |
+| 5 | Board dot grid | SVG pattern, as the repo draws it, same look. |
+| 6 | Make shortcut | ⌥M. |
+| 7 | Phone sheets | Keep the slide-up. |
+| 8 | Object swap | One element replaced per run, as drawn; reference images for that element are fine if the engine takes them. |
+| 9 | Jobs tray | Dots, as built. |
+| 10 | Toast dot | Green only for success with Undo / Open, as built. |
+| 11 | Settings menu interim targets until D1 | OK: Spending rules → Atomik › Budget, Connections → Tools & connections, Advanced → Engines. |
+| 12 | "STUDIO" under the wordmark | Leave the logo as drawn; logos are exempt from the text floor. |
+| 13 | Credit price | **1 credit = US$0.10** (final; it replaces the $0.80 and $0.05 answers given earlier the same morning). `CLAUDE.md` § Pricing, the code default and this handoff are already at $0.10 and stay; only particl.si (`CREDIT_USD` 0.80) comes back, by the PR "pricing: back to US$0.10 on particl.si" and `docs/credit-switchover.md`. |
+| 14 | Cinema Studio 4.0 in Make | "about N cr, at most 3N cr". |
+| 15 | Missing frames | A Claude Design round 2 before U1 (`docs/design-round-2.md`). |
+| 16 | `account=` on old Viral links | Keep it on the final URL. |
 
 ## Where the repo wins
 
-The code and `CLAUDE.md` override the handoff where they disagree. These are the owner's corrections of 4 October 2026, checked against the code. Each one that needs a decision is marked **Owner decision**, and work that depends on it waits for the answer.
+The code and `CLAUDE.md` override the handoff where they disagree. These are the owner's corrections of 4 October 2026, checked against the code. Point d (packs) was dropped on 5 October: "Starter" is in `CLAUDE.md` § Packs. Each one that needs a decision is marked **Owner decision**, and work that depends on it waits for the answer.
 
 **a. Spend without asking.** `lib/workbench/rig-agent-limits.ts` is the rule, not the design's sample. Ask is the default (`RigAgentCard.tsx:55`; the run's `mode` defaults to `'ask'` in `rig-agent-store.ts:39`), so README §9 decision 3 is already decided. In Auto, a render runs without a tap only when it is a draft priced at or under the per-job line (`rig-agent-runs.ts:354-361`, "at or under", not "under"); a full-quality render always asks, and nothing passes the run's approved limit. The per-job line is `RIG_AGENT_JOB_CEILING_CREDITS`, a code constant that is `null` today, so it falls back to guardrail 4 (`JOB_APPROVAL_LINE_USD`, US$20 in `lib/approvalRule.ts`). The design's "steps under 10 cr" is a sample. Today Ask or Auto is chosen per run on the Rig card by whoever starts it; making it a Settings › Spending rules switch that only an admin changes (rule 14) is new work.
-**Owner decision:** does the per-job line become a workspace setting, or stay `RIG_AGENT_JOB_CEILING_CREDITS`?
+**Decided 5 October:** it stays `RIG_AGENT_JOB_CEILING_CREDITS` for now; a workspace setting comes in U1 only if the owner asks for it.
 
 **b. The 40 cr per-shot rule.** This is the existing `cap` option of the cost approval rule in `lib/approvalRule.ts`, and 40 is a sample value. It is a workspace setting, not a constant: `approvalRule` and `shotCapCredits` in the settings table (`lib/settings.ts:24-26`; the default rule is `anyone` and the default cap 50 cr). Only an admin changes it (`PATCH /api/settings`, `requireAdmin`). It counts what the shot has already spent plus the new take (`lib/shotCap.ts`). A member who would pass it is refused, and an admin presses it instead. Limits are by role, not by person, so README §5's named approver reads "members up to the cap, an admin above it".
 
 **c. Topaz upscale.** The video upscale is named "Topaz upscale", as in the `CLAUDE.md` § Pricing rows ("Topaz upscale, 5s 1080p" 23 cr; "5s 4K" 38 cr). "Astra" is a retired name in the UI, both for 3D (now "3D blocking") and for the upscale. The code still labels the model "Topaz Astra 2" (`lib/models.ts`, short "ASTRA") and says "Astra" in `NextActionPanel.tsx`, so the build renames those labels. This overrides the 4 October SOW §8 line that keeps "Topaz Astra" as Topaz's model name.
 
-**d. Packs.** `CLAUDE.md` § Packs does list a Starter pack ($50 for 500 cr), and `lib/packs.ts` sells exactly the four packs on the card: Starter 500, Team 2,000 + 200, Studio 5,000 + 750, Agency 20,000 + 4,000, each priced at the credit price. README §3.5's "Top up · 500 cr · $50" is a sample of one pack: the Top up control lists whatever `packs()` returns. A top-up is a request from the owner or an admin that the platform approves (`lib/topups.ts`), not a checkout. If PR #500 merges (one credit at US$0.80), every pack keeps its dollar price for an eighth of the credits.
-
 **e. "Show me looks · 12 cr" is taken by a person.** README §4's Who column says "anyone (person approves)"; it reads "person". Approving spend belongs to people alone, and Atomik or an MCP caller can only prepare it (`CLAUDE.md` rules 11 and 14).
-**Owner decision:** "Start · up to 4 cr" (Atomik's thinking) is the other row that spends credits while saying "anyone".
+**Decided 5 October:** "Start · up to N cr" (Atomik's thinking) may be pressed by any member, as a person; the price on the button is the approval. Atomik and MCP callers never press it.
 
 **f. Phone record.** On `?device=phone&screen=record&paused=1`, the reference's "Make 3 shots" row overlaps. Its right-hand figure, "50 cr settled · Shot 3 waiting · 43 cr not yet spent", is `white-space:nowrap` in a flex row that does not wrap (master line 95), so it is about 437 px wide in a 358 px column and crushes the title. Build it wrapped: the settled figure stays on the right, and the waiting part moves to its own line under the title. No text in a row may be nowrap and wider than its column at 360 px.
 
@@ -450,15 +471,15 @@ The code and `CLAUDE.md` override the handoff where they disagree. These are the
 
 ### Other places the handoff conflicts with the code
 
-Found while checking a–g. Nothing is built from these until the owner answers.
+Found while checking a–g. Answered by the owner on 5 October where marked.
 
-1. **Fix allowance arithmetic.** README §5 and `CHANGES.txt` give "at most 114 cr" as 2 × (43 + 7 + 7), but the plan on the same card is 43 + 43 + 7 = 93, which gives 186 by the README's own formula. The Studio board frames file says 186.
-2. **The 80 % pause.** Desktop frame f2 reads 161 of 200 cr; README §5 and the phone say 160. In code, the 80 % mark is a one-time notice to admins (`lib/caps.ts`, `capWarnPct`), and the stop comes at the cap (`atCap`). A pause with Continue and Stop is new behaviour on caps, which ground rule 4 lists as "don't redesign".
+1. **Fix allowance arithmetic.** README §5 and `CHANGES.txt` give "at most 114 cr" as 2 × (43 + 7 + 7), but the plan on the same card is 43 + 43 + 7 = 93, which gives 186 by the README's own formula. The Studio board frames file says 186. **Decided:** the formula is 2 × the plan's shot prices; 114 on frame e is a design error. The handoff's $0.10 figures stand: 186 cr for the 93 cr plan, 114 cr for the 66 cr plan.
+2. **The 80 % pause.** Desktop frame f2 reads 161 of 200 cr; README §5 and the phone say 160. In code, the 80 % mark is a one-time notice to admins (`lib/caps.ts`, `capWarnPct`), and the stop comes at the cap (`atCap`). A pause with Continue and Stop is new behaviour on caps, which ground rule 4 lists as "don't redesign". **Decided:** build the pause in U1; money, so the owner reviews before merge.
 3. **The 200 cr line.** README §5 treats the Auto limit (10 cr sample) and the platform line (200 cr) as two numbers; in code they are the same constant (see a). README §4 lists "200 cr" under Spending rules as an admin setting; it is a platform constant, not a workspace setting.
-4. **Top up.** README §4 implies a purchase by any person. In code a top-up is a request restricted to the owner or an admin, which the platform approves (see d).
+4. **Top up.** README §4 implies a purchase by any person. In code a top-up is a request restricted to the owner or an admin, which the platform approves (`lib/topups.ts`).
 5. **Per-second figures.** README §8's "8.6 cr/s" and "1.4 cr/s" are the 5 s card rows divided by five, not rates. Kling 3.0 Standard costs $0.084/s and is rounded per job (10 s is 13 cr, not 14); Seedance is priced by tokens.
 6. **Upscale prices.** The master's "Video upscale · Topaz · 23 cr at 5 s 1080p" cannot be quoted today: the model offers only 4K (`lib/models.ts`, `resolutions: ["4k"]`), so 5 s quotes 38 cr. The image upscale costs 2 or 3 cr and has no card row, but the master shows it "up to 23 cr".
-7. **Gradients.** README §2 allows gradients only on project swatches and avatars, but defines the board dot grid as a `radial-gradient`, and the master also uses them on media placeholders, the "All" filter dot, the sphere highlight and the audio stripes. The repo draws dot grids as an SVG image instead.
+7. **Gradients.** README §2 allows gradients only on project swatches and avatars, but defines the board dot grid as a `radial-gradient`, and the master also uses them on media placeholders, the "All" filter dot, the sphere highlight and the audio stripes. The repo draws dot grids as an SVG image instead. **Decided:** the dot grid stays an SVG pattern, same look.
 8. **Below the readability floor.** The phone tab-bar count badge is 11 px; unsettled values on the phone record are at .35; "Failed" badges use danger red as text, which the repo replaces with `--gx-failed-text` (#FF6961) because #FF453A fails the label floor.
-9. **Make shortcut.** README §6 says ⌥M; the master and the Make frames bind ⌘/.
+9. **Make shortcut.** README §6 says ⌥M; the master and the Make frames bind ⌘/. **Decided:** ⌥M.
 10. **Names in copy.** README §5 names a person in a money rule, and the master uses a voice name and a token prefix that README §8 does not list as placeholders. None may reach code, seed data or copy (ground rule 3).
