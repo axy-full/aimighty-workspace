@@ -26,9 +26,8 @@ The running log of the overnight redesign build. A restarted session reads this 
 
 ## Next
 
-1. Write docs/redesign-plan.md from the prototype inventory and the app map.
-2. Open the P0 PR.
-3. Start lanes A–C on the first P1 items.
+1. P0 PR review (Opus) and CI.
+2. Lanes: A → A1 (tokens, primitives, overlay stack, V12Shell frame); B → B1 (price layer, low-credit rule); C → C1 (render-state model, typical times). Then A2 header, B2 Settings › Credits & billing, C2 Home, C3 Make, C4 Library tray, A3 menus/keys/tooltips.
 
 ## Log
 
