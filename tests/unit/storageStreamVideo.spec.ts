@@ -8,6 +8,7 @@ import { generatedSha256, startFakeProvider, type FakeProvider } from "../helper
 import { start as startFakeS3 } from "../helpers/fake-s3-server.mjs";
 import { createTransferLimiter, TransferQueueTimeoutError, transferConcurrency } from "../../lib/storage/transfers";
 import { readBodyCapped, BodyTooLargeError } from "../../lib/boundedBody";
+import { createClient } from "@libsql/client";
 
 /* storeVideo streams a provider's file into storage: through a real fake S3
  * (tests/helpers/fake-s3-server.mjs, the same SigV4 multipart path the R2
@@ -18,6 +19,20 @@ type FakeS3 = Awaited<ReturnType<typeof startFakeS3>>;
 
 const MiB = 1024 * 1024;
 let s3: FakeS3, provider: FakeProvider, s3Dir: string;
+
+/* The recovery fence (lib/recovery.ts) records every storage write as an
+   activity; a failure it cannot prove harmless stays behind as 'uncertain'
+   and blocks the backup fence. This spec's fence lives in its own database. */
+const fenceDir = mkdtempSync(path.join(tmpdir(), "stream-fence-"));
+const previousPlatformUrl = process.env.PLATFORM_DATABASE_URL;
+process.env.PLATFORM_DATABASE_URL = `file:${path.join(fenceDir, "platform.db")}`;
+async function unsettledActivities(): Promise<{ kind: string; state: string }[]> {
+  const client = createClient({ url: process.env.PLATFORM_DATABASE_URL! });
+  try {
+    const rs = await client.execute("SELECT kind, state FROM recovery_activities WHERE state != 'done'");
+    return rs.rows.map((r) => ({ kind: String(r.kind), state: String(r.state) }));
+  } finally { client.close(); }
+}
 
 test.describe.configure({ mode: "serial" });
 
@@ -30,6 +45,9 @@ test.afterAll(async () => {
   await provider?.close();
   await s3?.close();
   rmSync(s3Dir, { recursive: true, force: true });
+  if (previousPlatformUrl === undefined) delete process.env.PLATFORM_DATABASE_URL;
+  else process.env.PLATFORM_DATABASE_URL = previousPlatformUrl;
+  rmSync(fenceDir, { recursive: true, force: true });
 });
 
 function isolatedProcess(env: Record<string, string>, cwd = process.cwd()): NodeJS.Process {
@@ -83,6 +101,7 @@ test("a file past the cap aborts the multipart upload and leaves no object", asy
   expect(stored("stream-cap")).toBeNull();
   expect(openUploads()).toEqual([]);
   expect(s3.state().aborted).toBe(abortedBefore + 1);
+  expect(await unsettledActivities()).toEqual([]); // aborted cleanly: a certain outcome
   // Declared length over the cap: refused before any upload starts.
   const requestsBefore = s3.state().requests;
   await expect(storage.storeVideo("stream-cap-declared", provider.url(20 * MiB))).rejects.toThrow(/larger than the 10 MB storage limit/);
@@ -100,6 +119,7 @@ test("a stalled provider times out, aborts the upload and leaves no object", asy
   expect(stored("stream-stall")).toBeNull();
   expect(openUploads()).toEqual([]);
   expect(s3.state().aborted).toBe(abortedBefore + 1);
+  expect(await unsettledActivities()).toEqual([]);
 });
 
 test("a file that ends before its declared length is not completed", async () => {
@@ -107,6 +127,7 @@ test("a file that ends before its declared length is not completed", async () =>
   await expect(storage.storeVideo("stream-short", provider.url(20 * MiB, { truncateAt: 17 * MiB }))).rejects.toThrow();
   expect(stored("stream-short")).toBeNull();
   expect(openUploads()).toEqual([]);
+  expect(await unsettledActivities()).toEqual([]);
 });
 
 test("a provider error is reported and nothing is stored", async () => {

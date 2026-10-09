@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import { withRecoveryActivity } from "../recovery";
 import {
   ObjectExistsError,
+  markNothingWritten,
   uncertainUnlessExists,
   type StorageBackend,
   type StoragePutOptions,
@@ -239,6 +240,9 @@ export function createR2Backend(config: R2Config, deps: R2Dependencies = {}): St
     const { CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } = await sdk();
     const s3 = await client();
     let uploadId: string | undefined;
+    /* Set the moment a request that can create the object is sent: after it,
+       a failure no longer proves nothing was written. */
+    let committing = false;
     const abort = async () => {
       if (uploadId) await s3.send(new AbortMultipartUploadCommand({ Bucket: config.bucket, Key: key, UploadId: uploadId }), { abortSignal: AbortSignal.timeout(20_000) });
     };
@@ -265,11 +269,16 @@ export function createR2Backend(config: R2Config, deps: R2Dependencies = {}): St
         }
       }
       if (length) await upload(pending.subarray(0, length));
-      if (!parts.length) { await abort(); uploadId = undefined; await putBuffer(key, Buffer.alloc(0), options); return; }
+      if (!parts.length) { await abort(); uploadId = undefined; committing = true; await putBuffer(key, Buffer.alloc(0), options); return; }
+      committing = true;
       await s3.send(new CompleteMultipartUploadCommand({ Bucket: config.bucket, Key: key, UploadId: uploadId, MultipartUpload: { Parts: parts }, ...(options.overwrite ? {} : { IfNoneMatch: "*" }) }), { abortSignal: options.signal });
     } catch (error) {
-      await abort().catch(() => {});
-      translate(error, "MultipartUpload", key);
+      // No upload id: none was created, or Create's answer was lost (an
+      // orphaned upload is not an object; the bucket's lifecycle rule ends it).
+      let aborted = !uploadId;
+      if (uploadId) await abort().then(() => { aborted = true; }, () => {});
+      try { translate(error, "MultipartUpload", key); }
+      catch (translated) { throw aborted && !committing ? markNothingWritten(translated) : translated; }
     }
   }
   return {
