@@ -92,7 +92,7 @@ test("Motion Transfer on the API key: a 4–30 s source and ordered stills, the 
   const s = await seed(page, playwright, "owner");
   await page.goto("/suites?suite=subatomik&page=motion&sp=motion");
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "motion");
-  await expect(page.getByTestId("page-title")).toHaveText("Motion Transfer");
+  await expect(page.getByTestId("page-title")).toHaveText("Motion transfer");
   await expect(page.getByTestId("viral-reason")).toHaveText("Add one source video (4–30 s).");
   /* The account's owner-run card is gone for good: this page is the composer. */
   await expect(page.getByTestId("owner-run-viral")).toHaveCount(0);
@@ -142,7 +142,7 @@ test("the source's own tools: a frame saved to the project joins the references,
   test.setTimeout(180_000);
   const s = await seed(page, playwright, "owner");
   await page.goto("/suites?suite=subatomik&page=swap&sp=swap");
-  await expect(page.getByTestId("page-title")).toHaveText("Object Swap");
+  await expect(page.getByTestId("page-title")).toHaveText("Object swap");
   await expect(page.getByTestId("viral-prompt")).toHaveAttribute("placeholder", "Replace the bottle with the Glow serum; keep the hands as filmed.");
   await dropFiles(page, [CLIP]);
   await expect(page.getByTestId("viral-source")).toContainText("walk.mp4", { timeout: 60_000 });

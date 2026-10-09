@@ -45,7 +45,7 @@ async function open(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`/suites?project=${project.id}&view=crew`);
-  await expect(page.getByTestId("suite-mark")).toHaveText("CREW", { timeout: 60_000 });
+  await expect(page.getByTestId("suite-mark")).toHaveText("CREW REVIEW", { timeout: 60_000 });
   return { workspaceId: account.workspace.id, headers, rounds, errors };
 }
 

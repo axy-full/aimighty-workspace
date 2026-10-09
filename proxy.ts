@@ -22,7 +22,7 @@ const ALWAYS: Record<string, string> = {
   "/viral": "/site/viral",
 };
 /* Any of these in the query is an app link (a project, a page, a shell choice). */
-const APP_PARAMS = ["project", "suite", "page", "stage", "sel", "shell", "new", "atomik", "view", "tab", "sp", "cp", "plan", "cadence"];
+const APP_PARAMS = ["project", "suite", "page", "stage", "sel", "shell", "new", "atomik", "view", "make", "tab", "sp", "cp", "plan", "cadence"];
 
 export function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;

@@ -95,7 +95,7 @@ async function open(page: Page, options: Options = {}) {
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(options.url ?? "/suites?view=gen");
+  await page.goto(options.url ?? "/suites?make=video");
   if (!options.url) await expect(page.getByTestId("gen-view")).toBeVisible();
   await expect(page.getByTestId("project-name")).toHaveText("Harbour recreate study");
   return { errors, quotes, priced, release: () => release() };
@@ -103,6 +103,7 @@ async function open(page: Page, options: Options = {}) {
 
 /** Opens a take from Gen's own results in the Inspector (a column when wide, an overlay on a phone). */
 async function inspect(page: Page, id: string) {
+  await page.getByTestId("make-tab-recent").click();
   await page.getByTestId("gen-view").locator(`.gx-asset-thumb[data-ctx='asset:generation:${id}']`).click();
   const inspector = page.getByTestId("asset-inspector");
   await expect(inspector).toBeVisible();
@@ -157,9 +158,10 @@ test("Recreate lands the whole recipe in a Gen that is already open, waits for i
   await prompt.fill("my own words");
 
   const inspector = await inspect(page, "gen_harbour");
-  await expect(inspector.getByTestId("inspector-recreate")).toBeEnabled();
+  /* Recreate waits for Make's own price; the first engine read of a fresh workspace on a fresh dev server can take a while. */
+  await expect(inspector.getByTestId("inspector-recreate")).toBeEnabled({ timeout: 90_000 });
   await inspector.getByTestId("inspector-recreate").click();
-  await expect(page.getByTestId("toast")).toHaveText("Harbour dusk’s recipe is in Gen.");
+  await expect(page.getByTestId("toast")).toHaveText("Harbour dusk’s recipe is in Make.");
 
   /* The words as typed, the model, and each setting, applied in the open composer. */
   const card = page.getByTestId("gen-recipe");
@@ -181,7 +183,7 @@ test("Recreate lands the whole recipe in a Gen that is already open, waits for i
   await expect.poll(() => quotes.length).toBeGreaterThan(0);
   await page.waitForTimeout(600);
   await expect(go).toBeDisabled();
-  await expect(go).toHaveText("Generate");
+  await expect(go).toHaveText("Make");
   await expect(refs).toHaveAttribute("data-state", "reading");
   expect(priced).toEqual([]);
 
@@ -197,7 +199,7 @@ test("Recreate lands the whole recipe in a Gen that is already open, waits for i
   await expect(prompt).toHaveValue(RAW);
 
   /* Priced again, exactly as recreated, before anything runs. */
-  await expect(go).toHaveText("Generate · 31 cr");
+  await expect(go).toHaveText("Make · 31 cr");
   await expect(go).toBeEnabled();
   const asked = quotes.at(-1)!;
   expect(Object.fromEntries(["model", "ratio", "resolution", "duration", "genId"].map((k) => [k, asked.get(k)]))).toEqual({
@@ -246,25 +248,22 @@ test("× hides the card, and a recipe still being read keeps Generate waiting al
   await expect(page.getByTestId("gen-generate")).toBeDisabled();
   release();
   await expect(page.getByTestId("gen-well")).toContainText("@Image1 · Plate still");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · 31 cr");
   await expect(page.getByTestId("gen-recipe")).toHaveCount(0);
   expect(priced).toEqual([]);
   expect(errors).toEqual([]);
 });
 
-test("a model picked in ⌘K while the recipe is still read keeps its card and its wait; Undo takes both back", async ({ page }, info) => {
-  test.skip(info.project.name !== "workbench-1440x900", "the palette is a desktop key");
+test("a model picked in the model sheet while the recipe is still read keeps its card and its wait; Undo takes both back", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one desktop width");
   const { errors, release, priced } = await open(page, { holdPlate: true });
   const inspector = await inspect(page, "gen_harbour");
   await inspector.getByTestId("inspector-recreate").click();
   const refs = page.getByTestId("gen-recipe-refs");
   await expect(refs).toHaveText("2 refs…");
-  /* ⌘K hands Gen a model and no words: a change made here, not a new recipe. */
-  const palette = page.getByRole("dialog", { name: "Search" });
-  await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
-  await expect(palette).toBeVisible();
-  await palette.getByRole("textbox").fill("Kling 3.0 Pro");
-  await palette.getByRole("option").filter({ hasText: "MODEL" }).first().click();
+  /* A model picked in the sheet hands Gen a model and no words: a change made here, not a new recipe. */
+  await page.getByTestId("gen-model").click();
+  await page.getByRole("dialog", { name: "Choose a model" }).getByRole("option", { name: /^Kling 3\.0 Pro/ }).first().click();
   await expect(page.getByTestId("gen-model")).toContainText("Kling 3.0 Pro");
   await expect(page.getByTestId("gen-prompt")).toHaveValue(RAW);
   await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']")).toHaveText("Seedance 2.0 → Kling 3.0 Pro");
@@ -306,7 +305,7 @@ test("a gone first reference: the words are renumbered to the well, the gap keep
   /* Dropping the citation is the person's call; then the take is priced. */
   await prompt.fill("@Image1 walks the pier");
   await expect(page.getByTestId("gen-recipe-missing")).toHaveText("Not found @Image2 (upload)");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · 31 cr");
   await expect(page.getByTestId("gen-generate")).toBeEnabled();
   expect(await noOverflow(page)).toBe(true);
   expect(errors).toEqual([]);
@@ -333,7 +332,7 @@ test("an enhancement of the words a Recreate replaced is cleared, and Generate s
   await expect(page.getByTestId("enhanced-card")).toHaveCount(0);
   await expect(page.getByTestId("gen-recipe-refs")).toHaveText("1 of 2 refs");
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText("Generate · 31 cr");
+  await expect(go).toHaveText("Make · 31 cr");
   await go.click();
   /* The price check is where a press first spends: it carries the take's words, not the old enhancement,
      with its shot setup written in once and sent as data. */
@@ -351,7 +350,7 @@ test("Use settings only keeps the person's words; Copy prompt copies the take's 
 
   let inspector = await inspect(page, "gen_harbour");
   await inspector.getByTestId("inspector-settings-only").click();
-  await expect(page.getByTestId("toast")).toHaveText("Harbour dusk’s model and settings are in Gen.");
+  await expect(page.getByTestId("toast")).toHaveText("Harbour dusk’s model and settings are in Make.");
   const card = page.getByTestId("gen-recipe");
   await expect(card).toHaveAttribute("data-settings-only", "true");
   await expect(card).toContainText("Settings from");
@@ -372,7 +371,7 @@ test("Use settings only keeps the person's words; Copy prompt copies the take's 
   await expect(sheet).toHaveCount(0);
   await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']")).toHaveText(/^Seedance 2\.0 → Kling 3\.0/);
   await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='model']")).toHaveText("Model Changed here");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · 31 cr");
   await card.scrollIntoViewIfNeeded();
   await shot(page, info, "settings-only");
 
@@ -384,16 +383,16 @@ test("Use settings only keeps the person's words; Copy prompt copies the take's 
   expect(errors).toEqual([]);
 });
 
-test("a take from a tool Gen does not have — an edit, a dub — cannot be recreated, and says why", async ({ page }, info) => {
+test("a take from a tool Make does not have — an edit, a dub — cannot be recreated, and says why", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors } = await open(page);
-  const why = "Made with a tool Gen does not have. Run it again from that tool.";
+  const why = "Made with a tool Make does not have. Run it again from that tool.";
   let inspector = await inspect(page, "gen_cut");
   await expect(inspector.getByTestId("inspector-recreate")).toBeDisabled();
   await expect(inspector.getByTestId("inspector-settings-only")).toBeDisabled();
   await expect(inspector.getByTestId("inspector-recreate-why")).toHaveText(why);
   await expect(inspector.getByTestId("inspector-copy-prompt")).toBeEnabled();
-  /* The right-click menu says the same. */
+  /* The right-click menu says the same (Recent is still the tab open under the Inspector). */
   await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_cut']").click({ button: "right", force: true });
   const item = page.getByTestId("context-menu").getByRole("menuitem", { name: "Recreate" });
   await expect(item).toBeDisabled();
@@ -430,16 +429,16 @@ test(`${member ? "a member" : "the owner"} recreates a take made on the Higgsfie
   const inspector = await inspect(page, "gen_account");
   await inspector.getByTestId("inspector-recreate").click();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("a gull over the breakwater");
-  await expect(page.getByTestId("gen-model")).toContainText("Studio engine");
+  await expect(page.getByTestId("gen-model")).toHaveAttribute("title", "Studio engine · Change");
   const model = page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']");
   await expect(model).toHaveAttribute("data-state", "changed");
   /* The account's catalogue id is not a name: it is not dressed up as one. */
   await expect(model).toHaveText("Account model → Seedance 2.5");
-  await expect(page.getByTestId("gen-recipe-why")).toHaveText("Model Gen runs on Studio engines only");
+  await expect(page.getByTestId("gen-recipe-why")).toHaveText("Model Make runs on Studio engines only");
   /* The settings the account was asked for still carry over where this engine offers them. */
   await expect(page.getByRole("group", { name: "Aspect" }).getByRole("button", { name: "9:16" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-length")).toHaveValue("6");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · 31 cr");
   /* Dismissing the card leaves the engine choice where it was. */
   await page.getByTestId("gen-recipe-dismiss").click();
   await expect(page.getByTestId("gen-model")).toContainText("Seedance 2.5");
@@ -467,9 +466,9 @@ test("the owner's Soul take is recreated on Studio engines: its identity is not 
   const inspector = await inspect(page, "gen_soul");
   await inspector.getByTestId("inspector-recreate").click();
   await expect(page.getByTestId("gen-prompt")).toHaveValue("a keeper on the pier at first light");
-  await expect(page.getByTestId("gen-model")).toContainText("Studio engine");
+  await expect(page.getByTestId("gen-model")).toHaveAttribute("title", "Studio engine · Change");
   await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='model']")).toHaveText(/^Account model → /);
-  await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='model']")).toHaveText("Model Gen runs on Studio engines only");
+  await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='model']")).toHaveText("Model Make runs on Studio engines only");
   await expect(page.getByTestId("gen-recipe-chips").locator("li[data-chip='identity']")).toHaveText("Identity → none");
   await expect(page.getByTestId("gen-blocked")).not.toHaveText("Reading the account’s identities…");
   expect(priced).toEqual([]);
@@ -493,7 +492,7 @@ test("an engine that is gone lands on the nearest size at or below the take's, a
   await expect(chips.locator("li[data-chip='resolution']")).toHaveText("4k → 1080p");
   await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("gen-recipe-why").locator("li[data-note='resolution']")).toHaveText(/^Resolution .+ has no 4k$/);
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · 31 cr");
   expect(priced).toEqual([]);
   expect(errors).toEqual([]);
 });
@@ -506,7 +505,11 @@ test("when the engines cannot be read, the card gives the composer's one reason 
     setup: async (page) => { await page.route(/\/api\/workbench\/engines$/, (route) => route.fulfill({ status: 500, json: { error: failed } })); },
   });
   const inspector = await inspect(page, "gen_harbour");
-  await inspector.getByTestId("inspector-recreate").click();
+  /* With the engines unread there is no price for Recreate: the Inspector's button is disabled and says why (README § 5); ⌘R still hands Make the recipe, which gives its own one reason. */
+  await expect(inspector.getByTestId("inspector-recreate")).toBeDisabled();
+  await expect(inspector.getByTestId("inspector-recreate")).toHaveAttribute("title", failed);
+  await inspector.getByTestId("inspector-copy-prompt").focus();
+  await page.keyboard.press("ControlOrMeta+r");
   await expect(page.getByTestId("gen-recipe-refs")).toHaveText("1 of 2 refs");
   /* The model, the references and the shot setup (which lands on the chips whatever the engines say); no per-setting chips. */
   const chips = page.getByTestId("gen-recipe-chips").locator("li");

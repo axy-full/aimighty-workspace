@@ -253,6 +253,10 @@ export function useComposer(options: {
    * the others; without it the words go as typed.
    */
   compose?: (prompt: string, shot: Record<string, string>, type: ComposerType) => { prompt: string; shotSpec: Record<string, string> | null };
+  /** The button's verb ("Generate" unless the host says otherwise: Make says "Make"). */
+  verb?: string;
+  /** Engines this host does not offer at all (not in the list, not selected, not the default). A module-level function, so it is stable. */
+  hide?: (modelId: string) => boolean;
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
@@ -303,7 +307,8 @@ export function useComposer(options: {
   const quote = quoteAnswer?.scope === scope ? quoteAnswer.quote : null;
   const setQuote = useCallback((value: ComposerQuote | null) => setQuoteAnswer({ scope, quote: value }), [scope]);
 
-  const models = useMemo(() => workspaceModels(engines.rows, audio), [engines.rows, audio]);
+  const hide = options.hide;
+  const models = useMemo(() => workspaceModels(engines.rows, audio).filter((m) => !hide?.(m.id)), [engines.rows, audio, hide]);
   const offered = useMemo(() => offeredModels(state, models), [state, models]);
   const model = useMemo(() => activeModel(state, models), [state, models]);
   const settings = useMemo(() => composerSettings(model, target?.aspect, state.picks), [model, target?.aspect, state.picks]);
@@ -336,7 +341,9 @@ export function useComposer(options: {
     ? nodeAudioBody({ task: model.audioTask, text: state.prompt, seconds, instrumental: state.instrumental, voiceId, modelId: model.id })
     : null;
 
-  const blockedForQuote = !open || !model || !state.prompt.trim() || (options.projects != null && options.projects !== "ready");
+  /* A still or a clip is priced by its settings, not its words, so the price is read before anything is typed (Make shows it on the
+     button and the engine line from the start). Sound is priced by its words (speech), so it waits for them. */
+  const blockedForQuote = !open || !model || (Boolean(audioBody) && !state.prompt.trim()) || (options.projects != null && options.projects !== "ready");
 
   useEffect(() => {
     /* A figure for other inputs is already stale by its key; nothing is reset here. */
@@ -781,8 +788,8 @@ export function useComposer(options: {
 
   return {
     state, dispatch, models, offered, model, quote, quoteKey, settings, credits,
-    buttonLabel: composerButtonLabel({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
-    buttonParts: composerButtonParts({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
+    buttonLabel: composerButtonLabel({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft), verb: options.verb }),
+    buttonParts: composerButtonParts({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft), verb: options.verb }),
     blocked, submitting,
     wording: billingWording({ workspaceName: options.workspaceName }),
     audio, voices, voice, seconds, project: target, projectNotice, generate, retryEngines, scope,

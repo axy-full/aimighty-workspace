@@ -84,20 +84,22 @@ test("+ Run stage opens the gate in the Suites shell: Not now sends nothing, App
   expect(errors).toEqual([]);
 });
 
-test("⌘K: Ask Atomik keeps the words; a model row opens Gen on that model; no phone-only rows", async ({ page }, info) => {
+test("⌘K: Ask Atomik keeps the words; no model rows and no phone-only rows", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "the palette is a desktop key");
   const { mock, errors } = await setup(page);
-  await page.goto("/suites?view=gen");
-  await expect(page.getByTestId("page-title")).toHaveText("Generate");
+  await page.goto("/suites?make=video");
+  await expect(page.getByTestId("make-panel")).toBeVisible();
   const palette = page.getByRole("dialog", { name: "Search" });
   const open = async () => { await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k"); await expect(palette).toBeVisible(); };
 
   await open();
   await expect(palette.getByRole("option").first()).toBeVisible();
   expect((await palette.getByRole("option").allTextContents()).some((t) => t.includes("Where to?"))).toBe(false);
+  expect((await palette.getByRole("option").allTextContents()).some((t) => t.includes("MODEL"))).toBe(false);
   await palette.getByRole("textbox").fill("Kling 3.0 Pro");
-  await palette.getByRole("option").filter({ hasText: "MODEL" }).first().click();
-  await expect(page.getByTestId("gen-model")).toContainText("Kling 3.0 Pro");
+  await expect(palette.getByRole("option")).toHaveText([/^ATOMIKAsk Atomik: Kling 3\.0 Pro/]);
+  await palette.getByRole("textbox").fill("");
+  await page.keyboard.press("Escape");
 
   await open();
   await palette.getByRole("textbox").fill("zz make a thirty second teaser");
@@ -123,7 +125,7 @@ test("⌘K: Ask Atomik keeps the words; a model row opens Gen on that model; no 
 async function askBeforeAnyProject(page: Page) {
   const state = { failing: true };
   await page.route("**/api/workbench/projects**", (route) => (state.failing && route.request().method() === "GET" ? route.fulfill({ status: 500, json: { error: "Projects are unavailable right now." } }) : route.fallback()));
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=video");
   await expect(page.getByTestId("project-name")).toHaveText("Projects didn’t load");
   const palette = page.getByRole("dialog", { name: "Search" });
   await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");

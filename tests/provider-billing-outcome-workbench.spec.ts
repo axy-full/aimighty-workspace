@@ -78,7 +78,7 @@ async function noSideScroll(page: Page) {
 
 test("Gen › Results: a failed take's charge is said only from a receipt, whole, and clears the tab bar", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?view=gen");
+  const errors = await open(page, "/suites?make=recent");
   const results = page.getByRole("region", { name: "Results" });
   await expect(results.getByTestId("take-tile")).toHaveCount(CASES.length);
   await expectCards(results);
@@ -87,12 +87,12 @@ test("Gen › Results: a failed take's charge is said only from a receipt, whole
 
   if (PHONES.includes(info.project.name)) {
     expect(await smallTargets(page, ".gx-gen-results"), "targets under 44×44").toEqual([]);
-    /* Scrolled to the end (the shell's content pane scrolls Gen), the last card's charge sits above the tab bar. */
+    /* Scrolled to the end (Make's body scrolls Recent), the last card's charge sits above the tab bar. */
     const last = tile(results, "Released take").getByTestId("take-charge");
     const bar = page.getByTestId("tabbar");
     if (await bar.isVisible()) {
       await expect.poll(async () => {
-        await page.getByTestId("content").evaluate((el) => { el.scrollTop = el.scrollHeight; });
+        await page.getByTestId("gen-view").evaluate((el) => { el.scrollTop = el.scrollHeight; });
         const end = await last.boundingBox();
         const top = (await bar.boundingBox())?.y ?? null;
         return Boolean(end && top != null && end.height > 0 && end.y + end.height <= top + 1);
