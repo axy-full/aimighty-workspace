@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Kbd } from "./Kbd";
-import { useOverlay, v12PortalRoot } from "./overlay";
+import { useOverlay, useV12PortalRoot } from "./overlay";
 import type { OverlayLayer } from "./overlay-stack";
 import { place, placeStart, type Side } from "./place";
 
@@ -42,6 +42,7 @@ export function Popover({ open, onClose, anchor, label, children, align = "start
   autoFocus?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
+  const portal = useV12PortalRoot();
   const [at, setAt] = useState<{ left: number; top: number; side: Side } | null>(null);
   useOverlay(layer, open, onClose, { refs: [panel, anchor], outside: true });
   useFocusReturn(open, panel);
@@ -66,11 +67,13 @@ export function Popover({ open, onClose, anchor, label, children, align = "start
   useEffect(() => {
     if (!open || !at || !autoFocus || !panel.current) return;
     if (panel.current.contains(document.activeElement)) return;
-    (panel.current.querySelector<HTMLElement>(FOCUSABLE) ?? panel.current).focus({ preventScroll: true });
+    /* A menu starts on its first item that can be chosen; anything else on its first control. */
+    const first = role === "menu" ? '[role="menuitem"]:not([aria-disabled="true"])' : FOCUSABLE;
+    (panel.current.querySelector<HTMLElement>(first) ?? panel.current).focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when it is first placed.
   }, [open, at === null]);
 
-  const root = open ? v12PortalRoot() : null;
+  const root = open ? portal : null;
   if (!root) return null;
   const style: CSSProperties = at ? { left: at.left, top: at.top } : { left: 0, top: 0, visibility: "hidden" };
   if (width) style.width = width;
@@ -109,7 +112,8 @@ export function Menu({ open, onClose, anchor, label, items, side = "bottom", ali
     else if (event.key === "ArrowUp") go(at < 0 ? all.length - 1 : at - 1);
     else if (event.key === "Home") go(0);
     else if (event.key === "End") go(all.length - 1);
-    else if (event.key === "Tab") onClose();
+    /* Tab leaves the menu back on the control that opened it, so a dialog's own Tab trap still holds around it. */
+    else if (event.key === "Tab") { event.preventDefault(); event.stopPropagation(); onClose(); anchor.current?.focus(); }
   };
   return (
     <Popover open={open} onClose={onClose} anchor={anchor} label={label} role="menu" side={side} align={align} width={width} onKeyDown={onKeyDown} className="v12-menu">

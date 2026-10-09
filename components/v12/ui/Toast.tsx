@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { v12PortalRoot } from "./overlay";
+import { useV12PortalRoot } from "./overlay";
 import { toastDuration, type ToastInput } from "./toast-time";
 
 /**
@@ -51,13 +51,15 @@ export function ToastProvider({ children, bottom = 92 }: { children: ReactNode; 
     return () => window.removeEventListener("keydown", onKey, true);
   }, [toast, dismiss]);
 
-  const root = toast ? v12PortalRoot() : null;
+  const root = useV12PortalRoot();
   const value = useMemo(() => raise, [raise]);
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {root && toast ? createPortal(
-        <div key={toast.key} className="v12-toast" role="status" aria-live="polite" data-testid="v12-toast" style={{ bottom }}
+      {root ? createPortal(<>
+        {/* One live region for the provider's life: only its words change, so each toast is announced. */}
+        <div className="v12-sr" role="status" aria-live="polite" data-testid="v12-toast-live">{toast?.text ?? ""}</div>
+        {toast ? <div key={toast.key} className="v12-toast" data-testid="v12-toast" style={{ bottom }}
           onPointerEnter={(e) => { if (e.pointerType === "mouse") setHeld(true); }} onPointerLeave={() => setHeld(false)}
           onFocus={() => setHeld(true)} onBlur={() => setHeld(false)}>
           <span className="v12-toast-dot" aria-hidden />
@@ -67,9 +69,8 @@ export function ToastProvider({ children, bottom = 92 }: { children: ReactNode; 
               {toast.action.label}
             </button>
           ) : null}
-        </div>,
-        root,
-      ) : null}
+        </div> : null}
+      </>, root) : null}
     </ToastContext.Provider>
   );
 }

@@ -19,8 +19,11 @@
   -webkit-font-smoothing: antialiased;
 }
 .v12.v12-portal > * { pointer-events: auto; }
-.v12 *, .v12 *::before, .v12 *::after { box-sizing: border-box; }
-.v12 :focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+/* Only the portal's layers and the new interface's own pieces: today's screens inside the frame keep their own rules. */
+.v12.v12-portal *, .v12.v12-portal *::before, .v12.v12-portal *::after,
+.v12 :is([class^="v12-"], [class*=" v12-"]), .v12 :is([class^="v12-"], [class*=" v12-"])::before, .v12 :is([class^="v12-"], [class*=" v12-"])::after { box-sizing: border-box; }
+.v12.v12-portal :focus-visible, .v12 :is([class^="v12-"], [class*=" v12-"]):focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.v12-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .v12.v12-portal button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: left; }
 
 /* ── Kbd ─────────────────────────────────────────────────────────────────── */
@@ -97,7 +100,8 @@
   width: 100%; height: var(--gx-h-item); padding: 0 var(--gx-sp-10); border-radius: var(--gx-r-item);
   display: flex; align-items: center; gap: var(--gx-sp-8); font-size: var(--gx-fs-meta); color: var(--gx-text);
 }
-.v12 .v12-menu-item:hover, .v12 .v12-menu-item:focus-visible { background: var(--gx-selected); outline: none; }
+.v12 .v12-menu-item:hover, .v12 .v12-menu-item:focus-visible { background: var(--gx-selected); }
+.v12 .v12-menu-item:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: -2px; }
 .v12 .v12-menu-item[aria-disabled="true"] { color: var(--gx-disabled); cursor: default; background: transparent; }
 .v12 .v12-menu-item[data-tone="danger"] { color: var(--gx-failed-text); }
 .v12 .v12-menu-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

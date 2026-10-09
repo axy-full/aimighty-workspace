@@ -20,7 +20,9 @@ test("tooltips: name, line, shortcut and price, on hover after a delay and on ke
   await expect(tip).toContainText("Home");
   await expect(tip).toContainText("Your boards and what needs you.");
   await expect(tip.locator("kbd")).toHaveText(["G", "H", "⌘1"]);
-  await expect(page.getByTestId("tip-target")).toHaveAttribute("aria-describedby", await tip.getAttribute("id") ?? "");
+  /* The description is announced on focus at once: it is always in the page, not only once the tooltip shows. */
+  const described = await page.getByTestId("tip-target").getAttribute("aria-describedby");
+  await expect(page.locator(`[id="${described}"]`)).toHaveText("Home. Your boards and what needs you. G H or ⌘1");
   await page.mouse.move(0, 0);
   await expect(tip).toHaveCount(0);
 
@@ -90,6 +92,12 @@ test("Esc closes the top-most layer first: menu, then dialog, then the join shee
   const dialog = page.getByRole("dialog", { name: "Rename board" });
   await expect(dialog).toBeVisible();
   await expect(page.getByTestId("dialog-input")).toBeFocused();
+  await page.getByTestId("dialog-menu").click();
+  await expect(page.getByRole("menu", { name: "More" })).toBeVisible();
+  /* Tab inside a menu in a dialog goes back to its control: the dialog's Tab trap holds. */
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("menu", { name: "More" })).toHaveCount(0);
+  await expect(page.getByTestId("dialog-menu")).toBeFocused();
   await page.getByTestId("dialog-menu").click();
   await expect(page.getByRole("menu", { name: "More" })).toBeVisible();
   await expect(stack).toHaveText("Open: menu,menu,tool,selection,drawer");

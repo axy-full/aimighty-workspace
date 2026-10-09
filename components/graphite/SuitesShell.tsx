@@ -39,7 +39,10 @@ import { Palette } from "./Palette";
 import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { useCompact } from "@/lib/shell/use-compact";
-import { V12Shell } from "@/components/v12/V12Shell";
+import dynamic from "next/dynamic";
+/* The new interface's frame loads only for a workspace that has it (lib/newInterface.ts): customers never download it.
+   SuitesApp draws nothing until the browser is there, so the frame's own chunk is the only wait, and only for them. */
+const V12Shell = dynamic(() => import("@/components/v12/V12Shell").then((m) => m.V12Shell));
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { SwitchingVeil } from "./SwitchingVeil";
