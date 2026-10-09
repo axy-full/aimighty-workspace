@@ -34,6 +34,11 @@ async function unsettledActivities(): Promise<{ kind: string; state: string }[]>
   } finally { client.close(); }
 }
 
+async function clearActivities(): Promise<void> {
+  const client = createClient({ url: process.env.PLATFORM_DATABASE_URL! });
+  try { await client.execute("DELETE FROM recovery_activities"); } finally { client.close(); }
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async () => {
@@ -307,6 +312,35 @@ test("small provider files are read whole only up to their cap", async () => {
   await expect(fetchBytes(provider.url(2 * MiB, { declare: false }), 10_000, MiB)).rejects.toThrow("The provider file exceeds the download limit.");
   await expect(fetchBytes(provider.url(2 * MiB), 10_000, MiB)).rejects.toThrow("The provider file exceeds the download limit.");
   expect((await fetchBytes(provider.url(MiB), 10_000, MiB)).length).toBe(MiB);
+});
+
+test("an R2 write stays uncertain when Complete was sent or the abort failed", async () => {
+  const { createR2Backend } = await import("../../lib/storage/r2");
+  const r2 = createR2Backend({ accountId: "x", accessKeyId: "AKIAFAKE", secretAccessKey: "fake", bucket: "fault-check", endpoint: s3.endpoint });
+  const parts = (n: number, fail?: Error) => (async function* () {
+    for (let i = 0; i < n; i++) yield Buffer.alloc(4 * MiB, i + 1);
+    if (fail) throw fail;
+  })();
+  const options = { contentType: "video/mp4", overwrite: true, multipart: true } as const;
+  expect(await unsettledActivities()).toEqual([]);
+
+  // Complete answered 500: it was sent, so the object may exist. Uncertain.
+  s3.failNext("complete", 500);
+  await expect(r2.put("fault/complete.mp4", parts(3), options)).rejects.toThrow(/R2 MultipartUpload fault\/complete\.mp4 failed/);
+  expect(await unsettledActivities()).toEqual([{ kind: "r2-put", state: "uncertain" }]);
+  await clearActivities();
+
+  // The body failed before Complete, but the abort failed: the upload is still open. Uncertain.
+  s3.failNext("abort", 500);
+  await expect(r2.put("fault/abort.mp4", parts(3, new Error("provider stalled")), options)).rejects.toThrow();
+  expect(s3.state().uploads.filter((u: { key: string }) => u.key === "fault/abort.mp4")).toHaveLength(1);
+  expect(await unsettledActivities()).toEqual([{ kind: "r2-put", state: "uncertain" }]);
+  await clearActivities();
+
+  // The same body failure with a clean abort wrote nothing: certain, no row.
+  await expect(r2.put("fault/clean.mp4", parts(3, new Error("provider stalled")), options)).rejects.toThrow();
+  expect(s3.state().uploads.filter((u: { key: string }) => u.key === "fault/clean.mp4")).toHaveLength(0);
+  expect(await unsettledActivities()).toEqual([]);
 });
 
 test("the fake S3 answers the R2 backend's conditional writes, ranges, listing and deletes", async () => {

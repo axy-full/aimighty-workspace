@@ -16,7 +16,10 @@
  *
  * Test hooks: GET /__fake__/state answers JSON {objects, uploads, aborted,
  * completed, requests}; the in-process handle exposes the same through
- * state(), object(key) and close().
+ * state(), object(key) and close(). Fault injection: failNext(op, status)
+ * (or POST /__fake__/fail?op=complete&status=500) makes the next request of
+ * that operation answer `status` without doing anything. Operations: create,
+ * uploadPart, complete, abort, put, get, head, delete.
  *
  * In process:  const s3 = await start({ dir, port: 0 }); s3.endpoint ...; await s3.close();
  * As a CLI:    node tests/helpers/fake-s3-server.mjs --port 9100 --dir /tmp/fake-s3
@@ -73,6 +76,15 @@ export async function start(options = {}) {
   mkdirSync(objectsDir, { recursive: true });
   mkdirSync(uploadsDir, { recursive: true });
   const counters = { aborted: 0, completed: 0, requests: 0 };
+  /** Pending injected failures, consumed one per matching request. */
+  const faults = [];
+  const failNext = (op, status = 500) => { faults.push({ op, status }); };
+  const operationOf = (method, q, key) => {
+    if (q.has("uploadId")) return method === "PUT" ? "uploadPart" : method === "POST" ? "complete" : method === "DELETE" ? "abort" : "upload";
+    if (method === "POST" && q.has("uploads")) return "create";
+    if (!key) return method === "POST" && q.has("delete") ? "deleteObjects" : "bucket";
+    return { PUT: "put", GET: "get", HEAD: "head", DELETE: "delete" }[method] ?? "other";
+  };
 
   const fileFor = (bucket, key) => path.join(objectsDir, createHash("sha256").update(`${bucket}\n${key}`).digest("hex"));
   const metaOf = (bucket, key) => {
@@ -102,6 +114,10 @@ export async function start(options = {}) {
     const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
     const method = req.method.toUpperCase();
     const q = url.searchParams;
+    if (url.pathname === "/__fake__/fail" && method === "POST") {
+      failNext(q.get("op") ?? "", Number(q.get("status") ?? 500));
+      res.writeHead(204); res.end(); return;
+    }
     if (url.pathname === "/__fake__/state") {
       const body = JSON.stringify({ objects: allObjects(), uploads: allUploads(), ...counters });
       res.writeHead(200, { "content-type": "application/json" }); res.end(body); return;
@@ -110,6 +126,12 @@ export async function start(options = {}) {
     const bucket = decodeURIComponent(segments[0] ?? "");
     const key = segments.slice(1).map(decodeURIComponent).join("/");
     if (!bucket) return sendError(res, 400, "InvalidBucketName", "No bucket", method);
+    const fault = faults.findIndex((f) => f.op === operationOf(method, q, key));
+    if (fault >= 0) {
+      const { status } = faults.splice(fault, 1)[0];
+      await readBody(req);
+      return sendError(res, status, status === 503 ? "SlowDown" : "InternalError", "Injected failure", method);
+    }
     const chunked = String(req.headers["x-amz-content-sha256"] ?? "").startsWith("STREAMING-") || /aws-chunked/.test(String(req.headers["content-encoding"] ?? ""));
 
     if (!key) {
@@ -260,6 +282,8 @@ export async function start(options = {}) {
     dir: root,
     /** Objects (metadata only), multipart uploads still open, and counters. */
     state: () => ({ objects: allObjects(), uploads: allUploads(), ...counters }),
+    /** The next request of `op` answers `status` and does nothing. */
+    failNext,
     /** One object's metadata ({size, sha256, etag, contentType, file}) or null. */
     object: (key, bucket) => {
       const found = allObjects().find((o) => o.key === key && (bucket == null || o.bucket === bucket));
