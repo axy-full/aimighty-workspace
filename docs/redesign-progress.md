@@ -13,13 +13,16 @@ The running log of the overnight redesign build. A restarted session reads this 
 
 | Item | Branch | PR | Status |
 |---|---|---|---|
-| CI on PRs into release/1 | ci/verify-release1 | #612 | NEEDS AKSHAY (CI change, not screen work). CI confirmed running on it. |
-| P0 foundation: switch, design import, screenshot tool, plan | redesign/p0-foundation | #613 | Opus approved (after fixes); CI running |
-| B1 price layer, no-literal guard, low-credit rule and chip | redesign/b1-price | #614 | in review |
-| C1 render-state model, typical times API, queue places | redesign/c1-render-model | #615 | in review |
-| A1 tokens, primitives, overlay stack, V12Shell frame | redesign/a1-frame | — | lane A building |
-| B2 Settings › Credits & billing | redesign/b2-billing | — | lane B building (on B1) |
-| C2 Home (signed in) + shared bar | redesign/c2-home | — | lane C building (on B1) |
+| CI on PRs into release/1 | ci/verify-release1 | #612 | NEEDS AKSHAY (CI change, not screen work). CI green. |
+| P0 foundation: switch, design import, screenshot tool, plan | redesign/p0-foundation | #613 | Opus approved; CI re-running after a spec fix (two site-settings specs expected the old fields) |
+| B1 price layer, no-literal guard, low-credit rule and chip | redesign/b1-price | #614 | Opus approved (after fixes: Cinema "up to" the hold, batch totals, references) |
+| C1 render-state model, typical times API, queue places | redesign/c1-render-model | #615 | Opus approved (after fixes: Cinema Cancel and money wording) |
+| A1 tokens, primitives, overlay stack, V12Shell frame | redesign/a1-frame | #616 | Opus approved (after 9 small fixes) |
+| B2 Settings › Credits & billing | redesign/b2-billing | #617 | Opus approved (after fixes: members see "Ask an admin") |
+| C2 Home (signed in) + shared bar | redesign/c2-home | #618 | in review |
+| A2 header | redesign/a2-header | — | lane A building |
+| C4 Library tray | redesign/c4-library | — | lane B building |
+| C3 Make (grid, composer, viewer, prompt reuse) | redesign/c3-make | — | lane C building |
 
 ## Blockers
 
@@ -42,6 +45,8 @@ The running log of the overnight redesign build. A restarted session reads this 
 
 - Cancelling a queued Ark (Seedance) or fal (Kling, Topaz) job: both providers have cancel APIs and say a queued cancel isn't billed, but calling them is new money-adjacent code (NEEDS AKSHAY). Until then, Cancel shows only for held takes and queued Higgsfield API video.
 - fal's queue position is received and dropped (lib/engines/fal.ts); keeping it is an engine change.
+- `billing_cycles` has no `workspace_id` index (the low-credit base and Credits & billing read it); adding one is a schema change.
+- The spend-button scan counts any file using the quote layer as paid; each such v12 screen needs an entry in NOT_SPENDING_FILES until the scan learns quote-only helpers.
 - `meter_events` has no `created_at` index (typical times bound the query by rowid instead); adding one is a schema change.
 - The house workspace pays in dollars, so it never shows credits or the low-credit chip; screenshots are taken in credit-paying test workspaces.
 
@@ -49,3 +54,4 @@ The running log of the overnight redesign build. A restarted session reads this 
 
 - 10 Oct, evening: overnight build started. Prototype imported, switch and screenshot tool written, #612 opened.
 - 10 Oct, night: #613 reviewed (one blocker in the screenshot publisher, fixed) and approved. B1 (#614) and C1 (#615) pushed and in review; B2 and C2 started. The one-design guard now names prototype 12 as the design, with graphite only shrinking.
+- 10 Oct, late night: A1 (#616), B2 (#617) and C2 (#618) opened; A1 and B2 approved after fixes. Lanes now on A2 header, C4 Library tray, C3 Make.
