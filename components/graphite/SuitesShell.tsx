@@ -2,7 +2,7 @@
 import { rigDeleteHandler, setRigUndoSink, type RigUndo } from "@/lib/shell/rig-commands";
 import { newProject } from "@/lib/workbench/studio";
 import { useEffect, useRef, useState } from "react";
-import { useSession } from "@/lib/session";
+import { useNewInterface, useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -39,6 +39,10 @@ import { Palette } from "./Palette";
 import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { useCompact } from "@/lib/shell/use-compact";
+import dynamic from "next/dynamic";
+/* The new interface's frame loads only for a workspace that has it (lib/newInterface.ts): customers never download it.
+   SuitesApp draws nothing until the browser is there, so the frame's own chunk is the only wait, and only for them. */
+const V12Shell = dynamic(() => import("@/components/v12/V12Shell").then((m) => m.V12Shell));
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { SwitchingVeil } from "./SwitchingVeil";
@@ -354,23 +358,14 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
   const phoneOn = shell.phone.on;
   const phonePage = shell.view === "workspace" ? { title: "Settings", body: shell.screen === "settings" ? <SettingsBody ctx={screenCtx} /> : <WorkspaceView account={account} /> } : null;
 
-  return (
-    <AtomikHost scope={scope} project={project} bridge={planBridge}>
-      <JobsTrayProvider>
-      <LibraryFollowsJobs projectId={project?.id ?? null} refresh={library.refresh} />
-      <SwitchingVeil />
-      <div className="gx" data-screen={shell.screen ?? undefined} data-phone={phoneOn ? (shell.phone.framed ? "framed" : "") : undefined}
-        data-view={shell.view} data-suite={shell.suite.id} style={rootStyle} onContextMenu={onContext} onClick={() => shell.ctx && shell.closeCtx()}>
-        {session.workspace?.suspended ? (
-          <div role="status" data-testid="workspace-suspended" style={{ padding: "8px 20px", background: "var(--gx-card)", borderBottom: "1px solid var(--gx-hair)", color: "var(--gx-waiting)" }}>
-            This workspace is suspended{session.workspace.suspendedReason ? ` — ${session.workspace.suspendedReason}` : ""}. Rendering is paused; everything already made is still here.
-          </div>
-        ) : null}
-        {phoneOn ? (linkCard ? (
-          /* A link to a take that cannot show it yet says what it is doing on a phone too: the phone's own screens draw nothing for it. */
-          <div className="gx-screen gx-scroll" data-testid="screen" data-screen="link"><div className="gx-stage" data-testid="content">{linkCard}</div></div>
-        ) : <PhoneMount ctx={screenCtx} page={phonePage} />) : <>
-        <Header account={account} project={project?.name ?? null} bar={bar} />
+  /* The new interface's frame (components/v12/V12Shell.tsx), for a workspace with the switch on (lib/newInterface.ts), at
+     desktop sizes only: a phone keeps PhoneApp. Like the phone's own choice above it reads the viewport, which the shell
+     knows from its first render (SuitesApp draws nothing until the browser has it), so neither frame flashes first.
+     With the switch off the header and body below render exactly as they always have. */
+  const newInterface = useNewInterface();
+  const v12 = newInterface && !compact && !phoneOn;
+  const header = <Header account={account} project={project?.name ?? null} bar={bar} />;
+  const desktopBody = <>
         {bar ? null : <StageStrip />}
         {/* The gate row approves a run at its quote; one that throws keeps its row, and the run waits in the engine. */}
         <Boundary what="The Atomik gate" probe="atomik-gate" fallback={(fault) => <div className="gx-fault-dock"><PanelFault fault={fault} name="atomik-gate" variant="inline" /></div>}>
@@ -411,7 +406,26 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
             </main>
           </div>
         )}
-        </>}
+  </>;
+
+  return (
+    <AtomikHost scope={scope} project={project} bridge={planBridge}>
+      <JobsTrayProvider>
+      <LibraryFollowsJobs projectId={project?.id ?? null} refresh={library.refresh} />
+      <SwitchingVeil />
+      <div className="gx" data-screen={shell.screen ?? undefined} data-phone={phoneOn ? (shell.phone.framed ? "framed" : "") : undefined}
+        data-view={shell.view} data-suite={shell.suite.id} style={rootStyle} onContextMenu={onContext} onClick={() => shell.ctx && shell.closeCtx()}>
+        {session.workspace?.suspended ? (
+          <div role="status" data-testid="workspace-suspended" style={{ padding: "8px 20px", background: "var(--gx-card)", borderBottom: "1px solid var(--gx-hair)", color: "var(--gx-waiting)" }}>
+            This workspace is suspended{session.workspace.suspendedReason ? ` — ${session.workspace.suspendedReason}` : ""}. Rendering is paused; everything already made is still here.
+          </div>
+        ) : null}
+        {phoneOn ? (linkCard ? (
+          /* A link to a take that cannot show it yet says what it is doing on a phone too: the phone's own screens draw nothing for it. */
+          <div className="gx-screen gx-scroll" data-testid="screen" data-screen="link"><div className="gx-stage" data-testid="content">{linkCard}</div></div>
+        ) : <PhoneMount ctx={screenCtx} page={phonePage} />) : v12 ? (
+          <V12Shell header={header}>{desktopBody}</V12Shell>
+        ) : <>{header}{desktopBody}</>}
         {/* Make (README § 3.2): a panel over whatever is on screen, beside the Inspector's column when that is open. Its draft
             stays editable while the project list recovers ("Try again", never "Retry": that word is a take's own action). */}
         {shell.make && !phoneOn ? (
