@@ -7,8 +7,9 @@
 //
 // It shares a server with production, so it is careful by construction:
 // - run it through ~/ops/heavy.sh (nice 19, idle I/O); children inherit that;
-// - every load burst is at most 60 s (the optional big upload is one
-//   transfer, not a burst: it runs as long as 500 MiB takes, about 20 s here);
+// - every load burst is at most 60 s (a closed-loop scenario can overrun by
+//   one in-flight step, at most 45 s; the optional big upload is one transfer,
+//   not a burst: it runs as long as 500 MiB takes, about 20 s here);
 // - before each burst it checks the 1-minute load average;
 // - during each burst it polls the production health URL every 2 s and
 //   aborts the burst when the p95 of the last 10 samples passes 1 s.
@@ -77,7 +78,7 @@ async function stopAll() {
   await Promise.all(children.map((c) => stopChild(c, 10_000).catch(() => {})));
   if (dataDir) await rm(dataDir, { recursive: true, force: true }).catch(() => {});
 }
-for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(sig, () => { log("signal", { sig }); stopAll().finally(() => process.exit(130)); });
+for (const [sig, code] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]]) process.once(sig, () => { log("signal", { sig }); stopAll().finally(() => process.exit(code)); });
 async function stopChild(child, graceMs = 60_000) {
   if (child.exitCode != null || child.signalCode != null) return { code: child.exitCode, signal: child.signalCode, ms: 0 };
   const t0 = Date.now();

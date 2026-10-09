@@ -55,7 +55,7 @@ What the lease covers. `/api/cron/sync` takes `acquireOperationLease(platformDb,
 So:
 - **One server (stages A and B):** keep the Coolify scheduled task `cron-sync` (`node /app/cron-sync.mjs`, `*/10 * * * *`, timeout 300 s). It calls `127.0.0.1:3000/api/cron/sync` inside its own container, and the cluster hands the call to one of the processes.
 - **Two servers (stage C):** if Coolify runs the scheduled task on every server, an extra run is still safe (the lease, plus the row claims). Prefer the primary only. If the primary is down for long, run it by hand on the other server or move the primary role (§6).
-- **Check:** the scheduled-task log shows `cron-sync: 200`.
+- **Check:** the scheduled-task log shows `cron-sync: 200`. After particl-app-2 is attached, only the primary's scheduled-task log shows new `cron-sync` runs.
 
 ## 3. Stage C: add a second server
 
@@ -65,7 +65,7 @@ Do this only when one server is not enough: CPU stays above about 70 % at peak w
 
 1. **Remove the `/app/.data` volume.**
    - First confirm production does not use it. Signed in as the owner, `/api/health` shows `"database":"turso"` and storage on R2. Anonymous health only says `"ok"`. Also check both database URLs are `libsql://` and `STORAGE_BACKEND=r2`.
-   - List what the volume holds (Coolify, the app, **Persistent Storage**, or `ls -la /app/.data` in the container terminal) and copy anything unexpected somewhere safe.
+   - List what the volume holds (Coolify, the app, **Persistent Storage**, or `ls -la /app/.data` in the container terminal) and keep a copy before deleting: `tar czf /tmp/data-volume-$(date +%F).tgz -C /app .data` in the container terminal, then copy it off the server.
    - Then delete the volume and Deploy. The image creates `/app/.data` owned by the app user, so it becomes per-container scratch.
    - Run the stage A checks again.
 2. **Health check.** Keep the image's `HEALTHCHECK` (`/api/health`, every 30 s) and leave Coolify's own check off, as `docs/selfhost-test.md` says. Coolify's rolling update waits for the container to be healthy. It also needs **no host port mapping**.
@@ -93,7 +93,7 @@ Coolify builds once and the other servers pull the same image. Its docs: "Coolif
    - **New owner decision:** at the 8 Oct switch the owner chose no Cloudflare token (path (b)). Stage C needs one.
    - Check on each server, over SSH, against itself: `openssl s_client -connect 127.0.0.1:443 -servername particl.si </dev/null 2>/dev/null | openssl x509 -noout -issuer -dates`.
 6. Coolify, the production app, **Servers**, **Add another server**: particl-app-2, its standalone Docker network. Then **Deploy on that server only**. Coolify pulls the image from the registry.
-7. **Test the new server before it gets traffic.** On particl-app-2 over SSH, `curl -sk --resolve particl.si:443:127.0.0.1 https://particl.si/api/health` shows `ok:true` and the **same 7-char commit** as particl-app. Running it from particl-app against particl-app-2's private IP also works.
+7. **Test the new server before it gets traffic.** On particl-app-2 over SSH, `curl -sk --resolve particl.si:443:127.0.0.1 https://particl.si/api/health` shows `ok:true` and the **same 7-char commit** as particl-app.
 
 ### 3.4 Load balancer
 
@@ -102,7 +102,7 @@ Coolify builds once and the other servers pull the same image. Its docs: "Coolif
 | Setting | Value | Why |
 |---|---|---|
 | Forwarding | **TCP 443 → 443** (TLS passthrough) and TCP 80 → 80 | each server's Traefik keeps its own Let's Encrypt (DNS-challenge) certificate; DigitalOcean can only issue certificates for domains whose DNS it hosts, and particl.si is on Cloudflare |
-| **PROXY protocol** | **on**, and Traefik's entrypoints trust it from the VPC range only: `--entrypoints.https.proxyProtocol.trustedIPs=<VPC CIDR>` (same for `http`), in Coolify, Servers, each server, Proxy, Configuration | without it every visitor arrives from the load balancer's address and shares one rate-limit and sign-in-lock bucket. `TRUSTED_PROXY_HOPS` stays **unset** (1): Traefik writes the real address into `X-Forwarded-For`. |
+| **PROXY protocol** | **on**, and Traefik's entrypoints trust it from the VPC range only: `--entrypoints.https.proxyProtocol.trustedIPs=<VPC CIDR>` (same for `http`), in Coolify, Servers, each server, Proxy, Configuration, then **Restart Proxy** when quiet (it drops that server's connections for a few seconds) | without it every visitor arrives from the load balancer's address and shares one rate-limit and sign-in-lock bucket. `TRUSTED_PROXY_HOPS` stays **unset** (1): Traefik writes the real address into `X-Forwarded-For`. |
 | Health check | HTTP, port 80, path `/api/health`, interval 10 s, unhealthy after 3 | see the note below on the Host header |
 | Timeouts | the load balancer's HTTP idle-timeout setting does **not** apply to TLS passthrough | long requests do not rely on it: upload finish answers 202 and the browser polls, media streams send bytes continuously, and Inngest steps answer within 300 s |
 | Sticky sessions | not available with TCP passthrough | skew is handled in §4 |
@@ -116,9 +116,9 @@ traefik.http.routers.lb-health.priority=1
 traefik.http.routers.lb-health.service=<the app's generated service name>
 ```
 
-Check it on each server from inside the VPC before attaching: `curl -s http://<server private IP>/api/health`. Then check that the health check still passes with PROXY protocol on. If it does not, use a TCP 443 health check instead, which is weaker: it only proves Traefik is up.
+Check it on each server itself, over SSH: `curl -s http://<that server's own private IP>/api/health`. The DigitalOcean firewall also filters VPC traffic, so this check does not work from the other droplet.
 
-Now add particl-app-2's firewall rule for 80/443 from the load balancer (§3.3 step 2).
+Right after creating the load balancer, add particl-app-2's firewall rule for 80/443 from the load balancer (§3.3 step 2). Until that rule exists, particl-app-2 shows as unhealthy, and that is not a PROXY protocol fault. Then check that both servers pass the load balancer's health check with PROXY protocol on. If they do not, use a TCP 443 health check instead, which is weaker: it only proves Traefik is up.
 
 **Alternative: Cloudflare Load Balancing**, for when the names go orange-cloud (`docs/selfhost-test.md`, "Later"). Cloudflare ends TLS, health monitors can send `Host: particl.si`, session affinity by cookie is available, and the client address comes from `CF-Connecting-IP`. Set `TRUST_CF_CONNECTING_IP=1` only then, and firewall the servers to Cloudflare's ranges. It brings Cloudflare's 100 s response limit, which the owner has deferred until every long flow is proven under 100 s. So it is not the first choice.
 
@@ -126,9 +126,10 @@ Now add particl-app-2's firewall rule for 80/443 from the load balancer (§3.3 s
 
 1. Both droplets healthy in the load balancer.
 2. Cloudflare: lower the TTL of `particl.si` a day ahead, as on 8 Oct. Then `particl.si` A → the load balancer's IP, still **DNS-only (grey)**. `www` stays a CNAME to `particl.si`.
-3. Run the checks in §5.
-4. **Only after one full TTL with the checks passing:** change particl-app's firewall so 80/443 come from the load balancer only, the same as particl-app-2. Doing this earlier takes production offline, because visitors still reach particl-app directly until DNS moves.
-5. Inngest: no change. It is synced to `https://particl.si/api/inngest`, which now reaches the load balancer. Press **Resync** once anyway and check the function count (7).
+3. Wait one TTL plus a few minutes. Then confirm that both test networks (§5) resolve `particl.si` to the load balancer: `dig +short particl.si` on each, or `@1.1.1.1` and `@8.8.8.8`. A tester still on the old record reaches particl-app directly, and the client-address test would pass even with PROXY protocol broken.
+4. Run the checks in §5.
+5. **Run the client-address test again, then close the firewall.** First check `Servers → Proxy` on particl-app for any other site it serves (staging, an sslip.io address). Those go dark and stop renewing certificates once 80/443 are limited to the load balancer; move or stop them first. Then change particl-app's firewall so 80/443 come from the load balancer only, the same as particl-app-2. Doing this earlier takes production offline, because visitors still reach particl-app directly until DNS moves.
+6. Inngest: no change. It is synced to `https://particl.si/api/inngest`, which now reaches the load balancer. Press **Resync** once anyway and check the function count (7).
 
 ### 3.6 Roll back stage C
 
@@ -162,7 +163,7 @@ Between steps 1 and 3 both builds can serve for a minute:
 ## 5. Checks after going live on two servers
 
 - **Commit.** `curl -s https://particl.si/api/health` 20 times: always `ok:true`, always the same commit.
-- **Client address (the real gate).** Sign in with a wrong password 8 times from one network, until it locks. From a second network (for example a phone on mobile data), signing in must still work.
+- **Client address (the real gate).** Use a test account (as in `docs/selfhost-test.md`'s cutover checks), not the owner's. From network A, sign in with a wrong password 8 times, until it locks. From network B (for example a phone on mobile data), sign in to the **same** test account with the right password: it must work.
   - If the second network is locked too, every visitor shares one address. PROXY protocol is not working: roll back (§3.6).
   - Don't rely on the logs here. Without PROXY protocol everyone shows up as the load balancer's VPC address, which is a valid address, so the app's "shared bucket" warning never fires.
 - **Uploads and generation.** Upload a large file (chunks spread over both servers) and a reference image; both finish. A cheap generation completes, and its video saves and plays.
