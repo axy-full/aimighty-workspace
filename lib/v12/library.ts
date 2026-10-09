@@ -86,9 +86,12 @@ export function tileAspect(entry: LibraryEntry, cast: CastKind | null): string {
   return cast === "Characters" ? "4 / 5" : entry.media === "audio" ? "3 / 1" : "16 / 9";
 }
 
+const UNFINISHED = new Set(["rendering", "held", "failed"]);
+
 /** The tray's items from the library's entries; `castOf` answers for a Library id from the open board's cards. */
 export function trayItems(entries: readonly LibraryEntry[], castOf: (libraryId: string) => CastKind | null = () => null): TrayItem[] {
-  return entries.filter((e) => e.take.status !== "failed").map((entry) => {
+  /* Finished takes only: one still rendering, held for an approval or failed has nothing to drag or mention yet. */
+  return entries.filter((e) => !UNFINISHED.has(e.take.status)).map((entry) => {
     const cast = castOf(entry.take.id);
     return {
       id: entry.take.id,

@@ -8,13 +8,14 @@ import type { ProjectSummary } from "@/lib/workspace/data";
 import { STUB_KINDS, castKindsOf, TRAY_HINT, TRAY_KINDS, TRAY_SOURCES, filterTray, masonry, trayItems, type CastKind, type TrayItem } from "@/lib/v12/library";
 import { requestMention } from "@/lib/v12/mention";
 import { inField, useTrayLibrary, useTrayState } from "@/lib/v12/useLibraryTray";
-import { Kbd, Menu, Segment, Tooltip, useOverlay, type MenuItem } from "@/components/v12/ui";
+import { Kbd, Menu, Segment, Tooltip, useOverlay, useOverlayStack, type MenuItem } from "@/components/v12/ui";
 import "./library.css";
 
 /**
  * The Library tray (docs/redesign/inventory.md § 5.10; prototype `?view=board&drawer=Library`): 360 px from the left,
  * under the header, opened by the bottom-left "Library L" button or the L key, closed by L, × or Esc (last in the Esc
- * order). It replaces today's board Library drawer for a workspace with the new interface on.
+ * order: the tray registers as the drawer layer; the armed tool and the selection join the stack with the new board,
+ * P2). It replaces today's board Library drawer for a workspace with the new interface on.
  *
  * What is wired and what is a stub (lib/v12/library.ts has where each part's data comes from):
  *  - Search: the library route's own `q`, on the server, scoped to this workspace and the board browsed.
@@ -32,24 +33,40 @@ export function LibraryTray({ project, projects, library }: { project: Project |
   const shell = useShell();
   const tray = useTrayState();
   const button = useRef<HTMLButtonElement>(null);
+  const stack = useOverlayStack();
+  const { setOpen } = tray;
+  /* Where focus was when the tray opened: every close (L, Esc, ×) gives it back there, else to the Library button. */
+  const returnTo = useRef<HTMLElement | null>(null);
+  const wasOpen = useRef(tray.open);
+  useEffect(() => {
+    if (tray.open && !wasOpen.current) returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!tray.open && wasOpen.current) {
+      const back = returnTo.current;
+      requestAnimationFrame(() => { (back && back.isConnected && back !== document.body ? back : button.current)?.focus(); });
+    }
+    wasOpen.current = tray.open;
+  }, [tray.open]);
   const onBoard = shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
 
-  /* L toggles the tray, anywhere in the new frame, never while typing; it runs before the board's own keys. */
+  /* L toggles the tray, anywhere in the new frame: never while typing, never on a held key's repeat, and never while a
+     layer above the drawers is open (a menu, a dialog, a veil). It runs before the board's own keys. */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || inField(event.target)) return;
+      if (event.defaultPrevented || event.repeat || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || inField(event.target)) return;
       if (event.key.toLowerCase() !== "l") return;
+      const top = stack?.top();
+      if ((top && top.layer !== "drawer") || document.querySelector(".gx-veil, [aria-modal='true']")) return;
       event.preventDefault();
-      tray.setOpen((was) => !was);
+      setOpen((was) => !was);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [tray]);
-  useOverlay("drawer", tray.open, () => tray.setOpen(false));
+  }, [setOpen, stack]);
+  useOverlay("drawer", tray.open, () => setOpen(false));
 
   return (
     <>
-      {tray.open ? <Tray project={project} projects={projects} library={library} tray={tray} onBoard={onBoard} onClose={() => { tray.setOpen(false); requestAnimationFrame(() => button.current?.focus()); }} /> : null}
+      {tray.open ? <Tray project={project} projects={projects} library={library} tray={tray} onBoard={onBoard} onClose={() => setOpen(false)} /> : null}
       {/* Hidden on Make (prototype blDisplay) and while the tray is open, where the tray's own × and L close it: on today's
           board the button beside an open tray would sit on the board's bottom toolbar. */}
       {shell.make || tray.open ? null : (
@@ -66,6 +83,7 @@ export function LibraryTray({ project, projects, library }: { project: Project |
 }
 
 type TrayControl = ReturnType<typeof useTrayState>;
+const libraryOfFor = (browsing: string | null, open: string) => browsing ?? open;
 
 function Tray({ project, projects, library, tray, onBoard, onClose }: {
   project: Project | null; projects: readonly ProjectSummary[]; library: ProjectLibrary; tray: TrayControl; onBoard: boolean; onClose: () => void;
@@ -75,6 +93,11 @@ function Tray({ project, projects, library, tray, onBoard, onClose }: {
   const [browsing, setBrowsing] = useState<string | null>(project?.id ?? null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const picker = useRef<HTMLButtonElement>(null);
+  const search = useRef<HTMLInputElement>(null);
+  /* Opening the tray puts the cursor in its search. */
+  useEffect(() => { search.current?.focus(); }, []);
+  /* A tile from another board's library cannot be dropped here: it is not in this board's Library. */
+  const elsewhere = Boolean(project && libraryOfFor(browsing, project.id) !== project.id);
   /* The open board, until another is picked. */
   const libraryOf = browsing ?? project?.id ?? null;
   const read = useTrayLibrary(libraryOf, query, {
@@ -98,7 +121,7 @@ function Tray({ project, projects, library, tray, onBoard, onClose }: {
       <div className="v12-lib-head">
         <strong className="v12-lib-title">Library</strong>
         <span className="v12-lib-head-acts">
-          <Tooltip name="Expand" line="Open the full Library page">
+          <Tooltip name="Expand" line="Open everything made here, in Make › Recent">
             <button type="button" className="v12-lib-expand" onClick={() => shell.openMake("recent")} data-testid="v12-library-expand">Expand</button>
           </Tooltip>
           <Tooltip name="Close" shortcut="L">
@@ -107,7 +130,7 @@ function Tray({ project, projects, library, tray, onBoard, onClose }: {
         </span>
       </div>
       <div className="v12-lib-search">
-        <input aria-label="Search the library" placeholder="Search the library" value={query} onChange={(e) => setQuery(e.target.value)} className="v12-lib-input" data-testid="v12-library-search" />
+        <input ref={search} aria-label="Search the library" placeholder="Search the library" value={query} onChange={(e) => setQuery(e.target.value)} className="v12-lib-input" data-testid="v12-library-search" />
         <Tooltip name="Library" line="The board whose library you are browsing.">
           <button ref={picker} type="button" className="v12-lib-brand" aria-haspopup="menu" aria-expanded={pickerOpen} onClick={() => setPickerOpen((v) => !v)} data-testid="v12-library-picker">
             <span className="v12-lib-brand-name">{browsingName}</span> ▾
@@ -138,8 +161,8 @@ function Tray({ project, projects, library, tray, onBoard, onClose }: {
             {columns.map((col, c) => (
               <div key={c} className="v12-lib-col">
                 {col.map((item) => (
-                  <Tooltip key={item.id} name={`${item.name} · ${item.kindLine}`} line="Drag onto the board, the bar or a board tile; click to @mention it." side="right">
-                    <button type="button" className="v12-lib-tile" draggable onDragStart={(e) => drag(e, item)} onClick={() => pick(item)}
+                  <Tooltip key={item.id} name={`${item.name} · ${item.kindLine}`} line={elsewhere ? "From another board's library: open that board to use it here." : "Drag onto the board, the bar or a board tile; click to @mention it."} side="right">
+                    <button type="button" className="v12-lib-tile" draggable={!elsewhere} onDragStart={elsewhere ? undefined : (e) => drag(e, item)} onClick={() => pick(item)}
                       data-testid="v12-library-tile" data-source={item.source} data-id={item.id}>
                       <span className="v12-lib-pic" style={{ aspectRatio: item.aspect }}>
                         {item.url && item.media === "image" ? (
