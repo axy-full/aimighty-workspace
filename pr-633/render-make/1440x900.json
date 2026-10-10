@@ -1,6 +1,6 @@
 {
   "name": "render-make",
-  "app": "/suites?project=project-db1a9ec9&suite=particl&page=brief&view=home&make=video",
+  "app": "/suites?project=project-d8dd30a1&suite=particl&page=brief&view=home&make=video",
   "prototype": "?view=make&render=1",
   "size": {
     "width": 1440,

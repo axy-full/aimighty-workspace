@@ -1,6 +1,6 @@
 {
   "name": "render-queued",
-  "app": "/suites?project=project-be33370b&suite=particl&page=brief&view=board&stage=shots",
+  "app": "/suites?project=project-929ab6a3&suite=particl&page=brief&view=board&stage=shots",
   "prototype": "?view=board&stage=Shots&render=queued",
   "size": {
     "width": 1440,

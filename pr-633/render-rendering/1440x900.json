@@ -1,6 +1,6 @@
 {
   "name": "render-rendering",
-  "app": "/suites?project=project-03791d10&suite=particl&page=brief&view=board&stage=shots",
+  "app": "/suites?project=project-4dbb5803&suite=particl&page=brief&view=board&stage=shots",
   "prototype": "?view=board&stage=Shots&render=rendering",
   "size": {
     "width": 1440,
