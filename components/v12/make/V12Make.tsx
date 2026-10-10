@@ -7,6 +7,7 @@ import { useSession } from "@/lib/session";
 import type { Project } from "@/lib/workbench/studio";
 import { modeFromParam, type MakeMode, type ResultTile } from "@/lib/v12/make";
 import { useToast } from "@/components/v12/ui/Toast";
+import { usePlaces } from "@/components/graphite/atomik/panel/use-places";
 import { Composer } from "./Composer";
 import { Results } from "./Results";
 import { Viewer } from "./Viewer";
@@ -43,6 +44,7 @@ export function V12Make({ scope, project, projects, projectsError, onRetry, work
   const trayPrices = useTrayPrices();
   const session = useSession();
   const toast = useToast();
+  const places = usePlaces();
   const paysInDollars = session.rates.unit === "usd";
   const [first] = useState(asked);
 
@@ -80,6 +82,11 @@ export function V12Make({ scope, project, projects, projectsError, onRetry, work
           selected={selected} onSelect={select} onOpen={open} onReuse={reuse} />
       </div>
       <div className="v12-mk-band">
+        {/* The Library (the prototype's tray over Make is redesign C4; until it lands, the board's Library drawer, as ⌘K's "Library" opens it). */}
+        <button type="button" className="v12-mk-library" onClick={places.library} title="Library · L — Your characters, locations, products and everything made." data-testid="v12-make-library">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.5" /><path d="M6 3v10" /></svg>
+          Library
+        </button>
         <Composer input={input} asked={first.mode} mentions={results.tiles} />
       </div>
       <Viewer tiles={viewable} index={viewing} onIndex={setViewing} onClose={() => setViewing(null)} onReuse={reuse} onReference={reference} paysInDollars={paysInDollars} />

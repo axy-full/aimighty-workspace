@@ -10,6 +10,9 @@ import { useOverlay, useV12PortalRoot } from "@/components/v12/ui/overlay";
 import { useFocusReturn } from "@/components/v12/ui/Popover";
 import { Price } from "@/components/v12/ui/Price";
 
+/** Why "Reuse seed" can't be pressed yet: Make's send has no seed in it. */
+export const SEED_LATER = "Reusing a seed comes when Make can send one. Variations puts these words and settings in the composer.";
+
 const clock = (at: number) => new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
 
 /**
@@ -82,10 +85,18 @@ export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReference, p
             <span data-testid="v12-make-viewer-meta">{meta}</span>
             {cost ? <span className="v12-mk-mono" data-testid="v12-make-viewer-cost"><Price quote={cost} /> for this take</span> : null}
             <span>{dayLabel(g.createdAt, now)} · {clock(g.createdAt)}</span>
+            {seed != null ? (
+              <span className="v12-mk-viewer-seed" data-testid="v12-make-viewer-seed">
+                <span className="v12-mk-mono">Seed {seed}</span>
+                {/* Reuse seed: Make's send carries no seed today (lib/workbench/generation-request.ts), so this waits on that
+                    change to the priced request (NEEDS AKSHAY, reported with redesign C3) rather than promise a repeat it can't keep. */}
+                <button type="button" className="v12-mk-link" disabled title={SEED_LATER} data-testid="v12-make-viewer-reuse-seed">Reuse seed</button>
+              </span>
+            ) : null}
           </div>
           <div className="v12-mk-viewer-actions">
             <button type="button" className="v12-mk-action" onClick={() => onReuse(tile)} disabled={Boolean(tile.reuseBlock)} title={tile.reuseBlock ?? "Its words and settings go into the composer; Make shows the price"} data-testid="v12-make-viewer-reuse">
-              <span>Make it again</span><span className="v12-mk-quiet">in the composer</span>
+              <span>Variations</span><span className="v12-mk-quiet">priced in the composer</span>
             </button>
             {tile.kind !== "audio" ? (
               <button type="button" className="v12-mk-action" onClick={() => onReference(tile)} title="Add this take to the composer's references" data-testid="v12-make-viewer-reference">

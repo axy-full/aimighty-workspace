@@ -57,10 +57,21 @@ test.describe("justified rows", () => {
       const used = row.items.reduce((sum, p) => sum + p.width, 0) + 8 * (row.items.length - 1);
       expect(used).toBe(1200);
       for (const p of row.items.slice(0, -1)) expect(Math.abs(p.width - p.item * row.height)).toBeLessThanOrEqual(2);
-      expect(row.height).toBeLessThanOrEqual(200);
+      /* Each full row breaks where its height is closest to the target: the other break would have been further off. */
       expect(row.height).toBeGreaterThanOrEqual(120);
+      expect(row.height).toBeLessThan(400);
     }
     expect(rows.flatMap((r) => r.items.map((p) => p.item))).toEqual(items);
+  });
+  test("a row breaks where its height comes closest to the target, not always after it", () => {
+    /* 16:9, 9:16, 16:9, 1:1, 9:16, 16:9 in 1232 px: five tiles make a 211 px row, six a 160 px one; five is nearer 200. */
+    const shapes = [16 / 9, 9 / 16, 16 / 9, 1, 9 / 16, 16 / 9];
+    const rows = justify(shapes, (a) => a, 1232);
+    expect(rows.map((r) => r.items.length)).toEqual([5, 1]);
+    expect(rows[0].height).toBe(211);
+    const used = rows[0].items.reduce((sum, p) => sum + p.width, 0) + 8 * 4;
+    expect(used).toBe(1232);
+    expect(rows[1].height).toBe(200);
   });
   test("a short last row keeps the target height instead of stretching", () => {
     const rows = justify([16 / 9], (a) => a, 1200);

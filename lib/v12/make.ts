@@ -86,7 +86,7 @@ export const ROW_GAP = 8;
 
 /**
  * Rows of tiles that keep their true aspect and fill the width (the prototype's justified rows): each row is scaled to
- * span the width exactly, at about the target height, never under the minimum. A short last row keeps the target
+ * span the width exactly, breaking where its height comes closest to the target, never under the minimum. A short last row keeps the target
  * height rather than stretching. Widths are whole pixels; the last tile of a full row takes the rounding.
  */
 export function justify<T>(items: readonly T[], ratio: (item: T) => number, width: number,
@@ -110,10 +110,21 @@ export function justify<T>(items: readonly T[], ratio: (item: T) => number, widt
     sum = 0;
   };
   for (const item of items) {
+    const before = row.length ? (width - gap * (row.length - 1)) / sum : Infinity;
     row.push(item);
     sum += ratio(item);
     const room = width - gap * (row.length - 1);
-    if (room / sum <= target) flush(true);
+    const height = room / sum;
+    if (height > target) continue;
+    /* The row breaks where its height comes closest to the target: before this tile (a little taller) or after it (shorter). */
+    if (row.length > 1 && before - target < target - height) {
+      row.pop();
+      sum -= ratio(item);
+      flush(true);
+      row.push(item);
+      sum = ratio(item);
+      if ((width) / sum <= target) flush(true);
+    } else flush(true);
   }
   flush(false);
   return rows;
