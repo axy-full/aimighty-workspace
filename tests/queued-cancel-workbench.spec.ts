@@ -28,7 +28,7 @@ async function tenantDb(workspaceId: string) {
 const unique = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 /** A video take waiting at its provider (`tag` says how the mocked vendor behaves) with the meter's reservation for it. */
-async function seed(w: World, provider: "byteplus" | "fal", tag: "queued" | "running" | "cancelerror") {
+async function seed(w: World, provider: "byteplus" | "fal", tag: "queued" | "running" | "cancelerror" | "turnsrunning" | "silentgone") {
   const at = Date.now() - 20_000;
   const id = `gq${unique()}`;
   const handle = `mock_${provider === "fal" ? "fal" : "ark"}_${unique()}-${tag}_${Date.now()}`;
@@ -53,9 +53,9 @@ async function state(w: World, id: string) {
   const db = await tenantDb(w.workspaceId);
   const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try {
-    const gen = (await db.execute({ sql: "SELECT status FROM generations WHERE id=?", args: [id] })).rows[0];
+    const gen = (await db.execute({ sql: "SELECT status,params FROM generations WHERE id=?", args: [id] })).rows[0];
     const meter = (await platform.execute({ sql: "SELECT status,billed_credits,engine_cost_usd,updated_at FROM meter_events WHERE id=? AND workspace_id=?", args: [id, w.workspaceId] })).rows[0];
-    return { row: String(gen?.status), meter: String(meter?.status), credits: Number(meter?.billed_credits), updated: Number(meter?.updated_at) };
+    return { row: String(gen?.status), asked: JSON.parse(String(gen?.params ?? "{}")).cancelRequestedAt != null, meter: String(meter?.status), credits: Number(meter?.billed_credits), updated: Number(meter?.updated_at) };
   } finally { db.close(); platform.close(); }
 }
 const cancel = (w: World, id: string) => w.api.post(`/api/generations/${encodeURIComponent(id)}/cancel`, { headers: w.headers });
@@ -100,6 +100,38 @@ test.describe("queued cancel", () => {
       expect(await state(w, id)).toMatchObject({ row: "queued", meter: "running", credits: HELD });
     });
   }
+
+  test("fal: it answers 202 and the job is then in progress: not marked as cancel-asked, nothing released, billed as today", async ({ request }) => {
+    const w = await world(request, "Cancel fal turns running");
+    const id = await seed(w, "fal", "turnsrunning");
+    const reply = await cancel(w, id);
+    expect(reply.status(), await reply.text()).toBe(200);
+    expect(await reply.json()).toEqual({ status: "running" });
+    expect(await state(w, id)).toMatchObject({ row: "queued", asked: false, meter: "running", credits: HELD });
+  });
+
+  test("fal: accepted, then the request is gone with no word of a cancellation: today's path (the hold stays); only an explicit cancel is free", async ({ request }) => {
+    const w = await world(request, "Cancel fal silent");
+    const id = await seed(w, "fal", "silentgone");
+    const reply = await cancel(w, id);
+    expect(reply.status(), await reply.text()).toBe(200);
+    expect(await reply.json()).toEqual({ status: "failed" });
+    const after = await state(w, id);
+    expect(after).toMatchObject({ row: "failed", asked: true });
+    /* Not released: the reservation was not cleared to nothing on a guess. */
+    expect(after.credits).toBe(HELD);
+  });
+
+  test("two presses at once reach the provider once", async ({ request }) => {
+    const w = await world(request, "Cancel twice at once");
+    const id = await seed(w, "byteplus", "queued");
+    const [a, b] = await Promise.all([cancel(w, id), cancel(w, id)]);
+    const statuses = [a.status(), b.status()].sort();
+    /* One press wins and cancels; the other either finds it cancelled already or is told one is being sent. */
+    expect([200, 409]).toContain(statuses[1]);
+    expect(statuses[0]).toBe(200);
+    expect(await state(w, id)).toMatchObject({ row: "cancelled", meter: "failed", credits: 0 });
+  });
 
   test("another workspace's take is not found, and nothing about it changes", async ({ request, playwright }) => {
     const mine = await world(request, "Cancel owner");

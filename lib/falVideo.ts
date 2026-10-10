@@ -15,7 +15,7 @@ import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
  * there is no token count to wait for.
  */
 import { ASTRA_MODEL, astraInput } from "./astra";
-import { falSubmit, } from "./fal";
+import { falSubmit, FalHttpError } from "./fal";
 import { preflight } from "./preflight";
 import {
   presignedReadUrl, videoPath, imagePath, uploadPath, usingBlob,
@@ -171,6 +171,16 @@ export function falVideoCostUsd(modelId: string, p: FalVideoParams & { task?: st
   return est ? est.net : null;
 }
 
+/**
+ * Whether fal's own answer names a cancellation (its error's text or body says the request was cancelled). The only thing that ends a
+ * take as cancelled, at no charge, after we asked fal to cancel it: a 404, a 410 or any other error is read as it always was, and a
+ * request fal no longer knows keeps its hold (docs/redesign/cancel-billing.md; owner's decision pending).
+ */
+function namesCancellation(error: unknown): boolean {
+  const body = error instanceof FalHttpError ? JSON.stringify(error.body ?? "") : "";
+  return /cancel/i.test(`${(error as Error)?.message ?? ""} ${body}`);
+}
+
 /** What a take says once fal no longer holds the request a person asked to cancel while it was queued. */
 export const CANCELLED_AT_FAL = "Cancelled while it waited in the render queue. Nothing was billed.";
 
@@ -255,7 +265,7 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean;store?:St
     }));
   } catch (e) {
     const msg = (e as Error).message;
-    if (cancelAsked && /\b(400|404|410)\b|not found|cancel/i.test(msg))
+    if (cancelAsked && namesCancellation(e))
       return fail(gen, CANCELLED_AT_FAL, true, silentOutcome("fal", "run", "canceled", null), "cancelled");
     if (/\b404\b|not found/i.test(msg))
       return fail(gen, "The render service no longer has this job. Render again.", false, outcomeOfError(e, { provider: "fal", stage: "run" }));
@@ -273,7 +283,7 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean;store?:St
     if (options.strict) throw e;
     return { ...gen, error: msg };
   }
-  if (cancelAsked && (polled.status === "failed" || polled.status === "cancelled"))
+  if (cancelAsked && polled.status === "cancelled")
     return fail(gen, CANCELLED_AT_FAL, true, silentOutcome("fal", "run", "canceled", null), "cancelled");
   if (polled.status === "failed" || polled.status === "cancelled")
     return fail(

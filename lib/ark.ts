@@ -15,7 +15,7 @@ import { readUploadBytes, readImageBytes, presignedReadUrl, uploadPath, imagePat
 import { IMAGE_LIMITS } from "./imagemeta";
 import { vendorKey } from "./vendorKeys";
 import { engineMock, mockJobId, mockTag, isMockJob, mockDone, mockStartedAt, fixtureUrl } from "./mock";
-import { mockQueueKind, mockIsCancelled, mockCancel } from "./mockQueue";
+import { mockQueueKind, mockAftermath, mockCancel } from "./mockQueue";
 import { preflight } from "./preflight";
 import { DRAFT_RESOLUTION, FINAL_RESOLUTION } from "./draftFinal";
 
@@ -320,7 +320,10 @@ function mockTaskResponse(taskId: string): ArkTaskResponse {
   const started = mockStartedAt(taskId);
   /* A mocked job parked in the vendor's queue (lib/mock.ts mockQueueKind): queued until cancelled, then cancelled. */
   const parked = mockQueueKind(taskId);
-  if (parked) return { id: taskId, model: "mock", status: mockIsCancelled(taskId) ? "cancelled" : parked === "running" ? "running" : "queued", created_at: Math.floor(started / 1000) };
+  if (parked) {
+    const said = mockAftermath(taskId);
+    return { id: taskId, model: "mock", status: said === "running" ? "running" : said ? "cancelled" : parked === "running" ? "running" : "queued", created_at: Math.floor(started / 1000) };
+  }
   if (!mockDone(taskId)) return { id: taskId, model: "mock", status: "running", created_at: Math.floor(started / 1000) };
   const ended = { created_at: Math.floor(started / 1000), updated_at: Math.floor(Date.now() / 1000) };
   if (mockTag(taskId)?.endsWith(`-${MOCK_REFUSED}`))
@@ -447,7 +450,7 @@ function sane(sec: number | undefined): number | null {
  */
 export async function cancelTask(taskId: string): Promise<void> {
   if (isMockJob(taskId)) {
-    if (mockCancel(taskId) === "running") throw new ArkHttpError(409, "Ark cancel failed (409): the task is already running.", "");
+    if (mockCancel(taskId) !== "accepted") throw new ArkHttpError(409, "Ark cancel failed (409): the task is already running.", "");
     return;
   }
   const res = await arkFetch(`${TASKS_URL}/${encodeURIComponent(taskId)}`, {

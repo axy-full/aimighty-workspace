@@ -5,9 +5,13 @@
  *  1. Our row must be `queued` (not `running`, which the polls only write once the provider says it started) and carry the
  *     provider's receipt (an Ark task id, a fal request id).
  *  2. The provider is asked how the job stands. Anything but queued is refused in its true words, and billing stays as today.
- *  3. The provider is asked to cancel (lib/ark.ts cancelTask, lib/fal.ts falCancel; behind the engine adapters' `cancel`).
- *     A refusal or a lost answer keeps the hold and says so.
- *  4. The take is then settled by the same path every poll uses (lib/jobs.ts syncGeneration): when the provider reports the
+ *  3. The row is claimed first, atomically (`params.cancelClaimAt`), before any provider call, so two presses at once make one
+ *     call: a second Ark DELETE could delete the task and leave nothing to poll. The claim is let go if the cancel fails.
+ *  4. The provider is asked to cancel (lib/ark.ts cancelTask, lib/fal.ts falCancel; behind the engine adapters' `cancel`).
+ *     A refusal or a lost answer keeps the hold and says so. fal answers 202 whether the request was queued or already
+ *     running, so the status is read again afterwards: a request that now reads running was not cancelled in its queue, is not
+ *     marked as cancel-asked, and is billed as today.
+ *  5. The take is then settled by the same path every poll uses (lib/jobs.ts syncGeneration): when the provider reports the
  *     task cancelled, or fal no longer has the request, the row ends `cancelled` and the existing ledger event releases the
  *     reservation at no charge (lib/generationSettlement.ts). Until then it answers `requested`, never `cancelled`.
  *
@@ -38,6 +42,10 @@ export type QueuedCancelDeps = {
   actor(): { id: string; role: string } | null;
   poll(row: QueuedRow, handle: RenderHandle): Promise<ProviderSeen>;
   cancel(row: QueuedRow, handle: RenderHandle): Promise<void>;
+  /** Claims the take for one cancel (atomic): true for the one press that won it, false for any other while it is held. */
+  claim(id: string): Promise<boolean>;
+  unclaim(id: string): Promise<void>;
+  /** Records that the provider accepted a cancel (`params.cancelRequestedAt`): what lets the take's sync end it as cancelled. */
   markAsked(id: string): Promise<void>;
   /** The take's own sync (lib/jobs.ts syncGeneration): where a terminal provider answer becomes a row status and a ledger release. */
   settle(id: string): Promise<{ status: string }>;
@@ -56,6 +64,7 @@ export const servedHere = (row: Pick<QueuedRow, "provider" | "kind">) => row.kin
 
 export const NOT_HERE = "Only a video waiting in its engine's queue can be cancelled here.";
 export const NO_RECEIPT = "The engine has not acknowledged this take yet. Check it again in a moment before cancelling.";
+export const BUSY = "A cancel for this take is already being sent.";
 export const UNSURE = "Cancellation could not be confirmed. The take is still tracked and its credits stay held; check it before trying again.";
 
 export async function cancelQueuedVideo(id: string, d: QueuedCancelDeps = realDeps): Promise<QueuedCancel> {
@@ -77,28 +86,43 @@ export async function cancelQueuedVideo(id: string, d: QueuedCancelDeps = realDe
     /* A cancel already asked: settle only (the provider's answer decides), never ask twice. */
     if (typeof row.params.cancelRequestedAt === "number") return afterAsk(await d.settle(id));
 
-    let seen: ProviderSeen;
-    try { seen = await d.poll(row, handle); }
-    catch { throw new QueuedCancelError(503, UNSURE); }
-    if (seen !== "queued") {
-      if (seen !== "running") await d.settle(id);
-      return { status: seen === "cancelled" ? "cancelled" : seen };
-    }
-    try { await d.cancel(row, handle); }
-    catch {
-      /* A refusal can mean it started a moment ago: ask once more before saying anything. */
-      const again = await d.poll(row, handle).catch(() => null);
-      if (again && again !== "queued") {
-        if (again !== "running") await d.settle(id);
-        return { status: again };
+    /* One press at a time: only the one that wins the claim may reach the provider. */
+    if (!(await d.claim(id))) throw new QueuedCancelError(409, BUSY);
+    let accepted = false;
+    try {
+      let seen: ProviderSeen;
+      try { seen = await d.poll(row, handle); }
+      catch { throw new QueuedCancelError(503, UNSURE); }
+      if (seen !== "queued") {
+        if (seen !== "running") await d.settle(id);
+        return { status: seen === "cancelled" ? "cancelled" : seen };
       }
-      throw new QueuedCancelError(503, UNSURE);
+      try { await d.cancel(row, handle); }
+      catch {
+        /* A refusal can mean it started a moment ago: ask once more before saying anything. */
+        const again = await d.poll(row, handle).catch(() => null);
+        if (again && again !== "queued") {
+          if (again !== "running") await d.settle(id);
+          return { status: again };
+        }
+        throw new QueuedCancelError(503, UNSURE);
+      }
+      /* The provider took the request. It answers the same whether the job was queued or had just started, so read it again: a job
+         that now reads running was not cancelled in its queue and is billed as today. Anything else (still queued, gone, ended) is
+         left to the take's sync, which ends it as cancelled only on the provider's explicit word. */
+      const after = await d.poll(row, handle).catch(() => "gone" as const);
+      if (after === "running") return { status: "running" };
+      await d.markAsked(id);
+      accepted = true;
+      return afterAsk(await d.settle(id));
+    } finally {
+      if (!accepted) await d.unclaim(id);
     }
-    await d.markAsked(id);
-    return afterAsk(await d.settle(id));
   });
 }
 
+/** How long a press holds a take for its cancel before another may take it: far longer than a provider call, short enough to outlive a crash. */
+const CLAIM_MS = 5 * 60_000;
 const afterAsk = (settled: { status: string }): QueuedCancel => ({ status: settled.status === "cancelled" ? "cancelled" : settled.status === "succeeded" ? "succeeded" : settled.status === "failed" ? "failed" : "requested" });
 
 const realDeps: QueuedCancelDeps = {
@@ -120,6 +144,18 @@ const realDeps: QueuedCancelDeps = {
   async cancel(row, handle) {
     const vendor = row.provider === "fal" ? "fal" : "ark";
     await withAcceptedJobCredentials(row.id, vendor, () => engineFor(row.provider).cancel!(handle));
+  },
+  async claim(id) {
+    /* A claim older than CLAIM_MS is a press that died: it may be taken again. */
+    const rs = await db().execute({
+      sql: `UPDATE generations SET params=json_set(params,'$.cancelClaimAt',?) WHERE id=? AND deleted=0 AND status='queued'
+            AND COALESCE(json_extract(params,'$.cancelClaimAt'),0) < ? RETURNING id`,
+      args: [now(), id, now() - CLAIM_MS],
+    });
+    return rs.rows.length > 0;
+  },
+  async unclaim(id) {
+    await db().execute({ sql: "UPDATE generations SET params=json_remove(params,'$.cancelClaimAt') WHERE id=? AND deleted=0", args: [id] });
   },
   async markAsked(id) {
     await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.cancelRequestedAt',?), updated_at=? WHERE id=? AND deleted=0 AND status='queued'", args: [now(), now(), id] });

@@ -1,24 +1,33 @@
 /**
- * Tests only (ENGINE_MOCK=1): a mocked video job whose tag ends in `-queued` waits in its vendor's queue until it is cancelled,
- * one ending in `-running` is already being made, and one ending in `-cancelerror` waits but its vendor refuses to cancel it.
- * They let the queued cancel (lib/queuedCancel.ts) be walked end to end without a vendor. Nothing outside the mock reads them.
- * Self-contained on purpose (no import from lib/mock.ts): a mock id is `mock_<vendor>_<tag>_<time>`, and a real id is never one.
+ * Tests only (ENGINE_MOCK=1): mocked video jobs that wait in their vendor's queue, so the queued cancel (lib/queuedCancel.ts) can
+ * be walked end to end without a vendor. A mock id is `mock_<vendor>_<tag>_<time>`; a tag ending in
+ *  - `-queued`: waits in the queue until cancelled, then the vendor says so (Ark: status cancelled; fal: an explicit cancelled error);
+ *  - `-running`: is already being made, and refuses a cancel;
+ *  - `-cancelerror`: waits, but the vendor cannot be reached to cancel it;
+ *  - `-turnsrunning`: waits, the vendor accepts the cancel (fal's 202 is the same either way) and the job then reads running;
+ *  - `-silentgone`: waits, the vendor accepts the cancel, and afterwards no longer knows the request, with no word of a cancellation.
+ * Nothing outside the mock reads them. Self-contained on purpose (no import from lib/mock.ts): a real id is never `mock_…`.
  */
-export type MockQueueKind = "queued" | "running" | "cancelerror";
+export type MockQueueKind = "queued" | "running" | "cancelerror" | "turnsrunning" | "silentgone";
+const KINDS: readonly MockQueueKind[] = ["queued", "running", "cancelerror", "turnsrunning", "silentgone"];
 
 export function mockQueueKind(id: string): MockQueueKind | null {
   if (!id.startsWith("mock_")) return null;
   const parts = id.split("_");
   const tag = parts.length >= 4 ? parts.slice(2, -1).join("_") : "";
-  return tag.endsWith("-queued") ? "queued" : tag.endsWith("-running") ? "running" : tag.endsWith("-cancelerror") ? "cancelerror" : null;
+  return KINDS.find((kind) => tag.endsWith(`-${kind}`)) ?? null;
 }
-const cancelled = new Set<string>();
-export const mockIsCancelled = (id: string): boolean => cancelled.has(id);
-/** The vendor's answer to a cancel: it takes it while the job is queued, refuses once it is being made, and may fail. */
-export function mockCancel(id: string): "cancelled" | "running" {
+
+/** What the vendor says of a job after it accepted a cancel. */
+export type MockAftermath = "cancelled" | "running" | "gone";
+const after = new Map<string, MockAftermath>();
+export const mockAftermath = (id: string): MockAftermath | null => after.get(id) ?? null;
+
+/** The vendor's answer to a cancel: it accepts while the job is queued, refuses once it is being made, and may fail. */
+export function mockCancel(id: string): "accepted" | "running" {
   const kind = mockQueueKind(id);
   if (kind === "cancelerror") throw new Error("The vendor could not be reached to cancel this job.");
-  if (kind !== "queued") return "running";
-  cancelled.add(id);
-  return "cancelled";
+  if (kind === null || kind === "running") return "running";
+  after.set(id, kind === "turnsrunning" ? "running" : kind === "silentgone" ? "gone" : "cancelled");
+  return "accepted";
 }
