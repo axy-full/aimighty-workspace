@@ -148,7 +148,7 @@ export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
   const v = row.shown;
   const judging = Boolean(data.grid && v && judgeable(v) && !hasStatus(v) && !inFlight(v));
   return (
-    <article className="gx-take" style={{ "--gx-take-well": `${wellHeight(340, ctx.project.aspect)}px` } as CSSProperties} data-status={v?.status ?? "empty"} data-dim={v?.status === "changes" || undefined}
+    <article className="gx-take" style={{ "--gx-take-well": `${wellHeight(data.grid ? 260 : 340, ctx.project.aspect)}px` } as CSSProperties} data-status={v?.status ?? "empty"} data-dim={v?.status === "changes" || undefined}
       aria-label={[row.title, v ? `${v.label}` : "no take yet", v && needsReview(v) ? "needs review" : null].filter(Boolean).join(" · ")} data-testid="take-card" data-node={row.nodeId}>
       <div className="gx-take-media">
         <Picture version={v} frame={row.frame} name={row.title} />

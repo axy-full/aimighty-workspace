@@ -14,7 +14,6 @@ import { KIND_CARDS } from "@/lib/v12/board/kinds";
 import type { BoardKindId, ScreenId } from "@/lib/shell/screens";
 import { FirstRun, type ProjectActions } from "./FirstRun";
 import { isControlRoomPage } from "./control-room/pages";
-import { useNewInterface } from "@/lib/session";
 import type { HomeViewProps } from "./home/HomeView";
 
 /**
