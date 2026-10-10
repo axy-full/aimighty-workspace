@@ -145,9 +145,11 @@ function delivering(current: () => string) {
 }
 
 /** lib/recovery.ts records every storage write; one it cannot prove harmless stays 'uncertain'. */
-async function unsettledActivities() {
+/* Only what this test started: in CI a shard shares one platform database across spec files, and another spec's own
+   unsettled write is not this save's. */
+async function unsettledActivities(since: number) {
   const { platformDb } = await import("../../lib/platform");
-  const rs = await platformDb().execute("SELECT kind, state FROM recovery_activities WHERE state != 'done'");
+  const rs = await platformDb().execute({ sql: "SELECT kind, state FROM recovery_activities WHERE state != 'done' AND created_at >= ?", args: [since] });
   return rs.rows.map((r) => ({ kind: String(r.kind), state: String(r.state) }));
 }
 
@@ -155,6 +157,7 @@ const sha256 = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
 const leftovers = (id: string) => (existsSync(LOCAL_DIR) ? readdirSync(LOCAL_DIR).filter((f) => f.includes(id)) : []);
 
 test("a save that times out keeps the paid render on the provider URL, billed exactly as a normal success", async () => {
+  const testStart = Date.now();
   const { runInTenant } = await import("../../lib/tenant");
   const { engineFor } = await import("../../lib/engines");
   const { getGeneration, syncGeneration, syncPending } = await import("../../lib/jobs");
@@ -203,7 +206,7 @@ test("a save that times out keeps the paid render on the provider URL, billed ex
       // Nothing half-written is left as the master.
       expect(leftovers(id)).toEqual([]);
       // And the recovery fence holds no uncertain storage write for it.
-      expect(await unsettledActivities()).toEqual([]);
+      expect(await unsettledActivities(testStart)).toEqual([]);
 
       // Billed once, at the same figure and the same credits as the normal success:
       // no refund for a render the customer has, and no second charge.
