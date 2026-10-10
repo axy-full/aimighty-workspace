@@ -1,6 +1,6 @@
 {
   "name": "rig-input",
-  "app": "/suites?project=project-65476a21&suite=particl&page=brief&view=board&stage=shots&v=rig",
+  "app": "/suites?project=project-3de3e3df&suite=particl&page=brief&view=board&stage=shots&v=rig",
   "prototype": "?view=board&v=rig&rig=input",
   "size": {
     "width": 1280,
