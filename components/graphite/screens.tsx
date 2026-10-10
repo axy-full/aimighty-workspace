@@ -14,6 +14,8 @@ import { KIND_CARDS } from "@/lib/v12/board/kinds";
 import type { BoardKindId, ScreenId } from "@/lib/shell/screens";
 import { FirstRun, type ProjectActions } from "./FirstRun";
 import { isControlRoomPage } from "./control-room/pages";
+import { useNewInterface } from "@/lib/session";
+import type { HomeViewProps } from "./home/HomeView";
 
 /**
  * The shell's mounts for the new interface's screens (lib/shell/screens.ts is the registry that says which exist).
@@ -25,6 +27,8 @@ import { isControlRoomPage } from "./control-room/pages";
  * this file's adapter, never SuitesShell. Streams own their entry modules; this file is the shell's.
  */
 const HomeEntry = dynamic(() => import("./home/HomeView").then((m) => m.HomeView), { ssr: false });
+/* The new interface's Home (components/v12/home, redesign C2): only with the switch on, so a customer never downloads it. */
+const V12HomeEntry = dynamic(() => import("@/components/v12/home/V12Home").then((m) => m.V12Home), { ssr: false });
 const BoardEntry = dynamic(() => import("./board/BoardView").then((m) => m.BoardView), { ssr: false });
 const NewBoardEntry = dynamic(() => import("@/components/v12/board/NewBoard").then((m) => m.NewBoard), { ssr: false });
 const ControlRoomEntry = dynamic(() => import("./control-room/ControlRoom").then((m) => m.ControlRoom), { ssr: false });
@@ -55,6 +59,14 @@ function ScreenFault({ fault, name }: { fault: Fault; name: string }) {
 const BOARD_KINDS: readonly string[] = ["studio", "ads", "social"];
 const boardKind = (value: string | undefined): BoardKindId | null => (value && BOARD_KINDS.includes(value) ? (value as BoardKindId) : null);
 
+/**
+ * Home's slot: with the new-interface switch on (lib/newInterface.ts), the new Home, inside the new frame's body
+ * (components/v12/V12Shell.tsx); otherwise today's. Phone sizes never reach it (PhoneApp replaces the body).
+ */
+function HomeSlot(props: HomeViewProps) {
+  return useNewInterface() ? <V12HomeEntry {...props} /> : <HomeEntry {...props} />;
+}
+
 /** The body of a screen that fills the shell's body (Home, the board, the control room); null for one that is not that kind. */
 export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenContext }): ReactNode {
   const { shell, scope, project, data } = ctx;
@@ -62,7 +74,7 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
     case "home":
       return (
         <Boundary what="Home" probe="home" resetKey={`home:${scope}`} fallback={(f) => <ScreenFault fault={f} name="home" />}>
-          <HomeEntry scope={scope} projects={data.projects} status={data.status} error={data.error} onRetry={data.retry} onPick={ctx.projectActions.onPick}
+          <HomeSlot scope={scope} projects={data.projects} status={data.status} error={data.error} onRetry={data.retry} onPick={ctx.projectActions.onPick}
             onCreate={ctx.onCreate} onStarter={ctx.projectActions.onStarter} now={ctx.now} />
         </Boundary>
       );

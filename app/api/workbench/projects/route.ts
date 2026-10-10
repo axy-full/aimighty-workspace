@@ -32,8 +32,12 @@ export const GET=withTenant(async(req:Request)=>{
     const row=(await db().execute({sql:"SELECT project_id AS id FROM workbench_projects WHERE owner=? AND (CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END)=? ORDER BY updated_at DESC LIMIT 1",args:[auth.user.id,production]})).rows[0];
     return Response.json({id:row?String(row.id):null},{headers:noStore});
   }
+  /* `?kinds=1` (the new Home's boards): each board's kind, read the way lib/board/kind.ts boardKindOf reads it (an older
+     Ads draft carries a marketing brief; an empty one is not one). Only when asked: it parses each listed draft. */
+  const kinds=new URL(req.url).searchParams.get('kinds')==='1';
+  const KIND="CASE WHEN json_valid(body) THEN COALESCE(NULLIF(json_extract(body,'$.boardKind'),''),CASE WHEN NULLIF(json_extract(body,'$.marketingBrief'),'') IS NOT NULL OR NULLIF(json_extract(body,'$.moleculr'),'') IS NOT NULL THEN 'ads' END) END AS kind";
   const [list,productions,draft]=await Promise.all([
-    db().execute({sql:'SELECT project_id AS id,name,revision,updated_at AS updatedAt FROM workbench_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 100',args:[auth.user.id]}),
+    db().execute({sql:`SELECT project_id AS id,name,revision,updated_at AS updatedAt${kinds?`,${KIND}`:''} FROM workbench_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 100`,args:[auth.user.id]}),
     db().execute('SELECT id,name FROM projects ORDER BY created_at DESC LIMIT 100'),
     id?readDraft(auth.user.id,id):null,
   ]);
