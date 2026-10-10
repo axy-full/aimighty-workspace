@@ -72,9 +72,9 @@ export function gridSummary(rows: readonly DeliverRow[]): string {
 export function deliverLines(stem: string): readonly (readonly [string, string])[] {
   return [
     ["Naming", NAMING_PATTERN(stem)],
-    ["Format", "MP4 · H.264 · ProRes on request"],
-    ["Captions", "Burned-in + SRT"],
-    ["Stems", "VO · Music · SFX · WAV"],
+    ["Format", "MP4 · H.264 / AAC, or WebM, made in your browser. ProRes isn’t built yet."],
+    ["Captions", "Not built yet: no burned-in captions or SRT."],
+    ["Stems", "One mixed WAV from Edit & Sound. Separate VO, music and SFX stems aren’t built yet."],
   ];
 }
 
@@ -83,7 +83,10 @@ export function deliverLines(stem: string): readonly (readonly [string, string])
 /** What one language needs, in the prototype's words: a dubbed voice, lip-sync and the on-screen text. */
 export const LANGUAGE_PARTS = ["dubbed voice", "lip-sync", "on-screen text"] as const;
 export const LANGUAGE_WHY = "Dubbing a finished cut, lip-sync and translated on-screen text have no engine or quote path yet, so no price is shown.";
+/** The most languages a board keeps: the draft's schema takes no more (lib/workbench/studio-schema.ts › boardLanguages). */
 export const MAX_LANGUAGES = 12;
+/** Why another language cannot be added, or null. */
+export const languageLimit = (count: number): string | null => (count >= MAX_LANGUAGES ? `A board holds up to ${MAX_LANGUAGES} languages. Remove one to add another.` : null);
 
 /** The languages a person added, well formed and distinct (codes of the dubbing list). */
 export function cleanLanguages(value: unknown, isKnown: (code: string) => boolean): string[] {
@@ -106,9 +109,9 @@ export const MANDATORIES_WHY = "Brand mandatories aren’t stored in Particl yet
 /** One platform's pack as the prototype words it. `ready`: whether today's exports can produce it (none can: each needs an adapted version). */
 export type PackRow = { platform: string; spec: string; ready: boolean };
 export const PACK_ROWS: readonly PackRow[] = [
-  { platform: "Reels", spec: "MP4 · 9:16 · SRT", ready: false },
+  { platform: "Reels", spec: "MP4 · 9:16", ready: false },
   { platform: "Shorts", spec: "MP4 · 9:16", ready: false },
-  { platform: "YouTube", spec: "MP4 · 16:9 · ProRes on request", ready: false },
+  { platform: "YouTube", spec: "MP4 · 16:9", ready: false },
   { platform: "Meta feed", spec: "MP4 · 4:5 · 1:1", ready: false },
 ];
 export const PACK_WHY = "A platform’s pack needs its adapted version, which isn’t built yet.";
@@ -116,4 +119,4 @@ export const POST_DIRECTLY = { label: "Post directly", value: "Later · every po
 
 /** What the Edit row of the pack really holds today (the editorial package), and what it does not. */
 export const EDIT_HAS = "Premiere / Resolve XML · EDL · the cut’s source media";
-export const EDIT_LACKS = "Audio stems and ProRes aren’t built yet.";
+export const EDIT_LACKS = "Separate audio stems, SRT captions and ProRes aren’t built yet.";

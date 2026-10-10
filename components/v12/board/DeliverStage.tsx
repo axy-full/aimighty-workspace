@@ -5,7 +5,7 @@ import { makeEDL, safeName } from "@/lib/workbench/studio";
 import { withExportNames } from "@/lib/workbench/export-names";
 import { downloadFile, exportPackage } from "@/lib/workbench/studio-export";
 import { makeFCPXML, makeXMEML } from "@/lib/workbench/editorial-xml";
-import { ADAPT_WHY, EDIT_HAS, EDIT_LACKS, GRID_SECONDS, LANGUAGE_PARTS, LANGUAGE_WHY, MANDATORIES, MANDATORIES_WHY, PACK_ROWS, PACK_WHY, POST_DIRECTLY, deliverGrid, deliverLines, gridSummary, nameStem, type DeliverCell } from "@/lib/v12/deliver";
+import { ADAPT_WHY, EDIT_HAS, languageLimit, EDIT_LACKS, GRID_SECONDS, LANGUAGE_PARTS, LANGUAGE_WHY, MANDATORIES, MANDATORIES_WHY, PACK_ROWS, PACK_WHY, POST_DIRECTLY, deliverGrid, deliverLines, gridSummary, nameStem, type DeliverCell } from "@/lib/v12/deliver";
 import { FREE_QUOTE } from "@/lib/v12/quote";
 import { Price } from "@/components/v12/ui/Price";
 import { deliverRows, type CutData } from "@/components/graphite/board/cards/cut/cut-model";
@@ -47,7 +47,8 @@ export function DeliverStage({ cut, cardId, ctx, languages, onLanguages }: {
     catch (error) { setNote({ error: true, text: error instanceof Error ? error.message : "Could not export." }); }
   };
   const noShots = project.shots.length === 0;
-  const add = (code: string) => { if (!isDubbingLanguage(code) || languages.includes(code)) return; const refused = onLanguages([...languages, code]); if (refused) ctx.toast(refused); };
+  const full = languageLimit(languages.length);
+  const add = (code: string) => { if (full || !isDubbingLanguage(code) || languages.includes(code)) return; const refused = onLanguages([...languages, code]); if (refused) ctx.toast(refused); };
   const left = (c: DeliverCell) => (c.state === "ready" ? "Ready" : c.state === "waiting" ? "Waiting" : "Not made");
 
   return (
@@ -106,7 +107,7 @@ export function DeliverStage({ cut, cardId, ctx, languages, onLanguages }: {
         </dl>
         <div className="v12-sp-acts">
           {act ? (
-            <select className="v12-sp-select" aria-label="Add a language" value="" onChange={(e) => add(e.target.value)} data-testid="v12-deliver-add-language">
+            <select className="v12-sp-select" aria-label="Add a language" value="" disabled={Boolean(full)} title={full ?? undefined} onChange={(e) => add(e.target.value)} data-testid="v12-deliver-add-language">
               <option value="">Add a language</option>
               {DUBBING_LANGUAGES.filter((l) => !languages.includes(l.code)).map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
             </select>

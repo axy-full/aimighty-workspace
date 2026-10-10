@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { ADAPT_WHY, GRID_ASPECTS, GRID_SECONDS, MANDATORIES, PACK_ROWS, cleanLanguages, deliverGrid, deliverLines, deliverName, gridSummary, nameStem } from "../../lib/v12/deliver";
-import { DECK_EXPORTS, SHOT_COLUMNS, deckFacts, deckSections, shotListCsv, shotListTitle, shotRows, withShotEdit } from "../../lib/v12/ppm";
+import { ADAPT_WHY, MAX_LANGUAGES, languageLimit, GRID_ASPECTS, GRID_SECONDS, MANDATORIES, PACK_ROWS, cleanLanguages, deliverGrid, deliverLines, deliverName, gridSummary, nameStem } from "../../lib/v12/deliver";
+import { DECK_EXPORTS, deckMeta, SHOT_COLUMNS, deckFacts, deckSections, shotListCsv, shotListTitle, shotRows, withShotEdit } from "../../lib/v12/ppm";
 import { csvCell } from "../../lib/v12/csv";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { newProject } from "../../lib/workbench/studio";
@@ -20,7 +20,15 @@ test.describe("Deliver", () => {
     expect(nameStem("x".repeat(200)).length).toBeLessThanOrEqual(60);
     expect(deliverName("harbour-film", "16:9", 30)).toBe("harbour-film_16x9_30s_v1");
     expect(deliverName("harbour-film", "4:5", 0)).toBe("harbour-film_4x5_cut_v1");
-    expect(deliverLines("harbour-film")).toEqual([["Naming", "harbour-film_{aspect}_{dur}_v1"], ["Format", "MP4 · H.264 · ProRes on request"], ["Captions", "Burned-in + SRT"], ["Stems", "VO · Music · SFX · WAV"]]);
+    /* What is not built is said so: no ProRes, no burned-in captions or SRT, no separate stems. */
+    const lines = deliverLines("harbour-film");
+    expect(lines.map((l) => l[0])).toEqual(["Naming", "Format", "Captions", "Stems"]);
+    expect(lines[0][1]).toBe("harbour-film_{aspect}_{dur}_v1");
+    expect(lines[1][1]).toContain("ProRes isn’t built yet");
+    expect(lines[2][1]).toContain("Not built yet");
+    expect(lines[3][1]).toContain("aren’t built yet");
+    expect(JSON.stringify(lines)).not.toMatch(/on request|Burned-in \+ SRT|VO · Music · SFX/);
+    expect(JSON.stringify(PACK_ROWS)).not.toMatch(/ProRes|SRT/);
   });
 
   test("the grid is four sizes by a master and three lengths; only the cut's own size can be ready, and only once it is complete", () => {
@@ -37,6 +45,16 @@ test.describe("Deliver", () => {
     /* A cut that is complete but empty is not ready; another size keeps its own master cell. */
     expect(deliverGrid("c", cut({ complete: true, empty: true }))[0].cells[0].state).toBe("waiting");
     expect(deliverGrid("c", cut({ aspect: "9:16", complete: true }))[1].cells[0].state).toBe("ready");
+  });
+
+  test("a thirteenth language is refused with its reason, and one read from a draft past the limit is cut to twelve", () => {
+    expect(MAX_LANGUAGES).toBe(12);
+    expect(languageLimit(11)).toBeNull();
+    expect(languageLimit(12)).toBe("A board holds up to 12 languages. Remove one to add another.");
+    const codes = ["en", "es", "fr", "de", "it", "pt", "pl", "nl", "sv", "da", "fi", "no", "cs"];
+    expect(cleanLanguages(codes, () => true)).toHaveLength(12);
+    expect(projectSchema.safeParse({ ...newProject("B"), boardLanguages: codes }).success).toBe(false);
+    expect(projectSchema.safeParse({ ...newProject("B"), boardLanguages: codes.slice(0, 12) }).success).toBe(true);
   });
 
   test("languages: only known codes, once each, at most twelve", () => {
@@ -127,6 +145,14 @@ test.describe("PPM deck and shot list", () => {
     expect(sections[0].line).toBe("The board’s name · the date");
     expect(deckSections(facts, true)[0].line).toBe("Your logo · the date");
     expect(deckSections(deckFacts({ script: "", scriptVersions: undefined, nodes: [], production: undefined }), false).every((s) => s.n === 1 || s.empty)).toBe(true);
+  });
+
+  test("the deck's meta counts the sections that hold something, never a fixed eight", () => {
+    const empty = deckSections(deckFacts({ script: "", scriptVersions: undefined, nodes: [], production: undefined }), false);
+    expect(deckMeta(empty)).toBe("Draft · 1 section");
+    const some = deckSections(deckFacts({ script: "One two", scriptVersions: undefined, nodes: [{ id: "a", title: "Skipper", type: "character", refKind: "cast" }] as never, production: { beats: sheet } as never }), false);
+    expect(deckMeta(some)).toBe("Draft · 6 sections");
+    expect(deckMeta(some)).not.toBe("Draft · 8 sections");
   });
 
   test("the exports: only the shot list CSV is built, and the rest say why", () => {

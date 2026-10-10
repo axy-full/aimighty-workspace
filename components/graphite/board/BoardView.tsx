@@ -63,6 +63,9 @@ import { useOverlay } from "@/components/v12/ui/overlay";
 import { StageRail, type StageEdit } from "@/components/v12/board/StageRail";
 import { StageHeader } from "@/components/v12/board/StageHeader";
 import { StageEmpty } from "@/components/v12/board/StageEmpty";
+import { cleanLanguages } from "@/lib/v12/deliver";
+import { isDubbingLanguage } from "@/lib/workbench/dubbing-options";
+import { deckFacts, deckMeta, deckSections, shotRows } from "@/lib/v12/ppm";
 import { DeliverStage } from "@/components/v12/board/DeliverStage";
 import { PpmStage } from "@/components/v12/board/PpmStage";
 import type { CutCardData } from "./cards/cut/cut-model";
@@ -675,7 +678,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const inspected = v12Frame && details !== primary?.id ? null : primary;
   /* The stage header (inventory § 6.4): the stage's meta, the selection, the one primary where its action lives, the board menu. */
   const stageNow = stage ? stageStatus(stage, allCards, flavor) : null;
-  const stageMeta = page === "ppm" ? "Draft · 8 sections" : stageNow && stageNow.summary && stageNow.summary !== "Nothing yet" ? stageNow.summary : null;
+  const stageMeta = page === "ppm" ? deckMeta(deckSections({ ...deckFacts(project), shots: shotRows(project.production?.beats, project.boardShotList).length }, false)) : stageNow && stageNow.summary && stageNow.summary !== "Nothing yet" ? stageNow.summary : null;
   const crumb = selectionCrumb([...selection.ids].map((id) => {
     const data = placed.byId.get(id)?.data as { title?: unknown; name?: unknown } | undefined;
     return typeof data?.title === "string" && data.title ? data.title : typeof data?.name === "string" && data.name ? data.name : "1 card";
@@ -718,7 +721,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           {page && !list ? (
             <div className="v12-stage-page gx-scroll" data-testid="v12-stage-page" data-page={page}>
               {page === "deliver" && cutNow && deliverCard
-                ? <DeliverStage cut={cutNow} cardId={deliverCard.id} ctx={ctx} languages={project.boardLanguages ?? []} onLanguages={(next) => rig.apply((p) => ({ ...p, boardLanguages: next }))} />
+                ? <DeliverStage cut={cutNow} cardId={deliverCard.id} ctx={ctx} languages={cleanLanguages(project.boardLanguages, isDubbingLanguage)} onLanguages={(next) => rig.apply((p) => ({ ...p, boardLanguages: next }))} />
                 : <PpmStage ctx={ctx} />}
             </div>
           ) : null}

@@ -145,3 +145,9 @@ export function deckFacts(project: Pick<Project, "script" | "scriptVersions" | "
     shots: (sheet?.scenes ?? []).reduce((n, s) => n + s.shots.length, 0),
   };
 }
+
+/** The deck's meta line (prototype: "Draft · 8 sections"): how many of its sections have something in them, never more than there are. */
+export function deckMeta(sections: readonly DeckSection[]): string {
+  const filled = sections.filter((s) => !s.empty).length;
+  return `Draft · ${filled} ${filled === 1 ? "section" : "sections"}`;
+}
