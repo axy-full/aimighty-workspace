@@ -139,11 +139,11 @@ test("desktop: ?view=make&viewer=1 opens the viewer on the newest result, with i
   await page.goto("/suites?view=make&viewer=1");
   await expect(page.getByTestId("v12-make-viewer")).toBeVisible({ timeout: 90_000 });
   await expect(page.getByTestId("v12-make-viewer-count")).toHaveText("1 / 2");
-  /* The seed shows; Reuse seed waits until Make's send can carry a seed, and says so rather than promise a repeat. */
+  /* The seed shows; a still's engines take none, so Reuse seed is off on a still and says why. */
   await expect(page.getByTestId("v12-make-viewer-seed")).toContainText("Seed 8841");
   await expect(page.getByTestId("v12-make-viewer-meta")).toContainText("seed 8841");
   await expect(page.getByTestId("v12-make-viewer-reuse-seed")).toBeDisabled();
-  await expect(page.getByTestId("v12-make-viewer-reuse-seed")).toHaveAttribute("title", /comes when Make can send one/);
+  await expect(page.getByTestId("v12-make-viewer-reuse-seed")).toHaveAttribute("title", /^Stills don't repeat a seed/);
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("v12-make-viewer-count")).toHaveText("2 / 2");
   await expect(page.getByTestId("v12-make-viewer-seed")).toHaveCount(0);
@@ -157,6 +157,45 @@ test("desktop: ?view=make&viewer=1 opens the viewer on the newest result, with i
   await page.goto("/suites?view=make");
   await expect(page.getByTestId("v12-make-empty")).toHaveText("What you make shows here. Describe it below and press Make.", { timeout: 90_000 });
   await noOverflow(page);
+});
+
+test("desktop: Reuse seed on a clip loads it with its seed, and the next priced press sends that seed", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
+  test.setTimeout(240_000);
+  await seedHome(page, { takes: 1 });
+  /* A Seedance clip that recorded its seed: the mock makes stills, so the reply makes its one take such a clip. */
+  const SEEDANCE = "dreamina-seedance-2-5-260628";
+  await page.route(/\/api\/jobs\?limit=/, async (route) => {
+    const reply = await route.fetch();
+    const body = await reply.json();
+    const g = body.generations?.[0];
+    if (g) Object.assign(g, { kind: "video", model: SEEDANCE, params: { ...g.params, ratio: "16:9", resolution: "1080p", duration: 5, seed: 8841 } });
+    await route.fulfill({ response: reply, json: body });
+  });
+  await page.goto("/suites?view=make&viewer=1");
+  await expect(page.getByTestId("v12-make-viewer")).toBeVisible({ timeout: 90_000 });
+  const reuseSeed = page.getByTestId("v12-make-viewer-reuse-seed");
+  await expect(reuseSeed).toBeEnabled();
+  await reuseSeed.click();
+  await expect(page.getByTestId("v12-make-viewer")).toHaveCount(0);
+  await expect(page.getByText("Seed 8841 set · the next make repeats it").first()).toBeVisible();
+  const input = page.getByTestId("v12-make-bar-input");
+  await expect(input).toHaveValue("A lighthouse at dusk, slow push-in");
+  await expect(page.getByTestId("v12-make-seed")).toContainText("Seed 8841", { timeout: 60_000 });
+  const go = page.getByTestId("v12-make-go");
+  await expect(go).toHaveText(/^Make · \d[\d,]* cr$/, { timeout: 60_000 });
+  /* The priced press: quoted and sent with the seed, at the figure on the button. */
+  const quoted = page.waitForRequest((r) => new URL(r.url()).pathname === "/api/generate/quote" && r.method() === "POST");
+  const sent = page.waitForRequest((r) => new URL(r.url()).pathname === "/api/generate" && r.method() === "POST");
+  await go.click();
+  expect((await quoted).postDataJSON()).toMatchObject({ seed: 8841, model: SEEDANCE });
+  const body = (await sent).postDataJSON() as { seed?: number; maxCredits?: number; quoteFingerprint?: string };
+  expect(body.seed).toBe(8841);
+  expect(typeof body.maxCredits).toBe("number");
+  expect(typeof body.quoteFingerprint).toBe("string");
+  /* × stops repeating it. */
+  await page.getByTestId("v12-make-seed").getByRole("button", { name: "Stop repeating this seed" }).click();
+  await expect(page.getByTestId("v12-make-seed")).toHaveCount(0);
 });
 
 test("phone sizes: the phone app is unchanged with the switch on", async ({ page }, info) => {

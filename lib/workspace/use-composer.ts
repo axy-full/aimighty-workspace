@@ -261,6 +261,8 @@ export type ComposerHost = {
   scope: string;
   /** Batches of takes 2–4 still being followed, newest last: Gen's Results show each as one strip. */
   batches: BatchView[];
+  /** The seed the next press sends (the host's `seed`, while its engine is picked), or null. */
+  seed: number | null;
 };
 
 /**
@@ -305,6 +307,12 @@ export function useComposer(options: {
   preference?: ModelPreference;
   /** The settings the composer opens with, as if picked (Make opens on 1080p). Read once; a later pick, a recipe or Draft replaces them. */
   initialPicks?: ComposerPicks;
+  /**
+   * A seed to repeat (Make's "Reuse seed", redesign C3), and the engine it was made on: sent with a clip's request only while that
+   * engine is the one picked (another engine's seed means nothing). Admission records it and Seedance passes it to the engine. It
+   * changes no price; the quote is asked for the same body, seed included, so its fingerprint covers it.
+   */
+  seed?: { value: number; model: string } | null;
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
@@ -456,8 +464,9 @@ export function useComposer(options: {
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */
-  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent });
-  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent }; });
+  const seed = options.seed && Number.isFinite(options.seed.value) && model?.id === options.seed.model && model.type === "video" ? options.seed.value : null;
+  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed });
+  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed }; });
   const busy = useRef(false);
 
   /** The project to file into: the open one, or a new "Untitled" through the ordinary creation path. */
@@ -594,6 +603,7 @@ export function useComposer(options: {
                   prompt: now.sent.prompt.trim(), kind: model.type === "video" ? "video" : "image", model: { id: model.id }, mapping,
                   ratio: settings.ratio, resolution: settings.resolution, duration: settings.duration, references: references(), firstFrameAssetId: "",
                   batch: { id: batchId, variation }, shotSpec: now.sent.shotSpec, cinema: now.sent.cinema,
+                  ...(now.seed !== null ? { seed: now.seed } : {}),
                   ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },
               };
@@ -709,6 +719,7 @@ export function useComposer(options: {
                   firstFrameAssetId: "",
                   shotSpec: now.sent.shotSpec,
                   cinema: now.sent.cinema,
+                  ...(now.seed !== null ? { seed: now.seed } : {}),
                   ...(settings.draft ? { draft: true } : {}),
                   ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },
@@ -862,7 +873,7 @@ export function useComposer(options: {
     blocked, submitting, failed,
     wording: billingWording({ workspaceName: options.workspaceName }),
     audio, voices, voice, seconds, project: target, projectNotice, generate, retryEngines, scope,
-    batches: batchViews,
+    batches: batchViews, seed,
   };
 }
 

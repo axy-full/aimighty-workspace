@@ -124,3 +124,19 @@ test.describe("modes and their words", () => {
     expect(EDIT_OPS.filter((o) => o.tool).map((o) => o.tool)).toEqual(["upscale", "motion"]);
   });
 });
+
+test.describe("Reuse seed (NEEDS AKSHAY: the seed rides in the priced request)", () => {
+  test("a clip's request carries the seed when one is set; a still's, or none, carries no seed", async () => {
+    const { generationRequestBody } = await import("../../lib/workbench/generation-request");
+    const request = { prompt: "a wave", kind: "video" as const, model: { id: "dreamina-seedance-2-5-260628" }, mapping: { shotId: "s", productionProjectId: "p" }, ratio: "16:9", resolution: "1080p", duration: 5, references: [] };
+    expect(generationRequestBody({ ...request, seed: 8841 })).toMatchObject({ seed: 8841, model: "dreamina-seedance-2-5-260628" });
+    expect(generationRequestBody({ ...request, seed: 0 })).toMatchObject({ seed: 0 });
+    for (const seed of [undefined, null, Number.NaN])
+      expect(generationRequestBody({ ...request, seed }), String(seed)).not.toHaveProperty("seed");
+    expect(generationRequestBody({ ...request, kind: "image", seed: 8841 })).not.toHaveProperty("seed");
+    /* The quote and the send are built from the same input, so the fingerprint the press approves covers the seed. */
+    const quoted = generationRequestBody({ ...request, seed: 8841 });
+    const sent = generationRequestBody({ ...request, seed: 8841, maxCredits: 43, quoteFingerprint: "f" });
+    expect(sent.seed).toBe(quoted.seed);
+  });
+});

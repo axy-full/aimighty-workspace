@@ -10,8 +10,8 @@ import { useOverlay, useV12PortalRoot } from "@/components/v12/ui/overlay";
 import { useFocusReturn } from "@/components/v12/ui/Popover";
 import { Price } from "@/components/v12/ui/Price";
 
-/** Why "Reuse seed" can't be pressed yet: Make's send has no seed in it. */
-export const SEED_LATER = "Reusing a seed comes when Make can send one. Variations puts these words and settings in the composer.";
+/** Why "Reuse seed" can't be pressed on a still: Make's still engines take no seed. */
+export const SEED_LATER = "Stills don't repeat a seed. Variations puts these words and settings in the composer.";
 
 const clock = (at: number) => new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
 
@@ -21,12 +21,14 @@ const clock = (at: number) => new Date(at).toLocaleTimeString("en-GB", { hour: "
  * the prompt and settings into the composer; "Use as reference" adds the take to the composer; Download is free.
  * What a take cost is the ledger's figure for it.
  */
-export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReference, paysInDollars }: {
+export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReuseSeed, onReference, paysInDollars }: {
   tiles: readonly ResultTile[];
   index: number | null;
   onIndex: (index: number) => void;
   onClose: () => void;
   onReuse: (tile: ResultTile) => void;
+  /** Loads the take into the composer with its seed, to repeat it. */
+  onReuseSeed: (tile: ResultTile, seed: number) => void;
   onReference: (tile: ResultTile) => void;
   paysInDollars: boolean;
 }) {
@@ -88,9 +90,9 @@ export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReference, p
             {seed != null ? (
               <span className="v12-mk-viewer-seed" data-testid="v12-make-viewer-seed">
                 <span className="v12-mk-mono">Seed {seed}</span>
-                {/* Reuse seed: Make's send carries no seed today (lib/workbench/generation-request.ts), so this waits on that
-                    change to the priced request (NEEDS AKSHAY, reported with redesign C3) rather than promise a repeat it can't keep. */}
-                <button type="button" className="v12-mk-link" disabled title={SEED_LATER} data-testid="v12-make-viewer-reuse-seed">Reuse seed</button>
+                {/* A clip's seed goes out with the next make (lib/workbench/generation-request.ts `seed`); a still's engines take none. */}
+                <button type="button" className="v12-mk-link" disabled={tile.kind !== "video" || Boolean(tile.reuseBlock)} onClick={() => onReuseSeed(tile, seed)}
+                  title={tile.kind !== "video" ? SEED_LATER : tile.reuseBlock ?? "Reuse this seed in the composer"} data-testid="v12-make-viewer-reuse-seed">Reuse seed</button>
               </span>
             ) : null}
           </div>
