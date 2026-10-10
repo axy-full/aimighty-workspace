@@ -44,6 +44,8 @@ export function WaitingStrip({ items, shown, onApprove, onOpen, onMore, onHide }
     seen.observe(el);
     return () => seen.disconnect();
   }, [has]);
+  /* After every render: still too wide, one level barer (it ends at the barest level, so it cannot loop). */
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- measures the DOM after each render on purpose
   useLayoutEffect(() => {
     const el = list.current;
     if (el && el.scrollWidth > el.clientWidth + 1 && at < levels.length - 1) setFit({ key, level: at + 1 });
