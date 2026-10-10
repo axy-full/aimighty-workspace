@@ -54,7 +54,7 @@ import { CheckAgain } from "../CheckAgain";
 import { sampleGate } from "@/lib/demo/sample";
 import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
-import { stagePage, addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
+import { stagePage, type StagePageKind, addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
@@ -65,6 +65,10 @@ import { StageHeader } from "@/components/v12/board/StageHeader";
 import { StageEmpty } from "@/components/v12/board/StageEmpty";
 import { DeliverStage } from "@/components/v12/board/DeliverStage";
 import { PpmStage } from "@/components/v12/board/PpmStage";
+import { ProductStage } from "@/components/v12/board/campaign/ProductStage";
+import { LookStage } from "@/components/v12/board/campaign/LookStage";
+import { FormatsStage } from "@/components/v12/board/campaign/FormatsStage";
+import { VariantsStage } from "@/components/v12/board/campaign/VariantsStage";
 import type { CutCardData } from "./cards/cut/cut-model";
 import { BoardToolbar, ViewSwitch } from "@/components/v12/board/BoardTools";
 import "@/components/v12/board/board.css";
@@ -187,7 +191,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const pageWanted = stagePage(stage?.id, flavor);
   const deliverCard = allCards.find((c) => c.kind === "deliver");
   const cutNow = (deliverCard?.data as CutCardData | undefined)?.cut ?? null;
-  const page: "deliver" | "ppm" | null = pageWanted === "deliver" && cutNow && deliverCard ? "deliver" : pageWanted === "ppm" && allCards.length > 0 ? "ppm" : null;
+  /* Campaign's Product, Look, Formats and Variants are pages from the start: Product is where a campaign begins. */
+  const page: StagePageKind | null = pageWanted === "deliver" ? (cutNow && deliverCard ? "deliver" : null) : pageWanted === "ppm" ? (allCards.length > 0 ? "ppm" : null) : pageWanted;
   const stageIsEmpty = v12Frame && !empty && placed.cards.length === 0 && !page;
 
   /* A drawer opens from the design's frame letter, or from `drawer=` (Viral's History page is the Social board's History drawer: lib/shell/ads-social.ts). */
@@ -714,12 +719,16 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
               <PeerCursors peers={peers} />
             </BoardCanvas>
           )}
-          {empty && !list && board.Empty ? <board.Empty ctx={ctx} /> : empty && !list && kind === "studio" ? <EmptyBoard ctx={ctx} /> : null}
+          {empty && !list && !page && board.Empty ? <board.Empty ctx={ctx} /> : empty && !list && !page && kind === "studio" ? <EmptyBoard ctx={ctx} /> : null}
           {page && !list ? (
             <div className="v12-stage-page gx-scroll" data-testid="v12-stage-page" data-page={page}>
               {page === "deliver" && cutNow && deliverCard
                 ? <DeliverStage cut={cutNow} cardId={deliverCard.id} ctx={ctx} languages={project.boardLanguages ?? []} onLanguages={(next) => rig.apply((p) => ({ ...p, boardLanguages: next }))} />
-                : <PpmStage ctx={ctx} />}
+                : page === "ppm" ? <PpmStage ctx={ctx} />
+                : page === "product" ? <ProductStage ctx={ctx} />
+                : page === "look" ? <LookStage ctx={ctx} />
+                : page === "formats" ? <FormatsStage ctx={ctx} />
+                : page === "variants" ? <VariantsStage ctx={ctx} /> : null}
             </div>
           ) : null}
           {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}

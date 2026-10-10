@@ -130,17 +130,18 @@ export function useAdsActions() {
    * "Make in Make": the brief's prompt, its frame and the product's stills go to Make, which shows its price on its
    * button before anything runs. A hook picked on the Hooks card rides with it.
    */
-  const makeInMake = useCallback((templateId: string): string | null => {
+  const makeInMake = useCallback((templateId: string, only?: { hook?: string; ratio?: string }): string | null => {
     const template = CREATIVE_TEMPLATES.find((t) => t.id === templateId);
     const project = latest.current.rig.project;
     if (!template || !project) return "Open a project first.";
     const asked = withTemplate(briefOf(project), template);
-    const hook = readSession(pid).picked.find((h) => asked.hooks.includes(h)) ?? null;
+    /* The Variants grid names the hook and the size of its cell; the Formats card uses the hook picked on the Hooks card. */
+    const hook = only?.hook ?? readSession(pid).picked.find((h) => asked.hooks.includes(h)) ?? null;
     const ready = briefForGen(project, asked, hook);
     if ("problem" in ready) return ready.problem;
     changeBrief(editor, () => asked);
     void latest.current.rig.save();
-    sendGenPreset({ prompt: ready.prompt, type: ready.type, note: ready.note, billing: "workspace", picks: { ratio: ready.ratio } });
+    sendGenPreset({ prompt: ready.prompt, type: ready.type, note: ready.note, billing: "workspace", picks: { ratio: only?.ratio ?? ready.ratio } });
     for (const ref of ready.references) sendReference(ref);
     shell.openMake(ready.type);
     return null;

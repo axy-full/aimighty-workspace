@@ -181,12 +181,15 @@ export function addStage(stages: readonly Stage[], after: string | null, label: 
 }
 
 /**
- * A stage that is a page of its own over the canvas instead of cards (components/v12/board/DeliverStage.tsx, PpmStage.tsx):
- * Film's Deliver and Pre-vis's PPM deck. Other kinds' stages of those names keep their cards.
+ * A stage that is a page of its own over the canvas instead of cards (components/v12/board/DeliverStage.tsx, PpmStage.tsx,
+ * campaign/*): Film's Deliver, Pre-vis's PPM deck, and Campaign's Product, Look, Formats and Variants. Other kinds' stages
+ * of those names keep their cards.
  */
-export type StagePageKind = "deliver" | "ppm";
+export type StagePageKind = "deliver" | "ppm" | "product" | "look" | "formats" | "variants";
+const CAMPAIGN_PAGES: readonly string[] = ["product", "look", "formats", "variants"];
 export const stagePage = (stageId: string | null | undefined, flavor: Flavor): StagePageKind | null =>
-  flavor === "film" && stageId === "deliver" ? "deliver" : flavor === "previs" && stageId === "ppm-deck" ? "ppm" : null;
+  flavor === "film" && stageId === "deliver" ? "deliver" : flavor === "previs" && stageId === "ppm-deck" ? "ppm"
+    : flavor === "campaign" && stageId && CAMPAIGN_PAGES.includes(stageId) ? (stageId as StagePageKind) : null;
 
 /* ── The stage header (§ 6.4) ─────────────────────────────────────────────────────────────────────── */
 
