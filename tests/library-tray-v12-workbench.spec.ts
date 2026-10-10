@@ -1,5 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { openLibrary } from "./helpers/libraryV12";
+import { signInToRedesign } from "./helpers/newInterface";
+import { forbidPaidWork } from "./helpers/workspaceFixtures";
 
 /**
  * The Library tray in the new interface (docs/redesign-plan.md, item C4; components/v12/library/LibraryTray.tsx).
@@ -138,6 +140,44 @@ test.describe("desktop, switch on", () => {
     await expect(page.getByRole("menu")).toBeVisible();
     await page.getByRole("menu").press("l");
     await expect(page.getByTestId("v12-library")).toBeVisible();
+  });
+
+  test("with no board at all (a new person on Home), the tray says the Library is empty, never Reading", async ({ page }) => {
+    await signInToRedesign(page.request);
+    await forbidPaidWork(page);
+    await page.route("**/api/workbench/projects**", (route) => route.request().method() === "GET"
+      ? route.fulfill({ json: { projects: [], productions: [], project: null, revision: 1, shared: null } })
+      : route.fulfill({ status: 400, json: { error: "Unexpected projects request in a workspace test." } }));
+    await page.goto("/suites?view=home&drawer=Library");
+    const tray = page.getByTestId("v12-library");
+    await expect(tray).toBeVisible({ timeout: 60_000 });
+    await expect(tray.getByText("Nothing in this library yet.")).toBeVisible();
+    await expect(tray.getByText("Reading the Library…")).toHaveCount(0);
+  });
+
+  test("a held L never reaches the board's list key, and L gives focus back where it was pressed", async ({ page }) => {
+    await openLibrary(page, "/suites?view=board");
+    const button = page.getByTestId("v12-library-button");
+    await expect(button).toBeVisible({ timeout: 60_000 });
+    const list = page.getByTestId("board-list-toggle");
+    const listWas = await list.getAttribute("aria-selected");
+    /* A held key: the first press opens the tray, the repeats do nothing, and the board's list never toggles. */
+    await page.locator(".react-flow__pane").click({ position: { x: 300, y: 300 } });
+    await page.keyboard.down("l");
+    await page.evaluate(() => { for (let i = 0; i < 3; i++) window.dispatchEvent(new KeyboardEvent("keydown", { key: "l", repeat: true, bubbles: true, cancelable: true })); });
+    await page.keyboard.up("l");
+    await expect(page.getByTestId("v12-library")).toBeVisible();
+    if (listWas !== null) await expect(list).toHaveAttribute("aria-selected", listWas);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("v12-library")).toHaveCount(0);
+    /* Opened with L from a focused control in the header: closing gives focus back to that control, not the Library button. */
+    const from = page.getByTestId("v12-head").locator("button:visible").first();
+    await from.focus();
+    await expect(from).toBeFocused();
+    await page.keyboard.press("l");
+    await expect(page.getByTestId("v12-library-search")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(from).toBeFocused();
   });
 
   test("switch off: L still toggles the board's list, and there is no tray", async ({ page }) => {

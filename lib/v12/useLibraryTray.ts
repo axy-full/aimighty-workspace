@@ -64,13 +64,15 @@ export function useTrayLibrary(projectId: string | null, query: string, own: { p
   }, [key, projectId, q, fetcher, attempt]);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   return useMemo<TrayRead>(() => {
+    /* No board open (Home, or a person with no boards yet): nothing to read, so an empty Library, never "Reading…". */
+    if (!projectId) return { status: "ready", entries: [], error: null, retry };
     if (useOwn) {
       const status = own.status === "error" && !own.entries.length ? "error" : own.status === "ready" || own.entries.length ? "ready" : "loading";
       return { status, entries: [...own.entries], error: own.error, retry: own.retry };
     }
     if (!key) return { status: "ready", entries: [], error: null, retry };
     return answer?.key === key ? { ...answer.read, retry } : { status: "loading", entries: [], error: null, retry };
-  }, [useOwn, own.status, own.entries, own.error, own.retry, key, answer, retry]);
+  }, [projectId, useOwn, own.status, own.entries, own.error, own.retry, key, answer, retry]);
 }
 
 /** Whether a key press belongs to a field (the tray's L never fires while typing). */
