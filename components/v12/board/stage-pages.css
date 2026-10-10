@@ -38,7 +38,7 @@
   .v12 .v12-ds > [data-testid="v12-deliver-pack"] { grid-area: p; }
 }
 .v12 .v12-ds-table { display: flex; flex-direction: column; gap: 8px; overflow-x: auto; }
-.v12 .v12-ds-row { display: grid; grid-template-columns: 56px repeat(4, minmax(120px, 1fr)); gap: 8px; align-items: stretch; min-width: 560px; }
+.v12 .v12-ds-row { display: grid; grid-template-columns: 56px repeat(4, minmax(160px, 1fr)); gap: 8px; align-items: stretch; min-width: 720px; }
 .v12 .v12-ds-headrow { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
 .v12 .v12-ds-aspect { align-self: center; font-family: var(--gx-mono); font-size: var(--gx-fs-meta); color: var(--gx-text-strong); }
 .v12 .v12-ds-cell { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 2px; align-items: center; padding: 8px 10px; border: 1px solid var(--gx-card-border); border-radius: 8px; background: var(--gx-input); min-width: 0; }
