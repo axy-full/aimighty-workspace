@@ -4,8 +4,9 @@ import { useMake, type MakeInput } from "@/components/graphite/make/use-make";
 import { useShell } from "@/lib/shell/state";
 import { spendAttrsOf, spendAttrsText } from "@/lib/spend";
 import { TAKES_MAX } from "@/lib/workspace/composer";
-import { knownQuote } from "@/lib/v12/quote";
-import { EDIT_OPS, MAKE_MODES, REMIX_OPS, modeType, placeholderFor, type MakeMode, type MakeOp, type ResultTile } from "@/lib/v12/make";
+import { useSession } from "@/lib/session";
+import { creditRate } from "@/lib/shell/price-words";
+import { EDIT_OPS, MAKE_MODES, REMIX_OPS, makeQuote, modeType, placeholderFor, type MakeMode, type MakeOp, type ResultTile } from "@/lib/v12/make";
 import { Bar, BarChip, type BarMention } from "@/components/v12/bar/Bar";
 import { Price } from "@/components/v12/ui/Price";
 import { Menu, type MenuItem } from "@/components/v12/ui/Popover";
@@ -49,6 +50,9 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   onClearSeed?: () => void;
 }) {
   const shell = useShell();
+  const session = useSession();
+  /* Prices in the workspace's own unit: credits, or dollars for the workspace that pays in dollars. */
+  const money = { dollars: session.rates.unit === "usd", creditUsd: creditRate(session.rates.creditUsd) };
   const make = useMake({ ...input, onBoard: false, keepOpen: true });
   /* The mode: Remix or Edit when picked here, else the composer's own type once picked, else Auto. */
   const { pickType, unpick, recipe } = make;
@@ -77,11 +81,11 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   if (!ops && model) {
     chips.push({
       /* "Nano Banana 2 · 2K · 2 cr": the engine, its size and one take's price, the server's. */
-      k: "Model", v: <>{model.label}{settings.resolution && state.type !== "audio" ? ` · ${settings.resolution}` : ""}{make.linePrice?.value ? <> · <Price quote={knownQuote(make.linePrice.value)} /></> : make.linePrice?.about ? ` · ${make.linePrice.about}` : null}</>,
+      k: "Model", v: <>{model.label}{settings.resolution && state.type !== "audio" ? ` · ${settings.resolution}` : ""}{make.linePrice?.value ? <> · <Price quote={makeQuote(make.linePrice.value, money)} testId="v12-make-chip-price" /></> : make.linePrice?.about ? ` · ${make.linePrice.about}` : null}</>,
       title: "Engines from the rate card", testId: "v12-make-chip-model", onOpen: make.openList, onClose: make.closeList,
       items: make.offered.map((m) => {
         const row = make.rowValue(m);
-        return { id: m.id, label: m.label, onSelect: () => make.pickEngine(m), hint: row.value ? <Price quote={knownQuote(row.value)} /> : row.about ?? undefined };
+        return { id: m.id, label: m.label, onSelect: () => make.pickEngine(m), hint: row.value ? <Price quote={makeQuote(row.value, money)} /> : row.about ?? undefined };
       }),
     });
     const ratios = (model.ratios ?? []).filter((r) => r !== "adaptive");
@@ -98,7 +102,7 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   }
 
   const price = make.go.price;
-  const priceNode = price?.value ? <Price quote={knownQuote(price.value)} testId="v12-make-price" /> : price?.about ? <span className="v12-price" data-price="about" data-testid="v12-make-price">{price.about}</span> : undefined;
+  const priceNode = price?.value ? <Price quote={makeQuote(price.value, money)} testId="v12-make-price" /> : price?.about ? <span className="v12-price" data-price="about" data-testid="v12-make-price">{price.about}</span> : undefined;
   const attrs = price?.value ? spendAttrsOf(price.value) : price?.about ? spendAttrsText(price.about) : { "data-spend": "unpriced" as const };
   const autoLine = mode === "auto" && model
     ? [`Auto · ${TYPE_WORD[state.type]}, so ${model.label}${settings.resolution && state.type !== "audio" ? ` at ${settings.resolution}` : ""}`]
@@ -122,7 +126,7 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
       <Segment label="What to make" size="md" value={mode} onChange={onMode}
         options={MAKE_MODES.map((m) => ({ id: m.id, label: m.label }))} />
       {autoLine ? (
-        <span className="v12-mk-auto" data-testid="v12-make-auto"><span className="v12-mk-dot" aria-hidden="true" />{autoLine[0]}{priceNode ? <> · {priceNode}</> : null} · override by picking a mode</span>
+        <span className="v12-mk-auto" data-testid="v12-make-auto"><span className="v12-mk-dot" aria-hidden="true" />{autoLine[0]}{priceNode ? <> · {priceNode}</> : null}</span>
       ) : null}
       {ops ? (
         <span className="v12-mk-ops" role="group" aria-label={mode === "remix" ? "Remix" : "Edit"} data-testid="v12-make-ops">

@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import type { Generation } from "../../lib/jobs";
 import {
-  EDIT_OPS, MAKE_MODES, REMIX_OPS, aspectOf, byDay, dayLabel, justify, modeFromParam, modeType, placeholderFor, resultTile, resultTiles, resultsCount,
+  EDIT_OPS, MAKE_MODES, REMIX_OPS, aspectOf, makeQuote, byDay, dayLabel, justify, modeFromParam, modeType, placeholderFor, resultTile, resultTiles, resultsCount,
 } from "../../lib/v12/make";
 
 /**
@@ -138,5 +138,20 @@ test.describe("Reuse seed (NEEDS AKSHAY: the seed rides in the priced request)",
     const quoted = generationRequestBody({ ...request, seed: 8841 });
     const sent = generationRequestBody({ ...request, seed: 8841, maxCredits: 43, quoteFingerprint: "f" });
     expect(sent.seed).toBe(quoted.seed);
+  });
+});
+
+test.describe("Make's prices in the workspace's unit", () => {
+  test("credits as the server gave them; dollars at the credit's price for the workspace that pays in dollars", () => {
+    const credits = { dollars: false, creditUsd: 0.1 };
+    const dollars = { dollars: true, creditUsd: 0.1 };
+    expect(makeQuote({ kind: "exact", credits: 8 }, credits)).toEqual({ state: "ready", price: { unit: "cr", value: { kind: "exact", credits: 8 } } });
+    expect(makeQuote({ kind: "exact", credits: 8 }, dollars)).toMatchObject({ state: "ready", price: { unit: "usd", upTo: false } });
+    expect((makeQuote({ kind: "exact", credits: 8 }, dollars) as { price: { usd: number } }).price.usd).toBeCloseTo(0.8, 6);
+    expect(makeQuote({ kind: "up-to", credits: 43 }, dollars)).toMatchObject({ price: { unit: "usd", upTo: true } });
+    expect(makeQuote({ kind: "free" }, dollars)).toEqual({ state: "ready", price: { unit: "cr", value: { kind: "free" } } });
+    /* No figure, or no credit price to turn it into dollars: never a number. */
+    expect(makeQuote(null, credits).state).toBe("error");
+    expect(makeQuote({ kind: "exact", credits: 8 }, { dollars: true, creditUsd: null }).state).toBe("error");
   });
 });

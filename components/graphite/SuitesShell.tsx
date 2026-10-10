@@ -1,7 +1,7 @@
 "use client";
 import { rigDeleteHandler, setRigUndoSink, type RigUndo } from "@/lib/shell/rig-commands";
 import { newProject } from "@/lib/workbench/studio";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNewInterface, useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
@@ -15,7 +15,7 @@ import { GenerateComposer } from "@/components/workspace/GenerateComposer";
 import { GenerationStrip } from "@/components/workspace/GenerationStrip";
 import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
-import { useShell } from "@/lib/shell/state";
+import { setMakeIsPage, useShell } from "@/lib/shell/state";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { useRecreatePrice } from "@/lib/shell/use-recreate-price";
 import { ctxPrice } from "@/lib/shell/recreate-price";
@@ -253,8 +253,12 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
         /* Atomik's panel (new interface) closes after ⌘K and the menus, before Make, unless a sheet is open over it. */
         else if (shell.atomik && !document.querySelector(".gx-veil")) shell.closeAtomik();
         /* Make closes with Esc, except from a field (Esc there closes the field's own list first) or while a sheet is open over it.
-           Make as a page (the new interface's, [data-v12-make]) is a place, not a panel: Esc does not leave it. */
-        else if (shell.make && !inField(event.target) && !document.querySelector(".gx-veil") && !document.querySelector("[data-v12-make]")) shell.closeMake();
+           Make as a page (the new interface's, [data-v12-make]) is a place, not a panel: Esc does not leave it, and a quick
+           tool open over it (Motion transfer, Object swap, Upscale) goes back to the page. */
+        else if (shell.make && !inField(event.target) && !document.querySelector(".gx-veil")) {
+          if (!document.querySelector("[data-v12-make]")) shell.closeMake();
+          else if (isMakeTool(shell.make)) shell.setMake(shell.lastMake);
+        }
         return;
       }
       /* ⌥M opens and closes Make (README § 6), from anywhere, a field included: ⌥M types nothing a prompt needs. */
@@ -367,10 +371,16 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
      knows from its first render (SuitesApp draws nothing until the browser has it), so neither frame flashes first.
      With the switch off the header and body below render exactly as they always have. */
   const newInterface = useNewInterface();
+  /* The address the page opened with: Make's page (lazy) can mount after the workspace has rewritten the address, so it reads
+     what was asked for (`mk=`, `viewer=1`) from here, once. Its first mount spends it; a later visit reads the live address. */
+  const [openedWith, setOpenedWith] = useState<string | undefined>(() => (typeof window === "undefined" ? undefined : window.location.search));
+  const spendOpenedWith = useCallback(() => setOpenedWith(undefined), []);
   const v12 = newInterface && !compact && !phoneOn;
   /* With the switch on at desktop sizes, Make is a page in the frame's body (components/v12/make), not a panel; its quick
      tools (Motion transfer, Object swap, Upscale) still open as today's panel over that page. */
   const v12Make = v12 && Boolean(shell.make);
+  /* Make is a page in the new frame: leaving for Home, a board or Settings leaves it (lib/shell/state.tsx stayMake). */
+  useEffect(() => { setMakeIsPage(v12); return () => setMakeIsPage(false); }, [v12]);
   const makePanel = Boolean(shell.make) && !phoneOn && !(v12Make && !isMakeTool(shell.make));
   const header = <Header account={account} project={project?.name ?? null} bar={bar} />;
   const desktopBody = <>
@@ -434,7 +444,7 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
         ) : <PhoneMount ctx={screenCtx} page={phonePage} />) : v12 ? (
           <V12Shell header={header}>{v12Make ? (
             <Boundary what="Make" probe="gen" resetKey={`v12-make:${scope}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="gen" /></div>}>
-              <V12Make scope={scope} project={project} projects={data.status} projectsError={projectsError} onRetry={data.retry}
+              <V12Make initialSearch={openedWith} onOpened={spendOpenedWith} scope={scope} project={project} projects={data.status} projectsError={projectsError} onRetry={data.retry}
                 workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} balance={account?.credits?.balance ?? null} />
             </Boundary>
           ) : desktopBody}</V12Shell>
@@ -445,7 +455,7 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
           <Boundary what="Make" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <aside className="gx-make" aria-label="Make"><PanelFault fault={fault} name="gen" actions={<button type="button" className="gx-hbtn" onClick={shell.closeMake}>Close</button>} /></aside>}>
             <MakePanel scope={scope} project={project} items={items} library={library} projects={data.status} projectsError={projectsError} onRetry={data.retry}
               workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })}
-              balance={account?.credits?.balance ?? null} aspect={aspect} />
+              balance={account?.credits?.balance ?? null} aspect={aspect} onClose={v12Make ? () => shell.setMake(shell.lastMake) : undefined} />
           </Boundary>
         ) : null}
         <Boundary what="Search" probe="palette" resetKey={shell.palette ? "open" : "closed"} fallback={(fault) => !shell.palette ? null : (

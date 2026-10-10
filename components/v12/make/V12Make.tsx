@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { recreatePreset } from "@/lib/shell/recipe";
 import { sendGenPreset } from "@/lib/shell/gen-preset";
 import { sendReference } from "@/lib/shell/reference-inbox";
@@ -15,6 +15,10 @@ import { useResults, useTrayPrices } from "./use-results";
 import "./make.css";
 
 export type V12MakeProps = {
+  /** The address the page opened with (SuitesShell keeps it: by the time this lazy page mounts it has been rewritten). */
+  initialSearch?: string;
+  /** Told once the page has read `initialSearch`, so a later visit to Make does not reopen what the first address asked for. */
+  onOpened?: () => void;
   scope: string;
   project: Project | null;
   projects: "loading" | "ready" | "error";
@@ -26,9 +30,9 @@ export type V12MakeProps = {
 };
 
 /** What the address asked for when the page opened: `mk=` (a mode) and `viewer=1` (the viewer on the newest result). */
-function asked(): { mode: MakeMode | null; viewer: boolean } {
+function asked(search?: string): { mode: MakeMode | null; viewer: boolean } {
   if (typeof window === "undefined") return { mode: null, viewer: false };
-  const q = new URLSearchParams(window.location.search);
+  const q = new URLSearchParams(search ?? window.location.search);
   return { mode: modeFromParam(q.get("mk")), viewer: q.get("viewer") === "1" };
 }
 
@@ -39,43 +43,52 @@ function asked(): { mode: MakeMode | null; viewer: boolean } {
  * on the shared bar: the same quote and the same one priced send, marked where it is pressed. A press that went through keeps the page open; the take shows up
  * in the results, rendering.
  */
-export function V12Make({ scope, project, projects, projectsError, onRetry, workspaceName, onProject, balance }: V12MakeProps) {
+export function V12Make({ initialSearch, onOpened, scope, project, projects, projectsError, onRetry, workspaceName, onProject, balance }: V12MakeProps) {
   const results = useResults(scope);
   const trayPrices = useTrayPrices();
   const session = useSession();
   const toast = useToast();
   const places = usePlaces();
   const paysInDollars = session.rates.unit === "usd";
-  const [first] = useState(asked);
+  const [first] = useState(() => asked(initialSearch));
+  const opened = useRef(onOpened);
+  useEffect(() => { opened.current?.(); }, []);
 
   /* Selection, and the viewer over the finished takes. */
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const select = (id: string) => setSelected((now) => { const next = new Set(now); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const viewable = useMemo(() => results.tiles.filter((t) => t.source.status === "succeeded" && t.url), [results.tiles]);
-  /* `viewer=1` opens the viewer on the newest result once there is one. */
-  const [viewingAt, setViewing] = useState<number | null | "first">(first.viewer ? "first" : null);
-  const viewing = viewingAt === "first" ? (viewable.length ? 0 : null) : viewingAt;
-  const open = (tile: ResultTile) => { const i = viewable.findIndex((t) => t.id === tile.id); if (i >= 0) setViewing(i); };
+  /* The viewer holds the open take by id, never by position: the results are read again while takes render and after a
+     press, and a take that lands at the front must not move the viewer to another one. `viewer=1` asks for the newest
+     result once, when the results first load; an empty workspace spends the request, so a later first take does not
+     pop the viewer open. A take that disappears closes it. */
+  const [view, setView] = useState<{ id: string | null; first: boolean }>({ id: null, first: first.viewer });
+  if (view.first && results.status !== "loading") setView({ id: viewable[0]?.id ?? null, first: false });
+  const viewingIndex = view.id ? viewable.findIndex((t) => t.id === view.id) : -1;
+  if (view.id && viewingIndex < 0 && results.status === "ready") setView({ id: null, first: false });
+  const viewing = viewingIndex >= 0 ? viewingIndex : null;
+  const setViewing = useCallback((index: number | null) => setView({ id: index === null ? null : viewable[index]?.id ?? null, first: false }), [viewable]);
+  const open = (tile: ResultTile) => setView({ id: tile.id, first: false });
 
   /* Prompt reuse: the take's words and settings land in the composer itself (lib/shell/recipe recreatePreset, read by
      use-make's preset inbox), and a take used as a reference arrives through the reference inbox it reads too. */
   const [seed, setSeed] = useState<{ value: number; model: string } | null>(null);
   const reuse = useCallback((tile: ResultTile) => {
     if (tile.reuseBlock) return;
-    setViewing(null);
+    setView({ id: null, first: false });
     setSeed(null);
     sendGenPreset(recreatePreset(tile.source, { name: tile.prompt.slice(0, 60) }));
     toast({ text: "Prompt and settings loaded into the composer" });
   }, [toast]);
   const reference = useCallback((tile: ResultTile) => {
     sendReference({ id: `generation:${tile.id}`, name: tile.prompt.slice(0, 60) });
-    setViewing(null);
+    setView({ id: null, first: false });
     toast({ text: "Added to the composer's references" });
   }, [toast]);
   /* Reuse seed: the take's words and settings, as Variations, and its seed, sent with the next clip while its engine is picked. */
   const reuseSeed = useCallback((tile: ResultTile, value: number) => {
     if (tile.reuseBlock) return;
-    setViewing(null);
+    setView({ id: null, first: false });
     sendGenPreset(recreatePreset(tile.source, { name: tile.prompt.slice(0, 60) }));
     setSeed({ value, model: tile.model });
     toast({ text: `Seed ${value} set · the next make repeats it` });

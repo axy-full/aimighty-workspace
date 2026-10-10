@@ -59,11 +59,23 @@ test("desktop: results in justified rows, the composer, prompt reuse, the viewer
   await expect(go).toHaveAttribute("data-spend", "priced");
   await expect(go).toBeEnabled();
   await expect(page.getByTestId("v12-make-chip-model")).toContainText("Model");
+  /* The Model chip carries one take's price, the server's. */
+  await expect(page.getByTestId("v12-make-chip-price")).toHaveText(/^\d[\d,]* cr$/, { timeout: 60_000 });
   await expect(page.getByTestId("v12-make-chip-count")).toContainText("Count");
   await page.getByTestId("v12-make-chip-count").click();
   await page.getByRole("menuitem", { name: "2" }).click();
   await expect(page.getByTestId("v12-make-chip-count")).toContainText("2");
   await expect(go).toHaveText(/^Make( \d takes)? · \d[\d,]* cr$/, { timeout: 60_000 });
+
+  /* Focus on the words shows on the docked card (rule 15): a 2px ring that is not there without focus. */
+  const card = page.getByTestId("v12-make-bar").locator(".v12-bar-card");
+  const ring = () => card.evaluate((el) => { const c = getComputedStyle(el); return `${c.outlineStyle} ${c.outlineWidth} ${c.borderTopColor}`; });
+  await page.getByRole("radio", { name: "Image" }).focus();
+  const unfocused = await ring();
+  await input.focus();
+  const focused = await ring();
+  expect(focused).not.toBe(unfocused);
+  expect(focused).toMatch(/^solid 2px /);
 
   /* Remix and Edit: ops, and Make waits on a choice. */
   await page.getByRole("radio", { name: "Remix" }).click();
@@ -114,13 +126,16 @@ test("desktop: results in justified rows, the composer, prompt reuse, the viewer
 
   /* A press goes through today's priced send, at the figure on the button; the page stays and the take joins the results. */
   await input.fill("A paper kite over a grey sea");
-  await expect(go).toHaveText(/^Make( \d takes)? · \d[\d,]* cr$/, { timeout: 60_000 });
+  await page.getByTestId("v12-make-chip-count").click();
+  await page.getByRole("menuitem", { name: "1" }).click();
+  await expect(go).toHaveText(/^Make · \d[\d,]* cr$/, { timeout: 60_000 });
+  const shown = Number((await go.innerText()).match(/· ([\d,]+) cr$/)![1].replace(/,/g, ""));
   const sent = page.waitForRequest((r) => new URL(r.url()).pathname === "/api/generate" && r.method() === "POST");
   await go.click();
   const body = (await sent).postDataJSON() as { maxCredits?: number };
-  expect(typeof body.maxCredits).toBe("number");
+  expect(body.maxCredits, "the approval is the figure on the button").toBe(shown);
   await expect(make).toBeVisible();
-  await expect(page.getByTestId("v12-make-count")).toHaveText(/^(7|8) results$/, { timeout: 90_000 });
+  await expect(page.getByTestId("v12-make-count")).toHaveText("7 results", { timeout: 90_000 });
   await noOverflow(page);
   expect(errors).toEqual([]);
 });
@@ -150,6 +165,13 @@ test("desktop: ?view=make&viewer=1 opens the viewer on the newest result, with i
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("v12-make-viewer-count")).toHaveText("1 / 2");
   await page.getByTestId("v12-make-viewer-close").click();
+  await expect(page.getByTestId("v12-make-viewer")).toHaveCount(0);
+  /* The opening address is read once: Home and back to Make opens Make without the viewer. */
+  await page.getByTestId("brand-home").click();
+  await expect(page.getByTestId("v12-make")).toHaveCount(0, { timeout: 30_000 });
+  await page.keyboard.press("Alt+KeyM");
+  await expect(page.getByTestId("v12-make")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("v12-make-tile")).toHaveCount(2, { timeout: 60_000 });
   await expect(page.getByTestId("v12-make-viewer")).toHaveCount(0);
 
   await page.context().clearCookies();
@@ -196,6 +218,82 @@ test("desktop: Reuse seed on a clip loads it with its seed, and the next priced 
   /* × stops repeating it. */
   await page.getByTestId("v12-make-seed").getByRole("button", { name: "Stop repeating this seed" }).click();
   await expect(page.getByTestId("v12-make-seed")).toHaveCount(0);
+});
+
+test("desktop: the open viewer stays on its take when a new take lands at the front; viewer=1 on an empty workspace is spent once results load", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
+  test.setTimeout(240_000);
+  await seedHome(page, { takes: 2 });
+  /* The results are read again while takes render and after a press: a take that arrives is put at the front here. */
+  let seen: Record<string, unknown>[] = [];
+  let arriving: Record<string, unknown> | null = null;
+  await page.route(/\/api\/jobs\?limit=/, async (route) => {
+    const reply = await route.fetch();
+    const body = await reply.json();
+    if (Array.isArray(body.generations)) {
+      if (body.generations.length) seen = body.generations;
+      if (arriving) body.generations.unshift(arriving);
+    }
+    await route.fulfill({ response: reply, json: body });
+  });
+  const reread = () => page.evaluate(() => window.dispatchEvent(new Event("particl:jobs")));
+  await page.goto("/suites?view=make");
+  const tiles = page.getByTestId("v12-make-tile");
+  await expect(tiles).toHaveCount(2, { timeout: 90_000 });
+  await tiles.nth(1).getByTestId("v12-make-tile-open").click();
+  const count = page.getByTestId("v12-make-viewer-count");
+  const words = page.getByTestId("v12-make-viewer-prompt");
+  await expect(count).toHaveText("2 / 2");
+  const open = (await words.innerText()).trim();
+  arriving = { ...seen[0], id: "arriving-take-0001", createdAt: Date.now() + 60_000 };
+  await reread();
+  await expect(tiles).toHaveCount(3, { timeout: 30_000 });
+  await expect(words).toHaveText(open);
+  await expect(count).toHaveText("3 / 3");
+  /* ← moves from where the take is now. */
+  await page.keyboard.press("ArrowLeft");
+  await expect(count).toHaveText("2 / 3");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("v12-make-viewer")).toHaveCount(0);
+
+  /* An empty workspace opened with viewer=1: the request is spent when the results load, so the first take to land later
+     does not open the viewer by itself. */
+  const first = arriving;
+  arriving = null;
+  await page.context().clearCookies();
+  await signInSwitchedOn(page);
+  await page.goto("/suites?view=make&viewer=1");
+  /* Loaded (not "Reading your results…"): the request is spent here. */
+  await expect(page.getByTestId("v12-make-empty")).toHaveText("What you make shows here. Describe it below and press Make.", { timeout: 90_000 });
+  arriving = first;
+  await reread();
+  await expect(tiles).toHaveCount(1, { timeout: 30_000 });
+  await page.waitForTimeout(1_000);
+  await expect(page.getByTestId("v12-make-viewer")).toHaveCount(0);
+});
+
+test("desktop: a quick tool over the Make page goes back to the page with Esc or ×, never leaving Make", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
+  test.setTimeout(240_000);
+  await seedHome(page, { takes: 1 });
+  await page.goto("/suites?view=make");
+  const make = page.getByTestId("v12-make");
+  await expect(make).toBeVisible({ timeout: 90_000 });
+  const tool = page.getByTestId("make-panel");
+  for (const how of ["Escape", "×"] as const) {
+    await page.getByRole("radio", { name: "Edit" }).click();
+    await page.locator('[data-op="upscale"]').click();
+    await expect(tool).toBeVisible({ timeout: 30_000 });
+    await expect(page).toHaveURL(/make=upscale/);
+    await expect(page.getByTestId("make-close")).toHaveAttribute("title", "Close · Esc");
+    if (how === "Escape") {
+      await page.getByTestId("make-title").click();
+      await page.keyboard.press("Escape");
+    } else await page.getByTestId("make-close").click();
+    await expect(tool, `${how} closes the tool`).toHaveCount(0);
+    await expect(make, `${how} keeps the Make page`).toBeVisible();
+    await expect(page).toHaveURL(/make=(image|video|audio)/);
+  }
 });
 
 test("phone sizes: the phone app is unchanged with the switch on", async ({ page }, info) => {
