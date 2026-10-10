@@ -3,24 +3,22 @@ import { useState, type RefObject } from "react";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import type { ProjectSummary } from "@/lib/workspace/data";
-import type { BoardKindId } from "@/lib/shell/screens";
 import { posterOf } from "@/components/graphite/icons";
 import { editedLine } from "@/components/graphite/home/home-model";
 import { useProjectCover } from "@/components/graphite/home/use-project-cards";
-import { Popover, useToast } from "../ui";
+import { Popover } from "../ui";
 
 /**
  * The + popover (docs/redesign/inventory.md § 5.3; prototype L72): find a board, the recent boards, the boards closed
- * lately, and a new board by kind. A new board is made by today's create path (the shell's createProject, as Home's
- * templates make one) and opens on its board. Pre-vis has no board kind of its own yet (P2 adds the kinds), so it opens
- * a Film board; the four cards are the prototype's.
+ * lately, and a new board by kind. A new board opens as a tab of its own, "New board" (components/v12/board/NewBoard.tsx),
+ * on the kind picked; nothing is made until Start there, and Start is today's create path.
  */
-type Kind = { id: "film" | "previs" | "campaign" | "social"; name: string; line: string; kind: BoardKindId; untitled: string };
+type Kind = { id: "film" | "previs" | "campaign" | "social"; name: string; line: string };
 const KINDS: readonly Kind[] = [
-  { id: "film", name: "Film", line: "An AI film or ad", kind: "studio", untitled: "Untitled film" },
-  { id: "previs", name: "Pre-vis", line: "Boards for a shoot", kind: "studio", untitled: "Untitled pre-vis" },
-  { id: "campaign", name: "Campaign", line: "A product’s ads", kind: "ads", untitled: "Untitled ad campaign" },
-  { id: "social", name: "Social", line: "Narrated or clips", kind: "social", untitled: "Untitled social clips" },
+  { id: "film", name: "Film", line: "An AI film or ad" },
+  { id: "previs", name: "Pre-vis", line: "Boards for a shoot" },
+  { id: "campaign", name: "Campaign", line: "A product’s ads" },
+  { id: "social", name: "Social", line: "Narrated or clips" },
 ];
 
 export function PlusPopover({ open, onClose, anchor, projects, closed, onOpen }: {
@@ -32,9 +30,7 @@ export function PlusPopover({ open, onClose, anchor, projects, closed, onOpen }:
   onOpen: (id: string) => void;
 }) {
   const shell = useShell();
-  const toast = useToast();
   const [query, setQuery] = useState("");
-  const [making, setMaking] = useState<Kind["id"] | null>(null);
   const [now] = useState(() => Date.now());
   const q = query.trim().toLowerCase();
   const found = q ? projects.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 6) : projects.slice(0, 3);
@@ -42,15 +38,11 @@ export function PlusPopover({ open, onClose, anchor, projects, closed, onOpen }:
 
   /* The Enter that picked a board is spent here (preventDefault), so it never reaches the + button focus returns to. */
   const go = (id: string) => { setQuery(""); onOpen(id); };
-  const make = async (kind: Kind) => {
-    if (making || !shell.createProject) return;
-    setMaking(kind.id);
-    const made = await shell.createProject(kind.untitled, { boardKind: kind.kind }).catch(() => ({ error: "The board could not be made. Try again." }));
-    setMaking(null);
-    if ("error" in made) { toast({ text: made.error }); return; }
+  /* A new board is a tab of its own (components/v12/board/NewBoard.tsx): it opens on the kind picked, and nothing is made until Start. */
+  const make = (kind: Kind) => {
     setQuery("");
     onClose();
-    shell.goBoard({ ...(kind.kind !== "studio" ? { kind: kind.kind } : {}), closeMake: true });
+    shell.goBoard({ newBoard: kind.id, closeMake: true });
   };
 
   return (
@@ -76,8 +68,8 @@ export function PlusPopover({ open, onClose, anchor, projects, closed, onOpen }:
           <div className="v12-plus-label">New board</div>
           <div className="v12-plus-kinds">
             {KINDS.map((k) => (
-              <button key={k.id} type="button" className="v12-plus-kind" onClick={() => void make(k)} disabled={making !== null} aria-busy={making === k.id || undefined} data-testid={`v12-new-${k.id}`}>
-                <span className="v12-plus-kind-name">{making === k.id ? "Making…" : k.name}</span>
+              <button key={k.id} type="button" className="v12-plus-kind" onClick={() => make(k)} data-testid={`v12-new-${k.id}`}>
+                <span className="v12-plus-kind-name">{k.name}</span>
                 <span className="v12-plus-kind-line">{k.line}</span>
               </button>
             ))}

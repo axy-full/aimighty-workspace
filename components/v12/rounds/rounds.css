@@ -1,0 +1,36 @@
+/* Client rounds on the board (redesign P2-c). Tokens only: app/graphite.css. */
+.v12-rd-badge { flex: none; height: 24px; padding: 0 10px; border: 1px solid var(--gx-accent); border-radius: 999px; background: var(--gx-tint-06); color: var(--gx-accent-text); font: 600 12px/1 var(--gx-font); white-space: nowrap; cursor: pointer; }
+.v12-rd-badge:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.v12-rd-pop { display: flex; flex-direction: column; gap: 6px; padding: 14px; font-family: var(--gx-font); color: var(--gx-text); }
+.v12-rd-pop-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 14px; }
+.v12-rd-pop-head span { font-size: 12px; color: var(--gx-text-sec); }
+.v12-rd-change { display: flex; gap: 10px; font-size: 13px; line-height: 1.45; padding: 6px 0; border-top: 1px solid var(--gx-hair); }
+.v12-rd-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--gx-done); margin-top: 6px; }
+.v12-rd-btn { height: 32px; padding: 0 12px; border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-btn); background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); white-space: nowrap; cursor: pointer; }
+.v12-rd-btn[data-hot] { border-color: var(--gx-accent); color: var(--gx-accent-text); font-weight: 600; }
+.v12-rd-btn:hover { border-color: var(--gx-hover-border); }
+.v12-rd-btn:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+
+.v12-rd-card { width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 14px; overflow: hidden; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); color: var(--gx-text); font-family: var(--gx-font); }
+.v12-rd-head { display: flex; flex-direction: column; gap: 4px; }
+.v12-rd-title { font-size: 14px; font-weight: 600; }
+.v12-rd-state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gx-text-muted); }
+.v12-rd-state .v12-rd-dot { margin-top: 0; }
+.v12-rd-list { display: flex; flex-direction: column; }
+.v12-rd-row { display: flex; gap: 10px; align-items: center; min-height: 30px; font-size: 13px; border-top: 1px solid var(--gx-hair-soft); }
+.v12-rd-num { flex: none; width: 20px; font: 12px/1 var(--gx-mono); color: var(--gx-text-sec); }
+.v12-rd-body { margin: 0; font-size: 13px; line-height: 1.45; color: var(--gx-text-muted); }
+.v12-rd-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+
+.v12-rd-compare { display: flex; flex-direction: column; gap: 12px; padding: 4px 4px 8px; font-family: var(--gx-font); color: var(--gx-text); }
+.v12-rd-sub { margin-left: 10px; font-size: 13px; font-weight: 400; color: var(--gx-text-sec); }
+.v12-rd-picks { display: flex; gap: 6px; flex-wrap: wrap; }
+.v12-rd-pick { height: 28px; padding: 0 12px; border: 1px solid var(--gx-line-control); border-radius: 999px; background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); cursor: pointer; }
+.v12-rd-pick[aria-pressed="true"] { border-color: var(--gx-accent); color: var(--gx-accent-text); background: var(--gx-tint-06); }
+.v12-rd-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.v12-rd-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.v12-rd-media { aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--gx-sunken); border: 1px solid var(--gx-hair-strong); display: grid; place-items: center; }
+.v12-rd-media img, .v12-rd-media video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.v12-rd-empty { padding: 0 16px; text-align: center; font-size: 13px; color: var(--gx-text-sec); }
+.v12-rd-side-meta { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.v12-rd-side-meta span { font-size: 12px; color: var(--gx-text-sec); }
