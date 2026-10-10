@@ -8,7 +8,9 @@ import { reconcileGenjutsuVideo } from "./genjutsuVideo";
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
-import { storeVideo } from "./storage";
+import { PROVIDER_VIDEO_TIMEOUT_MS, REQUEST_PATH_QUEUE_WAIT_MS, storeVideo, type StoreVideoOptions } from "./storage";
+import { R2_ABORT_TIMEOUT_MS } from "./storage/r2";
+import { HEARTBEAT_MAX_DURATION_MS, RECONCILIATION_BUDGET_MS } from "./reconciliation";
 import { inspectOriginalVideo } from "./videoMetadata.server";
 import { costUsd, isSoulIdentityModel } from "./models";
 import { draftExpiresAt, draftSentAt, isDraft } from "./draftFinal";
@@ -397,7 +399,7 @@ export async function getGeneration(genId: string): Promise<Generation | null> {
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
 /** Long enough for storeVideo's two-minute download budget, short enough to recover a crash. */
-const STORE_LEASE_MS = 180_000;
+export const STORE_LEASE_MS = 180_000;
 /** A connected-account still sent with no acknowledgement: its receipt is written the moment the POST answers. */
 const HIGGSFIELD_UNCONFIRMED_MS = 2 * 60 * 60_000;
 /** A connected-account still whose collection has failed, without a break, for a day will not be collected. */
@@ -417,8 +419,12 @@ function collectionAbandoned(run: StillCollection | undefined, at: number): bool
  */
 export async function syncGeneration(
   gen: Generation,
-  options: { strict?: boolean } = {},
+  /** `store` bounds the wait for a storage transfer slot (lib/storage.ts
+   *  storeVideo); `requestPath` is a person's request waiting on the answer:
+   *  a busy store skips the save for the next poll. */
+  options: { strict?: boolean; store?: StoreVideoOptions; requestPath?: boolean } = {},
 ): Promise<Generation> {
+  if (options.requestPath) options = { ...options, store: { maxQueueMs: REQUEST_PATH_QUEUE_WAIT_MS, ...options.store } };
   if (gen.status === "succeeded" && gen.provider === "higgsfield" && (isConsumerVideoModel(gen.model) || isConsumerOriginalParams(gen.params)) && gen.storedUrl && await hasRetainedConsumerOriginal(gen.id)) return gen;
 return await withRecoveryJob(requireTenant().id, gen.id, async () => {
 
@@ -511,7 +517,7 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
         storeLease = lease;
         const storeStart = now();
         try {
-          const put = await storeVideo(gen.id, task.videoUrl);
+          const put = await storeVideo(gen.id, task.videoUrl, options.store);
           storedUrl = put.url;
           storedBytes = put.bytes;
           storeMs = now() - storeStart;
@@ -724,7 +730,7 @@ export async function hasActiveGenerations(): Promise<boolean> {
  * old version ran a write plus a wide scan on every poll from every open tab,
  * so a workspace that was merely *open* paid for reconciliation forever.
  */
-export async function syncActive(limit = 12): Promise<void> {
+export async function syncActive(limit = 12, options: { store?: StoreVideoOptions; requestPath?: boolean } = {}): Promise<void> {
   await ready();
   await syncCreditReceipts();
   const rs = await db().execute({
@@ -733,7 +739,23 @@ export async function syncActive(limit = 12): Promise<void> {
     args: [limit],
   });
   if (!rs.rows.length) return;
-  await inChunks(rows(rs), 6, (r) => syncGeneration(rowToGeneration(r)));
+  await inChunks(rows(rs), 6, (r) => syncGeneration(rowToGeneration(r), options));
+}
+
+/**
+ * The last moment the heartbeat may START a provider → storage save.
+ *
+ * The sweep starts at S and stops admitting work at its deadlineAt,
+ * S + RECONCILIATION_BUDGET_MS (140 s). The route itself may run until
+ * S + HEARTBEAT_MAX_DURATION_MS (300 s). A save can take
+ * PROVIDER_VIDEO_TIMEOUT_MS (120 s) and then R2_ABORT_TIMEOUT_MS (20 s) to
+ * abort, so the last safe start is
+ *   S + 300 s − 120 s − 20 s = S + 160 s = deadlineAt + 20 s.
+ * Saves queued or admitted after it fail fast and go to the next run.
+ */
+export function heartbeatSaveDeadline(deadlineAt: number): number {
+  const sweepStart = deadlineAt - RECONCILIATION_BUDGET_MS;
+  return sweepStart + HEARTBEAT_MAX_DURATION_MS - PROVIDER_VIDEO_TIMEOUT_MS - R2_ABORT_TIMEOUT_MS;
 }
 
 /**
@@ -926,7 +948,8 @@ export async function syncPending(
             await deliverGenerationSettlement(gen.id);
             return;
           }
-          await syncGeneration(gen, { strict: true });
+          // A save starts only while a whole transfer still fits inside the route (heartbeatSaveDeadline).
+          await syncGeneration(gen, { strict: true, ...(options.deadlineAt != null ? { store: { deadlineAt: heartbeatSaveDeadline(options.deadlineAt) } } : {}) });
         }),
     );
     results.attempted += batch.length;

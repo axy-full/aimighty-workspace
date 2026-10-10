@@ -105,7 +105,7 @@ test("deep probes use unique object names and a broken database returns a coarse
   expect(await response.text()).not.toContain("SECRET");
 });
 
-test("the commit: Vercel's, else the self-hosted image's GIT_COMMIT_SHA, else \"local\"; signed-in only, as before", async () => {
+test("the commit: Vercel's, else the self-hosted image's GIT_COMMIT_SHA, else \"local\"; seven characters, signed in or not", async () => {
   const SHA = "0123456789abcdef0123456789abcdef01234567", VERCEL_SHA = "fedcba9876543210fedcba9876543210fedcba98";
   const health = async (env: Record<string, string>, signedIn: boolean) =>
     (await healthFixture({ signedIn, env }).get(new Request("https://example.test/api/health"))).json();
@@ -113,7 +113,15 @@ test("the commit: Vercel's, else the self-hosted image's GIT_COMMIT_SHA, else \"
   expect((await health({ GIT_COMMIT_SHA: SHA, VERCEL_GIT_COMMIT_SHA: VERCEL_SHA }, true)).commit).toBe("fedcba9");
   expect((await health({}, true)).commit).toBe("local");
   expect((await health({ GIT_COMMIT_SHA: "unknown" }, true)).commit).toBe("local");
+  /* Anonymous: the seven characters and nothing more of the commit, and nothing else new. */
   const anonymous = await health({ GIT_COMMIT_SHA: SHA, VERCEL_GIT_COMMIT_SHA: VERCEL_SHA }, false);
-  expect(anonymous).not.toHaveProperty("commit");
-  expect(JSON.stringify(anonymous)).not.toMatch(/0123456|fedcba9/);
+  expect(anonymous.commit).toBe("fedcba9");
+  expect(JSON.stringify(anonymous)).not.toContain(VERCEL_SHA.slice(0, 8));
+  expect(JSON.stringify(anonymous)).not.toContain("0123456");
+  expect(Object.keys(anonymous).sort()).toEqual(["commit", "database", "dispatch", "mock", "ok", "storage", "storageVerified"]);
+  expect((await health({ GIT_COMMIT_SHA: SHA }, false)).commit).toBe("0123456");
+  expect((await health({}, false)).commit).toBe("local");
+  const down = await healthFixture({ databaseDown: true, env: { GIT_COMMIT_SHA: SHA } }).get(new Request("https://example.test/api/health"));
+  expect(down.status).toBe(503);
+  expect((await down.json()).commit).toBe("0123456");
 });
