@@ -1,6 +1,7 @@
 "use client";
 import type { CSSProperties } from "react";
 import { wallLayout, type WallTile } from "@/lib/v12/home";
+import { FitText } from "./FitText";
 
 /**
  * The wall (docs/redesign/inventory.md § 5.9 · 2): this workspace's newest finished stills and clips on a 6-column
@@ -42,8 +43,8 @@ export function Wall({ tiles, status, row, picked, onPick, onRemix }: {
             <button type="button" className="v12-hm-tile-pick" onClick={() => onPick(tile)} aria-pressed={on}
               aria-label={`${on ? "Picked" : "Pick"}: ${tile.title}`} title={`${tile.title} · ${tile.type} — Make one like this`} data-testid="v12-home-tile-pick" />
             <span className="v12-hm-tile-label" aria-hidden="true">
-              <span className="v12-hm-tile-type">{tile.type}</span>
-              <span className="v12-hm-tile-title">{tile.title}</span>
+              <FitText className="v12-hm-tile-type" text={tile.type} box=".v12-hm-tile" inset={40} />
+              <FitText className="v12-hm-tile-title" text={tile.title} box=".v12-hm-tile" inset={40} />
             </span>
             <span className="v12-hm-tile-hover">
               <span className="v12-hm-tile-like" aria-hidden="true">Make one like this</span>
