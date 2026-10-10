@@ -1,0 +1,9 @@
+{
+  "name": "board-new-social",
+  "app": "/suites?project=project-bbab9ee7&suite=particl&page=brief&view=board&newboard=1&pick=social",
+  "prototype": "?view=board&new=1&kind=Social",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}

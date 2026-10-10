@@ -1,0 +1,9 @@
+{
+  "name": "board-new",
+  "app": "/suites?project=project-d1d0b11d&suite=particl&page=brief&view=board&newboard=1",
+  "prototype": "?view=board&new=1",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
