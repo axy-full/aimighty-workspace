@@ -1,5 +1,7 @@
 # Particl: build SOW for Claude Code
 
+> **Correction, 10 Oct 2026 (Inngest Cloud, not self-hosted).** Production's background work runs on **Inngest Cloud**, which calls the app at `https://particl.si/api/inngest` (`DISPATCH_MODE=inngest`, `INNGEST_SERVE_ORIGIN=https://particl.si`, `INNGEST_STREAMING=true`, `INNGEST_BASE_URL` unset), as `docs/selfhost-test.md` (8 Oct) set it up and the live settings confirmed on 10 Oct. Where this file plans a **self-hosted** Inngest (an internal `--sdk-url`, `INNGEST_BASE_URL` at an internal address), that plan was not carried out. `WORKER_ORIGIN` (127.0.0.1:3000) was never built: in the native-dispatch fallback the app calls its own `/api/worker` through the public `APP_ORIGIN`.
+
 Amendment of 4 October 2026, written for Claude Code. Read it in full before any work, then `CLAUDE.md`.
 
 It amends `docs/particl-sow-v1.md`. Where the two disagree, this file wins until the first PR (§9.1) folds it in. The owner keeps a planning copy, "Particl: scope of work…", in a Claude doc with a Scope tab and a Runbook tab; package names here (D0, U1, S1, A1, E1…) match it, and the Runbook holds a ready prompt for each package.

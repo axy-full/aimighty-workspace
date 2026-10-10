@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { MAX_STAGES, stageLimit, CAMPAIGN_STAGES, CLIPS_STAGES, FILM_STAGES, KIND_LABEL, NARRATED_STAGES, OPENS_ON, PREVIS_STAGES, addStage, applyStageEdit, currentStage, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus } from "../../lib/v12/board/stages";
+import { MAX_STAGES, freeCards, stageLimit, CAMPAIGN_STAGES, CLIPS_STAGES, FILM_STAGES, KIND_LABEL, NARRATED_STAGES, OPENS_ON, PREVIS_STAGES, addStage, applyStageEdit, currentStage, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus } from "../../lib/v12/board/stages";
 import type { BoardCard } from "../../lib/board/types";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { newProject } from "../../lib/workbench/studio";
@@ -198,4 +198,13 @@ test("the rail edited before Start is the same list the board keeps; the project
   expect(stagesOf("campaign", project.boardStages).find((s) => s.id === "look")!.label).toBe("Brand look");
   expect(projectSchema.safeParse(project).success).toBe(true);
   expect(seededProject("B", { boardFlavor: "nonsense" as never }).boardFlavor).toBeUndefined();
+});
+
+test("a free card (a dropped tile, a note, an upload) is no stage's own, yet is the board's: it is drawn on whichever stage is open", () => {
+  const free = freeCards(CARDS);
+  expect(free.map((c) => c.id)).toEqual(["note:1"]);
+  expect(free.every((c) => c.region === null)).toBe(true);
+  /* No stage owns it, so no stage's status or empty state counts it; every stage can draw it. */
+  for (const s of FILM_STAGES) expect(stageCards(s, CARDS, "film").map((c) => c.id)).not.toContain("note:1");
+  expect(freeCards([card("shot:1", "shots")])).toEqual([]);
 });
