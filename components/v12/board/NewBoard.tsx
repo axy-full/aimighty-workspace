@@ -8,13 +8,14 @@ import { upTo } from "@/lib/shell/price-words";
 import { goalFor, BRIEF_MAX, DEFAULT_ASPECT, DEFAULT_LENGTH } from "@/components/graphite/home/home-model";
 import { askAtomik, planningFor, productionOf } from "@/components/graphite/home/start";
 import { useThinkingPrice } from "@/components/graphite/home/use-thinking-price";
-import { COMPOSER, FLAVOR_BOARD, KIND_CARDS, boardName, detectCard, flavorForCard, type KindCard } from "@/lib/v12/board/kinds";
+import { COMPOSER, COMPOSER_LENGTH, FLAVOR_BOARD, KIND_CARDS, boardName, detectCard, flavorForCard, type KindCard } from "@/lib/v12/board/kinds";
 import { KIND_LABEL, applyStageEdit, stagesOf, type SavedStage, type StageEdit } from "@/lib/v12/board/stages";
 import { IDLE, LOADING, QUOTE_FAULT, knownQuote, type Quote } from "@/lib/v12/quote";
 import { Price } from "@/components/v12/ui/Price";
 import { useToast } from "@/components/v12/ui";
 import { StageRail } from "./StageRail";
 import { StageHeader } from "./StageHeader";
+import "./board.css";
 
 /**
  * The new-board flow (docs/redesign/inventory.md § 6.3; prototype L300–L312): the board's own tab, "New board", opened by
@@ -66,7 +67,7 @@ export function NewBoard({ scope, onCreate, initialKind }: { scope: string; onCr
   };
   const pickCard = (id: KindCard) => { setCard(id); setProblem(""); };
 
-  const value = (chip: Chip, options: readonly string[]) => chips[chip] ?? (chip === "length" ? (options.includes(DEFAULT_LENGTH) ? DEFAULT_LENGTH : options[0]) : chip === "aspect" ? DEFAULT_ASPECT : options[0]);
+  const value = (chip: Chip, options: readonly string[]) => chips[chip] ?? (chip === "length" ? (options.includes(COMPOSER_LENGTH) ? COMPOSER_LENGTH : options[0]) : chip === "aspect" ? DEFAULT_ASPECT : options[0]);
 
   /* Atomik's thinking, as the button states it: the planning figure, "up to N cr". */
   const quote: Quote = thinking.state === "ready" ? knownQuote(upTo(thinking.credits))
@@ -87,10 +88,10 @@ export function NewBoard({ scope, onCreate, initialKind }: { scope: string; onCr
     try {
       const picked = card ?? detectCard(text);
       const chosen = flavorForCard(picked, text);
-      const length = chips.length ?? (COMPOSER[picked].chips.some((c) => c.id === "length") ? DEFAULT_LENGTH : undefined);
+      const length = chips.length ?? (COMPOSER[picked].chips.some((c) => c.id === "length") ? COMPOSER_LENGTH : undefined);
       const platform = chips.platform ?? (picked === "social" ? "Reels" : undefined);
       const aspect = chips.aspect ?? (platform ? PLATFORM_ASPECT[platform] ?? "9:16" : DEFAULT_ASPECT);
-      const deliverables = [platform, length].filter(Boolean).join(" · ") || DEFAULT_LENGTH;
+      const deliverables = [platform, length].filter(Boolean).join(" · ") || COMPOSER_LENGTH;
       const brief = text.trim().slice(0, BRIEF_MAX);
       const made = await onCreate(boardName(text, chosen), {
         ...(brief ? { brief } : {}), aspect, deliverables, boardKind: FLAVOR_BOARD[chosen], boardFlavor: chosen,

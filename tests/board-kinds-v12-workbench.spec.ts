@@ -221,7 +221,7 @@ test.describe("desktop, switch on", () => {
     await page.getByTestId("v12-newboard-start").click();
     await expect(page.getByTestId("v12-stage-kind")).toHaveText("SOCIAL · NARRATED", { timeout: 60_000 });
     const made = sent.puts.find((p) => p.boardFlavor)!;
-    expect(made).toMatchObject({ boardKind: "social", boardFlavor: "narrated", aspect: "9:16", deliverables: "Reels · 15 s" });
+    expect(made).toMatchObject({ boardKind: "social", boardFlavor: "narrated", aspect: "9:16", deliverables: "Reels · 30 s" });
     await expect(page.getByTestId("v12-stage-crumb")).toHaveText("Hook");
     expect(await noSideways(page)).toBe(true);
   });

@@ -68,7 +68,7 @@ function HomeSlot(props: HomeViewProps) {
 
 /** The body of a screen that fills the shell's body (Home, the board, the control room); null for one that is not that kind. */
 export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenContext }): ReactNode {
-  const { shell, scope, project, items, library, data } = ctx;
+  const { shell, scope, project, data } = ctx;
   switch (screen) {
     case "home":
       return (
