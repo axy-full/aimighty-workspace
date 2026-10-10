@@ -10,7 +10,11 @@ export type ActivityScope = "all" | "board";
 
 export type NeedsRow = { kind: "needs"; id: string; name: string; meta: string; draftId: string | null; item: QueueItem };
 export type RunningRow = { kind: "running"; id: string; name: string; meta: string; draftId: string | null; job: TrayJob };
-export type ActivityGroups = { needs: NeedsRow[]; running: RunningRow[] };
+export type LookRow = { kind: "look"; id: string; name: string; meta: string; draftId: string | null; job: TrayJob };
+export type ActivityGroups = { needs: NeedsRow[]; running: RunningRow[]; look: LookRow[] };
+
+/** How long a failed or unconfirmed take stays under "Needs a look": a day, as the jobs tray keeps it. */
+export const LOOK_MS = 24 * 3600_000;
 
 /** "2 need you · 3 running", "3 running", "2 need you", or "Activity" when nothing waits or runs. */
 export function activityLabel(needs: number, running: number): string {
@@ -48,7 +52,29 @@ export function activityGroups(jobs: readonly TrayJob[], items: readonly QueueIt
         meta: [job.projectName ?? "Make", job.label, sinceWords(job, options.now), held ? `${held} held` : null].filter(Boolean).join(" · "),
       };
     });
-  return { needs, running };
+  /* What today's Jobs pill offered and the frame would otherwise hide: a take that failed, or one whose outcome is not
+     confirmed yet. Opened at its card, where Retry and Check again live. */
+  const look: LookRow[] = jobs
+    .filter((job) => (job.stage === "failed" || job.stage === "unconfirmed") && mine(job.draftId) && (job.settledAt == null || options.now - job.settledAt < LOOK_MS))
+    .map((job) => ({
+      kind: "look", id: job.id, name: job.name, draftId: job.draftId, job,
+      meta: [job.projectName ?? "Make", job.label].filter(Boolean).join(" · "),
+    }));
+  return { needs, running, look };
+}
+
+/** The stages where the ledger has reserved a take's credits: it has started (lib/generationAdmission.ts reserves on start). */
+const RESERVED_STAGES: ReadonlySet<TrayJob["stage"]> = new Set(["rendering", "confirming"]);
+
+/**
+ * "N held" only for credits the ledger really holds: a take that has started on Particl's own engines. A queued take
+ * holds nothing yet: one waiting for a free slot carries the figure its start will reserve (lib/jobsTray.ts, the
+ * release quote), which is a price, not a hold, so no figure is said for it. A connected account's figure is its
+ * quote, not a hold.
+ */
+export function heldPrice<T>(job: Pick<TrayJob, "source" | "price" | "stage">, label: (price: NonNullable<TrayJob["price"]>) => T): T | null {
+  if (!job.price || job.source === "account" || job.price.unit === "account-cr" || !RESERVED_STAGES.has(job.stage)) return null;
+  return label(job.price);
 }
 
 /** Per board: what its tab's dot says (approvals waiting win over rendering). */

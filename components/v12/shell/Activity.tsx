@@ -9,7 +9,7 @@ import type { ApprovalsState } from "@/lib/control-room/use-approvals";
 import type { QueueItem } from "@/lib/control-room/queue";
 import { Price } from "@/components/graphite/Price";
 import { Popover, Segment, Tooltip } from "../ui";
-import { activityGroups, activityLabel, activityTone, type ActivityScope, type NeedsRow, type RunningRow } from "./activity";
+import { activityGroups, activityLabel, activityTone, heldPrice, type ActivityScope, type LookRow, type NeedsRow, type RunningRow } from "./activity";
 
 /**
  * The Activity pill and its dropdown (docs/redesign/inventory.md § 5.4; prototype L51, L75): what needs you and what is
@@ -23,7 +23,9 @@ export function ActivityPill({ approvals, draftId, onBoard }: { approvals: Appro
   const tray = useJobsTray();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const [scope, setScope] = useState<ActivityScope>("all");
+  const [chosen, setScope] = useState<ActivityScope>("all");
+  /* "This board" only while a board is open: off a board the list is every board's again. */
+  const scope: ActivityScope = draftId ? chosen : "all";
   /* `?activity=1` opens it on landing, as the prototype's address does. Read from the address the page loaded with: the
      shell rewrites the address to its own params before the header draws. */
   const [landed, setLanded] = useState(landedWithActivity);
@@ -31,8 +33,9 @@ export function ActivityPill({ approvals, draftId, onBoard }: { approvals: Appro
   const close = () => { setOpen(false); setLanded(false); };
 
   const now = tray?.now ?? 0;
-  const all = activityGroups(tray?.jobs ?? [], approvals.items, { scope: "all", draftId, now, heldWord: (job) => priceLabel(job.price) });
-  const groups = scope === "all" ? all : activityGroups(tray?.jobs ?? [], approvals.items, { scope, draftId, now, heldWord: (job) => priceLabel(job.price) });
+  const heldWord = (job: TrayJob) => heldPrice(job, (price) => priceLabel(price));
+  const all = activityGroups(tray?.jobs ?? [], approvals.items, { scope: "all", draftId, now, heldWord });
+  const groups = scope === "all" ? all : activityGroups(tray?.jobs ?? [], approvals.items, { scope, draftId, now, heldWord });
   const label = activityLabel(all.needs.length, all.running.length);
   const tone = activityTone(all.needs.length, all.running.length);
 
@@ -72,7 +75,8 @@ export function ActivityPill({ approvals, draftId, onBoard }: { approvals: Appro
         </div>
         {groups.needs.length ? <Group title="Needs you" rows={groups.needs} onOpen={(row) => openNeeds((row as NeedsRow).item)} /> : null}
         {groups.running.length ? <Group title="Running" rows={groups.running} onOpen={(row) => openRunning((row as RunningRow).job)} /> : null}
-        {!groups.needs.length && !groups.running.length ? (
+        {groups.look.length ? <Group title="Needs a look" rows={groups.look} onOpen={(row) => openRunning((row as LookRow).job)} /> : null}
+        {!groups.needs.length && !groups.running.length && !groups.look.length ? (
           <p className="v12-act-empty" data-testid="v12-activity-empty">{scope === "board" ? "Nothing waits or runs on this board." : "Nothing waits for you and nothing is running."}</p>
         ) : null}
       </Popover>
@@ -89,7 +93,7 @@ function landedWithActivity(): boolean {
   }
 }
 
-function Group({ title, rows, onOpen }: { title: string; rows: readonly (NeedsRow | RunningRow)[]; onOpen: (row: NeedsRow | RunningRow) => void }) {
+function Group({ title, rows, onOpen }: { title: string; rows: readonly (NeedsRow | RunningRow | LookRow)[]; onOpen: (row: NeedsRow | RunningRow | LookRow) => void }) {
   return (
     <div role="group" aria-label={title}>
       <div className="v12-act-group">{title}</div>

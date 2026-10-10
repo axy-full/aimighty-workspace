@@ -18,6 +18,9 @@ import { afterClose, closeOthers, closeTab, headerKey, openTab, restoreTab, visi
 import { useBoardTabs } from "./use-board-tabs";
 import "./header.css";
 
+/** The most boards GET /api/workbench/projects returns (app/api/workbench/projects/route.ts). */
+const PROJECTS_LIST_LIMIT = 100;
+
 /**
  * The new interface's header (docs/redesign/inventory.md § 5.1; prototype L43–L56): 56 px, the logo, the tabs that
  * hug (Home · Make · up to four board tabs · +N ▾ · +), the merged Atomik field (⌘K) with its panel icon (⌘J), the
@@ -39,7 +42,8 @@ export function V12Header({ account, project, projects, onPick }: {
   const toast = useToast();
   const tray = useJobsTray();
   const approvals = useApprovals();
-  const known = useMemo(() => (projects.length || project ? new Set(projects.map((p) => p.id)) : null), [projects, project]);
+  /* The boards list stops at PROJECTS_LIST_LIMIT, so a full list can't say a board is gone: prune only from a shorter one. */
+  const known = useMemo(() => (projects.length >= PROJECTS_LIST_LIMIT ? null : projects.length || project ? new Set(projects.map((p) => p.id)) : null), [projects, project]);
   const tabs = useBoardTabs(session.requestScope ?? null, known);
 
   const onBoard = shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
@@ -77,12 +81,17 @@ export function V12Header({ account, project, projects, onPick }: {
 
   const close = (id: string) => {
     const index = tabs.state.open.indexOf(id);
-    const wasActive = id === activeBoard;
+    /* The open board counts as active even with Make over it: closing its tab must not leave it on screen without one. */
+    const wasActive = id === openId;
     const next = wasActive ? afterClose(tabs.state.open, id) : null;
     update((now) => closeTab(now, id));
     if (wasActive) { if (next) goBoard(next); else goHome(); }
     const name = nameOf(id);
-    toast({ text: `${name} closed · the board is kept`, action: { label: "Undo", run: () => { update((now) => restoreTab(now, id, index)); if (wasActive) goBoard(id); } } });
+    toast({ text: `${name} closed · the board is kept`, action: { label: "Undo", run: () => {
+      update((now) => restoreTab(now, id, index));
+      /* The latest goBoard: closing already moved to the neighbour, so this closure's project is no longer the open one. */
+      if (wasActive) keys.current.goBoard(id);
+    } } });
   };
 
   /* Keys: ⌘1 Home, ⌘2 Make, ⌘3… the board tabs shown, ⌘J the panel, G then H Home. Not while typing. */
@@ -95,6 +104,8 @@ export function V12Header({ account, project, projects, onPick }: {
       if (event.defaultPrevented || event.isComposing) return;
       const target = event.target as HTMLElement | null;
       if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      /* Not behind one of today's sheets (a .gx-veil), as BoardView's own keys: the page under a modal never moves. */
+      if (document.querySelector(".gx-veil")) return;
       const command = headerKey(event, afterG);
       afterG = false;
       if (!command) return;
@@ -127,7 +138,7 @@ export function V12Header({ account, project, projects, onPick }: {
     { id: "copy", label: "Copy link", onSelect: () => copyLink(tabMenu), testId: "v12-tab-copy" },
     { id: "sep", separator: true },
     { id: "close", label: "Close", onSelect: () => close(tabMenu), testId: "v12-tab-close-item" },
-    { id: "others", label: "Close others", disabled: tabs.state.open.length < 2, onSelect: () => { const keep = tabMenu; update((now) => closeOthers(now, keep)); if (activeBoard && activeBoard !== keep) goBoard(keep); }, testId: "v12-tab-close-others" },
+    { id: "others", label: "Close others", disabled: tabs.state.open.length < 2, onSelect: () => { const keep = tabMenu; update((now) => closeOthers(now, keep)); if (openId && openId !== keep) goBoard(keep); }, testId: "v12-tab-close-others" },
   ] : [];
   const moreItems: MenuItem[] = [
     ...hidden.map((id) => ({ id, label: nameOf(id), onSelect: () => goBoard(id) })),
