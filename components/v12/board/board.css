@@ -73,7 +73,7 @@
 .v12 .v12-tool[aria-disabled="true"] { color: var(--gx-disabled); cursor: not-allowed; }
 .v12 .v12-tool > svg { flex: none; }
 .v12 .v12-tool-label { font-size: 13px; font-weight: 500; white-space: nowrap; }
-.v12 .v12-tools-got { margin-top: 4px; height: 32px; border: 1px solid var(--gx-line-control); background: transparent; color: var(--gx-text); border-radius: var(--gx-r-btn); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.v12 .v12-tools-got { text-align: center; padding: 0 12px; margin-top: 4px; height: 32px; border: 1px solid var(--gx-line-control); background: transparent; color: var(--gx-text); border-radius: var(--gx-r-btn); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 
 /* ── View switch, beside the Library button (left = rail + 16 + the button) ── */
 .v12 .v12-viewswitch { position: absolute; left: 150px; bottom: 16px; z-index: 45; background: var(--gx-card); border: 1px solid var(--gx-line-control); border-radius: 10px; padding: 3px; box-shadow: var(--gx-shadow-float); }
