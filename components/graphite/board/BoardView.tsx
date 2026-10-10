@@ -573,10 +573,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     const before = { boardKind: current.boardKind, boardFlavor: current.boardFlavor, boardStages: current.boardStages };
     const refusal = rig.apply((p) => ({ ...p, boardKind: FLAVOR_BOARD[to], boardFlavor: to, boardStages: [] }));
     if (refusal) { ws.toast(refusal); return; }
-    /* An address that names another board kind would win over the draft's. */
-    shell.setScreenParams({ kind: null, stage: null }, "replace");
+    /* An address that names another board kind would win over the draft's. The stage stays when the new rail has it. */
+    const stays = stage && stagesOf(to, null).some((s) => s.id === stage.id);
+    shell.setScreenParams({ kind: null, stage: stays ? stage.id : null }, "replace");
     undoable("The board kind is back as it was", () => { rig.apply((p) => ({ ...p, ...before })); }, withUndoHint(`Board kind · ${KIND_LABEL[to]} · the rail changed; your cards are kept`));
-  }, [flavor, rig, shell, undoable, ws]);
+  }, [flavor, rig, shell, stage, undoable, ws]);
   /* 1–9 jump to stage N; [ and ] to the stage before and after (inventory § 4.2). Never while typing. */
   useEffect(() => {
     if (!v12Frame) return;

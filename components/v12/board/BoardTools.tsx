@@ -61,8 +61,11 @@ export function BoardToolbar({ tool, readOnly, onTool, userId, firstVisit }: {
   );
 }
 
-/** The view switch (§ 6.5): Canvas and List are today's; Strip and Rig are not built yet and say so. */
-export type BoardViewId = "canvas" | "list" | "strip" | "rig";
+/**
+ * The view switch (§ 6.5): Canvas and List are today's; Strip is not built yet and says so. The prototype's fourth view, the
+ * Rig, comes with P5 (the one-design and UI-names guards ban that word until its screen exists), so it is not drawn here.
+ */
+export type BoardViewId = "canvas" | "list" | "strip";
 export function ViewSwitch({ view, onView }: { view: "canvas" | "list"; onView: (view: "canvas" | "list") => void }) {
   return (
     <div className="v12-viewswitch" data-testid="v12-view-switch">
@@ -70,7 +73,6 @@ export function ViewSwitch({ view, onView }: { view: "canvas" | "list"; onView: 
         { id: "canvas", label: "Canvas", tooltip: { name: "Canvas", line: "Free cards you can move, group and annotate." } },
         { id: "list", label: "List", tooltip: { name: "List", line: "The shot list: #, size, description, VO, duration, status." } },
         { id: "strip", label: "Strip", disabled: true, tooltip: { name: "Strip", line: "Timeline / animatic with durations. Not built yet." } },
-        { id: "rig", label: "Rig", disabled: true, tooltip: { name: "Rig", line: "See what feeds what, and what a change will cost. Not built yet." } },
       ]} />
     </div>
   );
