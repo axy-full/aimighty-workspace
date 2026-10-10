@@ -60,22 +60,29 @@ export function V12Make({ initialSearch, onOpened, scope, project, projects, pro
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const select = (id: string) => setSelected((now) => { const next = new Set(now); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const viewable = useMemo(() => results.tiles.filter((t) => t.source.status === "succeeded" && t.url), [results.tiles]);
-  /* `viewer=1` opens the viewer on the newest result once there is one. */
-  const [viewingAt, setViewing] = useState<number | null | "first">(first.viewer ? "first" : null);
-  const viewing = viewingAt === "first" ? (viewable.length ? 0 : null) : viewingAt;
-  const open = (tile: ResultTile) => { const i = viewable.findIndex((t) => t.id === tile.id); if (i >= 0) setViewing(i); };
+  /* The viewer holds the open take by id, never by position: the results are read again while takes render and after a
+     press, and a take that lands at the front must not move the viewer to another one. `viewer=1` asks for the newest
+     result once, when the results first load; an empty workspace spends the request, so a later first take does not
+     pop the viewer open. A take that disappears closes it. */
+  const [view, setView] = useState<{ id: string | null; first: boolean }>({ id: null, first: first.viewer });
+  if (view.first && results.status !== "loading") setView({ id: viewable[0]?.id ?? null, first: false });
+  const viewingIndex = view.id ? viewable.findIndex((t) => t.id === view.id) : -1;
+  if (view.id && viewingIndex < 0 && results.status === "ready") setView({ id: null, first: false });
+  const viewing = viewingIndex >= 0 ? viewingIndex : null;
+  const setViewing = useCallback((index: number | null) => setView({ id: index === null ? null : viewable[index]?.id ?? null, first: false }), [viewable]);
+  const open = (tile: ResultTile) => setView({ id: tile.id, first: false });
 
   /* Prompt reuse: the take's words and settings land in the composer itself (lib/shell/recipe recreatePreset, read by
      use-make's preset inbox), and a take used as a reference arrives through the reference inbox it reads too. */
   const reuse = useCallback((tile: ResultTile) => {
     if (tile.reuseBlock) return;
-    setViewing(null);
+    setView({ id: null, first: false });
     sendGenPreset(recreatePreset(tile.source, { name: tile.prompt.slice(0, 60) }));
     toast({ text: "Prompt and settings loaded into the composer" });
   }, [toast]);
   const reference = useCallback((tile: ResultTile) => {
     sendReference({ id: `generation:${tile.id}`, name: tile.prompt.slice(0, 60) });
-    setViewing(null);
+    setView({ id: null, first: false });
     toast({ text: "Added to the composer's references" });
   }, [toast]);
   /* Right-click menus (redesign A3): a result's, and empty space's. */
