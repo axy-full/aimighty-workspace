@@ -187,8 +187,10 @@ export function stageOf(take: Pick<RenderTake, "status" | "held" | "atProvider" 
  * its provider refunds a cancelled request). Cinema Studio goes through the
  * same cancel, but a cancelled Cinema take is charged what its provider
  * reports (lib/genjutsuVideo.ts, lib/meter.ts heldSettlement), so it is not
- * offered. Ark and fal document a queued cancel too, but calling them is new
- * money-adjacent code (NEEDS AKSHAY), so not yet. Once a take is rendering, no
+ * offered. A Seedance (BytePlus) or Kling and Topaz (fal) video waiting in its
+ * provider's queue is offered too: the server asks the provider first, cancels
+ * only while it is still queued, and releases the credits only when the
+ * provider confirms (lib/queuedCancel.ts). Once a take is rendering, no
  * provider promises a stopped job is not billed.
  */
 export function cancelOf(take: RenderTake, stage: RenderStage = stageOf(take)): RenderState["cancel"] {
@@ -199,8 +201,10 @@ export function cancelOf(take: RenderTake, stage: RenderStage = stageOf(take)): 
   if (take.status === "held") return take.mayCancel === false ? refuse(CANCEL_NOT_YOURS) : free("discard");
   if (stage === "queue") {
     const higgsVideo = take.provider === "higgsfield" && take.kind === "video";
+    /* Seedance (BytePlus) and Kling or Topaz (fal): cancelled while the provider still has the take queued (lib/queuedCancel.ts). The server asks the provider first and refuses in its own words if it has started. */
+    const queuedAtProvider = (take.provider === "byteplus" || take.provider === "fal") && take.kind === "video";
     if (higgsVideo && isCinemaStudioModel(take.model)) return refuse(CANCEL_MAY_CHARGE);
-    if (!(higgsVideo && isGenjutsuModel(take.model))) return refuse(CANCEL_PROVIDER_QUEUE);
+    if (!queuedAtProvider && !(higgsVideo && isGenjutsuModel(take.model))) return refuse(CANCEL_PROVIDER_QUEUE);
     return take.mayCancel === false ? refuse(CANCEL_NOT_YOURS) : free("provider-queue");
   }
   if (stage === "preparing") return refuse(CANCEL_PREPARING);

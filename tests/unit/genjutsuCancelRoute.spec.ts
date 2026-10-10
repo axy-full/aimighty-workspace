@@ -25,6 +25,7 @@ async function fixture(name: string) {
   const { MediaSourceError } = await import("../../lib/mediaBindings");
   const scope = await import("../../lib/workbench/request-scope");
   const higgsfield = await import("../../lib/higgsfield");
+  const queued = await import("../../lib/queuedCancel");
   await platformReady();
   const stores: TenantStore[] = [];
   for (const suffix of ["a", "b"]) {
@@ -53,6 +54,8 @@ async function fixture(name: string) {
     "@/lib/tenant": tenant,
     "@/lib/jobs": jobs,
     "@/lib/higgsfield": higgsfield,
+    /* A take of another engine takes the queued cancel (lib/queuedCancel.ts); these are connected-account takes, which never do. */
+    "@/lib/queuedCancel": queued,
     "@/lib/workbench/request-scope": scope,
     "@/lib/genjutsuVideo": { cancelGenjutsuVideo: async (id: string) => {
       const current = tenant.currentTenant()!;

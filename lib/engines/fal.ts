@@ -2,7 +2,8 @@ import type { EngineAdapter, PollResult } from "./types";
 import { providerConfigured, getProvider } from "../providers";
 import { estimateCostUsd, estimateImageCostUsd } from "../vendorPricing";
 import { submitFalVideo } from "../falVideo";
-import { falStatus, falResult } from "../fal";
+import { falStatus, falResult, falCancel, FalHttpError } from "../fal";
+import { mockQueueKind, mockAftermath, mockCancel } from "../mockQueue";
 import { fetchBytes } from "../mockFs";
 import { TOPAZ_IMAGE_MODEL } from "../topaz";
 import { renderFalStill, submitTopazImage } from "../falImage";
@@ -91,6 +92,14 @@ export const fal: EngineAdapter = {
   },
   /** Status, then the result once it is complete. Throws as the vendor client throws; the caller reads the message. */
   async poll(handle): Promise<PollResult> {
+    /* A mocked job parked in the vendor's queue (lib/mockQueue.ts). */
+    const parked = mockQueueKind(handle.ref);
+    if (parked) {
+      const said = mockAftermath(handle.ref);
+      if (said === "cancelled") throw new FalHttpError(400, "The render service returned 400: Request was cancelled.", { detail: "Request was cancelled." });
+      if (said === "gone") throw new FalHttpError(404, "The render service returned 404: not found.", null);
+      return { status: said === "running" || parked === "running" ? "running" : "queued", videoUrl: null, totalTokens: null, error: null, vendorStartedAt: null, vendorEndedAt: null, raw: null };
+    }
     const endpoint = handle.endpoint ?? handle.model;
     const st = await falStatus(endpoint, handle.ref);
     if (st.status !== "COMPLETED") {
@@ -109,6 +118,10 @@ export const fal: EngineAdapter = {
       handle.ref,
     );
     const url = out?.video?.url ?? null;
+    /* fal says in words when a request ended because it was cancelled: only that is read as a cancellation (lib/falVideo.ts). */
+    if (!url && /cancel/i.test(JSON.stringify(out ?? ""))) {
+      return { status: "cancelled", videoUrl: null, totalTokens: null, error: "The render service cancelled this request.", vendorStartedAt: null, vendorEndedAt: null, raw: out };
+    }
     if (!url)
       return {
         status: "failed",
@@ -128,6 +141,14 @@ export const fal: EngineAdapter = {
       vendorEndedAt: null,
       raw: out,
     };
+  },
+  /** Take a request off fal's queue (lib/fal.ts falCancel). Only lib/queuedCancel.ts calls it, after a status read said IN_QUEUE. */
+  async cancel(handle) {
+    if (mockQueueKind(handle.ref)) {
+      if (mockCancel(handle.ref) !== "accepted") throw new FalHttpError(400, "The render service returned 400: already running.", null);
+      return;
+    }
+    await falCancel(handle.endpoint ?? handle.model, handle.ref);
   },
   fetchMaster: (url) => fetchBytes(url),
 };
