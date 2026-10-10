@@ -117,7 +117,7 @@ export function FrameCard({ card, data, ctx, selected }: CardProps<FrameData>) {
     <FrameTile name={data.name} line={data.line} genId={data.genId} aspect={ctx.project.aspect} rendering={data.rendering}
       empty={errors[data.shotId] ?? "No frame yet"} testId="board-frame"
       badge={current && lines.versions.length > 1 ? { text: `V${current.n}`, tone: "dark" } : null}>
-      {data.grid ? <div className="gx-frame-acts" data-testid="frame-grid-actions">{linesBlock}{details}</div> : linesBlock}
+      {data.grid ? (linesBlock || details ? <div className="gx-frame-acts" data-testid="frame-grid-actions">{linesBlock}{details}</div> : null) : linesBlock}
     </FrameTile>
   );
 }

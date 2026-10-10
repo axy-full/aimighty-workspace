@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { openShotsBoard } from "./helpers/shotsV12";
+import { openBoard } from "./helpers/boardV12";
 
 /**
  * The Shots stage grid and the board's bar in the new interface (redesign P2-b; docs/redesign/inventory.md § 6.6, § 5.8,
@@ -13,13 +14,20 @@ const PHONE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const noSideways = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
 const shots = (page: Page) => page.locator('.bd-node[data-card-kind="take"]');
 const boxes = (page: Page) => shots(page).evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; }));
+const frames = (page: Page) => page.locator('.bd-node[data-card-kind="frame"]');
 const overlap = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
 /** Atomik's docked panel closed, as the prototype's Shots view is drawn; the grid follows the canvas's new width. */
 async function closeDock(page: Page) {
+  /* Today's dock opens itself on Atomik's questions, a moment after the board loads: fold it until it stays folded. */
   const collapse = page.getByTestId("agent-collapse");
-  if (await collapse.isVisible().catch(() => false)) await collapse.click();
+  await collapse.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
+  await expect.poll(async () => {
+    if (await collapse.isVisible().catch(() => false)) await collapse.click().catch(() => {});
+    return page.getByTestId("board-agent-panel").count();
+  }, { timeout: 20_000 }).toBe(0);
+  await page.waitForTimeout(500);
   await expect(page.getByTestId("board-agent-panel")).toHaveCount(0);
 }
 
@@ -129,10 +137,71 @@ test.describe("desktop, switch on", () => {
       expect(String(body!.goal)).toContain(`About ${sentCrumb}: Warmer light on @${first}`);
     }
 
-    /* Attach: today's upload into this board's Library; a picture lands on the canvas. */
-    const before = await page.locator(".bd-node").count();
+    /* Attach: today's upload into this board's Library (the board's toast says so). A free card is on no stage of the rail (lib/v12/board/stages.ts), so none shows here. */
     await page.getByTestId("v12-board-bar-inner-attach-input").setInputFiles("public/campaign/hero.webp");
-    await expect.poll(() => page.locator(".bd-node").count(), { timeout: 30_000 }).toBeGreaterThan(before);
+    await expect(page.getByText(/1 file added to the Library/)).toBeVisible({ timeout: 30_000 });
+    expect(await noSideways(page)).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  test("Shots: a finished card shows Approve · Reject only; Approve and Reject (with its reason) work on the card; selecting opens no Inspector", async ({ page }) => {
+    const { errors } = await openShotsBoard(page);
+    await expect(shots(page)).toHaveCount(8, { timeout: 90_000 });
+    await closeDock(page);
+    const review = shots(page).filter({ has: page.locator('[data-status="review"]') });
+    await expect(review).toHaveCount(3);
+    await expect(page.getByTestId("take-grid-actions")).toHaveCount(3);
+    for (const card of await review.all()) {
+      await expect(card.getByRole("button")).toHaveCount(2);
+      await expect(card.getByTestId("take-approve")).toHaveText("Approve");
+      await expect(card.getByTestId("take-reject")).toHaveText("Reject");
+    }
+    /* Selecting a card opens no Inspector over the bar. */
+    await shots(page).first().click();
+    await expect(page.getByTestId("board-inspector")).toHaveCount(0);
+    await expect(page.getByTestId("v12-board-bar")).toBeVisible();
+    /* Approve: the take's review trail, free; the card then says Approved. */
+    const first = shots(page).first();
+    await first.getByTestId("take-approve").click();
+    await expect(first.getByTestId("take-approve")).toHaveText("Approved", { timeout: 30_000 });
+    /* Reject asks why, over the card, which keeps its size. */
+    const second = shots(page).nth(1);
+    const before = await second.boundingBox();
+    await second.getByTestId("take-reject").click();
+    await expect(second.getByTestId("take-reject-panel")).toBeVisible();
+    expect(await second.boundingBox()).toEqual(before);
+    await second.getByTestId("take-reject-chip").first().click();
+    await second.getByTestId("take-reject-confirm").click();
+    await expect(second.getByTestId("take-rejected")).toContainText("Rejected", { timeout: 30_000 });
+    expect(errors).toEqual([]);
+  });
+
+  test("Storyboard: 4 across, one 24 px gap, one frame size; a selected frame shows one row with Details, which opens the Inspector", async ({ page }) => {
+    const { errors } = await openBoard(page, "/suites?view=board&stage=storyboard");
+    await expect(frames(page)).toHaveCount(8, { timeout: 90_000 });
+    await closeDock(page);
+    await expect.poll(async () => new Set((await frames(page).evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().x))))).size).toBe(4);
+    const b = await frames(page).evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; }));
+    expect(new Set(b.map((x) => x.w))).toEqual(new Set([260]));
+    expect(new Set(b.map((x) => x.h)).size).toBe(1);
+    const xs = [...new Set(b.map((x) => x.x))].sort((p, q) => p - q);
+    for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1] - 260).toBe(24);
+    const ys = [...new Set(b.map((x) => x.y))].sort((p, q) => p - q);
+    expect(ys).toHaveLength(2);
+    expect(ys[1] - ys[0] - b[0].h).toBe(24);
+    /* The group has no frame and no title: the stage header says them. */
+    await expect(page.getByTestId("board-group").first()).toHaveAttribute("data-grid", "true");
+    expect(await page.getByTestId("board-group").first().evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("0px");
+    /* Calm until selected; then one row: its action and Details. */
+    await expect(page.getByTestId("frame-grid-actions")).toHaveCount(0);
+    await frames(page).first().click();
+    await expect(page.getByTestId("board-inspector")).toHaveCount(0);
+    const row = page.getByTestId("frame-grid-actions");
+    await expect(row).toHaveCount(1);
+    await expect(row.getByTestId("frame-details")).toBeVisible();
+    expect(await frames(page).first().boundingBox()).toMatchObject({ width: 260, height: b[0].h });
+    await row.getByTestId("frame-details").click();
+    await expect(page.getByTestId("board-inspector")).toBeVisible();
     expect(await noSideways(page)).toBe(true);
     expect(errors).toEqual([]);
   });
