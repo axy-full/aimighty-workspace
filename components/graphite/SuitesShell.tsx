@@ -374,12 +374,12 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
      knows from its first render (SuitesApp draws nothing until the browser has it), so neither frame flashes first.
      With the switch off the header and body below render exactly as they always have. */
   const newInterface = useNewInterface();
-  /* The frame's chunk starts loading as soon as the switch is known to be on, before the frame is first asked for. */
-  useEffect(() => { if (newInterface) void loadV12Shell(); }, [newInterface]);
   /* The address the page opened with: Make's page (lazy) can mount after the workspace has rewritten the address, so it reads
      what was asked for (`mk=`, `viewer=1`) from here, once. Its first mount spends it; a later visit reads the live address. */
   const [openedWith, setOpenedWith] = useState<string | undefined>(() => (typeof window === "undefined" ? undefined : window.location.search));
   const spendOpenedWith = useCallback(() => setOpenedWith(undefined), []);
+  /* The frame's chunk starts loading as soon as the switch is known to be on, before the frame is first asked for. */
+  useEffect(() => { if (newInterface) void loadV12Shell(); }, [newInterface]);
   const v12 = newInterface && !compact && !phoneOn;
   /* With the switch on at desktop sizes, Make is a page in the frame's body (components/v12/make), not a panel; its quick
      tools (Motion transfer, Object swap, Upscale) still open as today's panel over that page. */

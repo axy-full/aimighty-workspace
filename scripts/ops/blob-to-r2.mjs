@@ -138,10 +138,19 @@ export async function loadProgress(dir) {
   return records;
 }
 
-async function writeReport(dir, mode, body) {
-  const name = `blob-to-r2-${mode}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-  await writeFile(join(dir, name), JSON.stringify(body, null, 2), { flag: "wx", mode: 0o600 });
-  return name;
+/** Writes the run's report under a name of its own: the time, and a counter when another report already has it (two runs in
+ * the same millisecond). The open stays exclusive, so no report is ever overwritten. */
+export async function writeReport(dir, mode, body) {
+  const stem = `blob-to-r2-${mode}-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  for (let n = 1; ; n += 1) {
+    const name = n === 1 ? `${stem}.json` : `${stem}-${n}.json`;
+    try {
+      await writeFile(join(dir, name), JSON.stringify(body, null, 2), { flag: "wx", mode: 0o600 });
+      return name;
+    } catch (error) {
+      if (error.code !== "EEXIST" || n >= 1000) throw error;
+    }
+  }
 }
 
 async function withLock(dir, work) {
