@@ -55,6 +55,8 @@ import { sampleGate } from "@/lib/demo/sample";
 import { useSession } from "@/lib/session";
 import { addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
+import { gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
+import { BoardBar } from "@/components/v12/board/BoardBar";
 import { useOverlay } from "@/components/v12/ui/overlay";
 import { StageRail, type StageEdit } from "@/components/v12/board/StageRail";
 import { StageHeader } from "@/components/v12/board/StageHeader";
@@ -164,7 +166,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const stages = useMemo(() => stagesOf(kind, board.rail, savedStages), [kind, board.rail, savedStages]);
   const stage = v12Frame ? currentStage(stages, shell.params.stage, kind) : null;
   const cards = useMemo(() => (stage ? stageCards(stage, allCards, kind, board.rail) : allCards), [stage, allCards, kind, board.rail]);
-  const placed = useMemo(() => placeBoard(cards, registry.defs, board.bands, project?.aspect ?? "16:9"), [cards, registry.defs, board.bands, project?.aspect]);
+  /* The new interface's stage grid (components/v12/board/stage-grid.ts, redesign P2-b): on a grid stage, its groups N across with
+     a 24 px gap and its shot cards one size. Off the switch, or on any other stage, today's definitions as they are. */
+  const gridAcross = useStageColumns(v12Frame && onGrid(stage?.id));
+  const layoutDefs = useMemo(() => (gridAcross ? gridDefs(registry.defs, cards, project?.aspect ?? "16:9", gridAcross) : registry.defs), [gridAcross, registry.defs, cards, project?.aspect]);
+  const placed = useMemo(() => placeBoard(cards, layoutDefs, board.bands, project?.aspect ?? "16:9"), [cards, layoutDefs, board.bands, project?.aspect]);
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
   /* A fresh board (nothing on any stage) keeps today's way in; a stage with nothing on it says what goes there. */
   const empty = !!project && (v12Frame ? allCards.length === 0 : placed.cards.length === 0);
@@ -394,7 +400,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     if (entry.media !== "image" && entry.media !== "video") { ws.toast("Only pictures and videos go on the board. Other files stay in the Library."); return; }
     addMedia([entryAsset(entry)], { x: at.x - FREE_MEDIA_WIDTH / 2, y: at.y - 114 });
   }, [addMedia, entryFor, notHere, ws]);
-  const upload = useCallback(async (list: FileList | null) => {
+  const upload = useCallback(async (list: FileList | readonly File[] | null) => {
     if (!list?.length || !project) return;
     const picked = [...list];
     try {
@@ -664,6 +670,10 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           )}
           {empty && !list && board.Empty ? <board.Empty ctx={ctx} /> : empty && !list && kind === "studio" ? <EmptyBoard ctx={ctx} /> : null}
           {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}
+          {v12Frame && !list && !empty ? (
+            <BoardBar ctx={ctx} selection={crumb} onClearSelection={() => pick(new Set(), null)} tool={tool} onDisarm={() => setTool("select")}
+              onAttach={(picked) => void upload(picked)} library={items} onAsked={() => setDockOpen(true)} />
+          ) : null}
           {list ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12Frame} />
           {v12Frame ? <ViewSwitch view={list ? "list" : "canvas"} onView={(v) => setList(v === "list")} /> : null}

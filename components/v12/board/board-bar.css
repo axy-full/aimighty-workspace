@@ -1,0 +1,18 @@
+/*
+ * The board's bar and the stage grid (redesign P2-b). Their own file, beside the frame's (board.css, P2-a1).
+ *
+ * The bar (prototype L355, `barLeft`/`barWidth` L845): 20 px above the stage column's bottom, as wide as the column
+ * less 440 px, between 300 and 720, centred, but never closer than 420 px to the column's left edge (the Library
+ * button and the view switch sit there); with the Library tray open the tray's 360 px count as taken.
+ */
+.v12-stage-canvas { --v12-bd-taken: 0px; }
+.v12-frame:has(.v12-lib) .v12-stage-canvas { --v12-bd-taken: 360px; }
+.v12-bd-bar {
+  --v12-bd-bar-w: clamp(300px, calc(100% - 440px - var(--v12-bd-taken)), 720px);
+  position: absolute; bottom: 20px; z-index: 20; width: var(--v12-bd-bar-w);
+  left: max(calc(var(--v12-bd-taken) + (100% - var(--v12-bd-taken)) / 2), calc(var(--v12-bd-taken) + 420px + var(--v12-bd-bar-w) / 2));
+  transform: translateX(-50%);
+}
+
+/* The stage grid's shot cards are 260 wide: their picture keeps the board's aspect at that width (the card sets it for 340). */
+.bd[data-v12][data-stage="shots"] .gx-take:not(.gx-take--review) .gx-take-media { height: calc(var(--gx-take-well) * 260 / 340); }

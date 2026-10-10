@@ -163,12 +163,12 @@ export function BarChip({ label, thumb, media, onRemove, removeTitle = "Remove",
   media?: "image" | "video" | null;
   onRemove?: () => void;
   removeTitle?: string;
-  /** "picked": a filled chip with a picture (Home's picked tile); otherwise an outlined one (a file). */
-  tone?: "picked" | "file";
+  /** "picked": a filled chip with a picture (Home's picked tile); "selection": a board's selection, blue-tinted; otherwise an outlined one (a file). */
+  tone?: "picked" | "file" | "selection";
   testId?: string;
 }) {
   return (
-    <span className={tone === "picked" ? "v12-bar-chip v12-bar-chip-picked" : "v12-bar-chip"} data-testid={testId}>
+    <span className={tone === "picked" ? "v12-bar-chip v12-bar-chip-picked" : tone === "selection" ? "v12-bar-chip v12-bar-chip-selection" : "v12-bar-chip"} data-testid={testId}>
       {/* eslint-disable-next-line @next/next/no-img-element -- Particl's own media route, already sized */}
       {thumb ? (media === "video" ? <video className="v12-bar-chip-thumb" src={thumb} muted playsInline preload="metadata" aria-hidden="true" /> : <img className="v12-bar-chip-thumb" src={thumb} alt="" />) : null}
       <span className="v12-bar-chip-label">{label}</span>
