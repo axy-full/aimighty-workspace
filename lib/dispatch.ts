@@ -65,21 +65,33 @@ export type WorkerEvent = {
 export type DispatchMode = "native" | "inngest" | "inline";
 type Environment = Record<string, string | undefined>;
 
-/** The origin the worker route is reached at; null when nothing names one. */
-export function dispatchOrigin(env: Environment = process.env): string | null {
-  const raw =
-    env.APP_ORIGIN ||
-    (env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : "");
+/** An http(s) origin from a configured value; null when it is not one. Never throws. */
+function originOf(raw: string | undefined): string | null {
   if (!raw) return null;
   try {
     const url = new URL(raw);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-    return url.origin;
+    return url.protocol === "https:" || url.protocol === "http:" ? url.origin : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * The origin the worker route is reached at; null when nothing names one.
+ *
+ * `WORKER_ORIGIN` (an http or https origin) comes first, so a self-hosted
+ * container can hand work to itself on its own listen address
+ * (`http://127.0.0.1:3000`) instead of through the public URL. Unset, or not a
+ * usable origin, it is ignored and the answer is what it always was:
+ * APP_ORIGIN, else the production deployment's URL.
+ */
+export function dispatchOrigin(env: Environment = process.env): string | null {
+  const own = originOf(env.WORKER_ORIGIN?.trim());
+  if (own) return own;
+  return originOf(
+    env.APP_ORIGIN ||
+      (env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}` : ""),
+  );
 }
 
 export function dispatchMode(env: Environment = process.env): DispatchMode {

@@ -8,12 +8,13 @@ import { dayLabel, type ResultTile } from "@/lib/v12/make";
 import { knownQuote } from "@/lib/v12/quote";
 import { useOverlay, useV12PortalRoot } from "@/components/v12/ui/overlay";
 import { useFocusReturn } from "@/components/v12/ui/Popover";
+import { takesSeed } from "@/lib/workspace/composer";
 import { Price } from "@/components/v12/ui/Price";
 import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { keyOf } from "@/lib/v12/keymap";
 
-/** Why "Reuse seed" can't be pressed yet: Make's send has no seed in it. */
-export const SEED_LATER = "Reusing a seed comes when Make can send one. Variations puts these words and settings in the composer.";
+/** Why "Reuse seed" can't be pressed here: this engine takes no seed (today only Seedance does). */
+export const SEED_LATER = "This engine doesn't repeat a seed. Variations puts these words and settings in the composer.";
 
 const clock = (at: number) => new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
 
@@ -23,12 +24,14 @@ const clock = (at: number) => new Date(at).toLocaleTimeString("en-GB", { hour: "
  * the prompt and settings into the composer; "Use as reference" adds the take to the composer; Download is free.
  * What a take cost is the ledger's figure for it.
  */
-export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReference, paysInDollars }: {
+export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReuseSeed, onReference, paysInDollars }: {
   tiles: readonly ResultTile[];
   index: number | null;
   onIndex: (index: number) => void;
   onClose: () => void;
   onReuse: (tile: ResultTile) => void;
+  /** Loads the take into the composer with its seed, to repeat it. */
+  onReuseSeed: (tile: ResultTile, seed: number) => void;
   onReference: (tile: ResultTile) => void;
   paysInDollars: boolean;
 }) {
@@ -96,9 +99,9 @@ export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReference, p
             {seed != null ? (
               <span className="v12-mk-viewer-seed" data-testid="v12-make-viewer-seed">
                 <span className="v12-mk-mono">Seed {seed}</span>
-                {/* Reuse seed: Make's send carries no seed today (lib/workbench/generation-request.ts), so this waits on that
-                    change to the priced request (NEEDS AKSHAY, reported with redesign C3) rather than promise a repeat it can't keep. */}
-                <button type="button" className="v12-mk-link" disabled title={SEED_LATER} data-testid="v12-make-viewer-reuse-seed">Reuse seed</button>
+                {/* A clip's seed goes out with the next make (lib/workbench/generation-request.ts `seed`); an engine that takes none has the button off (takesSeed). */}
+                <button type="button" className="v12-mk-link" disabled={!takesSeed(tile.model) || Boolean(tile.reuseBlock)} onClick={() => onReuseSeed(tile, seed)}
+                  title={!takesSeed(tile.model) ? SEED_LATER : tile.reuseBlock ?? "Reuse this seed in the composer"} data-testid="v12-make-viewer-reuse-seed">Reuse seed</button>
               </span>
             ) : null}
           </div>
