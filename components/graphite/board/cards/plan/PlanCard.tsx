@@ -9,7 +9,8 @@ import type { PlanData } from "./derive";
 import { publishPlanModel, setPlanStepsOpen } from "./ui";
 import { balanceLine, fixLine, type PlanModel, type PlanPrimary } from "./model";
 import { usePlan } from "./use-plan";
-import { ROUND_LINE, clientRoundModel, isClientRound } from "@/lib/v12/rounds";
+import { ROUND_LINE, clientRoundModel, shotOfNodeMap, showsRound } from "@/lib/v12/rounds";
+import { shotTakes } from "../take/take-model";
 import { useNewInterface } from "@/lib/session";
 import { planLineKey, planMoneyState } from "./money-state";
 import { MoneyActions, MoneyLine, PausedBody, useMoveOffer, usePlanBudget, usePlanBudgetLine, useTopUpLabel } from "./MoneyStates";
@@ -29,10 +30,11 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   const shell = useShell();
   const open = data.open;
   /* A client's reply asked of Atomik (lib/v12/rounds.ts): the same plan at the same prices, in a round's words, with the one approval "Approve all". */
-  const round = useNewInterface() && isClientRound(data.run?.goal);
+  const round = showsRound(useNewInterface(), data.run?.goal);
   const goal = data.run?.goal ?? "";
   const planned = data.sample ?? plan.model;
-  const model = useMemo(() => (planned && round ? clientRoundModel(planned, goal) : planned), [planned, round, goal]);
+  const shots = useMemo(() => (round ? shotOfNodeMap(shotTakes(ctx.project, [])) : null), [round, ctx.project]);
+  const model = useMemo(() => (planned && round && shots ? clientRoundModel(planned, goal, shots) : planned), [planned, round, goal, shots]);
   const runId = data.run?.id ?? "sample";
   /* The money states (./money-state.ts): read only what the state at hand needs. The sample has none. */
   const live = Boolean(data.run) && !data.sample;

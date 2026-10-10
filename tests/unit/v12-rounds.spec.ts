@@ -1,10 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { readFileSync } from "node:fs";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { newProject } from "../../lib/workbench/studio";
+import { mockPlanCalls, mockPlannerModel, runPlanner } from "../../lib/workbench/rig-agent-planner";
+import { deriveRounds } from "../../components/v12/rounds/round-derive";
 import type { PlanModel } from "../../components/graphite/board/cards/plan/model";
 import {
-  CLIENT_MARK, ROUND_LIMITS, cleanRounds, withRound, shotOfTitle, clientRoundGoal, clientRoundModel, feedbackOf, hasRound, isClientRound, latestRound, looksLikeClientFeedback, parseFeedback, roundBadge, roundDate, roundOf,
+  CLIENT_MARK, ROUND_LIMITS, cleanRounds, withRound, shotOfNodeMap, shotOfStep, showsRound, clientRoundGoal, clientRoundModel, feedbackOf, hasRound, isClientRound, latestRound, looksLikeClientFeedback, parseFeedback, roundBadge, roundDate, roundOf,
   whatChangedText, type BoardRound,
 } from "../../lib/v12/rounds";
 
@@ -39,49 +40,59 @@ test("the ask says what it is, within the ask's limit, and the client's words co
   expect(clientRoundGoal("x".repeat(5000)).length).toBe(2000);
 });
 
+/* The grid's own numbering: the card behind each shot. Atomik's step titles ("01 — Opening") name no shot; the card does. */
+const SHOTS = shotOfNodeMap(Array.from({ length: 9 }, (_, i) => ({ nodeId: `card-${i + 1}`, index: i + 1 })));
+
 const model = (over: Partial<PlanModel> = {}): PlanModel => ({
   runId: "run-1", phase: "proposal", title: "Make 3 shots",
-  steps: [2, 4, 7].map((n, i) => ({ seq: i + 1, kind: "take", title: `Shot ${n} · Wide`, meta: "Seedance", price: null, source: "estimate", unavailable: null, needsAdmin: false, asksAlone: null, state: "proposed", status: "Planned", reason: null, canRender: false, fingerprint: null })),
+  steps: [2, 4, 7].map((n, i) => ({ seq: i + 1, nodeId: `card-${n}`, kind: "take", title: `0${i + 1} — ${["Opening", "The turn", "Close"][i]}`, meta: "Seedance", price: null, source: "estimate", unavailable: null, needsAdmin: false, asksAlone: null, state: "proposed", status: "Planned", reason: null, canRender: false, fingerprint: null })),
   total: null, ceiling: null, used: null, balance: null, totalLine: null, thinking: null, modeLine: null, ruleLine: null, adminLine: "", note: null, mine: true,
   primary: { kind: "plan", label: "Approve · 93 cr", price: { kind: "exact", credits: 93 } as never, fingerprint: "f", blocked: null }, ...over,
 });
 
 test("the plan reads as a client round: a step per shot with what was asked, and 'Approve all' at the plan's own price", () => {
-  const out = clientRoundModel(model(), clientRoundGoal(REPLY));
+  const out = clientRoundModel(model(), clientRoundGoal(REPLY), SHOTS);
   expect(out.title).toBe("Client round · 3 changes");
   /* Atomik's own titles stay; what the client asked for each shot is beside them. */
-  expect(out.steps.map((s) => s.title)).toEqual(["Shot 2 · Wide", "Shot 4 · Wide", "Shot 7 · Wide"]);
+  expect(out.steps.map((s) => s.title)).toEqual(["01 — Opening", "02 — The turn", "03 — Close"]);
   expect(out.steps.map((s) => s.meta)).toEqual(["Asked: “Sphere bigger in the wide” · Seedance", "Asked: “Bottle fuller, label to camera” · Seedance", "Asked: “Lose the second figure” · Seedance"]);
   expect(out.primary).toMatchObject({ kind: "plan", label: "Approve all · 93 cr" });
   /* Prices and state are the plan's: nothing is added or worked out here. */
   expect(out.steps[0]).toMatchObject({ price: null, state: "proposed" });
-  expect(clientRoundModel(model({ steps: model().steps.slice(0, 1) }), clientRoundGoal(REPLY)).title).toBe("Client round · 1 change");
-  expect(clientRoundModel(model({ phase: "working" }), clientRoundGoal(REPLY)).title).toBe("Round 2 · 3 changes");
+  expect(clientRoundModel(model({ steps: model().steps.slice(0, 1) }), clientRoundGoal(REPLY), SHOTS).title).toBe("Client round · 1 change");
+  expect(clientRoundModel(model({ phase: "working" }), clientRoundGoal(REPLY), SHOTS).title).toBe("Round 2 · 3 changes");
 });
 
-test("a step is never matched to a change by its place in the list: only a title that names the shot is, and 'N changes' counts changes", () => {
-  const steps = ["Opening wide", "Shot 4 · Wide", "The bottle"].map((title, i) => ({ ...model().steps[0], seq: i + 1, title }));
-  const out = clientRoundModel(model({ steps }), clientRoundGoal(REPLY));
-  /* The client asked for shots 2, 4 and 7. The first and third steps name no shot, so neither takes shot 2's or 7's words. */
-  expect(out.steps[0].meta).toBe("Seedance");
-  expect(out.steps[0].title).toBe("Opening wide");
-  expect(out.steps[1].meta).toBe("Asked: “Bottle fuller, label to camera” · Seedance");
-  expect(out.steps[2].meta).toBe("Seedance");
+test("a step is matched to a shot by its card, never by its title or its place in the list; 'N changes' counts changes", () => {
+  /* The client asked about shots 2, 4 and 7. Step 1 stands in the first place and is called "Shot 2 · Wide", but its card is shot 5 (not asked).
+     Step 2 stands second (a place the client DID ask about), has a card that is no shot on the grid, and a title that names no shot.
+     Step 3 is shot 4's card, called "The bottle". */
+  const base = model().steps[0];
+  const steps = [
+    { ...base, seq: 1, nodeId: "card-5", title: "Shot 2 · Wide" },
+    { ...base, seq: 2, nodeId: "card-new", title: "Redraw" },
+    { ...base, seq: 3, nodeId: "card-4", title: "The bottle" },
+    { ...base, seq: 4, nodeId: null, title: "Shot 7 · Wide" },
+  ];
+  const out = clientRoundModel(model({ steps }), clientRoundGoal(REPLY), SHOTS);
+  expect(out.steps.map((s) => s.meta)).toEqual(["Seedance", "Seedance", "Asked: “Bottle fuller, label to camera” · Seedance", "Seedance"]);
+  expect(out.steps.map((s) => s.title)).toEqual(["Shot 2 · Wide", "Redraw", "The bottle", "Shot 7 · Wide"]);
   expect(out.title).toBe("Client round · 1 change");
-  expect(shotOfTitle("Opening wide")).toBeNull();
-  expect(shotOfTitle("Redraw shot #12 · Wide")).toBe(12);
-  /* The round the approval records tags the same shots and no others, and keeps the take each had before. */
-  const round = roundOf({ runId: "r", goal: clientRoundGoal(REPLY), stepTitles: ["Opening wide", "Shot 4 · Wide", "The bottle"], rounds: [], before: { "1": "g1", "2": "g2", "4": "g4" }, at: 5 });
+  expect(shotOfStep({ nodeId: "card-7" }, SHOTS)).toBe(7);
+  expect(shotOfStep({ nodeId: "card-new" }, SHOTS)).toBeNull();
+  expect(shotOfStep({ nodeId: null }, SHOTS)).toBeNull();
+  /* The round the approval records tags the same shot and no other (shot 5 was rendered but not asked about), and keeps the take that shot had before. */
+  const round = roundOf({ runId: "r", goal: clientRoundGoal(REPLY), steps, shots: SHOTS, rounds: [], before: { "1": "g1", "2": "g2", "4": "g4", "5": "g5" }, at: 5 });
   expect(round.changes).toEqual([{ shot: 4, text: "Bottle fuller, label to camera" }]);
   expect(round.before).toEqual({ "4": "g4" });
-  expect(roundOf({ runId: "r", goal: clientRoundGoal(REPLY), stepTitles: ["Opening wide"], rounds: [], before: {}, at: 5 }).changes).toEqual([]);
+  expect(roundOf({ runId: "r", goal: clientRoundGoal(REPLY), steps: [steps[1], steps[3]], shots: SHOTS, rounds: [], before: {}, at: 5 }).changes).toEqual([]);
 });
 
 test("a recorded round never makes the board unsavable: text, changes and rounds are cut to what the draft takes, and a 21st round still saves", () => {
   let rounds: BoardRound[] = [];
   for (let i = 0; i < 21; i++) {
     const long = Array.from({ length: 70 }, (_, k) => `Shot ${k + 1} ${"x".repeat(300)}`).join(". ");
-    const next = roundOf({ runId: `run-${i}`, goal: clientRoundGoal(long), stepTitles: Array.from({ length: 70 }, (_, k) => `Shot ${k + 1} · Wide`), rounds, before: Object.fromEntries(Array.from({ length: 70 }, (_, k) => [String(k + 1), "g".repeat(150)])), at: 1000 + i });
+    const next = roundOf({ runId: `run-${i}`, goal: clientRoundGoal(long), steps: Array.from({ length: 70 }, (_, k) => ({ nodeId: `card-${k + 1}` })), shots: shotOfNodeMap(Array.from({ length: 70 }, (_, k) => ({ nodeId: `card-${k + 1}`, index: k + 1 }))), rounds, before: Object.fromEntries(Array.from({ length: 70 }, (_, k) => [String(k + 1), "g".repeat(150)])), at: 1000 + i });
     expect(next.changes.length).toBeLessThanOrEqual(ROUND_LIMITS.changes);
     expect(next.changes.every((c) => c.text.length <= ROUND_LIMITS.text)).toBe(true);
     rounds = withRound(rounds, next);
@@ -100,9 +111,9 @@ test("a recorded round never makes the board unsavable: text, changes and rounds
 
 test("the approved plan makes round 2, with what each shot had before; the next is round 3", () => {
   const at = Date.UTC(2026, 9, 9, 10, 40);
-  const r2 = roundOf({ runId: "run-1", goal: clientRoundGoal(REPLY), stepTitles: ["Shot 7 · Wide", "Shot 2 · Wide", "Shot 4 · Wide"], rounds: [], before: { "2": "g2", "4": "g4", "9": "g9" }, at });
+  const r2 = roundOf({ runId: "run-1", goal: clientRoundGoal(REPLY), steps: [7, 2, 4].map((n) => ({ nodeId: `card-${n}` })), shots: SHOTS, rounds: [], before: { "2": "g2", "4": "g4", "9": "g9" }, at });
   expect(r2).toEqual({ n: 2, runId: "run-1", at, changes: [{ shot: 2, text: "Sphere bigger in the wide" }, { shot: 4, text: "Bottle fuller, label to camera" }, { shot: 7, text: "Lose the second figure" }], before: { "2": "g2", "4": "g4" } });
-  const r3 = roundOf({ runId: "run-2", goal: clientRoundGoal("Shot 1 darker. Shot 2 lighter"), stepTitles: ["Shot 1"], rounds: [r2], before: {}, at });
+  const r3 = roundOf({ runId: "run-2", goal: clientRoundGoal("Shot 1 darker. Shot 2 lighter"), steps: [{ nodeId: "card-1" }], shots: SHOTS, rounds: [r2], before: {}, at });
   expect(r3.n).toBe(3);
   expect(hasRound([r2, r3], "run-2")).toBe(true);
   expect(hasRound([r2], "run-2")).toBe(false);
@@ -126,9 +137,36 @@ test("the rounds are part of the draft JSON: the project schema takes them and r
   expect(projectSchema.safeParse({ ...project, boardRounds: [{ ...round, extra: true }] }).success).toBe(false);
 });
 
-test("a customer's plan card never reads as a client round: the wording is gated on the new interface", () => {
-  const source = readFileSync("components/graphite/board/cards/plan/PlanCard.tsx", "utf8");
-  expect(source).toMatch(/useNewInterface\(\)\s*&&\s*isClientRound\(/);
-  /* The round cards are derived only from rounds a board of the new interface recorded (use-round.ts runs on its frame alone). */
-  expect(readFileSync("components/v12/rounds/round-derive.ts", "utf8")).toMatch(/cleanRounds\(src\.project\.boardRounds\)/);
+test("a customer's plan card never reads as a client round: the wording is on the new interface alone, and a board without rounds derives none", () => {
+  const goal = clientRoundGoal(REPLY);
+  expect(showsRound(true, goal)).toBe(true);
+  expect(showsRound(false, goal)).toBe(false);
+  expect(showsRound(true, "Make the opening")).toBe(false);
+  expect(showsRound(true, undefined)).toBe(false);
+  /* The round cards come only from rounds a board of the new interface recorded: a board with none (every customer's) derives nothing. */
+  const project = newProject("Board");
+  const src = (boardRounds?: unknown) => ({ kind: "studio" as const, project: { ...project, boardRounds } as never, library: [] });
+  expect(deriveRounds(src())).toEqual([]);
+  expect(deriveRounds(src("nonsense"))).toEqual([]);
+  expect(deriveRounds(src([{ n: 2, runId: "run-1", at: 1, changes: [{ shot: 2, text: "Bigger" }], before: {} }])).map((c) => c.id)).toEqual(["round:changed", "round:cut", "round:deliver"]);
+});
+
+test("the scripted planner answers a client's reply as a planner given the board would: it renders the board's own shot cards again, by id", () => {
+  const cards = [{ id: "c-brief", kind: "note", title: "Brief" }, ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ id: `c-${n}`, kind: "shot", title: `Take ${n * 11}`, shot: true as const }))];
+  const snapshot = { production: "P", brief: "", goal: clientRoundGoal(REPLY), cards, assets: [], cast: [], places: [], boardShots: [] };
+  const { calls } = mockPlanCalls(snapshot);
+  expect(calls).toEqual([2, 4, 7].map((n) => ({ tool: "render", input: { shot: `c-${n}` } })));
+  /* An ordinary ask is planned as before. */
+  expect(mockPlanCalls({ ...snapshot, goal: "Three shots of the pier" }).calls.some((c) => c.tool === "create_node")).toBe(true);
+});
+
+test("a plan that only renders the board's own shots again is a plan for a client's reply, and for nothing else", async () => {
+  const cards = [1, 2, 3].map((n) => ({ id: `c-${n}`, kind: "shot", title: `Take ${n}`, shot: true as const }));
+  const snapshot = { production: "P", brief: "", goal: clientRoundGoal("Shot 2 sphere bigger. Shot 3 warmer"), cards, assets: [], cast: [], places: [], boardShots: [] };
+  const done = await runPlanner(snapshot, mockPlannerModel(snapshot));
+  expect(done.draft.cards).toEqual([]);
+  expect(done.draft.next).toEqual([{ what: "render", card: "c-2" }, { what: "render", card: "c-3" }]);
+  /* The same render-only script for an ordinary ask is refused, as before. */
+  const plain = { ...snapshot, goal: "Redo shots two and three" };
+  await expect(runPlanner(plain, mockPlannerModel(plain, { calls: mockPlanCalls(snapshot).calls, result: mockPlanCalls(snapshot).result }))).rejects.toThrow(/did not propose any cards/);
 });

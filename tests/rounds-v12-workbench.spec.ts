@@ -43,12 +43,7 @@ test.describe("desktop, switch on", () => {
       const request = route.request();
       if (request.method() === "POST") { posts.push(request.postDataJSON() as Record<string, unknown>); return route.fallback(); }
       const response = await route.fetch();
-      const body = await response.json().catch(() => null) as { agent?: { run?: { plan?: typeof planNow.plan; paid?: { tool: string; title: string; fixOf?: number | null }[] } | null } } | null;
-      /* The local scripted planner titles its renders with its own starter shots, which name none of the client's shots. A planner
-         that names the shot it renders ("Shot 2 · …") is what a round needs, so the three renders are named here, the server's
-         quote, fingerprint and prices untouched. A step that names no shot is never matched to one (tests/unit/v12-rounds.spec.ts). */
-      let at = 0;
-      for (const step of body?.agent?.run?.paid ?? []) if (step.tool === "render" && step.fixOf == null) { const shot = [2, 4, 7][at++]; if (shot && !/^shot\s*\d+/i.test(step.title)) step.title = `Shot ${shot} · ${step.title}`; }
+      const body = await response.json().catch(() => null) as { agent?: { run?: { plan?: typeof planNow.plan; paid?: unknown[] } | null } } | null;
       if (body?.agent?.run?.plan) planNow.plan = body.agent.run.plan;
       return route.fulfill({ response, json: body });
     });
@@ -83,9 +78,9 @@ test.describe("desktop, switch on", () => {
     await expect(approve).toHaveText(/^Approve all · \d[\d,.]* cr$/, { timeout: 120_000 });
     await expect(plan.getByTestId("board-plan-step")).toHaveCount(3);
     await expect(plan).toContainText("Client round · 3 changes");
-    /* Atomik's own step titles stay, with what the client asked beside each; only a step that names its shot gets those words. */
+    /* Atomik's own step titles stay, with what the client asked beside each. The scripted planner renders the board's own shot
+       cards and names none of them "Shot N": each step is matched to its shot by its card, not by its title. */
     const steps = plan.getByTestId("board-plan-step");
-    for (const [i, shot] of [2, 4, 7].entries()) await expect(steps.nth(i)).toContainText(new RegExp(`Shot ${shot}\\b`));
     await expect(steps.nth(0)).toContainText("Asked: “Sphere bigger in the wide”");
     await expect(steps.nth(1)).toContainText("Asked: “Bottle fuller, label to camera”");
     await expect(steps.nth(2)).toContainText("Asked: “Lose the second figure”");

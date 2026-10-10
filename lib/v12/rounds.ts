@@ -55,29 +55,31 @@ export function clientRoundGoal(words: string): string {
   return `${CLIENT_MARK}${words.trim()}`.slice(0, GOAL_MAX);
 }
 export const isClientRound = (goal: string | null | undefined): boolean => typeof goal === "string" && goal.includes(CLIENT_MARK);
+/** Whether a plan card is worded as a client round: only on the new interface, so a customer's card never changes. */
+export const showsRound = (newInterface: boolean, goal: string | null | undefined): boolean => newInterface && isClientRound(goal);
 /** The client's words, out of a run's goal. */
 export function feedbackOf(goal: string): string {
   const at = goal.indexOf(CLIENT_MARK);
   return at < 0 ? goal : goal.slice(at + CLIENT_MARK.length).replace(/\s*\(\d+:\d+(, [^)]*)?\)\s*$/, "");
 }
 
-/** The shot a step's own title names ("Shot 3 · …"), or null: a title that names no shot is never guessed at from its place in the list. */
-export const shotOfTitle = (title: string): number | null => {
-  const m = /shot\s*#?\s*(\d{1,2})\b/i.exec(title);
-  return m ? Number(m[1]) : null;
-};
+/** Which shot a board card is, by the card's id: the shot grid's own numbering (`shotTakes` rows: nodeId and index). */
+export type ShotOfNode = ReadonlyMap<string, number>;
+export const shotOfNodeMap = (rows: readonly { nodeId: string; index: number }[]): ShotOfNode => new Map(rows.map((r) => [r.nodeId, r.index]));
+/** The shot a step renders: the shot its own card is. A step without a card on the grid names no shot, and is never guessed at from its title or its place in the list. */
+export const shotOfStep = (step: { nodeId: string | null }, shots: ShotOfNode): number | null => (step.nodeId ? shots.get(step.nodeId) ?? null : null);
 
 /**
  * The plan as a client round: the same plan, steps and prices as the server quoted them, in a round's words. "Client round ·
  * 3 changes", a step per shot with what the client asked, and the one approval "Approve all · N cr".
  */
-export function clientRoundModel(model: PlanModel, goal: string): PlanModel {
+export function clientRoundModel(model: PlanModel, goal: string, shots: ShotOfNode): PlanModel {
   const asked = new Map(parseFeedback(feedbackOf(goal)).map((c) => [c.shot, c.text]));
   let changes = 0;
   /* Atomik's own step title stays as it is. What the client asked for that shot is put beside it, and only for a step whose
-     title names the shot: a step is never matched to a change by where it stands in the list. */
+     card is that shot: a step is never matched to a change by its title or by where it stands in the list. */
   const steps: PlanStep[] = model.steps.map((step) => {
-    const shot = shotOfTitle(step.title);
+    const shot = shotOfStep(step, shots);
     const text = shot == null ? undefined : asked.get(shot);
     if (!text) return step;
     changes += 1;
@@ -94,18 +96,20 @@ export const ROUND_LINE = "The rest stay approved. Results land as Round 2 with 
 export const ROUND_LIMITS = { text: 200, changes: 60, rounds: 20, n: 99, before: 100 } as const;
 
 /**
- * The round a plan's approval makes: what the client asked, for the shots the plan renders again. Only a step whose title names
- * its shot makes a change (never one placed by its position), and everything is cut to what the draft takes.
+ * The round a plan's approval makes: what the client asked, for the shots the plan renders again. Only a step whose card is a
+ * shot the client asked about makes a change (never one placed by its title or position), and everything is cut to what the draft takes.
  */
-export function roundOf(args: { runId: string; goal: string; stepTitles: readonly string[]; rounds: readonly BoardRound[]; before: Record<string, string>; at: number }): BoardRound {
+export function roundOf(args: { runId: string; goal: string; steps: readonly { nodeId: string | null }[]; shots: ShotOfNode; rounds: readonly BoardRound[]; before: Record<string, string>; at: number }): BoardRound {
   const asked = new Map(parseFeedback(feedbackOf(args.goal)).map((c) => [c.shot, c.text]));
   const seen = new Set<number>();
   const changes: RoundChange[] = [];
-  for (const title of args.stepTitles) {
-    const shot = shotOfTitle(title);
-    if (shot == null || shot < 1 || seen.has(shot)) continue;
+  for (const step of args.steps) {
+    const shot = shotOfStep(step, args.shots);
+    const text = shot == null ? undefined : asked.get(shot);
+    /* A change is a shot the client asked about and the plan renders again; a shot rendered that the client did not ask about is not one. */
+    if (shot == null || !text || seen.has(shot)) continue;
     seen.add(shot);
-    changes.push({ shot, text: (asked.get(shot) || title.replace(/^shot\s*#?\d+\s*[·:–—-]?\s*/i, "").trim() || `Shot ${shot}`).slice(0, ROUND_LIMITS.text) });
+    changes.push({ shot, text: text.slice(0, ROUND_LIMITS.text) });
   }
   changes.sort((a, b) => a.shot - b.shot);
   const kept = changes.slice(0, ROUND_LIMITS.changes);
