@@ -1,0 +1,9 @@
+{
+  "name": "round-feedback",
+  "app": "/suites?project=project-472031d4&suite=particl&page=brief&view=board&stage=shots",
+  "prototype": "?view=board&feedback=1&atomik=1",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "round-compare",
+  "app": "/suites?project=project-81b2b5f5&suite=particl&page=brief&view=board&stage=cut",
+  "prototype": "?view=board&compare=1",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}
