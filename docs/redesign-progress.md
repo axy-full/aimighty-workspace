@@ -62,6 +62,10 @@ The running log of the overnight redesign build. A restarted session reads this 
 - "quoted" (decision 5) still conflicts with CLAUDE.md rule 14's wording; owner to confirm the override stands.
 - The house workspace pays in dollars, so it never shows credits or the low-credit chip; screenshots are taken in credit-paying test workspaces.
 
+- **#627 decisions (owner, 10 Oct, all yes):** a separate site setting for the visitor pages, off by default; `?workspace=` pre-fills the new workspace's name only with an invite code (the server still checks it; the field stays editable); company, role and size ride in the existing access-request note; neutral wording "You don't have access to this board."; keep `app/(test)/v12-join` (test builds only). Also to build: after joining, the person lands back where they were with the prompt in the bar and the price shown.
+- **Google sign-in (NEEDS AKSHAY, later):** "Continue with Google" on the join sheet is a stub; no Google sign-in exists today. Not to be built until the owner says so.
+- **Question for the owner (no change):** boards are listed per person today, so a teammate in the same workspace can't open another member's board from a link. Should workspace members see each other's boards?
+
 ## Log
 
 - 10 Oct, evening: overnight build started. Prototype imported, switch and screenshot tool written, #612 opened.
