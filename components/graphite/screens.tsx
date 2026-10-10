@@ -8,6 +8,9 @@ import type { LibraryEntry, ProjectLibrary } from "@/lib/workspace/library";
 import type { Project } from "@/lib/workbench/studio";
 import type { CreateSeed } from "@/lib/shell/create-project";
 import type { Shell } from "@/lib/shell/state";
+import { useNewInterface } from "@/lib/session";
+import { useCompact } from "@/lib/shell/use-compact";
+import { KIND_CARDS } from "@/lib/v12/board/kinds";
 import type { BoardKindId, ScreenId } from "@/lib/shell/screens";
 import { FirstRun, type ProjectActions } from "./FirstRun";
 import { isControlRoomPage } from "./control-room/pages";
@@ -27,6 +30,7 @@ const HomeEntry = dynamic(() => import("./home/HomeView").then((m) => m.HomeView
 /* The new interface's Home (components/v12/home, redesign C2): only with the switch on, so a customer never downloads it. */
 const V12HomeEntry = dynamic(() => import("@/components/v12/home/V12Home").then((m) => m.V12Home), { ssr: false });
 const BoardEntry = dynamic(() => import("./board/BoardView").then((m) => m.BoardView), { ssr: false });
+const NewBoardEntry = dynamic(() => import("@/components/v12/board/NewBoard").then((m) => m.NewBoard), { ssr: false });
 const ControlRoomEntry = dynamic(() => import("./control-room/ControlRoom").then((m) => m.ControlRoom), { ssr: false });
 const SettingsEntry = dynamic(() => import("./settings/SettingsView").then((m) => m.SettingsView), { ssr: false });
 const PhoneEntry = dynamic(() => import("./phone/PhoneApp").then((m) => m.PhoneApp), { ssr: false });
@@ -77,17 +81,9 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
     case "board":
     case "board-ads":
     case "board-social":
-      /* The board is for every workspace, so a workspace with no project yet gets Studio's first run here (New project, the starter) rather than a board that never opens. */
-      if (!project && data.status === "ready") {
-        return (
-          <Boundary what="The board" probe="board" resetKey={`board:none`} fallback={(f) => <ScreenFault fault={f} name="board" />}>
-            <div className="gx-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto" }} data-testid="board-no-project"><FirstRun stage="board" lead="Open or create a project to use the board." actions={ctx.projectActions} now={ctx.now} /></div>
-          </Boundary>
-        );
-      }
       return (
-        <Boundary what="The board" probe="board" resetKey={`board:${project?.id ?? ""}:${shell.params.kind ?? ""}`} fallback={(f) => <ScreenFault fault={f} name="board" />}>
-          <BoardEntry scope={scope} project={project} items={items} library={library} kind={boardKind(shell.params.kind)} frame={shell.params.frame ?? null} region={shell.params.region ?? null} />
+        <Boundary what="The board" probe="board" resetKey={`board:${project?.id ?? ""}:${shell.params.kind ?? ""}:${shell.params.newboard ?? ""}`} fallback={(f) => <ScreenFault fault={f} name="board" />}>
+          <BoardOrNew ctx={ctx} />
         </Boundary>
       );
     case "control-room": {
@@ -102,6 +98,25 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
     default:
       return null;
   }
+}
+
+/**
+ * The board, or in the new interface its "New board" tab (`?newboard=1`, components/v12/board/NewBoard.tsx): a board not
+ * made yet, so no project is involved. With the switch off, or on a phone, the address means nothing and the board shows.
+ */
+function BoardOrNew({ ctx }: { ctx: ScreenContext }) {
+  const { shell, scope, project, items, library } = ctx;
+  const v12 = useNewInterface();
+  const compact = useCompact();
+  if (v12 && !compact && shell.params.newboard === "1") {
+    const pick = KIND_CARDS.find((k) => k.id === shell.params.pick)?.id ?? null;
+    return <NewBoardEntry scope={scope} onCreate={ctx.onCreate} initialKind={pick} />;
+  }
+  /* The board is for every workspace, so a workspace with no project yet gets Studio's first run here (New project, the starter) rather than a board that never opens. */
+  if (!project && ctx.data.status === "ready") {
+    return <div className="gx-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto" }} data-testid="board-no-project"><FirstRun stage="board" lead="Open or create a project to use the board." actions={ctx.projectActions} now={ctx.now} /></div>;
+  }
+  return <BoardEntry scope={scope} project={project} items={items} library={library} kind={boardKind(shell.params.kind)} frame={shell.params.frame ?? null} region={shell.params.region ?? null} />;
 }
 
 /** Settings, in place of Workspace's old tabs. */

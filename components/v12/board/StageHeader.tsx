@@ -14,11 +14,12 @@ export function StageHeader({ board, stage, meta, selection, primary, menu, onBo
   meta: string | null;
   selection: string | null;
   primary: { label: string; run: () => void } | null;
-  menu: readonly MenuItem[];
+  /** Null: no board menu (a board not started yet). */
+  menu: readonly MenuItem[] | null;
   /** The board name: back to the first stage. */
-  onBoard: () => void;
+  onBoard?: () => void;
   /** The stage name: clears the selection. */
-  onStage: () => void;
+  onStage?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
@@ -26,7 +27,7 @@ export function StageHeader({ board, stage, meta, selection, primary, menu, onBo
     <div className="v12-stagehead" data-testid="v12-stage-header">
       <span className="v12-stagehead-left">
         <span className="v12-crumbs">
-          <button type="button" className="v12-crumb v12-crumb-board" onClick={onBoard} title="The first stage">{board}</button>
+          {onBoard ? <button type="button" className="v12-crumb v12-crumb-board" onClick={onBoard} title="The first stage">{board}</button> : <span className="v12-crumb v12-crumb-board" data-testid="v12-board-crumb">{board}</span>}
           {stage ? <><span className="v12-crumb-sep" aria-hidden="true">›</span><button type="button" className="v12-crumb v12-crumb-stage" onClick={onStage} data-testid="v12-stage-crumb">{stage}</button></> : null}
           {selection ? <><span className="v12-crumb-sep" aria-hidden="true">›</span><span className="v12-crumb v12-crumb-stage" data-testid="v12-selection-crumb">{selection}</span></> : null}
         </span>
@@ -34,10 +35,10 @@ export function StageHeader({ board, stage, meta, selection, primary, menu, onBo
       </span>
       <span className="v12-stagehead-right">
         {primary ? <button type="button" className="v12-primary" onClick={primary.run} data-testid="v12-stage-primary">{primary.label}</button> : null}
-        <Tooltip name="Board menu">
+        {menu ? <><Tooltip name="Board menu">
           <button ref={anchor} type="button" className="v12-stagehead-menu" aria-label="Board menu" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)} data-testid="v12-board-menu">⋯</button>
         </Tooltip>
-        <Menu open={open} onClose={() => setOpen(false)} anchor={anchor} label="Board menu" items={menu} align="start" width={240} />
+        <Menu open={open} onClose={() => setOpen(false)} anchor={anchor} label="Board menu" items={menu} align="start" width={240} /></> : null}
       </span>
     </div>
   );
