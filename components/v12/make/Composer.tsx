@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useMake, type MakeInput } from "@/components/graphite/make/use-make";
 import { useShell } from "@/lib/shell/state";
 import { spendAttrsOf, spendAttrsText } from "@/lib/spend";
@@ -16,7 +16,7 @@ const TYPE_WORD = { image: "a still", video: "a clip", audio: "a sound" } as con
 const COUNTS = [1, 2, 4].filter((n) => n <= TAKES_MAX);
 
 /** A setting chip: "Model Nano Banana 2 ▾", with its menu. */
-function Chip({ k, v, title, items, onOpen, onClose, testId }: { k: string; v: string; title: string; items: readonly MenuItem[]; onOpen?: () => void; onClose?: () => void; testId: string }) {
+function Chip({ k, v, title, items, onOpen, onClose, testId }: { k: string; v: ReactNode; title: string; items: readonly MenuItem[]; onOpen?: () => void; onClose?: () => void; testId: string }) {
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const close = () => { setOpen(false); onClose?.(); };
@@ -71,10 +71,12 @@ export function Composer({ input, asked, mentions }: {
   const runOp = (op: MakeOp) => { if (op.tool) shell.openMake(op.tool); };
 
   /* The settings chips, for what the engine offers. */
-  const chips: { k: string; v: string; title: string; items: MenuItem[]; onOpen?: () => void; onClose?: () => void; testId: string }[] = [];
+  const chips: { k: string; v: ReactNode; title: string; items: MenuItem[]; onOpen?: () => void; onClose?: () => void; testId: string }[] = [];
   if (!ops && model) {
     chips.push({
-      k: "Model", v: model.label, title: "Engines from the rate card", testId: "v12-make-chip-model", onOpen: make.openList, onClose: make.closeList,
+      /* "Nano Banana 2 · 2K · 2 cr": the engine, its size and one take's price, the server's. */
+      k: "Model", v: <>{model.label}{settings.resolution && state.type !== "audio" ? ` · ${settings.resolution}` : ""}{make.linePrice?.value ? <> · <Price quote={knownQuote(make.linePrice.value)} /></> : make.linePrice?.about ? ` · ${make.linePrice.about}` : null}</>,
+      title: "Engines from the rate card", testId: "v12-make-chip-model", onOpen: make.openList, onClose: make.closeList,
       items: make.offered.map((m) => {
         const row = make.rowValue(m);
         return { id: m.id, label: m.label, onSelect: () => make.pickEngine(m), hint: row.value ? <Price quote={knownQuote(row.value)} /> : row.about ?? undefined };
