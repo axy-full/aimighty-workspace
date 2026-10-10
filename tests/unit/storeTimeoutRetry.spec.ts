@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { alignLedgerUnit } from "../helpers/ledgerUnit";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -23,11 +23,15 @@ import type { TenantWorkspace } from "../../lib/tenant";
  * tests/helpers/fake-provider-server.ts. Nothing is paid, nothing leaves the host.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-store-retry-"));
+/* What this file sets, as it was, so the other specs in the same worker (CI runs a shard in one process, which loads every
+   file before running any) see their own settings again. STORAGE_BACKEND is set only while this file's tests run: set at
+   load, the specs that copy process.env into an isolated module read "local" and sent their Blob reads to the disk. */
+const ENV_KEYS = ["PLATFORM_DATABASE_URL", "TURSO_DATABASE_URL", "KEYRING_SECRET", "BLOB_READ_WRITE_TOKEN", "STORAGE_BACKEND", "CREDIT_USD", "ENGINE_MOCK"] as const;
+const envBefore = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "store-retry-unit-keyring-not-a-real-secret";
 process.env.BLOB_READ_WRITE_TOKEN = "";
-process.env.STORAGE_BACKEND = "local";
 process.env.CREDIT_USD = "0.10";
 process.env.ENGINE_MOCK = "1";
 
@@ -43,6 +47,7 @@ let provider: FakeProvider;
 const stored: string[] = [];
 
 test.beforeAll(async () => {
+  process.env.STORAGE_BACKEND = "local";
   /* Before any fixture row: a fresh platform database counts in today's price (lib/ledgerUnit.ts). */
   await alignLedgerUnit();
   provider = await startFakeProvider();
@@ -50,7 +55,12 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await provider?.close();
   await Promise.all(stored.map((id) => unlink(path.join(LOCAL_DIR, `${id}.mp4`)).catch(() => {})));
-  rmSync(dir, { recursive: true, force: true });
+  for (const key of ENV_KEYS) {
+    if (envBefore[key] === undefined) delete process.env[key];
+    else process.env[key] = envBefore[key];
+  }
+  /* The temporary databases stay (as tests/unit/seedanceDraftFinal.spec.ts leaves its own): clients opened on them may
+     still be cached in this process, and removing the folder under them failed later specs with ENOENT. */
 });
 
 function workspace(name: string): TenantWorkspace {
@@ -135,9 +145,11 @@ function delivering(current: () => string) {
 }
 
 /** lib/recovery.ts records every storage write; one it cannot prove harmless stays 'uncertain'. */
-async function unsettledActivities() {
+/* Only what this test started: in CI a shard shares one platform database across spec files, and another spec's own
+   unsettled write is not this save's. */
+async function unsettledActivities(since: number) {
   const { platformDb } = await import("../../lib/platform");
-  const rs = await platformDb().execute("SELECT kind, state FROM recovery_activities WHERE state != 'done'");
+  const rs = await platformDb().execute({ sql: "SELECT kind, state FROM recovery_activities WHERE state != 'done' AND created_at >= ?", args: [since] });
   return rs.rows.map((r) => ({ kind: String(r.kind), state: String(r.state) }));
 }
 
@@ -145,6 +157,7 @@ const sha256 = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
 const leftovers = (id: string) => (existsSync(LOCAL_DIR) ? readdirSync(LOCAL_DIR).filter((f) => f.includes(id)) : []);
 
 test("a save that times out keeps the paid render on the provider URL, billed exactly as a normal success", async () => {
+  const testStart = Date.now();
   const { runInTenant } = await import("../../lib/tenant");
   const { engineFor } = await import("../../lib/engines");
   const { getGeneration, syncGeneration, syncPending } = await import("../../lib/jobs");
@@ -193,7 +206,7 @@ test("a save that times out keeps the paid render on the provider URL, billed ex
       // Nothing half-written is left as the master.
       expect(leftovers(id)).toEqual([]);
       // And the recovery fence holds no uncertain storage write for it.
-      expect(await unsettledActivities()).toEqual([]);
+      expect(await unsettledActivities(testStart)).toEqual([]);
 
       // Billed once, at the same figure and the same credits as the normal success:
       // no refund for a render the customer has, and no second charge.
