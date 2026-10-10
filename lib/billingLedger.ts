@@ -1,5 +1,6 @@
 import type { Transaction } from "@libsql/client";
 import { platformDb, platformReady } from "./platform";
+import { columnInstaller } from "./schemaInitialization";
 import { creditUsd, type CreditState } from "./creditTerms";
 import { LEDGER_UNIT_SCHEMA, seedLedgerUnit } from "./ledgerUnit";
 import type { PlanId } from "./plans";
@@ -39,6 +40,8 @@ export async function billingReady(): Promise<void> {
       ],
       "write",
     );
+    /* Processes booting together may race on a column: columnInstaller accepts "duplicate column" once it sees it there. */
+    const addColumn = await columnInstaller(platformDb());
     for (const [table, columns] of Object.entries({
       billing_lots: [
         "clock_started_at INTEGER",
@@ -46,18 +49,8 @@ export async function billingReady(): Promise<void> {
       ],
       billing_debits: ["legacy INTEGER NOT NULL DEFAULT 0"],
       billing_unit: ["paused_since INTEGER"],
-    })) {
-      const present = new Set(
-        (await platformDb().execute(`PRAGMA table_info(${table})`)).rows.map(
-          (r) => String(r.name),
-        ),
-      );
-      for (const column of columns)
-        if (!present.has(column.split(" ")[0]))
-          await platformDb().execute(
-            `ALTER TABLE ${table} ADD COLUMN ${column}`,
-          );
-    }
+    }))
+      for (const column of columns) await addColumn(table, column);
     /* The unit the record counts in (lib/ledgerUnit.ts): seeded once; a boot at another price is noted. */
     await seedLedgerUnit(platformDb(), Date.now());
     await platformDb().execute(
