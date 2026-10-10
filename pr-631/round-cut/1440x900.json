@@ -1,6 +1,6 @@
 {
   "name": "round-cut",
-  "app": "/suites?project=project-d1dc2f5a&suite=particl&page=brief&view=board&stage=cut",
+  "app": "/suites?project=project-dd714c9b&suite=particl&page=brief&view=board&stage=cut",
   "prototype": "?view=board&round=2&stage=Cut",
   "size": {
     "width": 1440,

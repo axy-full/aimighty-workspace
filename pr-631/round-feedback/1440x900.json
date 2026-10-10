@@ -1,6 +1,6 @@
 {
   "name": "round-feedback",
-  "app": "/suites?project=project-b4dee5c7&suite=particl&page=brief&view=board&stage=shots",
+  "app": "/suites?project=project-ad40a513&suite=particl&page=brief&view=board&stage=shots",
   "prototype": "?view=board&feedback=1&atomik=1",
   "size": {
     "width": 1440,

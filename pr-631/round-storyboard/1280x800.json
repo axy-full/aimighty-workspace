@@ -1,6 +1,6 @@
 {
   "name": "round-storyboard",
-  "app": "/suites?project=project-02ac42f0&suite=particl&page=brief&view=board&stage=storyboard",
+  "app": "/suites?project=project-f0517c82&suite=particl&page=brief&view=board&stage=storyboard",
   "prototype": "?view=board&round=2&stage=Storyboard",
   "size": {
     "width": 1280,
