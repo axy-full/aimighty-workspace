@@ -1,15 +1,16 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { countsByDraft } from "@/lib/control-room/queue";
 import { useApprovals } from "@/lib/control-room/use-approvals";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { throwIfArmed } from "@/lib/shell/fault";
-import { creditRate, upTo } from "@/lib/shell/price-words";
+import { creditRate, priceWords, upTo } from "@/lib/shell/price-words";
 import { recreatePreset } from "@/lib/shell/recipe";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { spendAttrsOf } from "@/lib/spend";
-import { pickedBrief, startQuote, waitingShown, wallRow, type WallTile } from "@/lib/v12/home";
+import { pickedBrief, startQuote, startWords, waitingShown, wallRow, type WallTile } from "@/lib/v12/home";
+import { useMoney } from "@/lib/price";
 import { useOverlay } from "@/components/v12/ui/overlay";
 import { ASPECTS, BLANK, BRIEF_MAX, LENGTHS, appendBrief, draftAspect, draftLength, withAspect, withLength } from "@/components/graphite/home/home-model";
 import { BriefFileError, briefKind, readBriefFile } from "@/components/graphite/home/brief-file";
@@ -57,7 +58,12 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
   const nav = useHomeNav();
   const shell = useShell();
   const session = useSession();
-  const s = useHomeStart({ scope, projects, onPick, onCreate, onStarter, openBoard: nav.openBoard });
+  const money = useMoney();
+  /* One unit for every figure Start shows: the button, its marker and the note that a higher price needs another press. */
+  const dollars = session.rates.unit === "usd";
+  const creditUsd = creditRate(session.rates.creditUsd);
+  const wordsOf = useCallback((credits: number) => startWords(startQuote({ spendOff: false, figure: credits, thinking: { state: "ready" }, dollars, creditUsd }), { creditUsd, dollars: money.price }) ?? priceWords(upTo(credits)) ?? "", [dollars, creditUsd, money.price]);
+  const s = useHomeStart({ scope, projects, onPick, onCreate, onStarter, openBoard: nav.openBoard, worded: wordsOf });
   const approvals = useApprovals();
   const spendOff = useSampleWorkspace();
   const wall = useWall(scope);
@@ -91,7 +97,8 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
      layer; the house workspace sees that same figure in dollars. */
   const words = picked ? pickedBrief(picked, s.draft.text) : s.draft.text;
   const figure = s.figureFor(words);
-  const quote = startQuote({ spendOff: Boolean(spendOff), figure, thinking: s.thinking, dollars: session.rates.unit === "usd", creditUsd: creditRate(session.rates.creditUsd) });
+  const quote = startQuote({ spendOff: Boolean(spendOff), figure, thinking: s.thinking, dollars, creditUsd });
+  const startMarker = startWords(quote, { creditUsd, dollars: money.price });
 
   /* Attach: a brief (PDF or text) is read into the words; pictures and clips go with the new board as references. */
   const [note, setNote] = useState<{ tone: "note" | "problem"; text: string } | null>(null);
@@ -128,6 +135,20 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
     }
   }, [onDraft, setRefs, setBriefFile, refs, briefFile]);
 
+  /* The page leaves room under its last row for the bar as it is now (a picked tile's sheet and a note make it taller). */
+  const root = useRef<HTMLDivElement>(null);
+  const barBox = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const host = root.current, bar = barBox.current;
+    if (!host || !bar) return;
+    const set = () => host.style.setProperty("--v12-bar-h", `${Math.ceil(bar.getBoundingClientRect().height)}px`);
+    set();
+    if (typeof ResizeObserver === "undefined") return;
+    const seen = new ResizeObserver(set);
+    seen.observe(bar);
+    return () => seen.disconnect();
+  }, []);
+
   const mentions: BarMention[] = wall.tiles.map((tile) => ({ id: tile.id, name: tile.title, kind: tile.type, thumb: tile.url, media: tile.media }));
   const busy = s.pending !== null;
   const send = () => {
@@ -139,7 +160,7 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
   const shownNote = problem ? { tone: "problem" as const, text: problem } : spendOff ? { tone: "note" as const, text: spendOff } : note;
 
   return (
-    <div className="v12-hm" data-testid="v12-home" data-screen-label="Home">
+    <div className="v12-hm" data-testid="v12-home" data-screen-label="Home" ref={root}>
       <div className="v12-hm-scroll gx-scroll" data-testid="home">
         {stripOn ? (
           <WaitingStrip items={items} shown={waitingShown(wide)} onApprove={approvals.approve}
@@ -151,7 +172,7 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
             disabled={busy} onOpen={s.open} onNew={() => void s.create(BLANK)} />
         </div>
       </div>
-      <div className="v12-hm-bar">
+      <div className="v12-hm-bar" ref={barBox}>
         <Bar
           value={s.draft.text}
           onChange={(text) => onDraft((d) => ({ ...d, text }))}
@@ -162,6 +183,7 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
           disabled={busy}
           onAttach={(files) => void attach(files)}
           attachAccept={ATTACH_ACCEPT}
+          attachTitle="Attach a file — A PDF or text brief is read into the words; pictures and clips go with the new board."
           mentions={mentions}
           mentionsTitle="From your work"
           sheet={picked ? (
@@ -184,7 +206,7 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
             busyLabel: "Starting…",
             title: spendOff ?? (figure == null ? "Start is priced first: Atomik's thinking, up to a figure you approve." : undefined),
             testId: "v12-home-start",
-            attrs: spendOff ? { "data-spend": "unpriced" } : { ...spendAttrsOf(figure != null ? upTo(figure) : null) },
+            attrs: spendOff ? { "data-spend": "unpriced" } : startMarker ? { "data-spend": "priced", "data-spend-price": startMarker } : { ...spendAttrsOf(null) },
           }}
           testId="v12-home-bar"
         />
