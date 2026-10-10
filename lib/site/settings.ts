@@ -9,6 +9,9 @@
  * - `openSignup`: anyone may create an account without an invitation link. Off, the server refuses a self-serve
  *   sign-up whatever the environment is configured for (lead decision 36).
  * - `guestHome`: a signed-out visitor at "/" sees Home in its guest state instead of today's site (decision 35).
+ * - `visitorPages`: with `guestHome` also on, "/?guest=1" shows the new interface's visitor pages
+ *   (components/v12/visitor, prototype 12). Off by default (owner, 10 Oct): nothing visitor-facing changes until the
+ *   owner turns it on; off, "/?guest=1" is today's Guest Home.
  * - `guestWorkspace`: the one workspace whose sample production a guest may read. Nothing else is ever read for a
  *   guest; null means there is no sample to show.
  * - `newInterfaceWorkspaces`: workspaces, besides the platform's own house workspace, that see the interface being
@@ -20,11 +23,12 @@ export const SITE_ROW = "site";
 export type SiteSettings = {
   openSignup: boolean;
   guestHome: boolean;
+  visitorPages: boolean;
   guestWorkspace: string | null;
   newInterfaceWorkspaces: string[];
 };
 
-export const DEFAULT_SITE: SiteSettings = Object.freeze({ openSignup: false, guestHome: false, guestWorkspace: null, newInterfaceWorkspaces: Object.freeze([]) as unknown as string[] }) as SiteSettings;
+export const DEFAULT_SITE: SiteSettings = Object.freeze({ openSignup: false, guestHome: false, visitorPages: false, guestWorkspace: null, newInterfaceWorkspaces: Object.freeze([]) as unknown as string[] }) as SiteSettings;
 
 /** The most workspaces the new interface can be switched on for by list. */
 const MAX_NEW_INTERFACE = 50;
@@ -45,6 +49,7 @@ export function cleanSite(value: unknown): SiteSettings {
   return {
     openSignup: raw.openSignup === true,
     guestHome: raw.guestHome === true,
+    visitorPages: raw.visitorPages === true,
     guestWorkspace: typeof ws === "string" && WORKSPACE_ID.test(ws) ? ws : null,
     newInterfaceWorkspaces: cleanIds(raw.newInterfaceWorkspaces),
   };
@@ -54,10 +59,10 @@ export function cleanSite(value: unknown): SiteSettings {
 export function sitePatch(body: unknown): { patch: Partial<SiteSettings> } | { error: string } {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { error: "Send the settings to change." };
   const raw = body as Record<string, unknown>;
-  const unknown = Object.keys(raw).filter((k) => !["openSignup", "guestHome", "guestWorkspace", "newInterfaceWorkspaces"].includes(k));
+  const unknown = Object.keys(raw).filter((k) => !["openSignup", "guestHome", "visitorPages", "guestWorkspace", "newInterfaceWorkspaces"].includes(k));
   if (unknown.length) return { error: `Not a site setting: ${unknown.join(", ")}.` };
   const patch: Partial<SiteSettings> = {};
-  for (const key of ["openSignup", "guestHome"] as const) {
+  for (const key of ["openSignup", "guestHome", "visitorPages"] as const) {
     if (key in raw) {
       if (typeof raw[key] !== "boolean") return { error: `${key} must be true or false.` };
       patch[key] = raw[key] as boolean;

@@ -21,6 +21,7 @@ import { MAX_FILES } from "@/components/graphite/home/BriefBox";
 import { Bar, BarChip, BarSheet, type BarMention } from "@/components/v12/bar/Bar";
 import { Price } from "@/components/v12/ui/Price";
 import { readGuestBrief, clearGuestBrief } from "@/lib/guest/brief";
+import { takeJoinReturn } from "@/lib/v12/joinReturn";
 import { useWall } from "./use-wall";
 import { Wall } from "./Wall";
 import { WaitingStrip } from "./WaitingStrip";
@@ -103,17 +104,25 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
 
   /* After joining (`?joined=1`, docs/redesign/inventory.md § 8.6): what the visitor typed before the join sheet is in the bar, kept in
      this browser (lib/guest/brief.ts), with Start's price beside it as always. Once, and only into an empty bar. */
-  const joined = useRef(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("joined") === "1");
+  /* The join sheet's note says where they were (lib/v12/joinReturn.ts): Make takes the words into its composer, where
+     Make prices them; Home puts them in this bar, with Start's price beside it. `?joined=1` still means Home. */
+  /* undefined: not read yet; read once, in the first effect (the note is removed as it is read). */
+  const joined = useRef<"home" | "make" | null | undefined>(undefined);
   const { onDraft: setDraftOnce } = s;
   const bar = s.draft.text;
+  const openMake = shell.openMake;
   useEffect(() => {
-    if (!joined.current) return;
-    joined.current = false;
+    if (joined.current === undefined)
+      joined.current = takeJoinReturn() ?? (new URLSearchParams(window.location.search).get("joined") === "1" ? "home" : null);
+    const where = joined.current;
+    if (!where) return;
+    joined.current = null;
     const kept = readGuestBrief();
     if (!kept) return;
-    if (!bar.trim()) setDraftOnce(() => kept);
     clearGuestBrief();
-  }, [bar, setDraftOnce]);
+    if (where === "make") { if (kept.text.trim()) openMake({ prompt: kept.text }); return; }
+    if (!bar.trim()) setDraftOnce(() => kept);
+  }, [bar, setDraftOnce, openMake]);
 
   /* Attach: a brief (PDF or text) is read into the words; pictures and clips go with the new board as references. */
   const [note, setNote] = useState<{ tone: "note" | "problem"; text: string } | null>(null);

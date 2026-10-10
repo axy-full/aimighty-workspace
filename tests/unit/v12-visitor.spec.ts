@@ -32,11 +32,13 @@ test("the showcase is Particl's own: public stills, never a workspace's, never t
   for (const sample of ["Mirror at noon", "Aqua, carried far", "Walk the ridge", "Bleached gold", "Dune Studies", "Maggi", "MAYA"]) expect(words).not.toContain(sample);
 });
 
-test("the prototype's own words, verbatim", () => {
+test("the prototype's own words, verbatim (the no-access title is the owner's, 10 Oct)", () => {
   expect(HOW_IT_WORKS.map((s) => s.title)).toEqual(["Describe it", "Atomik plans the stages", "Approve as it’s made", "Deliver in every size and language"]);
   expect(HOW_IT_WORKS[0].line).toBe("A film, an ad or an idea, in a sentence or a brief.");
-  expect(NO_ACCESS.title).toBe("You don’t have access");
-  expect(NO_ACCESS.line).toBe("This board belongs to another workspace. Boards, names and assets are never shown outside their workspace.");
+  expect(NO_ACCESS.title).toBe("You don’t have access to this board.");
+  /* Neutral (owner, 10 Oct): never "belongs to another workspace", since a teammate's board shows this too. */
+  expect(`${NO_ACCESS.title} ${NO_ACCESS.line}`).not.toMatch(/another workspace/);
+  expect(NO_ACCESS.line).toBe("");
   expect(SAMPLE_PILL).toBe("Sample · changes on the sample aren’t saved");
   expect(sampleTab("A short film")).toBe("Sample · A short film");
 });

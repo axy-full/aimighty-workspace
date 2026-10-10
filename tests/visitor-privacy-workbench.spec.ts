@@ -31,7 +31,7 @@ test.beforeAll(async ({}, info) => {
   member = await pwRequest.newContext({ baseURL: base });
   await signInLocally(member, "Other Workspace Member");
   visitor = await pwRequest.newContext({ baseURL: base });
-  await setSite({ guestHome: true, guestWorkspace: null });
+  await setSite({ guestHome: true, visitorPages: true, guestWorkspace: null });
 });
 test.afterAll(async () => {
   await setSite({});
@@ -108,6 +108,8 @@ async function ask(api: APIRequestContext, probe: Probe, p: Private, headers?: R
 }
 
 test("a visitor with no session: every route answers with an error or nothing, and nothing of workspace A", async () => {
+  /* ~50 routes, each compiled on first use by a local dev server. */
+  test.setTimeout(420_000);
   for (const probe of PROBES) {
     const got = await ask(visitor, probe, a);
     const where = `${probe.method} ${probe.path(a)} (${probe.why})`;
@@ -117,6 +119,8 @@ test("a visitor with no session: every route answers with an error or nothing, a
 });
 
 test("a member of another workspace, alone: nothing of workspace A, from any route", async () => {
+  /* ~50 routes, each compiled on first use by a local dev server. */
+  test.setTimeout(420_000);
   for (const probe of PROBES) {
     const got = await ask(member, probe, a);
     const where = `${probe.method} ${probe.path(a)} (${probe.why})`;
@@ -125,6 +129,8 @@ test("a member of another workspace, alone: nothing of workspace A, from any rou
 });
 
 test("a member of another workspace claiming A's scope or switching into A: refused, and still nothing of A", async () => {
+  /* ~50 routes, each compiled on first use by a local dev server. */
+  test.setTimeout(420_000);
   /* The scope header names workspace and account; a request drawn for A is refused whole when the session is not A's. */
   for (const probe of PROBES.filter((p) => p.method === "GET")) {
     const got = await ask(member, probe, a, { "X-Workbench-Scope": a.scope });
@@ -194,8 +200,9 @@ test("in the new interface, a member of another workspace who opens A's board li
   await page.goto(`/suites?view=board&project=${encodeURIComponent(a.draftId)}`);
   const none = page.getByTestId("v12-no-access");
   await expect(none).toBeVisible({ timeout: 60_000 });
-  await expect(none.getByRole("heading")).toHaveText("You don’t have access");
-  await expect(none).toContainText("This board belongs to another workspace. Boards, names and assets are never shown outside their workspace.");
+  await expect(none.getByRole("heading")).toHaveText("You don’t have access to this board.");
+  /* Neutral words (owner, 10 Oct): it never says whose the board is. */
+  await expect(none).not.toContainText("another workspace");
   const text = await page.locator("body").innerText();
   expect(leaks(text, a.secrets.filter((s) => s !== a.draftId)), "the page").toEqual([]);
   expect(leaks(seen.join("\n"), a.secrets.filter((s) => s !== a.draftId)), "every answer the page got from the server").toEqual([]);

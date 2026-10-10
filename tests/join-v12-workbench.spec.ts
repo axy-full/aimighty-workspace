@@ -134,6 +134,8 @@ test("an invite code goes to today's pages: a team invite to /invite, a new-work
   await page.getByTestId("v12-join-code").fill(team);
   await page.getByTestId("v12-join-email").click();
   await page.waitForURL(`**/invite/${team}`);
+  /* The sheet noted where the visitor was (their Home), for the signed-in app to bring them back to (lib/v12/joinReturn.ts). */
+  expect(JSON.parse((await page.evaluate(() => localStorage.getItem("particl:join-return"))) ?? "{}")).toMatchObject({ view: "home" });
 
   await open(page, "join=start");
   await page.getByTestId("v12-join-code").fill(fresh);

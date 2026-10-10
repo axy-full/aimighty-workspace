@@ -33,7 +33,18 @@ test("Guest Home off: ?guest=1 is today's site, nothing of the new interface", a
   await setSite({});
   await page.goto(HOME);
   await expect(page.getByTestId("v12-visitor")).toHaveCount(0);
-  await setSite({ guestHome: true, guestWorkspace: sample.guestWorkspace });
+  await setSite({ guestHome: true, visitorPages: true, guestWorkspace: sample.guestWorkspace });
+});
+
+test("Guest Home on, visitor pages off (the owner's switch, off by default): ?guest=1 is today's Guest Home", async ({ page }) => {
+  await setSite({ guestHome: true, visitorPages: false, guestWorkspace: sample.guestWorkspace });
+  try {
+    await page.goto(HOME);
+    await expect(page.getByTestId("guest-home")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("v12-visitor")).toHaveCount(0);
+  } finally {
+    await setSite({ guestHome: true, visitorPages: true, guestWorkspace: sample.guestWorkspace });
+  }
 });
 
 test("desktop: the visitor's Home is the same app — header, Particl's own showcase, How it works, the bar — and nothing of any workspace", async ({ page }, info) => {
@@ -186,14 +197,15 @@ test("desktop: the sample board is explorable and says nothing is saved; every a
   expect(stray(seen)).toEqual([]);
 });
 
-test("desktop: a link to a board that is not theirs says 'You don’t have access' with Log in and Request access, and shows nothing of it", async ({ page }, info) => {
+test("desktop: a link to a board that is not theirs says 'You don’t have access to this board.' with Log in and Request access, and shows nothing of it", async ({ page }, info) => {
   test.skip(!desktop(info), "desktop sizes");
   const seen = apiLog(page);
   await page.goto(`${HOME}&board=draft-of-another-workspace`);
   const none = page.getByTestId("v12-no-access");
   await expect(none).toBeVisible({ timeout: 60_000 });
-  await expect(none.getByRole("heading")).toHaveText("You don’t have access");
-  await expect(none).toContainText("This board belongs to another workspace. Boards, names and assets are never shown outside their workspace.");
+  await expect(none.getByRole("heading")).toHaveText("You don’t have access to this board.");
+  /* Neutral words (owner, 10 Oct): it never says whose the board is. */
+  await expect(none).not.toContainText("another workspace");
   await expect(page.getByTestId("v12-no-access-login")).toHaveAttribute("href", /^\/login\?next=/);
   await page.getByTestId("v12-no-access-request").click();
   await expect(page.getByTestId("v12-join-title")).toHaveText("Request access to Particl");

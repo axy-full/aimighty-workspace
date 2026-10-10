@@ -3,6 +3,7 @@ import { useId, useState, type Dispatch, type FormEvent, type SetStateAction } f
 import { Dialog } from "../ui";
 import { PLAN_CARDS } from "@/lib/marketing/planCards";
 import { fmtCredits } from "@/lib/price";
+import { saveJoinReturn } from "@/lib/v12/joinReturn";
 import { COMPANY_SIZES, ROLES, cleanCode, emailPath, inviteTitle, joinTitle, loginPath, requestBody, requestProblem, signupPath, type InviteKind, type RequestFields } from "./join-model";
 import { readCode } from "./read-code";
 import type { JoinState } from "./JoinProvider";
@@ -43,9 +44,9 @@ export function JoinSheet({ state, setState, invite, compact, back, onClose }: {
       {state.requested ? (
         <Requested onDone={onClose} />
       ) : focused?.kind === "team" ? (
-        <div className="v12-join-invitebox" data-testid="v12-join-invitebox"><InvitePath state={state} setState={setState} invite={invite} /></div>
+        <div className="v12-join-invitebox" data-testid="v12-join-invitebox"><InvitePath state={state} setState={setState} invite={invite} back={back} /></div>
       ) : focused?.kind === "new" ? (
-        <NewWorkspace state={state} setState={setState} invite={focused} />
+        <NewWorkspace state={state} setState={setState} invite={focused} back={back} />
       ) : focused?.kind === "expired" ? (
         <div className="v12-join-paths" data-compact="">
           <section className="v12-join-path" data-testid="v12-join-expired">
@@ -56,13 +57,13 @@ export function JoinSheet({ state, setState, invite, compact, back, onClose }: {
         </div>
       ) : (
         <div className="v12-join-paths" data-compact={compact ? "" : undefined}>
-          <InvitePath state={state} setState={setState} invite={invite} />
+          <InvitePath state={state} setState={setState} invite={invite} back={back} />
           <RequestPath state={state} setState={setState} primary={!(invite?.kind === "team" && invite.code === cleanCode(state.code))} />
         </div>
       )}
       <div className="v12-join-foot">
         <span>Your work stays private to your workspace.</span>
-        <a href={loginPath(back)} className="v12-join-login" data-testid="v12-join-login">Already a member? Log in</a>
+        <a href={loginPath(back)} onClick={() => saveJoinReturn(back)} className="v12-join-login" data-testid="v12-join-login">Already a member? Log in</a>
       </div>
     </Dialog>
   );
@@ -78,7 +79,7 @@ function Requested({ onDone }: { onDone: () => void }) {
   );
 }
 
-function InvitePath({ state, setState, invite }: { state: JoinState; setState: Dispatch<SetStateAction<JoinState>>; invite: InviteKind | null }) {
+function InvitePath({ state, setState, invite, back }: { state: JoinState; setState: Dispatch<SetStateAction<JoinState>>; invite: InviteKind | null; back: string }) {
   const id = useId();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
@@ -93,7 +94,7 @@ function InvitePath({ state, setState, invite }: { state: JoinState; setState: D
     try {
       const kind = invite && invite.code === code && invite.kind !== "invalid" ? invite : await readCode(code);
       const to = emailPath(kind);
-      if (to) { window.location.assign(to); return; }
+      if (to) { saveJoinReturn(back); window.location.assign(to); return; }
       setProblem(kind.kind === "expired" ? "This invite has expired or been used. Request access instead." : "That invite code isn’t valid. Check it, or request access.");
     } catch {
       setProblem("The code could not be checked. Try again.");
@@ -188,11 +189,11 @@ function RequestPath({ state, setState, primary }: { state: JoinState; setState:
  * The plan cards are the display-only placeholders (lib/marketing/planCards.ts); the choice is not carried anywhere, and
  * the sign-up page and checkout stay as they are today.
  */
-function NewWorkspace({ state, setState, invite }: { state: JoinState; setState: Dispatch<SetStateAction<JoinState>>; invite: Extract<InviteKind, { kind: "new" }> }) {
+function NewWorkspace({ state, setState, invite, back }: { state: JoinState; setState: Dispatch<SetStateAction<JoinState>>; invite: Extract<InviteKind, { kind: "new" }>; back: string }) {
   const id = useId();
   const plan = PLAN_CARDS.find((p) => p.id === state.plan) ?? PLAN_CARDS[0];
   const next = () => setState((now) => ({ ...now, step: "plan" }));
-  const go = () => window.location.assign(signupPath(invite.code, state.workspace));
+  const go = () => { saveJoinReturn(back); window.location.assign(signupPath(invite.code, state.workspace)); };
   return (
     <div className="v12-join-invitebox" data-testid="v12-join-new" data-step={state.step}>
       {state.step === "name" ? (

@@ -72,8 +72,9 @@ export function visitorAsk(q: Raw): VisitorAsk {
 
 /** The "No access" screen (§ 8.7), verbatim. */
 export const NO_ACCESS = {
-  title: "You don’t have access",
-  line: "This board belongs to another workspace. Boards, names and assets are never shown outside their workspace.",
+  /* The owner's words (10 Oct): neutral, because boards are listed per person, so a teammate's board shows this too. */
+  title: "You don’t have access to this board.",
+  line: "",
 } as const;
 
 /** The sample's tab in the header: "Sample · <title>". */

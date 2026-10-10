@@ -44,6 +44,13 @@ export function SiteSettingsCard({ workspaces }: { workspaces: { id: string; nam
             {data.guestHome ? "Guest Home · on" : "Guest Home · off"}
           </button>
         </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="flex flex-col gap-0.5"><span className="font-medium">New visitor pages</span><span className="text-[12px] text-lead">{data.visitorPages ? "With Guest Home on, /?guest=1 shows the new interface’s visitor pages and join sheet." : "/?guest=1 shows today’s Guest Home."}</span></span>
+          <button type="button" className={`chip !py-0.5 !text-[12px] ${data.visitorPages ? "is-on" : ""}`} disabled={busy} aria-pressed={data.visitorPages} data-testid="site-visitor-pages"
+            onClick={() => void save({ visitorPages: !data.visitorPages }, data.visitorPages ? undefined : ["Show the new visitor pages?", "With Guest Home on, signed-out visitors at /?guest=1 then see the new interface’s Home, Make, sample board and join sheet. Nothing they do there thinks or spends.", "Show them"])}>
+            {data.visitorPages ? "New visitor pages · on" : "New visitor pages · off"}
+          </button>
+        </div>
         <label className="flex flex-wrap items-center justify-between gap-3">
           <span className="flex flex-col gap-0.5"><span className="font-medium">The sample’s workspace</span><span className="text-[12px] text-lead">The separate public workspace that holds the sample production (“Particl sample”). Guests read only its sample; never the house workspace or a demo workspace.</span></span>
           <select className="ctl !h-9 w-[260px]" value={data.guestWorkspace ?? ""} disabled={busy} data-testid="site-guest-workspace"

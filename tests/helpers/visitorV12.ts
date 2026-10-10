@@ -10,13 +10,13 @@ import { seedMarkedSample } from "./guestSample";
  * tests/demo-s15-guest-home-workbench.spec.ts does), a sample production in a workspace of its own, and invitations in
  * every state. Local ENGINE_MOCK servers only; nothing is generated and nothing is sent.
  */
-export async function setSite(value: { openSignup?: boolean; guestHome?: boolean; guestWorkspace?: string | null }) {
+export async function setSite(value: { openSignup?: boolean; guestHome?: boolean; visitorPages?: boolean; guestWorkspace?: string | null }) {
   const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try {
     await db.execute({
       sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES (?,?,?,?)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-      args: [SITE_ROW, JSON.stringify({ openSignup: false, guestHome: false, guestWorkspace: null, ...value }), Date.now(), "test"],
+      args: [SITE_ROW, JSON.stringify({ openSignup: false, guestHome: false, visitorPages: false, guestWorkspace: null, ...value }), Date.now(), "test"],
     });
   } finally { db.close(); }
 }
@@ -33,7 +33,7 @@ export async function visitorSite(browser: Browser, options: { sample?: boolean 
       title = seeded.project.name;
     } finally { await context.close(); }
   }
-  await setSite({ guestHome: true, guestWorkspace });
+  await setSite({ guestHome: true, visitorPages: true, guestWorkspace });
   return { title, guestWorkspace };
 }
 
