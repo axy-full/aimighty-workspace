@@ -55,6 +55,32 @@ export async function acquireOperationLease(
   return result.rows.length ? { name, owner, cursor: String(result.rows[0].cursor) } : null;
 }
 
+/**
+ * A once-per-window mark shared by every process on this database (several Node
+ * processes behind ops/selfhost/cluster.mjs, or several serverless instances):
+ * the first caller in a window takes it; until the window ends, every other
+ * caller is told when it was taken. It is a lease that is never finished, so
+ * the window is the lease and a taken mark is never given back early.
+ */
+export async function takeOncePerWindow(
+  client: Client, name: string, windowMs: number, at = Date.now(),
+): Promise<{ taken: true } | { taken: false; since: number }> {
+  if (await acquireOperationLease(client, name, windowMs, at)) return { taken: true };
+  const row = (await client.execute({
+    sql: "SELECT started_at FROM operation_leases WHERE name=?", args: [name],
+  })).rows[0];
+  return { taken: false, since: row?.started_at == null ? at : Number(row.started_at) };
+}
+
+/** When the window `name` was taken, while it is still running at `at`; else null. Reads only. */
+export async function windowTakenAt(client: Client, name: string, at = Date.now()): Promise<number | null> {
+  await ready(client);
+  const row = (await client.execute({
+    sql: "SELECT started_at FROM operation_leases WHERE name=? AND lease_until>?", args: [name, at],
+  })).rows[0];
+  return row ? Number(row.started_at ?? at) : null;
+}
+
 export async function checkpointOperation(
   client: Client, lease: OperationLease, cursor: string, failed: boolean, at = Date.now(), deferred = false,
 ) {

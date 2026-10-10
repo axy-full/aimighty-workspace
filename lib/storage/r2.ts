@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import { withRecoveryActivity } from "../recovery";
 import {
   ObjectExistsError,
+  markNothingWritten,
   uncertainUnlessExists,
   type StorageBackend,
   type StoragePutOptions,
@@ -40,6 +41,8 @@ export const R2_MAX_PARTS = 10_000;
 const DELETE_BATCH = 1000;
 const PRESIGN_MAX_SECONDS = 15 * 60;
 export const R2_MULTIPART_THRESHOLD = 100 * 1024 * 1024;
+/** How long a failed multipart upload's AbortMultipartUpload may take. */
+export const R2_ABORT_TIMEOUT_MS = 20_000;
 const PRIVATE_CACHE_CONTROL = "private, max-age=31536000, immutable";
 
 /* ── SigV4 ─────────────────────────────────────────────────────────────── */
@@ -239,8 +242,11 @@ export function createR2Backend(config: R2Config, deps: R2Dependencies = {}): St
     const { CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } = await sdk();
     const s3 = await client();
     let uploadId: string | undefined;
+    /* Set the moment a request that can create the object is sent: after it,
+       a failure no longer proves nothing was written. */
+    let committing = false;
     const abort = async () => {
-      if (uploadId) await s3.send(new AbortMultipartUploadCommand({ Bucket: config.bucket, Key: key, UploadId: uploadId }), { abortSignal: AbortSignal.timeout(20_000) });
+      if (uploadId) await s3.send(new AbortMultipartUploadCommand({ Bucket: config.bucket, Key: key, UploadId: uploadId }), { abortSignal: AbortSignal.timeout(R2_ABORT_TIMEOUT_MS) });
     };
     try {
       const created = await s3.send(new CreateMultipartUploadCommand({ Bucket: config.bucket, Key: key, ContentType: options.contentType, CacheControl: PRIVATE_CACHE_CONTROL }), { abortSignal: options.signal });
@@ -265,11 +271,16 @@ export function createR2Backend(config: R2Config, deps: R2Dependencies = {}): St
         }
       }
       if (length) await upload(pending.subarray(0, length));
-      if (!parts.length) { await abort(); uploadId = undefined; await putBuffer(key, Buffer.alloc(0), options); return; }
+      if (!parts.length) { await abort(); uploadId = undefined; committing = true; await putBuffer(key, Buffer.alloc(0), options); return; }
+      committing = true;
       await s3.send(new CompleteMultipartUploadCommand({ Bucket: config.bucket, Key: key, UploadId: uploadId, MultipartUpload: { Parts: parts }, ...(options.overwrite ? {} : { IfNoneMatch: "*" }) }), { abortSignal: options.signal });
     } catch (error) {
-      await abort().catch(() => {});
-      translate(error, "MultipartUpload", key);
+      // No upload id: none was created, or Create's answer was lost (an
+      // orphaned upload is not an object; the bucket's lifecycle rule ends it).
+      let aborted = !uploadId;
+      if (uploadId) await abort().then(() => { aborted = true; }, () => {});
+      try { translate(error, "MultipartUpload", key); }
+      catch (translated) { throw aborted && !committing ? markNothingWritten(translated) : translated; }
     }
   }
   return {
