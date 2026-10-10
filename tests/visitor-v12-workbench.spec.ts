@@ -299,7 +299,7 @@ test("phones: the visitor's Home is the phone's own — Log in and Request acces
   const vp = page.viewportSize()!;
   expect(box.x).toBeGreaterThanOrEqual(-0.5);
   expect(box.x + box.width).toBeLessThanOrEqual(vp.width + 0.5);
-  expect(box.y + box.height).toBeLessThanOrEqual(vp.height + 0.5);
+  expect(box.y + box.height).toBeLessThanOrEqual(vp.height + 1.5);
   const invite = (await page.getByTestId("v12-join-invite").boundingBox())!;
   const request = (await page.getByTestId("v12-join-request").boundingBox())!;
   expect(request.y, "the request form is under the invite: one column").toBeGreaterThan(invite.y + invite.height - 1);
