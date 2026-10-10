@@ -40,7 +40,7 @@ test.afterAll(async () => {
 
 type Probe = { method: "GET" | "POST"; path: (p: Private) => string; data?: (p: Private) => unknown; why: string };
 const get = (path: (p: Private) => string, why: string): Probe => ({ method: "GET", path, why });
-/* Every route the new interface reads a workspace's data from. */
+/* Every route the new interface reads a workspace's data from, and the two that spend. */
 const PROBES: Probe[] = [
   get(() => "/api/me", "who am I (the header, the avatar)"),
   get(() => "/api/workbench/projects", "boards: Your boards, the + popover, ⌘K's go-to"),
@@ -79,6 +79,23 @@ const PROBES: Probe[] = [
   get(() => "/api/billing", "plan and credits"),
   get(() => "/api/demo/sample", "the sample production, as a member reads it"),
   { method: "POST", path: () => "/api/atomik", data: (p) => ({ message: `What is on ${p.draftId}?`, projectId: p.draftId, quoteOnly: true }), why: "asking Atomik about a board" },
+  /* Added after review: the rest of what the new interface calls (the routes that spend are sent with no approved
+     price, so the server refuses them before anything runs; they are probed for what they reveal). */
+  get(() => "/api/workbench/atomik", "Atomik's workbench state"),
+  get((p) => `/api/workbench/preview/generation/${encodeURIComponent(p.genId)}`, "a take's thumbnail: the wall, the Library tray"),
+  get((p) => `/api/workbench/preview/upload/${encodeURIComponent(p.genId)}`, "an upload's thumbnail"),
+  get(() => "/api/usage/boards", "spend per board: board names"),
+  get(() => "/api/soul/identities", "identities"),
+  get(() => "/api/notes", "notes"),
+  get((p) => `/api/rig/elements?projectId=${encodeURIComponent(p.productionId)}`, "the Rig's elements"),
+  get(() => "/api/review-links", "review links"),
+  get((p) => `/api/uploads/${encodeURIComponent(p.genId)}`, "an upload by id"),
+  get(() => "/api/prepared-jobs", "prepared jobs"),
+  get(() => "/api/settings", "the workspace's settings"),
+  { method: "POST", path: () => "/api/workbench/atomik", data: (p) => ({ message: `What is on ${p.draftId}?`, projectId: p.draftId, productionId: p.productionId, quoteOnly: true }), why: "asking Atomik's workbench about a board" },
+  { method: "POST", path: () => "/api/generate", data: (p) => ({ prompt: "anything", model: "gemini-3.1-flash-image", projectId: p.productionId, ratio: "16:9", resolution: "1K", references: [] }), why: "making inside a board, with no approved price" },
+  { method: "POST", path: () => "/api/workbench/team-canvas", data: (p) => ({ action: "agent.plan", productionId: p.productionId, projectId: p.draftId, goal: "anything" }), why: "asking Atomik to plan on a board, with no approved limit" },
+
   { method: "POST", path: () => "/api/generate/quote", data: (p) => ({ prompt: "anything", model: "gemini-3.1-flash-image", projectId: p.productionId, ratio: "16:9", resolution: "1K", references: [] }), why: "pricing a make inside a board" },
 ];
 
