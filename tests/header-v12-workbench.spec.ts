@@ -107,6 +107,47 @@ test.describe("desktop", () => {
     await expect(boardTab(page, ids[1])).toHaveAttribute("data-active", "");
   });
 
+  test("closing the open board's tab moves to its neighbour, and Undo puts the closed board back on screen", async ({ page }) => {
+    const { ids } = await redesignWithBoards(page, ["One", "Two", "Three"]);
+    await openAsTabs(page, ids, `/suites?view=board&project=${encodeURIComponent(ids[0])}`);
+    await expect(boardTab(page, ids[0])).toHaveAttribute("data-active", "");
+    await boardTab(page, ids[0]).getByTestId("v12-tab-close").click();
+    await expect(boardTab(page, ids[0])).toHaveCount(0);
+    await expect(boardTab(page, ids[1])).toHaveAttribute("data-active", "");
+    await expect(page).toHaveURL(new RegExp(`project=${ids[1]}`));
+    await page.getByTestId("v12-toast-action").click();
+    /* The closed board, not the neighbour, is the one on screen again. */
+    await expect(boardTab(page, ids[0])).toHaveAttribute("data-active", "");
+    await expect(page).toHaveURL(new RegExp(`project=${ids[0]}`));
+    await expect(boardTab(page, ids[1])).not.toHaveAttribute("data-active", "");
+  });
+
+  test("Close others while Make covers the open board keeps a tab for the board on screen; Activity's scope follows the board", async ({ page }) => {
+    const { ids } = await redesignWithBoards(page, ["One", "Two"]);
+    await openAsTabs(page, ids, `/suites?view=board&project=${encodeURIComponent(ids[0])}`);
+    await expect(boardTab(page, ids[0])).toHaveAttribute("data-active", "");
+    /* Activity narrowed to this board, then Home: off a board it lists every board again. */
+    await page.getByTestId("v12-activity").click();
+    const activity = page.getByTestId("v12-activity-menu");
+    await activity.getByRole("radio", { name: "This board" }).click();
+    await expect(activity.getByRole("radio", { name: "This board" })).toBeChecked();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("v12-tab-home").click();
+    await page.getByTestId("v12-activity").click();
+    await expect(activity.getByRole("radio", { name: "All boards" })).toBeChecked();
+    await page.keyboard.press("Escape");
+
+    /* Make over the open board, then Close others on the other tab: that board opens, so what is on screen has its tab. */
+    await boardTab(page, ids[0]).getByRole("button", { name: "One", exact: true }).click();
+    await page.getByTestId("v12-tab-make").click();
+    await expect(page.getByTestId("v12-tab-make")).toHaveAttribute("data-active", "");
+    await boardTab(page, ids[1]).click({ button: "right" });
+    await page.getByTestId("v12-tab-close-others").click();
+    await expect(page.getByTestId("v12-tab-board")).toHaveCount(1);
+    await expect(boardTab(page, ids[1])).toHaveAttribute("data-active", "");
+    await expect(page).toHaveURL(new RegExp(`project=${ids[1]}`));
+  });
+
   test("the + popover finds a board and makes a new one by kind on today's create path", async ({ page }) => {
     const { ids } = await redesignWithBoards(page, ["Mirror film", "Launch clips"]);
     await page.goto("/suites?view=home");

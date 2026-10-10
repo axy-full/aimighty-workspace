@@ -63,9 +63,17 @@ export function activityGroups(jobs: readonly TrayJob[], items: readonly QueueIt
   return { needs, running, look };
 }
 
-/** "N held" only for the ledger's own reservation: a connected account's figure is its quote, not a hold. */
-export function heldPrice<T>(job: Pick<TrayJob, "source" | "price">, label: (price: NonNullable<TrayJob["price"]>) => T): T | null {
-  if (!job.price || job.source === "account" || job.price.unit === "account-cr") return null;
+/** The stages where the ledger has reserved a take's credits: it has started (lib/generationAdmission.ts reserves on start). */
+const RESERVED_STAGES: ReadonlySet<TrayJob["stage"]> = new Set(["rendering", "confirming"]);
+
+/**
+ * "N held" only for credits the ledger really holds: a take that has started on Particl's own engines. A queued take
+ * holds nothing yet: one waiting for a free slot carries the figure its start will reserve (lib/jobsTray.ts, the
+ * release quote), which is a price, not a hold, so no figure is said for it. A connected account's figure is its
+ * quote, not a hold.
+ */
+export function heldPrice<T>(job: Pick<TrayJob, "source" | "price" | "stage">, label: (price: NonNullable<TrayJob["price"]>) => T): T | null {
+  if (!job.price || job.source === "account" || job.price.unit === "account-cr" || !RESERVED_STAGES.has(job.stage)) return null;
   return label(job.price);
 }
 

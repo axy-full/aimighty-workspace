@@ -100,9 +100,21 @@ test("Activity keeps today's failed and unconfirmed takes under Needs a look, fo
 
 test("'held' is said only of the ledger's own reservation, never a connected account's quote", () => {
   const label = (price: { amount: number; unit: string }) => `${price.amount} ${price.unit}`;
-  expect(heldPrice({ source: "engine", price: { amount: 7, unit: "cr" } }, label)).toBe("7 cr");
-  expect(heldPrice({ source: "engine", price: { amount: 0.7, unit: "usd" } }, label)).toBe("0.7 usd");
-  expect(heldPrice({ source: "account", price: { amount: 7, unit: "account-cr" } }, label)).toBeNull();
-  expect(heldPrice({ source: "engine", price: { amount: 7, unit: "account-cr" } }, label)).toBeNull();
-  expect(heldPrice({ source: "engine", price: null }, label)).toBeNull();
+  expect(heldPrice({ source: "engine", stage: "rendering", price: { amount: 7, unit: "cr" } }, label)).toBe("7 cr");
+  expect(heldPrice({ source: "engine", stage: "confirming", price: { amount: 0.7, unit: "usd" } }, label)).toBe("0.7 usd");
+  expect(heldPrice({ source: "account", stage: "rendering", price: { amount: 7, unit: "account-cr" } }, label)).toBeNull();
+  expect(heldPrice({ source: "engine", stage: "rendering", price: { amount: 7, unit: "account-cr" } }, label)).toBeNull();
+  expect(heldPrice({ source: "engine", stage: "rendering", price: null }, label)).toBeNull();
+});
+
+test("a take queued for a free slot holds nothing yet: its figure is the start's price, never said as held", () => {
+  const label = (price: { amount: number; unit: string }) => `${price.amount} ${price.unit}`;
+  /* As lib/jobsTray.ts writes a slot wait: stage queued, its price the release quote (money.needs); nothing is reserved
+     until the take starts (lib/generationAdmission.ts). */
+  const waiting = job({ id: "slot", stage: "queued", label: "Queued", reason: "Waiting for a free slot", price: { amount: 43, unit: "cr" } });
+  expect(heldPrice(waiting, label)).toBeNull();
+  expect(heldPrice({ ...waiting, stage: "submitting" }, label)).toBeNull();
+  const started = job({ id: "go", price: { amount: 43, unit: "cr" } });
+  const groups = activityGroups([waiting, started], [], { scope: "all", draftId: null, now: 60_000, heldWord: (j) => heldPrice(j, label) });
+  expect(groups.running.map((r) => r.meta)).toEqual(["Mirror film · Queued · 1 min so far", "Mirror film · Rendering · 1 min so far · 43 cr held"]);
 });

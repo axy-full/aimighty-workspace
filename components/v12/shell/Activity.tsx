@@ -23,7 +23,9 @@ export function ActivityPill({ approvals, draftId, onBoard }: { approvals: Appro
   const tray = useJobsTray();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const [scope, setScope] = useState<ActivityScope>("all");
+  const [chosen, setScope] = useState<ActivityScope>("all");
+  /* "This board" only while a board is open: off a board the list is every board's again. */
+  const scope: ActivityScope = draftId ? chosen : "all";
   /* `?activity=1` opens it on landing, as the prototype's address does. Read from the address the page loaded with: the
      shell rewrites the address to its own params before the header draws. */
   const [landed, setLanded] = useState(landedWithActivity);
