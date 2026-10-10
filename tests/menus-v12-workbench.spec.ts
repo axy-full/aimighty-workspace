@@ -143,9 +143,14 @@ test.describe("desktop, switch on", () => {
   });
 
   test("a board: card, several cards, canvas with New ▸; ⌘A selects every card, A approves, never while typing", async ({ page }) => {
-    const { errors } = await openLibrary(page, "/suites?view=board", { project: boardWithNotes() });
+    /* The new frame draws one stage at a time (its own cards and the board's free cards): Elements holds the two placed
+       cards in their region's frame, so with the two notes four cards (and the frame) are in view. The Cast stage's card is
+       on another stage and is not drawn. */
+    const { errors } = await openLibrary(page, "/suites?view=board&stage=elements", { project: boardWithNotes() });
     const notes = page.locator('.bd-node[data-free="true"]');
     await expect(notes).toHaveCount(2, { timeout: 60_000 });
+    await expect(page.locator(".bd-node")).toHaveCount(5);
+    await expect(page.locator('.bd-node:has-text("cast-1")')).toHaveCount(0);
     /* Every card in view (the board's own 0). */
     await page.keyboard.press("0");
 
@@ -172,7 +177,8 @@ test.describe("desktop, switch on", () => {
     /* ⌘A: every card; right-click inside the selection: the multi menu; Delete takes the free cards off, with Undo. */
     await page.locator(".bd-flow").click({ position: { x: 20, y: 20 }, force: true }).catch(() => {});
     await page.keyboard.press("ControlOrMeta+a");
-    await expect.poll(() => page.locator(".bd-node[data-selected]").count()).toBeGreaterThan(2);
+    /* Every card in view is selected, and only those: the cards on other stages are not drawn and not touched. */
+    await expect.poll(() => page.locator(".bd-node[data-selected]").count()).toBe(4);
     await rightClickCard(notes.first());
     expect(await menuLabels(page, "v12-multi-menu")).toEqual(["Delete"]);
     await page.getByTestId("v12-menu-delete-all").click();
