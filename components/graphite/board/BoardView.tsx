@@ -52,7 +52,7 @@ import { useSampleBoard, useSampleLift, useSampleWorkspace } from "@/lib/demo/us
 import { CHECK_LINE, isSampleDraftId, LIFT_LINE } from "@/lib/demo/sample";
 import { CheckAgain } from "../CheckAgain";
 import { sampleGate } from "@/lib/demo/sample";
-import { useNewInterface, useSession } from "@/lib/session";
+import { useSession } from "@/lib/session";
 import { addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
 import { useOverlay } from "@/components/v12/ui/overlay";
@@ -159,16 +159,16 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const madeHere = useMemo<MadeEntry[]>(() => madeNow.filter((m) => m.projectId === project?.id).map((m) => ({ nodeId: m.nodeId })), [madeNow, project?.id]);
   const allCards = useMemo(() => (src ? [...registry.derive(src), ...madeCards(src, madeHere)] : []), [madeHere, registry, src]);
   /* The new interface (docs/redesign-plan.md P2-a): one stage at a time, each a slice of today's cards (lib/v12/board/stages.ts). */
-  const v12 = useNewInterface() && !compact;
+  const v12Frame = v12 && !compact;
   const savedStages = project?.boardStages;
   const stages = useMemo(() => stagesOf(kind, board.rail, savedStages), [kind, board.rail, savedStages]);
-  const stage = v12 ? currentStage(stages, shell.params.stage, kind) : null;
+  const stage = v12Frame ? currentStage(stages, shell.params.stage, kind) : null;
   const cards = useMemo(() => (stage ? stageCards(stage, allCards, kind, board.rail) : allCards), [stage, allCards, kind, board.rail]);
   const placed = useMemo(() => placeBoard(cards, registry.defs, board.bands, project?.aspect ?? "16:9"), [cards, registry.defs, board.bands, project?.aspect]);
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
   /* A fresh board (nothing on any stage) keeps today's way in; a stage with nothing on it says what goes there. */
-  const empty = !!project && (v12 ? allCards.length === 0 : placed.cards.length === 0);
-  const stageIsEmpty = v12 && !empty && placed.cards.length === 0;
+  const empty = !!project && (v12Frame ? allCards.length === 0 : placed.cards.length === 0);
+  const stageIsEmpty = v12Frame && !empty && placed.cards.length === 0;
 
   /* A drawer opens from the design's frame letter, or from `drawer=` (Viral's History page is the Social board's History drawer: lib/shell/ads-social.ts). */
   const [drawer, setDrawer] = useState<BoardDrawer | null>(() => frameDrawer(frame) ?? (shell.params.drawer === "history" || shell.params.drawer === "library" || shell.params.drawer === "render" ? shell.params.drawer : null));
@@ -227,7 +227,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const asset = useRef<string | null>(shell.asset);
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    if (v12 || !ready || !projectId || opened.current === projectId || !placed.bounds) return;
+    if (v12Frame || !ready || !projectId || opened.current === projectId || !placed.bounds) return;
     opened.current = projectId;
     const kindRegion = adsSocialRegion(kind, frame, shell.params.card);
     const linked = (region && board.rail.some((entry) => entry.id === region) ? region as RegionId : null) ?? frameRegion(frame) ?? (kindRegion && board.rail.some((entry) => entry.id === kindRegion) ? kindRegion as RegionId : null);
@@ -239,18 +239,18 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     const box = linkedTake ? placed.boxes.get(linkedTake.id) : null;
     const first = box ? viewportFor(box, 1, true) : saved ?? viewportFor(target ?? placed.arranged ?? placed.bounds, 1);
     void flow.setViewport(first).then(() => { measureInView(first); if (linkedTake) select(linkedTake.id); });
-  }, [board.rail, flow, frame, kind, measureInView, placed.arranged, placed.bounds, placed.boxes, placed.cards, placed.regions, placed.slots, projectId, ready, region, scope, select, shell.params.card, status, v12, viewportFor]);
+  }, [board.rail, flow, frame, kind, measureInView, placed.arranged, placed.bounds, placed.boxes, placed.cards, placed.regions, placed.slots, projectId, ready, region, scope, select, shell.params.card, status, v12Frame, viewportFor]);
   /* The new interface: each stage opens on its own cards, at 100 %, from their top-left. */
   const shownStage = useRef<string | null>(null);
   useEffect(() => {
-    if (!v12 || !ready || !projectId || !stage) return;
+    if (!v12Frame || !ready || !projectId || !stage) return;
     const key = `${projectId}:${stage.id}`;
     if (shownStage.current === key) return;
     shownStage.current = key;
     const box = placed.arranged ?? placed.bounds;
     const next = box ? viewportFor(box, 1) : { x: INSET, y: INSET, zoom: 1 };
     void flow.setViewport(next).then(() => measureInView(next));
-  }, [flow, measureInView, placed.arranged, placed.bounds, projectId, ready, stage, v12, viewportFor]);
+  }, [flow, measureInView, placed.arranged, placed.bounds, projectId, ready, stage, v12Frame, viewportFor]);
   const onMoveEnd = useCallback((viewport: Viewport) => {
     if (projectId) saveBoardView(scope, projectId, viewport);
     measureInView(viewport);
@@ -456,7 +456,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       case "list": setList(true); return true;
       case "board": setList(false); return true;
       case "glide": glide(command.to); return true;
-      case "library": if (v12) window.dispatchEvent(new Event(LIBRARY_OPEN_EVENT)); else setDrawer("library"); return true;
+      case "library": if (v12Frame) window.dispatchEvent(new Event(LIBRARY_OPEN_EVENT)); else setDrawer("library"); return true;
     }
   });
 
@@ -554,7 +554,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   }, [goStage, rig, stage?.id, stages, undoable, ws]);
   /* 1–9 jump to stage N; [ and ] to the stage before and after (inventory § 4.2). Never while typing. */
   useEffect(() => {
-    if (!v12) return;
+    if (!v12Frame) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.repeat || event.metaKey || event.ctrlKey || event.altKey || inField(event.target) || document.querySelector(".gx-veil, [aria-modal='true']")) return;
       const at = stages.findIndex((s) => s.id === stage?.id);
@@ -568,10 +568,10 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goStage, stage?.id, stages, v12]);
-  /* Esc's order (components/v12/ui/overlay-stack.ts): an armed tool, then the selection, then a drawer. */
-  useOverlay("tool", v12 && tool !== "select", () => setTool("select"));
-  useOverlay("selection", v12 && selection.ids.size > 0, () => pick(new Set(), null));
+  }, [goStage, stage?.id, stages, v12Frame]);
+  /* Esc's order (components/v12Frame/ui/overlay-stack.ts): an armed tool, then the selection, then a drawer. */
+  useOverlay("tool", v12Frame && tool !== "select", () => setTool("select"));
+  useOverlay("selection", v12Frame && selection.ids.size > 0, () => pick(new Set(), null));
 
   const List = registry.List ?? ShotList;
 
@@ -640,15 +640,15 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const regionBoxes = board.rail.flatMap((entry) => { const box = placed.regions.get(entry.id); return box ? [box] : []; });
   return (
     <BoardInternalsProvider value={internals}>
-      <div className="bd" style={style} data-testid="board" data-board-kind={kind} data-tool={tool} data-offline={offline || undefined} data-sample={gate.exploreOnly ? "1" : undefined} data-v12={v12 || undefined} data-stage={stage?.id}>
-        {v12 ? (
+      <div className="bd" style={style} data-testid="board" data-board-kind={kind} data-tool={tool} data-offline={offline || undefined} data-sample={gate.exploreOnly ? "1" : undefined} data-v12={v12Frame || undefined} data-stage={stage?.id}>
+        {v12Frame ? (
           <StageRail kindLabel={KIND_LABEL[kind]} stages={stages} current={stage?.id ?? null} status={(st) => stageStatus(st, allCards, kind, board.rail)}
             readOnly={offline ? "Offline" : gate.readOnly ?? null} onPick={goStage} onEdit={editStages} />
         ) : <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} render={kind === "studio"} />}
         <div className="bd-main" data-testid="board-canvas">
-          {v12 ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={headPrimary} menu={boardMenu}
+          {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={headPrimary} menu={boardMenu}
             onBoard={() => { if (stages[0]) goStage(stages[0].id); }} onStage={() => pick(new Set(), null)} /> : null}
-          <StageColumn on={v12}>
+          <StageColumn on={v12Frame}>
           {list ? <List ctx={ctx} cards={placed.cards} /> : (
             <BoardCanvas placed={placed} selection={selection} onSelect={pick} onFreeMoved={onFreeMoved} readOnly={offline} onMoveEnd={onMoveEnd}
               placing={tool === "note" || tool === "text"} onPlace={place}
@@ -664,9 +664,9 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           )}
           {empty && !list && board.Empty ? <board.Empty ctx={ctx} /> : empty && !list && kind === "studio" ? <EmptyBoard ctx={ctx} /> : null}
           {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}
-          {list ? null : v12 ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
-          <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12} />
-          {v12 ? <ViewSwitch view={list ? "list" : "canvas"} onView={(v) => setList(v === "list")} /> : null}
+          {list ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
+          <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12Frame} />
+          {v12Frame ? <ViewSwitch view={list ? "list" : "canvas"} onView={(v) => setList(v === "list")} /> : null}
           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}
           {pill ? <p className="bd-sample" role="status" data-testid="board-sample" data-lifted={pill === LIFT_LINE || undefined}>{pill}{pill === CHECK_LINE ? <> <CheckAgain className="bd-link" /></> : null}</p> : null}
           {live ? <WhoIsHere peers={peers} /> : null}
