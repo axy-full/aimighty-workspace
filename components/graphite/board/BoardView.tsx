@@ -54,7 +54,7 @@ import { CheckAgain } from "../CheckAgain";
 import { sampleGate } from "@/lib/demo/sample";
 import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
-import { addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
+import { stagePage, addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
@@ -63,6 +63,9 @@ import { useOverlay } from "@/components/v12/ui/overlay";
 import { StageRail, type StageEdit } from "@/components/v12/board/StageRail";
 import { StageHeader } from "@/components/v12/board/StageHeader";
 import { StageEmpty } from "@/components/v12/board/StageEmpty";
+import { DeliverStage } from "@/components/v12/board/DeliverStage";
+import { PpmStage } from "@/components/v12/board/PpmStage";
+import type { CutCardData } from "./cards/cut/cut-model";
 import { BoardToolbar, ViewSwitch } from "@/components/v12/board/BoardTools";
 import "@/components/v12/board/board.css";
 import "./board.css";
@@ -180,7 +183,12 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
   /* A fresh board (nothing on any stage) keeps today's way in; a stage with nothing on it says what goes there. */
   const empty = !!project && (v12Frame ? allCards.length === 0 : placed.cards.length === 0);
-  const stageIsEmpty = v12Frame && !empty && placed.cards.length === 0;
+  /* Film's Deliver and Pre-vis's PPM deck are pages of their own over the canvas, once the board has something for them. */
+  const pageWanted = stagePage(stage?.id, flavor);
+  const deliverCard = allCards.find((c) => c.kind === "deliver");
+  const cutNow = (deliverCard?.data as CutCardData | undefined)?.cut ?? null;
+  const page: "deliver" | "ppm" | null = pageWanted === "deliver" && cutNow && deliverCard ? "deliver" : pageWanted === "ppm" && allCards.length > 0 ? "ppm" : null;
+  const stageIsEmpty = v12Frame && !empty && placed.cards.length === 0 && !page;
 
   /* A drawer opens from the design's frame letter, or from `drawer=` (Viral's History page is the Social board's History drawer: lib/shell/ads-social.ts). */
   const [drawer, setDrawer] = useState<BoardDrawer | null>(() => frameDrawer(frame) ?? (shell.params.drawer === "history" || shell.params.drawer === "library" || shell.params.drawer === "render" ? shell.params.drawer : null));
@@ -707,12 +715,19 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             </BoardCanvas>
           )}
           {empty && !list && board.Empty ? <board.Empty ctx={ctx} /> : empty && !list && kind === "studio" ? <EmptyBoard ctx={ctx} /> : null}
+          {page && !list ? (
+            <div className="v12-stage-page gx-scroll" data-testid="v12-stage-page" data-page={page}>
+              {page === "deliver" && cutNow && deliverCard
+                ? <DeliverStage cut={cutNow} cardId={deliverCard.id} ctx={ctx} languages={project.boardLanguages ?? []} onLanguages={(next) => rig.apply((p) => ({ ...p, boardLanguages: next }))} />
+                : <PpmStage ctx={ctx} />}
+            </div>
+          ) : null}
           {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}
           {v12Frame && !list && !empty ? (
             <BoardBar ctx={ctx} selection={crumb} onClearSelection={() => pick(new Set(), null)} tool={tool} onDisarm={() => setTool("select")}
               onAttach={(picked) => void upload(picked)} library={items} onAsked={() => setDockOpen(true)} />
           ) : null}
-          {list ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
+          {list || page ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12Frame} />
           {v12Frame ? <ViewSwitch view={list ? "list" : "canvas"} onView={(v) => setList(v === "list")} /> : null}
           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}

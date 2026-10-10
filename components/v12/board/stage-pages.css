@@ -1,0 +1,74 @@
+/*
+ * The Deliver stage and the PPM deck (components/v12/board/DeliverStage.tsx, PpmStage.tsx; prototype 12 L580–L606): a page over
+ * the stage's canvas, in the new frame only. Under .v12; app/graphite.css tokens only.
+ */
+.v12 .v12-stage-page { position: absolute; inset: 0; z-index: 22; overflow: auto; background: var(--gx-root); container-type: inline-size; }
+.v12 .v12-sp { padding: 20px 24px 140px; display: grid; gap: 24px; align-items: start; font-family: var(--gx-font); color: var(--gx-text); max-width: 1500px; }
+.v12 .v12-sp-card { background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-pop); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.v12 .v12-sp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.v12 .v12-sp-title { margin: 0; font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: var(--gx-ls-h2); }
+.v12 .v12-sp-state, .v12 .v12-sp-eyebrow { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+.v12 .v12-sp-eyebrow { font-size: var(--gx-fs-eyebrow); letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; font-weight: 600; color: var(--gx-eyebrow); }
+.v12 .v12-sp-lines { margin: 0; display: flex; flex-direction: column; }
+.v12 .v12-sp-line { display: grid; grid-template-columns: minmax(72px, 110px) minmax(0, 1fr); gap: 12px; padding: 9px 0; border-top: 1px solid var(--gx-hair-soft); font-size: var(--gx-fs-body); }
+.v12 .v12-sp-line dt { color: var(--gx-text-2); }
+.v12 .v12-sp-line dd { margin: 0; overflow-wrap: anywhere; }
+.v12 .v12-sp-ok { color: var(--gx-done-text); }
+.v12 .v12-sp-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.v12 .v12-sp-btn, .v12 .v12-sp-select { height: 32px; padding: 0 12px; border-radius: var(--gx-r-btn); border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text); font: inherit; font-size: var(--gx-fs-meta); font-weight: 500; white-space: nowrap; cursor: pointer; }
+.v12 .v12-sp-btn:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.v12 .v12-sp-btn:disabled { color: var(--gx-disabled); cursor: default; }
+.v12 .v12-sp-primary { background: var(--gx-accent); border-color: transparent; color: var(--gx-on-accent); font-weight: 600; }
+.v12 .v12-sp-primary:hover:not(:disabled) { background: var(--gx-accent-hover); border-color: transparent; }
+.v12 .v12-sp-primary:disabled { background: var(--gx-tint-border-50); color: var(--gx-on-accent); opacity: 0.7; }
+.v12 .v12-sp-select { padding: 0 8px; color-scheme: dark; background: var(--gx-input); }
+.v12 .v12-sp-x { margin-left: 8px; border: 0; background: transparent; color: var(--gx-text-2); font-size: 16px; line-height: 1; cursor: pointer; }
+.v12 .v12-sp-why { margin: 0; font-size: var(--gx-fs-meta); line-height: 1.45; color: var(--gx-text-2); }
+.v12 .v12-sp-problem { color: var(--gx-failed-text); }
+.v12 .v12-sp button:focus-visible, .v12 .v12-sp select:focus-visible, .v12 .v12-sp input:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+
+/* Deliver: the grid card, then the checks beside it (two columns from 1100 px of stage) */
+.v12 .v12-ds { grid-template-columns: minmax(0, 1fr); }
+@container (min-width: 1100px) {
+  .v12 .v12-ds { grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); grid-template-areas: "g s" "l m" "l p"; }
+  .v12 .v12-ds > [data-testid="v12-deliver-grid-card"] { grid-area: g; }
+  .v12 .v12-ds > [data-testid="v12-deliver-spec"] { grid-area: s; }
+  .v12 .v12-ds > [data-testid="v12-deliver-languages"] { grid-area: l; }
+  .v12 .v12-ds > [data-testid="v12-deliver-mandatories"] { grid-area: m; }
+  .v12 .v12-ds > [data-testid="v12-deliver-pack"] { grid-area: p; }
+}
+.v12 .v12-ds-table { display: flex; flex-direction: column; gap: 8px; overflow-x: auto; }
+.v12 .v12-ds-row { display: grid; grid-template-columns: 56px repeat(4, minmax(120px, 1fr)); gap: 8px; align-items: stretch; min-width: 560px; }
+.v12 .v12-ds-headrow { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+.v12 .v12-ds-aspect { align-self: center; font-family: var(--gx-mono); font-size: var(--gx-fs-meta); color: var(--gx-text-strong); }
+.v12 .v12-ds-cell { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 2px; align-items: center; padding: 8px 10px; border: 1px solid var(--gx-card-border); border-radius: 8px; background: var(--gx-input); min-width: 0; }
+.v12 .v12-ds-cell[data-state="ready"] { border-color: var(--gx-done-border); background: var(--gx-done-tint-08); }
+.v12 .v12-ds-cell[data-state="waiting"] { border-color: var(--gx-waiting); }
+.v12 .v12-ds-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gx-idle); grid-row: 1; }
+.v12 .v12-ds-cell[data-state="ready"] .v12-ds-dot { background: var(--gx-done); }
+.v12 .v12-ds-cell[data-state="waiting"] .v12-ds-dot { background: var(--gx-waiting); }
+.v12 .v12-ds-cell-state { font-size: var(--gx-fs-meta); font-weight: 600; }
+.v12 .v12-ds-cell-name { grid-column: 1 / -1; font-family: var(--gx-mono); font-size: var(--gx-fs-label); color: var(--gx-text-2); overflow-wrap: anywhere; }
+.v12 .v12-ds-spec .gx-deliver-row { min-height: 40px; }
+
+/* PPM deck */
+.v12 .v12-ppm { grid-template-columns: minmax(0, 1fr); }
+@container (min-width: 1100px) { .v12 .v12-ppm { grid-template-columns: minmax(320px, 520px) minmax(0, 1fr); } }
+.v12 .v12-ppm-logo { max-height: 48px; max-width: 180px; object-fit: contain; align-self: flex-start; }
+.v12 .v12-ppm-sections { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.v12 .v12-ppm-section { display: grid; grid-template-columns: 22px minmax(0, 150px) minmax(0, 1fr); gap: 10px; padding: 8px 0; border-top: 1px solid var(--gx-hair-soft); font-size: var(--gx-fs-body); align-items: baseline; }
+.v12 .v12-ppm-n { font-family: var(--gx-mono); color: var(--gx-text-2); }
+.v12 .v12-ppm-stitle { font-weight: 500; }
+.v12 .v12-ppm-line { color: var(--gx-text-2); overflow-wrap: anywhere; }
+.v12 .v12-ppm-section[data-empty] .v12-ppm-line { color: var(--gx-text-2); }
+.v12 .v12-ppm-scroll { overflow: auto; border: 1px solid var(--gx-hair); border-radius: 8px; }
+.v12 .v12-ppm-table { border-collapse: collapse; width: 100%; min-width: 1100px; font-size: var(--gx-fs-meta); }
+.v12 .v12-ppm-table th { text-align: left; font-weight: 600; color: var(--gx-text-2); padding: 8px 6px; border-bottom: 1px solid var(--gx-hair); white-space: nowrap; position: sticky; top: 0; background: var(--gx-card); }
+.v12 .v12-ppm-table td, .v12 .v12-ppm-table .v12-ppm-num { border-bottom: 1px solid var(--gx-hair-soft); padding: 0; vertical-align: top; }
+.v12 .v12-ppm-num { width: 36px; text-align: center; font-family: var(--gx-mono); color: var(--gx-text-2); padding: 8px 4px; }
+.v12 .v12-ppm-cell { width: 100%; min-width: 80px; height: 36px; padding: 0 6px; border: 0; background: transparent; color: var(--gx-text); font: inherit; font-size: var(--gx-fs-meta); box-sizing: border-box; }
+.v12 .v12-ppm-cell:hover:not(:disabled) { background: var(--gx-input-hover); }
+.v12 .v12-ppm-cell:focus { background: var(--gx-input); }
+.v12 td[data-col="dur"] .v12-ppm-cell { min-width: 56px; }
+.v12 td[data-col="vo"] .v12-ppm-cell, .v12 td[data-col="notes"] .v12-ppm-cell { min-width: 160px; }
+.v12 .v12-ppm-list { grid-column: 1 / -1; }

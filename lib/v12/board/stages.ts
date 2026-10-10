@@ -180,6 +180,14 @@ export function addStage(stages: readonly Stage[], after: string | null, label: 
   return { saved: toSaved(next), id };
 }
 
+/**
+ * A stage that is a page of its own over the canvas instead of cards (components/v12/board/DeliverStage.tsx, PpmStage.tsx):
+ * Film's Deliver and Pre-vis's PPM deck. Other kinds' stages of those names keep their cards.
+ */
+export type StagePageKind = "deliver" | "ppm";
+export const stagePage = (stageId: string | null | undefined, flavor: Flavor): StagePageKind | null =>
+  flavor === "film" && stageId === "deliver" ? "deliver" : flavor === "previs" && stageId === "ppm-deck" ? "ppm" : null;
+
 /* ── The stage header (§ 6.4) ─────────────────────────────────────────────────────────────────────── */
 
 /**
@@ -216,7 +224,7 @@ export type StageEmpty = { title: string; line: string; ask?: true };
 const EMPTY: Record<string, StageEmpty> = {
   cut: { title: "Nothing to cut yet", line: "Approved takes land here in order, with a timeline, music, voice and captions." },
   deliver: { title: "Nothing to deliver yet", line: "The spec check and the master appear once there is a cut. Rendering is free." },
-  "ppm-deck": { title: "The PPM deck is not made yet", line: "The deck for the production meeting is built here from the approved boards." },
+  "ppm-deck": { title: "Nothing to put in the deck yet", line: "The PPM deck gathers script, cast, locations, boards and the shot list as they are approved." },
   moments: { title: "No moments yet", line: "Find the moments worth clipping in the source, and they are listed here with reasons." },
   voice: { title: "No narration yet", line: "Pick a voice and a language, and the narration is made from the script." },
   shots: { title: "Shots wait for the cast and the storyboard", line: "Approve the plan on the Storyboard and the shots start here." },
