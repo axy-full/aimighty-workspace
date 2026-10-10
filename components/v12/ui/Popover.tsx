@@ -24,7 +24,7 @@ export function useFocusReturn(open: boolean, panel: RefObject<HTMLElement | nul
  * A popover beside the control that opened it: on the overlay stack (Esc, outside click), drawn above the page and
  * kept on screen. Focus moves into it and comes back to the control when it closes.
  */
-export function Popover({ open, onClose, anchor, label, children, align = "start", side = "bottom", layer = "menu", role = "dialog", width, className, onKeyDown, autoFocus = true, testId }: {
+export function Popover({ open, onClose, anchor, label, children, align = "start", side = "bottom", layer = "menu", role = "dialog", width, className, onKeyDown, autoFocus = true, focusPanel = false, testId }: {
   open: boolean;
   onClose: () => void;
   anchor: RefObject<HTMLElement | null>;
@@ -40,6 +40,8 @@ export function Popover({ open, onClose, anchor, label, children, align = "start
   className?: string;
   onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   autoFocus?: boolean;
+  /** Focus goes to the panel itself, not its first control (a menu opened by a pointer: ↓ then reaches its first item). */
+  focusPanel?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const portal = useV12PortalRoot();
@@ -82,7 +84,7 @@ export function Popover({ open, onClose, anchor, label, children, align = "start
     if (panel.current.contains(document.activeElement)) return;
     /* A menu starts on its first item that can be chosen; anything else on its first control. */
     const first = role === "menu" ? '[role="menuitem"]:not([aria-disabled="true"])' : FOCUSABLE;
-    (panel.current.querySelector<HTMLElement>(first) ?? panel.current).focus({ preventScroll: true });
+    ((focusPanel ? null : panel.current.querySelector<HTMLElement>(first)) ?? panel.current).focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when it is first placed.
   }, [open, at === null]);
 
@@ -116,7 +118,7 @@ export type MenuItem =
  * and Esc close it, → opens an item's submenu and ← closes it. A shortcut shown here is one that works (docs/redesign/
  * inventory.md § 4.2: none drawn unwired; lib/v12/keymap.ts has them all).
  */
-export function Menu({ open, onClose, anchor, label, items, side = "bottom", align = "start", width = 220, head, testId, layer }: {
+export function Menu({ open, onClose, anchor, label, items, side = "bottom", align = "start", width = 220, head, testId, layer, focusPanel }: {
   open: boolean;
   onClose: () => void;
   anchor: RefObject<HTMLElement | null>;
@@ -129,6 +131,8 @@ export function Menu({ open, onClose, anchor, label, items, side = "bottom", ali
   head?: ReactNode;
   testId?: string;
   layer?: OverlayLayer;
+  /** Opened by a pointer: focus the menu, not its first item (no focus ring on an item nobody chose); ↓ reaches it. */
+  focusPanel?: boolean;
 }) {
   const [sub, setSub] = useState<string | null>(null);
   const subAnchor = useRef<HTMLButtonElement | null>(null);
@@ -157,7 +161,7 @@ export function Menu({ open, onClose, anchor, label, items, side = "bottom", ali
     else if (event.key === "Tab") { event.preventDefault(); event.stopPropagation(); onClose(); anchor.current?.focus(); }
   };
   return (
-    <Popover open={open} onClose={onClose} anchor={anchor} label={label} role="menu" side={side} align={align} width={width} onKeyDown={onKeyDown} className="v12-menu" testId={testId} layer={layer}>
+    <Popover open={open} onClose={onClose} anchor={anchor} label={label} role="menu" side={side} align={align} width={width} onKeyDown={onKeyDown} className="v12-menu" testId={testId} layer={layer} focusPanel={focusPanel}>
       {head}
       {items.map((item) => "separator" in item ? <div key={item.id} role="separator" className="v12-menu-sep" /> : (
         <button key={item.id} type="button" role="menuitem" className="v12-menu-item" data-tone={item.tone} data-testid={item.testId} aria-disabled={item.disabled || undefined}
@@ -198,7 +202,8 @@ function SubMenu({ anchor, label, items, width, onBack, onDone, layer }: {
  * The point is a zero-size anchor at the cursor, so it places, flips and focuses as a menu under a control does.
  */
 export function ContextMenu({ at, onClose, label, items, width = 260, testId }: {
-  at: { x: number; y: number } | null;
+  /** `pointer: false`: opened from the keyboard (the menu key, ⇧F10), so its first item takes focus. */
+  at: { x: number; y: number; pointer?: boolean } | null;
   onClose: () => void;
   label: string;
   items: readonly MenuItem[];
@@ -211,7 +216,7 @@ export function ContextMenu({ at, onClose, label, items, width = 260, testId }: 
   return (
     <>
       {createPortal(<span ref={point} aria-hidden="true" className="v12-menu-point" style={{ left: at.x, top: at.y }} />, portal)}
-      <Menu key={`${at.x},${at.y}`} open onClose={onClose} anchor={point} label={label} items={items} width={width} testId={testId} />
+      <Menu key={`${at.x},${at.y}`} open onClose={onClose} anchor={point} label={label} items={items} width={width} testId={testId} focusPanel={at.pointer !== false} />
     </>
   );
 }

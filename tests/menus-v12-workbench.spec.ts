@@ -78,7 +78,9 @@ test.describe("desktop, switch on", () => {
     /* Remix's price is the quote layer's, never a figure written in the menu: it reads, then shows a price or a dash. */
     await expect(menu.getByTestId("v12-menu-price")).toHaveAttribute("data-price-state", /ready|error/, { timeout: 30_000 });
     await expect(menu.getByTestId("v12-menu-price")).toHaveText(/^(\d[\d,]* cr|up to \d[\d,]* cr|free|—)$/);
-    /* Keys: the first item has focus, ↓ moves, Esc closes and nothing else. */
+    /* Keys: opened by the pointer, the menu has focus and ↓ reaches its first item; ↓ moves on, Enter runs it. */
+    await expect(menu).toBeFocused();
+    await page.keyboard.press("ArrowDown");
     await expect(menu.getByRole("menuitem", { name: "Open" })).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await expect(menu.getByRole("menuitem", { name: "Make one like this" })).toBeFocused();

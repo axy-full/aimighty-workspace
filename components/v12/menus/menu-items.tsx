@@ -23,7 +23,7 @@ export function menuItems(entries: readonly MenuEntry[], run: (id: MenuAction) =
   });
 }
 
-export type MenuAt<T> = { at: { x: number; y: number }; target: T };
+export type MenuAt<T> = { at: { x: number; y: number; pointer: boolean }; target: T };
 
 /**
  * A right-click menu's state: `open` from an onContextMenu (the browser's own menu does not show, and the event goes
@@ -34,7 +34,11 @@ export function useMenuAt<T>() {
   const open = useCallback((event: MouseEvent, target: T) => {
     event.preventDefault();
     event.stopPropagation();
-    setMenu({ at: { x: event.clientX, y: event.clientY }, target });
+    /* The menu key and ⇧F10 send a contextmenu with no right button (a Mac's ⌃-click is a pointer): its first item
+       takes focus, and with no point given it opens on the element. */
+    const keyboard = event.button === 0 && !event.ctrlKey;
+    const box = keyboard && !event.clientX && !event.clientY ? (event.currentTarget as Element).getBoundingClientRect() : null;
+    setMenu({ at: box ? { x: box.left + 8, y: box.top + 8, pointer: false } : { x: event.clientX, y: event.clientY, pointer: !keyboard }, target });
   }, []);
   const close = useCallback(() => setMenu(null), []);
   return { menu, open, close };

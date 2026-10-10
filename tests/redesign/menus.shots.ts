@@ -16,17 +16,19 @@ test.afterAll(closePrototypeServer);
 async function protoCardMenu(proto: Page) {
   const card = proto.locator("#canvas img").first();
   await card.waitFor({ state: "visible", timeout: 15_000 });
-  await card.click({ button: "right" });
+  await card.click({ button: "right", force: true });
 }
 
 /** Right-clicks empty canvas in the prototype. */
 async function protoCanvasMenu(proto: Page) {
   const at = await proto.evaluate(() => {
     const canvas = document.getElementById("canvas")!.getBoundingClientRect();
-    for (let y = canvas.bottom - 140; y > canvas.top + 40; y -= 31) {
-      for (let x = canvas.right - 120; x > canvas.left + 40; x -= 37) {
+    for (let y = canvas.top + canvas.height * 0.3; y < canvas.bottom - 300; y += 31) {
+      for (let x = canvas.left + canvas.width * 0.35; x < canvas.right - 300; x += 37) {
+        /* The canvas itself or its card layer, never a card on it. */
         const el = document.elementFromPoint(x, y) as HTMLElement | null;
-        if (el && el.closest("#canvas") && !el.closest("img, button, [draggable='true']") && !(el.textContent ?? "").trim()) return { x, y };
+        const canvasEl = document.getElementById("canvas");
+        if (el && (el === canvasEl || el.parentElement === canvasEl)) return { x, y };
       }
     }
     return { x: canvas.left + canvas.width / 2, y: canvas.bottom - 160 };
@@ -41,7 +43,7 @@ test("a card's menu beside the prototype's", async ({ page }) => {
   await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLImageElement>('[data-testid="v12-library"] img')).every((img) => img.complete), null, { timeout: 30_000 });
   const tile = page.getByTestId("v12-library").locator('[data-id="generation:gopen"]');
   const box = (await tile.boundingBox())!;
-  await page.mouse.click(box.x + box.width * 0.7, box.y + box.height * 0.4, { button: "right" });
+  await tile.click({ button: "right", position: { x: box.width * 0.7, y: box.height * 0.4 } });
   const menu = page.getByTestId("v12-card-menu");
   await expect(menu).toBeVisible();
   await expect(menu.getByTestId("v12-menu-price")).toHaveAttribute("data-price-state", /ready|error/, { timeout: 30_000 });
