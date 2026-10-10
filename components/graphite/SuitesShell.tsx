@@ -43,7 +43,10 @@ import { isMakeTool } from "@/lib/shell/make";
 import dynamic from "next/dynamic";
 /* The new interface's frame loads only for a workspace that has it (lib/newInterface.ts): customers never download it.
    SuitesApp draws nothing until the browser is there, so the frame's own chunk is the only wait, and only for them. */
-const V12Shell = dynamic(() => import("@/components/v12/V12Shell").then((m) => m.V12Shell));
+const loadV12Shell = () => import("@/components/v12/V12Shell");
+/* While its chunk arrives the body keeps its place (an empty stage), never a blank window. */
+const V12Shell = dynamic(() => loadV12Shell().then((m) => m.V12Shell), { loading: () => <div className="gx-stage" data-testid="v12-loading" /> });
+const LibraryTray = dynamic(() => import("@/components/v12/library/LibraryTray").then((m) => m.LibraryTray), { ssr: false });
 /* Make as a page (redesign C3): only with the switch on at desktop sizes, so a customer never downloads it. */
 const V12Make = dynamic(() => import("@/components/v12/make/V12Make").then((m) => m.V12Make));
 import { useRig } from "@/components/workspace/rig/RigProvider";
@@ -375,6 +378,8 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
      what was asked for (`mk=`, `viewer=1`) from here, once. Its first mount spends it; a later visit reads the live address. */
   const [openedWith, setOpenedWith] = useState<string | undefined>(() => (typeof window === "undefined" ? undefined : window.location.search));
   const spendOpenedWith = useCallback(() => setOpenedWith(undefined), []);
+  /* The frame's chunk starts loading as soon as the switch is known to be on, before the frame is first asked for. */
+  useEffect(() => { if (newInterface) void loadV12Shell(); }, [newInterface]);
   const v12 = newInterface && !compact && !phoneOn;
   /* With the switch on at desktop sizes, Make is a page in the frame's body (components/v12/make), not a panel; its quick
      tools (Motion transfer, Object swap, Upscale) still open as today's panel over that page. */
@@ -442,12 +447,12 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
           /* A link to a take that cannot show it yet says what it is doing on a phone too: the phone's own screens draw nothing for it. */
           <div className="gx-screen gx-scroll" data-testid="screen" data-screen="link"><div className="gx-stage" data-testid="content">{linkCard}</div></div>
         ) : <PhoneMount ctx={screenCtx} page={phonePage} />) : v12 ? (
-          <V12Shell header={header}>{v12Make ? (
+          <V12Shell header={{ account, project, projects: data.projects, onPick: pickProject }}>{v12Make ? (
             <Boundary what="Make" probe="gen" resetKey={`v12-make:${scope}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="gen" /></div>}>
               <V12Make initialSearch={openedWith} onOpened={spendOpenedWith} scope={scope} project={project} projects={data.status} projectsError={projectsError} onRetry={data.retry}
                 workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} balance={account?.credits?.balance ?? null} />
             </Boundary>
-          ) : desktopBody}</V12Shell>
+          ) : desktopBody}<LibraryTray project={project} projects={data.projects} library={library} /></V12Shell>
         ) : <>{header}{desktopBody}</>}
         {/* Make (README § 3.2): a panel over whatever is on screen, beside the Inspector's column when that is open. Its draft
             stays editable while the project list recovers ("Try again", never "Retry": that word is a take's own action). */}

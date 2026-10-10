@@ -47,7 +47,6 @@ const OUTGOING = new Set([
   "design/particl-graphite/Gaps B README.txt",
   "design/particl-graphite/Gaps B frames.dc.html",
   "design/particl-graphite/Guest Home frames.dc.html",
-  "design/particl-graphite/Home and header options.dc.html",
   "design/particl-graphite/PROMPT.md",
   "design/particl-graphite/Particl Suites.dc.html",
   "design/particl-graphite/Phone frames.dc.html",
