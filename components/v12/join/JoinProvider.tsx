@@ -1,7 +1,5 @@
 "use client";
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import { saveGuestBrief } from "@/lib/guest/brief";
-import { EMPTY_DRAFT } from "@/components/graphite/home/home-model";
 import type { InviteKind, JoinReason, RequestFields } from "./join-model";
 import { JoinSheet } from "./JoinSheet";
 
@@ -14,7 +12,7 @@ export type JoinOpen = { detail?: string | null; prompt?: string; requested?: bo
 export type JoinApi = {
   openJoin: (reason: JoinReason, options?: JoinOpen) => void;
   closeJoin: () => void;
-  /** The words in the visitor's bar, so the sheet quotes them and pre-fills "What do you want to make?". */
+  /** The words in the visitor's bar, so the sheet quotes them and pre-fills "What do you want to make?". The screen keeps them for after joining (lib/guest/brief.ts). */
   setPrompt: (prompt: string) => void;
   /** An invite link (`?invite=`): its code, read by today's routes, fills the sheet. */
   setInvite: (invite: InviteKind | null) => void;
@@ -72,8 +70,6 @@ export function JoinProvider({ children, initial, compact = false, back = "/" }:
   const closeJoin = useCallback(() => setState((now) => ({ ...now, open: false })), []);
   const setPrompt = useCallback((prompt: string) => {
     setState((now) => (now.prompt === prompt ? now : { ...now, prompt }));
-    /* Kept in this browser for after joining (lib/guest/brief.ts): the first board, and Home's bar with `?joined=1`. */
-    saveGuestBrief({ ...EMPTY_DRAFT, text: prompt });
   }, []);
   const setInvite = useCallback((next: InviteKind | null) => {
     setInviteState(next);

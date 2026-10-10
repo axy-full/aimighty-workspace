@@ -9,6 +9,8 @@ import Atomik, { metadata as atomik } from "../_pages/atomik";
 import Settings, { metadata as settings } from "../_pages/settings";
 import Pricing, { metadata as pricing } from "../_pages/pricing";
 import { GuestHome } from "@/components/graphite/guest/GuestHome";
+import { VisitorApp } from "@/components/v12/visitor/VisitorApp";
+import { visitorAsk } from "@/lib/v12/visitor";
 import { readSite } from "@/lib/site/settings.server";
 import { guestSample } from "@/lib/guest/sample.server";
 import { SAMPLE_TITLE } from "@/lib/guest/sample";
@@ -50,6 +52,11 @@ export default async function SiteRoute({ params, searchParams }: Props) {
      else today's page. proxy.ts already sends a member, an app link or the old shell to the app instead. */
   if ((await isRoot(params)) && (await readSite()).guestHome) {
     const q = (await searchParams) ?? {};
+    /* `?guest=1`: the new interface's visitor screens (components/v12/visitor), the same Guest Home switch and the same public sample. */
+    if (one(q.guest) === "1") {
+      const sample = await guestSample();
+      return <VisitorApp ask={visitorAsk(q)} sampleTitle={sample?.title ?? SAMPLE_TITLE} sampleBoard={sample?.board ?? null} />;
+    }
     const invite = one(q.invite);
     const [sample, welcome] = await Promise.all([guestSample(), approvedWelcomeCredits().catch(() => null)]);
     return (

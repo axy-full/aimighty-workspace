@@ -1,0 +1,103 @@
+/*
+ * The visitor's new interface (components/v12/visitor/; prototype 12 `?guest=1`, docs/redesign/inventory.md § 8). Under .v12
+ * only; app/graphite.css tokens only. It reuses the header's, Home's and the board's own sheets for what it shares.
+ */
+
+.v12.v12-visitor { height: 100dvh; display: flex; flex-direction: column; background: var(--gx-root); color: var(--gx-text); font-family: var(--gx-font); font-size: var(--gx-fs-body); overflow: hidden; position: relative; }
+.v12-visitor .v12-vspacer { flex: 1 1 0; min-width: 0; }
+.v12-visitor .v12-vheader { gap: var(--gx-sp-12); }
+.v12-visitor .v12-vheader[data-compact] { height: 52px; padding: 0 var(--gx-sp-12); }
+.v12-visitor .v12-vheader[data-compact] + * { min-height: 0; }
+.v12-visitor .v12-vlogin { flex: none; display: inline-flex; align-items: center; min-height: var(--gx-h-input); padding: 0 var(--gx-sp-8); font-size: var(--gx-fs-meta); font-weight: 600; color: var(--gx-text-strong); text-decoration: none; border-radius: var(--gx-r-btn); }
+.v12-visitor .v12-vlogin:hover { color: var(--gx-text); }
+.v12-visitor .v12-vbtn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; height: var(--gx-h-input); padding: 0 14px; border-radius: var(--gx-r-btn);
+  border: 1px solid var(--gx-line-strong); background: transparent; color: var(--gx-text); font: inherit; font-size: var(--gx-fs-meta); font-weight: 500; text-decoration: none; white-space: nowrap; cursor: pointer;
+}
+.v12-visitor .v12-vbtn:hover { border-color: var(--gx-hover-border); }
+.v12-visitor .v12-vbtn-primary { border-color: transparent; background: var(--gx-accent); color: var(--gx-on-accent); font-weight: 600; }
+.v12-visitor .v12-vbtn-primary:hover { background: var(--gx-accent-hover); }
+.v12-visitor .v12-vheader[data-compact] .v12-vlogin, .v12-visitor .v12-vheader[data-compact] .v12-vbtn { min-height: var(--gx-touch); height: var(--gx-touch); }
+@media (max-width: 1199px) { .v12-visitor .v12-vheader:not([data-compact]) .v12-field { flex-basis: 220px; min-width: 160px; } }
+
+/* Invite banner: 40 px under the header (§ 8.4), a phone's is at least 44. */
+.v12-visitor .v12-vbanner { order: 1; flex: none; min-height: 40px; display: flex; align-items: center; justify-content: center; gap: var(--gx-sp-10); padding: 4px var(--gx-sp-16); background: var(--gx-card); border-bottom: 1px solid var(--gx-hair-strong); font-size: var(--gx-fs-meta); }
+.v12-visitor .v12-vbanner[data-compact] { min-height: var(--gx-touch); }
+.v12-visitor .v12-head { order: 0; }
+.v12-visitor .v12-vbanner-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gx-accent); flex: none; }
+.v12-visitor .v12-vbanner-btn { height: var(--gx-h-seg); padding: 0 var(--gx-sp-12); border: 1px solid var(--gx-tint-border-50); border-radius: var(--gx-r-btn); background: transparent; color: var(--gx-accent-text); font: inherit; font-size: var(--gx-fs-meta); font-weight: 600; cursor: pointer; }
+.v12-visitor .v12-vbanner[data-compact] .v12-vbanner-btn { height: var(--gx-touch); }
+.v12-visitor .v12-body { order: 2; }
+
+/* Section heads */
+.v12-visitor .v12-vsection { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.v12-visitor .v12-vhead { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.v12-visitor .v12-vtitle { margin: 0; font-size: var(--gx-fs-h2); font-weight: 600; letter-spacing: -0.01em; }
+.v12-visitor .v12-vtitle-sm { font-size: var(--gx-fs-panel); }
+.v12-visitor .v12-vsub { font-size: var(--gx-fs-meta); color: var(--gx-text-sec); }
+.v12-visitor .v12-vmono { font-family: var(--gx-mono); }
+.v12-visitor .v12-grow { flex: 1; }
+
+/* Home: the wall as C2's, six rows deep over the showcase; How it works: four cards */
+.v12-visitor .v12-vhow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.v12-visitor .v12-vhow-card { display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-pop); min-width: 0; }
+.v12-visitor .v12-vhow-img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; display: block; }
+.v12-visitor .v12-vhow-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.v12-visitor .v12-vhow-n { font-family: var(--gx-mono); font-size: var(--gx-fs-meta); color: var(--gx-text-sec); }
+.v12-visitor .v12-vhow-title { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: -0.01em; }
+.v12-visitor .v12-vhow-line { font-size: var(--gx-fs-meta); line-height: 1.45; color: var(--gx-text-2); }
+@media (max-width: 1199px) { .v12-visitor .v12-vhow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Phone Home (§ 8.5): a two-column wall of rows 120, then How it works as a list. */
+.v12-visitor .v12-vhome[data-compact] .v12-hm-scroll { padding: 12px 16px calc(var(--v12-bar-h, 120px) + 44px); gap: 20px; }
+.v12-visitor .v12-vhome[data-compact] .v12-hm-wall { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 120px; gap: 6px; }
+.v12-visitor .v12-vhome[data-compact] .v12-hm-tile:first-child { grid-column: 1 / -1; grid-row: span 2; }
+.v12-visitor .v12-vhome[data-compact] .v12-hm-tile-hover { display: none !important; }
+.v12-visitor .v12-vhome[data-compact] .v12-vhow { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.v12-visitor .v12-vhome[data-compact] .v12-vhow-card { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 10px 12px; }
+.v12-visitor .v12-vhome[data-compact] .v12-vhow-n { width: 24px; height: 24px; display: inline-grid; place-items: center; border-radius: 50%; border: 1px solid var(--gx-line-control); font-size: var(--gx-fs-label); }
+.v12-visitor .v12-vhome[data-compact] .v12-hm-bar { bottom: max(16px, env(safe-area-inset-bottom, 0px)); width: calc(100% - 24px); }
+.v12-visitor .v12-vhome[data-compact] .v12-bar-input { font-size: var(--gx-fs-field); min-height: var(--gx-touch); }
+.v12-visitor .v12-vhome[data-compact] .v12-bar-icon, .v12-visitor .v12-vhome[data-compact] .v12-bar-send { min-height: var(--gx-touch); min-width: var(--gx-touch); }
+
+/* Make */
+.v12-visitor .v12-vmake .v12-hm-scroll { gap: 12px; }
+.v12-visitor .v12-vmake-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.v12-visitor .v12-vmake-tile { margin: 0; position: relative; border-radius: 10px; overflow: hidden; background: var(--gx-track); border: 1px solid var(--gx-card-border); aspect-ratio: 16 / 9; }
+.v12-visitor .v12-vmake-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.v12-visitor .v12-vmake-sample { position: absolute; left: 10px; bottom: 10px; height: 24px; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; background: var(--gx-on-media); font-size: var(--gx-fs-label); font-weight: 500; }
+.v12-visitor .v12-vmake-acts { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; background: rgba(0, 0, 0, 0.5); padding: 8px; }
+.v12-visitor .v12-vmake-tile:hover .v12-vmake-acts, .v12-visitor .v12-vmake-tile:focus-within .v12-vmake-acts { display: flex; }
+.v12-visitor .v12-vmake-band { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 24px 16px; background: var(--gx-root); border-top: 1px solid var(--gx-hair-strong); display: flex; flex-direction: column; gap: 8px; z-index: 20; }
+.v12-visitor .v12-vmake-band .v12-bar { max-width: 1100px; margin: 0 auto; }
+.v12-visitor .v12-vmake-modes { max-width: 1100px; margin: 0 auto; width: 100%; }
+.v12-visitor .v12-vmake[data-compact] .v12-vmake-grid { grid-template-columns: minmax(0, 1fr); }
+.v12-visitor .v12-vmake[data-compact] .v12-vmake-acts { display: flex; background: none; align-items: flex-end; justify-content: flex-end; }
+.v12-visitor .v12-vmake[data-compact] .v12-vmake-band { padding: 8px 12px calc(12px + env(safe-area-inset-bottom, 0px)); }
+.v12-visitor .v12-vmake[data-compact] .v12-vbtn { min-height: var(--gx-touch); }
+
+/* The sample board */
+.v12-visitor .v12-vboard { flex: 1; min-height: 0; display: flex; position: relative; }
+.v12-visitor .v12-vboard-main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+.v12-visitor .v12-vpill { flex: none; display: inline-flex; align-items: center; height: 24px; padding: 0 var(--gx-sp-10); border: 1px solid var(--gx-line-control); border-radius: 999px; font-size: var(--gx-fs-label); color: var(--gx-text-strong); white-space: nowrap; }
+.v12-visitor .v12-vboard-canvas { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px 140px; }
+.v12-visitor .v12-vboard-empty { position: relative; min-height: 300px; }
+.v12-visitor .v12-vboard-bar { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); width: min(720px, calc(100% - 48px)); z-index: 20; }
+.v12-visitor .v12-vcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px; align-items: start; max-width: 1240px; }
+.v12-visitor .v12-vcard { display: flex; flex-direction: column; gap: 8px; padding: 14px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-pop); min-width: 0; }
+.v12-visitor .v12-vcard-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.v12-visitor .v12-vcard-title { margin: 0; font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: -0.01em; }
+.v12-visitor .v12-vcard-state { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+.v12-visitor .v12-vcard-meta, .v12-visitor .v12-vcard-text { margin: 0; font-size: var(--gx-fs-meta); line-height: 1.45; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.v12-visitor .v12-vcard-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.v12-visitor .v12-vplan { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--gx-fs-meta); }
+.v12-visitor .v12-vplan li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; }
+
+/* No access (§ 8.7): over everything, the header too */
+.v12-visitor .v12-noaccess { position: fixed; inset: 0; z-index: 85; background: var(--gx-root); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; }
+.v12-visitor .v12-noaccess > * { max-width: 420px; }
+.v12-visitor .v12-noaccess-lock { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--gx-line-control); display: grid; place-items: center; color: var(--gx-text-strong); }
+.v12-visitor .v12-noaccess-title { margin: 0; font-size: var(--gx-fs-h2); font-weight: 600; }
+.v12-visitor .v12-noaccess-line { margin: 0; font-size: var(--gx-fs-body); line-height: 1.5; color: var(--gx-text-2); }
+.v12-visitor .v12-noaccess-actions { display: flex; gap: 8px; margin-top: 8px; }
+.v12-visitor[data-compact] .v12-noaccess .v12-vbtn { height: var(--gx-touch); min-width: var(--gx-touch); }

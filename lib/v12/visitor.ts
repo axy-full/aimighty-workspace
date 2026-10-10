@@ -44,8 +44,8 @@ export type VisitorAsk = {
   invite: string | null;
   /** `step=plan`: a new-workspace invite on its plan step. */
   step: "plan" | null;
-  /** A board link (`board=`): any board id; a visitor has no workspace, so it is never opened (§ 8.7). */
-  board: string | null;
+  /** A board link (`board=`, any board id): a visitor has no workspace, so no board is opened and the id goes no further (§ 8.7). */
+  board: boolean;
   joined: boolean;
 };
 
@@ -65,7 +65,7 @@ export function visitorAsk(q: Raw): VisitorAsk {
     requested: one(q.requested) === "1",
     invite: code && CODE.test(code) ? code : null,
     step: one(q.step) === "plan" ? "plan" : null,
-    board: board && BOARD_ID.test(board) ? board : null,
+    board: Boolean(board && BOARD_ID.test(board)),
     joined: one(q.joined) === "1",
   };
 }
