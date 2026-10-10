@@ -26,8 +26,8 @@ export type BarSend = {
   /** The hover: the price's dollar value, or why it cannot be pressed. */
   title?: string;
   testId?: string;
-  /** Home's Start is the screen's one filled primary; a board's Ask is outlined. */
-  variant?: "filled" | "outlined";
+  /** Home's Start is the screen's one filled primary; a board's Ask is outlined; "quiet" is grey, waiting on a choice (Make's "Pick what to do"). */
+  variant?: "filled" | "outlined" | "quiet";
   /** The spend opt-in (lib/spend spendAttrsOf) for a send that spends. */
   attrs?: Record<string, string | boolean | undefined>;
 };
@@ -58,11 +58,13 @@ export type BarProps = {
   note?: { tone: "note" | "problem"; text: string } | null;
   disabled?: boolean;
   maxLength?: number;
+  /** Docked in a band (Make's composer) rather than floating over the page: no shadow. */
+  docked?: boolean;
   testId?: string;
 };
 
 export function Bar(props: BarProps) {
-  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, attachAccept, attachTitle = "Attach a file — Upload a file from your computer.", mentions, mentionsTitle = "From the library", onMention, chips, sheet, note, disabled, maxLength, testId = "v12-bar" } = props;
+  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, attachAccept, attachTitle = "Attach a file — Upload a file from your computer.", mentions, mentionsTitle = "From the library", onMention, chips, sheet, note, disabled, maxLength, docked, testId = "v12-bar" } = props;
   const input = useRef<HTMLInputElement>(null);
   const files = useRef<HTMLInputElement>(null);
   const pop = useRef<HTMLDivElement>(null);
@@ -99,7 +101,7 @@ export function Bar(props: BarProps) {
   const canSend = !send.disabled && !send.busy && !disabled;
 
   return (
-    <div className="v12-bar" data-testid={testId}>
+    <div className={docked ? "v12-bar v12-bar-docked" : "v12-bar"} data-testid={testId}>
       {listOpen && mentions ? (
         <div ref={pop} className="v12-bar-pop" role="listbox" id={listId} aria-label={mentionsTitle} data-testid={`${testId}-mentions`}
           onKeyDown={(e) => {
@@ -145,7 +147,7 @@ export function Bar(props: BarProps) {
             aria-activedescendant={listOpen ? `${listId}-${current}` : undefined} aria-autocomplete={mentions ? "list" : undefined}
             onChange={(e) => { const next = e.target.value; onChange(next); if (mentions?.length && /(^|\s)@$/.test(next)) openList(); }}
             onKeyDown={onKey} data-testid={`${testId}-input`} />
-          <button type="button" className={send.variant === "outlined" ? "v12-bar-send v12-bar-send-outlined" : "v12-bar-send"} onClick={() => canSend && onSubmit()}
+          <button type="button" className={send.variant === "outlined" ? "v12-bar-send v12-bar-send-outlined" : send.variant === "quiet" ? "v12-bar-send v12-bar-send-quiet" : "v12-bar-send"} onClick={() => canSend && onSubmit()}
             disabled={!canSend} aria-busy={send.busy || undefined} title={send.title} data-testid={send.testId ?? `${testId}-send`} {...send.attrs}>
             {send.busy ? (send.busyLabel ?? `${send.label}…`) : send.price ? <span>{send.label} · {send.price}</span> : send.label}
           </button>

@@ -23,16 +23,18 @@ export type MakeProps = {
   onBoard?: boolean;
   /** Open with the engine list showing (`make=change`). */
   listOpen?: boolean;
+  /** What × does, when not closing Make: a quick tool over the new interface's Make page goes back to that page. */
+  onClose?: () => void;
 };
 
 /**
- * Make with the new interface switched on (design/particl-graphite/README.md § 3.2; "Make frames.dc.html" 1–8):
+ * Make with the new interface switched on (design/particl-graphite/README.md § 3.2; the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12) 1–8):
  * a 440 px panel over any screen, full width on a phone. Its head is the title, Make | Recent and Close; its body is
  * the composer as the handoff draws it (Compose), Recent, or a quick tool. Left of whatever is docked at the right
  * edge (`--board-dock`, set by the shell from the board's dock).
  * The logic is useMake's, which the phone's simple Make shares.
  */
-export function Make({ scope, project, items, library, projects = "ready", projectsError = null, onRetry, workspaceName, onProject, aspect = null, balance, onBoard, listOpen = false }: MakeProps) {
+export function Make({ scope, project, items, library, projects = "ready", projectsError = null, onRetry, workspaceName, onProject, aspect = null, balance, onBoard, listOpen = false, onClose }: MakeProps) {
   const shell = useShell();
   /* Results land on the board too when the board is the screen under the panel (the shell's own view, unless the host says). */
   const make = useMake({ scope, project, projects, workspaceName, onProject, balance, onBoard: onBoard ?? shell.view === "board", listOpen });
@@ -52,7 +54,7 @@ export function Make({ scope, project, items, library, projects = "ready", proje
           </div>
         )}
         <span className="gx-spacer" />
-        <button type="button" className="gx-mk-close" aria-label="Close Make" title="Close · Esc" onClick={shell.closeMake} data-testid="make-close">×</button>
+        <button type="button" className="gx-mk-close" aria-label="Close Make" title="Close · Esc" onClick={onClose ?? shell.closeMake} data-testid="make-close">×</button>
       </div>
       <div className="gx-mk-body gx-scroll" data-testid="gen-view">
         {projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={onRetry ?? (() => undefined)} testId="projects-error" /> : null}

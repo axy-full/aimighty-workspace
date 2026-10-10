@@ -47,7 +47,6 @@ const OUTGOING = new Set([
   "design/particl-graphite/Gaps B README.txt",
   "design/particl-graphite/Gaps B frames.dc.html",
   "design/particl-graphite/Guest Home frames.dc.html",
-  "design/particl-graphite/Make frames.dc.html",
   "design/particl-graphite/PROMPT.md",
   "design/particl-graphite/Particl Suites.dc.html",
   "design/particl-graphite/Phone frames.dc.html",
@@ -90,6 +89,8 @@ const baseline = (): Baseline => JSON.parse(readFileSync(BASELINE, "utf8"));
  */
 const TOMBSTONES = [
   "docs/hand" + "off/",
+  /* Redesign C3 rebuilt Make as a page from design/particl-prototype-12; the graphite Make frames went with it. */
+  "design/particl-graphite/Make frames.dc.html",
   "docs/phase" + "-0/",
   "docs/four-suites-v2" + "-plan.md",
   "public/marketing/screens/studio-cast.jpg",

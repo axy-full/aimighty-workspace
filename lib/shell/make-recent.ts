@@ -8,7 +8,7 @@ import { DRAFT_RESOLUTION, FINAL_RESOLUTION } from "../draftFinal";
 import { recreateBlock, recreatePreset } from "./recipe";
 
 /**
- * Make › Recent (design/particl-graphite/README.md § 7: the takes wall is Make's Recent; "Make frames" 4):
+ * Make › Recent (design/particl-graphite/README.md § 7: the takes wall is Make's Recent; the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12) 4):
  * its filters, the line under a card's name, and what "Again" would cost. Pure; reads nothing from the
  * network, and prices nothing itself. The price of an Again is the server's: the same read the composer
  * makes for its live quote (GET /api/workbench/engines, or the audio route's quoteOnly), asked at the
