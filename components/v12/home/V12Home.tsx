@@ -147,10 +147,12 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
     if (!host || !bar) return;
     const set = () => host.style.setProperty("--v12-bar-h", `${Math.ceil(bar.getBoundingClientRect().height)}px`);
     set();
-    if (typeof ResizeObserver === "undefined") return;
+    /* The window's own resize too: the bar can change height (it wraps) before the observer is told. */
+    window.addEventListener("resize", set);
+    if (typeof ResizeObserver === "undefined") return () => window.removeEventListener("resize", set);
     const seen = new ResizeObserver(set);
     seen.observe(bar);
-    return () => seen.disconnect();
+    return () => { seen.disconnect(); window.removeEventListener("resize", set); };
   }, []);
 
   const mentions: BarMention[] = wall.tiles.map((tile) => ({ id: tile.id, name: tile.title, kind: tile.type, thumb: tile.url, media: tile.media }));
