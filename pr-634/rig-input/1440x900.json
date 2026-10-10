@@ -1,0 +1,9 @@
+{
+  "name": "rig-input",
+  "app": "/suites?project=project-a0a23df0&suite=particl&page=brief&view=board&stage=shots&v=rig",
+  "prototype": "?view=board&v=rig&rig=input",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

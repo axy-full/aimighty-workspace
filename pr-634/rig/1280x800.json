@@ -1,0 +1,9 @@
+{
+  "name": "rig",
+  "app": "/suites?project=project-366d88df&suite=particl&page=brief&view=board&stage=shots&v=rig",
+  "prototype": "?view=board&v=rig",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}
