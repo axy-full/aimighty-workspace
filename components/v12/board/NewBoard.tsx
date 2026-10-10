@@ -9,7 +9,7 @@ import { goalFor, BRIEF_MAX, DEFAULT_ASPECT, DEFAULT_LENGTH } from "@/components
 import { askAtomik, planningFor, productionOf } from "@/components/graphite/home/start";
 import { useThinkingPrice } from "@/components/graphite/home/use-thinking-price";
 import { COMPOSER, COMPOSER_LENGTH, FLAVOR_BOARD, KIND_CARDS, boardName, detectCard, flavorForCard, type KindCard } from "@/lib/v12/board/kinds";
-import { KIND_LABEL, applyStageEdit, stagesOf, type SavedStage, type StageEdit } from "@/lib/v12/board/stages";
+import { KIND_LABEL, applyStageEdit, stageLimit, stagesOf, type SavedStage, type StageEdit } from "@/lib/v12/board/stages";
 import { IDLE, LOADING, QUOTE_FAULT, knownQuote, type Quote } from "@/lib/v12/quote";
 import { Price } from "@/components/v12/ui/Price";
 import { useToast } from "@/components/v12/ui";
@@ -131,7 +131,7 @@ export function NewBoard({ scope, onCreate, initialKind }: { scope: string; onCr
   return (
     <div className="v12-newboard" data-testid="v12-newboard" data-kind={shown ?? "none"} data-flavor={flavor}>
       <StageRail kindLabel={KIND_LABEL[flavor]} dim stages={stages} current={null} status={() => ({ state: "empty", count: 0, summary: "Nothing yet", cards: 0 })}
-        readOnly={null} onPick={() => {}} onEdit={edit} />
+        readOnly={null} onPick={() => {}} onEdit={edit} addBlocked={stageLimit(stages.length)} />
       <div className="v12-newboard-main">
         <StageHeader board="New board" stage={null} meta={null} selection={null} primary={null} menu={null} />
         <div className="v12-newboard-body">
