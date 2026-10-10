@@ -15,6 +15,23 @@ async function noOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal overflow").toBe(true);
 }
 
+/**
+ * Rewrites the results' reply (GET /api/jobs?limit=…). The page re-reads it as takes arrive and when it navigates, so a read can
+ * outlive its page: the reply is then gone (`Response has been disposed`), and the read is let through rather than failing the test.
+ */
+async function rewriteJobs(page: Page, edit: (body: { generations?: Record<string, unknown>[] }) => void) {
+  await page.route(/\/api\/jobs\?limit=/, async (route) => {
+    try {
+      const reply = await route.fetch();
+      const body = await reply.json();
+      edit(body);
+      await route.fulfill({ response: reply, json: body });
+    } catch {
+      await route.fallback().catch(() => undefined);
+    }
+  });
+}
+
 test("desktop: results in justified rows, the composer, prompt reuse, the viewer, and a priced press that stays", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
   test.setTimeout(300_000);
@@ -145,20 +162,18 @@ test("desktop: ?view=make&viewer=1 opens the viewer on the newest result, with i
   test.setTimeout(240_000);
   await seedHome(page, { takes: 2 });
   /* A take that recorded its seed (Seedance through MCP can): the reply is given one here, as no mock take carries one. */
-  await page.route(/\/api\/jobs\?limit=/, async (route) => {
-    const reply = await route.fetch();
-    const body = await reply.json();
-    if (body.generations?.[0]) body.generations[0].params = { ...body.generations[0].params, seed: 8841 };
-    await route.fulfill({ response: reply, json: body });
+  await rewriteJobs(page, (body) => {
+    const g = body.generations?.[0];
+    if (g) g.params = { ...(g.params as object), seed: 8841 };
   });
   await page.goto("/suites?view=make&viewer=1");
   await expect(page.getByTestId("v12-make-viewer")).toBeVisible({ timeout: 90_000 });
   await expect(page.getByTestId("v12-make-viewer-count")).toHaveText("1 / 2");
-  /* The seed shows; Reuse seed waits until Make's send can carry a seed, and says so rather than promise a repeat. */
+  /* The seed shows; a still's engines take none, so Reuse seed is off on a still and says why. */
   await expect(page.getByTestId("v12-make-viewer-seed")).toContainText("Seed 8841");
   await expect(page.getByTestId("v12-make-viewer-meta")).toContainText("seed 8841");
   await expect(page.getByTestId("v12-make-viewer-reuse-seed")).toBeDisabled();
-  await expect(page.getByTestId("v12-make-viewer-reuse-seed")).toHaveAttribute("title", /comes when Make can send one/);
+  await expect(page.getByTestId("v12-make-viewer-reuse-seed")).toHaveAttribute("title", /^This engine doesn't repeat a seed/);
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("v12-make-viewer-count")).toHaveText("2 / 2");
   await expect(page.getByTestId("v12-make-viewer-seed")).toHaveCount(0);
@@ -181,6 +196,81 @@ test("desktop: ?view=make&viewer=1 opens the viewer on the newest result, with i
   await noOverflow(page);
 });
 
+test("desktop: Reuse seed on a clip loads it with its seed, and the next priced press sends that seed", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
+  test.setTimeout(240_000);
+  await seedHome(page, { takes: 1 });
+  /* A Seedance clip that recorded its seed: the mock makes stills, so the reply makes its one take such a clip. */
+  const SEEDANCE = "dreamina-seedance-2-5-260628";
+  await rewriteJobs(page, (body) => {
+    const g = body.generations?.[0];
+    if (g) Object.assign(g, { kind: "video", model: SEEDANCE, params: { ...(g.params as object), ratio: "16:9", resolution: "1080p", duration: 5, seed: 8841 } });
+  });
+  await page.goto("/suites?view=make&viewer=1");
+  await expect(page.getByTestId("v12-make-viewer")).toBeVisible({ timeout: 90_000 });
+  const reuseSeed = page.getByTestId("v12-make-viewer-reuse-seed");
+  await expect(reuseSeed).toBeEnabled();
+  await reuseSeed.click();
+  await expect(page.getByTestId("v12-make-viewer")).toHaveCount(0);
+  await expect(page.getByText("Seed 8841 set · it stays until you remove it").first()).toBeVisible();
+  const input = page.getByTestId("v12-make-bar-input");
+  await expect(input).toHaveValue("A lighthouse at dusk, slow push-in");
+  await expect(page.getByTestId("v12-make-seed")).toContainText("Seed 8841", { timeout: 60_000 });
+  const go = page.getByTestId("v12-make-go");
+  await expect(go).toHaveText(/^Make · \d[\d,]* cr$/, { timeout: 60_000 });
+  /* The priced press: quoted and sent with the seed, at the figure on the button. */
+  const quoted = page.waitForRequest((r) => new URL(r.url()).pathname === "/api/generate/quote" && r.method() === "POST");
+  const sent = page.waitForRequest((r) => new URL(r.url()).pathname === "/api/generate" && r.method() === "POST");
+  await go.click();
+  const quotedRequest = await quoted;
+  expect(quotedRequest.postDataJSON()).toMatchObject({ seed: 8841, model: SEEDANCE });
+  /* The server takes a seed that is a whole number from 0 to 4294967295 and refuses any other before it quotes. */
+  const replay = (seed: unknown) => page.request.post(quotedRequest.url(), { headers: quotedRequest.headers(), data: { ...(quotedRequest.postDataJSON() as object), seed } });
+  for (const bad of [-1, 1.5, 4_294_967_296, "abc"]) expect((await replay(bad)).status(), `seed ${bad}`).toBe(400);
+  expect((await replay(4_294_967_295)).status()).not.toBe(400);
+  const body = (await sent).postDataJSON() as { seed?: number; maxCredits?: number; quoteFingerprint?: string };
+  expect(body.seed).toBe(8841);
+  expect(typeof body.maxCredits).toBe("number");
+  expect(typeof body.quoteFingerprint).toBe("string");
+  /* × stops repeating it, and the next press carries no seed. */
+  await page.getByTestId("v12-make-seed").getByRole("button", { name: "Stop repeating this seed" }).click();
+  await expect(page.getByTestId("v12-make-seed")).toHaveCount(0);
+  await expect(go).toHaveText(/^Make · \d[\d,]* cr$/, { timeout: 60_000 });
+  const again = page.waitForRequest((r) => new URL(r.url()).pathname === "/api/generate" && r.method() === "POST");
+  await go.click();
+  expect(Object.keys((await again).postDataJSON() as object)).not.toContain("seed");
+});
+
+test("desktop: Reuse seed is offered only for an engine that takes a seed, and picking another engine drops the seed", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
+  test.setTimeout(240_000);
+  await seedHome(page, { takes: 1 });
+  let model = "fal-ai/kling-video/v3/standard";
+  await rewriteJobs(page, (body) => {
+    const g = body.generations?.[0];
+    if (g) Object.assign(g, { kind: "video", model, params: { ...(g.params as object), ratio: "16:9", resolution: "1080p", duration: 5, seed: 8841 } });
+  });
+  /* A clip on an engine that ignores seeds: the button is off and says why. */
+  await page.goto("/suites?view=make&viewer=1");
+  await expect(page.getByTestId("v12-make-viewer")).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByTestId("v12-make-viewer-reuse-seed")).toBeDisabled();
+  await expect(page.getByTestId("v12-make-viewer-reuse-seed")).toHaveAttribute("title", /^This engine doesn't repeat a seed/);
+
+  /* On Seedance it works; then choosing another engine drops the seed (it is not merely hidden), and choosing Seedance back does not bring it back. */
+  model = "dreamina-seedance-2-5-260628";
+  await page.goto("/suites?view=make&viewer=1");
+  await expect(page.getByTestId("v12-make-viewer-reuse-seed")).toBeEnabled({ timeout: 90_000 });
+  await page.getByTestId("v12-make-viewer-reuse-seed").click();
+  await expect(page.getByTestId("v12-make-seed")).toContainText("Seed 8841", { timeout: 60_000 });
+  await page.getByTestId("v12-make-chip-model").click();
+  await page.getByRole("menuitem", { name: /Seedance 2\.0/ }).click();
+  await expect(page.getByTestId("v12-make-seed")).toHaveCount(0, { timeout: 30_000 });
+  await page.getByTestId("v12-make-chip-model").click();
+  await page.getByRole("menuitem", { name: /Seedance 2\.5/ }).click();
+  await expect(page.getByTestId("v12-make-chip-model")).toContainText("Seedance 2.5");
+  await expect(page.getByTestId("v12-make-seed")).toHaveCount(0);
+});
+
 test("desktop: the open viewer stays on its take when a new take lands at the front; viewer=1 on an empty workspace is spent once results load", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
   test.setTimeout(240_000);
@@ -188,14 +278,11 @@ test("desktop: the open viewer stays on its take when a new take lands at the fr
   /* The results are read again while takes render and after a press: a take that arrives is put at the front here. */
   let seen: Record<string, unknown>[] = [];
   let arriving: Record<string, unknown> | null = null;
-  await page.route(/\/api\/jobs\?limit=/, async (route) => {
-    const reply = await route.fetch();
-    const body = await reply.json();
+  await rewriteJobs(page, (body) => {
     if (Array.isArray(body.generations)) {
       if (body.generations.length) seen = body.generations;
       if (arriving) body.generations.unshift(arriving);
     }
-    await route.fulfill({ response: reply, json: body });
   });
   const reread = () => page.evaluate(() => window.dispatchEvent(new Event("particl:jobs")));
   await page.goto("/suites?view=make");
