@@ -16,12 +16,14 @@ const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select
  * `layer` places it in the Esc order (docs/redesign/inventory.md § 4.1): "viewer" for the Make viewer, "join" for the
  * join sheet, "menu" (the default) for the other sheets and dialogs. `scrim` picks the prototype's darkness for each.
  */
-export function Dialog({ open, onClose, label, title, children, footer, variant = "dialog", layer = "menu", scrim = "default", width, closeTip = "Close" }: {
+export function Dialog({ open, onClose, label, title, head, children, footer, variant = "dialog", layer = "menu", scrim = "default", width, closeTip = "Close", closeLine, className, testId }: {
   open: boolean;
   onClose: () => void;
   /** Accessible name when there is no visible title. */
   label: string;
   title?: ReactNode;
+  /** A head of its own in place of the title (an eyebrow, a title and a quote, say); `label` names the dialog then. */
+  head?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   variant?: "dialog" | "sheet";
@@ -30,6 +32,10 @@ export function Dialog({ open, onClose, label, title, children, footer, variant 
   width?: number;
   /** The × tooltip's line ("Close · Esc — your text stays in the bar", for the join sheet). */
   closeTip?: string;
+  /** The × tooltip's one line ("Your text stays in the bar."). */
+  closeLine?: string;
+  className?: string;
+  testId?: string;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -58,11 +64,11 @@ export function Dialog({ open, onClose, label, title, children, footer, variant 
   if (!root) return null;
   return createPortal(
     <div className="v12-scrim" data-scrim={scrim} data-variant={variant} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={panel} role="dialog" aria-modal="true" aria-label={title ? undefined : label} aria-labelledby={title ? titleId : undefined}
-        tabIndex={-1} className="v12-dialog" data-variant={variant} style={width ? { width } : undefined} onKeyDown={trap}>
+      <div ref={panel} role="dialog" aria-modal="true" aria-label={title && !head ? undefined : label} aria-labelledby={title && !head ? titleId : undefined}
+        tabIndex={-1} className={["v12-dialog", className].filter(Boolean).join(" ")} data-variant={variant} data-testid={testId} style={width ? { width } : undefined} onKeyDown={trap}>
         <div className="v12-dialog-head">
-          {title ? <h2 id={titleId} className="v12-dialog-title">{title}</h2> : <span />}
-          <IconButton tooltip={{ name: closeTip, shortcut: "Esc" }} label="Close" size="sm" onClick={onClose}>
+          {head ?? (title ? <h2 id={titleId} className="v12-dialog-title">{title}</h2> : <span />)}
+          <IconButton tooltip={{ name: closeTip, line: closeLine, shortcut: "Esc" }} label="Close" size="sm" className="v12-dialog-x" onClick={onClose} data-testid="v12-dialog-close">
             <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
           </IconButton>
         </div>

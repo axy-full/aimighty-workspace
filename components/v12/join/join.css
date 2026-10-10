@@ -1,0 +1,72 @@
+/*
+ * The join sheet (components/v12/join/JoinSheet.tsx; prototype 12 L34–L42, L59–L69). Under .v12 (the portal layer);
+ * app/graphite.css tokens only.
+ */
+
+.v12 .v12-dialog.v12-join { gap: var(--gx-sp-16); padding: 20px 22px 18px; border-color: var(--gx-line-control); border-radius: var(--gx-r-bar); max-width: calc(100vw - 48px); overflow: auto; }
+.v12 .v12-join .v12-dialog-head { padding: 0; align-items: flex-start; gap: var(--gx-sp-12); }
+.v12 .v12-join .v12-dialog-body { padding: 0; overflow: visible; color: var(--gx-text); display: flex; flex-direction: column; gap: var(--gx-sp-16); }
+.v12 .v12-join .v12-iconbtn.v12-dialog-x { width: var(--gx-h-input); height: var(--gx-h-input); border-radius: var(--gx-r-btn); flex: none; }
+
+.v12 .v12-join-head { display: flex; flex-direction: column; gap: var(--gx-sp-4); min-width: 0; }
+.v12 .v12-join-eyebrow { font-size: var(--gx-fs-label); letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; font-weight: 600; color: var(--gx-eyebrow); }
+.v12 .v12-join-title { margin: 0; font-size: var(--gx-fs-title); font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; }
+.v12 .v12-join-prompt {
+  margin-top: var(--gx-sp-4); font-size: var(--gx-fs-meta); line-height: 1.45; color: var(--gx-text-strong);
+  padding: var(--gx-sp-8) var(--gx-sp-10); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-btn); background: var(--gx-input);
+  overflow-wrap: anywhere;
+}
+
+.v12 .v12-join-paths { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; min-width: 0; }
+.v12 .v12-join-paths[data-compact] { grid-template-columns: minmax(0, 1fr); gap: var(--gx-sp-12); }
+.v12 .v12-join-path { min-width: 0; display: flex; flex-direction: column; gap: var(--gx-sp-10); padding: 14px; border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-pop); margin: 0; }
+.v12 .v12-join-path-title { margin: 0; font-size: var(--gx-fs-body); font-weight: 600; }
+.v12 .v12-join-line { margin: 0; font-size: var(--gx-fs-meta); color: var(--gx-text-strong); line-height: 1.45; }
+.v12 .v12-join-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gx-sp-6); min-width: 0; }
+.v12 .v12-join-wide { grid-column: 1 / -1; }
+.v12 .v12-join-input {
+  box-sizing: border-box; width: 100%; min-width: 0; height: var(--gx-h-bar); padding: 0 var(--gx-sp-12);
+  border: 1px solid var(--gx-input-border); background: var(--gx-input); border-radius: var(--gx-r-btn); color: var(--gx-text);
+  font: inherit; font-size: var(--gx-fs-body);
+}
+.v12 select.v12-join-input { padding: 0 var(--gx-sp-10); }
+.v12 .v12-join-input::placeholder { color: var(--gx-placeholder); }
+.v12 .v12-join-code { font-family: var(--gx-mono); }
+.v12 .v12-join-want { height: auto; min-height: 56px; resize: vertical; padding: 9px var(--gx-sp-12); line-height: var(--gx-lh-body); }
+.v12 .v12-join-stack { display: flex; flex-direction: column; gap: var(--gx-sp-6); }
+.v12 .v12-join .v12-join-btn {
+  height: var(--gx-h-bar); padding: 0 14px; border-radius: var(--gx-r-btn); border: 1px solid var(--gx-line-strong); background: transparent;
+  color: var(--gx-text); font-size: var(--gx-fs-meta); font-weight: 500; text-align: center; white-space: nowrap;
+}
+.v12 .v12-join .v12-join-btn:hover { border-color: var(--gx-hover-border); }
+.v12 .v12-join .v12-join-btn.v12-join-primary { border-color: transparent; background: var(--gx-accent); color: var(--gx-on-accent); font-weight: 600; }
+.v12 .v12-join .v12-join-btn.v12-join-primary:hover { background: var(--gx-accent-hover); }
+.v12 .v12-join .v12-join-btn:disabled { cursor: default; opacity: 1; color: var(--gx-disabled); }
+.v12 .v12-join .v12-join-btn.v12-join-primary:disabled { color: var(--gx-on-accent); background: var(--gx-tint-border-50); }
+.v12 .v12-join-problem { margin: 0; font-size: var(--gx-fs-meta); color: var(--gx-waiting-text); }
+.v12 .v12-join-trap { position: absolute; left: -10000px; width: 1px; height: 1px; opacity: 0; }
+
+.v12 .v12-join-foot { display: flex; justify-content: space-between; align-items: center; gap: var(--gx-sp-12); flex-wrap: wrap; font-size: var(--gx-fs-meta); color: var(--gx-text-sec); }
+.v12 .v12-join-login { font-weight: 600; color: var(--gx-accent-text); text-decoration: none; }
+.v12 .v12-join-login:hover { color: var(--gx-accent-text-hover); }
+
+.v12 .v12-join-done { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gx-sp-10); padding: var(--gx-sp-16); border: 1px solid var(--gx-done-border); border-radius: var(--gx-r-pop); background: var(--gx-done-tint-08); }
+.v12 .v12-join-done-title { display: flex; align-items: center; gap: var(--gx-sp-8); font-size: var(--gx-fs-card); font-weight: 600; }
+.v12 .v12-join-done-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gx-done); }
+.v12 .v12-join-done-line { font-size: var(--gx-fs-body); line-height: 1.5; color: var(--gx-text-strong); }
+.v12 .v12-join .v12-join-done .v12-join-btn { height: 36px; }
+
+/* Phone: one column in a bottom sheet, 44 px targets, inputs at 16 px so the page does not zoom. */
+.v12 .v12-dialog.v12-join[data-variant="sheet"] {
+  max-width: 100%; max-height: 88dvh; padding: 10px var(--gx-sp-16) calc(48px + env(safe-area-inset-bottom, 0px));
+  border-radius: var(--gx-r-sheet) var(--gx-r-sheet) 0 0;
+}
+.v12 .v12-dialog.v12-join[data-variant="sheet"]::before { content: ""; align-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--gx-line-dashed); flex: none; }
+.v12 .v12-join[data-variant="sheet"] .v12-join-title { font-size: var(--gx-fs-empty); }
+.v12 .v12-join[data-variant="sheet"] .v12-join-input, .v12 .v12-join[data-variant="sheet"] .v12-join-btn { height: var(--gx-touch); }
+.v12 .v12-join[data-variant="sheet"] .v12-join-input { font-size: var(--gx-fs-field); }
+.v12 .v12-join[data-variant="sheet"] .v12-join-btn { font-size: var(--gx-fs-body); }
+.v12 .v12-join[data-variant="sheet"] .v12-join-want { height: auto; }
+.v12 .v12-join[data-variant="sheet"] .v12-iconbtn.v12-dialog-x { width: var(--gx-touch); height: var(--gx-touch); }
+.v12 .v12-join[data-variant="sheet"] .v12-join-foot { flex-direction: column-reverse; align-items: flex-start; }
+.v12 .v12-join[data-variant="sheet"] .v12-join-login { min-height: var(--gx-touch); display: inline-flex; align-items: center; }

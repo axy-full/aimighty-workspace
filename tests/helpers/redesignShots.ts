@@ -71,7 +71,11 @@ export async function openPrototype(page: Page, query: string): Promise<void> {
  * Writes the app screenshot (the page as it is now), the prototype screenshot (opened in a second page of the same
  * context) and one image with both side by side, app on the left.
  */
-export async function captureBeside(appPage: Page, name: string, protoQuery: string): Promise<{ dir: string; files: string[] }> {
+/**
+ * `phone`: the prototype draws its phone screens (`device=phone`) as a 390 × 844 shell centred on a desktop page, so the
+ * app's phone-sized page is put beside that shell, cut from the prototype opened at 1440 × 900.
+ */
+export async function captureBeside(appPage: Page, name: string, protoQuery: string, options: { phone?: boolean } = {}): Promise<{ dir: string; files: string[] }> {
   const size = appPage.viewportSize() ?? { width: 1440, height: 900 };
   const dir = path.resolve(process.env.REDESIGN_SHOTS_DIR ?? "../redesign-shots", name);
   await mkdir(dir, { recursive: true });
@@ -79,8 +83,10 @@ export async function captureBeside(appPage: Page, name: string, protoQuery: str
   const app = await appPage.screenshot({ animations: "disabled" });
   const proto = await appPage.context().newPage();
   try {
+    /* The same size as the app's page, which a phone capture sets itself (page.setViewportSize). */
+    await proto.setViewportSize(options.phone ? { width: 1440, height: 900 } : size);
     await openPrototype(proto, protoQuery);
-    const protoShot = await proto.screenshot({ animations: "disabled" });
+    const protoShot = await proto.screenshot({ animations: "disabled", ...(options.phone ? { clip: { x: (1440 - size.width) / 2, y: 0, width: size.width, height: Math.min(size.height, 900) } } : {}) });
     const gap = 16;
     const beside = await sharp({ create: { width: size.width * 2 + gap, height: size.height, channels: 3, background: "#808080" } })
       .composite([{ input: app, left: 0, top: 0 }, { input: protoShot, left: size.width + gap, top: 0 }])
