@@ -103,6 +103,9 @@
 }
 .v12 .v12-menu-item:hover, .v12 .v12-menu-item:focus-visible { background: var(--gx-fill-hover); }
 .v12 .v12-menu-item:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: -2px; }
+/* A menu opened by the pointer holds focus itself until ↓ reaches an item, which then shows the ring: the panel draws
+   none, as the prototype's menus (the open menu is what has focus, and it is in plain view). */
+.v12.v12-portal .v12-menu:focus-visible { outline: none; }
 .v12 .v12-menu-item[aria-disabled="true"] { color: var(--gx-disabled); cursor: default; background: transparent; }
 .v12 .v12-menu-item[data-tone="danger"] { color: var(--gx-failed-text); }
 .v12 .v12-menu-item[data-tone="quiet"] { color: var(--gx-text-muted); }

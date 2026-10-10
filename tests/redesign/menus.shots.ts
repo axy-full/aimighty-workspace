@@ -68,6 +68,8 @@ test("the canvas menu beside the prototype's", async ({ page }) => {
     }
     throw new Error("no empty canvas");
   }, { left: flow.x, top: flow.y, width: flow.width, height: flow.height });
+  /* A press first: the board was fitted with its 0 key, and a person reaching for the menu uses the pointer. */
+  await page.mouse.click(at.x, at.y);
   await page.mouse.click(at.x, at.y, { button: "right" });
   await expect(page.getByTestId("v12-canvas-menu")).toBeVisible();
   await page.mouse.move(at.x + 400, at.y);
