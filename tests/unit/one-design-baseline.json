@@ -54,9 +54,6 @@
   "words": {
     "components/atomik/MarketingStudioEntry.tsx": 3,
     "components/graphite/business/FormatTool.tsx": 1,
-    "components/graphite/production/TimelineCut.tsx": 1,
-    "components/workbench/AtomikRunDialog.tsx": 1,
-    "components/workspace/rig/RigProvider.tsx": 2,
-    "components/workspace/rig/use-team-canvas.ts": 1
+    "components/workbench/AtomikRunDialog.tsx": 1
   }
 }
