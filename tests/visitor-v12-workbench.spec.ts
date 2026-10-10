@@ -294,12 +294,13 @@ test("phones: the visitor's Home is the phone's own — Log in and Request acces
   for (const id of ["v12-join-name", "v12-join-work-email", "v12-join-company", "v12-join-role", "v12-join-size", "v12-join-want"]) await expect(page.getByTestId(id)).toBeAttached();
   await expect(page.getByTestId("v12-join-login")).toBeAttached();
   await expect(s).toContainText("Your work stays private to your workspace.");
-  /* One column, inside the screen, clear of the bottom edge. */
+  /* One column, inside the screen, clear of the bottom edge (measured once the sheet has come up). */
+  await page.waitForTimeout(500);
   const box = (await s.boundingBox())!;
   const vp = page.viewportSize()!;
   expect(box.x).toBeGreaterThanOrEqual(-0.5);
   expect(box.x + box.width).toBeLessThanOrEqual(vp.width + 0.5);
-  expect(box.y + box.height).toBeLessThanOrEqual(vp.height + 1.5);
+  expect(box.y + box.height).toBeLessThanOrEqual(vp.height + 0.5);
   const invite = (await page.getByTestId("v12-join-invite").boundingBox())!;
   const request = (await page.getByTestId("v12-join-request").boundingBox())!;
   expect(request.y, "the request form is under the invite: one column").toBeGreaterThan(invite.y + invite.height - 1);
