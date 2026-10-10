@@ -1,6 +1,6 @@
 {
   "name": "render-slow",
-  "app": "/suites?project=project-9f177744&suite=particl&page=brief&view=board&stage=shots",
+  "app": "/suites?project=project-eebeb11c&suite=particl&page=brief&view=board&stage=shots",
   "prototype": "?view=board&stage=Shots&render=slow",
   "size": {
     "width": 1440,

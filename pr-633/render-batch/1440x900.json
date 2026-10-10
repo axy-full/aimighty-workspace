@@ -1,6 +1,6 @@
 {
   "name": "render-batch",
-  "app": "/suites?project=project-0ad2a1cc&suite=particl&page=brief&view=board&stage=shots",
+  "app": "/suites?project=project-a647a71d&suite=particl&page=brief&view=board&stage=shots",
   "prototype": "?view=board&stage=Shots&render=batch",
   "size": {
     "width": 1440,

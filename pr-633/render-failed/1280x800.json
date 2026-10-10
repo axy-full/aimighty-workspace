@@ -1,6 +1,6 @@
 {
   "name": "render-failed",
-  "app": "/suites?project=project-7881e1c8&suite=particl&page=brief&view=board&stage=shots",
+  "app": "/suites?project=project-a093e6a8&suite=particl&page=brief&view=board&stage=shots",
   "prototype": "?view=board&stage=Shots&render=failed",
   "size": {
     "width": 1280,

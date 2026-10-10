@@ -1,6 +1,6 @@
 {
   "name": "render-notify",
-  "app": "/suites?project=project-1c12eed5&suite=particl&page=brief&view=board&stage=shots",
+  "app": "/suites?project=project-5414b3d8&suite=particl&page=brief&view=board&stage=shots",
   "prototype": "?view=board&stage=Shots&render=rendering&notify=1",
   "size": {
     "width": 1440,
