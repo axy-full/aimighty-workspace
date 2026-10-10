@@ -29,7 +29,7 @@ export function deriveRounds(src: Pick<BoardSource, "kind" | "project" | "librar
   });
   const base = { round, board: src.project.name, shots: rows.length, compare };
   const card = (variant: RoundVariant, region: "storyboard" | "cut" | "deliver"): BoardCard => ({
-    id: `round:${variant}`, kind: "round", region, order: 9500, state: "done", summary: `Round ${round.n} · ${round.changes.length} changed`, data: { variant, ...base } satisfies RoundCardData,
+    id: `round:${variant}`, kind: "round", region, order: 9500, state: "done", data: { variant, ...base } satisfies RoundCardData,
   });
   return [card("changed", "storyboard"), card("cut", "cut"), card("deliver", "deliver")];
 }
