@@ -89,7 +89,11 @@ export function V12Header({ account, project, projects, onPick }: {
     update((now) => closeTab(now, id));
     if (wasActive) { if (next) goBoard(next); else goHome(); }
     const name = nameOf(id);
-    toast({ text: `${name} closed · the board is kept`, action: { label: "Undo", run: () => { update((now) => restoreTab(now, id, index)); if (wasActive) goBoard(id); } } });
+    toast({ text: `${name} closed · the board is kept`, action: { label: "Undo", run: () => {
+      update((now) => restoreTab(now, id, index));
+      /* The latest goBoard: closing already moved to the neighbour, so this closure's project is no longer the open one. */
+      if (wasActive) keys.current.goBoard(id);
+    } } });
   };
 
   /* Keys: ⌘1 Home, ⌘2 Make, ⌘3… the board tabs shown, ⌘J the panel, G then H Home. Not while typing. */
@@ -133,7 +137,7 @@ export function V12Header({ account, project, projects, onPick }: {
     { id: "copy", label: "Copy link", onSelect: () => copyLink(tabMenu), testId: "v12-tab-copy" },
     { id: "sep", separator: true },
     { id: "close", label: "Close", onSelect: () => close(tabMenu), testId: "v12-tab-close-item" },
-    { id: "others", label: "Close others", disabled: tabs.state.open.length < 2, onSelect: () => { const keep = tabMenu; update((now) => closeOthers(now, keep)); if (activeBoard && activeBoard !== keep) goBoard(keep); }, testId: "v12-tab-close-others" },
+    { id: "others", label: "Close others", disabled: tabs.state.open.length < 2, onSelect: () => { const keep = tabMenu; update((now) => closeOthers(now, keep)); if (openId && openId !== keep) goBoard(keep); }, testId: "v12-tab-close-others" },
   ] : [];
   const moreItems: MenuItem[] = [
     ...hidden.map((id) => ({ id, label: nameOf(id), onSelect: () => goBoard(id) })),

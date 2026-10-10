@@ -19,6 +19,9 @@
   flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--gx-sp-2); padding: 3px; margin-left: var(--gx-sp-8);
   background: var(--gx-sunken); border-radius: var(--gx-r-btn); overflow: hidden;
 }
+/* The tab group clips (overflow hidden, 3 px padding): a focus ring at the frame's 2 px offset lost its outer pixel, so
+   rings inside the group sit flush (2 px, inside the padding). */
+.v12 .v12-header .v12-tabs :focus-visible { outline-offset: 0; }
 .v12 .v12-tab {
   flex: none; min-width: 0; max-width: var(--gx-w-tab-max); height: var(--gx-h-tab); display: flex; align-items: center;
   border-radius: var(--gx-r-tab); color: var(--gx-text-muted); transition: background var(--gx-t-menu) var(--gx-ease), color var(--gx-t-menu) var(--gx-ease);
