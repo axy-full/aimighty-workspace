@@ -105,6 +105,10 @@ test.describe("desktop, switch on", () => {
     await page.mouse.click(space.x, space.y, { button: "right" });
     expect(await menuLabels(page, "v12-empty-menu")).toEqual(["Library", "Make", "Atomik panel", "Ask Atomik, search or go to"]);
     await expect(page.getByTestId("v12-empty-menu").locator(".v12-menu-key")).toHaveText(["L", "⌘2", "⌘J", "⌘K"]);
+    /* A right-click on our own menu opens nothing more: no menu on a menu, and not today's shell menu either. */
+    await page.getByTestId("v12-empty-menu").click({ button: "right" });
+    await expect(page.getByTestId("context-menu")).toHaveCount(0);
+    await expect(page.getByTestId("v12-empty-menu")).toBeVisible();
     await page.getByTestId("v12-menu-library").click();
     await expect(page.getByTestId("v12-library")).toBeVisible();
     /* A right-click in a field keeps the browser's own menu (no menu of ours). */

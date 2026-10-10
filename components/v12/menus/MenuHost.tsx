@@ -81,8 +81,9 @@ export function MenuHost({ children }: { children: ReactNode }) {
   const onContextMenu = (event: MouseEvent) => {
     const el = event.target as HTMLElement;
     if (!(el instanceof Element)) return;
-    /* A menu, tooltip or toast of the new frame: no menu on a menu, and not the browser's either. */
-    if (el.closest(".v12-portal")) { event.preventDefault(); return; }
+    /* A menu, tooltip or toast of the new frame: no menu on a menu, not the browser's, and not today's shell menu either
+       (the event would bubble to SuitesShell's onContextMenu). */
+    if (el.closest(".v12-portal")) { event.preventDefault(); event.stopPropagation(); return; }
     /* A field keeps the browser's menu (paste, spelling); a file tile or Rig node of today's screens keeps today's menu. */
     if (typingIn(el) || el.closest("[data-ctx]")) return;
     const node = el.closest<HTMLElement>(NODE);
