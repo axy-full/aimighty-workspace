@@ -71,7 +71,7 @@ export async function openBoard(page: Page, path = "/suites?view=board", opts: {
   if (opts.on !== false) await expect.poll(async () => ((await (await page.request.get("/api/me")).json()) as { workspace?: { newInterface?: boolean } }).workspace?.newInterface ?? false, { timeout: 30_000 }).toBe(true);
   /* The drawn frames' takes are rows in the workspace's own local database (nothing is generated): gaps-l2's seedBoard. */
   const film = opts.project ?? filmBoard();
-  const { project, scope } = await seedBoard(page, signed.workspace.id, (base) => ({ ...base, name: film.name, brief: film.brief, production: film.production, nodes: film.nodes }),
+  const { project, scope } = await seedBoard(page, signed.workspace.id, (base) => ({ ...base, name: film.name, brief: film.brief, production: film.production, nodes: film.nodes, ...(film.boardKind ? { boardKind: film.boardKind } : {}), ...(film.boardFlavor ? { boardFlavor: film.boardFlavor } : {}), ...(film.boardStages ? { boardStages: film.boardStages } : {}) }),
     { generations: [1, 2, 3, 4, 5].map((i) => `gframe${i}`) });
   await forbidPaidWork(page);
   await mockMedia(page);

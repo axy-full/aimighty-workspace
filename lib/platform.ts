@@ -168,6 +168,8 @@ const SCHEMA = [
      updated_at       INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS meter_events_ws ON meter_events(workspace_id, created_at)`,
+  // Reads by date alone (the ledger unit's newest price, statements over a window) have no workspace to lead with.
+  `CREATE INDEX IF NOT EXISTS meter_events_created ON meter_events(created_at)`,
   // A monotonic receipt revision supports incremental tenant projections across servers.
   `CREATE TABLE IF NOT EXISTS meter_credit_receipts (
      revision INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL UNIQUE,

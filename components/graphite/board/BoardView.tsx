@@ -54,7 +54,7 @@ import { CheckAgain } from "../CheckAgain";
 import { sampleGate } from "@/lib/demo/sample";
 import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
-import { addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
+import { stageLimit, addStage, currentStage, freeCards as unstagedCards, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
@@ -174,16 +174,18 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* A board with nothing on it yet opens on its first stage (the brief); one with work on it, where the kind opens. */
   const stage = v12Frame ? currentStage(stages, shell.params.stage ?? (allCards.length ? null : stages[0]?.id), flavor) : null;
   const stageOwn = useMemo(() => (stage ? stageCards(stage, allCards, flavor) : allCards), [stage, allCards, flavor]);
+  /* The board's free cards (a dropped tile, a note, an upload) show on whichever stage is open, where they were put. */
+  const stageShown = useMemo(() => (stage ? [...stageOwn, ...unstagedCards(allCards)] : allCards), [stage, stageOwn, allCards]);
   /* The new interface's stage grid (components/v12/board/stage-grid.ts, redesign P2-b): on a grid stage, its groups N across with
      a 24 px gap and its shot cards one size. Off the switch, or on any other stage, today's definitions as they are. */
   const gridAcross = useStageColumns(v12Frame && onGrid(stage?.id));
-  const cards = useMemo(() => (gridAcross ? gridCards(stageOwn) : stageOwn), [gridAcross, stageOwn]);
+  const cards = useMemo(() => (gridAcross ? gridCards(stageShown) : stageShown), [gridAcross, stageShown]);
   const layoutDefs = useMemo(() => (gridAcross ? gridDefs(registry.defs, cards, project?.aspect ?? "16:9", gridAcross) : registry.defs), [gridAcross, registry.defs, cards, project?.aspect]);
   const placed = useMemo(() => placeBoard(cards, layoutDefs, board.bands, project?.aspect ?? "16:9"), [cards, layoutDefs, board.bands, project?.aspect]);
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
   /* A fresh board (nothing on any stage) keeps today's way in; a stage with nothing on it says what goes there. */
   const empty = !!project && (v12Frame ? allCards.length === 0 : placed.cards.length === 0);
-  const stageIsEmpty = v12Frame && !empty && placed.cards.length === 0;
+  const stageIsEmpty = v12Frame && !empty && stageOwn.length === 0;
 
   /* A drawer opens from the design's frame letter, or from `drawer=` (Viral's History page is the Social board's History drawer: lib/shell/ads-social.ts). */
   const [drawer, setDrawer] = useState<BoardDrawer | null>(() => frameDrawer(frame) ?? (shell.params.drawer === "history" || shell.params.drawer === "library" || shell.params.drawer === "render" ? shell.params.drawer : null));
@@ -585,7 +587,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       case "skip": next = skipStage(stages, edit.id, edit.skipped); say = edit.skipped ? `${name(edit.id)} skipped · gates warn, never block` : `${name(edit.id)} is back`; break;
       case "remove": next = removeStage(stages, edit.id); say = `${name(edit.id)} removed · its cards are kept`; if (edit.id === stage?.id) go = stages.find((s) => s.id !== edit.id)?.id ?? null; break;
       case "move": next = moveStage(stages, edit.id, edit.index); say = `${name(edit.id)} moved`; break;
-      case "add": { const out = addStage(stages, edit.after, edit.label, () => crypto.randomUUID().slice(0, 8)); next = out.saved; go = out.id; say = `${edit.label} added`; break; }
+      case "add": { const refused = stageLimit(stages.length); if (refused) { ws.toast(refused); return; } const out = addStage(stages, edit.after, edit.label, () => crypto.randomUUID().slice(0, 8)); next = out.saved; go = out.id; say = `${edit.label} added`; break; }
     }
     const refusal = rig.apply((p) => ({ ...p, boardStages: next }));
     if (refusal) { ws.toast(refusal); return; }
@@ -700,7 +702,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       <div className="bd" style={style} data-testid="board" data-board-kind={kind} data-tool={tool} data-offline={offline || undefined} data-sample={gate.exploreOnly ? "1" : undefined} data-v12={v12Frame || undefined} data-stage={stage?.id}>
         {v12Frame ? (
           <StageRail kindLabel={KIND_LABEL[flavor]} onKind={changeKind} stages={stages} current={stage?.id ?? null} status={(st) => stageStatus(st, allCards, flavor)}
-            readOnly={offline ? "Offline" : gate.readOnly ?? null} onPick={goStage} onEdit={editStages} />
+            readOnly={offline ? "Offline" : gate.readOnly ?? null} onPick={goStage} onEdit={editStages} addBlocked={stageLimit(stages.length)} />
         ) : <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} render={kind === "studio"} />}
         <div className="bd-main" data-testid="board-canvas">
           {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={headPrimary} menu={boardMenu}
