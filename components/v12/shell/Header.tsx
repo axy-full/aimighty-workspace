@@ -18,6 +18,9 @@ import { afterClose, closeOthers, closeTab, headerKey, openTab, restoreTab, visi
 import { useBoardTabs } from "./use-board-tabs";
 import "./header.css";
 
+/** The most boards GET /api/workbench/projects returns (app/api/workbench/projects/route.ts). */
+const PROJECTS_LIST_LIMIT = 100;
+
 /**
  * The new interface's header (docs/redesign/inventory.md § 5.1; prototype L43–L56): 56 px, the logo, the tabs that
  * hug (Home · Make · up to four board tabs · +N ▾ · +), the merged Atomik field (⌘K) with its panel icon (⌘J), the
@@ -39,7 +42,8 @@ export function V12Header({ account, project, projects, onPick }: {
   const toast = useToast();
   const tray = useJobsTray();
   const approvals = useApprovals();
-  const known = useMemo(() => (projects.length || project ? new Set(projects.map((p) => p.id)) : null), [projects, project]);
+  /* The boards list stops at PROJECTS_LIST_LIMIT, so a full list can't say a board is gone: prune only from a shorter one. */
+  const known = useMemo(() => (projects.length >= PROJECTS_LIST_LIMIT ? null : projects.length || project ? new Set(projects.map((p) => p.id)) : null), [projects, project]);
   const tabs = useBoardTabs(session.requestScope ?? null, known);
 
   const onBoard = shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
@@ -77,7 +81,8 @@ export function V12Header({ account, project, projects, onPick }: {
 
   const close = (id: string) => {
     const index = tabs.state.open.indexOf(id);
-    const wasActive = id === activeBoard;
+    /* The open board counts as active even with Make over it: closing its tab must not leave it on screen without one. */
+    const wasActive = id === openId;
     const next = wasActive ? afterClose(tabs.state.open, id) : null;
     update((now) => closeTab(now, id));
     if (wasActive) { if (next) goBoard(next); else goHome(); }
@@ -95,6 +100,8 @@ export function V12Header({ account, project, projects, onPick }: {
       if (event.defaultPrevented || event.isComposing) return;
       const target = event.target as HTMLElement | null;
       if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      /* Not behind one of today's sheets (a .gx-veil), as BoardView's own keys: the page under a modal never moves. */
+      if (document.querySelector(".gx-veil")) return;
       const command = headerKey(event, afterG);
       afterG = false;
       if (!command) return;
