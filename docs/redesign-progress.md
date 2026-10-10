@@ -20,9 +20,12 @@ The running log of the overnight redesign build. A restarted session reads this 
 | A1 tokens, primitives, overlay stack, V12Shell frame | redesign/a1-frame | #616 | Opus approved (after 9 small fixes) |
 | B2 Settings › Credits & billing | redesign/b2-billing | #617 | Opus approved (after fixes: members see "Ask an admin") |
 | C2 Home (signed in) + shared bar | redesign/c2-home | #618 | in review |
-| A2 header | redesign/a2-header | — | lane A building |
-| C4 Library tray | redesign/c4-library | — | lane B building |
-| C3 Make (grid, composer, viewer, prompt reuse) | redesign/c3-make | — | lane C building |
+| A2 header | redesign/a2-header | #620 | Opened with screenshots; review fixes (ce2498c7) pushed 10 Oct 13:30 IST; CI re-running (last run: spend-buttons STRICT · Make panel failed at 360×640); fresh Opus review pending |
+| C4 Library tray | redesign/c4-library | #619 | Opened with screenshots; CI green; fresh Opus review pending |
+| C3 Make (grid, composer, viewer, prompt reuse) | redesign/c3-make | — | WIP recovered and pushed (95c639e6); lane C finishing |
+| P2-a1 board frame (stage rail, stage header, right toolbar, view switch) | redesign/p2a-board-frame | — | WIP recovered and pushed (cb5b5dcd); stacked on C4 |
+| P4 join sheet (Continue with email, request access + company size) | redesign/p4-join | — | WIP recovered and pushed (96d875e7); touches app/api/access-request: NEEDS AKSHAY when opened |
+| A3 menus, keys, tooltips | redesign/a3-menus | — | not started |
 
 ## Blockers
 
@@ -38,8 +41,10 @@ The running log of the overnight redesign build. A restarted session reads this 
 
 ## Next
 
-1. P0 PR review (Opus) and CI.
-2. Lanes: A → A1 (tokens, primitives, overlay stack, V12Shell frame); B → B1 (price layer, low-credit rule); C → C1 (render-state model, typical times). Then A2 header, B2 Settings › Credits & billing, C2 Home, C3 Make, C4 Library tray, A3 menus/keys/tooltips.
+1. Fresh Opus reviews of #619 (C4) and #620 (A2); #620's CI.
+2. Two lanes (owner, 10 Oct: at most 2 plus the lead): C3 Make (finish, specs, shots), A3 menus/keys/tooltips.
+3. Then P2 boards, starting from redesign/p2a-board-frame.
+4. The log lives on redesign/integration; commit and push at least every 30 minutes.
 
 ## Follow-ups for the owner (found while building)
 
@@ -55,3 +60,4 @@ The running log of the overnight redesign build. A restarted session reads this 
 - 10 Oct, evening: overnight build started. Prototype imported, switch and screenshot tool written, #612 opened.
 - 10 Oct, night: #613 reviewed (one blocker in the screenshot publisher, fixed) and approved. B1 (#614) and C1 (#615) pushed and in review; B2 and C2 started. The one-design guard now names prototype 12 as the design, with graphite only shrinking.
 - 10 Oct, late night: A1 (#616), B2 (#617) and C2 (#618) opened; A1 and B2 approved after fixes. Lanes now on A2 header, C4 Library tray, C3 Make.
+- 10 Oct, 13:30 IST: session resumed (the previous one stopped about 02:45 IST and its conversation was lost). Recovered and pushed: A2's review fixes (ce2498c7, never pushed), C3 Make WIP (redesign/c3-make, never pushed), P2-a1 board frame WIP (redesign/p2a-board-frame, unlogged) and P4 join WIP (redesign/p4-join, unlogged). Found A2 (#620) and C4 (#619) already opened with screenshots, though the log said none. Running 2 lanes: C3, A3.
