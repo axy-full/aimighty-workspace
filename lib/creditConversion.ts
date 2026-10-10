@@ -1,6 +1,7 @@
 import type { Transaction } from "@libsql/client";
 import { billingReady, billingTransaction, syncBillingLedger } from "./billingLedger";
 import { platformDb, platformReady, getWorkspace } from "./platform";
+import { columnInstaller } from "./schemaInitialization";
 import { creditRateUsd, creditUsd } from "./creditTerms";
 import { HOUSE_WORKSPACE_ID } from "./houseWorkspace";
 import { OLD_PRICE_EARLIEST, ledgerUnitTx, pausedSinceTx, samePrice, setLedgerUnitTx } from "./ledgerUnit";
@@ -173,9 +174,9 @@ export async function conversionsReady(): Promise<void> {
       `CREATE TABLE IF NOT EXISTS ${CONVERSION_ROWS_TABLE}(conversion_id TEXT NOT NULL, tbl TEXT NOT NULL, row_key TEXT NOT NULL,
         factor REAL NOT NULL, PRIMARY KEY(conversion_id, tbl, row_key))`,
     ], "write");
-    const have = new Set((await platformDb().execute(`PRAGMA table_info(${CONVERSIONS_TABLE})`)).rows.map((r) => String(r.name)));
-    for (const col of ["end_at INTEGER", "caps_json TEXT"])
-      if (!have.has(col.split(" ")[0])) await platformDb().execute(`ALTER TABLE ${CONVERSIONS_TABLE} ADD COLUMN ${col}`);
+    /* Tolerates "duplicate column" from a process booting alongside (lib/schemaInitialization.ts). */
+    const addColumn = await columnInstaller(platformDb());
+    for (const col of ["end_at INTEGER", "caps_json TEXT"]) await addColumn(CONVERSIONS_TABLE, col);
   })().catch((error) => { tableReady = undefined; throw error; });
   await tableReady;
 }

@@ -1,18 +1,19 @@
 import ts from "typescript";
 
 /**
- * The words the owner retired from the UI (design/particl-graphite/README.md §7),
+ * The words the owner retired from the UI (design/particl-graphite/README.md §7). "Rig" left this list on 10 Oct 2026:
+ * prototype 12 names a board view "Rig" and the owner kept that name (docs/redesign-plan.md, "Owner decisions").
  * spelled in pieces so this file does not match its own search. Matching is
  * case-sensitive on the capitalised word, so lower-case code names (kind: "rig",
  * /api/higgsfield, soul_id) are never counted.
  */
 export const OLD_WORDS = [
-  ["Mole", "culr"], ["Sub", "atomik"], ["R", "ig"], ["Gen", "jutsu"], ["So", "ul"], ["Higgs", "field"], ["Per", "sona"], ["As", "tra"],
+  ["Mole", "culr"], ["Sub", "atomik"], ["Gen", "jutsu"], ["So", "ul"], ["Higgs", "field"], ["Per", "sona"], ["As", "tra"],
 ].map((parts) => parts.join(""));
 
 /**
  * The old structure's phrases (the five-suite story and its names). They are counted with the
- * words: a string that says "Five suites in one shell" is the same old design as one that says Rig.
+ * words: a string that says "Five suites in one shell" is the same old design as one that says Moleculr.
  */
 export const OLD_PHRASES = [
   ["Five", " suites"], ["Four", " suites"], ["Production", " Studio"], ["Business", " Suite"], ["Viral", " Studio"],
@@ -176,7 +177,7 @@ function inPageTitle(node: ts.Node): boolean {
 export type BannedName = UiWord & { title: boolean };
 
 /**
- * Every banned name in the user-visible strings of one file: Moleculr, Subatomik, Rig, Genjutsu, Soul,
+ * Every banned name in the user-visible strings of one file: Moleculr, Subatomik, Genjutsu, Soul,
  * Higgsfield, Gen as a place, Astra unless it stands right after Topaz, the old suite phrases, and the
  * same words in capitals. `title` marks a hit inside a page title. `navigation` says the file is
  * navigation data (palette rows, tabs, the header), where a label that is only "Generate" is the old Gen page.

@@ -44,7 +44,9 @@ export function useQuote(source: QuoteSource | null, { debounceMs = 400 }: { deb
     return () => { controller.abort(); clearTimeout(timer); };
   }, [key, fetcher, terms, debounceMs, attempt]);
 
+  /* One object per answer, so a caller's memo or effect keyed on the quote does not rerun on every render. */
+  const current = answer?.key === key ? answer : null;
+  const withRetry = useMemo<Quote | null>(() => (current?.quote.state === "error" ? { ...current.quote, retry } : current?.quote ?? null), [current, retry]);
   if (!key) return IDLE;
-  if (answer?.key !== key) return LOADING;
-  return answer.quote.state === "error" ? { ...answer.quote, retry } : answer.quote;
+  return withRetry ?? LOADING;
 }
