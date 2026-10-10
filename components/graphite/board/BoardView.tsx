@@ -53,6 +53,7 @@ import { CHECK_LINE, isSampleDraftId, LIFT_LINE } from "@/lib/demo/sample";
 import { CheckAgain } from "../CheckAgain";
 import { sampleGate } from "@/lib/demo/sample";
 import { useSession } from "@/lib/session";
+import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
 import { addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
 import { useOverlay } from "@/components/v12/ui/overlay";
@@ -161,9 +162,12 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* The new interface (docs/redesign-plan.md P2-a): one stage at a time, each a slice of today's cards (lib/v12/board/stages.ts). */
   const v12Frame = v12 && !compact;
   const savedStages = project?.boardStages;
-  const stages = useMemo(() => stagesOf(kind, board.rail, savedStages), [kind, board.rail, savedStages]);
-  const stage = v12Frame ? currentStage(stages, shell.params.stage, kind) : null;
-  const cards = useMemo(() => (stage ? stageCards(stage, allCards, kind, board.rail) : allCards), [stage, allCards, kind, board.rail]);
+  /* The kind a person sees (Film, Pre-vis, Campaign, Social · narrated or clips) sits over today's three board kinds. */
+  const flavor = flavorOf(kind, project?.boardFlavor);
+  const stages = useMemo(() => stagesOf(flavor, savedStages), [flavor, savedStages]);
+  /* A board with nothing on it yet opens on its first stage (the brief); one with work on it, where the kind opens. */
+  const stage = v12Frame ? currentStage(stages, shell.params.stage ?? (allCards.length ? null : stages[0]?.id), flavor) : null;
+  const cards = useMemo(() => (stage ? stageCards(stage, allCards, flavor) : allCards), [stage, allCards, flavor]);
   const placed = useMemo(() => placeBoard(cards, registry.defs, board.bands, project?.aspect ?? "16:9"), [cards, registry.defs, board.bands, project?.aspect]);
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
   /* A fresh board (nothing on any stage) keeps today's way in; a stage with nothing on it says what goes there. */
@@ -552,6 +556,18 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     undoable("The stages are back as they were", () => { rig.apply((p) => ({ ...p, boardStages: before })); }, withUndoHint(say));
     if (go) goStage(go);
   }, [goStage, rig, stage?.id, stages, undoable, ws]);
+  /* The kind label cycles the kind (§ 6.2): the rail changes, the cards are kept, and Undo puts both back. */
+  const changeKind = useCallback(() => {
+    const current = rig.project;
+    if (!current) return;
+    const to: Flavor = nextFlavor(flavor);
+    const before = { boardKind: current.boardKind, boardFlavor: current.boardFlavor, boardStages: current.boardStages };
+    const refusal = rig.apply((p) => ({ ...p, boardKind: FLAVOR_BOARD[to], boardFlavor: to, boardStages: [] }));
+    if (refusal) { ws.toast(refusal); return; }
+    /* An address that names another board kind would win over the draft's. */
+    shell.setScreenParams({ kind: null, stage: null }, "replace");
+    undoable("The board kind is back as it was", () => { rig.apply((p) => ({ ...p, ...before })); }, withUndoHint(`Board kind · ${KIND_LABEL[to]} · the rail changed; your cards are kept`));
+  }, [flavor, rig, shell, undoable, ws]);
   /* 1–9 jump to stage N; [ and ] to the stage before and after (inventory § 4.2). Never while typing. */
   useEffect(() => {
     if (!v12Frame) return;
@@ -622,13 +638,13 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   }
   const primary = selection.primary ? placed.byId.get(selection.primary) ?? null : null;
   /* The stage header (inventory § 6.4): the stage's meta, the selection, the one primary where its action lives, the board menu. */
-  const stageNow = stage ? stageStatus(stage, allCards, kind, board.rail) : null;
+  const stageNow = stage ? stageStatus(stage, allCards, flavor) : null;
   const stageMeta = stageNow && stageNow.summary && stageNow.summary !== "Nothing yet" ? stageNow.summary : null;
   const crumb = selectionCrumb([...selection.ids].map((id) => {
     const data = placed.byId.get(id)?.data as { title?: unknown; name?: unknown } | undefined;
     return typeof data?.title === "string" && data.title ? data.title : typeof data?.name === "string" && data.name ? data.name : "1 card";
   }));
-  const wants = stagePrimary(stage, allCards, kind);
+  const wants = stagePrimary(stage, allCards, flavor);
   const headPrimary = wants ? { label: wants.label, run: () => { select(wants.card); glide({ card: wants.card }); } } : null;
   const boardMenu = [
     { id: "library", label: "Library", shortcut: "L", onSelect: () => window.dispatchEvent(new Event(LIBRARY_OPEN_EVENT)) },
@@ -642,7 +658,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     <BoardInternalsProvider value={internals}>
       <div className="bd" style={style} data-testid="board" data-board-kind={kind} data-tool={tool} data-offline={offline || undefined} data-sample={gate.exploreOnly ? "1" : undefined} data-v12={v12Frame || undefined} data-stage={stage?.id}>
         {v12Frame ? (
-          <StageRail kindLabel={KIND_LABEL[kind]} stages={stages} current={stage?.id ?? null} status={(st) => stageStatus(st, allCards, kind, board.rail)}
+          <StageRail kindLabel={KIND_LABEL[flavor]} onKind={changeKind} stages={stages} current={stage?.id ?? null} status={(st) => stageStatus(st, allCards, flavor)}
             readOnly={offline ? "Offline" : gate.readOnly ?? null} onPick={goStage} onEdit={editStages} />
         ) : <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} render={kind === "studio"} />}
         <div className="bd-main" data-testid="board-canvas">

@@ -9,6 +9,9 @@
   margin: 0 6px 8px; min-height: 22px; border-radius: var(--gx-r-xs); color: var(--gx-text-2); font-size: var(--gx-fs-label); font-weight: 600;
   letter-spacing: 0.06em; line-height: 1.2; text-align: center; padding: 2px 4px; display: block;
 }
+.v12 button.v12-rail-kind { appearance: none; background: none; border: 0; cursor: pointer; font-family: inherit; width: calc(100% - 12px); }
+.v12 button.v12-rail-kind:hover { background: rgba(255, 255, 255, 0.06); color: var(--gx-text); }
+.v12 .v12-rail[data-dim] .v12-rail-rows { opacity: 0.45; }
 .v12 .v12-rail-rows { position: relative; display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; }
 .v12 .v12-rail-line { position: absolute; left: 43px; top: 22px; bottom: 60px; width: 1px; background: rgba(255, 255, 255, 0.12); pointer-events: none; }
 .v12 .v12-rail-row { position: relative; margin: 0 6px; border-radius: var(--gx-r-btn); border-top: 2px solid transparent; cursor: grab; }
@@ -87,3 +90,36 @@
 .v12 .v12-stage-empty-line { margin: 0; font-size: 14px; line-height: 1.5; color: var(--gx-text-sec); }
 .v12 .v12-btn { height: 32px; padding: 0 14px; border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-btn); background: transparent; color: var(--gx-text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 html[data-v12-tray] .v12 .v12-viewswitch { left: calc(var(--gx-w-tray) + 16px); }
+
+/* ── The new-board flow (inventory § 6.3; prototype L300–L312): the rail, then the centred column ── */
+.v12 .v12-newboard { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; height: 100%; overflow: hidden; background: var(--gx-root); color: var(--gx-text); font-family: var(--gx-font); }
+.v12 .v12-newboard-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.v12 .v12-newboard-body { flex: 1 1 auto; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 24px 24px 60px; }
+.v12 .v12-newboard-col { width: 640px; max-width: 100%; display: flex; flex-direction: column; gap: 18px; }
+.v12 .v12-newboard-title { margin: 0; font-size: 32px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; }
+.v12 .v12-newboard-kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.v12 .v12-kindcard { text-align: left; min-height: 92px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--gx-btn-border); background: var(--gx-card); color: var(--gx-text); display: flex; flex-direction: column; gap: 6px; font: inherit; cursor: pointer; }
+.v12 .v12-kindcard:hover { border-color: var(--gx-hover-border); }
+.v12 .v12-kindcard[data-selected] { border-color: var(--gx-accent); background: var(--gx-tint-10); }
+.v12 .v12-kindcard-name { font-size: 15px; font-weight: 600; }
+.v12 .v12-kindcard-line { font-size: 13px; line-height: 1.4; color: var(--gx-text-2); }
+.v12 .v12-composer { background: var(--gx-card); border: 1px solid var(--gx-dialog-border); border-radius: 14px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); }
+.v12 .v12-composer-text { display: block; width: 100%; min-height: 88px; resize: none; border: 0; background: transparent; color: var(--gx-text); font: inherit; font-size: 16px; line-height: 1.5; padding: 14px 16px 6px; box-sizing: border-box; }
+.v12 .v12-composer-text::placeholder { color: var(--gx-placeholder); }
+.v12 .v12-composer-text:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: -2px; border-radius: 14px 14px 0 0; }
+.v12 .v12-composer-foot { display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 1px solid var(--gx-hair); flex-wrap: wrap; }
+.v12 .v12-composer-gap { flex: 1 1 0; }
+.v12 .v12-chips { display: flex; gap: 4px; margin-left: 6px; }
+.v12 .v12-chip { height: 32px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.v12 .v12-chip[data-on] { border-color: var(--gx-tint-border); background: var(--gx-tint-10); color: var(--gx-accent-text); }
+.v12 .v12-chip-attach { height: 36px; border-radius: 9px; padding: 0 12px; }
+.v12 .v12-attached { height: 32px; display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--gx-btn-border); font-size: 13px; font-weight: 500; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v12 .v12-attached button { width: 20px; height: 20px; border: 0; background: transparent; color: rgba(235, 235, 245, 0.7); font-size: 14px; padding: 0; cursor: pointer; }
+.v12 .v12-startbtn { flex: none; height: 36px; padding: 0 16px; border-radius: 9px; border: 0; background: var(--gx-accent); color: var(--gx-on-accent); font: inherit; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.v12 .v12-startbtn:hover:not(:disabled) { background: var(--gx-accent-hover); }
+.v12 .v12-startbtn:disabled { cursor: default; opacity: 0.7; }
+.v12 .v12-newboard-note { margin: 0; font-size: 13px; line-height: 1.4; color: var(--gx-text-2); }
+.v12 .v12-newboard-problem { margin: 0; font-size: 13px; color: var(--gx-failed-text); }
+.v12 .v12-link { border: 0; background: transparent; padding: 0; color: var(--gx-accent-text); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.v12 .v12-link:hover { color: var(--gx-accent-text-hover); }
+@media (max-width: 1100px) { .v12 .v12-newboard-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

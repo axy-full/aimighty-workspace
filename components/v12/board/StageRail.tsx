@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import type { RegionStatus } from "@/lib/board/regions";
-import { STAGE_PRESETS, type Stage } from "@/lib/v12/board/stages";
+import { STAGE_PRESETS, type Stage, type StageEdit } from "@/lib/v12/board/stages";
 import { Menu, Tooltip, type MenuItem } from "@/components/v12/ui";
 
 /**
@@ -11,15 +11,14 @@ import { Menu, Tooltip, type MenuItem } from "@/components/v12/ui";
  * to reorder; "+ Stage" adds a preset or a custom stage after the current one. Every change is one draft edit with Undo
  * (the caller's `onEdit`).
  */
-export type StageEdit =
-  | { type: "rename"; id: string; label: string }
-  | { type: "skip"; id: string; skipped: boolean }
-  | { type: "remove"; id: string }
-  | { type: "move"; id: string; index: number }
-  | { type: "add"; after: string | null; label: string };
+export type { StageEdit };
 
-export function StageRail({ kindLabel, stages, current, status, readOnly, onPick, onEdit }: {
+export function StageRail({ kindLabel, onKind, dim, stages, current, status, readOnly, onPick, onEdit }: {
   kindLabel: string;
+  /** The kind label cycles the kind (§ 6.2); absent or read-only, it is only a label. */
+  onKind?: () => void;
+  /** The rail of a board not started yet: shown at 0.45 opacity until Start (§ 6.3). */
+  dim?: boolean;
   stages: readonly Stage[];
   current: string | null;
   status: (stage: Stage) => RegionStatus;
@@ -61,9 +60,11 @@ export function StageRail({ kindLabel, stages, current, status, readOnly, onPick
   };
 
   return (
-    <nav className="v12-rail" aria-label="Board stages" data-testid="v12-stage-rail">
-      <Tooltip name="Board kind" line={`${kindLabel} · the stages below are this kind's`}>
-        <span className="v12-rail-kind" tabIndex={0} data-testid="v12-stage-kind">{kindLabel.toUpperCase()}</span>
+    <nav className="v12-rail" aria-label="Board stages" data-testid="v12-stage-rail" data-dim={dim || undefined}>
+      <Tooltip name="Board kind" line={onKind && !readOnly ? `${kindLabel} · click to change it` : `${kindLabel} · the stages below are this kind's`}>
+        {onKind && !readOnly
+          ? <button type="button" className="v12-rail-kind" onClick={onKind} data-testid="v12-stage-kind">{kindLabel.toUpperCase()}</button>
+          : <span className="v12-rail-kind" tabIndex={0} data-testid="v12-stage-kind">{kindLabel.toUpperCase()}</span>}
       </Tooltip>
       <div className="v12-rail-rows">
         <span className="v12-rail-line" aria-hidden="true" />
