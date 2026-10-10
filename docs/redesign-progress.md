@@ -14,20 +14,20 @@ The running log of the overnight redesign build. A restarted session reads this 
 | Item | Branch | PR | Status |
 |---|---|---|---|
 | CI on PRs into release/1 | ci/verify-release1 | #612 | NEEDS AKSHAY (CI change, not screen work). CI green. |
-| P0 foundation: switch, design import, screenshot tool, plan | redesign/p0-foundation | #613 | Opus approved; CI re-running after a spec fix (two site-settings specs expected the old fields) |
+| P0 foundation: switch, design import, screenshot tool, plan | redesign/p0-foundation | #613 | Opus approved; CI green |
 | B1 price layer, no-literal guard, low-credit rule and chip | redesign/b1-price | #614 | Opus approved (after fixes: Cinema "up to" the hold, batch totals, references) |
-| C1 render-state model, typical times API, queue places | redesign/c1-render-model | #615 | Opus approved (after fixes: Cinema Cancel and money wording) |
+| C1 render-state model, typical times API, queue places | redesign/c1-render-model | #615 | Opus approved (after fixes: Cinema Cancel and money wording); CI green (a flaky spend-buttons failure passed on re-run) |
 | A1 tokens, primitives, overlay stack, V12Shell frame | redesign/a1-frame | #616 | Opus approved (after 9 small fixes) |
 | B2 Settings › Credits & billing | redesign/b2-billing | #617 | Opus approved (after fixes: members see "Ask an admin") |
-| C2 Home (signed in) + shared bar | redesign/c2-home | #618 | in review |
+| C2 Home (signed in) + shared bar | redesign/c2-home | #618 | CI green; no Opus approval on record: needs a fresh review |
 | A2 header | redesign/a2-header | #620 | Fresh Opus re-review APPROVED (303ba243). CI on ce2498c7 green (the earlier spend-buttons failure was flaky: it also hit #615 and passed on re-run); run on 303ba243 in progress. Ready to merge once #612 is in. |
 | C4 Library tray | redesign/c4-library | #619 | Fresh Opus re-review APPROVED (1222e2f6); CI green; screenshots re-taken. Ready to merge once #612 is in. |
-| C3 Make (grid, composer, viewer, prompt reuse) | redesign/c3-make | #621 | Opened with screenshots (e67252c9); Opus review running; Reuse seed split to #622 |
-| P2-a1 board frame (stage rail, stage header, right toolbar, view switch) | redesign/p2a-board-frame | — | lane C building |
+| C3 Make (grid, composer, viewer, prompt reuse) | redesign/c3-make | #621 | Opus review asked for changes (focus ring, viewer by id, Esc on quick tools); all fixed at 34783290, specs pass locally; needs screenshots re-taken and an Opus re-review; CI running |
+| P2-a1 board frame (stage rail, stage header, right toolbar, view switch) | redesign/p2a-board-frame | — | WIP at 630a6f35: frame spec 5/5 at 1440; other sizes not run; the storyboard shot fails at 1440 (not looked at) |
 | P4 join sheet (Continue with email, request access + company size) | redesign/p4-join | — | WIP recovered and pushed (96d875e7); touches app/api/access-request: NEEDS AKSHAY when opened |
-| A3 menus, keys, tooltips | redesign/a3-menus | — | Built and pushed (f882bd91, includes A2 fixes); PR next |
-| C3 Reuse seed (seed in the priced request) | redesign/c3-make-seed | #622 | NEEDS AKSHAY (opened) |
-| P2-b Shots 4-across grid (gap fix) and the bar with Attach | redesign/p2b-shots | — | lane A building |
+| A3 menus, keys, tooltips | redesign/a3-menus | — | Built (688c64bd, has A2 fixes and C3 e67252c9 merged in); no PR yet. After that merge, make-v12 "viewer=1" timed out once at 1440 (not yet re-run or looked at) |
+| C3 Reuse seed (seed in the priced request) | redesign/c3-make-seed | #622 | NEEDS AKSHAY; branched before C3's review fixes (needs a merge of c3-make); CI unit (1) failed, not inspected |
+| P2-b Shots 4-across grid (gap fix) and the bar with Attach | redesign/p2b-shots | — | WIP at efd0cf6c: grid and bar built; 3 desktop checks pass at 1440; the bar's Ask test times out; other sizes and shots not run |
 
 ## Blockers
 
@@ -41,12 +41,15 @@ The running log of the overnight redesign build. A restarted session reads this 
 - A plan's fix (priced only when its turn comes)
 - "/" skills (no per-skill quote)
 
-## Next
+## Next (when resumed)
 
-1. Fresh Opus reviews of #619 (C4) and #620 (A2); #620's CI.
-2. Two lanes (owner, 10 Oct: at most 2 plus the lead): C3 Make (finish, specs, shots), A3 menus/keys/tooltips.
-3. Then P2 boards, starting from redesign/p2a-board-frame.
-4. The log lives on redesign/integration; commit and push at least every 30 minutes.
+1. C3 (#621): re-take the make and make-viewer shots, republish, fresh Opus re-review; check its CI.
+2. #622: merge c3-make into c3-make-seed, look at the unit (1) failure.
+3. A3: re-run make-v12 "viewer=1" on a3-menus at 1440 (timed out once after merging C3), then open the PR with the menus shots and an Opus review.
+4. #618 (C2): fresh Opus review (none on record).
+5. Resume the two P2 lanes: P2-a1 (other sizes, the storyboard shot), P2-b (the bar's Ask timeout, other sizes, shots).
+6. Merge the approved PRs once the owner merges #612.
+7. The log lives on redesign/integration; commit and push at least every 30 minutes.
 
 ## Follow-ups for the owner (found while building)
 
@@ -66,3 +69,4 @@ The running log of the overnight redesign build. A restarted session reads this 
 - 10 Oct, late night: A1 (#616), B2 (#617) and C2 (#618) opened; A1 and B2 approved after fixes. Lanes now on A2 header, C4 Library tray, C3 Make.
 - 10 Oct, 13:30 IST: session resumed (the previous one stopped about 02:45 IST and its conversation was lost). Recovered and pushed: A2's review fixes (ce2498c7, never pushed), C3 Make WIP (redesign/c3-make, never pushed), P2-a1 board frame WIP (redesign/p2a-board-frame, unlogged) and P4 join WIP (redesign/p4-join, unlogged). Found A2 (#620) and C4 (#619) already opened with screenshots, though the log said none. Running 2 lanes: C3, A3.
 - 10 Oct, about 15:00 IST: C4 (#619) and A2 (#620) fixed after fresh Opus reviews and re-approved. C3 opened as #621, its Reuse seed as #622 (NEEDS AKSHAY). A3 built (a3-menus). Lanes now: C on P2-a1 board frame, A on P2-b Shots grid and bar. Integration has A2, C4 and C3 merged.
+- 10 Oct, 16:15 IST (10:45 UTC): **Paused at 16:15 IST** by the owner. Every worktree committed and pushed (WIP where half-done); no servers running, all slots free. Approved and green: #613–#617, #619, #620 (#620's run on 303ba243 still going). In progress: #621 (fixes pushed, needs shots and a re-review), A3 (no PR), P2-a1 and P2-b (WIP).
