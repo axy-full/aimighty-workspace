@@ -57,6 +57,7 @@ import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board
 import { addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
 import { gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
+import { GRID_ORIGIN } from "@/lib/v12/board/grid";
 import { BoardBar } from "@/components/v12/board/BoardBar";
 import { useOverlay } from "@/components/v12/ui/overlay";
 import { StageRail, type StageEdit } from "@/components/v12/board/StageRail";
@@ -259,7 +260,9 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     if (shownStage.current === key) return;
     shownStage.current = key;
     const box = placed.arranged ?? placed.bounds;
-    const next = box ? viewportFor(box, 1) : { x: INSET, y: INSET, zoom: 1 };
+    const from = box ? viewportFor(box, 1) : { x: INSET, y: INSET, zoom: 1 };
+    /* A grid stage starts 60 px in from the stage column's top-left, as the prototype's cards do (L556). */
+    const next = onGrid(stage.id) ? { ...from, x: from.x + GRID_ORIGIN - INSET, y: from.y + GRID_ORIGIN - INSET } : from;
     void flow.setViewport(next).then(() => measureInView(next));
   }, [flow, measureInView, placed.arranged, placed.bounds, projectId, ready, stage, v12Frame, viewportFor]);
   const onMoveEnd = useCallback((viewport: Viewport) => {

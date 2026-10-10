@@ -45,3 +45,14 @@ test("shots, a card selected", async ({ page }) => {
   await page.waitForTimeout(800);
   await captureBeside(page, "shots-selected", "?view=board&stage=Shots&render=batch&frame=2");
 });
+
+test("storyboard, a frame selected", async ({ page }) => {
+  await openBoard(page, "/suites?view=board&stage=storyboard");
+  await expect(page.getByTestId("v12-stage-rail")).toBeVisible({ timeout: 60_000 });
+  await settle(page);
+  await page.locator('.bd-node[data-card-kind="frame"]').nth(1).click();
+  await expect(page.getByTestId("frame-details")).toBeVisible();
+  await page.mouse.move(700, 120);
+  await page.waitForTimeout(800);
+  await captureBeside(page, "shots-storyboard-selected", "?view=board&stage=Storyboard&frame=1");
+});

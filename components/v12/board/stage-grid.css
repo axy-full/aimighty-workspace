@@ -19,3 +19,6 @@
 .v12 .gx-frame-acts { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
 .v12 .gx-frame-acts > .gx-ln { flex: 1 1 auto; min-width: 0; }
 .v12 .gx-frame-acts > .gx-frame-details { flex: none; margin-top: 8px; margin-left: auto; }
+
+/* The selected card: the accent border and ring (prototype L556), on the card itself. */
+.v12 .bd[data-v12] .bd-node[data-selected] > .gx-take, .v12 .bd[data-v12] .bd-node[data-selected] > .gx-frame { border-color: var(--gx-accent); box-shadow: var(--gx-ring-selected); }

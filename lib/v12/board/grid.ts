@@ -14,6 +14,8 @@
 export const GRID_GAP = 24;
 export const GRID_CARD = 260;
 export const GRID_STEP = GRID_CARD + GRID_GAP;
+/** Where the first card sits from the stage column's top-left (prototype L556: x and y 60). */
+export const GRID_ORIGIN = 60;
 export const GRID_MIN = 2;
 export const GRID_MAX = 4;
 /** What the stage column keeps clear beside the cards (prototype: the 60 px origin, the right toolbar's 72 px). */
