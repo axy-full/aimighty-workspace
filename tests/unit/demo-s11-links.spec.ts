@@ -6,9 +6,11 @@ import { EMPTY_MOLECULR } from "../../lib/workbench/moleculr";
 import { newProject, type Asset } from "../../lib/workbench/studio";
 
 /* Stream 11 · the Ads and Social addresses (README § 1.1, § 1.2) and the Designer's pure steps. */
-test("both boards have landed, and own the frame and card params", () => {
+test("both boards have landed, and own the frame and card params, and the stage, first, newboard and pick params of the board frame", () => {
   expect([ADS_SCREEN.landed, SOCIAL_SCREEN.landed]).toEqual([true, true]);
-  expect(ADS_SCREEN.params).toEqual(["frame", "card"]);
+  const owned = ["frame", "card", "stage", "first", "newboard", "pick"];
+  expect(ADS_SCREEN.params).toEqual(owned);
+  expect(SOCIAL_SCREEN.params).toEqual(owned);
   expect(SCREENS.find((s) => s.id === "board-ads")).toBe(ADS_SCREEN);
 });
 
