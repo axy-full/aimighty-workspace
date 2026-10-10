@@ -109,14 +109,13 @@ test.describe("desktop, switch on", () => {
     await expect(page.getByTestId("v12-tooltip")).toContainText("A sticky note for ideas, feedback or to-dos.");
     await page.goto("/suites?view=board&stage=storyboard&first=1");
     await expect(page.getByTestId("v12-board-tools")).toHaveAttribute("data-labels", "true", { timeout: 60_000 });
-    /* Canvas and List are today's views; Strip and Rig are not built yet. */
+    /* Canvas and List are today's views; Strip is not built yet (the Rig view comes with P5). */
     const view = page.getByTestId("v12-view-switch");
     await view.getByRole("radio", { name: "List" }).click();
     await expect(page.getByTestId("v12-board-tools")).toHaveCount(0);
     await view.getByRole("radio", { name: "Canvas" }).click();
     await expect(page.getByTestId("v12-board-tools")).toBeVisible();
     await expect(view.getByRole("radio", { name: "Strip" })).toBeDisabled();
-    await expect(view.getByRole("radio", { name: "Rig" })).toBeDisabled();
     expect(await noSideways(page)).toBe(true);
   });
 
