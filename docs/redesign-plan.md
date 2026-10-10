@@ -68,6 +68,23 @@ Each one is listed for the owner in the morning report.
 10. **The Activity pill** reads today's jobs tray API (`/api/jobs?view=tray`) and approvals.
 11. **Library "Uploaded / Generated"** is derived from where an item lives (uploads vs generations), if today's library API can tell them apart. If it can't, that's a migration PR (NEEDS AKSHAY).
 
+## Owner decisions (Akshay, 10 Oct evening)
+
+These settle the lead's decisions above and the open questions in the builder's brief (§13). They win over older documents.
+
+1. **The lead's 11 decisions above: all confirmed.** In particular, "quoted" (shown where an action has no live quote path) overrides CLAUDE.md rule 14's "never the bare word quoted" for this build.
+2. **"Rig" stays the view's name.** The UI-text ban on "Rig" is lifted before P5, through a docs PR that updates CLAUDE.md, titled "NEEDS AKSHAY · …".
+3. **The new-interface switch stays until launch** (scope v2's "no switch" is overridden until then).
+4. **Where the v12 render differs from the brief, build from the brief:**
+   - Cancel only while a job is queued at the provider; never on Preparing, Rendering or Saving cards.
+   - Elements 4 across, with the last row clearing the Library button and the view switch.
+   - Rig fits 1440×900 or scrolls inside its own canvas; the hint pill never covers a node.
+   - No ~100 px gap between Shots rows.
+   - The render card's time line on one line; no particles over text.
+5. **#622 Reuse seed: yes.** The seed is sent in the priced request; the price is unchanged.
+6. **Still waiting on the owner (no action):** queued-job Cancel for Ark/fal, the two indexes (`billing_cycles.workspace_id`, `meter_events.created_at`), plan mapping and prices.
+7. **Merges:** the lead may merge into release/1 (never main) PRs that are green, reviewed and approved, including money ones the owner has decided (e.g. #622). Never force; stop on a conflict or a red check and report.
+
 ## Merge rule
 
 The lead merges into release/1 only when all of these hold:
