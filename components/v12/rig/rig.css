@@ -1,0 +1,64 @@
+/* The Rig view (redesign P5; docs/redesign/inventory.md § 9). Tokens only: app/graphite.css. */
+.v12 .v12-rig { position: absolute; inset: 0; z-index: 16; display: flex; flex-direction: column; padding-bottom: 92px; background-color: var(--gx-root); background-image: radial-gradient(circle, var(--gx-canvas-dot) 1px, transparent 1.5px); background-size: var(--gx-canvas-step) var(--gx-canvas-step); color: var(--gx-text); font-family: var(--gx-font); }
+/* What is said about the selection has a row of its own: never over a node. */
+.v12 .v12-rig-note { flex: none; min-height: 56px; padding: 14px 24px 0; display: flex; align-items: center; font-size: 13px; color: var(--gx-text-muted); }
+.v12 .v12-rig-impact { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; line-height: 1.45; }
+.v12 .v12-rig-impact strong { color: var(--gx-text); font-size: 14px; font-weight: 600; }
+.v12 .v12-rig-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 24px 16px; }
+.v12 .v12-rig-inner { position: relative; min-width: 880px; }
+.v12 .v12-rig-cols { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, minmax(260px, 1fr)); column-gap: 96px; align-items: start; }
+.v12 .v12-rig-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.v12 .v12-rig-h { margin: 0; min-height: 24px; font-size: 13px; font-weight: 600; color: var(--gx-text-muted); }
+.v12 .v12-rig-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.v12 .v12-rig-chip { height: 24px; padding: 0 10px; border: 1px solid var(--gx-line-control); border-radius: 999px; background: transparent; color: var(--gx-text-strong); font: 500 12px/1 var(--gx-font); cursor: pointer; }
+.v12 .v12-rig-chip[aria-pressed="false"] { color: var(--gx-text-sec); }
+.v12 .v12-rig-chip:focus-visible, .v12 .v12-rig-node:focus-visible, .v12 .v12-rig-btn:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.v12 .v12-rig-empty { margin: 0; font-size: 13px; color: var(--gx-text-sec); }
+
+.v12 .v12-rig-edges { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 0; }
+.v12 .v12-rig-edge { fill: none; stroke: var(--gx-accent); stroke-width: 2; pointer-events: stroke; cursor: pointer; }
+.v12 .v12-rig-edge[data-picked] { stroke: var(--gx-waiting); }
+
+/* A node: a thumbnail cropped to its subject, a name and one line. A dimmed node keeps its words readable; its picture and frame step back. */
+.v12 .v12-rig-node { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; min-height: 64px; box-sizing: border-box; border: 1px solid var(--gx-hair-strong); border-radius: 10px; background: var(--gx-card); color: var(--gx-text); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--gx-t) var(--gx-ease); }
+.v12 .v12-rig-node:hover { border-color: var(--gx-line-control); }
+.v12 .v12-rig-node[data-selected] { border-color: var(--gx-accent); box-shadow: var(--gx-ring-thin); }
+.v12 .v12-rig-node[data-dim] { border-color: var(--gx-hair); }
+.v12 .v12-rig-node[data-dim] .v12-rig-thumb, .v12 .v12-rig-node[data-dim] .v12-rig-mosaic { opacity: 0.45; }
+.v12 .v12-rig-node[data-over] { border-color: var(--gx-accent); background: var(--gx-tint-06); }
+.v12 .v12-rig-thumb { flex: none; width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: var(--gx-sunken); }
+.v12 .v12-rig-thumb--shot { width: 64px; height: 36px; }
+.v12 .v12-rig-thumb-empty { display: block; }
+.v12 .v12-rig-body { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.v12 .v12-rig-name { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A shot's name wraps to two lines, then stops. */
+.v12 .v12-rig-name--wrap { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow: hidden; }
+.v12 .v12-rig-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--gx-text-sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v12 .v12-rig-lock { flex: none; color: var(--gx-text-strong); }
+.v12 .v12-rig-avatars { display: inline-flex; align-items: center; }
+.v12 .v12-rig-avatar { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: -6px; border-radius: 50%; overflow: hidden; background: var(--gx-selected); border: 1px solid var(--gx-card); font-size: 12px; line-height: 1; color: var(--gx-text); }
+.v12 .v12-rig-avatar:first-child { margin-left: 0; }
+.v12 .v12-rig-avatar-img { width: 100%; height: 100%; object-fit: cover; }
+.v12 .v12-rig-state { display: inline-flex; align-items: center; gap: 6px; color: var(--gx-text-muted); }
+.v12 .v12-rig-state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-text-sec); }
+.v12 .v12-rig-state[data-state="rendering"]::before { background: var(--gx-accent); }
+.v12 .v12-rig-state[data-state="held"]::before { background: var(--gx-waiting); }
+.v12 .v12-rig-state[data-state="failed"] { color: var(--gx-failed-text); }
+.v12 .v12-rig-state[data-state="failed"]::before { background: var(--gx-failed); }
+
+.v12 .v12-rig-output { padding: 10px 12px 10px 10px; min-height: 96px; }
+.v12 .v12-rig-mosaic { flex: none; width: 120px; height: 68px; border-radius: 8px; overflow: hidden; display: grid; gap: 2px; background: var(--gx-sunken); grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; }
+.v12 .v12-rig-mosaic[data-n="1"], .v12 .v12-rig-mosaic[data-n="0"] { grid-template-columns: 1fr; }
+.v12 .v12-rig-mosaic-img { width: 100%; height: 100%; object-fit: cover; }
+
+.v12 .v12-rig-steps { flex: 1 0 100%; display: flex; flex-direction: column; border-top: 1px solid var(--gx-hair); padding-top: 6px; }
+.v12 .v12-rig-step { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: 13px; color: var(--gx-text-strong); }
+.v12 .v12-rig-step-price { flex: none; font-variant-numeric: tabular-nums; color: var(--gx-text); }
+.v12 .v12-rig-step--quiet { font-size: 12px; color: var(--gx-text-sec); }
+
+.v12 .v12-rig-btn { height: 28px; padding: 0 12px; border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-btn); background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); white-space: nowrap; cursor: pointer; }
+.v12 .v12-rig-btn[data-hot] { border-color: var(--gx-accent); color: var(--gx-accent-text); font-weight: 600; }
+.v12 .v12-rig-btn:disabled { color: var(--gx-disabled); cursor: default; }
+
+/* The first-time hint has a row of its own above the bar, under the scrolling canvas: it never covers a node. */
+.v12 .v12-rig-hint { flex: none; align-self: center; margin: 0 0 12px; display: flex; align-items: center; gap: 12px; padding: 6px 8px 6px 16px; border: 1px solid var(--gx-line-control); border-radius: 999px; background: var(--gx-card); font-size: 13px; color: var(--gx-text); box-shadow: var(--gx-shadow-float); }

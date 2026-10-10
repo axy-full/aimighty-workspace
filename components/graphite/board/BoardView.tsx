@@ -59,6 +59,8 @@ import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
 import { useRecordRound } from "@/components/v12/rounds/use-round";
+import { RigView } from "@/components/v12/rig/RigView";
+import { rigModel } from "@/components/v12/rig/model";
 import { RoundBadge, useCopyWhatChanged } from "@/components/v12/rounds/RoundBadge";
 import { latestRound } from "@/lib/v12/rounds";
 import { BoardBar } from "@/components/v12/board/BoardBar";
@@ -210,6 +212,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     setInView(best);
   }, [board.rail, placed.regions, store]);
   const [list, setList] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("list") === "1");
+  /* The Rig, the new interface's fourth view (components/v12/rig): what feeds what. `v=rig` opens on it. */
+  const [rigView, setRigView] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("v") === "rig");
+  const rigOn = v12Frame && rigView && !list;
+  /* The Rig's reading of the whole board (every stage's cards, not only this stage's). */
+  const rigModelNow = useMemo(() => (rigOn && project ? rigModel({ cards: allCards, project, library: items }) : null), [rigOn, allCards, project, items]);
   const glide = useCallback((to: RegionId | { card: string }) => {
     if (list) setList(false);
     const zoom = flow.getZoom();
@@ -721,9 +728,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             <BoardBar ctx={ctx} selection={crumb} onClearSelection={() => pick(new Set(), null)} tool={tool} onDisarm={() => setTool("select")}
               onAttach={(picked) => void upload(picked)} library={items} onAsked={() => setDockOpen(true)} />
           ) : null}
-          {list ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
+          {rigOn ? <RigView model={rigModelNow!} project={project} scope={scope} userId={userId ?? null} apply={rig.apply} readOnly={offline || Boolean(gate.readOnly)}
+            onStage={(id) => { setRigView(false); goStage(id); }} onAsk={(words) => ctx.askAtomik(words)} /> : null}
+          {list || rigOn ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12Frame} />
-          {v12Frame ? <ViewSwitch view={list ? "list" : "canvas"} onView={(v) => setList(v === "list")} /> : null}
+          {v12Frame ? <ViewSwitch view={list ? "list" : rigOn ? "rig" : "canvas"} onView={(v) => { setList(v === "list"); setRigView(v === "rig"); }} /> : null}
           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}
           {pill ? <p className="bd-sample" role="status" data-testid="board-sample" data-lifted={pill === LIFT_LINE || undefined}>{pill}{pill === CHECK_LINE ? <> <CheckAgain className="bd-link" /></> : null}</p> : null}
           {live ? <WhoIsHere peers={peers} /> : null}
