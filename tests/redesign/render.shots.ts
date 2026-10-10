@@ -39,7 +39,7 @@ const CASES: [string, string, (ShotRow | null)[]][] = [
   ["queued", "?view=board&stage=Shots&render=queued", one({ status: "queued", kind: "video", model: KLING, ageS: 4, arkTaskId: "task-seed-3" })],
   ["rendering", "?view=board&stage=Shots&render=rendering", one({ status: "running", kind: "video", model: KLING, ageS: 72 })],
   ["slow", "?view=board&stage=Shots&render=slow", one({ status: "running", kind: "video", model: SEEDANCE, ageS: 700 })],
-  ["failed", "?view=board&stage=Shots&render=failed", one({ status: "failed", kind: "video", model: KLING, ageS: 200, error: "The engine did not finish this take." })],
+  ["failed", "?view=board&stage=Shots&render=failed", one({ status: "failed", kind: "video", model: KLING, ageS: 200, error: "The engine did not finish this take.", reserved: undefined, settled: 0 })],
   ["batch", "?view=board&stage=Shots&render=batch", BATCH_ROWS],
 ];
 for (const [name, query, rows] of CASES) {

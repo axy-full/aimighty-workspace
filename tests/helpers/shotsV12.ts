@@ -20,7 +20,7 @@ const FRAMES = SHOT_TITLES.map((title, i) => ({ id: `a-frame-${i + 1}`, name: `$
 const node = (i: number): CanvasNode => ({ id: `node-shot000${i + 1}`, title: SHOT_TITLES[i], type: "scene", x: 0, y: 0, width: 254, linked: [], text: SHOT_TITLES[i], assetId: `a-frame-${i + 1}` } as CanvasNode);
 
 /** One shot's take: its status, how long ago it was asked for, and what its row says of where it is (a held take's reason, the provider's receipt, a store lease). */
-export type ShotRow = { /** Another provider than the engine's own, and what its row keeps in `params` (a provider's receipt for a take it holds). */ provider?: string; extra?: Record<string, unknown>; /** The credits the meter holds for it while it runs (a reservation row on the platform ledger). */ reserved?: number; status: "succeeded" | "running" | "queued" | "held" | "failed"; ageS?: number; model?: string; kind?: "image" | "video"; held?: Record<string, unknown>; arkTaskId?: string; saving?: boolean; error?: string };
+export type ShotRow = { /** Another provider than the engine's own, and what its row keeps in `params` (a provider's receipt for a take it holds). */ provider?: string; extra?: Record<string, unknown>; /** The credits the meter holds for it while it runs (a reservation row on the platform ledger). */ reserved?: number; /** A settled meter row for a take that ended: what the ledger charged (0: nothing billed, confirmed). */ settled?: number; status: "succeeded" | "running" | "queued" | "held" | "failed"; ageS?: number; model?: string; kind?: "image" | "video"; held?: Record<string, unknown>; arkTaskId?: string; saving?: boolean; error?: string };
 /** Shots 1–3 finished; 4–5 rendering (a minute in); 6–8 nothing yet: the grid specs' default. */
 const DEFAULT_ROWS: (ShotRow | null)[] = [{ status: "succeeded" }, { status: "succeeded" }, { status: "succeeded" }, { status: "running", ageS: 20 }, { status: "running", ageS: 20 }, null, null, null];
 /** A Higgsfield-API video waiting in the provider's queue, with the provider's receipt: the one take Cancel is offered for at the provider. */
@@ -74,6 +74,12 @@ export async function openShotsBoard(page: Page, path = "/suites?view=board&stag
             row.status === "succeeded" ? "/campaign/hero.webp" : null, me.id, asked, asked, row.provider ?? (row.kind === "video" ? "fal" : "google"), row.error ?? null, row.arkTaskId ?? null],
         });
         /* What the meter holds for a take while it runs: a reservation row on the platform ledger, as admission writes it. The tray reads it as the figure held. */
+        if (row.settled != null) {
+          await platform.execute({
+            sql: `INSERT OR REPLACE INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,0,?,1,?,?,?)`,
+            args: [`gshot${i + 1}`, signed.workspace.id, row.kind ?? "image", row.kind === "video" ? "fal" : "google", row.model ?? "gemini-3.1-flash-image", row.status === "failed" ? "failed" : "succeeded", row.settled, me.id, asked, asked],
+          });
+        }
         if (row.reserved != null) {
           await platform.execute({
             sql: `INSERT OR REPLACE INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,?,?,?,'running',?,?,1,?,?,?)`,

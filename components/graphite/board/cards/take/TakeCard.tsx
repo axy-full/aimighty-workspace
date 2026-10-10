@@ -99,7 +99,7 @@ function StatusLine({ version, ctx }: { version: ShotVersion; ctx: BoardCtx }) {
     const cancelled = version.entry.take.cancelled === true;
     return (
       <div className="gx-take-status" data-tone={cancelled ? "idle" : "failed"} data-testid="take-failed">
-        <span className="gx-take-why">{version.reason ?? (cancelled ? "Stopped before it rendered" : "Did not render")}</span>
+        <span className="gx-take-why" title={version.reason ?? undefined}>{version.reason ?? (cancelled ? "Stopped before it rendered" : "Did not render")}</span>
         {version.nothingBilled
           ? <span className="gx-take-charge" data-testid="take-nothing-billed">Nothing billed</span>
           : version.charge ? <span className="gx-take-charge" data-testid="take-charge">{version.charge}</span> : null}
@@ -191,12 +191,12 @@ export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
   const grid = useGridRender(data, ctx);
   const judging = Boolean(data.grid && v && judgeable(v) && !hasStatus(v) && !inFlight(v));
   return (
-    <article className="gx-take" style={{ "--gx-take-well": `${wellHeight(data.grid ? 260 : 340, ctx.project.aspect)}px` } as CSSProperties} data-status={v?.status ?? "empty"} data-dim={v?.status === "changes" || undefined} data-render={grid.state?.stage} data-reveal={grid.landed || undefined}
+    <article className="gx-take" style={{ "--gx-take-well": `${wellHeight(data.grid ? 260 : 340, ctx.project.aspect)}px` } as CSSProperties} data-status={v?.status ?? "empty"} data-dim={v?.status === "changes" || undefined} data-grid={data.grid || undefined} data-render={grid.state?.stage} data-reveal={grid.landed || undefined}
       aria-label={[row.title, v ? `${v.label}` : "no take yet", v && needsReview(v) ? "needs review" : null].filter(Boolean).join(" · ")} data-testid="take-card" data-node={row.nodeId}>
       <div className="gx-take-media">
         <Picture version={v} frame={row.frame} name={row.title} />
         {v && !data.grid ? <Progress version={v} typicalMs={row.typicalMs} /> : null}
-        {grid.state ? <RenderOverlay state={grid.state} cancelling={grid.cancelling.busy === grid.genId} pending={Boolean(grid.genId && grid.cancelling.pending.has(grid.genId))}
+        {grid.state ? <RenderOverlay state={grid.state} cancelling={grid.cancelling.busy === grid.genId} pending={Boolean(grid.genId && grid.state.stage === "queue" && grid.cancelling.pending.has(grid.genId))}
           onCancel={grid.state.cancel?.cancellable && grid.genId ? () => void grid.cancelling.cancel(grid.genId!, grid.state!.cancel!.via!) : undefined} /> : null}
         {grid.landed ? <RenderGather /> : null}
         {row.anchor ? <span className="gx-take-tag" data-anchor={row.anchor === "anchor" || undefined} data-testid="take-anchor">{row.anchor === "anchor" ? "LOOK ANCHOR" : "FOLLOWS SHOT 1"}</span> : null}
@@ -205,7 +205,7 @@ export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
       </div>
       <div className="gx-take-foot">
         <div className="gx-take-name">{row.title}</div>
-        <div className="gx-take-line" data-testid={data.grid && v ? "take-engine-line" : undefined}>{data.grid && v ? engineAndPrice(v, dollars) : row.line}</div>
+        <div className={data.grid && v ? "gx-take-line gx-take-line--engine" : "gx-take-line"} data-testid={data.grid && v ? "take-engine-line" : undefined}>{data.grid && v ? engineAndPrice(v, dollars) : row.line}</div>
         {v && hasStatus(v) ? <StatusLine version={v} ctx={ctx} /> : null}
         {data.blocking ? <ShotBlockingStrip ctx={ctx} nodeId={row.nodeId} index={row.index} view={data.blocking} /> : null}
         {judging && v ? <GridActions row={row} version={v} ctx={ctx} /> : null}

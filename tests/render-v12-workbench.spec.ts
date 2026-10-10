@@ -147,6 +147,36 @@ test.describe("desktop, switch on", () => {
     expect(errors).toEqual([]);
   });
 
+  test("a failed take never says 'nothing billed' while a hold stands; Retry, its main action, stays inside the card; the engine line is not in mono", async ({ page }) => {
+    const held: (ShotRow | null)[] = [{ status: "failed", kind: "video", model: KLING, ageS: 300, error: "The engine did not finish this take.", reserved: 7 }, null, null, null, null, null, null, null];
+    const { errors } = await openShotsBoard(page, "/suites?view=board&stage=shots", { rows: held });
+    await expect(shots(page).first()).toBeVisible({ timeout: 90_000 });
+    await closeDock(page);
+    const card = shots(page).first();
+    await expect(card.getByTestId("take-failed")).toBeVisible({ timeout: 30_000 });
+    /* The ledger still holds credits for it: the stage's meta says it did not finish, and nothing more. */
+    await expect(page.getByTestId("v12-stage-meta")).toContainText("didn’t finish");
+    await expect(page.getByTestId("v12-stage-meta")).not.toContainText(/nothing billed/i);
+    await expect(card.getByTestId("take-nothing-billed")).toHaveCount(0);
+    /* Retry is whole and inside the card. */
+    const retry = await card.getByTestId("take-retry").boundingBox();
+    const frame = await card.boundingBox();
+    expect(retry && frame && retry.y >= frame.y && retry.y + retry.height <= frame.y + frame.height && retry.x + retry.width <= frame.x + frame.width).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  test("a failed take whose ledger settled at nothing says so, in the card and in the stage's meta", async ({ page }) => {
+    const settled: (ShotRow | null)[] = [{ status: "failed", kind: "video", model: KLING, ageS: 300, error: "The engine did not finish this take.", settled: 0 }, { status: "succeeded" }, null, null, null, null, null, null];
+    await openShotsBoard(page, "/suites?view=board&stage=shots", { rows: settled });
+    await expect(shots(page).first()).toBeVisible({ timeout: 90_000 });
+    await closeDock(page);
+    await expect(shots(page).first().getByTestId("take-failed")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("v12-stage-meta")).toContainText("Shot 1 didn’t finish · nothing billed", { timeout: 30_000 });
+    await expect(shots(page).first().getByTestId("take-nothing-billed")).toBeVisible();
+    const family = await shots(page).nth(1).getByTestId("take-engine-line").evaluate((el) => getComputedStyle(el).fontFamily);
+    expect(family).not.toMatch(/mono/i);
+  });
+
   test("Cancel at the provider says what happened and no more: sent is not cancelled, a lost answer claims nothing, and once sent it is not offered again", async ({ page }) => {
     const answers: { status: number; body: Record<string, unknown> }[] = [];
     let asked = 0;

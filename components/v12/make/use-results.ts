@@ -7,6 +7,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { RESULTS_READ, resultTiles, type ResultTile } from "@/lib/v12/make";
 import { parseTypicalTimes, type TypicalTimesReply } from "@/lib/v12/typicalTimes";
 import type { RenderPrice, RenderTake } from "@/lib/v12/renderState";
+import { failureUncharged } from "@/lib/errors";
 
 /**
  * Make's results: the workspace's takes, newest first, from today's takes list (GET /api/jobs, scoped by the request
@@ -73,9 +74,18 @@ export function renderTakeOf(g: Generation, trayPrice: TrayJob["price"] | null |
   const held = p.held && typeof p.held === "object" ? (p.held as RenderTake["held"]) : null;
   const facts = p.renderFacts && typeof p.renderFacts === "object" ? (p.renderFacts as { atProvider?: unknown; saving?: unknown }) : null;
   const settled = g.status === "succeeded" || g.status === "failed" || g.status === "cancelled";
+  const unit = paysInDollars ? "usd" : "cr";
+  /* A failed or cancelled take is charged what the ledger settled, or nothing only when a ledger or its provider confirmed nothing was kept
+     (lib/errors.ts failureUncharged: the same rule the Takes page uses). A recorded zero alone is not proof, and a hold that still stands is
+     not a charge: until it settles, the figure is unknown and nothing says "nothing billed". */
+  const ended = g.status === "failed" || g.status === "cancelled";
+  const ledger = g.failure?.charge ?? null;
   const charged: RenderPrice | null = !settled ? null
-    : paysInDollars ? (typeof g.costUsd === "number" ? { amount: g.costUsd, unit: "usd" } : null)
-      : typeof g.creditsBilled === "number" ? { amount: g.creditsBilled, unit: "cr" } : null;
+    : ended ? (ledger?.settled ? { amount: paysInDollars ? (g.costUsd ?? 0) : ledger.credits, unit }
+      : failureUncharged(g.failure) ? { amount: 0, unit }
+        : paysInDollars && typeof g.costUsd === "number" && g.costUsd > 0 ? { amount: g.costUsd, unit } : null)
+    : paysInDollars ? (typeof g.costUsd === "number" ? { amount: g.costUsd, unit } : null)
+      : typeof g.creditsBilled === "number" ? { amount: g.creditsBilled, unit } : null;
   return {
     id: g.id, status: g.status, kind: g.kind, model: g.model, provider: g.provider, createdAt: g.createdAt, held,
     /* The browser sees a provider's task id for Ark and fal takes; the server says the same for the rest, and whether the result is being saved (lib/v12/renderFacts.ts). */
