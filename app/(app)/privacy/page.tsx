@@ -7,7 +7,7 @@ export default function PrivacyPage() {
   return (
     <PolicyPage
       title="Privacy & retention"
-      updated="13 September 2026"
+      updated="11 October 2026"
       intro="What the platform keeps about a workspace, where, for how long, and who can see it."
     >
       <P title="What is kept">
@@ -22,14 +22,22 @@ export default function PrivacyPage() {
       </P>
       <P title="Where">
         <p>
-          Particl runs on its own server, hosted by Contabo. Each workspace has
-          a database of its own, at Turso, holding everything but the files.
-          Masters, uploads and identity photos are objects in private storage
-          on Cloudflare R2, under a prefix that is the workspace&rsquo;s alone,
-          reachable only by short-lived signed links. Accounts, workspace
+          Particl runs on its own server. Each workspace has a database of its
+          own, at Turso, holding everything but the files. New masters, uploads
+          and identity photos are objects in private storage on Cloudflare R2,
+          under a prefix that is the workspace&rsquo;s alone, reachable only by
+          short-lived signed links. Some older files are still in Vercel Blob
+          until they are moved. Cloudflare also runs our DNS.
+          Accounts, workspace
           membership, verification requests, credit grants and billing records
           are held in the platform record. Each customer workspace has a
           separate content database.
+        </p>
+        <p>
+          Other services handle personal data for us: Resend sends email (your
+          address, for sign-in and invites); Inngest runs background jobs (it
+          receives the identifiers of the work to run, not prompts); and
+          Liveblocks carries live team editing on a shared board.
         </p>
       </P>
       <P title="Who sees it">
@@ -47,7 +55,7 @@ export default function PrivacyPage() {
       </P>
       <P title="How long">
         <p>
-          Nothing is erased. Masters stay on the server indefinitely. A take,
+          Nothing is erased. Masters are kept in storage: Cloudflare R2, or Vercel Blob for older ones. A take,
           upload or project you delete is hidden from every screen and kept,
           so it can be restored. Deleting a workspace immediately disables
           access and retires its key; its files and database are kept.
