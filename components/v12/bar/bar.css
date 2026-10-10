@@ -4,8 +4,7 @@
   background: var(--gx-card); border: 1px solid var(--gx-dashed); border-radius: 14px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); transition: border-color 0.15s;
 }
-/* The card shows where the words have focus (the input draws no ring of its own inside it). */
-.v12-bar-card:focus-within { border-color: var(--gx-tint-border-50); }
+/* The card, not the input, shows that the words have focus: see the ring below the docked rule. */
 .v12-bar-row { display: flex; align-items: center; gap: 6px; padding: 8px; min-width: 0; }
 .v12-bar-icon {
   flex: none; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--gx-btn-border);
@@ -31,6 +30,8 @@
 .v12-bar-send-quiet, .v12-bar-send-quiet:disabled { background: var(--gx-seg-on); color: var(--gx-text-2); opacity: 1; }
 .v12-bar-send .v12-price { color: inherit; }
 .v12-bar-docked .v12-bar-card { box-shadow: none; border-color: var(--gx-btn-border); }
+/* Focus on the words (rule 15): a 2px ring around the whole card, docked or floating (its buttons ring themselves). After the docked rule, so it wins. */
+.v12-bar .v12-bar-card:has(.v12-bar-input:focus) { border-color: var(--gx-accent); outline: 2px solid var(--gx-accent); outline-offset: 1px; }
 .v12-bar button:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
 .v12 .v12-bar .v12-bar-input:focus-visible, .v12-bar .v12-bar-input:focus { outline: none; }
 

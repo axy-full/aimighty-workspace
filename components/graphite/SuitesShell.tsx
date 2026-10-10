@@ -256,8 +256,12 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
         /* Atomik's panel (new interface) closes after ⌘K and the menus, before Make, unless a sheet is open over it. */
         else if (shell.atomik && !document.querySelector(".gx-veil")) shell.closeAtomik();
         /* Make closes with Esc, except from a field (Esc there closes the field's own list first) or while a sheet is open over it.
-           Make as a page (the new interface's, [data-v12-make]) is a place, not a panel: Esc does not leave it. */
-        else if (shell.make && !inField(event.target) && !document.querySelector(".gx-veil") && !document.querySelector("[data-v12-make]")) shell.closeMake();
+           Make as a page (the new interface's, [data-v12-make]) is a place, not a panel: Esc does not leave it, and a quick
+           tool open over it (Motion transfer, Object swap, Upscale) goes back to the page. */
+        else if (shell.make && !inField(event.target) && !document.querySelector(".gx-veil")) {
+          if (!document.querySelector("[data-v12-make]")) shell.closeMake();
+          else if (isMakeTool(shell.make)) shell.setMake(shell.lastMake);
+        }
         return;
       }
       /* ⌥M opens and closes Make (README § 6), from anywhere, a field included: ⌥M types nothing a prompt needs. */
@@ -456,7 +460,7 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
           <Boundary what="Make" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <aside className="gx-make" aria-label="Make"><PanelFault fault={fault} name="gen" actions={<button type="button" className="gx-hbtn" onClick={shell.closeMake}>Close</button>} /></aside>}>
             <MakePanel scope={scope} project={project} items={items} library={library} projects={data.status} projectsError={projectsError} onRetry={data.retry}
               workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })}
-              balance={account?.credits?.balance ?? null} aspect={aspect} />
+              balance={account?.credits?.balance ?? null} aspect={aspect} onClose={v12Make ? () => shell.setMake(shell.lastMake) : undefined} />
           </Boundary>
         ) : null}
         <Boundary what="Search" probe="palette" resetKey={shell.palette ? "open" : "closed"} fallback={(fault) => !shell.palette ? null : (

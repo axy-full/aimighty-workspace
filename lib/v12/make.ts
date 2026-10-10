@@ -8,6 +8,19 @@ import type { Generation } from "@/lib/jobs";
 import type { ComposerType } from "@/lib/workspace/composer";
 import { displayModelName } from "@/lib/models";
 import { recipePrompt, recreateBlock } from "@/lib/shell/recipe";
+import type { PriceValue } from "@/lib/shell/price-words";
+import { knownQuote, NO_DOLLAR_PRICE, type Quote } from "./quote";
+
+/* ── Prices ───────────────────────────────────────────────────────────── */
+
+/**
+ * A price today's Make gave (use-make: the server's quote, in credits) as the quote layer draws it: credits for a
+ * workspace that pays in credits; dollars at the credit's price for the one that pays in dollars, as Home's Start does.
+ */
+export function makeQuote(value: PriceValue | null | undefined, money: { dollars: boolean; creditUsd: number | null }): Quote {
+  if (!money.dollars || !value || value.kind === "free") return knownQuote(value);
+  return money.creditUsd ? { state: "ready", price: { unit: "usd", usd: value.credits * money.creditUsd, upTo: value.kind === "up-to" } } : { state: "error", message: NO_DOLLAR_PRICE };
+}
 
 /* ── Results ──────────────────────────────────────────────────────────── */
 

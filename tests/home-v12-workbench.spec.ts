@@ -213,6 +213,14 @@ test("desktop: Remix opens Make with the take; Start with a picked tile asks Ato
   await page.getByTestId("brand-home").click();
   await expect(page.getByTestId("v12-make")).toHaveCount(0);
   await expect(page.getByTestId("v12-home")).toBeVisible({ timeout: 30_000 });
+  /* Focus on the words shows on the floating bar too (rule 15): a 2px ring that is not there without focus. */
+  const card = page.getByTestId("v12-home-bar").locator(".v12-bar-card");
+  const ring = () => card.evaluate((el) => { const c = getComputedStyle(el); return `${c.outlineStyle} ${c.outlineWidth} ${c.borderTopColor}`; });
+  await page.getByTestId("brand-home").focus();
+  const unfocused = await ring();
+  await page.getByTestId("v12-home-bar-input").focus();
+  expect(await ring()).not.toBe(unfocused);
+  expect(await ring()).toMatch(/^solid 2px /);
 
   /* Pick, add words, press Start: the ask carries the tile's words and the figure on the button as its limit. */
   await tiles.first().getByTestId("v12-home-tile-pick").click();
