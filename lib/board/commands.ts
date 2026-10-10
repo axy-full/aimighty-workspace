@@ -15,11 +15,23 @@ export type BoardCommand =
   | { name: "library" }
   | { name: "glide"; to: RegionId };
 
-type Handler = (command: BoardCommand) => boolean;
+/**
+ * The commands the new interface's right-click menus send (redesign A3, components/v12/menus/MenuHost.tsx); nothing
+ * else sends them, so today's board behaves as before for every workspace without the new interface. Each runs the
+ * code its key or click runs: select a card as a click does, take the selected cards off as ⌫ does, pick a tool as its
+ * key does, and select every card.
+ */
+export type BoardMenuCommand =
+  | { name: "select"; card: string | null; add?: boolean }
+  | { name: "remove" }
+  | { name: "tool"; tool: "select" | "note" | "text" | "image" | "video" | "audio" | "upload" }
+  | { name: "select-all" };
+
+type Handler = (command: BoardCommand | BoardMenuCommand) => boolean;
 const handlers = new Set<Handler>();
 
 /** Runs a command on the board on screen; false when no board is open (or it could not do it just now). */
-export function runBoardCommand(command: BoardCommand): boolean {
+export function runBoardCommand(command: BoardCommand | BoardMenuCommand): boolean {
   let ran = false;
   for (const handler of [...handlers]) ran = handler(command) || ran;
   return ran;

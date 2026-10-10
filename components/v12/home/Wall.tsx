@@ -1,5 +1,5 @@
 "use client";
-import type { CSSProperties } from "react";
+import type { CSSProperties, MouseEvent } from "react";
 import { wallLayout, type WallTile } from "@/lib/v12/home";
 
 /**
@@ -8,7 +8,7 @@ import { wallLayout, type WallTile } from "@/lib/v12/home";
  * clicking picks it (a "Picked" pill, the others fade, the bar opens its sheet). Remix opens Make with the take's own
  * recipe, where Make shows its price. A new workspace sees one quiet line instead of sample work.
  */
-export function Wall({ tiles, status, row, picked, onPick, onRemix }: {
+export function Wall({ tiles, status, row, picked, onPick, onRemix, onMenu }: {
   tiles: readonly WallTile[];
   status: "loading" | "ready" | "error";
   /** Grid row height, px. */
@@ -16,6 +16,8 @@ export function Wall({ tiles, status, row, picked, onPick, onRemix }: {
   picked: string | null;
   onPick: (tile: WallTile) => void;
   onRemix: (tile: WallTile) => void;
+  /** A right-click on a tile (components/v12/menus/WallMenu.tsx). */
+  onMenu?: (event: MouseEvent, tile: WallTile) => void;
 }) {
   const cells = wallLayout(tiles.length);
   const style = { "--v12-wall-row": `${row}px` } as CSSProperties;
@@ -34,7 +36,7 @@ export function Wall({ tiles, status, row, picked, onPick, onRemix }: {
         const on = picked === tile.id;
         return (
           <div key={tile.id} className="v12-hm-tile" style={{ gridColumn: cells[i].col, gridRow: cells[i].row }} data-picked={on ? "" : undefined}
-            data-faded={picked && !on ? "" : undefined} data-testid="v12-home-tile" data-tile={tile.id}>
+            data-faded={picked && !on ? "" : undefined} data-testid="v12-home-tile" data-tile={tile.id} onContextMenu={onMenu ? (e) => onMenu(e, tile) : undefined}>
             {tile.media === "video"
               ? <video className="v12-hm-tile-media" src={tile.url} muted playsInline preload="metadata" aria-hidden="true" />
               // eslint-disable-next-line @next/next/no-img-element -- Particl's own media route (/api/media), already sized

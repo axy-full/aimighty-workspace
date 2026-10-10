@@ -422,7 +422,13 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       case "board": setList(false); return true;
       case "glide": glide(command.to); return true;
       case "library": setDrawer("library"); return true;
+      /* Sent only by the new interface's right-click menus (lib/board/commands.ts BoardMenuCommand). */
+      case "select": select(command.card, { add: command.add }); return true;
+      case "remove": if (offline || !selection.ids.size) return false; remove(); return true;
+      case "tool": if (offline && command.tool !== "select") return false; chooseTool(command.tool); return true;
+      case "select-all": { const all = placed.cards.filter((card) => card.nodeId && !placed.containers.has(card.id)).map((card) => card.id); pick(new Set(all), all[0] ?? null); return true; }
     }
+    return false;
   });
 
   /* ── A Make result landing (README § 3.2 made): glide to its card, light it for a moment, the Library open on it ── */

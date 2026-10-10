@@ -11,6 +11,12 @@ import { readTrayParams, writeTrayParams, type TrayKind, type TrayParams, type T
  * then kept here and mirrored back into the address (replace, never a new history entry). The shell's own moves may
  * drop the mirror; the tray stays as it was.
  */
+/** Asks the tray on screen to open or close, as L does (the new interface's right-click menu, redesign A3). */
+export const TRAY_TOGGLE_EVENT = "particl:v12-library-toggle";
+export function requestTrayToggle() {
+  window.dispatchEvent(new Event(TRAY_TOGGLE_EVENT));
+}
+
 export function useTrayState() {
   const [state, setState] = useState<TrayParams>(() => (typeof window === "undefined" ? { open: false, source: "All", kind: "All" } : readTrayParams(window.location.search)));
   useEffect(() => {

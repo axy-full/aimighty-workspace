@@ -7,8 +7,11 @@ import type { ProjectLibrary } from "@/lib/workspace/library";
 import type { ProjectSummary } from "@/lib/workspace/data";
 import { STUB_KINDS, castKindsOf, TRAY_HINT, TRAY_KINDS, TRAY_SOURCES, filterTray, masonry, trayItems, type CastKind, type TrayItem } from "@/lib/v12/library";
 import { requestMention } from "@/lib/v12/mention";
-import { inField, useTrayLibrary, useTrayState } from "@/lib/v12/useLibraryTray";
+import { keyOf } from "@/lib/v12/keymap";
+import { TRAY_TOGGLE_EVENT, inField, useTrayLibrary, useTrayState } from "@/lib/v12/useLibraryTray";
 import { Kbd, Menu, Segment, Tooltip, useOverlay, useOverlayStack, type MenuItem } from "@/components/v12/ui";
+import { TrayMenu } from "../menus/TrayMenu";
+import { useMenuAt } from "../menus/menu-items";
 import "./library.css";
 
 /**
@@ -63,6 +66,12 @@ export function LibraryTray({ project, projects, library }: { project: Project |
     return () => window.removeEventListener("keydown", onKey, true);
   }, [setOpen, stack]);
   useOverlay("drawer", tray.open, () => setOpen(false));
+  /* The right-click menu's "Library L" asks for the same toggle. */
+  useEffect(() => {
+    const onToggle = () => setOpen((was) => !was);
+    window.addEventListener(TRAY_TOGGLE_EVENT, onToggle);
+    return () => window.removeEventListener(TRAY_TOGGLE_EVENT, onToggle);
+  }, [setOpen]);
 
   return (
     <>
@@ -70,11 +79,11 @@ export function LibraryTray({ project, projects, library }: { project: Project |
       {/* Hidden on Make (prototype blDisplay) and while the tray is open, where the tray's own × and L close it: on today's
           board the button beside an open tray would sit on the board's bottom toolbar. */}
       {shell.make || tray.open ? null : (
-        <Tooltip name="Library" shortcut="L" side="top">
+        <Tooltip name="Library" shortcut={keyOf("library")} side="top">
           <button ref={button} type="button" className="v12-lib-btn" data-on-board={onBoard || undefined} aria-pressed={tray.open} aria-label="Library"
             data-testid="v12-library-button" onClick={() => tray.setOpen((was) => !was)}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 3h12v10H2zM2 7h12M6 7v6" /></svg>
-            Library<Kbd keys="L" />
+            Library<Kbd keys={keyOf("library")} />
           </button>
         </Tooltip>
       )}
@@ -114,6 +123,8 @@ function Tray({ project, projects, library, tray, onBoard, onClose }: {
   const pick = (item: TrayItem) => {
     if (!requestMention({ id: item.id, name: item.name })) shell.selectAsset(item.id, { reason: "pick" });
   };
+  /* A tile's right-click menu (redesign A3). */
+  const tileMenu = useMenuAt<string>();
   const drag = (event: DragEvent, item: TrayItem) => writeAssetDrag(event.dataTransfer, item.id, { name: item.name, url: item.url ?? undefined, kind: item.media ?? undefined });
 
   return (
@@ -124,7 +135,7 @@ function Tray({ project, projects, library, tray, onBoard, onClose }: {
           <Tooltip name="Expand" line="Open everything made here, in Make › Recent">
             <button type="button" className="v12-lib-expand" onClick={() => shell.openMake("recent")} data-testid="v12-library-expand">Expand</button>
           </Tooltip>
-          <Tooltip name="Close" shortcut="L">
+          <Tooltip name="Close" shortcut={keyOf("library")}>
             <button type="button" className="v12-lib-close" aria-label="Close the Library" onClick={onClose} data-testid="v12-library-close">×</button>
           </Tooltip>
         </span>
@@ -163,6 +174,7 @@ function Tray({ project, projects, library, tray, onBoard, onClose }: {
                 {col.map((item) => (
                   <Tooltip key={item.id} name={`${item.name} · ${item.kindLine}`} line={elsewhere ? "From another board's library: open that board to use it here." : "Drag onto the board, the bar or a board tile; click to @mention it."} side="right">
                     <button type="button" className="v12-lib-tile" draggable={!elsewhere} onDragStart={elsewhere ? undefined : (e) => drag(e, item)} onClick={() => pick(item)}
+                      onContextMenu={(e) => tileMenu.open(e, item.id)}
                       data-testid="v12-library-tile" data-source={item.source} data-id={item.id}>
                       <span className="v12-lib-pic" style={{ aspectRatio: item.aspect }}>
                         {item.url && item.media === "image" ? (
@@ -187,6 +199,8 @@ function Tray({ project, projects, library, tray, onBoard, onClose }: {
         )}
       </div>
       <div className="v12-lib-hint">{onBoard ? TRAY_HINT.board : TRAY_HINT.other}</div>
+      <TrayMenu menu={tileMenu.menu} onClose={tileMenu.close} shown={shown} own={project && libraryOf === project.id ? library.items : null}
+        otherBoards={projects.filter((p) => p.id !== project?.id).length} aspect={project?.aspect} />
     </aside>
   );
 }
