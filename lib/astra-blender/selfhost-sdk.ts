@@ -62,6 +62,7 @@ type SessionState = { status: "running" | "stopped"; usage?: Partial<AstraRuntim
    readable only until its next create, so the read that follows a stop (the
    render's own and a cancel's) is answered from here. Bounded; another process
    reads the worker, and after the worker's next create the name is missing. */
+/* Several processes (WEB_CONCURRENCY, ops/selfhost/cluster.mjs): a read on another process takes that missing path, an uncertain, held reservation, never a second charge. */
 const finals = new Map<string, Partial<AstraRuntimeUsage> | undefined>();
 function remember(name: string, usage: Partial<AstraRuntimeUsage> | undefined) {
   if (!usage && finals.has(name)) return;
