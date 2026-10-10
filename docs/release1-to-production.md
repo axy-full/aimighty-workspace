@@ -50,6 +50,10 @@ There is no migrations folder. Each database builds its own schema in code the f
   - `paid_text_jobs.reconcile_lease`
   - `astra_render_jobs.claimed_at`
   - `upload_sessions.failure`
+- **New indexes** (both on the platform database, built by `CREATE INDEX IF NOT EXISTS` when it is first used after the deploy; the branch is `db/r1-two-indexes`):
+  - `billing_cycles_ws` on `billing_cycles(workspace_id)`: every read of a workspace's billing cycles filters on it, and the table had no index.
+  - `meter_events_created` on `meter_events(created_at)`: reads by date alone (the newest price in the ledger unit, statements over a window) have no workspace to lead with. The existing `meter_events_ws(workspace_id, created_at)` stays.
+  - Building an index on a large table takes time and holds the database's write lock while it runs, so the first start after the deploy may be slow on `meter_events`. `IF NOT EXISTS` makes it idempotent: a second start, or a database that already has them, does nothing. Main ignores an index it did not create, so a rollback leaves them in place harmlessly.
 - Nothing is dropped or renamed, and no default changes.
 
 **Rewrites existing rows automatically, on the first cron run** (every 10 minutes after the deploy). A rollback cannot undo these:
