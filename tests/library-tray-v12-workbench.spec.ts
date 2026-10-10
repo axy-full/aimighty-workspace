@@ -159,15 +159,17 @@ test.describe("desktop, switch on", () => {
     await openLibrary(page, "/suites?view=board");
     const button = page.getByTestId("v12-library-button");
     await expect(button).toBeVisible({ timeout: 60_000 });
-    const list = page.getByTestId("board-list-toggle");
-    const listWas = await list.getAttribute("aria-selected");
-    /* A held key: the first press opens the tray, the repeats do nothing, and the board's list never toggles. */
+    /* The new frame's view switch (Canvas · List · Strip · Rig): the board is on Canvas, and stays there. */
+    const view = page.getByTestId("v12-view-switch");
+    await expect(view.getByRole("radio", { name: "Canvas" })).toBeChecked({ timeout: 60_000 });
+    /* A held key: the first press opens the tray, the repeats do nothing, and the board never switches to List. */
     await page.locator(".react-flow__pane").click({ position: { x: 300, y: 300 } });
     await page.keyboard.down("l");
     await page.evaluate(() => { for (let i = 0; i < 3; i++) window.dispatchEvent(new KeyboardEvent("keydown", { key: "l", repeat: true, bubbles: true, cancelable: true })); });
     await page.keyboard.up("l");
     await expect(page.getByTestId("v12-library")).toBeVisible();
-    if (listWas !== null) await expect(list).toHaveAttribute("aria-selected", listWas);
+    await expect(view.getByRole("radio", { name: "Canvas" })).toBeChecked();
+    await expect(view.getByRole("radio", { name: "List" })).not.toBeChecked();
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("v12-library")).toHaveCount(0);
     /* Opened with L from a focused control in the header: closing gives focus back to that control, not the Library button. */
