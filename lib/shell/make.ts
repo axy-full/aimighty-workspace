@@ -86,7 +86,7 @@ export function recentEntries<T extends RecentEntry>(entries: readonly T[], chip
 }
 
 /**
- * A result landing (README § 3.2, `make=made`; "Make frames" 9): Make files every take on a new shot node in the project's
+ * A result landing (README § 3.2, `make=made`; the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12) 9): Make files every take on a new shot node in the project's
  * draft, so a result is on the board as a card already. When the server has accepted a press, Make closes, toasts, and tells
  * the board, which glides to that card, lights it, and opens the Library on the take. The board's side is
  * lib/board/made.ts (`useMadeOnBoard`); it hears this window event, so Make imports nothing of the board.
