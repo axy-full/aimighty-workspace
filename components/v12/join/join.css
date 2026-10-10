@@ -56,6 +56,18 @@
 .v12 .v12-join-done-line { font-size: var(--gx-fs-body); line-height: 1.5; color: var(--gx-text-strong); }
 .v12 .v12-join .v12-join-done .v12-join-btn { height: 36px; }
 
+.v12 .v12-join-invitebox { display: flex; flex-direction: column; gap: var(--gx-sp-10); padding: 14px; border: 1px solid var(--gx-tint-border); border-radius: var(--gx-r-pop); background: var(--gx-tint-08); min-width: 0; }
+.v12 .v12-join-invitebox .v12-join-path { border: 0; padding: 0; }
+.v12 .v12-join-label { font-size: var(--gx-fs-label); letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; font-weight: 600; color: var(--gx-eyebrow); }
+.v12 .v12-join-plans { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gx-sp-8); }
+.v12 .v12-join-plan { display: flex; flex-direction: column; gap: var(--gx-sp-4); text-align: left; padding: var(--gx-sp-10) var(--gx-sp-12); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-pop); background: var(--gx-card); color: var(--gx-text); min-width: 0; }
+.v12 .v12-join-plan[aria-pressed="true"] { border-color: var(--gx-accent); background: var(--gx-tint-10); }
+.v12 .v12-join-plan-name { font-size: var(--gx-fs-body); font-weight: 600; }
+.v12 .v12-join-plan-price { font-family: var(--gx-mono); font-size: var(--gx-fs-meta); }
+.v12 .v12-join-plan-line { font-size: var(--gx-fs-meta); color: var(--gx-text-sec); line-height: 1.4; }
+.v12 .v12-join-note { margin: 0; font-size: var(--gx-fs-meta); color: var(--gx-text-sec); }
+@media (max-width: 719px) { .v12 .v12-join-plans { grid-template-columns: minmax(0, 1fr); } }
+
 /* Phone: one column in a bottom sheet, 44 px targets, inputs at 16 px so the page does not zoom. */
 .v12 .v12-dialog.v12-join[data-variant="sheet"] {
   max-width: 100%; max-height: 88dvh; padding: 10px var(--gx-sp-16) calc(48px + env(safe-area-inset-bottom, 0px));

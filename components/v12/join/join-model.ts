@@ -96,5 +96,32 @@ export function emailPath(invite: InviteKind): string | null {
   return null;
 }
 
+/**
+ * Where "Continue" goes for a new-workspace invite: today's sign-up page for the code, which asks for the password and
+ * the terms and checks the invite itself. The workspace's name typed in the sheet comes along to fill its field.
+ */
+export function signupPath(code: string, workspace: string): string {
+  const name = workspace.trim().slice(0, 100);
+  return `/signup?invite=${encodeURIComponent(code)}${name ? `&workspace=${encodeURIComponent(name)}` : ""}`;
+}
+
+/** The sheet's title when an invite code is read: the invite's own, else the reason's. */
+export function inviteTitle(invite: InviteKind | null, fallback: string): string {
+  if (!invite) return fallback;
+  if (invite.kind === "team") return invite.workspace ? `Join ${invite.workspace}’s workspace` : "Join the workspace you were invited to";
+  if (invite.kind === "new") return "Create your workspace";
+  if (invite.kind === "expired") return "This invite has expired";
+  return fallback;
+}
+
+/** The banner under a visitor's header for an invite link (§ 8.4), and its button. Null: no banner. */
+export function inviteBanner(invite: InviteKind | null): { line: string; action: string; to: "accept" | "request" } | null {
+  if (!invite) return null;
+  if (invite.kind === "team") return { line: invite.workspace ? `${invite.workspace} invited you to Particl` : "You’ve been invited to a workspace on Particl", action: "Accept invite", to: "accept" };
+  if (invite.kind === "new") return { line: "You’re invited to create a workspace on Particl", action: "Accept invite", to: "accept" };
+  if (invite.kind === "expired") return { line: "This invite has expired or been used", action: "Request access", to: "request" };
+  return { line: "That invite code isn’t valid", action: "Request access", to: "request" };
+}
+
 /** "Log in", coming back to where the visitor was. */
 export const loginPath = (back: string) => `/login?next=${encodeURIComponent(back.startsWith("/") ? back : "/")}`;

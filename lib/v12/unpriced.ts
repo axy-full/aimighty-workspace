@@ -49,6 +49,16 @@ export const UNPRICED = {
     why: "No code path finishes a storyboard panel (clean lines and the final look; inventory § 4.3 card toolbar). Storyboard redraws exist (lib/production/boards.ts) but nothing defines a finish step to quote.",
     hover: "Finishing a panel has no price yet.",
   },
+  visitorStart: {
+    action: "Start, as a visitor",
+    why: "A visitor has no session, so the board-start planning figure (GET /api/workbench/team-canvas?agent=1&board=new) is not theirs to read. It is priced once they are in; the join sheet opens instead of anything running.",
+    hover: "Starting is priced once you have an account.",
+  },
+  visitorMake: {
+    action: "Make, as a visitor",
+    why: "A visitor has no session, so no quote route (POST /api/generate/quote and the rest) answers them. Make opens the join sheet instead of running anything.",
+    hover: "Making is priced once you have an account.",
+  },
 } as const satisfies Record<string, Unpriced>;
 
 export type UnpricedId = keyof typeof UNPRICED;

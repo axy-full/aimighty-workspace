@@ -43,6 +43,8 @@ export type BarProps = {
   /** Files picked with [+]. Absent: the button is not drawn. */
   onAttach?: (files: File[]) => void;
   attachAccept?: string;
+  /** [+] does this instead of opening the file chooser (a visitor's join sheet). */
+  onAttachPress?: () => void;
   /** The hover on [+]: what attaching does on this screen. */
   attachTitle?: string;
   /** What [@] lists. Absent: the button is not drawn. */
@@ -62,7 +64,7 @@ export type BarProps = {
 };
 
 export function Bar(props: BarProps) {
-  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, attachAccept, attachTitle = "Attach a file — Upload a file from your computer.", mentions, mentionsTitle = "From the library", onMention, chips, sheet, note, disabled, maxLength, testId = "v12-bar" } = props;
+  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, onAttachPress, attachAccept, attachTitle = "Attach a file — Upload a file from your computer.", mentions, mentionsTitle = "From the library", onMention, chips, sheet, note, disabled, maxLength, testId = "v12-bar" } = props;
   const input = useRef<HTMLInputElement>(null);
   const files = useRef<HTMLInputElement>(null);
   const pop = useRef<HTMLDivElement>(null);
@@ -128,7 +130,7 @@ export function Bar(props: BarProps) {
         <div className="v12-bar-row">
           {onAttach ? (
             <>
-              <button type="button" className="v12-bar-icon v12-bar-plus" onClick={() => files.current?.click()} disabled={disabled}
+              <button type="button" className="v12-bar-icon v12-bar-plus" onClick={() => (onAttachPress ? onAttachPress() : files.current?.click())} disabled={disabled}
                 title={attachTitle} aria-label="Attach a file" data-testid={`${testId}-attach`}>+</button>
               <input ref={files} type="file" multiple hidden tabIndex={-1} accept={attachAccept} data-testid={`${testId}-attach-input`}
                 onChange={(e) => { const list = Array.from(e.target.files ?? []); e.target.value = ""; if (list.length) onAttach(list); }} />

@@ -39,6 +39,12 @@ export type JoinState = {
   requested: boolean;
   fields: RequestFields;
   code: string;
+  /** A new-workspace invite: the name typed, the step, the plan looked at (display only). */
+  workspace: string;
+  step: "name" | "plan";
+  plan: string;
+  /** An expired invite shows the request form on request. */
+  showRequest: boolean;
 };
 
 export function JoinProvider({ children, initial, compact = false, back = "/" }: {
@@ -51,7 +57,7 @@ export function JoinProvider({ children, initial, compact = false, back = "/" }:
   back?: string;
 }) {
   const [state, setState] = useState<JoinState>(() => ({
-    open: false, reason: "start", detail: null, prompt: "", requested: false, fields: EMPTY_FIELDS, code: "", ...initial,
+    open: false, reason: "start", detail: null, prompt: "", requested: false, fields: EMPTY_FIELDS, code: "", workspace: "", step: "name", plan: "", showRequest: false, ...initial,
   }));
   const [invite, setInviteState] = useState<InviteKind | null>(null);
 
