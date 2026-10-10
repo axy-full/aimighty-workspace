@@ -19,7 +19,7 @@ import { falSubmit, } from "./fal";
 import { preflight } from "./preflight";
 import {
   presignedReadUrl, videoPath, imagePath, uploadPath, usingBlob,
-  readImageBytes, readUploadBytes, readVideoBytes, storeVideo,
+  readImageBytes, readUploadBytes, readVideoBytes, storeVideo, type StoreVideoOptions,
 } from "./storage";
 import { getModel, type ModelDef } from "./models";
 import { estimateCostUsd } from "./vendorPricing";
@@ -217,7 +217,7 @@ async function fail(
  */
 export async function syncFalVideo(
   gen: Generation,
-  options: { strict?: boolean } = {},
+  options: { strict?: boolean; store?: StoreVideoOptions } = {},
 ): Promise<Generation> {
   if (gen.model !== ASTRA_MODEL) return collectFalVideo(gen, options);
   return withRecoveryJob(requireTenant().id,gen.id,async()=>{
@@ -228,7 +228,7 @@ export async function syncFalVideo(
     finally {await db().execute({sql:"UPDATE generations SET params=json_remove(params,'$.astraPollUntil') WHERE id=? AND json_extract(params,'$.astraPollUntil')=?",args:[gen.id,until]});}
   });
 }
-async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise<Generation> {
+async function collectFalVideo(gen:Generation,options:{strict?:boolean;store?:StoreVideoOptions}):Promise<Generation> {
   await deliverGenerationSettlement(gen.id);
   const savedCosts = await generationCosts(gen.id);
   const p = gen.params as FalVideoParams & {
@@ -282,7 +282,7 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean}):Promise
   const storeStart = now();
   let stored: { url: string; bytes: number };
   try {
-    stored = await storeVideo(gen.id, url);
+    stored = await storeVideo(gen.id, url, options.store);
   } catch (e) {
     // fal's URL lives for a while; the next pass stores it. Loud, though.
     console.error(`storeVideo failed for ${gen.id}:`, (e as Error).message);
