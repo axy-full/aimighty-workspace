@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { PHONES, SIZES, everySpendButtonPriced, floors, noBannedNames, seedPhoneStates, shoot, signedInWarm, watchErrors } from "./helpers/r1-gaps";
 
 /**
- * Release 1 gap 3: Make's Upscale quick tool (design/particl-graphite, Make frames: the third tool beside Motion transfer
+ * Release 1 gap 3: Make's Upscale quick tool (the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12): the third tool beside Motion transfer
  * and Object swap). Priced from the server's quote and off until it is; the paid route is intercepted, so nothing here
  * generates or charges.
  */

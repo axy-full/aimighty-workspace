@@ -7,7 +7,7 @@ import { newProject } from "../lib/workbench/studio";
 import { isCompact } from "./helpers/shellMode";
 
 /**
- * Make with the new interface switched on (design/particl-graphite/README.md § 3.2; "Make frames.dc.html" 1–8): the
+ * Make with the new interface switched on (design/particl-graphite/README.md § 3.2; the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12) 1–8): the
  * panel as drawn, Auto's type from the words, Change with the engines priced in "N cr" and dollars on hover, Advanced
  * folded, Recent's chips, and "Short by N cr · Top up" with Make still pressable. With the switch off, today's panel.
  * Against a local ENGINE_MOCK server; nothing is sent. The panel is the desktop's: from compact widths (tests/helpers/shellMode.ts, 844x390
