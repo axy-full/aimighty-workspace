@@ -141,6 +141,37 @@ test.describe("Reuse seed (NEEDS AKSHAY: the seed rides in the priced request)",
   });
 });
 
+test.describe("Reuse seed: which engines, and what a batch sends", () => {
+  test("only an engine that passes a seed on takes one", async () => {
+    const { takesSeed } = await import("../../lib/workspace/composer");
+    expect(takesSeed("dreamina-seedance-2-5-260628")).toBe(true);
+    expect(takesSeed("dreamina-seedance-2-0-260128")).toBe(true);
+    for (const id of ["fal-ai/kling-video/v3/standard", "gemini-3.1-flash-image", "nope", "", null, undefined]) expect(takesSeed(id), String(id)).toBe(false);
+  });
+
+  test("a batch with one seed repeats it on take 1 and varies the others, so it is not N copies of one clip", async () => {
+    const { variationSeed } = await import("../../lib/workspace/composer");
+    expect(variationSeed(8841, 1)).toBe(8841);
+    const seeds = [1, 2, 3, 4].map((v) => variationSeed(8841, v));
+    expect(new Set(seeds).size).toBe(4);
+    expect(seeds).toEqual([8841, 8842, 8843, 8844]);
+    /* Always a seed the server accepts (a whole number, 0 to 4294967295), including at the top of the range. */
+    for (const seed of [0, 2_147_483_647, 4_294_967_295]) for (const v of [1, 2, 3, 4]) {
+      const out = variationSeed(seed, v);
+      expect(Number.isInteger(out) && out >= 0 && out <= 4_294_967_295, `${seed}/${v}`).toBe(true);
+    }
+    expect(variationSeed(4_294_967_295, 1)).toBe(4_294_967_295);
+  });
+
+  test("the price's key covers the seed that is sent, and is unchanged without one", async () => {
+    const { quoteKeyFor } = await import("../../lib/workspace/composer");
+    const base = { type: "video" as const, modelId: "dreamina-seedance-2-5-260628", settings: { ratio: "16:9", resolution: "1080p", duration: 5 } as never, references: [], prompt: "", seconds: 0, instrumental: false, voiceId: "" };
+    expect(quoteKeyFor({ ...base, seed: null })).toBe(quoteKeyFor(base));
+    expect(quoteKeyFor({ ...base, seed: 8841 })).not.toBe(quoteKeyFor(base));
+    expect(quoteKeyFor({ ...base, seed: 8841 })).not.toBe(quoteKeyFor({ ...base, seed: 8842 }));
+  });
+});
+
 test.describe("Make's prices in the workspace's unit", () => {
   test("credits as the server gave them; dollars at the credit's price for the workspace that pays in dollars", () => {
     const credits = { dollars: false, creditUsd: 0.1 };

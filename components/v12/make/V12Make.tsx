@@ -91,7 +91,7 @@ export function V12Make({ initialSearch, onOpened, scope, project, projects, pro
     setView({ id: null, first: false });
     sendGenPreset(recreatePreset(tile.source, { name: tile.prompt.slice(0, 60) }));
     setSeed({ value, model: tile.model });
-    toast({ text: `Seed ${value} set · the next make repeats it` });
+    toast({ text: `Seed ${value} set · it stays until you remove it` });
   }, [toast]);
   const input = useMemo(() => ({ scope, project, projects, workspaceName, onProject, balance, seed }), [scope, project, projects, workspaceName, onProject, balance, seed]);
 

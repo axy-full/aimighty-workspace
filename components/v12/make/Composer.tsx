@@ -143,6 +143,16 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   );
   /* The seed the next clip repeats, while the engine it was made on is picked (lib/workspace/use-composer `seed`). */
   const seed = make.composer.seed;
+  /* Picking another engine drops the seed (it belongs to the engine it was made on). The engine the viewer loads arrives a moment
+     after the seed does, so it is dropped only after that engine has been the one picked. */
+  const seedFor = input.seed ?? null;
+  const seedMatched = useRef(false);
+  useEffect(() => { seedMatched.current = false; }, [seedFor?.value, seedFor?.model]);
+  useEffect(() => {
+    if (!seedFor || !model) return;
+    if (model.id === seedFor.model) seedMatched.current = true;
+    else if (seedMatched.current) onClearSeed?.();
+  }, [seedFor, model, onClearSeed]);
   const seedChip = seed !== null ? (
     <BarChip label={`Seed ${seed}`} onRemove={onClearSeed} removeTitle="Stop repeating this seed" testId="v12-make-seed" />
   ) : null;

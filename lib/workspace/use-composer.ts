@@ -25,6 +25,8 @@ import {
   offeredModels,
   quoteKeyFor,
   shownTotal,
+  takesSeed,
+  variationSeed,
   workspaceModels,
   type ComposerAction,
   type ComposerModel,
@@ -392,10 +394,12 @@ export function useComposer(options: {
   const voice = speechVoiceFor(voices, state.voiceId);
   const voiceId = voice?.id ?? "";
 
+  /* The seed to repeat: only while the engine it was made on is the one picked, and only an engine that takes one. */
+  const seed = options.seed && Number.isFinite(options.seed.value) && model?.id === options.seed.model && model.type === "video" && takesSeed(model.id) ? options.seed.value : null;
   const quoteKey = quoteKeyFor({
     type: state.type, modelId: model?.id ?? "", settings,
     references: state.references, prompt: sent.prompt.trim(), seconds,
-    instrumental: state.instrumental, voiceId,
+    instrumental: state.instrumental, voiceId, seed,
   });
 
   /* ── The live price on the button ───────────────────────────────────── */
@@ -464,7 +468,6 @@ export function useComposer(options: {
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */
-  const seed = options.seed && Number.isFinite(options.seed.value) && model?.id === options.seed.model && model.type === "video" ? options.seed.value : null;
   const live = useRef({ state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed });
   useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed }; });
   const busy = useRef(false);
@@ -603,7 +606,7 @@ export function useComposer(options: {
                   prompt: now.sent.prompt.trim(), kind: model.type === "video" ? "video" : "image", model: { id: model.id }, mapping,
                   ratio: settings.ratio, resolution: settings.resolution, duration: settings.duration, references: references(), firstFrameAssetId: "",
                   batch: { id: batchId, variation }, shotSpec: now.sent.shotSpec, cinema: now.sent.cinema,
-                  ...(now.seed !== null ? { seed: now.seed } : {}),
+                  ...(now.seed !== null ? { seed: variationSeed(now.seed, variation) } : {}),
                   ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },
               };

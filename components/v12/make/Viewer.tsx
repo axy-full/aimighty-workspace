@@ -8,10 +8,11 @@ import { dayLabel, type ResultTile } from "@/lib/v12/make";
 import { knownQuote } from "@/lib/v12/quote";
 import { useOverlay, useV12PortalRoot } from "@/components/v12/ui/overlay";
 import { useFocusReturn } from "@/components/v12/ui/Popover";
+import { takesSeed } from "@/lib/workspace/composer";
 import { Price } from "@/components/v12/ui/Price";
 
-/** Why "Reuse seed" can't be pressed on a still: Make's still engines take no seed. */
-export const SEED_LATER = "Stills don't repeat a seed. Variations puts these words and settings in the composer.";
+/** Why "Reuse seed" can't be pressed here: this engine takes no seed (today only Seedance does). */
+export const SEED_LATER = "This engine doesn't repeat a seed. Variations puts these words and settings in the composer.";
 
 const clock = (at: number) => new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
 
@@ -90,9 +91,9 @@ export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReuseSeed, o
             {seed != null ? (
               <span className="v12-mk-viewer-seed" data-testid="v12-make-viewer-seed">
                 <span className="v12-mk-mono">Seed {seed}</span>
-                {/* A clip's seed goes out with the next make (lib/workbench/generation-request.ts `seed`); a still's engines take none. */}
-                <button type="button" className="v12-mk-link" disabled={tile.kind !== "video" || Boolean(tile.reuseBlock)} onClick={() => onReuseSeed(tile, seed)}
-                  title={tile.kind !== "video" ? SEED_LATER : tile.reuseBlock ?? "Reuse this seed in the composer"} data-testid="v12-make-viewer-reuse-seed">Reuse seed</button>
+                {/* A clip's seed goes out with the next make (lib/workbench/generation-request.ts `seed`); an engine that takes none has the button off (takesSeed). */}
+                <button type="button" className="v12-mk-link" disabled={!takesSeed(tile.model) || Boolean(tile.reuseBlock)} onClick={() => onReuseSeed(tile, seed)}
+                  title={!takesSeed(tile.model) ? SEED_LATER : tile.reuseBlock ?? "Reuse this seed in the composer"} data-testid="v12-make-viewer-reuse-seed">Reuse seed</button>
               </span>
             ) : null}
           </div>
