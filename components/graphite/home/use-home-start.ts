@@ -42,7 +42,7 @@ const FILM = TEMPLATES[0];
  * place, moved here unchanged so both surfaces make and start a project the same way; there is no second
  * create or start path. Only `openBoard` differs: where the surface goes once the project is open.
  */
-export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, openBoard }: {
+export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, openBoard, worded }: {
   scope: string;
   projects: readonly ProjectSummary[];
   onPick: (id: string) => void;
@@ -50,6 +50,8 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
   /** Opens the workspace's starter production (the sample); the refusal, or null. Only the desktop Home offers it. */
   onStarter?: () => Promise<string | null>;
   openBoard: OpenBoard;
+  /** How a figure of credits reads in the note that a higher price needs another press: the new Home words it in the unit it shows (dollars for the house workspace). */
+  worded?: (credits: number) => string;
 }) {
   const { toast } = useWorkspace();
   const fetcher = useScopedFetch(scope);
@@ -147,7 +149,7 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
       if ("error" in terms) { setStarted(project); setStartProblem(terms.error); return; }
       if (terms.planning > limit) {
         setStarted({ ...project, figure: terms.planning });
-        setStartProblem(`For this brief, Atomik's thinking may cost ${priceWords(upTo(terms.planning))}. Press Start again to approve it.`);
+        setStartProblem(`For this brief, Atomik's thinking may cost ${worded ? worded(terms.planning) : priceWords(upTo(terms.planning))}. Press Start again to approve it.`);
         return;
       }
       const asked = await askAtomik(fetcher, { productionId: production.productionId, draftId: project.id, goal, limit, requestId: crypto.randomUUID() });
