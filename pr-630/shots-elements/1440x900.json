@@ -1,0 +1,9 @@
+{
+  "name": "shots-elements",
+  "app": "/suites?project=project-6c497800&suite=particl&page=brief&view=board&stage=elements",
+  "prototype": "?view=board&stage=Elements",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

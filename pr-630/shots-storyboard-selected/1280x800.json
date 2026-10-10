@@ -1,0 +1,9 @@
+{
+  "name": "shots-storyboard-selected",
+  "app": "/suites?project=project-c9c720ff&suite=particl&page=brief&view=board&stage=storyboard",
+  "prototype": "?view=board&stage=Storyboard&frame=1",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}

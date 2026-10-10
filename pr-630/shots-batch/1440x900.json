@@ -1,0 +1,9 @@
+{
+  "name": "shots-batch",
+  "app": "/suites?project=project-ba30b068&suite=particl&page=brief&view=board&stage=shots",
+  "prototype": "?view=board&stage=Shots&render=batch",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

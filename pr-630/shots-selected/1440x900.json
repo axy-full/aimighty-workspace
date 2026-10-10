@@ -1,0 +1,9 @@
+{
+  "name": "shots-selected",
+  "app": "/suites?project=project-2080af22&suite=particl&page=brief&sel=shot%3Anode-shot0002&view=board&stage=shots",
+  "prototype": "?view=board&stage=Shots&render=batch&frame=2",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
