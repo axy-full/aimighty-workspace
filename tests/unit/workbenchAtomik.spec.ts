@@ -18,7 +18,7 @@ import { createSuiteAgent, suiteAgentMessages } from '../../lib/workbench/suite-
 
 const dir = mkdtempSync(path.join(tmpdir(), 'particl-workbench-atomik-'));
 const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Economy', owner: 'test', type: 'language', inputModalities: ['text', 'image'], description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: '0.0000001', output: '0.0000003' } };
-const validReply = { intent: 'shots', summary: 'Mira enters the dunes after the sphere catches first light.', steps: ['Open on the mirrored dunes for 96 frames at 24 fps.', 'Hold the encounter for 144 frames; keep Mira’s ivory scarf consistent.'] };
+const validReply = { intent: 'shots', summary: 'Wren enters the dunes after the sphere catches first light.', steps: ['Open on the mirrored dunes for 96 frames at 24 fps.', 'Hold the encounter for 144 frames; keep Wren’s ivory scarf consistent.'] };
 function workspace(): TenantWorkspace {
   const id = randomUUID();
   return { id, slug: 'unit', name: 'Unit', legacy: false, dbUrl: 'file:' + path.join(dir, id + '.db'), dbToken: null,
@@ -46,7 +46,7 @@ async function fixture() {
   project.id = 'production-' + randomUUID();
   project.productionProjectId = 'real-project-' + randomUUID();
   await db().execute({ sql: 'INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)', args: ['owner:' + project.id, 'owner', project.id, project.name, JSON.stringify(project), Date.now()] });
-  const input = atomikRequestSchema.parse({ projectId: project.id, requestId: randomUUID(), request: 'Make a shot proposal from the Mira brief', model: 'auto', depth: 'Quick', refs: ['hero', 'character'] });
+  const input = atomikRequestSchema.parse({ projectId: project.id, requestId: randomUUID(), request: 'Make a shot proposal from the Wren brief', model: 'auto', depth: 'Quick', refs: ['hero', 'character'] });
   return { project, input };
 }
 
@@ -77,10 +77,10 @@ test('an unapproved catalog model cannot quote or reserve Atomik work', async ()
 
 test('context is tied to supplied references and never pretends to inspect pictures', async () => {
   const project = seedProject();
-  project.script = 'EXT. MIRRORED DUNES - DAY\nMira turns away from her reflection.';
+  project.script = 'EXT. MIRRORED DUNES - DAY\nWren turns away from her reflection.';
   const input = atomikRequestSchema.parse({ projectId: project.id, requestId: 'request-123', request: 'Check continuity', refs: ['hero'] });
   const context = JSON.parse(atomikContext(project, input, { hero: 'User supplied continuity notes' }));
-  expect(context.project.screenplay).toContain('Mira turns');
+  expect(context.project.screenplay).toContain('Wren turns');
   expect(context.selectedReferences).toHaveLength(1);
   expect(context.selectedReferences[0].uploadedText).toContain('continuity notes');
   expect(JSON.parse(atomikContext(project, input)).selectedReferences[0].evidence).toContain('has not been viewed');
@@ -205,7 +205,7 @@ test('a quote states how much of a long screenplay this depth reads instead of s
     const h = harness();
     const short = await quoteAtomikJob(input, 'owner', h.deps);
     expect(short.screenplay).toEqual({ chars: project.script?.length ?? 0, includedChars: project.script?.length ?? 0, truncated: false });
-    const long = { ...project, script: 'INT. CORRIDOR - NIGHT\nMira counts the doors.\n'.repeat(400) };
+    const long = { ...project, script: 'INT. CORRIDOR - NIGHT\nWren counts the doors.\n'.repeat(400) };
     await db().execute({ sql: 'UPDATE workbench_projects SET body=? WHERE key=?', args: [JSON.stringify(long), 'owner:' + project.id] });
     const quote = await quoteAtomikJob(input, 'owner', h.deps);
     expect(long.script.length).toBeGreaterThan(8000);
@@ -510,6 +510,55 @@ test('SDK suite steps settle using their own context tiers and the saved price, 
   });
 });
 
+test('a Claude suite step with a thinking budget stays inside its quoted ceiling: the budget is taken off maxOutputTokens', async () => {
+  const { atomikEffortOptions } = await import('../../lib/atomik-reasoning');
+  const { suiteAgentMaxOutputTokens } = await import('../../lib/workbench/suite-agent');
+  await runInTenant({ ...workspace(), keys: {}, usesPlatformKeys: true }, async () => {
+    const { input } = await fixture(), h = harness();
+    const budgeted: CatalogModel = { ...model, owner: 'anthropic', maxTokens: 64000, reasoningOptions: [{ type: 'budget_tokens', min: 1024, max: 32000 }] };
+    h.deps.models = async () => [budgeted];
+    const effort = atomikEffortOptions(budgeted).find(option => option.value.startsWith('budget:'))!.value;
+    const budget = Number(effort.slice('budget:'.length));
+    const request = { ...input, model: budgeted.id, suite: 'particl' as const, refs: [], effort, maxCredits: 10000 };
+    const { job } = await prepareAtomikJob(request, 'owner', undefined, h.deps);
+    const envelope = JSON.parse(String((await db().execute({ sql: 'SELECT provider_body FROM workbench_atomik_jobs WHERE id=?', args: [job.id] })).rows[0].provider_body));
+    // The quote's per-step ceiling counts the thinking budget inside maxTokens.
+    expect(envelope.providerOptions.anthropic.thinking).toEqual({ type: 'enabled', budgetTokens: budget });
+    expect(envelope.maxTokens).toBeGreaterThan(budget);
+    expect(suiteAgentMaxOutputTokens(envelope)).toBe(envelope.maxTokens - budget);
+    // The SDK loop asks for the answer's share only; the Anthropic SDK adds the budget back on the wire.
+    const seen: (number | undefined)[] = [];
+    const sdkModel = new MockLanguageModelV4({ doGenerate: async options => { seen.push(options.maxOutputTokens); return {
+      content: [{ type: 'text', text: JSON.stringify(suiteProposal) }], finishReason: { unified: 'stop', raw: undefined }, warnings: [],
+      usage: { inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined }, outputTokens: { total: 10, text: 10, reasoning: undefined } } }; } });
+    await createSuiteAgent(envelope, sdkModel).generate({ messages: suiteAgentMessages(envelope) });
+    expect(seen).toEqual([envelope.maxTokens - budget]);
+    // No thinking, adaptive thinking, or a non-Claude model: unchanged. A budget that leaves no answer is refused.
+    expect(suiteAgentMaxOutputTokens({ ...envelope, providerOptions: {} })).toBe(envelope.maxTokens);
+    expect(suiteAgentMaxOutputTokens({ ...envelope, providerOptions: { anthropic: { thinking: { type: 'adaptive' } } } })).toBe(envelope.maxTokens);
+    expect(suiteAgentMaxOutputTokens({ ...envelope, model: 'openai/gpt-5-mini' })).toBe(envelope.maxTokens);
+    expect(() => suiteAgentMaxOutputTokens({ ...envelope, providerOptions: { anthropic: { thinking: { type: 'enabled', budgetTokens: envelope.maxTokens } } } })).toThrow();
+  });
+});
+
+test('on the wire, a direct Claude suite step asks Anthropic for exactly the quoted ceiling (answer + thinking budget)', async () => {
+  const saved = { direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
+  process.env.TEXT_DIRECT = 'anthropic'; process.env.ANTHROPIC_API_KEY = 'test-anthropic-key-never-sent';
+  try {
+    const { languageModel } = await import('../../lib/language-provider');
+    const bodies: Record<string, unknown>[] = [];
+    const fetch: typeof globalThis.fetch = async (_url, init) => { bodies.push(JSON.parse(String(init?.body))); return Response.json({ type: 'error', error: { type: 'invalid_request_error', message: 'Fixture stop.' } }, { status: 400 }); };
+    const envelope = { suite: 'particl' as const, model: 'anthropic/claude-sonnet-4.6', context: 'Brief.', maxTokens: 6000, inputTokenBudget: 50000, toolResultByteBudget: 20000,
+      providerOptions: { anthropic: { thinking: { type: 'enabled' as const, budgetTokens: 2048 } } }, assetIds: [], images: [] };
+    await createSuiteAgent(envelope, languageModel(envelope.model, { auth: {}, fetch })).generate({ messages: suiteAgentMessages(envelope) }).catch(() => null);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0].max_tokens).toBe(6000);
+    expect(bodies[0].thinking).toEqual({ type: 'enabled', budget_tokens: 2048 });
+  } finally {
+    for (const [name, value] of [['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+  }
+});
+
 test('suite usage above the approved quote remains held without charging the overage or replaying the loop', async () => {
   await runInTenant({ ...workspace(), keys: {}, usesPlatformKeys: true }, async () => {
     const { input } = await fixture(), h = harness();
@@ -584,7 +633,7 @@ test('Astra uses the exact requested model, binds the saved scene and prices bot
     expect(quote.model).toBe(ASTRA_BLENDER_MODEL);
     expect(quote.estimateUsd).toBeCloseTo(textCostUsd(astraModel, ASTRA_AGENT_INPUT_TOKENS, quote.maxTokens)! * ASTRA_AGENT_STEPS);
     expect(h.calls()).toBe(0); expect(h.reservations()).toBe(0);
-    await expect(quoteAtomikJob({ ...request, model: 'auto' }, 'owner', h.deps)).rejects.toThrow('uses GPT-6 Astra');
+    await expect(quoteAtomikJob({ ...request, model: 'auto' }, 'owner', h.deps)).rejects.toThrow('uses its own thinking model');
     h.deps.models = async () => [model];
     await expect(quoteAtomikJob(request, 'owner', h.deps)).rejects.toThrow('No priced language model');
     h.deps.models = async () => [astraModel];
@@ -664,4 +713,63 @@ for (const agentKind of ['raw', 'suite', 'astra'] as const) test(`direct ${agent
       expect(String(receipt.provider_response)).toContain('cached_tokens'); expect(String(receipt.usage)).toContain('cached_tokens');
     });
   } } finally { if (priorKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = priorKey; if (previousMock === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = previousMock; }
+});
+
+for (const agentKind of ['raw', 'suite'] as const) test(`a TEXT_DIRECT ${agentKind} job is quoted at its cold cache ceiling, settled from its own usage on its vendor, and a route changed after approval is refused before sending (PR 3)`, async () => {
+  const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
+  delete process.env.ENGINE_MOCK; process.env.ANTHROPIC_API_KEY = 'test-anthropic-key-never-sent';
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('No provider call is allowed in this test.'); };
+  try {
+    await runInTenant(workspace(), async () => {
+      const { input } = await fixture();
+      const h = harness();
+      const request = { ...input, model: model.id, refs: [], ...(agentKind === 'suite' ? { suite: 'particl' as const } : {}) };
+      process.env.TEXT_DIRECT = 'anthropic';
+      // Without cache prices a direct Claude call has no ceiling: refused before any reservation.
+      await expect(quoteAtomikJob(request, 'owner', h.deps)).rejects.toMatchObject({ status: 503 });
+      const priced: CatalogModel = { ...model, pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+      h.deps.models = async () => [priced];
+      const quote = await quoteAtomikJob(request, 'owner', h.deps);
+      delete process.env.TEXT_DIRECT;
+      const gatewayQuote = await quoteAtomikJob(request, 'owner', h.deps);
+      expect(quote.estimateUsd).toBeGreaterThan(gatewayQuote.estimateUsd);
+      process.env.TEXT_DIRECT = 'anthropic';
+      let reservedEngine = '';
+      h.deps.reserve = async event => { reservedEngine = event.engine; };
+      h.deps.assertFunding = async (_id, engine) => { if (engine !== reservedEngine) throw new Error('The funding source changed. No paid request was sent.'); };
+      const prepared = await prepareAtomikJob({ ...request, maxCredits: quote.estimateCredits }, 'owner', undefined, h.deps);
+      expect(reservedEngine).toBe('anthropic');
+      const row = (await db().execute({ sql: 'SELECT provider_body FROM workbench_atomik_jobs WHERE id=?', args: [prepared.job.id] })).rows[0];
+      expect(JSON.parse(String(row.provider_body)).pricingModel.pricing).toEqual(priced.pricing);
+      expect((await db().execute({ sql: 'SELECT ledger FROM atomik_spend WHERE id=?', args: [prepared.job.id] })).rows[0].ledger).toBe('anthropic');
+      const usage = { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 40 } };
+      const result = agentKind === 'suite' ? { ...validReply, actions: [{ kind: 'image', title: 'Hero', prompt: 'Motivated soft light.', referenceIds: [] }], hooks: [], assumptions: [] } : validReply;
+      let sent = 0;
+      const reply = async () => { sent++; return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(result) } }], usage: agentKind === 'raw' ? usage : { steps: [usage, usage] } }) }; };
+      h.deps.run = async req => { expect(req.body).not.toContain('pricingModel'); return reply(); };
+      h.deps.runSuite = reply;
+      h.deps.models = async () => { throw new Error('Must use the saved price, never a new catalog lookup.'); };
+      await runAtomikJob(prepared.job.id, 'owner', h.deps);
+      expect(sent).toBe(1);
+      const [done] = await listAtomikJobs('owner', input.projectId, { meter: h.deps.meter }, request.requestId);
+      expect(done.status).toBe('succeeded');
+      expect(done.costUsd).toBeCloseTo((30 * .0000001 + 30 * .00000001 + 40 * .000000125 + 20 * .0000003) * (agentKind === 'raw' ? 1 : 2), 15);
+      expect(h.events.at(-1)).toMatchObject({ engine: 'anthropic', status: 'succeeded' });
+      // Approved on the gateway, then TEXT_DIRECT switched Claude to Anthropic: refused before the provider, nothing charged.
+      h.deps.models = async () => [priced];
+      delete process.env.TEXT_DIRECT;
+      const earlier = await prepareAtomikJob({ ...request, requestId: randomUUID(), maxCredits: gatewayQuote.estimateCredits }, 'owner', undefined, h.deps);
+      expect(reservedEngine).toBe('vercel');
+      process.env.TEXT_DIRECT = 'anthropic';
+      await runAtomikJob(earlier.job.id, 'owner', h.deps);
+      expect(sent).toBe(1);
+      const [refused] = await listAtomikJobs('owner', input.projectId, { meter: h.deps.meter }, earlier.job.requestId);
+      expect(refused).toMatchObject({ status: 'failed', costUsd: 0 });
+      expect(h.events.at(-1)).toMatchObject({ engine: 'anthropic', status: 'failed', engineCostUsd: 0 });
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+    for (const [name, value] of [['ENGINE_MOCK', saved.mock], ['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+  }
 });

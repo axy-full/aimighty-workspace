@@ -23,7 +23,7 @@ const ws: TenantWorkspace = {
   storageQuotaBytes: null, deletedAt: null,
 };
 
-test("transcription and Astra renders are statement lines, and a take's meter row is never listed twice", async () => {
+test("transcription and 3D blocking renders are statement lines, and a take's meter row is never listed twice", async () => {
   const { platformReady, platformDb } = await import("../../lib/platform");
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
@@ -57,7 +57,7 @@ test("transcription and Astra renders are statement lines, and a take's meter ro
     const byId = new Map(lines.map((l) => [l.id, l]));
     expect(byId.get("g1")!.credits).toBe(15);
     expect(byId.get("stt_1")).toMatchObject({ credits: 3, take: "Transcript", what: "Transcription", kind: "audio" });
-    expect(byId.get("astra_1")).toMatchObject({ credits: 8, take: "Astra", what: "Astra render", kind: "image" });
+    expect(byId.get("astra_1")).toMatchObject({ credits: 8, take: "3D blocking", what: "3D blocking render", kind: "image" });
     expect(byId.get("text_1")!.credits).toBe(1);
     expect(s.totals.credits).toBe(27);
     // The funding split covers the same credits the total does.

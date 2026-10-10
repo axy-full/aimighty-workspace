@@ -2,6 +2,7 @@ import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/ge
 import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem, genjutsuFrameProblem } from "@/lib/genjutsu";
 import { CINEMA_STUDIO_LIMITS, isCinemaStudioAudioMime, isCinemaStudioModel, readCinemaControls } from "@/lib/cinemaStudioTypes";
 import { cinemaStudioEnabled, cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH } from "@/lib/cinemaStudio";
+import { HOLD_NEEDS_A_PERSON, holdBandOf, isAgentApprover } from "@/lib/cinemaHold";
 import { CINEMA_SOUND_UNAVAILABLE, cinemaSoundOffered } from "@/lib/cinemaSoundPricing";
 import { readDraft } from "@/lib/workbench/records";
 import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
@@ -111,6 +112,7 @@ import { isBatchId } from "@/lib/variations";
 import { uploadSourceParams } from "@/lib/sourceClip";
 import { shotCapGate } from "@/lib/shotCap";
 import { approvedTakeOf } from "@/lib/shots";
+import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
 import { reasonNeeded, cleanReason, lockAsk } from "@/lib/approval";
 import {
@@ -418,6 +420,11 @@ export async function executeGenerationAdmission(
       if (!project.rows.length)
         return admissionReply({ error: "No such project." }, { status: 404 });
     }
+    /* The sample workspace spends nothing, filed or not, save the one run its mark is lifted for: refused before anything is held or reserved. A quote (no request claim) still answers. */
+    if (options.requestClaim) {
+      const sample = await sampleWorkspaceRefusal({ runId: options.run?.id });
+      if (sample) return admissionReply({ error: sample, charged: 0 }, { status: 409 });
+    }
     if (body.shotId) {
       const shot = await getShot(String(body.shotId));
       if (!shot)
@@ -501,9 +508,9 @@ export async function executeGenerationAdmission(
     const cinemaControls = readCinemaControls(body.cinema);
     if (!cinemaControls.ok) return admissionReply({ error: cinemaControls.error }, { status: 400 });
     if (model.marketing && !options.checkpoint)
-      return admissionReply({ error: "Review a live Marketing Studio quote before submitting this take." }, { status: 400 });
+      return admissionReply({ error: "Review a live Product image quote before submitting this take." }, { status: 400 });
     if (!model.marketing && body.marketing != null)
-      return admissionReply({ error: "Marketing settings require the Marketing Studio Image engine." }, { status: 400 });
+      return admissionReply({ error: "Marketing settings require the Product image engine." }, { status: 400 });
     const marketing = model.marketing ? marketingSettings(body.marketing) : undefined;
     if (marketing && body.references != null && (!Array.isArray(body.references) || body.references.length > 16 || body.references.some((ref: unknown) => {
       if (!ref || typeof ref !== "object" || Array.isArray(ref)) return true;
@@ -617,6 +624,12 @@ export async function executeGenerationAdmission(
         },
         { status: 400 },
       );
+    }
+    /* A seed to repeat is a whole number the engine accepts; anything else is refused before a quote. It changes no price. */
+    if (body.seed !== "" && body.seed != null) {
+      const seed = Number(body.seed);
+      if (!Number.isInteger(seed) || seed < 0 || seed > 4_294_967_295)
+        return admissionReply({ error: "A seed is a whole number from 0 to 4294967295." }, { status: 400 });
     }
     if (modelId === ASTRA_MODEL) {
       try { astra = astraSettings(body.astra); }
@@ -1206,7 +1219,7 @@ export async function executeGenerationAdmission(
     /* THE CEILING IS COUNTED AFTER THE CAST, because the cast attaches too.
      References were validated at the point they arrived from the browser —
      which is before `expandCast` pushes a still for every cited name. So
-     attaching two images to a two-image model and then citing @Mara and
+     attaching two images to a two-image model and then citing @Courier and
      @Mule passed the check with two and left with four, and nothing said
      so. The still path already counts them (see the identical check on the
      image branch below, and its comment); the video path never did.
@@ -1251,7 +1264,7 @@ export async function executeGenerationAdmission(
     const rules = await effectiveRules().catch(() => layer.rules);
     if (model.kind === "image") {
       if (model.marketing && ((body.ratio != null && !model.ratios.includes(body.ratio)) || (body.resolution != null && !model.resolutions.includes(body.resolution))))
-        return admissionReply({ error: "Choose a supported Marketing Studio size and aspect." }, { status: 400 });
+        return admissionReply({ error: "Choose a supported Product image size and aspect." }, { status: 400 });
       if (soulRender && ((body.ratio != null && !model.ratios.includes(body.ratio)) || (body.resolution != null && !model.resolutions.includes(body.resolution))))
         return admissionReply({ error: "Choose 720p or 1080p and a supported aspect ratio." }, { status: 400 });
       const ratio = model.ratios.includes(body.ratio)
@@ -1575,7 +1588,7 @@ export async function executeGenerationAdmission(
       );
       if (stopped) return stopped;
       if (model.marketing && body.maxCredits == null)
-        return admissionReply({ error: "Approve the quoted credit ceiling before generating with Marketing Studio." }, { status: 400 });
+        return admissionReply({ error: "Approve the quoted credit ceiling before generating with Product image." }, { status: 400 });
       if (soulRender && body.maxCredits == null)
         return admissionReply({ error: "Approve the quoted credit ceiling before rendering with an identity." }, { status: 400 });
       /* An Atomik run never leaves a held take behind (it could start later by itself, outside the
@@ -1723,6 +1736,8 @@ export async function executeGenerationAdmission(
       ? final.carried.rawPrompt
       : castPrompt !== prompt ? prompt : undefined;
     let refineModel: string | null = null;
+    /* Whose balance paid for the writer's text (generations.refine_ledger, lib/reconcile.ts PROMPT_LEDGER). */
+    let refineLedger: string | null = null;
     let refineIn = 0,
       refineOut = 0;
     /** How long the prompt writer held the submit up. Null when it never ran. */
@@ -1823,6 +1838,7 @@ export async function executeGenerationAdmission(
         chosenMove = r.move ?? null;
         rawPrompt = prompt; // the words a person actually typed
         refineModel = r.model;
+        refineLedger = r.ledger ?? null;
         refineIn = r.inTokens;
         refineOut = r.outTokens;
 
@@ -2029,9 +2045,12 @@ export async function executeGenerationAdmission(
         hasVideoInput,
         { audio: params.generateAudio, task: task.id, fps60: params.fps60 },
       )?.net ?? 0;
+    /* Cinema Studio holds its quote times its band (lib/cinemaHold.ts): "about N cr, at most 3N cr". The approval
+       (`maxCredits`), the balance and a held take's `needs` are all the hold; any other engine's band is 1. */
+    const band = holdBandOf(modelId);
     if (
       body.maxCredits != null &&
-      quotedCredits(estUsd, modelId) > body.maxCredits
+      quotedCredits(estUsd, modelId) * band > body.maxCredits
     ) {
       return admissionReply(
         {
@@ -2049,6 +2068,8 @@ export async function executeGenerationAdmission(
         takeUsd: estUsd,
         modelId,
         isAdmin: got.user.role === "admin",
+        /* A take that holds its ceiling counts at its hold (lib/cinemaHold.ts). */
+        band,
       });
       if (stop)
         return admissionReply(
@@ -2060,11 +2081,12 @@ export async function executeGenerationAdmission(
       renderKeyNameFor(model.provider),
       estUsd,
       modelId,
+      band,
     );
     if (!wall.ok && wall.status !== 402)
       return admissionReply({ error: wall.error }, { status: wall.status });
     let hold = !wall.ok ? heldInfo(estUsd, "video", modelId) : null;
-    const capV = await checkCap(projectId, estUsd, modelId);
+    const capV = await checkCap(projectId, estUsd, modelId, band);
     if (!capV.allow)
       return admissionReply({ error: capV.error }, { status: 409 });
     if (capV.notice) notices.push(capV.notice);
@@ -2174,7 +2196,7 @@ export async function executeGenerationAdmission(
           source: sourceRef,
           rules: rules.map((r) => r.id),
         },
-        { approximate: cinema },
+        { approximate: cinema, band },
       );
       if (stopped) return stopped;
     }
@@ -2192,6 +2214,10 @@ export async function executeGenerationAdmission(
       return admissionReply({ error: "Confirm the quoted transform credit ceiling before generating." }, { status: 400 });
     if (cinema && body.maxCredits == null)
       return admissionReply({ error: "Review the approximate credit price before generating with Cinema Studio." }, { status: 400 });
+    /* Only a person approves a hold (lib/cinemaHold.ts): an outside agent on an API token (an MCP client) or an Atomik
+       run's own id may price it and explain it, never approve it. Preparing stops at the checkpoint above. */
+    if (band > 1 && (got.token || isAgentApprover(got.user.id)))
+      return admissionReply({ error: HOLD_NEEDS_A_PERSON }, { status: 403 });
 
     // Row first, so a failed submit is still visible rather than silently lost.
     // The claim is bound in the same write: a claim naming no job proves there is none.
@@ -2211,8 +2237,8 @@ export async function executeGenerationAdmission(
         sql: `INSERT INTO generations
           (id, project_id, ark_task_id, model, prompt, params, status, created_by, created_at, updated_at,
            refine_model, refine_in_tokens, refine_out_tokens, refine_cost_usd, token_id,
-           shot_id, version, provider, task, source_gen_id, refine_ms, billed_to)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           shot_id, version, provider, task, source_gen_id, refine_ms, billed_to, refine_ledger)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         args: [
           genId,
           projectId,
@@ -2236,6 +2262,7 @@ export async function executeGenerationAdmission(
           sourceGenId,
           refineMs,
           billedTo(model.provider ?? "byteplus"),
+          refineModel ? refineLedger : null,
         ],
       });
       for (const bind of binding) await tx.execute(bind);
@@ -2343,7 +2370,8 @@ export async function executeGenerationAdmission(
           shotId,
           createdBy: got.user.id,
         },
-        { token: got.token, run: options.run },
+        /* Cinema Studio holds its quote times its band, recorded on its meter row (lib/cinemaHold.ts). */
+        { token: got.token, run: options.run, holdBand: band },
       );
     } catch (e) {
       /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik

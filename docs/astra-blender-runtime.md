@@ -64,6 +64,27 @@ Admission requires three free project asset slots within the 500-asset limit. If
 
 Final billing uses SDK CPU milliseconds, wall duration for 4 GB memory (one-minute minimum), creation and reported egress. Missing or over-ceiling telemetry leaves the reviewed reservation held with an explicit uncertain status. The approved ceiling assumes 180 seconds, two fully active CPUs and 512 MiB transfer. Snapshot storage and platform Blob retention are separate infrastructure expenses. No final vendor cost is invented for a lost receipt.
 
+## Self-hosted render worker
+
+`ASTRA_RENDER_BACKEND` chooses where a native render runs: `vercel` (the default, the Vercel Sandbox above) or `selfhost` (the platform's own single-slot CPU workers in `ops/render-worker/`, whose README is the setup and protocol reference). Set on the app:
+
+```text
+ASTRA_RENDER_BACKEND=selfhost
+ASTRA_WORKER_URLS=http://<worker 1>:8790,http://<worker 2>:8790,http://<worker 3>:8790
+ASTRA_WORKER_SECRETS=<secret 1>,<secret 2>,<secret 3>
+ASTRA_WORKER_SECRET=<one secret for every worker, used only when ASTRA_WORKER_SECRETS is unset>
+ASTRA_BLENDER_RATE_CARD=<unchanged>
+```
+
+- `ASTRA_WORKER_URLS` takes one to three internal http(s) origins, with no credentials, path or query. `ASTRA_WORKER_SECRETS` holds one secret per worker, in the same order as the URLs, and each worker is sent only its own as a bearer token. When it is unset, `ASTRA_WORKER_SECRET` is every worker's. A count that differs from the URL count, or any secret under 32 characters, leaves the backend not configured. In `selfhost` mode the snapshot and the Vercel credentials are neither needed nor read.
+- The client (`lib/astra-blender/selfhost-sdk.ts`) speaks only to those origins, refuses redirects, and has deadlines of 30 seconds per call and 190 seconds for the run. Its errors never carry a host, a header or the secret.
+- Create tries the workers in order and takes the first free one. When every worker answers busy, nothing has started: the job goes back to the queue with no charge and no refund, and runs when a worker is free. Inngest waits 30 seconds between attempts; native dispatch retries from the panel poll, the slot chain and the cron after a 15-second backoff. A job that still has not started 30 minutes after it was approved is cancelled and its reservation released, as for a dispatch outage. Workers that refuse the request outright (for example a wrong secret) fail the job before anything starts and release its reservation.
+- At most three native renders run at once on either backend (the Inngest function's concurrency and the native worker slots).
+- Billing is unchanged: the same rate card and formula, applied to the CPU milliseconds, wall duration and egress that the worker reports. The meter engine is `selfhost-blender` (`vercel-sandbox` for Vercel), the model is still `blender-5.2.2-cpu`, and both are charged in credits the same way. Missing usage leaves the reservation held as uncertain.
+- A job keeps the backend it was approved under. One approved on the other backend fails before it starts and is refunded; one that already started is read and stopped on its own backend. Rows from before the switch are Vercel rows.
+- Recovery reads a session by name from whichever worker holds it, stops it 240 seconds after its claim, and never creates one.
+- A self-hosted session is stopped as soon as its outputs are read into memory, before they are stored, so its reported duration covers the render alone. Recovery leaves a job alone while its outputs are being stored. Vercel keeps storing first: the VM's own 180-second timeout already bounds its duration.
+
 ## Low-level server integration
 
 Use the following exports from `lib/astra-blender/sandbox.ts`:

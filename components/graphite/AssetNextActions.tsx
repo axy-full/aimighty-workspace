@@ -1,6 +1,7 @@
 "use client";
 import { useId, useState } from "react";
-import { nextActions, notOfferedLine, pricedActions, NEXT_SECTION, type NextActionId, type PricedActionId } from "@/lib/shell/next-actions";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
+import { nextActions, notOfferedLine, pricedActions, type NextActionId, type PricedActionId } from "@/lib/shell/next-actions";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import { NextActionPanel } from "./NextActionPanel";
 
@@ -15,20 +16,25 @@ import { NextActionPanel } from "./NextActionPanel";
  * desk's selected take both show it (lib/shell/next-actions.ts says which
  * apply, and why one cannot yet).
  */
-export function AssetNextActions({ entry, saved, onAction, scope, project, onOpenTake }: {
+export function AssetNextActions({ entry, saved, onAction, scope, project, onOpenTake, onOpened }: {
   entry: LibraryEntry;
   saved: boolean;
-  onAction: (id: NextActionId) => void;
+  /** The way into the existing tool (Re-edit, Edit, Edit & Sound). Left out where the surface has its own (the board Inspector's Change with words): the row is then the priced actions alone. */
+  onAction?: (id: NextActionId) => void;
   /** Where the priced actions run: the workspace's scope and the project (its production once saved). Without them the row only navigates. */
   scope?: string;
   project?: { id: string; productionProjectId?: string } | null;
   /** Open a take by its library id: the new take an action made. */
   onOpenTake?: (id: string) => void;
+  /** A priced action's panel was opened on this take: the surface can hold the take still while the new one lands. */
+  onOpened?: () => void;
 }) {
   const [open, setOpen] = useState<{ take: string; id: PricedActionId } | null>(null);
   const panelId = useId();
-  const actions = nextActions(entry, { saved });
-  const priced = scope && project ? pricedActions(entry, { saved }) : [];
+  /* The sample workspace spends nothing: Upscale, Outpaint, Animate, Reframe and Extend (and their panel) are not offered. */
+  const spendOff = useSampleWorkspace();
+  const actions = onAction ? nextActions(entry, { saved }) : [];
+  const priced = scope && project && !spendOff ? pricedActions(entry, { saved }) : [];
   if (!actions.length && !priced.length) return null;
   const openId = open?.take === entry.take.id ? open.id : null;
   const current = openId ? priced.find((a) => a.id === openId && a.enabled) ?? null : null;
@@ -41,14 +47,14 @@ export function AssetNextActions({ entry, saved, onAction, scope, project, onOpe
       <div className="gx-next-row">
         {actions.map((a) => (
           <button key={a.id} type="button" className="gx-hbtn" disabled={!a.enabled} title={a.enabled ? `Opens ${a.opens}` : a.why ?? undefined}
-            onClick={() => onAction(a.id)} data-testid={`next-${a.id}`}>{a.label} ›</button>
+            onClick={() => onAction?.(a.id)} data-testid={`next-${a.id}`}>{a.label} ›</button>
         ))}
         {priced.map((a) => (
           <button key={a.id} type="button" className="gx-hbtn gx-next-priced" disabled={!a.enabled}
             aria-expanded={a.enabled ? openId === a.id : undefined} aria-controls={openId === a.id ? panelId : undefined}
             title={a.enabled ? `${a.label} on ${a.engine}: a new take, priced before it runs` : a.offered ? a.why ?? undefined : `Not offered: ${a.why ?? ""}`}
             data-offered={a.offered ? undefined : "false"}
-            onClick={() => setOpen(openId === a.id ? null : { take: entry.take.id, id: a.id })} data-testid={`next-${a.id}`}>{a.label}</button>
+            onClick={() => { if (openId !== a.id) onOpened?.(); setOpen(openId === a.id ? null : { take: entry.take.id, id: a.id }); }} data-testid={`next-${a.id}`}>{a.label}</button>
         ))}
       </div>
       {whys.length ? <p className="gx-reason" data-testid="next-why">{whys.join(" ")}</p> : null}
@@ -59,33 +65,4 @@ export function AssetNextActions({ entry, saved, onAction, scope, project, onOpe
       ) : null}
     </div>
   );
-}
-
-/**
- * Bring a tool's section of the Takes desk into view once it is on the page
- * (after a page change it mounts when the project's library has the take);
- * `focus` puts the cursor in its first field. The desk brings a newly opened
- * take's panel into view on its own, a frame or two later: for a moment after
- * landing, the section is put back at the top if that moved it. Gives up
- * quietly after a few seconds.
- */
-export function revealNext(id: NextActionId, focus = id === "re-edit", within = 4000, hold = 800) {
-  const section = NEXT_SECTION[id];
-  if (!section || typeof window === "undefined") return;
-  const until = performance.now() + within;
-  const look = () => {
-    const found = document.querySelector<HTMLElement>(`[data-section="${section}"]`);
-    if (!found) { if (performance.now() < until) requestAnimationFrame(look); return; }
-    found.scrollIntoView({ block: "start" });
-    if (focus) found.querySelector<HTMLElement>("textarea")?.focus({ preventScroll: true });
-    const settled = performance.now() + hold;
-    const keep = () => {
-      if (!found.isConnected) return;
-      const top = found.getBoundingClientRect().top;
-      if (top < 0 || top > window.innerHeight / 2) found.scrollIntoView({ block: "start" });
-      if (performance.now() < settled) requestAnimationFrame(keep);
-    };
-    requestAnimationFrame(keep);
-  };
-  requestAnimationFrame(look);
 }

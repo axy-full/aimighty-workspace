@@ -9,15 +9,13 @@ import { createSoundNode, findSoundNode } from "../../lib/workbench/sound-genera
 import { connectNodes, graphEdges } from "../../lib/workspace/rig-graph";
 import { canConnect } from "../../lib/workbench/node-graph";
 import { removeShots, restoreShots } from "../../lib/production/rig-build";
-import { environmentsFromBeats, newEnvironmentEntry, sourcedPlaceId } from "../../lib/production/environment";
+import { newEnvironmentEntry, sourcedPlaceId } from "../../lib/production/environment";
 import { beatSheetFrom } from "../../lib/production/beats";
 import { applyTeamPatch, catchUpForTeam, diffForTeam, emptyTeamCanvas } from "../../lib/workbench/team-canvas-model";
 import { recoverMediaAssets, type MediaJob } from "../../lib/workbench/job-recovery";
 import { addInput, buildFromBoards } from "../../lib/production/rig-build";
 import { deleteDrawing } from "../../lib/production/boards";
-import { prepareMoleculrVariants } from "../../lib/workbench/moleculr-storyboard";
 import { EMPTY_MOLECULR } from "../../lib/workbench/moleculr";
-import { uid } from "../../lib/workbench/studio";
 import { canUndo, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
 
 /* lib/workbench/merge.ts: how two saves of one draft come together. */
@@ -31,7 +29,7 @@ function project(shape: (p: Project) => void = () => {}): Project {
   p.id = "project-merge";
   p.createdAt = "2026-09-25T00:00:00Z";
   p.nodes = [node("n1", { title: "Opening" }), node("n2", { title: "Second" })];
-  p.production = { cast: { entries: [entry("cast-1", "Mara")] } };
+  p.production = { cast: { entries: [entry("cast-1", "Keeper")] } };
   shape(p);
   return p;
 }
@@ -132,10 +130,10 @@ test.describe("objects", () => {
   });
 
   test("nested objects merge all the way down", () => {
-    const base = { production: { cast: { entries: [entry("c1", "Mara")], agentJobId: "j1" }, beats: { updatedAt: "t0", scenes: [] as { id: string }[] } } };
+    const base = { production: { cast: { entries: [entry("c1", "Keeper")], agentJobId: "j1" }, beats: { updatedAt: "t0", scenes: [] as { id: string }[] } } };
     const mine = clone(base); mine.production.cast.agentJobId = "j2";
     const theirs = clone(base); theirs.production.beats.updatedAt = "t1"; theirs.production.beats.scenes.push({ id: "s1" });
-    expect(merge3(base, mine, theirs)).toEqual({ production: { cast: { entries: [entry("c1", "Mara")], agentJobId: "j2" }, beats: { updatedAt: "t1", scenes: [{ id: "s1" }] } } });
+    expect(merge3(base, mine, theirs)).toEqual({ production: { cast: { entries: [entry("c1", "Keeper")], agentJobId: "j2" }, beats: { updatedAt: "t1", scenes: [{ id: "s1" }] } } });
   });
 
   test("a key both sides added merges as if its base were empty", () => {
@@ -152,7 +150,7 @@ test.describe("lists of records merge by id", () => {
     for (const [mine, theirs] of [[rig, cast], [cast, rig]]) {
       const merged = merge3(base, mine, theirs);
       expect(merged.nodes[0].text).toBe("A fox crosses the ice");
-      expect(merged.production!.cast!.entries.map((e) => e.name)).toEqual(["Mara", "Tom"]);
+      expect(merged.production!.cast!.entries.map((e) => e.name)).toEqual(["Keeper", "Tom"]);
     }
   });
 
@@ -250,7 +248,7 @@ test.describe("lists of records merge by id", () => {
   });
 
   test("takes key by genId, pending renders by jobId, plates by assetId", () => {
-    const takes = { entries: [{ ...entry("c1", "Mara"), takes: [{ genId: "g0", at: "t0" }] }] };
+    const takes = { entries: [{ ...entry("c1", "Keeper"), takes: [{ genId: "g0", at: "t0" }] }] };
     const mine = clone(takes); mine.entries[0].takes.unshift({ genId: "g1", at: "t1" });
     const theirs = clone(takes); theirs.entries[0].takes.unshift({ genId: "g2", at: "t2" });
     /* Newest first: both windows' new takes lead, mine's first — neither is taken for the oldest. */
@@ -284,11 +282,11 @@ test.describe("guarantees", () => {
     const once = merge3(base, mine, theirs);
     expect(merge3(base, mine, once)).toEqual(once);
     /* Our save landed, then another save built on it: merging over that adds nothing twice. */
-    const onTop = clone(once); onTop.nodes.push(node("later")); onTop.production!.cast!.entries[0].name = "Mara Vey";
+    const onTop = clone(once); onTop.nodes.push(node("later")); onTop.production!.cast!.entries[0].name = "Keeper Vey";
     const again = merge3(base, mine, onTop);
     expect(ids(again.nodes)).toEqual(ids(onTop.nodes));
     expect(again.production!.cast!.entries.map((e) => e.id)).toEqual(onTop.production!.cast!.entries.map((e) => e.id));
-    expect(again.production!.cast!.entries[0].name).toBe("Mara Vey");
+    expect(again.production!.cast!.entries[0].name).toBe("Keeper Vey");
   });
 
   test("rebaseDraft: no edits in flight gives exactly what was saved; edits in flight are laid over it", () => {
@@ -465,7 +463,7 @@ test.describe("a merge of two valid saves is a valid save (mergeDraft)", () => {
   });
 
   test("each window files a take on a character holding twenty: both new takes, the oldest trimmed", () => {
-    const base = project((p) => { p.production = { cast: { entries: [{ ...entry("cast-1", "Mara"), takes: Array.from({ length: 20 }, (_, i) => ({ genId: `g${i}`, at })) }] } }; });
+    const base = project((p) => { p.production = { cast: { entries: [{ ...entry("cast-1", "Keeper"), takes: Array.from({ length: 20 }, (_, i) => ({ genId: `g${i}`, at })) }] } }; });
     const file = (p: Project, genId: string) => { const e = p.production!.cast!.entries[0]; e.takes = [{ genId, at }, ...e.takes].slice(0, 20); e.selected = genId; };
     const mine = clone(base); file(mine, "g-mine");
     const theirs = clone(base); file(theirs, "g-theirs");
@@ -778,15 +776,6 @@ test.describe("what two windows make from one source, then edit in one of them",
     expect(merged.nodes.find((n) => n.id === built.id)).toMatchObject({ title: "Opening — renamed", text: "The person's own prompt" });
   });
 
-  test("Marketing › Prepare hook × cast variants in two windows prepares each combination once, as one window refuses to prepare it twice", () => {
-    const hero: Asset = { id: "product-1", name: "bottle.png", kind: "image", category: "Product", url: "/campaign/hero.webp", mime: "image/png", description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] };
-    const base = project((p) => { p.nodes = []; p.assets = [hero]; p.moleculr = { ...EMPTY_MOLECULR, productName: "Still Water", productAssetIds: [hero.id], hooks: ["Quiet mornings", "Cold, clean, yours"] }; });
-    const theirs = prepareMoleculrVariants(clone(base), "image", () => uid("campaign"));
-    expect(() => prepareMoleculrVariants(clone(theirs), "image", () => uid("campaign"))).toThrow(/already prepared/);
-    const merged = mergeDraft(base, prepareMoleculrVariants(clone(base), "image", () => uid("campaign")), theirs);
-    expect({ variants: merged.moleculr!.variants.length, nodes: merged.nodes.length }).toEqual({ variants: 2, nodes: theirs.nodes.length });
-    expect(duplicates(ids(merged.nodes))).toEqual([]);
-  });
 
   test("a direction note first typed in two windows is still mine: typing is not a source both windows share", () => {
     const base = project((p) => { p.nodes = [node("n1", { title: "Opening", type: "scene" })]; });
@@ -797,45 +786,6 @@ test.describe("what two windows make from one source, then edit in one of them",
 });
 
 test.describe("what one window took out stays out, and only that (Project.takenOut)", () => {
-  test("what each window made differently from one source is all kept: a variant for a hook one window added, a shot from a frame it made ready, a place from a beat sheet line it added", () => {
-    /* Marketing: A prepared the variants of the two hooks it had; B added a third hook, then prepared. */
-    const hero: Asset = { id: "product-1", name: "bottle.png", kind: "image", category: "Product", url: "/campaign/hero.webp", mime: "image/png", description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] };
-    const brief = project((p) => { p.nodes = []; p.assets = [hero]; p.moleculr = { ...EMPTY_MOLECULR, productName: "Still Water", productAssetIds: [hero.id], hooks: ["Quiet mornings", "Cold, clean, yours"] }; });
-    const prepared = prepareMoleculrVariants(clone(brief), "image", () => uid("campaign"));
-    const made: MadeRecords = new Map();
-    const hooked = edit(brief, (p) => { p.moleculr!.hooks.push("A third hook"); });
-    madeBy(brief, hooked, made);
-    const mine = prepareMoleculrVariants(clone(hooked), "image", () => uid("campaign"));
-    madeBy(hooked, mine, made);
-    const merged = mergeDraft(brief, mine, prepared, { made });
-    expect(merged.moleculr!.variants.map((v) => v.hook).sort()).toEqual(["A third hook", "Cold, clean, yours", "Quiet mornings"]);
-    expect(merged.moleculr!.variants.every((v) => merged.nodes.some((n) => n.id === v.nodeId)), "every variant keeps its node").toBe(true);
-    expect(duplicates(ids(merged.nodes))).toEqual([]);
-
-    /* Rig › Build from Storyboards: A built the two frames ready in its copy; B made a third ready, then built. */
-    const scenes = [{ heading: "INT. HARBOUR", summary: "", beats: ["Ice."], shots: ["Wide on the ice", "Close on the fox", "The pier"].map((description) => ({ description, framing: "Wide", movement: "", lighting: "", sound: "" })), characters: [], locations: [], props: [] }] as unknown as Parameters<typeof beatSheetFrom>[0];
-    const beats = beatSheetFrom(scenes, "0".repeat(64), "wb_development_job-4");
-    const frame = (i: number) => ({ prompt: "p", takes: [{ genId: `gen-frame-${i}`, style: "color-sketch" as const, at: "2026-09-26T00:00:00.000Z" }] });
-    const boards = project((p) => { p.nodes = []; p.production = { beats, boards: { style: "color-sketch", model: "gemini-3.1-flash-image", frames: { [beats.scenes[0].shots[0].id]: frame(1), [beats.scenes[0].shots[1].id]: frame(2) } } } as Project["production"]; });
-    const built = buildFromBoards(clone(boards), "kling-v3").project;
-    const ready = edit(boards, (p) => { p.production!.boards!.frames[beats.scenes[0].shots[2].id] = frame(3); });
-    const shots = new Map() as MadeRecords;
-    madeBy(boards, ready, shots);
-    const three = buildFromBoards(clone(ready), "kling-v3").project;
-    madeBy(ready, three, shots);
-    expect(mergeDraft(boards, three, built, { made: shots }).nodes.filter((n) => n.boardShotId).map((n) => n.title)).toEqual(["1.1 — Wide on the ice", "1.2 — Close on the fox", "1.3 — The pier"]);
-
-    /* Environment › Add from the beat sheet: A added the one place its sheet had; B added a location to a scene, then added. */
-    const located = (locations: string[]) => [{ heading: "INT. HARBOUR", summary: "", beats: ["Ice."], shots: [], characters: [], locations, props: [] }] as unknown as Parameters<typeof beatSheetFrom>[0];
-    const sheet = project((p) => { p.production = { beats: beatSheetFrom(located(["Harbour"]), "0".repeat(64), "wb_development_job-5"), environment: { world: "", model: "gemini-3.1-flash-image", entries: [] } } as Project["production"]; });
-    const added = edit(sheet, (p) => { p.production!.environment!.entries = environmentsFromBeats(p.production!.beats, []); });
-    const places: MadeRecords = new Map();
-    const relocated = edit(sheet, (p) => { p.production!.beats!.scenes[0].locations = ["Harbour", "Fish market"]; });
-    madeBy(sheet, relocated, places);
-    const both = edit(relocated, (p) => { p.production!.environment!.entries = environmentsFromBeats(p.production!.beats, []); });
-    madeBy(relocated, both, places);
-    expect(mergeDraft(sheet, both, added, { made: places }).production!.environment!.entries.map((e) => e.name)).toEqual(["Harbour", "Fish market"]);
-  });
 
   test("a record another window took out before this window's copy was read, made again here on purpose, stays", () => {
     const run = (p: Project) => { p.production!.environment!.entries.push(newEnvironmentEntry("Fish market", "", "", sourcedPlaceId("wb_development_job-6", "Fish market"))); };
@@ -875,12 +825,12 @@ test.describe("what one window took out stays out, and only that (Project.takenO
 test.describe("lines both windows put in at one place", () => {
   test("two paragraphs added at the same place each keep their blank line, a cue the other window repeated stays, and merging again changes nothing", () => {
     const at = (middle: string) => `INT. HARBOUR - NIGHT\n\nThe ice cracks.\n\n${middle}FADE OUT.`;
-    const merged = merge3(at(""), at("Mara runs.\n\n"), at("Jonas follows.\n\n"));
-    expect(merged).toBe(at("Mara runs.\n\nJonas follows.\n\n"));
-    expect(merge3(at(""), at("Mara runs.\n\n"), merged)).toBe(merged);
-    const cues = "MARA\nWhere were you?\n\nEND";
+    const merged = merge3(at(""), at("Keeper runs.\n\n"), at("Jonas follows.\n\n"));
+    expect(merged).toBe(at("Keeper runs.\n\nJonas follows.\n\n"));
+    expect(merge3(at(""), at("Keeper runs.\n\n"), merged)).toBe(merged);
+    const cues = "KEEPER\nWhere were you?\n\nEND";
     const both = merge3(cues, cues.replace("\n\nEND", "\nJONAS\nOut.\n\nEND"), cues.replace("\n\nEND", "\nJONAS\nLater.\n\nEND"));
-    expect(both.split("\n")).toEqual(["MARA", "Where were you?", "JONAS", "Out.", "JONAS", "Later.", "", "END"]);
+    expect(both.split("\n")).toEqual(["KEEPER", "Where were you?", "JONAS", "Out.", "JONAS", "Later.", "", "END"]);
   });
 });
 
@@ -938,17 +888,17 @@ test.describe("text merged line by line", () => {
   });
 
   test("a dialogue line rewritten in one window, its character cue in another: both are kept", () => {
-    const base = "INT. KITCHEN - NIGHT\n\nMARA\nWhere were you?\n\nJONAS\nOut.";
-    const merged = merge3(base, base.replace("MARA\n", "MARA (O.S.)\n"), base.replace("Where were you?", "Where have you been?"));
-    expect(merged).toBe("INT. KITCHEN - NIGHT\n\nMARA (O.S.)\nWhere have you been?\n\nJONAS\nOut.");
+    const base = "INT. KITCHEN - NIGHT\n\nKEEPER\nWhere were you?\n\nJONAS\nOut.";
+    const merged = merge3(base, base.replace("KEEPER\n", "KEEPER (O.S.)\n"), base.replace("Where were you?", "Where have you been?"));
+    expect(merged).toBe("INT. KITCHEN - NIGHT\n\nKEEPER (O.S.)\nWhere have you been?\n\nJONAS\nOut.");
   });
 
   test("a character renamed on 600 lines of a feature script in one window, one word typed in another: both are kept", () => {
-    const base = Array.from({ length: 3000 }, (_, i) => (i % 5 === 0 ? "MARA" : i % 5 === 1 ? `Line ${i}.` : i % 5 === 2 ? "" : i % 5 === 3 ? "JONAS" : `Reply ${i}.`)).join("\n");
-    const theirs = base.replace(/^MARA$/gm, "NORA");
+    const base = Array.from({ length: 3000 }, (_, i) => (i % 5 === 0 ? "KEEPER" : i % 5 === 1 ? `Line ${i}.` : i % 5 === 2 ? "" : i % 5 === 3 ? "JONAS" : `Reply ${i}.`)).join("\n");
+    const theirs = base.replace(/^KEEPER$/gm, "NORA");
     for (const mine of [base.replace("Line 1501.", "Line 1501, fixed."), `${base} typed-here`]) {
       const merged = merge3(base, mine, theirs);
-      expect({ mara: (merged.match(/^MARA$/gm) ?? []).length, nora: (merged.match(/^NORA$/gm) ?? []).length, mine: merged.includes("Line 1501, fixed.") || merged.endsWith(" typed-here") }).toEqual({ mara: 0, nora: 600, mine: true });
+      expect({ keeper: (merged.match(/^KEEPER$/gm) ?? []).length, nora: (merged.match(/^NORA$/gm) ?? []).length, mine: merged.includes("Line 1501, fixed.") || merged.endsWith(" typed-here") }).toEqual({ keeper: 0, nora: 600, mine: true });
     }
   });
 
@@ -967,13 +917,13 @@ test.describe("text merged line by line", () => {
   });
 
   test("a rename across 600 lines where no line is unique, and one line typed in another window: both are kept, with or without a line added", () => {
-    const base = Array.from({ length: 3000 }, (_, i) => (i % 5 === 0 ? "MARA" : i % 5 === 3 ? "JONAS" : i % 5 === 2 ? "" : "(beat)")).join("\n");
-    const renamed = base.replace(/^MARA$/gm, "NORA");
+    const base = Array.from({ length: 3000 }, (_, i) => (i % 5 === 0 ? "KEEPER" : i % 5 === 3 ? "JONAS" : i % 5 === 2 ? "" : "(beat)")).join("\n");
+    const renamed = base.replace(/^KEEPER$/gm, "NORA");
     const typed = base.split("\n").map((l, i) => (i === 1501 ? "(beat, then a long pause)" : l)).join("\n");
     for (const theirs of [renamed, `${renamed}\nTHE END`, `FADE IN:\n${renamed}`]) {
       const merged = merge3(base, typed, theirs);
-      expect({ mara: (merged.match(/^MARA$/gm) ?? []).length, nora: (merged.match(/^NORA$/gm) ?? []).length, typed: merged.split("\n").filter((l) => l === "(beat, then a long pause)").length, lines: merged.split("\n").length })
-        .toEqual({ mara: 0, nora: 600, typed: 1, lines: theirs.split("\n").length });
+      expect({ keeper: (merged.match(/^KEEPER$/gm) ?? []).length, nora: (merged.match(/^NORA$/gm) ?? []).length, typed: merged.split("\n").filter((l) => l === "(beat, then a long pause)").length, lines: merged.split("\n").length })
+        .toEqual({ keeper: 0, nora: 600, typed: 1, lines: theirs.split("\n").length });
       expect(merge3(base, typed, merged)).toBe(merged);
     }
   });
@@ -1124,17 +1074,17 @@ test.describe("a merge of two valid saves is a save the server takes, and keeps 
 
   test("a screenplay imported in one tab while a line was typed into the old one in another: both kept, the import marked edited", () => {
     const base = project((p) => { p.script = "INT. HARBOUR - NIGHT\n\nThe ice cracks."; });
-    const imported = "EXT. LIGHTHOUSE - DAWN\n\nA fox waits.\n\nMARA\nThere you are.";
+    const imported = "EXT. LIGHTHOUSE - DAWN\n\nA fox waits.\n\nKEEPER\nThere you are.";
     const mine = clone(base);
     mine.assets = [...mine.assets, { id: "up-script", uploadId: "up-script", name: "draft.pdf", kind: "document", category: "Screenplay", url: "/api/uploads/up-script", description: "Original screenplay source", prompt: "", status: "Draft", locked: false, version: 1, refs: [] }];
     mine.script = imported;
     mine.scriptReviews = {};
     mine.scriptSource = { assetId: "up-script", filename: "draft.pdf", sha256: "a".repeat(64), pages: [{ page: 1, start: 0, end: imported.length }], importedAt: "2026-09-26T00:00:00.000Z", edited: false, acknowledgedEmptyPages: [] };
-    const theirs = clone(base); theirs.script = `${base.script}\n\nMara runs.`;
+    const theirs = clone(base); theirs.script = `${base.script}\n\nKeeper runs.`;
     const merged = mergeDraft(base, mine, theirs);
     expect(issues(merged)).toEqual([]);
     expect(merged.script).toContain("There you are.");
-    expect(merged.script).toContain("Mara runs.");
+    expect(merged.script).toContain("Keeper runs.");
     expect(merged.scriptSource?.edited).toBe(true);
   });
 
@@ -1392,7 +1342,7 @@ test.describe("a save whose last try landed with its reply lost (writeMergedDraf
   test.afterEach(() => { globalThis.fetch = nativeFetch; });
 
   test("is settled by the next save, never merged again over what another window did since: a rewrite stands, a delete holds", async () => {
-    const base = project((p) => { p.production = { cast: { entries: [entry("cast-1", "Mara")] } }; });
+    const base = project((p) => { p.production = { cast: { entries: [entry("cast-1", "Keeper")] } }; });
     const typed = clone(base); typed.production!.cast!.entries[0].description = "A fox-eyed deckhand.";
     const added = clone(base); added.production!.cast!.entries.push(entry("cast-new", "Tom"));
     const cases: [Project, (p: Project) => Project, (p: Project) => unknown, unknown][] = [

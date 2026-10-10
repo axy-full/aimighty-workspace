@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { TextNotSentError } from "@/lib/textDirect";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import {
   getChat, patchChat, deleteChat, addUserMessage, runTurn, projectContext, requestEffort, reconcileRunningSteps,
@@ -6,12 +7,13 @@ import {
 } from "@/lib/atomik";
 import { writerRulesByScope } from "@/lib/platformLayer";
 import { effectiveRules } from "@/lib/rules";
-import { withGenerationRequest, SpendReservationError } from "@/lib/generationRequests";
+import { withGenerationRequest, SpendReservationError, ANSWER_AFTER_MS } from "@/lib/generationRequests";
 import { PaidTextError, paidTextQuoteScopeFailure, paidTextFailure, paidTextQuoteResponse, requestMaxCredits } from "@/lib/paidText";
 import { cleanAttachments } from "@/lib/attachments";
 import { plannerMemoryText } from "@/lib/atomikMemory";
 import { plannerInputs, priceKeyStep } from "@/lib/atomikLibrary";
 import { ARCHIVED_NOTE, ThreadError, archiveThread, renameThread, restoreThread } from "@/lib/atomikThreads";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 /* A bounded 270s provider attempt has enough time for reasoning before this route ends. */
@@ -66,7 +68,9 @@ export const DELETE = withTenant(async function DELETE(_req: NextRequest, ctx: C
  *
  * The turn runs inside the request. Its durable request claim and paid
  * reservation are saved before submission, so an interrupted response
- * cannot cause a second paid attempt.
+ * cannot cause a second paid attempt. A turn still thinking after
+ * ANSWER_AFTER_MS is answered "still being accepted" and finishes after the
+ * reply; the same request sent again is answered with its saved reply.
  */
 export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   /* A turn is a paid call to the gateway, so this is a spending route and
@@ -75,12 +79,14 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
      planner and bill the workspace for it. */
   const got = await requireRender();
   if (got.response) return got.response;
-  const quoteOnly = (await req.clone().json().catch(() => ({}))).quoteOnly === true;
-  if (quoteOnly) { const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure; }
-  const run = async () => {
+  /* Everything the turn reads from the request, read now: it may finish after its reply (answerAfterMs). */
+  const b = await req.clone().json().catch(() => ({}));
   const { id } = await ctx.params;
-
-  const b = await req.json().catch(() => ({}));
+  const quoteOnly = b?.quoteOnly === true;
+  if (quoteOnly) { const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure; }
+  /* The sample workspace spends nothing: answered before the request is claimed. A quote still answers. */
+  if (!quoteOnly) { const off = await sampleWorkspaceOff(); if (off) return off; }
+  const run = async () => {
   const text = String(b.text ?? "").trim().slice(0, 20000);
   if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
 
@@ -110,7 +116,7 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
       priceKeyStep: (body) => priceKeyStep(body, got) });
   } catch (e) {
     if (!quoteOnly) await patchChat(id, { status: "failed" });
-    const known = e instanceof PaidTextError || e instanceof SpendReservationError;
+    const known = e instanceof PaidTextError || e instanceof SpendReservationError || e instanceof TextNotSentError;
     return NextResponse.json(
       { error: known ? e.message : "The planning request could not finish. Recover this request before starting another.", chat: await getChat(id) },
       { status: known ? e.status : 502 },
@@ -118,5 +124,5 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   }
   return NextResponse.json(await getChat(id));
   };
-  return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run);
+  return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run, { answerAfterMs: ANSWER_AFTER_MS });
 });

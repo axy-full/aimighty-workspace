@@ -10,6 +10,7 @@ import { workbenchReady, readDraft, mapNodeShot, saveDraft, publishBible, checkD
 import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
+import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -31,15 +32,24 @@ export const GET=withTenant(async(req:Request)=>{
     const row=(await db().execute({sql:"SELECT project_id AS id FROM workbench_projects WHERE owner=? AND (CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END)=? ORDER BY updated_at DESC LIMIT 1",args:[auth.user.id,production]})).rows[0];
     return Response.json({id:row?String(row.id):null},{headers:noStore});
   }
+  /* `?kinds=1` (the new Home's boards): each board's kind, read the way lib/board/kind.ts boardKindOf reads it (an older
+     Ads draft carries a marketing brief; an empty one is not one). Only when asked: it parses each listed draft. */
+  const kinds=new URL(req.url).searchParams.get('kinds')==='1';
+  const KIND="CASE WHEN json_valid(body) THEN COALESCE(NULLIF(json_extract(body,'$.boardKind'),''),CASE WHEN NULLIF(json_extract(body,'$.marketingBrief'),'') IS NOT NULL OR NULLIF(json_extract(body,'$.moleculr'),'') IS NOT NULL THEN 'ads' END) END AS kind";
   const [list,productions,draft]=await Promise.all([
-    db().execute({sql:'SELECT project_id AS id,name,revision,updated_at AS updatedAt FROM workbench_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 100',args:[auth.user.id]}),
+    db().execute({sql:`SELECT project_id AS id,name,revision,updated_at AS updatedAt${kinds?`,${KIND}`:''} FROM workbench_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 100`,args:[auth.user.id]}),
     db().execute('SELECT id,name FROM projects ORDER BY created_at DESC LIMIT 100'),
     id?readDraft(auth.user.id,id):null,
   ]);
   let shared=null;
   if(draft?.project.productionProjectId){
     const row=(await db().execute({sql:'SELECT body,version,owner FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[draft.project.productionProjectId]})).rows[0];
-    if(row)shared={...JSON.parse(String(row.body)),version:Number(row.version)};
+    if(row){
+      const body=JSON.parse(String(row.body));
+      /* Who published, as this workspace may read it (lib/platformOwnerPrivacy.ts). */
+      if(typeof body.publishedBy==='string')body.publishedBy=(await storedActorMaskHere())(body.publishedBy);
+      shared={...body,version:Number(row.version)};
+    }
   }
   return projectResponse(req,{projects:list.rows,productions:productions.rows,project:draft?.project||null,revision:draft?.revision||0,shared});
 });

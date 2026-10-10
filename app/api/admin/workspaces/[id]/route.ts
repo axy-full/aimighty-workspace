@@ -7,6 +7,7 @@ import { runInTenant } from "@/lib/tenant";
 import { releaseHeldJobs } from "@/lib/held";
 import { restoreDeletedWorkspace } from "@/lib/purge";
 import { HOUSE_NOT_BILLED, isHouseWorkspace } from "@/lib/houseWorkspace";
+import { CAP_MAX_USD } from "@/lib/allowanceDesk";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,16 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }
      is written, so a mixed request changes nothing. */
   if (isHouseWorkspace(ws) && ["grantCredits", "allowanceUsd"].some((k) => k in body))
     return NextResponse.json({ error: HOUSE_NOT_BILLED }, { status: 400 });
+  /* The engine cap, read before anything is written so a bad figure changes nothing: a number of dollars a month
+     (0 is a wall), to the cent, or a literal null to remove it. A string, a blank or anything else is refused,
+     never read as 0 or as "no cap". */
+  let cap: { usd: number | null } | null = null;
+  if ("allowanceUsd" in body) {
+    const raw: unknown = body.allowanceUsd;
+    if (raw === null) cap = { usd: null };
+    else if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0 && raw <= CAP_MAX_USD) cap = { usd: Math.round(raw * 100) / 100 };
+    else return NextResponse.json({ error: `The engine cap is a number of dollars a month, from 0 to ${CAP_MAX_USD.toLocaleString("en-US")}, or null to remove it.` }, { status: 400 });
+  }
   const out: Record<string, unknown> = { ok: true };
   if ("suspended" in body) {
     const on = Boolean(body.suspended);
@@ -65,14 +76,9 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }
     out.flagged = on;
   }
 
-  if ("allowanceUsd" in body) {
-    const raw = body.allowanceUsd;
-    const usd = raw === null || raw === "" ? null : Number(raw);
-    if (usd !== null && (!Number.isFinite(usd) || usd < 0 || usd > 100_000)) {
-      return NextResponse.json({ error: "The allowance is dollars a month, from 0 up." }, { status: 400 });
-    }
-    await setWorkspaceAllowance(id, usd);
-    out.allowanceUsd = usd;
+  if (cap) {
+    await setWorkspaceAllowance(id, cap.usd);
+    out.allowanceUsd = cap.usd;
   }
   if ("grantCredits" in body) {
     const n = Number(body.grantCredits);

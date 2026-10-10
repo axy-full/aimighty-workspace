@@ -62,7 +62,8 @@ async function fixture() {
     '@/lib/higgsfield-consumer/video-original': { ConsumerOriginalError },
     /* The standalone guard runs inside the quote service (tests/unit/higgsfieldConsumerVideoService.spec.ts); the route maps its refusal. */
     '@/lib/higgsfield-consumer/marketing-records': { ConsumerSetupError: records.ConsumerSetupError },
-    '@/lib/higgsfield-consumer/retired': retired,
+    /* The handlers kept behind signInOff, as they ran before Release 1 (the switch itself: tests/unit/signinOffRelease1.spec.ts). */
+    '@/lib/higgsfield-consumer/retired': { ...retired, signInOff: (kept: unknown) => kept },
     '@/lib/higgsfield-consumer/marketing-setup': { SETUP_TYPE_IDS: ['product', 'avatar', 'hook', 'setting', 'ad_reference', 'brand_kit'], connectedMarketingSetup: service('setup', { connected: true, reads: [] }) },
     '@/lib/higgsfield-consumer/video-service': {
       ConsumerVideoServiceError: ServiceError, MARKETING_VIDEO_REHEARSAL: input,

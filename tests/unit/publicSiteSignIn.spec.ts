@@ -41,8 +41,8 @@ test("no public page offers what needs a Higgsfield sign-in", () => {
   expect(files.length, "the site's sources were found").toBeGreaterThan(10);
   const found = files.flatMap((file) => renderable(file).flatMap((text) => retiredFindings(text).map((why) => `${file}: ${why}`)));
   expect(found).toEqual([]);
-  /* The page lists the header and the suites strip print: Viral without Shorts, Atomik without its Generate page. */
-  expect(SITE_SUITES.find((suite) => suite.id === "viral")!.pages).toEqual(["Motion Transfer", "Object Swap", "Sources", "Compare", "History"]);
+  /* The page lists the header and the places strip print: Social without Shorts, Atomik without its Generate page. */
+  expect(SITE_SUITES.find((suite) => suite.id === "social")!.pages).toEqual(["Source", "Motion transfer", "Object swap", "History"]);
   expect(SITE_SUITES.find((suite) => suite.id === "atomik")!.pages).not.toContain("Generate");
 });
 
@@ -69,10 +69,10 @@ test("the guard knows the copy it replaced, and lets the replacements through", 
   /* What replaced them, and Particl's own tools, stay sayable. */
   for (const line of [
     "Standard video. Highest fidelity, native audio, up to 30 s and 30 reference images.",
-    "Astra 3D", "Templates", "Change voice", "Dub", "Upscale", "Marketing Studio", "Soul ID",
+    "Astra 3D", "Templates", "Change voice", "Dub", "Upscale", "Soul ID",
     "Ads presets for image variants, read live.",
     "Social accounts and posting providers are not connected; Publish leads to review and delivery.",
     "with interface, data, sign-in and generation models wired in",
-    "One source of 4 to 30 seconds, ordered references, 480p to 1080p.",
+    "One source of 4 to 8 seconds, ordered references, 480p to 1080p.",
   ]) expect(retiredFindings(line), line).toEqual([]);
 });

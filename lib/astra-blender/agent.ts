@@ -1,4 +1,5 @@
-import { sdkTextUsage, textVendor } from '../openai-direct';
+import { isDirectText } from '../openai-direct';
+import { stepTextUsage } from '../textDirect';
 import { ToolLoopAgent, Output, isStepCount, tool, type LanguageModel, type ModelMessage } from 'ai';
 import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
 import { z } from 'zod';
@@ -120,5 +121,5 @@ export async function runAstraAgent(envelope: AstraAgentEnvelope, auth: Record<s
   // Return even invalid scene JSON with its usage so the durable job can settle
   // the real completed attempt, instead of losing accounting during validation.
   return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(result.output) } }],
-    usage: { steps: result.steps.map(step => sdkTextUsage(step.usage, textVendor(envelope.model) === 'openai')) } }) };
+    usage: { steps: result.steps.map(step => stepTextUsage(envelope.model, step.usage, isDirectText(envelope.model))) } }) };
 }

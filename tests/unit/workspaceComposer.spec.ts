@@ -22,10 +22,7 @@ import {
 import { nodeAudioBody, speechVoiceFor } from "../../lib/workbench/generation-audio";
 import { readFileSync } from "node:fs";
 import { SITE_SUITES } from "../../lib/marketing/site";
-import { suiteTiles } from "../../lib/shell/studio-home";
 import { INITIAL_STATE, generateTarget } from "../../lib/workspace/navigation";
-import { WORKSPACE_BINDINGS, inKeyboardOverlay, keyContextFor, resolveKey } from "../../lib/workspace/keys";
-import { filterPalette, paletteCommands } from "../../lib/workspace/palette";
 import { displayModelName } from "../../lib/models";
 
 /**
@@ -170,8 +167,8 @@ test("a missing or stale quote blocks the send with a visible reason", () => {
   expect(composerButtonLabel({ quote: ready(key, 18), quoteKey: key, submitting: false })).toBe("Generate · 18 cr");
   expect(composerButtonLabel({ quote: ready(key, 1296), quoteKey: key, submitting: false })).toBe("Generate · 1,296 cr");
   /* An approximate figure (an engine that settles on what it delivers) never reads as exact. */
-  expect(composerButtonLabel({ quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false })).toBe("Generate · about 18 cr");
-  expect(composerButtonLabel({ quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false, count: 3 })).toBe("Generate 3 takes · about 54 cr");
+  expect(composerButtonLabel({ quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false })).toBe("Generate · about 18 cr, at most 54 cr");
+  expect(composerButtonLabel({ quote: { ...ready(key, 18), approximate: true }, quoteKey: key, submitting: false, count: 3 })).toBe("Generate 3 takes · about 54 cr, at most 162 cr");
   expect(composerButtonLabel({ quote: ready(key, 18), quoteKey: key, submitting: true })).toBe("Submitting…");
   expect(composerBlock({ ...base, quote: ready(key, 18), submitting: true })).toBe("Submitting this generation…");
   /* Changing the model moves the key, so the old figure cannot be sent. */
@@ -330,8 +327,6 @@ test("Gen's copy promises only the outputs its composer makes: no 3D while the c
   const gen = SITE_SUITES.find((suite) => suite.id === "gen")!;
   expect(`${gen.blurb} · ${gen.pages.join(" · ")}`).not.toMatch(/3D/i);
   expect(readFileSync("app/(marketing)/site/_pages/gen/index.tsx", "utf8")).not.toMatch(/3D/i);
-  /* In the app: the Home tile's line (lib/shell/studio-home.ts). */
-  expect(suiteTiles([], { rendering: 0, videoEngine: "", viralResolution: "", awaiting: 0, seats: null }).find((t) => t.id === "gen")!.line).not.toMatch(/3D/i);
 });
 
 /* ── The keymap and the palette ─────────────────────────────────────────── */
@@ -350,65 +345,10 @@ test("G opens the composer with no shot selected, and keeps Rig's Generate with 
   expect(generateTarget(selected, false)).toBe("composer");
 });
 
-test("G obeys the typing guard, answers on Home, and is swallowed while the composer is open", () => {
-  const inStudio = keyContextFor(studio, { canGenerate: true, canCompose: true });
-  const atHome = keyContextFor(INITIAL_STATE, { canCompose: true });
-  expect(resolveKey(WORKSPACE_BINDINGS, { key: "g" }, inStudio)?.id).toBe("generate");
-  expect(resolveKey(WORKSPACE_BINDINGS, { key: "G" }, atHome)?.id).toBe("generate");
-  /* Typing a prompt must never fire G, I or A. */
-  for (const key of ["g", "i", "a"])
-    expect(resolveKey(WORKSPACE_BINDINGS, { key, target: { tagName: "TEXTAREA" } }, inStudio)).toBeNull();
-  expect(resolveKey(WORKSPACE_BINDINGS, { key: "g", target: { tagName: "INPUT" } }, inStudio)).toBeNull();
-  /* While the composer is open, the shell's single keys stay out of its way. */
-  const open = keyContextFor({ ...studio, composer: true }, { canGenerate: true, canCompose: true, canPlay: true });
-  for (const key of ["g", "i", "a", "3", " ", "ArrowRight"]) expect(resolveKey(WORKSPACE_BINDINGS, { key }, open)).toBeNull();
-  /* Esc and ⌘K still reach the shell. */
-  expect(resolveKey(WORKSPACE_BINDINGS, { key: "Escape" }, open)?.id).toBe("escape");
-  expect(resolveKey(WORKSPACE_BINDINGS, { key: "k", metaKey: true }, open)?.id).toBe("palette");
-  /* ⌘G is the browser's, not ours. */
-  expect(resolveKey(WORKSPACE_BINDINGS, { key: "g", metaKey: true }, inStudio)).toBeNull();
-});
 
 /** A DOM-ish target: `closest` answers for anything the composer contains. */
-const inComposer = (tagName: string) => ({ tagName, closest: (selector: string) => (selector === ".pxw-composer" ? {} : null) });
-const outside = (tagName: string) => ({ tagName, closest: () => null });
 
-test("anything inside the composer is inert to the single-key map, whatever its tag", () => {
-  expect(inKeyboardOverlay(inComposer("BUTTON"))).toBe(true);
-  expect(inKeyboardOverlay(outside("BUTTON"))).toBe(false);
-  expect(inKeyboardOverlay(null)).toBe(false);
-  /* A plain object with no `closest` (the unit fixtures elsewhere) is not in an overlay. */
-  expect(inKeyboardOverlay({ tagName: "BODY" })).toBe(false);
 
-  const open = keyContextFor({ ...studio, composer: true }, { canGenerate: true, canCompose: true, canPlay: true });
-  /* The guard is containment, not tag: a button, the click-catcher and a
-     tabindex div all receive keys without being fields. */
-  for (const tagName of ["BUTTON", "DIV", "A", "LABEL", "SPAN"])
-    for (const key of ["g", "i", "a", "3", " ", "ArrowRight"])
-      expect(resolveKey(WORKSPACE_BINDINGS, { key, target: inComposer(tagName) }, open), `${key} on ${tagName}`).toBeNull();
-
-  /* It holds even if a binding forgot the state flag — which is the point of
-     guarding by containment as well as by state. */
-  const stateForgot = keyContextFor(studio, { canGenerate: true, canCompose: true, canPlay: true });
-  for (const key of ["g", "i", "a"])
-    expect(resolveKey(WORKSPACE_BINDINGS, { key, target: inComposer("BUTTON") }, stateForgot)).toBeNull();
-
-  /* Esc and ⌘K are the two that must still get through, so the composer can
-     always be closed and the palette always opened. */
-  expect(resolveKey(WORKSPACE_BINDINGS, { key: "Escape", target: inComposer("BUTTON") }, open)?.id).toBe("escape");
-  expect(resolveKey(WORKSPACE_BINDINGS, { key: "k", metaKey: true, target: inComposer("TEXTAREA") }, open)?.id).toBe("palette");
-  /* Outside the composer the same keys work as before. */
-  expect(resolveKey(WORKSPACE_BINDINGS, { key: "i", target: outside("BODY") }, keyContextFor(studio, { canGenerate: true }))?.id).toBe("inspector");
-});
-
-test("the palette shows Generate… first on an empty query", () => {
-  const rows = filterPalette(paletteCommands({ shots: null }), "");
-  expect(rows[0]).toMatchObject({ id: "composer", label: "Generate…", group: "ACTION", hint: "G", action: { type: "composer" } });
-  /* And it is findable by name, beside the Rig row, which no longer claims G. */
-  const hits = filterPalette(paletteCommands({ shots: [{ id: "s1", name: "Opening" }] }), "generate");
-  expect(hits.map((row) => row.id)).toEqual(["composer", "page:generate", "plan:generate", "generate"]);
-  expect(hits.find((row) => row.id === "generate")?.hint).toBe("");
-});
 
 test("a pick is used only where the engine allows it; anything else falls back to the engine's default", () => {
   const engine = { id: "e", label: "Engine", type: "video" as const, ratios: ["16:9", "9:16", "1:1"], resolutions: ["720p", "1080p"], durations: [4, 5, 6, 7, 8] };

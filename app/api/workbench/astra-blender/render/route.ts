@@ -9,6 +9,7 @@ import { reserveRecoveryContinuation } from '@/lib/recovery';
 import { astraRenderRequestSchema, AstraRenderError, astraRenderAvailability, listAstraRenderJobs, quoteAstraRender, prepareAstraRender, runAstraRender, cancelAstraRenderJob, pendingAstraRenders } from '@/lib/astra-blender/render-jobs';
 import { enqueueAstraRender, recoverAstraRenders } from '@/lib/astra-blender/render-dispatch';
 import { LEDGER_UNIT_PAUSED } from "@/lib/ledgerUnit";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -42,6 +43,8 @@ export const POST = withTenant(async (req: Request) => { const auth = await requ
     const input = astraRenderRequestSchema.parse(JSON.parse(await readBoundedText(req, 4000)));
     if (input.quoteOnly)
         return response(await quoteAstraRender(input, auth.user.id));
+    /* The sample workspace spends nothing: answered before a job is written or reserved. */
+    { const off = await sampleWorkspaceOff(); if (off) return off; }
     const result = await prepareAstraRender(input, auth.user.id, auth.token);
     if (result.scheduled) {
         const store = currentTenant()!;

@@ -380,6 +380,38 @@ test("workspace: a lost take whose check gets no answer stays unconfirmed, and n
   });
 });
 
+test("workspace, two tabs: after another tab settled this tab's lost batch take, this tab's next Generate follows it and sends nothing", async () => {
+  const shared = memory();
+  /* Each tab's view of the browser's shared storage, with its own tab store (lib/workbench/pending-generation › tabStorage). */
+  const tabOf = () => ({ getItem: (k: string) => shared.getItem(k), setItem: (k: string, v: string) => shared.setItem(k, v), removeItem: (k: string) => shared.removeItem(k) });
+  const a = tabOf(), b = tabOf();
+  const checks: string[] = [];
+  const server = workspace(() => 18, (variation, attempt) => variation === 1 && attempt === 1 ? { status: 503, json: { error: "The request was interrupted." } } : { json: { id: `gen_take${variation}` }, complete: true });
+  const route = (path: string, sent: Record<string, unknown>, calls: Call[]): Answer => {
+    if (path === "/api/generate/check") { checks.push(String(sent.key)); return { json: { state: "landed", id: "gen_take1", status: "running" } }; }
+    return server.route(path, sent, calls);
+  };
+  const record = { projectId: DRAFT, batchId: "b_unit0002", name: "Close on her hands.", model: "Seedance 2.5", takes: [{ variation: 1, storageId: storageId(1), credits: 18 }] };
+  await withServer(route, async (calls) => {
+    const outcome = await sendWorkspaceBatch({ scope: SCOPE, shown: 36, count: 2, storageId, storage: a, request: (v) => ({ endpoint: "/api/generate", input: body(v) }) });
+    if (outcome.state !== "sent") throw new Error(outcome.state);
+    expect(outcome.takes.map((t) => t.state)).toEqual(["unconfirmed", "not-sent"]);
+    rememberWorkspaceBatch(a, SCOPE, record);
+    const k1 = readPendingGeneration(shared, storageId(1))!.key;
+    /* Tab B's Generate on the project settles it (landed) and lets the record and the claim go. */
+    expect(await settleWorkspaceBatch({ scope: SCOPE, projectId: DRAFT, storage: b })).toMatchObject({ state: "settled", landed: [{ variation: 1, jobId: "gen_take1", credits: 18 }], lost: [] });
+    expect(checks).toEqual([k1]);
+    expect(await settleWorkspaceBatch({ scope: SCOPE, projectId: DRAFT, storage: b })).toEqual({ state: "none" });
+    /* Tab A's next Generate: its own record and claim, answered by B's note. Nothing is asked again, quoted or sent. */
+    const before = calls.length;
+    expect(await settleWorkspaceBatch({ scope: SCOPE, projectId: DRAFT, storage: a })).toMatchObject({ state: "settled", batchId: "b_unit0002", landed: [{ variation: 1, jobId: "gen_take1", credits: 18 }], lost: [] });
+    expect(calls.slice(before)).toEqual([]);
+    expect(server.charged).toEqual([]);
+    /* Settled for A too: the press after it is free to send. */
+    expect(await settleWorkspaceBatch({ scope: SCOPE, projectId: DRAFT, storage: a })).toEqual({ state: "none" });
+  });
+});
+
 /* ── What the person sees ─────────────────────────────────────────────── */
 
 test("the button's total is the take's price summed per take, and a batch of one keeps the single label", () => {

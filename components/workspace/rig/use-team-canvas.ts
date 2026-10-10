@@ -9,6 +9,8 @@ import {
 } from "@/lib/workbench/team-canvas-model";
 import { mergePatches, sendFailure, TeamOutbox } from "@/lib/workspace/team-canvas-outbox";
 import { useWorkspace } from "@/lib/workspace/state";
+import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
+import { sendsAllowed } from "@/lib/shell/switch-workspace";
 
 /*
  * The Rig's team canvas in the browser (owner, 2026-09-24: one shared canvas).
@@ -60,6 +62,8 @@ export type TeamCanvasApi = {
   presence: (patch: Partial<Presence>) => void;
   /** Sends any waiting canvas edit now. The draft save awaits it, so the canvas is never older than the saved draft. */
   flush: () => Promise<void>;
+  /** Before leaving the workspace (a switch): every send still out ends, then anything waiting (an edit made while the canvas loaded too) is sent; true once nothing is left unsent. */
+  drain: () => Promise<boolean>;
   /** Lays the board out on the server, for everyone at once. Free. */
   tidy: () => Promise<TidyOutcome>;
   /** Folds in what the server just changed (Atomik's build), now rather than at the next check. A live room brings it by itself. */
@@ -195,8 +199,13 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     toast(`${names.length ? names.join(", ") : "A card"} ${names.length > 1 ? "are locked masters" : "is a locked master"}: that edit did not change ${names.length > 1 ? "them" : "it"}. An admin can unlock a master.`);
   }, [fold, toast, setLocks, locksFor]);
 
-  const send = useCallback(async () => {
+  /* Every send still out (the debounce's, a retry's, the one the page hiding starts), so leaving the workspace can wait for them. */
+  const sending = useRef(new Set<Promise<void>>());
+  const sendNow = useCallback(async () => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    /* The workspace switch route has been asked (lib/shell/switch-workspace.ts): nothing more goes to this workspace;
+       if the switch does not happen, what waits goes on the next try. */
+    if (!sendsAllowed()) { if (outbox.size || catchUps.current.size) timer.current = setTimeout(() => retry.current(), RETRY_MS); return; }
     const post = async (pid: string, patch: TeamPatch) => {
       const going = inflight.current.get(pid) ?? [];
       going.push(patch);
@@ -251,7 +260,27 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     }));
     if (again && !timer.current) timer.current = setTimeout(() => retry.current(), RETRY_MS);
   }, [scope, outbox, toast, handleHeld]);
+  const send = useCallback((): Promise<void> => {
+    const run = sendNow();
+    sending.current.add(run);
+    const done = () => { sending.current.delete(run); };
+    run.then(done, done);
+    return run;
+  }, [sendNow]);
   useEffect(() => { retry.current = () => void send(); }, [send]);
+  /* The edit made while the canvas was loading that a drain already delivered (it stays, for the join to lay over the canvas). */
+  const earlySent = useRef<TeamPatch | null>(null);
+  const drain = useCallback(async (): Promise<boolean> => {
+    /* A send already out may fail and put its edit back: it ends first, so this send carries it. */
+    while (sending.current.size) await Promise.allSettled([...sending.current]);
+    /* An edit made before the canvas loaded goes too, as a copy: it is kept for the join in case the page stays. */
+    const waiting = early.current;
+    if (waiting && earlySent.current !== waiting.patch) outbox.add(waiting.pid, waiting.patch);
+    await send().catch(() => {});
+    const sent = !outbox.size && !catchUps.current.size;
+    if (sent && waiting) earlySent.current = waiting.patch;
+    return sent && (!early.current || early.current.patch === earlySent.current);
+  }, [send, outbox]);
 
   /* A page being closed or reloaded sends the waiting edit now, or the older canvas would win on the next open. */
   useEffect(() => {
@@ -461,7 +490,7 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
 
   const tidy = useCallback(async (): Promise<TidyOutcome> => {
     const pid = joined.current;
-    if (!pid) return { ok: false, error: "Save this project first: the board is tidied for your whole team." };
+    if (!pid) return { ok: false, error: `${SAVING_NOW} The board is tidied for your whole team once it is saved.` };
     /* This window's waiting edits reach the canvas first, so the layout starts from them. */
     await send();
     let answer: unknown;
@@ -497,5 +526,5 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
   }, [locksFor, setLocks]);
   const writeServer = useCallback((node: CanvasNode, fields: string[]) => { writeTrusted.current?.(node, fields); }, []);
 
-  return { mode, peers, server, publish, catchUp, presence, flush: send, tidy, refresh, locks, learnLock, writeServer };
+  return { mode, peers, server, publish, catchUp, presence, flush: send, drain, tidy, refresh, locks, learnLock, writeServer };
 }

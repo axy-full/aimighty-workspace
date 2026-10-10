@@ -45,7 +45,7 @@ export const GET = withTenant(async function GET(req: Request, { params }: Ctx) 
   // Drag resolution only needs persisted metadata. It must not poll a provider,
   // copy a master or advance accounting merely because someone selected a take.
   const synced = new URL(req.url).searchParams.get("sync") === "0"
-    ? gen : await syncGeneration(gen);
+    ? gen : await syncGeneration(gen, { requestPath: true }); // a busy store: the next poll saves it
   const [generation] = await withLedgerCharges([synced]);
   return NextResponse.json({ generation }, {
     headers: { "Cache-Control": "private, no-store" },
@@ -178,7 +178,9 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   }
   /* Filing against a shot, moving between shots, or unfiling. A video or a
      still takes the shot's next version number on the way in; an audio
-     track carries none. The render follows the shot into its production. */
+     track takes none and keeps the number it has. The render follows the
+     shot into its production. `version` is NOT NULL (lib/db.ts): unfiling
+     puts back the default an unfiled render carries, never NULL. */
   if (body.shotId !== undefined) {
     const shotId = body.shotId ? String(body.shotId) : null;
     if (shotId) {
@@ -188,12 +190,12 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
       if (!gen) return NextResponse.json({ error: "No such render." }, { status: 404 });
       const version = gen.kind === "audio" ? null : await nextVersion(shotId);
       await db().execute({
-        sql: `UPDATE generations SET shot_id=?, version=?, project_id=COALESCE(?, project_id), updated_at=? WHERE id=?`,
+        sql: `UPDATE generations SET shot_id=?, version=COALESCE(?, version), project_id=COALESCE(?, project_id), updated_at=? WHERE id=?`,
         args: [shotId, version, shot.projectId, Date.now(), id],
       });
     } else {
       await db().execute({
-        sql: `UPDATE generations SET shot_id=NULL, version=NULL, updated_at=? WHERE id=?`,
+        sql: `UPDATE generations SET shot_id=NULL, version=1, updated_at=? WHERE id=?`,
         args: [Date.now(), id],
       });
     }

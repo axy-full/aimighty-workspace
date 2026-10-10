@@ -1,5 +1,7 @@
 import { PROJECT_LIMITS } from "./project-limits";
 import { astraNativeSchema, astraNativeProposalSchema, validateAstraNativeBindings } from '../astra-blender/native';
+import { scriptVersionsSchema } from '../production/script-versions';
+import { blockingSchema } from '../production/blocking-schema';
 import { astraSceneSchema } from '../astra-blender/scene';
 import { astraProposalSchema, validateAstraBindings } from '../astra-blender/proposal';
 import { z } from "zod";
@@ -212,6 +214,8 @@ export const moleculrSchema = z.object({
   variants:z.array(z.object({id:z.string().max(100),nodeId:z.string().max(100),hook:z.string().max(500),castAssetId:z.string().max(100).optional(),kind:z.enum(["image","video"]).optional(),productId:z.string().max(100).optional(),templateId:z.string().max(100).optional(),createdAt:z.string().datetime().optional(),referenceVideo:referenceAdBindingSchema.optional(),generation:z.object({modelId:z.string().max(200).optional(),resolution:z.string().max(30).optional(),firstFrameAssetId:z.string().max(100).optional(),soulIdentityId:z.string().max(100).optional(),soulStrength:z.number().min(0).max(1).optional(),ratio:z.string().max(20).optional(),duration:z.number().int().min(1).max(60).optional(),marketing:z.object({variant:z.enum(["alpha","flare","sunburst"]).optional(),quality:z.enum(["low","medium","high","xhigh","max"]),enhancePrompt:z.boolean(),presetId:z.string().uuid().optional()}).strict().optional(),cinema:cinemaControlsSchema.optional(),generateAudio:z.boolean().optional()}).strict().optional()}).strict()).max(100),
 }).strict();
 export const productionSchema = z.object({
+  /* 3D blocking per Rig shot (lib/production/blocking-schema.ts): additive and optional, so a draft from before it parses as it did. */
+  blocking: blockingSchema.optional(),
   scriptApproval: z.object({
     at: z.string().datetime(), source: z.enum(['agent', 'hand']),
     jobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(), sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -247,6 +251,14 @@ export const productionSchema = z.object({
       pending: z.array(z.object({ jobId: z.string().max(100), style: z.enum(['live', 'color-sketch', 'bw-sketch']), at: z.string().datetime() }).strict()).optional(),
     }).strict()).refine((value) => Object.keys(value).length <= 2000),
     promptsJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
+    /* The looks made before the storyboard, and the one picked (lib/production/looks.ts). Optional: drafts from before them parse as they did. */
+    looks: z.record(z.string().regex(/^[a-z0-9-]{1,40}$/), z.object({
+      name: z.string().max(80), prompt: z.string().max(8000),
+      takes: z.array(z.object({ genId: z.string().max(100), at: z.string().datetime() }).strict()).max(20),
+      selected: z.string().max(100).optional(),
+      pending: z.array(z.object({ jobId: z.string().max(100), at: z.string().datetime() }).strict()).max(4).optional(),
+    }).strict()).refine((value) => Object.keys(value).length <= 8).optional(),
+    look: z.string().regex(/^[a-z0-9-]{1,40}$/).optional(),
   }).strict().optional(),
   cast: z.object({
     entries: z.array(z.object({
@@ -340,7 +352,28 @@ export const projectSchema = z.object({
     .max(64)
     .optional(),
   script: z.string().max(MAX_SCRIPT_CHARS).optional(),
+  /* Earlier scripts (lib/production/script-versions.ts): additive and optional, so a draft from before it parses as it did. */
+  scriptVersions: scriptVersionsSchema.optional(),
   scriptFormat: z.enum(["screenplay", "adfilm"]).optional(),
+  /* The board a project opens on (lib/board/kind.ts; lead decision 26): set when a template makes it. Absent: read from its data. */
+  boardKind: z.enum(["studio", "ads", "social"]).optional(),
+  /* The board's kind in the new interface (lib/v12/board/kinds.ts): Film, Pre-vis, Campaign, Social narrated or clips. Additive and optional, draft JSON only. */
+  boardFlavor: z.enum(["film", "previs", "campaign", "narrated", "clips"]).optional(),
+  /* The board's stages as arranged in the new interface (lib/v12/board/stages.ts): additive and optional, draft JSON only. */
+  boardStages: z.array(z.object({
+    id: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/),
+    label: z.string().max(40).optional(),
+    skipped: z.boolean().optional(),
+    custom: z.boolean().optional(),
+  }).strict()).max(24).optional(),
+  /* Client rounds in the new interface (lib/v12/rounds.ts): the approved rounds, what each changed and the take each shot had before. Additive and optional, draft JSON only. */
+  boardRounds: z.array(z.object({
+    n: z.number().int().min(2).max(99),
+    runId: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/),
+    at: z.number().int().min(0),
+    changes: z.array(z.object({ shot: z.number().int().min(1).max(999), text: z.string().max(200) }).strict()).max(60),
+    before: z.record(z.string().regex(/^\d{1,3}$/), z.string().max(100)),
+  }).strict()).max(20).optional(),
   scriptSource: z
     .object({
       assetId: z.string().max(100),

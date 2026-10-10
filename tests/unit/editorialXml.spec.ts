@@ -10,7 +10,7 @@ function project(): Project {
   const p = newProject("Fox & <Harbour>");
   return {
     ...p, fps: 24, aspect: "16:9",
-    assets: [asset("gen-wide", "video", "Wide on the ice", "video/mp4"), asset("gen-still", "image", "Mara at the window", "image/png"), asset("up-voice", "audio", "Mara line", "audio/wav"), asset("up-score", "audio", "Score", "audio/mpeg")],
+    assets: [asset("gen-wide", "video", "Wide on the ice", "video/mp4"), asset("gen-still", "image", "Keeper at the window", "image/png"), asset("up-voice", "audio", "Keeper line", "audio/wav"), asset("up-score", "audio", "Score", "audio/mpeg")],
     shots: [
       { id: "s1", name: "01 — The crossing", assetId: "gen-wide", duration: 48, sourceIn: 12, note: "Hold on the ice" },
       { id: "s2", name: "02 — The window", assetId: "gen-still", duration: 72, sourceIn: 0, note: "" },
@@ -46,7 +46,7 @@ test("FCPXML: the cut on one spine from 01:00:00:00, the Sound lanes connected u
   expect(xml).toContain('name="01 — The crossing" offset="86400/24s" start="12/24s" duration="48/24s"');
   expect(xml).toContain('name="02 — The window" offset="86448/24s" start="0s" duration="72/24s"');
   /* The dialogue line starts at frame 60, 12 frames into shot 2 (which starts at 48). */
-  expect(xml).toMatch(/lane="-1" name="Mara line" offset="12\/24s" start="0s" duration="24\/24s" audioRole="dialogue">\s*<adjust-volume amount="-6.0dB"\/>/);
+  expect(xml).toMatch(/lane="-1" name="Keeper line" offset="12\/24s" start="0s" duration="24\/24s" audioRole="dialogue">\s*<adjust-volume amount="-6.0dB"\/>/);
   /* The score starts at frame 0, under shot 1, whose own time starts at its source in (12). */
   expect(xml).toContain('lane="-2" name="Score" offset="12/24s" start="24/24s" duration="120/24s" audioRole="music" enabled="0"');
   expect(xml).toContain("<note>Hold on the ice</note>");

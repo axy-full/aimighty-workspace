@@ -30,12 +30,12 @@ test("an old workspace flag cannot authorize provider-wallet spending after migr
     });
     expect(response.status(), await response.text()).toBe(410);
     expect(await response.json()).toEqual(RETIRED);
-    /* History still reads. */
+    /* Release 1: the account's saved-job list is retired too (past results are read from the Library, not from this route). */
     const jobs = await page.request.get("/api/higgsfield/consumer/video", { headers });
-    expect(jobs.ok(), await jobs.text()).toBe(true);
-    expect((await jobs.json()).jobs).toEqual([]);
+    expect(jobs.status(), await jobs.text()).toBe(410);
+    expect(await jobs.json()).toEqual(RETIRED);
     for (const data of [
-      { action: "characters-create", name: "Mira", type: "soul_2", sources: Array.from({ length: 5 }, (_, i) => ({ uploadId: `original-${i}` })) },
+      { action: "characters-create", name: "Wren", type: "soul_2", sources: Array.from({ length: 5 }, (_, i) => ({ uploadId: `original-${i}` })) },
       { action: "elements-create", name: "Harbour", category: "environment", sources: [{ uploadId: "original-0" }] },
     ]) {
       const build = await page.request.post("/api/higgsfield/consumer/generation", { headers, data });

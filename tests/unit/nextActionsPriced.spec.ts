@@ -66,7 +66,7 @@ test("a take that cannot go yet says why, once for the whole row; the engine's o
   expect(whys({ status: "running", storedUrl: null })).toEqual(Array(3).fill([false, "It opens once it has rendered."]));
   expect(whys({ status: "failed", storedUrl: null, error: "refused" })).toEqual(Array(3).fill([false, "It did not render, so there is nothing to edit."]));
   expect(whys({ status: "succeeded", storedUrl: null })).toEqual(Array(3).fill([false, "Its stored copy is not here yet."]));
-  expect(whys({}, { saved: false })).toEqual(Array(3).fill([false, "Save the project first."]));
+  expect(whys({}, { saved: false })).toEqual(Array(3).fill([false, "Saving this project…"]));
 
   /* Extend reads 480p or 720p clips of 4 to 30 seconds (the vendor's rule, lib/tasks.ts sourceProblem); Reframe and Upscale take five minutes. */
   const clipWhy = (params: Record<string, unknown>) => Object.fromEntries(pricedActions(one([clip({ params })]), saved).map((a) => [a.id, a.why]));

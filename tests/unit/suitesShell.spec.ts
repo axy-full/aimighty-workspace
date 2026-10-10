@@ -1,44 +1,46 @@
 import { test, expect } from "@playwright/test";
-import {
-  ALL_SHELL_PAGES, HEADER_SEGMENT, SHELL_SUITES, WORKSPACE_TABS, firstShellPage, isShellSuite, pageOfLegacy, restorePage, shellPage, suiteOfLegacy,
-  pageAlias,
-} from "../../lib/shell/ia";
+import { ALL_SHELL_PAGES, HEADER_SEGMENT, SHELL_SUITES, firstShellPage, isShellSuite, pageOfLegacy, restorePage, shellPage, suiteOfLegacy } from "../../lib/shell/ia";
 import { PAGES } from "../../lib/workspace/pages";
 import { UNDO_DEPTH, boundUndo, canUndo, popUndo, pushUndo, type UndoEntry } from "../../lib/shell/undo";
 import { ctxItems, inSelectionSurface, parseCtx, placeMenu, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxItem } from "../../lib/shell/context-menu";
-import { PALETTE_ROWS, paletteIndex, searchPalette } from "../../lib/shell/palette";
 
 /* ── Information architecture ───────────────────────────────────────────── */
 
-test("the header segment reads Studio | Gen | Business | Viral | Atomik | Crew", () => {
-  expect(HEADER_SEGMENT.map((s) => s.label)).toEqual(["Studio", "Gen", "Business", "Viral", "Atomik", "Crew"]);
+test("the header segment is option B: Home · the project · Make · Atomik", () => {
+  expect(HEADER_SEGMENT.map((s) => [s.id, s.label])).toEqual([["home", "Home"], ["project", "Project"], ["make", "Make"], ["atomik", "Atomik"]]);
 });
 
-test("every suite has the README's pages, numbered in order, with its group gaps; the phone's Studio home sits outside the strip", () => {
-  const shape = Object.fromEntries(SHELL_SUITES.map((s) => [s.id, s.pages.filter((p) => !p.phoneOnly).map((p) => `${p.gapBefore ? "|" : ""}${p.n} ${p.label}`)]));
-  const home = SHELL_SUITES.find((s) => s.id === "studio")!.pages.find((p) => p.phoneOnly);
-  expect(home).toMatchObject({ id: "home", n: "", own: true });
+test("the shell has two suites: Atomik's control room, and the Studio suite whose one page nothing draws (Business, Viral, Crew and the Studio overview are gone)", () => {
+  const shape = Object.fromEntries(SHELL_SUITES.map((s) => [s.id, s.pages.filter((p) => !p.phoneOnly && !p.stripHidden).map((p) => `${p.gapBefore ? "|" : ""}${p.n} ${p.label}`)]));
+  /* The stage pages, the Studio overview and the phone's Home are deleted: Studio keeps one backing page, never a tab. */
+  expect(SHELL_SUITES.find((s) => s.id === "studio")!.pages.map((p) => [p.id, p.phoneOnly])).toEqual([["board", true]]);
+  expect(SHELL_SUITES.map((s) => s.id)).toEqual(["studio", "atomik"]);
   expect(shape).toEqual({
-    studio: ["01 Brief", "02 Beats", "03 Storyboards", "|04 Environment", "05 Cast", "06 Astra", "07 Rig", "|08 Takes", "09 Edit & Sound", "10 Deliver"],
-    business: ["01 Image ads", "|02 Setup", "|03 Brand", "04 Product", "05 Format", "06 Hooks", "07 Reference", "08 Design"],
-    viral: ["01 Motion Transfer", "02 Object Swap", "|03 History"],
-    atomik: ["01 Agent", "|02 Runs", "03 Approvals", "04 Budget", "|05 Models", "06 Tools", "07 Memory", "08 Skills"],
+    studio: [],
+    /* The control room's own four tabs, in the design's order (Atomik frames g–j), unnumbered; Agent, Budget, Models and Tools are not tabs. */
+    atomik: [" Approvals", " Activity", " Skills", " Memory"],
   });
+});
+
+test("Atomik's strip is the control room's four tabs and nothing else; the retired pages still resolve, so their addresses can redirect", () => {
+  const atomik = SHELL_SUITES.find((s) => s.id === "atomik")!;
+  expect(atomik.pages.filter((p) => !p.stripHidden).map((p) => p.id)).toEqual(["approvals", "runs", "saved-skills", "memory"]);
+  expect(atomik.pages.filter((p) => !p.stripHidden).every((p) => p.n === "")).toBe(true);
+  for (const id of ["agent", "budget", "models", "skills"]) expect(shellPage("atomik", id), id).toMatchObject({ stripHidden: true });
+  expect(firstShellPage("atomik").id).toBe("approvals");
 });
 
 test("Atomik › Memory is the shell's own page on Agent's backing page, told apart by the hint", () => {
   expect(shellPage("atomik", "memory")).toMatchObject({ title: "Memory", own: true, legacy: { suite: "atomik", page: "agent" } });
   expect(pageOfLegacy("atomik", "agent")?.id).toBe("agent");
   expect(pageOfLegacy("atomik", "agent", "memory")?.id).toBe("memory");
-  expect(searchPalette(paletteIndex({ models: [], assets: [] }), "memory")[0].run).toEqual({ type: "page", suite: "atomik", page: "memory" });
 });
 
 test("Atomik › Skills is the shell's own page beside Memory, on Agent's backing page; `skills` still means Tools & connections", () => {
-  expect(shellPage("atomik", "saved-skills")).toMatchObject({ n: "08", label: "Skills", title: "Skills", own: true, legacy: { suite: "atomik", page: "agent" } });
+  expect(shellPage("atomik", "saved-skills")).toMatchObject({ n: "", label: "Skills", title: "Skills", own: true, legacy: { suite: "atomik", page: "agent" } });
   expect(shellPage("atomik", "skills")?.title).toBe("Tools & connections");
   expect(pageOfLegacy("atomik", "agent")?.id).toBe("agent");
   expect(pageOfLegacy("atomik", "agent", "saved-skills")?.id).toBe("saved-skills");
-  expect(searchPalette(paletteIndex({ models: [], assets: [] }), "saved runs")[0].run).toEqual({ type: "page", suite: "atomik", page: "saved-skills" });
 });
 
 test("every shell page is backed by a page the state layer really has", () => {
@@ -50,32 +52,28 @@ test("every shell page is backed by a page the state layer really has", () => {
 });
 
 test("a suite restores its remembered page and falls back to its first", () => {
-  expect(restorePage("studio", "rig").id).toBe("rig");
+  /* A stage id is not a page any more (it is a region of the board): it restores Studio's one backing page. */
+  expect(restorePage("studio", "rig").id).toBe("board");
   expect(restorePage("studio", "gone").id).toBe(firstShellPage("studio").id);
-  expect(restorePage("viral", null).id).toBe("motion");
+  expect(restorePage("atomik", "gone").id).toBe("approvals");
   expect(shellPage("atomik", "budget")?.title).toBe("Budget");
   expect(isShellSuite("studio")).toBe(true);
-  expect(isShellSuite("gen")).toBe(false);
+  for (const retired of ["business", "viral", "gen", "crew"]) expect(isShellSuite(retired), retired).toBe(false);
 });
 
 test("a state-layer page finds its shell page; a shared backing page follows the hint", () => {
-  expect(suiteOfLegacy("moleculr")).toBe("business");
-  /* Beats shares Brief's backing page and follows the hint. */
-  expect(pageOfLegacy("particl", "takes")?.id).toBe("takes");
-  expect(pageOfLegacy("particl", "edit")?.id).toBe("edit");
-  expect(pageOfLegacy("particl", "brief", "beats")?.id).toBe("beats");
-  /* Business opens on Image ads; Ads is gone, and an old `sp=ads` link is Image ads. */
-  expect(pageOfLegacy("moleculr", "marketing")?.id).toBe("dtc");
-  expect(pageOfLegacy("moleculr", "marketing", "setup")?.id).toBe("setup");
-  expect(pageOfLegacy("moleculr", "marketing", "not-a-page")?.id).toBe("dtc");
-  expect(pageOfLegacy("moleculr", "marketing", "ads")?.id).toBe("dtc");
-  expect(pageAlias("business", "ads")).toBe("dtc");
-  expect(pageAlias("business", "dtc") ?? pageAlias("studio", "ads") ?? pageAlias("business", null) ?? pageAlias("business", "toString")).toBeNull();
-  expect(shellPage("business", "ads")?.id).toBe("dtc");
-  expect(restorePage("business", "ads").id).toBe("dtc");
-  expect(firstShellPage("business").id).toBe("dtc");
-  expect(SHELL_SUITES.find((s) => s.id === "business")!.pages.some((p) => p.id === "ads")).toBe(false);
-  expect(shellPage("business", "setup")).toMatchObject({ n: "02", title: "Setup items", hint: "Saved products, brand kit and reference ad" });
+  /* Business and Viral's backing suites are the Studio suite now: it holds nothing a link can open. */
+  expect(suiteOfLegacy("moleculr")).toBe("studio");
+  expect(suiteOfLegacy("subatomik")).toBe("studio");
+  expect(suiteOfLegacy("particl")).toBe("studio");
+  expect(suiteOfLegacy("atomik")).toBe("atomik");
+  /* A stage, and the pages of the retired suites, are no shell page. */
+  expect(pageOfLegacy("particl", "takes")).toBeNull();
+  expect(pageOfLegacy("particl", "edit")).toBeNull();
+  /* Brief backs the one page of the Studio suite, which nothing draws. */
+  expect(pageOfLegacy("particl", "brief")?.id).toBe("board");
+  expect(pageOfLegacy("moleculr", "marketing")).toBeNull();
+  expect(pageOfLegacy("subatomik", "history")).toBeNull();
 });
 
 test("suite names and marks are the design's, verbatim, with Atomik renamed by the owner", () => {
@@ -83,12 +81,9 @@ test("suite names and marks are the design's, verbatim, with Atomik renamed by t
      README's names; the never-name rule covers the legacy screens only.
      Owner, 28 September 2026: Atomik is "Just Atomik agent". */
   expect(SHELL_SUITES.map((s) => [s.mark, s.name])).toEqual([
-    ["STUDIO", "Particl Production Studio"],
-    ["BUSINESS", "Moleculr Business Suite"],
-    ["VIRAL", "Subatomik Viral Studio · Genjutsu"],
+    ["STUDIO", "Studio"],
     ["AGENT", "Atomik Agent"],
   ]);
-  for (const s of SHELL_SUITES) expect(HEADER_SEGMENT.find((h) => h.id === s.id)?.title).toBe(s.name);
 });
 
 /* ── Undo ───────────────────────────────────────────────────────────────── */
@@ -157,7 +152,7 @@ test("the menu follows the README's order for each target", () => {
   /* A Rig node lists what the Rig carries out for it: nothing wired → only Paste and Undo; the rest once the Rig registers them. */
   expect(commands(ctxItems({ kind: "node", id: "n" }, caps()))).toEqual(["paste", "—", "undo"]);
   expect(commands(ctxItems({ kind: "node", id: "n" }, caps({ can: { bypass: true, unplug: true } })))).toEqual(["paste", "—", "bypass", "unplug", "—", "undo"]);
-  expect(commands(ctxItems({ kind: "empty" }, caps()))).toEqual([...head, ...tail, "—", "generate-here", "open-library", "toggle-inspector"]);
+  expect(commands(ctxItems({ kind: "empty" }, caps()))).toEqual([...head, ...tail, "—", "generate-here", "open-library"]);
 });
 
 test("a blocked item stays in the menu, disabled, with its reason", () => {
@@ -174,11 +169,11 @@ test("a blocked item stays in the menu, disabled, with its reason", () => {
 
 test("a Rig node leaves out commands the Rig does not carry out, and keeps a blocked one that has its own reason", () => {
   /* What SuitesShell gives a node while the Rig is on screen, and while it is not. */
-  const onRig = ctxItems({ kind: "node", id: "n" }, caps({ can: { delete: true }, why: { delete: "Open the Rig to delete a shot." }, canUndo: true }));
+  const onRig = ctxItems({ kind: "node", id: "n" }, caps({ can: { delete: true }, why: { delete: "Open the Board to delete a shot." }, canUndo: true }));
   expect(commands(onRig)).toEqual(["paste", "—", "delete", "undo"]);
   expect(find(onRig, "delete").disabled).toBeFalsy();
-  const offRig = ctxItems({ kind: "node", id: "n" }, caps({ why: { delete: "Open the Rig to delete a shot." } }));
-  expect(find(offRig, "delete")).toMatchObject({ disabled: true, reason: "Open the Rig to delete a shot." });
+  const offRig = ctxItems({ kind: "node", id: "n" }, caps({ why: { delete: "Open the Board to delete a shot." } }));
+  expect(find(offRig, "delete")).toMatchObject({ disabled: true, reason: "Open the Board to delete a shot." });
   for (const gone of ["copy", "cut", "duplicate", "bypass", "unplug", "move", "retry"]) expect(onRig.some((i) => !i.sep && i.command === gone)).toBe(false);
   /* When Bypass is wired it appears, in the README's place. */
   expect(commands(ctxItems({ kind: "node", id: "n" }, caps({ can: { bypass: true, delete: true } })))).toEqual(["paste", "—", "bypass", "—", "delete", "undo"]);
@@ -186,10 +181,10 @@ test("a Rig node leaves out commands the Rig does not carry out, and keeps a blo
   expect(ctxItems({ kind: "asset", id: "a" }, caps()).filter((i) => !i.sep)).toHaveLength(10);
 });
 
-test("empty space blocks selection commands but keeps its own three", () => {
+test("empty space blocks selection commands but keeps its own two", () => {
   const items = ctxItems({ kind: "empty" }, caps({ can: { copy: true } }));
   expect(find(items, "copy")).toMatchObject({ disabled: true, reason: "Select an asset or a node first." });
-  for (const c of ["generate-here", "open-library", "toggle-inspector"]) expect(find(items, c).disabled).toBeFalsy();
+  for (const c of ["generate-here", "open-library"]) expect(find(items, c).disabled).toBeFalsy();
 });
 
 test("the menu opens at the cursor, flips at an edge and never leaves the viewport", () => {
@@ -242,34 +237,3 @@ test("a lingering selection does not take ⌘C from selected text, nor ⌫/⌘R/
   }
 });
 
-/* ── ⌘K ─────────────────────────────────────────────────────────────────── */
-
-const rows = paletteIndex({
-  models: [{ id: "m1", name: "Seedance 2.5", kind: "video" }],
-  assets: [{ id: "tk_1", name: "Rigging diagram", kind: "image" }],
-});
-
-test("the palette indexes Generate, suites, every page, Workspace, models and assets", () => {
-  expect(rows[0]).toMatchObject({ label: "Generate", run: { type: "gen" } });
-  expect(rows.filter((r) => r.run.type === "suite")).toHaveLength(4);
-  /* The phone's own screens (Where to?, the Studio grid) are not desktop pages: no " Where to?" rows. */
-  expect(rows.filter((r) => r.run.type === "page")).toHaveLength(ALL_SHELL_PAGES.filter(({ page }) => !page.phoneOnly).length);
-  expect(rows.some((r) => r.run.type === "page" && (r.run.page === "home" || r.run.page === "stages"))).toBe(false);
-  expect(rows.some((r) => r.label.trim() === "Where to?" || r.label.trim() === "Studio" && r.run.type === "page")).toBe(false);
-  expect(rows.filter((r) => r.run.type === "page").every((r) => /^\d{2} \S/.test(r.label))).toBe(true);
-  expect(rows.filter((r) => r.run.type === "workspace")).toHaveLength(WORKSPACE_TABS.length);
-  expect(rows.some((r) => r.run.type === "model")).toBe(true);
-  expect(rows.some((r) => r.run.type === "asset")).toBe(true);
-});
-
-test("search ranks a page's own name first and always ends with Ask Atomik", () => {
-  const hits = searchPalette(rows, "rig");
-  expect(hits[0].run).toEqual({ type: "page", suite: "studio", page: "rig" });
-  expect(hits.at(-1)).toMatchObject({ label: "Ask Atomik: rig", run: { type: "ask", text: "rig" } });
-  /* The asset "Rigging diagram" matches too, below the page. */
-  expect(hits.some((r) => r.run.type === "asset")).toBe(true);
-  expect(searchPalette(rows, "zzzz")).toEqual([expect.objectContaining({ run: { type: "ask", text: "zzzz" } })]);
-  expect(searchPalette(rows, "")).toHaveLength(PALETTE_ROWS);
-  expect(searchPalette(rows, "a").length).toBeLessThanOrEqual(PALETTE_ROWS);
-  expect(searchPalette(rows, "budget atomik")[0].run).toEqual({ type: "page", suite: "atomik", page: "budget" });
-});

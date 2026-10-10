@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { DefaultFault, type Fault } from "../../components/Boundary";
 import { HEADER_SEGMENT } from "../../lib/shell/ia";
 import {
-  CRASH_PROBE, FIND_HREF, HOME_HREF, STUDIO_HREF, TAKES_HREF,
+  CRASH_PROBE, FIND_HREF, HOME_HREF, STUDIO_HREF, SHOTS_HREF,
   asError, attemptsFor, countTry, faultMessage, faultPrimary, faultRef, faultReport, findRequested, isStaleBuild, probeArmed, segmentHref, throwIfArmed, withoutFind,
   type Tries,
 } from "../../lib/shell/fault";
@@ -115,21 +115,20 @@ test("faultReport: what, ref, message, where and when — and nothing about the 
 });
 
 test.describe("the ways back in", () => {
-  test("Studio, Takes and Search are Suites destinations, not legacy ones; a visitor goes to the front page", () => {
+  test("Studio, Shots and Search are Suites destinations, not legacy ones; a visitor goes to the front page", () => {
     expect(STUDIO_HREF).toBe("/suites");
-    expect(TAKES_HREF).toBe("/suites?page=takes&sp=takes");
+    expect(SHOTS_HREF).toBe("/suites?view=board&region=shots");
     expect(FIND_HREF).toBe("/suites?find=1");
     expect(HOME_HREF).toBe("/");
   });
 
   test("every header segment has a plain link that lands on it", () => {
+    /* The places the live header opens until their packages ship: the Studio overview, Studio, Make's panel, the Atomik suite. */
     expect(Object.fromEntries(HEADER_SEGMENT.map((s) => [s.id, segmentHref(s.id)]))).toEqual({
-      studio: "/suites",
-      gen: "/suites?view=gen",
-      business: "/suites?suite=moleculr",
-      viral: "/suites?suite=subatomik",
+      home: "/suites?view=home",
+      project: "/suites?view=board",
+      make: "/suites?make=video",
       atomik: "/suites?suite=atomik",
-      crew: "/suites?view=crew",
     });
   });
 
@@ -222,8 +221,8 @@ test.describe("Boundary", () => {
 test.describe("the shell's walls, in source", () => {
   const shell = read("components/graphite/SuitesShell.tsx");
 
-  test("every stage body, the Library, the Inspector, Gen, Crew, Workspace, search, the strip, the composer and Atomik have their own boundary", () => {
-    for (const probe of ["stageProbe", '"library"', '"inspector"', '"gen"', '"crew"', '"workspace"', '"palette"', '"strip"', '"composer"', '"atomik-gate"', '"atomik-sheet"']) {
+  test("the control room's body, Make, Settings, search, the strip, the composer and Atomik have their own boundary (the Library, Inspector and Crew walls went with their columns)", () => {
+    for (const probe of ["stageProbe", '"gen"', '"workspace"', '"palette"', '"strip"', '"composer"', '"atomik-gate"', '"atomik-sheet"']) {
       expect(shell, probe).toMatch(new RegExp(`<Boundary [^>]*probe=\\{?${probe.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\}?`));
     }
     /* Moving to another stage, project or selection resets the wall. */
@@ -233,10 +232,10 @@ test.describe("the shell's walls, in source", () => {
     expect(shell.match(/className="gx-fault-dialog" role="dialog" aria-modal="true"/g)).toHaveLength(2);
   });
 
-  test("Gen walls off its results and each take", () => {
-    const gen = read("components/graphite/GenView.tsx");
-    expect(gen).toMatch(/<Boundary what="Results" probe="gen-results"/);
-    expect(gen).toMatch(/<Boundary what="This take" probe=\{`take:\$\{entry\.take\.id\}`\}.*<TileFault/);
+  test("Make walls off its results and each take", () => {
+    const recent = read("components/graphite/make/Recent.tsx");
+    expect(recent).toMatch(/<Boundary what="Recent" probe="make-recent"/);
+    expect(recent).toMatch(/<Boundary what="This take" probe=\{`take:\$\{entry\.take\.id\}`\}.*<TileFault/);
   });
 
   test("the Suites segment has its own error page; it keeps the header and retries with retry()", () => {
@@ -247,7 +246,7 @@ test.describe("the shell's walls, in source", () => {
     const faultPage = read("components/graphite/FaultPage.tsx");
     expect(faultPage).toContain("<StaticHeader member={member} />");
     expect(faultPage).toContain("Back to Studio");
-    expect(faultPage).toContain("Open Takes");
+    expect(faultPage).toContain("Open Shots");
   });
 
   test("the 404 stays static and light: it never reads the request, and its page loads only with a 404", () => {

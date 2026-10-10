@@ -25,6 +25,8 @@ import { signInHrefFor } from "./signIn";
 
 export type SessionWorkspace = {
   id: string; name: string; slug: string; suspended?: boolean; suspendedReason?: string | null; internalTest?: boolean;
+  /** The interface being built from design/particl-prototype-12 is on here (lib/newInterface.ts). */
+  newInterface?: boolean;
   /** Who runs the connected account, by display name, for a member's owner-run surfaces — never the address; null for the owner. */
   ownerName?: string | null;
 };
@@ -32,7 +34,13 @@ export type SessionWorkspace = {
 /* No `margins`. It used to be here, beside `creditUsd`, where any customer
    could read it — §2 says margin is never shown, and shipping it counts. What
    the browser gets instead is `rates`, already converted, in lib/rateTable.ts. */
-export type SessionCredits = { creditUsd: number; granted: number; used: number; balance: number };
+export type SessionCredits = {
+  creditUsd: number; granted: number; used: number; balance: number;
+  /** What the low-credit rule measures against (lib/v12/lowCredit.server.ts): the current cycle's included credits (0 when none). Read-only; absent when it could not be read. */
+  planIncludedCredits?: number;
+  /** The workspace's welcome grant: the low-credit base on a plan that includes no credits (Invite). */
+  welcomeGrant?: number;
+};
 export type Session = {
   signedIn: boolean;
   /** Captured by the server-rendered document; never refreshed just before a private mutation. */
@@ -114,6 +122,11 @@ export function SessionProvider({ value, children }: {
 
 export function useSession(): Session {
   return useContext(SessionContext);
+}
+
+/** The interface being built from design/particl-prototype-12 is on for this session's workspace (lib/newInterface.ts). */
+export function useNewInterface(): boolean {
+  return Boolean(useContext(SessionContext).workspace?.newInterface);
 }
 
 /**

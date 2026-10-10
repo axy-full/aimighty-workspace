@@ -61,8 +61,20 @@ export function mailLinkOrigin(req: Request, env: Env = process.env): string | n
   return null;
 }
 
+/**
+ * mailLinkOrigin for mail sent with no request in hand (the "renders are being
+ * held" notice): APP_ORIGIN; on Vercel without it, the production deployment's
+ * domain (VERCEL_PROJECT_PRODUCTION_URL, which Vercel sets); otherwise null, and
+ * the caller sends nothing rather than a link with no host.
+ */
+export function backgroundMailOrigin(env: Env = process.env): string | null {
+  const forced = configuredOrigin(env);
+  if (forced) return forced;
+  return env.VERCEL ? siteOrigin(env) : null;
+}
+
 export const SITE_NAME = "Particl";
-export const SITE_TITLE = "Particl Production Studio";
+export const SITE_TITLE = "Particl Studio";
 export const SITE_DESCRIPTION = "A production studio for generated film: brief, shots, takes and delivery.";
 
 /** The pages anyone may open without an account, for the sitemap. */

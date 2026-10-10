@@ -156,6 +156,43 @@ export async function recoveryFetch(
     await fence.finish(id, uncertain);
   }
 }
+/**
+ * A run started inside a request that may have to outlive it (an early answer,
+ * lib/generationRequests.ts answerAfterMs). It runs under a recovery parent of
+ * its own, the request's to begin with. `reserveContinuation` admits a
+ * continuation under that parent, before the reply, and makes the
+ * continuation the parent of everything the run admits from then on, so a
+ * deploy that drains after the request has finished still admits the run's
+ * later work (a provider call, a price check) instead of refusing it. The
+ * returned function is what Next.after calls: it waits for the run (never
+ * starting it again) and finishes the continuation.
+ */
+export function movableRecoveryRun<T>(run: () => Promise<T>): {
+  result: Promise<T>;
+  reserveContinuation: (kind: string) => Promise<() => Promise<T>>;
+} {
+  const parent = { id: context.getStore()?.id ?? "" };
+  const result = context.run(parent, run);
+  return {
+    result,
+    async reserveContinuation(kind: string) {
+      const fence = recoveryFence();
+      const id = await fence.admit({ kind, parentId: parent.id || null });
+      parent.id = id;
+      let invoked = false;
+      return async () => {
+        if (invoked)
+          throw new RecoveryFenceError("This continuation already started.");
+        invoked = true;
+        try {
+          return await result;
+        } finally {
+          await fence.finish(id);
+        }
+      };
+    },
+  };
+}
 /** Reserve before handing a continuation to Next.after. If the process dies
  * before it runs, the durable child remains a blocker instead of vanishing. */
 export async function reserveRecoveryContinuation<T>(

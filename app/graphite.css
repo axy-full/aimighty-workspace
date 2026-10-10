@@ -7,7 +7,9 @@
  *
  * No colour is declared anywhere else. A rule that needs a colour, a radius, a
  * shadow or an easing takes it from here; a value the README does not list is
- * not a token and is not added.
+ * not a token and is not added. The one exception is the block of
+ * prototype 12 additions at the end of :root (design/particl-prototype-12,
+ * docs/redesign/inventory.md § 3), which the new interface reads.
  */
 :root {
   color-scheme: dark;
@@ -157,12 +159,125 @@
   --gx-t-pulse: 1.4s;
   --gx-t-glide: .35s;        /* board glides */
   --gx-t-progress: .4s;      /* width, linear */
+
+  /*
+   * ── Prototype 12 additions ────────────────────────────────────────────
+   * The values design/particl-prototype-12 adds to the set above
+   * (docs/redesign/inventory.md § 3; the prototype has no variables of its
+   * own, so these are its counted values). Read by the new interface
+   * (components/v12/, under the .v12 root) only; nothing a customer sees reads
+   * them while the switch is off. The font order stays the repo's
+   * (docs/redesign-plan.md, decision 1).
+   */
+  /* Surfaces */
+  --gx-sunken: #0D0D10;               /* media placeholder, segment track, tab group, mini-map */
+  --gx-selected: #1C1C20;             /* selected segment or tab, hover fill in menus, avatar */
+  --gx-note: #121216;                 /* sticky note card */
+  --gx-canvas-dot: rgba(255, 255, 255, 0.06);   /* board canvas and Rig grid dots, every 24px */
+  --gx-canvas-step: 24px;
+  /* Lines */
+  --gx-line-control: rgba(255, 255, 255, 0.14); /* control border */
+  --gx-line-strong: rgba(255, 255, 255, 0.16);
+  --gx-line-dashed: rgba(255, 255, 255, 0.2);   /* dashed, 0.18–0.24 */
+  --gx-ring-thin: 0 0 0 1px #0A84FF;            /* ring on selection */
+  --gx-fill-hover: rgba(255, 255, 255, 0.06);   /* menu item and row hover */
+  --gx-fill-hover-soft: rgba(255, 255, 255, 0.04);
+  --gx-fill-hover-strong: rgba(255, 255, 255, 0.1);   /* a tab's ×, small glyph buttons */
+  /* Text: two steps under primary, then the strong, quiet and disabled ones */
+  --gx-text-sec: rgba(235, 235, 245, 0.62);     /* secondary */
+  --gx-text-muted: rgba(235, 235, 245, 0.7);    /* muted: idle tabs, menu shortcuts */
+  --gx-text-strong: rgba(235, 235, 245, 0.8);   /* strong secondary, 0.75–0.85 */
+  /* Accent and status */
+  --gx-tint-06: rgba(10, 132, 255, 0.06);
+  --gx-tint-drop: rgba(10, 132, 255, 0.16);     /* drop highlight */
+  --gx-tint-drop-strong: rgba(10, 132, 255, 0.22);
+  --gx-done-tint-08: rgba(48, 209, 88, 0.08);
+  --gx-done-border: rgba(48, 209, 88, 0.4);
+  --gx-waiting-border: rgba(255, 159, 10, 0.5);
+  --gx-lane-vo: rgba(191, 90, 242, 0.25);       /* timeline tracks: fill, then edge */
+  --gx-lane-vo-edge: rgba(191, 90, 242, 0.6);
+  --gx-lane-music: rgba(100, 210, 255, 0.22);
+  --gx-lane-music-edge: rgba(100, 210, 255, 0.55);
+  --gx-lane-sfx: rgba(255, 159, 10, 0.22);
+  --gx-lane-sfx-edge: rgba(255, 159, 10, 0.55);
+  /* Overlays */
+  --gx-scrim-join: rgba(0, 0, 0, 0.6);          /* the join sheet */
+  --gx-scrim-viewer: rgba(0, 0, 0, 0.78);       /* the Make viewer */
+  --gx-on-media-strong: rgba(0, 0, 0, 0.72);    /* media badge, 0.6–0.72 */
+  --gx-render-veil: rgba(0, 0, 0, 0.42);        /* over a rendering card */
+  --gx-particle: rgba(245, 245, 247, 0.24);
+  --gx-particle-bright: rgba(245, 245, 247, 0.5);
+  /* Image treatments (filters) */
+  --gx-img-mono: grayscale(1) contrast(1.35) brightness(1.05);   /* storyboard */
+  --gx-img-rendering: blur(10px) brightness(0.5);                 /* source under a render */
+  --gx-img-failed: blur(10px) brightness(0.4) grayscale(0.6);
+  --gx-img-make-rendering: blur(8px) brightness(0.55);
+  --gx-img-look: sepia(0.7) saturate(1.5) contrast(1.05);
+  /* Type scale (px; 12 is the floor) */
+  --gx-fs-display: 32px;     /* new-board h1 */
+  --gx-fs-h2-lg: 22px;       /* inspector h2, -0.02em */
+  --gx-fs-h3: 20px;          /* no-access h2 */
+  --gx-fs-title: 18px;       /* join title */
+  --gx-fs-empty: 17px;       /* empty-state title, phone sheet title */
+  --gx-fs-field: 16px;       /* inputs on phone, composer textarea */
+  --gx-fs-label: 12px;       /* labels, eyebrows, mono keys */
+  --gx-ls-h2-lg: -0.02em;
+  --gx-ls-kind: 0.06em;      /* rail kind label */
+  /* Radii */
+  --gx-r-bar: 14px;          /* bars, viewer, groups, join dialog */
+  --gx-r-pop: 12px;          /* cards, large popovers, right toolbar */
+  --gx-r-menu: 10px;         /* menus, wall and board tiles */
+  --gx-r-btn: 8px;           /* buttons, inputs, tiles */
+  --gx-r-item: 7px;          /* small buttons, menu items */
+  --gx-r-tab: 6px;           /* tabs, segments, small controls */
+  /* Sizes */
+  --gx-h-stage-head: 44px;
+  --gx-w-rail: 88px;
+  --gx-w-atomik: 340px;
+  --gx-w-tray: 360px;
+  --gx-h-bar: 40px;          /* bar inputs and buttons */
+  --gx-h-tab: 30px;
+  --gx-w-tab-max: 200px;
+  --gx-h-item: 32px;         /* menu items, card action buttons */
+  --gx-h-filter: 26px;       /* filter chips */
+  --gx-h-progress: 3px;
+  --gx-touch: 44px;          /* phone targets */
+  /* Spacing */
+  --gx-sp-2: 2px;
+  --gx-sp-4: 4px;
+  --gx-sp-6: 6px;
+  --gx-sp-8: 8px;
+  --gx-sp-10: 10px;
+  --gx-sp-12: 12px;
+  --gx-sp-14: 14px;
+  --gx-sp-16: 16px;
+  --gx-sp-20: 20px;
+  --gx-sp-24: 24px;          /* canvas grid gap, page side padding */
+  --gx-sp-40: 40px;          /* Home section gap */
+  /* Elevation */
+  --gx-shadow-float: 0 8px 24px rgba(0, 0, 0, 0.5);   /* floating controls */
+  --gx-shadow-drag: 0 24px 60px rgba(0, 0, 0, 0.7);   /* drag ghost */
+  /* Motion */
+  --gx-t-card: .3s;          /* card pop */
+  --gx-t-shimmer: 1.6s;
+  --gx-t-gather: .6s;
+  --gx-t-bar: .6s;           /* progress bar width */
+  --gx-t-drift: 8s;          /* particles, 6–11 s */
+  --gx-t-tip: .45s;          /* tooltip delay */
 }
 
 /* The three animations Graphite has (README › Motion). No other animation. */
 @keyframes gx-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes gx-pop { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
 @keyframes gx-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+/* Prototype 12's five more (inventory § 3, its om-* keyframes): the particle field, the bar's shimmer, the gather and the
+   reveal of a finished take. Every rule that plays one has a still fallback under prefers-reduced-motion: reduce
+   (components/v12/v12.css). */
+@keyframes gx-drift { 0% { transform: translate(0, 0); } 50% { transform: translate(6px, -9px); } 100% { transform: translate(0, 0); } }
+@keyframes gx-drift2 { 0% { transform: translate(0, 0); } 50% { transform: translate(-8px, 7px); } 100% { transform: translate(0, 0); } }
+@keyframes gx-shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
+@keyframes gx-gather { 0% { opacity: 1; transform: scale(1); } 70% { opacity: .9; transform: scale(.2); } 100% { opacity: 0; transform: scale(.05); } }
+@keyframes gx-reveal { 0% { filter: blur(14px) brightness(.45); opacity: .6; } 100% { filter: blur(0) brightness(1); opacity: 1; } }
 
 /*
  * ── Older names ──────────────────────────────────────────────────────────

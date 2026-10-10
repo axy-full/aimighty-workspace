@@ -1,5 +1,7 @@
 # Particl: master scope of work, v2 (6 October 2026)
 
+> **Correction, 10 Oct 2026 (Inngest Cloud, not self-hosted).** Production's background work runs on **Inngest Cloud**, which calls the app at `https://particl.si/api/inngest` (`DISPATCH_MODE=inngest`, `INNGEST_SERVE_ORIGIN=https://particl.si`, `INNGEST_STREAMING=true`, `INNGEST_BASE_URL` unset), as `docs/selfhost-test.md` (8 Oct) set it up and the live settings confirmed on 10 Oct. Where this file plans a **self-hosted** Inngest (an internal `--sdk-url`, `INNGEST_BASE_URL` at an internal address), that plan was not carried out. `WORKER_ORIGIN` (127.0.0.1:3000) was never built: in the native-dispatch fallback the app calls its own `/api/worker` through the public `APP_ORIGIN`.
+
 Owner: Akshay. Repo: `axy-full/aimighty-workspace` (public). Live site: particl.si (Vercel).
 This file replaces the order of work in `docs/handover-2026-10-05.md` Part B § B7. Everything else in that handover (rules, architecture B4, catalogue B5, platform runbook Part C, package prompts Part D) still applies unless this file changes it. Commit it as `docs/particl-sow.md` (no secrets, public repo).
 
@@ -76,7 +78,7 @@ This file replaces the order of work in `docs/handover-2026-10-05.md` Part B § 
 8. **Phone:** Home with what needs you, plan approval with the price as the button, full-screen review with swipe (never spends), project record, simple Make.
 9. **Autosave:** no "Save this project before asking Atomik" anywhere.
 10. **Guest Home** (behind its /admin "Guest Home" setting, off): signed-out Home, read-only sample from "Particl sample", invite-only sign-up enforced on the server, Request access stored in /admin, /signup on Graphite. The old homepage and its copy go when the owner turns it on.
-11. **Sample production (the dunes film):** generated only after the owner approves draft v3, in "Particl sample" (engine cap $32.60 for the run, 326 cr balance wall, back to $0 after). Plan: Shot 1 and 2 Seedance 2.5 hero takes (43 cr each), Shot 3 Kling 3.0 draft (7 cr); 93 cr plan, up to 186 cr fixes; 326 cr ceiling.
+11. **Sample production (the dunes film):** generated only after the owner approves draft v3, in "Particl sample" (engine cap $32.60 for the run, 326 cr balance wall, back to $0 after). Plan: Shot 1 and 2 Seedance 2.5 hero takes (43 cr each), Shot 3 Kling 3.0 draft (7 cr); 93 cr plan, up to 186 cr fixes; 326 cr ceiling. The sample mark refuses every paid step in that workspace; an owner or admin lifts it for one Atomik run, always in Ask (Settings › Spending rules lifts it for their next ask on a board; the API can also lift it for a run of theirs already in progress), and it comes back on by itself when that run ends, after 2 hours, when any owner or admin puts it back, or when the mark is undone (`lib/demo/lift.server.ts`).
 12. **Demo workspace** "Particl demo" with the cap field in /admin.
 13. **Deleted in the same release:** the ten stage pages, their routes (redirected to board regions), their styles, the old Gen and Viral pages, and the new-interface switch and its code.
 
@@ -165,7 +167,7 @@ Every model goes in through the same door: a verified price, a mocked test, one 
 | Liveblocks | Live board sync | Free or Pro $25/mo (yearly) |
 | MCP + TypeScript SDK | Outside agents use Particl safely | Free |
 | Langfuse | Agent run traces and cost | Hobby free; Core $29/mo |
-| Inngest (self-hosted) | Background renders, 1,000 jobs, per-plan limits | Free |
+| Inngest (self-hosted; **corrected 10 Oct: Inngest Cloud in production**) | Background renders, 1,000 jobs, per-plan limits | Free |
 | FFmpeg, OpenTimelineIO | Captions, clips, renders, AAF | Free |
 | Remotion | Designed captions, cards, ad versions, final cut | $100/mo from go-live (10,000 renders) |
 | Hostinger KVM 8 + Coolify | Own server and deploys | $25.99/mo (2-year term) |

@@ -30,10 +30,13 @@ import { rigUndoSink, setRigDeleteHandler } from "@/lib/shell/rig-commands";
 import { useShotEstimate, sharedShotEstimator } from "@/lib/workspace/use-shot-estimate";
 import { useWorkspace } from "@/lib/workspace/state";
 import type { Generation, SelectableItem } from "@/lib/workspace/types";
-import type { ShellSeams } from "../WorkspaceShell";
 import { videoReferenceProblem } from "@/lib/generationReferences";
 import { useTeamCanvas, type TeamCanvasApi } from "./use-team-canvas";
 import { useCutouts, type CutoutsApi } from "./use-cutouts";
+import { useBoardOpen } from "@/lib/board/active";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
+import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
+import { createHeldEdits, editsFrozen, registerDrain, sendsAllowed, subscribeSwitch, whileSwitching } from "@/lib/shell/switch-workspace";
 
 /**
  * The Rig's live state, shared by the shot list, the node graph, the
@@ -185,7 +188,9 @@ function useReferenceQuote(scope: string, query: string | null): Quote | null {
 export function RigProvider({ scope, children }: { scope: string; children: ReactNode }) {
   const ws = useWorkspace();
   const { state, dispatch, toast } = ws;
-  const projectId = state.view === "studio" ? state.projectId : null;
+  /* The board (components/graphite/board) is the Rig's page in the new interface: open, it is the Rig on screen. */
+  const boardOpen = useBoardOpen();
+  const projectId = state.view === "studio" || boardOpen ? state.projectId : null;
   /* The project the shell is on right now, on any page: an undo is only ever for it. */
   const shellProject = useRef(state.projectId);
   useEffect(() => { shellProject.current = state.projectId; }, [state.projectId]);
@@ -213,6 +218,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   /* Set once the team canvas hook exists below: its waiting edit goes out before the draft save. */
   const teamFlushRef = useRef<(() => Promise<void>) | null>(null);
+  /* …and, before leaving the workspace, every send of it still out ends too. */
+  const teamDrainRef = useRef<(() => Promise<boolean>) | null>(null);
   /* A local edit is also a team canvas edit; publishRef is set once the team canvas hook exists below. */
   const publishRef = useRef<((before: Project, after: Project) => void) | null>(null);
   /* What a merge brought in: onto the team canvas only where it still holds what the Rig had. */
@@ -225,6 +232,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     chain.current = chain.current.catch(() => false).then(async () => {
       if (!draftRef.current) return false;
       if (!dirty.current && !options.force) return true;
+      /* The switch route has been asked (lib/shell/switch-workspace.ts): nothing more goes to this workspace. */
+      if (!sendsAllowed()) return !dirty.current;
       await teamFlushRef.current?.();
       /* Read after that wait, together: what is sent is exactly what counts as saved. */
       const current = draftRef.current;
@@ -270,10 +279,15 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   }, [scope, setDraft, toast]);
   useEffect(() => { flushRef.current = () => flush(); }, [flush]);
 
+  const [heldWrites] = useState(() => createHeldEdits<{ fn: (p: Project) => Project; publish: boolean; made: boolean }>());
   /* The masters this window knows of (set once the team canvas hook exists below): its own edits never change one. */
   const mastersRef = useRef<ReadonlySet<string>>(new Set());
   /** `made`: the change builds records (shots from boards, inputs, a filed take) — noted as made, for the merge. */
   const write = useCallback((fn: (p: Project) => Project, publish: boolean, made = false) => {
+    /* A workspace switch is running: the edit waits (the page takes none of its own then; this is the app's, say a take
+       filed or a teammate's change). If the switch does not happen it is made then, and saved as usual; if it does, it
+       is never sent to the workspace being left (a take is filed again from its job wherever the project opens next). */
+    if (editsFrozen()) { heldWrites.hold({ fn, publish, made }); return; }
     const current = draftRef.current;
     if (!current) return;
     let changed = fn(current.project);
@@ -298,7 +312,12 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     setSaveState("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => void flush(), SAVE_DEBOUNCE_MS);
-  }, [setDraft, flush, toast]);
+  }, [setDraft, flush, toast, heldWrites]);
+  /* A switch that did not happen: what waited during it is made now, in order, and saved as usual. */
+  useEffect(() => subscribeSwitch(() => {
+    if (editsFrozen() || !heldWrites.size) return;
+    for (const w of heldWrites.release()) write(w.fn, w.publish, w.made);
+  }), [write, heldWrites]);
   const update = useCallback((fn: (p: Project) => Project) => write(fn, true), [write]);
   /** A build (lib/production/rig-build) or a filed take: what it made is noted, as made. */
   const make = useCallback((fn: (p: Project) => Project) => write(fn, true, true), [write]);
@@ -313,6 +332,11 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     const name = draft.project.name || "the last project";
     void (async () => {
       for (let attempt = 0; !entry.stop; attempt++) {
+        /* A workspace switch has asked its route: nothing more goes to this workspace (if it does not happen, this goes on). */
+        if (!sendsAllowed()) {
+          await new Promise<void>((resolve) => { entry.wake = resolve; setTimeout(resolve, RETRY_MS); });
+          continue;
+        }
         const step = writeMergedDraft(API, scope, { base: draft.base, mine: draft.project, revision: draft.revision, writer: draft.writer, ancestors: draft.ancestors, made: draft.made })
           .catch((err: unknown) => {
             if (!(err instanceof DraftRequestError && (err.retryable || err.uncertain))) {
@@ -406,7 +430,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   /* Back on the Rig after another page of this tab saved the draft (a Studio stage, Marketing): it catches up before
      anything is built from it. */
-  const onRig = state.page === "rig";
+  const onRig = state.page === "rig" || boardOpen;
   const wasOnRig = useRef(onRig);
   useEffect(() => {
     const came = onRig && !wasOnRig.current;
@@ -441,13 +465,13 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   /* ── The production's team canvas (shared Rig nodes, live when Liveblocks is set up) ── */
   const readDraft = useCallback(() => draftRef.current?.project ?? null, []);
   const team = useTeamCanvas({ scope, productionId: project?.productionProjectId ?? null, current: readDraft, fold });
-  useEffect(() => { publishRef.current = team.publish; catchUpRef.current = team.catchUp; teamFlushRef.current = team.flush; }, [team.publish, team.catchUp, team.flush]);
+  useEffect(() => { publishRef.current = team.publish; catchUpRef.current = team.catchUp; teamFlushRef.current = team.flush; teamDrainRef.current = team.drain; }, [team.publish, team.catchUp, team.flush, team.drain]);
   useEffect(() => { mastersRef.current = team.locks; }, [team.locks]);
 
   /* ── Jobs (the Studio's own poller; it also files finished takes) ──── */
   const [run, setRun] = useState<Run | null>(null);
   const empty = useMemo(() => newProject(""), []);
-  const jobsEnabled = !!project && (state.page === "rig" || run !== null);
+  const jobsEnabled = !!project && (onRig || run !== null);
   /* Takes the poller files are made from their job, the same in every window: noted as made. */
   const change = useCallback((fn: (p: Project) => Project) => make(fn), [make]);
   const jobs = useProductionJobs(project ?? empty, jobsEnabled, change, scope);
@@ -579,7 +603,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
         if (settled.state === "lost") earlier = settled.reason;
         /* Mapping, references and the request body are the shot's as it is now; the re-quote,
            the gate and the paid POST are the shared dispatch (generate-submit). */
-        if (!(await flush()) || draftRef.current?.project.id !== draftId) throw new Error("Save your latest work before generating.");
+        if (!(await flush()) || draftRef.current?.project.id !== draftId) throw new SaveFailedError();
         const mapping = await studioRequest<unknown>(`${API}/projects`, {
           method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
           body: JSON.stringify({ action: "map-shot", projectId: draftId, nodeId: shot.id }),
@@ -681,7 +705,11 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     setNotice(null);
   }, [dispatch, ws, setNotice]);
 
+  /* The calls below work out the new project from the draft as it is now, so while a workspace switch runs they change
+     nothing and say so (whileSwitching): a project held from then would undo whatever the drain's save merged in. */
   const patchShot = useCallback((id: string, patch: ShotPatch): string | null => {
+    const switching = whileSwitching();
+    if (switching) return switching;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     try {
@@ -695,6 +723,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   }, [update]);
 
   const addShot = useCallback(() => {
+    const switching = whileSwitching();
+    if (switching) { setNotice(switching); return; }
     const current = draftRef.current;
     if (!current) return;
     try {
@@ -708,6 +738,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   }, [update, select, setNotice]);
 
   const setRefKind = useCallback((id: string, kind: RefKind): string | null => {
+    const switching = whileSwitching();
+    if (switching) return switching;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     const card = current.project.nodes.find((n) => n.id === id);
@@ -743,7 +775,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     const node = current?.project.nodes.find((n) => n.id === id);
     const productionId = current?.project.productionProjectId;
     if (!current || !node) return "That card is no longer on the canvas.";
-    if (!productionId) return "Save this project before locking a master.";
+    if (!productionId) return SAVING_NOW;
     const problem = lockProblem(node, current.project, !!node.elementId && mastersRef.current.has(node.elementId));
     if (problem) return problem;
     /* The card as this window shows it reaches the team canvas first: the lock reads it there. */
@@ -786,6 +818,13 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const fileCutoutOn = useCallback((id: string, sourceAssetId: string, jobId: string): string | null => {
     const current = draftRef.current;
     if (!current) return "Open a project first.";
+    /* A cut-out that finished while a workspace switch runs (the app's own edit): held as an update of the draft as it
+       will be then, and filed if the switch does not happen. */
+    if (editsFrozen()) {
+      const at = new Date().toISOString();
+      update((p) => { const filed = fileCutout(p, id, sourceAssetId, jobId, at); return typeof filed === "string" ? p : filed; });
+      return null;
+    }
     const next = fileCutout(current.project, id, sourceAssetId, jobId, new Date().toISOString());
     if (typeof next === "string") return next;
     /* An edit like any other: the new version and the card's source to the team canvas, then the draft save. */
@@ -795,6 +834,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const cut = useCutouts({ scope, draftId: project?.id ?? null, current: readDraft, file: fileCutoutOn, toast });
 
   const connect = useCallback((source: string, target: string): string | null => {
+    const switching = whileSwitching();
+    if (switching) return switching;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     const result = connectNodes(current.project, source, target);
@@ -806,6 +847,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const planRequests = useMemo(() => (project ? rigPlanRequests(project, shots) : []), [project, shots]);
 
   const apply = useCallback((fn: (project: Project) => Project | { project: Project; id?: string }, pick?: boolean): string | null => {
+    const switching = whileSwitching();
+    if (switching) return switching;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     try {
@@ -820,7 +863,37 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     }
   }, [make, select]);
   const save = useCallback(() => flush({ force: true }), [flush]);
+  /* Leaving the workspace: the open project's pending edit (a save already out ends first, and one that failed is sent
+     again), the team canvas's, then the projects left with edits not saved yet — each tried once more now. An edit made
+     while that ran goes round again; whatever could not be saved stays here as it is, and the answer is false. */
+  const drain = useCallback(async (): Promise<boolean> => {
+    const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+    for (let round = 0; round < 3; round++) {
+      if (!(await flush()) && draftRef.current) return false;
+      if (teamDrainRef.current && !(await teamDrainRef.current())) return false;
+      for (const [id, entry] of [...parked.current]) {
+        if (entry.stop) {
+          /* Refused when it was left: once more, here. Its loop has ended, so nothing else is sending it. */
+          const saved = await writeMergedDraft(API, scope, { base: entry.draft.base, mine: entry.draft.project, revision: entry.draft.revision, writer: entry.draft.writer, ancestors: entry.draft.ancestors, made: entry.draft.made }).catch(() => null);
+          if (saved && parked.current.get(id) === entry) parked.current.delete(id);
+        } else {
+          /* Still being saved on its own: its next try now rather than after its wait, and this waits for it. */
+          entry.wake();
+          await tick();
+          await entry.inflight;
+        }
+      }
+      await tick();
+      if (parked.current.size) return false;
+      if (!dirty.current) return true;
+    }
+    return false;
+  }, [flush, scope]);
+  /* Registered with every workspace switch, whichever control starts it. */
+  useEffect(() => registerDrain(drain), [drain]);
   const removeShot = useCallback((id: string): string | null => {
+    const switching = whileSwitching();
+    if (switching) return switching;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     let out: ReturnType<typeof removeShots>;
@@ -857,7 +930,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     window.addEventListener(RIG_INTENT_EVENT, waiting);
     return () => window.removeEventListener(RIG_INTENT_EVENT, waiting);
   }, []);
-  const openId = project?.id ?? null, onRigPage = state.page === "rig";
+  const openId = project?.id ?? null, onRigPage = onRig;
   useEffect(() => {
     if (!openId || !onRigPage) return;
     const asset = takeRigIntent(openId);
@@ -875,14 +948,4 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, selectedCard, select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, teamView, masters, canUnlock, lockMaster, unlockMaster, cut.cutouts, cut.quote, cut.start]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
-}
-
-/** The shell's Generate seams, fed by the Rig. */
-export function RigSeams({ children }: { children: (seams: ShellSeams) => ReactNode }) {
-  const { generate, quote: live, blocked, notice } = useRig();
-  const { state, dispatch } = useWorkspace();
-  /* G, ← / → and Space are the shell's one keymap (#233); the Rig only feeds its seams. */
-  const onTogglePlay = useCallback(() => dispatch({ type: "patch", patch: { playing: !state.playing } }), [dispatch, state.playing]);
-  const quote = live?.state === "ready" && live.credits !== null ? formatCredits(live.credits) : null;
-  return <>{children({ onGenerate: generate, onTogglePlay, generate: { quote, blocked, notice } })}</>;
 }

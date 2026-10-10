@@ -8,6 +8,7 @@ import { cycleBounds } from "./cycle";
 import { modelLabel } from "./models";
 import { creditFundingFor } from "./billingLedger";
 import { GROK_STT_MODEL } from "./xaiVoice";
+import { isAstraComputeEngine } from "./astra-blender/backend";
 
 /**
  * Statements: what a workspace was billed, itemised by production, shot
@@ -168,7 +169,7 @@ const statementKind = (kind: string): StatementLine["kind"] =>
 export function meteredLine(e: Pick<MeterRow, "kind" | "model"> & { engine?: string | null }): { take: string; what: string } {
   if (e.kind === "training") return { take: "Training", what: "Identity training" };
   if (e.kind === "text") return { take: "Atomik", what: `Thinking · ${e.model}` };
-  if (e.engine === "vercel-sandbox") return { take: "Astra", what: "Astra render" };
+  if (isAstraComputeEngine(e.engine)) return { take: "3D blocking", what: "3D blocking render" };
   if (e.model === GROK_STT_MODEL) return { take: "Transcript", what: "Transcription" };
   const kind = statementKind(e.kind);
   return { take: kind === "image" ? "Still" : kind === "audio" ? "Audio" : "Video", what: modelLabel(e.model) };
@@ -225,7 +226,7 @@ export async function statementFor(month: string, projectId: string | null): Pro
       projectId: r.project_id, projectName: r.project_name ?? "", shotId: r.shot_id, shotCode: r.shot_code ?? "", shotTitle: r.shot_title ?? "",
     });
   }
-  /* Metered work with no take of its own: a transcription, an Astra render,
+  /* Metered work with no take of its own: a transcription, a 3D blocking render,
      anything else the meter billed under an id that is not a generation. The
      balance lost these credits, so the statement lists them. A meter row whose
      take exists but sits outside this month or production is that take's,

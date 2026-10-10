@@ -29,6 +29,8 @@ function route() {
     },
     "@/lib/tenant": { requireTenant: () => ({ id: "current-workspace" }) },
     "@/lib/workbench/request-scope": requestScope,
+    /* Who published the shared copy, as the workspace may read it: unchanged here (tests/unit/platformOwnerPrivacy.spec.ts). */
+    "@/lib/platformOwnerPrivacy": { storedActorMaskHere: async () => (value: unknown) => value },
     "@/lib/db": { db: () => ({ execute: record("query", { rows: [] }) }) },
     "@/lib/workbench/studio-schema": { saveSchema },
     "@/lib/workbench/save-problem": saveProblem,

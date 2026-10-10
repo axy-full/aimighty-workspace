@@ -7,6 +7,8 @@ import { compileAstraBlender, ASTRA_BLENDER_RUNTIME_LIMITS, ASTRA_BLENDER_OUTPUT
 import { compileAstraNativeRuntime, type AstraNativeBindings } from "./native-runtime";
 import { astraNativeSchema, type AstraNativeSource } from "./native";
 import { astraTextureDimensions, ASTRA_GLB_BYTES, validateAstraGlb as validateGlbContainer } from "./glb";
+import { astraRenderBackend, astraSelfhostConfig, type AstraRenderBackend } from "./backend";
+import { createSelfhostSdk } from "./selfhost-sdk";
 
 export const ASTRA_SANDBOX_INPUT_DIR = "/vercel/sandbox/astra/input";
 export const ASTRA_SANDBOX_OUTPUT_DIR = "/vercel/sandbox/astra/output";
@@ -43,7 +45,8 @@ export type AstraRenderCallbacks = {
   onArtifacts?: (artifacts:AstraRenderArtifacts)=>Promise<void>;
   onStopped?: (usage:AstraRuntimeUsage|null)=>Promise<void>;
 };
-export type AstraSandboxDependencies = AstraRenderCallbacks & { sdk?: AstraSandboxSdk; snapshotId?: string; signal?: AbortSignal; runtimeId?:string };
+/** `backend` is the job's own (from its recorded engine); it defaults to ASTRA_RENDER_BACKEND. */
+export type AstraSandboxDependencies = AstraRenderCallbacks & { sdk?: AstraSandboxSdk; snapshotId?: string; signal?: AbortSignal; runtimeId?:string; backend?: AstraRenderBackend };
 /** Sandbox convenience I/O auto-resumes stopped VMs in SDK 3.3. Capture a
  * Session once and use its methods so cancellation/timeout can never purchase
  * another session under an already-claimed job. Metadata lookups remain read-only. */
@@ -68,6 +71,17 @@ const sdk: AstraSandboxSdk = {
   },
   get: async options => astraSessionHandle(await Sandbox.get(options)),
 };
+/* The self-hosted workers (lib/astra-blender/selfhost-sdk.ts), read from the environment on each call. */
+const selfhostSdk: AstraSandboxSdk = {
+  create: async options => {
+    if (engineMock()) throw new AstraRuntimeError("Native 3D compute is disabled while ENGINE_MOCK=1.", "not_configured");
+    return createSelfhostSdk().create(options);
+  },
+  get: options => createSelfhostSdk().get(options),
+};
+const sdkFor = (backend: AstraRenderBackend) => backend === "selfhost" ? selfhostSdk : sdk;
+/* Vercel's control-plane credentials belong to Vercel calls only; a self-hosted call never reads them. */
+const vendorCredentials = (backend: AstraRenderBackend) => backend === "vercel" ? credentials() : {};
 
 export class AstraRuntimeError extends Error {
   constructor(message: string, public code: "not_configured" | "invalid_input" | "render_failed" | "invalid_output" | "not_running" | "stop_unconfirmed") {
@@ -77,14 +91,24 @@ export class AstraRuntimeError extends Error {
 }
 
 export function astraRuntimeStatus() {
-  const configured = /^snap_[A-Za-z0-9_-]{3,160}$/.test(process.env.ASTRA_BLENDER_SNAPSHOT_ID ?? "");
+  const limits = { blenderVersion: ASTRA_BLENDER_VERSION, timeoutMs: ASTRA_BLENDER_RUNTIME_LIMITS.timeoutMs, vcpus: 2, memoryMb: 4096 };
+  const backend = astraRenderBackend();
+  if (backend === null) return { configured: false, reason: "Native 3D rendering is not connected. The 3D render backend setting is not recognised.", ...limits };
+  if (backend === "selfhost") {
+    // The workers and their secret only: the snapshot and Vercel credentials are never read in this mode.
+    const configured = astraSelfhostConfig() !== null;
+    return { configured, reason: configured ? null : "Native 3D rendering is not connected. The render workers must be configured on this host.", ...limits };
+  }
+  const snapshot = /^snap_[A-Za-z0-9_-]{3,160}$/.test(process.env.ASTRA_BLENDER_SNAPSHOT_ID ?? "");
+  // Off Vercel the SDK has no OIDC context to fall back on: without all three
+  // control-plane credentials a funded render could never start or be reconciled.
+  const credentialed = Boolean(process.env.VERCEL) || Object.keys(credentials()).length > 0;
+  const configured = snapshot && credentialed;
   return {
     configured,
-    reason: configured ? null : "Native 3D rendering is not connected. A 3D runtime snapshot must be configured.",
-    blenderVersion: ASTRA_BLENDER_VERSION,
-    timeoutMs: ASTRA_BLENDER_RUNTIME_LIMITS.timeoutMs,
-    vcpus: 2,
-    memoryMb: 4096,
+    reason: configured ? null : !snapshot ? "Native 3D rendering is not connected. A 3D runtime snapshot must be configured."
+      : "Native 3D rendering is not connected. 3D runtime credentials must be configured on this host.",
+    ...limits,
   };
 }
 
@@ -178,17 +202,36 @@ export async function renderAstraNative(sceneValue:AstraScene,nativeValue:AstraN
 }
 
 async function executeAstraProgram(program:string,inputs:AstraRenderInput[],onCreated:((id:string)=>Promise<void>)|undefined,dependencies:AstraSandboxDependencies):Promise<AstraRenderArtifacts>{
-  const snapshotId = dependencies.snapshotId ?? process.env.ASTRA_BLENDER_SNAPSHOT_ID;
-  if (!snapshotId || !/^snap_[A-Za-z0-9_-]{3,160}$/.test(snapshotId)) throw new AstraRuntimeError(astraRuntimeStatus().reason ?? "A 3D runtime snapshot must be configured.", "not_configured");
+  const backend = dependencies.backend ?? astraRenderBackend();
+  if (backend === null) throw new AstraRuntimeError(astraRuntimeStatus().reason ?? "The 3D render backend setting is not recognised.", "not_configured");
+  let source: { type: "snapshot"; snapshotId: string } | undefined;
+  if (backend === "selfhost") {
+    if (!astraSelfhostConfig()) throw new AstraRuntimeError("Native 3D rendering is not connected. The render workers must be configured on this host.", "not_configured");
+  } else {
+    const snapshotId = dependencies.snapshotId ?? process.env.ASTRA_BLENDER_SNAPSHOT_ID;
+    if (!snapshotId || !/^snap_[A-Za-z0-9_-]{3,160}$/.test(snapshotId)) throw new AstraRuntimeError(astraRuntimeStatus().reason ?? "A 3D runtime snapshot must be configured.", "not_configured");
+    source = { type: "snapshot", snapshotId };
+  }
+  const runtime = dependencies.sdk ?? sdkFor(backend);
   const signal = dependencies.signal ? AbortSignal.any([dependencies.signal, AbortSignal.timeout(ASTRA_BLENDER_RUNTIME_LIMITS.timeoutMs)]) : AbortSignal.timeout(ASTRA_BLENDER_RUNTIME_LIMITS.timeoutMs);
   signal.throwIfAborted();
   if(dependencies.runtimeId && !runtimeName.test(dependencies.runtimeId)) throw new AstraRuntimeError("Invalid runtime name.","invalid_input");
-  const instance = await (dependencies.sdk ?? sdk).create({
-    ...credentials(), name: dependencies.runtimeId ?? `astra-blender-${randomUUID()}`, source: { type: "snapshot", snapshotId },
-    region: "iad1", timeout: ASTRA_BLENDER_RUNTIME_LIMITS.timeoutMs, resources: { vcpus: 2 }, networkPolicy: "deny-all",
+  const options = {
+    name: dependencies.runtimeId ?? `astra-blender-${randomUUID()}`,
+    region: "iad1", timeout: ASTRA_BLENDER_RUNTIME_LIMITS.timeoutMs, resources: { vcpus: 2 }, networkPolicy: "deny-all" as const,
     env: {}, ports: [], persistent: false, signal,
-  });
-  let failed = false;
+  };
+  // A self-hosted worker takes only the name: its runtime is already installed at the same paths.
+  const instance = source ? await runtime.create({ ...vendorCredentials(backend), ...options, source }) : await runtime.create(options);
+  let failed = false, stopped = false;
+  const stopAndRecord = async () => {
+    await instance.stop({ signal: AbortSignal.timeout(10_000) });
+    if(dependencies.onStopped){
+      const final=await runtime.get({...vendorCredentials(backend),name:instance.name,resume:false,signal:AbortSignal.timeout(10_000)});
+      await dependencies.onStopped(runtimeUsage(final));
+    }
+    stopped = true;
+  };
   try {
     // Persist BEFORE files or command submission. A failed checkpoint stops the VM.
     await onCreated?.(instance.name);
@@ -213,33 +256,37 @@ async function executeAstraProgram(program:string,inputs:AstraRenderInput[],onCr
       glb=candidate;
     } catch { signal.throwIfAborted(); /* A full native scene may not have a supported portable GLB representation. */ }
     const artifacts = { blend, preview, ...(glb?{glb}:{}) };
+    /* Self-hosted: the outputs are in memory, so stop the session now. Its usage then covers the render
+       alone (a slow storage write cannot stretch it past the quoted 180 s) and the worker is free sooner.
+       A stop that fails here does not lose the outputs: they are stored, and the stop is retried below.
+       Vercel keeps its order: the VM's own 180 s timeout already bounds its reported duration. */
+    if (backend === "selfhost") await stopAndRecord().catch(() => {});
     await dependencies.onArtifacts?.(artifacts);
     return artifacts;
   } catch (error) { failed = true; throw error; }
   finally {
     try {
-      await instance.stop({ signal: AbortSignal.timeout(10_000) });
-      if(dependencies.onStopped){
-        const stopped=await (dependencies.sdk??sdk).get({...credentials(),name:instance.name,resume:false,signal:AbortSignal.timeout(10_000)});
-        await dependencies.onStopped(runtimeUsage(stopped));
-      }
+      if (!stopped) await stopAndRecord();
     }
     catch { if (!failed) throw new AstraRuntimeError("The 3D runtime completed, but runtime shutdown could not be confirmed. The persisted runtime needs reconciliation.", "stop_unconfirmed"); }
   }
 }
 
 /** Read/cancel only; never resumes or purchases a replacement for a stopped run. */
-export async function getAstraRenderStatus(id: string, dependencies: Pick<AstraSandboxDependencies, "sdk" | "signal"> = {}) {
+export async function getAstraRenderStatus(id: string, dependencies: Pick<AstraSandboxDependencies, "sdk" | "signal" | "backend"> = {}) {
   if (!runtimeName.test(id)) throw new AstraRuntimeError("Invalid 3D runtime identity.", "invalid_input");
-  const instance = await (dependencies.sdk ?? sdk).get({ ...credentials(), name: id, resume: false, signal: dependencies.signal });
+  const backend = dependencies.backend ?? astraRenderBackend() ?? "vercel";
+  const instance = await (dependencies.sdk ?? sdkFor(backend)).get({ ...vendorCredentials(backend), name: id, resume: false, signal: dependencies.signal });
   return { runtimeId: instance.name, status: instance.status, usage:runtimeUsage(instance) };
 }
 
-export async function cancelAstraRender(id: string, dependencies: Pick<AstraSandboxDependencies, "sdk" | "signal"> = {}) {
+export async function cancelAstraRender(id: string, dependencies: Pick<AstraSandboxDependencies, "sdk" | "signal" | "backend"> = {}) {
   if (!runtimeName.test(id)) throw new AstraRuntimeError("Invalid 3D runtime identity.", "invalid_input");
-  const instance = await (dependencies.sdk ?? sdk).get({ ...credentials(), name: id, resume: false, signal: dependencies.signal });
+  const backend = dependencies.backend ?? astraRenderBackend() ?? "vercel";
+  const runtime = dependencies.sdk ?? sdkFor(backend);
+  const instance = await runtime.get({ ...vendorCredentials(backend), name: id, resume: false, signal: dependencies.signal });
   if (!["stopped", "failed", "aborted"].includes(instance.status)) await instance.stop({ signal: dependencies.signal ?? AbortSignal.timeout(10_000) });
-  const final=await (dependencies.sdk??sdk).get({...credentials(),name:id,resume:false,signal:dependencies.signal??AbortSignal.timeout(10000)});
+  const final=await runtime.get({...vendorCredentials(backend),name:id,resume:false,signal:dependencies.signal??AbortSignal.timeout(10000)});
   return { runtimeId: instance.name, stopped: true, usage:runtimeUsage(final) };
 }
 

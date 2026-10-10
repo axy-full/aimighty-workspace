@@ -4,8 +4,9 @@ import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
 import { resolveModel } from "@/lib/atomik";
 import { gatewayReachable } from "@/lib/gateway";
 import { vendorKey } from "@/lib/vendorKeys";
-import { withGenerationRequest } from "@/lib/generationRequests";
+import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
 import { PaidTextError, paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure, requestMaxCredits } from "@/lib/paidText";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 import { textRunCost } from "@/lib/textRunCost";
 import { PROJECT_ID } from "@/lib/atomikMemoryText";
 import { quoteMemoryRead, readText, runMemoryRead } from "@/lib/atomikMemoryRead";
@@ -46,6 +47,8 @@ export const POST = withTenant(async (req: Request) => {
   }
   const quoteOnly = body.quoteOnly === true;
   if (quoteOnly) { const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure; }
+  /* The sample workspace spends nothing: answered before the request is claimed. A quote still answers. */
+  if (!quoteOnly) { const off = await sampleWorkspaceOff(); if (off) return off; }
   const run = async () => {
     try {
       const text = readText(body.text);
@@ -63,5 +66,5 @@ export const POST = withTenant(async (req: Request) => {
       return NextResponse.json({ id: result.id, model, entries: result.read.entries, skipped: result.read.skipped, ...(await textRunCost(result)) });
     } catch (error) { return paidTextFailure(error); }
   };
-  return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run);
+  return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run, { answerAfterMs: ANSWER_AFTER_MS });
 }, { requireRequestScope: true });

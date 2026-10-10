@@ -8,6 +8,7 @@ import { platformDb, platformReady } from "@/lib/platform";
 import { creditsApply } from "@/lib/credits";
 import { accountFailure, AccountError } from "@/lib/accountDb";
 import { createWorkspaceInvite, mailWorkspaceInvite } from "@/lib/teamInvitations";
+import { ownerMaskFor, supportMemberId } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 const INVITE_DAYS = 7;
@@ -29,9 +30,11 @@ export const GET = withTenant(async function GET() {
 
   const [members, invites, stats] = await Promise.all([
     platformDb().execute({
+      /* Two-factor per person (Team security, Gaps B): whether their account has an authenticator on, nothing more. */
       sql: `SELECT a.id, a.email, a.name, a.last_seen, a.created_at, a.locked_until, a.disabled AS a_disabled,
-                   m.role, m.disabled AS m_disabled, m.created_at AS joined_at
+                   m.role, m.disabled AS m_disabled, m.created_at AS joined_at, asec.enabled_at AS two_step_at
             FROM memberships m JOIN accounts a ON a.id = m.account_id
+            LEFT JOIN account_security asec ON asec.account_id = a.id
             WHERE m.workspace_id = ? AND a.deleted_at IS NULL ORDER BY m.created_at ASC`,
       args: [ws.id],
     }),
@@ -43,6 +46,11 @@ export const GET = withTenant(async function GET() {
     db().execute(`SELECT created_by AS id, COUNT(*) AS clips${inCredits ? "" : ", COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0) AS spend"}
                   FROM generations GROUP BY created_by`),
   ]);
+  /* Outside the house the platform owner is one row reading "Particl support",
+     with no address, and can be removed like anyone: the client sees and
+     controls platform access, and the seats add up (lib/platformOwnerPrivacy.ts). */
+  const mask = await ownerMaskFor(ws);
+  const who = (r: any) => (mask.hides(r) ? { email: "", name: mask.name(r), support: true } : { email: r.email, name: r.name });
   const made = new Map((stats.rows as any[]).map((r) => [String(r.id), { clips: Number(r.clips), spend: Number(r.spend) }]));
 
   return NextResponse.json({
@@ -50,18 +58,25 @@ export const GET = withTenant(async function GET() {
     workspace: { id: ws.id, name: ws.name, slug: ws.slug },
     requests: [],
     canSeeRoles,
-    users: (members.rows as any[]).filter((r) => Number(r.m_disabled) === 0 || canSeeRoles).map((r) => ({
-      id: r.id, email: r.email, name: r.name,
-      ...(canSeeRoles ? { role: r.role === "owner" ? "admin" : r.role, standing: r.role, permanent: r.role === "owner" } : {}),
-      disabled: Number(r.m_disabled) === 1 || Number(r.a_disabled) === 1,
-      locked: r.locked_until != null && Number(r.locked_until) > now(),
-      lastSeen: r.last_seen == null ? null : Number(r.last_seen),
-      createdAt: Number(r.joined_at ?? r.created_at),
-      clips: made.get(String(r.id))?.clips ?? 0,
-      ...(!inCredits ? { spend: made.get(String(r.id))?.spend ?? 0 } : {}),
-    })),
+    users: (members.rows as any[]).filter((r) => Number(r.m_disabled) === 0 || canSeeRoles).map((r) => {
+      /* The support row says nothing about the account behind it: an id of
+         this workspace's own (team/[id] resolves it), no last seen, no
+         two-step or lockout state, and only this membership's own switch. */
+      const support = mask.hides(r);
+      return {
+        id: support ? supportMemberId(ws.id, String(r.id)) : r.id, ...who(r),
+        ...(canSeeRoles ? { role: r.role === "owner" ? "admin" : r.role, standing: r.role, permanent: r.role === "owner" } : {}),
+        disabled: Number(r.m_disabled) === 1 || (!support && Number(r.a_disabled) === 1),
+        locked: !support && r.locked_until != null && Number(r.locked_until) > now(),
+        twoStep: support ? null : r.two_step_at != null,
+        lastSeen: support || r.last_seen == null ? null : Number(r.last_seen),
+        createdAt: Number(r.joined_at ?? r.created_at),
+        clips: made.get(String(r.id))?.clips ?? 0,
+        ...(!inCredits ? { spend: made.get(String(r.id))?.spend ?? 0 } : {}),
+      };
+    }),
     invites: (invites.rows as any[]).map((r) => ({
-      code: r.code, email: r.email, name: r.name,
+      code: r.code, ...who(r),
       ...(canSeeRoles ? { role: r.role } : {}),
       createdAt: Number(r.created_at), expiresAt: Number(r.expires_at),
       sentAt: r.sent_at == null ? null : Number(r.sent_at), sendCount: Number(r.send_count ?? 0),

@@ -11,7 +11,7 @@ class MemoryStorage implements AtomikPendingStorage {
   removeItem(key: string) { this.values.delete(key); }
 }
 const scope = 'workspace-a:user-a', projectId = 'draft-a';
-const body = JSON.stringify({ projectId, requestId: 'request-original', request: 'Make a Mira treatment', model: 'test/quoted-model', depth: 'Quick', refs: ['character'], maxCredits: 3 });
+const body = JSON.stringify({ projectId, requestId: 'request-original', request: 'Make a Wren treatment', model: 'test/quoted-model', depth: 'Quick', refs: ['character'], maxCredits: 3 });
 const alternate = JSON.stringify({ ...JSON.parse(body), requestId: 'request-reopened', model: 'test/different-model' });
 
 test('a dropped submit response restores the exact quoted body and request ID after a reload', async () => {

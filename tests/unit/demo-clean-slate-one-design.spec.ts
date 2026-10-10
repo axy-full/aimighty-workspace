@@ -16,7 +16,8 @@ const NAMES = [
 ].map((parts) => parts.join("-"));
 const PATHS = ["docs/hand" + "off/", "docs/phase" + "-0"];
 const WORDS = ["fl" + "air", "GLASS" + "_SPEC", "design_hand" + "off_"];
-const EXEMPT = ["design/particl-graphite/", "docs/handoff-diff.md", "docs/handover-2026-10-05.md"];
+/* docs/old-design-inventory.md has to name what it lists for deletion; tests/unit/one-design-guard.spec.ts keeps those names in pieces. */
+const EXEMPT = ["design/particl-graphite/", "docs/handoff-diff.md", "docs/handover-2026-10-05.md", "docs/old-design-inventory.md"];
 
 test("no file outside the design names an older design, handoff or style sheet", () => {
   const pattern = [...NAMES, ...PATHS, ...WORDS].join("|");

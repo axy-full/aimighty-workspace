@@ -1,0 +1,47 @@
+/* The Cast region's cards (README § 3.1 frame h; § 2 tokens). Tokens only: app/graphite.css. */
+.gx-cast { position: relative; width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); color: var(--gx-text); font-family: var(--gx-font); }
+.gx-cast-well { position: relative; flex: none; display: block; height: 173px; overflow: hidden; background: var(--gx-root); }
+.gx-cast-well > span:first-child { display: block; width: 100%; height: 100%; }
+.gx-cast-well img, .gx-cast-well video { object-fit: cover; }
+.gx-cast-face { display: block; width: 100%; height: 100%; background: var(--gx-card); }
+.gx-cast-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 2px; padding: 10px 14px 14px; }
+.gx-cast-kicker { font: 12px/1.45 var(--gx-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--gx-text-2); }
+.gx-cast-title { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: var(--gx-ls-h2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gx-cast-desc { min-height: 42px; font-size: var(--gx-fs-body); line-height: 1.5; color: var(--gx-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gx-cast-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 26px; font-size: 13px; }
+.gx-cast-state { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--gx-text-2); }
+.gx-cast-state i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-disabled); }
+.gx-cast-state[data-tone="done"] { color: var(--gx-done-text); }
+.gx-cast-state[data-tone="done"] i { background: var(--gx-done); }
+.gx-cast-state[data-tone="working"] { color: var(--gx-accent-text); }
+.gx-cast-state[data-tone="working"] i { background: var(--gx-accent); }
+.gx-cast-state[data-tone="waiting"] { color: var(--gx-waiting-text); }
+.gx-cast-state[data-tone="waiting"] i { background: var(--gx-waiting); }
+.gx-cast-shots { flex: none; font: 12px/1.45 var(--gx-mono); color: var(--gx-text-2); white-space: nowrap; }
+.gx-cast-consent { display: flex; flex-direction: column; gap: 2px; min-height: 66px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--gx-hair-soft); font-size: var(--gx-fs-body); line-height: 1.45; color: var(--gx-text-2); }
+.gx-cast-label { font: 12px/1.45 var(--gx-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--gx-text-2); }
+.gx-cast-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 8px; }
+.gx-cast-btn { height: 28px; padding: 0 10px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); white-space: nowrap; cursor: pointer; transition: border-color var(--gx-t) var(--gx-ease), background var(--gx-t) var(--gx-ease); }
+.gx-cast-btn:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx-cast-btn:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gx-cast-btn:disabled { color: var(--gx-disabled); cursor: default; }
+
+/* Cut-out on a card with a still (gap screens): the state line, then its buttons. Tokens only. */
+.gx-cast-well[data-transparent] { background: repeating-conic-gradient(var(--gx-card) 0% 25%, var(--gx-input-hover) 0% 50%) 50% / 16px 16px; }
+.gx-co { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
+.gx-co-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gx-co-state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gx-text-2); }
+.gx-co-state i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-accent); }
+.gx-co-state[data-tone="done"] { color: var(--gx-done-text); }
+.gx-co-state[data-tone="done"] i { background: var(--gx-done); }
+.gx-co-state[data-tone="failed"] { color: var(--gx-waiting-text); }
+.gx-co-state[data-tone="failed"] i { background: var(--gx-waiting); }
+.gx-co-go[data-primary][data-spend="priced"]:not(:disabled) { background: var(--gx-accent); border-color: transparent; color: var(--gx-on-accent); font-weight: 600; }
+.gx-co-go[data-primary][data-spend="priced"]:hover:not(:disabled) { background: var(--gx-accent-hover); }
+.gx-co-chip[aria-pressed="true"] { background: var(--gx-seg-on); border-color: var(--gx-hover-border); }
+.gx-co-why { font-size: 13px; color: var(--gx-text-2); }
+.gx-co-bar { position: relative; display: block; height: 3px; border-radius: 2px; overflow: hidden; background: var(--gx-hair); }
+.gx-co-bar > span { display: block; width: 30%; height: 100%; background: var(--gx-accent); animation: gx-co-slide 1.4s var(--gx-ease) infinite; }
+@keyframes gx-co-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .gx-co-bar > span { animation: none; width: 100%; opacity: .5; } }
+@media (max-width: 767px) { .gx-co .gx-cast-btn { min-height: 44px; } }

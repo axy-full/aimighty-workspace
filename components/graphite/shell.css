@@ -29,10 +29,10 @@
 .gx-enter { animation: gx-in .4s var(--gx-ease) both; }
 
 /* ── Header (56px) ─────────────────────────────────────────────────────── */
-.gx-header { height: 56px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 20px; min-width: 0; border-bottom: 1px solid var(--gx-hair-strong); }
-.gx-brand { display: flex; align-items: center; gap: 12px; flex: none; }
+.gx-header { height: 56px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 14px; min-width: 0; border-bottom: 1px solid var(--gx-hair-strong); }
+.gx-brand { display: flex; align-items: center; gap: 8px; flex: none; }
 .gx-brand-name { font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
-.gx-brand-mark { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .18em; color: var(--gx-text-3); text-transform: uppercase; }
+.gx-brand-mark { font-family: var(--gx-mono); font-size: 12px; letter-spacing: .08em; color: var(--gx-text-3); text-transform: uppercase; }
 .gx-seg { display: inline-flex; padding: 3px; border-radius: 6px; background: var(--gx-track); border: 1px solid var(--gx-hair); flex: none; }
 .gx-seg--fill { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
 .gx-seg-btn { position: relative; height: 28px; padding: 0 14px; border-radius: 4px; font-size: 13px; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 6px; }
@@ -42,7 +42,7 @@
 .gx-seg-btn > span { position: relative; color: var(--gx-text-2); font-weight: 500; }
 .gx-seg-btn[aria-selected="true"] > span { color: var(--gx-text); font-weight: 600; }
 /* Counts, the search control's words and key hints are functional labels: --gx-text-2, since the .45 tertiary and .35
-   placeholder inks composite under the #7C7C84 label floor (tests/ui-floors-audit-workbench.spec.ts). */
+   placeholder inks composite under the #7C7C84 label floor (the label floor, tests/phoneFloors.ts). */
 .gx-seg-btn > .gx-seg-count { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); font-weight: 500; }
 .gx-search { flex: 0 1 460px; min-width: 120px; height: 32px; padding: 0 10px 0 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); color: var(--gx-text-2); box-shadow: var(--gx-shadow-search); }
 .gx-search:hover { background: var(--gx-input-hover); color: var(--gx-text); }
@@ -57,49 +57,55 @@
 /* The balance cannot pay for the last price quoted here: amber, and it still opens Plans & credits. */
 .gx .gx-hbtn.gx-credits[data-low] { color: var(--gx-waiting-text); background: color-mix(in srgb, var(--gx-waiting) 14%, transparent); border-color: color-mix(in srgb, var(--gx-waiting) 60%, transparent); }
 .gx .gx-hbtn.gx-credits[data-low] .gx-credits-u { color: var(--gx-waiting-text); }
-.gx-jobs { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); gap: 8px; }
 .gx-jobs-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gx-accent); animation: gx-pulse 1.4s ease-in-out infinite; }
 
-/* ── Jobs pill and tray (components/graphite/JobsTray.tsx): a popover under
-   the pill on desktop and on a phone on its side, a bottom sheet on a phone.
-   Every word in it is at least #7C7C84 on its ground (--gx-text-2 or a
-   tone), and no figure is ever cut short. ── */
-.gx-jobs[data-tone="amber"] { background: color-mix(in srgb, var(--gx-waiting) 14%, transparent); border-color: color-mix(in srgb, var(--gx-waiting) 40%, transparent); color: var(--gx-waiting-text); }
-.gx-jobs[data-tone="green"] { background: color-mix(in srgb, var(--gx-done) 12%, transparent); border-color: color-mix(in srgb, var(--gx-done) 36%, transparent); color: var(--gx-done-text); }
-.gx-jobs[data-tone="red"] { background: color-mix(in srgb, var(--gx-failed) 12%, transparent); border-color: color-mix(in srgb, var(--gx-failed) 38%, transparent); color: var(--gx-failed-text); }
-.gx-jobs[data-tone="idle"] { background: var(--gx-input); border-color: var(--gx-hair); color: var(--gx-text-2); }
-.gx-jobs[data-tone="amber"] .gx-jobs-dot { background: var(--gx-waiting); }
-.gx-jobs[data-tone="green"] .gx-jobs-dot { background: var(--gx-done); animation: none; }
-.gx-jobs[data-tone="red"] .gx-jobs-dot { background: var(--gx-failed); animation: none; }
-.gx-jobs[data-tone="idle"] .gx-jobs-dot { background: var(--gx-idle); animation: none; }
+/* ── Jobs pill and tray (components/graphite/JobsTray.tsx): the master's
+   outlined pill and its 380px popover under it on desktop and on a phone on
+   its side, a bottom sheet on a phone. Every word in it is at least #7C7C84
+   on its ground (--gx-text-2 or a tone), and no figure is ever cut short. ── */
+/* The pill: 32px, outlined on black, 12/500. Its dot says the state: blue and pulsing while anything renders (the
+   outline lit to match), amber while something waits on credits, red for a failure or a tray it could not read,
+   grey otherwise. */
+.gx .gx-hbtn.gx-jobs { border-radius: var(--gx-r-pill); background: transparent; border-color: var(--gx-dialog-border); color: var(--gx-text); gap: 8px; padding: 0 12px; font-size: 12px; font-weight: 500; }
+.gx .gx-hbtn.gx-jobs:hover { background: var(--gx-input-hover); }
+.gx .gx-hbtn.gx-jobs[data-live] { border-color: var(--gx-tint-border-45); }
+.gx-jobs > .gx-jobs-dot { flex: none; background: var(--gx-text-half); animation: none; }
+.gx-jobs[data-live] > .gx-jobs-dot { background: var(--gx-accent); box-shadow: var(--gx-glow-live); animation: gx-pulse var(--gx-t-pulse) ease-in-out infinite; }
+.gx-jobs[data-tone="amber"]:not([data-live]) > .gx-jobs-dot { background: var(--gx-waiting); }
+.gx-jobs[data-tone="red"]:not([data-live]) > .gx-jobs-dot { background: var(--gx-failed); }
 .gx-jobs-long { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .gx-jobs-short { display: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* A phone, a phone on its side and any short window: the pill says one figure (its name says the rest), so the header keeps one row. */
 @media (max-width: 900px), (max-height: 500px) {
   .gx-jobs-long { display: none; }
   .gx-jobs-short { display: inline; }
-  .gx-jobs { min-width: 44px; justify-content: center; padding: 0 12px; gap: 6px; }
-  .gx-jobs[data-kind="quiet"] { padding: 0; }
+  .gx .gx-hbtn.gx-jobs { min-width: 44px; justify-content: center; padding: 0 12px; gap: 6px; }
+  .gx .gx-hbtn.gx-jobs[data-kind="quiet"] { padding: 0; }
   .gx-jobs[data-kind="quiet"] .gx-jobs-dot { display: none; }
 }
 .gx-veil.gx-jobs-veil { z-index: 70; }
 .gx-jobs-tray:focus { outline: none; }
 .gx-jobs-head { gap: 10px; flex-wrap: nowrap; }
-.gx-jobs-count { min-width: 0; color: var(--gx-text-2); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-.gx-jobs-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.gx-jobs-row { display: flex; align-items: center; gap: 12px; min-height: 68px; padding: 8px 10px; border-radius: 10px; }
-.gx-jobs-row:hover { background: var(--gx-input-hover); }
-.gx-jobs-thumb { position: relative; width: 52px; height: 52px; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); }
-.gx-jobs-thumb img, .gx-jobs-thumb video, .gx-jobs-thumb > * { width: 100%; height: 100%; object-fit: cover; }
-.gx-jobs-thumb > .gx-jobs-kind { width: auto; height: auto; font-family: var(--gx-mono); font-size: 12px; font-weight: 600; letter-spacing: .06em; color: var(--gx-text-2); }
-.gx-jobs-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.gx-jobs-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Stage · how long · figure: each part whole, and a part that does not fit starts the next line. */
-.gx-jobs-meta { display: flex; flex-wrap: wrap; align-items: baseline; row-gap: 2px; font-size: 12px; color: var(--gx-text-2); font-variant-numeric: tabular-nums; }
+.gx-jobs-count { min-width: 0; color: var(--gx-text-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.gx .gx-hbtn.gx-jobs-close { height: 26px; padding: 0 9px; font-size: 12px; background: transparent; border-color: var(--gx-dialog-border); }
+.gx .gx-hbtn.gx-jobs-close:hover { background: var(--gx-input-hover); }
+.gx-jobs-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+/* A row: dot · name and mono meta (and, under them, where it is, its progress, a reason) · the one action. */
+.gx-jobs-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; padding: 8px; border-top: 1px solid var(--gx-hair-soft); }
+.gx-jobs-rowdot { align-self: start; margin-top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--gx-text-half); }
+.gx-jobs-row[data-tone="amber"] > .gx-jobs-rowdot { background: var(--gx-waiting); }
+.gx-jobs-row[data-tone="green"] > .gx-jobs-rowdot { background: var(--gx-done); }
+.gx-jobs-row[data-tone="red"] > .gx-jobs-rowdot { background: var(--gx-failed); }
+.gx-jobs-row[data-tone="idle"] > .gx-jobs-rowdot { background: var(--gx-idle); }
+.gx-jobs-row[data-tone="blue"][data-moving] > .gx-jobs-rowdot { background: var(--gx-accent); box-shadow: var(--gx-glow-live); animation: gx-pulse var(--gx-t-pulse) ease-in-out infinite; }
+.gx-jobs-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.gx-jobs-name { font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Stage · how long · figure, in mono: each part whole, and a part that does not fit starts the next line. */
+.gx-jobs-meta { display: flex; flex-wrap: wrap; align-items: baseline; row-gap: 2px; font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); font-variant-numeric: tabular-nums; }
 .gx-jobs-meta > span { white-space: nowrap; }
 .gx-jobs-meta > span + span::before { content: "·"; margin: 0 6px; color: var(--gx-text-2); }
 .gx-jobs-where { font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gx-jobs-stage { font-weight: 600; color: var(--gx-text-2); }
+.gx-jobs-stage { color: var(--gx-text-2); }
 .gx-jobs-row[data-tone="blue"] .gx-jobs-stage { color: var(--gx-accent-text); }
 .gx-jobs-row[data-tone="amber"] .gx-jobs-stage { color: var(--gx-waiting-text); }
 .gx-jobs-row[data-tone="green"] .gx-jobs-stage { color: var(--gx-done-text); }
@@ -113,39 +119,51 @@
 .gx-jobs-ring { --p: 0; position: relative; isolation: isolate; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); background: var(--gx-track); box-shadow: inset 0 0 0 1px var(--gx-tint-border); }
 /* Progress fills the disc from its foot: --p of its height, one flat tint under the figure. */
 .gx-jobs-ring::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: 50%; background: var(--gx-tint-border); clip-path: inset(calc((1 - var(--p)) * 100%) 0 0 0); }
-.gx-jobs-act { flex: none; }
-.gx-jobs-act--primary { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
-.gx-jobs-note { margin: 0 0 6px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--gx-text-2); border-radius: 10px; background: var(--gx-input); }
+/* The one action: 26px, outlined, 12/600 (a 44px target on any touch screen, by .gx-hbtn's floor). */
+.gx .gx-hbtn.gx-jobs-act { height: 26px; padding: 0 9px; font-size: 12px; font-weight: 600; background: transparent; border-color: var(--gx-dialog-border); }
+.gx .gx-hbtn.gx-jobs-act:hover { background: var(--gx-input-hover); }
+.gx .gx-hbtn.gx-jobs-act--primary { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); }
+.gx-jobs-note { margin: 0 0 6px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--gx-text-2); border-radius: var(--gx-r-ctl); background: var(--gx-input); }
 .gx-jobs-note[role="alert"] { color: var(--gx-text); }
-.gx-jobs-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin: 0; padding: 18px 12px; color: var(--gx-text-2); }
+.gx-jobs-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin: 0; padding: 16px 8px; font-size: 12px; color: var(--gx-text-2); }
 .gx-jobs-empty p { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   .gx-jobs-bar::after { animation: none; width: 100%; opacity: .45; }
+  .gx-jobs[data-live] > .gx-jobs-dot, .gx-jobs-row[data-moving] > .gx-jobs-rowdot { animation: none; }
+}
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .gx-hbtn.gx-jobs-close, .gx .gx-hbtn.gx-jobs-act { height: 44px; min-width: 44px; padding: 0 14px; }
 }
 @media (min-width: 768px) {
   .gx .gx-veil.gx-jobs-veil { display: block; padding: 0; background: transparent; animation: none; }
-  .gx .gx-sheet.gx-jobs-tray { position: fixed; top: var(--jobs-top, 74px); right: var(--jobs-right, 20px); width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - var(--jobs-top, 74px) - 12px); }
+  .gx .gx-sheet.gx-jobs-tray { position: fixed; top: var(--jobs-top, 74px); right: var(--jobs-right, 20px); width: min(380px, calc(100vw - 24px)); max-height: calc(100dvh - var(--jobs-top, 74px) - 12px); padding: 6px; border-radius: var(--gx-r-card); border-color: var(--gx-pop-border); box-shadow: var(--gx-shadow-pop); }
+  .gx-jobs-tray > .gx-jobs-head { padding: 6px 8px 8px; border-bottom: 0; }
+  .gx-jobs-tray > .gx-jobs-head > .gx-panel-title { font-size: 13px; }
+  .gx .gx-jobs-tray > .gx-jobs-list { padding: 0; gap: 0; }
 }
 @media (max-width: 767px) {
   /* The sheet is the screen's width, whatever a long name would like: the rows ellipsize inside it. Its list keeps
      the phone's clearance under the last row (the phone section below), so that row ends above the tab bar. */
   .gx .gx-veil.gx-jobs-veil { grid-template-columns: minmax(0, 1fr); }
-  .gx-jobs-row { border: 1px solid var(--gx-hair); border-radius: 14px; background: var(--gx-card); }
   /* The name gets the row's width; the one action sits under it rather than beside it. */
-  .gx-jobs-row:has(> .gx-jobs-act) { display: grid; grid-template-columns: 52px minmax(0, 1fr); column-gap: 12px; row-gap: 8px; align-items: start; }
+  .gx-jobs-row { padding: 10px 4px; row-gap: 8px; }
+  .gx-jobs-row:has(> .gx-hbtn.gx-jobs-act) { grid-template-columns: 8px minmax(0, 1fr); }
   .gx-jobs-row > .gx-jobs-act { grid-column: 2; justify-self: start; }
+  .gx-jobs-name { font-size: 13px; }
 }
-.gx-avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--gx-input); border: 1px solid var(--gx-pop-border); flex: none; }
+.gx-avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-family: var(--gx-mono); font-size: 12px; font-weight: 600; background: var(--gx-input); border: 1px solid var(--gx-pop-border); flex: none; }
 .gx-avatar:hover { background: var(--gx-input-hover); }
 
 /* ── Stage strip (46px) ────────────────────────────────────────────────── */
-.gx-strip { height: 46px; flex: none; display: flex; align-items: center; justify-content: safe center; gap: 2px; padding: 0 20px; overflow-x: auto; min-width: 0; border-bottom: 1px solid var(--gx-hair-strong); }
-.gx-strip-gap { width: 1px; height: 18px; background: var(--gx-hair-strong); margin: 0 8px; flex: none; }
-.gx-tab { height: 30px; padding: 0 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--gx-text-2); flex: none; }
+/* The old pages keep their strip until their boards ship (S3, S4) and the control room (D1), drawn as the master draws
+   it: from the left, a group set off by 14px of space rather than a hairline. */
+.gx-strip { height: 46px; flex: none; display: flex; align-items: center; justify-content: flex-start; gap: 2px; padding: 0 14px; overflow-x: auto; min-width: 0; border-bottom: 1px solid var(--gx-hair-strong); }
+.gx-strip-gap { width: 0; height: 0; margin: 0 0 0 12px; flex: none; }
+.gx-tab { height: 30px; padding: 0 10px; border-radius: 6px; display: flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 12.5px; font-weight: 500; color: var(--gx-text-2); flex: none; }
 .gx-tab:hover { color: var(--gx-text); }
 /* A nav number is a functional label: --gx-text-2, since the .45 tertiary ink composites under the #7C7C84 floor. */
-.gx-tab-n { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); }
-.gx-tab[aria-current="page"] { background: var(--gx-tint); color: var(--gx-accent-text); font-weight: 600; }
+.gx-tab-n { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); }
+.gx-tab[aria-current="page"] { background: var(--gx-tint); color: var(--gx-accent-text); }
 .gx-tab[aria-current="page"] .gx-tab-n { color: var(--gx-accent-text); }
 
 /* ── Body: [Library 280] | [Stage 1fr] | [Inspector 320] ───────────────── */
@@ -282,34 +300,60 @@
 
 /* ── ⌘K palette ────────────────────────────────────────────────────────── */
 .gx-veil { position: fixed; inset: 0; z-index: 60; background: var(--gx-scrim); display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh; }
-.gx-palette { width: min(600px, 92vw); padding: 8px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: var(--gx-shadow-dialog); animation: gx-pop .3s var(--gx-ease) both; }
-.gx-palette-input-row { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 46px; border-bottom: 1px solid var(--gx-hair); }
-.gx-palette-input { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 15px; }
+/* The master's ⌘K (README § 6): a 600px dialog 88px from the top over a .55 veil, radius 10 and the dialog hairline; a
+   74px group column, the top hit in the accent tint, twelve rows at most. A phone keeps it at the foot of the screen
+   (the phone section below), where the thumb is. */
+.gx .gx-veil.gx-palette-veil { padding: 88px 24px 16px; animation: gx-in var(--gx-t-pop) var(--gx-ease) both; }
+.gx-palette { width: 600px; max-width: 100%; max-height: calc(100dvh - 104px); display: flex; flex-direction: column; overflow: hidden; padding: 0; border-radius: var(--gx-r-dialog); background: var(--gx-card); border: 1px solid var(--gx-dialog-border); box-shadow: var(--gx-shadow-dialog); animation: gx-pop var(--gx-t-pop) var(--gx-ease) both; }
+.gx-palette-input-row { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--gx-hair); }
+.gx-palette-glyph { flex: none; color: var(--gx-text-2); }
+.gx-palette-input { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 15px; color: var(--gx-text); }
+.gx-palette-input-row > .gx-key { font-size: 12px; padding: 1px 6px; border: 1px solid var(--gx-pop-border); border-radius: var(--gx-r-xs); }
 /* The field, not only its row, is the 44px target on a touch screen. */
-@media (max-width: 767px), (pointer: coarse) { .gx-palette-input { min-height: 44px; } }
-.gx-palette-list { display: flex; flex-direction: column; gap: 2px; padding: 8px 2px 2px; }
-.gx-palette-row { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; width: 100%; }
-.gx-palette-row:hover, .gx-palette-row[aria-selected="true"] { background: var(--gx-input-hover); }
-.gx-palette-group { font-family: var(--gx-mono); font-size: 10.5px; letter-spacing: .12em; color: var(--gx-text-2); }
-.gx-palette-label { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gx-palette-hint { font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 767px), (pointer: coarse) { .gx-palette-input { min-height: 44px; } .gx-palette-input-row { padding-block: 0; } }
+.gx-palette-list { flex: 0 1 auto; min-height: 0; max-height: 420px; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 0; padding: 6px; }
+.gx-palette-row { flex: none; display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 8px 10px; border-radius: var(--gx-r-ctl); width: 100%; text-align: left; }
+.gx-palette-row:hover { background: var(--gx-hair-soft); }
+.gx-palette-row[aria-selected="true"] { background: var(--gx-tint-12); }
+.gx-palette-group { flex: none; min-width: 74px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--gx-text-2); white-space: nowrap; }
+.gx-palette-label { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The hint gives way first: the label is what is read. */
+.gx-palette-hint { flex: 0 3 auto; min-width: 0; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+/* A phone: the same dialog at the foot of the screen, 12px in from its sides and clear of the home indicator. */
+@media (max-width: 767px) {
+  .gx .gx-veil.gx-palette-veil { padding: 12px 12px max(12px, env(safe-area-inset-bottom, 0px)); }
+  .gx-palette { width: 100%; max-height: calc(100dvh - 24px); }
+  .gx-palette-row { min-height: 44px; }
+  .gx-palette-hint { white-space: normal; text-align: right; max-width: 55%; }
+}
 
 /* ── Context menu ──────────────────────────────────────────────────────── */
-.gx-ctx { position: fixed; z-index: 80; min-width: 220px; max-width: 280px; max-height: calc(100dvh - 16px); overflow-y: auto; padding: 4px; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: var(--gx-shadow-pop); animation: gx-pop .15s var(--gx-ease) both; }
-.gx-ctx-title { padding: 6px 10px; font-family: var(--gx-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gx-ctx-sep { display: block; height: 1px; margin: 4px 6px; background: var(--gx-hair); }
-.gx-ctx-item { width: 100%; height: 30px; padding: 0 10px; border-radius: 6px; display: flex; align-items: center; gap: 16px; font-size: 13px; }
-.gx-ctx-item:hover:not(:disabled) { background: var(--gx-input-hover); }
+/* The master's menu: 220px, radius 8, 5px in; items 12.5px with their keys in mono, Delete in the failure red that reads
+   (--gx-failed-text, since #FF453A as words sits under the label floor). */
+.gx-ctx { position: fixed; z-index: 80; width: 220px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; padding: 5px; border-radius: var(--gx-r-card); background: var(--gx-card); border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-pop); animation: gx-pop var(--gx-t-menu) var(--gx-ease) both; }
+.gx-ctx-title { padding: 5px 9px 4px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-ctx-sep { display: block; height: 1px; margin: 4px 2px; background: var(--gx-hair); }
+.gx-ctx-item { width: 100%; min-height: 30px; padding: 6px 9px; border-radius: var(--gx-r-sm); display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; text-align: left; }
+.gx-ctx-item:hover:not(:disabled) { background: var(--gx-hair-soft); }
 .gx-ctx-item:disabled { color: var(--gx-disabled); }
 .gx-ctx-item[data-danger="true"]:not(:disabled) { color: var(--gx-failed-text); }
-.gx-ctx-key { margin-left: auto; font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); }
+.gx-ctx-key { flex: none; margin-left: auto; font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); }
+.gx-ctx-item:disabled > .gx-ctx-key { color: inherit; }
 
 /* ── Toast ─────────────────────────────────────────────────────────────── */
-.gx-toast { position: fixed; left: 0; right: 0; margin-inline: auto; width: max-content; bottom: 26px; z-index: 70; max-width: min(560px, 90vw); padding: 10px 16px; border-radius: 999px; font-size: 13px; background: var(--gx-card); border: 1px solid var(--gx-card-border); animation: gx-pop .2s var(--gx-ease) both; }
+/* The master's toast: a pill under the header's right end (16px in, 66px down), 12/500 after a 6px dot, rising in over
+   .25s. The dot is green for a confirmation that carries its Open or Undo (something was done), the quiet ink for the
+   rest, which can be a refusal or an error. */
+.gx-toast { position: fixed; top: 66px; right: 16px; z-index: 90; width: max-content; max-width: min(480px, calc(100vw - 32px)); display: flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: var(--gx-r-pill); font-size: 12px; font-weight: 500; line-height: 18px; background: var(--gx-card); border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-toast); animation: gx-in var(--gx-t-toast) var(--gx-ease) both; }
+/* On a board the toast sits at the canvas's top right, beside the docked panel rather than over it (Gaps B, the Undo toast). */
+.gx[data-screen^="board"] .gx-toast { right: calc(16px + var(--board-dock, 0px)); }
+.gx-toast::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-text-2); }
+.gx-toast[data-open]::before { background: var(--gx-done); }
 
 /* A confirmation with somewhere to go, or one the undo stack can take back: the words, then one Open (lib/shell/confirmations) or
-   Undo (lib/shell/state › pushUndo). Centred by margin, since the pop animation owns transform. */
-.gx-toast[data-open] { display: flex; align-items: center; gap: 12px; padding: 5px 5px 5px 16px; }
+   Undo (lib/shell/state › pushUndo). Centred by margin on a phone, since the rise-in animation owns transform. */
+.gx-toast[data-open] { padding: 5px 5px 5px 16px; }
+.gx-toast[data-open] > .gx-toast-text { margin-right: 4px; }
 /* Two lines at most: the Open says where the rest is. */
 .gx-toast-text { min-width: 0; line-height: 18px; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .gx-toast-open { flex: none; height: 30px; padding: 0 14px; border-radius: 999px; font: inherit; font-weight: 600; white-space: nowrap; color: var(--gx-text); background: var(--gx-input-hover); border: 1px solid var(--gx-hair); cursor: pointer; }
@@ -318,9 +362,10 @@
 .gx-toast-undo { flex: none; height: 30px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--gx-tint-border-45); background: var(--gx-tint); color: var(--gx-accent-text); font: inherit; font-weight: 600; cursor: pointer; }
 .gx-toast-undo:hover { border-color: var(--gx-tint-border-50); }
 @media (hover: none), (pointer: coarse) { .gx-toast-kbd { display: none; } .gx-toast-undo { height: 44px; min-width: 72px; } }
-/* Phone: above the floating tab bar and the home indicator. Any touch screen: the Open is a full 44px target. */
+/* Phone: centred above the floating tab bar and the home indicator, clear of the header. Any touch screen: the Open is a
+   full 44px target. */
 @media (max-width: 767px) {
-  .gx-toast { bottom: calc(98px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 32px); }
+  .gx-toast { top: auto; left: 0; right: 0; margin-inline: auto; bottom: calc(98px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 32px); font-size: 13px; }
   /* The Uploads chip (components/UploadRecovery) floats just above the tab bar once anything was uploaded: the toast goes above it. */
   body:has(section[aria-label="Upload recovery"]) .gx-toast { bottom: calc(122px + env(safe-area-inset-bottom, 0px)); }
 }
@@ -501,8 +546,6 @@
 }
 @media (prefers-reduced-motion: reduce) { .gx-fv-media[data-preview="loading"]::after, .gx-fv-hash { animation: none; } }
 .gx-insp-why { flex-basis: 100%; margin: 0; }
-.gx-model { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; border-radius: 6px; background: var(--gx-input); border: 1px solid var(--gx-hair); min-height: 48px; }
-.gx-model:hover { background: var(--gx-input-hover); }
 .gx-model-name { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gx-model-sub { display: block; font-size: 12px; color: var(--gx-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gx-well { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 64px; padding: 10px; border-radius: 6px; border: 1px dashed var(--gx-hair-strong); background: transparent; }
@@ -1041,7 +1084,6 @@
 
 /* Connected workflows on a Studio page (Deliver › Social cuts, Edit › Dub · Change voice, Astra › Draw to edit) and Gen › Analysis. */
 .gx-extras { display: flex; flex-direction: column; gap: 12px; padding: 16px 20px 0; }
-.gx-gen-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .gx-workflow-title { margin: 2px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
 .gx-workflow .pxw { background: transparent; }
 @media (max-width: 767px) { .gx-extras { padding: 12px 12px 0; } }
@@ -1056,41 +1098,10 @@
 .gx-gen-sound { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .gx-gen-sound .gx-stepper span { min-width: 52px; padding: 0 4px; white-space: nowrap; }
 
-/* ── Stage views: Brief & Script, Boards, Astra 3D, Deliver in the shell's idiom (the spec-card rules, Graphite framed groups), the existing tool beneath. ── */
-.gx-stage-host { display: flex; flex-direction: column; min-height: 100%; }
-.gx-stage-view { padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 14px; }
-.gx-stage-intro { margin: 0; max-width: 72ch; font-size: 14px; line-height: 1.5; color: var(--gx-text-2); }
-.gx-stage-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; padding: 12px 14px; border-radius: 10px; background: var(--gx-card); border: 1px solid var(--gx-card-border); }
-.gx-stage-facts > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.gx-stage-facts dt { font-family: var(--gx-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-text-2); }
-.gx-stage-facts dd { margin: 0; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gx-stage-group { border-radius: 10px; background: var(--gx-card); border: 1px solid var(--gx-card-border); overflow: hidden; }
-.gx-stage-group-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--gx-hair-soft); }
-.gx-stage-group-head::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--dept, var(--gx-accent)); flex: none; }
-.gx-stage-group-head > .gx-hint { flex: 1; min-width: 0; }
-.gx-stage-count { margin-left: auto; height: 18px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; background: var(--gx-hair); color: var(--gx-text-2); letter-spacing: 0; }
-.gx-stage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1px; background: var(--gx-hair-soft); }
-.gx-stage-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; text-align: left; background: var(--gx-card); min-height: 132px; }
-button.gx-stage-card:hover { background: var(--gx-input-hover); }
-button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx-accent); }
-.gx-stage-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.gx-stage-card-title { font-weight: 600; font-size: 14.5px; letter-spacing: -.01em; }
-.gx-stage-card-desc { font-size: 13px; line-height: 1.45; color: var(--gx-text-2); }
-.gx-stage-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.gx-chip--static { height: 22px; padding: 0 8px; font-size: 11.5px; cursor: default; }
-.gx-stage-card-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-2); }
-.gx-stage-card-foot[data-state="COMPLETE"] { color: var(--gx-done); }
-.gx-stage-card-foot[data-state="ACTIVE"] { color: var(--gx-accent-text); }
-.gx-stage-card-foot[data-state="WAITING"] { color: var(--gx-waiting); }
 .gx-home-dot[data-state="done"] { background: var(--gx-done); }
 .gx-home-dot[data-state="progress"] { background: var(--gx-accent); }
 .gx-home-dot[data-state="waiting"] { background: var(--gx-waiting); }
-.gx-stage-work { border-radius: 10px; border: 1px solid var(--gx-card-border); background: var(--gx-panel); overflow: hidden; }
-.gx-stage-work > .gx-stage-group-head { justify-content: space-between; }
-.gx-stage-work > .gx-stage-group-head::before { display: none; }
-.gx-stage-tool { padding: 12px 14px 18px; }
-@media (max-width: 767px) { .gx-stage-view { padding: 12px 12px 24px; } .gx-stage-grid { grid-template-columns: 1fr; } }
-@media (max-width: 767px), (pointer: coarse) { .gx-stage-facts dt { font-size: 12px; } .gx-chip--static { height: 24px; font-size: 12px; } }
+
 /* Gen's Output strip carries five tabs (Video · Images · Audio · Edit · Analysis): below 400px it wraps so every tab keeps the 44px floor. */
 @media (max-width: 400px) {
   .gx-gen .gx-seg--fill { grid-auto-flow: row; grid-template-columns: repeat(3, 1fr); height: auto; }
@@ -1202,7 +1213,37 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .gx-header { position: relative; overflow: hidden; isolation: isolate; }
 .gx-header > * { position: relative; z-index: 1; }
 /* The suite badge: a mono pill in the accent tint. Hidden between 768 and 1279px (above); a phone shows it again. */
-.gx-brand-mark { height: 20px; padding: 0 8px; border-radius: var(--gx-r-pill); display: inline-flex; align-items: center; color: var(--gx-accent-text); background: var(--gx-tint); border: 1px solid var(--gx-tint-border); }
+.gx-brand-mark { height: 20px; padding: 0 7px; border-radius: var(--gx-r-pill); display: inline-flex; align-items: center; color: var(--gx-accent-text); background: var(--gx-tint); border: 1px solid var(--gx-tint-border); }
+/* Header option B (README § 1): Home · <project> · Make · Atomik in a hairless track, a lit one on the thumb in the
+   page's ink at the same weight; Search in the middle of what is left; the credits a mono figure, outlined. */
+.gx-header .gx-seg { gap: 2px; border-color: transparent; }
+.gx-header .gx-seg-btn { padding: 0 11px; gap: 7px; font-size: 12.5px; }
+.gx-header .gx-seg-btn[aria-selected="true"] > span { font-weight: 500; }
+.gx-seg-swatch { position: relative; width: 16px; height: 12px; border-radius: 3px; flex: none; background: var(--gx-thumb); }
+.gx-header .gx-seg-btn[data-suite-tab="project"] > .gx-seg-label { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.gx-header:not([data-static]) > .gx-spacer { display: none; }
+.gx-header > .gx-search { margin: 0 auto; min-width: 150px; padding: 0 10px; font-size: 12.5px; }
+.gx-header > .gx-search .gx-search-label { font-size: 12.5px; }
+.gx-header > .gx-search .gx-key { font-size: 12px; padding: 1px 6px; border: 1px solid var(--gx-pop-border); border-radius: 4px; }
+.gx-header > .gx-credits { gap: 4px; padding: 0 11px; background: transparent; border-color: var(--gx-dialog-border); font-family: var(--gx-mono); font-size: 12px; }
+.gx-header > .gx-credits .gx-credits-n { font-size: 12px; }
+.gx-header > .gx-credits .gx-credits-u { font-family: var(--gx-mono); color: inherit; }
+/* Settings behind the avatar (components/graphite/SettingsMenu): a menu under it, the master's account menu. */
+.gx-settings-veil { position: fixed; inset: 0; z-index: 70; }
+/* A phone on its side has less height than six 44px rows: the menu scrolls inside the screen rather than run past it. */
+.gx-settings-menu { position: fixed; top: var(--menu-top, 62px); right: var(--menu-right, 14px); width: min(250px, calc(100vw - 24px)); max-height: calc(100dvh - var(--menu-top, 62px) - 12px); overflow-y: auto; overscroll-behavior: contain; padding: 6px; display: flex; flex-direction: column; border-radius: 8px; background: var(--gx-card); border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-pop); animation: gx-pop .15s var(--gx-ease) both; }
+.gx-settings-who { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; min-width: 0; }
+.gx-settings-name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.gx-settings-meta { font-size: 12px; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.gx-settings-rule { height: 1px; margin: 4px 0; background: var(--gx-hair); }
+.gx-settings-item { width: 100%; min-height: 32px; padding: 7px 10px; border-radius: 6px; font-size: 12.5px; font-weight: 500; color: var(--gx-text); }
+.gx-settings-item:hover, .gx-settings-item:focus-visible { background: var(--gx-input-hover); }
+.gx-settings-problem { margin: 6px 10px; font-size: 12px; color: var(--gx-failed-text); }
+@media (max-width: 767px), (pointer: coarse) {
+  .gx-settings-item { min-height: 44px; font-size: 14px; }
+  /* A glyph-only segment (Home, Make) is still a 44px target on touch, here and on the error page's header. */
+  .gx-header .gx-seg-btn { min-width: 44px; }
+}
 @media (max-width: 1279px) { .gx-brand-mark { display: none; } }
 /* Suite picker: glyph, label and a 5px dot in the suite's colour (--suite). The glyph sits over the thumb and takes that colour when its suite is open. */
 .gx-seg-btn .gx-glyph { position: relative; color: var(--gx-text-2); }
@@ -1212,14 +1253,16 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .gx-library .gx-seg-btn .gx-glyph { color: var(--gx-text-2); }
 .gx-library .gx-seg-btn[aria-selected="true"] .gx-seg-count { color: var(--gx-accent-text); background: var(--gx-tint); border-radius: var(--gx-r-pill); padding: 0 6px; }
 /* Below 1180px the labels give way to the glyphs; each stays in the accessible name (clipped, not removed). A phone shows them again under the glyph. */
-@media (max-width: 1179px) { .gx-header .gx-seg-btn > .gx-seg-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } .gx-header .gx-seg-btn { padding: 0 10px; } }
+@media (max-width: 1179px) {
+  .gx-header .gx-seg-btn > .gx-seg-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .gx-header .gx-seg-btn { padding: 0 10px; }
+  /* The project's name is the segment: it stays, shorter. */
+  .gx-header .gx-seg-btn[data-suite-tab="project"] > .gx-seg-label { position: relative; width: auto; height: auto; clip: auto; max-width: 120px; }
+}
 @media (max-width: 767px) { .gx-header .gx-seg-btn > .gx-seg-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; } }
 /* Search leads with its magnifier. */
 .gx-search { gap: 10px; }
 .gx-search .gx-glyph { color: var(--gx-text-3); flex: none; }
-/* Stage strip: every page carries a dot; the current page's is the accent. */
-.gx-tab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gx-idle); flex: none; }
-.gx-tab[aria-current="page"] .gx-tab-dot { background: var(--gx-accent); }
 /* Gen's Generate and the line under it. */
 .gx-gen-cta { display: flex; flex-direction: column; gap: 6px; }
 
@@ -1247,7 +1290,9 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
   .gx-project-btn, .gx-project-btn > span:last-child { position: static; }
   .gx-project-meta { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; white-space: nowrap; }
   /* The tab bar: five 44px targets in a bar that floats 12px in from the sides, over the page. */
-  .gx .gx-tabbar { position: fixed; left: 12px; right: 12px; bottom: 22px; z-index: 30; height: 66px; display: grid; grid-template-columns: repeat(5, 1fr); flex: none; padding: 6px; border: 1px solid var(--gx-pop-border); border-radius: var(--gx-r-pill); background: var(--gx-card); box-shadow: var(--gx-shadow-pop); }
+  .gx .gx-tabbar { position: fixed; left: 12px; right: 12px; bottom: 22px; z-index: 30; height: 66px; display: grid; grid-template-columns: repeat(4, 1fr); flex: none; padding: 6px; border: 1px solid var(--gx-pop-border); border-radius: var(--gx-r-pill); background: var(--gx-card); box-shadow: var(--gx-shadow-pop); }
+  /* Hidden only over a full-screen review (the take previewer, mounted on the body) and a plan's approval (the Atomik sheet). */
+  body:has(.pv-veil) .gx .gx-tabbar, .gx:has([data-testid="atomik-veil"]) .gx-tabbar { display: none; }
   .gx-tabbar-btn { min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: var(--gx-r-pill); color: var(--gx-text-2); }
   .gx-tabbar-btn[aria-current="page"] { color: var(--gx-accent-text); background: var(--gx-tint); }
   .gx-tabbar-label { font-size: 12px; font-weight: 500; }
@@ -1437,3 +1482,19 @@ button.gx-stage-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--gx
 .vr-job { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; row-gap: 2px; padding: 8px 10px; border-radius: 6px; background: var(--gx-card); border: 1px solid var(--gx-card-border); font-size: 12.5px; }
 .vr-job-name { grid-column: 2; grid-row: 1; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 767px) { .vr-job { min-height: 44px; } }
+
+/*
+ * The new interface (lib/shell/screens.ts; docs/old-shells.md). Present only while a workspace has the switch on:
+ *  - `--gx-overlay-right` on `.gx`: how far the right panels reach (Make 440 + 1, Atomik's panel 340 + 1, else 0), for a
+ *    screen that pads its column clear of them (Home, the control room). Set by SuitesShell.
+ *  - `--board-dock` on `.gx`: the width of the board's right dock (340 open, 56 closed), reported by the board through
+ *    `shell.setDockRight`. Make sits beside it, so the dock is never covered.
+ */
+.gx-screen { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; position: relative; overflow: hidden; background: var(--gx-panel); }
+@media (min-width: 768px) {
+  .gx[data-screen^="board"] .gx-make { right: var(--board-dock, 0px); }
+}
+
+/* A workspace switch running (components/graphite/SwitchingVeil.tsx): nothing under it takes an edit until it lands or fails. */
+.gx-switching { position: fixed; inset: 0; z-index: 95; display: flex; align-items: flex-start; justify-content: center; padding-top: calc(72px + env(safe-area-inset-top, 0px)); background: var(--gx-scrim); cursor: progress; }
+.gx-switching-note { padding: 9px 16px; border-radius: var(--gx-r-pill); font-size: 13px; font-weight: 500; color: var(--gx-text); background: var(--gx-card); border: 1px solid var(--gx-pop-border); box-shadow: var(--gx-shadow-toast); }

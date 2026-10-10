@@ -1,4 +1,5 @@
-import { textVendor, directTextCostUsd, sdkTextUsage, TEXT_PROVIDER_HEADER, type TextVendor } from '../openai-direct';
+import { textVendor, directTextCostUsd, isDirectText, textEngine, textKeyName, TEXT_PROVIDER_HEADER, type TextVendor } from '../openai-direct';
+import { stepTextUsage } from '../textDirect';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { ToolLoopAgent, stepCountIs } from 'ai';
@@ -9,6 +10,7 @@ import { atomikModels, getAtomikProject } from './atomik-server';
 import { atomikReasoningAllowance, atomikReasoningRequest } from '../atomik-reasoning';
 import { gatewayReachable } from '../gateway';
 import { languageAuth, languageModel } from '../language-provider';
+import type { TextRoute } from '../textRoute';
 import { allowanceCheck } from '../allowance';
 import { reserveGenerationSpend } from '../generationRequests';
 import { assertMeterFunding, meter, type MeterEvent } from '../meter';
@@ -28,6 +30,7 @@ import { loadAtomikReferences } from './atomik-references';
 import { ATOMIK_IMAGE_TOKENS } from './atomik-reference-types';
 import type { Project } from './studio';
 import { claimVerifyKey, compileVerify, mockVerifyReply, storedVerificationFor, verificationStatements, VerifyError } from './verify-server';
+import { aliasModel } from '../modelAliases';
 import { verifyLikelyTokens, verifyPrompt, type VerifySnapshot } from './verify-judge';
 import { FRAMES_PER_CHUNK, developmentStages, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_REQUEST_CEILING_USD, AGENT_SCRIPT_CHARS, developmentAnswerTokens, parseAgentJson, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, redraftTooLong, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
 
@@ -65,15 +68,16 @@ export type DevelopmentDependencies = {
   funding: (id: string, model?: string) => Promise<void>;
   reservation: (id: string) => Promise<boolean>;
 };
-export type DevelopmentAuth = { token: string; method: 'api-key' | 'oidc'; vendor?: TextVendor };
+export type DevelopmentAuth = { token: string; method: 'api-key' | 'oidc'; vendor?: TextVendor | TextRoute };
 async function developmentAuth(model: string): Promise<DevelopmentAuth> {
   if (engineMock()) return { token: 'mock-not-sent', method: 'api-key' };
   const vendor = textVendor(model);
-  const method = vendor === 'openai' || vendorKey('gateway') ? 'api-key' : 'oidc';
+  const method = vendor !== 'gateway' || vendorKey('gateway') ? 'api-key' : 'oidc';
   const auth = await languageAuth(model);
   const token = auth.Authorization?.replace(/^Bearer\s+/i, '');
   if (!token) throw new DevelopmentError('This workspace has no connected development provider.', 503);
-  return { token, method, vendor };
+  // The door the auth was issued for (a direct vendor under TEXT_DIRECT), so languageModel checks the same one.
+  return { token, method, vendor: (auth[TEXT_PROVIDER_HEADER] as TextRoute | undefined) ?? vendor };
 }
 async function reservationExists(id: string) {
   await platformReady();
@@ -84,7 +88,7 @@ async function reservationExists(id: string) {
 const dependencies = (overrides?: Partial<DevelopmentDependencies>): DevelopmentDependencies => ({
   models: catalog, allowance: allowanceCheck, reserve: reserveGenerationSpend, meter, call: callDevelopmentAgent,
   auth: developmentAuth, reservation: reservationExists,
-  funding: async (id, model) => { if (!await reservationExists(id)) throw new Error('The development reservation is missing. No provider call was sent.'); await assertMeterFunding(id, textVendor(model ?? '') === 'openai' ? 'openai' : 'vercel'); },
+  funding: async (id, model) => { if (!await reservationExists(id)) throw new Error('The development reservation is missing. No provider call was sent.'); await assertMeterFunding(id, textEngine(model ?? '')); },
   ...overrides,
 });
 const initialized = new Map<string, Promise<void>>();
@@ -383,7 +387,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     const prior = stage === 'draft' ? 0 : stage === 'critique' ? resultBytes : resultBytes + DEVELOPMENT_CRITIQUE_BYTES;
     const inputTokens = base + prior + images * ATOMIK_IMAGE_TOKENS;
     if (model.contextWindow && inputTokens + maxTokens > model.contextWindow) throw new DevelopmentError('This model has too little context for the complete source and review stages. Choose a larger-context model or shorten the project brief.', 422);
-    const cost = textQuoteCostUsd(model, inputTokens, maxTokens, textVendor(model.id) === 'openai');
+    const cost = textQuoteCostUsd(model, inputTokens, maxTokens, isDirectText(model.id));
     if (cost == null || !Number.isFinite(cost) || cost < 0) throw new DevelopmentError('The selected model has no confirmed token price.', 503);
     return { chunk: chunk.index, stage, cost, maxTokens };
   }));
@@ -391,11 +395,11 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   const limit = Math.min(1000, Math.max(1, Number(process.env.WORKBENCH_DEVELOPMENT_MAX_REQUEST_USD) || DEVELOPMENT_REQUEST_CEILING_USD));
   /* The dollars are the model vendor's. They are stated only to a workspace that pays that vendor
      itself; one on the platform's keys is told the same without them. */
-  if (estimateUsd > limit) throw new DevelopmentError(paidByPlatform(textVendor(input.model))
+  if (estimateUsd > limit) throw new DevelopmentError(paidByPlatform(textKeyName(input.model))
     ? `The full development workflow is more than one request may spend: ${estimates.length} agent steps with ${model.name}. Choose a less expensive model or lower effort.`
     : `The full development workflow exceeds the per-request spending ceiling: at most $${estimateUsd.toFixed(2)} across ${estimates.length} agent steps with ${model.name}, against $${limit.toFixed(2)} per request. Choose a less expensive model or lower effort.`, 409);
   const sourceHash = developmentSourceHash(canonical);
-  const estimateCredits = paidByPlatform(textVendor(input.model)) ? billCredits(estimateUsd, 'text') : 0;
+  const estimateCredits = paidByPlatform(textKeyName(input.model)) ? billCredits(estimateUsd, 'text') : 0;
   /* A Verify check is quoted at what one usually uses (lib/workbench/verify-judge.ts verifyLikelyTokens), never above
      its ceiling; the ceiling above stays what its job reserves, allows and holds for review, as for every agent step. */
   let likely: { usd: number; credits: number } | undefined;
@@ -405,14 +409,18 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     const usd = textCostUsd(model, tokens.inputTokens, tokens.outputTokens);
     if (usd == null || !Number.isFinite(usd) || usd < 0) throw new DevelopmentError('The selected model has no confirmed token price.', 503);
     const capped = Math.min(usd, estimateUsd);
-    likely = { usd: capped, credits: paidByPlatform(textVendor(input.model)) ? Math.min(billCredits(capped, 'text'), estimateCredits) : 0 };
+    likely = { usd: capped, credits: paidByPlatform(textKeyName(input.model)) ? Math.min(billCredits(capped, 'text'), estimateCredits) : 0 };
   }
   return { project, canonical, snapshot, sourceHash, chunks, estimates, estimateUsd, estimateCredits, likely, model };
 }
 /** The price a person is shown and approves: a Verify check's usual use ("about N cr"), every other step's ceiling. */
 const shownPrice = (compiled: { estimateUsd: number; estimateCredits: number; likely?: { usd: number; credits: number } }) =>
   compiled.likely ?? { usd: compiled.estimateUsd, credits: compiled.estimateCredits };
-export async function quoteDevelopmentJob(input: DevelopmentRequest, owner: string, overrides?: Partial<DevelopmentDependencies>): Promise<DevelopmentQuote> {
+/* A request naming a dropped id (a page or Make plan from before 8 October) is quoted, saved and run on its
+   alias, the nearest model still offered (lib/modelAliases.ts): one model from the quote to the ledger. */
+const onAlias = (input: DevelopmentRequest): DevelopmentRequest => ({ ...input, model: aliasModel(input.model) });
+export async function quoteDevelopmentJob(request: DevelopmentRequest, owner: string, overrides?: Partial<DevelopmentDependencies>): Promise<DevelopmentQuote> {
+  const input = onAlias(request);
   /* A take checked against these masters already: the stored scorecard, free. Nothing is priced or started. */
   if (input.kind === 'verify') {
     const stored = await storedVerificationFor(await getAtomikProject(owner, input.projectId), input.nodeId);
@@ -482,7 +490,7 @@ export const DEVELOPMENT_LIST_MAX = 200;
 const JOB_COLUMNS = 'id,owner,project_id,production_project_id,request_id,request_body,source_hash,chunks,status,estimate_usd,estimate_credits,cost_usd,credits,error,funded_by_platform,settled,created_at,updated_at';
 function eventFor(row: Row, status: MeterEvent['status'], cost?: number): MeterEvent {
   const model = (JSON.parse(String(row.request_body)) as DevelopmentRequest).model;
-  return { id: String(row.id), kind: 'text', engine: textVendor(model) === 'openai' ? 'openai' : 'vercel', model,
+  return { id: String(row.id), kind: 'text', engine: textEngine(model), model,
     projectId: String(row.production_project_id), createdBy: String(row.owner), status, engineCostUsd: cost };
 }
 const preparationTails = new Map<string, Promise<void>>();
@@ -492,34 +500,37 @@ export async function prepareDevelopmentJob(input: DevelopmentRequest, owner: st
   let release!: () => void;
   const tail = new Promise<void>(resolve => { release = resolve; }); preparationTails.set(key, tail);
   await previous;
-  try { return await prepareUnlocked(input, owner, token, overrides); }
+  /* A job saved before 8 October under a dropped id was fingerprinted on the body as sent: its retry still finds it. */
+  const accepted = new Set([developmentSourceHash(JSON.stringify(input))]);
+  try { return await prepareUnlocked(onAlias(input), owner, token, overrides, accepted); }
   finally { release(); if (preparationTails.get(key) === tail) preparationTails.delete(key); }
 }
-async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?: TenantToken, overrides?: Partial<DevelopmentDependencies>) {
+async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?: TenantToken, overrides?: Partial<DevelopmentDependencies>, accepted = new Set<string>()) {
   await developmentReady();
   const deps = dependencies(overrides), fingerprint = developmentSourceHash(JSON.stringify(input));
+  accepted.add(fingerprint);
   const found = (await db().execute({ sql: 'SELECT * FROM workbench_development_jobs WHERE owner=? AND request_id=?', args: [owner, input.requestId] })).rows[0];
   if (found) {
-    if (found.fingerprint !== fingerprint) throw new DevelopmentError('This request ID belongs to a different workflow. Start a new request.', 409);
+    if (!accepted.has(String(found.fingerprint))) throw new DevelopmentError('This request ID belongs to a different workflow. Start a new request.', 409);
     return { job: await publicJob(found), scheduled: false };
   }
-  if (!input.sourceHash || input.maxCredits == null || (!paidByPlatform(textVendor(input.model)) && input.maxUsd == null)) throw new DevelopmentError('Review the complete workflow quote before starting.');
+  if (!input.sourceHash || input.maxCredits == null || (!paidByPlatform(textKeyName(input.model)) && input.maxUsd == null)) throw new DevelopmentError('Review the complete workflow quote before starting.');
   const compiled = await compile(input, owner, deps);
   await deps.auth(input.model);
   if (input.sourceHash !== compiled.sourceHash) throw new DevelopmentError('The source changed after the quote. Save the current project and review a new quote.', 409);
   /* A dollar approval counts only where the workspace pays the vendor itself: on the platform's keys a
      refusal that turned on it would tell, one guess at a time, what the vendor charges. */
-  const approvedUsd = paidByPlatform(textVendor(input.model)) ? null : input.maxUsd ?? null;
+  const approvedUsd = paidByPlatform(textKeyName(input.model)) ? null : input.maxUsd ?? null;
   /* The approval binds the price the person was shown; what is allowed, reserved and kept below is the ceiling. */
   const shown = shownPrice(compiled);
   if (shown.credits > input.maxCredits || (approvedUsd != null && shown.usd > approvedUsd + 1e-9)) throw new DevelopmentError('The estimate changed. Review a new quote before starting.', 409);
-  const allowance = await deps.allowance(textVendor(input.model), compiled.estimateUsd, input.model);
+  const allowance = await deps.allowance(textKeyName(input.model), compiled.estimateUsd, input.model);
   if (!allowance.ok) throw new DevelopmentError(allowance.error, allowance.status);
   const id = 'wb_development_' + randomUUID(), ts = now();
   // Claim and immutable source snapshot commit before reserving or calling a provider.
   const insert = { sql: `INSERT OR IGNORE INTO workbench_development_jobs(id,owner,project_id,production_project_id,request_id,fingerprint,request_body,source_hash,snapshot,model_body,chunks,status,estimate_usd,estimate_credits,funded_by_platform,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'queued',?,?,?,?,?)`,
     args: [id, owner, input.projectId, compiled.project.productionProjectId!, input.requestId, fingerprint, JSON.stringify(input), compiled.sourceHash,
-      compiled.canonical, JSON.stringify(compiled.model), JSON.stringify(compiled.chunks), compiled.estimateUsd, compiled.estimateCredits, paidByPlatform(textVendor(input.model)) ? 1 : 0, ts, ts] };
+      compiled.canonical, JSON.stringify(compiled.model), JSON.stringify(compiled.chunks), compiled.estimateUsd, compiled.estimateCredits, paidByPlatform(textKeyName(input.model)) ? 1 : 0, ts, ts] };
   /* A Verify check's job is also the claim on its key, saved under the write lock that first refuses a key stored
      or being checked (lib/workbench/verify-server.ts claimVerifyKey): one key is reserved, sent and charged once,
      even when two instances start it at the same instant. */
@@ -528,7 +539,7 @@ async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?:
   catch (error) { if (error instanceof VerifyError) throw new DevelopmentError(error.message, error.status); throw error; }
   if (!inserted.rowsAffected) {
     const duplicate = (await db().execute({ sql: 'SELECT * FROM workbench_development_jobs WHERE owner=? AND request_id=?', args: [owner, input.requestId] })).rows[0];
-    if (!duplicate || duplicate.fingerprint !== fingerprint) throw new DevelopmentError('This request identity conflicts with another workflow.', 409);
+    if (!duplicate || !accepted.has(String(duplicate.fingerprint))) throw new DevelopmentError('This request identity conflicts with another workflow.', 409);
     return { job: await publicJob(duplicate), scheduled: false };
   }
   const row = (await db().execute({ sql: 'SELECT * FROM workbench_development_jobs WHERE id=?', args: [id] })).rows[0];
@@ -590,7 +601,7 @@ export async function executeDevelopmentAgent(input: DevelopmentCall, auth: Deve
       ? await agent.generate({ messages: [{ role: 'user', content: [{ type: 'text', text: input.prompt }, ...input.images.map((image) => ({ type: 'image' as const, image, ...detail }))] }], abortSignal: AbortSignal.timeout(240_000) })
       : await agent.generate({ prompt: input.prompt, abortSignal: AbortSignal.timeout(240_000) });
     return { text: result.text, inputTokens: result.totalUsage.inputTokens, outputTokens: result.totalUsage.outputTokens, finishReason: result.finishReason,
-      ...(textVendor(input.model.id) === 'openai' ? { directUsage: result.steps.length === 1 ? sdkTextUsage(result.steps[0].usage, true) : null } : {}) };
+      ...(isDirectText(input.model.id) ? { directUsage: result.steps.length === 1 ? stepTextUsage(input.model.id, result.steps[0].usage, true) : null } : {}) };
   } catch (error) { throw Object.assign(error as Error, { providerSubmitted }); }
 }
 /** The mock writer: a short, well-formed script that says which draft it is, so a redraft visibly differs. */
@@ -604,8 +615,8 @@ function mockWriterReply(input: DevelopmentCall): DevelopmentReply {
     'EXT. FROZEN HARBOUR - DUSK', '',
     'Ice groans under a violet sky. A red FOX picks its way across the frozen harbour, breath smoking.', '',
     'INT. HARBOUR MASTER\'S HUT - CONTINUOUS', '',
-    'MARA (60s), wrapped in wool, watches through a frosted window.', '',
-    'MARA', '(to herself)', redraft ? 'You came back.' : 'Not tonight, little one.', '',
+    'KEEPER (60s), wrapped in wool, watches through a frosted window.', '',
+    'KEEPER', '(to herself)', redraft ? 'You came back.' : 'Not tonight, little one.', '',
     ...(redraft && note ? ['EXT. FROZEN HARBOUR - NIGHT', '', `The fox stops at the hut's lamp. ${note.slice(0, 200)}`, ''] : []),
     ...(request.beatSheet ? request.beatSheet.flatMap((scene) => [scene.heading.toUpperCase(), '', ...scene.beats.map((beat) => beat), '']) : []),
     'FADE OUT.',
@@ -625,7 +636,7 @@ function mockBoardReply(input: DevelopmentCall): DevelopmentReply {
 function mockCastReply(input: DevelopmentCall): DevelopmentReply {
   const request = JSON.parse(input.prompt) as { existingCast?: string[] };
   return { text: JSON.stringify({ entries: [
-    { name: 'Mara', kind: 'character', category: 'character', model: 'soul_cinematic', description: 'The harbour master; appears in every scene.', prompt: 'Mara, a woman in her sixties, weathered face, grey braid, heavy wool coat — mock cast prompt.' },
+    { name: 'Keeper', kind: 'character', category: 'character', model: 'soul_cinematic', description: 'The harbour master; appears in every scene.', prompt: 'Keeper, a woman in her sixties, weathered face, grey braid, heavy wool coat — mock cast prompt.' },
     { name: 'Mooring rope', kind: 'element', category: 'prop', model: 'soul_cinematic', description: 'The rope the fox steps over.', prompt: 'A frayed mooring rope, iced over, a clean plate — mock cast prompt.' },
   ].filter((e) => !(request.existingCast ?? []).includes(e.name)), critique: ['Mock review only; no provider was called.'], assumptions: [] }), inputTokens: 300, outputTokens: 300, costUsd: 0 };
 }
@@ -720,7 +731,7 @@ export async function runDevelopmentStep(id: string, owner: string, overrides?: 
       reply = await deps.call({ model, effort: input.effort, stage, kind: input.kind, chunk,
         prompt, instructions: developmentInstructions(input.kind, stage), maxTokens: Number(next.max_tokens), images: developmentImages(snapshot) });
       returned = true;
-      const direct = textVendor(input.model) === 'openai';
+      const direct = isDirectText(input.model);
       const directCost = direct ? directTextCostUsd(model, reply.directUsage) : null;
       if ((!direct || engineMock()) && typeof reply.costUsd === 'number' && Number.isFinite(reply.costUsd) && reply.costUsd >= 0) cost = reply.costUsd;
       else if (direct && directCost != null) cost = directCost;

@@ -4,7 +4,7 @@ import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { DraftRequestError, draftRequest, draftWriter, isDraftConflict, MERGE_TRIES, writeDraft, type DraftWriter } from "../workbench/draft-request";
 import { nodeAudioBody, speechVoiceFor, type NodeAudioSetup } from "../workbench/generation-audio";
 import { mediaQuoteReferences, mediaReferenceIdentity } from "../workbench/media-reference-input";
-import { pendingGenerationKey } from "../workbench/pending-generation";
+import { pendingGenerationKey, readOwnClaim } from "../workbench/pending-generation";
 import { createSoundNode, findSoundNode } from "../workbench/sound-generate";
 import { stableId } from "../workbench/stable-id";
 import { newProject, type Asset, type CanvasNode, type Project } from "../workbench/studio";
@@ -25,15 +25,19 @@ import {
   offeredModels,
   quoteKeyFor,
   shownTotal,
+  takesSeed,
+  variationSeed,
   workspaceModels,
   type ComposerAction,
   type ComposerModel,
+  type ComposerPicks,
   type ComposerQuote,
   type ComposerReference,
   type ComposerSettings,
   type ComposerState,
   type ComposerType,
   type EngineRow,
+  type ModelPreference,
 } from "./composer";
 import { formatCredits } from "./cost";
 import { refreshProjectLibrary } from "./library";
@@ -113,6 +117,8 @@ type BatchRun = {
   projectId: string;
   name: string;
   model: string;
+  /** The engine's id, so the strip says a held engine's price the way its button did (lib/cinemaHold.ts). */
+  modelId?: string;
   takes: BatchTake[];
 };
 /** A batch as Gen's Results and the shell's strip show it: its takes, each in its own words. */
@@ -147,8 +153,22 @@ const RESUME_KEY = (scope: string, projectId: string, take: string) => `${RESUME
 /** A record nobody took up in a week is let go (its claimed request is still settled by the dispatch: checked, never re-sent). */
 const RESUME_MS = 7 * 24 * 60 * 60 * 1000;
 function readResume(scope: string, projectId: string, take: string): ResumeRecord | null {
+  return readResumeIn(() => window.localStorage, scope, projectId, take);
+}
+/**
+ * Each record is kept in this tab's own store too (sessionStorage, as its claims are: lib/workbench/pending-generation.ts ›
+ * tabStorage). Another tab's Generate of the same take settles it and lets the shared record go; this tab, whose reply was
+ * lost, still takes up its own copy while it still holds its own copy of that shot's claim (`claimed`): the same shot, so the
+ * dispatch asks about that request, and a take that landed is followed, never sent again. A tab that never lost the take has
+ * no such copy, so its next Generate is a new take on a new shot, as before.
+ */
+function readOwnResume(scope: string, projectId: string, take: string, claimed: (node: CanvasNode) => boolean): ResumeRecord | null {
+  const own = readResumeIn(() => window.sessionStorage, scope, projectId, take);
+  return own?.node && claimed(own.node) ? own : null;
+}
+function readResumeIn(store: () => globalThis.Storage, scope: string, projectId: string, take: string): ResumeRecord | null {
   try {
-    const value = JSON.parse(window.localStorage.getItem(RESUME_KEY(scope, projectId, take)) ?? "null") as (ResumeRecord & { at?: number }) | null;
+    const value = JSON.parse(store().getItem(RESUME_KEY(scope, projectId, take)) ?? "null") as (ResumeRecord & { at?: number }) | null;
     if (!value || value.projectId !== projectId || !Number.isInteger(value.take) || value.take < 0 || typeof value.at !== "number" || Date.now() - value.at > RESUME_MS) return null;
     /* A record of a take on a signed-in account (no longer offered) is dropped: nothing takes it up. */
     return value.kind === "workspace" && (value.node === null || (value.node && typeof value.node.id === "string")) ? value : null;
@@ -156,17 +176,31 @@ function readResume(scope: string, projectId: string, take: string): ResumeRecor
     return null;
   }
 }
-function writeResume(scope: string, projectId: string, take: string, value: ResumeRecord | null) {
-  try {
-    if (value) window.localStorage.setItem(RESUME_KEY(scope, projectId, take), JSON.stringify({ ...value, at: Date.now() }));
-    else window.localStorage.removeItem(RESUME_KEY(scope, projectId, take));
-    for (let i = window.localStorage.length - 1; i >= 0; i--) {
-      const key = window.localStorage.key(i);
-      if (!key?.startsWith(RESUME_PREFIX)) continue;
-      const at = (JSON.parse(window.localStorage.getItem(key) ?? "null") as { at?: number } | null)?.at;
-      if (typeof at !== "number" || Date.now() - at > RESUME_MS) window.localStorage.removeItem(key);
-    }
-  } catch { /* without storage, a lost take is not taken up again after a reload: its claimed request still is */ }
+/**
+ * `shot`: the node this press files on. The shared record is left alone when it names another shot: another tab's take of the
+ * same words, unconfirmed, whose record it is (this tab may be on its own older shot: readOwnResume). This tab's copy is its own.
+ */
+function writeResume(scope: string, projectId: string, take: string, value: ResumeRecord | null, shot: string | null) {
+  const write = (storage: () => globalThis.Storage, shared: boolean) => {
+    try {
+      const store = storage();
+      if (shared && shot) {
+        const there = readResumeIn(storage, scope, projectId, take);
+        if (there?.node && there.node.id !== shot) return;
+      }
+      if (value) store.setItem(RESUME_KEY(scope, projectId, take), JSON.stringify({ ...value, at: Date.now() }));
+      else store.removeItem(RESUME_KEY(scope, projectId, take));
+      for (let i = store.length - 1; i >= 0; i--) {
+        const key = store.key(i);
+        if (!key?.startsWith(RESUME_PREFIX)) continue;
+        const at = (JSON.parse(store.getItem(key) ?? "null") as { at?: number } | null)?.at;
+        if (typeof at !== "number" || Date.now() - at > RESUME_MS) store.removeItem(key);
+      }
+    } catch { /* without storage, a lost take is not taken up again after a reload: its claimed request still is */ }
+  };
+  write(() => window.localStorage, true);
+  /* This tab's copy (see readOwnResume). */
+  write(() => window.sessionStorage, false);
 }
 
 function validMapping(value: unknown): value is { shotId: string; productionProjectId: string } {
@@ -208,6 +242,8 @@ export type ComposerHost = {
   buttonParts: { action: string; price: string | null };
   blocked: string | null;
   submitting: boolean;
+  /** The last press did not go through (its reason is `state.notice`); cleared by the next press. */
+  failed: boolean;
   /** Which credits will be charged, said plainly. */
   wording: string;
   /** The audio setup, for the voice row. */
@@ -227,7 +263,17 @@ export type ComposerHost = {
   scope: string;
   /** Batches of takes 2–4 still being followed, newest last: Gen's Results show each as one strip. */
   batches: BatchView[];
+  /** The seed the next press sends (the host's `seed`, while its engine is picked), or null. */
+  seed: number | null;
 };
+
+/**
+ * What a press sent, told to the host once the server has accepted it (`onSent`): where the take is filed (the shot node in
+ * the project's draft), its job or batch, what it was approved at, and whether admission held it or any take of a batch
+ * ("held": it starts when credits arrive, or a take was not accepted: the host keeps its panel open and says so). Told after
+ * the send, never before: nothing here sends, prices or approves anything.
+ */
+export type ComposerSent = { projectId: string; nodeId: string; name: string; jobId: string | null; batchId: string | null; credits: number; takes: number; held: boolean };
 
 export function useComposer(options: {
   scope: string;
@@ -253,19 +299,40 @@ export function useComposer(options: {
    * the others; without it the words go as typed.
    */
   compose?: (prompt: string, shot: Record<string, string>, type: ComposerType) => { prompt: string; shotSpec: Record<string, string> | null };
+  /** The button's verb ("Generate" unless the host says otherwise: Make says "Make"). */
+  verb?: string;
+  /** Told once a press has been accepted by the server (see ComposerSent). Optional; nothing depends on it. */
+  onSent?: (sent: ComposerSent) => void;
+  /** Engines this host does not offer at all (not in the list, not selected, not the default). A module-level function, so it is stable. */
+  hide?: (modelId: string) => boolean;
+  /** The host's own default engines, when they are not the composer's (Make's: lib/shell/make-price.ts). Module-level, so stable. */
+  preference?: ModelPreference;
+  /** The settings the composer opens with, as if picked (Make opens on 1080p). Read once; a later pick, a recipe or Draft replaces them. */
+  initialPicks?: ComposerPicks;
+  /**
+   * A seed to repeat (Make's "Reuse seed", redesign C3), and the engine it was made on: sent with a clip's request only while that
+   * engine is the one picked (another engine's seed means nothing). Admission records it and Seedance passes it to the engine. It
+   * changes no price; the quote is asked for the same body, seed included, so its fingerprint covers it.
+   */
+  seed?: { value: number; model: string } | null;
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
+  const sentRef = useRef(options.onSent);
+  useEffect(() => { sentRef.current = options.onSent; });
   const [state, dispatch] = useReducer(
     composerReducer,
     options.initialType,
-    (type) => (type ? { ...INITIAL_COMPOSER, type } : INITIAL_COMPOSER),
+    (type) => ({ ...INITIAL_COMPOSER, ...(type ? { type } : {}), picks: { ...INITIAL_COMPOSER.picks, ...options.initialPicks } }),
   );
   const [engines, setEngines] = useState<{ rows: EngineRow[]; error: string | null; loading: boolean }>({ rows: [], error: null, loading: true });
   const [enginesRead, setEnginesRead] = useState(0);
   const [audio, setAudio] = useState<NodeAudioSetup | null>(null);
   const [quoteAnswer, setQuoteAnswer] = useState<{ scope: string; quote: ComposerQuote | null } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  /* The last press that did not go through, for the panel's Result. It says nothing about the charge: a refusal here can be a lost reply,
+     and "Nothing billed" is only ever said from a take's own ledger (components/graphite/board/cards/take). */
+  const [failed, setFailed] = useState(false);
   const [run, setRun] = useState<Run | null>(null);
   /** Every batch sent here, followed take by take until each settles; the latest read of each take's job. */
   const [batches, setBatches] = useState<BatchRun[]>([]);
@@ -303,9 +370,11 @@ export function useComposer(options: {
   const quote = quoteAnswer?.scope === scope ? quoteAnswer.quote : null;
   const setQuote = useCallback((value: ComposerQuote | null) => setQuoteAnswer({ scope, quote: value }), [scope]);
 
-  const models = useMemo(() => workspaceModels(engines.rows, audio), [engines.rows, audio]);
+  const hide = options.hide;
+  const models = useMemo(() => workspaceModels(engines.rows, audio).filter((m) => !hide?.(m.id)), [engines.rows, audio, hide]);
   const offered = useMemo(() => offeredModels(state, models), [state, models]);
-  const model = useMemo(() => activeModel(state, models), [state, models]);
+  const preference = options.preference;
+  const model = useMemo(() => activeModel(state, models, preference), [state, models, preference]);
   const settings = useMemo(() => composerSettings(model, target?.aspect, state.picks), [model, target?.aspect, state.picks]);
   /* The words as sent: Gen's film vocabulary written in, and the setup itself as data (lib/workspace/film-vocabulary.ts).
      Cinema Studio 4.0 takes its own documented controls instead (lib/workspace/cinema-vocabulary.ts): sent as its
@@ -325,10 +394,12 @@ export function useComposer(options: {
   const voice = speechVoiceFor(voices, state.voiceId);
   const voiceId = voice?.id ?? "";
 
+  /* The seed to repeat: only while the engine it was made on is the one picked, and only an engine that takes one. */
+  const seed = options.seed && Number.isFinite(options.seed.value) && model?.id === options.seed.model && model.type === "video" && takesSeed(model.id) ? options.seed.value : null;
   const quoteKey = quoteKeyFor({
     type: state.type, modelId: model?.id ?? "", settings,
     references: state.references, prompt: sent.prompt.trim(), seconds,
-    instrumental: state.instrumental, voiceId,
+    instrumental: state.instrumental, voiceId, seed,
   });
 
   /* ── The live price on the button ───────────────────────────────────── */
@@ -336,7 +407,9 @@ export function useComposer(options: {
     ? nodeAudioBody({ task: model.audioTask, text: state.prompt, seconds, instrumental: state.instrumental, voiceId, modelId: model.id })
     : null;
 
-  const blockedForQuote = !open || !model || !state.prompt.trim() || (options.projects != null && options.projects !== "ready");
+  /* A still or a clip is priced by its settings, not its words, so the price is read before anything is typed (Make shows it on the
+     button and the engine line from the start). Sound is priced by its words (speech), so it waits for them. */
+  const blockedForQuote = !open || !model || (Boolean(audioBody) && !state.prompt.trim()) || (options.projects != null && options.projects !== "ready");
 
   useEffect(() => {
     /* A figure for other inputs is already stale by its key; nothing is reset here. */
@@ -395,8 +468,8 @@ export function useComposer(options: {
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */
-  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent });
-  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent }; });
+  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed });
+  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed }; });
   const busy = useRef(false);
 
   /** The project to file into: the open one, or a new "Untitled" through the ordinary creation path. */
@@ -467,6 +540,7 @@ export function useComposer(options: {
     busy.current = true;
     setSubmitting(true);
     dispatch({ type: "notice", value: null });
+    setFailed(false);
     void (async () => {
       try {
         const project = await ensureProject();
@@ -532,6 +606,7 @@ export function useComposer(options: {
                   prompt: now.sent.prompt.trim(), kind: model.type === "video" ? "video" : "image", model: { id: model.id }, mapping,
                   ratio: settings.ratio, resolution: settings.resolution, duration: settings.duration, references: references(), firstFrameAssetId: "",
                   batch: { id: batchId, variation }, shotSpec: now.sent.shotSpec, cinema: now.sent.cinema,
+                  ...(now.seed !== null ? { seed: variationSeed(now.seed, variation) } : {}),
                   ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },
               };
@@ -542,28 +617,41 @@ export function useComposer(options: {
             dispatch({ type: "notice", value: `${before}${outcome.reason}` });
             return;
           }
-          if (outcome.state === "refused") { batchShot.current = shotNow; dispatch({ type: "notice", value: `${before}${outcome.reason}` }); return; }
+          if (outcome.state === "refused") { batchShot.current = shotNow; dispatch({ type: "notice", value: `${before}${outcome.reason}` }); setFailed(true); return; }
           const unconfirmed = outcome.takes.filter((take) => take.state === "unconfirmed");
           if (unconfirmed.length)
             rememberWorkspaceBatch(window.localStorage, scope, {
               projectId: filed.project.id, batchId, name: base, model: model.label,
               takes: unconfirmed.map((take) => ({ variation: take.variation, storageId: storageId(take.variation), credits: take.credits })),
             });
-          followBatch({ id: batchId, source: "workspace", projectId: filed.project.id, name: base, model: model.label, takes: outcome.takes });
+          followBatch({ id: batchId, source: "workspace", projectId: filed.project.id, name: base, model: model.label, modelId: model.id, takes: outcome.takes });
           dispatch({ type: "notice", value: `${before}${batchNotice(outcome.takes, "cr")}` });
+          if (outcome.takes.some((take) => take.state === "queued" || take.state === "held"))
+            sentRef.current?.({
+              projectId: filed.project.id, nodeId: node.id, name: base, jobId: null, batchId,
+              credits: outcome.takes.reduce((sum, take) => sum + (take.state === "queued" || take.state === "held" ? take.credits : 0), 0), takes: outcome.takes.length,
+              held: outcome.takes.some((take) => take.state !== "queued"),
+            });
           return;
         }
         /* This take — these settings and this prompt — as the resume records name it. */
         /* This take — these settings and this prompt — as the resume records name it (the empty third part keeps the records already saved matching). */
         const takeKey = JSON.stringify([now.quoteKey, composer.prompt.trim(), ""]);
         /* The same take left unconfirmed, or a batch of it that stopped part way: taken up again, and the batch goes on from it. */
-        const again = readResume(scope, project.id, takeKey);
+        /* The take's own recovery key: a claimed request left unconfirmed is checked on the server, never re-sent. Sound
+           takes share their lane, so theirs is the lane's and these settings': a new prompt is a new request. */
+        const claimSlot = (projectId: string, node: CanvasNode) => pendingGenerationKey(scope, projectId, model.audioTask ? `${node.id}:${stableId("take", now.quoteKey)}` : node.id);
+        /* This tab's own unconfirmed take first: another tab may since have settled it and made a take of these words on a new
+           shot (with its own shared record). Then the shared record, as before. */
+        const again = readOwnResume(scope, project.id, takeKey, (node) => readOwnClaim(window.localStorage, claimSlot(project.id, node)) !== null)
+          ?? readResume(scope, project.id, takeKey);
         const start = again ? again.take : 0;
         const end = again ? Math.max(count, again.take + 1) : count;
         /* The draft the takes file into: read fresh for the first, then carried from each save to the next. */
         let draft: SavedDraft | null = null;
         if (writer.current?.projectId !== project.id) writer.current = { projectId: project.id, writer: draftWriter() };
         const saves = writer.current.writer;
+        let sent: ComposerSent | null = null;
         for (let take = start; take < end; take++) {
         const name = end > 1 ? `${base} · take ${take + 1}` : base;
         /* The take needs a shot to live in, so the composer adds one to the draft the way Rig does (sound: its
@@ -572,7 +660,7 @@ export function useComposer(options: {
         const remember = () => {
           const node = made as CanvasNode | null;
           /* Until the server confirms the job, the next Generate of this take takes this shot up again. */
-          if (node) writeResume(scope, project.id, takeKey, { kind: "workspace", projectId: project.id, take, node });
+          if (node) writeResume(scope, project.id, takeKey, { kind: "workspace", projectId: project.id, take, node }, node.id);
         };
         const filed = await saveOnLatest(scope, project.id, draft, (latest) => {
           /* Sound files on its lane: the one the draft has now (Edit & Sound may have made it meanwhile), else one made here, once. */
@@ -607,9 +695,7 @@ export function useComposer(options: {
           if (!identity) throw new Error(`${reference.name} cannot be used as a reference.`);
           return { ...identity, role: referenceRole({ kind: reference.kind }) };
         });
-        /* The take's own recovery key: a claimed request left unconfirmed is checked on the server, never re-sent. Sound
-           takes share their lane, so theirs is the lane's and these settings': a new prompt is a new request. */
-        const storageId = pendingGenerationKey(scope, filed.project.id, model.audioTask ? `${shot.id}:${stableId("take", now.quoteKey)}` : shot.id);
+        const storageId = claimSlot(filed.project.id, shot);
         const outcome = await dispatchGeneration({
           scope,
           storageId,
@@ -636,6 +722,7 @@ export function useComposer(options: {
                   firstFrameAssetId: "",
                   shotSpec: now.sent.shotSpec,
                   cinema: now.sent.cinema,
+                  ...(now.seed !== null ? { seed: now.seed } : {}),
                   ...(settings.draft ? { draft: true } : {}),
                   ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },
@@ -648,17 +735,20 @@ export function useComposer(options: {
           dispatch({ type: "notice", value: `${before}${outcome.reason}` });
           return;
         }
-        if (outcome.state === "refused") { setRun(null); dispatch({ type: "notice", value: `${before}${outcome.reason}` }); return; }
+        if (outcome.state === "refused") { setRun(null); dispatch({ type: "notice", value: `${before}${outcome.reason}` }); setFailed(true); return; }
         /* Taken: the next Generate of this batch goes on from the take after it. */
-        writeResume(scope, project.id, takeKey, take + 1 < end ? { kind: "workspace", projectId: project.id, take: take + 1, node: null } : null);
+        writeResume(scope, project.id, takeKey, take + 1 < end ? { kind: "workspace", projectId: project.id, take: take + 1, node: null } : null, shot.id);
         setRun({ source: "workspace", name, meta: [name, model.label, formatCredits(outcome.credits)].join(" · "), jobId: outcome.jobId, projectId: project.id });
+        sent = { projectId: project.id, nodeId: shot.id, name, jobId: outcome.jobId, batchId: null, credits: outcome.credits, takes: take - start + 1, held: outcome.status === "held" };
         }
+        if (sent) sentRef.current?.(sent);
         if (end > 1) dispatch({ type: "notice", value: start === 0 ? `${end} takes submitted, each at the price shown. They file into Takes as they land.`
           : start + 1 === end ? `Take ${end} submitted at the price shown. It files into Takes as it lands.`
           : `Takes ${start + 1}–${end} submitted, each at the price shown. They file into Takes as they land.` });
       } catch (error) {
         setRun(null);
         dispatch({ type: "notice", value: neutralCopy(error instanceof Error ? error.message : "This generation could not be submitted.") });
+        setFailed(true);
       } finally {
         busy.current = false;
         setSubmitting(false);
@@ -781,12 +871,12 @@ export function useComposer(options: {
 
   return {
     state, dispatch, models, offered, model, quote, quoteKey, settings, credits,
-    buttonLabel: composerButtonLabel({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
-    buttonParts: composerButtonParts({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft) }),
-    blocked, submitting,
+    buttonLabel: composerButtonLabel({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft), verb: options.verb }),
+    buttonParts: composerButtonParts({ quote, quoteKey, submitting, count: state.count, draft: Boolean(settings.draft), verb: options.verb }),
+    blocked, submitting, failed,
     wording: billingWording({ workspaceName: options.workspaceName }),
     audio, voices, voice, seconds, project: target, projectNotice, generate, retryEngines, scope,
-    batches: batchViews,
+    batches: batchViews, seed,
   };
 }
 

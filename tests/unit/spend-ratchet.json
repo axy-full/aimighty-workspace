@@ -1,0 +1,45 @@
+{
+  "ratchet": {
+    "components/graphite/SuitesShell.tsx": {
+      "count": 1,
+      "until": "2026-10-16",
+      "by": "stream 1 (rebuilt in place)"
+    },
+    "components/graphite/atomik/MemoryView.tsx": {
+      "count": 1,
+      "until": "2026-10-16",
+      "by": "stream 8 (control room)"
+    },
+    "components/graphite/production/CastIdentities.tsx": {
+      "count": 1,
+      "until": "2026-10-16",
+      "by": "stream 5 (cards 2)"
+    },
+    "components/marketing/HeroPrompt.tsx": {
+      "count": 1,
+      "until": "2026-10-16",
+      "by": "site/copy-names (stream 15)"
+    },
+    "components/workbench/GenerationDialog.tsx": {
+      "count": 1,
+      "until": "2026-10-16",
+      "by": "functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide)"
+    },
+    "components/workbench/MovieExport.tsx": {
+      "count": 1,
+      "until": "2026-10-16",
+      "by": "functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide)"
+    },
+    "components/workbench/SoundGenerate.tsx": {
+      "count": 1,
+      "until": "2026-10-16",
+      "by": "functional editor or tool with no frame: UNOWNED: tool restyle (lead/owner to decide)"
+    },
+    "components/workspace/GenerateComposer.tsx": {
+      "count": 1,
+      "until": "2026-10-16",
+      "by": "flip PR, then D1 retire /workspace (lead)"
+    }
+  },
+  "strict": {}
+}

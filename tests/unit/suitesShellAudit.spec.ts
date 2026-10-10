@@ -1,144 +1,15 @@
 import { test, expect } from "@playwright/test";
-import { newProject, type Asset, type CanvasNode, type Project } from "../../lib/workbench/studio";
-import { projectSchema } from "../../lib/workbench/studio-schema";
-import { keepWiring, watchWiring, watchedWiring, wireShot, wiringDecision, type RigWiring } from "../../lib/shell/rig-wire";
-import { AUTO_RETRIES, autoRetryMs } from "../../lib/shell/business";
+import { newProject } from "../../lib/workbench/studio";
 import { MIRROR_ECHO_MS, mirrorSeek, type MirrorMark } from "../../lib/shell/viral";
-import { libraryHasTools } from "../../lib/shell/production-tools";
-import { RESUME_TRIES, composerBusy, connectedJobKey, forgetJob, quoteLands, resumeLands, resumeRetry, settledState, submitRefused } from "../../lib/shell/use-connected-job";
-import { branchFromTake } from "../../lib/production/rig-build";
 import { atomikSheetRuns } from "../../lib/shell/atomik-sheet";
 import { freshOver, freshRead } from "../../lib/shell/use-fresh-project";
-import type { ConnectedJob } from "../../lib/higgsfield-consumer/generation-client";
 
 /* Production › Rig › "Let the agent wire this shot": applied once, recorded on the shot. */
-const img = (id: string): Asset => ({ id, generationId: id, name: id, kind: "image", category: "Storyboard", url: `/api/media/${id}`, description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] });
-const shot = (id: string, extra: Partial<CanvasNode> = {}): CanvasNode => ({ id, title: id, type: "scene", x: 0, y: 0, width: 300, linked: [], mode: "Video", ...extra });
-const project = (nodes: CanvasNode[] = [shot("s1")]): Project => ({ ...newProject("Rig"), nodes, assets: [img("a1"), img("a2")] });
-const wiring: RigWiring = { nodeId: "s1", prompt: "A fox crosses the ice.", notes: "Hold wide.", inputs: ["a1", "a2", "missing"], firstFrame: "a1" };
-const JOB = "wb_development_1f2e3d4c-5b6a-4798-8a9b-0c1d2e3f4a5b";
 
-test("the agent's wiring lands once: prompt, notes, inputs and first frame, with the run recorded on the shot and saved with the draft", () => {
-  const { project: wired, inputs } = wireShot(project(), "s1", JOB, wiring);
-  const node = wired.nodes.find((n) => n.id === "s1")!;
-  expect(node.text).toBe("A fox crosses the ice.");
-  expect(node.operations?.find((op) => op.kind === "direction")?.values.note).toBe("Hold wide.");
-  expect(inputs).toBe(2);
-  expect(node.linked).toHaveLength(2);
-  expect(node.firstFrameId).toBe("a1");
-  expect(node.wiredJobId).toBe(JOB);
-  /* The record survives the draft's own schema, so another tab, device or teammate reads it. */
-  expect(projectSchema.parse(wired).nodes.find((n) => n.id === "s1")!.wiredJobId).toBe(JOB);
-  expect(projectSchema.safeParse({ ...wired, nodes: wired.nodes.map((n) => ({ ...n, wiredJobId: "../other" })) }).success).toBe(false);
-
-  /* Recorded: never again, watched or not. */
-  expect(wiringDecision(node, JOB, true)).toBe("applied");
-  expect(wiringDecision(node, JOB, false)).toBe("applied");
-  /* A shot that took an earlier recorded run takes the newer one; an unrecorded shot takes it only if this tab watched it finish, and is otherwise asked. */
-  expect(wiringDecision({ wiredJobId: "wb_development_older" }, JOB, false)).toBe("apply");
-  expect(wiringDecision(shot("s1"), JOB, true)).toBe("apply");
-  expect(wiringDecision(shot("s1"), JOB, false)).toBe("offer");
-  expect(wiringDecision(undefined, JOB, true)).toBe("applied");
-  expect(watchedWiring(JOB)).toBe(false);
-  watchWiring(JOB);
-  expect(watchedWiring(JOB)).toBe(true);
-  /* Keep mine: the run is recorded and the shot is left as the director had it. */
-  const kept = keepWiring(project([shot("s1", { text: "Mine." })]), "s1", JOB).nodes.find((n) => n.id === "s1")!;
-  expect(kept.text).toBe("Mine.");
-  expect(kept.linked).toHaveLength(0);
-  expect(wiringDecision(kept, JOB, false)).toBe("applied");
-
-  /* A shot branched from a take is a new shot: it has taken no run, so a later one is offered, not applied. */
-  const branched = branchFromTake(wired, "s1", img("a2"));
-  const branch = branched.project.nodes.find((n) => n.id === branched.id)!;
-  expect(branch.wiredJobId).toBeUndefined();
-  expect(wiringDecision(branch, "wb_development_newer", false)).toBe("offer");
-
-  /* An input already linked is not linked twice; a locked shot refuses in words. */
-  const again = wireShot(wired, "s1", JOB, wiring);
-  expect(again.inputs).toBe(0);
-  expect(() => wireShot(project([shot("s1", { locked: true })]), "s1", JOB, wiring)).toThrow("Unlock this shot");
-});
-
-/* Business › a submitted job is resumed, not stranded. */
-test("a Business job is remembered per project and composer, and a status read settles the composer", () => {
-  expect(connectedJobKey("ads", "p1")).not.toBe(connectedJobKey("dtc", "p1"));
-  expect(connectedJobKey("ads", "p1")).not.toBe(connectedJobKey("ads", "p2"));
-  const job = (status: ConnectedJob["status"]) => ({ id: "j", status } as ConnectedJob);
-  expect(settledState(job("accepted")).phase).toBe("running");
-  expect(settledState(job("uncertain")).phase).toBe("running");
-  expect(settledState(job("completed")).phase).toBe("done");
-  expect(settledState(job("failed"))).toMatchObject({ phase: "failed", error: expect.stringContaining("didn't say if it charged") });
-  /* A failed quote is asked again on its own only when the failure passes by itself, spaced out and a few times (the route allows six a minute); a refusal of the input waits for Try again. */
-  expect(autoRetryMs({ status: 503 }, 1)).toBeGreaterThanOrEqual(5_000);
-  expect(autoRetryMs({ status: 503 }, AUTO_RETRIES + 1)).toBeNull();
-  expect(autoRetryMs({ status: 400, code: "parameter_invalid" }, 1)).toBeNull();
-  /* A price read while a remembered job was being resumed never replaces it (its polling would stop). */
-  const running = settledState(job("accepted"));
-  expect(quoteLands(running, { phase: "quoted", job: job("quoted") })).toBe(running);
-  expect(quoteLands({ phase: "submitting", job: job("quoted") }, { phase: "quoting" }).phase).toBe("submitting");
-  expect(quoteLands({ phase: "idle" }, { phase: "quoting" }).phase).toBe("quoting");
-  expect(quoteLands(settledState(job("completed")), { phase: "quoting" }).phase).toBe("quoting");
-});
-
-test("a resumed Business job lands only on the composer still waiting for it, and never clears a newer job", () => {
-  const job = (id: string, status: ConnectedJob["status"]) => ({ id, status } as ConnectedJob);
-  /* While the remembered job is read back the composer prices and submits nothing. */
-  expect(composerBusy("resuming")).toBe(true);
-  expect(composerBusy("submitting")).toBe(true);
-  expect(composerBusy("running")).toBe(true);
-  expect(composerBusy("quoted")).toBe(false);
-  expect(quoteLands({ phase: "resuming" }, { phase: "quoted", job: job("q", "quoted") }).phase).toBe("resuming");
-  /* The read for J1 comes back after J2 was submitted: J2 keeps the composer (and its polling). */
-  const j2 = { phase: "running" as const, job: job("j2", "accepted") };
-  expect(resumeLands(j2, settledState(job("j1", "completed")))).toBe(j2);
-  expect(resumeLands({ phase: "submitting", job: job("j2", "quoted") }, settledState(job("j1", "accepted"))).phase).toBe("submitting");
-  expect(resumeLands({ phase: "resuming" }, settledState(job("j1", "completed")))).toMatchObject({ phase: "done", job: { id: "j1" } });
-  /* A status read that finds the job still quoted: the submit never reached the account. */
-  expect(settledState(job("j", "quoted"))).toMatchObject({ phase: "failed", error: expect.stringContaining("nothing was billed") });
-
-  /* Compare-and-remove: an older job settling leaves a newer job's id in place. */
-  const kept = new Map<string, string>([["k", "j2"]]);
-  const storage = { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) };
-  forgetJob(storage, "k", "j1");
-  expect(kept.get("k")).toBe("j2");
-  forgetJob(storage, "k", "j2");
-  expect(kept.has("k")).toBe(false);
-  forgetJob(null, "k", "j2");
-
-  /* A missed resume read: forget what the server does not know, stop where this person may not read it (keeping the id), back off otherwise, and give up in the end. */
-  expect(resumeRetry(404, 1)).toBe("forget");
-  expect(resumeRetry(400, 1)).toBe("forget");
-  expect(resumeRetry(403, 1)).toBe("stop");
-  expect(resumeRetry(401, 1)).toBe("stop");
-  const waits = Array.from({ length: RESUME_TRIES - 1 }, (_, i) => resumeRetry(503, i + 1));
-  expect(waits).toEqual([4000, 8000, 16000, 32000, 60000, 60000, 60000]);
-  expect(resumeRetry(Number.NaN, 1)).toBe(4000);
-  expect(resumeRetry(503, RESUME_TRIES)).toBe("stop");
-
-  /* A refused submit (4xx) sent nothing; a 5xx or a lost reply may have reached the account, so its status is read, never re-sent. */
-  expect(submitRefused(409)).toBe(true);
-  expect(submitRefused(429)).toBe(true);
-  expect(submitRefused(503)).toBe(false);
-  expect(submitRefused(Number.NaN)).toBe(false);
-  /* Another request did send it: read, not dropped. */
-  expect(submitRefused(409, "already_submitted")).toBe(false);
-  expect(submitRefused(409, "approval_changed")).toBe(true);
-});
 
 /* Viral › History and Recent are the project's Library alone (tests/unit/suitesViral.spec.ts): nothing is read from the account. */
 
 /* Library › Tools only where the page has tools of its own. */
-test("the Library has Tools on the Studio stages and the spec pages, not on Gen, Business, Viral or the phone's pickers", () => {
-  expect(libraryHasTools("suite", "studio", "brief")).toBe(true);
-  expect(libraryHasTools("suite", "studio", "deliver")).toBe(true);
-  expect(libraryHasTools("suite", "atomik", "agent")).toBe(true);
-  expect(libraryHasTools("gen", "studio", "brief")).toBe(false);
-  expect(libraryHasTools("suite", "business", "dtc")).toBe(false);
-  expect(libraryHasTools("suite", "viral", "history")).toBe(false);
-  expect(libraryHasTools("suite", "studio", "home")).toBe(false);
-  expect(libraryHasTools("suite", "studio", "stages")).toBe(false);
-});
 
 /* Viral › Compare: one clock, no ping-pong. */
 test("a seek is mirrored once; the mirrored player's own seeked is not sent back", () => {

@@ -14,6 +14,7 @@ import { buildRateTable } from "@/lib/rateTable.server";
 import { creditsApply } from "@/lib/credits";
 import { accountScopeFor, workbenchScopeFor } from "@/lib/workbench/request-scope";
 import UploadRecovery from "@/components/UploadRecovery";
+import { newInterfaceFor } from "@/lib/newInterface.server";
 
 /**
  * The shell, for everyone.
@@ -43,7 +44,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       requestScope,
       name: user?.name ?? null,
       email: user?.email ?? null,
-      workspace: ctx?.workspace ? { id: ctx.workspace.id, name: ctx.workspace.name, slug: ctx.workspace.slug, suspended: Boolean(ctx.workspace.suspendedAt), suspendedReason: ctx.workspace.suspendedReason, internalTest: Boolean(ctx.workspace.internalTest) } : null,
+      workspace: ctx?.workspace ? { id: ctx.workspace.id, name: ctx.workspace.name, slug: ctx.workspace.slug, suspended: Boolean(ctx.workspace.suspendedAt), suspendedReason: ctx.workspace.suspendedReason, internalTest: Boolean(ctx.workspace.internalTest), newInterface: await newInterfaceFor(ctx.workspace) } : null,
       role: ctx?.role ?? null,
       owner: Boolean(ctx?.role === "owner"),
       superAdmin: await isPlatformOwner(user),

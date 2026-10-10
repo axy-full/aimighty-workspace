@@ -176,6 +176,14 @@ test("training reserves once before submission, concurrent request replay recove
     });
     expect(completed?.status).toBe("ready");
     expect(completed?.creditsBilled).toBe(38);
+    /* The consent that exists is read back with the identity: when, and by whom (this workspace's own display name, never an address). */
+    expect(completed?.consentAt).toBeGreaterThan(0);
+    const { db: tenantDb } = await import("../../lib/db");
+    await tenantDb().execute({ sql: "INSERT OR REPLACE INTO users(id,email,name,password_hash,role,disabled,created_at) VALUES(?,?,?,?,?,?,?)", args: [user.id, "alice@example.test", "Alice", "!", "admin", 0, 0] });
+    const { listSoulIdentities } = await import("../../lib/soulIdentities");
+    const listed = (await listSoulIdentities(project)).find((i) => i.id === identityId);
+    expect(listed?.consentBy).toBe("Alice");
+    expect(JSON.stringify(listed)).not.toMatch(/alice@example/);
     expect(
       (await requireReadySoulIdentity(identityId, production, project))
         .providerReferenceId,

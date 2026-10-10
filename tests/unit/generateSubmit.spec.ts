@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { checkQuote, dispatchGeneration, sendClaimedGeneration, settlePendingGeneration, settleStoredRequest, type QuoteCheck } from "../../lib/workspace/generate-submit";
-import { claimPendingGeneration, pendingGenerationKey, readPendingGeneration } from "../../lib/workbench/pending-generation";
+import { claimPendingGeneration, pendingGenerationKey, readOwnClaim, readPendingGeneration, SETTLED_MS } from "../../lib/workbench/pending-generation";
 import type { GenerationBodyInput } from "../../lib/workbench/generation-request";
 import { viralRequest } from "../../lib/shell/viral";
 import { imageAdRequest, INITIAL_IMAGE_AD } from "../../lib/shell/image-ads";
@@ -160,7 +160,7 @@ test("with nothing claimed, a Generate is quoted, held to the price on the butto
   await withServer({ "/api/generate/quote": quote, "/api/generate": () => ({ status: 202, json: { id: "gen_new" } }) }, async (calls) => {
     const storage = memory();
     expect(await dispatchGeneration({ scope: SCOPE, storageId: STORAGE_ID, shown: 20, storage, request: { endpoint: "/api/generate", input: edited() } }))
-      .toEqual({ state: "repriced", credits: 21, reason: "The price is now 21 cr. Press Generate again to approve it." });
+      .toEqual({ state: "repriced", credits: 21, reason: "The price is now 21 cr. Press it again to approve it." });
     expect(calls.map((c) => c.path)).toEqual(["/api/generate/quote"]);
     expect(await dispatchGeneration({ scope: SCOPE, storageId: STORAGE_ID, shown: 21, storage, request: { endpoint: "/api/generate", input: edited() } }))
       .toEqual({ state: "queued", jobId: "gen_new", credits: 21 });
@@ -171,7 +171,7 @@ test("with nothing claimed, a Generate is quoted, held to the price on the butto
 
 /* The rate-table Rig (the phone board's Apply, the canvas's Run node) prices its own request and sends
    that price as its ceiling, under a stored Idempotency-Key (sendClaimedGeneration). */
-const RERENDER = { prompt: "Iver crosses the ice", model: ENGINE, projectId: "prj_1", shotId: "sh1", ratio: "16:9", resolution: "1080p", duration: 5, maxCredits: 19 };
+const RERENDER = { prompt: "Rowan crosses the ice", model: ENGINE, projectId: "prj_1", shotId: "sh1", ratio: "16:9", resolution: "1080p", duration: 5, maxCredits: 19 };
 const SLOT = pendingGenerationKey(SCOPE, "prj_1", "rig-apply:sh1");
 const LOST_SEND = { key: "lost-send-00001", body: JSON.stringify(RERENDER), credits: 19, endpoint: "/api/generate" as const };
 
@@ -387,3 +387,160 @@ test("an Image ad goes through the same dispatch: the key model's body, priced a
   });
 });
 
+
+/* ── Two tabs, one lost reply ─────────────────────────────────────────────
+   Tab A's paid POST lands but its reply is lost (its claim stays). Tab B's press settles that claim and lets it go. Tab A's
+   next press must not quote and send anew: it settles its own copy of the claim (the note B left, else the same check). */
+const SETTLED = "particl:settled-generations:v1";
+/** One tab's view of the browser's shared storage: the same items, its own tab store (lib/workbench/pending-generation › tabStorage). */
+const tabOf = (shared: ReturnType<typeof memory>) => ({ getItem: (k: string) => shared.getItem(k), setItem: (k: string, v: string) => shared.setItem(k, v), removeItem: (k: string) => shared.removeItem(k) });
+const press = (storage: ReturnType<typeof tabOf>) => dispatchGeneration({ scope: SCOPE, storageId: STORAGE_ID, shown: 21, storage, request: { endpoint: "/api/generate", input: edited() } });
+
+async function lostInTabA(shared: ReturnType<typeof memory>) {
+  const a = tabOf(shared);
+  let k1 = "";
+  await withServer({ "/api/generate/quote": quote, "/api/generate": () => ({ status: 503, json: { error: "The request was interrupted." } }) }, async (calls) => {
+    expect((await press(a)).state).toBe("refused");
+    k1 = calls[1].key!;
+  });
+  expect(readPendingGeneration(shared, STORAGE_ID)?.key).toBe(k1);
+  return { a, k1 };
+}
+
+test("two tabs: after another tab settled this tab's lost request as landed, this tab's next press follows that job and sends nothing", async () => {
+  const shared = memory();
+  const { a, k1 } = await lostInTabA(shared);
+  const b = tabOf(shared);
+  await withServer({ "/api/generate/check": (body) => ({ json: body.key === k1 ? { state: "landed", id: "gen_k1", status: "running" } : { state: "absent" } }) }, async (calls) => {
+    expect(await press(b)).toEqual({ state: "queued", jobId: "gen_k1", credits: 21 });
+    expect(calls.map((c) => c.path)).toEqual(["/api/generate/check"]);
+  });
+  expect(readPendingGeneration(shared, STORAGE_ID)).toBeNull();
+  /* Tab A: B's note answers; nothing is asked, quoted or sent. */
+  await withServer({}, async (calls) => {
+    expect(await press(a)).toEqual({ state: "queued", jobId: "gen_k1", credits: 21 });
+    expect(calls).toEqual([]);
+  });
+  /* Settled for A too now: A's next press is a new take, and so is B's. */
+  for (const tab of [a, b]) {
+    await withServer({ "/api/generate/quote": quote, "/api/generate": () => ({ status: 202, json: { id: "gen_new" } }) }, async (calls) => {
+      expect(await press(tab)).toEqual({ state: "queued", jobId: "gen_new", credits: 21 });
+      expect(calls.map((c) => c.path)).toEqual(["/api/generate/quote", "/api/generate"]);
+      expect(calls[1].key).not.toBe(k1);
+    });
+  }
+});
+
+test("two tabs: without the note (expired, or never written), this tab asks the server by its own key before anything else", async () => {
+  for (const how of ["expired", "missing"] as const) {
+    const shared = memory();
+    const { a, k1 } = await lostInTabA(shared);
+    await withServer({ "/api/generate/check": () => ({ json: { state: "landed", id: "gen_k1", status: "queued" } }) }, async () => { expect((await press(tabOf(shared))).state).toBe("queued"); });
+    const note = JSON.parse(shared.getItem(SETTLED)!) as Record<string, { at: number }>;
+    expect(Object.keys(note)).toEqual([k1]);
+    if (how === "expired") shared.setItem(SETTLED, JSON.stringify({ [k1]: { ...note[k1], at: Date.now() - SETTLED_MS - 1 } }));
+    else shared.removeItem(SETTLED);
+    await withServer({ "/api/generate/check": () => ({ json: { state: "landed", id: "gen_k1", status: "running" } }) }, async (calls) => {
+      expect(await press(a)).toEqual({ state: "queued", jobId: "gen_k1", credits: 21 });
+      expect(calls).toEqual([{ path: "/api/generate/check", key: null, body: { key: k1, endpoint: "/api/generate", body: expect.any(String) } }]);
+    });
+  }
+});
+
+test("two tabs: this tab's own copy whose fate cannot be read yet sends nothing and is kept", async () => {
+  const shared = memory();
+  const { a, k1 } = await lostInTabA(shared);
+  /* Another tab let the claim go without a note this tab can read. */
+  shared.removeItem(STORAGE_ID);
+  for (const reply of [{ json: { state: "pending" } }, "network"] as Answer[]) {
+    await withServer({ "/api/generate/check": () => reply }, async (calls) => {
+      const outcome = await press(a);
+      expect(outcome.state).toBe("refused");
+      expect(calls.map((c) => c.path)).toEqual(["/api/generate/check"]);
+      expect(calls[0].body.key).toBe(k1);
+    });
+  }
+  expect(readOwnClaim(a, STORAGE_ID)?.key).toBe(k1);
+});
+
+test("two tabs: a lost request another tab found never arrived is let go here too, and this press goes once under a new key", async () => {
+  const shared = memory();
+  const { a, k1 } = await lostInTabA(shared);
+  await withServer({ "/api/generate/check": () => ({ json: { state: "absent" } }), "/api/generate/quote": quote, "/api/generate": () => ({ status: 202, json: { id: "gen_b" } }) }, async () => {
+    expect(await press(tabOf(shared))).toEqual({ state: "queued", jobId: "gen_b", credits: 21 });
+  });
+  await withServer({ "/api/generate/quote": quote, "/api/generate": () => ({ status: 202, json: { id: "gen_a" } }) }, async (calls) => {
+    expect(await press(a)).toEqual({ state: "queued", jobId: "gen_a", credits: 21 });
+    /* B's note said it never arrived (fenced): nothing to ask, and this press is quoted and sent once. */
+    expect(calls.map((c) => c.path)).toEqual(["/api/generate/quote", "/api/generate"]);
+    expect(calls[1].key).not.toBe(k1);
+  });
+  expect(readOwnClaim(a, STORAGE_ID)).toBeNull();
+});
+
+test("a claimed send (the rate-table Rig) settles its own copy the same way after another tab let the claim go", async () => {
+  const shared = memory();
+  const a = tabOf(shared), b = tabOf(shared);
+  let k1 = "";
+  await withServer({ "/api/generate": () => "network" }, async (calls) => {
+    expect(await sendClaimedGeneration({ scope: SCOPE, storageId: SLOT, body: RERENDER, credits: 19, storage: a })).toMatchObject({ state: "unknown", lost: true });
+    k1 = calls[0].key!;
+  });
+  await withServer({ "/api/generate/check": () => ({ json: { state: "landed", id: "gen_k1", status: "running" } }) }, async () => {
+    expect(await sendClaimedGeneration({ scope: SCOPE, storageId: SLOT, body: RERENDER, credits: 19, storage: b })).toMatchObject({ state: "queued", jobId: "gen_k1", followed: true });
+  });
+  await withServer({}, async (calls) => {
+    expect(await sendClaimedGeneration({ scope: SCOPE, storageId: SLOT, body: RERENDER, credits: 19, storage: a })).toEqual({ state: "queued", jobId: "gen_k1", status: "running", credits: 19, followed: true });
+    expect(calls).toEqual([]);
+  });
+  expect(k1).toBeTruthy();
+});
+
+test("two tabs: this tab's own claim comes before another tab's newer claim in the same slot, so a press never pays twice", async () => {
+  for (const how of ["note", "check"] as const) {
+    const shared = memory();
+    const { a, k1 } = await lostInTabA(shared);
+    const b = tabOf(shared);
+    const paid: string[] = [];
+    /* Tab B settles kA (landed) and follows it; then presses again on the same slot, and kB is lost before it reaches the server. */
+    await withServer({ "/api/generate/check": () => ({ json: { state: "landed", id: "gen_k1", status: "running" } }) }, async () => {
+      expect(await press(b)).toEqual({ state: "queued", jobId: "gen_k1", credits: 21 });
+    });
+    let kB = "";
+    await withServer({ "/api/generate/quote": quote, "/api/generate": () => "network" }, async (calls) => {
+      expect((await press(b)).state).toBe("refused");
+      kB = calls[1].key!;
+    });
+    expect(readPendingGeneration(shared, STORAGE_ID)?.key).toBe(kB);
+    if (how === "check") shared.removeItem(SETTLED);
+    /* Tab A presses: its own kA is settled first (landed) and followed. kB is not asked about, nothing is quoted or sent. */
+    await withServer({
+      "/api/generate/check": (body) => ({ json: body.key === k1 ? { state: "landed", id: "gen_k1", status: "running" } : { state: "absent" } }),
+      "/api/generate/quote": quote,
+      "/api/generate": (body) => { paid.push(String(body.prompt)); return { status: 202, json: { id: "gen_kC" } }; },
+    }, async (calls) => {
+      expect(await press(a)).toEqual({ state: "queued", jobId: "gen_k1", credits: 21 });
+      expect(calls.map((c) => [c.path, c.body.key])).toEqual(how === "note" ? [] : [["/api/generate/check", k1]]);
+    });
+    expect(paid, `${how}: tab A sent nothing`).toEqual([]);
+    /* B's own kB stays for B (and for whoever presses next). */
+    expect(readPendingGeneration(shared, STORAGE_ID)?.key).toBe(kB);
+    expect(readOwnClaim(a, STORAGE_ID)).toBeNull();
+  }
+});
+
+test("two tabs: this tab's own claim that made nothing is let go, and then another tab's newer claim in the slot is asked about as before", async () => {
+  const shared = memory();
+  const { a, k1 } = await lostInTabA(shared);
+  const theirs = { key: "other-window-0002", body: JSON.stringify({ prompt: "Theirs", model: ENGINE }), credits: 21, endpoint: "/api/generate" as const };
+  /* Another tab found kA never arrived, let it go, and its own later claim is waiting in the slot. */
+  shared.removeItem(STORAGE_ID);
+  claimPendingGeneration(tabOf(shared), STORAGE_ID, theirs);
+  await withServer({ "/api/generate/check": (body) => ({ json: body.key === k1 ? { state: "absent" } : { state: "pending" } }) }, async (calls) => {
+    const outcome = await press(a);
+    expect(outcome.state).toBe("refused");
+    expect(calls.map((c) => c.body.key)).toEqual([k1, theirs.key]);
+  });
+  expect(readOwnClaim(a, STORAGE_ID)).toBeNull();
+  expect(readPendingGeneration(shared, STORAGE_ID)?.key).toBe(theirs.key);
+});

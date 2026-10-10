@@ -148,7 +148,7 @@ export async function quoteConsumerGenjutsu(
   if (!(await readDraft(userId, draftId)))
     throw new ConsumerVideoServiceError(
       "project_missing",
-      "Save this project before requesting a quote.",
+      "This isn't available.",
       404,
     );
   const access = await connected(userId);

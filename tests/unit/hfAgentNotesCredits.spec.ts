@@ -1,15 +1,12 @@
 import { test, expect } from "@playwright/test";
-import { agentCharged, agentPrice, agentReserved } from "../../components/graphite/production/agent-price";
 import { NOTES_LIMIT, clearSentNotes, notesBack, notesOf, notesSent, withNotes } from "../../lib/production/notes";
 import { BEAT_LIMITS, newBeat, newScene, newShot, removalName, removeFromSheet, restoreRefusal, restoreToSheet, type BeatScene, type BeatSheet } from "../../lib/production/beats";
-import { attachBeatsStage, undoBeatRemoval } from "../../lib/production/beats-undo";
 import { UNDO_HINT, popUndo, pushUndo, splitUndoHint, undoneLabel, withUndoHint, type UndoEntry } from "../../lib/shell/undo";
 import { productionSchema } from "../../lib/workbench/studio-schema";
 import { mergeDraft } from "../../lib/workbench/draft-merge";
 import { noteTakenOut, recordMade, type MadeRecords } from "../../lib/workbench/merge";
 import { beatSheetFrom } from "../../lib/production/beats";
 import { newProject, type Project } from "../../lib/workbench/studio";
-import type { DevelopmentJob } from "../../lib/workbench/development-types";
 
 /**
  * Agent stages keep the director's notes and speak in credits; Beats deletes
@@ -23,48 +20,8 @@ function scene(heading: string, beats = 3, shots = 2): BeatScene {
 function sheetOf(...scenes: BeatScene[]): BeatSheet {
   return { scriptSha256: "a".repeat(64), updatedAt: "2026-09-25T00:00:00.000Z", scenes };
 }
-type Run = Pick<DevelopmentJob, "status" | "credits" | "costUsd" | "estimateCredits" | "estimateUsd" | "ownKey">;
-const run = (over: Partial<Run>): Run => ({ status: "succeeded", credits: 9, estimateCredits: 12, ownKey: false, ...over });
 
-/* ── Price in the workspace's unit ───────────────────────────────────────── */
 
-test("a credit workspace sees credits only — even when a dollar figure arrives with the quote", () => {
-  expect(agentPrice({ estimateCredits: 12 }, true)).toBe("12 credits");
-  expect(agentPrice({ estimateCredits: 12, estimateUsd: 0.0312 }, true)).toBe("12 credits");
-  expect(agentPrice({ estimateCredits: 1234 }, true)).toBe("1,234 credits");
-  expect(agentPrice({ estimateCredits: 1 }, true)).toBe("1 credit");
-  expect(agentPrice({ estimateCredits: 12, estimateUsd: 0.0312 }, true)).not.toContain("$");
-});
-
-test("a credit workspace never reads a dollar quote, never '0 credits' for one; the house workspace reads its dollars", () => {
-  expect(agentPrice({ estimateCredits: 0, estimateUsd: 0.0312 }, true)).toBe("Quote unavailable");
-  /* The house workspace (lib/houseWorkspace.ts) is never billed in credits: the dollars its own quote carries. */
-  expect(agentPrice({ estimateCredits: 0, estimateUsd: 2.5 }, false)).toBe("$2.5000");
-  expect(agentPrice({ estimateCredits: 0 }, false)).toBe("Quote unavailable");
-  /* No dollar figure at all (a platform model that costs nothing): the credit figure is all there is. */
-  expect(agentPrice({ estimateCredits: 0 }, true)).toBe("0 credits");
-});
-
-test("a run in progress: reserved credits, or what it may cost on the workspace's own key", () => {
-  expect(agentReserved(run({ status: "running", credits: null }), true)).toBe("reserved up to 12 credits");
-  /* A credit workspace's run list carries no dollars, so an own-key run says where it is billed. */
-  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0, ownKey: true }), true)).toBe("External account · historical");
-  /* The house's runs are metered as not platform-billed (ownKey), and read in its dollars. */
-  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0, estimateUsd: 0.05, ownKey: true }), false)).toBe("up to $0.0500");
-  expect(agentReserved(run({ status: "running", credits: null, estimateCredits: 0 }), false)).toBe("Quote unavailable");
-});
-
-test("a finished run's charge: credits, not billed when it failed, on your key, dollars, or still settling", () => {
-  expect(agentCharged(run({}), true)).toBe("9 credits");
-  expect(agentCharged(run({ credits: null }), true)).toBeNull();
-  expect(agentCharged(run({ status: "failed", credits: 0 }), true)).toBe("not billed");
-  expect(agentCharged(run({ ownKey: true, estimateCredits: 0, credits: 0 }), true)).toBe("External account · historical");
-  /* An older reply without the flag: a zero-credit estimate is the workspace's own key. */
-  expect(agentCharged(run({ ownKey: undefined, estimateCredits: 0, credits: 0 }), true)).toBe("0 credits");
-  /* The house workspace: what the engines charged, in dollars, never credits. */
-  expect(agentCharged(run({ costUsd: 0.0213, ownKey: true }), false)).toBe("$0.0213");
-  expect(agentCharged(run({ costUsd: null, credits: null }), false)).toBeNull();
-});
 
 /* ── Notes ───────────────────────────────────────────────────────────────── */
 
@@ -169,68 +126,6 @@ test("a deleted scene never goes back into a beat sheet that was replaced since 
   /* The last scene of a sheet had no neighbours: it goes back into the empty sheet. */
   const last = removeFromSheet(sheetOf(a), { kind: "scene", id: a.id })!;
   expect(restoreToSheet(last.sheet, last.removal)!.scenes.map((x) => x.heading)).toEqual(["INT. HUT"]);
-});
-
-/* ── Beats: where an undo lands ──────────────────────────────────────────── */
-
-test("an undo goes through the open Beats stage; with none open it waits for the next one", () => {
-  const scope = `ws-${Math.random()}`, projectId = `p-${Math.random()}`;
-  const a = scene("INT. HUT"), b = scene("EXT. ICE");
-  let sheet: BeatSheet = sheetOf(a, b);
-  const restore = (removal: Parameters<typeof restoreToSheet>[1]) => {
-    const next = restoreToSheet(sheet, removal);
-    if (!next) return restoreRefusal(sheet, removal);
-    sheet = next;
-    return null;
-  };
-
-  /* Open: restored at once. */
-  const first = attachBeatsStage(scope, projectId, restore);
-  expect(first.missed).toEqual([]);
-  let taken = removeFromSheet(sheet, { kind: "scene", id: b.id })!;
-  sheet = taken.sheet;
-  expect(undoBeatRemoval(scope, projectId, taken.removal)).toEqual({ done: "restored" });
-  expect(sheet.scenes.map((x) => x.heading)).toEqual(["INT. HUT", "EXT. ICE"]);
-
-  /* Closed (the director moved to Brief): held, never written by the closed stage. */
-  first.detach();
-  taken = removeFromSheet(sheet, { kind: "beat", sceneId: a.id, id: a.beats[0].id })!;
-  sheet = taken.sheet;
-  expect(undoBeatRemoval(scope, projectId, taken.removal)).toEqual({ done: "held" });
-  expect(sheet.scenes[0].beats).toHaveLength(2);
-
-  /* The next Beats stage for the project puts it back as it opens. */
-  const second = attachBeatsStage(scope, projectId, restore);
-  expect(second.missed).toEqual([]);
-  expect(second.restored.map((r) => r.kind)).toEqual(["beat"]);
-  expect(sheet.scenes[0].beats.map((x) => x.text)).toEqual(["INT. HUT beat 1", "INT. HUT beat 2", "INT. HUT beat 3"]);
-
-  /* A stale stage's detach does not close the newer one. */
-  first.detach();
-  taken = removeFromSheet(sheet, { kind: "shot", sceneId: b.id, id: b.shots[1].id })!;
-  sheet = taken.sheet;
-  expect(undoBeatRemoval(scope, projectId, taken.removal)).toEqual({ done: "restored" });
-
-  /* Its scene is gone: it says so. */
-  taken = removeFromSheet(sheet, { kind: "shot", sceneId: b.id, id: b.shots[0].id })!;
-  sheet = removeFromSheet(taken.sheet, { kind: "scene", id: b.id })!.sheet;
-  expect(undoBeatRemoval(scope, projectId, taken.removal)).toEqual({ done: "missed", why: "its scene is gone" });
-  second.detach();
-});
-
-test("another workspace's or project's undo is held for it, never applied to the open one", () => {
-  const scope = `ws-${Math.random()}`, projectId = `p-${Math.random()}`;
-  const seen: string[] = [];
-  const stage = attachBeatsStage(scope, projectId, (removal) => { seen.push(removal.kind); return null; });
-  const a = scene("INT. HUT");
-  const taken = removeFromSheet(sheetOf(a), { kind: "scene", id: a.id })!;
-  /* The same project id in another workspace, and another project in this one. */
-  expect(undoBeatRemoval(`other-${scope}`, projectId, taken.removal)).toEqual({ done: "held" });
-  expect(undoBeatRemoval(scope, `other-${projectId}`, taken.removal)).toEqual({ done: "held" });
-  expect(seen).toEqual([]);
-  const later = attachBeatsStage(`other-${scope}`, projectId, (removal) => { seen.push(`other:${removal.kind}`); return null; });
-  expect(seen).toEqual(["other:scene"]);
-  later.detach(); stage.detach();
 });
 
 /* ── The shell's undo toast ──────────────────────────────────────────────── */

@@ -189,8 +189,11 @@ test("password reset per-source limit behind the proxy counts the proxy's view, 
 test("the salted keys are unchanged on Vercel", async () => {
   await withEnv({ VERCEL: "1", SESSION_SECRET: "unit-salt", SELFHOST_BEHIND_PROXY: undefined }, async () => {
     const { sourceKey } = await import("../../lib/auth");
+    const { clientKey } = await import("../../lib/security/review-link");
     const r = { headers: new Headers({ "x-forwarded-for": "203.0.113.7" }) };
     expect(sourceKey(r)).toBe(createHash("sha256").update("unit-salt:login:203.0.113.7").digest("hex").slice(0, 32));
+    expect(clientKey(r, "shr_x")).toBe(createHash("sha256").update("unit-salt:review-link:shr_x:203.0.113.7").digest("hex").slice(0, 24));
+    expect(clientKey({ headers: new Headers() }, "shr_x")).toBe(createHash("sha256").update("unit-salt:review-link:shr_x:unknown").digest("hex").slice(0, 24));
     expect(sourceKey({ headers: new Headers() })).toBe(createHash("sha256").update("unit-salt:login:").digest("hex").slice(0, 32));
   });
 });

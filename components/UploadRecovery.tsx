@@ -1,15 +1,18 @@
 "use client";
 
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   listUploadEnvelopes,
   subscribeUploads,
   type UploadEnvelope,
 } from "@/lib/uploadRecovery";
-import { checkUpload, dismissUpload, resumeUpload } from "@/lib/uploadClient";
+import { checkUpload, dismissUpload, followFinishing, resumeUpload } from "@/lib/uploadClient";
+import { fileRecoveredUpload } from "@/lib/workspace/library";
 import styles from "./upload-recovery.module.css";
 
 const serverSnapshot = () => "{}";
+const STILL_FINISHING = "Storage is still finishing. Check again shortly.";
+const READY_TO_RESUME = "Ready to resume. Choose the original file if needed.";
 export default function UploadRecovery({ scope }: { scope: string | null }) {
   const snapshot = useCallback(() => {
     if (!scope) return "{}";
@@ -29,13 +32,19 @@ export default function UploadRecovery({ scope }: { scope: string | null }) {
   ) as { entries?: UploadEnvelope[]; error?: string };
   const entries = state.entries ?? [];
   if (!scope || (!entries.length && !state.error)) return null;
+  /* Finished receipts stay listed until dismissed; only an unfinished upload asks for its original file. */
+  const resumable = entries.some(
+    (entry) => entry.state !== "complete" && entry.state !== "blocked",
+  );
   return (
     <details className={styles.panel}>
       <summary>
         Uploads <span>{entries.length || "!"}</span>
       </summary>
       <section aria-label="Upload recovery" className={styles.body}>
-        <p>Choose the original file to resume an interrupted upload.</p>
+        {resumable && (
+          <p>Choose the original file to resume an interrupted upload.</p>
+        )}
         {state.error && <p role="alert">{state.error}</p>}
         {entries.map((entry) => (
           <UploadRow key={entry.session} entry={entry} />
@@ -50,6 +59,25 @@ function UploadRow({ entry }: { entry: UploadEnvelope }) {
   const [message, setMessage] = useState("");
   const file = useRef<HTMLInputElement>(null);
   const complete = entry.state === "complete";
+  /* Shown already finishing (the page reloaded while the server assembled it):
+     follow that finish to its end. Nothing is sent; an upload still running in
+     this or another tab is waited for first. Resume and Cancel stay usable. */
+  const finishingAtMount = useRef(entry.state === "finishing");
+  useEffect(() => {
+    if (!finishingAtMount.current) return;
+    finishingAtMount.current = false;
+    setMessage(STILL_FINISHING);
+    followFinishing(entry)
+      .then(async (result) => {
+        setMessage((shown) => (shown === STILL_FINISHING ? (result === "resume" ? READY_TO_RESUME : "") : shown));
+        if (result && result !== "resume") await fileRecoveredUpload(entry);
+      })
+      .catch((error) =>
+        setMessage(error instanceof Error ? error.message : "Upload recovery failed. Try again."),
+      );
+    // Once per row, from the record it was first shown with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   async function action(work: () => Promise<unknown>) {
     setBusy(true);
     setMessage("");
@@ -83,7 +111,7 @@ function UploadRow({ entry }: { entry: UploadEnvelope }) {
           <>
             <button
               disabled={busy}
-              onClick={() => void action(() => resumeUpload(entry))}
+              onClick={() => void action(() => resumeUpload(entry).then(() => fileRecoveredUpload(entry)))}
             >
               Resume upload
             </button>
@@ -95,11 +123,12 @@ function UploadRow({ entry }: { entry: UploadEnvelope }) {
               onClick={() =>
                 void action(async () => {
                   const result = await checkUpload(entry);
-                  if (result.state !== "committed")
+                  /* Found stored after all: it goes where it was dropped, as a resume would have put it. */
+                  if (result.state === "committed") await fileRecoveredUpload(entry);
+                  else if (result.failure) setMessage("");
+                  else
                     setMessage(
-                      result.retryAfterMs > 0
-                        ? "Storage is still finishing. Check again shortly."
-                        : "Ready to resume. Choose the original file if needed.",
+                      result.retryAfterMs > 0 ? STILL_FINISHING : READY_TO_RESUME,
                     );
                 })
               }
@@ -114,7 +143,7 @@ function UploadRow({ entry }: { entry: UploadEnvelope }) {
               onChange={(event) => {
                 const selected = event.target.files?.[0];
                 event.target.value = "";
-                if (selected) void action(() => resumeUpload(entry, selected));
+                if (selected) void action(() => resumeUpload(entry, selected).then(() => fileRecoveredUpload(entry)));
               }}
             />
           </>

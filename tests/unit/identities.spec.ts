@@ -7,9 +7,9 @@ test("a cited name becomes the identity's trigger, and training and a Flux still
   const { promptWithTrigger, trainCostUsd, TRAIN_STEPS, RENDER_USD_PER_MP } = await import("../../lib/identities");
   const { billCredits } = await import("../../lib/creditTerms");
   const { estimateImageCostUsd } = await import("../../lib/vendorPricing");
-  const identity = { name: "Mara", trigger: "mara_prtcl" } as never;
-  expect(promptWithTrigger("@Mara on a rooftop at dusk", identity)).toBe("mara_prtcl on a rooftop at dusk");
-  expect(promptWithTrigger("a rooftop at dusk", identity)).toBe("mara_prtcl, a rooftop at dusk");
+  const identity = { name: "Keeper", trigger: "keeper_prtcl" } as never;
+  expect(promptWithTrigger("@Keeper on a rooftop at dusk", identity)).toBe("keeper_prtcl on a rooftop at dusk");
+  expect(promptWithTrigger("a rooftop at dusk", identity)).toBe("keeper_prtcl, a rooftop at dusk");
   expect(trainCostUsd(TRAIN_STEPS)).toBeGreaterThan(0);
   expect(billCredits(trainCostUsd(TRAIN_STEPS), "identity-training")).toBeGreaterThanOrEqual(1);
   expect(estimateImageCostUsd("fal-ai/flux-lora", "1K", 0)?.net).toBe(RENDER_USD_PER_MP);
@@ -45,9 +45,9 @@ const FAL_PRESETS: Record<string, { width: number; height: number }> = {
 };
 test("the size fal is asked for is the size quoted, under one megapixel at every ratio", async () => {
   const { RENDER_RATIOS, renderInput, renderSizeFor } = await import("../../lib/identities");
-  const identity = { name: "Mara", trigger: "mara_prtcl", loraUrl: "https://example.invalid/lora.safetensors" } as never;
+  const identity = { name: "Keeper", trigger: "keeper_prtcl", loraUrl: "https://example.invalid/lora.safetensors" } as never;
   for (const ratio of RENDER_RATIOS) {
-    const asked = renderInput(identity, { prompt: "mara_prtcl on a rooftop", ratio, seed: null }).image_size;
+    const asked = renderInput(identity, { prompt: "keeper_prtcl on a rooftop", ratio, seed: null }).image_size;
     const drawn = typeof asked === "string" ? FAL_PRESETS[asked] : asked;
     expect(drawn, `${ratio}: ${JSON.stringify(asked)}`).toBeTruthy();
     expect(drawn.width * drawn.height, ratio).toBeLessThanOrEqual(1_000_000);

@@ -2,9 +2,9 @@ import { mkdirSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
-import { PHONE, forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload, type LibraryRoute } from "./helpers/workspaceFixtures";
+import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects, upload, type LibraryRoute } from "./helpers/workspaceFixtures";
 import type { Generation } from "../lib/jobs";
-import { smallTargets } from "./phoneFloors";
+import { projectName } from "./helpers/projectName";
 
 /**
  * Viral's Recent and History show real runs only (idea 17), read from the
@@ -19,14 +19,15 @@ import { smallTargets } from "./phoneFloors";
  * account's Viral route. The Library and the cancel route are answered here;
  * nothing is priced or sent.
  */
-const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
+const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
+const HISTORY_IS_THE_BOARDS = "History is the Social board's drawer, and the canvas is the desktop's: a phone has no History drawer (its past takes are in Library, Make, Recent)";
 const SHOT_SIZES: Record<string, string> = { "workbench-1440x900": "1440x900", "workbench-390x844": "390x844" };
 /* Review screenshots are written only when VIRAL_SHOTS names a folder; CI takes none. */
 const SHOTS = process.env.VIRAL_SHOTS;
-const fixture = (): Project => ({ ...newProject("Harbour dusk study"), id: "ws-runs", productionProjectId: "prod-ws", shotMappings: {} });
+const fixture = (): Project => ({ ...newProject("Harbour dusk study"), id: "ws-runs", productionProjectId: "prod-ws", shotMappings: {}, boardKind: "social" });
 const MOTION = "higgsfield-genjutsu-motion-transfer", SWAP = "higgsfield-genjutsu-object-swap";
 const MIN = 60_000;
-const uploads = [upload({ id: "up_src", filename: "walk.mp4", mime: "video/mp4", kind: "video", durationS: 12 }), upload({ id: "up_ref", filename: "mira.png", mime: "image/png" }),
+const uploads = [upload({ id: "up_src", filename: "walk.mp4", mime: "video/mp4", kind: "video", durationS: 6 }), upload({ id: "up_ref", filename: "wren.png", mime: "image/png" }),
   ...Array.from({ length: 12 }, (_, i) => upload({ id: `up_r${i}`, filename: `still-${i}.png`, mime: "image/png" }))];
 const keyParams = (resolution = "720p", extra: Record<string, unknown> = {}) => ({
   resolution, rawPrompt: "", sourceUploadId: "up_src", workbenchProjectId: "ws-runs",
@@ -55,8 +56,13 @@ async function open(page: Page, sp: "motion" | "swap" | "history", generations: 
   page.on("request", (request) => { const path = new URL(request.url()).pathname; if (path.startsWith("/api/higgsfield/consumer/")) asked.push(`${request.method()} ${path}`); });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`/suites?suite=subatomik&page=${sp}&sp=${sp}`);
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour dusk study");
+  /* History is the Social board's History drawer now (the Viral page is deleted); the quick tools are Make's. */
+  await page.goto(`/suites?project=ws-runs&view=board&kind=social${sp === "history" ? "" : `&make=${sp}`}`);
+  await expect(projectName(page)).toHaveText("Harbour dusk study", { timeout: 60_000 });
+  if (sp === "history") {
+    await page.getByTestId("board-drawer-history").click();
+    await expect(page.getByTestId("board-history").getByTestId("history-view")).toBeVisible({ timeout: 60_000 });
+  }
   return { errors, asked, library };
 }
 /** Viral asks nothing of the connected account; the shell's own collector may list an owner's earlier connected jobs, to drain them. */
@@ -72,7 +78,7 @@ async function shoot(page: Page, project: string, name: string) {
 }
 
 test("History lists the project's transform takes from the Library, each state in words, earlier account runs read-only, and Send to Edit opens that take in Takes", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.skip(!DESKTOP.includes(info.project.name), HISTORY_IS_THE_BOARDS);
   const { errors, asked } = await open(page, "history", [
     generation({ id: "gen_still", title: "Dunes still", prompt: "dunes", createdAt: Date.now() }),
     take("t_done", "succeeded", 1, { creditsBilled: 22 }),
@@ -99,19 +105,19 @@ test("History lists the project's transform takes from the Library, each state i
   await expect(done.nth(1)).toHaveAttribute("data-account", "true");
   /* No still is a transform; nothing is an estimate. */
   await expect(page.getByTestId("history-view")).not.toContainText("Dunes still");
-  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="history-view"]'), "44px targets").toEqual([]);
   await noOverflow(page);
   await shoot(page, info.project.name, "history");
 
   await done.nth(1).getByRole("button", { name: "Send to Edit" }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("Takes");
-  await expect(page.getByTestId("edit-takes").locator('[data-testid="edit-take"][aria-checked="true"]')).toContainText("Swapped bottle");
+  /* Takes is the board's Shots region now: it opens there, with that take selected. */
+  await expect.poll(() => { const q = new URL(page.url()).searchParams; return [q.get("view"), q.get("region")]; }).toEqual(["board", "shots"]);
+  await expect.poll(() => new URL(page.url()).searchParams.get("asset")).toMatch(/^(generation|upload):/);
   expect(viralAsked(asked), "Viral asks the connected account for nothing").toEqual([]);
   expect(errors).toEqual([]);
 });
 
 test("a take in flight lands without a reload: the Library is read again, and the card turns into its result", async ({ page }, info) => {
-  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  test.skip(info.project.name !== "workbench-1440x900", HISTORY_IS_THE_BOARDS);
   await page.clock.install();
   const { errors, library } = await open(page, "history", [take("t_render", "running", 2)]);
   await expect(page.getByTestId("history-take").getByTestId("history-take-status")).toHaveText("Rendering");
@@ -125,7 +131,7 @@ test("a take in flight lands without a reload: the Library is read again, and th
 });
 
 test("older takes page in by the Library's own cursor, and Recent beside a composer lists its own variant or says it has none", async ({ page }, info) => {
-  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  test.skip(info.project.name !== "workbench-1440x900", HISTORY_IS_THE_BOARDS);
   const takes = Array.from({ length: 5 }, (_, i) => take(`t_${i}`, "succeeded", i + 1, { model: i % 2 ? SWAP : MOTION }));
   const { errors } = await open(page, "history", takes, { pageSize: 2, uploads: [] });
   await expect(page.getByTestId("history-result")).toHaveCount(2);
@@ -134,8 +140,9 @@ test("older takes page in by the Library's own cursor, and Recent beside a compo
   await page.getByTestId("history-more").click();
   await expect(page.getByTestId("history-result")).toHaveCount(5);
   await expect(page.getByTestId("history-more")).toHaveCount(0);
-  /* Recent beside Object Swap: its own takes only, each a way into Takes. */
-  await page.getByRole("navigation", { name: "Pages" }).getByRole("button", { name: /Object Swap/ }).click();
+  /* Recent under Object swap (Make's quick tool, opened from the board's own Object swap button): its own takes only, each a way into Takes. */
+  await page.getByRole("button", { name: "Object swap", exact: true }).first().click();
+  await expect(page.getByTestId("make-panel")).toHaveAttribute("data-tab", "swap");
   const recent = page.getByTestId("viral-recent").getByTestId("viral-take");
   await expect(recent).toHaveCount(2);
   await expect(recent.getByTestId("viral-take-status")).toHaveText(["Done", "Done"]);
@@ -144,10 +151,11 @@ test("older takes page in by the Library's own cursor, and Recent beside a compo
 });
 
 test("with no takes yet, History says so and starts one; Recent says which variant has none", async ({ page }, info) => {
-  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  test.skip(info.project.name !== "workbench-1440x900", HISTORY_IS_THE_BOARDS);
   const { errors, asked } = await open(page, "history", []);
   await expect(page.getByTestId("history-empty")).toContainText("No takes in this project yet.");
   await page.getByTestId("history-empty").getByRole("button", { name: "Object Swap" }).click();
+  await expect(page.getByTestId("make-title")).toHaveText("Object swap");
   await expect(page.getByTestId("viral-recent-empty")).toHaveText("No Object Swap takes yet.");
   await noOverflow(page);
   expect(viralAsked(asked)).toEqual([]);
@@ -155,7 +163,7 @@ test("with no takes yet, History says so and starts one; Recent says which varia
 });
 
 test("Recreate from an earlier account run loads what the key carries and says what it cannot; Cancel on a queued take asks the route", async ({ page }, info) => {
-  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
+  test.skip(info.project.name !== "workbench-1440x900", HISTORY_IS_THE_BOARDS);
   const cancels: string[] = [];
   await page.route(/\/api\/generations\/[^/]+\/cancel$/, (route) => { cancels.push(route.request().url()); return route.fulfill({ status: 202, json: { status: "requested" } }); });
   const { errors, asked } = await open(page, "history", [take("t_queue", "queued", 1), earlier("t_many", 30, 12)]);
@@ -165,7 +173,7 @@ test("Recreate from an earlier account run loads what the key carries and says w
   expect(cancels).toHaveLength(1);
   expect(cancels[0]).toContain("/api/generations/t_queue/cancel");
   /* Twelve stills on the account; this route takes eight. */
-  await page.getByTestId("history-result").getByRole("button", { name: "Recreate" }).click();
+  await page.getByTestId("history-result").getByRole("button", { name: "Open in Make" }).click();
   await expect(page.getByTestId("viral-view")).toHaveAttribute("data-page", "swap");
   await expect(page.getByTestId("toast")).toContainText("Loaded the first 8 of 12 references; this route takes up to 8.");
   await expect(page.getByTestId("viral-source")).toContainText("walk.mp4");
@@ -176,35 +184,24 @@ test("Recreate from an earlier account run loads what the key carries and says w
   expect(errors).toEqual([]);
 });
 
-/* The account's Viral route is no longer read by these pages, but its history reads stay until its server code goes
-   (lib/higgsfield-consumer/retired.ts), and pricing or starting a run there answers 410. */
-test("the real route: the runs view pages runs by cursor and the saved-jobs list is unchanged; a quote or a submit is retired", async ({ page }, info) => {
+/* The connected account is retired (lib/higgsfield-consumer/retired.ts): its Viral route answers 410 to every read and every
+   write, before auth or a body read, so nothing here is priced, started, listed or collected. Past results stay in the Library. */
+test("the real route: every read and every send on the connected account's Viral route is retired", async ({ page }, info) => {
   test.skip(info.project.name !== "workbench-1440x900", "one server check is enough");
   await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json()) as { id: string; owner?: boolean; workspace: { id: string } };
   const headers = { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` };
   const base = "/api/higgsfield/consumer/genjutsu?draftId=ws-runs-real";
-  const runs = await page.request.get(`${base}&view=runs`, { headers });
-  expect(runs.status(), await runs.text()).toBe(200);
-  expect(await runs.json()).toMatchObject({ jobs: [], nextCursor: null, connection: { connected: false } });
-  const saved = await page.request.get(base, { headers });
-  expect(saved.status()).toBe(200);
-  const body = await saved.json();
-  expect(body.jobs).toEqual([]);
-  expect(body).not.toHaveProperty("nextCursor");
-  const swaps = await page.request.get(`${base}&view=runs&variant=object-swap`, { headers });
-  expect(swaps.status(), await swaps.text()).toBe(200);
-  expect(await swaps.json()).toMatchObject({ jobs: [], nextCursor: null });
-  for (const query of ["&view=runs&cursor=nope", "&cursor=1700000000000.abc", "&view=everything", "&variant=object-swap", "&view=runs&variant=lip-sync"])
-    expect((await page.request.get(`${base}${query}`, { headers })).status(), query).toBe(400);
-
-  /* New work is retired on the real server, whatever the body holds; a status read still reaches the ledger. */
-  const post = (data: Record<string, unknown>) => page.request.post("/api/higgsfield/consumer/genjutsu", { headers, data });
-  for (const action of ["quote", "submit"]) {
-    const refused = await post({ action, draftId: "ws-runs-real" });
-    expect(refused.status(), action).toBe(410);
-    expect(await refused.json()).toEqual({ code: "retired", error: "The connected account is no longer used. Past results stay in your Library." });
+  const retired = { code: "retired", error: "The connected account is no longer used. Past results stay in your Library." };
+  for (const query of ["&view=runs", "", "&view=runs&variant=object-swap"]) {
+    const read = await page.request.get(`${base}${query}`, { headers });
+    expect(read.status(), query).toBe(410);
+    expect(await read.json(), query).toEqual(retired);
   }
-  const status = await post({ action: "status", draftId: "ws-runs-real", id: "44444444-4444-4444-8444-000000000001" });
-  expect(status.status()).not.toBe(410);
+  const post = (data: Record<string, unknown>) => page.request.post("/api/higgsfield/consumer/genjutsu", { headers, data });
+  for (const action of ["quote", "submit", "status"]) {
+    const refused = await post({ action, draftId: "ws-runs-real", id: "44444444-4444-4444-8444-000000000001" });
+    expect(refused.status(), action).toBe(410);
+    expect(await refused.json(), action).toEqual(retired);
+  }
 });

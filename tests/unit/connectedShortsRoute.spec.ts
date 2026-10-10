@@ -56,7 +56,8 @@ async function fixture() {
     "@/lib/higgsfield-consumer/genjutsu-sources": { ConsumerGenjutsuError },
     "@/lib/higgsfield-consumer/generation-sources": { GENERATION_SOURCE_BYTES: 52428800 },
     "@/lib/higgsfield-consumer/shorts-studio": studio,
-    "@/lib/higgsfield-consumer/retired": retired,
+    /* The handlers kept behind signInOff, as they ran before Release 1 (the switch itself: tests/unit/signinOffRelease1.spec.ts). */
+    "@/lib/higgsfield-consumer/retired": { ...retired, signInOff: (kept: unknown) => kept },
     "@/lib/higgsfield-consumer/shorts-service": {
       consumerShortsJobs: service("list", [job]),
       connectedShortsPresets: service("presets", { presets: [], complete: true, fetchedAt: 1 }),

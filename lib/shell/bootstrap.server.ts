@@ -5,9 +5,12 @@ import { effectiveModels } from "@/lib/defaultModels";
 import { getPlatformLayer, platformDb, platformReady } from "@/lib/platform";
 import { buildRateTable } from "@/lib/rateTable.server";
 import { runInTenant } from "@/lib/tenant";
-import { workbenchScopeFor } from "@/lib/workbench/request-scope";
+import { accountScopeFor, workbenchScopeFor } from "@/lib/workbench/request-scope";
 import { shellEntryRedirect } from "@/lib/signIn";
-import { searchStringOf } from "@/lib/workspace/switchover";
+import { searchStringOf } from "@/lib/shell/raw-search";
+import { publicActorName } from "@/lib/platformOwnerPrivacy";
+import { newInterfaceFor } from "@/lib/newInterface.server";
+import { lowCreditBaseFor } from "@/lib/v12/lowCredit.server";
 
 /**
  * Who runs the connected Higgsfield account in this workspace, by name, for a
@@ -17,12 +20,14 @@ import { searchStringOf } from "@/lib/workspace/switchover";
 async function ownerNameOf(workspaceId: string): Promise<string | null> {
   await platformReady();
   const rs = await platformDb().execute({
-    sql: `SELECT a.name FROM memberships m JOIN accounts a ON a.id = m.account_id
+    sql: `SELECT a.id, a.email, a.name FROM memberships m JOIN accounts a ON a.id = m.account_id
           WHERE m.workspace_id = ? AND m.role = 'owner' AND m.disabled = 0 AND a.deleted_at IS NULL
           ORDER BY m.created_at LIMIT 1`,
     args: [workspaceId],
   });
-  const name = String((rs.rows[0] as { name?: unknown } | undefined)?.name ?? "").trim();
+  const row = rs.rows[0] as { id?: unknown; email?: unknown; name?: unknown } | undefined;
+  // Outside the house the platform owner is "Particl support" (lib/platformOwnerPrivacy.ts).
+  const name = row ? (await publicActorName({ id: workspaceId }, row)).trim() : "";
   return name ? name.slice(0, 80) : null;
 }
 
@@ -36,9 +41,10 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
   const ctx = await currentContext();
   if (ctx?.mfaRequired) redirect("/account/security");
   /* A visitor — a teammate whose session lapsed, holding a shared link — signs
-     in and comes back to this exact suite and page. Only an account with no
-     workspace goes to /workbench, and it keeps the whole query too. */
-  if (!ctx?.workspace) redirect(shellEntryRedirect(pathname, searchStringOf(await searchParams), Boolean(ctx)));
+     in and comes back to this exact suite and page. */
+  if (!ctx) redirect(shellEntryRedirect(pathname, searchStringOf(await searchParams)));
+  /* Signed in, in no workspace: the shell has nothing to open; the page says so (components/graphite/NoWorkspace.tsx). */
+  if (!ctx.workspace) return { none: true as const, scope: accountScopeFor(ctx.user.id), email: ctx.user.email || null };
   const credits = await creditStateFor(ctx.workspace).catch(() => null);
   const initialAccount = {
     workspace: { id: ctx.workspace.id, name: ctx.workspace.name },
@@ -46,6 +52,7 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
   };
   const scope = workbenchScopeFor(ctx.workspace.id, ctx.user.id);
   const owner = ctx.role === "owner";
+  const newInterface = await newInterfaceFor(ctx.workspace);
   const session = {
     signedIn: true,
     requestScope: scope,
@@ -54,6 +61,7 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
     userId: ctx.user.id,
     workspace: {
       id: ctx.workspace.id, name: ctx.workspace.name, slug: ctx.workspace.slug, suspended: Boolean(ctx.workspace.suspendedAt), suspendedReason: ctx.workspace.suspendedReason, internalTest: Boolean(ctx.workspace.internalTest),
+      newInterface,
       /* A member's owner-run card names who runs the connected account; the owner needs no such line. */
       ownerName: owner ? null : await ownerNameOf(ctx.workspace.id).catch(() => null),
     },
@@ -61,7 +69,9 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
     owner,
     superAdmin: await isPlatformOwner(ctx.user),
     workspaces: ctx.workspaces ?? [],
-    credits,
+    /* The balance; with the new interface on, also what its low-credit chip measures it against (read-only; none if it
+       can't be read). Off, nothing more is read: customers don't pay for the new queries. */
+    credits: credits && newInterface ? { ...credits, ...(await lowCreditBaseFor(ctx.workspace).catch(() => null)) } : credits,
     models: await runInTenant(ctx.workspace, () => effectiveModels()).catch(() => null),
     setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
     rates: buildRateTable(creditsApply(ctx.workspace) ? "cr" : "usd"),

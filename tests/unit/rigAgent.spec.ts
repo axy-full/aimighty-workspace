@@ -72,7 +72,7 @@ test("create_node's kinds map to the reference node types and a kind, or to a sh
 
 test("the dry tools check and record, never apply: each problem is answered so the planner can fix it", () => {
   const board = new DryBoard(snapshotOf({
-    cards: [{ id: "shot-a", kind: "Scene", title: "Their shot", shot: true }, { id: "locked-b", kind: "Scene", title: "Locked", shot: true, locked: true }, { id: "mira", kind: "Cast", title: "Mira", reference: true }],
+    cards: [{ id: "shot-a", kind: "Scene", title: "Their shot", shot: true }, { id: "locked-b", kind: "Scene", title: "Locked", shot: true, locked: true }, { id: "wren", kind: "Cast", title: "Wren", reference: true }],
     assets: [{ id: "still", name: "Still", kind: "image", category: "Character" }],
   }));
   expect(board.create({ key: "cast-1", kind: "cast", title: "The captain", from: "still" })).toEqual({ ok: true });
@@ -86,20 +86,20 @@ test("the dry tools check and record, never apply: each problem is answered so t
   expect(board.wire({ from: "cast-1", to: "shot-1" })).toEqual({ ok: true });
   expect(board.wire({ from: "cast-1", to: "shot-1" })).toEqual({ ok: true, note: "Already wired." });
   expect(board.wire({ from: "cast-1", to: "shot-a" })).toEqual({ ok: true });
-  expect(board.wire({ from: "mira", to: "shot-1" })).toEqual({ ok: true });
+  expect(board.wire({ from: "wren", to: "shot-1" })).toEqual({ ok: true });
   expect(board.wire({ from: "cast-1", to: "cast-1" })).toMatchObject({ ok: false });
   expect(board.wire({ from: "cast-1", to: "locked-b" })).toMatchObject({ ok: false, problem: expect.stringContaining("locked") });
   expect(board.wire({ from: "ghost", to: "shot-1" })).toMatchObject({ ok: false });
   expect(board.render({ shot: "cast-1" })).toMatchObject({ ok: false });
   expect(board.render({ shot: "shot-1" })).toMatchObject({ ok: true, note: expect.stringContaining("priced") });
   expect(board.lock({ card: "shot-1" })).toMatchObject({ ok: false });
-  expect(board.lock({ card: "mira" })).toMatchObject({ ok: true });
+  expect(board.lock({ card: "wren" })).toMatchObject({ ok: true });
   expect(board.tidy()).toEqual({ ok: true });
   expect(board.draft()).toEqual({
     cards: [{ key: "cast-1", kind: "cast", title: "The captain", from: "still" }, { key: "shot-1", kind: "shot", title: "Opening", text: "The pier at dawn.", durationS: 5, ratio: "16:9" }],
-    wires: [{ from: "cast-1", to: "shot-1" }, { from: "cast-1", to: "shot-a" }, { from: "mira", to: "shot-1" }],
+    wires: [{ from: "cast-1", to: "shot-1" }, { from: "cast-1", to: "shot-a" }, { from: "wren", to: "shot-1" }],
     tidy: true,
-    next: [{ what: "render", card: "shot-1" }, { what: "lock", card: "mira" }],
+    next: [{ what: "render", card: "shot-1" }, { what: "lock", card: "wren" }],
   });
   /* One build is bounded. */
   const full = new DryBoard(snapshotOf());
@@ -171,8 +171,11 @@ test("the planner stays inside its bounds: a turn that answers nothing proposes 
 });
 
 test("the planner thinks with Claude, OpenAI or Grok from Atomik's policy: Auto picks among them, an explicit choice is never swapped", () => {
-  const menu = [{ id: "google/gemini-3.1-pro-preview" }, { id: "spacexai/grok-4.7" }, { id: "openai/gpt-5.5" }, { id: "anthropic/claude-sonnet-4.6" }];
+  /* Cheapest first, as atomikModels orders a priced menu: Auto takes the first of its choices. */
+  const menu = [{ id: "google/gemini-3.1-pro-preview" }, { id: "spacexai/grok-4.7" }, { id: "anthropic/claude-sonnet-4.6" }, { id: "openai/gpt-5.5" }];
   expect(selectPlannerModel("auto", menu)).toBe("anthropic/claude-sonnet-4.6");
+  /* With only OpenAI connected, Auto keeps an OpenAI choice of its own (GPT-5.5, where GPT-5.5 Pro was). */
+  expect(selectPlannerModel("auto", [{ id: "openai/gpt-5-nano" }, { id: "openai/gpt-5.5" }])).toBe("openai/gpt-5.5");
   expect(selectPlannerModel("auto", [{ id: "google/gemini-3.1-pro-preview" }, { id: "spacexai/grok-4.7" }])).toBe("spacexai/grok-4.7");
   expect(selectPlannerModel("openai/gpt-5.5", menu)).toBe("openai/gpt-5.5");
   expect(() => selectPlannerModel("google/gemini-3.1-pro-preview", menu)).toThrow(/Claude, OpenAI or Grok/);
@@ -345,7 +348,8 @@ test("a run: asked, planned to a proposal, approved as shown, built step by step
     const built = (await agent.rigAgentState("prod-1", "ana")).run!;
     expect(built).toMatchObject({ state: "needs_you", built: { cards: 4, wires: 4 }, held: [], canUndo: true, credits: proposed.credits });
     expect(built.steps.map((s) => s.state)).toEqual(["done", "done", "done", "done", "done"]);
-    expect(built.paid.map((p) => p.state)).toEqual(["waiting", "next", "next", "next"]);
+    /* Every render the plan names is priced once the build is done (the plan is approved once, at its total); checks wait. */
+    expect(built.paid.map((p) => p.state)).toEqual(["waiting", "next", "waiting", "next"]);
     const canvas = (await readTeamCanvas("prod-1"))!;
     const own = Object.entries(canvas.canvas.serverMade).filter(([, by]) => by === `agent:${asked.id}`).map(([id]) => id);
     expect(own.sort()).toEqual(["cast-1", "place-1", "shot-1", "shot-2"].map((key) => agentNodeId(asked.id, key)).sort());
