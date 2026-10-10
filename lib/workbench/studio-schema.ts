@@ -357,6 +357,15 @@ export const projectSchema = z.object({
   scriptFormat: z.enum(["screenplay", "adfilm"]).optional(),
   /* The board a project opens on (lib/board/kind.ts; lead decision 26): set when a template makes it. Absent: read from its data. */
   boardKind: z.enum(["studio", "ads", "social"]).optional(),
+  /* The board's kind in the new interface (lib/v12/board/kinds.ts): Film, Pre-vis, Campaign, Social narrated or clips. Additive and optional, draft JSON only. */
+  boardFlavor: z.enum(["film", "previs", "campaign", "narrated", "clips"]).optional(),
+  /* The board's stages as arranged in the new interface (lib/v12/board/stages.ts): additive and optional, draft JSON only. */
+  boardStages: z.array(z.object({
+    id: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/),
+    label: z.string().max(40).optional(),
+    skipped: z.boolean().optional(),
+    custom: z.boolean().optional(),
+  }).strict()).max(24).optional(),
   scriptSource: z
     .object({
       assetId: z.string().max(100),
