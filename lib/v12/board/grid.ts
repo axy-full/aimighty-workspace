@@ -25,20 +25,15 @@ export function gridColumns(width: number): number {
   return Math.max(GRID_MIN, Math.min(GRID_MAX, Math.floor((width - GRID_SIDES + GRID_GAP) / GRID_STEP)));
 }
 
-/** The stages laid out on the grid. Shots now; Storyboard and Elements join with their own stage contents (P2). */
-export const GRID_STAGES: ReadonlySet<string> = new Set(["shots"]);
+/** The stages laid out on the grid: Storyboard and Shots (Elements joins with its own stage contents). */
+export const GRID_STAGES: ReadonlySet<string> = new Set(["storyboard", "shots"]);
+
+/** The row under a shot card's pictures and words: Approve · Reject on a finished take, the status line on one that has something to say. */
+export const GRID_ACTIONS = 40;
 
 export type GridSize = { w: number; h: number };
 
-/**
- * A shot card at the grid's width: today's card is drawn 340 wide with its picture's height from the board's aspect
- * (`well`), so at 260 the picture shrinks by the same ratio and everything under it stays as it is.
- */
-export function gridShotSize(size: GridSize, well: (width: number) => number): GridSize {
-  return { w: GRID_CARD, h: Math.max(0, size.h - well(size.w) + well(GRID_CARD)) };
-}
-
-/** One outer height for every shot card on the stage: the tallest one's (a finished card's actions, a rendering card's status line). */
+/** One outer height for every card of a kind on the stage: the tallest one's (a finished card's actions, a rendering card's status line). */
 export function evenHeights(sizes: ReadonlyMap<string, GridSize>): Map<string, GridSize> {
   const tallest = Math.max(0, ...[...sizes.values()].map((s) => s.h));
   return new Map([...sizes].map(([id, s]) => [id, { w: s.w, h: tallest }]));

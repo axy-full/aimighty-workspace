@@ -28,6 +28,8 @@ export type FrameData = {
   shotId: string; index: number; name: string; line: string; genId: string | null; rendering: boolean;
   /** Its versions (v1, v2 · line drawing…) and what a line drawing can do for it now (storyboard/lines-model.ts). */
   lines: LineState & { others: number };
+  /** Drawn on the new interface's stage grid: the selected card's action row (components/v12/board/stage-grid.ts). */
+  grid?: boolean;
 };
 
 /** The plan card: Atomik's run on the board, while it has something to approve, or renders to ask for. */

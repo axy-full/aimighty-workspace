@@ -59,14 +59,18 @@ function StopRun({ runId, productionId, scope, toast }: { runId: string; product
 
 export function GroupCard({ data, ctx }: CardProps<GroupData>) {
   const shots = data as ShotsGroupData;
+  /* On the new interface's stage grid (components/v12/board/stage-grid.ts) the group has no frame and no title (the stage header says them);
+     what its label carried that nothing else shows, a run's Stop and its cost, stays as a strip. */
+  const grid = data.grid === true;
+  const strip = !grid || Boolean(shots.stop);
   return (
-    <section className="gx-group" data-tone={data.tone} aria-label={data.title} data-testid="board-group">
-      <div className="gx-group-label">
-        <span className="gx-group-title">{data.title}</span>
-        {data.meta ? <span className="gx-group-meta">{data.meta}</span> : null}
+    <section className="gx-group" data-tone={data.tone} aria-label={data.title} data-testid="board-group" data-grid={grid || undefined}>
+      {strip ? <div className="gx-group-label">
+        {grid ? null : <span className="gx-group-title">{data.title}</span>}
+        {data.meta && !grid ? <span className="gx-group-meta">{data.meta}</span> : null}
         {shots.cost ? <CostLine productionId={ctx.productionId} scope={ctx.scope} live={shots.cost.live} spent={shots.cost.spent} /> : null}
         {shots.stop && !ctx.offline ? <StopRun runId={shots.stop.runId} productionId={ctx.productionId} scope={ctx.scope} toast={(t) => ctx.toast(t)} /> : null}
-      </div>
+      </div> : null}
     </section>
   );
 }

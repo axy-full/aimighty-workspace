@@ -55,7 +55,7 @@ import { sampleGate } from "@/lib/demo/sample";
 import { useSession } from "@/lib/session";
 import { addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
-import { gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
+import { gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { BoardBar } from "@/components/v12/board/BoardBar";
 import { useOverlay } from "@/components/v12/ui/overlay";
 import { StageRail, type StageEdit } from "@/components/v12/board/StageRail";
@@ -165,10 +165,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const savedStages = project?.boardStages;
   const stages = useMemo(() => stagesOf(kind, board.rail, savedStages), [kind, board.rail, savedStages]);
   const stage = v12Frame ? currentStage(stages, shell.params.stage, kind) : null;
-  const cards = useMemo(() => (stage ? stageCards(stage, allCards, kind, board.rail) : allCards), [stage, allCards, kind, board.rail]);
+  const stageOwn = useMemo(() => (stage ? stageCards(stage, allCards, kind, board.rail) : allCards), [stage, allCards, kind, board.rail]);
   /* The new interface's stage grid (components/v12/board/stage-grid.ts, redesign P2-b): on a grid stage, its groups N across with
      a 24 px gap and its shot cards one size. Off the switch, or on any other stage, today's definitions as they are. */
   const gridAcross = useStageColumns(v12Frame && onGrid(stage?.id));
+  const cards = useMemo(() => (gridAcross ? gridCards(stageOwn) : stageOwn), [gridAcross, stageOwn]);
   const layoutDefs = useMemo(() => (gridAcross ? gridDefs(registry.defs, cards, project?.aspect ?? "16:9", gridAcross) : registry.defs), [gridAcross, registry.defs, cards, project?.aspect]);
   const placed = useMemo(() => placeBoard(cards, layoutDefs, board.bands, project?.aspect ?? "16:9"), [cards, layoutDefs, board.bands, project?.aspect]);
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
@@ -493,16 +494,18 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* ── The seams other streams provide (review mode: 5; Atomik's panel: 7) ── */
   const [seams] = useState(() => new BoardSeams());
   const [dockOpen, setDockOpen] = useState(false);
+  /* The new interface: selecting a card does not open the Inspector (it would cover the bar); a card's ⓘ Details does (redesign P2-b). */
+  const [details, setDetails] = useState<string | null>(null);
   const ctx = useMemo<BoardCtx | null>(() => (project ? {
     kind, scope, project, productionId: project.productionProjectId ?? null, offline, readOnly: gate.readOnly, exploreOnly: gate.exploreOnly, selection, select, glide,
-    openInspector: (id: string) => select(id),
+    openInspector: (id: string) => { select(id); if (v12Frame) setDetails(id); },
     openReview: (takeId?: string) => seams.call("review", takeId),
     askAtomik: (words: string) => seams.call("atomik", words),
     openMake: (type) => shell.openMake(type),
     /* A step a person can take back is said with its Undo (the shell's toast, top right), and ⌘Z does the same. */
     toast: (text, undo) => { if (undo) undoable(undo.label, undo.run, withUndoHint(text)); else ws.toast(text); },
     rig,
-  } : null), [gate.exploreOnly, gate.readOnly, glide, kind, offline, project, rig, scope, seams, select, selection, shell, undoable, ws]);
+  } : null), [gate.exploreOnly, gate.readOnly, glide, kind, offline, project, rig, scope, seams, select, selection, shell, undoable, v12Frame, ws]);
 
   const watchers = useMemo(() => {
     const out = new Map<string, RoomPeer>();
@@ -627,6 +630,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     );
   }
   const primary = selection.primary ? placed.byId.get(selection.primary) ?? null : null;
+  const inspected = v12Frame && details !== primary?.id ? null : primary;
   /* The stage header (inventory § 6.4): the stage's meta, the selection, the one primary where its action lives, the board menu. */
   const stageNow = stage ? stageStatus(stage, allCards, kind, board.rail) : null;
   const stageMeta = stageNow && stageNow.summary && stageNow.summary !== "Nothing yet" ? stageNow.summary : null;
@@ -685,7 +689,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
         </div>
         {drawerEl}
         <BoardAgentDock ctx={ctx} open={dockOpen} onOpenChange={setDockOpen} />
-        <BoardInspector ctx={ctx} card={primary} def={primary ? registry.defs.get(primary.kind) ?? null : null} right={dockWidth} onClose={() => select(null)} />
+        <BoardInspector ctx={ctx} card={inspected} def={inspected ? registry.defs.get(inspected.kind) ?? null : null} right={dockWidth} onClose={() => { if (v12Frame) setDetails(null); else select(null); }} />
         <BoardReview ctx={ctx} />
         <GapOverlays ctx={ctx} />
         {board.Overlay ? <board.Overlay ctx={ctx} /> : null}

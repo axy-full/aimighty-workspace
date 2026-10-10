@@ -25,7 +25,7 @@ export type ShotsGroupData = GroupData & {
   stop?: { runId: string };
 };
 /** What a shot's own card says about its saved 3D blocking (components/graphite/board/blocking). */
-export type TakeCardData = { row: ShotTakes; blocking?: ShotBlockingView | null };
+export type TakeCardData = { row: ShotTakes; blocking?: ShotBlockingView | null; /** Drawn on the new interface's stage grid: Approve · Reject on the card (components/v12/board/stage-grid.ts). */ grid?: boolean };
 
 export function deriveShots(src: Pick<BoardSource, "kind" | "project" | "library" | "agent">): BoardCard[] {
   if (src.kind !== "studio") return [];
