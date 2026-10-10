@@ -1,0 +1,193 @@
+# Scale-out runbook: more processes, then more servers
+
+For the owner. Written 9 Oct 2026, when production was one Coolify app on the DigitalOcean droplet **particl-app** (BLR1, 8 vCPU / 32 GB), DNS-only (grey cloud) on Cloudflare, and Let's Encrypt certificates from Coolify's Traefik. **Files only:** nothing in DigitalOcean, Coolify, Cloudflare, DNS, Turso, Inngest or R2 is changed by this document. The owner runs every step, and nothing here happens without the owner's "go".
+
+There are three stages:
+
+| Stage | What it is | Registry? | Load balancer? |
+|---|---|---|---|
+| **A. Several processes, one server** (today's target, #606) | `WEB_CONCURRENCY` copies of the app in one container (`ops/selfhost/cluster.mjs`) | **No** | **No** |
+| **B. Same server, streaming storage** (#607) | provider files stream to R2; no whole video in memory | No | No |
+| **C. Two or more servers** (later, only when needed) | the same image on 2+ droplets behind a load balancer | **Yes** | **Yes** |
+
+**With one server, which is how things stand today, no registry and no load balancer are needed.** Coolify builds the image on particl-app and runs it there. Stages A and B ship as two separate deploys; their exact Coolify changes and checks are in their PR descriptions. Measured results are in `docs/scale-out-proof.md`. The rest of this document is about stage C.
+
+## 1. What already works on several servers
+
+The app was written for many Vercel instances at once, so most state already lives outside the process. Audit of 9 Oct (release/1 @ f59d853f):
+
+| Thing | Where it lives | Several servers |
+|---|---|---|
+| Platform and workspace databases | Turso (`libsql://`), one platform DB plus one per workspace | shared; fine. **Never run several processes on `file:` databases** (staging): SQLite's file lock makes them slower, not faster (`docs/scale-out-proof.md`). Keep staging at `WEB_CONCURRENCY=1`. |
+| Sessions and sign-in lockout | platform DB (`sessions`, `login_attempts`) | fine |
+| Money: reservations, charges, refunds, idempotency keys | DB transactions, UNIQUE keys, conditional `UPDATE … WHERE` | fine |
+| Generation limits, review-link limits | counted from DB rows | fine |
+| Media, uploads, chunks | R2 (`STORAGE_BACKEND=r2`; health answers 503 if production falls back to local disk) | fine |
+| Upload sessions (chunk leases, finish lease) | tenant DB `upload_sessions`, `upload_chunks` | any server takes any chunk |
+| Cron | `/api/cron/sync`, mostly under the `operation_leases` lease (`lib/reconciliation.ts`) | see §2 |
+| Inngest | stateless `serve()`; registered at `https://particl.si/api/inngest` | fine through the load balancer |
+| Worker concurrency, dispatch claims | platform DB (`worker_slots`, `render_dispatches`) | fine |
+| In-memory caches (projects 15 s, settings 10 s, catalogues up to 1 h) | each process | another process can be stale for up to the TTL. The spend reservation reads settings fresh (#606). |
+| Ask-an-admin and preset-staleness throttles | `operation_leases` (#606) | fine |
+| `.data/` | scratch only on production | **must stop being a Coolify volume** before stage C (§3.1) |
+
+Things that still assume one server, and how each is handled:
+
+- **Persistent volume at `/app/.data`.** Coolify refuses to add a second server to an app with persistent storage. Production keeps only scratch there, so stage C removes the volume (§3.1).
+- **Upload finish runs in the process that claimed it** (`after()` under a 20-minute DB lease). If that server dies mid-finish, the upload resumes when the lease expires, up to 20 minutes later. Nothing is lost or charged twice. Accepted.
+- **Work after the reply (`after()`, about 37 places).** It finishes inside the process that answered. A server that is stopped gets the 300 s stop grace. A server that crashes leaves recovery records in the DB, and the next cron or replay picks them up, as on Vercel.
+- **The client address.** Behind a load balancer, the app must still see the visitor's address. Otherwise everyone shares one sign-in-lock and rate-limit bucket. §3.4 covers this. Never go live on stage C without the two-network test in §5.
+- **Build skew during a deploy.** For a short time, two servers run different builds. §4 covers this.
+- **Same image everywhere.** Each server must run the identical image (same Next build id, same static files). That is what the registry is for (§3.2).
+- **Secrets.** `SESSION_SECRET`, `KEYRING_SECRET`, `CRON_SECRET`, the Inngest keys and every other variable must be identical on every server. Coolify keeps one environment per app, so this holds automatically.
+
+## 2. Cron: the DB lease, plus one server firing it
+
+**Decision:** keep the DB lease, and in stage C fire the scheduled task from the **primary server only**.
+
+What the lease covers. `/api/cron/sync` takes `acquireOperationLease(platformDb, "workspace-reconciliation", 330 s)`, saving its cursor as it goes. A second call while the lease is held answers `skipped: "already_running"`.
+- **Under the lease:** every per-workspace stage and `retireDeletedWorkspaces`.
+- **Outside it:**
+  - The recovery-fence `draining` branch (`drainRecoveryJobs`). It runs only while the owner drains for a backup or restore. Its intents are not exclusively claimed, so two calls at once can run the same intent.
+  - The `after()` continuations started by the `pipelines` and `held_jobs` stages. They run after the lease is released.
+- These rely on per-row claims built for at-least-once delivery: the submission row, `paidClaim`, and `UPDATE … WHERE status='held'`. The review found no way to charge twice, but there is no reason to invite overlap.
+
+So:
+- **One server (stages A and B):** keep the Coolify scheduled task `cron-sync` (`node /app/cron-sync.mjs`, `*/10 * * * *`, timeout 300 s). It calls `127.0.0.1:3000/api/cron/sync` inside its own container, and the cluster hands the call to one of the processes.
+- **Two servers (stage C):** if Coolify runs the scheduled task on every server, an extra run is still safe (the lease, plus the row claims). Prefer the primary only. If the primary is down for long, run it by hand on the other server or move the primary role (§6).
+- **Check:** the scheduled-task log shows `cron-sync: 200`. After particl-app-2 is attached, only the primary's scheduled-task log shows new `cron-sync` runs.
+
+## 3. Stage C: add a second server
+
+Do this only when one server is not enough: CPU stays above about 70 % at peak with `WEB_CONCURRENCY` already tuned, or you want to survive losing a droplet. The workshop (lead and agents) must not run on the new droplet.
+
+### 3.1 Prepare the app (on the one server, no traffic change)
+
+1. **Remove the `/app/.data` volume.**
+   - First confirm production does not use it. Signed in as the owner, `/api/health` shows `"database":"turso"` and storage on R2. Anonymous health only says `"ok"`. Also check both database URLs are `libsql://` and `STORAGE_BACKEND=r2`.
+   - List what the volume holds (Coolify, the app, **Persistent Storage**, or `ls -la /app/.data` in the container terminal) and keep a copy before deleting: `tar czf /tmp/data-volume-$(date +%F).tgz -C /app .data` in the container terminal, then copy it off the server.
+   - Then delete the volume and Deploy. The image creates `/app/.data` owned by the app user, so it becomes per-container scratch.
+   - Run the stage A checks again.
+2. **Health check.** Keep the image's `HEALTHCHECK` (`/api/health`, every 30 s) and leave Coolify's own check off, as `docs/selfhost-test.md` says. Coolify's rolling update waits for the container to be healthy. It also needs **no host port mapping**.
+3. **Source commit.** "Include Source Commit in Build" must be on. Without it `SOURCE_COMMIT` stays `unknown`: health shows `local`, and the deployment id in §4 never changes.
+
+### 3.2 Registry (needed from stage C on)
+
+Coolify builds once and the other servers pull the same image. Its docs: "Coolify requires **Image** before it can deploy an application to additional servers."
+
+1. Create a registry repository. **DigitalOcean Container Registry**, same region (BLR1). The Basic plan (5 GB) is enough for a few image tags; the Starter plan (500 MB) is too small. GitHub Container Registry (`ghcr.io/axy-full/…`, private package) also works.
+2. On **each** server, log the SSH user Coolify uses (root) in to the registry: `docker login registry.digitalocean.com` with a DigitalOcean API token. Give the primary push and pull rights; the others need pull only. Owner step, as root.
+3. Coolify, the app, **General**, **Container image**, **Image**: `registry.digitalocean.com/<registry>/particl`. Deploy once on the single server and check the tag appears in the registry.
+
+### 3.3 Second droplet
+
+1. Create droplet **particl-app-2** in **BLR1**, same CPU architecture (x86_64), Ubuntu 24.04, in the **same VPC** as particl-app. Size: it serves only the app (no workshop), so a smaller plan works; the baseline is particl-app's own plan.
+2. **DO Cloud Firewall for particl-app-2 only** (particl-app's firewall does not change yet):
+   - 22: as particl-app has today (key-only, fail2ban), plus particl-app's VPC address, which Coolify uses to SSH in. Never use a public IP allowlist.
+   - 80 and 443: **from the load balancer only** (DigitalOcean lets a firewall rule name the load balancer as a source). The load balancer does not exist yet, so add this rule in §3.4.
+   - Nothing else. The Coolify UI stays behind the SSH tunnel on particl-app.
+3. Coolify, **Servers, + Add**: the new droplet's VPC address and SSH key; **Validate** (Coolify installs Docker and its proxy). The proxy must be **Traefik**, as on particl-app; Coolify rejects mixed proxy types.
+4. **Traefik timeouts on particl-app-2.** Add the same two `readTimeout=900s` lines as on particl-app (`docs/selfhost-test.md`, "Traefik timeouts"), then Restart Proxy. Without them, uploads on the new server are cut at 60 s.
+5. **Certificates.** With two servers behind one name, Let's Encrypt's HTTP-01 check lands on whichever server the load balancer picks and fails about half the time. Switch **both** servers to the **DNS challenge** before adding the load balancer.
+   - The steps are in `docs/selfhost-test.md`, "Certificates before the switch", path (a): a Cloudflare token limited to `particl.si` DNS, the token file and the `letsencrypt-dns` resolver.
+   - **New owner decision:** at the 8 Oct switch the owner chose no Cloudflare token (path (b)). Stage C needs one.
+   - Check on each server, over SSH, against itself: `openssl s_client -connect 127.0.0.1:443 -servername particl.si </dev/null 2>/dev/null | openssl x509 -noout -issuer -dates`.
+6. Coolify, the production app, **Servers**, **Add another server**: particl-app-2, its standalone Docker network. Then **Deploy on that server only**. Coolify pulls the image from the registry.
+7. **Test the new server before it gets traffic.** On particl-app-2 over SSH, `curl -sk --resolve particl.si:443:127.0.0.1 https://particl.si/api/health` shows `ok:true` and the **same 7-char commit** as particl-app.
+
+### 3.4 Load balancer
+
+**Recommended: a DigitalOcean regional Load Balancer** in BLR1, 1 node, in the VPC, with both droplets as targets:
+
+| Setting | Value | Why |
+|---|---|---|
+| Forwarding | **TCP 443 → 443** (TLS passthrough) and TCP 80 → 80 | each server's Traefik keeps its own Let's Encrypt (DNS-challenge) certificate; DigitalOcean can only issue certificates for domains whose DNS it hosts, and particl.si is on Cloudflare |
+| **PROXY protocol** | **on**, and Traefik's entrypoints trust it from the VPC range only: `--entrypoints.https.proxyProtocol.trustedIPs=<VPC CIDR>` (same for `http`), in Coolify, Servers, each server, Proxy, Configuration, then **Restart Proxy** when quiet (it drops that server's connections for a few seconds) | without it every visitor arrives from the load balancer's address and shares one rate-limit and sign-in-lock bucket. `TRUSTED_PROXY_HOPS` stays **unset** (1): Traefik writes the real address into `X-Forwarded-For`. |
+| Health check | HTTP, port 80, path `/api/health`, interval 10 s, unhealthy after 3 | see the note below on the Host header |
+| Timeouts | the load balancer's HTTP idle-timeout setting does **not** apply to TLS passthrough | long requests do not rely on it: upload finish answers 202 and the browser polls, media streams send bytes continuously, and Inngest steps answer within 300 s |
+| Sticky sessions | not available with TCP passthrough | skew is handled in §4 |
+
+**Health check and Host.** Traefik routes by host name, and DigitalOcean's health check does not send `Host: particl.si`. Add one router that answers `/api/health` on any host, as a container label on the app: Coolify, the app, **Container Labels**. Use the app's own service name from the generated labels:
+
+```
+traefik.http.routers.lb-health.rule=Path(`/api/health`)
+traefik.http.routers.lb-health.entrypoints=http
+traefik.http.routers.lb-health.priority=1
+traefik.http.routers.lb-health.service=<the app's generated service name>
+```
+
+Check it on each server itself, over SSH: `curl -s http://<that server's own private IP>/api/health`. The DigitalOcean firewall also filters VPC traffic, so this check does not work from the other droplet.
+
+Right after creating the load balancer, add particl-app-2's firewall rule for 80/443 from the load balancer (§3.3 step 2). Until that rule exists, particl-app-2 shows as unhealthy, and that is not a PROXY protocol fault. Then check that both servers pass the load balancer's health check with PROXY protocol on. If they do not, use a TCP 443 health check instead, which is weaker: it only proves Traefik is up.
+
+**Alternative: Cloudflare Load Balancing**, for when the names go orange-cloud (`docs/selfhost-test.md`, "Later"). Cloudflare ends TLS, health monitors can send `Host: particl.si`, session affinity by cookie is available, and the client address comes from `CF-Connecting-IP`. Set `TRUST_CF_CONNECTING_IP=1` only then, and firewall the servers to Cloudflare's ranges. It brings Cloudflare's 100 s response limit, which the owner has deferred until every long flow is proven under 100 s. So it is not the first choice.
+
+### 3.5 Go live
+
+1. Both droplets healthy in the load balancer.
+2. Cloudflare: lower the TTL of `particl.si` a day ahead, as on 8 Oct. Then `particl.si` A → the load balancer's IP, still **DNS-only (grey)**. `www` stays a CNAME to `particl.si`.
+3. Wait one TTL plus a few minutes. Then confirm that both test networks (§5) resolve `particl.si` to the load balancer: `dig +short particl.si` on each, or `@1.1.1.1` and `@8.8.8.8`. A tester still on the old record reaches particl-app directly, and the client-address test would pass even with PROXY protocol broken.
+4. Run the checks in §5.
+5. **Run the client-address test again, then close the firewall.** First check `Servers → Proxy` on particl-app for any other site it serves (staging, an sslip.io address). Those go dark and stop renewing certificates once 80/443 are limited to the load balancer; move or stop them first. Then change particl-app's firewall so 80/443 come from the load balancer only, the same as particl-app-2. Doing this earlier takes production offline, because visitors still reach particl-app directly until DNS moves.
+6. Inngest: no change. It is synced to `https://particl.si/api/inngest`, which now reaches the load balancer. Press **Resync** once anyway and check the function count (7).
+
+### 3.6 Roll back stage C
+
+In this order:
+1. **Firewall first:** reopen 80/443 to everyone on particl-app.
+2. **DNS:** `particl.si` A back to particl-app's own IP; wait one TTL.
+3. **Load balancer:** detach both droplets, then destroy it.
+4. Then remove particl-app-2 as in §6.
+
+particl-app keeps its own DNS-challenge certificate, so nothing else changes.
+
+## 4. Deploys without downtime
+
+**One server (stages A and B).** Coolify does a rolling update: it starts the new container and waits for its health check, then moves traffic and stops the old one with the stop grace (300 s). This needs the image health check and no host port mapping (§3.1). Inside the old container, `cluster.mjs` passes SIGTERM to every process; each stops taking new connections, finishes its requests and its `after()` work, and exits.
+
+**Two servers (stage C).** Deploy one server at a time:
+
+1. In the load balancer, take server 1 out of rotation (remove it from the targets). Wait 5 minutes for open requests and Inngest steps (up to 300 s) to finish.
+2. Coolify, the app, **Servers**: **Deploy** on server 1 only. Check on server 1 over SSH, `curl -sk --resolve particl.si:443:127.0.0.1 https://particl.si/api/health`, which must show the new commit.
+3. Put server 1 back. Take server 2 out and repeat.
+
+Between steps 1 and 3 both builds can serve for a minute:
+- **Without a deployment id,** a page from one build that asks the other server for a script it does not have gets a 404. That client navigation fails until the person reloads.
+- **To make the reload automatic,** set Next's deployment id from the commit before stage C: `ENV NEXT_DEPLOYMENT_ID=${SOURCE_COMMIT}` in the Dockerfile's build stage.
+  - Next 16 then sends the id with every navigation and does a full reload when the server's id differs (`node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/deploymentId.md`).
+  - It needs "Include Source Commit in Build" on, otherwise the id is always `unknown`.
+  - It is a small change with its own review, made when stage C is scheduled. One server does not need it.
+
+**Rollback.** Coolify, the app, **Deployments**: redeploy the previous image (the registry keeps it), one server at a time as above. For stage A only, `WEB_CONCURRENCY=1` and a redeploy restores one process.
+
+## 5. Checks after going live on two servers
+
+- **Commit.** `curl -s https://particl.si/api/health` 20 times: always `ok:true`, always the same commit.
+- **Client address (the real gate).** Use a test account (as in `docs/selfhost-test.md`'s cutover checks), not the owner's. From network A, sign in with a wrong password 8 times, until it locks. From network B (for example a phone on mobile data), sign in to the **same** test account with the right password: it must work.
+  - If the second network is locked too, every visitor shares one address. PROXY protocol is not working: roll back (§3.6).
+  - Don't rely on the logs here. Without PROXY protocol everyone shows up as the load balancer's VPC address, which is a valid address, so the app's "shared bucket" warning never fires.
+- **Uploads and generation.** Upload a large file (chunks spread over both servers) and a reference image; both finish. A cheap generation completes, and its video saves and plays.
+- **Cron.** The `cron-sync` log shows `200`.
+- **Inngest.** The dashboard shows 7 functions, and the `worker/probe` round trip succeeds (`/api/admin/readiness`).
+- **Server failure.** Stop the app on one server (Coolify, Servers, Stop on that server). The site stays up, and the load balancer marks that server down within 30 s. Start it again. Coolify's docs also say to test a whole droplet failure (power off), not only a stopped container.
+
+## 6. Remove a server
+
+1. Load balancer: remove the droplet; wait 5 minutes.
+2. Coolify, the app, **Servers**: **Remove from server** (it stops the app there and asks for the server name). If it was the primary, **Promote to Primary** the other server first, and move the `cron-sync` task with it.
+3. Coolify, **Servers**: delete the server. In DigitalOcean, destroy the droplet, then check the firewall and load balancer no longer name it.
+4. With one server left, the load balancer can stay with one target, or go. To drop it, reopen 80/443 to everyone on the remaining server **first**, then point `particl.si` A at that server (lower the TTL ahead), then destroy the load balancer after one TTL.
+
+## 7. Costs (USD per month; check the prices when ordering)
+
+| Item | Stages A and B (one server) | Stage C (two servers) |
+|---|---|---|
+| Second droplet | 0 | same plan as particl-app. DigitalOcean lists 8 vCPU / 32 GB at about **$192** (shared CPU) or **$252** (General Purpose, dedicated); a smaller plan is fine for an app-only server |
+| Regional load balancer | 0 | **$12** per load-balancer node (1 node) |
+| Container registry | 0 | DigitalOcean Basic about **$5** (5 GB), or GHCR |
+| Cloudflare Load Balancing (alternative) | 0 | from about **$5** (2 origins, 60 s health checks; faster checks and more origins cost extra) |
+| Bandwidth | included with the droplets | the load balancer adds none |
+
+Stage C total: about **$209–$269** a month on top of today, mostly the droplet.
+
+Sources: [Coolify multi-server deployments](https://coolify.io/docs/core/infrastructure/scaling/multi-server-deployments), [Coolify cloud load balancing](https://coolify.io/docs/core/infrastructure/scaling/cloud-load-balancing), [DigitalOcean load balancer pricing](https://docs.digitalocean.com/products/networking/load-balancers/details/pricing), [DigitalOcean droplet plans](https://docs.digitalocean.com/products/droplets/concepts/choosing-a-plan/).
