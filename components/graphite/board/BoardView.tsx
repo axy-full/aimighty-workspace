@@ -54,7 +54,7 @@ import { CheckAgain } from "../CheckAgain";
 import { sampleGate } from "@/lib/demo/sample";
 import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
-import { stagePage, addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
+import { stageLimit, stagePage, addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
@@ -583,7 +583,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       case "skip": next = skipStage(stages, edit.id, edit.skipped); say = edit.skipped ? `${name(edit.id)} skipped · gates warn, never block` : `${name(edit.id)} is back`; break;
       case "remove": next = removeStage(stages, edit.id); say = `${name(edit.id)} removed · its cards are kept`; if (edit.id === stage?.id) go = stages.find((s) => s.id !== edit.id)?.id ?? null; break;
       case "move": next = moveStage(stages, edit.id, edit.index); say = `${name(edit.id)} moved`; break;
-      case "add": { const out = addStage(stages, edit.after, edit.label, () => crypto.randomUUID().slice(0, 8)); next = out.saved; go = out.id; say = `${edit.label} added`; break; }
+      case "add": { const refused = stageLimit(stages.length); if (refused) { ws.toast(refused); return; } const out = addStage(stages, edit.after, edit.label, () => crypto.randomUUID().slice(0, 8)); next = out.saved; go = out.id; say = `${edit.label} added`; break; }
     }
     const refusal = rig.apply((p) => ({ ...p, boardStages: next }));
     if (refusal) { ws.toast(refusal); return; }
@@ -695,7 +695,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       <div className="bd" style={style} data-testid="board" data-board-kind={kind} data-tool={tool} data-offline={offline || undefined} data-sample={gate.exploreOnly ? "1" : undefined} data-v12={v12Frame || undefined} data-stage={stage?.id}>
         {v12Frame ? (
           <StageRail kindLabel={KIND_LABEL[flavor]} onKind={changeKind} stages={stages} current={stage?.id ?? null} status={(st) => stageStatus(st, allCards, flavor)}
-            readOnly={offline ? "Offline" : gate.readOnly ?? null} onPick={goStage} onEdit={editStages} />
+            readOnly={offline ? "Offline" : gate.readOnly ?? null} onPick={goStage} onEdit={editStages} addBlocked={stageLimit(stages.length)} />
         ) : <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} render={kind === "studio"} />}
         <div className="bd-main" data-testid="board-canvas">
           {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={headPrimary} menu={boardMenu}
