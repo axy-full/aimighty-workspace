@@ -45,6 +45,7 @@ import dynamic from "next/dynamic";
 const loadV12Shell = () => import("@/components/v12/V12Shell");
 /* While its chunk arrives the body keeps its place (an empty stage), never a blank window. */
 const V12Shell = dynamic(() => loadV12Shell().then((m) => m.V12Shell), { loading: () => <div className="gx-stage" data-testid="v12-loading" /> });
+const LibraryTray = dynamic(() => import("@/components/v12/library/LibraryTray").then((m) => m.LibraryTray), { ssr: false });
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { SwitchingVeil } from "./SwitchingVeil";
@@ -428,7 +429,7 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
           /* A link to a take that cannot show it yet says what it is doing on a phone too: the phone's own screens draw nothing for it. */
           <div className="gx-screen gx-scroll" data-testid="screen" data-screen="link"><div className="gx-stage" data-testid="content">{linkCard}</div></div>
         ) : <PhoneMount ctx={screenCtx} page={phonePage} />) : v12 ? (
-          <V12Shell header={{ account, project, projects: data.projects, onPick: pickProject }}>{desktopBody}</V12Shell>
+          <V12Shell header={{ account, project, projects: data.projects, onPick: pickProject }}>{desktopBody}<LibraryTray project={project} projects={data.projects} library={library} /></V12Shell>
         ) : <>{header}{desktopBody}</>}
         {/* Make (README § 3.2): a panel over whatever is on screen, beside the Inspector's column when that is open. Its draft
             stays editable while the project list recovers ("Try again", never "Retry": that word is a take's own action). */}
