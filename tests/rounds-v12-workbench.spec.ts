@@ -125,11 +125,11 @@ test.describe("desktop, switch on", () => {
 
     await page.getByTestId("v12-stage-rail").getByText("Storyboard", { exact: true }).click();
     const changed = page.locator('[data-card-id="round:changed"]');
-    await expect(changed.getByTestId("v12-round-line")).toHaveText([/Shot 2: Sphere bigger in the wide/, /Shot 4: Bottle fuller, label to camera/, /Shot 7: Lose the second figure/], { timeout: 60_000 });
-    await expect(changed).toContainText("3 shots redrawn from the client’s reply; the other 5 are untouched. R1 is kept.");
+    await expect(changed.getByTestId("v12-round-line")).toHaveText([/Shot 2: Wide/, /Shot 4: Close/, /Shot 7: Reveal/], { timeout: 60_000 });
+    await expect(changed).toContainText("3 shots redrawn in Round 2; the other 5 are untouched. R1 is kept.");
     await changed.getByTestId("v12-round-copy-card").click();
     const first = (await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied))[0];
-    expect(first).toMatch(/^Harbour film · R2 · \d{1,2} \w{3} \d{4}\nWhat changed in round 2:\n• Shot 2: Sphere bigger in the wide\n• Shot 4: .+\n• Shot 7: .+\nThe other 5 shots are as you approved them\.$/);
+    expect(first).toMatch(/^Harbour film · R2 · \d{1,2} \w{3} \d{4}\nWhat changed in round 2:\n• Shot 2: Wide\n• Shot 4: .+\n• Shot 7: .+\nThe other 5 shots are as you approved them\.$/);
 
     await page.getByTestId("v12-stage-rail").getByText("Cut", { exact: true }).click();
     await page.locator('[data-card-id="round:cut"]').getByTestId("v12-round-compare").click();

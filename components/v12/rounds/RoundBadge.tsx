@@ -17,8 +17,8 @@ export function useCopyWhatChanged(board: string, round: BoardRound | null, shot
 }
 
 /**
- * The stage header's Round badge ("Round 2 · 3 changed", prototype L837, L354): the list of what changed, as the client's reply
- * asked for it, and the words to paste into WhatsApp or email. The MP4 with the round burned in is not built: nothing exports a
+ * The stage header's Round badge ("Round 2 · 3 changed", prototype L837, L354): the list of what was redrawn, as Atomik's own
+ * step titles, and the words to paste into WhatsApp or email. The MP4 with the round burned in is not built: nothing exports a
  * caption onto a video today.
  */
 export function RoundBadge({ board, round, shots }: { board: string; round: BoardRound; shots?: number }) {

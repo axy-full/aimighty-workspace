@@ -72,7 +72,7 @@ export function RoundCard({ data }: CardProps<RoundCardData>) {
           <div className="v12-rd-list">
             {data.round.changes.map((c) => <div key={c.shot} className="v12-rd-row" data-testid="v12-round-line"><span className="v12-rd-num">{c.shot}</span><span>Shot {c.shot}: {c.text}</span></div>)}
           </div>
-          <p className="v12-rd-body">{n} {n === 1 ? "shot" : "shots"} redrawn from the client’s reply{rest ? `; the other ${rest} ${rest === 1 ? "is" : "are"} untouched` : ""}. R1 is kept.</p>
+          <p className="v12-rd-body">{n} {n === 1 ? "shot" : "shots"} redrawn in Round {data.round.n}{rest ? `; the other ${rest} ${rest === 1 ? "is" : "are"} untouched` : ""}. R1 is kept.</p>
         </>
       ) : <p className="v12-rd-body">{data.variant === "cut" ? `${n} ${n === 1 ? "shot" : "shots"} to compare: ${data.round.changes.map((c) => `Shot ${c.shot}`).join(", ")}.` : `The words for the client: what changed in round ${data.round.n}, ready to paste.`}</p>}
       <div className="v12-rd-acts">

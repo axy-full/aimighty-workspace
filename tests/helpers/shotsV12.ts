@@ -26,7 +26,7 @@ export const ROUND_ROWS: (ShotRow | null)[] = [
   ...Array.from({ length: 8 }, (): ShotRow => ({ status: "succeeded", ageS: 3600 })),
   ...[2, 4, 7].map((shot): ShotRow => ({ status: "succeeded", ageS: 30, shot, version: 2, id: `gshotr${shot}` })),
 ];
-export const ROUND_CHANGES = [{ shot: 2, text: "Sphere bigger in the wide" }, { shot: 4, text: "Bottle fuller, label to camera" }, { shot: 7, text: "Lose the second figure" }];
+export const ROUND_CHANGES = [{ shot: 2, text: "Wide" }, { shot: 4, text: "Close" }, { shot: 7, text: "Reveal" }];
 
 export async function openShotsBoard(page: Page, path = "/suites?view=board&stage=shots", opts: { on?: boolean; rows?: (ShotRow | null)[]; round?: boolean } = {}) {
   const signed = opts.on === false ? await signInLocally(page.request, "Shots Tester") : await signInToRedesign(page.request, "Shots Tester");
