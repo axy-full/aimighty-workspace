@@ -7,8 +7,7 @@ import { textCostUsd, textQuoteCostUsd, type CatalogModel } from "../catalog";
 import { ATOMIK_IMAGE_TOKENS, ATOMIK_MAX_VISUALS } from "./atomik-reference-types";
 import { directTextCostUsd } from "../openai-direct";
 import { stepTextUsage } from "../textDirect";
-import { DryBoard, createNodeInput, lockInput, renderInput, wireInput, type BoardSnapshot, type PlanDraft, type SnapshotAttachment, type SnapshotCard } from "./rig-agent-plan";
-import { feedbackOf, isClientRound, parseFeedback } from "../v12/rounds";
+import { DryBoard, createNodeInput, lockInput, renderInput, wireInput, type BoardSnapshot, type PlanDraft, type SnapshotAttachment } from "./rig-agent-plan";
 
 /*
  * The planner: one bounded Atomik turn over the dry tools (lib/workbench/
@@ -249,8 +248,7 @@ export async function runPlanner(snapshot: BoardSnapshot, model: LanguageModel, 
   try { result = plannerResultSchema.parse(generated.output); }
   catch { throw new PlannerError("Atomik did not finish its proposal. Ask again.", stepUsage); }
   const draft = board.draft();
-  /* A client's reply (lib/v12/rounds.ts) may only render shots already on the board: it builds nothing, and is a plan all the same. Any other ask must propose cards. */
-  if (!draft.cards.length && !draft.wires.length && !(isClientRound(snapshot.goal) && draft.next.some((n) => n.what === "render"))) throw new PlannerError("Atomik did not propose any cards for that. Say what the board should hold, and ask again.", stepUsage);
+  if (!draft.cards.length && !draft.wires.length) throw new PlannerError("Atomik did not propose any cards for that. Say what the board should hold, and ask again.", stepUsage);
   return {
     draft, result,
     usage: { inputTokens: generated.totalUsage.inputTokens ?? 0, outputTokens: generated.totalUsage.outputTokens ?? 0, steps: generated.steps.length },
@@ -284,13 +282,6 @@ const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five:
 
 /** What the mock plans from the snapshot: the cast and places the production has (or one of each), N shots, the wires, a tidy, renders next. */
 export function mockPlanCalls(snapshot: BoardSnapshot): { calls: MockCall[]; result: PlannerResult } {
-  /* A client's reply (lib/v12/rounds.ts): like a planner given the board, it builds nothing and renders again the shots the reply
-     names, by the board's own shot cards (the Nth shot card is Shot N), whatever those cards are called. */
-  if (isClientRound(snapshot.goal)) {
-    const cards = snapshot.cards.filter((c) => c.shot);
-    const named = parseFeedback(feedbackOf(snapshot.goal)).map((c) => cards[c.shot - 1]).filter((c): c is SnapshotCard => !!c);
-    if (named.length) return { calls: named.map((c) => ({ tool: "render" as const, input: { shot: c.id } })), result: { title: "Client round", summary: `${named.length} ${named.length === 1 ? "shot" : "shots"} to render again from the client's reply. Rendering comes next, priced.` } };
-  }
   const asked = /\b(one|two|three|four|five|six|[1-6])\s+shots?\b/i.exec(snapshot.goal)?.[1]?.toLowerCase();
   const shots = asked ? WORDS[asked] ?? Number(asked) : 3;
   const idea = snapshot.goal.replace(/\s+/g, " ").trim().slice(0, 160) || snapshot.production;

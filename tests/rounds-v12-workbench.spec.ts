@@ -4,9 +4,11 @@ import { openShotsBoard, ROUND_ROWS } from "./helpers/shotsV12";
 /**
  * Client rounds in the new interface (redesign P2-c; lib/v12/rounds.ts; docs/redesign/inventory.md § 6.7, § 11): a client's reply
  * pasted into the board's bar is asked of Atomik by today's ask (`agent.plan`, the figure on the button as its limit); the plan
- * lists a change per shot at the server's own prices and is approved once by a person ("Approve all · N cr", today's
- * `agent.approvePlan`); the round is then kept in the board's draft, with its "What changed" list, Compare R1 / R2 in Cut,
- * and the words to copy for WhatsApp or email. The planner is the local scripted one (ENGINE_MOCK=1); renders are the mock's.
+ * lists its renders at the server's own prices, with the client's words only as "Asked: …" context, and is approved once by a
+ * person ("Approve all · N cr", today's `agent.approvePlan`). A round is kept in the board's draft only for shots whose own cards
+ * the plan renders again, recorded as what Atomik did (never the client's words as if applied), with its "What changed" list,
+ * Compare R1 / R2 in Cut and the words to copy. The planner is the local scripted one (ENGINE_MOCK=1), which renders none of the
+ * client's shots, so the live run keeps no round; the round's display is tested on a seeded board. Renders are the mock's.
  * Desktop with the switch on; phones keep today's phone board.
  */
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
@@ -29,13 +31,8 @@ async function closeDock(page: Page) {
 test.describe("desktop, switch on", () => {
   test.beforeEach(({}, info) => test.skip(!DESKTOP.includes(info.project.name), "desktop sizes"));
 
-  test("the reply is asked as a client round, planned and priced by the server, approved once, kept as Round 2 with its list, compare and words to copy", async ({ page }) => {
+  test("the reply is asked as a client round, planned and priced by the server, approved once; no round is kept for renders that are not the client's shots", async ({ page }) => {
     test.setTimeout(420_000);
-    await page.addInitScript(() => {
-      const w = window as unknown as { __copied: string[] };
-      w.__copied = [];
-      Object.defineProperty(navigator, "clipboard", { value: { writeText: (text: string) => { w.__copied.push(text); return Promise.resolve(); } }, configurable: true });
-    });
     const posts: Record<string, unknown>[] = [];
     /* The server's own answer about the plan, as the board last read it: its quote before the approval, its record after. */
     const planNow: { plan: { quote: { total: number; fingerprint: string } | null; approval: { total: number } | null } | null } = { plan: null };
@@ -77,13 +74,11 @@ test.describe("desktop, switch on", () => {
     const approve = plan.getByTestId("board-plan-primary");
     await expect(approve).toHaveText(/^Approve all · \d[\d,.]* cr$/, { timeout: 120_000 });
     await expect(plan.getByTestId("board-plan-step")).toHaveCount(3);
-    await expect(plan).toContainText("Client round · 3 changes");
-    /* Atomik's own step titles stay, with what the client asked beside each. The scripted planner renders the board's own shot
-       cards and names none of them "Shot N": each step is matched to its shot by its card, not by its title. */
-    const steps = plan.getByTestId("board-plan-step");
-    await expect(steps.nth(0)).toContainText("Asked: “Sphere bigger in the wide”");
-    await expect(steps.nth(1)).toContainText("Asked: “Bottle fuller, label to camera”");
-    await expect(steps.nth(2)).toContainText("Asked: “Lose the second figure”");
+    /* The scripted planner builds its own starter shots: none of its renders is a card of the client's shots, so no step is matched to
+       a shot, none is labelled with the client's words, and the title counts no changes. A step is never matched by title or place. */
+    await expect(plan).toContainText("Client round");
+    await expect(plan).not.toContainText("Asked:");
+    await expect(plan).not.toContainText(/\d+ changes?/);
     /* Every step carries the server's own price. */
     for (const step of await plan.getByTestId("board-plan-step").all()) await expect(step).toContainText(/\d[\d,.]* cr|priced when it runs/);
     expect(await noSideways(page)).toBe(true);
@@ -100,41 +95,12 @@ test.describe("desktop, switch on", () => {
     expect(posts.find((p) => p.action === "agent.approvePlan")!.fingerprint).toBe(quoted!.fingerprint);
     await expect.poll(() => planNow.plan?.approval?.total, { timeout: 60_000 }).toBe(shown);
 
-    /* Round 2: the badge with its list, kept in the board's draft. */
-    const badge = page.getByTestId("v12-round-badge");
-    await expect(badge).toHaveText("Round 2 · 3 changed", { timeout: 90_000 });
-    await badge.click();
-    await expect(page.getByTestId("v12-round-change")).toHaveCount(3);
-    await page.getByTestId("v12-round-copy").click();
-    const copied = await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied);
-    expect(copied).toHaveLength(1);
-    expect(copied[0]).toMatch(/^Harbour film · R2 · \d{1,2} \w{3} \d{4}\nWhat changed in round 2:\n• Shot \d+: .+/);
-    await expect(page.getByTestId("v12-toast")).toContainText("Copied · paste it into WhatsApp or email");
-    await page.keyboard.press("Escape");
-
-    /* The round is the board's own: it survives a reload, with nothing else needed. */
-    await page.reload();
-    await expect(page.getByTestId("v12-round-badge")).toHaveText("Round 2 · 3 changed", { timeout: 90_000 });
-
-    /* The Storyboard stage lists what changed; Cut compares; Deliver and ⋯ share the words. */
-    await page.getByTestId("v12-stage-rail").getByText("Storyboard", { exact: true }).click();
-    const changed = page.locator('[data-card-id="round:changed"]');
-    await expect(changed.getByTestId("v12-round-line")).toHaveCount(3, { timeout: 60_000 });
-    await expect(changed).toContainText("Round 2 · what changed");
-    await page.getByTestId("v12-stage-rail").getByText("Cut", { exact: true }).click();
-    const cut = page.locator('[data-card-id="round:cut"]');
-    await expect(cut).toContainText("Compare R1 / R2");
-    await cut.getByTestId("v12-round-compare").click();
-    const compare = page.getByTestId("v12-compare");
-    await expect(compare).toBeVisible();
-    await expect(compare.getByTestId("v12-compare-side")).toHaveCount(2);
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("v12-compare")).toHaveCount(0);
-    await page.getByTestId("v12-stage-rail").getByText("Deliver", { exact: true }).click();
-    await expect(page.locator('[data-card-id="round:deliver"]')).toContainText("Share round 2");
-    await page.getByTestId("v12-board-menu").click();
-    await page.getByRole("menuitem", { name: /Share R2 · copy what changed/ }).click();
-    expect(await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied.length)).toBeGreaterThanOrEqual(1);
+    /* A render makes the card's prompt again: nothing the client asked was applied, so the round is kept only for the shots whose
+       own cards the plan re-renders. Here none is, so no round is recorded and nothing is offered to copy to the client.
+       (The round with its list, Compare and words to copy is the next test, on a board that has one.) */
+    await expect(plan.getByTestId("board-plan-step").first()).toBeVisible();
+    await page.waitForTimeout(4_000);
+    await expect(page.getByTestId("v12-round-badge")).toHaveCount(0);
     expect(await noSideways(page)).toBe(true);
     expect(errors).toEqual([]);
   });

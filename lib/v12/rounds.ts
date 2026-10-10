@@ -97,19 +97,19 @@ export const ROUND_LIMITS = { text: 200, changes: 60, rounds: 20, n: 99, before:
 
 /**
  * The round a plan's approval makes: what the client asked, for the shots the plan renders again. Only a step whose card is a
- * shot the client asked about makes a change (never one placed by its title or position), and everything is cut to what the draft takes.
+ * shot the client asked about makes a change, recorded as Atomik's own step title (never one placed by its title or position), and everything is cut to what the draft takes.
  */
-export function roundOf(args: { runId: string; goal: string; steps: readonly { nodeId: string | null }[]; shots: ShotOfNode; rounds: readonly BoardRound[]; before: Record<string, string>; at: number }): BoardRound {
+export function roundOf(args: { runId: string; goal: string; steps: readonly { nodeId: string | null; title: string }[]; shots: ShotOfNode; rounds: readonly BoardRound[]; before: Record<string, string>; at: number }): BoardRound {
   const asked = new Map(parseFeedback(feedbackOf(args.goal)).map((c) => [c.shot, c.text]));
   const seen = new Set<number>();
   const changes: RoundChange[] = [];
   for (const step of args.steps) {
     const shot = shotOfStep(step, args.shots);
-    const text = shot == null ? undefined : asked.get(shot);
-    /* A change is a shot the client asked about and the plan renders again; a shot rendered that the client did not ask about is not one. */
-    if (shot == null || !text || seen.has(shot)) continue;
+    /* A change is a shot the client asked about whose card the plan renders again. What it records is what was done (Atomik's own
+       step title for it), never the client's words as if they had been applied: a render makes the card's prompt again. */
+    if (shot == null || !asked.has(shot) || seen.has(shot)) continue;
     seen.add(shot);
-    changes.push({ shot, text: text.slice(0, ROUND_LIMITS.text) });
+    changes.push({ shot, text: (step.title.trim() || `Shot ${shot}`).slice(0, ROUND_LIMITS.text) });
   }
   changes.sort((a, b) => a.shot - b.shot);
   const kept = changes.slice(0, ROUND_LIMITS.changes);
