@@ -109,7 +109,7 @@ export function SettingsBody({ ctx }: { ctx: ScreenContext }) {
   const { shell } = ctx;
   return (
     <Boundary what="Settings" probe="settings" resetKey={`settings:${shell.wsTab}`} fallback={(f) => <ScreenFault fault={f} name="settings" />}>
-      <SettingsEntry account={ctx.account} section={shell.wsTab} open={shell.wsOpen} />
+      <SettingsEntry account={ctx.account} section={shell.wsTab} open={shell.wsOpen} onOpenProject={(id) => { ctx.projectActions.onPick(id); shell.goBoard(); }} />
     </Boundary>
   );
 }

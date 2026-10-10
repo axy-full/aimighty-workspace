@@ -1,4 +1,5 @@
 import { db, ready } from "./db";
+import { takeOncePerWindow, windowTakenAt } from "./operationLease";
 import { requireTenant } from "./tenant";
 import { engineMock } from "./mock";
 import { higgsfieldConfigured, higgsfieldCredentials } from "./higgsfield";
@@ -126,9 +127,10 @@ export async function plannerLibrary(p: { owner: string; projectId: string | nul
   return out;
 }
 
-/* A workspace whose key lists no presets is not asked again for ten minutes. */
-const presetReads = new Map<string, number>();
+/* A workspace whose key lists no presets is not asked again for ten minutes: one mark in the workspace's database
+   (lib/operationLease.ts), so every server process counts the same attempt. */
 const PRESET_RETRY_MS = 10 * 60_000;
+const presetMark = (workspaceId: string, fingerprint: string) => `presets-stale:${workspaceId}:${fingerprint}`;
 /** Seen within the hour: the presets admission accepts (lib/higgsfieldMarketing.ts › requireMarketingPreset). */
 const PRESET_FRESH_MS = 3_600_000;
 
@@ -166,11 +168,15 @@ export async function plannerPresetsStale(): Promise<boolean> {
   if (engineMock() || !higgsfieldConfigured()) return false;
   await ready();
   const { fingerprint } = higgsfieldCredentials();
-  const key = `${requireTenant().id}:${fingerprint}`;
-  if (Date.now() - (presetReads.get(key) ?? 0) <= PRESET_RETRY_MS) return false;
-  if ((await freshPresets(fingerprint)).length) return false;
-  presetReads.set(key, Date.now());
-  return true;
+  const name = presetMark(requireTenant().id, fingerprint);
+  try {
+    if ((await windowTakenAt(db(), name)) != null) return false;
+    if ((await freshPresets(fingerprint)).length) return false;
+    /* Asked again only once the last attempt is MORE than ten minutes old; another process may have just marked it. */
+    return (await takeOncePerWindow(db(), name, PRESET_RETRY_MS + 1)).taken;
+  } catch {
+    return false; // The mark could not be read or kept: not asking is the cheap side.
+  }
 }
 
 /** Read the preset catalogue on the API key (free, non-generating), keeping what it lists for an hour. Never throws. */
