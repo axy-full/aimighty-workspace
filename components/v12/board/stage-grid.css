@@ -22,3 +22,6 @@
 
 /* The selected card: the accent border and ring (prototype L556), on the card itself. */
 .v12 .bd[data-v12] .bd-node[data-selected] > .gx-take, .v12 .bd[data-v12] .bd-node[data-selected] > .gx-frame { border-color: var(--gx-accent); box-shadow: var(--gx-ring-selected); }
+
+/* An Elements card's picture at the board's aspect, whole (prototype: the image at its true aspect, object-fit contain). */
+.v12 .gx-cast-well[data-whole] img, .v12 .gx-cast-well[data-whole] video { object-fit: contain; }

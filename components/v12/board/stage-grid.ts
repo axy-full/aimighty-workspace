@@ -5,6 +5,8 @@ import { GRID_ACTIONS, GRID_CARD, GRID_GAP, GRID_STAGES, evenHeights, gridColumn
 import type { CardDef } from "@/components/graphite/board/cards/types";
 import { containerOf } from "@/components/graphite/board/layout-cards";
 import { gridTakeHeight } from "@/components/graphite/board/cards/take/TakeCard";
+import { gridCastHeight } from "@/components/graphite/board/cards/cast/CastCard";
+import type { CastCardData } from "@/components/graphite/board/cards/cast/cast-model";
 import { frameCardHeight } from "@/components/graphite/board/cards/storyboard/FrameCard";
 import { REVIEW_GROUP } from "@/components/graphite/board/cards/take/shots-derive";
 import "./stage-grid.css";
@@ -56,7 +58,7 @@ export function gridCards(cards: readonly BoardCard[]): BoardCard[] {
     .filter((card) => card.id !== REVIEW_GROUP && card.group !== REVIEW_GROUP)
     .map((card) => {
       if (card.kind === "plan" && card.group) return { ...card, group: undefined };
-      if (card.kind === "take" || card.kind === "frame" || card.kind === "group") return { ...card, data: { ...(card.data as object), grid: true } };
+      if (card.kind === "take" || card.kind === "frame" || card.kind === "cast" || card.kind === "group") return { ...card, data: { ...(card.data as object), grid: true } };
       return card;
     });
 }
@@ -85,6 +87,7 @@ export function gridDefs(defs: ReadonlyMap<string, CardDef<unknown>>, cards: rea
     const { lines } = frame;
     return frameCardHeight(GRID_CARD, aspect, frame) + (lines.offer || lines.running || lines.versions.length > 1 ? 0 : GRID_ACTIONS);
   });
+  evened("cast", (data) => gridCastHeight(data as CastCardData, aspect));
   const group = defs.get("group");
   if (group?.container) {
     out.set("group", {
@@ -97,4 +100,15 @@ export function gridDefs(defs: ReadonlyMap<string, CardDef<unknown>>, cards: rea
     });
   }
   return out;
+}
+
+/**
+ * How far the last row must stay clear of the stage column's bottom: the bar's height and its 20 px offset, and 24 px more
+ * (the bottom safe area, as on Home), so the bottom-left Library button, the view switch and the bar never cover a card at the end of the scroll.
+ */
+export function bottomClear(): number {
+  const column = document.querySelector<HTMLElement>(".v12-stage-canvas");
+  const bar = document.querySelector<HTMLElement>(".v12-bd-bar");
+  const base = column && bar ? Math.max(0, column.getBoundingClientRect().bottom - bar.getBoundingClientRect().top) : 72;
+  return base + 24;
 }

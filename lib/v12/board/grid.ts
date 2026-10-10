@@ -27,8 +27,8 @@ export function gridColumns(width: number): number {
   return Math.max(GRID_MIN, Math.min(GRID_MAX, Math.floor((width - GRID_SIDES + GRID_GAP) / GRID_STEP)));
 }
 
-/** The stages laid out on the grid: Storyboard and Shots (Elements joins with its own stage contents). */
-export const GRID_STAGES: ReadonlySet<string> = new Set(["storyboard", "shots"]);
+/** The stages laid out on the grid: Storyboard, Shots and Elements. */
+export const GRID_STAGES: ReadonlySet<string> = new Set(["storyboard", "shots", "elements"]);
 
 /** The row under a shot card's pictures and words: Approve · Reject on a finished take, the status line on one that has something to say. */
 export const GRID_ACTIONS = 40;

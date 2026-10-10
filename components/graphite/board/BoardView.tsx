@@ -56,7 +56,7 @@ import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
 import { addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
-import { gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
+import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
 import { BoardBar } from "@/components/v12/board/BoardBar";
 import { useOverlay } from "@/components/v12/ui/overlay";
@@ -266,9 +266,23 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     void flow.setViewport(next).then(() => measureInView(next));
   }, [flow, measureInView, placed.arranged, placed.bounds, projectId, ready, stage, v12Frame, viewportFor]);
   const onMoveEnd = useCallback((viewport: Viewport) => {
+    /* A grid stage scrolls no further than its last row clear of the bar and the bottom-left controls (never above where the stage opens). */
+    const box = placed.arranged ?? placed.bounds;
+    if (gridAcross && box) {
+      const { height } = store.getState();
+      const floor = height - bottomClear();
+      const bottom = (box.y + box.h) * viewport.zoom + viewport.y;
+      const top = GRID_ORIGIN - box.y * viewport.zoom;
+      const y = Math.min(viewport.y + (floor - bottom), top);
+      if (bottom < floor - 1 && y > viewport.y + 1) {
+        const next = { ...viewport, y };
+        void flow.setViewport(next, { duration: 150 }).then(() => measureInView(next));
+        return;
+      }
+    }
     if (projectId) saveBoardView(scope, projectId, viewport);
     measureInView(viewport);
-  }, [measureInView, projectId, scope]);
+  }, [flow, gridAcross, measureInView, placed.arranged, placed.bounds, projectId, scope, store]);
 
   /* ── Edits a person makes on the board: each one draft edit, free, with ⌘Z ── */
   const undoable = useCallback((label: string, undo: () => void, say?: string) => {

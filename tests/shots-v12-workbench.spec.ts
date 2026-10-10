@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { openShotsBoard } from "./helpers/shotsV12";
-import { openBoard } from "./helpers/boardV12";
+import { openBoard, filmBoard } from "./helpers/boardV12";
 
 /**
  * The Shots stage grid and the board's bar in the new interface (redesign P2-b; docs/redesign/inventory.md § 6.6, § 5.8,
@@ -20,15 +20,15 @@ const overlap = (a: { x: number; y: number; width: number; height: number }, b: 
 
 /** Atomik's docked panel closed, as the prototype's Shots view is drawn; the grid follows the canvas's new width. */
 async function closeDock(page: Page) {
-  /* Today's dock opens itself on Atomik's questions, a moment after the board loads: fold it until it stays folded. */
+  /* Today's dock opens itself on Atomik's questions, a moment after the board loads (more than once): fold it until it has stayed folded for 2 s. */
   const collapse = page.getByTestId("agent-collapse");
   await collapse.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
+  let quiet = 0;
   await expect.poll(async () => {
-    if (await collapse.isVisible().catch(() => false)) await collapse.click().catch(() => {});
-    return page.getByTestId("board-agent-panel").count();
-  }, { timeout: 20_000 }).toBe(0);
-  await page.waitForTimeout(500);
-  await expect(page.getByTestId("board-agent-panel")).toHaveCount(0);
+    if (await collapse.isVisible().catch(() => false)) { await collapse.click({ timeout: 2_000 }).catch(() => {}); quiet = 0; return false; }
+    quiet = (await page.getByTestId("board-agent-panel").count()) === 0 ? quiet + 1 : 0;
+    return quiet >= 8;
+  }, { timeout: 30_000, intervals: [250] }).toBe(true);
 }
 
 test.describe("desktop, switch on", () => {
@@ -206,6 +206,36 @@ test.describe("desktop, switch on", () => {
     expect(await frames(page).first().boundingBox()).toMatchObject({ width: 260, height: b[0].h });
     await row.getByTestId("frame-details").click();
     await expect(page.getByTestId("board-inspector")).toBeVisible();
+    expect(await noSideways(page)).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  test("Elements: 4 across, one 24 px gap, one card size; the last row clears the bar, the Library button and the view switch at the end of the scroll", async ({ page }) => {
+    const film = filmBoard();
+    const props = ["Lantern", "Rope coil", "Tin cup", "Oar", "Net", "Crate", "Buoy"].map((title, i) => ({ id: `node-prop00${i + 2}`, title, type: "element" as const, x: 0, y: 0, width: 254, linked: [], refKind: "element" as const }));
+    const { errors } = await openBoard(page, "/suites?view=board&stage=elements", { project: { ...film, nodes: [...film.nodes, ...props] } });
+    const cards = page.locator('.bd-node[data-card-kind="cast"]');
+    await expect(cards).toHaveCount(9, { timeout: 90_000 });
+    await closeDock(page);
+    const read = () => cards.evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; }));
+    await expect.poll(async () => new Set((await read()).map((b) => b.x)).size).toBe(4);
+    const b = await read();
+    expect(new Set(b.map((x) => x.w))).toEqual(new Set([260]));
+    expect(new Set(b.map((x) => x.h)).size).toBe(1);
+    const xs = [...new Set(b.map((x) => x.x))].sort((p, q) => p - q);
+    for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1] - 260).toBe(24);
+    const ys = [...new Set(b.map((x) => x.y))].sort((p, q) => p - q);
+    expect(ys).toHaveLength(3);
+    for (let i = 1; i < ys.length; i++) expect(ys[i] - ys[i - 1] - b[0].h).toBe(24);
+    /* Scrolled to the end, the last row sits above the bar and the bottom-left controls, with 24 px clear. */
+    await page.mouse.move(600, 400);
+    await page.mouse.wheel(0, 3000);
+    const top = (id: string) => page.getByTestId(id).evaluate((el) => el.getBoundingClientRect().top);
+    await expect.poll(async () => {
+      const last = Math.max(...(await read()).map((x) => x.y + x.h));
+      const limit = Math.min(await top("v12-board-bar"), await top("v12-view-switch"), await top("v12-library-button"));
+      return limit - last;
+    }, { timeout: 10_000 }).toBeGreaterThanOrEqual(23);
     expect(await noSideways(page)).toBe(true);
     expect(errors).toEqual([]);
   });

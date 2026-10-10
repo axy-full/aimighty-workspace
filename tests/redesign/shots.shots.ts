@@ -56,3 +56,10 @@ test("storyboard, a frame selected", async ({ page }) => {
   await page.waitForTimeout(800);
   await captureBeside(page, "shots-storyboard-selected", "?view=board&stage=Storyboard&frame=1");
 });
+
+test("elements", async ({ page }) => {
+  await openBoard(page, "/suites?view=board&stage=elements");
+  await expect(page.getByTestId("v12-stage-rail")).toBeVisible({ timeout: 60_000 });
+  await settle(page);
+  await captureBeside(page, "shots-elements", "?view=board&stage=Elements");
+});

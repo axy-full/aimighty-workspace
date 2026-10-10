@@ -17,8 +17,8 @@ test("columns follow the canvas: 4 across at 1440 with Atomik closed, 3 with it 
   expect(gridColumns(0)).toBe(4);
 });
 
-test("Storyboard and Shots are the grid stages", () => {
-  expect([...GRID_STAGES].sort()).toEqual(["shots", "storyboard"]);
+test("Storyboard, Shots and Elements are the grid stages", () => {
+  expect([...GRID_STAGES].sort()).toEqual(["elements", "shots", "storyboard"]);
 });
 
 test("one height per kind: the tallest card's, and no row leaves more than the gap between it and the next", () => {
@@ -42,12 +42,14 @@ test("a grid stage drops the review group, takes the plan out of the group, and 
     card("versions:node-1", "versions", { group: "group:review" }),
     card("plan", "plan", { group: "group:storyboard" }),
     card("frame:1", "frame", { group: "group:storyboard" }),
+    card("cast:1", "cast", { group: "group:cast" }),
     card("note", "note"),
   ]);
-  expect(out.map((c) => c.id)).toEqual(["group:shots", "node-1", "plan", "frame:1", "note"]);
+  expect(out.map((c) => c.id)).toEqual(["group:shots", "node-1", "plan", "frame:1", "cast:1", "note"]);
   const by = new Map(out.map((c) => [c.id, c]));
   expect((by.get("node-1")!.data as { grid?: boolean }).grid).toBe(true);
   expect((by.get("frame:1")!.data as { grid?: boolean }).grid).toBe(true);
+  expect((by.get("cast:1")!.data as { grid?: boolean }).grid).toBe(true);
   expect((by.get("group:shots")!.data as { grid?: boolean }).grid).toBe(true);
   expect(by.get("plan")!.group).toBeUndefined();
   expect((by.get("note")!.data as { grid?: boolean }).grid).toBeUndefined();
