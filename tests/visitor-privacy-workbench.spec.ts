@@ -2,6 +2,7 @@ import { test, expect, request as pwRequest, type APIRequestContext } from "@pla
 import { leaks, seedPrivate, type Private } from "./helpers/privacyV12";
 import { setSite } from "./helpers/visitorV12";
 import { signInLocally } from "./helpers/workbenchLocal";
+import { signInToRedesign } from "./helpers/newInterface";
 
 /**
  * PRIVACY, enforced on the server (redesign P4, docs/redesign/inventory.md § 8.2, § 8.7): a visitor, and a member of
@@ -16,7 +17,6 @@ import { signInLocally } from "./helpers/workbenchLocal";
 let a: Private;
 let member: APIRequestContext;      // a member of another workspace (B)
 let visitor: APIRequestContext;     // no session at all
-let memberScope = "";
 const base = process.env.PW_BASE_URL || "http://localhost:4551";
 
 test.describe.configure({ mode: "serial" });
@@ -29,9 +29,7 @@ test.beforeAll(async ({}, info) => {
   const owner = await pwRequest.newContext({ baseURL: base });
   a = await seedPrivate(owner);
   member = await pwRequest.newContext({ baseURL: base });
-  const b = await signInLocally(member, "Other Workspace Member");
-  const me = await member.get("/api/me").then((r) => r.json()) as { id: string };
-  memberScope = `particl-active-${b.workspace.id}-${me.id}`;
+  await signInLocally(member, "Other Workspace Member");
   visitor = await pwRequest.newContext({ baseURL: base });
   await setSite({ guestHome: true, guestWorkspace: null });
 });
@@ -169,4 +167,21 @@ test("invite codes reveal nothing without the code; a wrong code is the same ans
   /* Request access answers the same for everyone and names nothing. */
   const res = await visitor.post("/api/access-request", { data: { name: "Privacy Probe", email: `probe-${a.mark.toLowerCase()}@example.test`, note: "probe" }, failOnStatusCode: false });
   expect(leaks(await res.text(), a.secrets)).toEqual([]);
+});
+
+test("in the new interface, a member of another workspace who opens A's board link is told they have no access, and sees nothing of the board", async ({ page }) => {
+  await signInToRedesign(page.request, "Other Workspace Member");
+  await expect.poll(async () => (await page.request.get("/api/me").then((r) => r.json())).workspace?.newInterface, { timeout: 30_000, intervals: [500, 1_000, 2_000] }).toBe(true);
+  const seen: string[] = [];
+  page.on("response", async (res) => { if (new URL(res.url()).pathname.startsWith("/api/")) seen.push(await res.text().catch(() => "")); });
+  await page.goto(`/suites?view=board&project=${encodeURIComponent(a.draftId)}`);
+  const none = page.getByTestId("v12-no-access");
+  await expect(none).toBeVisible({ timeout: 60_000 });
+  await expect(none.getByRole("heading")).toHaveText("You don’t have access");
+  await expect(none).toContainText("This board belongs to another workspace. Boards, names and assets are never shown outside their workspace.");
+  const text = await page.locator("body").innerText();
+  expect(leaks(text, a.secrets.filter((s) => s !== a.draftId)), "the page").toEqual([]);
+  expect(leaks(seen.join("\n"), a.secrets.filter((s) => s !== a.draftId)), "every answer the page got from the server").toEqual([]);
+  await page.getByTestId("v12-no-access-home").click();
+  await expect(page.getByTestId("v12-home")).toBeVisible({ timeout: 30_000 });
 });

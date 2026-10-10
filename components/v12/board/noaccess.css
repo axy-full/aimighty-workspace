@@ -1,0 +1,15 @@
+/*
+ * "You don't have access" (docs/redesign/inventory.md § 8.7): one screen for a visitor (over everything, the header too) and
+ * for a signed-in person on the board (in its place). Under .v12 only; app/graphite.css tokens only.
+ */
+.v12 .v12-noaccess { flex: 1; min-height: 0; background: var(--gx-root); color: var(--gx-text); font-family: var(--gx-font); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; }
+.v12 .v12-noaccess[data-cover] { position: fixed; inset: 0; z-index: 85; flex: none; }
+.v12 .v12-noaccess > * { max-width: 420px; }
+.v12 .v12-noaccess-lock { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--gx-line-control); display: grid; place-items: center; color: var(--gx-text-strong); }
+.v12 .v12-noaccess-title { margin: 0; font-size: var(--gx-fs-h2); font-weight: 600; }
+.v12 .v12-noaccess-line { margin: 0; font-size: var(--gx-fs-body); line-height: 1.5; color: var(--gx-text-2); }
+.v12 .v12-noaccess-actions { display: flex; gap: 8px; margin-top: 8px; }
+.v12 .v12-nbtn { display: inline-flex; align-items: center; justify-content: center; min-height: var(--gx-h-input); min-width: var(--gx-touch); padding: 0 14px; border-radius: var(--gx-r-btn); border: 1px solid var(--gx-line-strong); background: transparent; color: var(--gx-text); font: inherit; font-size: var(--gx-fs-meta); font-weight: 500; text-decoration: none; cursor: pointer; }
+.v12 .v12-nbtn:hover { border-color: var(--gx-hover-border); }
+.v12 .v12-nbtn-primary { border-color: transparent; background: var(--gx-accent); color: var(--gx-on-accent); font-weight: 600; }
+.v12 .v12-nbtn-primary:hover { background: var(--gx-accent-hover); }

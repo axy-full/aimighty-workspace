@@ -92,12 +92,3 @@
 .v12-visitor .v12-vcard-acts { display: flex; gap: 6px; flex-wrap: wrap; }
 .v12-visitor .v12-vplan { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--gx-fs-meta); }
 .v12-visitor .v12-vplan li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; }
-
-/* No access (§ 8.7): over everything, the header too */
-.v12-visitor .v12-noaccess { position: fixed; inset: 0; z-index: 85; background: var(--gx-root); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; }
-.v12-visitor .v12-noaccess > * { max-width: 420px; }
-.v12-visitor .v12-noaccess-lock { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--gx-line-control); display: grid; place-items: center; color: var(--gx-text-strong); }
-.v12-visitor .v12-noaccess-title { margin: 0; font-size: var(--gx-fs-h2); font-weight: 600; }
-.v12-visitor .v12-noaccess-line { margin: 0; font-size: var(--gx-fs-body); line-height: 1.5; color: var(--gx-text-2); }
-.v12-visitor .v12-noaccess-actions { display: flex; gap: 8px; margin-top: 8px; }
-.v12-visitor[data-compact] .v12-noaccess .v12-vbtn { height: var(--gx-touch); min-width: var(--gx-touch); }
