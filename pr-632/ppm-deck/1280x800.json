@@ -1,0 +1,9 @@
+{
+  "name": "ppm-deck",
+  "app": "/suites?project=project-101b7cbb&suite=particl&page=brief&view=board&stage=ppm-deck",
+  "prototype": "?view=board&project=recipe&stage=PPM%20deck",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}

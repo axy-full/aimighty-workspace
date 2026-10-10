@@ -1,0 +1,9 @@
+{
+  "name": "deliver",
+  "app": "/suites?project=project-e031452e&suite=particl&page=brief&view=board&stage=deliver",
+  "prototype": "?view=board&stage=Deliver&delivered=1",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
