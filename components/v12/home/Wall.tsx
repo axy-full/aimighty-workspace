@@ -2,6 +2,7 @@
 import type { CSSProperties, MouseEvent } from "react";
 import { wallLayout, type WallTile } from "@/lib/v12/home";
 import { Tooltip } from "@/components/v12/ui/Tooltip";
+import { FitText } from "./FitText";
 
 /**
  * The wall (docs/redesign/inventory.md § 5.9 · 2): this workspace's newest finished stills and clips on a 6-column
@@ -47,8 +48,8 @@ export function Wall({ tiles, status, row, picked, onPick, onRemix, onMenu }: {
                 aria-label={`${on ? "Picked" : "Pick"}: ${tile.title}`} data-testid="v12-home-tile-pick" />
             </Tooltip>
             <span className="v12-hm-tile-label" aria-hidden="true">
-              <span className="v12-hm-tile-type">{tile.type}</span>
-              <span className="v12-hm-tile-title">{tile.title}</span>
+              <FitText className="v12-hm-tile-type" text={tile.type} box=".v12-hm-tile" inset={40} />
+              <FitText className="v12-hm-tile-title" text={tile.title} box=".v12-hm-tile" inset={40} />
             </span>
             <span className="v12-hm-tile-hover">
               <span className="v12-hm-tile-like" aria-hidden="true">Make one like this</span>

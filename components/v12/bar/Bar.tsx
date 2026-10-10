@@ -44,6 +44,8 @@ export type BarProps = {
   /** Files picked with [+]. Absent: the button is not drawn. */
   onAttach?: (files: File[]) => void;
   attachAccept?: string;
+  /** The hover on [+]: what attaching does on this screen. */
+  attachTitle?: string;
   /** What [@] lists. Absent: the button is not drawn. */
   mentions?: readonly BarMention[];
   mentionsTitle?: string;
@@ -63,7 +65,7 @@ export type BarProps = {
 };
 
 export function Bar(props: BarProps) {
-  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, attachAccept, mentions, mentionsTitle = "From the library", onMention, chips, sheet, note, disabled, maxLength, docked, testId = "v12-bar" } = props;
+  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, attachAccept, attachTitle = "Attach a file — Upload a file from your computer.", mentions, mentionsTitle = "From the library", onMention, chips, sheet, note, disabled, maxLength, docked, testId = "v12-bar" } = props;
   const input = useRef<HTMLInputElement>(null);
   const files = useRef<HTMLInputElement>(null);
   const pop = useRef<HTMLDivElement>(null);
@@ -129,7 +131,7 @@ export function Bar(props: BarProps) {
         <div className="v12-bar-row">
           {onAttach ? (
             <>
-              <Tooltip name="Attach a file or a Library item" line="Upload a file, or pick from the Library." side="top">
+              <Tooltip name="Attach a file" line={attachTitle} side="top">
                 <button type="button" className="v12-bar-icon v12-bar-plus" onClick={() => files.current?.click()} disabled={disabled}
                   aria-label="Attach a file" data-testid={`${testId}-attach`}>+</button>
               </Tooltip>

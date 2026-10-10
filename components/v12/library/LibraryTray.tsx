@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useShell } from "@/lib/shell/state";
 import { writeAssetDrag } from "@/lib/drop";
 import type { Project } from "@/lib/workbench/studio";
@@ -38,11 +38,15 @@ export function LibraryTray({ project, projects, library }: { project: Project |
   const button = useRef<HTMLButtonElement>(null);
   const stack = useOverlayStack();
   const { setOpen } = tray;
-  /* Where focus was when the tray opened: every close (L, Esc, ×) gives it back there, else to the Library button. */
+  /* Where focus was when the tray opened: every close (L, Esc, ×) gives it back there, else to the Library button. It is
+     taken before the open (the tray's search box takes focus in its own effect, which runs before this component's). */
   const returnTo = useRef<HTMLElement | null>(null);
   const wasOpen = useRef(tray.open);
+  const toggle = useCallback(() => {
+    if (!wasOpen.current) returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setOpen((was) => !was);
+  }, [setOpen]);
   useEffect(() => {
-    if (tray.open && !wasOpen.current) returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!tray.open && wasOpen.current) {
       const back = returnTo.current;
       requestAnimationFrame(() => { (back && back.isConnected && back !== document.body ? back : button.current)?.focus(); });
@@ -52,19 +56,21 @@ export function LibraryTray({ project, projects, library }: { project: Project |
   const onBoard = shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
 
   /* L toggles the tray, anywhere in the new frame: never while typing, never on a held key's repeat, and never while a
-     layer above the drawers is open (a menu, a dialog, a veil). It runs before the board's own keys. */
+     layer above the drawers is open (a menu, a dialog, a veil). It runs before the board's own keys, and L is the tray's
+     in the new frame even when it does nothing, so a repeat or an L behind a menu never reaches the board's list key. */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || inField(event.target)) return;
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || inField(event.target)) return;
       if (event.key.toLowerCase() !== "l") return;
+      event.preventDefault();
+      if (event.repeat) return;
       const top = stack?.top();
       if ((top && top.layer !== "drawer") || document.querySelector(".gx-veil, [aria-modal='true']")) return;
-      event.preventDefault();
-      setOpen((was) => !was);
+      toggle();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [setOpen, stack]);
+  }, [toggle, stack]);
   useOverlay("drawer", tray.open, () => setOpen(false));
   /* The right-click menu's "Library L" asks for the same toggle. */
   useEffect(() => {
@@ -81,7 +87,7 @@ export function LibraryTray({ project, projects, library }: { project: Project |
       {shell.make || tray.open ? null : (
         <Tooltip name="Library" shortcut={keyOf("library")} side="top">
           <button ref={button} type="button" className="v12-lib-btn" data-on-board={onBoard || undefined} aria-pressed={tray.open} aria-label="Library"
-            data-testid="v12-library-button" onClick={() => tray.setOpen((was) => !was)}>
+            data-testid="v12-library-button" onClick={toggle}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 3h12v10H2zM2 7h12M6 7v6" /></svg>
             Library<Kbd keys={keyOf("library")} />
           </button>

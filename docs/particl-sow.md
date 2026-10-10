@@ -1,5 +1,7 @@
 # Particl: master scope of work, v2 (6 October 2026)
 
+> **Correction, 10 Oct 2026 (Inngest Cloud, not self-hosted).** Production's background work runs on **Inngest Cloud**, which calls the app at `https://particl.si/api/inngest` (`DISPATCH_MODE=inngest`, `INNGEST_SERVE_ORIGIN=https://particl.si`, `INNGEST_STREAMING=true`, `INNGEST_BASE_URL` unset), as `docs/selfhost-test.md` (8 Oct) set it up and the live settings confirmed on 10 Oct. Where this file plans a **self-hosted** Inngest (an internal `--sdk-url`, `INNGEST_BASE_URL` at an internal address), that plan was not carried out. `WORKER_ORIGIN` (127.0.0.1:3000) was never built: in the native-dispatch fallback the app calls its own `/api/worker` through the public `APP_ORIGIN`.
+
 Owner: Akshay. Repo: `axy-full/aimighty-workspace` (public). Live site: particl.si (Vercel).
 This file replaces the order of work in `docs/handover-2026-10-05.md` Part B § B7. Everything else in that handover (rules, architecture B4, catalogue B5, platform runbook Part C, package prompts Part D) still applies unless this file changes it. Commit it as `docs/particl-sow.md` (no secrets, public repo).
 
@@ -165,7 +167,7 @@ Every model goes in through the same door: a verified price, a mocked test, one 
 | Liveblocks | Live board sync | Free or Pro $25/mo (yearly) |
 | MCP + TypeScript SDK | Outside agents use Particl safely | Free |
 | Langfuse | Agent run traces and cost | Hobby free; Core $29/mo |
-| Inngest (self-hosted) | Background renders, 1,000 jobs, per-plan limits | Free |
+| Inngest (self-hosted; **corrected 10 Oct: Inngest Cloud in production**) | Background renders, 1,000 jobs, per-plan limits | Free |
 | FFmpeg, OpenTimelineIO | Captions, clips, renders, AAF | Free |
 | Remotion | Designed captions, cards, ad versions, final cut | $100/mo from go-live (10,000 renders) |
 | Hostinger KVM 8 + Coolify | Own server and deploys | $25.99/mo (2-year term) |
