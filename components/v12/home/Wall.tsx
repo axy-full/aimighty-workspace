@@ -1,6 +1,7 @@
 "use client";
 import type { CSSProperties, MouseEvent } from "react";
 import { wallLayout, type WallTile } from "@/lib/v12/home";
+import { Tooltip } from "@/components/v12/ui/Tooltip";
 
 /**
  * The wall (docs/redesign/inventory.md § 5.9 · 2): this workspace's newest finished stills and clips on a 6-column
@@ -41,8 +42,10 @@ export function Wall({ tiles, status, row, picked, onPick, onRemix, onMenu }: {
               ? <video className="v12-hm-tile-media" src={tile.url} muted playsInline preload="metadata" aria-hidden="true" />
               // eslint-disable-next-line @next/next/no-img-element -- Particl's own media route (/api/media), already sized
               : <img className="v12-hm-tile-media" src={tile.url} alt="" loading="lazy" />}
-            <button type="button" className="v12-hm-tile-pick" onClick={() => onPick(tile)} aria-pressed={on}
-              aria-label={`${on ? "Picked" : "Pick"}: ${tile.title}`} title={`${tile.title} · ${tile.type} — Make one like this`} data-testid="v12-home-tile-pick" />
+            <Tooltip name={`${tile.title} · ${tile.type}`} line="Make one like this: click to pick it, or right-click for more.">
+              <button type="button" className="v12-hm-tile-pick" onClick={() => onPick(tile)} aria-pressed={on}
+                aria-label={`${on ? "Picked" : "Pick"}: ${tile.title}`} data-testid="v12-home-tile-pick" />
+            </Tooltip>
             <span className="v12-hm-tile-label" aria-hidden="true">
               <span className="v12-hm-tile-type">{tile.type}</span>
               <span className="v12-hm-tile-title">{tile.title}</span>

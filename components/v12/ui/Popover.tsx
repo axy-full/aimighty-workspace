@@ -134,7 +134,9 @@ export function Menu({ open, onClose, anchor, label, items, side = "bottom", ali
   const subAnchor = useRef<HTMLButtonElement | null>(null);
   const subItem = sub ? items.find((item) => !("separator" in item) && item.id === sub) : undefined;
   const subItems = subItem && !("separator" in subItem) ? subItem.submenu : undefined;
-  useEffect(() => { if (!open) setSub(null); }, [open]);
+  /* A closed menu forgets its open submenu (set while rendering, as React advises for state that follows a prop). */
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) { setWasOpen(open); if (!open) setSub(null); }
   const openSub = (id: string, button: HTMLButtonElement) => { subAnchor.current = button; setSub(id); };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {

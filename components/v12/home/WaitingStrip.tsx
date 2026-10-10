@@ -5,6 +5,7 @@ import type { PressOutcome } from "@/lib/control-room/approve";
 import { spendAttrsOf } from "@/lib/spend";
 import { knownQuote } from "@/lib/v12/quote";
 import { Price } from "@/components/v12/ui/Price";
+import { Tooltip } from "@/components/v12/ui/Tooltip";
 
 /**
  * Waiting for you (docs/redesign/inventory.md § 5.9 · 1): one 44 px strip over the wall. "Waiting for you", the count,
@@ -33,7 +34,9 @@ export function WaitingStrip({ items, shown, onApprove, onOpen, onMore, onHide }
         {inline.map((item) => <Item key={item.id} item={item} onApprove={onApprove} onOpen={() => onOpen(item)} />)}
       </ul>
       {more > 0 ? <button type="button" className="v12-hm-chip-btn" onClick={onMore} title="See everything waiting for you" data-testid="v12-home-waiting-more">+{more} more</button> : null}
-      <button type="button" className="v12-hm-wait-x" onClick={onHide} title="Hide for now" aria-label="Hide for now" data-testid="v12-home-waiting-hide">×</button>
+      <Tooltip name="Hide for now" named>
+        <button type="button" className="v12-hm-wait-x" onClick={onHide} aria-label="Hide for now" data-testid="v12-home-waiting-hide">×</button>
+      </Tooltip>
     </section>
   );
 }
