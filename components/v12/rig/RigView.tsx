@@ -5,8 +5,8 @@ import { exact, upTo } from "@/lib/shell/price-words";
 import { useStageQuotes } from "@/lib/production/use-stage-quotes";
 import { retryQuoteBody } from "@/lib/workspace/retry-request";
 import { addInput, removeInput } from "@/lib/production/rig-build";
-import { renderTakeOf } from "@/components/v12/make/use-results";
-import { fmtRenderPrice } from "@/lib/v12/renderState";
+import { fmtRenderPrice, type RenderPrice } from "@/lib/v12/renderState";
+import type { Generation } from "@/lib/jobs";
 import { knownQuote } from "@/lib/v12/quote";
 import type { RigContext } from "@/components/workspace/rig/RigProvider";
 import type { Project } from "@/lib/workbench/studio";
@@ -303,6 +303,13 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
 
 const plural = (n: number) => `${n} ${n === 1 ? "shot" : "shots"}`;
 
+/** What the ledger charged for a settled take, in the workspace's own unit; null while it is still in flight. */
+function chargedOf(g: Generation, dollars: boolean): RenderPrice | null {
+  if (g.status !== "succeeded" && g.status !== "failed" && g.status !== "cancelled") return null;
+  if (dollars) return typeof g.costUsd === "number" ? { amount: g.costUsd, unit: "usd" } : null;
+  return typeof g.creditsBilled === "number" ? { amount: g.creditsBilled, unit: "cr" } : null;
+}
+
 /** A shot's steps (double-click): what its takes went through, oldest first, with the engine and what each cost. */
 function Steps({ shot, dollars }: { shot: RigShot; dollars: boolean }) {
   const versions = shot.row.versions;
@@ -310,7 +317,7 @@ function Steps({ shot, dollars }: { shot: RigShot; dollars: boolean }) {
     <div className="v12-rig-steps" data-testid="v12-rig-steps" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
       {versions.length ? versions.map((v) => {
         const g = v.entry.asset.origin === "generation" ? v.entry.asset.value : null;
-        const charged = g ? renderTakeOf(g, null, dollars).charged : null;
+        const charged = g ? chargedOf(g, dollars) : null;
         return (
           <div key={v.genId} className="v12-rig-step" data-testid="v12-rig-step" style={{ "--n": 1 } as CSSProperties}>
             <span>{stepName(v.task, v.media)} · {v.engine}</span>
