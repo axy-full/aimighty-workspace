@@ -129,7 +129,8 @@ export async function spentBy(column: "project_id" | "shot_id", keys: string[]):
  * inside its lock, so reading it here as well would be thrown away on every
  * reservation. Screens, warnings and pre-checks want projectCapSpent.
  */
-export async function projectCap(projectId: string): Promise<CapRow | null> {
+/** `settings`, when given, is where the workspace's budget is read instead of the memo (a reservation's fresh read). */
+export async function projectCap(projectId: string, settings?: Record<string, string>): Promise<CapRow | null> {
   await ready();
   const inCredits = creditsApply(currentTenant()?.workspace);
   const rs = await db().execute({
@@ -140,7 +141,7 @@ export async function projectCap(projectId: string): Promise<CapRow | null> {
   if (!r) return null;
   const own = inCredits ? (r.cap_credits == null ? null : Number(r.cap_credits)) : (r.cap_usd == null ? null : Number(r.cap_usd));
   /* A credits production with no cap of its own follows the workspace's budget per production, when an admin set one. */
-  const budget = own == null && inCredits ? await workspaceBudget() : null;
+  const budget = own == null && inCredits ? (settings ? cleanBudget(settings.productionBudgetCredits) : await workspaceBudget()) : null;
   return {
     unit: inCredits ? "cr" : "$",
     cap: own ?? budget,
