@@ -5,15 +5,14 @@ import { exact, upTo } from "@/lib/shell/price-words";
 import { useStageQuotes } from "@/lib/production/use-stage-quotes";
 import { retryQuoteBody } from "@/lib/workspace/retry-request";
 import { addInput, removeInput } from "@/lib/production/rig-build";
-import { fmtRenderPrice, type RenderPrice } from "@/lib/v12/renderState";
-import type { Generation } from "@/lib/jobs";
-import { knownQuote } from "@/lib/v12/quote";
+import { knownQuote, type Quote } from "@/lib/v12/quote";
 import type { RigContext } from "@/components/workspace/rig/RigProvider";
 import type { Project } from "@/lib/workbench/studio";
 import { Price } from "@/components/v12/ui/Price";
 import { useToast } from "@/components/v12/ui/Toast";
 import { useOverlay } from "@/components/v12/ui/overlay";
-import { GROUP_LABEL, STATE_WORD, redrawn, shotsList, shotsWord, stepName, type RigGroup, type RigInput, type RigModel, type RigShot } from "./model";
+import { uid, type CanvasNode } from "@/lib/workbench/studio";
+import { GROUP_LABEL, STATE_WORD, impactPrice, lengthOf, redrawn, shotsList, shotsWord, stepName, stepPriceText, type RigGroup, type RigInput, type RigModel, type RigShot } from "./model";
 import "./rig.css";
 
 /**
@@ -122,11 +121,13 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
     if (!i || !s) return;
     if (readOnly) { toast({ text: "Needs a connection" }); return; }
     if (!i.nodeId || !i.wired.includes(s.index)) { toast({ text: `${i.name} is in Shot ${s.index} through the script. Change the script to take it out.` }); return; }
-    const before = project;
+    /* Undo puts back this link alone (and its input card, if taking it out removed that): later changes stay. */
+    const linkNode = project.nodes.find((n) => n.id === i.nodeId);
+    const firstFrame = project.nodes.find((n) => n.id === shotNode)?.firstFrameId;
     const refusal = apply((p) => removeInput(p, shotNode, i.nodeId!));
     if (refusal) { toast({ text: refusal }); return; }
     setPick(null);
-    toast({ text: `${i.name} is no longer an input of Shot ${s.index}`, action: { label: "Undo", run: () => { apply(() => before); } } });
+    toast({ text: `${i.name} is no longer an input of Shot ${s.index}`, action: { label: "Undo", run: () => { if (linkNode) apply((p) => restoreLink(p, shotNode, linkNode, firstFrame)); } } });
   };
 
   useEffect(() => {
@@ -152,10 +153,10 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
     const asset = node?.assetId ? [...project.assets, ...(project.sharedAssets ?? [])].find((a) => a.id === node.assetId) : undefined;
     if (i.shots.includes(target.index)) { toast({ text: `${i.name} is already in Shot ${target.index}.` }); return; }
     if (!asset) { toast({ text: `${i.name} has no picture to add yet.` }); return; }
-    const before = project;
-    const refusal = apply((p) => addInput(p, target.nodeId, asset, i.name));
+    const added = uid("node");
+    const refusal = apply((p) => addInput(p, target.nodeId, asset, i.name, added));
     if (refusal) { toast({ text: refusal }); return; }
-    toast({ text: `${i.name} is a reference for Shot ${target.index}`, action: { label: "Undo", run: () => { apply(() => before); } } });
+    toast({ text: `${i.name} is a reference for Shot ${target.index}`, action: { label: "Undo", run: () => { apply((p) => removeInput(p, target.nodeId, added)); } } });
     setPick({ kind: "shot", id: target.nodeId });
   };
 
@@ -167,11 +168,11 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
     const body = g ? retryQuoteBody({ ...g, status: "failed" }) : null;
     return body ? [[s.nodeId, { body }]] : [];
   })), [affected]);
-  const { quotes } = useStageQuotes(scope, requests);
-  const priced = affected.length > 0 && affected.every((s) => requests[s.nodeId]);
-  const credits = affected.map((s) => quotes[s.nodeId]);
-  const total = priced && credits.every((q) => q && q.credits != null) ? credits.reduce((n, q) => n + (q!.credits ?? 0), 0) : null;
-  const approximate = credits.some((q) => q?.approximate);
+  const { quotes, tryAgain } = useStageQuotes(scope, requests);
+  const price = impactPrice(affected, requests, quotes);
+  const priceQuote: Quote | null = price.state === "ready" ? knownQuote(price.approximate ? upTo(price.total) : exact(price.total))
+    : price.state === "loading" ? { state: "loading" }
+      : price.state === "error" ? { state: "error", message: price.message, retry: () => price.ids.forEach(tryAgain) } : null;
   const engines = [...new Set(affected.map((s) => s.take!.engine.split(" · ")[0]))].join(" · ");
   const wording = (i: RigInput) => `Redraw ${shotsList(affected.map((s) => s.index))} with the change to ${i.name}: `;
 
@@ -188,7 +189,8 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
     }
     if (shot) {
       const names = shot.inputs.map((id) => inputById.get(id)?.name).filter(Boolean);
-      return { text: `${shot.label} uses ${names.length ? names.join(", ") : "no input yet"}. Double-click for its steps.`, action: null };
+      const removable = shot.inputs.flatMap((id) => { const i = inputById.get(id); return i && i.nodeId && i.wired.includes(shot.index) ? [i] : []; });
+      return { text: `${shot.label} uses ${names.length ? names.join(", ") : "no input yet"}. Double-click for its steps.`, action: removable.length && !readOnly ? <>{removable.map((i) => <button key={i.id} type="button" className="v12-rig-btn" onClick={() => removeEdge(i.id, shot.nodeId)} data-testid="v12-rig-unlink">Remove {i.name}</button>)}</> : null };
     }
     return null;
   })();
@@ -203,9 +205,10 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
           <span className="v12-rig-impact" data-testid="v12-rig-impact">
             <strong>Change {input.name}</strong>
             <span>
-              {plural(affected.length)} will redraw · {engines || "—"} · {total != null ? <Price quote={knownQuote(approximate ? upTo(total) : exact(total))} testId="v12-rig-price" /> : priced ? <Price quote={{ state: "loading" }} testId="v12-rig-price" /> : <Price quote={knownQuote(null)} testId="v12-rig-price" />}
+              {plural(affected.length)} will redraw · {engines || "—"} · {priceQuote ? <Price quote={priceQuote} testId="v12-rig-price" /> : <Price quote={null} reason="redrawNoRecord" testId="v12-rig-price" />}
               {input.locked ? " · Never change" : ""}. Locked frames stay.
             </span>
+            {priceQuote?.state === "error" ? <button type="button" className="v12-rig-btn" onClick={priceQuote.retry} data-testid="v12-rig-price-retry">Retry</button> : null}
             <button type="button" className="v12-rig-btn" data-hot="" onClick={() => onAsk(wording(input))} disabled={readOnly} data-testid="v12-rig-ask">Ask Atomik to redraw</button>
           </span>
         ) : note ? (
@@ -267,6 +270,7 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
                           ) : null; })}
                           {s.inputs.length > 4 ? <span className="v12-rig-avatar v12-rig-avatar--more">+{s.inputs.length - 4}</span> : null}
                         </span>
+                        {lengthOf(s.line) ? <span className="v12-rig-len" data-testid="v12-rig-length">{lengthOf(s.line)}</span> : null}
                         {STATE_WORD[s.state] ? <span className="v12-rig-state" data-state={s.state} data-testid="v12-rig-state">{STATE_WORD[s.state]}</span> : null}
                       </span>
                     </span>
@@ -306,13 +310,6 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
 
 const plural = (n: number) => `${n} ${n === 1 ? "shot" : "shots"}`;
 
-/** What the ledger charged for a settled take, in the workspace's own unit; null while it is still in flight. */
-function chargedOf(g: Generation, dollars: boolean): RenderPrice | null {
-  if (g.status !== "succeeded" && g.status !== "failed" && g.status !== "cancelled") return null;
-  if (dollars) return typeof g.costUsd === "number" ? { amount: g.costUsd, unit: "usd" } : null;
-  return typeof g.creditsBilled === "number" ? { amount: g.creditsBilled, unit: "cr" } : null;
-}
-
 /** A shot's steps (double-click): what its takes went through, oldest first, with the engine and what each cost. */
 function Steps({ shot, dollars }: { shot: RigShot; dollars: boolean }) {
   const versions = shot.row.versions;
@@ -320,15 +317,21 @@ function Steps({ shot, dollars }: { shot: RigShot; dollars: boolean }) {
     <div className="v12-rig-steps" data-testid="v12-rig-steps" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
       {versions.length ? versions.map((v) => {
         const g = v.entry.asset.origin === "generation" ? v.entry.asset.value : null;
-        const charged = g ? chargedOf(g, dollars) : null;
+        const price = stepPriceText(v, g, dollars);
         return (
           <div key={v.genId} className="v12-rig-step" data-testid="v12-rig-step" style={{ "--n": 1 } as CSSProperties}>
             <span>{stepName(v.task, v.media)} · {v.engine}</span>
-            <span className="v12-rig-step-price">{charged ? fmtRenderPrice(charged) : v.status === "rendering" || v.status === "held" ? "not billed yet" : "—"}</span>
+            <span className="v12-rig-step-price" data-testid="v12-rig-step-price">{price}</span>
           </div>
         );
       }) : <div className="v12-rig-step"><span>No take yet</span></div>}
       <div className="v12-rig-step v12-rig-step--quiet"><span>Esc collapses</span></div>
     </div>
   );
+}
+
+/** Puts a link back: the input card (if taking the link out removed it) and the shot's link to it, nothing else. */
+function restoreLink(project: Project, shotId: string, card: CanvasNode, firstFrame: string | undefined): Project {
+  const nodes = project.nodes.some((n) => n.id === card.id) ? project.nodes : [...project.nodes, card];
+  return { ...project, nodes: nodes.map((n) => (n.id === shotId && !n.linked.includes(card.id) ? { ...n, linked: [...n.linked, card.id], ...(firstFrame && !n.firstFrameId ? { firstFrameId: firstFrame } : {}) } : n)) };
 }

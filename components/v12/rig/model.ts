@@ -2,8 +2,10 @@ import { shotTakes, type ShotTakes } from "@/components/graphite/board/cards/tak
 import { assetStill, type CastCardData, type CastStill } from "@/components/graphite/board/cards/cast/cast-model";
 import type { LookData } from "@/components/graphite/board/cards/looks/derive";
 import { CUT_CARD, DELIVER_CARD } from "@/components/graphite/board/cards/cut/cut-model";
+import { fmtRenderPrice, type RenderPrice } from "@/lib/v12/renderState";
 import type { BoardCard } from "@/lib/board/types";
 import type { Project } from "@/lib/workbench/studio";
+import type { Generation } from "@/lib/jobs";
 import type { LibraryEntry } from "@/lib/workspace/library";
 
 /**
@@ -135,3 +137,42 @@ export function stepName(task: string, media: "image" | "video" | "audio" | null
   if (t.includes("lip")) return "Lip-sync";
   return media === "video" ? "Video" : media === "audio" ? "Sound" : "Still";
 }
+
+/** What the ledger charged for a settled take, in the workspace's own unit; null while it is still in flight. */
+export function chargedOf(g: Partial<Pick<Generation, "costUsd" | "creditsBilled">> & Pick<Generation, "status">, dollars: boolean): RenderPrice | null {
+  if (g.status !== "succeeded" && g.status !== "failed" && g.status !== "cancelled") return null;
+  if (dollars) return typeof g.costUsd === "number" ? { amount: g.costUsd, unit: "usd" } : null;
+  return typeof g.creditsBilled === "number" ? { amount: g.creditsBilled, unit: "cr" } : null;
+}
+
+/**
+ * What a step of a shot's work cost, in words. A failed or cancelled take that was charged nothing says "Nothing billed"
+ * (CLAUDE.md rule 14), never a zero figure; one that was charged says what; one in flight has not been billed yet.
+ */
+export function stepPriceText(v: Pick<ShotTakes["versions"][number], "status" | "nothingBilled" | "charge">, g: Partial<Pick<Generation, "costUsd" | "creditsBilled">> & Pick<Generation, "status"> | null, dollars: boolean): string {
+  const charged = g ? chargedOf(g, dollars) : null;
+  if (charged && charged.amount > 0) return fmtRenderPrice(charged);
+  const ended = g ? g.status === "failed" || g.status === "cancelled" : v.status === "failed";
+  if (ended) return v.nothingBilled || charged?.amount === 0 ? "Nothing billed" : v.charge ?? "—";
+  if (v.status === "rendering" || v.status === "held") return "not billed yet";
+  return charged ? fmtRenderPrice(charged) : "—";
+}
+
+type QuoteRead = { credits?: number; approximate?: true; error?: string } | undefined;
+/** The price of a change: every shot it redraws needs a request to quote; one without says "quoted"; a failed read says why. */
+export type ImpactPrice =
+  | { state: "quoted" }
+  | { state: "loading" }
+  | { state: "error"; message: string; ids: string[] }
+  | { state: "ready"; total: number; approximate: boolean };
+export function impactPrice(affected: readonly { nodeId: string }[], requests: Record<string, unknown>, quotes: Record<string, QuoteRead>): ImpactPrice {
+  if (!affected.length || affected.some((s) => !requests[s.nodeId])) return { state: "quoted" };
+  const reads = affected.map((s) => ({ id: s.nodeId, q: quotes[s.nodeId] }));
+  const failed = reads.filter((r) => r.q?.error);
+  if (failed.length) return { state: "error", message: failed[0].q!.error!, ids: failed.map((r) => r.id) };
+  if (reads.some((r) => !r.q || r.q.credits == null)) return { state: "loading" };
+  return { state: "ready", total: reads.reduce((n, r) => n + (r.q!.credits ?? 0), 0), approximate: reads.some((r) => r.q!.approximate) };
+}
+
+/** A shot's length, "4 s", when its script gives one. */
+export const lengthOf = (line: string): string | null => /(?:^| · )(\d+(?:\.\d+)? s)(?: · |$)/.exec(line)?.[1] ?? null;

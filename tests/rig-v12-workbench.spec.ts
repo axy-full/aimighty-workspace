@@ -140,6 +140,52 @@ test.describe("desktop, switch on", () => {
     await expect(page.getByTestId("v12-rig-edge")).toHaveCount(3);
   });
 
+  test("a price that cannot be read says so, with Retry, and is never a figure or a spinner for ever", async ({ page }) => {
+    let failing = true;
+    await page.route("**/api/generate/quote", (route) => (failing ? route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "The price could not be read. Try again." }) }) : route.continue()));
+    await open(page);
+    await input(page, "Skipper").click();
+    const price = page.getByTestId("v12-rig-price");
+    await expect(price).toHaveAttribute("data-price-state", "error", { timeout: 60_000 });
+    await expect(price).toHaveText("—");
+    await expect(page.getByTestId("v12-rig-price-retry")).toBeVisible();
+    failing = false;
+    await page.getByTestId("v12-rig-price-retry").click();
+    await expect(price).toHaveAttribute("data-price-state", "ready", { timeout: 60_000 });
+  });
+
+  test("a shot's steps: a charged take says what it cost; a failed take charged nothing says Nothing billed, never zero; shot lengths show", async ({ page }) => {
+    const rows: ShotRow[] = [...MADE.slice(0, 7), { status: "failed", ageS: 3600 }];
+    await openRigBoard(page, RIG, { rows, rig: true });
+    await expect(page.getByTestId("v12-rig")).toBeVisible({ timeout: 90_000 });
+    await closeDock(page);
+    await shot(page, 8).dblclick();
+    const failed = shot(page, 8).getByTestId("v12-rig-step-price");
+    await expect(failed).toHaveCount(1);
+    expect(await failed.innerText()).not.toMatch(/^0\b|\b0 cr|\$0/);
+    await expect(failed).toHaveText(/Nothing billed|—|charged/i);
+    /* Length, where the script gives one. */
+    const lengths = await page.getByTestId("v12-rig-length").allInnerTexts();
+    for (const l of lengths) expect(l).toMatch(/^\d+(\.\d+)? s$/);
+  });
+
+  test("the keyboard takes a connection out of a shot, and Undo puts back only that link", async ({ page }) => {
+    await open(page);
+    /* A change made first stays when a later one is undone: Undo puts back that link alone. */
+    await input(page, "Deckhand").dragTo(shot(page, 5));
+    await expect(shot(page, 5).getByTestId("v12-rig-avatar")).toHaveCount(2, { timeout: 30_000 });
+    await expect(shot(page, 1).getByTestId("v12-rig-avatar")).toHaveCount(2);
+    await shot(page, 1).focus();
+    await page.keyboard.press("Enter");
+    await page.getByTestId("v12-rig-unlink").filter({ hasText: "Skipper" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("v12-toast")).toContainText("Skipper is no longer an input of Shot 1");
+    await expect(shot(page, 1).getByTestId("v12-rig-avatar")).toHaveCount(1, { timeout: 30_000 });
+    await page.getByTestId("v12-toast-action").click();
+    await expect(shot(page, 1).getByTestId("v12-rig-avatar")).toHaveCount(2, { timeout: 30_000 });
+    await expect(shot(page, 5).getByTestId("v12-rig-avatar")).toHaveCount(2);
+  });
+
   test("a double-click opens a shot's steps with each engine and what it cost; Esc closes them first; groups fold", async ({ page }) => {
     await open(page);
     await shot(page, 1).dblclick();

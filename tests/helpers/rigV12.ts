@@ -34,7 +34,7 @@ const RIG_PICTURES: Record<string, { asset: string; name: string; generation: st
 const rigAssets = () => Object.values(RIG_PICTURES).map((p) => ({ id: p.asset, name: p.name, kind: "image", category: p.category, url: `/api/media/${p.generation}`, description: "", prompt: "", status: "Selected", locked: false, version: 1, refs: [], generationId: p.generation }));
 
 /** One take: its shot (1-based, by place when absent), version, status, and how long ago it was asked for. */
-export type ShotRow = { shot?: number; version?: number; id?: string; status: "succeeded" | "running"; ageS?: number };
+export type ShotRow = { shot?: number; version?: number; id?: string; status: "succeeded" | "running" | "failed"; ageS?: number };
 /** Shots 1–3 finished; 4–5 rendering; 6–8 nothing yet. */
 const DEFAULT_ROWS: (ShotRow | null)[] = [{ status: "succeeded" }, { status: "succeeded" }, { status: "succeeded" }, { status: "running" }, { status: "running" }, null, null, null];
 export async function openRigBoard(page: Page, path = "/suites?view=board&stage=shots", opts: { on?: boolean; rows?: (ShotRow | null)[]; rig?: boolean } = {}) {

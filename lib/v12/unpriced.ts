@@ -49,6 +49,11 @@ export const UNPRICED = {
     why: "No code path finishes a storyboard panel (clean lines and the final look; inventory § 4.3 card toolbar). Storyboard redraws exist (lib/production/boards.ts) but nothing defines a finish step to quote.",
     hover: "Finishing a panel has no price yet.",
   },
+  redrawNoRecord: {
+    action: "Redraw a shot whose take has no recorded request (the Rig's \"what a change will cost\")",
+    why: "A redraw is priced by quoting the request the take was made with (POST /api/generate/quote, the body Retry sends). A take with no generation record, or one whose request cannot be rebuilt, has no body to quote.",
+    hover: "This redraw has no price yet: its take has no recorded request.",
+  },
 } as const satisfies Record<string, Unpriced>;
 
 export type UnpricedId = keyof typeof UNPRICED;

@@ -62,3 +62,4 @@
 
 /* The first-time hint has a row of its own above the bar, under the scrolling canvas: it never covers a node. */
 .v12 .v12-rig-hint { flex: none; align-self: center; margin: 0 0 12px; display: flex; align-items: center; gap: 12px; padding: 6px 8px 6px 16px; border: 1px solid var(--gx-line-control); border-radius: 999px; background: var(--gx-card); font-size: 13px; color: var(--gx-text); box-shadow: var(--gx-shadow-float); }
+.v12 .v12-rig-len { font-variant-numeric: tabular-nums; }
