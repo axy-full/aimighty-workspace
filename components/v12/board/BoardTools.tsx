@@ -61,16 +61,16 @@ export function BoardToolbar({ tool, readOnly, onTool, userId, firstVisit }: {
   );
 }
 
-/** The view switch (§ 6.5): Canvas and List are today's; Strip and Rig are not built yet and say so (Rig comes with P5). */
+/** The view switch (§ 6.5): Canvas, List and Rig are built; Strip is not yet and says so. */
 export type BoardViewId = "canvas" | "list" | "strip" | "rig";
-export function ViewSwitch({ view, onView }: { view: "canvas" | "list"; onView: (view: "canvas" | "list") => void }) {
+export function ViewSwitch({ view, onView }: { view: "canvas" | "list" | "rig"; onView: (view: "canvas" | "list" | "rig") => void }) {
   return (
     <div className="v12-viewswitch" data-testid="v12-view-switch">
-      <Segment<BoardViewId> label="View" size="sm" value={view} onChange={(id) => { if (id === "canvas" || id === "list") onView(id); }} options={[
+      <Segment<BoardViewId> label="View" size="sm" value={view} onChange={(id) => { if (id === "canvas" || id === "list" || id === "rig") onView(id); }} options={[
         { id: "canvas", label: "Canvas", tooltip: { name: "Canvas", line: "Free cards you can move, group and annotate." } },
         { id: "list", label: "List", tooltip: { name: "List", line: "The shot list: #, size, description, VO, duration, status." } },
         { id: "strip", label: "Strip", disabled: true, tooltip: { name: "Strip", line: "Timeline / animatic with durations. Not built yet." } },
-        { id: "rig", label: "Rig", disabled: true, tooltip: { name: "Rig", line: "See what feeds what, and what a change will cost. Not built yet." } },
+        { id: "rig", label: "Rig", tooltip: { name: "Rig", line: "See what feeds what, and what a change will cost." } },
       ]} />
     </div>
   );
