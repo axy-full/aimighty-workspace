@@ -220,7 +220,11 @@ const carry = (extra: Readonly<Record<string, string>>): Readonly<Record<string,
   Object.fromEntries(CARRIED_OVER.filter((key) => key in extra).map((key) => [key, extra[key]]));
 
 /** Make over a page someone moves to: kept, except on a phone, where the panel is the whole screen. */
-const stayMake = (make: MakeTab | null) => (make && typeof window !== "undefined" && window.innerWidth < PHONE_BELOW ? null : make);
+/* Make as a page (the new interface at desktop sizes, redesign C3) is a place like Home or a board: going anywhere else leaves it.
+   Today's Make is a panel over the page, so it stays open across navigation. SuitesShell says which one is on screen. */
+let makeIsPage = false;
+export function setMakeIsPage(on: boolean) { makeIsPage = on; }
+const stayMake = (make: MakeTab | null) => (make && ((typeof window !== "undefined" && window.innerWidth < PHONE_BELOW) || makeIsPage) ? null : make);
 /** Below this, Make is full width (components/graphite/make.css). */
 export const PHONE_BELOW = 768;
 

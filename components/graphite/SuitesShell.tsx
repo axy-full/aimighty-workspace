@@ -15,7 +15,7 @@ import { GenerateComposer } from "@/components/workspace/GenerateComposer";
 import { GenerationStrip } from "@/components/workspace/GenerationStrip";
 import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
-import { useShell } from "@/lib/shell/state";
+import { setMakeIsPage, useShell } from "@/lib/shell/state";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { useRecreatePrice } from "@/lib/shell/use-recreate-price";
 import { ctxPrice } from "@/lib/shell/recreate-price";
@@ -375,6 +375,8 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
   /* With the switch on at desktop sizes, Make is a page in the frame's body (components/v12/make), not a panel; its quick
      tools (Motion transfer, Object swap, Upscale) still open as today's panel over that page. */
   const v12Make = v12 && Boolean(shell.make);
+  /* Make is a page in the new frame: leaving for Home, a board or Settings leaves it (lib/shell/state.tsx stayMake). */
+  useEffect(() => { setMakeIsPage(v12); return () => setMakeIsPage(false); }, [v12]);
   const makePanel = Boolean(shell.make) && !phoneOn && !(v12Make && !isMakeTool(shell.make));
   const header = <Header account={account} project={project?.name ?? null} bar={bar} />;
   const desktopBody = <>
