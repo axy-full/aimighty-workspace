@@ -12,6 +12,8 @@ import { Composer } from "./Composer";
 import { Results } from "./Results";
 import { Viewer } from "./Viewer";
 import { useResults, useTrayPrices } from "./use-results";
+import { MakeMenu } from "../menus/MakeMenu";
+import { useMenuAt } from "../menus/menu-items";
 import "./make.css";
 
 export type V12MakeProps = {
@@ -70,16 +72,19 @@ export function V12Make({ scope, project, projects, projectsError, onRetry, work
     setViewing(null);
     toast({ text: "Added to the composer's references" });
   }, [toast]);
+  /* Right-click menus (redesign A3): a result's, and empty space's. */
+  const menu = useMenuAt<string | null>();
   const input = useMemo(() => ({ scope, project, projects, workspaceName, onProject, balance }), [scope, project, projects, workspaceName, onProject, balance]);
 
   return (
-    <div className="v12-mk" data-testid="v12-make" data-v12-make="" data-screen-label="Make">
+    <div className="v12-mk" data-testid="v12-make" data-v12-make="" data-screen-label="Make"
+      onContextMenu={(e) => { const el = e.target as HTMLElement; if (el.closest(".v12-mk-results") && !el.closest("button, a, input, textarea")) menu.open(e, null); }}>
       <div className="v12-mk-scroll gx-scroll">
         {projectsError ? (
           <p className="v12-mk-problem" role="alert">{projectsError} <button type="button" className="v12-mk-link" onClick={onRetry}>Try again</button></p>
         ) : null}
         <Results tiles={results.tiles} status={results.status} typical={results.typical} trayPrices={trayPrices} paysInDollars={paysInDollars}
-          selected={selected} onSelect={select} onOpen={open} onReuse={reuse} />
+          selected={selected} onSelect={select} onOpen={open} onReuse={reuse} onMenu={(e, tile) => menu.open(e, tile.id)} />
       </div>
       <div className="v12-mk-band">
         {/* The Library (the prototype's tray over Make is redesign C4; until it lands, the board's Library drawer, as ⌘K's "Library" opens it). */}
@@ -89,6 +94,8 @@ export function V12Make({ scope, project, projects, projectsError, onRetry, work
         </button>
         <Composer input={input} asked={first.mode} mentions={results.tiles} />
       </div>
+      <MakeMenu menu={menu.menu} onClose={menu.close} tiles={results.tiles} selected={selected} onOpen={open} onReuse={reuse} onReference={reference}
+        onSelectAll={() => setSelected(new Set(viewable.map((t) => t.id)))} onClear={() => setSelected(new Set())} />
       <Viewer tiles={viewable} index={viewing} onIndex={setViewing} onClose={() => setViewing(null)} onReuse={reuse} onReference={reference} paysInDollars={paysInDollars} />
     </div>
   );

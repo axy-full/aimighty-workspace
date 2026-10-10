@@ -21,7 +21,9 @@ export type MenuKind =
   /** Empty space anywhere else in the new frame. */
   | "empty"
   /** A board's card on Home (Your boards). */
-  | "board";
+  | "board"
+  /** Empty space on Make's results (V10·13: Paste · Upload… · Select all, less what is not built). */
+  | "make-empty";
 
 export type MenuAction =
   | "open" | "make-like" | "download" | "copy" | "use-as-reference" | "move" | "redraw" | "remix" | "load-prompt"
@@ -29,7 +31,8 @@ export type MenuAction =
   | "approve-all" | "delete-all"
   | "paste" | "new" | "new-note" | "new-text" | "new-image" | "new-video" | "new-audio" | "upload" | "ask-atomik"
   | "select-all" | "tidy" | "fit"
-  | "library" | "make" | "palette";
+  | "library" | "make" | "palette"
+  | "select-results" | "clear-selection";
 
 export type MenuEntry =
   | { sep: true; id: string }
@@ -105,7 +108,16 @@ const BOARD: readonly MenuEntry[] = [
   item("copy-link", "Copy link"),
 ];
 
-const MENUS: Record<MenuKind, readonly MenuEntry[]> = { card: CARD, multi: MULTI, canvas: CANVAS, empty: EMPTY, board: BOARD };
+/** Empty space on Make's results: the selection, then where to go. */
+const MAKE_EMPTY: readonly MenuEntry[] = [
+  item("select-results", "Select all"),
+  item("clear-selection", "Clear the selection"),
+  sep("s1"),
+  item("library", "Library", { key: keyOf("library") }),
+  item("palette", "Ask Atomik, search or go to", { key: keyOf("palette") }),
+];
+
+const MENUS: Record<MenuKind, readonly MenuEntry[]> = { card: CARD, multi: MULTI, canvas: CANVAS, empty: EMPTY, board: BOARD, "make-empty": MAKE_EMPTY };
 
 /** Drops leading, trailing and doubled separators left behind when items are left out. */
 function tidy(entries: readonly MenuEntry[]): MenuEntry[] {
@@ -159,4 +171,9 @@ export const NOT_BUILT: readonly { menu: string; item: string; why: string }[] =
   { menu: "Canvas", item: "Paste (an image becomes a card, text a note)", why: "Paste files the copied Library file here; pasting from the system clipboard onto the canvas is not built." },
   { menu: "Canvas", item: "Ask Atomik here", why: "Atomik's panel opens; a result does not yet land where the click was." },
   { menu: "Canvas", item: "Tidy T", why: "T is Text on the board; Tidy is listed without a key." },
+  { menu: "Make result", item: "Variations", why: "No variations path in Make (as More like this)." },
+  { menu: "Make result", item: "Keep in Library", why: "A Make result is already in the workspace's Library; filing it on a board is Move to board on a board's Library file." },
+  { menu: "Make result", item: "Redraw", why: "In Make, Load prompt is the same action (the take's recipe into the composer), so it is listed once." },
+  { menu: "Make, several results", item: "Download all, Delete", why: "No zip route, and Make's results have no delete path of their own yet; right-click on a selected result shows its own menu." },
+  { menu: "Make, empty space", item: "Paste, Upload…", why: "No paste onto Make; uploads go through the composer's + (Attach)." },
 ];

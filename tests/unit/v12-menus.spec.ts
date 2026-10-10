@@ -31,7 +31,7 @@ test("a menu lists only what can be done, with no stray separators", () => {
   /* Only Delete: no separator before it. */
   expect(labels(menuFor("card", all("delete")))).toEqual(["Delete ⌫"]);
   expect(menuFor("card", all())).toEqual([]);
-  for (const kind of ["card", "multi", "canvas", "empty", "board"] as const) {
+  for (const kind of ["card", "multi", "canvas", "empty", "board", "make-empty"] as const) {
     const menu = menuFor(kind, all("open", "download", "copy", "approve", "approve-all", "delete-all", "paste", "upload", "fit", "library", "palette", "copy-link"));
     if (!menu.length) continue;
     expect(menu[0].sep).toBeFalsy();
@@ -50,6 +50,11 @@ test("multi, canvas, empty space and a board card", () => {
   expect(labels(menuFor("canvas", all("new", "fit")))).toEqual(["Zoom to fit 0"]);
   expect(labels(menuFor("empty", all("library", "make", "ask-atomik", "palette")))).toEqual(["Library L", "Make ⌘2", "—", "Atomik panel ⌘J", "Ask Atomik, search or go to ⌘K"]);
   expect(labels(menuFor("board", all("open", "copy-link")))).toEqual(["Open", "Copy link"]);
+  expect(labels(menuFor("make-empty", all("select-results", "library", "palette")))).toEqual(["Select all", "—", "Library L", "Ask Atomik, search or go to ⌘K"]);
+});
+
+test("a Make result: the card menu less Approve and Lock, with Load prompt", () => {
+  expect(labels(menuFor("card", all("open", "load-prompt", "download", "use-as-reference")))).toEqual(["Open", "Load prompt", "Download original", "—", "Use as reference"]);
 });
 
 test("the keys menus show are the keyboard map's", () => {
@@ -60,9 +65,10 @@ test("the keys menus show are the keyboard map's", () => {
 test("no price is written in a menu: priced items take theirs from the quote layer", () => {
   const code = readFileSync(path.resolve(__dirname, "../../lib/v12/menus.ts"), "utf8");
   expect(code).not.toMatch(/\d\s*cr\b/);
-  const entries = (["card", "multi", "canvas", "empty", "board"] as const).flatMap((kind) => menuFor(kind, all(
+  const entries = (["card", "multi", "canvas", "empty", "board", "make-empty"] as const).flatMap((kind) => menuFor(kind, all(
     "open", "make-like", "load-prompt", "download", "copy", "use-as-reference", "move", "redraw", "remix", "approve", "delete", "copy-link", "approve-all", "delete-all",
     "paste", "new", "new-note", "new-text", "new-image", "new-video", "new-audio", "upload", "ask-atomik", "select-all", "tidy", "fit", "library", "make", "palette",
+    "select-results", "clear-selection",
   )));
   for (const e of entries) if (!e.sep) expect(e.label).not.toMatch(/\d/);
   expect(entries.filter((e) => !e.sep && e.priced).map((e) => (e.sep ? "" : e.id)).sort()).toEqual(["redraw", "remix"]);

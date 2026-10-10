@@ -30,9 +30,11 @@ async function mockWall(page: Page) {
     generation({ id: "gwall2", title: "Rain on glass", prompt: "Rain on a kitchen window", params: { ratio: "9:16" } }),
     generation({ id: "gwall3", title: "Brass compass", prompt: "A brass compass on a map", params: { ratio: "1:1" } }),
   ];
-  await page.route((url) => url.pathname === "/api/jobs" && url.searchParams.get("status") === "succeeded", (route) => {
-    const kind = new URL(route.request().url()).searchParams.get("kind");
-    return route.fulfill({ json: { generations: kind === "image" ? stills : [] } });
+  /* The wall reads finished stills by kind; Make's results read the newest takes. The jobs tray is left alone. */
+  await page.route((url) => url.pathname === "/api/jobs" && (url.searchParams.get("status") === "succeeded" || (url.searchParams.has("limit") && !url.searchParams.has("view"))), (route) => {
+    const q = new URL(route.request().url()).searchParams;
+    const kind = q.get("kind");
+    return route.fulfill({ json: { generations: !q.get("status") || kind === "image" ? stills : [] } });
   });
 }
 
@@ -43,7 +45,7 @@ async function emptyPoint(page: Page, within: string) {
     for (let y = box.bottom - 40; y > box.top + 20; y -= 37) {
       for (let x = box.right - 40; x > box.left + 40; x -= 41) {
         const el = document.elementFromPoint(x, y);
-        if (el?.closest(selector) && !el.closest(".bd-node, .react-flow__panel, button, a, input, [role='button'], [data-testid='v12-home-tile'], [data-testid='v12-home-bar'], .v12-lib-btn")) return { x, y };
+        if (el?.closest(selector) && !el.closest(".bd-node, .react-flow__panel, button, a, input, [role='button'], [data-testid='v12-home-tile'], [data-testid='v12-make-tile'], [data-testid='v12-home-bar'], .v12-lib-btn")) return { x, y };
       }
     }
     throw new Error(`No empty space in ${selector}`);
@@ -199,6 +201,27 @@ test.describe("desktop, switch on", () => {
     await page.getByTestId("v12-menu-new-note").click();
     await expect(page.getByTestId("board")).toHaveAttribute("data-tool", "note");
     await expect(page.locator('[role="menu"]')).toHaveCount(0);
+    expect(await noSideways(page)).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  test("Make: a result's menu, and empty space's", async ({ page }) => {
+    const { errors } = await openLibrary(page, "/suites?view=make", { before: mockWall });
+    const tiles = page.getByTestId("v12-make-tile");
+    await expect(tiles).toHaveCount(3, { timeout: 60_000 });
+    await tiles.first().click({ button: "right" });
+    expect(await menuLabels(page, "v12-card-menu")).toEqual(["Open", "Load prompt", "Download original", "Use as reference"]);
+    await page.getByTestId("v12-menu-load-prompt").click();
+    await expect(page.getByTestId("v12-toast")).toHaveText(/Prompt and settings loaded into the composer/);
+    const space = await emptyPoint(page, ".v12-mk-results");
+    await page.mouse.click(space.x, space.y, { button: "right" });
+    expect(await menuLabels(page, "v12-make-empty-menu")).toEqual(["Select all", "Library", "Ask Atomik, search or go to"]);
+    await page.getByTestId("v12-menu-select-results").click();
+    await expect(page.getByTestId("v12-make-count")).toContainText("3 selected");
+    await page.mouse.click(space.x, space.y, { button: "right" });
+    expect(await menuLabels(page, "v12-make-empty-menu")).toEqual(["Clear the selection", "Library", "Ask Atomik, search or go to"]);
+    await page.getByTestId("v12-menu-clear-selection").click();
+    await expect(page.getByTestId("v12-make-count")).not.toContainText("selected");
     expect(await noSideways(page)).toBe(true);
     expect(errors).toEqual([]);
   });
