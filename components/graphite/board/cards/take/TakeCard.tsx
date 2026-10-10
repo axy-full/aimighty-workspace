@@ -12,6 +12,7 @@ import { useStageQuotes } from "@/lib/production/use-stage-quotes";
 import { askChange } from "../../inspector/change-intent";
 import { editQuoteBody } from "../../inspector/inspector-model";
 import { GRID_ACTIONS } from "@/lib/v12/board/grid";
+import { cleanRounds, takeRound } from "@/lib/v12/rounds";
 import { RejectPanel } from "./RejectPanel";
 import { isVerifyCard } from "@/lib/workbench/verify";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
@@ -143,6 +144,9 @@ function GridActions({ row, version, ctx }: { row: ShotTakes; version: ShotVersi
   );
 }
 
+/** "R2" on a take made for a client round (lib/v12/rounds.ts takeRound): a finished or rendering take asked for after the round began. */
+const roundTagOf = (rounds: Parameters<typeof takeRound>[0], shot: number, v: ShotVersion) => takeRound(rounds, shot, v.createdAt);
+
 export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
   const { row } = data;
   const v = row.shown;
@@ -153,6 +157,7 @@ export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
       <div className="gx-take-media">
         <Picture version={v} frame={row.frame} name={row.title} />
         {v ? <Progress version={v} typicalMs={row.typicalMs} /> : null}
+        {data.grid && v && roundTagOf(cleanRounds(ctx.project.boardRounds), row.index, v) ? <span className="gx-take-tag gx-take-tag--round" data-testid="take-round">{`R${roundTagOf(cleanRounds(ctx.project.boardRounds), row.index, v)}`}</span> : null}
         {row.anchor ? <span className="gx-take-tag" data-anchor={row.anchor === "anchor" || undefined} data-testid="take-anchor">{row.anchor === "anchor" ? "LOOK ANCHOR" : "FOLLOWS SHOT 1"}</span> : null}
         {v && v.media === "video" && judgeable(v) ? <span className="gx-take-play" aria-hidden="true">▶</span> : null}
         {v?.status === "failed" ? <span className="gx-take-glyph" aria-hidden="true">!</span> : null}

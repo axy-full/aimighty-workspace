@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Menu, Tooltip, type MenuItem } from "@/components/v12/ui";
 
 /**
@@ -8,7 +8,7 @@ import { Menu, Tooltip, type MenuItem } from "@/components/v12/ui";
  * action lives, and ⋯ (Board menu). `primary` is null on every other stage: what needs a person elsewhere shows in
  * the rail's markers.
  */
-export function StageHeader({ board, stage, meta, selection, primary, menu, onBoard, onStage }: {
+export function StageHeader({ board, stage, meta, selection, primary, menu, badge, onBoard, onStage }: {
   board: string;
   stage: string | null;
   meta: string | null;
@@ -16,6 +16,8 @@ export function StageHeader({ board, stage, meta, selection, primary, menu, onBo
   primary: { label: string; run: () => void } | null;
   /** Null: no board menu (a board not started yet). */
   menu: readonly MenuItem[] | null;
+  /** The Round badge of a board with a client round (components/v12/rounds), after the meta. */
+  badge?: ReactNode;
   /** The board name: back to the first stage. */
   onBoard?: () => void;
   /** The stage name: clears the selection. */
@@ -32,6 +34,7 @@ export function StageHeader({ board, stage, meta, selection, primary, menu, onBo
           {selection ? <><span className="v12-crumb-sep" aria-hidden="true">›</span><span className="v12-crumb v12-crumb-stage" data-testid="v12-selection-crumb">{selection}</span></> : null}
         </span>
         {meta ? <span className="v12-stagehead-meta" data-testid="v12-stage-meta">{meta}</span> : null}
+        {badge}
       </span>
       <span className="v12-stagehead-right">
         {primary ? <button type="button" className="v12-primary" onClick={primary.run} data-testid="v12-stage-primary">{primary.label}</button> : null}
