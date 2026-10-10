@@ -127,7 +127,14 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
     const refusal = apply((p) => removeInput(p, shotNode, i.nodeId!));
     if (refusal) { toast({ text: refusal }); return; }
     setPick(null);
-    toast({ text: `${i.name} is no longer an input of Shot ${s.index}`, action: { label: "Undo", run: () => { if (linkNode) apply((p) => restoreLink(p, shotNode, linkNode, firstFrame)); } } });
+    toast({ text: `${i.name} is no longer an input of Shot ${s.index}`, action: { label: "Undo", run: () => {
+      if (!linkNode) return;
+      /* The shot may have gone since: then there is nothing to put the link back on. */
+      let gone = false;
+      const refused = apply((p) => { if (p.nodes.some((n) => n.id === shotNode)) return restoreLink(p, shotNode, linkNode, firstFrame); gone = true; return p; });
+      if (refused) toast({ text: refused });
+      else if (gone) toast({ text: `Shot ${s.index} is gone, so ${i.name} could not be put back` });
+    } } });
   };
 
   useEffect(() => {

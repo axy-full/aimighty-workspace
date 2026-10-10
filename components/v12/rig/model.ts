@@ -146,14 +146,16 @@ export function chargedOf(g: Partial<Pick<Generation, "costUsd" | "creditsBilled
 }
 
 /**
- * What a step of a shot's work cost, in words. A failed or cancelled take that was charged nothing says "Nothing billed"
- * (CLAUDE.md rule 14), never a zero figure; one that was charged says what; one in flight has not been billed yet.
+ * What a step of a shot's work cost, in words. A failed or cancelled take confirmed uncharged says "Nothing billed"
+ * (CLAUDE.md rule 14), never a zero figure; one with a charge on record says what; one with neither shows a dash, because a
+ * row's own figure of 0 is not a confirmation (tests/unit/takeCardContract.spec.ts); one in flight has not been billed yet.
  */
 export function stepPriceText(v: Pick<ShotTakes["versions"][number], "status" | "nothingBilled" | "charge">, g: Partial<Pick<Generation, "costUsd" | "creditsBilled">> & Pick<Generation, "status"> | null, dollars: boolean): string {
   const charged = g ? chargedOf(g, dollars) : null;
   if (charged && charged.amount > 0) return fmtRenderPrice(charged);
   const ended = g ? g.status === "failed" || g.status === "cancelled" : v.status === "failed";
-  if (ended) return v.nothingBilled || charged?.amount === 0 ? "Nothing billed" : v.charge ?? "—";
+  /* "Nothing billed" rides on a receipt or its provider's word (`nothingBilled`, lib/workspace/takes.ts), never on a row's own zero. */
+  if (ended) return v.nothingBilled ? "Nothing billed" : v.charge ?? "—";
   if (v.status === "rendering" || v.status === "held") return "not billed yet";
   return charged ? fmtRenderPrice(charged) : "—";
 }

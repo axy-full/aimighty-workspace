@@ -17,10 +17,16 @@ test("a change's price: ready only when every read is back; an error says why; a
 
 const take = (status: "failed" | "review" | "rendering", over: Record<string, unknown> = {}) => ({ status, nothingBilled: false, charge: null, ...over }) as Parameters<typeof stepPriceText>[0];
 
-test("a step's price: a failed or cancelled take charged nothing says Nothing billed, never zero", () => {
-  expect(stepPriceText(take("failed"), { status: "failed", creditsBilled: 0, costUsd: 0 }, false)).toBe("Nothing billed");
-  expect(stepPriceText(take("failed"), { status: "cancelled", creditsBilled: 0, costUsd: 0 }, false)).toBe("Nothing billed");
-  expect(stepPriceText(take("failed", { nothingBilled: true }), { status: "failed" }, false)).toBe("Nothing billed");
+test("a step's price: Nothing billed only when confirmed; a row's own zero is not a confirmation", () => {
+  /* Confirmed (a receipt or the provider's word): Nothing billed, never zero. */
+  expect(stepPriceText(take("failed", { nothingBilled: true, charge: "Not billed" }), { status: "failed", creditsBilled: 0, costUsd: 0 }, false)).toBe("Nothing billed");
+  expect(stepPriceText(take("failed", { nothingBilled: true }), { status: "cancelled" }, false)).toBe("Nothing billed");
+  /* A figure of 0 with no confirmation says nothing: no "Nothing billed", and no zero either. */
+  expect(stepPriceText(take("failed"), { status: "failed", creditsBilled: 0, costUsd: 0 }, false)).toBe("—");
+  expect(stepPriceText(take("failed"), { status: "failed", costUsd: 0 }, true)).toBe("—");
+  expect(stepPriceText(take("failed"), { status: "cancelled", creditsBilled: 0 }, false)).toBe("—");
+  /* A receipt that charged N while the row says 0: the charge. */
+  expect(stepPriceText(take("failed", { charge: "12 cr charged" }), { status: "failed", creditsBilled: 0, costUsd: 0 }, false)).toBe("12 cr charged");
   expect(stepPriceText(take("failed", { charge: "Charged by its provider" }), { status: "failed" }, false)).toBe("Charged by its provider");
   const charged = stepPriceText(take("review"), { status: "succeeded", creditsBilled: 9, costUsd: 0.9 }, false);
   expect(charged).toMatch(/9/);
