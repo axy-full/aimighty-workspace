@@ -71,14 +71,16 @@ const asPrice = (p: TrayJob["price"] | null | undefined): RenderPrice | null =>
 export function renderTakeOf(g: Generation, trayPrice: TrayJob["price"] | null | undefined, paysInDollars: boolean): RenderTake {
   const p = (g.params ?? {}) as Record<string, unknown>;
   const held = p.held && typeof p.held === "object" ? (p.held as RenderTake["held"]) : null;
+  const facts = p.renderFacts && typeof p.renderFacts === "object" ? (p.renderFacts as { atProvider?: unknown; saving?: unknown }) : null;
   const settled = g.status === "succeeded" || g.status === "failed" || g.status === "cancelled";
   const charged: RenderPrice | null = !settled ? null
     : paysInDollars ? (typeof g.costUsd === "number" ? { amount: g.costUsd, unit: "usd" } : null)
       : typeof g.creditsBilled === "number" ? { amount: g.creditsBilled, unit: "cr" } : null;
   return {
     id: g.id, status: g.status, kind: g.kind, model: g.model, provider: g.provider, createdAt: g.createdAt, held,
-    /* The browser sees a provider's task id for Ark and fal takes; the rest wait as "Preparing" until they run. */
-    atProvider: Boolean(g.arkTaskId || (typeof p.falRequestId === "string" && p.falRequestId)),
+    /* The browser sees a provider's task id for Ark and fal takes; the server says the same for the rest, and whether the result is being saved (lib/v12/renderFacts.ts). */
+    atProvider: Boolean(g.arkTaskId || (typeof p.falRequestId === "string" && p.falRequestId) || facts?.atProvider === true),
+    saving: facts?.saving === true,
     price: asPrice(trayPrice), charged, discarded: g.status === "cancelled" && p.discardedAt != null,
   };
 }

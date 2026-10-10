@@ -28,7 +28,7 @@ export const BATCH_ROWS: (ShotRow | null)[] = [
   { status: "running", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 48 },
   { status: "queued", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 30 },
   { status: "queued", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 20, arkTaskId: "task-seed-7" },
-  { status: "held", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 10, held: { why: "slots" } },
+  { status: "held", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 10, held: { why: "slots", needs: 0, estUsd: 0 } },
 ];
 
 export async function openShotsBoard(page: Page, path = "/suites?view=board&stage=shots", opts: { on?: boolean; rows?: (ShotRow | null)[] } = {}) {

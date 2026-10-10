@@ -6,6 +6,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useTrayPrices, renderTakeOf } from "@/components/v12/make/use-results";
 import { batchSummary, renderState, type RenderState, type RenderTake } from "@/lib/v12/renderState";
 import { parseTypicalTimes, type TypicalTimesReply } from "@/lib/v12/typicalTimes";
+import { announceJob } from "@/lib/shell/jobs-bus";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 
 /**
@@ -111,7 +112,7 @@ export function useCancelTake(scope: string, projectId: string | null, toast: (t
       toast("It could not be cancelled just now. Try again.");
     } finally {
       setBusy(null);
-      window.dispatchEvent(new Event("particl:jobs"));
+      announceJob(id);
       if (projectId) void refreshProjectLibrary(scope, projectId);
     }
   }, [busy, fetcher, projectId, scope, toast]);

@@ -1,3 +1,4 @@
+import { renderFactsFromRow } from "./v12/renderFacts";
 import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 import { syncCreditReceipts } from "./creditReceipts";
 import { billedCreditsExpr } from "./creditSql";
@@ -163,6 +164,9 @@ export function rowToGeneration(r: any): Generation {
      (lib/draftFinal.ts), read before the submission record below is dropped. */
   if (isDraft(params) && r.status === "succeeded")
     params.draftExpiresAt = draftExpiresAt(draftSentAt(Number(r.created_at), (params.producedOutcome as { queueMs?: unknown } | undefined)?.queueMs));
+  /* What a take in flight can tell a render card (lib/v12/renderFacts.ts): whether the provider has it, whether its result is being
+     stored. Two flags: no id, handle, lease or figure leaves with them. Read before the internals below are dropped. */
+  if (r.status === "queued" || r.status === "running") params.renderFacts = (({ atProvider, saving }) => ({ atProvider, saving }))(renderFactsFromRow({ status: String(r.status), created_at: r.created_at, ark_task_id: r.ark_task_id, params: r.params }, Date.now()));
   // Queue recovery state contains vendor cost and storage internals, never UI input.
   delete params.producedOutcome;
   delete params.draftTaskId;

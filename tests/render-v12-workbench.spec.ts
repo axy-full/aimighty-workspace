@@ -59,7 +59,7 @@ test.describe("desktop, switch on", () => {
       expect(style.h).toBeLessThanOrEqual(style.lh + 1);
       expect(await line.getAttribute("title")).toMatch(/usually .* · (\d+:\d\d so far|not started)/);
     }
-    await expect(shots(page).nth(4).getByTestId("v12-render-line")).toHaveText(/^Kling 3\.0 Std · .* · \d+:\d\d$/);
+    await expect(shots(page).nth(4).getByTestId("v12-render-line")).toHaveText(/^Kling 3\.0 · 1–2 min · \d+:\d\d$/);
 
     /* The bar fills toward 90% and never past it; Saving holds at the cap. */
     for (const n of [3, 4, 5, 6, 7]) {
@@ -147,7 +147,7 @@ test.describe("desktop, switch on", () => {
     await expect(page.getByTestId("v12-tab-ring")).toBeVisible({ timeout: 30_000 });
     expect(await page.title()).not.toMatch(/ready/);
     await landShot(workspaceId, 2);
-    await page.evaluate(() => window.dispatchEvent(new Event("particl:jobs")));
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("particl:jobs", { detail: { id: "gshot2" } })));
     const toast = page.getByTestId("v12-toast");
     await expect(toast).toContainText("Shot 2 is ready", { timeout: 60_000 });
     await expect(page.getByTestId("v12-toast-action")).toHaveText("View");

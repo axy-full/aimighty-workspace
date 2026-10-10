@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type CSSProperties } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { ReleaseTake } from "@/components/graphite/ReleaseTake";
 import { Price } from "@/components/graphite/Price";
@@ -14,6 +14,7 @@ import { editQuoteBody } from "../../inspector/inspector-model";
 import { GRID_ACTIONS } from "@/lib/v12/board/grid";
 import { RejectPanel } from "./RejectPanel";
 import { RenderGather, RenderMoney, RenderOverlay } from "@/components/v12/render/RenderOverlay";
+import { useToast } from "@/components/v12/ui/Toast";
 import { useCancelTake, useRenderStates } from "@/components/v12/render/use-render";
 import type { Generation } from "@/lib/jobs";
 import { isVerifyCard } from "@/lib/workbench/verify";
@@ -159,7 +160,8 @@ function useGridRender(data: TakeCardData, ctx: BoardCtx) {
   const takes = useMemo(() => (g && watched ? [g] : NO_TAKES), [g, watched]);
   const states = useRenderStates(takes);
   const state = (g ? states.get(g.id) : null) ?? null;
-  const cancelling = useCancelTake(ctx.scope, ctx.project.id, ctx.toast);
+  const raise = useToast();
+  const cancelling = useCancelTake(ctx.scope, ctx.project.id, useCallback((text: string) => raise({ text }), [raise]));
   /* Landing: in flight a moment ago, finished now. */
   const flying = Boolean(v && inFlight(v));
   const was = useRef(flying);

@@ -8,8 +8,8 @@
 
 .v12-rc { position: absolute; inset: 0; z-index: 2; font-family: var(--gx-font); color: var(--gx-text); pointer-events: none; }
 
-/* The field: the picture's upper part only, clear of the text block (about 70 px at the bottom). */
-.v12-rc-field { position: absolute; left: 12px; right: 12px; top: 10px; bottom: 76px; display: block; overflow: hidden; }
+/* The field: the picture's upper part only, clear of the text block (the text block is about 78 px). */
+.v12-rc-field { position: absolute; left: 12px; right: 12px; top: 10px; bottom: 84px; display: block; overflow: hidden; }
 .v12-rc-field i { position: absolute; display: block; border-radius: 50%; background: var(--gx-text); opacity: 0.4; animation: v12-rc-drift 8s ease-in-out infinite; }
 .v12-rc-field i:nth-child(1) { left: 6%; top: 62%; width: 3px; height: 3px; animation-duration: 6s; opacity: 0.5; }
 .v12-rc-field i:nth-child(2) { left: 22%; top: 36%; width: 5px; height: 5px; animation-duration: 7s; opacity: 0.45; }

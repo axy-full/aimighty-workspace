@@ -238,7 +238,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const batch = useShotsBatch({
     cards: stageOwn, on: v12Frame && stage?.id === "shots",
     onView: (nodeId) => { glide({ card: nodeId }); select(nodeId); },
-    toast: (text, action) => ws.toast(text, action), selected: selection.ids,
+    selected: selection.ids,
   });
 
   /* ── The first view: an old link's region; where this device left it; the first section that needs you; the top at 100 % ── */

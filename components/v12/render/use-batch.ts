@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BoardCard } from "@/lib/board/types";
 import type { Generation } from "@/lib/jobs";
 import type { TakeCardData } from "@/components/graphite/board/cards/take/shots-derive";
+import { useToast } from "@/components/v12/ui/Toast";
 import { useTabTitle } from "@/components/v12/ui/tab-title";
 import { useRenderStates, batchMeta } from "./use-render";
 
@@ -31,11 +32,12 @@ export function useShotsBatch(opts: {
   on: boolean;
   /** The shot's card, selected and glided to: the toast's View. */
   onView: (nodeId: string) => void;
-  toast: (text: string, action?: { label: string; run: () => void }) => void;
   /** Cards the person has looked at (selected): they no longer count as waiting in the tab title. */
   selected: ReadonlySet<string>;
 }): Batch {
-  const { cards, on, onView, toast, selected } = opts;
+  const { cards, on, onView, selected } = opts;
+  const raise = useToast();
+  const toast = useCallback((text: string, action?: { label: string; run: () => void }) => raise({ text, action }), [raise]);
   const shots = useMemo<Shot[]>(() => on ? cards.flatMap((c) => {
     if (c.kind !== "take") return [];
     const row = (c.data as TakeCardData).row;
