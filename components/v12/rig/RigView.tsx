@@ -64,6 +64,10 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
   const { rates } = useSession();
   const dollars = rates.unit === "usd";
   const [pick, setPick] = useState<Pick>(null);
+  /* Pointing at a node (or tabbing to it) draws its connections too, until something is picked. */
+  const [hover, setHover] = useState<Pick>(null);
+  const point = pick ?? hover;
+  const pointing = (p: Pick) => ({ onMouseEnter: () => setHover(p), onMouseLeave: () => setHover(null), onFocus: () => setHover(p), onBlur: () => setHover(null) });
   const [closed, setClosed] = useState<ReadonlySet<RigGroup>>(new Set());
   const [open, setOpen] = useState<string | null>(null);
   const [hint, setHint] = useState(() => (typeof window === "undefined" ? false : !readHint(userId)));
@@ -79,12 +83,12 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
 
   /* The connections of the selection: an input to each shot it feeds, a shot from each input it uses. */
   const pairs = useMemo<{ input: RigInput; shot: RigShot }[]>(() => {
-    if (!pick) return [];
-    if (pick.kind === "input") { const i = inputById.get(pick.id); return i ? model.shots.filter((s) => i.shots.includes(s.index)).map((s) => ({ input: i, shot: s })) : []; }
-    if (pick.kind === "shot") { const s = model.shots.find((x) => x.nodeId === pick.id); return s ? s.inputs.flatMap((id) => { const i = inputById.get(id); return i ? [{ input: i, shot: s }] : []; }) : []; }
-    const i = inputById.get(pick.input), s = model.shots.find((x) => x.nodeId === pick.shot);
+    if (!point) return [];
+    if (point.kind === "input") { const i = inputById.get(point.id); return i ? model.shots.filter((s) => i.shots.includes(s.index)).map((s) => ({ input: i, shot: s })) : []; }
+    if (point.kind === "shot") { const s = model.shots.find((x) => x.nodeId === point.id); return s ? s.inputs.flatMap((id) => { const i = inputById.get(id); return i ? [{ input: i, shot: s }] : []; }) : []; }
+    const i = inputById.get(point.input), s = model.shots.find((x) => x.nodeId === point.shot);
     return i && s ? [{ input: i, shot: s }] : [];
-  }, [pick, model.shots, inputById]);
+  }, [point, model.shots, inputById]);
   const lit = useMemo(() => new Set(pairs.flatMap((p) => [`i:${p.input.id}`, `s:${p.shot.nodeId}`])), [pairs]);
 
   const shown = (i: RigInput) => !closed.has(i.group);
@@ -112,20 +116,7 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
   }, []);
 
   /* Esc: a shot's steps close, then the selection clears; never anything else (Esc never cancels or leaves). */
-  useOverlay("selection", open !== null || pick !== null, () => { if (open) setOpen(null); else setPick(null); });
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.key !== "Delete" && event.key !== "Backspace") || pick?.kind !== "edge") return;
-      const t = event.target as HTMLElement | null;
-      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-      event.preventDefault();
-      removeEdge(pick.input, pick.shot);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `removeEdge` reads the model it is rendered with
-  });
-
+  useOverlay("selection", open !== null || pick !== null, () => { setHover(null); if (open) setOpen(null); else setPick(null); });
   const removeEdge = (inputId: string, shotNode: string) => {
     const i = inputById.get(inputId), s = model.shots.find((x) => x.nodeId === shotNode);
     if (!i || !s) return;
@@ -137,6 +128,18 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
     setPick(null);
     toast({ text: `${i.name} is no longer an input of Shot ${s.index}`, action: { label: "Undo", run: () => { apply(() => before); } } });
   };
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.key !== "Delete" && event.key !== "Backspace") || pick?.kind !== "edge") return;
+      const t = event.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      event.preventDefault();
+      removeEdge(pick.input, pick.shot);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const drop = (target: RigShot, event: DragEvent) => {
     event.preventDefault();
@@ -229,8 +232,8 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
               </div>
               {GROUPS.flatMap(groupOf).filter(shown).map((i) => (
                 <button key={i.id} ref={ref(`i:${i.id}`)} type="button" className="v12-rig-node v12-rig-input" data-testid="v12-rig-input" data-id={i.id} data-kind={i.kind}
-                  data-selected={pick?.kind === "input" && pick.id === i.id ? "" : undefined} data-dim={pick && !lit.has(`i:${i.id}`) ? "" : undefined}
-                  draggable={!readOnly && Boolean(i.nodeId)} onDragStart={(e) => { e.dataTransfer.setData("application/x-particl-rig-input", i.id); e.dataTransfer.effectAllowed = "copy"; }}
+                  data-selected={pick?.kind === "input" && pick.id === i.id ? "" : undefined} data-dim={point && !lit.has(`i:${i.id}`) ? "" : undefined}
+                  {...pointing({ kind: "input", id: i.id })} draggable={!readOnly && Boolean(i.nodeId)} onDragStart={(e) => { e.dataTransfer.setData("application/x-particl-rig-input", i.id); e.dataTransfer.effectAllowed = "copy"; }}
                   onClick={(e) => { e.stopPropagation(); setPick(pick?.kind === "input" && pick.id === i.id ? null : { kind: "input", id: i.id }); }}>
                   <Thumb still={i.thumb} kind={i.kind} className="v12-rig-thumb" />
                   <span className="v12-rig-body">
@@ -248,10 +251,10 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
                 const expanded = open === s.nodeId;
                 return (
                   <div key={s.nodeId} ref={ref(`s:${s.nodeId}`)} role="button" tabIndex={0} className="v12-rig-node v12-rig-shot" data-testid="v12-rig-shot" data-id={s.nodeId} data-state={s.state} data-expanded={expanded ? "" : undefined}
-                    data-selected={pick?.kind === "shot" && pick.id === s.nodeId ? "" : undefined} data-dim={pick && !lit.has(`s:${s.nodeId}`) ? "" : undefined} data-over={over === s.nodeId ? "" : undefined}
+                    data-selected={pick?.kind === "shot" && pick.id === s.nodeId ? "" : undefined} data-dim={point && !lit.has(`s:${s.nodeId}`) ? "" : undefined} data-over={over === s.nodeId ? "" : undefined}
                     onClick={(e) => { e.stopPropagation(); setPick(pick?.kind === "shot" && pick.id === s.nodeId ? null : { kind: "shot", id: s.nodeId }); }}
                     onDoubleClick={(e) => { e.stopPropagation(); setOpen(expanded ? null : s.nodeId); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") setPick({ kind: "shot", id: s.nodeId }); }}
+                    {...pointing({ kind: "shot", id: s.nodeId })} onKeyDown={(e) => { if (e.key === "Enter") setPick({ kind: "shot", id: s.nodeId }); }}
                     onDragOver={(e) => { if (e.dataTransfer.types.includes("application/x-particl-rig-input")) { e.preventDefault(); setOver(s.nodeId); } }}
                     onDragLeave={() => setOver((o) => (o === s.nodeId ? null : o))} onDrop={(e) => drop(s, e)}>
                     <Thumb still={s.thumb} className="v12-rig-thumb v12-rig-thumb--shot" />
@@ -277,7 +280,7 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
             <section className="v12-rig-col" aria-label="Outputs">
               <h3 className="v12-rig-h">Outputs</h3>
               {model.outputs.map((o) => (
-                <button key={o.id} type="button" className="v12-rig-node v12-rig-output" data-testid="v12-rig-output" data-id={o.id} data-dim={pick ? "" : undefined}
+                <button key={o.id} type="button" className="v12-rig-node v12-rig-output" data-testid="v12-rig-output" data-id={o.id} data-dim={point ? "" : undefined}
                   onClick={(e) => { e.stopPropagation(); onStage(o.stage); }} title={`Opens ${o.stage === "shots" ? "Shots" : o.stage === "cut" ? "Cut" : "Deliver"}`}>
                   <span className="v12-rig-mosaic" data-n={Math.min(4, model.shots.filter((s) => s.thumb).length)} aria-hidden="true">
                     {model.shots.filter((s) => s.thumb).slice(0, o.id === "masters" ? 1 : 4).map((s) => <Thumb key={s.nodeId} still={s.thumb} className="v12-rig-mosaic-img" />)}

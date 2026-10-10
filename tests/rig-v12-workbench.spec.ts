@@ -61,9 +61,18 @@ test.describe("desktop, switch on", () => {
     expect(await noSideways(page)).toBe(true);
     const frame = await rect(page.getByTestId("v12-rig"));
     for (const n of await page.getByTestId("v12-rig-output").all()) { const r = await rect(n); expect(r.b).toBeLessThanOrEqual(frame.b + 1); }
+    /* Whatever does not fit is reached by scrolling inside the canvas: the page itself never scrolls, and the last node ends inside it. */
+    const scroller = page.getByTestId("v12-rig-scroll");
+    expect(await scroller.evaluate((el) => ["auto", "scroll"].includes(getComputedStyle(el).overflowY))).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1)).toBe(true);
+    await scroller.evaluate((el) => { el.scrollTop = el.scrollHeight; el.scrollLeft = el.scrollWidth; });
+    const view = await rect(scroller);
+    for (const n of await page.locator(".v12-rig-node").all()) { const r = await rect(n); expect(r.b).toBeLessThanOrEqual(view.b + 1); expect(r.r).toBeLessThanOrEqual(view.r + 1); }
+    await scroller.evaluate((el) => { el.scrollTop = 0; el.scrollLeft = 0; });
     /* The canvas keeps clear of the bar: its scroll area ends above it. */
-    const bar = await rect(page.getByTestId("v12-board-bar"));
-    expect((await rect(page.getByTestId("v12-rig-scroll"))).b).toBeLessThanOrEqual(bar.y);
+    /* (The bar belongs to the Shots PR; where it is on the board, the canvas ends above it.) */
+    if (await page.getByTestId("v12-board-bar").count()) expect((await rect(page.getByTestId("v12-rig-scroll"))).b).toBeLessThanOrEqual((await rect(page.getByTestId("v12-board-bar"))).y);
+    expect((await rect(page.getByTestId("v12-rig-scroll"))).b).toBeLessThanOrEqual(page.viewportSize()!.height);
     expect(errors).toEqual([]);
   });
 
@@ -82,7 +91,7 @@ test.describe("desktop, switch on", () => {
     const h2 = await rect(hint);
     for (const n of await page.locator(".v12-rig-node").all()) { const v = await seen(n); expect(empty(v) || !meets(h2, v), "the hint is over a node after scrolling").toBe(true); }
     /* It is not over the bar either. */
-    expect(meets(h2, await rect(page.getByTestId("v12-board-bar")))).toBe(false);
+    if (await page.getByTestId("v12-board-bar").count()) expect(meets(h2, await rect(page.getByTestId("v12-board-bar")))).toBe(false);
     await page.getByTestId("v12-rig-got-it").click();
     await expect(hint).toHaveCount(0);
     await page.reload();
@@ -114,6 +123,21 @@ test.describe("desktop, switch on", () => {
     await expect(page.getByTestId("v12-rig-edge")).toHaveCount(2);
     await expect(page.locator('.v12-rig-input[data-dim]')).toHaveCount(2);
     await expect(page.getByTestId("v12-rig-note")).toContainText("Shot 3");
+  });
+
+  test("pointing at a node, without a click, draws only its connections and dims the rest; moving off clears them", async ({ page }) => {
+    await open(page);
+    await expect(page.getByTestId("v12-rig-edge")).toHaveCount(0);
+    await input(page, "Brass bell").hover();
+    await expect(page.getByTestId("v12-rig-edge")).toHaveCount(2);
+    await expect(page.locator('.v12-rig-shot[data-dim]')).toHaveCount(6);
+    /* Pointing is not picking: the note and the price of a change wait for a click. */
+    await expect(page.getByTestId("v12-rig-impact")).toHaveCount(0);
+    await page.mouse.move(2, 2);
+    await expect(page.getByTestId("v12-rig-edge")).toHaveCount(0);
+    await expect(page.locator('.v12-rig-node[data-dim]')).toHaveCount(0);
+    await shot(page, 4).hover();
+    await expect(page.getByTestId("v12-rig-edge")).toHaveCount(3);
   });
 
   test("a double-click opens a shot's steps with each engine and what it cost; Esc closes them first; groups fold", async ({ page }) => {
