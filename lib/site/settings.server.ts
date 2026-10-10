@@ -35,6 +35,13 @@ export async function writeSite(patch: Partial<SiteSettings>, by: string | null)
     /* Guests read a separate public-sample workspace ("Particl sample", lead decision 41), never the house workspace. */
     if (Number((rs.rows[0] as { legacy?: unknown }).legacy) === 1) throw new SiteSettingsError("Guests can't read the house workspace. Name the public sample workspace.");
   }
+  if (patch.newInterfaceWorkspaces?.length) {
+    const ids = patch.newInterfaceWorkspaces;
+    const rs = await platformDb().execute({ sql: `SELECT id FROM workspaces WHERE deleted_at IS NULL AND id IN (${ids.map(() => "?").join(",")})`, args: ids });
+    const known = new Set(rs.rows.map((r) => String((r as { id?: unknown }).id)));
+    const missing = ids.filter((id) => !known.has(id));
+    if (missing.length) throw new SiteSettingsError(`Not a workspace on this deployment: ${missing.join(", ")}.`);
+  }
   const next = cleanSite({ ...(await readSite()), ...patch });
   await platformDb().execute({
     sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES (?,?,?,?)

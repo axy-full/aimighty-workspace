@@ -9,6 +9,7 @@ import { accountScopeFor, workbenchScopeFor } from "@/lib/workbench/request-scop
 import { shellEntryRedirect } from "@/lib/signIn";
 import { searchStringOf } from "@/lib/shell/raw-search";
 import { publicActorName } from "@/lib/platformOwnerPrivacy";
+import { newInterfaceFor } from "@/lib/newInterface.server";
 
 /**
  * Who runs the connected Higgsfield account in this workspace, by name, for a
@@ -58,6 +59,7 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
     userId: ctx.user.id,
     workspace: {
       id: ctx.workspace.id, name: ctx.workspace.name, slug: ctx.workspace.slug, suspended: Boolean(ctx.workspace.suspendedAt), suspendedReason: ctx.workspace.suspendedReason, internalTest: Boolean(ctx.workspace.internalTest),
+      newInterface: await newInterfaceFor(ctx.workspace),
       /* A member's owner-run card names who runs the connected account; the owner needs no such line. */
       ownerName: owner ? null : await ownerNameOf(ctx.workspace.id).catch(() => null),
     },

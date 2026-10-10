@@ -25,6 +25,8 @@ import { signInHrefFor } from "./signIn";
 
 export type SessionWorkspace = {
   id: string; name: string; slug: string; suspended?: boolean; suspendedReason?: string | null; internalTest?: boolean;
+  /** The interface being built from design/particl-prototype-12 is on here (lib/newInterface.ts). */
+  newInterface?: boolean;
   /** Who runs the connected account, by display name, for a member's owner-run surfaces — never the address; null for the owner. */
   ownerName?: string | null;
 };
@@ -114,6 +116,11 @@ export function SessionProvider({ value, children }: {
 
 export function useSession(): Session {
   return useContext(SessionContext);
+}
+
+/** The interface being built from design/particl-prototype-12 is on for this session's workspace (lib/newInterface.ts). */
+export function useNewInterface(): boolean {
+  return Boolean(useContext(SessionContext).workspace?.newInterface);
 }
 
 /**

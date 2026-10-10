@@ -6,11 +6,11 @@ import { decodeGuestBrief, firstBoard, GUEST_BRIEF_KEY } from "../../lib/guest/b
 import { SAMPLE_TITLE, cleanSampleTitle } from "../../lib/guest/sample";
 
 test("site settings: off by default; only exact booleans and well-formed ids survive", () => {
-  expect(DEFAULT_SITE).toEqual({ openSignup: false, guestHome: false, guestWorkspace: null });
+  expect(DEFAULT_SITE).toEqual({ openSignup: false, guestHome: false, guestWorkspace: null, newInterfaceWorkspaces: [] });
   expect(cleanSite(null)).toEqual(DEFAULT_SITE);
   expect(cleanSite([true])).toEqual(DEFAULT_SITE);
   expect(cleanSite({ openSignup: "true", guestHome: 1, guestWorkspace: "ws a; drop" })).toEqual(DEFAULT_SITE);
-  expect(cleanSite({ openSignup: true, guestHome: true, guestWorkspace: "ws_123", extra: 1 })).toEqual({ openSignup: true, guestHome: true, guestWorkspace: "ws_123" });
+  expect(cleanSite({ openSignup: true, guestHome: true, guestWorkspace: "ws_123", extra: 1 })).toEqual({ openSignup: true, guestHome: true, guestWorkspace: "ws_123", newInterfaceWorkspaces: [] });
   expect(INVITE_ONLY).toBe("Sign-up needs an invitation link.");
 });
 

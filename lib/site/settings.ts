@@ -11,6 +11,9 @@
  * - `guestHome`: a signed-out visitor at "/" sees Home in its guest state instead of today's site (decision 35).
  * - `guestWorkspace`: the one workspace whose sample production a guest may read. Nothing else is ever read for a
  *   guest; null means there is no sample to show.
+ * - `newInterfaceWorkspaces`: workspaces, besides the platform's own house workspace, that see the interface being
+ *   built from design/particl-prototype-12 (lib/newInterface.ts). Empty by default: every customer workspace keeps
+ *   today's screens.
  */
 export const SITE_ROW = "site";
 
@@ -18,9 +21,19 @@ export type SiteSettings = {
   openSignup: boolean;
   guestHome: boolean;
   guestWorkspace: string | null;
+  newInterfaceWorkspaces: string[];
 };
 
-export const DEFAULT_SITE: SiteSettings = Object.freeze({ openSignup: false, guestHome: false, guestWorkspace: null }) as SiteSettings;
+export const DEFAULT_SITE: SiteSettings = Object.freeze({ openSignup: false, guestHome: false, guestWorkspace: null, newInterfaceWorkspaces: Object.freeze([]) as unknown as string[] }) as SiteSettings;
+
+/** The most workspaces the new interface can be switched on for by list. */
+const MAX_NEW_INTERFACE = 50;
+
+/** Well-formed, distinct workspace ids, at most MAX_NEW_INTERFACE; anything else is dropped. */
+function cleanIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((id): id is string => typeof id === "string" && WORKSPACE_ID.test(id)))].slice(0, MAX_NEW_INTERFACE);
+}
 
 /** A well-formed workspace id. */
 const WORKSPACE_ID = /^[A-Za-z0-9_.:-]{1,120}$/;
@@ -33,14 +46,15 @@ export function cleanSite(value: unknown): SiteSettings {
     openSignup: raw.openSignup === true,
     guestHome: raw.guestHome === true,
     guestWorkspace: typeof ws === "string" && WORKSPACE_ID.test(ws) ? ws : null,
+    newInterfaceWorkspaces: cleanIds(raw.newInterfaceWorkspaces),
   };
 }
 
-/** A change from /admin: only the three fields, each checked; anything else is refused with the reason. */
+/** A change from /admin: only the known fields, each checked; anything else is refused with the reason. */
 export function sitePatch(body: unknown): { patch: Partial<SiteSettings> } | { error: string } {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { error: "Send the settings to change." };
   const raw = body as Record<string, unknown>;
-  const unknown = Object.keys(raw).filter((k) => !["openSignup", "guestHome", "guestWorkspace"].includes(k));
+  const unknown = Object.keys(raw).filter((k) => !["openSignup", "guestHome", "guestWorkspace", "newInterfaceWorkspaces"].includes(k));
   if (unknown.length) return { error: `Not a site setting: ${unknown.join(", ")}.` };
   const patch: Partial<SiteSettings> = {};
   for (const key of ["openSignup", "guestHome"] as const) {
@@ -53,6 +67,12 @@ export function sitePatch(body: unknown): { patch: Partial<SiteSettings> } | { e
     const ws = raw.guestWorkspace;
     if (ws !== null && (typeof ws !== "string" || !WORKSPACE_ID.test(ws))) return { error: "guestWorkspace must be a workspace id or null." };
     patch.guestWorkspace = ws as string | null;
+  }
+  if ("newInterfaceWorkspaces" in raw) {
+    const ids = raw.newInterfaceWorkspaces;
+    if (!Array.isArray(ids) || ids.length > MAX_NEW_INTERFACE || ids.some((id) => typeof id !== "string" || !WORKSPACE_ID.test(id)))
+      return { error: `newInterfaceWorkspaces must be a list of at most ${MAX_NEW_INTERFACE} workspace ids.` };
+    patch.newInterfaceWorkspaces = cleanIds(ids);
   }
   if (!Object.keys(patch).length) return { error: "Nothing to change." };
   return { patch };
