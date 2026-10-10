@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { CAMPAIGN_STAGES, CLIPS_STAGES, FILM_STAGES, KIND_LABEL, NARRATED_STAGES, OPENS_ON, PREVIS_STAGES, addStage, applyStageEdit, currentStage, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus } from "../../lib/v12/board/stages";
+import { MAX_STAGES, stageLimit, CAMPAIGN_STAGES, CLIPS_STAGES, FILM_STAGES, KIND_LABEL, NARRATED_STAGES, OPENS_ON, PREVIS_STAGES, addStage, applyStageEdit, currentStage, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus } from "../../lib/v12/board/stages";
 import type { BoardCard } from "../../lib/board/types";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { newProject } from "../../lib/workbench/studio";
@@ -73,14 +73,38 @@ test("the rail's arrangement is part of the draft JSON: the project schema takes
   expect(projectSchema.safeParse({ ...project, boardStages: [{ id: "brief", colour: "red" }] }).success).toBe(false);
 });
 
-test("one primary, only where its action lives; it never spends", () => {
+test("one primary, only on the stage that owns its action; it never spends", () => {
   const stage = (id: string) => ({ id });
+  /* The plan sits in the Storyboard group while frames are drawn: Storyboard owns it, Shots does not. */
   expect(stagePrimary(stage("cast"), CARDS, "film")).toEqual({ label: "Review the cast", card: "cast:a" });
   expect(stagePrimary(stage("storyboard"), CARDS, "film")).toEqual({ label: "Review the plan", card: "plan:run" });
-  expect(stagePrimary(stage("shots"), CARDS, "film")).toEqual({ label: "Review the plan", card: "plan:run" });
+  expect(stagePrimary(stage("shots"), CARDS, "film")).toBeNull();
+  /* Once the shots have taken the group's place, the plan stands in Shots: now Shots owns it, Storyboard does not. */
+  const shotsPlan = CARDS.map((c) => (c.id === "plan:run" ? { ...c, region: "shots" as const } : c));
+  expect(stagePrimary(stage("shots"), shotsPlan, "film")).toEqual({ label: "Review the plan", card: "plan:run" });
+  expect(stagePrimary(stage("storyboard"), shotsPlan, "film")).toBeNull();
+  /* Never more than one stage carries a primary for the plan, and no other stage has one. */
+  for (const cards of [CARDS, shotsPlan]) expect(FILM_STAGES.filter((s) => s.id !== "cast" && stagePrimary(s, cards, "film")).length).toBe(1);
   for (const id of ["brief", "script", "elements", "cut", "deliver"]) expect(stagePrimary(stage(id), CARDS, "film")).toBeNull();
   expect(stagePrimary(stage("cast"), CARDS.filter((c) => c.id !== "cast:a"), "film")).toBeNull();
   expect(stagePrimary(stage("cast"), CARDS, "campaign")).toBeNull();
+});
+
+test("a board's rail holds at most as many stages as the draft's schema takes; the next one is refused, never saved", () => {
+  expect(MAX_STAGES).toBe(24);
+  expect(stageLimit(23)).toBeNull();
+  expect(stageLimit(24)).toBe("A board holds up to 24 stages. Remove one to add another.");
+  let saved = stagesOf("film", null);
+  for (let i = 0; i < 16; i++) saved = stagesOf("film", addStage(saved, null, `Extra ${i}`, () => `x${i}`).saved);
+  expect(saved).toHaveLength(24);
+  const refused = addStage(saved, "brief", "One too many", () => "over");
+  expect(refused.id).toBeNull();
+  expect(refused.saved).toHaveLength(24);
+  expect(applyStageEdit(saved, { type: "add", after: null, label: "Over" }, () => "z")).toMatchObject({ go: null });
+  /* The full list is what the schema takes; one more is what it refuses (so adding it would have lost the whole draft). */
+  const project = { ...newProject("Board"), boardStages: refused.saved };
+  expect(projectSchema.safeParse(project).success).toBe(true);
+  expect(projectSchema.safeParse({ ...project, boardStages: [...refused.saved, { id: "custom-extra", label: "More", custom: true }] }).success).toBe(false);
 });
 
 test("the empty stage and the selection crumb", () => {
