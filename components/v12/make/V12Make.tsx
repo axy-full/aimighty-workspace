@@ -17,6 +17,8 @@ import { useMenuAt } from "../menus/menu-items";
 import "./make.css";
 
 export type V12MakeProps = {
+  /** The address the page opened with (SuitesShell keeps it: by the time this lazy page mounts it has been rewritten). */
+  initialSearch?: string;
   scope: string;
   project: Project | null;
   projects: "loading" | "ready" | "error";
@@ -28,9 +30,9 @@ export type V12MakeProps = {
 };
 
 /** What the address asked for when the page opened: `mk=` (a mode) and `viewer=1` (the viewer on the newest result). */
-function asked(): { mode: MakeMode | null; viewer: boolean } {
+function asked(search?: string): { mode: MakeMode | null; viewer: boolean } {
   if (typeof window === "undefined") return { mode: null, viewer: false };
-  const q = new URLSearchParams(window.location.search);
+  const q = new URLSearchParams(search ?? window.location.search);
   return { mode: modeFromParam(q.get("mk")), viewer: q.get("viewer") === "1" };
 }
 
@@ -41,14 +43,14 @@ function asked(): { mode: MakeMode | null; viewer: boolean } {
  * on the shared bar: the same quote and the same one priced send, marked where it is pressed. A press that went through keeps the page open; the take shows up
  * in the results, rendering.
  */
-export function V12Make({ scope, project, projects, projectsError, onRetry, workspaceName, onProject, balance }: V12MakeProps) {
+export function V12Make({ initialSearch, scope, project, projects, projectsError, onRetry, workspaceName, onProject, balance }: V12MakeProps) {
   const results = useResults(scope);
   const trayPrices = useTrayPrices();
   const session = useSession();
   const toast = useToast();
   const places = usePlaces();
   const paysInDollars = session.rates.unit === "usd";
-  const [first] = useState(asked);
+  const [first] = useState(() => asked(initialSearch));
 
   /* Selection, and the viewer over the finished takes. */
   const [selected, setSelected] = useState<Set<string>>(() => new Set());

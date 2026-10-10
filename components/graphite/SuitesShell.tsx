@@ -370,6 +370,9 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
      knows from its first render (SuitesApp draws nothing until the browser has it), so neither frame flashes first.
      With the switch off the header and body below render exactly as they always have. */
   const newInterface = useNewInterface();
+  /* The address the page opened with: Make's page (lazy, inside the lazy frame) mounts after the workspace has rewritten
+     the address, so it reads what was asked for (`mk=`, `viewer=1`) from here. */
+  const [openedWith] = useState(() => (typeof window === "undefined" ? "" : window.location.search));
   /* The frame's chunk starts loading as soon as the switch is known to be on, before the frame is first asked for. */
   useEffect(() => { if (newInterface) void loadV12Shell(); }, [newInterface]);
   const v12 = newInterface && !compact && !phoneOn;
@@ -439,7 +442,7 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
         ) : <PhoneMount ctx={screenCtx} page={phonePage} />) : v12 ? (
           <V12Shell header={{ account, project, projects: data.projects, onPick: pickProject }}>{v12Make ? (
             <Boundary what="Make" probe="gen" resetKey={`v12-make:${scope}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="gen" /></div>}>
-              <V12Make scope={scope} project={project} projects={data.status} projectsError={projectsError} onRetry={data.retry}
+              <V12Make initialSearch={openedWith} scope={scope} project={project} projects={data.status} projectsError={projectsError} onRetry={data.retry}
                 workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} balance={account?.credits?.balance ?? null} />
             </Boundary>
           ) : desktopBody}<LibraryTray project={project} projects={data.projects} library={library} /></V12Shell>
