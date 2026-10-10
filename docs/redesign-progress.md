@@ -20,12 +20,14 @@ The running log of the overnight redesign build. A restarted session reads this 
 | A1 tokens, primitives, overlay stack, V12Shell frame | redesign/a1-frame | #616 | Opus approved (after 9 small fixes) |
 | B2 Settings › Credits & billing | redesign/b2-billing | #617 | Opus approved (after fixes: members see "Ask an admin") |
 | C2 Home (signed in) + shared bar | redesign/c2-home | #618 | in review |
-| A2 header | redesign/a2-header | #620 | Opened with screenshots; review fixes (ce2498c7) pushed 10 Oct 13:30 IST; CI re-running (last run: spend-buttons STRICT · Make panel failed at 360×640); fresh Opus review pending |
-| C4 Library tray | redesign/c4-library | #619 | Opened with screenshots; CI green; fresh Opus review pending |
-| C3 Make (grid, composer, viewer, prompt reuse) | redesign/c3-make | — | WIP recovered and pushed (95c639e6); lane C finishing |
-| P2-a1 board frame (stage rail, stage header, right toolbar, view switch) | redesign/p2a-board-frame | — | WIP recovered and pushed (cb5b5dcd); stacked on C4 |
+| A2 header | redesign/a2-header | #620 | Fresh Opus re-review APPROVED (303ba243). CI on ce2498c7 green (the earlier spend-buttons failure was flaky: it also hit #615 and passed on re-run); run on 303ba243 in progress. Ready to merge once #612 is in. |
+| C4 Library tray | redesign/c4-library | #619 | Fresh Opus re-review APPROVED (1222e2f6); CI green; screenshots re-taken. Ready to merge once #612 is in. |
+| C3 Make (grid, composer, viewer, prompt reuse) | redesign/c3-make | #621 | Opened with screenshots (e67252c9); Opus review running; Reuse seed split to #622 |
+| P2-a1 board frame (stage rail, stage header, right toolbar, view switch) | redesign/p2a-board-frame | — | lane C building |
 | P4 join sheet (Continue with email, request access + company size) | redesign/p4-join | — | WIP recovered and pushed (96d875e7); touches app/api/access-request: NEEDS AKSHAY when opened |
-| A3 menus, keys, tooltips | redesign/a3-menus | — | not started |
+| A3 menus, keys, tooltips | redesign/a3-menus | — | Built and pushed (f882bd91, includes A2 fixes); PR next |
+| C3 Reuse seed (seed in the priced request) | redesign/c3-make-seed | #622 | NEEDS AKSHAY (opened) |
+| P2-b Shots 4-across grid (gap fix) and the bar with Attach | redesign/p2b-shots | — | lane A building |
 
 ## Blockers
 
@@ -53,6 +55,8 @@ The running log of the overnight redesign build. A restarted session reads this 
 - `billing_cycles` has no `workspace_id` index (the low-credit base and Credits & billing read it); adding one is a schema change.
 - The spend-button scan counts any file using the quote layer as paid; each such v12 screen needs an entry in NOT_SPENDING_FILES until the scan learns quote-only helpers.
 - `meter_events` has no `created_at` index (typical times bound the query by rowid instead); adding one is a schema change.
+- C4 (re-review notes): `looksLikeTakeId` in BoardView.tsx is looser than needed (a dragged single word can toast in the new frame); no spec covers the switch-off drop; an async drop handler can leave an unhandled rejection if findProjectTake throws.
+- "quoted" (decision 5) still conflicts with CLAUDE.md rule 14's wording; owner to confirm the override stands.
 - The house workspace pays in dollars, so it never shows credits or the low-credit chip; screenshots are taken in credit-paying test workspaces.
 
 ## Log
@@ -61,3 +65,4 @@ The running log of the overnight redesign build. A restarted session reads this 
 - 10 Oct, night: #613 reviewed (one blocker in the screenshot publisher, fixed) and approved. B1 (#614) and C1 (#615) pushed and in review; B2 and C2 started. The one-design guard now names prototype 12 as the design, with graphite only shrinking.
 - 10 Oct, late night: A1 (#616), B2 (#617) and C2 (#618) opened; A1 and B2 approved after fixes. Lanes now on A2 header, C4 Library tray, C3 Make.
 - 10 Oct, 13:30 IST: session resumed (the previous one stopped about 02:45 IST and its conversation was lost). Recovered and pushed: A2's review fixes (ce2498c7, never pushed), C3 Make WIP (redesign/c3-make, never pushed), P2-a1 board frame WIP (redesign/p2a-board-frame, unlogged) and P4 join WIP (redesign/p4-join, unlogged). Found A2 (#620) and C4 (#619) already opened with screenshots, though the log said none. Running 2 lanes: C3, A3.
+- 10 Oct, about 15:00 IST: C4 (#619) and A2 (#620) fixed after fresh Opus reviews and re-approved. C3 opened as #621, its Reuse seed as #622 (NEEDS AKSHAY). A3 built (a3-menus). Lanes now: C on P2-a1 board frame, A on P2-b Shots grid and bar. Integration has A2, C4 and C3 merged.
