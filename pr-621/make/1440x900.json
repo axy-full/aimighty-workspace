@@ -1,0 +1,9 @@
+{
+  "name": "make",
+  "app": "/suites?project=project-0f99a93a&suite=particl&page=brief&view=home&make=image",
+  "prototype": "?view=make",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
