@@ -167,7 +167,7 @@ test("desktop: ?view=make&viewer=1 opens the viewer on the newest result, with i
   await page.getByTestId("v12-make-viewer-close").click();
   await expect(page.getByTestId("v12-make-viewer")).toHaveCount(0);
   /* The opening address is read once: Home and back to Make opens Make without the viewer. */
-  await page.getByTestId("brand-home").click();
+  await page.getByTestId("v12-tab-home").getByRole("button", { name: "Home" }).click();
   await expect(page.getByTestId("v12-make")).toHaveCount(0, { timeout: 30_000 });
   await page.keyboard.press("Alt+KeyM");
   await expect(page.getByTestId("v12-make")).toBeVisible({ timeout: 30_000 });
