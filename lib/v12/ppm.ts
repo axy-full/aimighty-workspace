@@ -122,18 +122,23 @@ export const DECK_EXPORTS = [
   { id: "animatic", label: "Animatic MP4", built: false, why: "The animatic isn’t built yet." },
 ] as const;
 
-/** What this board holds for the deck, read from its own draft: no sample, no guess. Wardrobe is not stored anywhere yet, so it is empty. */
+/**
+ * What this board holds for the deck, read from its own draft: no sample, no guess. The cast, places and things are the cards
+ * the board draws for them (a node's reference kind) plus the production's own cast entries and the beat sheet's lists.
+ * Wardrobe is not stored anywhere yet, so it is empty.
+ */
 export function deckFacts(project: Pick<Project, "script" | "scriptVersions" | "nodes" | "production">): DeckFacts {
   const entries = project.production?.cast?.entries ?? [];
   const sheet = project.production?.beats;
   const unique = (list: readonly string[]) => [...new Set(list.map((x) => x.trim()).filter(Boolean))];
+  const named = (kind: string) => project.nodes.filter((n) => n.refKind === kind).map((n) => n.title);
   const frames = Object.values(project.production?.boards?.frames ?? {}).filter((f) => (f?.takes?.length ?? 0) > 0).length;
   return {
     script: project.script ?? "",
     scriptVersions: (project.scriptVersions?.length ?? 0) + (project.script ? 1 : 0),
-    cast: unique(entries.filter((e) => e.kind === "character").map((e) => e.name)),
-    locations: unique([...(sheet?.scenes ?? []).flatMap((s) => s.locations), ...entries.filter((e) => e.kind === "element" && e.category === "environment").map((e) => e.name)]),
-    props: unique([...(sheet?.scenes ?? []).flatMap((s) => s.props), ...entries.filter((e) => e.kind === "element" && e.category !== "environment").map((e) => e.name)]),
+    cast: unique([...named("cast"), ...entries.filter((e) => e.kind === "character").map((e) => e.name)]),
+    locations: unique([...named("environment"), ...(sheet?.scenes ?? []).flatMap((s) => s.locations), ...entries.filter((e) => e.kind === "element" && e.category === "environment").map((e) => e.name)]),
+    props: unique([...named("element"), ...(sheet?.scenes ?? []).flatMap((s) => s.props), ...entries.filter((e) => e.kind === "element" && e.category !== "environment").map((e) => e.name)]),
     wardrobe: [],
     looks: project.nodes.filter((n) => n.type === "moodboard").length,
     frames,

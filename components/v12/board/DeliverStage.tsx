@@ -132,7 +132,7 @@ export function DeliverStage({ cut, cardId, ctx, languages, onLanguages }: {
           <div className="v12-sp-line"><dt>{POST_DIRECTLY.label}</dt><dd data-testid="v12-deliver-post">{POST_DIRECTLY.value}</dd></div>
         </dl>
         <div className="v12-sp-acts">
-          <button type="button" className="v12-sp-btn v12-sp-primary" disabled={!act || noShots} onClick={() => void run("The export pack", () => exportPackage(project))} data-testid="v12-deliver-export-pack"
+          <button type="button" className="v12-sp-btn" disabled={!act || noShots} onClick={() => void run("The export pack", () => exportPackage(project))} data-testid="v12-deliver-export-pack"
             title="The cut’s source media with its EDL, Final Cut / Resolve XML and Premiere XML, in one file. Free: it is made in your browser.">
             Export pack · <Price quote={FREE_QUOTE} />
           </button>

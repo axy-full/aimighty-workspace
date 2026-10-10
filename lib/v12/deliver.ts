@@ -38,8 +38,8 @@ export function nameStem(projectName: string): string {
   return stem.slice(0, 60) || "cut";
 }
 
-/** "‹stem›_16x9_30s_v1": the naming pattern of § 6.7, with the project's own stem. */
-export const deliverName = (stem: string, aspect: string, seconds: number): string => `${stem}_${aspect.replace(":", "x")}_${seconds}s_v1`;
+/** "‹stem›_16x9_30s_v1": the naming pattern of § 6.7, with the project's own stem. A length of 0 (no cut to measure yet) reads "cut". */
+export const deliverName = (stem: string, aspect: string, seconds: number): string => `${stem}_${aspect.replace(":", "x")}_${seconds > 0 ? `${seconds}s` : "cut"}_v1`;
 
 export const NAMING_PATTERN = (stem: string) => `${stem}_{aspect}_{dur}_v1`;
 

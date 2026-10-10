@@ -63,7 +63,7 @@ export function PpmStage({ ctx }: { ctx: BoardCtx }) {
         </ol>
         <div className="v12-sp-acts" data-testid="v12-ppm-exports">
           {DECK_EXPORTS.map((x) => (
-            <button key={x.id} type="button" className={x.id === "deck" ? "v12-sp-btn v12-sp-primary" : "v12-sp-btn"} disabled={!x.built || rows.length === 0} title={x.built ? (rows.length ? "Free: made in your browser." : "There are no shots to list yet.") : x.why ?? ""}
+            <button key={x.id} type="button" className={x.id === "csv" ? "v12-sp-btn v12-sp-primary" : "v12-sp-btn"} disabled={!x.built || rows.length === 0} title={x.built ? (rows.length ? "Free: made in your browser." : "There are no shots to list yet.") : x.why ?? ""}
               data-testid={`v12-ppm-export-${x.id}`}
               onClick={() => { if (x.id === "csv") { downloadFile(new Blob([shotListCsv(rows)], { type: "text/csv;charset=utf-8" }), shotListFile(stem)); setNote("Shot list CSV downloaded."); } }}>
               {x.label} · <Price quote={FREE_QUOTE} />
