@@ -15,11 +15,6 @@
       "until": "2026-10-16",
       "by": "goes with the file: stream 11 (Ads and Social)"
     },
-    "components/graphite/production/TimelineCut.tsx": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "goes with the file: stream 5 (cards 2)"
-    },
     "components/studio/StudioNavigation.tsx": {
       "count": 3,
       "until": "2026-10-16",
@@ -29,16 +24,6 @@
       "count": 1,
       "until": "2026-10-16",
       "by": "UNOWNED: \"Build with Astra\" (3D blocking tool)"
-    },
-    "components/workspace/rig/RigProvider.tsx": {
-      "count": 2,
-      "until": "2026-10-16",
-      "by": "stream 3 (the board's data layer stays; two toasts reword)"
-    },
-    "components/workspace/rig/use-team-canvas.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "stream 3 (one message rewords)"
     },
     "lib/astra-blender/agent.ts": {
       "count": 7,
@@ -65,16 +50,6 @@
       "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
-    "lib/crew/context.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/crew/room.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
     "lib/falVideo.ts": {
       "count": 3,
       "until": "2026-10-16",
@@ -85,27 +60,12 @@
       "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
-    "lib/mediaBindings.ts": {
-      "count": 2,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
     "lib/models.ts": {
       "count": 2,
       "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/production/boards.ts": {
-      "count": 2,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/production/rig-build.ts": {
-      "count": 3,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/studio.ts": {
       "count": 1,
       "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
@@ -135,63 +95,23 @@
       "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
-    "lib/workbench/board-import.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
     "lib/workbench/development-plan.ts": {
-      "count": 2,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/workbench/development-server.ts": {
-      "count": 4,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/workbench/draft-merge.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/workbench/rig-agent-planner.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/workbench/rig-agent-runs.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/workbench/rig-agent.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/workbench/verify-server.ts": {
       "count": 1,
       "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workers.ts": {
-      "count": 2,
+      "count": 1,
       "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workspace/plans.ts": {
-      "count": 9,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/workspace/rig-import.ts": {
-      "count": 7,
+      "count": 5,
       "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },
     "lib/workspace/spec-cards.ts": {
-      "count": 13,
+      "count": 3,
       "until": "2026-10-16",
       "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     },

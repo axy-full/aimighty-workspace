@@ -35,6 +35,14 @@ Copied verbatim from docs/particl-sow-v1.md, section 3. The scope of work is the
 16. **No Higgsfield sign-in.** Restates rule 10 for all new work: every replacement in the 4 October 2026 amendment's §5.3 runs on a provider API key, and anything on Higgsfield runs on its API key (`api.higgsfield.ai`, with `HF_API_KEY_ID` and `HF_API_KEY_SECRET` or `HF_CREDENTIALS`). A PR that adds or keeps a Higgsfield tool names its endpoint. A tool that would need a Higgsfield account is not built.
 17. **Measure ease.** The five-minute rule (rule 6) becomes a Playwright test, landed as U1's first PR and run on every UI PR after it: a new person with an invite reaches an approved first render. The product records time to first render, approvals per session and where people stop, as ids and timings only, never prompt text.
 
+# Owner decisions since 10 Oct 2026
+
+These amend the ground rules above and the scope they were copied from (the full list is in docs/redesign-plan.md, "Owner decisions", on the redesign branches).
+
+- **"Rig" is a UI word again.** Prototype 12 names a board view "Rig" and the owner kept the name. The old ban (4 Oct scope, "No UI text says … Rig …") is lifted for it; the other retired words stay banned (`tests/helpers/uiStrings.ts`).
+- **"quoted"** is shown where an action has no live quote path, which overrides rule 14's "never the bare word quoted" for the prototype-12 build. Each such action is listed in docs/redesign-progress.md.
+- **The new-interface switch** (`lib/newInterface.ts`) stays until launch: off for every customer workspace, on for the house workspace.
+
 # Pricing
 
 Copied verbatim from docs/particl-sow-v1.md, section 7A. Decided for launch. Anything that spends real money stops and asks first (SOW §13.8); a change to what customers see (plans, packs, the rate card) changes this document too.
