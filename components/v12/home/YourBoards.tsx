@@ -34,7 +34,7 @@ function BoardCard({ scope, card, disabled, onOpen }: { scope: string; card: Pro
   const line = card.line ?? (card.meta ? { text: card.meta, tone: "quiet" as const } : null);
   return (
     <li>
-      <button type="button" className="v12-hm-board" disabled={disabled} onClick={() => onOpen(card.id)} title={`Open ${card.name}`} data-testid="v12-home-board" data-board={card.id}>
+      <button type="button" className="v12-hm-board" disabled={disabled} onClick={() => onOpen(card.id)} title={`Open ${card.name}`} aria-label={line ? `${card.name} · ${line.text}` : card.name} data-testid="v12-home-board" data-board={card.id}>
         <Cover scope={scope} id={card.id} name={card.name} />
         <FitText className="v12-hm-board-name" text={card.name} />
         {line ? <span className="v12-hm-board-state" data-tone={line.tone}><span className="v12-hm-dot" data-tone={line.tone} aria-hidden="true" />{line.text}</span> : null}

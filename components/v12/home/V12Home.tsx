@@ -201,7 +201,8 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
           send={{
             label: "Start",
             price: spendOff ? undefined : <Price quote={quote} testId="v12-home-start-price" />,
-            disabled: Boolean(spendOff) || figure == null,
+            /* No figure, or one that can't be shown (a dollar workspace with no credit price): no press, by click or Enter. */
+            disabled: Boolean(spendOff) || figure == null || quote.state !== "ready",
             busy: s.pending === "start",
             busyLabel: "Starting…",
             title: spendOff ?? (figure == null ? "Start is priced first: Atomik's thinking, up to a figure you approve." : undefined),
