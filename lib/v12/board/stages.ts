@@ -171,8 +171,17 @@ export function moveStage(stages: readonly Stage[], id: string, index: number): 
   const at = Math.max(0, Math.min(rest.length, Math.round(index)));
   return toSaved([...rest.slice(0, at), stages[from], ...rest.slice(at)]);
 }
-/** Adds a stage after `after` (or at the end): a preset by its name, or "New stage". Returns the list and the new id. */
-export function addStage(stages: readonly Stage[], after: string | null, label: string, makeId: () => string): { saved: SavedStage[]; id: string } {
+/** The most stages a board's rail keeps: the draft's schema takes no more (lib/workbench/studio-schema.ts › boardStages). */
+export const MAX_STAGES = 24;
+/** Why another stage cannot be added, or null. */
+export const stageLimit = (count: number): string | null => (count >= MAX_STAGES ? `A board holds up to ${MAX_STAGES} stages. Remove one to add another.` : null);
+
+/**
+ * Adds a stage after `after` (or at the end): a preset by its name, or "New stage". Returns the list and the new id. At the
+ * limit nothing is added: the list comes back as it was and `id` is null, so an over-long list is never saved.
+ */
+export function addStage(stages: readonly Stage[], after: string | null, label: string, makeId: () => string): { saved: SavedStage[]; id: string | null } {
+  if (stageLimit(stages.length)) return { saved: toSaved(stages), id: null };
   const id = `custom-${makeId()}`;
   const fresh: Stage = { id, label: cleanLabel(label) ?? "New stage", builtIn: null, skipped: false, custom: true, regions: [] };
   const at = after ? stages.findIndex((s) => s.id === after) + 1 : stages.length;
@@ -185,7 +194,7 @@ export function addStage(stages: readonly Stage[], after: string | null, label: 
 /**
  * The one filled primary, only on the stage where its action lives (§ 6.4, L836), from what today's board can do:
  *  - Cast: "Review the cast" while a cast card waits for a person (it selects the first such card).
- *  - Storyboard and Shots (Film and Pre-vis, which sit over today's Studio board): "Review the plan" while Atomik's plan waits for approval (it selects the plan card, whose own
+ *  - Storyboard or Shots (Film and Pre-vis, which sit over today's Studio board), whichever holds the plan's card: "Review the plan" while Atomik's plan waits for approval (it selects the plan card, whose own
  *    Approve carries the plan's price; the header never approves or spends).
  * The prototype's priced primaries (Approve 8 shots · 128 cr, Make social cuts · ~9 cr) need actions today's board
  * does not have from a header; they come with the stage contents.
@@ -197,9 +206,12 @@ export function stagePrimary(stage: Pick<Stage, "id"> | null, cards: readonly Bo
     const waiting = cards.find((c) => c.region === "cast" && c.kind !== "group" && variantOf(c) === "cast" && c.state === "needs");
     return waiting ? { label: "Review the cast", card: waiting.id } : null;
   }
-  if (stage.id === "storyboard" || stage.id === "shots") {
-    const plan = cards.find((c) => c.kind === "plan" && c.state === "needs");
-    return plan ? { label: "Review the plan", card: plan.id } : null;
+  /* The plan belongs to one stage: the one that holds its card. It sits in the Storyboard group while frames are being
+     drawn and stands in Shots once the shots have taken the group's place, so only that stage carries the button. */
+  const plan = cards.find((c) => c.kind === "plan" && c.state === "needs");
+  if (plan) {
+    const owner = builtInStages(flavor).find((d) => plan.region !== null && d.regions.includes(plan.region) && (d.id === "storyboard" || d.id === "shots"));
+    if (owner && owner.id === stage.id) return { label: "Review the plan", card: plan.id };
   }
   return null;
 }
