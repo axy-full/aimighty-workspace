@@ -34,7 +34,8 @@ export const GET = withTenant(async function GET(req: Request) {
   if(creditsApply(requireTenant()))return NextResponse.json(await creditUsage(viewer),{headers:{"Cache-Control":"no-store"}});
   await ready();
   await syncCreditReceipts();
-  try { await syncActive(); } catch { /* report on what we have */ }
+  // Inside the request (maxDuration 60): a busy store skips the save, the next poll retries it.
+  try { await syncActive(12, { requestPath: true }); } catch { /* report on what we have */ }
 
   const label = (m: string) => modelLabel(m);
 
