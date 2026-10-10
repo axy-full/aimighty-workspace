@@ -219,4 +219,4 @@ Rig → **Board** · Astra → **3D blocking** · Genjutsu → **Motion transfer
 
 ## Files
 
-`Particl Suites.dc.html` (master) · `Studio board frames.dc.html` · `Make frames.dc.html` · `Ads and Social frames.dc.html` · `Atomik frames.dc.html` · `Phone frames.dc.html` · `Home and header options.dc.html` · `Guest Home frames.dc.html` · `support.js` · `assets/` (stills, local React/Babel) · `PROMPT.md` · `github.md` · `CHANGES.txt`.
+`Particl Suites.dc.html` (master) · `Studio board frames.dc.html` · `Make frames.dc.html` · `Ads and Social frames.dc.html` · `Atomik frames.dc.html` · `Phone frames.dc.html` · `Guest Home frames.dc.html` · `support.js` · `assets/` (stills, local React/Babel) · `PROMPT.md` · `github.md` · `CHANGES.txt`.
