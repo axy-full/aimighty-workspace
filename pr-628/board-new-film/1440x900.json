@@ -1,0 +1,9 @@
+{
+  "name": "board-new-film",
+  "app": "/suites?project=project-73260275&suite=particl&page=brief&view=board&newboard=1&pick=film",
+  "prototype": "?view=board&new=1&kind=Film",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

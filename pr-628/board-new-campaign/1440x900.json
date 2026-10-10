@@ -1,0 +1,9 @@
+{
+  "name": "board-new-campaign",
+  "app": "/suites?project=project-a3ff2ced&suite=particl&page=brief&view=board&newboard=1&pick=campaign",
+  "prototype": "?view=board&new=1&kind=Campaign",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

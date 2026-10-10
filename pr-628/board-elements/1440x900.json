@@ -1,0 +1,9 @@
+{
+  "name": "board-elements",
+  "app": "/suites?project=project-095a6ad3&suite=particl&page=brief&view=board&stage=elements",
+  "prototype": "?view=board&stage=Elements",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

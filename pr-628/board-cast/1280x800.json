@@ -1,0 +1,9 @@
+{
+  "name": "board-cast",
+  "app": "/suites?project=project-76a0e02f&suite=particl&page=brief&view=board&stage=cast",
+  "prototype": "?view=board&stage=Cast",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}
