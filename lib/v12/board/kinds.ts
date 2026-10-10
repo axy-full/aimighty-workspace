@@ -70,6 +70,8 @@ export type Composer = {
   chips: readonly { id: "length" | "aspect" | "platform"; label: string; options: readonly string[] }[];
 };
 const LENGTHS = ["15 s", "30 s", "60 s"] as const;
+/** The length the composer opens on (the prototype's). */
+export const COMPOSER_LENGTH = "30 s";
 const ASPECTS = ["16:9", "9:16", "1:1"] as const;
 export const COMPOSER: Record<KindCard | "none", Composer> = {
   none: { title: "What are we making?", placeholder: "A film, an ad, a product, or a topic. Pick a kind above, or just describe it.", attach: "Attach a script or boards", chips: [] },
