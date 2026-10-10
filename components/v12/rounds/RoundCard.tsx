@@ -22,7 +22,6 @@ function Side({ label, side, empty }: { label: string; side: CompareShot["r1"]; 
     <div className="v12-rd-side" data-testid="v12-compare-side">
       <div className="v12-rd-media">
         {side ? (side.media === "video"
-          // eslint-disable-next-line jsx-a11y/media-has-caption -- a take of the board, no captions exist for it
           ? <video src={side.url} controls playsInline preload="metadata" />
           // eslint-disable-next-line @next/next/no-img-element -- Particl's own media route, already sized
           : <img src={side.url} alt="" />) : <span className="v12-rd-empty">{empty}</span>}
