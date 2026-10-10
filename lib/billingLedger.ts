@@ -24,6 +24,7 @@ export async function billingReady(): Promise<void> {
         created_at INTEGER NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS billing_cycles(id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, invoice_id TEXT NOT NULL,
         starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL, credits INTEGER NOT NULL, grant_id TEXT NOT NULL UNIQUE)`,
+        `CREATE INDEX IF NOT EXISTS billing_cycles_ws ON billing_cycles(workspace_id)`,
         `CREATE TABLE IF NOT EXISTS billing_lots(id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, kind TEXT NOT NULL,
         credits REAL NOT NULL, drawn REAL NOT NULL DEFAULT 0, expires_at INTEGER, off_plan_remaining_ms INTEGER,
         clock_updated_at INTEGER NOT NULL, clock_started_at INTEGER, off_plan_lifetime_ms INTEGER,
