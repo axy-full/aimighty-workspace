@@ -1,7 +1,7 @@
 import type { EngineAdapter, PollResult } from "./types";
 import { providerConfigured, getProvider } from "../providers";
 import { estimateCostUsd } from "../vendorPricing";
-import { submitTask, fetchTask } from "../ark";
+import { submitTask, fetchTask, cancelTask } from "../ark";
 import { fetchBytes } from "../mockFs";
 
 /** ByteDance's Seedance, on BytePlus ModelArk: an asynchronous video engine billed by output tokens. */
@@ -28,5 +28,7 @@ export const byteplus: EngineAdapter = {
       error: t.error ?? null, vendorStartedAt: t.vendorStartedAt ?? null, vendorEndedAt: t.vendorEndedAt ?? null, raw: t.raw,
     };
   },
+  /** Cancel a task still queued at ModelArk (lib/ark.ts cancelTask). Only lib/queuedCancel.ts calls it, after a poll said "queued". */
+  async cancel(handle) { await cancelTask(handle.ref); },
   fetchMaster: (url) => fetchBytes(url),
 };

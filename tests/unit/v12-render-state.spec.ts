@@ -305,11 +305,17 @@ test.describe("Cancel (plan decision 8)", () => {
     expect(renderState(queued, at(MIN)).cancel?.cancellable).toBe(false);
   });
 
-  test("Ark and fal queues: their docs allow it, but our code cannot cancel there yet (NEEDS AKSHAY)", () => {
-    expect(cancelOf(take({ status: "queued", atProvider: true, provider: "byteplus", model: SEEDANCE }))).toEqual({ cancellable: false, via: null, tooltip: CANCEL_PROVIDER_QUEUE, toast: null });
-    expect(cancelOf(take({ status: "queued", atProvider: true, provider: "fal", model: KLING }))).toEqual({ cancellable: false, via: null, tooltip: CANCEL_PROVIDER_QUEUE, toast: null });
+  test("Seedance (Ark) and Kling or Topaz (fal) in their provider's queue: offered, free, and only to who may cancel; a running one never", () => {
+    for (const [provider, model] of [["byteplus", SEEDANCE], ["fal", KLING]] as const) {
+      expect(cancelOf(take({ status: "queued", atProvider: true, provider, model }))).toEqual({ cancellable: true, via: "provider-queue", tooltip: CANCEL_FREE, toast: CANCELLED_FREE_TOAST });
+      expect(cancelOf(take({ status: "queued", atProvider: true, provider, model, mayCancel: false }))).toEqual({ cancellable: false, via: null, tooltip: CANCEL_NOT_YOURS, toast: null });
+      expect(cancelOf(take({ status: "running", atProvider: true, provider, model }))?.cancellable).toBe(false);
+    }
+    /* A take not at the provider yet is being prepared, not queued there. */
+    expect(cancelOf(take({ status: "queued", atProvider: false, provider: "byteplus", model: SEEDANCE }))?.cancellable).toBe(false);
     /* A still on the same provider is not the video cancel path. */
     expect(cancelOf(take({ status: "queued", atProvider: true, provider: "higgsfield", kind: "image", model: "higgsfield/marketing-studio-image" }))?.cancellable).toBe(false);
+    expect(cancelOf(take({ status: "queued", atProvider: true, provider: "google", kind: "image", model: "gemini-3.1-flash-image" }))).toEqual({ cancellable: false, via: null, tooltip: CANCEL_PROVIDER_QUEUE, toast: null });
   });
 
   test("never once rendering, saving or slow, on any provider", () => {

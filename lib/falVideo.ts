@@ -171,18 +171,23 @@ export function falVideoCostUsd(modelId: string, p: FalVideoParams & { task?: st
   return est ? est.net : null;
 }
 
+/** What a take says once fal no longer holds the request a person asked to cancel while it was queued. */
+export const CANCELLED_AT_FAL = "Cancelled while it waited in the render queue. Nothing was billed.";
+
 async function fail(
   gen: Generation,
   message: string,
   confirmed = false,
   /** What fal said, when it answered (its detail[] type), or that it never did. */
   said: ProviderOutcome | null = null,
+  /** How the row ends: a render that failed, or one a person cancelled while fal still had it queued (lib/queuedCancel.ts). The ledger event is the same, a free failure. */
+  end: "failed" | "cancelled" = "failed",
 ): Promise<Generation> {
   const ts = now();
   const outcome = await fundedOutcome(said, gen.id, "fal").catch(() => said);
   await writeGenerationOutcome(
     {
-      sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms, ?), provider_outcome=COALESCE(?, provider_outcome), updated_at=? WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
+      sql: `UPDATE generations SET status='${end === "cancelled" ? "cancelled" : "failed"}', error=?, duration_ms=COALESCE(duration_ms, ?), provider_outcome=COALESCE(?, provider_outcome), updated_at=? WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
       args: [
         message.slice(0, 600),
         Math.max(0, ts - gen.createdAt),
@@ -206,7 +211,7 @@ async function fail(
   );
   await deliverGenerationSettlement(gen.id);
   invalidate(PROJECTS_KEY);
-  return { ...gen, status: "failed", error: message, updatedAt: ts };
+  return { ...gen, status: end, error: message, updatedAt: ts };
 }
 
 /**
@@ -238,6 +243,8 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean;store?:St
   };
   if (!p.falRequestId || !p.falModel) return gen;
 
+  /* A cancel was asked of fal while the request was queued (lib/queuedCancel.ts): it is confirmed by fal no longer having the request in its queue. */
+  const cancelAsked = typeof (p as { cancelRequestedAt?: unknown }).cancelRequestedAt === "number";
   let polled;
   try {
     polled = await withAcceptedJobCredentials(gen.id, "fal", () => engineFor("fal").poll!({
@@ -248,6 +255,8 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean;store?:St
     }));
   } catch (e) {
     const msg = (e as Error).message;
+    if (cancelAsked && /\b(400|404|410)\b|not found|cancel/i.test(msg))
+      return fail(gen, CANCELLED_AT_FAL, true, silentOutcome("fal", "run", "canceled", null), "cancelled");
     if (/\b404\b|not found/i.test(msg))
       return fail(gen, "The render service no longer has this job. Render again.", false, outcomeOfError(e, { provider: "fal", stage: "run" }));
     // A refusal (422) is final; anything else gets another pass, until the ceiling.
@@ -264,6 +273,8 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean;store?:St
     if (options.strict) throw e;
     return { ...gen, error: msg };
   }
+  if (cancelAsked && (polled.status === "failed" || polled.status === "cancelled"))
+    return fail(gen, CANCELLED_AT_FAL, true, silentOutcome("fal", "run", "canceled", null), "cancelled");
   if (polled.status === "failed" || polled.status === "cancelled")
     return fail(
       gen,

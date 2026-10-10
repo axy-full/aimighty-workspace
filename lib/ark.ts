@@ -15,6 +15,7 @@ import { readUploadBytes, readImageBytes, presignedReadUrl, uploadPath, imagePat
 import { IMAGE_LIMITS } from "./imagemeta";
 import { vendorKey } from "./vendorKeys";
 import { engineMock, mockJobId, mockTag, isMockJob, mockDone, mockStartedAt, fixtureUrl } from "./mock";
+import { mockQueueKind, mockIsCancelled, mockCancel } from "./mockQueue";
 import { preflight } from "./preflight";
 import { DRAFT_RESOLUTION, FINAL_RESOLUTION } from "./draftFinal";
 
@@ -317,6 +318,9 @@ function mockRefuses(prompt: string, p: VideoParams): boolean {
 /** A finished mock task as ModelArk's poll returns one, so it is read by the same code as the real thing. */
 function mockTaskResponse(taskId: string): ArkTaskResponse {
   const started = mockStartedAt(taskId);
+  /* A mocked job parked in the vendor's queue (lib/mock.ts mockQueueKind): queued until cancelled, then cancelled. */
+  const parked = mockQueueKind(taskId);
+  if (parked) return { id: taskId, model: "mock", status: mockIsCancelled(taskId) ? "cancelled" : parked === "running" ? "running" : "queued", created_at: Math.floor(started / 1000) };
   if (!mockDone(taskId)) return { id: taskId, model: "mock", status: "running", created_at: Math.floor(started / 1000) };
   const ended = { created_at: Math.floor(started / 1000), updated_at: Math.floor(Date.now() / 1000) };
   if (mockTag(taskId)?.endsWith(`-${MOCK_REFUSED}`))
@@ -433,6 +437,28 @@ function sane(sec: number | undefined): number | null {
   // Anything before 2020 or more than a day ahead is not a real task stamp.
   if (ms < 1577836800000 || ms > Date.now() + 86400000) return null;
   return ms;
+}
+
+/**
+ * Cancel a task still waiting in ModelArk's queue: DELETE {host}/api/v3/contents/generations/tasks/{id}
+ * (BytePlus ModelArk, "Cancel or delete a video generation task"). A queued task becomes `cancelled` and is not billed; a
+ * running task cannot be cancelled and answers with an error. The same call DELETES a finished task's record, so callers
+ * (lib/queuedCancel.ts) ask only after a poll said the task is still queued. Throws ArkHttpError on a refusal.
+ */
+export async function cancelTask(taskId: string): Promise<void> {
+  if (isMockJob(taskId)) {
+    if (mockCancel(taskId) === "running") throw new ArkHttpError(409, "Ark cancel failed (409): the task is already running.", "");
+    return;
+  }
+  const res = await arkFetch(`${TASKS_URL}/${encodeURIComponent(taskId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${apiKey()}` },
+    cache: "no-store",
+  }, 30_000);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new ArkHttpError(res.status, `Ark cancel failed (${res.status}): ${text.slice(0, 600)}`, text.slice(0, 600));
+  }
 }
 
 export async function fetchTask(taskId: string): Promise<ArkTask> {
