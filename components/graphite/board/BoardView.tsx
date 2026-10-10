@@ -21,7 +21,8 @@ import { rigUndoSink } from "@/lib/shell/rig-commands";
 import { withUndoHint } from "@/lib/shell/undo";
 import { useShell } from "@/lib/shell/state";
 import { useCompact } from "@/lib/shell/use-compact";
-import { uploadFilesToProject, type LibraryEntry } from "@/lib/workspace/library";
+import { useNewInterface } from "@/lib/session";
+import { findProjectTake, libraryEntries, projectLibraryState, uploadFilesToProject, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { uid, type Asset, type Project } from "@/lib/workbench/studio";
 import { assetFromUpload } from "@/lib/workspace/draft-editor";
@@ -85,6 +86,9 @@ export type BoardViewProps = {
   region?: string | null;
 };
 
+/** A take id has no spaces (lib/platform.ts newId and the engines' job ids); a dragged sentence does. */
+const looksLikeTakeId = (key: string) => /^[\w:.-]{1,160}$/.test(key);
+
 export function BoardView(props: BoardViewProps) {
   return (
     <ReactFlowProvider>
@@ -111,6 +115,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const flow = useReactFlow();
   const store = useStoreApi();
   const compact = useCompact();
+  const v12 = useNewInterface();
   const online = useOnline();
   const offline = !online;
   const project = rig.project;
@@ -344,12 +349,23 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     pick(new Set([ids[ids.length - 1]]), ids[ids.length - 1]);
     return wanted.length;
   }, [pick, rig, undoable, ws]);
-  const dropFile = useCallback((key: string, at: BoardPoint) => {
-    const entry = items.find((e) => e.take.id === key);
-    if (!entry) return;
+  /* In the new frame only (the Library tray searches past the loaded pages): a dropped take this board's loaded Library
+     does not hold yet is loaded by id first (lib/workspace/library.ts findProjectTake), and one that is not this board's
+     at all says so. Anything that is not a take id (a dragged sentence) is let go silently, as today's board does. */
+  const entryFor = useCallback(async (key: string): Promise<LibraryEntry | null> => {
+    const found = items.find((e) => e.take.id === key);
+    if (found || !projectId || !v12 || !looksLikeTakeId(key)) return found ?? null;
+    if (!(await findProjectTake(scope, projectId, key))) return null;
+    return libraryEntries(projectLibraryState(scope, projectId)).find((e) => e.take.id === key) ?? null;
+  }, [items, projectId, scope, v12]);
+  const NOT_HERE = "That file is not in this board's Library. Open its own board to use it, or upload it here.";
+  const notHere = useCallback((key: string) => { if (v12 && looksLikeTakeId(key)) ws.toast(NOT_HERE); }, [v12, ws]);
+  const dropFile = useCallback(async (key: string, at: BoardPoint) => {
+    const entry = await entryFor(key);
+    if (!entry) { notHere(key); return; }
     if (entry.media !== "image" && entry.media !== "video") { ws.toast("Only pictures and videos go on the board. Other files stay in the Library."); return; }
     addMedia([entryAsset(entry)], { x: at.x - FREE_MEDIA_WIDTH / 2, y: at.y - 114 });
-  }, [addMedia, items, ws]);
+  }, [addMedia, entryFor, notHere, ws]);
   const upload = useCallback(async (list: FileList | null) => {
     if (!list?.length || !project) return;
     const picked = [...list];
@@ -497,13 +513,14 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   }
 
   const takesDrops = (cardId: string) => { const card = placed.byId.get(cardId); return !offline && !!card && !!registry.defs.get(card.kind)?.accepts; };
-  const dropOn = (cardId: string, data: DataTransfer) => {
+  const dropOn = async (cardId: string, data: DataTransfer) => {
     const card = placed.byId.get(cardId);
     const def = card ? registry.defs.get(card.kind) : undefined;
     let key = "";
     try { key = data.getData("text/plain"); } catch { /* unreadable */ }
-    const entry = items.find((e) => e.take.id === key);
-    if (!card || !def?.accepts || !entry) return;
+    if (!card || !def?.accepts || !key) return;
+    const entry = await entryFor(key);
+    if (!entry) { notHere(key); return; }
     const action = def.accepts({ type: "asset", assetId: entry.take.id, media: entry.media }, card);
     if (!action) { ws.toast("That card does not take this file."); return; }
     const shot = project.nodes.find((n) => n.id === action.shotId);
