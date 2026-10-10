@@ -37,9 +37,20 @@ test.describe("desktop, switch on", () => {
       Object.defineProperty(navigator, "clipboard", { value: { writeText: (text: string) => { w.__copied.push(text); return Promise.resolve(); } }, configurable: true });
     });
     const posts: Record<string, unknown>[] = [];
-    await page.route("**/api/workbench/team-canvas", async (route) => {
-      if (route.request().method() === "POST") posts.push(route.request().postDataJSON() as Record<string, unknown>);
-      return route.fallback();
+    /* The server's own answer about the plan, as the board last read it: its quote before the approval, its record after. */
+    const planNow: { plan: { quote: { total: number; fingerprint: string } | null; approval: { total: number } | null } | null } = { plan: null };
+    await page.route("**/api/workbench/team-canvas**", async (route) => {
+      const request = route.request();
+      if (request.method() === "POST") { posts.push(request.postDataJSON() as Record<string, unknown>); return route.fallback(); }
+      const response = await route.fetch();
+      const body = await response.json().catch(() => null) as { agent?: { run?: { plan?: typeof planNow.plan; paid?: { tool: string; title: string; fixOf?: number | null }[] } | null } } | null;
+      /* The local scripted planner titles its renders with its own starter shots, which name none of the client's shots. A planner
+         that names the shot it renders ("Shot 2 · …") is what a round needs, so the three renders are named here, the server's
+         quote, fingerprint and prices untouched. A step that names no shot is never matched to one (tests/unit/v12-rounds.spec.ts). */
+      let at = 0;
+      for (const step of body?.agent?.run?.paid ?? []) if (step.tool === "render" && step.fixOf == null) { const shot = [2, 4, 7][at++]; if (shot && !/^shot\s*\d+/i.test(step.title)) step.title = `Shot ${shot} · ${step.title}`; }
+      if (body?.agent?.run?.plan) planNow.plan = body.agent.run.plan;
+      return route.fulfill({ response, json: body });
     });
     const { errors } = await openShotsBoard(page, "/suites?view=board&stage=shots");
     await expect(shots(page)).toHaveCount(8, { timeout: 90_000 });
@@ -63,7 +74,7 @@ test.describe("desktop, switch on", () => {
     /* The plan: a client round, a step per shot, the one approval. */
     const plan = page.locator('[data-card-id="plan:run"]').getByTestId("board-plan");
     await expect(plan).toBeVisible({ timeout: 90_000 });
-    await expect(plan).toContainText("Client round · 3 changes");
+    await expect(plan).toContainText("Client round");
     await expect(plan).toContainText("The rest stay approved. Results land as Round 2 with a What changed list.");
     await expect(page.getByTestId("v12-round-badge")).toHaveCount(0);
     /* Building the board is free; then the server prices every render and the card is the plan gate. */
@@ -72,14 +83,27 @@ test.describe("desktop, switch on", () => {
     await expect(approve).toHaveText(/^Approve all · \d[\d,.]* cr$/, { timeout: 120_000 });
     await expect(plan.getByTestId("board-plan-step")).toHaveCount(3);
     await expect(plan).toContainText("Client round · 3 changes");
+    /* Atomik's own step titles stay, with what the client asked beside each; only a step that names its shot gets those words. */
+    const steps = plan.getByTestId("board-plan-step");
+    for (const [i, shot] of [2, 4, 7].entries()) await expect(steps.nth(i)).toContainText(new RegExp(`Shot ${shot}\\b`));
+    await expect(steps.nth(0)).toContainText("Asked: “Sphere bigger in the wide”");
+    await expect(steps.nth(1)).toContainText("Asked: “Bottle fuller, label to camera”");
+    await expect(steps.nth(2)).toContainText("Asked: “Lose the second figure”");
     /* Every step carries the server's own price. */
     for (const step of await plan.getByTestId("board-plan-step").all()) await expect(step).toContainText(/\d[\d,.]* cr|priced when it runs/);
     expect(await noSideways(page)).toBe(true);
 
     /* A person approves it, once: today's plan approval, at the server's quote. */
+    const shown = Number((await approve.innerText()).replace(/[^\d]/g, ""));
+    const quoted = planNow.plan?.quote;
+    expect(quoted, "the server's quote was read before the approval").toBeTruthy();
+    expect(quoted!.total, "the button shows the server's own total").toBe(shown);
     await approve.click();
     await expect.poll(() => posts.find((p) => p.action === "agent.approvePlan")).toBeTruthy();
     expect(posts.filter((p) => p.action === "agent.approvePlan")).toHaveLength(1);
+    /* What was approved is what was shown: the fingerprint sent is the server's quote's, and its record holds the same total. */
+    expect(posts.find((p) => p.action === "agent.approvePlan")!.fingerprint).toBe(quoted!.fingerprint);
+    await expect.poll(() => planNow.plan?.approval?.total, { timeout: 60_000 }).toBe(shown);
 
     /* Round 2: the badge with its list, kept in the board's draft. */
     const badge = page.getByTestId("v12-round-badge");

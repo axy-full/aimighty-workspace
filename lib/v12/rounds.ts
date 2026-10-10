@@ -61,9 +61,10 @@ export function feedbackOf(goal: string): string {
   return at < 0 ? goal : goal.slice(at + CLIENT_MARK.length).replace(/\s*\(\d+:\d+(, [^)]*)?\)\s*$/, "");
 }
 
-const shotOfTitle = (title: string, index: number): number => {
+/** The shot a step's own title names ("Shot 3 · …"), or null: a title that names no shot is never guessed at from its place in the list. */
+export const shotOfTitle = (title: string): number | null => {
   const m = /shot\s*#?\s*(\d{1,2})\b/i.exec(title);
-  return m ? Number(m[1]) : index + 1;
+  return m ? Number(m[1]) : null;
 };
 
 /**
@@ -72,33 +73,65 @@ const shotOfTitle = (title: string, index: number): number => {
  */
 export function clientRoundModel(model: PlanModel, goal: string): PlanModel {
   const asked = new Map(parseFeedback(feedbackOf(goal)).map((c) => [c.shot, c.text]));
-  const steps: PlanStep[] = model.steps.map((step, i) => {
-    const shot = shotOfTitle(step.title, i);
-    const text = asked.get(shot);
-    return text ? { ...step, title: `Shot ${shot} · ${text}` } : step;
+  let changes = 0;
+  /* Atomik's own step title stays as it is. What the client asked for that shot is put beside it, and only for a step whose
+     title names the shot: a step is never matched to a change by where it stands in the list. */
+  const steps: PlanStep[] = model.steps.map((step) => {
+    const shot = shotOfTitle(step.title);
+    const text = shot == null ? undefined : asked.get(shot);
+    if (!text) return step;
+    changes += 1;
+    return { ...step, meta: [`Asked: “${text}”`, step.meta].filter(Boolean).join(" · ") };
   });
-  const n = steps.length;
   const title = model.phase === "proposal" || model.phase === "planning" ? "Client round" : "Round 2";
   const primary = model.primary && model.primary.kind === "plan" ? { ...model.primary, label: model.primary.label.replace(/^Approve\b/, "Approve all") } : model.primary;
-  return { ...model, title: n ? `${title} · ${n} ${n === 1 ? "change" : "changes"}` : title, steps, primary };
+  return { ...model, title: changes ? `${title} · ${changes} ${changes === 1 ? "change" : "changes"}` : title, steps, primary };
 }
 
 export const ROUND_LINE = "The rest stay approved. Results land as Round 2 with a What changed list.";
 
-/** The round a plan's approval makes: what the client asked, for the shots the plan renders again. */
+/** What the draft's schema takes (lib/workbench/studio-schema.ts › boardRounds): text, changes per round, rounds kept. */
+export const ROUND_LIMITS = { text: 200, changes: 60, rounds: 20, n: 99, before: 100 } as const;
+
+/**
+ * The round a plan's approval makes: what the client asked, for the shots the plan renders again. Only a step whose title names
+ * its shot makes a change (never one placed by its position), and everything is cut to what the draft takes.
+ */
 export function roundOf(args: { runId: string; goal: string; stepTitles: readonly string[]; rounds: readonly BoardRound[]; before: Record<string, string>; at: number }): BoardRound {
   const asked = new Map(parseFeedback(feedbackOf(args.goal)).map((c) => [c.shot, c.text]));
   const seen = new Set<number>();
   const changes: RoundChange[] = [];
-  args.stepTitles.forEach((title, i) => {
-    const shot = shotOfTitle(title, i);
-    if (seen.has(shot)) return;
+  for (const title of args.stepTitles) {
+    const shot = shotOfTitle(title);
+    if (shot == null || shot < 1 || seen.has(shot)) continue;
     seen.add(shot);
-    changes.push({ shot, text: asked.get(shot) || title.replace(/^shot\s*#?\d+\s*[·:–—-]?\s*/i, "").trim() || `Shot ${shot}` });
-  });
+    changes.push({ shot, text: (asked.get(shot) || title.replace(/^shot\s*#?\d+\s*[·:–—-]?\s*/i, "").trim() || `Shot ${shot}`).slice(0, ROUND_LIMITS.text) });
+  }
   changes.sort((a, b) => a.shot - b.shot);
-  const before = Object.fromEntries(changes.flatMap((c) => (args.before[String(c.shot)] ? [[String(c.shot), args.before[String(c.shot)]]] : [])));
-  return { n: Math.max(1, ...args.rounds.map((r) => r.n)) + 1, runId: args.runId, at: args.at, changes, before };
+  const kept = changes.slice(0, ROUND_LIMITS.changes);
+  const before = Object.fromEntries(kept.flatMap((c) => (args.before[String(c.shot)] ? [[String(c.shot), args.before[String(c.shot)].slice(0, ROUND_LIMITS.before)]] : [])));
+  return { n: Math.min(ROUND_LIMITS.n, Math.max(1, ...args.rounds.map((r) => r.n)) + 1), runId: args.runId, at: args.at, changes: kept, before };
+}
+
+/** The rounds as the draft keeps them, newest last, at most twenty: what a new round is added to. */
+export const withRound = (rounds: readonly BoardRound[] | undefined, round: BoardRound): BoardRound[] => [...(rounds ?? []), round].slice(-ROUND_LIMITS.rounds);
+
+/**
+ * Rounds read from a draft, whatever is in it: a round the schema would refuse (a draft from before the limits, or edited by
+ * hand) is dropped or cut to size, so reading one never breaks the board; at most the newest twenty.
+ */
+export function cleanRounds(value: unknown): BoardRound[] {
+  if (!Array.isArray(value)) return [];
+  const out: BoardRound[] = [];
+  for (const r of value as Partial<BoardRound>[]) {
+    if (!r || typeof r !== "object" || !Number.isInteger(r.n) || (r.n as number) < 2 || (r.n as number) > ROUND_LIMITS.n || typeof r.runId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(r.runId)) continue;
+    if (!Number.isInteger(r.at) || (r.at as number) < 0 || !Array.isArray(r.changes)) continue;
+    const changes = r.changes.filter((c) => c && Number.isInteger(c.shot) && c.shot >= 1 && c.shot <= 999 && typeof c.text === "string").slice(0, ROUND_LIMITS.changes).map((c) => ({ shot: c.shot, text: c.text.slice(0, ROUND_LIMITS.text) }));
+    const before: Record<string, string> = {};
+    for (const [k, v] of Object.entries(r.before ?? {})) if (/^\d{1,3}$/.test(k) && typeof v === "string") before[k] = v.slice(0, ROUND_LIMITS.before);
+    out.push({ n: r.n as number, runId: r.runId, at: r.at as number, changes, before });
+  }
+  return out.slice(-ROUND_LIMITS.rounds);
 }
 
 export const hasRound = (rounds: readonly BoardRound[] | undefined, runId: string) => Boolean(rounds?.some((r) => r.runId === runId));

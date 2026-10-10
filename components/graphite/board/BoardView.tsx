@@ -60,7 +60,7 @@ import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/com
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
 import { useRecordRound } from "@/components/v12/rounds/use-round";
 import { RoundBadge, useCopyWhatChanged } from "@/components/v12/rounds/RoundBadge";
-import { latestRound } from "@/lib/v12/rounds";
+import { cleanRounds, latestRound } from "@/lib/v12/rounds";
 import { BoardBar } from "@/components/v12/board/BoardBar";
 import { useOverlay } from "@/components/v12/ui/overlay";
 import { StageRail, type StageEdit } from "@/components/v12/board/StageRail";
@@ -237,7 +237,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
 
   /* A client round's plan, once a person approves it, is kept in the draft (components/v12/rounds/use-round.ts). */
   useRecordRound({ on: v12Frame, project, items, run: agent, apply: rig.apply });
-  const round = v12Frame ? latestRound(project?.boardRounds) : null;
+  const round = v12Frame ? latestRound(cleanRounds(project?.boardRounds)) : null;
   const copyRound = useCopyWhatChanged(project?.name ?? "", round, undefined);
 
   /* ── The first view: an old link's region; where this device left it; the first section that needs you; the top at 100 % ── */

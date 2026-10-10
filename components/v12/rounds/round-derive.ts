@@ -1,6 +1,6 @@
 import { isFinished, shotTakes, type ShotVersion } from "@/components/graphite/board/cards/take/take-model";
 import type { BoardCard, BoardSource } from "@/lib/board/types";
-import { latestRound, type BoardRound } from "@/lib/v12/rounds";
+import { cleanRounds, latestRound, type BoardRound } from "@/lib/v12/rounds";
 
 /** One take as the compare shows it. */
 export type CompareSide = { genId: string; url: string; media: "image" | "video"; label: string; engine: string; at: number };
@@ -18,7 +18,7 @@ const sideOf = (v: ShotVersion | undefined): CompareSide | null =>
  */
 export function deriveRounds(src: Pick<BoardSource, "kind" | "project" | "library">): BoardCard[] {
   if (src.kind !== "studio") return [];
-  const round = latestRound(src.project.boardRounds);
+  const round = latestRound(cleanRounds(src.project.boardRounds));
   if (!round) return [];
   const rows = shotTakes(src.project, src.library);
   const compare: CompareShot[] = round.changes.map((c) => {

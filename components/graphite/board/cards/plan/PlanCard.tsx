@@ -10,6 +10,7 @@ import { publishPlanModel, setPlanStepsOpen } from "./ui";
 import { balanceLine, fixLine, type PlanModel, type PlanPrimary } from "./model";
 import { usePlan } from "./use-plan";
 import { ROUND_LINE, clientRoundModel, isClientRound } from "@/lib/v12/rounds";
+import { useNewInterface } from "@/lib/session";
 import { planLineKey, planMoneyState } from "./money-state";
 import { MoneyActions, MoneyLine, PausedBody, useMoveOffer, usePlanBudget, usePlanBudgetLine, useTopUpLabel } from "./MoneyStates";
 import "./plan.css";
@@ -28,7 +29,7 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   const shell = useShell();
   const open = data.open;
   /* A client's reply asked of Atomik (lib/v12/rounds.ts): the same plan at the same prices, in a round's words, with the one approval "Approve all". */
-  const round = isClientRound(data.run?.goal);
+  const round = useNewInterface() && isClientRound(data.run?.goal);
   const goal = data.run?.goal ?? "";
   const planned = data.sample ?? plan.model;
   const model = useMemo(() => (planned && round ? clientRoundModel(planned, goal) : planned), [planned, round, goal]);

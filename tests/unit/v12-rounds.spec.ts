@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { newProject } from "../../lib/workbench/studio";
 import type { PlanModel } from "../../components/graphite/board/cards/plan/model";
 import {
-  CLIENT_MARK, clientRoundGoal, clientRoundModel, feedbackOf, hasRound, isClientRound, latestRound, looksLikeClientFeedback, parseFeedback, roundBadge, roundDate, roundOf,
+  CLIENT_MARK, ROUND_LIMITS, cleanRounds, withRound, shotOfTitle, clientRoundGoal, clientRoundModel, feedbackOf, hasRound, isClientRound, latestRound, looksLikeClientFeedback, parseFeedback, roundBadge, roundDate, roundOf,
   whatChangedText, type BoardRound,
 } from "../../lib/v12/rounds";
 
@@ -48,12 +49,53 @@ const model = (over: Partial<PlanModel> = {}): PlanModel => ({
 test("the plan reads as a client round: a step per shot with what was asked, and 'Approve all' at the plan's own price", () => {
   const out = clientRoundModel(model(), clientRoundGoal(REPLY));
   expect(out.title).toBe("Client round · 3 changes");
-  expect(out.steps.map((s) => s.title)).toEqual(["Shot 2 · Sphere bigger in the wide", "Shot 4 · Bottle fuller, label to camera", "Shot 7 · Lose the second figure"]);
+  /* Atomik's own titles stay; what the client asked for each shot is beside them. */
+  expect(out.steps.map((s) => s.title)).toEqual(["Shot 2 · Wide", "Shot 4 · Wide", "Shot 7 · Wide"]);
+  expect(out.steps.map((s) => s.meta)).toEqual(["Asked: “Sphere bigger in the wide” · Seedance", "Asked: “Bottle fuller, label to camera” · Seedance", "Asked: “Lose the second figure” · Seedance"]);
   expect(out.primary).toMatchObject({ kind: "plan", label: "Approve all · 93 cr" });
   /* Prices and state are the plan's: nothing is added or worked out here. */
   expect(out.steps[0]).toMatchObject({ price: null, state: "proposed" });
   expect(clientRoundModel(model({ steps: model().steps.slice(0, 1) }), clientRoundGoal(REPLY)).title).toBe("Client round · 1 change");
   expect(clientRoundModel(model({ phase: "working" }), clientRoundGoal(REPLY)).title).toBe("Round 2 · 3 changes");
+});
+
+test("a step is never matched to a change by its place in the list: only a title that names the shot is, and 'N changes' counts changes", () => {
+  const steps = ["Opening wide", "Shot 4 · Wide", "The bottle"].map((title, i) => ({ ...model().steps[0], seq: i + 1, title }));
+  const out = clientRoundModel(model({ steps }), clientRoundGoal(REPLY));
+  /* The client asked for shots 2, 4 and 7. The first and third steps name no shot, so neither takes shot 2's or 7's words. */
+  expect(out.steps[0].meta).toBe("Seedance");
+  expect(out.steps[0].title).toBe("Opening wide");
+  expect(out.steps[1].meta).toBe("Asked: “Bottle fuller, label to camera” · Seedance");
+  expect(out.steps[2].meta).toBe("Seedance");
+  expect(out.title).toBe("Client round · 1 change");
+  expect(shotOfTitle("Opening wide")).toBeNull();
+  expect(shotOfTitle("Redraw shot #12 · Wide")).toBe(12);
+  /* The round the approval records tags the same shots and no others, and keeps the take each had before. */
+  const round = roundOf({ runId: "r", goal: clientRoundGoal(REPLY), stepTitles: ["Opening wide", "Shot 4 · Wide", "The bottle"], rounds: [], before: { "1": "g1", "2": "g2", "4": "g4" }, at: 5 });
+  expect(round.changes).toEqual([{ shot: 4, text: "Bottle fuller, label to camera" }]);
+  expect(round.before).toEqual({ "4": "g4" });
+  expect(roundOf({ runId: "r", goal: clientRoundGoal(REPLY), stepTitles: ["Opening wide"], rounds: [], before: {}, at: 5 }).changes).toEqual([]);
+});
+
+test("a recorded round never makes the board unsavable: text, changes and rounds are cut to what the draft takes, and a 21st round still saves", () => {
+  let rounds: BoardRound[] = [];
+  for (let i = 0; i < 21; i++) {
+    const long = Array.from({ length: 70 }, (_, k) => `Shot ${k + 1} ${"x".repeat(300)}`).join(". ");
+    const next = roundOf({ runId: `run-${i}`, goal: clientRoundGoal(long), stepTitles: Array.from({ length: 70 }, (_, k) => `Shot ${k + 1} · Wide`), rounds, before: Object.fromEntries(Array.from({ length: 70 }, (_, k) => [String(k + 1), "g".repeat(150)])), at: 1000 + i });
+    expect(next.changes.length).toBeLessThanOrEqual(ROUND_LIMITS.changes);
+    expect(next.changes.every((c) => c.text.length <= ROUND_LIMITS.text)).toBe(true);
+    rounds = withRound(rounds, next);
+  }
+  expect(rounds).toHaveLength(ROUND_LIMITS.rounds);
+  expect(rounds[rounds.length - 1].runId).toBe("run-20");
+  expect(rounds[0].runId).toBe("run-1");
+  expect(projectSchema.safeParse({ ...newProject("Board"), boardRounds: rounds }).success).toBe(true);
+  /* A draft read with more than the schema takes (older, or edited by hand) is cut to size on read. */
+  const messy = [...rounds, { n: 7, runId: "bad id!", at: 1, changes: [], before: {} }, { n: 1, runId: "x", at: 1, changes: [], before: {} }, { ...rounds[0], runId: "long", changes: Array.from({ length: 80 }, (_, k) => ({ shot: k + 1, text: "y".repeat(500) })) }];
+  const cleaned = cleanRounds(messy);
+  expect(cleaned.length).toBeLessThanOrEqual(ROUND_LIMITS.rounds);
+  expect(projectSchema.safeParse({ ...newProject("Board"), boardRounds: cleaned }).success).toBe(true);
+  expect(cleanRounds("nonsense")).toEqual([]);
 });
 
 test("the approved plan makes round 2, with what each shot had before; the next is round 3", () => {
@@ -82,4 +124,11 @@ test("the rounds are part of the draft JSON: the project schema takes them and r
   expect(projectSchema.safeParse({ ...project, boardRounds: [{ ...round, n: 1 }] }).success).toBe(false);
   expect(projectSchema.safeParse({ ...project, boardRounds: [{ ...round, before: { x: "g" } }] }).success).toBe(false);
   expect(projectSchema.safeParse({ ...project, boardRounds: [{ ...round, extra: true }] }).success).toBe(false);
+});
+
+test("a customer's plan card never reads as a client round: the wording is gated on the new interface", () => {
+  const source = readFileSync("components/graphite/board/cards/plan/PlanCard.tsx", "utf8");
+  expect(source).toMatch(/useNewInterface\(\)\s*&&\s*isClientRound\(/);
+  /* The round cards are derived only from rounds a board of the new interface recorded (use-round.ts runs on its frame alone). */
+  expect(readFileSync("components/v12/rounds/round-derive.ts", "utf8")).toMatch(/cleanRounds\(src\.project\.boardRounds\)/);
 });
