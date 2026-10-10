@@ -1,0 +1,9 @@
+{
+  "name": "visitor-invite-new",
+  "app": "/?guest=1&invite=k0Wurvw02Sq_sFgr",
+  "prototype": "?guest=1&invite=new",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "visitor-phone-home",
+  "app": "/?guest=1",
+  "prototype": "?guest=1&device=phone",
+  "size": {
+    "width": 390,
+    "height": 844
+  }
+}

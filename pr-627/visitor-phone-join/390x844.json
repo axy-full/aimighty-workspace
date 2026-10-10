@@ -1,0 +1,9 @@
+{
+  "name": "visitor-phone-join",
+  "app": "/?guest=1",
+  "prototype": "?guest=1&device=phone&join=start",
+  "size": {
+    "width": 390,
+    "height": 844
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "visitor-board",
+  "app": "/?guest=1&screen=board",
+  "prototype": "?guest=1&view=board",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}

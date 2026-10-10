@@ -1,0 +1,9 @@
+{
+  "name": "visitor-no-access",
+  "app": "/?guest=1&board=another-workspace",
+  "prototype": "?guest=1&view=board&project=other",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

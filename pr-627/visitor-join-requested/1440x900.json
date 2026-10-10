@@ -1,0 +1,9 @@
+{
+  "name": "visitor-join-requested",
+  "app": "/?guest=1&join=start&requested=1",
+  "prototype": "?guest=1&join=start&requested=1",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "visitor-invite-plan",
+  "app": "/?guest=1&invite=mjLj8x-xINmFLhXq",
+  "prototype": "?guest=1&invite=new&step=plan",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

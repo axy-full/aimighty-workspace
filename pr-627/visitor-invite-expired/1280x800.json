@@ -1,0 +1,9 @@
+{
+  "name": "visitor-invite-expired",
+  "app": "/?guest=1&invite=FbRu8nSymQH1uR93",
+  "prototype": "?guest=1&invite=expired",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "visitor-make",
+  "app": "/?guest=1&screen=make",
+  "prototype": "?guest=1&view=make",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}

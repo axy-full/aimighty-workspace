@@ -1,0 +1,9 @@
+{
+  "name": "visitor-invite-team",
+  "app": "/?guest=1&invite=Mv3aUnmTuB_b-dgA",
+  "prototype": "?guest=1&invite=team",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
