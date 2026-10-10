@@ -199,13 +199,20 @@ test("desktop: Remix opens Make with the take; Start with a picked tile asks Ato
   const tiles = page.getByTestId("v12-home-tile");
   await expect(tiles).toHaveCount(2, { timeout: 90_000 });
 
-  /* Remix: Make opens with the take's own recipe (Make shows its own price). */
+  /* Remix: Make opens with the take's own recipe (Make shows its own price). With the switch on at desktop sizes Make is a
+     page (redesign C3), not the panel: its composer holds the take's words on Image, priced by the server. */
   await tiles.first().hover();
   await tiles.first().getByTestId("v12-home-tile-remix").click();
-  await expect(page.getByTestId("make-panel")).toBeVisible({ timeout: 30_000 });
-  await expect(page).toHaveURL(/make=image/);
-  await page.getByTestId("make-close").click();
+  await expect(page.getByTestId("v12-make")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("make-panel")).toHaveCount(0);
+  await expect(page).toHaveURL(/make=image/);
+  await expect(page.getByRole("radio", { name: "Image" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("v12-make-bar-input")).not.toHaveValue("", { timeout: 30_000 });
+  await expect(page.getByTestId("v12-make-go")).toHaveText(/^Make( \d takes)? · \d[\d,]* cr$/, { timeout: 60_000 });
+  /* Back to Home (Make is a place: Esc does not leave it). */
+  await page.getByTestId("brand-home").click();
+  await expect(page.getByTestId("v12-make")).toHaveCount(0);
+  await expect(page.getByTestId("v12-home")).toBeVisible({ timeout: 30_000 });
 
   /* Pick, add words, press Start: the ask carries the tile's words and the figure on the button as its limit. */
   await tiles.first().getByTestId("v12-home-tile-pick").click();

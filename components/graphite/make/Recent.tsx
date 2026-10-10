@@ -24,7 +24,7 @@ import type { MakeModel } from "./use-make";
 const RING: Record<string, string> = { blue: "var(--gx-accent)", amber: "var(--gx-waiting)", red: "var(--gx-failed)", green: "var(--gx-done)", idle: "var(--gx-idle)" };
 
 /**
- * Make › Recent ("Make frames.dc.html" 4; README § 7: the takes wall is Make's Recent): the open project's takes and
+ * Make › Recent (the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12) 4; README § 7: the takes wall is Make's Recent): the open project's takes and
  * uploads, newest first, under All · Takes · Unfiled · Filed, one card a row. Each card is the take's own (TakeTile:
  * its state, a held take's Release, what a failed take was charged) with Again, which puts its recipe back in Make
  * to be priced again (Retry, for a failed one), and Use as reference. Nothing here runs or charges anything.
