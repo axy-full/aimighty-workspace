@@ -135,6 +135,13 @@ export function stageCards(stage: Pick<Stage, "id" | "regions">, cards: readonly
   return cards.filter((card) => regions.has(card.region) && (!def.holds || def.holds(card)));
 }
 
+/**
+ * The board's free cards: notes, labels and media dropped, attached or uploaded onto the canvas. They belong to the board, not
+ * to one stage (no region of today's board holds them), so every stage's canvas draws them where they were put and none is
+ * hidden. They are never counted in a stage's status or its empty state.
+ */
+export const freeCards = (cards: readonly BoardCard[]): BoardCard[] => cards.filter((card) => card.region === null);
+
 /** A stage's marker and hover summary, rolled up from its cards (today's rail status rules). */
 export function stageStatus(stage: Pick<Stage, "id" | "regions">, cards: readonly BoardCard[], flavor: Flavor): RegionStatus {
   /* A group frame shared by two stages (Cast and Elements share today's cast frame) speaks for both: there, only the
