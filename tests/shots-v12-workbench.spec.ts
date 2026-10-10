@@ -59,8 +59,12 @@ test.describe("desktop, switch on", () => {
   test("with Atomik's panel open the canvas is narrower and the grid takes 3 across, still one gap", async ({ page }) => {
     await openShotsBoard(page);
     await expect(shots(page)).toHaveCount(8, { timeout: 90_000 });
-    if (!(await page.getByTestId("board-agent-panel").isVisible().catch(() => false))) await page.getByTestId("agent-rail").click();
-    await expect(page.getByTestId("board-agent-panel")).toBeVisible();
+    /* Today's dock opens itself a moment after the board loads: open it if it has not, and let it settle. */
+    await expect.poll(async () => {
+      if (!(await page.getByTestId("board-agent-panel").isVisible().catch(() => false)) && (await page.getByTestId("agent-rail").isVisible().catch(() => false))) await page.getByTestId("agent-rail").click({ timeout: 2_000 }).catch(() => {});
+      return page.getByTestId("board-agent-panel").isVisible().catch(() => false);
+    }, { timeout: 20_000 }).toBe(true);
+    await page.waitForTimeout(500);
     const across = page.viewportSize()!.width >= 1900 ? 4 : 3;
     await expect.poll(async () => new Set((await boxes(page)).map((b) => b.x)).size).toBe(across);
     const b = await boxes(page);
