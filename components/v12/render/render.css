@@ -1,0 +1,71 @@
+/* A take in flight on a card (redesign P3; prototype L321). Tokens only: app/graphite.css. */
+
+/* The source stays visible, blurred and dimmed, under the field and the text. */
+.v12 .gx-take[data-render] .gx-take-media img, .v12 .gx-take[data-render] .gx-take-media video { filter: blur(5px) brightness(0.55); transform: scale(1.06); }
+.v12 .gx-take[data-render="failed"] .gx-take-media img, .v12 .gx-take[data-render="failed"] .gx-take-media video { filter: grayscale(1) brightness(0.45); transform: none; }
+.v12 .gx-take[data-render] .gx-take-media { background: var(--gx-sunken); }
+.v12 .gx-take[data-render] .gx-take-media::before { content: ""; position: absolute; inset: 0; background: var(--gx-scrim); pointer-events: none; z-index: 1; }
+
+.v12-rc { position: absolute; inset: 0; z-index: 2; font-family: var(--gx-font); color: var(--gx-text); pointer-events: none; }
+
+/* The field: the picture's upper part only, clear of the text block (about 70 px at the bottom). */
+.v12-rc-field { position: absolute; left: 12px; right: 12px; top: 10px; bottom: 76px; display: block; overflow: hidden; }
+.v12-rc-field i { position: absolute; display: block; border-radius: 50%; background: var(--gx-text); opacity: 0.4; animation: v12-rc-drift 8s ease-in-out infinite; }
+.v12-rc-field i:nth-child(1) { left: 6%; top: 62%; width: 3px; height: 3px; animation-duration: 6s; opacity: 0.5; }
+.v12-rc-field i:nth-child(2) { left: 22%; top: 36%; width: 5px; height: 5px; animation-duration: 7s; opacity: 0.45; }
+.v12-rc-field i:nth-child(3) { left: 40%; top: 18%; width: 7px; height: 7px; animation-duration: 8s; }
+.v12-rc-field i:nth-child(4) { left: 58%; top: 12%; width: 9px; height: 9px; animation-duration: 9s; opacity: 0.36; }
+.v12-rc-field i:nth-child(5) { left: 74%; top: 30%; width: 11px; height: 11px; animation-duration: 10s; opacity: 0.3; }
+.v12-rc-field i:nth-child(6) { left: 86%; top: 52%; width: 14px; height: 14px; animation-duration: 11s; opacity: 0.24; }
+@keyframes v12-rc-drift { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(8px, -10px); } }
+/* The take has landed: the dots gather into the frame's middle (about 0.6 s), and the picture comes into focus. */
+.v12-rc[data-gather] .v12-rc-field i { animation: v12-rc-gather 0.6s ease-in forwards; }
+@keyframes v12-rc-gather { to { left: 50%; top: 50%; opacity: 0; transform: translate(-50%, -50%) scale(0.4); } }
+.v12 .gx-take[data-reveal] .gx-take-media img, .v12 .gx-take[data-reveal] .gx-take-media video { animation: v12-rc-reveal 0.6s ease-out both; }
+@keyframes v12-rc-reveal { from { filter: blur(14px) brightness(0.55); } to { filter: blur(0) brightness(1); } }
+
+/* The text block: on a solid scrim at the bottom, never over the field. */
+.v12-rc-text { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; gap: 5px; padding: 18px 10px 9px; background: linear-gradient(to top, var(--gx-card) 78%, transparent); pointer-events: auto; }
+.v12-rc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
+.v12-rc-stage { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; font-weight: 600; }
+.v12-rc-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v12-rc-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-text-sec); }
+.v12-rc-stage[data-tone="blue"] .v12-rc-dot { background: var(--gx-accent); }
+.v12-rc-stage[data-tone="amber"] .v12-rc-dot { background: var(--gx-waiting); }
+.v12-rc-stage[data-tone="red"] .v12-rc-dot { background: var(--gx-failed); }
+.v12-rc-stage[data-tone="green"] .v12-rc-dot { background: var(--gx-done); }
+.v12-rc-cancel { flex: none; height: 24px; padding: 0 8px; border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-xs); background: transparent; color: var(--gx-text); font: 500 12px/1 var(--gx-font); cursor: pointer; }
+.v12-rc-cancel:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.v12-rc-cancel:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.v12-rc-cancel:disabled { color: var(--gx-disabled); cursor: default; }
+/* One line each: the time, then the money. The full words are the tooltip. */
+.v12-rc-line, .v12-rc-money { font-size: 12px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gx-text-muted); }
+.v12-rc-money > span:first-child { color: var(--gx-text); }
+.v12-rc-tail { color: var(--gx-text-sec); }
+.v12-rc-bar { position: relative; display: block; height: 3px; border-radius: 2px; overflow: hidden; background: var(--gx-hair); }
+.v12-rc-bar > span { display: block; height: 100%; background: var(--gx-accent); transition: width 1s linear; }
+/* Held at its cap: a soft shimmer, never 99%. */
+.v12-rc-bar[data-hold] > span { position: relative; overflow: hidden; }
+.v12-rc-bar[data-hold] > span::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, var(--gx-text-sec), transparent); animation: v12-rc-shimmer 2s ease-in-out infinite; }
+@keyframes v12-rc-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .v12-rc-field i { animation: none; }
+  .v12-rc[data-gather] .v12-rc-field i { animation: none; opacity: 0; }
+  .v12 .gx-take[data-reveal] .gx-take-media img, .v12 .gx-take[data-reveal] .gx-take-media video { animation: none; }
+  .v12-rc-bar > span { transition: none; }
+  .v12-rc-bar[data-hold] > span::after { animation: none; display: none; }
+}
+
+/* The money row under the picture, where Approve · Reject are on a finished card. */
+.v12 .v12-rc-moneyrow { display: flex; align-items: center; min-height: 32px; padding-top: 2px; }
+.v12 .v12-rc-moneyrow .v12-rc-money { min-width: 0; }
+
+/* "Tell me when it's done": a pill above the bar, centred in the stage column. */
+.v12 .v12-notify { position: absolute; left: 50%; bottom: 140px; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; background: var(--gx-card); border: 1px solid var(--gx-line-control); border-radius: 999px; box-shadow: var(--gx-shadow-float); font-family: var(--gx-font); font-size: 13px; color: var(--gx-text); white-space: nowrap; }
+.v12 .v12-notify-btn { height: 28px; padding: 0 12px; border: 1px solid var(--gx-line-control); border-radius: 999px; background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); cursor: pointer; }
+.v12 .v12-notify-btn--go { border-color: var(--gx-accent); color: var(--gx-accent-text); font-weight: 600; }
+.v12 .v12-notify-btn:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+
+/* The board tab's ring: a share of the board's running work, in place of the dot. */
+.v12 .v12-tab-ring { flex: none; width: 12px; height: 12px; border-radius: 50%; background: conic-gradient(var(--gx-accent) var(--p, 0%), var(--gx-line-control) 0); -webkit-mask: radial-gradient(circle, transparent 3px, #000 3.5px); mask: radial-gradient(circle, transparent 3px, #000 3.5px); }

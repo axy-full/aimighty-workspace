@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, type ButtonHTMLAttributes, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type CSSProperties } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import { ReleaseTake } from "@/components/graphite/ReleaseTake";
 import { Price } from "@/components/graphite/Price";
@@ -13,6 +13,9 @@ import { askChange } from "../../inspector/change-intent";
 import { editQuoteBody } from "../../inspector/inspector-model";
 import { GRID_ACTIONS } from "@/lib/v12/board/grid";
 import { RejectPanel } from "./RejectPanel";
+import { RenderGather, RenderMoney, RenderOverlay } from "@/components/v12/render/RenderOverlay";
+import { useCancelTake, useRenderStates } from "@/components/v12/render/use-render";
+import type { Generation } from "@/lib/jobs";
 import { isVerifyCard } from "@/lib/workbench/verify";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { takeChip } from "@/lib/workspace/takes";
@@ -143,16 +146,46 @@ function GridActions({ row, version, ctx }: { row: ShotTakes; version: ShotVersi
   );
 }
 
+const NO_TAKES: readonly Generation[] = [];
+
+/**
+ * A take in flight on the new interface's grid (components/v12/render, redesign P3): the render-state model's words over its
+ * blurred source, Cancel only where the model says nothing is billed; and when it lands, the dots gather into the frame.
+ */
+function useGridRender(data: TakeCardData, ctx: BoardCtx) {
+  const v = data.row.shown;
+  const g = data.grid && v && v.entry.asset.origin === "generation" ? v.entry.asset.value : null;
+  const watched = g && (g.status === "held" || g.status === "queued" || g.status === "running" || g.status === "failed");
+  const takes = useMemo(() => (g && watched ? [g] : NO_TAKES), [g, watched]);
+  const states = useRenderStates(takes);
+  const state = (g ? states.get(g.id) : null) ?? null;
+  const cancelling = useCancelTake(ctx.scope, ctx.project.id, ctx.toast);
+  /* Landing: in flight a moment ago, finished now. */
+  const flying = Boolean(v && inFlight(v));
+  const was = useRef(flying);
+  const [landed, setLanded] = useState(false);
+  useEffect(() => {
+    if (!data.grid) return;
+    if (was.current && !flying && v && judgeable(v)) { setLanded(true); const t = setTimeout(() => setLanded(false), 700); was.current = flying; return () => clearTimeout(t); }
+    was.current = flying;
+  }, [data.grid, flying, v]);
+  return { state: state && (state.active || state.failed) ? state : null, landed, cancelling, genId: g?.id ?? null };
+}
+
 export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
   const { row } = data;
   const v = row.shown;
+  const grid = useGridRender(data, ctx);
   const judging = Boolean(data.grid && v && judgeable(v) && !hasStatus(v) && !inFlight(v));
   return (
-    <article className="gx-take" style={{ "--gx-take-well": `${wellHeight(data.grid ? 260 : 340, ctx.project.aspect)}px` } as CSSProperties} data-status={v?.status ?? "empty"} data-dim={v?.status === "changes" || undefined}
+    <article className="gx-take" style={{ "--gx-take-well": `${wellHeight(data.grid ? 260 : 340, ctx.project.aspect)}px` } as CSSProperties} data-status={v?.status ?? "empty"} data-dim={v?.status === "changes" || undefined} data-render={grid.state?.stage} data-reveal={grid.landed || undefined}
       aria-label={[row.title, v ? `${v.label}` : "no take yet", v && needsReview(v) ? "needs review" : null].filter(Boolean).join(" · ")} data-testid="take-card" data-node={row.nodeId}>
       <div className="gx-take-media">
         <Picture version={v} frame={row.frame} name={row.title} />
-        {v ? <Progress version={v} typicalMs={row.typicalMs} /> : null}
+        {v && !data.grid ? <Progress version={v} typicalMs={row.typicalMs} /> : null}
+        {grid.state ? <RenderOverlay state={grid.state} cancelling={grid.cancelling.busy === grid.genId}
+          onCancel={grid.state.cancel?.cancellable && grid.genId ? () => void grid.cancelling.cancel(grid.genId!, grid.state!.cancel!.via!, grid.state!.cancel!.toast) : undefined} /> : null}
+        {grid.landed ? <RenderGather /> : null}
         {row.anchor ? <span className="gx-take-tag" data-anchor={row.anchor === "anchor" || undefined} data-testid="take-anchor">{row.anchor === "anchor" ? "LOOK ANCHOR" : "FOLLOWS SHOT 1"}</span> : null}
         {v && v.media === "video" && judgeable(v) ? <span className="gx-take-play" aria-hidden="true">▶</span> : null}
         {v?.status === "failed" ? <span className="gx-take-glyph" aria-hidden="true">!</span> : null}
@@ -163,6 +196,7 @@ export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
         {v && hasStatus(v) ? <StatusLine version={v} ctx={ctx} /> : null}
         {data.blocking ? <ShotBlockingStrip ctx={ctx} nodeId={row.nodeId} index={row.index} view={data.blocking} /> : null}
         {judging && v ? <GridActions row={row} version={v} ctx={ctx} /> : null}
+        {grid.state && !grid.state.failed && !(v && hasStatus(v)) ? <div className="v12-rc-moneyrow"><RenderMoney state={grid.state} /></div> : null}
       </div>
     </article>
   );

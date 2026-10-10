@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { TRAIL } from "@/components/ui/Mark";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
@@ -14,9 +14,12 @@ import { ActivityPill } from "./Activity";
 import { AccountMenu } from "./AccountMenu";
 import { PlusPopover } from "./PlusPopover";
 import { boardStates } from "./activity";
+import { boardRings } from "@/lib/v12/boardRing";
+import { useTick } from "../render/use-render";
 import { afterClose, closeOthers, closeTab, headerKey, openTab, restoreTab, visibleTabs } from "./tabs";
 import { useBoardTabs } from "./use-board-tabs";
 import "./header.css";
+import "../render/render.css";
 
 /** The most boards GET /api/workbench/projects returns (app/api/workbench/projects/route.ts). */
 const PROJECTS_LIST_LIMIT = 100;
@@ -56,6 +59,10 @@ export function V12Header({ account, project, projects, onPick }: {
   const { shown, hidden } = visibleTabs(tabs.state.open, activeBoard);
   const nameOf = (id: string) => projects.find((p) => p.id === id)?.name ?? (project?.id === id ? project.name : "Board");
   const states = useMemo(() => boardStates(tray?.jobs ?? [], approvals.items), [tray?.jobs, approvals.items]);
+  /* The ring on a board tab with work running (redesign P3): its share, and about how long is left. */
+  const running = states.size > 0 && [...states.values()].includes("live");
+  const ringNow = useTick(running, 5_000);
+  const rings = useMemo(() => boardRings(tray?.jobs ?? [], ringNow), [tray?.jobs, ringNow]);
 
   /* Home as a tab shows Home: Make closes. The shell's goHome keeps Make over the page it moves to, so Make closes once
      Home is the screen (one address write each, never two from the same old address). */
@@ -178,14 +185,16 @@ export function V12Header({ account, project, projects, onPick }: {
         {shown.map((id, i) => {
           const name = nameOf(id);
           const state = states.get(id);
+          const ring = state === "live" ? rings.get(id) ?? null : null;
           const stateWord = state === "waiting" ? "waiting for you" : state === "live" ? "rendering" : "open";
           const active = id === activeBoard;
           return (
             <div key={id} className="v12-tab" data-board="" data-active={active ? "" : undefined} data-testid="v12-tab-board" data-id={id}
               onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); tabAnchor.current = e.currentTarget; setTabMenu(id); }}>
-              <Tooltip name={name} line={stateWord === "open" ? undefined : `${stateWord[0].toUpperCase()}${stateWord.slice(1)}.`} shortcut={ordinal(i)}>
+              <Tooltip name={name} line={ring ? `${ring.words}.` : stateWord === "open" ? undefined : `${stateWord[0].toUpperCase()}${stateWord.slice(1)}.`} shortcut={ordinal(i)}>
                 <button type="button" className="v12-tab-main" onClick={() => goBoard(id)} aria-current={active ? "page" : undefined}>
-                  <span className="v12-tab-dot" data-state={state ?? "idle"} aria-hidden="true" />
+                  {ring ? <span className="v12-tab-ring" style={{ "--p": `${Math.round(ring.pct * 100)}%` } as CSSProperties} data-testid="v12-tab-ring" aria-hidden="true" />
+                    : <span className="v12-tab-dot" data-state={state ?? "idle"} aria-hidden="true" />}
                   <span className="v12-tab-label">{name}</span>
                 </button>
               </Tooltip>

@@ -58,6 +58,8 @@ import { addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
+import { useShotsBatch } from "@/components/v12/render/use-batch";
+import { NotifyAsk } from "@/components/v12/render/NotifyAsk";
 import { BoardBar } from "@/components/v12/board/BoardBar";
 import { useOverlay } from "@/components/v12/ui/overlay";
 import { StageRail, type StageEdit } from "@/components/v12/board/StageRail";
@@ -231,6 +233,13 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     if (!id) { pick(new Set(), null); return; }
     pick(opts?.add ? new Set([...selection.ids, id]) : new Set([id]), id);
   }, [pick, selection.ids]);
+
+  /* The Shots stage as a batch (components/v12/render/use-batch.ts, redesign P3): its meta, the ready toast, the tab title, the opt-in. */
+  const batch = useShotsBatch({
+    cards: stageOwn, on: v12Frame && stage?.id === "shots",
+    onView: (nodeId) => { glide({ card: nodeId }); select(nodeId); },
+    toast: (text, action) => ws.toast(text, action), selected: selection.ids,
+  });
 
   /* ── The first view: an old link's region; where this device left it; the first section that needs you; the top at 100 % ── */
   const projectId = project?.id ?? null;
@@ -667,7 +676,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const inspected = v12Frame && details !== primary?.id ? null : primary;
   /* The stage header (inventory § 6.4): the stage's meta, the selection, the one primary where its action lives, the board menu. */
   const stageNow = stage ? stageStatus(stage, allCards, flavor) : null;
-  const stageMeta = stageNow && stageNow.summary && stageNow.summary !== "Nothing yet" ? stageNow.summary : null;
+  const stageMeta = batch.meta ?? (stageNow && stageNow.summary && stageNow.summary !== "Nothing yet" ? stageNow.summary : null);
   const crumb = selectionCrumb([...selection.ids].map((id) => {
     const data = placed.byId.get(id)?.data as { title?: unknown; name?: unknown } | undefined;
     return typeof data?.title === "string" && data.title ? data.title : typeof data?.name === "string" && data.name ? data.name : "1 card";
@@ -712,6 +721,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             <BoardBar ctx={ctx} selection={crumb} onClearSelection={() => pick(new Set(), null)} tool={tool} onDisarm={() => setTool("select")}
               onAttach={(picked) => void upload(picked)} library={items} onAsked={() => setDockOpen(true)} />
           ) : null}
+          {batch.offer && !list ? <NotifyAsk onTell={() => void batch.tellMe()} onNotNow={batch.notNow} /> : null}
           {list ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12Frame} />
           {v12Frame ? <ViewSwitch view={list ? "list" : "canvas"} onView={(v) => setList(v === "list")} /> : null}
