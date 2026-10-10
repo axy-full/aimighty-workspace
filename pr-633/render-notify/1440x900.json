@@ -1,0 +1,9 @@
+{
+  "name": "render-notify",
+  "app": "/suites?project=project-f9e4dadb&suite=particl&page=brief&view=board&stage=shots",
+  "prototype": "?view=board&stage=Shots&render=rendering&notify=1",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

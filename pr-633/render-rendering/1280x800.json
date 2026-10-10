@@ -1,0 +1,9 @@
+{
+  "name": "render-rendering",
+  "app": "/suites?project=project-0b64452a&suite=particl&page=brief&view=board&stage=shots",
+  "prototype": "?view=board&stage=Shots&render=rendering",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}

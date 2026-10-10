@@ -1,0 +1,9 @@
+{
+  "name": "render-slow",
+  "app": "/suites?project=project-8ec224fb&suite=particl&page=brief&view=board&stage=shots",
+  "prototype": "?view=board&stage=Shots&render=slow",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}

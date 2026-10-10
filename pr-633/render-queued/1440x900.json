@@ -1,0 +1,9 @@
+{
+  "name": "render-queued",
+  "app": "/suites?project=project-be33370b&suite=particl&page=brief&view=board&stage=shots",
+  "prototype": "?view=board&stage=Shots&render=queued",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

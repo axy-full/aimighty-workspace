@@ -1,0 +1,9 @@
+{
+  "name": "render-failed",
+  "app": "/suites?project=project-6c9a4ff0&suite=particl&page=brief&view=board&stage=shots",
+  "prototype": "?view=board&stage=Shots&render=failed",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
