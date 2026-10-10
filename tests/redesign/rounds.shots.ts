@@ -29,8 +29,21 @@ const stage = (page: Page, name: string) => page.getByTestId("v12-stage-rail").g
 
 test("round · the client's reply, planned", async ({ page }) => {
   test.setTimeout(300_000);
+  /* The scripted planner builds its own starter cards, so none of its renders is a card of the client's shots. For the picture, the
+     three renders are pointed at the board's shots 2, 4 and 7 (the display field `nodeId` of the run's steps, as a planner that
+     renders the board's own cards would give): titles, prices and the approval are the server's, untouched. */
+  const cardIds: string[] = [];
+  await page.route("**/api/workbench/team-canvas**", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    const response = await route.fetch();
+    const body = await response.json().catch(() => null) as { agent?: { run?: { paid?: { tool: string; nodeId?: string | null; fixOf?: number | null }[] } | null } } | null;
+    let at = 0;
+    for (const step of body?.agent?.run?.paid ?? []) if (step.tool === "render" && step.fixOf == null && cardIds[at]) step.nodeId = cardIds[at++];
+    return route.fulfill({ response, json: body });
+  });
   await openShotsBoard(page, "/suites?view=board&stage=shots");
   await expect(takes(page)).toHaveCount(8, { timeout: 90_000 });
+  for (const n of [1, 3, 6]) cardIds.push((await takes(page).nth(n).getAttribute("data-card-id")) ?? "");
   await settle(page);
   await page.getByTestId("v12-board-bar-inner-input").fill("Loving it. Shot 2 — sphere bigger in the wide. Shot 4: bottle fuller, label to camera. Shot 7 lose the second figure. Rest approved");
   await expect(page.getByTestId("v12-board-bar-price")).toHaveAttribute("data-price-state", "ready", { timeout: 30_000 });
@@ -42,6 +55,7 @@ test("round · the client's reply, planned", async ({ page }) => {
   await page.mouse.move(700, 120);
   await page.waitForTimeout(800);
   await captureBeside(page, "round-feedback", "?view=board&feedback=1&atomik=1");
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("round · Round 2 on Storyboard and Cut, the list, Compare", async ({ page }) => {
