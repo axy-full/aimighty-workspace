@@ -36,10 +36,14 @@ const NODE = ".bd-node[data-card-id]";
 const selectedNodes = () => Array.from(document.querySelectorAll<HTMLElement>(`${NODE}[data-selected]`));
 const nodeOf = (id: string) => document.querySelector<HTMLElement>(`${NODE}[data-card-id="${CSS.escape(id)}"]`);
 
-/** A card's own Approve, when it has one that can be pressed now; for the one selected card, the Inspector's too. */
+/**
+ * A card's own Approve, when it has one that can be pressed now. For a take card that is the one selected card, the
+ * Inspector's too (the Inspector shows the selected take): never for a card that is not selected yet, whose Inspector
+ * still shows the card before it.
+ */
 function approveButton(node: HTMLElement | null, alone: boolean): HTMLButtonElement | null {
   const own = node?.querySelector<HTMLButtonElement>('[data-testid="take-approve"]:not([disabled])') ?? null;
-  if (own || !alone) return own;
+  if (own || !alone || !node || node.dataset.cardKind !== "take" || node.dataset.selected !== "true" || selectedNodes().length !== 1) return own;
   return document.querySelector<HTMLButtonElement>('[data-testid="insp-approve"]:not([disabled])');
 }
 

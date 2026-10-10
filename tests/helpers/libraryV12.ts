@@ -47,13 +47,14 @@ export function libraryProject(): Project {
   };
 }
 
-export async function openLibrary(page: Page, path = "/suites?view=board&drawer=Library", opts: { on?: boolean } = {}) {
+/** `project`: the open board (default libraryProject()); `before`: more routes, set before the page opens. */
+export async function openLibrary(page: Page, path = "/suites?view=board&drawer=Library", opts: { on?: boolean; project?: Project; before?: (page: Page) => Promise<void> } = {}) {
   if (opts.on === false) await signInLocally(page.request);
   else await signInToRedesign(page.request);
   if (opts.on !== false) await expect.poll(async () => ((await (await page.request.get("/api/me")).json()) as { workspace?: { newInterface?: boolean } }).workspace?.newInterface ?? false, { timeout: 30_000 }).toBe(true);
   await forbidPaidWork(page);
   await mockMedia(page);
-  const project = libraryProject();
+  const project = opts.project ?? libraryProject();
   await mockProjects(page, { current: project, list: [{ id: project.id, name: project.name }, { id: "ws-other", name: "Spring campaign" }] });
   const reads: { projectId: string | null; source: string | null; q: string | null }[] = [];
   await page.route("**/api/workbench/library**", (route) => {
@@ -72,6 +73,7 @@ export async function openLibrary(page: Page, path = "/suites?view=board&drawer=
     if (source === "uploads") return route.fulfill({ json: { uploads: mine ? [...UPLOADS, ...(q ? [ARCHIVE] : [])].filter((u) => match(u.filename)) : [upload("uother", "Spring poster.webp", 1000, 1250)], nextCursor: null } });
     return route.fulfill({ json: { generations: mine ? GENERATIONS.filter((g) => match(g.title)) : [], nextPageCursor: null } });
   });
+  await opts.before?.(page);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(path);
