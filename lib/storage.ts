@@ -228,9 +228,10 @@ async function saveVideo(genId: string, sourceUrl: string, options: StoreVideoOp
      number that says whether VIDEO_TRANSFER_CONCURRENCY is too low. */
   const limiter = transferLimiter();
   const queued = Date.now();
-  let queuedFor: number | undefined;
+  /* Set once a slot is held; the log before that (a queue timeout) reports the wait so far. */
+  const wait: { queuedFor?: number } = {};
   const log = (outcome: string, extra: Record<string, unknown> = {}) => logVideoTransfer(genId, outcome, {
-    queueWaitMs: queuedFor ?? Date.now() - queued, limit: limiter.limit, active: limiter.active, waiting: limiter.waiting, ...extra,
+    queueWaitMs: wait.queuedFor ?? Date.now() - queued, limit: limiter.limit, active: limiter.active, waiting: limiter.waiting, ...extra,
   });
   let release: () => void;
   try {
@@ -243,7 +244,7 @@ async function saveVideo(genId: string, sourceUrl: string, options: StoreVideoOp
     log(isTransferQueueTimeout(error) ? "queue_timeout" : "cancelled");
     throw error;
   }
-  queuedFor = Date.now() - queued;
+  wait.queuedFor = Date.now() - queued;
   const started = Date.now();
   try {
     const saved = await withRecoveryActivity('storage', () => streamVideo(genId, sourceUrl, options));
