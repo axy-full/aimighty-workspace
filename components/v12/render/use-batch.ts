@@ -72,8 +72,7 @@ export function useShotsBatch(opts: {
   useTabTitle(on ? waiting.length : 0);
 
   /* "Tell me when it's done": offered once, on the first take over a minute. */
-  const [asked, setAsked] = useState(true);
-  useEffect(() => { setAsked(readAsked()); }, []);
+  const [asked, setAsked] = useState(() => (typeof window === "undefined" ? true : readAsked()));
   const slowOne = on && [...states.values()].some((s) => s.active && (s.elapsedMs ?? 0) > 60_000);
   const can = typeof Notification !== "undefined" && Notification.permission === "default";
   const tellMe = useCallback(async () => {
