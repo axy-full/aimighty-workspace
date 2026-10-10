@@ -1,7 +1,7 @@
 "use client";
 import { rigDeleteHandler, setRigUndoSink, type RigUndo } from "@/lib/shell/rig-commands";
 import { newProject } from "@/lib/workbench/studio";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNewInterface, useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
@@ -15,7 +15,7 @@ import { GenerateComposer } from "@/components/workspace/GenerateComposer";
 import { GenerationStrip } from "@/components/workspace/GenerationStrip";
 import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
-import { useShell } from "@/lib/shell/state";
+import { setMakeIsPage, useShell } from "@/lib/shell/state";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { useRecreatePrice } from "@/lib/shell/use-recreate-price";
 import { ctxPrice } from "@/lib/shell/recreate-price";
@@ -370,15 +370,18 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
      knows from its first render (SuitesApp draws nothing until the browser has it), so neither frame flashes first.
      With the switch off the header and body below render exactly as they always have. */
   const newInterface = useNewInterface();
-  /* The address the page opened with: Make's page (lazy, inside the lazy frame) mounts after the workspace has rewritten
-     the address, so it reads what was asked for (`mk=`, `viewer=1`) from here. */
-  const [openedWith] = useState(() => (typeof window === "undefined" ? "" : window.location.search));
+  /* The address the page opened with: Make's page (lazy) can mount after the workspace has rewritten the address, so it reads
+     what was asked for (`mk=`, `viewer=1`) from here, once. Its first mount spends it; a later visit reads the live address. */
+  const [openedWith, setOpenedWith] = useState<string | undefined>(() => (typeof window === "undefined" ? undefined : window.location.search));
+  const spendOpenedWith = useCallback(() => setOpenedWith(undefined), []);
   /* The frame's chunk starts loading as soon as the switch is known to be on, before the frame is first asked for. */
   useEffect(() => { if (newInterface) void loadV12Shell(); }, [newInterface]);
   const v12 = newInterface && !compact && !phoneOn;
   /* With the switch on at desktop sizes, Make is a page in the frame's body (components/v12/make), not a panel; its quick
      tools (Motion transfer, Object swap, Upscale) still open as today's panel over that page. */
   const v12Make = v12 && Boolean(shell.make);
+  /* Make is a page in the new frame: leaving for Home, a board or Settings leaves it (lib/shell/state.tsx stayMake). */
+  useEffect(() => { setMakeIsPage(v12); return () => setMakeIsPage(false); }, [v12]);
   const makePanel = Boolean(shell.make) && !phoneOn && !(v12Make && !isMakeTool(shell.make));
   const header = <Header account={account} project={project?.name ?? null} bar={bar} />;
   const desktopBody = <>
@@ -442,7 +445,7 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
         ) : <PhoneMount ctx={screenCtx} page={phonePage} />) : v12 ? (
           <V12Shell header={{ account, project, projects: data.projects, onPick: pickProject }}>{v12Make ? (
             <Boundary what="Make" probe="gen" resetKey={`v12-make:${scope}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="gen" /></div>}>
-              <V12Make initialSearch={openedWith} scope={scope} project={project} projects={data.status} projectsError={projectsError} onRetry={data.retry}
+              <V12Make initialSearch={openedWith} onOpened={spendOpenedWith} scope={scope} project={project} projects={data.status} projectsError={projectsError} onRetry={data.retry}
                 workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} balance={account?.credits?.balance ?? null} />
             </Boundary>
           ) : desktopBody}<LibraryTray project={project} projects={data.projects} library={library} /></V12Shell>

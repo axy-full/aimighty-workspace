@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { recreatePreset } from "@/lib/shell/recipe";
 import { sendGenPreset } from "@/lib/shell/gen-preset";
 import { sendReference } from "@/lib/shell/reference-inbox";
@@ -19,6 +19,8 @@ import "./make.css";
 export type V12MakeProps = {
   /** The address the page opened with (SuitesShell keeps it: by the time this lazy page mounts it has been rewritten). */
   initialSearch?: string;
+  /** Told once the page has read `initialSearch`, so a later visit to Make does not reopen what the first address asked for. */
+  onOpened?: () => void;
   scope: string;
   project: Project | null;
   projects: "loading" | "ready" | "error";
@@ -43,7 +45,7 @@ function asked(search?: string): { mode: MakeMode | null; viewer: boolean } {
  * on the shared bar: the same quote and the same one priced send, marked where it is pressed. A press that went through keeps the page open; the take shows up
  * in the results, rendering.
  */
-export function V12Make({ initialSearch, scope, project, projects, projectsError, onRetry, workspaceName, onProject, balance }: V12MakeProps) {
+export function V12Make({ initialSearch, onOpened, scope, project, projects, projectsError, onRetry, workspaceName, onProject, balance }: V12MakeProps) {
   const results = useResults(scope);
   const trayPrices = useTrayPrices();
   const session = useSession();
@@ -51,6 +53,8 @@ export function V12Make({ initialSearch, scope, project, projects, projectsError
   const places = usePlaces();
   const paysInDollars = session.rates.unit === "usd";
   const [first] = useState(() => asked(initialSearch));
+  const opened = useRef(onOpened);
+  useEffect(() => { opened.current?.(); }, []);
 
   /* Selection, and the viewer over the finished takes. */
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
