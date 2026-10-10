@@ -340,7 +340,7 @@ The owner's estimate for two people: the full scope by 26 February 2027.
 - The five-minute test passes for a new person on desktop and on a phone.
 - One real production runs from brief to an approved cut on the board; every paid step was approved at its quoted price, and the ledger matches.
 - Every registry tool is reachable by Atomik, a skill and MCP at the same price and through the same gate as its button; every engine in §5.1 is also reachable from Make and a board card; a test proves each. Actions that belong to people (rule 11) stay theirs, and a test proves an agent cannot take them.
-- No UI text says Moleculr, Subatomik, Rig, Genjutsu, Soul or Higgsfield, and "Astra" appears only as Topaz's model name ("Topaz Astra"), never for 3D blocking.
+- No UI text says Moleculr, Subatomik, Genjutsu, Soul or Higgsfield, and "Astra" appears only as Topaz's model name ("Topaz Astra"), never for 3D blocking. (Amended 10 Oct 2026: "Rig" is allowed again as the name of a board view, prototype 12; owner's decision.)
 - Nothing needs a Higgsfield sign-in.
 - The contrast and size minimums pass an automated check on every screen.
 - The VPS runs 1,000 jobs at once without slowing pages (P8's load test).
