@@ -1,6 +1,6 @@
 {
   "name": "make-viewer",
-  "app": "/suites?project=project-0f99a93a&suite=particl&page=brief&view=home&make=video",
+  "app": "/suites?project=project-e244e168&suite=particl&page=brief&view=home&make=video",
   "prototype": "?view=make&viewer=1",
   "size": {
     "width": 1440,
