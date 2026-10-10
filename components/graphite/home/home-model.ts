@@ -172,6 +172,15 @@ export function shownProjects<T>(projects: readonly T[], all: boolean): { shown:
   return { shown: projects.slice(0, FIRST_CARDS), hidden: projects.length - FIRST_CARDS };
 }
 
+/**
+ * The figure Start shows, and approves when pressed, for these words: the newer figure the server gave for the project
+ * Start already made from the same words (a refused press said "Press Start again"), else the planner's figure for a
+ * new board. Null while there is none. Pure (use-home-start's `figureFor`), so shown always equals approved.
+ */
+export function startFigure(started: { text: string; figure: number | null } | null, thinking: { state: string; credits?: number }, text: string): number | null {
+  return (started && started.text === text ? started.figure : null) ?? (thinking.state === "ready" && typeof thinking.credits === "number" ? thinking.credits : null);
+}
+
 /** The longest request Atomik takes (lib/workbench/rig-agent-plan.ts › PLAN_LIMITS.goal), and the shortest. */
 export const GOAL_MAX = 2000;
 export const GOAL_MIN = 3;

@@ -1,0 +1,133 @@
+/* Home, signed in, in the new interface (docs/redesign/inventory.md § 5.9). Graphite tokens only (app/graphite.css). */
+.v12-hm {
+  position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column;
+  background: var(--gx-root); color: var(--gx-text); font-family: var(--gx-font); font-size: var(--gx-fs-body);
+}
+.v12-hm-scroll {
+  flex: 1; min-height: 0; overflow: auto; padding: 16px 24px calc(var(--v12-bar-h, 120px) + 44px); display: flex; flex-direction: column; gap: 20px;
+}
+.v12-hm button { font: inherit; }
+.v12-hm button:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.v12-hm-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--gx-waiting); }
+.v12-hm-dot[data-tone="live"] { background: var(--gx-accent); }
+.v12-hm-dot[data-tone="quiet"] { background: var(--gx-idle); }
+.v12-hm-dot[data-tone="problem"] { background: var(--gx-failed); }
+.v12-hm-chip-btn {
+  flex: none; height: 26px; display: inline-flex; align-items: center; padding: 0 9px; border-radius: 6px;
+  border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text); font-size: 12px; font-weight: 500;
+  white-space: nowrap; cursor: pointer;
+}
+.v12-hm-chip-btn:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.v12-hm-chip-btn:disabled { color: var(--gx-disabled); cursor: default; }
+.v12-hm-link { border: 0; background: transparent; padding: 0; color: var(--gx-accent-text); font-size: 13px; font-weight: 500; cursor: pointer; }
+.v12-hm-link:hover:not(:disabled) { color: var(--gx-accent-text-hover); }
+.v12-hm-link:disabled { color: var(--gx-disabled); cursor: default; }
+.v12-hm-quiet { margin: 0; padding: 12px 0; font-size: 13px; color: var(--gx-text-2); }
+.v12-hm-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.v12-hm-grow { flex: 1; }
+
+/* 1 · Waiting for you */
+.v12-hm-wait {
+  flex: none; height: 44px; display: flex; align-items: center; gap: 14px; padding: 0 14px; min-width: 0;
+  border: 1px solid var(--gx-card-border); border-radius: 10px; background: var(--gx-card);
+}
+.v12-hm-wait-title { margin: 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.v12-hm-wait-count { font-family: var(--gx-mono); font-size: 13px; color: rgba(235, 235, 245, 0.62); }
+.v12-hm-wait-items { flex: 1; min-width: 0; display: flex; gap: 18px; overflow: hidden; margin: 0; padding: 0; list-style: none; }
+.v12-hm-wait-item { flex: none; min-width: 0; max-width: 100%; display: flex; align-items: center; gap: 8px; position: relative; }
+.v12-hm-wait-open {
+  min-width: 0; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent;
+  color: var(--gx-text); font-size: 13px; white-space: nowrap; cursor: pointer;
+}
+.v12-hm-wait-name { font-weight: 600; }
+.v12-hm-wait-where { color: rgba(235, 235, 245, 0.65); }
+.v12-hm-wait-item .v12-hm-chip-btn { font-size: 13px; }
+.v12-hm-wait-x {
+  flex: none; border: 0; background: transparent; color: var(--gx-text-2); font-size: 16px; line-height: 1; padding: 2px 4px; cursor: pointer;
+}
+.v12-hm-wait-x:hover { color: var(--gx-text); }
+
+/* 2 · The wall */
+.v12-hm-wall { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: var(--v12-wall-row, 100px); gap: 8px; }
+.v12-hm-wall-empty { grid-auto-rows: auto; }
+.v12-hm-wall-note {
+  grid-column: 1 / -1; margin: 0; padding: 48px 16px; text-align: center; font-size: 13px; color: var(--gx-text-2);
+  border: 1px dashed var(--gx-dashed); border-radius: 10px;
+}
+.v12-hm-tile {
+  position: relative; border-radius: 10px; overflow: hidden; background: var(--gx-track); border: 1px solid var(--gx-card-border);
+  transition: opacity 0.2s, box-shadow 0.2s;
+}
+/* A tile that is not the picked one fades its picture only: its words stay at full strength (rule 15: text is at least 55% white). */
+.v12-hm-tile[data-faded] .v12-hm-tile-media { opacity: 0.55; }
+.v12-hm-tile[data-picked] { border-color: var(--gx-accent); box-shadow: 0 0 0 1px var(--gx-accent); }
+.v12-hm-tile-media { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity 0.2s; }
+.v12-hm-tile-pick { position: absolute; inset: 0; border: 0; padding: 0; background: transparent; cursor: pointer; z-index: 1; }
+.v12-hm-tile-pick:focus-visible { outline-offset: -3px; }
+.v12-hm-tile-label {
+  position: absolute; left: 10px; bottom: 10px; max-width: calc(100% - 20px); display: flex; flex-direction: column; padding: 6px 10px;
+  border-radius: 8px; background: rgba(0, 0, 0, 0.66); pointer-events: none; z-index: 2;
+}
+.v12-hm-tile-type { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8); white-space: nowrap; overflow: hidden; }
+.v12-hm-tile-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; }
+.v12-hm-tile-hover {
+  position: absolute; inset: 0; display: none; place-content: center; grid-auto-flow: column; gap: 6px;
+  background: rgba(0, 0, 0, 0.38); z-index: 2; pointer-events: none;
+}
+.v12-hm-tile:hover .v12-hm-tile-hover, .v12-hm-tile:focus-within .v12-hm-tile-hover { display: grid; }
+.v12-hm-tile-like, .v12-hm-tile-remix {
+  height: 36px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 999px; background: var(--gx-card);
+  border: 1px solid rgba(255, 255, 255, 0.28); color: var(--gx-text); font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.v12-hm-tile-remix { pointer-events: auto; cursor: pointer; }
+.v12-hm-tile-remix:hover:not(:disabled) { border-color: var(--gx-hover-border); background: var(--gx-seg-on); }
+.v12-hm-tile-remix:disabled { color: var(--gx-disabled); cursor: default; }
+.v12-hm-tile-picked {
+  position: absolute; right: 10px; top: 10px; height: 26px; display: flex; align-items: center; padding: 0 10px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.7); border: 1px solid var(--gx-accent); color: var(--gx-accent-text); font-size: 12px; font-weight: 600; z-index: 2; pointer-events: none;
+}
+
+/* 3 · Your boards */
+.v12-hm-lower { display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; transition: opacity 0.2s; }
+/* A picked tile dims the boards' pictures, not their words, and the boards stay in reach above the bar. */
+.v12-hm-lower[data-dim] .v12-hm-board-cover { opacity: 0.55; }
+.v12-hm-boards-head { display: flex; align-items: baseline; gap: 6px; padding-bottom: 8px; flex-wrap: wrap; }
+.v12-hm-section-title { margin: 0; font-size: 15px; font-weight: 600; }
+.v12-hm-filters { display: inline-flex; gap: 4px; margin-left: 6px; flex-wrap: wrap; }
+.v12-hm-filter {
+  height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--gx-btn-border); background: transparent;
+  color: var(--gx-text); font-size: 12px; font-weight: 500; cursor: pointer;
+}
+.v12-hm-filter:hover { border-color: var(--gx-hover-border); }
+.v12-hm-filter[aria-pressed="true"] { background: var(--gx-tint); border-color: var(--gx-tint-border-50); color: var(--gx-accent-text); }
+.v12-hm-boards-body { padding-top: 9px; border-top: 1px solid var(--gx-hair); }
+.v12-hm-board-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.v12-hm-board {
+  width: 100%; text-align: left; border: 0; background: transparent; padding: 0; color: var(--gx-text);
+  display: flex; flex-direction: column; gap: 6px; cursor: pointer;
+}
+.v12-hm-board:disabled { cursor: default; }
+.v12-hm-board-cover {
+  display: block; position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--gx-card-border); background: var(--gx-track); transition: border-color 0.15s;
+}
+.v12-hm-board-cover[data-cover="swatch"] { background: linear-gradient(135deg, var(--v12-from, #1C1C20), var(--v12-to, #0D0D10)); }
+.v12-hm-board:hover .v12-hm-board-cover { border-color: var(--gx-hover-border); }
+.v12-hm-board-media, .v12-hm-board-cover img, .v12-hm-board-cover video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.v12-hm-board-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; max-width: 100%; }
+.v12-hm-board-state { display: flex; align-items: center; gap: 6px; font-size: 12px; color: rgba(235, 235, 245, 0.68); min-width: 0; }
+.v12-hm-board-state .v12-hm-dot { width: 6px; height: 6px; }
+.v12-hm-show-all { margin-top: 12px; }
+
+/* The bar: bottom-centre over the page. */
+.v12-hm-bar { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); width: min(760px, calc(100% - 48px)); z-index: 20; }
+
+@media (max-width: 1199px) {
+  .v12-hm-board-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 899px) {
+  .v12-hm-board-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v12-hm-tile, .v12-hm-tile-media, .v12-hm-lower, .v12-hm-board-cover { transition: none; }
+}
