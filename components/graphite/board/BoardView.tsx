@@ -58,6 +58,7 @@ import { addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
+import { openBlocking } from "./blocking/blocking-store";
 import { useShotsBatch } from "@/components/v12/render/use-batch";
 import { NotifyAsk } from "@/components/v12/render/NotifyAsk";
 import { BoardBar } from "@/components/v12/board/BoardBar";
@@ -683,10 +684,13 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   }));
   const wants = stagePrimary(stage, allCards, flavor);
   const headPrimary = wants ? { label: wants.label, run: () => { select(wants.card); glide({ card: wants.card }); } } : null;
+  /* The 3D blocking card is not drawn on the new stages (a stray box under the grid): its way in is the board menu. */
+  const blocking = (allCards.find((c) => c.kind === "blocking")?.data as { nodeId?: string } | undefined)?.nodeId ?? null;
   const boardMenu = [
     { id: "library", label: "Library", shortcut: "L", onSelect: () => window.dispatchEvent(new Event(LIBRARY_OPEN_EVENT)) },
     { id: "history", label: "History", onSelect: () => setDrawer("history") },
     ...(kind === "studio" ? [{ id: "render", label: "3D scene", onSelect: () => setDrawer("render") }] : []),
+    ...(v12Frame && blocking ? [{ id: "blocking", label: "3D blocking", onSelect: () => openBlocking(blocking) }] : []),
     { id: "fit", label: "Fit to view", shortcut: "0", onSelect: () => void flow.fitView({ padding: 0.08, duration: GLIDE_MS, ease: glideEase }) },
     ...(freeCards.length && !offline ? [{ id: "tidy", label: "Tidy", onSelect: () => void tidy() }] : []),
   ];

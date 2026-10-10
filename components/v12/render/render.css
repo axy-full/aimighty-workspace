@@ -69,3 +69,4 @@
 
 /* The board tab's ring: a share of the board's running work, in place of the dot. */
 .v12 .v12-tab-ring { flex: none; width: 12px; height: 12px; border-radius: 50%; background: conic-gradient(var(--gx-accent) var(--p, 0%), var(--gx-line-control) 0); -webkit-mask: radial-gradient(circle, transparent 3px, #000 3.5px); mask: radial-gradient(circle, transparent 3px, #000 3.5px); }
+.v12 .v12-rc-pending { flex: none; font-size: 12px; font-weight: 500; color: var(--gx-text-muted); white-space: nowrap; }

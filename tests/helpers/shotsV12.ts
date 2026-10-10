@@ -6,7 +6,7 @@ import { forbidPaidWork, mockMedia } from "./workspaceFixtures";
 import { seedBoard } from "./gaps-l2";
 import { localPlatformDbUrl } from "./workbenchLocal";
 import { filmBoard } from "./boardV12";
-import type { CanvasNode } from "../../lib/workbench/studio";
+import type { CanvasNode, Project } from "../../lib/workbench/studio";
 
 /**
  * A Film board whose Shots stage has eight shots in mixed states (redesign P2-b): three finished takes, two still
@@ -15,19 +15,26 @@ import type { CanvasNode } from "../../lib/workbench/studio";
  * spent). Neutral names only (CLAUDE.md rule 3).
  */
 const SHOT_TITLES = ["Opening wide", "The walk", "The rope", "Leaving", "The gull", "The horizon", "The engine", "Open water"];
-const node = (i: number): CanvasNode => ({ id: `node-shot000${i + 1}`, title: SHOT_TITLES[i], type: "scene", x: 0, y: 0, width: 254, linked: [], text: SHOT_TITLES[i] } as CanvasNode);
+/* Each shot card starts on its storyboard frame (the picture a take in flight is drawn over, blurred and dimmed): five stills, in turn. */
+const FRAMES = SHOT_TITLES.map((title, i) => ({ id: `a-frame-${i + 1}`, name: `${title} · frame`, kind: "image", category: "storyboard", url: `/api/media/gframe${(i % 5) + 1}`, description: "", prompt: "", status: "Selected", locked: false, version: 1, refs: [], generationId: `gframe${(i % 5) + 1}` }));
+const node = (i: number): CanvasNode => ({ id: `node-shot000${i + 1}`, title: SHOT_TITLES[i], type: "scene", x: 0, y: 0, width: 254, linked: [], text: SHOT_TITLES[i], assetId: `a-frame-${i + 1}` } as CanvasNode);
 
 /** One shot's take: its status, how long ago it was asked for, and what its row says of where it is (a held take's reason, the provider's receipt, a store lease). */
-export type ShotRow = { status: "succeeded" | "running" | "queued" | "held" | "failed"; ageS?: number; model?: string; kind?: "image" | "video"; held?: Record<string, unknown>; arkTaskId?: string; saving?: boolean; error?: string };
+export type ShotRow = { /** Another provider than the engine's own, and what its row keeps in `params` (a provider's receipt for a take it holds). */ provider?: string; extra?: Record<string, unknown>; /** The credits the meter holds for it while it runs (a reservation row on the platform ledger). */ reserved?: number; status: "succeeded" | "running" | "queued" | "held" | "failed"; ageS?: number; model?: string; kind?: "image" | "video"; held?: Record<string, unknown>; arkTaskId?: string; saving?: boolean; error?: string };
 /** Shots 1–3 finished; 4–5 rendering (a minute in); 6–8 nothing yet: the grid specs' default. */
 const DEFAULT_ROWS: (ShotRow | null)[] = [{ status: "succeeded" }, { status: "succeeded" }, { status: "succeeded" }, { status: "running", ageS: 20 }, { status: "running", ageS: 20 }, null, null, null];
+/** A Higgsfield-API video waiting in the provider's queue, with the provider's receipt: the one take Cancel is offered for at the provider. */
+export const HIGGS_QUEUED: ShotRow = {
+  status: "queued", kind: "video", model: "higgsfield-genjutsu-motion-transfer", provider: "higgsfield", ageS: 25, reserved: 7,
+  extra: { higgsfieldVideoHandle: { ref: "6f1c7a52-2d9e-4f1b-9a52-0c5d8d0e1a11", model: "higgsfield-genjutsu-motion-transfer" }, paidClaim: { at: 1 } },
+};
 /** The prototype's batch (render=batch): 1–3 ready, 4 saving, 5 rendering, 6 preparing, 7–8 waiting in the provider's queue; all video. */
 export const BATCH_ROWS: (ShotRow | null)[] = [
   { status: "succeeded" }, { status: "succeeded" }, { status: "succeeded" },
-  { status: "running", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 50, saving: true },
-  { status: "running", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 48 },
-  { status: "queued", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 30 },
-  { status: "queued", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 20, arkTaskId: "task-seed-7" },
+  { status: "running", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 50, saving: true, reserved: 7 },
+  { status: "running", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 48, reserved: 7 },
+  { status: "queued", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 30, reserved: 7 },
+  { status: "queued", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 20, arkTaskId: "task-seed-7", reserved: 7 },
   { status: "held", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 10, held: { why: "slots", needs: 0, estUsd: 0 } },
 ];
 
@@ -36,7 +43,7 @@ export async function openShotsBoard(page: Page, path = "/suites?view=board&stag
   if (opts.on !== false) await expect.poll(async () => ((await (await page.request.get("/api/me")).json()) as { workspace?: { newInterface?: boolean } }).workspace?.newInterface ?? false, { timeout: 30_000 }).toBe(true);
   const film = filmBoard();
   const nodes = [...film.nodes.filter((n) => n.type !== "scene"), ...SHOT_TITLES.map((_, i) => node(i))];
-  const { project, scope } = await seedBoard(page, signed.workspace.id, (base) => ({ ...base, name: film.name, brief: film.brief, production: film.production, nodes }),
+  const { project, scope } = await seedBoard(page, signed.workspace.id, (base) => ({ ...base, name: film.name, brief: film.brief, production: film.production, nodes, assets: FRAMES as Project["assets"] }),
     { generations: [1, 2, 3, 4, 5].map((i) => `gframe${i}`) });
   const headers = { "X-Workbench-Scope": scope, "Content-Type": "application/json" };
   const shotIds: string[] = [];
@@ -58,13 +65,21 @@ export async function openShotsBoard(page: Page, path = "/suites?view=board&stag
         const asked = Date.now() - (row.ageS ?? 120) * 1000;
         const params: Record<string, unknown> = { ratio: "16:9" };
         if (row.held) params.held = row.held;
+        Object.assign(params, row.extra ?? {});
         if (row.saving) params.storeUntil = Date.now() + 10 * 60_000;
         await db.execute({
           sql: `INSERT INTO generations (id,project_id,shot_id,kind,model,prompt,params,status,stored_url,cost_usd,created_by,created_at,updated_at,version,provider,task,review_state,review_by,reviewed_at,deleted,error,ark_task_id)
                 VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?,1,?,'generate','',NULL,NULL,0,?,?)`,
           args: [`gshot${i + 1}`, production, shotIds[i], row.kind ?? "image", row.model ?? "gemini-3.1-flash-image", SHOT_TITLES[i], JSON.stringify(params), row.status,
-            row.status === "succeeded" ? "/campaign/hero.webp" : null, me.id, asked, asked, row.kind === "video" ? "fal" : "google", row.error ?? null, row.arkTaskId ?? null],
+            row.status === "succeeded" ? "/campaign/hero.webp" : null, me.id, asked, asked, row.provider ?? (row.kind === "video" ? "fal" : "google"), row.error ?? null, row.arkTaskId ?? null],
         });
+        /* What the meter holds for a take while it runs: a reservation row on the platform ledger, as admission writes it. The tray reads it as the figure held. */
+        if (row.reserved != null) {
+          await platform.execute({
+            sql: `INSERT OR REPLACE INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,?,?,?,'running',?,?,1,?,?,?)`,
+            args: [`gshot${i + 1}`, signed.workspace.id, row.kind ?? "image", row.kind === "video" ? "fal" : "google", row.model ?? "gemini-3.1-flash-image", row.reserved / 20, row.reserved, me.id, asked, asked],
+          });
+        }
       }
     } finally { db.close(); }
   } finally { platform.close(); }

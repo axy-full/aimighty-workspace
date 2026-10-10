@@ -42,6 +42,9 @@ const ACTIVE = new Set(["held", "queued", "running"]);
  * words, which load the prompt and its settings into the composer. A take in flight shows its render state (C1); one
  * that did not finish says whether anything was billed and offers Retry, which loads it into the composer to price again.
  */
+/** A take still in flight is at least this wide for its height: its words (the stage, the time, the money) are on one line and must fit. */
+const IN_FLIGHT_ASPECT = 1.5;
+
 export function Results({ tiles, status, typical, trayPrices, paysInDollars, selected, onSelect, onOpen, onReuse }: {
   tiles: readonly ResultTile[];
   status: "loading" | "ready" | "error";
@@ -70,7 +73,7 @@ export function Results({ tiles, status, typical, trayPrices, paysInDollars, sel
         ) : width > 0 ? groups.map((group) => (
           <div key={group.label} className="v12-mk-day">
             <div className="v12-mk-divider" data-testid="v12-make-day"><span>{group.label}</span><span className="v12-mk-rule" /></div>
-            {justify(group.items, (t) => t.aspect, width).map((row, r) => (
+            {justify(group.items, (t) => (t.source.status === "succeeded" ? t.aspect : Math.max(t.aspect, IN_FLIGHT_ASPECT)), width).map((row, r) => (
               <div key={r} className="v12-mk-row" style={{ height: row.height }}>
                 {row.items.map(({ item, width: w }) => (
                   <Tile key={item.id} tile={item} width={w} now={now} typical={typical} trayPrice={trayPrices.get(item.id)} paysInDollars={paysInDollars}

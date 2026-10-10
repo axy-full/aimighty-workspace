@@ -4,8 +4,9 @@ import type { Generation } from "@/lib/jobs";
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useTrayPrices, renderTakeOf } from "@/components/v12/make/use-results";
-import { batchSummary, renderState, type RenderState, type RenderTake } from "@/lib/v12/renderState";
+import { batchSummary, renderState, type CancelVia, type RenderState, type RenderTake } from "@/lib/v12/renderState";
 import { parseTypicalTimes, type TypicalTimesReply } from "@/lib/v12/typicalTimes";
+import { cancelFailure, mayCancelTake, discardedOutcome, providerQueueOutcome, type CancelOutcome } from "@/lib/v12/renderCancel";
 import { announceJob } from "@/lib/shell/jobs-bus";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 
@@ -20,15 +21,17 @@ import { refreshProjectLibrary } from "@/lib/workspace/library";
 
 let typicalOnce: Promise<TypicalTimesReply | null> | null = null;
 
-export function useTypicalTimes(): TypicalTimesReply | null {
+/** Read only when asked for: a screen with nothing in flight, or a customer's app with the switch off, makes no request. */
+export function useTypicalTimes(enabled: boolean): TypicalTimesReply | null {
   const fetcher = useScopedFetch();
   const [reply, setReply] = useState<TypicalTimesReply | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     let live = true;
     typicalOnce ??= fetcher("/api/v12/typical-times", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((body) => (body ? parseTypicalTimes(body) : null)).catch(() => null);
     void typicalOnce.then((r) => { if (live) setReply(r); });
     return () => { live = false; };
-  }, [fetcher]);
+  }, [enabled, fetcher]);
   return reply;
 }
 
@@ -81,41 +84,49 @@ export function useRenderStates(takes: readonly Generation[]): ReadonlyMap<strin
   const session = useSession();
   const dollars = session.rates.unit === "usd";
   const prices = useTrayPrices();
-  const typical = useTypicalTimes();
+  /* Nothing is asked of the server for a board with nothing in flight (or none at all: the switch off hands in no takes). */
+  const typical = useTypicalTimes(takes.some(takeNeedsState));
   const active = takes.some(isActive);
   const waiting = takes.some((g) => g.status === "held" || g.status === "queued");
   const now = useTick(active);
   const positions = useQueuePositions(waiting);
   return useMemo(() => new Map(takes.map((g) => {
-    const base: RenderTake = renderTakeOf(g, prices.get(g.id), dollars);
+    /* Cancel is offered to the take's author and to an admin: the routes refuse everyone else. */
+    const mayCancel = mayCancelTake(session, g.createdBy);
+    const base: RenderTake = renderTakeOf(g, prices.get(g.id), dollars, mayCancel);
     return [g.id, renderState({ ...base, queuePosition: positions.get(g.id) ?? null }, now, typical)] as const;
-  })), [takes, prices, dollars, positions, now, typical]);
+  })), [takes, prices, dollars, positions, now, typical, session]);
 }
 
-/** Cancel a take the model says can be cancelled for nothing: a held take is discarded, one waiting in its provider's queue is cancelled there. */
+/**
+ * Cancel a take the model says can be cancelled where nothing is billed: a held take is discarded, one waiting in its provider's
+ * queue is asked of the provider. The words are what happened (lib/v12/renderCancel.ts): a provider's "requested" is a cancel
+ * sent, not a take cancelled, and until the take says otherwise it is shown as pending and not offered again.
+ */
 export function useCancelTake(scope: string, projectId: string | null, toast: (text: string) => void) {
   const fetcher = useScopedFetch(scope);
   const [busy, setBusy] = useState<string | null>(null);
-  const cancel = useCallback(async (id: string, via: "discard" | "provider-queue", said: string | null) => {
+  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
+  const cancel = useCallback(async (id: string, via: CancelVia) => {
     if (busy) return;
     setBusy(id);
+    let outcome: CancelOutcome;
     try {
       const response = via === "discard"
         ? await fetcher(`/api/jobs/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ discard: true }) })
         : await fetcher(`/api/generations/${encodeURIComponent(id)}/cancel`, { method: "POST" });
       const body = (await response.json().catch(() => null)) as { error?: string; status?: string } | null;
-      if (!response.ok) toast(body?.error ?? "It could not be cancelled just now. Nothing was billed.");
-      else if (via === "provider-queue" && body?.status !== "requested") toast("It had already started, so it could not be cancelled.");
-      else if (said) toast(said);
+      outcome = !response.ok ? cancelFailure(via, body?.error) : via === "discard" ? discardedOutcome() : providerQueueOutcome(body?.status);
     } catch {
-      toast("It could not be cancelled just now. Try again.");
-    } finally {
-      setBusy(null);
-      announceJob(id);
-      if (projectId) void refreshProjectLibrary(scope, projectId);
+      outcome = cancelFailure(via, null);
     }
+    toast(outcome.text);
+    if (outcome.pending) setPending((was) => new Set(was).add(id));
+    setBusy(null);
+    announceJob(id);
+    if (projectId) void refreshProjectLibrary(scope, projectId);
   }, [busy, fetcher, projectId, scope, toast]);
-  return { cancel, busy };
+  return { cancel, busy, pending };
 }
 
 /** A batch's stage meta: "3 of 8 ready · about 4 min left", or null when nothing runs or failed. */

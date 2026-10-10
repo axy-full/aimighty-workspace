@@ -4,6 +4,7 @@ import { captureBeside, closePrototypeServer } from "../helpers/redesignShots";
 import { openShotsBoard, BATCH_ROWS, type ShotRow } from "../helpers/shotsV12";
 import { seedHome } from "../helpers/v12Home";
 import { localPlatformDbUrl } from "../helpers/workbenchLocal";
+import { mockMedia } from "../helpers/workspaceFixtures";
 
 /*
  * Render cards (redesign P3) beside prototype 12's render URLs, with Atomik closed as they are drawn: queued, rendering, slow,
@@ -14,10 +15,10 @@ test.afterAll(closePrototypeServer);
 
 const KLING = "fal-ai/kling-video/v3/standard";
 const SEEDANCE = "dreamina-seedance-2-5-260628";
-const rest = (n: number): (ShotRow | null)[] => Array.from({ length: n }, () => ({ status: "queued", kind: "video", model: KLING, ageS: 5, arkTaskId: "task-seed" }));
+const rest = (n: number): (ShotRow | null)[] => Array.from({ length: n }, () => ({ status: "queued", kind: "video", model: KLING, ageS: 5, arkTaskId: "task-seed", reserved: 7 }));
 const ready: ShotRow[] = [{ status: "succeeded" }, { status: "succeeded" }];
 /** The prototype's single-state boards: Shots 1–2 ready, Shot 3 in the state, the rest waiting. */
-const one = (row: ShotRow): (ShotRow | null)[] => [...ready, row, ...rest(5)];
+const one = (row: ShotRow): (ShotRow | null)[] => [...ready, { reserved: 7, ...row }, ...rest(5)];
 
 async function settle(page: Page) {
   const collapse = page.getByTestId("agent-collapse");
@@ -78,6 +79,7 @@ test("render · make tiles", async ({ page }) => {
       for (const [i, id] of newest.entries()) await db.execute({ sql: "UPDATE generations SET status=?, stored_url=NULL, created_at=?, updated_at=? WHERE id=?", args: [i === 0 ? "running" : "queued", Date.now() - ages[i], Date.now(), id] });
     } finally { db.close(); }
   } finally { platform.close(); }
+  await mockMedia(page);
   await page.goto("/suites?view=make");
   await expect(page.getByTestId("v12-make-tile")).toHaveCount(6, { timeout: 90_000 });
   await expect(page.getByTestId("v12-make-tile-render")).toHaveCount(2, { timeout: 60_000 });

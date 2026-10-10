@@ -15,6 +15,9 @@ import { GRID_ACTIONS } from "@/lib/v12/board/grid";
 import { RejectPanel } from "./RejectPanel";
 import { RenderGather, RenderMoney, RenderOverlay } from "@/components/v12/render/RenderOverlay";
 import { useToast } from "@/components/v12/ui/Toast";
+import { useSession } from "@/lib/session";
+import { renderTakeOf } from "@/components/v12/make/use-results";
+import { fmtRenderPrice } from "@/lib/v12/renderState";
 import { useCancelTake, useRenderStates } from "@/components/v12/render/use-render";
 import type { Generation } from "@/lib/jobs";
 import { isVerifyCard } from "@/lib/workbench/verify";
@@ -174,8 +177,16 @@ function useGridRender(data: TakeCardData, ctx: BoardCtx) {
   return { state: state && (state.active || state.failed) ? state : null, landed, cancelling, genId: g?.id ?? null };
 }
 
+/** "Kling 3.0 · 7 cr": the engine a take was made on and, once it has settled, what it cost (the ledger's figure, in the workspace's unit). */
+function engineAndPrice(v: ShotVersion, dollars: boolean): string {
+  const g = v.entry.asset.origin === "generation" ? v.entry.asset.value : null;
+  const charged = g ? renderTakeOf(g, null, dollars).charged : null;
+  return [v.engine, charged && charged.amount > 0 ? fmtRenderPrice(charged) : null].filter(Boolean).join(" · ");
+}
+
 export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
   const { row } = data;
+  const dollars = useSession().rates.unit === "usd";
   const v = row.shown;
   const grid = useGridRender(data, ctx);
   const judging = Boolean(data.grid && v && judgeable(v) && !hasStatus(v) && !inFlight(v));
@@ -185,8 +196,8 @@ export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
       <div className="gx-take-media">
         <Picture version={v} frame={row.frame} name={row.title} />
         {v && !data.grid ? <Progress version={v} typicalMs={row.typicalMs} /> : null}
-        {grid.state ? <RenderOverlay state={grid.state} cancelling={grid.cancelling.busy === grid.genId}
-          onCancel={grid.state.cancel?.cancellable && grid.genId ? () => void grid.cancelling.cancel(grid.genId!, grid.state!.cancel!.via!, grid.state!.cancel!.toast) : undefined} /> : null}
+        {grid.state ? <RenderOverlay state={grid.state} cancelling={grid.cancelling.busy === grid.genId} pending={Boolean(grid.genId && grid.cancelling.pending.has(grid.genId))}
+          onCancel={grid.state.cancel?.cancellable && grid.genId ? () => void grid.cancelling.cancel(grid.genId!, grid.state!.cancel!.via!) : undefined} /> : null}
         {grid.landed ? <RenderGather /> : null}
         {row.anchor ? <span className="gx-take-tag" data-anchor={row.anchor === "anchor" || undefined} data-testid="take-anchor">{row.anchor === "anchor" ? "LOOK ANCHOR" : "FOLLOWS SHOT 1"}</span> : null}
         {v && v.media === "video" && judgeable(v) ? <span className="gx-take-play" aria-hidden="true">▶</span> : null}
@@ -194,7 +205,7 @@ export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
       </div>
       <div className="gx-take-foot">
         <div className="gx-take-name">{row.title}</div>
-        <div className="gx-take-line">{row.line}</div>
+        <div className="gx-take-line" data-testid={data.grid && v ? "take-engine-line" : undefined}>{data.grid && v ? engineAndPrice(v, dollars) : row.line}</div>
         {v && hasStatus(v) ? <StatusLine version={v} ctx={ctx} /> : null}
         {data.blocking ? <ShotBlockingStrip ctx={ctx} nodeId={row.nodeId} index={row.index} view={data.blocking} /> : null}
         {judging && v ? <GridActions row={row} version={v} ctx={ctx} /> : null}

@@ -12,10 +12,12 @@ import "./render.css";
  * Cancel is drawn only where the model says it bills nothing (a held take, one waiting in its provider's queue): never
  * on Preparing, Rendering or Saving, and Esc never reaches it. Reduced motion: still dots, no drift, no shimmer.
  */
-export function RenderOverlay({ state, onCancel, cancelling = false, gather = false }: {
+export function RenderOverlay({ state, onCancel, cancelling = false, pending = false, gather = false }: {
   state: RenderState;
   onCancel?: () => void;
   cancelling?: boolean;
+  /** A cancel was sent to the engine and is not confirmed: the take says so, and Cancel is not offered again. */
+  pending?: boolean;
   /** The take has just landed: the dots gather into the frame (about 0.6 s). */
   gather?: boolean;
 }) {
@@ -29,7 +31,8 @@ export function RenderOverlay({ state, onCancel, cancelling = false, gather = fa
       <div className="v12-rc-text" data-testid="v12-render-text">
         <div className="v12-rc-head">
           <span className="v12-rc-stage" data-tone={state.tone}><span className="v12-rc-dot" aria-hidden="true" /><span className="v12-rc-label" data-testid="v12-render-stage">{state.label}</span></span>
-          {cancel?.cancellable && onCancel ? (
+          {pending ? <span className="v12-rc-pending" title="The engine has the cancel. The take says what it cost once it answers." data-testid="v12-render-cancel-sent">Cancel sent</span>
+          : cancel?.cancellable && onCancel ? (
             <button type="button" className="v12-rc-cancel nodrag nopan" onClick={(e) => { e.stopPropagation(); onCancel(); }} onDoubleClick={(e) => e.stopPropagation()}
               disabled={cancelling} title={cancel.tooltip} aria-label={`Cancel. ${cancel.tooltip}`} data-testid="v12-render-cancel">Cancel</button>
           ) : null}

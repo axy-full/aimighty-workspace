@@ -68,7 +68,7 @@ const asPrice = (p: TrayJob["price"] | null | undefined): RenderPrice | null =>
   p && (p.unit === "cr" || p.unit === "usd") && Number.isFinite(p.amount) ? { amount: p.amount, unit: p.unit } : null;
 
 /** A take as the render-state model reads it (lib/v12/renderState.ts), from what the browser may see of it. */
-export function renderTakeOf(g: Generation, trayPrice: TrayJob["price"] | null | undefined, paysInDollars: boolean): RenderTake {
+export function renderTakeOf(g: Generation, trayPrice: TrayJob["price"] | null | undefined, paysInDollars: boolean, mayCancel?: boolean): RenderTake {
   const p = (g.params ?? {}) as Record<string, unknown>;
   const held = p.held && typeof p.held === "object" ? (p.held as RenderTake["held"]) : null;
   const facts = p.renderFacts && typeof p.renderFacts === "object" ? (p.renderFacts as { atProvider?: unknown; saving?: unknown }) : null;
@@ -81,6 +81,6 @@ export function renderTakeOf(g: Generation, trayPrice: TrayJob["price"] | null |
     /* The browser sees a provider's task id for Ark and fal takes; the server says the same for the rest, and whether the result is being saved (lib/v12/renderFacts.ts). */
     atProvider: Boolean(g.arkTaskId || (typeof p.falRequestId === "string" && p.falRequestId) || facts?.atProvider === true),
     saving: facts?.saving === true,
-    price: asPrice(trayPrice), charged, discarded: g.status === "cancelled" && p.discardedAt != null,
+    ...(mayCancel === undefined ? {} : { mayCancel }), price: asPrice(trayPrice), charged, discarded: g.status === "cancelled" && p.discardedAt != null,
   };
 }

@@ -29,3 +29,9 @@ export function boardRings(jobs: readonly TrayJob[], now: number): Map<string, B
     return [id, { pct, leftMs: e.left, count: e.pcts.length, words: `Rendering · ${fmtTimeLeft(e.left)}` }];
   }));
 }
+
+/** "about 2 min left" for a take the tray shows in flight, by the kind's typical time (the tray row does not name the engine); null once it is past it. */
+export function jobTimeLeft(job: Pick<TrayJob, "kind" | "createdAt">, now: number): string | null {
+  const left = defaultTypical(null, job.kind).highMs - Math.max(0, now - job.createdAt);
+  return left > 0 ? fmtTimeLeft(left) : null;
+}

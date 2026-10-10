@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openShotsBoard, BATCH_ROWS, landShot, type ShotRow } from "./helpers/shotsV12";
+import { openShotsBoard, BATCH_ROWS, HIGGS_QUEUED, landShot, type ShotRow } from "./helpers/shotsV12";
 
 /**
  * Render cards in the new interface (redesign P3; docs/redesign/inventory.md § 7, docs/redesign/cancel-billing.md, plan decisions
@@ -69,8 +69,26 @@ test.describe("desktop, switch on", () => {
     }
     await expect(shots(page).nth(3).getByTestId("v12-render-bar")).toHaveAttribute("data-hold", "");
 
-    /* Money, once per card, from the ledger's reservation or its own words: never a literal in the page's code. */
-    for (const n of [3, 4, 5, 6]) await expect(shots(page).nth(n).getByTestId("v12-render-money")).toHaveCount(1);
+    /* Money, once per card, from the ledger's own reservation (a meter row seeded for each take in flight): never a figure written in the page's code. */
+    for (const n of [3, 4, 5, 6]) {
+      await expect(shots(page).nth(n).getByTestId("v12-render-money")).toHaveCount(1);
+      await expect(shots(page).nth(n).getByTestId("v12-render-money")).toHaveText("7 cr held · charged only when it’s ready", { timeout: 60_000 });
+    }
+
+    /* The source stays visible under the dots: the shot's storyboard frame, blurred and dimmed, never a black box. */
+    for (const n of [3, 4, 5, 6, 7]) {
+      const img = shots(page).nth(n).locator(".gx-take-media img");
+      await expect(img).toHaveAttribute("src", /\/api\/media\/gframe\d/);
+      expect(await img.evaluate((el) => getComputedStyle(el).filter)).toMatch(/blur\(/);
+    }
+    /* Under each title, the engine (and, once settled, what it cost). */
+    await expect(shots(page).nth(0).getByTestId("take-engine-line")).toHaveText(/^Nano Banana/);
+    await expect(shots(page).nth(4).getByTestId("take-engine-line")).toHaveText(/^Kling 3\.0/);
+    /* The 3D blocking card is not a stray box under the grid: its way in is the board menu. */
+    await expect(page.locator('.bd-node[data-card-kind="blocking"]')).toHaveCount(0);
+    await page.getByTestId("v12-board-menu").click();
+    await expect(page.getByRole("menuitem", { name: "3D blocking" })).toBeVisible();
+    await page.keyboard.press("Escape");
 
     /* Particles never over text: the field and the text block never share a pixel. */
     for (const n of [3, 4, 5, 6, 7]) {
@@ -89,7 +107,9 @@ test.describe("desktop, switch on", () => {
     await expect(page.getByTestId("v12-toast")).toContainText("Cancelled · nothing billed · the frame stays", { timeout: 30_000 });
     await expect(page.getByTestId("v12-render-cancel")).toHaveCount(0, { timeout: 30_000 });
 
-    /* One size, 4 across, one gap: finished and rendering cards mix with no empty canvas. */
+    /* One size, 4 across, one gap: finished and rendering cards mix with no empty canvas (Atomik's dock folded: it opens itself again on its own). */
+    await closeDock(page);
+    await expect.poll(async () => new Set(await shots(page).evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().x)))).size).toBe(4);
     const b = await shots(page).evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), h: Math.round(r.height) }; }));
     expect(new Set(b.map((x) => x.h)).size).toBe(1);
     const ys = [...new Set(b.map((x) => x.y))].sort((p, q) => p - q);
@@ -124,6 +144,44 @@ test.describe("desktop, switch on", () => {
     await expect(failed.getByTestId("take-retry")).toBeVisible();
     await expect(failed.getByTestId("v12-render-field")).toHaveCount(0);
     await expect(failed.getByTestId("v12-render-cancel")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
+  test("Cancel at the provider says what happened and no more: sent is not cancelled, a lost answer claims nothing, and once sent it is not offered again", async ({ page }) => {
+    const answers: { status: number; body: Record<string, unknown> }[] = [];
+    let asked = 0;
+    await page.route("**/api/generations/*/cancel", (route) => { asked += 1; const a = answers.shift()!; return route.fulfill({ status: a.status, contentType: "application/json", body: JSON.stringify(a.body) }); });
+    const rows: (ShotRow | null)[] = [HIGGS_QUEUED, null, null, null, null, null, null, null];
+    const { errors } = await openShotsBoard(page, "/suites?view=board&stage=shots", { rows });
+    await expect(shots(page).first()).toBeVisible({ timeout: 90_000 });
+    await closeDock(page);
+    const cancel = shots(page).nth(0).getByTestId("v12-render-cancel");
+    await expect(cancel).toBeVisible({ timeout: 30_000 });
+    const toast = page.getByTestId("v12-toast");
+    const press = async (status: number, body: Record<string, unknown>, words: string | RegExp) => {
+      answers.push({ status, body });
+      const before = asked;
+      await cancel.click();
+      await expect.poll(() => asked).toBe(before + 1);
+      await expect(toast).toContainText(words, { timeout: 15_000 });
+      return (await toast.innerText()).trim();
+    };
+    /* Each answer in its own true words; none of them claims a billing it does not know. */
+    expect(await press(200, { status: "running" }, "It had already started, so it could not be cancelled.")).not.toMatch(/billed/i);
+    expect(await press(200, { status: "succeeded" }, "It had already finished, so it could not be cancelled.")).not.toMatch(/billed/i);
+    expect(await press(200, { status: "failed" }, "It had already stopped. The take says what it cost.")).not.toMatch(/billed|already started/i);
+    expect(await press(200, { status: "mystery" }, "The cancel could not be confirmed.")).not.toMatch(/nothing (was )?billed/i);
+    expect(await press(503, { error: "Cancellation could not be confirmed. The request remains tracked; refresh status before trying again." }, "Cancellation could not be confirmed.")).not.toMatch(/nothing (was )?billed/i);
+    expect(await press(500, {}, "The cancel could not be confirmed. Check the take before trying again")).not.toMatch(/nothing (was )?billed/i);
+    /* An already-cancelled take is cancelled: never "it had already started". */
+    const done = await press(200, { status: "cancelled" }, "Cancelled · nothing billed · the frame stays");
+    expect(done).not.toMatch(/already started/);
+    /* "Requested" is a cancel sent: the words say so, the take is not called cancelled, and Cancel is not offered again. */
+    const sent = await press(202, { status: "requested" }, "Cancel sent · nothing billed once the engine confirms");
+    expect(sent).not.toMatch(/^Cancelled/);
+    await expect(shots(page).nth(0).getByTestId("v12-render-cancel-sent")).toHaveText("Cancel sent");
+    await expect(cancel).toHaveCount(0);
+    expect(asked).toBe(8);
     expect(errors).toEqual([]);
   });
 
@@ -188,9 +246,13 @@ test.describe("desktop, switch on", () => {
     await expect(page.getByTestId("v12-notify-ask")).toHaveCount(0);
   });
 
-  test("switch off: today's cards, with none of it", async ({ page }) => {
+  test("switch off: today's cards, with none of it, and not one request of the new interface's", async ({ page }) => {
+    const asked: string[] = [];
+    page.on("request", (request) => { const path = new URL(request.url()).pathname; if (path.startsWith("/api/v12/")) asked.push(`${request.method()} ${path}`); });
     await openShotsBoard(page, "/suites?view=board", { on: false, rows: BATCH_ROWS });
     await expect(shots(page)).toHaveCount(8, { timeout: 90_000 });
+    await page.waitForTimeout(3_000);
+    expect(asked).toEqual([]);
     await expect(page.getByTestId("v12-render")).toHaveCount(0);
     await expect(page.getByTestId("v12-tab-ring")).toHaveCount(0);
   });
