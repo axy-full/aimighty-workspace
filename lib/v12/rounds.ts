@@ -118,3 +118,10 @@ export function whatChangedText(board: string, round: BoardRound, total?: number
   const rest = total != null && total > round.changes.length ? [`The other ${total - round.changes.length} shots are as you approved them.`] : [];
   return [`${board || "Board"} · R${round.n} · ${roundDate(round.at)}`, `What changed in round ${round.n}:`, ...lines, ...rest].join("\n");
 }
+
+/** The round a take of a shot belongs to: the newest round that changed this shot and began before the take was asked for. */
+export function takeRound(rounds: readonly BoardRound[] | undefined, shot: number, createdAt: number): number | null {
+  let found: number | null = null;
+  for (const r of rounds ?? []) if (createdAt >= r.at && r.changes.some((c) => c.shot === shot) && (found == null || r.n > found)) found = r.n;
+  return found;
+}

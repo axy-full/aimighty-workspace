@@ -1,5 +1,5 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Price, usePriceTitle } from "@/components/graphite/Price";
 import { useShell } from "@/lib/shell/state";
 import { spendAttrsOf } from "@/lib/spend";
@@ -9,6 +9,7 @@ import type { PlanData } from "./derive";
 import { publishPlanModel, setPlanStepsOpen } from "./ui";
 import { balanceLine, fixLine, type PlanModel, type PlanPrimary } from "./model";
 import { usePlan } from "./use-plan";
+import { ROUND_LINE, clientRoundModel, isClientRound } from "@/lib/v12/rounds";
 import { planLineKey, planMoneyState } from "./money-state";
 import { MoneyActions, MoneyLine, PausedBody, useMoveOffer, usePlanBudget, usePlanBudgetLine, useTopUpLabel } from "./MoneyStates";
 import "./plan.css";
@@ -26,7 +27,11 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   const plan = usePlan(ctx, data.run, readOnly);
   const shell = useShell();
   const open = data.open;
-  const model = data.sample ?? plan.model;
+  /* A client's reply asked of Atomik (lib/v12/rounds.ts): the same plan at the same prices, in a round's words, with the one approval "Approve all". */
+  const round = isClientRound(data.run?.goal);
+  const goal = data.run?.goal ?? "";
+  const planned = data.sample ?? plan.model;
+  const model = useMemo(() => (planned && round ? clientRoundModel(planned, goal) : planned), [planned, round, goal]);
   const runId = data.run?.id ?? "sample";
   /* The money states (./money-state.ts): read only what the state at hand needs. The sample has none. */
   const live = Boolean(data.run) && !data.sample;
@@ -39,14 +44,14 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   useEffect(() => { publishPlanModel(runId, model); }, [runId, model]);
   if (!model) return null;
   const proposal = model.phase === "proposal";
-  const lines = [proposal ? model.totalLine : null, fixLine(model), proposal && money?.kind !== "short" ? balanceLine(model) : null].filter(Boolean).join(" · ");
+  const lines = [round && proposal ? ROUND_LINE : null, proposal ? model.totalLine : null, fixLine(model), proposal && money?.kind !== "short" ? balanceLine(model) : null].filter(Boolean).join(" · ");
   /* At the plan gate the steps are shown at once: they are what the one approval covers. */
   const gate = model.primary?.kind === "plan" && model.runId !== "sample";
   const short = model.balance?.short != null && proposal && !money;
   const paused = money?.kind === "paused" ? money : null;
   const acting = money && money.kind !== "failed" && !(proposal && plan.held);
   return (
-    <article className="gx-plan" data-phase={model.phase} data-money={money?.kind} data-testid="board-plan" aria-label={paused?.title ?? model.title}>
+    <article className="gx-plan" data-phase={model.phase} data-round={round || undefined} data-money={money?.kind} data-testid="board-plan" aria-label={paused?.title ?? model.title}>
       <div className="gx-plan-head">
         <div className="gx-plan-title">{paused?.title ?? model.title}</div>
         {paused ? <div className="gx-plan-line" data-testid="board-plan-line">{paused.sub}</div>

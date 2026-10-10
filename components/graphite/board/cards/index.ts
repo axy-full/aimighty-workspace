@@ -3,6 +3,7 @@ import { boardCards } from "./set-board";
 import { planCards } from "./set-plan";
 import { shotCards } from "./set-shots";
 import { gapCardsA } from "./set-gaps-a";
+import { roundCards } from "@/components/v12/rounds/RoundCard";
 import { cardDef, type CardDef, type CardSet } from "./types";
 
 export { defineCard, cardDef } from "./types";
@@ -22,7 +23,7 @@ export type { AnyCardDef, BoardCtx, BoardDrop, BoardKindModule, CardDef, CardPro
  * Studio's own sets: stream 4's plan cards (questions, doc, looks, storyboard,
  * plan) and stream 5's shot cards (group, take, cast, cut, deliver).
  */
-export const STUDIO_SETS: readonly CardSet[] = [planCards, shotCards, gapCardsA];
+export const STUDIO_SETS: readonly CardSet[] = [planCards, shotCards, gapCardsA, roundCards];
 
 export type Registry = {
   defs: ReadonlyMap<string, CardDef<unknown>>;
