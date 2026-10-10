@@ -29,7 +29,7 @@ const stop = (e: MouseEvent) => e.stopPropagation();
  * on the card (an indeterminate bar: no engine reports a percentage, so none is claimed) and lands as the frame's next version, v2,
  * with v1 kept; the chips pick which version the frame shows (free).
  */
-export function FrameCard({ data, ctx, selected }: CardProps<FrameData>) {
+export function FrameCard({ card, data, ctx, selected }: CardProps<FrameData>) {
   const seam = { scope: ctx.scope, project: ctx.project, apply: ctx.rig.apply, save: ctx.rig.save };
   const errors = useFramePoller(seam, data.shotId);
   const { lines } = data;
@@ -67,12 +67,14 @@ export function FrameCard({ data, ctx, selected }: CardProps<FrameData>) {
     void ctx.rig.save();
   };
   const current = lines.versions.find((v) => v.genId === data.genId) ?? null;
-  const showLines = Boolean(data.genId) && (lines.offer || lines.running || lines.versions.length > 1);
-  return (
-    <FrameTile name={data.name} line={data.line} genId={data.genId} aspect={ctx.project.aspect} rendering={data.rendering}
-      empty={errors[data.shotId] ?? "No frame yet"} testId="board-frame"
-      badge={current && lines.versions.length > 1 ? { text: `V${current.n}`, tone: "dark" } : null}>
-      {showLines ? (
+  /* On the new interface's grid a frame is calm until it is selected: its line drawings offer and ⓘ Details show on the selected card, one row. */
+  const idle = !lines.running && lines.versions.length <= 1;
+  const showLines = Boolean(data.genId) && (lines.offer || lines.running || lines.versions.length > 1) && (!data.grid || selected || !idle);
+  const details = data.grid && selected ? (
+    <button type="button" className="gx-ln-btn gx-frame-details nodrag nopan" title="Details · i — The words this frame is drawn from."
+      onClick={(e) => { e.stopPropagation(); ctx.openInspector(card.id); }} onDoubleClick={stop} data-testid="frame-details">ⓘ Details</button>
+  ) : null;
+  const linesBlock = showLines ? (
         <div className="gx-ln" data-testid="frame-lines" data-phase={lines.running ? "running" : lines.versions.length > 1 ? "done" : "idle"} onDoubleClick={stop}>
           {lines.running ? (
             <>
@@ -101,7 +103,7 @@ export function FrameCard({ data, ctx, selected }: CardProps<FrameData>) {
             </>
           ) : (
             <div className="gx-ln-row">
-              <button type="button" className="gx-ln-btn nodrag nopan" data-primary={selected || undefined} title={ownTitle ?? blocked ?? (draw.pricing === "error" ? "The price could not be read." : undefined)} aria-busy={draw.busy || undefined}
+              <button type="button" className="gx-ln-btn nodrag nopan" data-primary={(selected && !data.grid) || undefined} title={ownTitle ?? blocked ?? (draw.pricing === "error" ? "The price could not be read." : undefined)} aria-busy={draw.busy || undefined}
                 {...spendAttrsOf(draw.own)} disabled={Boolean(blocked) || draw.busy || !draw.own}
                 onClick={(e) => { e.stopPropagation(); void draw.send([data.shotId]); }} onDoubleClick={stop} data-testid="frame-lines-go">
                 {own ? `${verb} · ${own}` : verb}
@@ -110,7 +112,12 @@ export function FrameCard({ data, ctx, selected }: CardProps<FrameData>) {
             </div>
           )}
         </div>
-      ) : null}
+      ) : null;
+  return (
+    <FrameTile name={data.name} line={data.line} genId={data.genId} aspect={ctx.project.aspect} rendering={data.rendering}
+      empty={errors[data.shotId] ?? "No frame yet"} testId="board-frame"
+      badge={current && lines.versions.length > 1 ? { text: `V${current.n}`, tone: "dark" } : null}>
+      {data.grid ? (linesBlock || details ? <div className="gx-frame-acts" data-testid="frame-grid-actions">{linesBlock}{details}</div> : null) : linesBlock}
     </FrameTile>
   );
 }

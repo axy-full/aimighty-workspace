@@ -40,6 +40,9 @@
   border-radius: 8px; border: 1px solid var(--gx-btn-border); font-size: 13px; font-weight: 500; color: var(--gx-text);
 }
 .v12-bar-chip-picked { background: var(--gx-seg-on); border-color: transparent; padding-left: 4px; }
+/* A board's selection (prototype L357: "Shot 4 ×", blue tint). */
+.v12-bar-chip-selection { background: var(--gx-tint); border-color: var(--gx-tint-border); color: var(--gx-accent-text); font-weight: 600; }
+.v12-bar-chip-selection .v12-bar-chip-x { color: var(--gx-accent-text); }
 .v12-bar-chip-thumb { width: 24px; height: 24px; border-radius: 5px; object-fit: cover; display: block; flex: none; }
 .v12-bar-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v12-bar-chip-x {

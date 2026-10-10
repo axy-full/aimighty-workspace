@@ -11,6 +11,7 @@ import { sendReference } from "@/lib/shell/reference-inbox";
 import { useStageQuotes } from "@/lib/production/use-stage-quotes";
 import { askChange } from "../../inspector/change-intent";
 import { editQuoteBody } from "../../inspector/inspector-model";
+import { GRID_ACTIONS } from "@/lib/v12/board/grid";
 import { RejectPanel } from "./RejectPanel";
 import { isVerifyCard } from "@/lib/workbench/verify";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
@@ -113,11 +114,41 @@ function StatusLine({ version, ctx }: { version: ShotVersion; ctx: BoardCtx }) {
 
 const hasStatus = (v: ShotVersion | null) => Boolean(v && (v.status === "failed" || v.status === "held" || v.status === "changes"));
 
+/**
+ * The new interface's shot card, Approve · Reject (prototype L576; docs/redesign/inventory.md § 6.6): a finished take is judged on
+ * its card, by the same paths as the review card and the Inspector (use-judge: free, a person's call). Reject asks why, as it
+ * always has: the reason covers the card while it is asked.
+ */
+function GridActions({ row, version, ctx }: { row: ShotTakes; version: ShotVersion; ctx: BoardCtx }) {
+  const judge = useJudge(ctx.scope, ctx.project.id, ctx.toast);
+  const [rejecting, setRejecting] = useState(false);
+  const off = ctx.offline || Boolean(judge.busy);
+  const approved = version.status === "approved";
+  const rejected = version.status === "changes";
+  return (
+    <>
+      <div className="gx-take-grid-acts" data-testid="take-grid-actions">
+        <Btn className="gx-take-btn--hot" disabled={off || approved} title={ctx.offline ? "Needs a connection" : "Approve · A — Mark this take as good; the next step can use it. Free."}
+          onClick={(e) => { e.stopPropagation(); void judge.approve(row, version); }} data-testid="take-approve">{approved ? "Approved" : "Approve"}</Btn>
+        <Btn disabled={off || rejected} title={ctx.offline ? "Needs a connection" : "Reject — Say what is wrong; nothing more is spent."}
+          onClick={(e) => { e.stopPropagation(); setRejecting(true); }} aria-expanded={rejecting} data-testid="take-reject">{rejected ? "Rejected" : "Reject"}</Btn>
+      </div>
+      {rejecting ? (
+        <div className="gx-take-grid-reject">
+          <RejectPanel busy={Boolean(judge.busy)} onCancel={() => setRejecting(false)}
+            onReject={(reason) => { void judge.reject(row, version, reason).then((ok) => { if (ok) setRejecting(false); }); }} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
   const { row } = data;
   const v = row.shown;
+  const judging = Boolean(data.grid && v && judgeable(v) && !hasStatus(v) && !inFlight(v));
   return (
-    <article className="gx-take" style={{ "--gx-take-well": `${wellHeight(340, ctx.project.aspect)}px` } as CSSProperties} data-status={v?.status ?? "empty"} data-dim={v?.status === "changes" || undefined}
+    <article className="gx-take" style={{ "--gx-take-well": `${wellHeight(data.grid ? 260 : 340, ctx.project.aspect)}px` } as CSSProperties} data-status={v?.status ?? "empty"} data-dim={v?.status === "changes" || undefined}
       aria-label={[row.title, v ? `${v.label}` : "no take yet", v && needsReview(v) ? "needs review" : null].filter(Boolean).join(" · ")} data-testid="take-card" data-node={row.nodeId}>
       <div className="gx-take-media">
         <Picture version={v} frame={row.frame} name={row.title} />
@@ -131,6 +162,7 @@ export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
         <div className="gx-take-line">{row.line}</div>
         {v && hasStatus(v) ? <StatusLine version={v} ctx={ctx} /> : null}
         {data.blocking ? <ShotBlockingStrip ctx={ctx} nodeId={row.nodeId} index={row.index} view={data.blocking} /> : null}
+        {judging && v ? <GridActions row={row} version={v} ctx={ctx} /> : null}
       </div>
     </article>
   );
@@ -238,6 +270,11 @@ const FOOT = 73;
 const STATUS = 40;
 /** The row under the note: Change with words, Use as reference, Versions (8 gap + 28 button). */
 const MORE = 36;
+
+/** A shot card on the new interface's grid: 260 wide, its picture at the board's aspect, the name and line, and the row Approve · Reject (or a status) takes. */
+export function gridTakeHeight(data: TakeCardData, aspect: string): number {
+  return wellHeight(260, aspect) + FOOT + GRID_ACTIONS + (data.blocking ? STRIP_HEIGHT : 0);
+}
 
 export const takeDef = defineCard<TakeCardData>({
   kind: "take",
