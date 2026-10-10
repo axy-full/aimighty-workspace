@@ -214,7 +214,7 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
         <div className="v12-rig-inner" ref={inner}>
           <svg className="v12-rig-edges" aria-hidden="true">
             {lines.map((l) => (
-              <path key={l.key} d={l.d} className="v12-rig-edge" data-picked={l.picked || undefined} data-testid="v12-rig-edge"
+              <path key={l.key} d={l.d} className="v12-rig-edge" data-picked={l.picked ? "" : undefined} data-testid="v12-rig-edge"
                 onClick={() => { const [i, s] = l.key.split(">"); setPick({ kind: "edge", input: i, shot: s }); }} />
             ))}
           </svg>
@@ -247,7 +247,7 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
               {model.shots.map((s) => {
                 const expanded = open === s.nodeId;
                 return (
-                  <div key={s.nodeId} ref={ref(`s:${s.nodeId}`)} role="button" tabIndex={0} className="v12-rig-node v12-rig-shot" data-testid="v12-rig-shot" data-id={s.nodeId} data-state={s.state} data-expanded={expanded || undefined}
+                  <div key={s.nodeId} ref={ref(`s:${s.nodeId}`)} role="button" tabIndex={0} className="v12-rig-node v12-rig-shot" data-testid="v12-rig-shot" data-id={s.nodeId} data-state={s.state} data-expanded={expanded ? "" : undefined}
                     data-selected={pick?.kind === "shot" && pick.id === s.nodeId ? "" : undefined} data-dim={pick && !lit.has(`s:${s.nodeId}`) ? "" : undefined} data-over={over === s.nodeId ? "" : undefined}
                     onClick={(e) => { e.stopPropagation(); setPick(pick?.kind === "shot" && pick.id === s.nodeId ? null : { kind: "shot", id: s.nodeId }); }}
                     onDoubleClick={(e) => { e.stopPropagation(); setOpen(expanded ? null : s.nodeId); }}
