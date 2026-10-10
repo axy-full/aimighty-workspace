@@ -67,7 +67,8 @@ test.describe("desktop, switch on", () => {
     const plan = page.locator('[data-card-id="plan:run"]').getByTestId("board-plan");
     await expect(plan).toBeVisible({ timeout: 90_000 });
     await expect(plan).toContainText("Client round");
-    await expect(plan).toContainText("The rest stay approved. Results land as Round 2 with a What changed list.");
+    /* No step is one of the client's shots here, so the card does not promise a round's list. */
+    await expect(plan).not.toContainText("The rest stay approved");
     await expect(page.getByTestId("v12-round-badge")).toHaveCount(0);
     /* Building the board is free; then the server prices every render and the card is the plan gate. */
     await plan.getByTestId("board-plan-primary").click();
@@ -129,7 +130,7 @@ test.describe("desktop, switch on", () => {
     await expect(changed).toContainText("3 shots redrawn in Round 2; the other 5 are untouched. R1 is kept.");
     await changed.getByTestId("v12-round-copy-card").click();
     const first = (await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied))[0];
-    expect(first).toMatch(/^Harbour film · R2 · \d{1,2} \w{3} \d{4}\nWhat changed in round 2:\n• Shot 2: Wide\n• Shot 4: .+\n• Shot 7: .+\nThe other 5 shots are as you approved them\.$/);
+    expect(first).toMatch(/^Harbour film · R2 · \d{1,2} \w{3} \d{4}\nWhat changed in round 2:\n• Shot 2: Wide\n• Shot 4: .+\n• Shot 7: .+\nThe other 5 shots are unchanged\.$/);
 
     await page.getByTestId("v12-stage-rail").getByText("Cut", { exact: true }).click();
     await page.locator('[data-card-id="round:cut"]').getByTestId("v12-round-compare").click();
@@ -178,9 +179,12 @@ test.describe("desktop, switch on", () => {
   });
 
   test("switch off: today's board, with no round and no bar", async ({ page }) => {
-    await openShotsBoard(page, "/suites?view=board", { on: false });
+    /* Even a draft that holds a round (saved on the new interface) shows none of it on today's board. */
+    await openShotsBoard(page, "/suites?view=board", { on: false, round: true, rows: ROUND_ROWS });
     await expect(shots(page)).toHaveCount(8, { timeout: 90_000 });
     await expect(page.getByTestId("v12-round-badge")).toHaveCount(0);
+    await expect(page.getByTestId("v12-round-card")).toHaveCount(0);
+    await expect(page.getByText(/Compare R1 \/ R2|Share round|what changed/i)).toHaveCount(0);
     await expect(page.getByTestId("v12-board-bar")).toHaveCount(0);
   });
 });
@@ -188,9 +192,10 @@ test.describe("desktop, switch on", () => {
 test.describe("phones, switch on", () => {
   test.beforeEach(({}, info) => test.skip(!PHONE.includes(info.project.name), "phone sizes"));
   test("today's phone board: no round, no bar, no sideways scroll", async ({ page }) => {
-    const { errors } = await openShotsBoard(page, "/suites?view=board");
+    const { errors } = await openShotsBoard(page, "/suites?view=board", { round: true, rows: ROUND_ROWS });
     await expect(page.locator("[data-phone], [data-testid='phone-app']").first()).toBeVisible({ timeout: 90_000 });
     await expect(page.getByTestId("v12-round-badge")).toHaveCount(0);
+    await expect(page.getByTestId("v12-round-card")).toHaveCount(0);
     expect(await noSideways(page)).toBe(true);
     expect(errors).toEqual([]);
   });

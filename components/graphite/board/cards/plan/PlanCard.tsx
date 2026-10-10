@@ -9,7 +9,7 @@ import type { PlanData } from "./derive";
 import { publishPlanModel, setPlanStepsOpen } from "./ui";
 import { balanceLine, fixLine, type PlanModel, type PlanPrimary } from "./model";
 import { usePlan } from "./use-plan";
-import { ROUND_LINE, clientRoundModel, shotOfNodeMap, showsRound } from "@/lib/v12/rounds";
+import { cleanRounds, clientRoundModel, nextRoundNumber, roundChanges, roundLine, shotOfNodeMap, showsRound } from "@/lib/v12/rounds";
 import { shotTakes } from "../take/take-model";
 import { useNewInterface } from "@/lib/session";
 import { planLineKey, planMoneyState } from "./money-state";
@@ -34,7 +34,10 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   const goal = data.run?.goal ?? "";
   const planned = data.sample ?? plan.model;
   const shots = useMemo(() => (round ? shotOfNodeMap(shotTakes(ctx.project, [])) : null), [round, ctx.project]);
-  const model = useMemo(() => (planned && round && shots ? clientRoundModel(planned, goal, shots) : planned), [planned, round, goal, shots]);
+  /* The round this run is: the one it has already been kept as, else the board's next. */
+  const roundN = useMemo(() => { const kept = cleanRounds(ctx.project.boardRounds); return kept.find((r) => r.runId === (data.run?.id ?? ""))?.n ?? nextRoundNumber(kept); }, [ctx.project.boardRounds, data.run?.id]);
+  const model = useMemo(() => (planned && round && shots ? clientRoundModel(planned, goal, shots, roundN) : planned), [planned, round, goal, shots, roundN]);
+  const askedShots = useMemo(() => (planned && round && shots ? roundChanges(planned, goal, shots) : 0), [planned, round, goal, shots]);
   const runId = data.run?.id ?? "sample";
   /* The money states (./money-state.ts): read only what the state at hand needs. The sample has none. */
   const live = Boolean(data.run) && !data.sample;
@@ -47,7 +50,7 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   useEffect(() => { publishPlanModel(runId, model); }, [runId, model]);
   if (!model) return null;
   const proposal = model.phase === "proposal";
-  const lines = [round && proposal ? ROUND_LINE : null, proposal ? model.totalLine : null, fixLine(model), proposal && money?.kind !== "short" ? balanceLine(model) : null].filter(Boolean).join(" · ");
+  const lines = [round && proposal && askedShots > 0 ? roundLine(roundN) : null, proposal ? model.totalLine : null, fixLine(model), proposal && money?.kind !== "short" ? balanceLine(model) : null].filter(Boolean).join(" · ");
   /* At the plan gate the steps are shown at once: they are what the one approval covers. */
   const gate = model.primary?.kind === "plan" && model.runId !== "sample";
   const short = model.balance?.short != null && proposal && !money;

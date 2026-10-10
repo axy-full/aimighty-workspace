@@ -73,7 +73,7 @@ export const shotOfStep = (step: { nodeId: string | null }, shots: ShotOfNode): 
  * The plan as a client round: the same plan, steps and prices as the server quoted them, in a round's words. "Client round ·
  * 3 changes", a step per shot with what the client asked, and the one approval "Approve all · N cr".
  */
-export function clientRoundModel(model: PlanModel, goal: string, shots: ShotOfNode): PlanModel {
+export function clientRoundModel(model: PlanModel, goal: string, shots: ShotOfNode, round = 2): PlanModel {
   const asked = new Map(parseFeedback(feedbackOf(goal)).map((c) => [c.shot, c.text]));
   let changes = 0;
   /* Atomik's own step title stays as it is. What the client asked for that shot is put beside it, and only for a step whose
@@ -85,12 +85,19 @@ export function clientRoundModel(model: PlanModel, goal: string, shots: ShotOfNo
     changes += 1;
     return { ...step, meta: [`Asked: “${text}”`, step.meta].filter(Boolean).join(" · ") };
   });
-  const title = model.phase === "proposal" || model.phase === "planning" ? "Client round" : "Round 2";
+  const title = model.phase === "proposal" || model.phase === "planning" ? "Client round" : `Round ${round}`;
   const primary = model.primary && model.primary.kind === "plan" ? { ...model.primary, label: model.primary.label.replace(/^Approve\b/, "Approve all") } : model.primary;
   return { ...model, title: changes ? `${title} · ${changes} ${changes === 1 ? "change" : "changes"}` : title, steps, primary };
 }
 
-export const ROUND_LINE = "The rest stay approved. Results land as Round 2 with a What changed list.";
+/** How many of the plan's steps are shots the client asked about (the "N changes" in the title). */
+export const roundChanges = (model: PlanModel, goal: string, shots: ShotOfNode): number =>
+  model.steps.filter((step) => { const shot = shotOfStep(step, shots); return shot != null && parseFeedback(feedbackOf(goal)).some((c) => c.shot === shot); }).length;
+
+/** The number the next client round takes: the board as first made is round 1. */
+export const nextRoundNumber = (rounds: readonly BoardRound[] | undefined): number => Math.min(ROUND_LIMITS.n, Math.max(1, ...(rounds ?? []).map((r) => r.n)) + 1);
+
+export const roundLine = (round: number): string => `The rest stay approved. Results land as Round ${round} with a What changed list.`;
 
 /** What the draft's schema takes (lib/workbench/studio-schema.ts › boardRounds): text, changes per round, rounds kept. */
 export const ROUND_LIMITS = { text: 200, changes: 60, rounds: 20, n: 99, before: 100 } as const;
@@ -114,7 +121,7 @@ export function roundOf(args: { runId: string; goal: string; steps: readonly { n
   changes.sort((a, b) => a.shot - b.shot);
   const kept = changes.slice(0, ROUND_LIMITS.changes);
   const before = Object.fromEntries(kept.flatMap((c) => (args.before[String(c.shot)] ? [[String(c.shot), args.before[String(c.shot)].slice(0, ROUND_LIMITS.before)]] : [])));
-  return { n: Math.min(ROUND_LIMITS.n, Math.max(1, ...args.rounds.map((r) => r.n)) + 1), runId: args.runId, at: args.at, changes: kept, before };
+  return { n: nextRoundNumber(args.rounds), runId: args.runId, at: args.at, changes: kept, before };
 }
 
 /** The rounds as the draft keeps them, newest last, at most twenty: what a new round is added to. */
@@ -152,7 +159,7 @@ export const roundBadge = (round: BoardRound): string => `Round ${round.n} · ${
 /** The what-changed list as words to paste into WhatsApp or an email: "Board · R2 · 9 Oct 2026", then a line per change. */
 export function whatChangedText(board: string, round: BoardRound, total?: number): string {
   const lines = round.changes.map((c) => `• Shot ${c.shot}: ${c.text}`);
-  const rest = total != null && total > round.changes.length ? [`The other ${total - round.changes.length} shots are as you approved them.`] : [];
+  const rest = total != null && total > round.changes.length ? [`The other ${total - round.changes.length} shots are unchanged.`] : [];
   return [`${board || "Board"} · R${round.n} · ${roundDate(round.at)}`, `What changed in round ${round.n}:`, ...lines, ...rest].join("\n");
 }
 

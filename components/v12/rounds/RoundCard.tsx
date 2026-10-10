@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Dialog } from "@/components/v12/ui/Dialog";
 import { defineCard, type CardProps, type CardSet } from "@/components/graphite/board/cards/types";
-import { roundDate, ROUND_LINE } from "@/lib/v12/rounds";
+import { roundDate } from "@/lib/v12/rounds";
 import { deriveRounds, type CompareShot, type RoundCardData } from "./round-derive";
 import { useCopyWhatChanged } from "./RoundBadge";
 import "./rounds.css";
@@ -45,7 +45,7 @@ function Compare({ open, onClose, data }: { open: boolean; onClose: () => void; 
         {one ? (
           <div className="v12-rd-sides">
             <Side label="R1" side={one.r1} empty="The take before the round is not kept for this shot." />
-            <Side label={`R${data.round.n} · ${roundDate(data.round.at)}${one.r2 ? "" : " · not ready yet"}`} side={one.r2} empty="Round 2 for this shot is still being made." />
+            <Side label={`R${data.round.n} · ${roundDate(data.round.at)}${one.r2 ? "" : " · not ready yet"}`} side={one.r2} empty={`Round ${data.round.n} for this shot is still being made.`} />
           </div>
         ) : null}
       </div>
@@ -72,7 +72,7 @@ export function RoundCard({ data }: CardProps<RoundCardData>) {
           <div className="v12-rd-list">
             {data.round.changes.map((c) => <div key={c.shot} className="v12-rd-row" data-testid="v12-round-line"><span className="v12-rd-num">{c.shot}</span><span>Shot {c.shot}: {c.text}</span></div>)}
           </div>
-          <p className="v12-rd-body">{n} {n === 1 ? "shot" : "shots"} redrawn in Round {data.round.n}{rest ? `; the other ${rest} ${rest === 1 ? "is" : "are"} untouched` : ""}. R1 is kept.</p>
+          <p className="v12-rd-body">{n} {n === 1 ? "shot" : "shots"} {data.ready ? "redrawn" : "being redrawn"} in Round {data.round.n}{rest ? `; the other ${rest} ${rest === 1 ? "is" : "are"} untouched` : ""}. R1 is kept.</p>
         </>
       ) : <p className="v12-rd-body">{data.variant === "cut" ? `${n} ${n === 1 ? "shot" : "shots"} to compare: ${data.round.changes.map((c) => `Shot ${c.shot}`).join(", ")}.` : `The words for the client: what changed in round ${data.round.n}, ready to paste.`}</p>}
       <div className="v12-rd-acts">
@@ -92,4 +92,3 @@ const roundDef = defineCard<RoundCardData>({
 });
 
 export const roundCards: CardSet = { id: "rounds", defs: [roundDef], derive: (src) => deriveRounds(src) };
-export { ROUND_LINE };

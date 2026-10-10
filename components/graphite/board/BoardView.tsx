@@ -56,6 +56,7 @@ import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
 import { stageLimit, addStage, currentStage, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
+import { roundCardsFor } from "@/components/v12/rounds/round-derive";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
 import { useRecordRound } from "@/components/v12/rounds/use-round";
@@ -164,9 +165,10 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* What Make filed while this board was open (the "Made in Make" band; session only, never saved). */
   const [madeNow, setMadeNow] = useState<{ projectId: string; nodeId: string }[]>([]);
   const madeHere = useMemo<MadeEntry[]>(() => madeNow.filter((m) => m.projectId === project?.id).map((m) => ({ nodeId: m.nodeId })), [madeNow, project?.id]);
-  const allCards = useMemo(() => (src ? [...registry.derive(src), ...madeCards(src, madeHere)] : []), [madeHere, registry, src]);
   /* The new interface (docs/redesign-plan.md P2-a): one stage at a time, each a slice of today's cards (lib/v12/board/stages.ts). */
   const v12Frame = v12 && !compact;
+  /* A client round's cards (redesign P2-c) belong to the new frame alone: today's board, and the compact one, never show them. */
+  const allCards = useMemo(() => (src ? [...roundCardsFor(registry.derive(src), v12Frame), ...madeCards(src, madeHere)] : []), [madeHere, registry, src, v12Frame]);
   const savedStages = project?.boardStages;
   /* The kind a person sees (Film, Pre-vis, Campaign, Social · narrated or clips) sits over today's three board kinds. */
   const flavor = flavorOf(kind, project?.boardFlavor);

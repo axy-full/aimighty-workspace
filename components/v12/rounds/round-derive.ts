@@ -6,7 +6,7 @@ import { cleanRounds, latestRound, type BoardRound } from "@/lib/v12/rounds";
 export type CompareSide = { genId: string; url: string; media: "image" | "video"; label: string; engine: string; at: number };
 export type CompareShot = { shot: number; title: string; r1: CompareSide | null; r2: CompareSide | null };
 export type RoundVariant = "changed" | "cut" | "deliver";
-export type RoundCardData = { variant: RoundVariant; round: BoardRound; board: string; shots: number; compare: CompareShot[] };
+export type RoundCardData = { variant: RoundVariant; round: BoardRound; board: string; shots: number; compare: CompareShot[]; /** Every changed shot has its Round take: until then the shots are being redrawn. */ ready: boolean };
 
 const sideOf = (v: ShotVersion | undefined): CompareSide | null =>
   v && v.url && (v.media === "image" || v.media === "video") ? { genId: v.genId, url: v.url, media: v.media, label: v.label, engine: v.engine, at: v.createdAt } : null;
@@ -27,9 +27,12 @@ export function deriveRounds(src: Pick<BoardSource, "kind" | "project" | "librar
     const later = row?.versions.filter((v) => isFinished(v) && v.createdAt >= round.at).at(-1);
     return { shot: c.shot, title: row ? row.title : `Shot ${c.shot}`, r1: sideOf(first), r2: sideOf(later) };
   });
-  const base = { round, board: src.project.name, shots: rows.length, compare };
+  const base = { round, board: src.project.name, shots: rows.length, compare, ready: compare.every((c) => c.r2 != null) };
   const card = (variant: RoundVariant, region: "storyboard" | "cut" | "deliver"): BoardCard => ({
     id: `round:${variant}`, kind: "round", region, order: 9500, state: "done", data: { variant, ...base } satisfies RoundCardData,
   });
   return [card("changed", "storyboard"), card("cut", "cut"), card("deliver", "deliver")];
 }
+
+/** A client round's cards belong to the new frame alone: on today's board (the switch off, or the compact one) they are dropped. */
+export const roundCardsFor = (cards: readonly BoardCard[], v12Frame: boolean): BoardCard[] => (v12Frame ? [...cards] : cards.filter((c) => c.kind !== "round"));

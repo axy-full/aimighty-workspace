@@ -1,10 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { newProject } from "../../lib/workbench/studio";
-import { deriveRounds } from "../../components/v12/rounds/round-derive";
+import { deriveRounds, roundCardsFor } from "../../components/v12/rounds/round-derive";
 import type { PlanModel } from "../../components/graphite/board/cards/plan/model";
 import {
-  CLIENT_MARK, ROUND_LIMITS, cleanRounds, withRound, shotOfNodeMap, shotOfStep, showsRound, clientRoundGoal, clientRoundModel, feedbackOf, hasRound, isClientRound, latestRound, looksLikeClientFeedback, parseFeedback, roundBadge, roundDate, roundOf,
+  CLIENT_MARK, ROUND_LIMITS, cleanRounds, withRound, nextRoundNumber, roundChanges, roundLine, shotOfNodeMap, shotOfStep, showsRound, clientRoundGoal, clientRoundModel, feedbackOf, hasRound, isClientRound, latestRound, looksLikeClientFeedback, parseFeedback, roundBadge, roundDate, roundOf,
   whatChangedText, type BoardRound,
 } from "../../lib/v12/rounds";
 
@@ -60,6 +60,11 @@ test("the plan reads as a client round: a step per shot with what was asked, and
   expect(out.steps[0]).toMatchObject({ price: null, state: "proposed" });
   expect(clientRoundModel(model({ steps: model().steps.slice(0, 1) }), clientRoundGoal(REPLY), SHOTS).title).toBe("Client round · 1 change");
   expect(clientRoundModel(model({ phase: "working" }), clientRoundGoal(REPLY), SHOTS).title).toBe("Round 2 · 3 changes");
+  /* The round's number is the board's next, not always 2; and the plan counts the shots the client asked about. */
+  expect(clientRoundModel(model({ phase: "working" }), clientRoundGoal(REPLY), SHOTS, 4).title).toBe("Round 4 · 3 changes");
+  expect(roundChanges(model(), clientRoundGoal(REPLY), SHOTS)).toBe(3);
+  expect(roundChanges(model(), clientRoundGoal(REPLY), shotOfNodeMap([]))).toBe(0);
+  expect(roundLine(4)).toBe("The rest stay approved. Results land as Round 4 with a What changed list.");
 });
 
 test("a step is matched to a shot by its card, never by its title or its place in the list; 'N changes' counts changes", () => {
@@ -108,6 +113,13 @@ test("a recorded round never makes the board unsavable: text, changes and rounds
   expect(cleanRounds("nonsense")).toEqual([]);
 });
 
+test("the next round takes the next number", () => {
+  const r = (n: number): BoardRound => ({ n, runId: `r${n}`, at: 1, changes: [], before: {} });
+  expect(nextRoundNumber(undefined)).toBe(2);
+  expect(nextRoundNumber([r(2), r(3)])).toBe(4);
+  expect(nextRoundNumber([r(99)])).toBe(99);
+});
+
 test("the approved plan makes round 2, with what each shot had before; the next is round 3", () => {
   const at = Date.UTC(2026, 9, 9, 10, 40);
   const r2 = roundOf({ runId: "run-1", goal: clientRoundGoal(REPLY), steps: [7, 2, 4].map((n) => ({ nodeId: `card-${n}`, title: `Redo ${n}` })), shots: SHOTS, rounds: [], before: { "2": "g2", "4": "g4", "9": "g9" }, at });
@@ -125,7 +137,7 @@ test("the words for WhatsApp or email, and the header's badge", () => {
   const round: BoardRound = { n: 2, runId: "r", at: new Date(2026, 9, 9, 12).getTime(), changes: [{ shot: 2, text: "Sphere bigger in the wide" }, { shot: 4, text: "Bottle fuller" }], before: {} };
   expect(roundDate(round.at)).toBe("9 Oct 2026");
   expect(roundBadge(round)).toBe("Round 2 · 2 changed");
-  expect(whatChangedText("Harbour film", round, 8)).toBe("Harbour film · R2 · 9 Oct 2026\nWhat changed in round 2:\n• Shot 2: Sphere bigger in the wide\n• Shot 4: Bottle fuller\nThe other 6 shots are as you approved them.");
+  expect(whatChangedText("Harbour film", round, 8)).toBe("Harbour film · R2 · 9 Oct 2026\nWhat changed in round 2:\n• Shot 2: Sphere bigger in the wide\n• Shot 4: Bottle fuller\nThe other 6 shots are unchanged.");
 });
 
 test("the rounds are part of the draft JSON: the project schema takes them and refuses nonsense", () => {
@@ -148,5 +160,12 @@ test("a customer's plan card never reads as a client round: the wording is on th
   const src = (boardRounds?: unknown) => ({ kind: "studio" as const, project: { ...project, boardRounds } as never, library: [] });
   expect(deriveRounds(src())).toEqual([]);
   expect(deriveRounds(src("nonsense"))).toEqual([]);
-  expect(deriveRounds(src([{ n: 2, runId: "run-1", at: 1, changes: [{ shot: 2, text: "Bigger" }], before: {} }])).map((c) => c.id)).toEqual(["round:changed", "round:cut", "round:deliver"]);
+  const kept = deriveRounds(src([{ n: 2, runId: "run-1", at: 1, changes: [{ shot: 2, text: "Wide" }], before: {} }]));
+  expect(kept.map((c) => c.id)).toEqual(["round:changed", "round:cut", "round:deliver"]);
+  /* A round that has no Round take yet is being redrawn, not redrawn. */
+  expect((kept[0].data as { ready: boolean }).ready).toBe(false);
+  /* The cards are the new frame's alone: today's board, and the compact one, never get them, whatever the draft holds. */
+  const other = { id: "x", kind: "take", region: "shots", order: 1, state: "done", data: {} } as never;
+  expect(roundCardsFor([...kept, other], true)).toHaveLength(4);
+  expect(roundCardsFor([...kept, other], false)).toEqual([other]);
 });
