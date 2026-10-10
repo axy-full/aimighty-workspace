@@ -40,6 +40,10 @@ test("desktop: results in justified rows, the composer, prompt reuse, the viewer
   });
   if (fill.rows > 1) expect(Math.abs(fill.grid - fill.row)).toBeLessThanOrEqual(2);
 
+  /* The Library sits beside the composer, at the composer's height. */
+  await expect(page.getByTestId("v12-make-library")).toBeVisible();
+  await expect(page.getByTestId("v12-make-library")).toHaveAttribute("title", /^Library · L/);
+
   /* The composer: six modes, Auto first; Make waits for words, then carries the server's price. */
   const modes = page.getByRole("radiogroup", { name: "What to make" }).getByRole("radio");
   await expect(modes).toHaveText(["Auto", "Image", "Video", "Audio", "Remix", "Edit"]);
@@ -100,6 +104,9 @@ test("desktop: results in justified rows, the composer, prompt reuse, the viewer
   await expect(page.getByTestId("v12-make-viewer-download")).toHaveAttribute("href", /\/api\/media\/.+\?download=1$/);
   await expect(page.getByTestId("v12-make-viewer-download")).toContainText("free");
   await expect(page.getByTestId("v12-make-viewer-cost")).toContainText(/\d cr/);
+  await expect(page.getByTestId("v12-make-viewer-reuse")).toContainText("Variations");
+  /* No take made here carries a seed, so no seed row (the seeded case is the next test). */
+  await expect(page.getByTestId("v12-make-viewer-seed")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(viewer).toHaveCount(0);
   await page.keyboard.press("Escape");
@@ -118,12 +125,29 @@ test("desktop: results in justified rows, the composer, prompt reuse, the viewer
   expect(errors).toEqual([]);
 });
 
-test("desktop: ?view=make&viewer=1 opens the viewer on the newest result; an empty workspace says where results go", async ({ page }, info) => {
+test("desktop: ?view=make&viewer=1 opens the viewer on the newest result, with its seed; an empty workspace says where results go", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
   test.setTimeout(240_000);
   await seedHome(page, { takes: 2 });
+  /* A take that recorded its seed (Seedance through MCP can): the reply is given one here, as no mock take carries one. */
+  await page.route(/\/api\/jobs\?limit=/, async (route) => {
+    const reply = await route.fetch();
+    const body = await reply.json();
+    if (body.generations?.[0]) body.generations[0].params = { ...body.generations[0].params, seed: 8841 };
+    await route.fulfill({ response: reply, json: body });
+  });
   await page.goto("/suites?view=make&viewer=1");
   await expect(page.getByTestId("v12-make-viewer")).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByTestId("v12-make-viewer-count")).toHaveText("1 / 2");
+  /* The seed shows; Reuse seed waits until Make's send can carry a seed, and says so rather than promise a repeat. */
+  await expect(page.getByTestId("v12-make-viewer-seed")).toContainText("Seed 8841");
+  await expect(page.getByTestId("v12-make-viewer-meta")).toContainText("seed 8841");
+  await expect(page.getByTestId("v12-make-viewer-reuse-seed")).toBeDisabled();
+  await expect(page.getByTestId("v12-make-viewer-reuse-seed")).toHaveAttribute("title", /comes when Make can send one/);
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("v12-make-viewer-count")).toHaveText("2 / 2");
+  await expect(page.getByTestId("v12-make-viewer-seed")).toHaveCount(0);
+  await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("v12-make-viewer-count")).toHaveText("1 / 2");
   await page.getByTestId("v12-make-viewer-close").click();
   await expect(page.getByTestId("v12-make-viewer")).toHaveCount(0);
