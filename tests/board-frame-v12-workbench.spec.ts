@@ -105,8 +105,14 @@ test.describe("desktop, switch on", () => {
     await page.reload();
     await expect(page.getByTestId("v12-board-tools")).toBeVisible({ timeout: 60_000 });
     await expect(page.getByTestId("v12-board-tools")).not.toHaveAttribute("data-labels", "true");
-    await page.locator('[data-testid="v12-board-tools"] [data-tool="note"]').hover();
-    await expect(page.getByTestId("v12-tooltip")).toContainText("A sticky note for ideas, feedback or to-dos.");
+    /* The board opens Atomik's panel by itself once its agent is ready (questions to ask), and the toolbar moves left by the panel's
+       width. A hover that lands before that leaves the pointer off the tool, and a tooltip opens only on a pointer entering. So:
+       enter the tool afresh until its tooltip shows (the same assertion, on a pointer that is really over the tool). */
+    await expect(async () => {
+      await page.mouse.move(2, 2);
+      await page.locator('[data-testid="v12-board-tools"] [data-tool="note"]').hover();
+      await expect(page.getByTestId("v12-tooltip")).toContainText("A sticky note for ideas, feedback or to-dos.", { timeout: 3_000 });
+    }).toPass({ timeout: 45_000 });
     await page.goto("/suites?view=board&stage=storyboard&first=1");
     await expect(page.getByTestId("v12-board-tools")).toHaveAttribute("data-labels", "true", { timeout: 60_000 });
     /* Canvas and List are today's views; Rig is built (P5); Strip is not yet. */

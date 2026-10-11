@@ -32,6 +32,14 @@ async function cutsAtWords(page: Page, selector: string) {
   }));
 }
 
+/** The strip is fitted by code (resize event, observer, fonts), so a size is read once the page has had its frames: fonts loaded, then two animation frames (the resize event runs before the first, the fit before paint). */
+async function settled(page: Page) {
+  await page.evaluate(async () => {
+    await document.fonts?.ready;
+    await new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+  });
+}
+
 async function openHome(page: Page, items: QueueItem[], takes = 6) {
   await seedHome(page, { takes });
   await page.route((url) => url.pathname === "/api/control-room/approvals", (route) => route.fulfill({ json: { items, decided: [], inCredits: true } }));
@@ -79,14 +87,18 @@ test("the Waiting strip keeps every item's action whole and counts what it does 
       if (name.shown.endsWith("…")) expect(/[\p{L}\p{N}]/u.test(name.label.charAt(head.length)), `${label}: cut at a word: ${name.shown}`).toBe(false);
     }
   };
+  await settled(page);
   await check("at this size");
   /* A narrower window changes what fits, and the strip follows. */
   const size = page.viewportSize()!;
   await page.setViewportSize({ width: 1180, height: size.height });
+  await settled(page);
   await check("at 1180 wide");
   await page.setViewportSize({ width: 900, height: size.height });
+  await settled(page);
   await check("at 900 wide");
   await page.setViewportSize(size);
+  await settled(page);
   await check("back at this size");
 });
 
