@@ -54,7 +54,7 @@ import { CheckAgain } from "../CheckAgain";
 import { sampleGate } from "@/lib/demo/sample";
 import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
-import { stageLimit, stagePage, addStage, currentStage, freeCards as unstagedCards, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
+import { stageLimit, stagePage, type StagePageKind, addStage, currentStage, freeCards as unstagedCards, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
 import { RigView } from "@/components/v12/rig/RigView";
 import { rigModel } from "@/components/v12/rig/model";
@@ -78,6 +78,9 @@ import { isDubbingLanguage } from "@/lib/workbench/dubbing-options";
 import { deckFacts, deckMeta, deckSections, shotRows } from "@/lib/v12/ppm";
 import { DeliverStage } from "@/components/v12/board/DeliverStage";
 import { PpmStage } from "@/components/v12/board/PpmStage";
+import { ProductStage } from "@/components/v12/board/campaign/ProductStage";
+import { LookStage } from "@/components/v12/board/campaign/LookStage";
+import { FormatsStage } from "@/components/v12/board/campaign/FormatsStage";
 import type { CutCardData } from "./cards/cut/cut-model";
 import { BoardToolbar, ViewSwitch } from "@/components/v12/board/BoardTools";
 import "@/components/v12/board/board.css";
@@ -192,7 +195,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const pageWanted = stagePage(stage?.id, flavor);
   const deliverCard = allCards.find((c) => c.kind === "deliver");
   const cutNow = (deliverCard?.data as CutCardData | undefined)?.cut ?? null;
-  const page: "deliver" | "ppm" | null = pageWanted === "deliver" && cutNow && deliverCard ? "deliver" : pageWanted === "ppm" && allCards.length > 0 ? "ppm" : null;
+  /* Campaign's Product, Look and Formats are pages from the start: Product is where a campaign begins. */
+  const page: StagePageKind | null = pageWanted === "deliver" ? (cutNow && deliverCard ? "deliver" : null) : pageWanted === "ppm" ? (allCards.length > 0 ? "ppm" : null) : pageWanted;
   /* A client round's share card (redesign P2-c) rides in the page when a page covers the canvas, so it is never hidden behind it. */
   const roundShare = page ? allCards.find((c) => c.id === "round:deliver") ?? null : null;
   /* The board's free cards (a dropped tile, a note, an upload) show on whichever stage is open, where they were put. */
@@ -570,7 +574,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     kind, scope, project, productionId: project.productionProjectId ?? null, offline, readOnly: gate.readOnly, exploreOnly: gate.exploreOnly, selection, select, glide,
     openInspector: (id: string) => { select(id); if (v12Frame) setDetails(id); },
     openReview: (takeId?: string) => seams.call("review", takeId),
-    askAtomik: (words: string) => seams.call("atomik", words),
+    /* In the new frame the panel is closed until asked for, and only an open panel takes the words: open it, then fill it. */
+    askAtomik: (words: string) => { if (v12Frame) { setDockOpen(true); window.setTimeout(() => seams.call("atomik", words), 80); } else seams.call("atomik", words); },
     openMake: (type) => shell.openMake(type),
     /* A step a person can take back is said with its Undo (the shell's toast, top right), and ⌘Z does the same. */
     toast: (text, undo) => { if (undo) undoable(undo.label, undo.run, withUndoHint(text)); else ws.toast(text); },
@@ -759,12 +764,15 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
               <PeerCursors peers={peers} />
             </BoardCanvas>
           )}
-          {empty && !list && board.Empty ? <board.Empty ctx={ctx} /> : empty && !list && kind === "studio" ? <EmptyBoard ctx={ctx} /> : null}
+          {empty && !list && !page && board.Empty ? <board.Empty ctx={ctx} /> : empty && !list && !page && kind === "studio" ? <EmptyBoard ctx={ctx} /> : null}
           {page && !list ? (
             <div className="v12-stage-page gx-scroll" data-testid="v12-stage-page" data-page={page}>
               {page === "deliver" && cutNow && deliverCard
                 ? <DeliverStage cut={cutNow} cardId={deliverCard.id} ctx={ctx} languages={cleanLanguages(project.boardLanguages, isDubbingLanguage)} onLanguages={(next) => rig.apply((p) => ({ ...p, boardLanguages: next }))} />
-                : <PpmStage ctx={ctx} />}
+                : page === "ppm" ? <PpmStage ctx={ctx} />
+                : page === "product" ? <ProductStage ctx={ctx} />
+                : page === "look" ? <LookStage ctx={ctx} />
+                : page === "formats" ? <FormatsStage ctx={ctx} /> : null}
               {roundShare ? <div className="v12-stage-round" data-card-id={roundShare.id}><RoundCard card={roundShare as BoardCard<RoundCardData>} data={roundShare.data as RoundCardData} selected={false} ctx={ctx} /></div> : null}
             </div>
           ) : null}

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditRate } from "@/lib/shell/price-words";
-import { IDLE, LOADING, QUOTE_FAULT, quoteFromResponse, quoteRequest, type MoneyTerms, type Quote, type QuoteSource } from "./quote";
+import { IDLE, LOADING, QUOTE_FAULT, engineRequest, quoteFromResponse, quoteRequest, type EngineQuoteSource, type MoneyTerms, type Quote, type QuoteSource } from "./quote";
 
 /**
  * The live price of one action, from its quote route (lib/v12/quote.ts › QuoteSource), for `<Price quote={…} />`.
@@ -13,7 +13,19 @@ import { IDLE, LOADING, QUOTE_FAULT, quoteFromResponse, quoteRequest, type Money
  * source is shown: while a newer one is asked, the state is "loading", never the old figure. Null source: "idle".
  * An error carries `retry`, which asks the route again.
  */
-export function useQuote(source: QuoteSource | null, { debounceMs = 400 }: { debounceMs?: number } = {}): Quote {
+export function useQuote(source: QuoteSource | null, options: { debounceMs?: number } = {}): Quote {
+  return useQuoteBy(source, quoteRequest, options);
+}
+
+/**
+ * `useQuote` for a screen that only prices one engine at given settings (the Campaign formats): it takes the engine read alone,
+ * so it can reach no other quote route (chat turns, audio, a board's planning).
+ */
+export function useEngineQuote(source: EngineQuoteSource | null, options: { debounceMs?: number } = {}): Quote {
+  return useQuoteBy(source, engineRequest, options);
+}
+
+function useQuoteBy<S extends QuoteSource>(source: S | null, build: (source: S) => { url: string; init: RequestInit }, { debounceMs = 400 }: { debounceMs?: number } = {}): Quote {
   const session = useSession();
   const fetcher = useScopedFetch();
   const terms = useMemo<MoneyTerms>(() => ({
@@ -27,8 +39,8 @@ export function useQuote(source: QuoteSource | null, { debounceMs = 400 }: { deb
 
   useEffect(() => {
     if (!key) return;
-    const asked = JSON.parse(key) as QuoteSource;
-    const { url, init } = quoteRequest(asked);
+    const asked = JSON.parse(key) as S;
+    const { url, init } = build(asked);
     const controller = new AbortController();
     const timer = setTimeout(() => {
       void fetcher(url, { ...init, signal: controller.signal })
@@ -42,7 +54,7 @@ export function useQuote(source: QuoteSource | null, { debounceMs = 400 }: { deb
         });
     }, debounceMs);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [key, fetcher, terms, debounceMs, attempt]);
+  }, [key, fetcher, terms, debounceMs, attempt, build]);
 
   /* One object per answer, so a caller's memo or effect keyed on the quote does not rerun on every render. */
   const current = answer?.key === key ? answer : null;
