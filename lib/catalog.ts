@@ -102,6 +102,8 @@ export function toCatalogModel(m: RawModel & { id: string }): CatalogModel {
 /* ── The read, cached ─────────────────────────────────────────────────── */
 
 let cache: { at: number; models: CatalogModel[] } | null = null;
+/** Drop the cached live read, so the next read goes to the gateway again (tests that model an offline catalogue). */
+export function forgetCatalogCache(): void { cache = null; }
 const TTL_MS = 60 * 60 * 1000;   // an hour; the catalogue moves in weeks
 
 /**
@@ -250,10 +252,11 @@ export function catalogSource(): 'gateway' | 'static' {
 function providerPricedExtras(live: CatalogModel[]): CatalogModel[] {
   const snapshot = modelCatalogJson as unknown as CatalogSnapshot;
   const have = new Set(live.map((m) => m.id));
-  const mock = engineMock();
+  // Under ENGINE_MOCK the live read is served as it is, exactly as before.
+  if (engineMock()) return [];
   return (snapshot.providerPriced ?? []).flatMap(({ providerId, pricedAt, source, ...model }) => {
     void pricedAt; void source;
-    return !have.has(model.id) && providerOfOwner(model.owner) === providerId && (mock || callable(model, providerId)) ? [model] : [];
+    return !have.has(model.id) && providerOfOwner(model.owner) === providerId && callable(model, providerId) ? [model] : [];
   });
 }
 
