@@ -9,7 +9,7 @@ import { readBoundedText, RequestBodyError } from '@/lib/requestBody';
 import { reserveRecoveryContinuation } from '@/lib/recovery';
 import { engineMock } from '@/lib/mock';
 import { paidByPlatform } from '@/lib/platformSpend';
-import { textVendor } from '@/lib/openai-direct';
+import { textKeyName } from '@/lib/openai-direct';
 import { atomikPublicResponse } from '@/lib/workbench/atomik-response';
 import { DevelopmentError, developmentRequestSchema, developmentState, listDevelopmentJobs, listVerifications, prepareDevelopmentJob, quoteDevelopmentJob, runDevelopmentStep } from '@/lib/workbench/development-server';
 import { enqueueDevelopmentJob } from '@/lib/workbench/development-worker';
@@ -85,7 +85,7 @@ export const POST = withTenant(async (req: Request) => {
     if (!parsed.success) return response({ error: 'Check the development mode, model, effort and instructions.' }, 400);
     const { quoteOnly, ...input } = parsed.data;
     /* A model on the workspace's own key bills its dollars, not credits: the quote keeps the dollar ceiling the start must lock. */
-    if (quoteOnly) return response(await quoteDevelopmentJob(input, auth.user.id), 200, creditsApply(currentTenant()?.workspace) && paidByPlatform(textVendor(input.model)));
+    if (quoteOnly) return response(await quoteDevelopmentJob(input, auth.user.id), 200, creditsApply(currentTenant()?.workspace) && paidByPlatform(textKeyName(input.model)));
     /* The sample workspace spends nothing: answered before a job is written or reserved. */
     { const off = await sampleWorkspaceOff(); if (off) return off; }
     const prepared = await prepareDevelopmentJob(input, auth.user.id, auth.token);

@@ -5,6 +5,7 @@ import type { Transaction } from "@libsql/client";
 import { mediaMutation, validateMediaSources } from "./mediaMutation";
 import { MediaSourceError } from "./mediaBindings";
 import { db, ready, now, id as newId } from "./db";
+import { columnInstaller } from "./schemaInitialization";
 import { falConfigured, falSubmit, falStatus, falResult, falAwait, progressFromLogs, falSubmissionRejected } from "./fal";
 import { readUploadBytes, storeIdentityZip, storeImageBytes, presignedReadUrl, usingBlob } from "./storage";
 import { nameProblem } from "./cast";
@@ -352,8 +353,8 @@ async function trainingReady() {
   if (!trainingBoot.has(workspace)) trainingBoot.set(workspace, (async () => {
     await ready();
     await db().execute(`CREATE TABLE IF NOT EXISTS identity_training_runs(id TEXT PRIMARY KEY,identity_id TEXT NOT NULL,status TEXT NOT NULL,request_id TEXT,cost_usd REAL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL)`);
-    const columns = (await db().execute(`PRAGMA table_info(identities)`)).rows;
-    if (!columns.some((r) => r.name === "training_run_id")) await db().execute(`ALTER TABLE identities ADD COLUMN training_run_id TEXT`);
+    /* Tolerates "duplicate column" from a process booting alongside (lib/schemaInitialization.ts). */
+    await (await columnInstaller(db()))("identities", "training_run_id TEXT");
   })().catch((error) => { trainingBoot.delete(workspace); throw error; }));
   await trainingBoot.get(workspace);
 }

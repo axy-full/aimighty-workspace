@@ -2,6 +2,7 @@ import { vendorKey } from "./vendorKeys";
 import { recoveryFetch } from "./recovery";
 import { engineMock, mockDelay } from "./mock";
 import { fixtureBytes } from "./mockFs";
+import { readBodyCapped } from "./boundedBody";
 import { XaiHttpError } from "./xaiErrors";
 import { preflight } from "./preflight";
 
@@ -108,6 +109,9 @@ export async function grokVoicesForScreen(waitMs = GROK_VOICES_SCREEN_WAIT_MS): 
   }
 }
 
+/** A spoken line is MP3 at 128 kbps from capped text: minutes, a few MB. The cap only stops a runaway body. */
+const GROK_SPEECH_MAX_BYTES = 50 * 1024 * 1024;
+
 /** One spoken line: MP3 at 24 kHz / 128 kbps, the charge by its characters. */
 export async function grokSpeech(opts: { text: string; voiceId: string; language?: string; speed?: number }): Promise<{ bytes: Buffer; mime: string; costUsd: number }> {
   const text = opts.text.slice(0, GROK_TTS_MAX_CHARS);
@@ -124,7 +128,8 @@ export async function grokSpeech(opts: { text: string; voiceId: string; language
     const text = (await res.text()).slice(0, 8192);
     throw new XaiHttpError(res.status, `Grok Voice refused the line (${res.status}): ${text.slice(0, 300)}`, text);
   }
-  return { bytes: Buffer.from(await res.arrayBuffer()), mime: res.headers.get("content-type") || "audio/mpeg", costUsd: grokSpeechUsd(text) };
+  const bytes = await readBodyCapped(res, GROK_SPEECH_MAX_BYTES, "Grok Voice returned more audio than the 50 MB limit; nothing was saved.");
+  return { bytes, mime: res.headers.get("content-type") || "audio/mpeg", costUsd: grokSpeechUsd(text) };
 }
 
 export type Transcript = { text: string; language: string | null; seconds: number; words: { text: string; start: number; end: number; speaker?: number }[] };

@@ -95,10 +95,10 @@ test.beforeAll(async () => {
 
 test("the switches are off by default and an unreadable row stays off", async () => {
   const { readSite } = await import("../../lib/site/settings.server");
-  expect(await readSite()).toEqual({ openSignup: false, guestHome: false, guestWorkspace: null });
+  expect(await readSite()).toEqual({ openSignup: false, guestHome: false, guestWorkspace: null, newInterfaceWorkspaces: [] });
   const { platformDb } = await import("../../lib/platform");
   await platformDb().execute({ sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', '{not json', 0, 'x') ON CONFLICT(key) DO UPDATE SET value = excluded.value`, args: [] });
-  expect(await readSite()).toEqual({ openSignup: false, guestHome: false, guestWorkspace: null });
+  expect(await readSite()).toEqual({ openSignup: false, guestHome: false, guestWorkspace: null, newInterfaceWorkspaces: [] });
 });
 
 test("guest Home off: nothing is read for a guest, whatever workspace is named", async () => {

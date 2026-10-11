@@ -1,0 +1,189 @@
+<!-- Particl · v12 screens · written 2026-10-10 -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>/* Offline bundle: React, ReactDOM and Babel load from ./assets/vendor instead of unpkg. */window.__resources = Object.assign({}, window.__resources, { "https://unpkg.com/react@18.3.1/umd/react.production.min.js": "assets/vendor/react.production.min.js", "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js": "assets/vendor/react-dom.production.min.js", "https://unpkg.com/@babel/standalone@7.29.0/babel.min.js": "assets/vendor/babel.min.js" });</script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+html,body{margin:0;background:#111114;color:#F5F5F7;-webkit-font-smoothing:antialiased;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Geist,system-ui,sans-serif}
+*{box-sizing:border-box}
+a{color:#6EB4FF;text-decoration:none}a:hover{color:#8FC4FF}
+</style>
+</helmet>
+<div style="padding:28px 32px 48px;display:flex;flex-direction:column;gap:28px;font-size:13px;line-height:1.45">
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-0.02em">Particl prototype v9 · screens (v9 first, then v7)</h1>
+    <p style="margin:0;font-size:13px;color:rgba(235,235,245,0.6)">Live at 1440 × 900. Library drawer everywhere with drag rules · on-card toolbar and selection chip · Details pop-over · editable stages · PDF import · autonomy per board.</p>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax({{ w }}px,1fr));gap:20px">
+    <sc-for list="{{ frames }}" as="f" hint-placeholder-count="8">
+      <section id="{{ f.id }}" style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px"><span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;border-radius:999px;background:rgba(10,132,255,0.14);border:1px solid rgba(10,132,255,0.35);color:#6EB4FF">{{ f.badge }}</span><strong style="font-size:13.5px;font-weight:600">{{ f.title }}</strong></div>
+        <div style="position:relative;width:{{ w }}px;height:{{ h }}px;overflow:hidden;border:1px solid rgba(255,255,255,0.12);border-radius:8px;background:#000"><iframe src="{{ f.src }}" title="{{ f.title }}" style="width:1440px;height:900px;border:0;display:block;transform:scale({{ scale }});transform-origin:0 0"></iframe></div>
+        <div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;color:rgba(235,235,245,0.6)"><span>{{ f.line }}</span><a href="{{ f.src }}" target="_blank">Open ›</a></div>
+      </section>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { vw: window.innerWidth };
+  componentDidMount() { this._r = () => this.setState({ vw: window.innerWidth }); window.addEventListener('resize', this._r); }
+  componentWillUnmount() { window.removeEventListener('resize', this._r); }
+  renderVals() {
+    const scale = Math.max(0.3, Math.min(0.5, (this.state.vw - 84) / 2900));
+    const M = 'Particl%20prototype.dc.html';
+    const frames = [
+      ['V11·1', "Rendering · in queue", "Source visible under the particle field · In queue · position 7 · 7 cr held", M + '?view=board&stage=Shots&render=queued'],
+      ['V11·2', "Rendering · 1:12 so far", "Honest time with a ~90 % bar · Cancel · charged only when ready", M + '?view=board&stage=Shots&render=rendering'],
+      ['V11·3', "Rendering · slow", "Taking longer than usual — no red state", M + '?view=board&stage=Shots&render=slow'],
+      ['V11·4', "Failed", "Didn’t finish · nothing billed · Retry · 7 cr", M + '?view=board&stage=Shots&render=failed'],
+      ['V11·5', "Batch · 3 of 8 ready", "Stage header \"3 of 8 ready · about 4 min left\"; approve finished takes while others render; tab ring", M + '?view=board&stage=Shots&render=batch'],
+      ['V11·6', "Running list", "From the header pill: every running job, time left, \"Open card\"", M + '?view=board&stage=Shots&render=batch&jobs=1'],
+      ['V11·7', "Ready toast", "\"Shot 3 is ready · View\" · tab title \"(1 ready) Particl\"", M + '?view=board&stage=Shots&render=ready'],
+      ['V11·8', "The reveal", "Particles gather into the frame (plays on load)", M + '?view=board&stage=Shots&demo=reveal'],
+      ['V11·9', "Notify me", "\"Tell me when it’s done\" on the first long job", M + '?view=board&stage=Shots&render=rendering&notify=1'],
+      ['V11·10', "Make · rendering tiles", "The same states in Make results", M + '?view=make&render=1'],
+      ['V11·11', "Rig · rendering node", "Ring and time left on the shot node", M + '?view=board&v=rig&render=1'],
+      ['V11·12', "Elements · fixed", "4 across, no redundant Approved, clear of the bottom controls", M + '?view=board&stage=Elements'],
+      ['V11·13', "Rig · Geist headings, outputs", "Thumbnails crop to the subject; Takes · Cut · Masters nodes", M + '?view=board&v=rig'],
+      ['V11·14', "Visitor Home", "\"Made with Particl\" wall · How it works · Log in / Request access", M + '?guest=1'],
+      ['V11·15', "Visitor Make", "Sample results; download opens the join sheet", M + '?guest=1&view=make'],
+      ['V11·16', "Sample board · Canvas", "Read-only sample, \"changes aren’t saved\"", M + '?guest=1&view=board'],
+      ['V11·17', "Sample board · Rig", "Every view is explorable", M + '?guest=1&view=board&v=rig'],
+      ['V11·18', "Join sheet · from Start", "Two paths: invite code, or request access; prompt kept", M + '?guest=1&join=start'],
+      ['V11·19', "Join sheet · from Make", "\"To make this you need a Particl account\"", M + '?guest=1&join=make'],
+      ['V11·20', "Join sheet · from Upload", "", M + '?guest=1&join=upload'],
+      ['V11·21', "Join sheet · from Ask Atomik", "", M + '?guest=1&join=ask'],
+      ['V11·22', "Request-access confirmation", "\"You’re on the list…\"", M + '?guest=1&join=start&requested=1'],
+      ['V11·23', "Invite · team", "Banner + \"Join ZigZag Films’ workspace\", code filled", M + '?guest=1&invite=team'],
+      ['V11·24', "Invite · new workspace", "\"Create your workspace\"", M + '?guest=1&invite=new'],
+      ['V11·25', "Invite · plan step", "Choose a plan / add credits (placeholders · confirm)", M + '?guest=1&invite=new&step=plan'],
+      ['V11·26', "Invite · expired", "\"This invite has expired or been used · Request access\"", M + '?guest=1&invite=expired'],
+      ['V11·27', "After joining", "Back on Home with the prompt kept", M + '?joined=1'],
+      ['V11·28', "No access", "\"You don’t have access\" · never a preview", M + '?guest=1&view=board&project=other'],
+      ['V11·29', "Phone · visitor Home", "390 × 844", M + '?guest=1&device=phone', true],
+      ['V11·30', "Phone · join sheet", "As a bottom sheet", M + '?guest=1&device=phone&join=start', true],
+      ['V11·31', "Phone · invite banner", "", M + '?guest=1&device=phone&invite=team', true],
+
+      ['V10·1', 'Settings · Credits & billing', 'Balance, Top up · 500 cr · $50, per-board spend this month, history, Export for billing', M + '?view=billing'],
+      ['V10·2', 'Header · low-credit chip', 'Below 100 cr a “Low on credits · Top up” chip appears in the header; the credits pill is gone (balance lives in the avatar menu)', M + '?view=home&credits=low'],
+      ['V10·3', 'Tabs · 2 boards', 'The tab group hugs its tabs; no empty band before the search field', M + '?view=home'],
+      ['V10·4', 'Tabs · 5 boards', 'Grows as boards open', M + '?view=home&tabs=5'],
+      ['V10·5', 'Tabs · 9 boards', 'Overflows into “+N ▾” only when space runs out', M + '?view=home&tabs=9'],
+      ['V10·6', 'Cast · filled primary', '“Review the cast” appears only on the Cast stage', M + '?view=board&stage=Cast'],
+      ['V10·7', 'Storyboard · no primary', 'What needs you elsewhere shows in the rail badge and the Activity pill; grey FILM label at the top of the rail', M + '?view=board&stage=Storyboard'],
+      ['V10·8', 'Elements · Film', 'Locations, Props, Wardrobe, Products as true-aspect cards with approval, locks and ↑/✦', M + '?view=board&stage=Elements'],
+      ['V10·9', 'Elements · Pre-vis', 'Locations is the first group inside Elements (the old Locations stage folds in)', M + '?view=board&project=recipe&stage=Elements'],
+      ['V10·10', 'Bar · Attach', '“+” at the bar’s left: attach a file or a Library item (Home, Make and boards)', M + '?view=board&stage=Storyboard'],
+      ['V10·11', 'Make · no Seed', 'Seed is gone from the composer', M + '?view=make'],
+      ['V10·12', 'Make · viewer seed', '“Seed 8841 · Reuse seed” in the viewer’s details', M + '?view=make&viewer=1'],
+      ['V10·13', 'Make · right-click', 'Right-click a result for the generation menu; right-click empty space for Paste · Upload… · Select all (live: open and right-click)', M + '?view=make'],
+      ['V10·14', 'Rig · default', 'Thumbnails, no lines, grouped inputs (Cast · Elements · Look), one Deliver node, first-open hint', M + '?view=board&v=rig'],
+      ['V10·15', 'Rig · node selected', 'Only MAYA’s connections draw; her five shots light up', M + '?view=board&v=rig&rig=input'],
+      ['V10·16', 'Rig · impact', '“Change MAYA · 5 shots will redraw · 10 cr · Approve”', M + '?view=board&v=rig&rig=impact'],
+      ['V10·17', 'Rig · shot expanded', 'Double-click a shot: still → video → upscale → lip-sync with engine and price; Esc collapses', M + '?view=board&v=rig&rig=expand'],
+      ['V10·18', 'Rig · Recipes panel', 'Opened from the Recipes chip (or “/recipe”): the chain over the Rig with Save as skill', M + '?view=board&v=rig&rig=recipes'],
+
+      ['V9·1', 'Header · one Atomik entry, panel closed', '◆ Ask Atomik, search or go to · ⌘K with the panel icon and its blue dot; no Atomik button, no edge strip; canvas at full width', M + '?view=board&frame=3'],
+      ['V9·2', 'Header · panel open', 'The Atomik side panel with × and the thread switcher (⌘J)', M + '?view=board&frame=3&atomik=1'],
+      ['V9·3', 'Toolbar · first visit', 'Labels beside the icons with “Got it”; every icon carries name · one line · shortcut · price', M + '?view=board&first=1'],
+      ['V9·4', 'Make · justified grid', 'True-aspect rows of fixed height, newest first; hover → prompt caption, download, checkbox', M + '?view=make'],
+      ['V9·5', 'Make · viewer', 'Large preview, ‹ › through the run’s takes, prompt (click to load), model line, cost and time, actions', M + '?view=make&viewer=1'],
+      ['V9·6', 'Library tray on a board · All', '360 px, search + brand, All · Uploaded · Generated, kind chips in one scrolling row, 2-column masonry, source badges, “2 products need packshots · Add”', M + '?view=board&drawer=Library'],
+      ['V9·7', 'Library tray · Uploaded', 'Only uploaded items', M + '?view=board&drawer=Library&src=Uploaded'],
+      ['V9·8', 'Library tray · Generated', 'Only generated items', M + '?view=board&drawer=Library&src=Generated'],
+      ['V9·9', 'Library tray · Products', 'One “Add a packshot” tile per product without one', M + '?view=board&drawer=Library&kind=Products'],
+      ['V9·10', 'Library tray on Home', 'The same tray over Home; the bar and bottom-left controls move right of it', M + '?view=home&drawer=Library'],
+      ['V9·11', 'Rig · default', 'Inputs → the 8 shots → outputs, locks on connections, the Recipe row', M + '?view=board&v=rig'],
+      ['V9·12', 'Rig · input selected', 'MAYA selected: the five shots she feeds light up', M + '?view=board&v=rig&rig=input'],
+      ['V9·13', 'Rig · impact preview', '“Change MAYA”: 5 shots will redraw · 10 cr, one priced Approve', M + '?view=board&v=rig&rig=impact'],
+      ['V7·1', 'Make · real stills, Geist, docked composer', '', M + '?view=make'],
+      ['V7·2', 'Make · Auto model + Improve prompt', 'Atomik picks the model and says why in one line', M + '?view=make&mk=Auto'],
+      ['V7·3', 'Make · Remix before a choice', 'The button reads "Pick what to do"', M + '?view=make&mk=Remix'],
+      ['V7·4', 'Make · Remix · Cut into clips', 'Only the settings that apply, on one row', M + '?view=make&mk=Remix&op=Cut%20into%20clips'],
+      ['V7·5', 'Make · Remix · Transfer motion', '', M + '?view=make&mk=Remix&op=Transfer%20motion'],
+      ['V7·6', 'Make · Remix · Swap an object', '', M + '?view=make&mk=Remix&op=Swap%20an%20object'],
+      ['V7·7', 'Make · Remix · Add an effect', '', M + '?view=make&mk=Remix&op=Add%20an%20effect'],
+      ['V7·8', 'New board · a new tab', 'Empty rail, no primary, "What are we making?" with four kinds', M + '?view=board&new=1'],
+      ['V7·9', 'New board · Film composer', 'Kind picked: the rail switches (dimmed until Start)', M + '?view=board&new=1&kind=Film'],
+      ['V7·10', 'New board · Pre-vis composer', '', M + '?view=board&new=1&kind=Pre-vis'],
+      ['V7·11', 'New board · Campaign composer', '', M + '?view=board&new=1&kind=Campaign'],
+      ['V7·12', 'New board · Social composer', '', M + '?view=board&new=1&kind=Social'],
+      ['V7·13', 'Pre-vis · Locations', '', M + '?view=board&project=recipe&stage=Locations'],
+      ['V7·14', 'Pre-vis · PPM deck', 'Cover, sections, the editable shot list, exports', M + '?view=board&project=recipe&stage=PPM%20deck'],
+      ['V7·15', 'Social · Narrated · Hook', 'Three options with Hook review', M + '?view=board&project=social&stage=Hook'],
+      ['V7·16', 'Social · Clips · Source', '', M + '?view=board&project=canva&stage=Source'],
+      ['V7·17', 'Social · Clips · Moments', 'Atomik’s picks on a timeline with reasons', M + '?view=board&project=canva&stage=Moments'],
+      ['V7·18', 'Social · Clips · Clips', '9:16 cards, each with Hook review', M + '?view=board&project=canva&stage=Clips'],
+      ['V7·19', 'Top bar · a question answered', '"what’s left on the Canva board?"', M + '?view=home&palette=1&q=what%27s%20left%20on%20the%20Canva%20board'],
+      ['V7·20', 'Top bar · spend this week', '', M + '?view=home&palette=1&q=how%20much%20did%20we%20spend%20this%20week'],
+      ['V7·21', 'Atomik panel · thread switcher', '', M + '?view=board&frame=3&atomik=1'],
+      ['V7·22', 'The + popover', 'Search, recent boards, recently closed, new board by kind', M + '?view=board&frame=3&plus=1'],
+      ['V7·23', 'Board · right toolbar in its safe area, download + checkbox corners', '', M + '?view=board&frame=3'],
+      ['V7·24', 'Library · true-aspect tiles', '', M + '?view=library'],
+      ['V7·25', 'Client Round 2 · What changed · Compare', '', M + '?view=board&round=2&stage=Cut'],
+      ['V7·26', 'Campaign · Formats (even grid, one dimmed) · Product swatches', '', M + '?view=board&project=launch&stage=Formats'],
+      ['V6·1', 'Make · docked composer', 'The composer is a solid bottom band; results end above it; Library button in the band', M + '?view=make'],
+      ['V6·2', 'Make · Remix', 'Remix mode: four choices, each priced · Cut into clips · Transfer motion · Swap an object · Add an effect', M + '?view=make&mk=Remix'],
+      ['V6·2b', 'Make · Remix · Cut into clips', '6 cr per minute of source', M + '?view=make&mk=Remix&op=Cut%20into%20clips'],
+      ['V6·2c', 'Make · Remix · Transfer motion', '43 cr', M + '?view=make&mk=Remix&op=Transfer%20motion'],
+      ['V6·2d', 'Make · Remix · Swap an object', '43 cr', M + '?view=make&mk=Remix&op=Swap%20an%20object'],
+      ['V6·2e', 'Make · Remix · Add an effect', 'from 7 cr', M + '?view=make&mk=Remix&op=Add%20an%20effect'],
+      ['V6·3', 'Board · right toolbar, Atomik closed', 'Select · Frame · Note · Text · Image · Video · Audio · Upload on the right edge; the bar only types', M + '?view=board&frame=3'],
+      ['V6·4', 'Board · right toolbar, Atomik open', 'The toolbar moves with the canvas edge', M + '?view=board&frame=3&atomik=1'],
+      ['V6·5', 'New board · four kinds', 'Film · Pre-vis · Campaign · Social as choice cards; Atomik proposes the rail', M + '?view=board&new=1'],
+      ['V6·6', 'Pre-vis · Shot list', 'One row per shot with export: Storyboard PDF, Shot list PDF + CSV, Animatic MP4', M + '?view=board&project=recipe&stage=Shot%20list'],
+      ['V6·7', 'Pre-vis · Animatic', '', M + '?view=board&project=recipe&stage=Animatic'],
+      ['V6·8', 'Campaign · Product', 'Read from the product page, reviewed before use', M + '?view=board&project=launch&stage=Product'],
+      ['V6·9', 'Campaign · Formats', 'Skill cards, one quoted price per run; pick, then "Make 3 formats · 129 cr"', M + '?view=board&project=launch&stage=Formats'],
+      ['V6·10', 'Campaign · Variants', 'Hooks × formats grid, each cell priced', M + '?view=board&project=launch&stage=Variants'],
+      ['V6·11', 'Campaign · Look', 'Moodboard + brand mandatories', M + '?view=board&project=launch&stage=Look'],
+      ['V6·12', 'Social · Scenes', '', M + '?view=board&project=canva&stage=Scenes'],
+      ['V6·13', 'Social · Voice', '', M + '?view=board&project=canva&stage=Voice'],
+      ['V6·14', 'Deliver · sizes × durations, languages, mandatories, export pack', '', M + '?view=board&project=launch&stage=Deliver'],
+      ['V6·15', 'Library · product with next actions', 'Maggi Atta pack: Photoshoot · Unboxing · Try-on; Mandatories filter', M + '?view=library&sel=Maggi%20Atta%20pack'],
+      ['V6·16', 'Home · boards filter', 'All · Films · Pre-vis · Campaigns · Social; "Remix this" on wall tiles', M + '?view=home'],
+      ['V6·17', 'The bar · "/" skills', 'Fifteen skills with prices', M + '?view=home&q=%2F'],
+      ['V6·18', 'Stage header · one primary', 'Stage name · one primary button · ⋯ (versions, export, spend, autonomy inside)', M + '?view=board&stage=Cast'],
+      ['M1', 'Make · image results + the settings row', 'Pinned ✦ Make tab · Image · Video · Audio · Edit · model with price, aspect, count, seed · references tray · results newest first', M + '?view=make'],
+      ['M2', 'Storyboard · List view', '#, size, description, VO/dialogue, duration, status', M + '?view=board&v=list'],
+      ['M3', 'Storyboard · Strip view', 'Timeline / animatic with durations and play', M + '?view=board&v=strip'],
+      ['M4', 'Send sheet', 'WhatsApp · Email · Copy link; a watermarked phone-friendly link or the file itself', M + '?view=board&frame=3&send=1'],
+      ['M5', 'Cards marked by the client', 'Shot 4 "Client: approved" with a note; Shot 2 "Client: changes"', M + '?view=board&client=1'],
+      ['M6', 'Pasted client feedback → change requests', 'A WhatsApp reply turned into three change requests on the right cards, priced once', M + '?view=board&feedback=1&atomik=1'],
+      ['M7', 'Deliver · the deliverables grid', '16:9 / 9:16 / 1:1 × 30 / 15 / 6 s · naming, format, captions, stems · status per cell · Send per cell or all', M + '?view=board&stage=Deliver&delivered=1'],
+      ['M8', 'Cut · strip with sound tracks', 'VO, music and SFX under the strip, each made from the bar (priced) or uploaded', M + '?view=board&stage=Cut&v=strip&delivered=1'],
+      ['M9', 'Budget breakdown', '"Spent 46 of 400 cr" in the header; by stage, plus Export for billing', M + '?view=board&budget=1'],
+      ['M10', 'Versions · compare two takes', 'Save v2 snapshots the board; the picker; side-by-side compare', M + '?view=board&compare=1'],
+      ['N1', 'Home · three tabs', '[⌂ Home] [Maggi Atta · 30 s ad ×] [Dune Studies · Mirror film ×] [+] · Activity pill "2 need you · 3 running" · the Library button bottom-left', M + '?view=home'],
+      ['N2', 'Board · the Activity list', 'Needs-you items first, then running jobs, across all boards; each deep-links to the stage and card', M + '?view=board&activity=1'],
+      ['N3', 'A card dragged onto another board’s tab', 'Shot 4 over the Dune Studies tab: the tab highlights, "Copy to Dune Studies · Mirror film"', M + '?view=board&frame=3&drag=tab'],
+      ['N4', 'The rail in edit mode', 'Hover pencil and ⋯ on a row; Cast being renamed in place; the Cut row menu (Rename · Skip · Remove); drag rows to reorder; "+ Stage"', M + '?view=board&rail=edit'],
+      ['N5', 'The new card toolbar + breadcrumb', 'One row: Lock / Redraw / Finish as icons (price on hover), Approve, ⓘ; take ‹ 2/4 › on the image; "Maggi Atta › Storyboard › Shot 4"', M + '?view=board&frame=3'],
+      ['N6', '⌘K · "go to"', 'Boards, stages, cards and library items', M + '?view=board&palette=1&q=go%20to%20shot'],
+      ['N7', '⌘K · actions', '"Approve cast", "Retry Shot 3 · 43 cr", "Fix MAYA’s face · Shot 4 · 2 cr"', M + '?view=home&palette=1&q=approve'],
+      ['N8', 'Header overflow at 7 boards', 'Four tabs shown, "+3 ▾" opens the rest', M + '?view=board&tabs=7'],
+      ['1', 'Home · Library drawer · a take dragged onto a board', 'Drawer open (L); “Mirror at noon · hero” over Dune Studies with the drop highlight “Add here”', M + '?view=home&lib=1&drag=1'],
+      ['2', 'Board · on-card toolbar + “Shot 4 ×” in the bar', 'Lock · Redraw 2 cr · Finish 2 cr · ‹ take 2/4 › · Approve · ⓘ; drift dot with Fix · 2 cr; the selection chip in the bar', M + '?view=board&frame=3'],
+      ['3', 'Board · Details pop-over', 'ⓘ or “i”: elements in frame, continuity, model, cost so far, comments', M + '?view=board&frame=3&details=1'],
+      ['4', 'Board · editing the stages · “+ Stage”', 'The rail is the board’s list: rename, ↑↓, skip, remove; presets Moodboard, Recce, Client review, Animatic', M + '?view=board&rail=edit&add=1'],
+      ['5', 'Board · PDF storyboard imported', 'storyboard_v3.pdf read: 8 frames, shot numbers and timings, cast into Cast; the rail shows ✓ imported', M + '?view=board&stage=Storyboard&import=1'],
+      ['6', 'Board · the autonomy menu', 'Ask at every stage / Ask only above X cr / Run to the end within Y cr; the mode as a label by the stage title', M + '?view=board&menu=1&mode=above'],
+      ['7', 'New board · Atomik proposes stages (agency boards)', '“Agency boards supplied” → Storyboard (imported) → Shots → Cut', M + '?view=board&new=1&propose=agency'],
+      ['8', 'New board · Atomik proposes stages (pitch only)', '“Pitch only” → Brief → Storyboard', M + '?view=board&new=1&propose=pitch']
+    ].map(([badge, title, line, src]) => ({ id: 'f' + badge, badge, title, line, src }));
+    return { frames, scale, w: Math.round(1440 * scale), h: Math.round(900 * scale) };
+  }
+}
+</script>
+</body>
+</html>

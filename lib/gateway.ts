@@ -2,6 +2,7 @@ import { recoveryFetch as fetch } from "./recovery";
 import { vendorKey, deploymentIdentityAllowed } from "./vendorKeys";
 import { engineMock, mockCompletion, mockDelay } from "./mock";
 import { assertTextProvider, openaiDirectPost, TEXT_PROVIDER_HEADER, textVendor } from './openai-direct';
+import { isDirectRoute, textRoute } from './textRoute';
 /**
  * Vercel AI Gateway — the one door this deployment can always open.
  *
@@ -50,7 +51,7 @@ export async function gatewayAuth(): Promise<Record<string, string>> {
 export function explainGatewayFailure(status: number, text: string): string | null {
   try {
     const reply = JSON.parse(text);
-    if (reply.provider === 'openai') return status === 401 ? 'The language account rejected the connected API key. Check the language account.' : status === 429 ? 'The language account reached its rate or usage limit. Check the connected language account.' : `The language account could not complete this request (${status}). ${typeof reply.error?.message === 'string' ? reply.error.message.slice(0, 400) : ''}`;
+    if (['openai', 'anthropic', 'google', 'xai'].includes(reply.provider)) return status === 401 ? 'The language account rejected the connected API key. Check the language account.' : status === 429 ? 'The language account reached its rate or usage limit. Check the connected language account.' : `The language account could not complete this request (${status}). ${typeof reply.error?.message === 'string' ? reply.error.message.slice(0, 400) : ''}`;
   } catch { /* Other gateway responses retain their existing explanation. */ }
   if (status === 403 && /free tier|RestrictedModels/i.test(text)) {
     return "The model gateway is on its free tier, which does not include this model. " +
@@ -109,6 +110,9 @@ export async function gatewayPost(
   if (typeof input.model !== 'string') throw new Error('Choose a language model before submitting.');
   assertTextProvider(input.model, opts.auth);
   if (textVendor(input.model) === 'openai') return openaiDirectPost(input, { timeoutMs: opts.timeoutMs });
+  // A vendor switched on in TEXT_DIRECT never reaches the gateway, so its key
+  // cannot either. Its calls go through textPost (lib/textDirect.ts).
+  if (isDirectRoute(textRoute(input.model))) throw new Error('This model is routed to its provider directly. Send it through the direct text path.');
   const auth = { ...(opts.auth ?? await gatewayAuth()) }; delete auth[TEXT_PROVIDER_HEADER];
   const res = await fetch(GATEWAY_URL(), {
     method: "POST",

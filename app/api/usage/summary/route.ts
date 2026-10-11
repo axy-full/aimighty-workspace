@@ -6,6 +6,7 @@ import { creditState, creditsApply, type CreditState } from "@/lib/credits";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { PROVIDERS } from "@/lib/providers";
+import { PROMPT_LEDGER } from "@/lib/reconcile";
 import { memoGet, memoPut } from "@/lib/memo";
 
 export const dynamic = "force-dynamic";
@@ -62,7 +63,7 @@ export const GET = withTenant(async function GET() {
     db().execute(`SELECT COALESCE(SUM(amount_usd),0) AS total FROM topups`),
     db().execute(`SELECT provider, COALESCE(SUM(COALESCE(cost_usd,0)),0) AS spend FROM generations GROUP BY provider`),
     db().execute(`
-      SELECT CASE WHEN refine_model LIKE 'anthropic/%' OR refine_model LIKE 'google/%' THEN 'google' ELSE 'byteplus' END AS ledger,
+      SELECT ${PROMPT_LEDGER} AS ledger,
              COALESCE(SUM(COALESCE(refine_cost_usd,0)),0) AS spend
       FROM generations WHERE refine_model IS NOT NULL GROUP BY ledger`),
   ]);

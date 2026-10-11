@@ -20,7 +20,8 @@ test("every provider has an adapter, and the adapters estimate what the catalogu
     expect(e.configured()).toBe(true);
   }
   expect(enginesFor("video").map((e) => e.id).sort()).toEqual(["byteplus", "fal", "higgsfield", "xai"]);
-  expect(enginesFor("text").map((e) => e.id)).toEqual(["vercel"]);
+  /* Claude text direct (TEXT_DIRECT) has its own text-only adapter beside the gateway's. */
+  expect(enginesFor("text").map((e) => e.id)).toEqual(["vercel", "anthropic"]);
   expect(() => engineFor("nope")).toThrow();
 
   const model = getModel(DEFAULT_MODEL_ID);

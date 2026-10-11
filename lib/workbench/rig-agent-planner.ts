@@ -2,9 +2,11 @@ import { ToolLoopAgent, Output, isStepCount, tool, type LanguageModel, type Lang
 import type { LanguageModelV4, LanguageModelV4Content, LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import { z } from "zod";
 import { ATOMIK_AUTO_MODEL_IDS, isAtomikModel } from "../atomikModelPolicy";
+import { aliasModel } from "../modelAliases";
 import { textCostUsd, textQuoteCostUsd, type CatalogModel } from "../catalog";
 import { ATOMIK_IMAGE_TOKENS, ATOMIK_MAX_VISUALS } from "./atomik-reference-types";
-import { directTextCostUsd, sdkTextUsage } from "../openai-direct";
+import { directTextCostUsd } from "../openai-direct";
+import { stepTextUsage } from "../textDirect";
 import { DryBoard, createNodeInput, lockInput, renderInput, wireInput, type BoardSnapshot, type PlanDraft, type SnapshotAttachment } from "./rig-agent-plan";
 
 /*
@@ -164,22 +166,24 @@ export function plannerBounds(snapshot: BoardSnapshot): { perCallInputTokens: nu
   return { perCallInputTokens: sent + answers + earlier + attached, outputTokens: PLANNER_MAX_OUTPUT_TOKENS, calls: PLANNER_STEPS };
 }
 
-/** The planning turn's ceiling in the model's dollars (reserved before it starts), or null when the model has no confirmed price. */
-export function plannerCeilingUsd(model: CatalogModel, snapshot: BoardSnapshot, directOpenAI = false): number | null {
+/** The planning turn's ceiling in the model's dollars (reserved before it starts), or null when the model has no confirmed price.
+ * `direct`: the turn takes a direct door (any vendor), so each call is quoted at its cold cache-write ceiling. */
+export function plannerCeilingUsd(model: CatalogModel, snapshot: BoardSnapshot, direct = false): number | null {
   const bounds = plannerBounds(snapshot);
-  const perCall = textQuoteCostUsd(model, bounds.perCallInputTokens, bounds.outputTokens, directOpenAI);
+  const perCall = textQuoteCostUsd(model, bounds.perCallInputTokens, bounds.outputTokens, direct);
   return perCall == null || !Number.isFinite(perCall) || perCall < 0 ? null : perCall * bounds.calls;
 }
 
-/** What the turn used, in the model's dollars: each call at its own reported usage. Null when any call's usage is missing. */
-export function plannerCostUsd(model: CatalogModel, steps: readonly LanguageModelUsage[] | undefined, directOpenAI = false): number | null {
+/** What the turn used, in the model's dollars: each call at its own reported usage. Null when any call's usage is missing.
+ * A direct turn reads each vendor's own raw counts (cache reads and writes, thought tokens) and prices them at the snapshot. */
+export function plannerCostUsd(model: CatalogModel, steps: readonly LanguageModelUsage[] | undefined, direct = false): number | null {
   if (!steps?.length || steps.length > PLANNER_STEPS) return null;
   let total = 0;
   for (const usage of steps) {
-    const reported = sdkTextUsage(usage, directOpenAI);
+    const reported = stepTextUsage(model.id, usage, direct);
     const input = reported.prompt_tokens, output = reported.completion_tokens;
     if (![input, output].every((n) => typeof n === "number" && Number.isSafeInteger(n) && n >= 0)) return null;
-    const cost = directOpenAI ? directTextCostUsd(model, reported) : textCostUsd(model, input as number, output as number);
+    const cost = direct ? directTextCostUsd(model, reported) : textCostUsd(model, input as number, output as number);
     if (cost == null || !Number.isFinite(cost) || cost < 0) return null;
     total += cost;
   }
@@ -257,7 +261,9 @@ export async function runPlanner(snapshot: BoardSnapshot, model: LanguageModel, 
  * three families, never swapped for another; Auto takes Atomik's own economy
  * choice among them, else the first priced one.
  */
-export function selectPlannerModel(want: string, menu: readonly { id: string }[]): string {
+export function selectPlannerModel(wanted: string, menu: readonly { id: string }[]): string {
+  /* A run saved on a dropped id is priced and run on its alias (lib/modelAliases.ts). */
+  const want = aliasModel(wanted);
   const offered = menu.filter((m) => RIG_AGENT_FAMILIES.test(m.id) && isAtomikModel(m.id));
   if (want && want !== "auto") {
     if (!RIG_AGENT_FAMILIES.test(want) || !isAtomikModel(want)) throw new PlannerError("Atomik builds boards with Claude, OpenAI or Grok models. Choose one of those, or Auto.");

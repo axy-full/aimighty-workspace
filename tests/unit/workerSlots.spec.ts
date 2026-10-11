@@ -38,6 +38,15 @@ test("worker slots enforce four platform-wide and two per workspace, refuse a ru
   // Another kind has its own ceiling.
   expect(await acquireSlot({ kind: "astra-blender/render.requested", workspaceId: "ws_d", jobId: "astra_d1" }, { clock })).not.toBeNull();
   expect((await liveSlots({ clock })).map((s) => s.jobId).sort()).toEqual(["astra_d1", "job_a1", "job_a2", "job_b1", "job_c1"]);
+  // Native 3D renders stop at three platform-wide (the self-hosted pool's size), still two per workspace.
+  const { WORKER_SLOT_KIND_LIMITS, workerSlotLimit } = await import("../../lib/worker-slots");
+  expect(WORKER_SLOT_KIND_LIMITS).toEqual({ "astra-blender/render.requested": 3 });
+  expect(workerSlotLimit("render/requested")).toBe(4);
+  expect(await acquireSlot({ kind: "astra-blender/render.requested", workspaceId: "ws_x", jobId: "astra_x1" }, { clock })).not.toBeNull();
+  expect(await acquireSlot({ kind: "astra-blender/render.requested", workspaceId: "ws_y", jobId: "astra_y1" }, { clock })).not.toBeNull();
+  expect(await acquireSlot({ kind: "astra-blender/render.requested", workspaceId: "ws_z", jobId: "astra_z1" }, { clock })).toBeNull();
+  expect((await liveSlots({ clock })).filter((s) => s.kind === "astra-blender/render.requested").map((s) => s.jobId).sort()).toEqual(["astra_d1", "astra_x1", "astra_y1"]);
+  for (const slot of await liveSlots({ clock })) if (slot.jobId === "astra_x1" || slot.jobId === "astra_y1") await releaseSlot(slot.id);
   // Release frees exactly that slot.
   await releaseSlot(b1!.id);
   expect(await acquireSlot({ kind, workspaceId: "ws_d", jobId: "job_d1" }, { clock })).not.toBeNull();

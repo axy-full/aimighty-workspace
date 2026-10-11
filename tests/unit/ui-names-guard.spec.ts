@@ -14,7 +14,7 @@ import { compare, expired, growth, lowered, onMain, past, readJson, shapeProblem
  * files sat on the baseline or outside its roots, and because "Gen" was never a banned name. This spec reads
  * every string a person can read, in app/, components/ and lib/, and fails on any banned name:
  *
- *   Moleculr, Subatomik, Rig, Genjutsu, Soul, Higgsfield, "Gen" as the name of a place (and "Generate" as a
+ *   Moleculr, Subatomik, Genjutsu, Soul, Higgsfield, "Gen" as the name of a place (and "Generate" as a
  *   navigation label), "Astra" unless it stands right after "Topaz" ("Topaz Astra 2"; GPT-6 Astra is banned), the old suite phrases, and the same words in capitals.
  *
  * Exempt: code identifiers, comments, tests, design/particl-graphite/, docs/handoff-diff.md and
@@ -51,7 +51,9 @@ const list = (hits: Hit[]) => hits.map(format);
 /* The matcher itself: what it must catch and what it must leave alone.                            */
 /* ---------------------------------------------------------------------------------------------- */
 
-const R = ["R", "ig"].join("");
+/* A banned word for the matcher's cases (it was the board view's name until the owner kept "Rig" on 10 Oct 2026). */
+const R = ["Sub", "atomik"].join("");
+const RIG = ["R", "ig"].join("");
 const SOUL = ["So", "ul"].join("");
 const GEN = ["G", "en"].join("");
 const ASTRA = ["As", "tra"].join("");
@@ -62,6 +64,8 @@ const names = (source: string, navigation = false) => bannedNamesIn("probe.tsx",
 test("the matcher reads every kind of UI string: ⌘K data, tab tables, page titles, JSX, attributes, templates", () => {
   /* ⌘K and tab label data: strings in object literals and arrays. */
   expect(names(`export const rows = [{ group: "SUITE", label: "${R}", hint: "x" }];`)).toEqual([R]);
+  /* "Rig" names a board view again (owner, 10 Oct 2026): never flagged, in text or in capitals. */
+  expect(names(`const a = <button aria-label="Open the ${RIG}">${RIG}</button>; const b = "${RIG.toUpperCase()}";`)).toEqual([]);
   expect(names(`export const TABS = { a: { label: \`Open in ${GEN}\` } };`)).toEqual([`Open in ${GEN}`]);
   expect(names(`const a = "Make it in ${GEN}";`)).toEqual([GEN]);
   expect(names(`const label = \`\${n} ${MOLECULR} Business\`;`)).toEqual([MOLECULR]);

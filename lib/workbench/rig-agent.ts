@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { TextNotSentError } from "@/lib/textDirect";
 import { after } from "next/server";
 import { db, now } from "@/lib/db";
 import { EVENTS, RIG_AGENT_STOPPED, RIG_RENDER_SETTLED, type WorkerEvent } from "@/lib/dispatch";
@@ -13,7 +14,7 @@ import { creditState, quotedCredits } from "@/lib/credits";
 import { reserveGenerationSpend, runCharges, RUN_LIMIT_REACHED, SpendReservationError } from "@/lib/generationRequests";
 import { languageAuth, languageModel } from "@/lib/language-provider";
 import { meter } from "@/lib/meter";
-import { textVendor } from "@/lib/openai-direct";
+import { isDirectText, textEngine } from "@/lib/openai-direct";
 import { fromTenths, isRunLimitAmount, runTally, toTenths, type RunCharge } from "@/lib/runLimit";
 import { applyCanvasOps } from "./canvas-ops";
 import type { OpOutcome } from "./canvas-ops-model";
@@ -172,7 +173,7 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
   const paid: RigAgentPaidStepView[] = steps.filter((s) => s.purpose === "take" || s.purpose === "verify").map((s) => {
     const title = s.fixOf != null ? `Fix · ${stepTitle(run, s)}` : stepTitle(run, s);
     if (s.purpose === "verify")
-      return { seq: s.seq, tool: "verify", title, state: s.state, quote: null, worst: null, pause: null, charged: s.creditsSettled, outcome: null, charge: null,
+      return { seq: s.seq, nodeId: s.nodeId, tool: "verify", title, state: s.state, quote: null, worst: null, pause: null, charged: s.creditsSettled, outcome: null, charge: null,
         reason: RIG_AGENT_VERIFY ? s.reason : VERIFY_LATER, canRender: false, fingerprint: null };
     const charge = s.jobId ? byId.get(s.jobId) : undefined;
     const ended = s.state === "done" || s.state === "failed";
@@ -183,7 +184,7 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
       : s.creditsSettled != null ? { credits: s.creditsSettled, settled: true } : null;
     const open = s.state === "waiting" || s.state === "paused";
     return {
-      seq: s.seq, tool: "render", title, state: s.state, quote: s.quoteCredits,
+      seq: s.seq, nodeId: s.nodeId, tool: "render", title, state: s.state, quote: s.quoteCredits,
       worst: s.quoteCredits == null ? null : fromTenths(toTenths(s.quoteCredits) * Math.max(1, s.band ?? 1)),
       pause: s.state === "paused" ? s.pause : null, charged, outcome, charge: ledger, reason: s.reason,
       canRender: mine && open && asking, fingerprint: open && s.admission ? s.admission.quote.fingerprint : null,
@@ -770,7 +771,8 @@ async function waitForLease(runId: string, waitMs: number): Promise<RunLease | n
 /* ── The tick ─────────────────────────────────────────────────────────── */
 
 /** The thinking model a plan is priced at before it runs: its id, its catalogue price, and whether its words go to OpenAI directly. */
-export type PlannerPrice = { id: string; catalog: CatalogModel; direct: boolean };
+/** `engine`: the ledger the turn is reserved and settled on (lib/openai-direct.ts textEngine); older callers pass `direct` alone. */
+export type PlannerPrice = { id: string; catalog: CatalogModel; direct: boolean; engine?: string };
 
 export type TickDeps = PaidDeps & {
   /** The planning turn (default: the Atomik model policy, or the mock planner under ENGINE_MOCK=1), on the model it was priced at. */
@@ -841,7 +843,7 @@ async function planRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<Ri
   /* Priced before it runs: the most this turn can use, reserved inside the run's limit. */
   let price: PlannerPrice;
   try { price = await (deps.pricing ?? plannerPrice)(run.model); }
-  catch (error) { return failRun(run.id, error instanceof PlannerError ? error.message : "Atomik could not price this plan. Ask again.", ["planning"]); }
+  catch (error) { return failRun(run.id, error instanceof PlannerError || error instanceof TextNotSentError ? error.message : "Atomik could not price this plan. Ask again.", ["planning"]); }
   const ceiling = plannerCeilingUsd(price.catalog, snapshot, price.direct);
   if (ceiling == null) return failRun(run.id, "This thinking model has no confirmed price, so Atomik does not plan with it. Choose another, or Auto.", ["planning"]);
   if (run.capCredits == null) return failRun(run.id, "This request has no approved limit, so Atomik does not plan it. Ask again.", ["planning"]);
@@ -891,7 +893,7 @@ async function planRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<Ri
 /** The planning turn's meter event: text, on the thinking model, for the production, by the person who asked. */
 function planEvent(run: RunRow, price: PlannerPrice, status: "running" | "succeeded" | "failed", costUsd: number) {
   return {
-    id: planEventId(run.id), kind: "text" as const, engine: price.direct ? "openai" : "vercel", model: price.id, status,
+    id: planEventId(run.id), kind: "text" as const, engine: price.engine ?? (price.direct ? "openai" : "vercel"), model: price.id, status,
     engineCostUsd: costUsd, projectId: run.productionId, createdBy: run.owner,
   };
 }
@@ -949,7 +951,8 @@ export async function plannerPrice(want: string): Promise<PlannerPrice> {
   const id = selectPlannerModel(want, atomikModels(models));
   const model = models.find((m) => m.id === id);
   if (!model) throw new PlannerError("That thinking model is not available right now. Choose another, or Auto.");
-  return { id, catalog: model, direct: textVendor(id) === "openai" };
+  /* A direct door (any vendor) is quoted at its cold cache-write ceiling and settled at its usage × this snapshot. */
+  return { id, catalog: model, direct: isDirectText(id), engine: textEngine(id) };
 }
 
 async function defaultPlan(snapshot: BoardSnapshot, id: string, attachments: PlannerAttachmentContent): Promise<PlannerOutcome & { model: string }> {

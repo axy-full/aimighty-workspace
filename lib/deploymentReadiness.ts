@@ -1,4 +1,5 @@
 import { deploymentSetting, isProductionDeployment, onVercel } from "./deployment";
+import { backendKind, r2ConfigFromEnv } from "./storage/backend";
 
 type Environment = Record<string, string | undefined>;
 export type ReadinessCheck = {
@@ -36,8 +37,8 @@ export function deploymentReadiness(
   );
   add(
     "storage",
-    Boolean(env.BLOB_READ_WRITE_TOKEN),
-    "Private blob storage",
+    cloudStorageReady(env),
+    "Private cloud storage: BLOB_READ_WRITE_TOKEN, or STORAGE_BACKEND=r2 with R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET",
   );
   add(
     "mail",
@@ -113,4 +114,22 @@ export function deploymentReadiness(
     verified: false,
     checks,
   };
+}
+
+/**
+ * Storage is ready when the backend the app will actually use
+ * (lib/storage/backend.ts) is a cloud store with its configuration complete:
+ * r2 needs all four R2_* variables, blob needs the token. Local disk, or an
+ * unknown STORAGE_BACKEND (which the app refuses), is not ready. With
+ * STORAGE_BACKEND unset the Blob token alone still selects blob, as before.
+ */
+function cloudStorageReady(env: Environment): boolean {
+  try {
+    const kind = backendKind(env);
+    if (kind === "r2") return Boolean(r2ConfigFromEnv(env));
+    if (kind === "blob") return Boolean(env.BLOB_READ_WRITE_TOKEN);
+    return false;
+  } catch {
+    return false;
+  }
 }

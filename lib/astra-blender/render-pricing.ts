@@ -1,6 +1,7 @@
 import { billCredits } from '../creditTerms';
 import { paidByPlatformEngine } from '../platformSpend';
 import type { AstraRuntimeUsage } from './sandbox';
+import { ASTRA_COMPUTE_ENGINES } from './backend';
 export const ASTRA_COMPUTE_MODEL = 'blender-5.2.2-cpu';
 export type AstraComputeRates = {
     cpuUsdPerHour: number;
@@ -25,4 +26,5 @@ export function astraComputeRates(): AstraComputeRates | null {
 }
 export function astraComputeCost(usage: AstraRuntimeUsage, rates: AstraComputeRates) { return Math.max(0, usage.activeCpuMs / 3600000 * rates.cpuUsdPerHour + Math.max(60000, usage.durationMs) / 3600000 * 4 * rates.memoryUsdPerGbHour + usage.egressBytes / 1e9 * rates.egressUsdPerGb + rates.createUsd); }
 export const ASTRA_MAX_USAGE: AstraRuntimeUsage = { activeCpuMs: 360000, durationMs: 180000, egressBytes: 512 * 1024 * 1024 };
-export function astraComputeCredits(cost: number) { return paidByPlatformEngine('vercel-sandbox') ? billCredits(cost, ASTRA_COMPUTE_MODEL) : 0; }
+/** Same formula and model on either backend; the engine is the job's own meter label (vercel-sandbox or selfhost-blender). */
+export function astraComputeCredits(cost: number, engine: string = ASTRA_COMPUTE_ENGINES.vercel) { return paidByPlatformEngine(engine) ? billCredits(cost, ASTRA_COMPUTE_MODEL) : 0; }

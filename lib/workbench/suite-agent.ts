@@ -1,4 +1,5 @@
-import { sdkTextUsage, textVendor } from '../openai-direct';
+import { isDirectText } from '../openai-direct';
+import { stepTextUsage } from '../textDirect';
 import { ToolLoopAgent, Output, isStepCount, tool, type ModelMessage, type LanguageModel } from 'ai';
 import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
 import { z } from 'zod';
@@ -90,6 +91,21 @@ export function suiteAgentMessages(envelope: SuiteAgentEnvelope): ModelMessage[]
   ] }];
 }
 
+/**
+ * The per-step output ceiling sent to the SDK. The Anthropic SDK adds a
+ * `thinking.budgetTokens` budget on top of `maxOutputTokens`, while the quote
+ * (atomik-server compileAtomikRequest) already counts the budget inside
+ * `maxTokens`: it is taken off here, as development-server does, so a step
+ * never exceeds its quoted ceiling.
+ */
+export function suiteAgentMaxOutputTokens(envelope: Pick<SuiteAgentEnvelope, 'model' | 'maxTokens' | 'providerOptions'>): number {
+  const thinking = (envelope.providerOptions?.anthropic as { thinking?: { type?: unknown; budgetTokens?: unknown } } | undefined)?.thinking;
+  if (!envelope.model.startsWith('anthropic/') || thinking?.type !== 'enabled') return envelope.maxTokens;
+  const budget = thinking.budgetTokens;
+  if (typeof budget !== 'number' || !Number.isSafeInteger(budget) || budget < 0 || budget >= envelope.maxTokens) throw new SuiteAgentBudgetError();
+  return envelope.maxTokens - budget;
+}
+
 /** The production SDK loop is also injectable with its official mock model. */
 export function createSuiteAgent(envelope: SuiteAgentEnvelope, model: LanguageModel, onStep?: (step: { step: number; tools: string[]; inputTokens?: number; outputTokens?: number }) => Promise<void>) {
   if (![envelope.maxTokens, envelope.inputTokenBudget, envelope.toolResultByteBudget].every(value => Number.isSafeInteger(value) && value > 0) || envelope.maxTokens > 32768 || envelope.inputTokenBudget > 2_000_000 || envelope.toolResultByteBudget > 1_000_000 || envelope.images.length > ATOMIK_MAX_VISUALS)
@@ -98,7 +114,7 @@ export function createSuiteAgent(envelope: SuiteAgentEnvelope, model: LanguageMo
   let completed = 0;
   return new ToolLoopAgent({
     model, instructions: suiteAgentInstructions(envelope.suite),
-    maxOutputTokens: envelope.maxTokens, maxRetries: 0,
+    maxOutputTokens: suiteAgentMaxOutputTokens(envelope), maxRetries: 0,
     providerOptions: envelope.providerOptions,
     stopWhen: isStepCount(SUITE_AGENT_STEPS),
     output: Output.object({ schema: suiteAgentResultSchema }),
@@ -170,5 +186,5 @@ export async function runSuiteAgent(envelope: SuiteAgentEnvelope, auth: Record<s
   if (!validation.valid) throw new Error('The agent proposal referenced unavailable assets. This attempt is saved and will not be repeated automatically.');
   return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(output) } }],
     usage: { prompt_tokens: result.totalUsage.inputTokens, completion_tokens: result.totalUsage.outputTokens,
-      steps: result.steps.map(step => sdkTextUsage(step.usage, textVendor(envelope.model) === 'openai')) }, agentTrace: trace }) };
+      steps: result.steps.map(step => stepTextUsage(envelope.model, step.usage, isDirectText(envelope.model))) }, agentTrace: trace }) };
 }

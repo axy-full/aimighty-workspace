@@ -3,7 +3,7 @@ import { DEFAULT_TOPAZ_IMAGE, TOPAZ_IMAGE_MODEL, type TopazImageSettings } from 
 import type { LibraryEntry } from "@/lib/workspace/library";
 
 /**
- * Make › Upscale (design/particl-graphite, Make frames: the third quick tool beside Motion transfer and Object swap):
+ * Make › Upscale (the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12): the third quick tool beside Motion transfer and Object swap):
  * the request bodies the two existing upscale panels send (components/make/AstraUpscale.tsx for a clip,
  * components/make/TopazImageUpscale.tsx for a still) through the existing quote and send routes
  * (POST /api/generate/quote, POST /api/generate). Pure; nothing here prices anything, the server's quote does.

@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { MADE_EVENT, MAKE_PARAM, announceMade, madeLine, MAKE_SCREEN, RECENT_CHIPS, inferType, makeDest, readMake, recentEntries, typeNote, wantsChange } from "../../lib/shell/make";
 
-/* Make with the new interface (design/particl-graphite/README.md § 3.2, "Make frames.dc.html"): Auto's type, the line
+/* Make with the new interface (design/particl-graphite/README.md § 3.2, the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12)): Auto's type, the line
    that says where a result goes, `make=change`, and Recent's chips. */
 
 test("Auto infers the type from the words, as the master does: a still, a sound, else video", () => {

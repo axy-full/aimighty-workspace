@@ -10,11 +10,14 @@ const read = (file: string) => readFileSync(join(__dirname, "..", "..", file), "
 const shell = read("components/graphite/SuitesShell.tsx");
 
 test("seam b: the phone's own screens never share the page with the desktop's Make panel or Atomik's panel", () => {
-  expect(shell).toMatch(/\{shell\.make && !phoneOn \? \(/);
+  /* Make's panel mounts through `makePanel`, which is never true on the phone (redesign C3 adds: nor while Make is the
+     new frame's page, unless a quick tool is open over it). */
+  expect(shell).toMatch(/const makePanel = Boolean\(shell\.make\) && !phoneOn && /);
+  expect(shell).toMatch(/\{makePanel \? \(/);
   expect(shell).toMatch(/\{!phoneOn \? <AtomikMount ctx=\{screenCtx\} \/> : null\}/);
-  /* phoneOn is declared before the JSX that reads it. */
+  /* phoneOn is declared before the line that reads it. */
   expect(shell.indexOf("const phoneOn = shell.phone.on;")).toBeGreaterThan(0);
-  expect(shell.indexOf("const phoneOn = shell.phone.on;")).toBeLessThan(shell.indexOf("shell.make && !phoneOn"));
+  expect(shell.indexOf("const phoneOn = shell.phone.on;")).toBeLessThan(shell.indexOf("const makePanel ="));
 });
 
 test("seam c: ⌘K's ask seam opens Atomik's panel with the words, and the Agent page only before the panel has landed", () => {
