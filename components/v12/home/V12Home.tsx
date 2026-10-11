@@ -20,6 +20,8 @@ import { useHomeStart } from "@/components/graphite/home/use-home-start";
 import { MAX_FILES } from "@/components/graphite/home/BriefBox";
 import { Bar, BarChip, BarSheet, type BarMention } from "@/components/v12/bar/Bar";
 import { Price } from "@/components/v12/ui/Price";
+import { readGuestBrief, clearGuestBrief } from "@/lib/guest/brief";
+import { takeJoinReturn } from "@/lib/v12/joinReturn";
 import { useWall } from "./use-wall";
 import { Wall } from "./Wall";
 import { WaitingStrip } from "./WaitingStrip";
@@ -104,6 +106,28 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
   const quote = startQuote({ spendOff: Boolean(spendOff), figure, thinking: s.thinking, dollars, creditUsd });
   const startMarker = startWords(quote, { creditUsd, dollars: money.price });
 
+  /* After joining (`?joined=1`, docs/redesign/inventory.md § 8.6): what the visitor typed before the join sheet is in the bar, kept in
+     this browser (lib/guest/brief.ts), with Start's price beside it as always. Once, and only into an empty bar. */
+  /* The join sheet's note says where they were (lib/v12/joinReturn.ts): Make takes the words into its composer, where
+     Make prices them; Home puts them in this bar, with Start's price beside it. `?joined=1` still means Home. */
+  /* undefined: not read yet; read once, in the first effect (the note is removed as it is read). */
+  const joined = useRef<"home" | "make" | null | undefined>(undefined);
+  const { onDraft: setDraftOnce } = s;
+  const bar = s.draft.text;
+  const openMake = shell.openMake;
+  useEffect(() => {
+    if (joined.current === undefined)
+      joined.current = takeJoinReturn() ?? (new URLSearchParams(window.location.search).get("joined") === "1" ? "home" : null);
+    const where = joined.current;
+    if (!where) return;
+    joined.current = null;
+    const kept = readGuestBrief();
+    if (!kept) return;
+    clearGuestBrief();
+    if (where === "make") { if (kept.text.trim()) openMake({ prompt: kept.text }); return; }
+    if (!bar.trim()) setDraftOnce(() => kept);
+  }, [bar, setDraftOnce, openMake]);
+
   /* Attach: a brief (PDF or text) is read into the words; pictures and clips go with the new board as references. */
   const [note, setNote] = useState<{ tone: "note" | "problem"; text: string } | null>(null);
   const reading = useRef<AbortController | null>(null);
@@ -172,7 +196,7 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
           <WaitingStrip items={items} shown={waitingShown(wide)} onApprove={approvals.approve}
             onOpen={() => nav.openApprovals()} onMore={() => nav.openApprovals()} onHide={hide} />
         ) : null}
-        <Wall tiles={wall.tiles} status={wall.status} row={wallRow(stripOn)} picked={picked?.id ?? null} onPick={pick} onRemix={remix} onMenu={(e, tile) => wallMenu.open(e, tile.id)} />
+        <Wall tiles={wall.tiles} status={wall.status} row={wallRow(stripOn)} picked={picked?.id ?? null} onPick={pick} onRemix={remix} onMenu={(e, tile) => wallMenu.open(e, tile.id)} onBroken={(tile) => wall.markBroken(tile.id)} unloaded={wall.unloaded} />
         <WallMenu scope={scope} tiles={wall.tiles} menu={wallMenu.menu} onClose={wallMenu.close} onChoose={(tile) => setPickedId(tile.id)} onRemix={remix} />
         <div className="v12-hm-lower" data-dim={picked ? "" : undefined}>
           <YourBoards scope={scope} projects={projects} status={status} error={error} onRetry={onRetry} now={now} approvals={approvalsByDraft}

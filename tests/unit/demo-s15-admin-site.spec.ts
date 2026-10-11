@@ -58,6 +58,6 @@ test("the owner's change is checked: junk and unknown fields are refused, a gone
   expect((await route.PATCH(patch({ guestWorkspace: "ws_gone" }))).status).toBe(400);
   expect(writes).toEqual([]);
   const ok = await route.PATCH(patch({ guestHome: true, guestWorkspace: "ws_demo" }));
-  expect(await ok.json()).toEqual({ ok: true, openSignup: false, guestHome: true, guestWorkspace: "ws_demo", newInterfaceWorkspaces: [] });
+  expect(await ok.json()).toEqual({ ok: true, openSignup: false, guestHome: true, visitorPages: false, guestWorkspace: "ws_demo", newInterfaceWorkspaces: [] });
   expect(writes).toEqual([{ guestHome: true, guestWorkspace: "ws_demo" }]);
 });

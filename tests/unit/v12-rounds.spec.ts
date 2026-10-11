@@ -56,6 +56,9 @@ test("the plan reads as a client round: a step per shot with what was asked, and
   expect(out.steps.map((s) => s.title)).toEqual(["01 — Opening", "02 — The turn", "03 — Close"]);
   expect(out.steps.map((s) => s.meta)).toEqual(["Asked: “Sphere bigger in the wide” · Seedance", "Asked: “Bottle fuller, label to camera” · Seedance", "Asked: “Lose the second figure” · Seedance"]);
   expect(out.primary).toMatchObject({ kind: "plan", label: "Approve all · 93 cr" });
+  /* A plan that already asks only for "the rest" keeps that wording: never "Approve all the rest". */
+  const rest = model({ primary: { ...model().primary!, label: "Approve the rest · 40 cr" } as never });
+  expect(clientRoundModel(rest, clientRoundGoal(REPLY), SHOTS).primary).toMatchObject({ kind: "plan", label: "Approve the rest · 40 cr" });
   /* Prices and state are the plan's: nothing is added or worked out here. */
   expect(out.steps[0]).toMatchObject({ price: null, state: "proposed" });
   expect(clientRoundModel(model({ steps: model().steps.slice(0, 1) }), clientRoundGoal(REPLY), SHOTS).title).toBe("Client round · 1 change");

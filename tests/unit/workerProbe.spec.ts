@@ -23,6 +23,15 @@ test.beforeAll(() => {
   envBefore = Object.fromEntries(Object.keys(PROBE_ENV).map((k) => [k, process.env[k]]));
   Object.assign(process.env, PROBE_ENV);
 });
+/* Legacy-flagged rows this file inserts: removed when it is done, because the platform database is shared by every spec file in a worker and
+   lib/platform.ts legacyWorkspace() takes the first legacy row as the house (platformOwnerPrivacy runs after this file in the same worker). */
+const legacyRows: string[] = [];
+test.afterAll(async () => {
+  if (legacyRows.length) {
+    const { platformDb } = await import("../../lib/platform");
+    for (const id of legacyRows) await platformDb().execute({ sql: "DELETE FROM workspaces WHERE id=?", args: [id] });
+  }
+});
 test.afterAll(() => {
   for (const [k, v] of Object.entries(envBefore)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
 });
@@ -42,6 +51,7 @@ async function workspace(id: string, legacy = false) {
       legacy ? 1 : 0,
     ],
   });
+  if (legacy) legacyRows.push(id);
   return (await getWorkspace(id))!;
 }
 

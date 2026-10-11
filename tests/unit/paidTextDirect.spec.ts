@@ -58,11 +58,12 @@ const xaiReply = { id: "resp_xai_fixture", object: "response", created_at: 1, mo
  * that reply costs at the snapshot, worked by hand.
  */
 const VENDORS = [
-  { vendor: "anthropic", model: "anthropic/claude-sonnet-4.6", origin: "https://api.anthropic.com", reply: anthropicReply,
+  /* Ids the owner's keys list (11 Oct 2026): Claude Sonnet 5 and Gemini 3.5 Flash-Lite. */
+  { vendor: "anthropic", model: "anthropic/claude-sonnet-5", origin: "https://api.anthropic.com", reply: anthropicReply,
     refusal: { status: 429, body: { type: "error", error: { type: "rate_limit_error", message: "Fixture." } } },
-    // 100 uncached × $3/M + 60 cache reads × $0.30/M + 40 cache writes × $3.75/M + 25 out × $15/M
-    usd: 100 * 0.000003 + 60 * 0.0000003 + 40 * 0.00000375 + 25 * 0.000015 },
-  { vendor: "google", model: "google/gemini-2.5-flash", origin: "https://generativelanguage.googleapis.com", reply: googleReply,
+    // 100 uncached × $2/M + 60 cache reads × $0.20/M + 40 cache writes × $2.50/M + 25 out × $10/M
+    usd: 100 * 0.000002 + 60 * 0.0000002 + 40 * 0.0000025 + 25 * 0.00001 },
+  { vendor: "google", model: "google/gemini-3.5-flash-lite", origin: "https://generativelanguage.googleapis.com", reply: googleReply,
     refusal: { status: 400, body: { error: { code: 400, message: "Fixture.", status: "INVALID_ARGUMENT" } } },
     // 80 uncached × $0.30/M + 120 cache reads × $0.03/M + (30 answer + 50 thought) out × $2.50/M
     usd: 80 * 0.0000003 + 120 * 0.00000003 + 80 * 0.0000025 },
@@ -358,7 +359,7 @@ test("ANTHROPIC_API_KEY set with TEXT_DIRECT empty: paid text, the meter, the le
 
 test("the writer's model list is PROMPT_MODELS, still reading GATEWAY_PROMPT_MODELS; the legacy Claude call only when REFINE_PROVIDER forces it", async () => {
   const { PROMPT_MODELS, refineProvider } = await import("../../lib/enhance");
-  expect(PROMPT_MODELS()).toEqual(["anthropic/claude-opus-5", "anthropic/claude-sonnet-5"]);
+  expect(PROMPT_MODELS()).toEqual(["anthropic/claude-sonnet-5.5", "anthropic/claude-sonnet-5"]);
   process.env.GATEWAY_PROMPT_MODELS = "anthropic/claude-haiku-4.5";
   expect(PROMPT_MODELS()).toEqual(["anthropic/claude-haiku-4.5"]);
   process.env.PROMPT_MODELS = "google/gemini-2.5-flash, anthropic/claude-sonnet-4.6";
@@ -377,12 +378,12 @@ test("the inline writer on a direct door: priced at usage × snapshot, on the ve
   await inWorkspace(async () => {
     const { enhancePrompt, activeWriter } = await import("../../lib/enhance");
     // The platform's enhance writer (DEFAULT_TEXT_MODELS), now on Anthropic's own API.
-    expect(await activeWriter()).toMatchObject({ provider: "gateway", model: "anthropic/claude-sonnet-5", via: "Model provider, direct", configured: true });
+    expect(await activeWriter()).toMatchObject({ provider: "gateway", model: "anthropic/claude-sonnet-5.5", via: "Model provider, direct", configured: true });
     const refined = await enhancePrompt({ prompt: "A tree in rain.", citations: [], provider: "gateway" });
     expect(transport.urls).toHaveLength(1);
-    expect(refined).toMatchObject({ text: "A lone tree in steady rain.", move: "static", ledger: "anthropic", model: "anthropic/claude-sonnet-5" });
-    // Claude Sonnet 5 at the snapshot: 100 × $2/M + 60 reads × $0.20/M + 40 writes × $2.50/M + 25 out × $10/M.
-    expect(refined.costUsd).toBeCloseTo(100 * 0.000002 + 60 * 0.0000002 + 40 * 0.0000025 + 25 * 0.00001, 15);
+    expect(refined).toMatchObject({ text: "A lone tree in steady rain.", move: "static", ledger: "anthropic", model: "anthropic/claude-sonnet-5.5" });
+    // Claude Sonnet 5.5 at its list price (provider-priced): 100 × $2/M + 60 reads × $0.10/M + 40 writes × $2.50/M + 25 out × $10/M.
+    expect(refined.costUsd).toBeCloseTo(100 * 0.000002 + 60 * 0.0000001 + 40 * 0.0000025 + 25 * 0.00001, 15);
   });
 });
 

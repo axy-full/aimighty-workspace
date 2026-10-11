@@ -412,7 +412,13 @@ async function fixture(name: string, run: (f: Awaited<ReturnType<typeof setup>>)
   if (name !== HOUSE_WORKSPACE_ID) await grantCredits(name, 100000, "Cinema Studio sound test", actor.user.id, "manual");
   const ws = rowToWorkspace((await platformDb().execute({ sql: "SELECT * FROM workspaces WHERE id=?", args: [name] })).rows[0]);
   expect(ws.legacy).toBe(legacy);
-  await runInTenant(ws, async () => run(await setup(name)), actor);
+  try {
+    await runInTenant(ws, async () => run(await setup(name)), actor);
+  } finally {
+    /* The platform database is shared by every spec file in this worker: a legacy-flagged row left behind is picked as "the house" by
+       lib/platform.ts legacyWorkspace() (first legacy row) in a spec that runs after this one (platformOwnerPrivacy). */
+    if (legacy) await platformDb().execute({ sql: "DELETE FROM workspaces WHERE id=?", args: [name] });
+  }
 }
 async function setup(name: string) {
   const database = await import("../../lib/db");
