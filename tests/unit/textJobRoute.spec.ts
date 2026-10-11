@@ -78,27 +78,42 @@ test("the admin route sends each job its own list and what a saved choice does",
   expect(body.textEffects.shot).toMatchObject({ runnable: true });
 });
 
+/** Everything that decides whether a text model has a route (lib/textRoute.ts › textRouteWorks): the mock, the gateway's key and identity, the direct doors and their keys, the deployment's name, the catalogue source. */
+const ROUTE_ENV = ["ENGINE_MOCK", "TEXT_DIRECT", "MODEL_CATALOG", "PROMPT_MODELS", "VERCEL", "VERCEL_ENV", "VERCEL_OIDC_TOKEN", "PARTICL_DEPLOYMENT",
+  "AI_GATEWAY_API_KEY", "AI_GATEWAY_BASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY"] as const;
+/** Runs with exactly `env` set and every other routing variable cleared, then puts back what an earlier spec in this worker left. */
+async function withRouteEnv<T>(env: Partial<Record<(typeof ROUTE_ENV)[number], string>>, run: () => Promise<T> | T): Promise<T> {
+  const saved = Object.fromEntries(ROUTE_ENV.map((name) => [name, process.env[name]]));
+  try {
+    for (const name of ROUTE_ENV) delete process.env[name];
+    Object.assign(process.env, env);
+    return await run();
+  } finally {
+    for (const name of ROUTE_ENV) { if (saved[name] === undefined) delete process.env[name]; else process.env[name] = saved[name]; }
+  }
+}
+
 test("a saved enhance choice never reads \"X runs instead\" with X itself: it runs as saved, names the real stand-in, or says nothing can run it", async () => {
   const saved = "anthropic/claude-sonnet-5.5";
   /* Priced, with a working route, but not on the admin's list: the writer runs it as saved. */
-  expect(textEffect("enhance", saved, [])).toEqual({ saved, runnable: true, runs: saved });
-  /* No model in the writer's list has a route (no engine mock, no keys, no gateway): the old rule's stand-in was the first of the list, which could be the saved model itself. */
-  const keep = { mock: process.env.ENGINE_MOCK, list: process.env.PROMPT_MODELS, direct: process.env.TEXT_DIRECT };
-  try {
-    delete process.env.ENGINE_MOCK; delete process.env.TEXT_DIRECT;
-    process.env.PROMPT_MODELS = saved;
+  await withRouteEnv({ ENGINE_MOCK: "1" }, () => {
+    expect(textEffect("enhance", saved, [])).toEqual({ saved, runnable: true, runs: saved });
+  });
+  /* No model in the writer's list has a route (no engine mock, no keys, no gateway, whatever an earlier spec left set): the old rule's stand-in was the first of the list, which could be the saved model itself. */
+  await withRouteEnv({ PROMPT_MODELS: saved }, () => {
     expect(enhanceModelFor(saved)).toBe(saved);
     expect(textEffect("enhance", saved, ROUTABLE)).toEqual({ saved, runnable: false, runs: null });
-    process.env.PROMPT_MODELS = "google/gemini-3.1-pro-preview";
+  });
+  await withRouteEnv({ PROMPT_MODELS: "google/gemini-3.1-pro-preview" }, () => {
     expect(textEffect("enhance", saved, ROUTABLE)).toEqual({ saved, runnable: false, runs: null });
-  } finally {
-    for (const [name, value] of [["ENGINE_MOCK", keep.mock], ["PROMPT_MODELS", keep.list], ["TEXT_DIRECT", keep.direct]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
-  }
+  });
   /* With routes, a saved model the writer is not priced for gets the first of its list that works. */
-  const gpt = ROUTABLE.find((id) => id.startsWith("openai/"))!;
-  const effect = textEffect("enhance", gpt, ROUTABLE);
-  expect(effect.runs).not.toBe(gpt);
-  expect(effect.runs).toBe(enhanceModelFor(gpt));
+  await withRouteEnv({ ENGINE_MOCK: "1" }, () => {
+    const gpt = ROUTABLE.find((id) => id.startsWith("openai/"))!;
+    const effect = textEffect("enhance", gpt, ROUTABLE);
+    expect(effect.runs).not.toBe(gpt);
+    expect(effect.runs).toBe(enhanceModelFor(gpt));
+  });
 });
 
 test("ideas and shots read a saved choice against everything the catalogue serves, as Atomik does at run time, not the admin's priced list", async () => {
