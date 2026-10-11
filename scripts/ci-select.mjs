@@ -7,13 +7,16 @@
 // Three modes:
 //   full  the whole browser suite (today's 22 jobs). Every push to release/1 or main, every PR into main, and any PR
 //         that touches a path that is not on the slim list below. When in doubt, full.
-//   slim  a PR into release/1 whose every changed path is on the slim list: the specs it touches plus a fixed guard set.
+//   slim  a PR into release/1 whose every changed path is a presentational new-interface file (CSS, or a component with no
+//         fetch and no money word that nothing outside components/v12 imports), a test or documentation: the specs it touches
+//         plus a fixed guard set. Everything in lib/ is full, including lib/v12/.
 //   docs  a PR that only changes documentation: no browser specs (the unit shards and `core` still run).
 // Every mode but docs also runs the five-minute test. The unit shards and `core` run in every mode.
 //
 // Nothing here skips a test inside a suite; it only decides which spec files a PR runs in the browser.
-import { readdirSync, readFileSync } from "node:fs";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /* Which browser suite runs a spec file: the same patterns as playwright.workbench.config.ts and playwright.customer.config.ts
@@ -25,41 +28,61 @@ const V12_SPEC = /^tests\/[^/]+-v12-[^/]*workbench\.spec\.ts$/;
 
 /* ── The fixed guard set: every slim run executes these, whatever the PR touches ───────────────────────────────── */
 export const GUARDS = {
-  /* Every paid control carries its price (unit scan: tests/unit/spend-buttons.spec.ts runs in the unit shards; this is the rendered pages). */
-  workbench: ["tests/spend-buttons-workbench.spec.ts", "tests/demo-board-everyone-audit-workbench.spec.ts"],
+  /* Every paid control carries its price (unit scan: tests/unit/spend-buttons.spec.ts runs in the unit shards; this is the rendered pages),
+     paid sends, money, and the retired sign-in, and the board with the switch off. */
+  workbench: [
+    "tests/spend-buttons-workbench.spec.ts", "tests/signin-retired-workbench.spec.ts", "tests/r1-port-paid-sends-workbench.spec.ts",
+    "tests/audit-money-workbench.spec.ts", "tests/demo-board-everyone-audit-workbench.spec.ts", "tests/marketing-site-workbench.spec.ts",
+    "tests/demo-s15-guest-home-workbench.spec.ts",
+  ],
   /* A customer's board and sign-in, with the switch off. */
   customer: ["tests/customer.spec.ts"],
-  /* "Switch off: customers unchanged": every new-interface spec's own switch-off test, found by name. */
+  /* "Switch off: customers unchanged": each new-interface spec's own switch-off test, found by name (only specs that have one). */
   switchOffGrep: "switch off",
 };
 
-/* ── Paths that may run slim. Anything not matched here, or matched by NEVER, is a full run ───────────────────── */
+/* ── Paths that may run slim. Anything not matched here is a full run ───────────────────────────────────────── */
 const DOCS = [/^docs\//, /^[^/]+\.md$/, /^design\//];
-/* A new-interface file is slim-eligible unless it is shared UI, or it names money. */
-const V12_AREA = [/^components\/v12\/(?!ui\/)/, /^lib\/v12\//];
-/* Money, price, quote, approval and sign-in words in a path: always a full run, even under components/v12 or lib/v12. */
+/* Tests and tooling that run in the unit shards or in a browser spec of their own. Guard tests and shared helpers are never here. */
+const TESTS = [
+  /^tests\/[^/]+-v12-[^/]*\.spec\.ts$/, /^tests\/redesign\//, /^tests\/unit\/v12-[^/]+\.spec\.ts$/,
+  /^tests\/[^/]+\.spec\.ts$/, /^tests\/unit\/(?!spend|ui-names|one-design|signin|ci-select)[^/]+\.spec\.ts$/, /^scripts\/redesign\//,
+];
+/* Always full, whatever else holds: money, sign-in, tenant separation, shared code, and every guard (when in doubt, full). */
 const NEVER = [
+  /^lib\//,                                            // all of lib/, including lib/v12/
+  /\.server\.tsx?$/,                                   // anything that runs on the server, anywhere
+  /^app\//, /^middleware/, /^components\/(?!v12\/)/,   // routes, middleware, every component outside the new interface
+  /^components\/v12\/ui\//,                           // shared primitives
   /(quote|price|pricing|spend|unpriced|approval|credit|ledger|billing|budget|payment|stripe|topup|auth|session|signin|signup|invite|tenant|workspace|middleware|permission|privacy)/i,
-  /^(app\/api|middleware|lib\/(?!v12\/))/,
-  /^components\/v12\/ui\//,
-  /^tests\/(helpers|unit\/spend|unit\/ui-names|unit\/one-design|unit\/signin|unit\/.*privacy|unit\/.*tooltip)/,
-  /^\.github\//,
-  /^package(-lock)?\.json$/,
-  /^playwright[^/]*\.config\.ts$/,
-  /^scripts\/ci-/,
+  /^tests\/(helpers|unit\/spend|unit\/ui-names|unit\/one-design|unit\/signin|unit\/.*privacy|unit\/.*tooltip|unit\/ci-select)/,
+  /^\.github\//, /^package(-lock)?\.json$/, /^playwright[^/]*\.config\.ts$/, /^scripts\/ci-/,
   /^(next|tsconfig|eslint|postcss)[^/]*\.(m?js|ts|json)$/,
 ];
-const SLIM_OK = [
-  ...DOCS,
-  ...V12_AREA,
-  /^tests\/[^/]+\.spec\.ts$/,
-  /^tests\/redesign\//,
-  /^tests\/unit\/(?!spend|ui-names|one-design|signin)[^/]+\.spec\.ts$/,
-  /^scripts\/redesign\//,
-];
+/* A new-interface file whose text touches a price, a hold, a charge, a refund, a cancel, an approval, a workspace id, a fetch or an
+   API route is not presentational: full. ("placeholder" is not a hold.) */
+const MONEY_TEXT = /quote|price|\bcr\b|credit|charge|billed|\bhold|\bheld|refund|cancel|approv|ledger|workspace_id|fetch\(|\/api\//i;
 
 const isDocs = (path) => DOCS.some((re) => re.test(path));
-const never = (path) => NEVER.some((re) => re.test(path)) && !isDocs(path) && !/^tests\/[^/]+-v12-[^/]*\.spec\.ts$/.test(path) && !/^tests\/redesign\//.test(path) && !/^tests\/unit\/v12-/.test(path);
+const isTest = (path) => TESTS.some((re) => re.test(path));
+const isV12Component = (path) => /^components\/v12\//.test(path);
+
+/**
+ * Whether a changed path may run slim. `read(path)`: the file's text at the PR's head, or null when it was deleted;
+ * `exposed`: the new-interface files that something outside components/v12 imports, directly or through other new-interface files.
+ */
+function slimOk(path, { read, exposed }) {
+  if (isDocs(path)) return true;
+  if (NEVER.some((re) => re.test(path)) && !isTest(path)) return false;
+  if (isTest(path)) return true;
+  if (!isV12Component(path)) return false;
+  if (/\.css$/.test(path)) return true;
+  if (!/\.tsx?$/.test(path)) return false;
+  const text = read(path);
+  if (text == null) return false;
+  if (exposed.has(path.replace(/\.tsx?$/, ""))) return false;
+  return !MONEY_TEXT.test(text.replace(/placeholder/gi, ""));
+}
 
 /* ── Which new-interface specs a path touches (the one place that maps a path to its specs) ───────────────────── */
 const A = (...names) => names.map((n) => `tests/${n}-v12-workbench.spec.ts`);
@@ -79,16 +102,6 @@ const AREAS = [
   [/^components\/v12\/rig\//, A("rig")],
   [/^components\/v12\/rounds\//, A("rounds")],
   [/^components\/v12\/settings\//, A("settings-billing")],
-  [/^lib\/v12\/board\//, A("board-frame", "board-kinds", "shots", "deliver", "campaign", "rounds")],
-  [/^lib\/v12\/campaign\.ts$/, A("campaign")],
-  [/^lib\/v12\/(deliver|ppm|csv)\.ts$/, A("deliver")],
-  [/^lib\/v12\/home\.ts$/, [...A("home"), "tests/home-v12-layout-workbench.spec.ts"]],
-  [/^lib\/v12\/(library|useLibraryTray|mention)\.ts$/, A("library-tray")],
-  [/^lib\/v12\/make\.ts$/, A("make")],
-  [/^lib\/v12\/(menus|keymap)\.ts$/, A("menus", "shell")],
-  [/^lib\/v12\/rounds\.ts$/, A("rounds")],
-  [/^lib\/v12\/(lowCredit|useLowCredit)[^/]*\.ts$/, A("settings-billing", "header")],
-  [/^lib\/v12\/(render[A-Za-z]*|typicalTime[A-Za-z.]*|queuePosition[A-Za-z.]*|boardRing)\.ts$/, A("render")],
 ];
 /* Anything under the new interface that no row names (shared CSS, dev tools, a new area): every new-interface spec. */
 const areaSpecs = (path) => { for (const [re, list] of AREAS) if (re.test(path)) return list; return ALL_V12; };
@@ -96,10 +109,10 @@ const areaSpecs = (path) => { for (const [re, list] of AREAS) if (re.test(path))
 const unique = (list) => [...new Set(list)];
 
 /**
- * @param {{ event: string, base: string, files: string[], specs: string[] }} input
+ * @param {{ event: string, base: string, files: string[], specs: string[], read?: (path: string) => string | null, exposed?: Set<string> }} input
  *   `specs`: every tests/*.spec.ts in the repository (a mapped spec that does not exist is dropped, never invented).
  */
-export function select({ event, base, files, specs }) {
+export function select({ event, base, files, specs, read = () => null, exposed = new Set() }) {
   const reasons = [];
   const full = (reason) => ({ mode: "full", reasons: [...reasons, reason], runs: [], fiveMinute: true });
   if (event !== "pull_request") return full(`${event} to ${base}: the whole suite after every merge`);
@@ -107,8 +120,8 @@ export function select({ event, base, files, specs }) {
   const changed = unique(files.filter(Boolean));
   if (!changed.length) return full("no changed files could be read: the whole suite");
 
-  const loud = changed.filter((path) => never(path) || !SLIM_OK.some((re) => re.test(path)));
-  if (loud.length) return full(`touches ${loud.slice(0, 5).join(", ")}${loud.length > 5 ? ` and ${loud.length - 5} more` : ""}: money, sign-in, tenant separation or shared code`);
+  const loud = changed.filter((path) => !slimOk(path, { read, exposed }));
+  if (loud.length) return full(`touches ${loud.slice(0, 5).join(", ")}${loud.length > 5 ? ` and ${loud.length - 5} more` : ""}: money, sign-in, tenant separation, shared code, or a new-interface file that is not presentational`);
 
   if (changed.every(isDocs)) return { mode: "docs", reasons: ["documentation only: the unit shards and core, no browser specs"], runs: [], fiveMinute: false };
 
@@ -117,7 +130,7 @@ export function select({ event, base, files, specs }) {
   const picked = new Set();
   for (const path of changed) {
     if (/^tests\/[^/]+\.spec\.ts$/.test(path)) { if (exists.has(path)) picked.add(path); continue; } // a changed spec runs itself
-    if (!V12_AREA.some((re) => re.test(path))) continue;
+    if (!isV12Component(path)) continue;
     const list = areaSpecs(path);
     for (const s of list === ALL_V12 ? v12 : list) if (exists.has(s)) picked.add(s);
   }
@@ -126,22 +139,57 @@ export function select({ event, base, files, specs }) {
   const inSuite = (re) => [...whole].filter((s) => re.test(s)).sort();
   const workbenchSpecs = inSuite(WORKBENCH_SPEC);
   const customerSpecs = inSuite(CUSTOMER_SPEC);
-  const switchOff = v12.filter((s) => !whole.has(s)).sort();
+  /* Only the specs that have a switch-off test: a chunk of specs without one would fail with "No tests found". */
+  const switchOff = v12.filter((s) => !whole.has(s) && /switch off/.test(read(s) ?? "")).sort();
 
   const runs = [];
-  if (workbenchSpecs.length) runs.push({ name: "specs this PR touches, and the spend guard", suite: "workbench", grep: null, specs: workbenchSpecs });
+  if (workbenchSpecs.length) runs.push({ name: "specs this PR touches, and the guard specs", suite: "workbench", grep: null, specs: workbenchSpecs });
   if (switchOff.length) runs.push({ name: `switch off: customers unchanged (${switchOff.length} specs, their own switch-off tests)`, suite: "workbench", grep: GUARDS.switchOffGrep, specs: switchOff });
   if (customerSpecs.length) runs.push({ name: "customer smoke", suite: "customer", grep: null, specs: customerSpecs });
-  reasons.push(`new-interface and test paths only: ${[...picked].length} spec file(s) from the changed paths, plus the fixed guard set`);
+  reasons.push(`presentational new-interface files and tests only: ${[...picked].length} spec file(s) from the changed paths, plus the fixed guard set`);
   return { mode: "slim", reasons, runs, fiveMinute: true };
 }
 
 /* ── CLI ───────────────────────────────────────────────────────────────────────────────────────────────────── */
+/* The new-interface files that something outside components/v12 imports, and everything those import inside it, as module paths without
+   an extension (the repository at the PR's head). */
+export function exposedV12(root = ".") {
+  const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8", maxBuffer: 1 << 28 })
+    .split("\n").filter((p) => /\.(ts|tsx|mjs)$/.test(p) && /^(app|components|lib|tests|scripts)\//.test(p));
+  const known = new Set(files.map((p) => p.replace(/\.(tsx?|mjs)$/, "")));
+  const specifiers = (text) => [...text.matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g)].map((m) => m[1]);
+  const resolve = (from, spec) => {
+    const base = spec.startsWith("@/") ? spec.slice(2) : spec.startsWith(".") ? posix.normalize(posix.join(posix.dirname(from), spec)) : null;
+    if (base === null) return null;
+    return known.has(base) ? base : known.has(`${base}/index`) ? `${base}/index` : null;
+  };
+  const edges = new Map();
+  const seeds = new Set();
+  for (const path of files) {
+    let text;
+    try { text = readFileSync(join(root, path), "utf8"); } catch { continue; }
+    const into = specifiers(text).map((spec) => resolve(path, spec)).filter(Boolean);
+    const inside = path.startsWith("components/v12/");
+    if (inside) edges.set(path.replace(/\.(tsx?|mjs)$/, ""), into.filter((m) => m.startsWith("components/v12/")));
+    else for (const m of into) if (m.startsWith("components/v12/")) seeds.add(m);
+  }
+  const exposed = new Set();
+  const queue = [...seeds];
+  while (queue.length) {
+    const next = queue.pop();
+    if (exposed.has(next)) continue;
+    exposed.add(next);
+    for (const m of edges.get(next) ?? []) queue.push(m);
+  }
+  return exposed;
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const [event = "pull_request", base = "release/1"] = process.argv.slice(2);
   const files = readFileSync(0, "utf8").split("\n").map((l) => l.trim()).filter(Boolean);
   const specs = readdirSync("tests").filter((n) => /\.spec\.ts$/.test(n)).map((n) => `tests/${n}`);
-  const plan = select({ event, base, files, specs });
+  const read = (path) => { try { return readFileSync(path, "utf8"); } catch { return null; } };
+  const plan = select({ event, base, files, specs, read, exposed: event === "pull_request" ? exposedV12() : new Set() });
   console.error(`[ci-select] ${plan.mode}: ${plan.reasons.join("; ")}`);
   for (const run of plan.runs) console.error(`[ci-select]   ${run.suite}${run.grep ? ` --grep "${run.grep}"` : ""}: ${run.name}: ${run.specs.join(" ")}`);
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `mode=${plan.mode}\nfive_minute=${plan.fiveMinute}\nruns=${JSON.stringify(plan.runs)}\n`);

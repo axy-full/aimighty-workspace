@@ -2,19 +2,26 @@ import { test, expect } from "@playwright/test";
 import { readFileSync, readdirSync } from "node:fs";
 
 /**
- * Which browser specs a pull request runs (scripts/ci-select.mjs; docs/ci.md): the whole suite after a merge and for money,
- * sign-in, tenant-separation and shared-code changes; a slimmer set (touched specs plus a fixed guard set) for a PR into
- * release/1 that only touches new-interface files; none for documentation. Pure: a dry run over example diffs.
+ * Which browser specs a pull request runs (scripts/ci-select.mjs; docs/ci.md): the whole suite after a merge and for any change that
+ * is not presentational (money, sign-in, tenant separation, shared code, everything in lib/); a slimmer set (touched specs plus a fixed
+ * guard set) for CSS, presentational new-interface files and tests; none for documentation. A dry run over example diffs, on the
+ * repository's real files.
  */
 type Run = { name: string; suite: "workbench" | "customer"; grep: string | null; specs: string[] };
 type Plan = { mode: "full" | "slim" | "docs"; reasons: string[]; runs: Run[]; fiveMinute: boolean };
+type Input = { event: string; base: string; files: string[]; specs: string[]; read?: (path: string) => string | null; exposed?: Set<string> };
 const script = async () => (await import("../../scripts/ci-select.mjs")) as {
-  select: (input: { event: string; base: string; files: string[]; specs: string[] }) => Plan;
+  select: (input: Input) => Plan;
+  exposedV12: () => Set<string>;
   GUARDS: { workbench: string[]; customer: string[]; switchOffGrep: string };
   WORKBENCH_SPEC: RegExp; CUSTOMER_SPEC: RegExp;
 };
 const SPECS = readdirSync("tests").filter((n) => /\.spec\.ts$/.test(n)).map((n) => `tests/${n}`);
-const pr = async (files: string[], base = "release/1", event = "pull_request") => (await script()).select({ event, base, files, specs: SPECS });
+const readReal = (path: string) => { try { return readFileSync(path, "utf8"); } catch { return null; } };
+const pr = async (files: string[], base = "release/1", event = "pull_request", over: Partial<Input> = {}) => {
+  const { select, exposedV12 } = await script();
+  return select({ event, base, files, specs: SPECS, read: readReal, exposed: exposedV12(), ...over });
+};
 const specsOf = (plan: Plan) => plan.runs.flatMap((r) => r.specs);
 
 test("the suite patterns here are the playwright configs' own", async () => {
@@ -34,19 +41,25 @@ test("every merge into release/1 or main runs the whole suite, whatever it touch
 });
 
 test("a pull request into main runs the whole suite", async () => {
-  expect((await pr(["components/v12/rounds/RoundCard.tsx"], "main")).mode).toBe("full");
+  expect((await pr(["components/v12/rounds/rounds.css"], "main")).mode).toBe("full");
 });
 
-test("a money, sign-in, tenant or shared-code change runs the whole suite", async () => {
+test("money, sign-in, tenant, server and shared-code changes run the whole suite", async () => {
   const full = [
     ["lib/credits.ts"], ["lib/billingLedger.ts"], ["lib/approvalRule.ts"], ["lib/session.ts"], ["lib/auth/session.ts"], ["app/api/generate/quote/route.ts"],
-    ["middleware.ts"], ["lib/workbench/studio.ts"], ["lib/v12/quote.ts"], ["lib/v12/useQuote.ts"], ["lib/v12/unpriced.ts"], ["lib/v12/billing.ts"],
+    ["middleware.ts"], ["lib/workbench/studio.ts"],
+    /* Everything in lib/, including lib/v12/ and the files a reviewer named: none of them may run slim. */
+    ["lib/v12/quote.ts"], ["lib/v12/useQuote.ts"], ["lib/v12/unpriced.ts"], ["lib/v12/billing.ts"], ["lib/v12/rounds.ts"], ["lib/v12/renderFacts.ts"],
+    ["lib/v12/queuePosition.server.ts"], ["lib/v12/typicalTimes.server.ts"], ["lib/v12/renderState.ts"], ["lib/v12/renderCancel.ts"], ["lib/v12/campaign.ts"],
+    ["lib/v12/board/stages.ts"], ["lib/anything.server.ts"], ["components/v12/anything.server.ts"],
+    /* New-interface files with money, holds, charges, cancels or fetches, or that a file outside components/v12 imports. */
+    ["components/v12/render/use-render.ts"], ["components/v12/render/use-batch.ts"], ["components/v12/make/use-results.ts"], ["components/v12/rig/model.ts"],
+    ["components/v12/make/Composer.tsx"], ["components/v12/rounds/RoundCard.tsx"], ["components/v12/board/campaign/FormatsStage.tsx"],
     ["components/graphite/board/BoardView.tsx"], ["components/graphite/SpendButton.tsx"], ["components/v12/ui/Price.tsx"], ["components/v12/settings/CreditsPage.tsx"],
     ["tests/helpers/workbenchLocal.ts"], ["tests/unit/spend-buttons.spec.ts"], ["tests/unit/spend-ratchet.json"], ["tests/helpers/paidRoutes.ts"],
-    ["playwright.workbench.config.ts"], ["package.json"], ["package-lock.json"], [".github/workflows/verify.yml"], ["scripts/ci-select.mjs"],
-    ["app/page.tsx"],
-    /* One shared file among new-interface ones is enough. */
-    ["components/v12/rounds/RoundCard.tsx", "lib/credits.ts"],
+    ["playwright.workbench.config.ts"], ["package.json"], ["package-lock.json"], [".github/workflows/verify.yml"], ["scripts/ci-select.mjs"], ["app/page.tsx"],
+    /* One shared file among presentational ones is enough. */
+    ["components/v12/rounds/rounds.css", "lib/credits.ts"],
   ];
   for (const files of full) {
     const plan = await pr(files);
@@ -55,37 +68,64 @@ test("a money, sign-in, tenant or shared-code change runs the whole suite", asyn
   }
 });
 
+test("a new-interface file is slim only when it is presentational, unexposed and readable", async () => {
+  const path = "components/v12/home/Greeting.tsx";
+  const slim = (text: string | null, exposed = new Set<string>()) => pr([path], "release/1", "pull_request", { read: () => text, exposed });
+  expect((await slim("export const Greeting = () => <p>Hello</p>;")).mode).toBe("slim");
+  expect((await slim("export const Box = () => <input placeholder=\"Name\" />;")).mode, "a placeholder is not a hold").toBe("slim");
+  for (const text of ["const r = await fetch(url);", "const u = '/api/me';", "const quote = 1;", "const price = 2;", "const credit = 3;", "const charged = 1;", "const billed = 1;", "const hold = 1;", "const refund = 1;",
+    "const cancelled = 1;", "const approved = 1;", "const ledger = 1;", "const workspace_id = 1;", "const cr = 1;"]) {
+    expect((await slim(`export const A = () => null; ${text}`)).mode, text).toBe("full");
+  }
+  expect((await slim(null)).mode, "a deleted file cannot be read").toBe("full");
+  expect((await slim("export const A = () => null;", new Set(["components/v12/home/Greeting"]))).mode, "imported from outside components/v12").toBe("full");
+});
+
+test("what a file outside components/v12 imports from it is exposed, directly or through other new-interface files", async () => {
+  const { exposedV12 } = await script();
+  const exposed = exposedV12();
+  /* BoardView (components/graphite) imports RoundCard and the Campaign stages; those import their own helpers. */
+  expect(exposed.has("components/v12/rounds/RoundCard")).toBe(true);
+  expect(exposed.has("components/v12/board/campaign/FormatsStage")).toBe(true);
+  expect(exposed.has("components/v12/ui/Price")).toBe(true);
+});
+
 test("a pull request whose changed files cannot be read runs the whole suite", async () => {
   expect((await pr([])).mode).toBe("full");
 });
 
-test("a new-interface change runs its own specs plus the fixed guard set, and nothing else", async () => {
+test("CSS and tests run slim: their own specs plus the fixed guard set, and nothing else", async () => {
   const { GUARDS } = await script();
-  const plan = await pr(["components/v12/rounds/RoundCard.tsx", "lib/v12/rounds.ts", "tests/unit/v12-rounds.spec.ts"]);
+  const plan = await pr(["components/v12/rounds/rounds.css", "tests/unit/v12-rounds.spec.ts"]);
   expect(plan.mode).toBe("slim");
   expect(plan.fiveMinute).toBe(true);
   const workbench = plan.runs.find((r) => r.suite === "workbench" && r.grep === null)!;
   expect(workbench.specs).toEqual([...new Set(["tests/rounds-v12-workbench.spec.ts", ...GUARDS.workbench])].sort());
-  /* The guard set: the spend pages, the switch-off checks of every new-interface spec, and a customer smoke test. */
-  expect(workbench.specs).toContain("tests/spend-buttons-workbench.spec.ts");
+  /* The guard set: spend, paid sends, money audit, the retired sign-in, the visitor pages, the switch-off checks and a customer smoke test. */
+  for (const spec of ["tests/spend-buttons-workbench.spec.ts", "tests/signin-retired-workbench.spec.ts", "tests/r1-port-paid-sends-workbench.spec.ts",
+    "tests/audit-money-workbench.spec.ts", "tests/marketing-site-workbench.spec.ts", "tests/demo-s15-guest-home-workbench.spec.ts"]) expect(workbench.specs, spec).toContain(spec);
   const off = plan.runs.find((r) => r.grep === GUARDS.switchOffGrep)!;
-  expect(off.specs.length).toBeGreaterThan(10);
-  expect(off.specs.every((s) => /-v12-.*workbench\.spec\.ts$/.test(s))).toBe(true);
+  expect(off.specs.length).toBeGreaterThan(8);
+  /* Only specs that have a switch-off test: a chunk of none would fail with "No tests found". */
+  for (const spec of off.specs) {
+    expect(/-v12-.*workbench\.spec\.ts$/.test(spec), spec).toBe(true);
+    expect(readFileSync(spec, "utf8"), spec).toMatch(/switch off/);
+  }
   expect(off.specs).not.toContain("tests/rounds-v12-workbench.spec.ts");
   const customer = plan.runs.find((r) => r.suite === "customer")!;
   expect(customer.specs).toEqual(GUARDS.customer);
-  /* Far fewer than the 180-odd specs of the whole suite. */
   expect(new Set(specsOf(plan)).size).toBeLessThan(30);
   for (const spec of specsOf(plan)) expect(SPECS, spec).toContain(spec);
 });
 
 test("a changed spec runs itself; a changed area maps to its own specs; an unmapped new-interface path runs every new-interface spec", async () => {
   const own = await pr(["tests/shots-v12-workbench.spec.ts"]);
+  expect(own.mode).toBe("slim");
   expect(own.runs[0].specs).toContain("tests/shots-v12-workbench.spec.ts");
-  const campaign = await pr(["components/v12/board/campaign/FormatsStage.tsx"]);
-  expect(campaign.mode).toBe("slim");
-  expect(campaign.runs[0].specs).toContain("tests/campaign-v12-workbench.spec.ts");
-  expect(campaign.runs[0].specs).not.toContain("tests/rig-v12-workbench.spec.ts");
+  const board = await pr(["components/v12/board/board.css"]);
+  expect(board.mode).toBe("slim");
+  expect(board.runs[0].specs).toContain("tests/campaign-v12-workbench.spec.ts");
+  expect(board.runs[0].specs).not.toContain("tests/rig-v12-workbench.spec.ts");
   const css = await pr(["components/v12/v12.css"]);
   expect(css.mode).toBe("slim");
   expect(css.runs[0].specs.length + (css.runs.find((r) => r.grep)?.specs.length ?? 0)).toBeGreaterThan(15);
@@ -98,18 +138,25 @@ test("a documentation-only change runs no browser specs and no five-minute test"
   expect(plan.mode).toBe("docs");
   expect(plan.runs).toEqual([]);
   expect(plan.fiveMinute).toBe(false);
-  /* Docs next to a new-interface file is not docs only. */
-  expect((await pr(["docs/ci.md", "components/v12/rounds/RoundCard.tsx"])).mode).toBe("slim");
+  /* Docs next to a CSS file is not docs only. */
+  expect((await pr(["docs/ci.md", "components/v12/rounds/rounds.css"])).mode).toBe("slim");
 });
 
-test("the workflow gates its jobs on the plan, keeps the required check names and never cancels a post-merge run", async () => {
+test("the workflow gates its jobs on the plan, keeps the required check names, reports the five-minute test without requiring it, and never cancels a post-merge run", async () => {
   const workflow = readFileSync(".github/workflows/verify.yml", "utf8");
   expect(workflow).toMatch(/push:\n\s+branches: \[main, release\/1\]/);
   expect(workflow).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
   for (const job of ["unit:", "core:", "browser-shards:", "browser:"]) expect(workflow).toContain(`\n  ${job}`);
   expect(workflow).toMatch(/browser-shards:\n\s+needs: plan\n\s+if: needs\.plan\.outputs\.mode == 'full'/);
   expect(workflow).toMatch(/browser-slim:\n\s+needs: plan\n\s+if: needs\.plan\.outputs\.mode == 'slim'/);
-  /* The gate fails on no plan, and passes docs only when nothing was asked for. */
   expect(workflow).toContain('*) echo "::error::No plan was made for this run."; exit 1 ;;');
-  expect(workflow).toContain('docs) test "$SHARDS" = skipped && test "$SLIM" = skipped && test "$FIVE" = skipped ;;');
+  expect(workflow).toContain('docs) test "$SHARDS" = skipped && test "$SLIM" = skipped ;;');
+  expect(workflow).toContain('full) test "$SHARDS" = success ;;');
+  /* The five-minute result is shown, never a condition of the gate. */
+  expect(workflow).toContain("five-minute (reported, not required yet): $FIVE");
+  expect(workflow).not.toMatch(/test "\$FIVE" = success/);
+});
+
+test("the runner passes an empty switch-off chunk instead of failing it", async () => {
+  expect(readFileSync("scripts/ci-run-specs.sh", "utf8")).toContain('--grep "$GREP" --pass-with-no-tests');
 });

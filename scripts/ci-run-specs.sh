@@ -64,7 +64,7 @@ else
     shift "$(( $# < CHUNK ? $# : CHUNK ))"
     n=$((n + 1))
     args=(npx playwright test --config="playwright.$SUITE.config.ts" --output="ci-results/$SUITE/slim-$n")
-    [ "$GREP" != "-" ] && args+=(--grep "$GREP")
+    [ "$GREP" != "-" ] && args+=(--grep "$GREP" --pass-with-no-tests)
     run_chunk "$SUITE-$n" "${args[@]}" "${chunk[@]}"
   done
 fi

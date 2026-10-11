@@ -16,31 +16,32 @@ When the plan cannot be made (the changed files cannot be listed) the run is ful
 
 ## Which paths run slim
 
-A PR runs slim only if every changed path is on this list, and none of them is on the full list below it. **Anything not on the slim list is a full run: when in doubt, full.**
+A PR runs slim only if every changed path is **presentational** or a test or documentation. **Anything else is a full run: when in doubt, full.**
 
-Slim list:
+Slim:
 
 - `docs/**`, top-level `*.md`, `design/**`
-- `components/v12/**` except `components/v12/ui/**`
-- `lib/v12/**` (except what the full list names)
-- `tests/*.spec.ts` (a changed spec runs itself), `tests/redesign/**`, `tests/unit/**` specs other than the guards below
-- `scripts/redesign/**`
+- a new-interface **CSS** file under `components/v12/`, or a `components/v12/**` `.ts`/`.tsx` file that is presentational: its text has no `fetch(`, no `/api/`, and none of `quote`, `price`, `cr`, `credit`, `charge`, `billed`, `hold`, `refund`, `cancel`, `approv`, `ledger`, `workspace_id` (checked on the file at the PR's head by `scripts/ci-select.mjs`), and **nothing outside `components/v12/` imports it**, directly or through other new-interface files (computed from the import specifiers of the repository at the PR's head)
+- `tests/*.spec.ts` (a changed spec runs itself), `tests/redesign/**`, non-guard `tests/unit/**` specs, `scripts/redesign/**`
 
-Always a full run, even under the paths above:
+Always a full run:
 
-- a path that names money, sign-in or tenant separation: `quote`, `price`, `pricing`, `spend`, `unpriced`, `approval`, `credit`, `ledger`, `billing`, `budget`, `payment`, `stripe`, `topup`, `auth`, `session`, `signin`, `signup`, `invite`, `tenant`, `workspace`, `middleware`, `permission`, `privacy` (so `lib/v12/quote.ts`, `lib/v12/useQuote.ts`, `lib/v12/billing.ts` and `components/v12/settings/**` billing files are full)
-- `app/api/**`, `middleware*`, and everything in `lib/` outside `lib/v12/` (`lib/auth*`, `lib/session*`, `lib/credits*`, `lib/workbench/**`, …)
-- `components/v12/ui/**` (shared primitives), and everything else outside `components/v12/` (`components/graphite/**`, including the board, `SpendButton` and `BoardView.tsx`; `components/workbench/**`, …)
-- `tests/helpers/**`, and the guard tests: `tests/unit/spend*`, `ui-names*`, `one-design*`, `signin*`, privacy and tooltip specs, `spend-ratchet.json`
-- `playwright*.config.ts`, `package.json`, `package-lock.json`, `next`/`tsconfig`/`eslint`/`postcss` config, `scripts/ci-*`, and `.github/**` (the workflow itself)
+- **everything in `lib/`, including `lib/v12/`**, and any `*.server.ts` anywhere
+- `app/**`, `middleware*`, and every component outside `components/v12/` (`components/graphite/**` including `BoardView.tsx`, `components/workbench/**`, …), and `components/v12/ui/**` (shared primitives)
+- a path naming money, sign-in or tenant separation: `quote`, `price`, `pricing`, `spend`, `unpriced`, `approval`, `credit`, `ledger`, `billing`, `budget`, `payment`, `stripe`, `topup`, `auth`, `session`, `signin`, `signup`, `invite`, `tenant`, `workspace`, `middleware`, `permission`, `privacy`
+- a new-interface file that is not presentational by the text rule above, or that a file outside `components/v12/` imports, or that was deleted (it cannot be read)
+- `tests/helpers/**` and the guard tests (`tests/unit/spend*`, `ui-names*`, `one-design*`, `signin*`, privacy, tooltip, `ci-select`, `spend-ratchet.json`)
+- `playwright*.config.ts`, `package.json`, `package-lock.json`, build configs, `scripts/ci-*`, and `.github/**` (the workflow itself)
 
 ## What a slim run runs
 
 1. **The specs the changed paths touch.** A changed spec runs itself. A changed path maps to its area's specs through the table `AREAS` in `scripts/ci-select.mjs` (for example `components/v12/rounds/**` and `lib/v12/rounds.ts` run `tests/rounds-v12-workbench.spec.ts`; `components/v12/board/campaign/**` runs `tests/campaign-v12-workbench.spec.ts`). A new-interface path no row names (shared CSS, a new area) runs every new-interface spec.
 2. **The fixed guard set, every time:**
    - `tests/spend-buttons-workbench.spec.ts`: every paid control on the rendered pages carries its price (the file scan is `tests/unit/spend-buttons.spec.ts`, in the unit shards)
+   - `tests/signin-retired-workbench.spec.ts`, `tests/r1-port-paid-sends-workbench.spec.ts`, `tests/audit-money-workbench.spec.ts`: the retired sign-in, paid sends, and the money audit
    - `tests/demo-board-everyone-audit-workbench.spec.ts`: the board, with the switch off, is the same for everyone
-   - the switch-off test of every new-interface spec (`--grep "switch off"` over `tests/*-v12-*workbench.spec.ts`): customers see today's app
+   - `tests/marketing-site-workbench.spec.ts` and `tests/demo-s15-guest-home-workbench.spec.ts`: the visitor pages
+   - the switch-off test of every new-interface spec that has one (`--grep "switch off" --pass-with-no-tests` over those spec files only): customers see today's app
    - `tests/customer.spec.ts`: the customer smoke test
    - the five-minute test (`playwright.five-minute.config.ts`): a new person with an invitation reaches an approved first render, on a laptop and a phone
 3. All of it on fresh dev servers in chunks of at most six spec files, each server warmed (`scripts/ci-run-specs.sh`).
@@ -49,11 +50,11 @@ Nothing here removes a test from a spec: a spec that runs, runs whole (except th
 
 ## Required checks
 
-The check names the repository can require are unchanged: `unit (1)`, `unit (2)`, `unit (3)`, `core`, `browser (workbench)` and `browser (customer)`. `browser (…)` is a gate that reads the plan: in a full run it needs every shard and the five-minute test to pass; in a slim run it needs the slim job and the five-minute test to pass and the full shards to be skipped; in a docs run it needs all three skipped; with no plan it fails. A skipped job is not a pass by itself: only the combination the plan asked for passes. The `browser-shards (…)` jobs are skipped in slim and docs runs, so they should not be required checks (they never were).
+The check names the repository can require are unchanged: `unit (1)`, `unit (2)`, `unit (3)`, `core`, `browser (workbench)` and `browser (customer)`. `browser (…)` is a gate that reads the plan: in a full run it needs every shard to pass; in a slim run it needs the slim job to pass and the full shards to be skipped; in a docs run it needs the shards and the slim job skipped; with no plan it fails. A skipped job is not a pass by itself: only the combination the plan asked for passes. The `browser-shards (…)` jobs are skipped in slim and docs runs, so they should not be required checks (they never were).
 
 ## Concurrency
 
-A new push to a pull request cancels that PR's older run. A run on `release/1` or `main` is never cancelled by the next merge: its result is what says whether the last merge was safe.
+A new push to a pull request cancels that PR's older run. A run on `release/1` or `main` is never cancelled by a later merge. GitHub keeps only one pending run per concurrency group, so with several quick merges a **middle post-merge run can be dropped** while an earlier one is still running; the latest merge still gets its full run on the newest `release/1`, which includes every earlier merge. So a red run always points at "the last merge, or one of the quick ones before it": check the merges since the last green full run.
 
 ## A red post-merge run comes before any other merge
 
@@ -61,4 +62,4 @@ The slim PR run can miss a failure in a spec it did not select (a shared effect 
 
 ## The five-minute test is new in CI
 
-It was kept out of the shards (its own config, one worker, a warm server) and ran locally. This workflow runs it as its own job, `five-minute`, in every mode but docs.
+It was kept out of the shards (its own config, one worker, a warm server) and ran locally. This workflow runs it as its own job, `five-minute`, in every mode but docs, and the browser gate reports its result in the summary. It is **not required yet**: it has never run in CI, so a slow or flaky first run must not block every PR. **It becomes required after 3 consecutive green runs on `release/1`** (the owner changes the gate then).

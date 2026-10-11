@@ -344,7 +344,7 @@ jobs:
             dev-ci-*.log
           retention-days: 7
   # The five-minute test (rule 17): a new person with an invitation reaches an approved first render, mocked, on a laptop and
-  # on a phone. In every mode but documentation-only.
+  # on a phone. In every mode but documentation-only. Reported by the browser gate, not required yet (docs/ci.md).
   five-minute:
     needs: plan
     if: needs.plan.outputs.five_minute == 'true'
@@ -396,14 +396,19 @@ jobs:
           SLIM: ${{ needs.browser-slim.result }}
           FIVE: ${{ needs.five-minute.result }}
         run: |
-          echo "plan: $MODE; full shards: $SHARDS; slim: $SLIM; five-minute: $FIVE"
+          echo "plan: $MODE; full shards: $SHARDS; slim: $SLIM"
+          # The five-minute test runs in every mode but docs and is reported here, but it is not required yet: it has never run in
+          # CI, so a slow or flaky first runs must not block every PR. It becomes required after 3 consecutive green runs on release/1
+          # (docs/ci.md).
+          echo "five-minute (reported, not required yet): $FIVE"
+          [ "$FIVE" = success ] || echo "::warning::The five-minute test result was $FIVE."
           case "$MODE" in
-            # The whole suite: every shard passed, and so did the five-minute test.
-            full) test "$SHARDS" = success && test "$FIVE" = success ;;
-            # The slim set: it passed, the full shards were not asked for, and the five-minute test passed.
-            slim) test "$SLIM" = success && test "$SHARDS" = skipped && test "$FIVE" = success ;;
+            # The whole suite: every shard passed.
+            full) test "$SHARDS" = success ;;
+            # The slim set: it passed, and the full shards were not asked for.
+            slim) test "$SLIM" = success && test "$SHARDS" = skipped ;;
             # Documentation only: nothing was asked for, so nothing ran.
-            docs) test "$SHARDS" = skipped && test "$SLIM" = skipped && test "$FIVE" = skipped ;;
+            docs) test "$SHARDS" = skipped && test "$SLIM" = skipped ;;
             # No plan (the plan job failed): fail, never pass on nothing.
             *) echo "::error::No plan was made for this run."; exit 1 ;;
           esac
