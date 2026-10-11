@@ -139,3 +139,4 @@
   .v12 .v12-activity[data-tone="live"] .v12-activity-dot, .v12 .v12-act-dot[data-kind="running"] { animation: none; opacity: 1; }
   .v12 .v12-tab { transition: none; }
 }
+.v12 .v12-acct-note { font-size: var(--gx-fs-label); color: var(--gx-text-sec); text-align: right; }

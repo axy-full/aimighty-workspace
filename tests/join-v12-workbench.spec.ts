@@ -41,7 +41,9 @@ test("the sheet by reason: title, the prompt quoted, both ways in; Esc and × cl
   await expect(sheet.getByText("Particl is invite-only")).toBeVisible();
   await expect(page.getByTestId("v12-join-want")).toHaveValue(PROMPT);
   await expect(page.getByTestId("v12-join-email")).toBeVisible();
-  await expect(page.getByTestId("v12-join-google")).toBeVisible();
+  /* Google sign-in is not on (components/v12/join/google.ts): no button for it, Continue with email alone. */
+  await expect(page.getByTestId("v12-join-google")).toHaveCount(0);
+  await expect(sheet.getByText("Continue with Google")).toHaveCount(0);
   await expect(page.getByTestId("v12-join-size")).toBeVisible();
   await expect(page.getByTestId("v12-join-login")).toHaveAttribute("href", "/login?next=%2Fv12-join");
   await noOverflow(page);
@@ -128,8 +130,6 @@ test("an invite code goes to today's pages: a team invite to /invite, a new-work
   await page.getByTestId("v12-join-code").fill("NOT-A-CODE");
   await page.getByTestId("v12-join-email").click();
   await expect(page.getByTestId("v12-join-invite-problem")).toContainText("isn’t valid");
-  await page.getByTestId("v12-join-google").click();
-  await expect(page.getByTestId("v12-join-invite-problem")).toHaveText("Google sign-in isn’t on yet. Use Continue with email.");
 
   await page.getByTestId("v12-join-code").fill(team);
   await page.getByTestId("v12-join-email").click();

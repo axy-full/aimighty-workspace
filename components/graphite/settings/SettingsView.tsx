@@ -41,6 +41,8 @@ export function SettingsView({ account, section, open, onOpenProject }: { accoun
   if (newInterface && !shell.phone.on && section === "credits" && !fold) {
     return <CreditsBilling account={account} onTopUp={() => go("credits", "packs")} onOpenBoard={(id) => onOpenProject?.(id)} />;
   }
+  /* In the new interface on a desktop window the section is called what its page is: Credits & billing (the phone and today's screens keep Plan & credits). */
+  const labelOf = (id: SettingsSectionId, label: string) => (newInterface && !shell.phone.on && id === "credits" ? "Credits & billing" : label);
   /* ←/→ walk the sections, Home/End jump; a section opens on press, as the master's segment does. */
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const at = tabs.current.findIndex((el) => el === document.activeElement);
@@ -56,13 +58,13 @@ export function SettingsView({ account, section, open, onOpenProject }: { accoun
         <div className="gs-head">
           <div className="gs-title">
             <span className="gs-eyebrow">Settings</span>
-            <h1 className="gs-h1" data-testid="settings-title">{sectionLabel(section)}</h1>
+            <h1 className="gs-h1" data-testid="settings-title">{labelOf(section, sectionLabel(section))}</h1>
           </div>
           <div className="gs-seg" role="group" aria-label="Settings sections" onKeyDown={onKey}>
             {SETTINGS_SECTIONS.map((s, i) => (
               <button key={s.id} ref={(el) => { tabs.current[i] = el; }} type="button" className="gs-seg-btn" aria-current={s.id === section ? "page" : undefined}
                 onClick={() => { if (s.id !== section) go(s.id); }} data-testid={`settings-section-${s.id}`}>
-                {s.label}
+                {labelOf(s.id, s.label)}
               </button>
             ))}
           </div>
