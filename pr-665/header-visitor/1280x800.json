@@ -1,9 +1,0 @@
-{
-  "name": "header-visitor",
-  "app": "/?guest=1",
-  "prototype": "?guest=1",
-  "size": {
-    "width": 1280,
-    "height": 800
-  }
-}
