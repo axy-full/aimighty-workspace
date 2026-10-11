@@ -247,3 +247,39 @@ test("desktop: Remix opens Make with the take; Start with a picked tile asks Ato
   expect(asks[0].goal).toContain(`Make one like “${title}”`);
   await expect(page).toHaveURL(/view=board/, { timeout: 30_000 });
 });
+
+test("desktop: a tile whose picture will not load leaves the wall (never a black box), the next take takes its place, and a clip draws a frame", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
+  test.setTimeout(300_000);
+  const seeded = await seedHome(page, { takes: 6 });
+  /* The workspace's two newest stills and an older clip: the newest two stills' files cannot be reached (an older take's file that is gone), the clip is the fixture. */
+  const broken = new Set<string>();
+  await page.route(/\/api\/jobs\?.*kind=video/, async (route) => {
+    const reply = await route.fetch();
+    const body = await reply.json();
+    const clip = { id: "gen_clip_fixture", kind: "video", status: "succeeded", storedUrl: "/api/media/gen_clip_fixture", model: "dreamina-seedance-2-5-260628", prompt: "A boat leaves the quay", params: { ratio: "16:9", duration: 5 }, createdAt: Date.now() - 60_000, durationS: 5 };
+    await route.fulfill({ response: reply, json: { ...body, generations: [clip] } });
+  });
+  await page.route(/\/api\/media\/gen_clip_fixture/, (route) => route.fulfill({ path: "public/fixtures/clip.mp4", contentType: "video/mp4" }));
+  await page.route(/\/api\/media\/([^/?#]+)/, (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").pop()!;
+    if (id === "gen_clip_fixture") return route.fallback();
+    if (broken.size < 2 && seeded.takes.slice(-2).includes(id)) { broken.add(id); return route.fulfill({ status: 404, body: "Not found" }); }
+    return route.fallback();
+  });
+  await page.goto("/suites");
+  const tiles = page.getByTestId("v12-home-tile");
+  await expect(tiles.first()).toBeVisible({ timeout: 90_000 });
+  /* However many files were missing, what the wall shows is all picture: every still is loaded, the clip has a frame that is not black. */
+  await expect.poll(async () => page.evaluate(() => {
+    const media = Array.from(document.querySelectorAll<HTMLElement>(".v12-hm-tile-media"));
+    return media.length > 0 && media.every((el) => (el instanceof HTMLImageElement ? el.complete && el.naturalWidth > 0 : el instanceof HTMLVideoElement ? el.readyState >= 2 && el.videoWidth > 0 : false));
+  }), { timeout: 60_000 }).toBe(true);
+  expect(broken.size).toBeGreaterThan(0);
+  const clip = page.locator("video.v12-hm-tile-media");
+  await expect(clip).toHaveCount(1);
+  expect(await clip.getAttribute("src")).toMatch(/#t=0\.1$/);
+  const bright = await clip.evaluate((el: HTMLVideoElement) => { const c = document.createElement("canvas"); c.width = 16; c.height = 16; const x = c.getContext("2d")!; x.drawImage(el, 0, 0, 16, 16); const d = x.getImageData(0, 0, 16, 16).data; let t = 0; for (let i = 0; i < d.length; i += 4) t += d[i] + d[i + 1] + d[i + 2]; return t / (d.length / 4 * 3); });
+  expect(bright, "the clip's tile draws a frame, not black").toBeGreaterThan(8);
+  await noOverflow(page);
+});

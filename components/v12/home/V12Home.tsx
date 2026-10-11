@@ -196,7 +196,7 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
           <WaitingStrip items={items} shown={waitingShown(wide)} onApprove={approvals.approve}
             onOpen={() => nav.openApprovals()} onMore={() => nav.openApprovals()} onHide={hide} />
         ) : null}
-        <Wall tiles={wall.tiles} status={wall.status} row={wallRow(stripOn)} picked={picked?.id ?? null} onPick={pick} onRemix={remix} onMenu={(e, tile) => wallMenu.open(e, tile.id)} />
+        <Wall tiles={wall.tiles} status={wall.status} row={wallRow(stripOn)} picked={picked?.id ?? null} onPick={pick} onRemix={remix} onMenu={(e, tile) => wallMenu.open(e, tile.id)} onBroken={(tile) => wall.markBroken(tile.id)} />
         <WallMenu scope={scope} tiles={wall.tiles} menu={wallMenu.menu} onClose={wallMenu.close} onChoose={(tile) => setPickedId(tile.id)} onRemix={remix} />
         <div className="v12-hm-lower" data-dim={picked ? "" : undefined}>
           <YourBoards scope={scope} projects={projects} status={status} error={error} onRetry={onRetry} now={now} approvals={approvalsByDraft}

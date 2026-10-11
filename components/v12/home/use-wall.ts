@@ -1,19 +1,22 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Generation } from "@/lib/jobs";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { WALL_READ, wallTiles, type WallTile } from "@/lib/v12/home";
+import { WALL_CANDIDATES, WALL_READ, WALL_TILES, wallTiles, type WallTile } from "@/lib/v12/home";
 
 /**
  * The wall's tiles: this workspace's newest finished stills and clips, from today's takes list (GET /api/jobs, one read per kind, scoped to
  * the workspace and person by the request scope; `sync=0` so a Home read never starts a reconcile). Read once Home opens,
  * and again when a take lands (the jobs bus). Never another workspace's work, never sample work.
  */
-export type WallState = { status: "loading" | "ready" | "error"; tiles: WallTile[] };
+export type WallState = { status: "loading" | "ready" | "error"; tiles: WallTile[]; /** A tile whose picture would not load: it leaves the wall and the next take takes its place. */ markBroken: (id: string) => void };
+type Read = { status: "loading" | "ready" | "error"; candidates: WallTile[] };
 
 export function useWall(scope: string): WallState {
   const fetcher = useScopedFetch(scope);
-  const [state, setState] = useState<WallState>({ status: "loading", tiles: [] });
+  const [state, setState] = useState<Read>({ status: "loading", candidates: [] });
+  const [broken, setBroken] = useState<ReadonlySet<string>>(new Set());
+  const markBroken = useCallback((id: string) => setBroken((was) => (was.has(id) ? was : new Set(was).add(id))), []);
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const bump = () => setTick((n) => n + 1);
@@ -32,9 +35,10 @@ export function useWall(scope: string): WallState {
       });
     };
     Promise.all([read("image"), read("video")])
-      .then(([stills, clips]) => { if (!controller.signal.aborted) setState({ status: "ready", tiles: wallTiles([...stills, ...clips]) }); })
-      .catch(() => { if (!controller.signal.aborted) setState((s) => ({ status: s.tiles.length ? "ready" : "error", tiles: s.tiles })); });
+      .then(([stills, clips]) => { if (!controller.signal.aborted) setState({ status: "ready", candidates: wallTiles([...stills, ...clips], WALL_CANDIDATES) }); })
+      .catch(() => { if (!controller.signal.aborted) setState((s) => ({ status: s.candidates.length ? "ready" : "error", candidates: s.candidates })); });
     return () => controller.abort();
   }, [fetcher, tick]);
-  return state;
+  const tiles = useMemo(() => state.candidates.filter((tile) => !broken.has(tile.id)).slice(0, WALL_TILES), [state.candidates, broken]);
+  return { status: state.status, tiles, markBroken };
 }
