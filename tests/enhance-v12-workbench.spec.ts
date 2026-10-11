@@ -15,6 +15,7 @@ const WORDS = "A paper kite over a grey sea";
 
 const noOverflow = async (page: Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "no horizontal overflow").toBe(true);
 const toggle = (page: Page) => page.getByTestId("v12-make-enhance");
+const info = (page: Page) => page.getByTestId("v12-make-enhance-info");
 const credits = async (page: Page) => Number((await page.getByTestId("v12-make-go").innerText()).match(/· ([\d,]+) cr$/)![1].replace(/,/g, ""));
 const isEnhanceCall = (r: { url(): string; method(): string; postDataJSON(): unknown }) =>
   new URL(r.url()).pathname === "/api/prompt/enhance" && r.method() === "POST" && (r.postDataJSON() as { quoteOnly?: boolean } | null)?.quoteOnly !== true;
@@ -36,18 +37,41 @@ test.describe("desktop, switch on", () => {
   test("Enhance ⓘ: On by default, the owner's tooltip word for word, and remembered per person", async ({ page }) => {
     test.setTimeout(300_000);
     await openMake(page);
-    await expect(toggle(page)).toHaveText(/^Enhance\s*ⓘ$/);
+    await expect(toggle(page)).toHaveText(/^Enhance$/);
+    await expect(info(page)).toHaveText("ⓘ");
     await expect(toggle(page)).toHaveAttribute("aria-checked", "true");
     /* Sound is not offered it: its request carries no label, so it goes as written. */
     await page.getByRole("radio", { name: "Audio" }).click();
     await expect(toggle(page)).toHaveCount(0);
     await page.getByRole("radio", { name: "Image" }).click();
     await expect(toggle(page)).toBeVisible();
-    await toggle(page).hover();
+    /* The ⓘ is its own control: the tooltip opens on hover, on focus, and a tap or click pins it until a click elsewhere or Esc. */
     const tip = page.getByTestId("v12-tooltip");
+    await info(page).hover();
     await expect(tip).toBeVisible();
     await expect(tip.locator(".v12-tip-name")).toHaveText("Enhance");
     await expect(tip.locator(".v12-tip-line")).toHaveText(ENHANCE_TIP_LINE);
+    await page.mouse.move(700, 600);
+    await expect(tip).toHaveCount(0);
+    await toggle(page).focus();
+    await page.keyboard.press("Tab");
+    await expect(info(page)).toBeFocused();
+    await expect(tip).toBeVisible();
+    await expect(tip.locator(".v12-tip-line")).toHaveText(ENHANCE_TIP_LINE);
+    await page.keyboard.press("Escape");
+    await expect(tip).toHaveCount(0);
+    await info(page).click();
+    await expect(info(page)).toHaveAttribute("aria-expanded", "true");
+    await page.mouse.move(700, 600);
+    await expect(tip).toBeVisible();
+    await expect(toggle(page), "pressing the ⓘ does not move the switch").toHaveAttribute("aria-checked", "true");
+    await page.mouse.click(700, 600);
+    await expect(tip).toHaveCount(0);
+    await info(page).click();
+    await expect(tip).toBeVisible();
+    await info(page).click();
+    await page.mouse.move(700, 600);
+    await expect(tip).toHaveCount(0);
     expect(ENHANCE_TIP_LINE).toBe("On: Particl rewrites your prompt for the chosen engine (light, camera, detail) before it runs. Its small cost is included in the price shown. Off: your prompt is sent exactly as you typed it.");
     /* Off is kept for this person in this browser, through a reload; nothing was chosen for them before. */
     expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("particl:v12-enhance:")))).toEqual([]);

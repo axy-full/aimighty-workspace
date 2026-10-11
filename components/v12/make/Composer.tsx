@@ -6,9 +6,9 @@ import { spendAttrsOf, spendAttrsText } from "@/lib/spend";
 import { TAKES_MAX } from "@/lib/workspace/composer";
 import { useSession } from "@/lib/session";
 import { creditRate } from "@/lib/shell/price-words";
-import { ENHANCE_ASWRITTEN, ENHANCE_LABEL, ENHANCE_TIP_LINE, ENHANCE_TIP_NAME, enhanceKey, enhanceOffered, workspaceEnhance, writeEnhance } from "@/lib/v12/enhance";
+import { EnhanceSwitch } from "./EnhanceSwitch";
+import { ENHANCE_ASWRITTEN, enhanceKey, enhanceOffered, workspaceEnhance, writeEnhance } from "@/lib/v12/enhance";
 import { useRead } from "@/components/graphite/settings/use-settings";
-import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { EDIT_OPS, MAKE_MODES, REMIX_OPS, makeQuote, modeType, placeholderFor, type MakeMode, type MakeOp, type ResultTile } from "@/lib/v12/make";
 import { Bar, BarChip, type BarMention } from "@/components/v12/bar/Bar";
 import { Price } from "@/components/v12/ui/Price";
@@ -162,14 +162,7 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
         </span>
       ) : null}
       <span className="v12-mk-grow" />
-      {enhanceShown && !ops ? (
-        <Tooltip name={ENHANCE_TIP_NAME} line={ENHANCE_TIP_LINE} side="top">
-          <button type="button" role="switch" aria-checked={enhanceOn} className="v12-mk-enhance" onClick={() => setEnhance(!enhanceOn)} data-testid="v12-make-enhance">
-            <span>{ENHANCE_LABEL} <span aria-hidden="true">ⓘ</span></span>
-            <span className="v12-mk-enhance-track" aria-hidden="true" data-on={enhanceOn ? "" : undefined}><span className="v12-mk-enhance-knob" /></span>
-          </button>
-        </Tooltip>
-      ) : null}
+      {enhanceShown && !ops ? <EnhanceSwitch on={enhanceOn} onChange={setEnhance} /> : null}
       {chips.map((c) => <Chip key={c.k} {...c} />)}
     </div>
   );

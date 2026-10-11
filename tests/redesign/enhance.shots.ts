@@ -2,21 +2,44 @@ import { test, expect } from "@playwright/test";
 import { captureBeside, closePrototypeServer } from "../helpers/redesignShots";
 import { seedHome } from "../helpers/v12Home";
 
-/* Make's Enhance switch (the owner's night queue, item 2) beside prototype 12's Make: the composer with it On and its tooltip, and the viewer's Enhanced label with the original words. */
+/* Make's Enhance switch (the owner's night queue, item 2) beside prototype v14's Make (set REDESIGN_PROTOTYPE_DIR to its folder until it is merged): the composer with it On and its tooltip, and the viewer's Enhanced label with the original words. */
 test.afterAll(closePrototypeServer);
 
-test("Make with Enhance On, and its tooltip", async ({ page }) => {
-  test.setTimeout(240_000);
+async function ready(page: import("@playwright/test").Page) {
   await seedHome(page, { takes: 6 });
   await page.goto("/suites?view=make");
   await expect(page.getByTestId("v12-make")).toBeVisible({ timeout: 90_000 });
   await page.getByRole("radio", { name: "Image" }).click();
   await page.getByTestId("v12-make-bar-input").fill("A paper kite over a grey sea");
   await expect(page.getByTestId("v12-make-go")).toHaveText(/^Make · \d[\d,]* cr$/, { timeout: 60_000 });
-  await page.getByTestId("v12-make-enhance").hover();
-  await expect(page.getByTestId("v12-tooltip")).toBeVisible();
+}
+
+test("Make with Enhance On: one total on the button", async ({ page }) => {
+  test.setTimeout(240_000);
+  await ready(page);
+  await page.mouse.move(700, 300);
   await page.waitForTimeout(800);
   await captureBeside(page, "enhance-make", "?view=make");
+});
+
+test("Make with the ⓘ tooltip pinned open", async ({ page }) => {
+  test.setTimeout(240_000);
+  await ready(page);
+  await page.getByTestId("v12-make-enhance-info").click();
+  await page.mouse.move(700, 300);
+  await expect(page.getByTestId("v12-tooltip")).toBeVisible();
+  await page.waitForTimeout(800);
+  await captureBeside(page, "enhance-tip", "?view=make&tip=enhance");
+});
+
+test("Make with Enhance Off: the take's price alone", async ({ page }) => {
+  test.setTimeout(240_000);
+  await ready(page);
+  await page.getByTestId("v12-make-enhance").click();
+  await expect(page.getByTestId("v12-make-enhance")).toHaveAttribute("aria-checked", "false");
+  await page.mouse.move(700, 300);
+  await page.waitForTimeout(800);
+  await captureBeside(page, "enhance-off", "?view=make&enhance=off");
 });
 
 test("the viewer: Enhanced, with its original words", async ({ page }) => {
