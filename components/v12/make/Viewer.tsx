@@ -60,7 +60,9 @@ export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReuseSeed, o
   const seed = typeof p.seed === "number" ? p.seed : null;
   const meta = [displayModelName(g.model), typeof p.resolution === "string" ? p.resolution : null, typeof p.ratio === "string" ? p.ratio : null,
     seed != null ? `seed ${seed}` : null, clock(g.createdAt)].filter(Boolean).join(" · ");
-  const cost = !paysInDollars && typeof g.creditsBilled === "number" ? knownQuote(exact(g.creditsBilled)) : null;
+  /* What the take cost: the ledger's credits, or for the house workspace (never billed in credits) the engine's dollars it was metered at. */
+  const cost = !paysInDollars && typeof g.creditsBilled === "number" ? knownQuote(exact(g.creditsBilled))
+    : paysInDollars && typeof g.costUsd === "number" && g.costUsd > 0 ? { state: "ready" as const, price: { unit: "usd" as const, usd: g.costUsd, upTo: false } } : null;
   return createPortal(
     <div className="v12-scrim v12-mk-viewer-scrim" data-scrim="viewer" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }} data-testid="v12-make-viewer">
       <div ref={panel} role="dialog" aria-modal="true" aria-label={`${tile.type}: ${tile.prompt}`} tabIndex={-1} className="v12-mk-viewer">

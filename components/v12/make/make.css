@@ -151,3 +151,4 @@
   .v12-mk-render-dots i, .v12-mk-bar[data-hold] > span { animation: none; }
   .v12-mk-check, .v12-mk-download, .v12-mk-caption, .v12-mk-bar > span { transition: none; }
 }
+.v12-mk-render-tail { color: rgba(235, 235, 245, 0.65); }
