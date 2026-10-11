@@ -75,12 +75,12 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   const { state, model, settings, composer } = make;
   const ops = mode === "remix" ? REMIX_OPS : mode === "edit" ? EDIT_OPS : null;
   /* Remix works on a source: with none in the composer an op says so, and opens nothing. */
-  const [sourceNote, setSourceNote] = useState(false);
+  const [sourceAsked, setSourceAsked] = useState(false);
   const hasSource = make.references.some((r) => r.kind === "video");
-  useEffect(() => { if (hasSource || mode !== "remix") setSourceNote(false); }, [hasSource, mode]);
+  const sourceNote = sourceAsked && mode === "remix" && !hasSource;
   const runOp = (op: MakeOp) => {
     if (!op.tool) return;
-    if (mode === "remix" && !hasSource) { setSourceNote(true); return; }
+    if (mode === "remix" && !hasSource) { setSourceAsked(true); return; }
     shell.openMake(op.tool);
   };
 
