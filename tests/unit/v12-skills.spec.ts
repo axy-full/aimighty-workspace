@@ -51,10 +51,10 @@ test("a command being typed lists the best matches first; a made command is read
 test("a saved skill's price is its preview's estimates added up, 'up to', and never a guess", () => {
   expect(previewQuote(preview([step({ estCredits: 2 }), step({ index: 1, estCredits: 5 })]))).toMatchObject({ state: "ready", price: { unit: "cr", value: { kind: "up-to", credits: 7 } } });
   /* A step with no list rate (a voice line, a library step) leaves the whole skill unpriced until its run form is filled in. */
-  expect(previewQuote(preview([step({ estCredits: 2 }), step({ index: 1, estCredits: null })]))).toEqual({ reason: "skillPriceLater" });
-  /* An engine that needs a choice. */
-  expect(previewQuote(preview([step({})], [{ index: 0, title: "x", reason: "off" } as never]))).toEqual({ reason: "skillPriceLater" });
-  expect(previewQuote(preview([]))).toEqual({ reason: "skillPriceLater" });
+  expect(previewQuote(preview([step({ estCredits: 2 }), step({ index: 1, estCredits: null })]))).toEqual({ reason: "skillPriceStep" });
+  /* An engine that needs a choice says so: its hover names the engine, not the words. */
+  expect(previewQuote(preview([step({})], [{ index: 0, title: "x", reason: "off" } as never]))).toEqual({ reason: "skillPriceEngine" });
+  expect(previewQuote(preview([]))).toEqual({ reason: "skillPriceStep" });
   /* The house workspace pays in dollars. */
   expect(previewQuote(preview([step({ estCredits: null, estUsd: 0.5 }), step({ index: 1, estCredits: null, estUsd: 0.25 })]))).toEqual({ state: "ready", price: { unit: "usd", usd: 0.75, upTo: true } });
   expect(previewQuote(preview([step({ estCredits: 0 })]))).toMatchObject({ state: "ready", price: { unit: "cr", value: { kind: "free" } } });
@@ -63,6 +63,13 @@ test("a saved skill's price is its preview's estimates added up, 'up to', and ne
 test("a blank parameter is not a fault, and the one new 'quoted' reason is listed with its why", () => {
   expect(needsWords("Fill in The product.")).toBe(true);
   expect(needsWords("The skill could not be previewed. Try again.")).toBe(false);
-  expect(UNPRICED.skillPriceLater.why).toMatch(/dryRun/);
-  expect(UNPRICED.skillPriceLater.hover.length).toBeGreaterThan(10);
+  for (const id of ["skillPriceWords", "skillPriceEngine", "skillPriceStep"] as const) {
+    expect(UNPRICED[id].why, id).toMatch(/dryRun/);
+    expect(UNPRICED[id].hover.length, id).toBeGreaterThan(10);
+  }
+  /* Each reason says its own cause: only a blank parameter tells the person to fill in words. */
+  expect(UNPRICED.skillPriceWords.hover).toMatch(/fill in its words/);
+  expect(UNPRICED.skillPriceEngine.hover).toMatch(/engine/i);
+  expect(UNPRICED.skillPriceEngine.hover).not.toMatch(/fill in its words/);
+  expect(UNPRICED.skillPriceStep.hover).not.toMatch(/fill in its words/);
 });

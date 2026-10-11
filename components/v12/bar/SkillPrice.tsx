@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useScopedFetch } from "@/lib/useScopedFetch";
 import { formatQuote } from "@/lib/v12/campaign";
 import { needsWords, previewQuote, type SkillRow } from "@/lib/v12/skills";
 import { LOADING, QUOTE_FAULT, type Quote } from "@/lib/v12/quote";
@@ -25,14 +26,37 @@ function BuiltInPrice({ row }: { row: Extract<SkillRow, { kind: "built-in" }> })
 }
 
 type Read = { quote: Quote } | { reason: UnpricedId };
-/* One preview per skill version while the page is open: typing a command re-draws the list, never re-asks. */
+/* One preview per skill version, and per setting of the engines Atomik may use, while the page is open: typing a command re-draws the
+   list, never re-asks, and switching an engine on or off in Settings › Engines starts the next preview afresh. */
 const READ = new Map<string, Read>();
 
+/** The workspace's engines-off setting (`atomikEngines`), read for the list (at most every 10 s), as the part of a preview's key that says which engines were allowed. Null while it is read. */
+const OFF_FRESH_MS = 10_000;
+let lastOff: { at: number; value: Promise<string> } | null = null;
+function useEnginesOff(): string | null {
+  const fetcher = useScopedFetch();
+  const [key, setKey] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (!lastOff || Date.now() - lastOff.at > OFF_FRESH_MS) {
+      lastOff = {
+        at: Date.now(),
+        value: fetcher("/api/settings", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null))
+          .then((body: { settings?: { atomikEngines?: unknown } } | null) => (typeof body?.settings?.atomikEngines === "string" ? body.settings.atomikEngines : "?")).catch(() => "?"),
+      };
+    }
+    void lastOff.value.then((value) => { if (live) setKey(value); });
+    return () => { live = false; };
+  }, [fetcher]);
+  return key;
+}
+
 function SavedPrice({ row, api }: { row: Extract<SkillRow, { kind: "saved" }>; api: SkillsApi }) {
-  const key = `${row.skill.id}:${row.skill.version}:${row.skill.updatedAt}`;
+  const enginesOff = useEnginesOff();
+  const key = `${row.skill.id}:${row.skill.version}:${row.skill.updatedAt}:${enginesOff}`;
   const [read, setRead] = useState<{ key: string; value: Read } | null>(null);
   useEffect(() => {
-    if (READ.has(key)) return;
+    if (enginesOff === null || READ.has(key)) return;
     let live = true;
     api.preview(row.skill.id, { values: {}, engines: {} }).then(
       (preview) => {
@@ -44,14 +68,14 @@ function SavedPrice({ row, api }: { row: Extract<SkillRow, { kind: "saved" }>; a
       (error: unknown) => {
         const message = error instanceof Error ? error.message : "";
         /* A blank parameter is not a fault: the price waits for the run form's words. */
-        const value: Read = needsWords(message) ? { reason: "skillPriceLater" } : { quote: { state: "error", message: message && message !== "Failed to fetch" ? message : QUOTE_FAULT } };
+        const value: Read = needsWords(message) ? { reason: "skillPriceWords" } : { quote: { state: "error", message: message && message !== "Failed to fetch" ? message : QUOTE_FAULT } };
         if (needsWords(message)) READ.set(key, value);
         if (live) setRead({ key, value });
       },
     );
     return () => { live = false; };
-  }, [api, key, row.skill.id]);
-  const value = READ.get(key) ?? (read?.key === key ? read.value : null);
+  }, [api, key, enginesOff, row.skill.id]);
+  const value = enginesOff === null ? null : READ.get(key) ?? (read?.key === key ? read.value : null);
   if (!value) return <Price quote={LOADING} />;
   return "reason" in value ? <Price quote={null} reason={value.reason} /> : <Price quote={value.quote} />;
 }

@@ -76,8 +76,10 @@ export function commandOf(text: string, rows: readonly SkillRow[]): { row: Skill
 
 /** What a saved skill's free preview says as a price, or why it has none yet. Estimates, so a figure is "up to N cr". */
 export function previewQuote(preview: SkillRunPreview): Quote | { reason: UnpricedId } {
-  if (preview.problems.length || !preview.steps.length) return { reason: "skillPriceLater" };
-  if (preview.steps.some((s) => s.estCredits === null && s.estUsd === null)) return { reason: "skillPriceLater" };
+  /* Why there is no total, said as the cause: an engine to choose, else a step with no list rate (or no steps). */
+  if (preview.problems.length) return { reason: "skillPriceEngine" };
+  if (!preview.steps.length) return { reason: "skillPriceStep" };
+  if (preview.steps.some((s) => s.estCredits === null && s.estUsd === null)) return { reason: "skillPriceStep" };
   const credits = preview.steps.reduce((sum, s) => sum + (s.estCredits ?? 0), 0);
   const usd = preview.steps.reduce((sum, s) => sum + (s.estUsd ?? 0), 0);
   if (preview.steps.every((s) => s.estUsd !== null && s.estCredits === null)) return { state: "ready", price: { unit: "usd", usd, upTo: true } };

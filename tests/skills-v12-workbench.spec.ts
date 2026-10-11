@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { seedHome } from "./helpers/v12Home";
 import { openBoard } from "./helpers/boardV12";
+import { newProject, type Project } from "../lib/workbench/studio";
 
 /**
  * The "/" skills list in the new interface's bar (redesign P6-d; docs/redesign/inventory.md § 10.4), on Home, on a board and in
@@ -156,6 +157,21 @@ test.describe("desktop, switch on", () => {
     await input.fill("/tutorial ");
     await input.press("Enter");
     await expect(page.getByTestId("v12-toast")).toContainText("Formats are made from a Campaign board's Formats stage.");
+    expect(errors).toEqual([]);
+  });
+
+  test("an older ads board with no saved kind is a Campaign: a format goes to its Formats stage", async ({ page }) => {
+    test.setTimeout(300_000);
+    /* No boardFlavor: BoardView reads an ads board as a Campaign, so the bar must too. */
+    const { errors } = await openBoard(page, "/suites?view=board&stage=product", { project: { ...newProject("Older ads board"), boardKind: "ads" } as Project });
+    await mockSkills(page);
+    const input = page.getByTestId("v12-board-bar-inner-input");
+    await expect(input).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("v12-stage-kind")).toHaveText("CAMPAIGN");
+    await input.fill("/tutorial ");
+    await input.press("Enter");
+    await expect(page.getByTestId("v12-formats-stage")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("v12-toast")).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 
