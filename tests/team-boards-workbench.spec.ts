@@ -104,12 +104,16 @@ test("a save of a teammate's board is refused, and the maker's board is exactly 
   const refusal = await put.json() as { error: string; code: string };
   expect(refusal.code).toBe("view_only");
   expect(refusal.error).toContain("Board Owner");
-  /* Nor does any other action on it: it is not theirs to map, publish or check. */
-  for (const action of ["map-shot", "publish", "check-write"]) {
-    const r = await teammate.post("/api/workbench/projects", { headers: teammateHeaders, data: { action, projectId: a.draftId, nodeId: "n", expectedBibleVersion: 0, write: { writer: "w", seq: 1 } } });
-    expect([403, 400], action).toContain(r.status());
-    expect(r.status() === 403 ? (await r.json() as { code: string }).code : "view_only").toBe("view_only");
+  /* Nor does any other action on it: map and publish are refused as view-only, whatever else is in the body. */
+  for (const action of ["map-shot", "publish"]) {
+    const r = await teammate.post("/api/workbench/projects", { headers: teammateHeaders, data: { action, projectId: a.draftId, nodeId: "n", expectedBibleVersion: 0 } });
+    expect(r.status(), action).toBe(403);
+    expect((await r.json() as { code: string }).code, action).toBe("view_only");
   }
+  /* "Did my save land?" is asked about the caller's own saves only: a teammate has none of this board, so it answers no, and changes nothing. */
+  const check = await teammate.post("/api/workbench/projects", { headers: teammateHeaders, data: { action: "check-write", projectId: a.draftId, write: { writer: "teammate-writer-1", seq: 1 } } });
+  expect(check.status()).toBe(200);
+  expect(await check.json()).toMatchObject({ landed: null, project: null });
   const after = await (await a.api.get(`/api/workbench/projects?id=${a.draftId}`, { headers: a.headers })).json() as { project: { name: string }; revision: number };
   expect(after.project.name).toBe(before.project.name);
   expect(after.revision).toBe(before.revision);

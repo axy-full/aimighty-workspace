@@ -34,13 +34,16 @@ export default function PrivacyPage() {
       <P title="Who sees it">
         <p>
           Published project bibles and shared workspace assets are visible to
-          your team. A board is listed for every member of its workspace and
-          opens view-only for everyone but its maker, who alone edits it. Access
+          your team. Every board is listed for its workspace&rsquo;s members and
+          opens view-only for all but its maker; Atomik memory and identities
+          stay with their person. Access
           also depends on role: members render, pick and approve; admins run the
           team and the ledger; the owner alone deletes the workspace or exports
           it. The platform&rsquo;s desk sees each workspace&rsquo;s spend,
           balance, engine health and any report about it, and can suspend a
-          workspace; it does not browse a workspace&rsquo;s takes. The engines
+          workspace; it does not browse a workspace&rsquo;s takes. If the platform&rsquo;s owner
+          is a member of a workspace, they can read every board in it, as any
+          member can. The engines
           receive the prompt and the references needed to render one take, under
           their own terms, and nothing else.
         </p>
