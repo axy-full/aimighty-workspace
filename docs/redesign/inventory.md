@@ -170,7 +170,7 @@ Scale (px, count): 32 new-board h1 · 26 page h1 (−0.03em) · 22 inspector h2 
 
 **Radii**: 999 pills/chips [31] · 50% dots, avatars · 16 phone sheet (top) · 14 bars, viewer, groups, join dialog · 12 cards, large popovers, right toolbar · 10 menus, wall/board tiles, drawers' tiles, primary bar buttons · 8 buttons, inputs, tiles [77] · 7 small buttons, menu items · 6 tabs, segments, small controls [55] · 5/4 tiny.
 
-**Sizes**: header 56 · board stage header 44 · rail 88 · Atomik panel 340 · Library tray 360 (History 280) · bar inputs and buttons 40 · Library bottom button 34 · search field 32 (flex 0 1 300, min 200) · menu items 32 · card action buttons 32 · tabs 30 (max-width 200) · segments 26–30 · filter chips 26 · rail markers 22 · dots 6–7 · progress bar 3 · phone targets 44.
+**Sizes**: header 56 · board stage header 44 · rail 88 · Atomik panel 340 · Library tray 360 (History 280) · bar inputs and buttons 40 · Library bottom button 34 · search field 32 (flex 1 1 280px, min 280, max 560 (owner, 11 Oct)) · menu items 32 · card action buttons 32 · tabs 30 (max-width 200) · segments 26–30 · filter chips 26 · rail markers 22 · dots 6–7 · progress bar 3 · phone targets 44.
 
 **Spacing**: 2 · 4 · 6 [70] · 8 [66] · 10 [45] · 12 [22] · 14 [15] · 16 · 20 · 24 (canvas grid gap, page side padding) · 40 (Home section gap). Canvas content origin 60/60, card width 260 (Storyboard and Shots), 280 (Elements), 290 (Formats and Scenes).
 
@@ -226,7 +226,7 @@ A pill (padding 9×16, radius 999, `#0B0B0D`, border 0.12, 13/500, 6 px green do
 - (b) 56 px, padding 0 16, gap 16, bottom hairline. Left to right:
   - logo button (30×14 dot-mark SVG + "particl" 15/600, −0.01em).
   - **tab group** `nav`: flex `0 1 auto` so it **hugs** its tabs. bg `#0D0D10`, radius 8, padding 3, gap 2, margin-left 8. Tabs: 30 h, max-width 200, padding 0 6 0 10, radius 6, 13/500, active `#1C1C20` + `#F5F5F7`, idle 0.7 white. Home has a house icon. Make has "✦" and is pinned. Board tabs show a 6 px state dot, the name ellipsised, and a × (18×18). An optional 12 px conic progress ring sits on the left. Max 4 board tabs, then "+N ▾" (opens "All boards" 280 px list with "+ New board"). Then **+** (30×30).
-  - **merged Atomik field**: flex `0 1 300px`, min 200, 32 h, `#0A0A0C`, border 0.08, radius 8. Inside: a button "◆ Ask Atomik, search or go to · ⌘K" (13 px, 0.6 white, ◆ in `#6EB4FF`) and a 32×32 **panel icon** (rect with a divider) behind a left hairline. Open state: tint bg + `#6EB4FF`. A 7 px blue unread dot sits top-right.
+  - **merged Atomik field**: flex `1 1 280px`, min 280, max 560 (owner, 11 Oct), after the tabs; Activity, the low chip and the avatar pinned right, 32 h, `#0A0A0C`, border 0.08, radius 8. Inside: a button "◆ Ask Atomik, search or go to · ⌘K" (13 px, 0.6 white, ◆ in `#6EB4FF`) and a 32×32 **panel icon** (rect with a divider) behind a left hairline. Open state: tint bg + `#6EB4FF`. A 7 px blue unread dot sits top-right.
   - **Activity pill** (signed in): 32 h, radius 999, border 0.14, 13/500, 7 px dot (orange when anything needs you, else blue pulsing). Label "‹N› need you · ‹M› running" or "‹M› running".
   - **low-credit chip** (only when low): border `rgba(255,159,10,.5)`, orange dot, "Low on credits · Top up". Opens Settings › Credits & billing.
   - **avatar** "AP" 32×32 circle, `#1C1C20`.
