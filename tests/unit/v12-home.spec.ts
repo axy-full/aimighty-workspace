@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import type { Generation } from "../../lib/jobs";
 import {
-  BOARD_FILTERS, FIRST_BOARDS, WALL_TILES, boardKindIn, filterBoards, fitWords, pickedBrief, startQuote, startWords, waitingLevels, waitingShown, waitingWords, wallLayout, wallRow, wallTile, wallTiles,
+  BOARD_FILTERS, FIRST_BOARDS, WALL_TILES, boardKindIn, filterBoards, fitWords, pickedBrief, startQuote, startWords, waitingLevels, waitingShown, waitingWords, WALL_CANDIDATES, clipFrameUrl, wallLayout, wallRow, wallTile, wallTiles,
 } from "../../lib/v12/home";
 import { GOAL_MAX, startFigure, startFigureUsd } from "../../components/graphite/home/home-model";
 import { NO_AT_COST_PRICE } from "../../lib/v12/quote";
@@ -189,5 +189,18 @@ test.describe("Start's words in one unit", () => {
     expect(startWords(startQuote({ spendOff: false, figure: null, thinking: { state: "loading" }, dollars: false }), env(0.1))).toBeNull();
     expect(startWords(startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: true, usd: null }), env(null))).toBeNull();
     expect(startWords(startQuote({ spendOff: true, figure: 14, thinking: ready, dollars: false }), env(0.1))).toBeNull();
+  });
+});
+
+test.describe("the wall's reserve and a clip's frame", () => {
+  test("the wall keeps six, and a reserve behind them for a take whose picture cannot load", () => {
+    const list = Array.from({ length: 20 }, (_, i) => gen({ id: `t${i}`, createdAt: T0 + i }));
+    expect(wallTiles(list)).toHaveLength(WALL_TILES);
+    expect(wallTiles(list, WALL_CANDIDATES)).toHaveLength(WALL_CANDIDATES);
+    expect(wallTiles(list, WALL_CANDIDATES).slice(0, WALL_TILES).map((t) => t.id)).toEqual(wallTiles(list).map((t) => t.id));
+  });
+  test("a clip's address asks for its first moments, so a browser that loads only its header still draws a frame", () => {
+    expect(clipFrameUrl("/api/media/v1")).toBe("/api/media/v1#t=0.1");
+    expect(clipFrameUrl("/api/media/v1#t=2")).toBe("/api/media/v1#t=2");
   });
 });

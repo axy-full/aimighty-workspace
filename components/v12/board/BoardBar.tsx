@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { agentAsk } from "@/lib/shell/board-agent";
 import { spendAttrsOf } from "@/lib/spend";
 import { planningQuote } from "@/lib/v12/quote";
@@ -79,8 +79,21 @@ export function BoardBar({ ctx, selection, onClearSelection, tool, onDisarm, onA
 
   const armed = ARMED[tool] ?? null;
   const note = said ?? ask.reason ?? sample;
+  /* The bar's height (it grows with a selection chip or a note) is published on its parent, so a view drawn under it (the Rig)
+     keeps its last row clear: --v12-bd-bar-h. */
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current, host = el?.parentElement;
+    if (!el || !host) return;
+    const set = () => host.style.setProperty("--v12-bd-bar-h", `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    set();
+    if (typeof ResizeObserver === "undefined") return () => host.style.removeProperty("--v12-bd-bar-h");
+    const seen = new ResizeObserver(set);
+    seen.observe(el);
+    return () => { seen.disconnect(); host.style.removeProperty("--v12-bd-bar-h"); };
+  }, []);
   return (
-    <div className="v12-bd-bar" data-testid="v12-board-bar">
+    <div className="v12-bd-bar" data-testid="v12-board-bar" ref={box}>
       <Bar
         value={words}
         onChange={(text) => { setWords(text); setSaid(null); }}

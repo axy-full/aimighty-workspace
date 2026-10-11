@@ -1,6 +1,5 @@
-import { vendorKey } from '../vendorKeys';
 import { directTextCostUsd, isDirectText, textEngine, textKeyName } from '../openai-direct';
-import { languageAuth } from '../language-provider';
+import { languageAuth, languageReachable } from '../language-provider';
 import { ASTRA_BLENDER_MODEL, createAstraScene } from '../astra-blender/scene';
 import { astraRequestSchema, astraAgentResultSchema, serializeAstraScene, validateAstraProposal, astraAssetKind } from '../astra-blender/proposal';
 import { runAstraAgent, astraAgentInstructions, astraAgentMessages, astraAgentInputTokens, ASTRA_AGENT_STEPS, ASTRA_AGENT_INPUT_TOKENS, type AstraAgentEnvelope } from '../astra-blender/agent';
@@ -18,7 +17,7 @@ import { z } from 'zod';
 import { db, ready, now } from '../db';
 import { catalog, textCostUsd, textQuoteCostUsd, type CatalogModel } from '../catalog';
 import { engineFor } from '../engines';
-import { gatewayReachable, explainGatewayFailure } from '../gateway';
+import { explainGatewayFailure } from '../gateway';
 import { allowanceCheck } from '../allowance';
 import { checkLimits, limitVerdict } from '../limits';
 import { meter, assertMeterFunding, type MeterEvent } from '../meter';
@@ -588,7 +587,7 @@ export async function listAtomikJobs(owner: string, projectId: string, overrides
 }
 export async function atomikState(owner: string, projectId: string) {
   const jobs = await listAtomikJobs(owner, projectId);
-  const configured = gatewayReachable() || !!vendorKey('openai');
+  const configured = languageReachable();
   const models = configured ? atomikModels(await catalog()) : [];
   return { configured: configured && models.length > 0, models, defaultModel: models[0]?.id ?? null, jobs, budgets: atomikBudgets(true), referenceSupport: 'Images and three sampled stills per selected video are visually inspected as 512px review copies. Up to six images/frames per request. TXT content is read; PDF, audio and links supply descriptions only.' };
 }

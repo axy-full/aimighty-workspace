@@ -1,9 +1,8 @@
+import { languageReachable } from "@/lib/language-provider";
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
 import { resolveModel } from "@/lib/atomik";
-import { gatewayReachable } from "@/lib/gateway";
-import { vendorKey } from "@/lib/vendorKeys";
 import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
 import { PaidTextError, paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure, requestMaxCredits } from "@/lib/paidText";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
@@ -52,7 +51,7 @@ export const POST = withTenant(async (req: Request) => {
   const run = async () => {
     try {
       const text = readText(body.text);
-      if (!gatewayReachable() && !vendorKey("openai"))
+      if (!languageReachable())
         return NextResponse.json({ error: "Atomik's reader isn't connected for this workspace. Use the free import, or ask the platform to connect it." }, { status: 503 });
       /* Atomik's model policy: Claude, OpenAI or Grok (lib/atomikModelPolicy), Auto by default; never swapped for another paid model. */
       const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "idea");

@@ -44,12 +44,27 @@ const int = (value: unknown): value is number => typeof value === 'number' && Nu
 export class TextNotSentError extends Error { readonly status = 422; override name = 'TextNotSentError'; }
 function notSent(message: string): never { throw new TextNotSentError(message); }
 
-/** What a log line may say about a provider failure: never the error object, whose request body carries the prompt. */
+/** Text a provider wrote about a failure, made safe for a log line: one line, no key-shaped token, bounded. */
+function safeProviderText(value: unknown, max = 200): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return value.replace(/\s+/g, ' ').replace(/\b(?:sk|xai|AIza)[-_A-Za-z0-9]{12,}/g, '[redacted]').slice(0, max);
+}
+
+/**
+ * What a log line may say about a provider failure: never the error object,
+ * whose request body carries the prompt. The provider's own error type and
+ * message (Anthropic: `{ error: { type, message } }`) are kept, truncated,
+ * because they name the field it refused; the prompt and the key never appear.
+ */
 export function providerErrorSummary(error: unknown): string {
-  const value = error && typeof error === 'object' ? error as { name?: unknown; statusCode?: unknown; code?: unknown; data?: unknown } : {};
-  const nested = record(record(value.data).error);
+  const value = error && typeof error === 'object' ? error as { name?: unknown; statusCode?: unknown; code?: unknown; data?: unknown; responseBody?: unknown } : {};
+  let nested = record(record(value.data).error);
+  if (!Object.keys(nested).length && typeof value.responseBody === 'string') {
+    try { nested = record(record(JSON.parse(value.responseBody)).error); } catch { /* not JSON: no provider detail */ }
+  }
   const code = value.code ?? nested.type ?? nested.code;
-  return `${typeof value.name === 'string' ? value.name : 'Error'} status=${typeof value.statusCode === 'number' ? value.statusCode : '-'} code=${typeof code === 'string' || typeof code === 'number' ? code : '-'}`;
+  const message = safeProviderText(nested.message);
+  return `${typeof value.name === 'string' ? value.name : 'Error'} status=${typeof value.statusCode === 'number' ? value.statusCode : '-'} code=${typeof code === 'string' || typeof code === 'number' ? code : '-'}${message ? ` message=${JSON.stringify(message)}` : ''}`;
 }
 
 /** Claude models that take `effort` without adaptive thinking (as in developmentProviderOptions). */
@@ -259,7 +274,8 @@ async function directTextPost(vendor: DirectVendor, input: Record<string, unknow
     }) };
   } catch (error) {
     // Name, status and code only: an APICallError carries the request body, prompt included.
-    console.warn(`direct text ${vendor}: ${sent ? 'failed' : 'not sent'} ${providerErrorSummary(error)}`);
+    // Our own refusal says why (its text names the model and the setting, never the prompt).
+    console.warn(`direct text ${vendor}: ${sent ? 'failed' : 'not sent'} ${providerErrorSummary(error)}${error instanceof TextNotSentError ? ` reason=${JSON.stringify(error.message.slice(0, 200))}` : ''}`);
     if (!sent) {
       if (error instanceof TextNotSentError) return reply(error.status, error.message);
       // Missing key, unmapped id, refused endpoint or a request the SDK rejected locally: nothing left the process.

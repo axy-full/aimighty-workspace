@@ -1,6 +1,6 @@
 import { directTextCostUsd, TEXT_LEDGER_KEY, textEngine, textVendor } from './openai-direct';
 import { findModel } from './catalog';
-import { languageAuth } from './language-provider';
+import { directTextReachable, languageAuth } from './language-provider';
 import { recoveryFetch as fetch } from "./recovery";
 /**
  * Prompt refinement — the layer platforms like Higgsfield run between the
@@ -44,6 +44,7 @@ import { prettyModel } from "./models";
 import { textModelFor } from "./platformLayer";
 import { currentTenant } from "./tenant";
 import { aliasModel } from "./modelAliases";
+import { textRouteWorks } from "./textRoute";
 export { TEXT_RATES, promptRichness, shouldRefine };
 export type { Richness };
 export {
@@ -90,7 +91,8 @@ export function refineProvider(): RefineProvider {
   const forced = process.env.REFINE_PROVIDER;
   if (forced === "anthropic" || forced === "gateway" || forced === "byteplus")
     return forced;
-  if (gatewayReachable()) return "gateway";
+  /* The router, once the gateway or a direct door (TEXT_DIRECT with its key) can carry the call. */
+  if (gatewayReachable() || directTextReachable()) return "gateway";
   return "byteplus";
 }
 /** Opus 5 by default — this is the judgement step, and the studio asked for the best. */
@@ -103,7 +105,7 @@ export const PROMPT_MODELS = (): string[] =>
   (
     process.env.PROMPT_MODELS ??
     process.env.GATEWAY_PROMPT_MODELS ??
-    "anthropic/claude-opus-5,anthropic/claude-sonnet-5"
+    "anthropic/claude-sonnet-5.5,anthropic/claude-sonnet-5"
   )
     .split(",")
     .map((s) => aliasModel(s.trim()))
@@ -177,7 +179,9 @@ export async function activeWriter(): Promise<ActiveWriter> {
     (await getPlatformLayer().catch(() => null))?.models ?? null,
     "enhance",
   );
-  const m = TEXT_RATES[routed] ? routed : PROMPT_MODELS()[0];
+  /* The routed model when it has a working route (lib/textRoute.ts), else the first of the deployment's list that does. */
+  const fallback = PROMPT_MODELS().find((id) => textRouteWorks(id)) ?? PROMPT_MODELS()[0];
+  const m = TEXT_RATES[routed] && textRouteWorks(routed) ? routed : fallback;
   const vendor = textVendor(m);
   return {
     writer: "claude",
