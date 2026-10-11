@@ -1,211 +1,240 @@
-# Taking `release/1` to production (plan only)
+# release/1 to production: fast launch (Mon 12 Oct 2026)
 
-Status: **plan**, written 9 Oct 2026 for the owner. Nothing in it has been done. The owner picks the date after reading it.
+For the owner and his advisor. Written Sun 11 Oct against `release/1` at 65042dca. Nothing in it has been done yet.
 
-Production (particl.si) runs `main` at 367ad430. `release/1` (f59d853f) is 1,002 commits ahead, and main has no commit `release/1` lacks. Until `release/1` ships, every infrastructure fix needs its own backport to main (#609 is the first). This plan is about shipping `release/1` as a whole.
+**Where things stand.** particl.si runs `main` and has no real users besides the team. `release/1` is 1,350 commits ahead, and main has nothing `release/1` lacks, so the merge is clean. Deploys are a Coolify **Deploy** on the DigitalOcean box. Today `curl https://particl.si/api/health` answers `{"ok":true,"mock":false,"dispatch":{"mode":"inngest"},"database":"ok","storage":"ok",…}`, with no `commit` field. `release/1` adds that field, so it shows when the new build is live.
 
-## The short version
+**The one thing that can break.** Removing `AI_GATEWAY_API_KEY` only works if `TEXT_DIRECT` and `MODEL_CATALOG` are set first (§2, §10 step 8). Without them, Claude, Gemini and Grok text stops: Atomik can only use OpenAI models, and the prompt writer and idea/shot drafting fail.
 
-`release/1` is **not ready for a date yet**. Four things should be done first, in this order:
+---
 
-1. **Make rollback real.** Ship a small "rollback-compat" backport to `main` first. It makes main accept the project fields `release/1` writes. Without it, after a rollback, main cannot save any project that `release/1` has touched (see risk 2).
-2. **Stand up a production-shaped staging and soak it.** Run the frozen release candidate against *copies* of production's databases, not fresh SQLite. `release/1` has never run on Turso or on production data.
-3. **Decide the two money sweeps.** On its first cron run, `release/1` refunds old uncertain paid-text jobs and fails stuck Cinema takes. Measure exactly which rows that touches on the staging copies, then the owner decides: allow, or ship with those cron stages switched off for the first days.
-4. **Accept, or build, a switch for the new interface.** The new interface has no customer switch, and the old one is gone. Either the owner accepts all-or-nothing, or we add a switch before the date (estimate: several days).
+## 1. Backup (just before the deploy)
 
-After those, cutover is a normal Deploy with a 24-hour watch, below.
+Turso keeps point-in-time restore. The Scaler plan has a 30-day window (docs/selfhost-test.md, line 20). The "restore point" is just the exact time you write down. On top of that, take a plain SQL export of every database.
 
-## 1. What is on staging today
+**Which databases.**
 
-- **The last recorded staging pass** was `release/1` at **c287f044**, on the old Contabo Coolify behind a temporary sslip.io address (docs/selfhost-test.md, top). It checked:
-  - the image build;
-  - `/setup` sign-in;
-  - renaming a workspace;
-  - one upload to the staging R2 bucket, with its thumbnail;
-  - `/api/health`.
-- **Its databases were fresh SQLite files** (`file:/app/.data/…`). It ran with `ENGINE_MOCK=1` and `PARTICL_DEPLOYMENT=staging`, with native dispatch (no Inngest), and with no Stripe and no Turso API. It had **one workspace**.
-- **Never exercised there:** per-workspace Turso databases, several workspaces, Inngest, the money paths with real data, and any production-shaped data.
-- `release/1` is now **213 commits past c287f044**.
-- **Unknown:**
-  - Contabo is closing, and I found no record of a staging app on the DigitalOcean droplet, so staging may not exist any more.
-  - I can't tell which commit any staging runs today, or whether the Vercel preview (#546) still runs.
-- **CI** ("Verify Particl") passed on f59d853f (8 Oct). CI uses mocks and local databases, too.
+| Database | How to find its name |
+|---|---|
+| Platform | The host in `PLATFORM_DATABASE_URL`. If that's unset, `TURSO_DATABASE_URL`. The name is the part before `-<org>.turso.io` (lib/platform.ts:36). |
+| House workspace (`ws_legacy`) | The host in `TURSO_DATABASE_URL` (lib/platform.ts:304). It may be the same database as the platform one. |
+| Every other workspace | `particl-<slug>-<4 chars>`, made by lib/provision.ts:28 in `TURSO_ORG` (group `TURSO_GROUP`, default `default`). Each name is in `workspaces.db_name`. |
 
-## 2. What it changes in production's databases
+**Commands** (on your laptop or the box, wherever the `turso` CLI is logged in to the org):
 
-There is no migrations folder. Each database builds its own schema in code the first time it is used (`CREATE … IF NOT EXISTS`, additive `ADD COLUMN`).
+```sh
+mkdir -p ~/particl-backups/2026-10-12-predeploy && cd ~/particl-backups/2026-10-12-predeploy
+date -u +%Y-%m-%dT%H:%M:%SZ | tee restore-point.txt          # the PITR timestamp
+turso db list | tee dbs.txt                                     # every database in the org
+turso db shell <platform-db> "SELECT id, slug, db_name, legacy, deleted_at FROM workspaces" | tee workspaces.txt
+for db in $(turso db list | awk 'NR>1 {print $1}'); do
+  turso db shell "$db" .dump > "$db.sql" || echo "FAILED $db" | tee -a failed.txt
+done
+```
 
-**Additive, and main ignores it (safe to keep after a rollback):**
-- **New tables:**
-  - `api_token_grants`
-  - `sample_lifts`
-  - `identity_consents`, `consent_recordings`
-  - `prepared_jobs`
-  - `review_link_scopes`, `review_verdicts`, `review_link_hits`
-  - `rig_plan_approvals`
-- **New nullable columns:**
-  - `atomik_messages.ledger`, `atomik_spend.ledger`
-  - `generations.refine_ledger`
-  - `meter_events.hold_band`, `meter_events.overrun_usd`
-  - `paid_text_jobs.reconcile_lease`
-  - `astra_render_jobs.claimed_at`
-  - `upload_sessions.failure`
-- **New indexes** (both on the platform database, built by `CREATE INDEX IF NOT EXISTS` when it is first used after the deploy; the branch is `db/r1-two-indexes`):
-  - `billing_cycles_ws` on `billing_cycles(workspace_id)`: every read of a workspace's billing cycles filters on it, and the table had no index.
-  - `meter_events_created` on `meter_events(created_at)`: reads by date alone (the newest price in the ledger unit, statements over a window) have no workspace to lead with. The existing `meter_events_ws(workspace_id, created_at)` stays.
-  - Building an index on a large table takes time and holds the database's write lock while it runs, so the first start after the deploy may be slow on `meter_events`. `IF NOT EXISTS` makes it idempotent: a second start, or a database that already has them, does nothing. Main ignores an index it did not create, so a rollback leaves them in place harmlessly.
-- Nothing is dropped or renamed, and no default changes.
+`turso db export <db>` writes a SQLite file instead, if your CLI version has it (`turso db export --help`). Either is fine.
 
-**Rewrites existing rows automatically, on the first cron run** (every 10 minutes after the deploy). A rollback cannot undo these:
-- **Paid text** (`reconcilePaidTextJobs`, lib/paidText.ts): every `paid_text_jobs` row that is `queued`, `running` or `uncertain`, has no response and is older than 30 minutes is marked `refunded`, and its meter event fails, so the credits come back. That includes rows main left behind.
-- **Cinema** (`cinema_unanswered`, lib/genjutsuVideo.ts): Cinema Studio takes unanswered for over 24 hours, old ones included, are failed with `cost_usd=0`, their hold is released and they are settled.
-- **Connected-account collection is off:** Higgsfield jobs still in flight on connected accounts are no longer collected.
+**Check the backup** (2 minutes):
 
-**Rewrites rows when used:**
-- Opening a client workspace mirrors the platform owner into its `users` table as "Particl support" (lib/platform.ts). This stays after a rollback.
-- An owner-privacy scrub exists in admin. It runs a dry run first, and once applied it can't be undone.
+1. `failed.txt` doesn't exist.
+2. There's one `.sql` file per line of `dbs.txt` (minus the header line).
+3. Every `db_name` in `workspaces.txt` has a file.
+4. Load the platform dump and run a query:
+   ```sh
+   sqlite3 /tmp/p.db < <platform-db>.sql
+   sqlite3 /tmp/p.db "PRAGMA integrity_check; SELECT count(*) FROM workspaces; SELECT count(*) FROM accounts;"
+   ```
+   It should print `ok` and two non-zero counts.
+5. Copy the folder to a second place (your laptop, if you ran this on the box).
 
-**JSON inside project rows: the main rollback hazard.**
-- `release/1` saves `production.blocking` and `production.boards.looks`/`look` into project bodies.
-- Main's schema for those objects is `.strict()`. Once a project holds them, **main refuses to save that project**, and Atomik's parse of it fails.
-- `scripts/ops/strip-production-blocking.mjs` strips only `blocking` and `scriptVersions`. Nothing strips `looks`.
-- Prerequisite 1 fixes this before the date. Main learns the new fields as optional, so a rollback just works.
+Media in R2 (and old Blob media) isn't touched by this deploy, so it doesn't need a copy.
 
-## 3. Switches that keep things off for customers
+**Restoring** (only if §7 says so): `turso db create <db>-restore --from-db <db> --timestamp $(cat restore-point.txt)`. Then point the env var at the new database, or load the `.sql` back in. Restoring signs nobody out; it only rewinds data.
 
-**The new interface has no switch.** It was removed on purpose ("every screen shows for everyone", d43fe250), and main's `?shell=legacy` escape is gone too (docs/workspace-switchover.md). On deploy, every customer gets all of the following at once:
-- the new Home, the board canvas, the Make and Atomik panels and ⌘K;
-- the Control room;
-- the five-section Settings;
-- the phone bar and phone review;
-- autosave;
-- review links with verdicts;
-- the old stage pages turned into redirects, with `/business`, `/viral` and `/workspace` answering 308.
+## 2. Env vars release/1 needs
 
-**What does have a switch:**
+These are names only, from grepping `process.env.*` and `env.*` across app/, lib/, scripts/, ops/, mcp/, proxy.ts, next.config.ts and instrumentation.ts at `origin/release/1`, plus lib/vendorKeys.ts, which reads vendor keys by name. The readiness list is lib/deploymentReadiness.ts. Signed in as platform owner, `https://particl.si/api/admin/readiness` shows each check as true/false, before and after the deploy.
 
-| Switch | Default | Where | Note |
+**New in release/1** (main never reads these, so production doesn't have them):
+
+| Name | Set to | Where it's read | When |
 |---|---|---|---|
-| `openSignup` | **off** | /admin → site settings | **Behaviour change:** main opens self-serve sign-up whenever Turso, mail and billing are configured. On `release/1` sign-up needs an invite until this is on. Check what production does today and set it to match *before* the deploy. |
-| `guestHome` | off | /admin → site settings | |
-| `HF_CINEMA_STUDIO_ENABLED` | on | env | `0` hides Cinema Studio |
-| `ASTRA_RENDER_BACKEND`, `TEXT_DIRECT`, `MODEL_CATALOG` | today's behaviour | env | Opt-in, all optional |
+| `WEB_CONCURRENCY` | `3` | ops/selfhost/cluster.mjs (default 3; `1` is the rollback switch) | Before the deploy |
+| `WORKER_ORIGIN` | `http://127.0.0.1:3000` | lib/dispatch.ts:89 (only used by native dispatch; production uses Inngest, so this is a fallback) | Before the deploy |
+| **`TEXT_DIRECT`** | `anthropic,google,xai` | lib/textDirectVendors.ts:12, lib/textRoute.ts:103 | **Before removing the gateway** (step 8) |
+| **`MODEL_CATALOG`** | `static` | lib/catalog.ts:224 | **Before removing the gateway** (step 8) |
+| `WORKER_HEAP_MB` | leave unset (896 MB per process) | ops/selfhost/cluster.mjs | — |
+| `CLUSTER_*` (6 names) | leave unset (defaults) | ops/selfhost/cluster.mjs | — |
+| `PROMPT_MODELS` | leave unset (`GATEWAY_PROMPT_MODELS` is still read) | lib/enhance.ts | — |
+| `MAX_PROVIDER_VIDEO_BYTES`, `VIDEO_TRANSFER_CONCURRENCY` | leave unset (1 GiB default) | lib/storage.ts | — |
+| `ASTRA_RENDER_BACKEND`, `ASTRA_WORKER_*` | leave unset (Vercel Sandbox, as today) | lib/astra-blender/backend.ts | — |
 
-**Changes to existing customer workflows, with no switch:**
-- Identity training now **requires a consent record**, and is refused for API tokens.
-- Collection of connected-account jobs stops.
-- A token with any scope other than `render` now reads as read-only (before, anything but `read` counted as `render`).
+Main reads `APP_URL` and `NEXT_PUBLIC_APP_URL`, but release/1 doesn't any more. Leaving them set is harmless.
 
-**Option for prerequisite 4:** a site setting `newInterface` (on by default for admins and the internal workspace, off for customers) that falls back to the old pages. This needs the old shell restored behind it, so it is real work, not a flag flip: estimate several days plus its own review. The alternative is to accept all-or-nothing and rely on the soak.
+**Required, and main already reads them**, so production has them while it's healthy (check in Coolify):
 
-## 4. Smoke tests
+| Group | Names |
+|---|---|
+| Databases | `PLATFORM_DATABASE_URL` + `PLATFORM_AUTH_TOKEN` (or the `TURSO_*` pair), `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `TURSO_API_TOKEN`, `TURSO_ORG` (`TURSO_GROUP` optional) |
+| Secrets | `KEYRING_SECRET` (32+ chars), `SESSION_SECRET`, `CRON_SECRET` |
+| Storage | `STORAGE_BACKEND=r2`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` (`R2_ENDPOINT` optional). Keep `BLOB_READ_WRITE_TOKEN` for older media. |
+| Mail | `RESEND_API_KEY`, `MAIL_FROM` |
+| Origin / proxy | `APP_ORIGIN=https://particl.si`, plus `SELFHOST_BEHIND_PROXY`, `TRUST_CF_CONNECTING_IP`, `TRUSTED_PROXY_HOPS` as they are now |
+| Background work | `DISPATCH_MODE=inngest`, `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`. `INNGEST_SERVE_ORIGIN` and `INNGEST_STREAMING` are read by the Inngest SDK. |
+| Deployment | `PARTICL_DEPLOYMENT=production`, `SUPER_ADMIN_EMAIL` |
+| Boards (live presence) | `LIVEBLOCKS_SECRET_KEY` (lib/collab.ts) |
+| Push | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (also a build arg), `VAPID_PRIVATE_KEY` (`VAPID_SUBJECT` optional) |
+| Astra renders | `ASTRA_BLENDER_SNAPSHOT_ID`, `ASTRA_BLENDER_RATE_CARD`, `VERCEL_TOKEN`, `VERCEL_TEAM_ID` |
 
-**Safe against production (no spend, no sign-ups):**
-- `ops/selfhost/smoke.sh https://particl.si`: 9 GET checks, never signs in.
-- `/api/health`: `ok`, and `commit` equals the release candidate's short SHA.
-- `/api/admin/readiness?billing=1` (super-admin): configuration and probes, including the Inngest worker probe receipt.
-- `/api/health?deep=1` (super-admin): writes one small probe object to storage, with no generation spend.
-- The manual post-switch checklist in docs/selfhost-test.md (sign in, open a workspace, upload, Library plays, cron-sync 200).
+**Vendor keys:**
 
-**Owner-run (small real spend, internal workspace only):**
-- One cheap still and one short video through the Make panel.
-- Check: settled, stored (`stored_url` set), billed once, and the at-risk count is 0.
+| Name | In production | Note |
+|---|---|---|
+| `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `ARK_API_KEY`, `FAL_KEY`, `ELEVENLABS_API_KEY`, `HF_CREDENTIALS` | yes | |
+| `ANTHROPIC_API_KEY` | added today | While production is still on **main**, this key alone switches main's prompt writer to Claude direct (main's lib/enhance.ts, `refineProvider`). That's expected and harmless. On release/1 the key does nothing until `TEXT_DIRECT` lists `anthropic`. |
+| `AI_GATEWAY_API_KEY` | yes | Removed in step 8, after `TEXT_DIRECT` and `MODEL_CATALOG` are set |
 
-**Not for production:** the five-minute and customer Playwright configs (they need mocks and sign people up) and `scripts/ops/staging-rehearsal.mjs`. These run on staging.
+**Must stay unset:** `ENGINE_MOCK` (it must not be `1`; readiness check "generation"), `OWNER_PRIVACY_SCRUB_LOCAL` and `PARTICL_ALLOW_STAGING_REHEARSAL`.
 
-## 5. Staging and soak
+**Optional with defaults** (don't add any): `CREDIT_USD` (0.10, lib/creditTerms.ts:36), `CREDIT_MARGINS`, `CREDIT_PACKS`, `SIGNUP_CREDITS`, `PLATFORM_ALLOWANCE_USD`, `ATOMIK_MAX_REQUEST_USD`, `WORKBENCH_DEVELOPMENT_MAX_REQUEST_USD`, the `*_BASE_URL`s, `ARK_TEXT_MODEL`, `XAI_MODEL`, `GEMINI_IMAGE_MODEL`, `GOOGLE_SAFETY_THRESHOLD`, `HF_*` toggles and rates, `FAL_TRAIN*`, `ELEVEN_*`, `BLOB_USD_*`, `WARM_*`, `REFINE_PROVIDER`, `ANTHROPIC_PROMPT_*`, `LEGACY_WORKSPACE_NAME`, and `PAYMENT_PROVIDER`/`STRIPE_*` (billing is off today: "Online subscriptions are being connected").
 
-1. **Freeze a release candidate.**
-   - Merge what is open (#606, #607, #608, the at-risk alert, the reference-upload limit), then tag `r1-rc1`.
-   - Nothing else lands on it except fixes found during the soak, and each fix makes a new rc.
-2. **Staging on the droplet's Coolify,** as a second app beside production, with its own domain:
-   - **Databases:** Turso branches (copies) of production's platform database and of every workspace database, taken at one point in time. That is production-shaped data with no effect on production. It needs the owner's yes and a Turso token decision.
-   - **Isolation:**
-     - `ENGINE_MOCK=1`.
-     - **Mail off**: staging must never email real customers from copied data.
-     - Stripe test keys or off.
-     - Its own Inngest app.
-     - A staging R2 bucket. Objects that copied rows point at are read-only, or are missing, and that's acceptable.
-   - **Process count:** `WEB_CONCURRENCY` as production will have it (3), because Turso doesn't have the SQLite lock problem.
-3. **On the first staging cron run,** record exactly what the money sweeps change:
-   - paid-text rows refunded, with their credits;
-   - Cinema takes failed;
-   - connected jobs dropped.
+**`RIG_AGENT_ENABLED`** (lib/workbench/rig-agent.ts:91) is the owner's call. Unset in production means **Atomik's board building is off**. Main reads it too, so today's value carries over. Set it to `1` only if Atomik should build on boards from day one.
 
-   This is the evidence for prerequisite 3.
-4. **Soak for 7 days,** with at least 3 working days of real internal use.
-   - **Daily:**
-     - smoke.sh, readiness, and the customer and five-minute Playwright configs against staging;
-     - cron-sync 200 every run;
-     - no 5xx in the logs;
-     - at-risk 0;
-     - memory within limits;
-     - `recovery_activities` with nothing `uncertain`.
-   - **Once:**
-     - open, edit and save the 20 largest copied projects;
-     - roll staging back to main + rollback-compat, check those projects still save, then roll forward again.
+**Test and script only** (never in Coolify): `PARTICL_TEST_MOCK_DELAYS`, `PWTEST_SHARD_WEIGHTS`, `CI_DEV_SOURCE_MAPS`, `GITHUB_*`, `RUNNER_TEMP`, `ASTRA_WORKER_TEST_ROOT`, `SOURCE_*`/`TARGET_*`, `STRIP_BLOCKING_DB_*`, `PARTICL_BACKUP_*`, `AIMIGHTY_*`, `PARTICL_URL`/`PARTICL_TOKEN`, `TURSO_CLI`.
 
-   This rehearses the rollback.
-5. **Exit:** 7 clean days, the rollback rehearsal passed, and the owner's answers to prerequisites 3 and 4.
+## 3. Open sign-up
 
-## 6. Cutover (the day)
+- **The setting.** `openSignup` lives in the platform database's `platform_layer` row `site` (lib/site/settings.ts). It's new in release/1 and off by default. Main has no such switch: sign-up is closed today because billing isn't configured.
+- **Today:** `curl -s https://particl.si/api/auth/signup` answers `"open":false`, with the reason "Online subscriptions are being connected".
+- **After the deploy:** the same curl should answer `"open":false` and `"inviteOnly":true` (app/api/auth/signup/route.ts:139). In **/admin → Site** the chip should read **Open sign-up · off**. Don't press it. Invitation links work as before.
 
-1. **Before:**
-   - Announce a window.
-   - Confirm main + rollback-compat is live on production and has been for at least a day.
-   - Record the time, for a Turso point-in-time restore if needed.
-   - Export the platform database.
-   - Set `openSignup` to match today.
-2. **Deploy:** merge `r1-rc1` into main, then the owner clicks Deploy. Re-sync Inngest at `https://particl.si/api/inngest`.
-3. **Within 15 minutes:**
-   - the safe smoke tests in §4;
-   - the health commit equals the rc;
-   - the readiness worker probe succeeds;
-   - the owner's cheap still and video.
-4. **Watch 24 hours:**
-   - logs, memory, cron-sync;
-   - the at-risk alert;
-   - support email;
-   - the first cron run's money-sweep log lines match the staging numbers.
+## 4. Schema changes (applied on boot)
 
-   The rollback decision window is these 24 hours.
+There is no migrations folder and no script to run. Each database adds what it lacks the first time it's used (`CREATE … IF NOT EXISTS`, `ADD COLUMN`). Every change below is additive. Nothing is dropped, renamed or re-defaulted, and no new boot-time `UPDATE`/`DELETE` was added in lib/db.ts or lib/platform.ts.
+
+| Change | Database | Safe? |
+|---|---|---|
+| New tables: `api_token_grants`, `sample_lifts`, `identity_consents`, `consent_recordings`, `prepared_jobs`, `review_link_scopes`, `review_verdicts`, `review_link_hits`, `rig_plan_approvals` | workspace / platform | Additive. Main ignores them. |
+| New nullable columns: `atomik_messages.ledger`, `atomik_spend.ledger`, `generations.refine_ledger`, `meter_events.hold_band`, `meter_events.overrun_usd`, `paid_text_jobs.reconcile_lease`, `astra_render_jobs.claimed_at`, `upload_sessions.failure`, `rig_agent_runs.attachments`, `rig_agent_steps.approval_id`, `rig_agent_steps.fix_of` | both | Additive |
+| #637: `billing_cycles_ws` on `billing_cycles(workspace_id)`, `meter_events_created` on `meter_events(created_at)` | platform | Additive. The first start builds them while holding the write lock. Production's tables are small (no real users), so expect seconds. |
+| Indexes on the new tables: `identity_consents_subject`, `prepared_jobs_state`, `review_verdicts_gen`, `sample_lifts_one_open` | workspace | Additive, on empty tables |
+
+**One thing a rollback can trip on** (from the 9 Oct analysis): release/1 saves `production.blocking` and `production.boards.looks` into project JSON. Main's schema for those objects is `.strict()`, so after a rollback main refuses to save a project that release/1 has touched. With no customers, that only affects projects the team edits on release/1. `scripts/ops/strip-production-blocking.mjs` strips `blocking` (not `looks`).
+
+## 5. New interface (prototype 12)
+
+**How it works.** lib/newInterface.ts:11 turns it on for the house workspace (`ws_legacy`) and for any workspace id in the site setting `newInterfaceWorkspaces` (up to 50). It's read in app/(app)/layout.tsx:47, /api/me, /api/billing and lib/shell/bootstrap.server.ts. Off, a workspace sees the graphite screens: release/1's Home, board, Make, Atomik, Control room and Settings. Those are still all new compared with today's particl.si.
+
+**Recommendation: don't turn it on for every workspace at launch.** Keep the standing owner decision: on for the house workspace, off for everyone else.
+
+- **Why:** the v12 screens are still being built lane by lane (docs/redesign-progress.md), and five actions still show "quoted" instead of a live price. The five-minute test (rule 17) runs on the graphite screens, not v12.
+- **The trade-off:** your own house workspace shows v12. An invited person sees graphite. That's a split, but each side is consistent.
+- **To show v12 to a team workspace,** add its id to the list. There's no button for this on the /admin card. Signed in as platform owner on particl.si, run this in the browser console:
+  ```js
+  fetch('/api/admin/site',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({newInterfaceWorkspaces:['<ws_id>']})})
+  ```
+  The ids are in /admin → Workspaces.
+- **If you want everyone on v12 anyway,** that's a code PR merged before the deploy, not a setting. lib/newInterface.ts:13 becomes `return true;`. It also has to change tests/unit/newInterfaceSwitch.spec.ts, which asserts the current rule, so it's a reviewed PR, not a one-line hotfix.
+
+## 6. Smoke tests (after the deploy)
+
+| # | Where | Look for |
+|---|---|---|
+| 1 | `curl -s https://particl.si/api/health` | `"ok":true`, `"mock":false`, `"dispatch":{"mode":"inngest"}`, `"database":"ok"`, `"storage":"ok"`, and **`"commit":"<first 7 of main's new head>"`** (field `commit`, app/api/health/route.ts:138, from `GIT_COMMIT_SHA`/`SOURCE_COMMIT`, lib/deployment.ts:79) |
+| 2 | `curl -s https://particl.si/api/auth/signup` | `"open":false,"inviteOnly":true` |
+| 3 | https://particl.si/login, then https://particl.si/admin | Signs in. The Workspaces header shows the same count as before the deploy. Open sign-up is off. |
+| 4 | https://particl.si/api/admin/readiness (signed in) | `"ready":true`; no required check false |
+| 5 | https://particl.si/api/health (signed in) | `providers[]`: `gemini` via `key`, `openai` via `key`. `mail.configured: true`. `cron` shows a run within 10 min of the deploy. |
+| 6 | Inngest dashboard → Apps → particl → **Resync** (`https://particl.si/api/inngest`) | Synced, 6 functions: probe, render, astra-render, dubbing, rig-agent, development worker |
+| 7 | Open a production and its board | The board loads and live presence works (two tabs see each other) |
+| 8 | **Internal test workspace only** (flagged internal in /admin; otherwise the house workspace): one **Standard still, Nano Banana 2, 512 = 1 cr**. The owner says yes first. | The image lands in the take and appears in the Library. The price on the button reads `1 cr`. |
+| 9 | Atomik in the same workspace: one short question | It answers. A planning turn is a real text call: the price shows before you approve, and the owner approves. |
 
 ## 7. Rollback
 
-- **Code:**
-  - Coolify **Rollback** tab → the previous image (main + rollback-compat). This takes seconds.
-  - Then re-sync Inngest.
-  - Inngest function ids are the same on both, so no run is stranded by a rename. A run sleeping mid-`step.sleep` (Astra) may not resume correctly on main. Check the Inngest dashboard and re-run anything stuck.
-- **Schema:** nothing to do. New tables and columns are ignored by main.
-- **Project JSON:** handled by rollback-compat. Without it, strip `blocking` with the existing script and `looks` with an extended one, and expect some projects to be unsaveable until stripped.
-- **Can't be undone, and should be accepted in advance:**
-  - money-sweep refunds and failures, with their ledger rows;
-  - "Particl support" user rows;
-  - consent and prepared-job rows (unused on main);
-  - emails already sent;
-  - browsers' cached 308 redirects for `/business`, `/viral`, `/workspace` and `/site/*`, which persist until the browser drops them.
-- **Restoring data** instead (last resort):
-  - Turso point-in-time restore (30 days on Scaler) has no tooling here.
-  - It means repointing every workspace's sealed database address and token, losing every write after the restore point, and signing everyone out.
-  - The nightly encrypted backup isn't live yet. Making it live is worth doing before the date.
+**Plain words.** Coolify keeps the previous image. Open the app in Coolify → **Rollback** tab → pick the image from before today (main) → **Rollback**. The site is back on main in about a minute. Before you deploy, check that the main image is listed there; Coolify keeps 2 images by default ("Docker images to keep").
 
-## Risks, most severe first
+**Before rolling back to main:**
 
-1. **Never tested on Turso or production data.** Staging was SQLite with one workspace, 213 commits ago. §5 fixes this.
-2. **A rollback leaves projects main can't save** (the strict `production`/`boards` schema). Prerequisite 1 fixes this.
-3. **The first cron run refunds and fails existing money rows,** and that can't be undone. Prerequisite 3 measures it first.
-4. **The new interface is all-or-nothing for customers.** There's no switch and no legacy escape.
-5. **Self-serve sign-up may close silently** (`openSignup` defaults to off).
-6. **No live automated backup.** Data recovery is Turso point-in-time restore plus manual repointing.
-7. **Changed customer workflows:** consent is required for identity training, connected-account collection stops, and token scope reads stricter.
-8. **Inngest Astra runs that sleep across the deploy or a rollback** may need a manual re-run.
-9. **Persisting side effects:** the "Particl support" mirror rows and cached 308s.
-10. **The release keeps moving.** Freeze the rc before staging it, or the soak proves nothing.
+- If you've already removed `AI_GATEWAY_API_KEY`, **put it back first.** Main needs the gateway for Atomik, the catalogue and the prompt writer.
+- `TEXT_DIRECT`, `MODEL_CATALOG`, `WEB_CONCURRENCY` and `WORKER_ORIGIN` can stay. Main ignores them, and main's image runs `node server.js`, not `cluster.mjs`.
 
-## What it needs from the owner
+**Data written in between:**
 
-- **Yes/no:** Turso branch copies of production for staging, plus the token decision.
-- **Yes/no:** build rollback-compat for main now. It's small, and the lead recommends it.
-- **After the staging numbers:** allow the money sweeps, or ship with them off at first.
-- **The interface:** all-or-nothing, or build the `newInterface` switch first.
-- **The date.**
+- The new tables, columns and indexes stay. Main ignores them.
+- A project the team edited on release/1 may refuse to save on main (§4). Run `scripts/ops/strip-production-blocking.mjs` for that project, or re-create it.
+- **Use the Turso restore point only** if main misbehaves on data in a way that matters. With no customers, that's unlikely. Anything done after the timestamp is lost.
+
+## 8. Dropped from the old plan
+
+| Item | Why it's dropped |
+|---|---|
+| 7-day staging soak | No real users. A rollback is a minute in Coolify, and the backup covers the data. |
+| Rollback-compat backport to main | It only protects projects edited on release/1. With no customers, that's the team's own projects; strip or restore if it ever comes up (§7). |
+| Money-sweep measurement | Two sweeps run on the first cron pass (app/api/cron/sync/route.ts). See the rows below. |
+
+The two sweeps:
+
+- **Paid text** (`reconcilePaidTextJobs`, lib/paidText.ts:455). It refunds each workspace's `paid_text_jobs` rows in `queued`/`running`/`uncertain` with no response and older than 30 min, 10 per run. Main never runs this pass.
+- **Cinema** (`expireUnansweredCinemaTakes`, lib/genjutsuVideo.ts:210). It fails Higgsfield Cinema `generations` still `queued`/`running` after 24 h, 5 per run, with `cost_usd=0`.
+
+How many rows they touch **can't be known without production database access**. No fixture models it. With no real users, the expected number is about 0: at most a few of the team's own stuck jobs, which get refunded or released. That is the right outcome.
+
+## 9. #609 vs release/1
+
+- **Deploy release/1 directly. Don't merge #609.** #609 backports #606 (multi-process, `WEB_CONCURRENCY`) to main, and release/1 already has #606 (b3e95735). Merging #609 first would put a commit on main that release/1 lacks, which turns a clean merge into a possible conflict, all to ship code that arrives anyway. Close #609 once release/1 is on main.
+- **How release/1 reaches main: reuse #546.** GitHub allows only one open PR per branch pair, and #546 is already `release/1 → main`, so a fresh PR would be refused while #546 is open. Retitle it **"Release 1 → main (launch, Mon 12 Oct)"** and replace its "do not merge" body.
+- **Merge with "Create a merge commit"**, never squash or rebase. Squash would flatten 1,350 commits into one and split the branches' history. Main isn't branch-protected, so wait for #546's checks to go green on release/1's final commit before merging.
+
+## 10. Runbook (owner, in order)
+
+| Step | Do | Check before going on |
+|---|---|---|
+| 0 | Freeze `release/1`: nothing more merges into it today. Note its head sha. | #546 checks are green on that sha |
+| 1 | **Backup** (§1) | The §1 check passes; `restore-point.txt` is saved |
+| 2 | Coolify → app → **Configuration**: Resource limits **CPUs 3**, **Memory 6 GB**. **Environment variables**: `WEB_CONCURRENCY=3`, `WORKER_ORIGIN=http://127.0.0.1:3000` (runtime, not build). **General/Advanced**: **Include Source Commit in Build** on. Confirm `ENGINE_MOCK` isn't set and `ANTHROPIC_API_KEY` is. **Save** (don't deploy yet). | Rollback tab lists the current main image |
+| 3 | GitHub: merge **#546** with **Create a merge commit** | `main` head = the merge commit; note its first 7 characters |
+| 4 | Coolify → **Deploy** | Build log ends successfully; the container is healthy |
+| 5 | `curl -s https://particl.si/api/health` | `"commit"` = the 7 characters from step 3; `ok`, `database`, `storage` as in §6 |
+| 6 | Inngest → Resync; smoke tests §6 rows 2–7 | All pass |
+| 7 | Sign in → internal test workspace → board → **one Standard still (Nano Banana 2, 512): 1 cr**, owner's yes | Image lands; button read `1 cr` |
+| 8 | Coolify env: **add `TEXT_DIRECT=anthropic,google,xai` and `MODEL_CATALOG=static`, then remove `AI_GATEWAY_API_KEY`** → **Restart** | `/api/health` (signed in): `anthropic` configured via `key`, `vercel` not configured |
+| 9 | Atomik: one short question (owner approves the price). The prompt writer: one **Enhance** on a short prompt. | Both answer. Atomik's model menu still lists Claude. |
+
+**Why step 8 needs the two extra variables** (checked in code):
+
+- **Routing.** lib/textRoute.ts:103 sends a model to its own provider only when its vendor is in `TEXT_DIRECT`. Otherwise it goes through the gateway: `gatewayPost` → `gatewayAuth`, which throws "The model gateway is unreachable" (lib/gateway.ts:44). The default text models are all Claude (lib/platformLayer.ts:108: enhance `claude-sonnet-5`, idea and shot `claude-opus-5`), and so is the Atomik Auto list (lib/atomikModelPolicy.ts:112).
+- **The catalogue.** With `MODEL_CATALOG` unset, lib/catalog.ts:241 drops every non-OpenAI model once the gateway is unreachable. Atomik would fall back to `openai/gpt-5.5`, and the Enhance route (app/api/prompt/enhance/route.ts:59) would lose its Claude choices. `MODEL_CATALOG=static` serves lib/modelCatalog.json (priced 8 Oct), keeping each vendor whose key is set (`callable`, lib/catalog.ts:203).
+- **Once set,** Claude, Gemini and Grok text go direct with `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` and `XAI_API_KEY` (lib/language-provider.ts:48, lib/textDirect.ts:35). OpenAI was already direct.
+- **Images don't need the gateway once their keys are set.** Stills go to Google with `GEMINI_API_KEY` (`stillsDoor`, lib/gemini.ts:49). OpenAI and xAI images go direct with their keys (lib/vendorImages.ts:75).
+- **Still unverified:** the provider model ids in lib/textRoute.ts:41 (`claude-opus-5`, `claude-sonnet-5`, `gemini-3.x`, `grok-4.x`). The code itself says to check them against each provider's `/v1/models` during this smoke run. Step 9 is that check for Claude. Run one Gemini and one Grok text call if you use them.
+
+## 11. If a check fails
+
+| Failed at | Do |
+|---|---|
+| 1 Backup | Stop. Nothing has changed. Fix the export, then start again. |
+| 2 Coolify settings | Put the values back as they were. Nothing is deployed yet. |
+| 3 Merge | If you merged and haven't deployed, leave it. Production only changes when you press Deploy. (Reverting the merge on main is optional.) |
+| 4 Build fails | Production keeps running main; nothing to undo. Send the build log to the lead. |
+| 5 `commit` wrong or `ok` false | Coolify → Rollback to the main image (§7). Then `curl /api/health`: no `commit` field means you're back on main. |
+| 6 Smoke test fails | Small and isolated (for example, one page): note it and carry on. Sign-in, /admin, the database or storage: roll back (§7). |
+| 7 Still fails | If it says "Nothing billed", retry once. If it fails again, roll back and send the error text. |
+| 8–9 Atomik or Enhance fails after removing the gateway | **Put `AI_GATEWAY_API_KEY` back → Restart.** You're on release/1 with the gateway, as at step 7. Leave `TEXT_DIRECT`/`MODEL_CATALOG` set or remove them; either works with the key back. No image rollback needed. |
+| Later: data looks wrong | Restore the affected database from the restore point into a new database (§1) and compare before switching anything. |
+
+## 12. Counts in /admin
+
+**What /admin shows today** (app/(app)/admin/page.tsx, data from `/api/admin/invites`, platform owner only):
+
+- **Workspaces: yes.** Go to https://particl.si/admin and scroll to **Workspaces**. The header reads "*N* on this deployment, *M* deleted".
+- **Users: only per workspace.** Each row shows "*n* members". There's no total, and adding the rows up counts a person once per workspace they belong to.
+- **Credit grants: only per workspace, as amounts.** Each row's 30-day cell shows granted credits split free/paid (`grantsByKind`, lib/platform.ts:628). There's no platform total and no count of grants.
+
+**Smallest read-only addition** (described here, not built). Add one `totals` object to the existing owner-only `GET /api/admin/invites`, and show it as one line under the Workspaces header, for example "12 workspaces · 31 people · 18 grants (2,450 free cr · 0 paid cr)". It's counts only, with no names or emails, and reads the platform database only:
+
+- `SELECT count(*) FROM workspaces WHERE deleted_at IS NULL`
+- `SELECT count(*) FROM accounts WHERE deleted_at IS NULL`
+- `SELECT kind, count(*), COALESCE(sum(credits),0) FROM credit_grants GROUP BY kind`
+
+That's about 15 lines plus one unit test, behind the existing `requireSuperAdmin`.
