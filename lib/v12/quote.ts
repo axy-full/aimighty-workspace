@@ -76,18 +76,22 @@ export function quoteRequest(source: QuoteSource): { url: string; init: RequestI
     case "audio": return post("/api/audio", { ...source.body, quoteOnly: true });
     case "atomik": return post("/api/atomik", { ...source.body, quoteOnly: true });
     case "board-start": return { url: "/api/workbench/team-canvas?agent=1&board=new", init: { cache: "no-store" } };
-    case "engine": {
-      const q = new URLSearchParams({ model: source.model, resolution: source.resolution, ratio: source.ratio });
-      if (source.duration != null) q.set("duration", String(source.duration));
-      if (source.audio) q.set("audio", "1");
-      for (const id of source.uploadIds ?? []) q.append("uploadId", id);
-      for (const id of source.genIds ?? []) q.append("genId", id);
-      if (source.imageRefs) q.set("imageRefs", String(source.imageRefs));
-      if (source.soulIdentityId) q.set("soulIdentityId", source.soulIdentityId);
-      if (source.projectId) q.set("projectId", source.projectId);
-      return { url: `/api/workbench/engines?${q}`, init: { cache: "no-store" } };
-    }
+    case "engine": return engineRequest(source);
   }
+}
+
+/** An engine source (one engine at given settings), as its read: the only route the Formats cards ask, so they take this and not `quoteRequest`. */
+export type EngineQuoteSource = Extract<QuoteSource, { route: "engine" }>;
+export function engineRequest(source: EngineQuoteSource): { url: string; init: RequestInit } {
+  const q = new URLSearchParams({ model: source.model, resolution: source.resolution, ratio: source.ratio });
+  if (source.duration != null) q.set("duration", String(source.duration));
+  if (source.audio) q.set("audio", "1");
+  for (const id of source.uploadIds ?? []) q.append("uploadId", id);
+  for (const id of source.genIds ?? []) q.append("genId", id);
+  if (source.imageRefs) q.set("imageRefs", String(source.imageRefs));
+  if (source.soulIdentityId) q.set("soulIdentityId", source.soulIdentityId);
+  if (source.projectId) q.set("projectId", source.projectId);
+  return { url: `/api/workbench/engines?${q}`, init: { cache: "no-store" } };
 }
 
 /** What the session says about money here: whether it pays in dollars (the house workspace), and a credit's price. */

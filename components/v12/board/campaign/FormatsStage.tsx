@@ -3,7 +3,7 @@ import { briefOf } from "@/components/graphite/business/own-kit";
 import { useAdsActions } from "@/components/graphite/board/ads/use-ads-actions";
 import type { BoardCtx } from "@/components/graphite/board/cards/types";
 import { CAMPAIGN_FORMATS, formatFits, formatQuote, type CampaignFormat } from "@/lib/v12/campaign";
-import { useQuote } from "@/lib/v12/useQuote";
+import { useEngineQuote } from "@/lib/v12/useQuote";
 import { Price } from "@/components/v12/ui/Price";
 import "../stage-pages.css";
 import "./campaign.css";
@@ -74,6 +74,6 @@ export function FormatsStage({ ctx }: { ctx: BoardCtx }) {
 /** A format's one price: the server's quote at Make's own settings, else "quoted" with why. */
 export function FormatPrice({ format, ratio }: { format: CampaignFormat; ratio?: string }) {
   const asked = formatQuote(format, ratio);
-  const quote = useQuote("source" in asked ? asked.source : null);
+  const quote = useEngineQuote("source" in asked ? asked.source : null);
   return "source" in asked ? <Price quote={quote} /> : <Price quote={null} reason={asked.reason} />;
 }

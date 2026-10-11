@@ -13,7 +13,7 @@ import type { ProductExtraction } from "@/lib/workbench/product-extraction-types
 import type { BrandKit, CreativeTemplate } from "@/lib/workbench/moleculr-creative";
 import { CREATIVE_TEMPLATES } from "@/lib/workbench/moleculr-creative";
 import { MAKE_MODEL_PREFERENCE, MAKE_PICKS } from "@/lib/shell/make-price";
-import type { QuoteSource } from "./quote";
+import type { EngineQuoteSource } from "./quote";
 import type { UnpricedId } from "./unpriced";
 
 /* ── Product ──────────────────────────────────────────────────────────── */
@@ -119,7 +119,7 @@ export const templateOf = (format: CampaignFormat): CreativeTemplate | null => (
  * engine Make opens on, 1080p, five seconds) at the brief's size: the figure Make's button will show. A still format is a
  * set of briefs priced in Make, and a format with nothing behind it has none: both read "quoted", each with its reason.
  */
-export function formatQuote(format: CampaignFormat, ratio?: string): { source: QuoteSource } | { reason: UnpricedId } {
+export function formatQuote(format: CampaignFormat, ratio?: string): { source: EngineQuoteSource } | { reason: UnpricedId } {
   const template = templateOf(format);
   if (!template) return { reason: "campaignFormatNotBuilt" };
   if (template.kind !== "video") return { reason: "campaignStills" };
