@@ -44,8 +44,11 @@ test.afterAll(() => { for (const key of CLEARED_ENV) { if (ENV_BEFORE[key] === u
   const loaded = createRequire(path.resolve("package.json")).cache;
   const importers = new Map<string, Set<string>>();
   for (const [file, mod] of Object.entries(loaded)) for (const child of mod?.children ?? []) (importers.get(child.id) ?? importers.set(child.id, new Set()).get(child.id)!).add(file);
+  /* Only the app's own modules are dropped: never node_modules, a spec file or a helper (they reach @playwright/test, which must be required once per worker). */
+  const appRoots = ["lib", "app", "components"].map((dir) => path.resolve(dir) + path.sep);
+  const isApp = (file: string) => appRoots.some((dir) => file.startsWith(dir)) && !file.includes(`${path.sep}node_modules${path.sep}`);
   const stale = [path.resolve("lib/catalog.ts")];
-  for (let i = 0; i < stale.length; i++) for (const up of importers.get(stale[i]) ?? []) if (!stale.includes(up)) stale.push(up);
+  for (let i = 0; i < stale.length; i++) for (const up of importers.get(stale[i]) ?? []) if (isApp(up) && !stale.includes(up)) stale.push(up);
   for (const file of stale) delete loaded[file];
 }
 
