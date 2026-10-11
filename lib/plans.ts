@@ -50,6 +50,8 @@ export type PlanDef = {
   group: PlanGroup;
   /** Whether the public plan list offers it. A legacy plan is resolvable by a workspace that is on it, and never offered. */
   offered: boolean;
+  /** A word on the card when the plan is the one most people take, or null. */
+  badge: string | null;
   /** A business plan is sold per seat a month: `priceUsd` and `includedCredits` are for one seat. */
   perSeat: boolean;
 };
@@ -71,17 +73,20 @@ export const PLAN_IDS: readonly PlanId[] = [
  */
 export const DEFAULT_PLANS: PlanDef[] = [
   /* Invite includes no credits: its 250 are the one-time welcome grant. The free default of a new workspace; never offered. */
-  { id: "invite", label: "Invite", priceUsd: 0, includedCredits: 0, maxProductions: 1, maxMembers: 3, group: "legacy", offered: false, perSeat: false },
-  { id: "studio", label: "Studio", priceUsd: 49, includedCredits: 400, maxProductions: null, maxMembers: null, group: "legacy", offered: false, perSeat: false },
-  { id: "agency", label: "Agency", priceUsd: 199, includedCredits: 1600, maxProductions: null, maxMembers: null, group: "legacy", offered: false, perSeat: false },
-  { id: "production", label: "Production", priceUsd: 999, includedCredits: 9000, maxProductions: null, maxMembers: null, group: "legacy", offered: false, perSeat: false },
-  { id: "explore", label: "Explore", priceUsd: 50, includedCredits: 500, maxProductions: null, maxMembers: null, group: "individual", offered: true, perSeat: false },
-  { id: "create", label: "Create", priceUsd: 100, includedCredits: 1000, maxProductions: null, maxMembers: null, group: "individual", offered: true, perSeat: false },
-  { id: "master", label: "Master", priceUsd: 250, includedCredits: 2500, maxProductions: null, maxMembers: null, group: "individual", offered: true, perSeat: false },
-  { id: "business100", label: "Business 100", priceUsd: 100, includedCredits: 1000, maxProductions: null, maxMembers: null, group: "business", offered: true, perSeat: true },
-  { id: "business250", label: "Business 250", priceUsd: 250, includedCredits: 2500, maxProductions: null, maxMembers: null, group: "business", offered: true, perSeat: true },
-  { id: "business500", label: "Business 500", priceUsd: 500, includedCredits: 5000, maxProductions: null, maxMembers: null, group: "business", offered: true, perSeat: true },
+  { id: "invite", label: "Invite", priceUsd: 0, includedCredits: 0, maxProductions: 1, maxMembers: 3, group: "legacy", offered: false, perSeat: false, badge: null },
+  { id: "studio", label: "Studio", priceUsd: 49, includedCredits: 400, maxProductions: null, maxMembers: null, group: "legacy", offered: false, perSeat: false, badge: null },
+  { id: "agency", label: "Agency", priceUsd: 199, includedCredits: 1600, maxProductions: null, maxMembers: null, group: "legacy", offered: false, perSeat: false, badge: null },
+  { id: "production", label: "Production", priceUsd: 999, includedCredits: 9000, maxProductions: null, maxMembers: null, group: "legacy", offered: false, perSeat: false, badge: null },
+  { id: "explore", label: "Explore", priceUsd: 50, includedCredits: 500, maxProductions: null, maxMembers: null, group: "individual", offered: true, perSeat: false, badge: null },
+  { id: "create", label: "Create", priceUsd: 100, includedCredits: 1000, maxProductions: null, maxMembers: null, group: "individual", offered: true, perSeat: false, badge: "Most people" },
+  { id: "master", label: "Master", priceUsd: 250, includedCredits: 2500, maxProductions: null, maxMembers: null, group: "individual", offered: true, perSeat: false, badge: null },
+  { id: "business100", label: "Business 100", priceUsd: 100, includedCredits: 1000, maxProductions: null, maxMembers: null, group: "business", offered: true, perSeat: true, badge: null },
+  { id: "business250", label: "Business 250", priceUsd: 250, includedCredits: 2500, maxProductions: null, maxMembers: null, group: "business", offered: true, perSeat: true, badge: null },
+  { id: "business500", label: "Business 500", priceUsd: 500, includedCredits: 5000, maxProductions: null, maxMembers: null, group: "business", offered: true, perSeat: true, badge: null },
 ];
+
+/** What the house workspace (ws_legacy) shows where a plan or a credit balance would be: it pays at cost, in dollars, and holds none. */
+export const HOUSE_PLAN = { label: "Pays at cost", line: "This workspace pays at cost: every price is the engines' own, in dollars. It holds no credits and no plan." } as const;
 
 /** Enterprise: "Get in touch". No price, no credits and no plan id: a workspace cannot be on it, and nothing here sells it. */
 export const ENTERPRISE = { id: "enterprise", label: "Enterprise", line: "Get in touch" } as const;

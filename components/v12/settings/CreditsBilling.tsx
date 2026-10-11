@@ -4,7 +4,7 @@ import { useSession } from "@/lib/session";
 import { fmtCredits } from "@/lib/price";
 import { creditRate, creditsUsd } from "@/lib/shell/price-words";
 import { creditRateLine } from "@/lib/creditTerms";
-import { HOUSE_NOT_BILLED } from "@/lib/houseWorkspace";
+import { HOUSE_PLAN } from "@/lib/plans";
 import type { CreditLedgerRow } from "@/lib/usageLedgerTerms";
 import type { BillingSubscription, Topups } from "@/lib/shell/workspace-view";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
@@ -72,7 +72,7 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
             <span className="v12-bill-eyebrow">Balance</span>
             {inCredits && creditRateLine(rate) ? <span className="v12-bill-meta">{creditRateLine(rate)}</span> : null}
           </div>
-          {!inCredits ? <div className="v12-bill-empty">{HOUSE_NOT_BILLED}</div> : (
+          {!inCredits ? <div className="v12-bill-empty" data-testid="v12-billing-house">{HOUSE_PLAN.label} · {HOUSE_PLAN.line}</div> : (
             <>
               <div className="v12-bill-row" data-testid="v12-billing-credits">
                 <span>Credits</span>

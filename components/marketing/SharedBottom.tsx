@@ -83,8 +83,8 @@ function PricingTeaser({ prices }: { prices: SitePrices }) {
         aside={<Link href={PRICING_HREF} className="mk-btn mk-btn--secondary" style={{ height: 38 }}>Plans, packs and the rate card →</Link>} />
       <Grid col={230}>
         {individual.map((plan) => (
-          <Link key={plan.id} href={PRICING_HREF} className={`mk-card${plan.id === "create" ? " mk-card--hl" : ""}`}>
-            <span className={`mk-tag${plan.id === "create" ? "" : " mk-tag--muted"}`}>{plan.label}</span>
+          <Link key={plan.id} href={PRICING_HREF} className={`mk-card${plan.badge ? " mk-card--hl" : ""}`}>
+            <span className={`mk-tag${plan.badge ? "" : " mk-tag--muted"}`}>{plan.label}</span>
             <span className="mk-plan-price">{usd(plan.priceUsd)}<small>/mo</small></span>
             <span className="mk-body">{planLines(plan, prices.inviteCredits).slice(0, 3).join(" · ")}</span>
           </Link>
