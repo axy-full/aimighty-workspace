@@ -44,6 +44,12 @@ export type GenerationBodyInput = {
   cinema?: Record<string, string> | null;
   /** Cinema Studio 4.0's Sound switch: sent only when it is on. Absent, admission keeps the take silent. */
   generateAudio?: boolean;
+  /**
+   * Whether the words were run through Enhance first (Make's Enhance toggle): `{ from }` carries the words as the person typed them
+   * (the take is then labelled Enhanced, and "See original" shows them), `false` says they went as written (Raw). Absent: the screen
+   * has no toggle. A label only: it changes no price and no fingerprint.
+   */
+  enhanced?: false | { from: string };
   /** A seed to repeat (Make's "Reuse seed"): a clip's only, sent when set. Admission records it; Seedance passes it to the engine. */
   seed?: number | null;
   /**
@@ -82,6 +88,7 @@ export function generationRequestBody(input: GenerationBodyInput): Record<string
     ...(input.cinema && Object.keys(input.cinema).length ? { cinema: input.cinema } : {}),
     ...(input.generateAudio === true && input.kind === "video" ? { generateAudio: true } : {}),
     ...(typeof input.seed === "number" && Number.isFinite(input.seed) && input.kind === "video" ? { seed: input.seed } : {}),
+    ...(input.enhanced === false ? { enhanced: false } : input.enhanced ? { enhanced: { from: input.enhanced.from } } : {}),
   };
 }
 

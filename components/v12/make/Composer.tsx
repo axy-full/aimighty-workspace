@@ -6,6 +6,9 @@ import { spendAttrsOf, spendAttrsText } from "@/lib/spend";
 import { TAKES_MAX } from "@/lib/workspace/composer";
 import { useSession } from "@/lib/session";
 import { creditRate } from "@/lib/shell/price-words";
+import { ENHANCE_ASWRITTEN, ENHANCE_LABEL, ENHANCE_TIP_LINE, ENHANCE_TIP_NAME, enhanceKey, enhanceOffered, workspaceEnhance, writeEnhance } from "@/lib/v12/enhance";
+import { useRead } from "@/components/graphite/settings/use-settings";
+import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { EDIT_OPS, MAKE_MODES, REMIX_OPS, makeQuote, modeType, placeholderFor, type MakeMode, type MakeOp, type ResultTile } from "@/lib/v12/make";
 import { Bar, BarChip, type BarMention } from "@/components/v12/bar/Bar";
 import { Price } from "@/components/v12/ui/Price";
@@ -53,7 +56,22 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   const session = useSession();
   /* Prices in the workspace's own unit: credits, or dollars for the workspace that pays in dollars. */
   const money = { dollars: session.rates.unit === "usd", creditUsd: creditRate(session.rates.creditUsd) };
-  const make = useMake({ ...input, onBoard: false, keepOpen: true });
+  /* Enhance (lib/v12/enhance.ts): this person's own choice, else the workspace's default (Settings › Advanced), else On. The house, which pays in
+     dollars at cost, has none here: its enhancement cannot be added to the button's figure. */
+  const inDollars = session.rates.unit === "usd";
+  const userId = session.userId ?? null;
+  const defaults = useRead<{ settings: Record<string, string> }>("/api/settings");
+  const [mine, setMine] = useState<boolean | null>(null);
+  useEffect(() => {
+    const at = setTimeout(() => { try { const kept = window.localStorage.getItem(enhanceKey(userId)); setMine(kept === "1" ? true : kept === "0" ? false : null); } catch { setMine(null); } }, 0);
+    return () => clearTimeout(at);
+  }, [userId]);
+  const enhanceOn = mine ?? workspaceEnhance(defaults.data?.settings.enhanceDefault);
+  const make = useMake({ ...input, onBoard: false, keepOpen: true, enhanceToggle: inDollars ? null : enhanceOn });
+  const { setAuto } = make.enhancer;
+  const enhanceShown = !inDollars && !make.spendOff && Boolean(make.model) && enhanceOffered(make.state.type, make.model?.audioTask);
+  useEffect(() => { setAuto(enhanceOn && enhanceShown); }, [setAuto, enhanceOn, enhanceShown]);
+  const setEnhance = (next: boolean) => { setMine(next); writeEnhance(typeof window === "undefined" ? null : window.localStorage, userId, next); };
   /* The mode: Remix or Edit when picked here, else the composer's own type once picked, else Auto. */
   const { pickType, unpick, recipe } = make;
   /* A recipe that lands (prompt reuse) is made in its own type: Remix or Edit, picked before it, gives way to it. */
@@ -118,7 +136,8 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
     : make.result ? { tone: "problem" as const, text: make.result }
       : make.short ? { tone: "problem" as const, text: make.short }
         : make.notices[0] ? { tone: "note" as const, text: make.notices[0] }
-          : make.spendOff ? { tone: "note" as const, text: make.spendOff } : null;
+          : make.spendOff ? { tone: "note" as const, text: make.spendOff }
+            : enhanceShown && enhanceOn && make.enhanceAsWritten ? { tone: "note" as const, text: ENHANCE_ASWRITTEN } : null;
   const blocked = ops ? "Pick one of the four first" : make.go.blocked;
 
   const head = (
@@ -138,6 +157,14 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
         </span>
       ) : null}
       <span className="v12-mk-grow" />
+      {enhanceShown && !ops ? (
+        <Tooltip name={ENHANCE_TIP_NAME} line={ENHANCE_TIP_LINE} side="top">
+          <button type="button" role="switch" aria-checked={enhanceOn} className="v12-mk-enhance" onClick={() => setEnhance(!enhanceOn)} data-testid="v12-make-enhance">
+            <span>{ENHANCE_LABEL} <span aria-hidden="true">ⓘ</span></span>
+            <span className="v12-mk-enhance-track" aria-hidden="true" data-on={enhanceOn ? "" : undefined}><span className="v12-mk-enhance-knob" /></span>
+          </button>
+        </Tooltip>
+      ) : null}
       {chips.map((c) => <Chip key={c.k} {...c} />)}
     </div>
   );

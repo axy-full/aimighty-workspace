@@ -26,6 +26,8 @@ export type EnhancerHost = {
   credits: number | null;
   /** Why Enhance cannot run right now, said on the control. */
   blocked: string | null;
+  /** The enhancer was asked for a price and could not give one (not "still pricing"): why. The new interface sends the words as written then. */
+  unavailable: string | null;
   busy: boolean;
   enhanced: string | null;
   provider: EnhancerProvider | null;
@@ -119,7 +121,7 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
   const shown = result && result.body === key ? result : null;
 
   return {
-    auto: auto && !off, setAuto, credits, blocked, busy, error,
+    auto: auto && !off, setAuto, credits, blocked, unavailable: quotable ? current?.reason ?? null : null, busy, error,
     enhanced: shown?.prompt ?? null, provider: shown?.provider ?? null, charged: shown?.charged ?? null,
     enhance: () => void enhance(), run: enhance, dismiss,
   };

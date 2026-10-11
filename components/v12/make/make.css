@@ -107,6 +107,16 @@
 }
 .v12-mk-chip:hover, .v12-mk-chip[aria-expanded="true"] { border-color: var(--gx-hover-border); }
 .v12-mk-chip-k { color: var(--gx-text-2); }
+/* The Enhance switch (lib/v12/enhance.ts): its words, then a track. */
+.v12-mk-enhance {
+  height: 30px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text);
+  font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; cursor: pointer;
+}
+.v12-mk-enhance:hover { border-color: var(--gx-hover-border); }
+.v12-mk-enhance-track { width: 26px; height: 14px; border-radius: 999px; background: var(--gx-track); position: relative; flex: none; }
+.v12-mk-enhance-track[data-on] { background: var(--gx-accent); }
+.v12-mk-enhance-knob { position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--gx-text); transition: transform var(--gx-t) var(--gx-ease); }
+.v12-mk-enhance-track[data-on] .v12-mk-enhance-knob { transform: translateX(12px); }
 .v12-mk-chip-caret { color: rgba(235, 235, 245, 0.45); font-size: 10px; }
 .v12-mk-refs { display: flex; gap: 6px; align-items: center; padding: 8px 12px 0; flex-wrap: wrap; }
 
@@ -151,3 +161,8 @@
   .v12-mk-render-dots i, .v12-mk-bar[data-hold] > span { animation: none; }
   .v12-mk-check, .v12-mk-download, .v12-mk-caption, .v12-mk-bar > span { transition: none; }
 }
+
+/* The viewer's Enhanced / Raw label and its original words. */
+.v12-mk-viewer-enh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
+.v12-mk-viewer-enh-label { color: var(--gx-text); font-weight: 600; }
+.v12-mk-viewer-original { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--gx-sunken); color: var(--gx-text-sec); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }

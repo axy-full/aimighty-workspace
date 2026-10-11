@@ -52,6 +52,11 @@ export type MakeInput = {
   keepOpen?: boolean;
   /** A seed to repeat, and the engine it was made on (the new interface's "Reuse seed"); sent while that engine is picked. */
   seed?: { value: number; model: string } | null;
+  /**
+   * The new interface's Enhance toggle (lib/v12/enhance.ts): true/false is its position, null a screen with none (today's panel). On, the
+   * one press enhances the words first (Auto, below) and the take records that it was; off, or a `raw:` line, it records Raw.
+   */
+  enhanceToggle?: boolean | null;
 };
 
 /**
@@ -77,7 +82,7 @@ const CINEMA_SOUND_ONLY = "Cinema Studio takes sound references as WAV files upl
 /** How long the words rest before Make infers a type from them. */
 const INFER_AFTER_MS = 350;
 
-export function useMake({ scope, project, projects = "ready", workspaceName, onProject, balance, onBoard = false, listOpen: startOpen = false, keepOpen = false, seed = null }: MakeInput) {
+export function useMake({ scope, project, projects = "ready", workspaceName, onProject, balance, onBoard = false, listOpen: startOpen = false, keepOpen = false, seed = null, enhanceToggle = null }: MakeInput) {
   const shell = useShell();
   const session = useSession();
   /* The words survive leaving Make (lib/draft.ts): closing the panel, a reload or Try again on a failed tile unmounts it, and a person
@@ -97,8 +102,14 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     announceMade({ projectId: made.projectId, nodeId: made.nodeId, name: made.name });
     if (!keepOpen) shell.closeMake();
   }, [ws, shell, surface, keepOpen]);
+  /* The words an enhancement was written from and the words it made: while the box still holds those, the take is Enhanced from the first, and is not enhanced again. */
+  const [lastEnhanced, setLastEnhanced] = useState<{ from: string; to: string } | null>(null);
+  const enhancedOf = useCallback((prompt: string): false | { from: string } | undefined => {
+    if (enhanceToggle === null) return undefined;
+    return enhanceToggle && lastEnhanced && prompt.trim() === lastEnhanced.to.trim() ? { from: lastEnhanced.from } : false;
+  }, [enhanceToggle, lastEnhanced]);
   const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent, hide: hiddenInMake,
-    preference: MAKE_MODEL_PREFERENCE, initialPicks: MAKE_PICKS, seed });
+    preference: MAKE_MODEL_PREFERENCE, initialPicks: MAKE_PICKS, seed, enhanced: enhancedOf });
   const { state, model, offered, settings, submitting } = composer;
   const dispatch = composer.dispatch;
   /* Back from where the words were left: only into an empty box, before anything else (a recipe, ⌘K's "make …") lands in it. */
@@ -359,7 +370,10 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   /* Auto, "enhance first": with it on and no enhancement on the card yet, the press enhances the words (the enhancer's own priced
      route, at the figure it quoted) and then sends the take. The button's figure is the take plus the enhancement, so the person
      approves both at once; a raw: line is never enhanced, and a Cinema Studio take, quoted as "about", does not take Auto. */
-  const autoNeeds = enhancer.auto && !enhancer.enhanced && Boolean(state.prompt.trim()) && !isRawPrompt(state.prompt) && !composer.quote?.approximate;
+  const autoNeeds = enhancer.auto && !enhancer.enhanced && Boolean(state.prompt.trim()) && !isRawPrompt(state.prompt) && !composer.quote?.approximate
+    && state.prompt.trim() !== lastEnhanced?.to.trim()
+    /* The new interface's switch never holds a make hostage to an enhancer that cannot be priced: those words go as written, and say so. */
+    && !(enhanceToggle !== null && enhancer.unavailable);
   const enhanceCredits = autoNeeds ? enhancer.credits : null;
   const blocked = spendOff ?? blockedBase ?? (autoNeeds && enhanceCredits == null ? enhancer.blocked ?? "Pricing the enhancement…" : null);
   const make = useCallback(() => {
@@ -367,6 +381,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     if (model && !composer.blocked) used(model.id);
     if (enhancer.auto && enhancer.enhanced && enhancer.enhanced !== state.prompt && !isRawPrompt(state.prompt)) {
       pending.current = true;
+      setLastEnhanced({ from: state.prompt, to: enhancer.enhanced });
       dispatch({ type: "prompt", value: enhancer.enhanced });
       enhancer.dismiss();
       return;
@@ -376,6 +391,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
       void enhancer.run().then((words) => {
         if (!words) return;
         pending.current = true;
+        setLastEnhanced({ from: state.prompt, to: words });
         dispatch({ type: "prompt", value: words });
         enhancer.dismiss();
       });
@@ -434,6 +450,8 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
       undo: undoRecipe, hide: hideRecipe,
     } : null,
     enhancer, soundTask, enhanceCredits, autoNeeds, balance: balanceNow,
+    /** With the Enhance switch on but no price to be had: the reason, the words go as written (the new interface only). */
+    enhanceAsWritten: enhanceToggle !== null && enhancer.auto && !enhancer.enhanced ? enhancer.unavailable : null,
     /** The sample's line in the sample workspace, where nothing spends: Enhance is not offered and Make waits. */
     spendOff,
   };
