@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditRate } from "@/lib/shell/price-words";
-import { IDLE, LOADING, QUOTE_FAULT, engineRequest, quoteFromResponse, quoteRequest, type EngineQuoteSource, type MoneyTerms, type Quote, type QuoteSource } from "./quote";
+import { IDLE, LOADING, QUOTE_FAULT, audioRequest, engineRequest, quoteFromResponse, quoteRequest, type AudioQuoteSource, type EngineQuoteSource, type MoneyTerms, type Quote, type QuoteSource } from "./quote";
 
 /**
  * The live price of one action, from its quote route (lib/v12/quote.ts › QuoteSource), for `<Price quote={…} />`.
@@ -23,6 +23,11 @@ export function useQuote(source: QuoteSource | null, options: { debounceMs?: num
  */
 export function useEngineQuote(source: EngineQuoteSource | null, options: { debounceMs?: number } = {}): Quote {
   return useQuoteBy(source, engineRequest, options);
+}
+
+/** `useQuote` for a screen that only prices a sound take (the Voice stage): it takes the audio read alone, so it can reach no other quote route. */
+export function useAudioQuote(source: AudioQuoteSource | null, options: { debounceMs?: number } = {}): Quote {
+  return useQuoteBy(source, audioRequest, options);
 }
 
 function useQuoteBy<S extends QuoteSource>(source: S | null, build: (source: S) => { url: string; init: RequestInit }, { debounceMs = 400 }: { debounceMs?: number } = {}): Quote {
