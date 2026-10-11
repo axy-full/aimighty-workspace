@@ -9,7 +9,6 @@ import { ADAPT_WHY, EDIT_HAS, languageLimit, EDIT_LACKS, GRID_SECONDS, LANGUAGE_
 import { FREE_QUOTE } from "@/lib/v12/quote";
 import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { Price } from "@/components/v12/ui/Price";
-import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { deliverRows, type CutData } from "@/components/graphite/board/cards/cut/cut-model";
 import { SpecRowView } from "@/components/graphite/board/cards/deliver/SpecRow";
 import type { BoardCtx } from "@/components/graphite/board/cards/types";
