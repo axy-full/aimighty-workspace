@@ -4,7 +4,7 @@ import { MediaQuoteError, workbenchGenerationModels, referencePrices, quoteWorkb
 import { requireReadySoulIdentity } from '@/lib/soulIdentities';
 import { requireTenant } from '@/lib/tenant';
 import { cinemaSoundOffered } from '@/lib/cinemaSoundPricing';
-import { creditsApply } from '@/lib/credits';
+import { creditsApply, quotedCredits } from '@/lib/credits';
 
 export const GET = withTenant(async (req: Request) => {
   const got = await requireUser();
@@ -56,7 +56,11 @@ export const GET = withTenant(async (req: Request) => {
     /* `audio=1`: the take is asked for with sound (Cinema Studio's Sound switch); priced as the engine bills it, and
        refused for Cinema Studio where its sound is not offered. */
     const quote = (atCost ? quoteWorkbenchMediaAtCost : quoteWorkbenchMedia)(model, { resolution: q.get('resolution') || model.resolutions[0], ratio: q.get('ratio') || '16:9', duration: Number(q.get('duration') || 5), audio: q.get('audio') === '1', soundOffered: soundHere }, refPrices);
-    return Response.json({ models, ...quote }, { headers });
+    /* The house is approved in what admission reserves: the engine's dollars counted in credits at no margin (lib/credits.ts › quotedCredits, the
+       figure /api/generate/quote answers). The rate card's credits carry the customer margin, so the composer's gate (the figure on the button
+       against the fresh quote) never matched and the house's Make could not be pressed ("The price is now N cr"). A held, approximate take keeps its own. */
+    const answer = atCost && !('approximate' in quote && quote.approximate) && 'usd' in quote && typeof quote.usd === 'number' && Number.isFinite(quote.usd) ? { ...quote, credits: quotedCredits(quote.usd) } : quote;
+    return Response.json({ models, ...answer }, { headers });
   } catch (error) {
     return Response.json({ error: error instanceof MediaQuoteError ? error.message : 'The reference estimate could not be read.' }, { status: error instanceof MediaQuoteError ? error.status : 500, headers });
   }
