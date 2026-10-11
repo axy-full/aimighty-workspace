@@ -45,6 +45,10 @@ test("the house's Make press goes through at the price shown: no repricing, no c
     await page.getByRole("radio", { name: "Image" }).click();
     await page.getByTestId("v12-make-chip-count").click();
     await page.getByRole("menuitem", { name: "1" }).click();
+    /* Enhance is On by default (the house has it too: tests/enhance-house-v12-workbench.spec.ts); this is the take alone. */
+    const toggle = page.getByTestId("v12-make-enhance");
+    await expect(toggle).toBeVisible({ timeout: 60_000 });
+    await toggle.click();
     await page.getByTestId("v12-make-bar-input").fill(WORDS);
     const price = page.getByTestId("v12-make-price");
     await expect(price).toHaveText(/^\$/, { timeout: 60_000 });
