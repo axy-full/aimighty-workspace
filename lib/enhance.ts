@@ -110,6 +110,16 @@ export const PROMPT_MODELS = (): string[] =>
     .split(",")
     .map((s) => aliasModel(s.trim()))
     .filter(Boolean);
+/**
+ * The model the inline prompt writer runs for a routed choice: the choice itself when it has a price in the writer's own rate table and a
+ * working route, else the first of the deployment's list that has a route. The one rule the writer runs by and the admin routing shows.
+ */
+export function enhanceModelFor(routed: string): string {
+  const fallback = PROMPT_MODELS().find((id) => textRouteWorks(id)) ?? PROMPT_MODELS()[0];
+  return TEXT_RATES[routed] && textRouteWorks(routed) ? routed : fallback;
+}
+/** Whether the inline prompt writer can run this model as chosen (no fallback). */
+export const enhanceRunsModel = (id: string): boolean => Boolean(TEXT_RATES[id]);
 /** The old name, kept for one release with GATEWAY_PROMPT_MODELS. */
 export const GATEWAY_MODELS = PROMPT_MODELS;
 export const TEXT_RATE_FALLBACK = { input: 0.5, output: 3.0 };
@@ -180,8 +190,7 @@ export async function activeWriter(): Promise<ActiveWriter> {
     "enhance",
   );
   /* The routed model when it has a working route (lib/textRoute.ts), else the first of the deployment's list that does. */
-  const fallback = PROMPT_MODELS().find((id) => textRouteWorks(id)) ?? PROMPT_MODELS()[0];
-  const m = TEXT_RATES[routed] && textRouteWorks(routed) ? routed : fallback;
+  const m = enhanceModelFor(routed);
   const vendor = textVendor(m);
   return {
     writer: "claude",
