@@ -76,6 +76,25 @@ test.describe("desktop, switch on", () => {
     expect(errors).toEqual([]);
   });
 
+  test("the board's bar shows in the Rig, and no node is under it, at the top or scrolled to the end", async ({ page }) => {
+    await open(page);
+    const bar = page.getByTestId("v12-board-bar");
+    await expect(bar).toBeVisible();
+    const scroller = page.getByTestId("v12-rig-scroll");
+    /* What a person sees of a node is the part inside the canvas's scrolling area. */
+    const seen = async (n: Locator) => { const r = await rect(n), s = await rect(scroller); return { x: Math.max(r.x, s.x), y: Math.max(r.y, s.y), r: Math.min(r.r, s.r), b: Math.min(r.b, s.b) }; };
+    const empty = (r: { x: number; y: number; r: number; b: number }) => r.r <= r.x || r.b <= r.y;
+    const clear = async (label: string) => {
+      const b = await rect(bar);
+      expect((await rect(scroller)).b, `${label}: the canvas ends above the bar`).toBeLessThanOrEqual(b.y + 1);
+      for (const n of await page.locator(".v12-rig-node").all()) { const v = await seen(n); expect(empty(v) || !meets(b, v), `${label}: a node is under the bar`).toBe(true); }
+    };
+    await clear("at the top");
+    await scroller.evaluate((el) => { el.scrollTop = el.scrollHeight; el.scrollLeft = el.scrollWidth; });
+    await clear("scrolled to the end");
+    expect(await noSideways(page)).toBe(true);
+  });
+
   test("the hint has a row of its own and never covers a node; Got it is kept", async ({ page }) => {
     await open(page);
     const hint = page.getByTestId("v12-rig-hint");
