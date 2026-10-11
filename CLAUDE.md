@@ -41,7 +41,7 @@ These amend the ground rules above and the scope they were copied from (the full
 
 - **"Rig" is a UI word again.** Prototype 12 names a board view "Rig" and the owner kept the name. The old ban (4 Oct scope, "No UI text says … Rig …") is lifted for it; the other retired words stay banned (`tests/helpers/uiStrings.ts`).
 - **"quoted"** is shown where an action has no live quote path, which overrides rule 14's "never the bare word quoted" for the prototype-12 build. Each such action is listed in docs/redesign-progress.md.
-- **The new interface is on for every workspace** (`lib/newInterface.ts`; owner, 11 October 2026): signed-in people always see it at desktop sizes, and the phone app is unchanged. The visitor pages stay behind their own setting (`visitorPages`, off). The platform owner can keep one workspace on today's screens by listing it in the site setting `newInterfaceOff` (the no-deploy way back; empty by default).
+- **The new interface is on for every workspace** (`lib/newInterface.ts`; owner, 11 October 2026): signed-in people always see it at desktop sizes, and the phone app is unchanged. The visitor pages stay behind their own setting (`visitorPages`, off). The platform owner's no-deploy way back is in /admin › Site: "New interface for everyone" (on by default; off puts every workspace back on today's screens) and a per-workspace list that keeps one workspace there (one `ni_off:<workspace id>` row each, no cap).
 
 # Pricing
 

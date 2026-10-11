@@ -63,20 +63,20 @@ export async function signInLocally(api: APIRequestContext, name = "Workbench Te
   return signed;
 }
 
-/** Lists a workspace as off (or lifts it) in the local platform database's site setting `newInterfaceOff`, as the platform owner would from /admin. */
+/**
+ * Keeps a workspace on today's screens (or lifts it) in the local platform database, as the platform owner would from /admin: one row of
+ * its own per workspace (`ni_off:<id>`, lib/site/settings.ts), so parallel workers never write the same row.
+ */
 export async function setNewInterfaceOff(workspaceId: string, off: boolean) {
   const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
   try {
-    const row = await db.execute({ sql: "SELECT value FROM platform_layer WHERE key = 'site'", args: [] });
-    const site = row.rows.length ? JSON.parse(String(row.rows[0].value)) as Record<string, unknown> : {};
-    const listed = Array.isArray(site.newInterfaceOff) ? (site.newInterfaceOff as string[]) : [];
-    /* Newest first and capped, so a long local run never pushes the list past the setting's limit. */
-    site.newInterfaceOff = (off ? [workspaceId, ...listed.filter((id) => id !== workspaceId)] : listed.filter((id) => id !== workspaceId)).slice(0, 40);
-    await db.execute({
-      sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, ?, 'test')
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-      args: [JSON.stringify(site), Date.now()],
-    });
+    if (off) {
+      await db.execute({
+        sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES (?, '1', ?, 'test')
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+        args: [`ni_off:${workspaceId}`, Date.now()],
+      });
+    } else await db.execute({ sql: "DELETE FROM platform_layer WHERE key = ?", args: [`ni_off:${workspaceId}`] });
   } finally {
     db.close();
   }
