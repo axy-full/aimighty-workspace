@@ -1,0 +1,9 @@
+{
+  "name": "header-avatar-menu",
+  "app": "/suites?project=project-ec643022&suite=particl&page=brief&view=home",
+  "prototype": "?view=home&acct=1",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}
