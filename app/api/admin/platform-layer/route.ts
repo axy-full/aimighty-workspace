@@ -25,7 +25,7 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request) {
   const body = await req.json().catch(() => ({}));
   const key = String(body.key ?? "") as LayerKey;
   if (!LAYER_KEYS.includes(key)) return NextResponse.json({ error: `key must be one of ${LAYER_KEYS.join(", ")}.` }, { status: 400 });
-  const layer = body.reset ? await resetPlatformLayer(key) : await setPlatformLayer(key, body.value, got.user.id);
+  const layer = body.reset ? await resetPlatformLayer(key, got.user.id) : await setPlatformLayer(key, body.value, got.user.id);
   const state = await platformLayerState();
   return NextResponse.json({ ok: true, layer, stored: state.stored });
 });

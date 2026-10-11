@@ -4,6 +4,7 @@ import { useWorkspace } from "@/lib/workspace/state";
 import { pageOfLegacy, redirectFor, restorePage, shellSuite, suiteOfLegacy, type ShellPage, type ShellSuite, type ShellSuiteId, type ShellView, type WorkspaceTabId, WORKSPACE_TABS } from "./ia";
 import { isSettingsSection } from "./settings";
 import { isStageId, stageAddress } from "./stage-redirects";
+import { platformAddress, type PlatformSectionId } from "@/lib/platformConsole";
 import { SCREENS, atomikAt, isLanded, phoneAt, route, sameSearch, screenOf, screenParams, type BoardKindId, type ScreenId } from "./screens";
 import { useCompact } from "./use-compact";
 import { canUndo, popUndo, pushUndo, undoneLabel, type UndoEntry } from "./undo";
@@ -108,6 +109,8 @@ export type Shell = {
   phone: { on: boolean; framed: boolean };
   /** Home: `?view=home`, or today's Studio overview. */
   goHome: () => void;
+  /** The platform console (`?view=admin`, lib/platformConsole.ts): a section, and a workspace's side sheet on All workspaces. The owner's; the server refuses it to anyone else. */
+  goPlatform: (section?: PlatformSectionId, sheet?: string | null) => void;
   /** The board: `?view=board`, with the kind, a region, the List view or a start. */
   goBoard: (opts?: { newBoard?: string | true; kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" | "history"; frame?: string; closeMake?: boolean }) => void;
   /** One of the control room's four pages (approvals, runs, memory, saved-skills): the same addresses as ever. */
@@ -182,7 +185,7 @@ function readParams(search: string, last: ComposerType = "video"): Params {
   const extra: Record<string, string> = {};
   for (const key of screenKeys) { const value = q.get(key); if (value !== null) extra[key] = value; }
   return {
-    view: view === "workspace" ? view : mounted === "home" ? "home" : mounted?.startsWith("board") ? "board" : "suite",
+    view: view === "workspace" ? view : mounted === "home" ? "home" : mounted?.startsWith("board") ? "board" : mounted === "platform" ? "admin" : "suite",
     tab: WORKSPACE_TABS.some((t) => t.id === tab) || isSettingsSection(tab) ? (tab as WorkspaceTabId) : "general",
     sp: q.get("sp"),
     make: make === "last" ? last : make,
@@ -376,6 +379,8 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     navigate("?view=home");
   }, [navigate]);
 
+  const goPlatform = useCallback((section: PlatformSectionId = "overview", sheet?: string | null) => { navigate(platformAddress(section, sheet)); }, [navigate]);
+
   const goBoard = useCallback((opts: { newBoard?: string | true; kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" | "history"; frame?: string; closeMake?: boolean } = {}) => {
     const q = new URLSearchParams({ view: "board" });
     /* The new interface's "New board" tab (components/v12/board/NewBoard.tsx): a kind card to open on, or just the tab. */
@@ -496,6 +501,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     atomikQuery: params.extra?.q ?? null,
     phone,
     goHome,
+    goPlatform,
     goBoard,
     goControlRoom: (page) => goSuite("atomik", page),
     openAtomik,
@@ -551,7 +557,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       }
     },
     live,
-  }), [params, lastMake, openMake, suite, page, wide, palette, ctx, clip, undoStack, goSuite, goProject, apply, ws, setUndoStack, live, link, take, screen, phone, navigate, goHome, goBoard, setScreenParams, openAtomik, dock, settingsRequested]);
+  }), [params, lastMake, openMake, suite, page, wide, palette, ctx, clip, undoStack, goSuite, goProject, apply, ws, setUndoStack, live, link, take, screen, phone, navigate, goHome, goPlatform, goBoard, setScreenParams, openAtomik, dock, settingsRequested]);
   useEffect(() => { liveRef.current = value; }, [value]);
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;

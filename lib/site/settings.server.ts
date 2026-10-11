@@ -1,4 +1,5 @@
 import { platformDb, platformReady, now } from "@/lib/platform";
+import { platformAuditStatement, type PlatformAuditDetails } from "@/lib/platformAudit";
 import { DEFAULT_SITE, SITE_ROW, cleanSite, type SiteSettings } from "./settings";
 
 /**
@@ -43,10 +44,18 @@ export async function writeSite(patch: Partial<SiteSettings>, by: string | null)
     if (missing.length) throw new SiteSettingsError(`Not a workspace on this deployment: ${missing.join(", ")}.`);
   }
   const next = cleanSite({ ...(await readSite()), ...patch });
-  await platformDb().execute({
+  const upsert = {
     sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES (?,?,?,?)
           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
     args: [SITE_ROW, JSON.stringify(next), now(), by],
-  });
+  };
+  /* A change by a person carries its audit line in the same batch (lib/platformAudit.ts): which switches, and the values they were set to. */
+  if (by) {
+    const details: PlatformAuditDetails = {};
+    for (const key of ["openSignup", "visitorPages", "guestHome"] as const) if (key in patch) details[key] = next[key];
+    if ("guestWorkspace" in patch) details.guestWorkspace = next.guestWorkspace ? "set" : "cleared";
+    if ("newInterfaceWorkspaces" in patch) details.newInterfaceWorkspaces = next.newInterfaceWorkspaces.length;
+    await platformDb().batch([upsert, platformAuditStatement({ actorId: by, action: "site.changed", targetType: "site", targetId: SITE_ROW, details: details })], "write");
+  } else await platformDb().execute(upsert);
   return next;
 }

@@ -48,6 +48,9 @@ export default async function Suites({ searchParams }: { searchParams: Promise<R
   /* The screen registry (lib/shell/screens.ts): an old address opens its screen, and a bare landing opens Home. One more 307,
      only when something moves, and only now: the session is read first. */
   const routed = route(asked);
+  /* The platform console (`?view=admin`) is the platform owner's: anyone else lands on Home, as if the view did not exist. Its
+     data routes refuse them too (app/api/admin/*); this keeps the screen from ever drawing for a client workspace. */
+  if (new URLSearchParams(routed).get("view") === "admin" && !session.superAdmin) redirect(`${SHELL_PATH}?view=home`);
   if (!sameSearch(routed, asked)) redirect(`${SHELL_PATH}${routed}`);
   return (
     <SessionProvider key={scope} value={session}>
