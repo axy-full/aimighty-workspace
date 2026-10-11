@@ -237,7 +237,7 @@ test("the brand kit's lines are offered to pick; each picked line lands as an or
 
 /* ── Atomik reads a paste: paid, priced first, kept only when ticked ─── */
 
-const READER: CatalogModel = { id: "anthropic/claude-sonnet-4.6", name: "Reader", owner: "anthropic", type: "language", description: "", contextWindow: 200000, maxTokens: 8192,
+const READER: CatalogModel = { id: "anthropic/claude-sonnet-5.5", name: "Reader", owner: "anthropic", type: "language", description: "", contextWindow: 200000, maxTokens: 8192,
   pricing: { input: "0.00003", output: "0.00015" } };
 const PASTE = ["- Brand colours are teal and warm sand", "- Our audience is skaters in coastal towns", "- Packs are $49 each", "- A premium price point, never discount-led", "- Always end on the board"].join("\n");
 /** A provider's reply: the proposals as `content`, at `cost`. */

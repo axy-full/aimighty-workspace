@@ -122,9 +122,9 @@ export function parseEnhanced(text: string, original: string): ParsedEnhancement
  * workspace's routed writer and falls back to this list.
  */
 export const ENHANCER_MODELS: Record<EnhancerProvider, readonly string[]> = {
-  claude: ["anthropic/claude-haiku-4.5", "anthropic/claude-sonnet-5", "anthropic/claude-sonnet-4.6", "anthropic/claude-sonnet-4.5"],
+  claude: ["anthropic/claude-sonnet-5.5", "anthropic/claude-haiku-5.5", "anthropic/claude-sonnet-5", "anthropic/claude-haiku-4.5", "anthropic/claude-sonnet-4.6", "anthropic/claude-sonnet-4.5"],
   openai: ["openai/gpt-5-mini", "openai/gpt-4.1-mini", "openai/gpt-5-nano", "openai/gpt-4o-mini", "openai/gpt-5.2"],
-  higgsfield: ["anthropic/claude-haiku-4.5", "google/gemini-3.5-flash", "openai/gpt-5-mini", "anthropic/claude-sonnet-5", "anthropic/claude-sonnet-4.6"],
+  higgsfield: ["anthropic/claude-sonnet-5.5", "anthropic/claude-haiku-4.5", "google/gemini-3.5-flash", "openai/gpt-5-mini", "anthropic/claude-sonnet-5", "anthropic/claude-sonnet-4.6"],
 };
 
 export function pickEnhancerModel(provider: EnhancerProvider, availableIds: readonly string[], routed?: string | null): string | null {

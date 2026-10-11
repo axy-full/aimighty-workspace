@@ -691,7 +691,7 @@ type Layer = {
   caps: { defaultCapCredits: number | null; signupCredits: number | null; warnPct: number; concurrency: number; rendersPerHour: number; storageGb: number };
   models: { video: string; image: string; text?: Record<string, string> };
 };
-type LayerView = { layer: Layer; stored: string[]; defaults: Layer; cameraBank: { kind: string; value: string; label: string; module: string }[] };
+type LayerView = { layer: Layer; stored: string[]; defaults: Layer; textModels?: string[]; cameraBank: { kind: string; value: string; label: string; module: string }[] };
 
 /**
  * The platform layer: what every new workspace inherits. Four parts, each
@@ -705,6 +705,8 @@ function PlatformLayerCard() {
   const layer = draft ?? data?.layer ?? null;
   if (!data || !layer) return null;
   const stored = new Set(data.stored);
+  /* Only models with a working route are offered; the saved one stays listed so the select shows what is set. */
+  const routable = (current: string) => { const ids = data.textModels ?? TEXT_MODEL_IDS; return ids.includes(current) ? ids : [current, ...ids]; };
   const set = (patch: Partial<Layer>) => setDraft({ ...(draft ?? data.layer), ...patch });
   async function save(key: keyof Layer, reset = false) {
     setBusy(key);
@@ -808,7 +810,7 @@ function PlatformLayerCard() {
           {TEXT_JOBS.map((job) => (
             <label key={job} className="flex flex-col gap-1 text-[12px] text-lead">{TEXT_JOB_LABELS[job]} — model
               <select className="ctl !h-8 !text-[13px]" value={textModelFor(layer.models, job)} onChange={(e) => set({ models: { ...layer.models, text: { ...(layer.models.text ?? {}), [job]: e.target.value } } })}>
-                {TEXT_MODEL_IDS.map((id) => <option key={id} value={id}>{id.split("/").pop()}</option>)}
+                {routable(textModelFor(layer.models, job)).map((id) => <option key={id} value={id}>{id.split("/").pop()}</option>)}
               </select></label>
           ))}
         </div>
