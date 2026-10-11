@@ -13,6 +13,7 @@ test("remix · the ops and the no-source note", async ({ page }) => {
   await seedHome(page, { takes: 4 });
   await page.goto("/suites?view=make");
   await expect(page.getByTestId("v12-make")).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByTestId("v12-make-tile").first()).toBeVisible({ timeout: 60_000 });
   await page.getByRole("radio", { name: "Remix" }).click();
   await expect(page.getByTestId("v12-make-op")).toHaveCount(4);
   await page.locator('[data-op="motion"]').click();
