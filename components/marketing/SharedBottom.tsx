@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ParticlMark } from "@/components/ParticlMark";
 import type { SitePrices } from "@/lib/marketing/prices.server";
 import { planLines } from "@/lib/marketing/plans";
-import { BUSINESS, ENTERPRISE, businessFromUsd, plansIn } from "@/lib/plans";
+import { ENTERPRISE, businessFromUsd, plansIn } from "@/lib/plans";
 import { usd } from "@/lib/marketing/format";
 import { APP_HREF, PRICING_HREF, SIGN_IN_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
 import AccessForm from "./AccessForm";
@@ -91,7 +91,7 @@ function PricingTeaser({ prices }: { prices: SitePrices }) {
         ))}
         {from != null && (
           <Link href={PRICING_HREF} className="mk-card">
-            <span className="mk-tag mk-tag--muted">{BUSINESS.label}</span>
+            <span className="mk-tag mk-tag--muted">Team seats</span>
             <span className="mk-plan-price">from {usd(from)}<small> per seat</small></span>
             <span className="mk-body">One pool of credits across every seat</span>
           </Link>

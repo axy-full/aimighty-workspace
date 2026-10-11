@@ -6,7 +6,7 @@ import { creditRateUsd } from "@/lib/creditTerms";
 import { BONUS_CAP } from "@/lib/packs";
 import { count, cr, usd } from "@/lib/marketing/format";
 import { PLAN_AUDIENCE, planLines } from "@/lib/marketing/plans";
-import { BUSINESS, ENTERPRISE, businessFromUsd, plansIn, type PlanDef } from "@/lib/plans";
+import { ENTERPRISE, businessFromUsd, plansIn, type PlanDef } from "@/lib/plans";
 import PlanCards, { type PlanCard } from "./PlanCards";
 import s from "./pricing.module.css";
 
@@ -25,12 +25,13 @@ export default async function Pricing() {
   const individual = plansIn(plans, "individual").map((plan) => card(plan, plan.badge ?? undefined));
   const levels = plansIn(plans, "business");
   const from = businessFromUsd(plans);
-  /* The Business plans are one card: the lowest level's price a seat, and each level's credits a seat, pooled across the seats. */
+  /* The team plans are one card: the lowest level's price a seat, and each level's credits a seat, pooled across the seats. The public
+     site does not print the plans' in-app names (its retired words, tests/unit/publicSitePages.spec.ts): levels read by price. */
   const business: PlanCard = {
-    id: "business", label: BUSINESS.label, price: from == null ? null : `from ${usd(from)}`, unit: " per seat · a month", cta: "Request access",
+    id: "business", label: "Team seats", price: from == null ? null : `from ${usd(from)}`, unit: " per seat · a month", cta: "Request access",
     audience: "A team sharing one pool of credits. One level at a time.",
     lines: [
-      ...levels.map((plan) => `${plan.label} · ${count(plan.includedCredits)} credits a seat · ${usd(plan.priceUsd)} a seat`),
+      ...levels.map((plan) => `${count(plan.includedCredits)} credits a seat · ${usd(plan.priceUsd)} a seat`),
       "Credits pooled across every seat",
       ...planLines(levels[0] ?? plans[0], inviteCredits).slice(3),
     ],

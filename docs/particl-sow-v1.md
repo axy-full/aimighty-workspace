@@ -339,7 +339,7 @@ configuration only: checkout is later, and no credit math, margin or `CREDIT_USD
 - Every figure is $0.10 a credit. Monthly only: the yearly period is hidden (its config, `ANNUAL_DISCOUNT_PERCENT`, is kept).
 - **Invite** ($0, 250 cr once, 1 production, 3 members) stays as the hidden default for a new workspace, and **Studio ($49, 400 cr),
   Agency ($199, 1,600 cr) and Production ($999, 9,000 cr)** stay as hidden legacy plans: a workspace on one still resolves it, and none
-  is offered. The public site names them "Business" too (owner, 11 October 2026: the 7 Oct ban on the word is lifted; it still may not print "workspace").
+  is offered. The public site names the team plans "Team seats" and by price (it may not print "Business" or "workspace").
 - **Low-credit warning:** at 20% of the cycle's credits (the pooled total for Business), from the ledger's funded cycle
   (`billing_cycles.credits`), else the welcome grant, else no warning. A plan an admin only labels grants nothing and warns nothing.
 
