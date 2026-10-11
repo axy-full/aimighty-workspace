@@ -14,7 +14,7 @@ import { useBoardCommands } from "@/lib/board/commands";
 import { canReorder, moved, reorderNodes, reorderSlot, siblingsOf, type ReorderSlot } from "@/lib/board/reorder";
 import { addFreeCard, addFreeMedia, FREE_MEDIA_WIDTH, moveFreeCards, removeFreeCards, restoreFreeCards, type FreeMove } from "@/lib/board/snap";
 import { tidyFree } from "@/lib/board/tidy";
-import { isBoardKind, type BoardBox, type BoardKind, type BoardPoint, type BoardSource, type RegionId } from "@/lib/board/types";
+import { isBoardKind, type BoardBox, type BoardCard, type BoardKind, type BoardPoint, type BoardSource, type RegionId } from "@/lib/board/types";
 import { readBoardView, saveBoardView } from "@/lib/board/view";
 import { useMadeOnBoard } from "@/lib/board/made";
 import { rigUndoSink } from "@/lib/shell/rig-commands";
@@ -56,7 +56,8 @@ import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
 import { stageLimit, stagePage, addStage, currentStage, freeCards as unstagedCards, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
-import { roundCardsFor } from "@/components/v12/rounds/round-derive";
+import { roundCardsFor, type RoundCardData } from "@/components/v12/rounds/round-derive";
+import { RoundCard } from "@/components/v12/rounds/RoundCard";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
 import { useRecordRound } from "@/components/v12/rounds/use-round";
@@ -182,8 +183,15 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* A board with nothing on it yet opens on its first stage (the brief); one with work on it, where the kind opens. */
   const stage = v12Frame ? currentStage(stages, shell.params.stage ?? (allCards.length ? null : stages[0]?.id), flavor) : null;
   const stageOwn = useMemo(() => (stage ? stageCards(stage, allCards, flavor) : allCards), [stage, allCards, flavor]);
+  /* Film's Deliver and Pre-vis's PPM deck are pages of their own over the canvas, once the board has something for them. */
+  const pageWanted = stagePage(stage?.id, flavor);
+  const deliverCard = allCards.find((c) => c.kind === "deliver");
+  const cutNow = (deliverCard?.data as CutCardData | undefined)?.cut ?? null;
+  const page: "deliver" | "ppm" | null = pageWanted === "deliver" && cutNow && deliverCard ? "deliver" : pageWanted === "ppm" && allCards.length > 0 ? "ppm" : null;
+  /* A client round's share card (redesign P2-c) rides in the page when a page covers the canvas, so it is never hidden behind it. */
+  const roundShare = page ? allCards.find((c) => c.id === "round:deliver") ?? null : null;
   /* The board's free cards (a dropped tile, a note, an upload) show on whichever stage is open, where they were put. */
-  const stageAll = useMemo(() => (stage ? [...stageOwn, ...unstagedCards(allCards)] : allCards), [stage, stageOwn, allCards]);
+  const stageAll = useMemo(() => (stage ? [...stageOwn, ...unstagedCards(allCards)] : allCards).filter((c) => !(roundShare && c.id === roundShare.id)), [stage, stageOwn, allCards, roundShare]);
   /* The new interface's stage grid (components/v12/board/stage-grid.ts, redesign P2-b): on a grid stage, its groups N across with
      a 24 px gap and its shot cards one size. Off the switch, or on any other stage, today's definitions as they are. */
   const gridAcross = useStageColumns(v12Frame && onGrid(stage?.id));
@@ -193,11 +201,6 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
   /* A fresh board (nothing on any stage) keeps today's way in; a stage with nothing on it says what goes there. */
   const empty = !!project && (v12Frame ? allCards.length === 0 : placed.cards.length === 0);
-  /* Film's Deliver and Pre-vis's PPM deck are pages of their own over the canvas, once the board has something for them. */
-  const pageWanted = stagePage(stage?.id, flavor);
-  const deliverCard = allCards.find((c) => c.kind === "deliver");
-  const cutNow = (deliverCard?.data as CutCardData | undefined)?.cut ?? null;
-  const page: "deliver" | "ppm" | null = pageWanted === "deliver" && cutNow && deliverCard ? "deliver" : pageWanted === "ppm" && allCards.length > 0 ? "ppm" : null;
   const stageIsEmpty = v12Frame && !empty && stageOwn.length === 0 && !page;
 
   /* A drawer opens from the design's frame letter, or from `drawer=` (Viral's History page is the Social board's History drawer: lib/shell/ads-social.ts). */
@@ -736,6 +739,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
               {page === "deliver" && cutNow && deliverCard
                 ? <DeliverStage cut={cutNow} cardId={deliverCard.id} ctx={ctx} languages={cleanLanguages(project.boardLanguages, isDubbingLanguage)} onLanguages={(next) => rig.apply((p) => ({ ...p, boardLanguages: next }))} />
                 : <PpmStage ctx={ctx} />}
+              {roundShare ? <div className="v12-stage-round" data-card-id={roundShare.id}><RoundCard card={roundShare as BoardCard<RoundCardData>} data={roundShare.data as RoundCardData} selected={false} ctx={ctx} /></div> : null}
             </div>
           ) : null}
           {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}
