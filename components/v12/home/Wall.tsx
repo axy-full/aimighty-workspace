@@ -10,7 +10,7 @@ import { FitText } from "./FitText";
  * clicking picks it (a "Picked" pill, the others fade, the bar opens its sheet). Remix opens Make with the take's own
  * recipe, where Make shows its price. A new workspace sees one quiet line instead of sample work.
  */
-export function Wall({ tiles, status, row, picked, onPick, onRemix, onMenu, onBroken }: {
+export function Wall({ tiles, status, row, picked, onPick, onRemix, onMenu, onBroken, unloaded = 0 }: {
   tiles: readonly WallTile[];
   status: "loading" | "ready" | "error";
   /** Grid row height, px. */
@@ -22,6 +22,8 @@ export function Wall({ tiles, status, row, picked, onPick, onRemix, onMenu, onBr
   onMenu?: (event: MouseEvent, tile: WallTile) => void;
   /** A tile's picture would not load (a take whose file is gone or not yet reachable): the wall leaves it out. */
   onBroken?: (tile: WallTile) => void;
+  /** How many takes were left out because their picture would not load: with no tile left, the wall says so instead of "What you make shows here". */
+  unloaded?: number;
 }) {
   const cells = wallLayout(tiles.length);
   const style = { "--v12-wall-row": `${row}px` } as CSSProperties;
@@ -29,7 +31,7 @@ export function Wall({ tiles, status, row, picked, onPick, onRemix, onMenu, onBr
     return (
       <div className="v12-hm-wall v12-hm-wall-empty" style={style} data-testid="v12-home-wall" data-state={status}>
         <p className="v12-hm-wall-note" data-testid="v12-home-wall-empty">
-          {status === "loading" ? "Reading your work…" : status === "error" ? "Your work could not be read. It shows here when it loads." : "What you make shows here. Describe a film, ad or idea below to start."}
+          {status === "loading" ? "Reading your work…" : unloaded > 0 ? "Your recent work could not be loaded. It shows here when it can." : status === "error" ? "Your work could not be read. It shows here when it loads." : "What you make shows here. Describe a film, ad or idea below to start."}
         </p>
       </div>
     );

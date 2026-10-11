@@ -283,3 +283,20 @@ test("desktop: a tile whose picture will not load leaves the wall (never a black
   expect(bright, "the clip's tile draws a frame, not black").toBeGreaterThan(8);
   await noOverflow(page);
 });
+
+test("desktop: when no picture will load the wall says so honestly, and a take that failed once comes back on the next read", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
+  test.setTimeout(300_000);
+  await seedHome(page, { takes: 3 });
+  let failing = true;
+  await page.route(/\/api\/media\/[^/?#]+/, (route) => (failing ? route.fulfill({ status: 404, body: "Not found" }) : route.fallback()));
+  await page.goto("/suites");
+  const note = page.getByTestId("v12-home-wall-empty");
+  await expect(note).toHaveText("Your recent work could not be loaded. It shows here when it can.", { timeout: 90_000 });
+  await expect(page.getByTestId("v12-home-tile")).toHaveCount(0);
+  /* The files are reachable again: the next read of the wall shows them (a failure is not kept until reload). */
+  failing = false;
+  await page.evaluate(() => window.dispatchEvent(new Event("particl:jobs")));
+  await expect(page.getByTestId("v12-home-tile")).toHaveCount(3, { timeout: 60_000 });
+  await expect(note).toHaveCount(0);
+});
