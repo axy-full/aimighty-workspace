@@ -14,26 +14,24 @@ test("the owner's tooltip, word for word", () => {
   expect(`${ENHANCE_TIP_NAME} — ${ENHANCE_TIP_LINE}`).toBe("Enhance — On: Particl rewrites your prompt for the chosen engine (light, camera, detail) before it runs. Its small cost is included in the price shown. Off: your prompt is sent exactly as you typed it.");
 });
 
-test("it applies to what is made from words, never to a spoken line", () => {
-  expect(enhanceOffered("image", null)).toBe(true);
-  expect(enhanceOffered("video", null)).toBe(true);
-  expect(enhanceOffered("audio", "sound")).toBe(true);
-  expect(enhanceOffered("audio", "music")).toBe(true);
-  expect(enhanceOffered("audio", "speech")).toBe(false);
-  expect(enhanceOffered("audio", null)).toBe(false);
+test("it applies to stills and clips; sound and a spoken line go as written", () => {
+  expect(enhanceOffered("image")).toBe(true);
+  expect(enhanceOffered("video")).toBe(true);
+  expect(enhanceOffered("audio")).toBe(false);
 });
 
-test("a person's own choice is kept per person, and overrides the workspace's default; nothing is chosen for them", () => {
+test("a person's own choice is kept per workspace and person, and overrides the workspace's default; nothing is chosen for them", () => {
   const s = store();
-  expect(readEnhance(s, "u1")).toBe(true);
-  expect(readEnhance(s, "u1", false)).toBe(false);
-  writeEnhance(s, "u1", false);
-  expect(s.data[enhanceKey("u1")]).toBe("0");
-  expect(readEnhance(s, "u1", true)).toBe(false);
-  expect(readEnhance(s, "u2", true)).toBe(true);
-  writeEnhance(s, "u1", true);
-  expect(readEnhance(s, "u1", false)).toBe(true);
-  expect(readEnhance(null, "u1", false)).toBe(false);
+  expect(readEnhance(s, "w1", "u1")).toBe(true);
+  expect(readEnhance(s, "w1", "u1", false)).toBe(false);
+  writeEnhance(s, "w1", "u1", false);
+  expect(s.data[enhanceKey("w1", "u1")]).toBe("0");
+  expect(readEnhance(s, "w1", "u1", true)).toBe(false);
+  expect(readEnhance(s, "w1", "u2", true)).toBe(true);
+  expect(readEnhance(s, "w2", "u1", true), "another workspace is its own choice").toBe(true);
+  writeEnhance(s, "w1", "u1", true);
+  expect(readEnhance(s, "w1", "u1", false)).toBe(true);
+  expect(readEnhance(null, "w1", "u1", false)).toBe(false);
 });
 
 test("the workspace's default is On unless an admin set it Off, and its setting is a closed choice", () => {
@@ -47,10 +45,10 @@ test("the workspace's default is On unless an admin set it Off, and its setting 
   expect(settingProblem("enhanceDefault", "sometimes")).toMatch(/on or off/);
 });
 
-test("a take says Enhanced (with its original words) or Raw, and an older take says nothing", () => {
-  expect(takeEnhance({ enhanced: true, rawPrompt: "a kite over the sea" })).toEqual({ label: "Enhanced", original: "a kite over the sea" });
-  expect(takeEnhance({ enhanced: true })).toEqual({ label: "Enhanced", original: null });
-  expect(takeEnhance({ enhanced: false, rawPrompt: "x" })).toEqual({ label: "Raw" });
+test("a take says Enhanced (with the words typed) or Raw, and an older take says nothing; rawPrompt is not read", () => {
+  expect(takeEnhance({ enhanced: true, enhancedFrom: "a kite over the sea", rawPrompt: "something else" })).toEqual({ label: "Enhanced", original: "a kite over the sea" });
+  expect(takeEnhance({ enhanced: true, rawPrompt: "x" })).toEqual({ label: "Enhanced", original: null });
+  expect(takeEnhance({ enhanced: false, enhancedFrom: "x" })).toEqual({ label: "Raw" });
   expect(takeEnhance({ rawPrompt: "x" })).toBeNull();
   expect(takeEnhance(null)).toBeNull();
 });

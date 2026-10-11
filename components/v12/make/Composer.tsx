@@ -60,18 +60,23 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
      dollars at cost, has none here: its enhancement cannot be added to the button's figure. */
   const inDollars = session.rates.unit === "usd";
   const userId = session.userId ?? null;
+  const workspaceId = session.workspace?.id ?? null;
   const defaults = useRead<{ settings: Record<string, string> }>("/api/settings");
-  const [mine, setMine] = useState<boolean | null>(null);
+  const [mineRead, setMineRead] = useState<{ read: boolean; value: boolean | null }>({ read: false, value: null });
+  const mine = mineRead.value;
+  const setMine = (value: boolean | null) => setMineRead({ read: true, value });
   useEffect(() => {
-    const at = setTimeout(() => { try { const kept = window.localStorage.getItem(enhanceKey(userId)); setMine(kept === "1" ? true : kept === "0" ? false : null); } catch { setMine(null); } }, 0);
+    const at = setTimeout(() => { try { const kept = window.localStorage.getItem(enhanceKey(workspaceId, userId)); setMineRead({ read: true, value: kept === "1" ? true : kept === "0" ? false : null }); } catch { setMineRead({ read: true, value: null }); } }, 0);
     return () => clearTimeout(at);
-  }, [userId]);
+  }, [workspaceId, userId]);
   const enhanceOn = mine ?? workspaceEnhance(defaults.data?.settings.enhanceDefault);
   const make = useMake({ ...input, onBoard: false, keepOpen: true, enhanceToggle: inDollars ? null : enhanceOn });
   const { setAuto } = make.enhancer;
-  const enhanceShown = !inDollars && !make.spendOff && Boolean(make.model) && enhanceOffered(make.state.type, make.model?.audioTask);
+  /* Shown only once the position is known: this person's own choice, or else the workspace's default (or that it could not be read, which is On). */
+  const enhanceKnown = mineRead.read && (mine !== null || defaults.data !== null || defaults.error !== null);
+  const enhanceShown = enhanceKnown && !inDollars && !make.spendOff && Boolean(make.model) && enhanceOffered(make.state.type);
   useEffect(() => { setAuto(enhanceOn && enhanceShown); }, [setAuto, enhanceOn, enhanceShown]);
-  const setEnhance = (next: boolean) => { setMine(next); writeEnhance(typeof window === "undefined" ? null : window.localStorage, userId, next); };
+  const setEnhance = (next: boolean) => { setMine(next); writeEnhance(typeof window === "undefined" ? null : window.localStorage, workspaceId, userId, next); };
   /* The mode: Remix or Edit when picked here, else the composer's own type once picked, else Auto. */
   const { pickType, unpick, recipe } = make;
   /* A recipe that lands (prompt reuse) is made in its own type: Remix or Edit, picked before it, gives way to it. */

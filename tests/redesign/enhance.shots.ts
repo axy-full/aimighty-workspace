@@ -27,7 +27,7 @@ test("the viewer: Enhanced, with its original words", async ({ page }) => {
       const reply = await route.fetch();
       const body = await reply.json() as { generations?: Record<string, unknown>[] };
       const a = body.generations?.[0];
-      if (a) a.params = { ...(a.params as object), enhanced: true, rawPrompt: "a kite over a grey sea" };
+      if (a) a.params = { ...(a.params as object), enhanced: true, enhancedFrom: "a kite over a grey sea" };
       await route.fulfill({ response: reply, json: body });
     } catch { await route.fallback().catch(() => undefined); }
   });

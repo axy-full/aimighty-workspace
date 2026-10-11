@@ -38,6 +38,11 @@ test.describe("desktop, switch on", () => {
     await openMake(page);
     await expect(toggle(page)).toHaveText(/^Enhance\s*ⓘ$/);
     await expect(toggle(page)).toHaveAttribute("aria-checked", "true");
+    /* Sound is not offered it: its request carries no label, so it goes as written. */
+    await page.getByRole("radio", { name: "Audio" }).click();
+    await expect(toggle(page)).toHaveCount(0);
+    await page.getByRole("radio", { name: "Image" }).click();
+    await expect(toggle(page)).toBeVisible();
     await toggle(page).hover();
     const tip = page.getByTestId("v12-tooltip");
     await expect(tip).toBeVisible();
@@ -86,12 +91,12 @@ test.describe("desktop, switch on", () => {
     expect(generated.enhanced, "the take says what it was made from").toEqual({ from: WORDS });
     expect((enhanceBody.maxCredits ?? 0) + (generated.maxCredits ?? 0), "the approvals together are the figure on the button").toBe(takeOnly + enhancement);
     expect(generated.maxCredits).toBe(takeOnly);
-    /* The take keeps it: Enhanced, and the words it was made from. */
+    /* The take keeps it: Enhanced, and the words typed under their own key; rawPrompt keeps its meaning (the words sent), so the take reads as the enhanced words. (The mock enhancer answers with the words it was given, so typed and enhanced are equal here; the viewer test below tells them apart.) */
     await expect.poll(async () => {
-      const jobs = await page.request.get("/api/jobs?limit=10", { headers: seeded.headers }).then((r) => r.json()) as { generations?: { prompt?: string; params?: { enhanced?: boolean; rawPrompt?: string } }[] };
-      const mine = (jobs.generations ?? []).find((g) => g.params?.rawPrompt === WORDS);
-      return mine ? { enhanced: mine.params?.enhanced, rawPrompt: mine.params?.rawPrompt } : null;
-    }, { timeout: 60_000 }).toEqual({ enhanced: true, rawPrompt: WORDS });
+      const jobs = await page.request.get("/api/jobs?limit=10", { headers: seeded.headers }).then((r) => r.json()) as { generations?: { prompt?: string; params?: { enhanced?: boolean; enhancedFrom?: string; rawPrompt?: string } }[] };
+      const mine = (jobs.generations ?? []).find((g) => g.params?.enhancedFrom === WORDS);
+      return mine ? { enhanced: mine.params?.enhanced, enhancedFrom: mine.params?.enhancedFrom, rawPromptIsWordsSent: mine.params?.rawPrompt === written.trim(), startsWithWordsSent: (mine.prompt ?? "").startsWith(written.trim()) } : null;
+    }, { timeout: 60_000 }).toEqual({ enhanced: true, enhancedFrom: WORDS, rawPromptIsWordsSent: true, startsWithWordsSent: true });
   });
 
   test("Off, or a raw: line, sends the words as written, at the take's figure alone, and says Raw", async ({ page }) => {
@@ -158,7 +163,7 @@ test.describe("desktop, switch on", () => {
     expect(read.settings.enhanceDefault).toBe("on");
   });
 
-  test("the viewer says Enhanced, with See original, or Raw; an older take says nothing", async ({ page }) => {
+  test("the viewer's prompt line is the enhanced words, See original is what was typed, and Raw says Raw; an older take says nothing", async ({ page }) => {
     test.setTimeout(300_000);
     await seedHome(page, { takes: 3 });
     await page.route(/\/api\/jobs\?limit=/, async (route) => {
@@ -166,7 +171,7 @@ test.describe("desktop, switch on", () => {
         const reply = await route.fetch();
         const body = await reply.json() as { generations?: Record<string, unknown>[] };
         const [a, b] = body.generations ?? [];
-        if (a) a.params = { ...(a.params as object), enhanced: true, rawPrompt: "a kite, grey sea" };
+        if (a) a.params = { ...(a.params as object), enhanced: true, enhancedFrom: "a kite, grey sea" };
         if (b) b.params = { ...(b.params as object), enhanced: false };
         await route.fulfill({ response: reply, json: body });
       } catch { await route.fallback().catch(() => undefined); }
@@ -174,9 +179,14 @@ test.describe("desktop, switch on", () => {
     await page.goto("/suites?view=make&viewer=1");
     await expect(page.getByTestId("v12-make-viewer")).toBeVisible({ timeout: 90_000 });
     await expect(page.getByTestId("v12-make-viewer-enhance-label")).toHaveText("Enhanced");
+    /* The words the take was made from lead the viewer; the typed ones appear only when asked for, and never replace them. */
+    const made = (await page.getByTestId("v12-make-viewer-prompt").innerText()).trim();
+    expect(made.length).toBeGreaterThan(10);
+    expect(made).not.toBe("a kite, grey sea");
     await expect(page.getByTestId("v12-make-viewer-original")).toHaveCount(0);
     await page.getByTestId("v12-make-viewer-see-original").click();
     await expect(page.getByTestId("v12-make-viewer-original")).toHaveText("a kite, grey sea");
+    await expect(page.getByTestId("v12-make-viewer-prompt")).toHaveText(made);
     await page.getByTestId("v12-make-viewer-next").click();
     await expect(page.getByTestId("v12-make-viewer-enhance-label")).toHaveText("Raw");
     await expect(page.getByTestId("v12-make-viewer-see-original")).toHaveCount(0);
