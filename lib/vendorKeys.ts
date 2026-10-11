@@ -1,4 +1,5 @@
 import { currentTenant } from "./tenant";
+import { productionIntended } from "./vercelGuard";
 
 /** Shared provider credentials stay on the server. Workspace keys from the
  * previous billing mode are retained for history but never fund new work. */
@@ -40,5 +41,8 @@ export function vendorKeyForEnv(envName: string): string | null {
   return entry ? vendorKey(entry[0]) : null;
 }
 
-/** The managed gateway can use the deployment identity for every workspace. */
-export function deploymentIdentityAllowed(): boolean { return true; }
+/**
+ * The gateway may use the deployment's own identity (Vercel's OIDC token) everywhere EXCEPT production, where it is never used:
+ * the gateway is reachable there only with AI_GATEWAY_API_KEY (lib/vercelGuard.ts).
+ */
+export function deploymentIdentityAllowed(): boolean { return !productionIntended(); }
