@@ -106,6 +106,19 @@ These settle the lead's decisions above and the open questions in the builder's 
 11. **#642:** retake the screenshots with the Ask Atomik buttons and add them to the PR for the record.
 12. **11 Oct, 13:30–14:15 IST:** the owner deploys #609 to production. Keep #609 green, push nothing to main, and run no heavy work on the server in that window.
 
+## Owner decisions (Akshay, 11 Oct afternoon: launch day)
+
+1. **Freeze release/1 at 65042dca** for today's launch. #639, #645, #648 and #647 go in the next deploy.
+2. **Gateway removal** at runbook step 8: set `TEXT_DIRECT=anthropic,google,xai` and `MODEL_CATALOG=static` first, then remove `AI_GATEWAY_API_KEY`.
+3. **`RIG_AGENT_ENABLED=1`** (runtime), set in step 2.
+4. **New interface:** house workspace only at launch.
+5. **#639: option A.** Provider-queued Ark/fal jobs keep Cancel in the new interface, with honest wording: never "nothing billed" before the provider confirms. It needs an Opus re-review and goes in the next deploy.
+6. **"/" skills** are built on today's priced paths, provided each "/" item calls exactly the same priced route, with the same price and approval, as its button. Each item is logged as a registry gap (rule 11) to close later.
+7. **#647 privacy text** is approved as is: no gateway (it's removed at launch), no Recraft.
+8. **platformOwnerPrivacy:179 flake:** a read-only look after the launch, reported to the owner before anything changes.
+9. **Close #609 after the launch**, "superseded by the release/1 launch".
+10. **Backup is done** (owner): platform-backup-20261011, tenant-backup-20261011 and .sql dumps; integrity ok; restore point 11:03 UTC.
+
 ## Merge rule
 
 The lead merges into release/1 only when all of these hold:
