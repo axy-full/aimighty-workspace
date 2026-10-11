@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { RULE_SCOPES, RULE_SCOPE_LABELS, type RuleApply, type RuleScope } from "@/lib/platformLayer";
 import { useRead, useWrite } from "@/components/graphite/settings/use-settings";
+import { Tooltip } from "../../ui";
 import { Note, Problem, Sec } from "./parts";
 
 /**
@@ -47,8 +48,10 @@ export function StyleRules() {
           <select className="v12-ws-select" aria-label="Applies to" value={r.apply} disabled={busy != null} onChange={(e) => void act(r.id, at(r), "PATCH", { apply: e.target.value })}>
             <option value="writer">For the writer</option><option value="prompt">In the prompt</option>
           </select>
-          <button type="button" className={`v12-ws-btn ${removing === r.id ? "v12-ws-btn-danger" : "v12-ws-btn-quiet"}`} disabled={busy != null} aria-label={removing === r.id ? "Remove this rule now" : "Remove this rule"} title={removing === r.id ? "Press again to remove it" : "Remove this rule"}
-            onClick={() => (removing === r.id ? void act(r.id, at(r), "DELETE") : setRemoving(r.id))} data-testid="v12-settings-rule-remove">×</button>
+          <Tooltip name={removing === r.id ? "Press again to remove it" : "Remove this rule"} named>
+            <button type="button" className={`v12-ws-btn ${removing === r.id ? "v12-ws-btn-danger" : "v12-ws-btn-quiet"}`} disabled={busy != null} aria-label={removing === r.id ? "Remove this rule now" : "Remove this rule"}
+              onClick={() => (removing === r.id ? void act(r.id, at(r), "DELETE") : setRemoving(r.id))} data-testid="v12-settings-rule-remove">×</button>
+          </Tooltip>
         </div>
       ))}
       {data && !mine.length ? <div className="v12-ws-empty">No rules of your own yet.</div> : null}

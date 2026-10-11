@@ -1,5 +1,6 @@
 "use client";
 import type { ReactNode } from "react";
+import { Tooltip } from "../../ui";
 
 /** The console's small pieces (components/v12/settings/console/console.css): a section, a row, a switch, a note. */
 
@@ -32,9 +33,11 @@ export function Row({ name, line, value, children, testId }: { name: ReactNode; 
 export function Switch({ on, onChange, name, state, line, disabled, title, testId }: { on: boolean; onChange: (next: boolean) => void; name: string; state?: string; line?: ReactNode; disabled?: boolean; title?: string; testId?: string }) {
   return (
     <div className="v12-ws-switch" data-testid={testId}>
-      <button type="button" role="switch" aria-checked={on} aria-label={name} className="v12-ws-sw" disabled={disabled} title={title} onClick={() => onChange(!on)} data-testid={testId ? `${testId}-switch` : undefined}>
-        <span className="v12-ws-sw-track" aria-hidden="true"><span className="v12-ws-sw-knob" /></span>
-      </button>
+      <Tooltip name={title ?? name} named>
+        <button type="button" role="switch" aria-checked={on} aria-label={name} className="v12-ws-sw" disabled={disabled} onClick={() => onChange(!on)} data-testid={testId ? `${testId}-switch` : undefined}>
+          <span className="v12-ws-sw-track" aria-hidden="true"><span className="v12-ws-sw-knob" /></span>
+        </button>
+      </Tooltip>
       <span className="v12-ws-sw-k">
         <span className="v12-ws-sw-name">{name}{state ? <span className="v12-ws-mono v12-ws-quiet" style={{ fontSize: 12, fontWeight: 500 }}>{state}</span> : null}</span>
         {line ? <span className="v12-ws-row-line">{line}</span> : null}

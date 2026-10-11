@@ -5,8 +5,7 @@ import { platformDb, platformReady } from "@/lib/platform";
 import { mailConfigured, sendMail, inviteEmail, inviteOrigin, MAIL_LINK_UNSET } from "@/lib/mail";
 import { accountFailure, AccountError } from "@/lib/accountDb";
 import { mailWorkspaceInvite } from "@/lib/teamInvitations";
-import { securityAuditStatement } from "@/lib/securityAudit";
-import { inviteRef } from "@/lib/teamAdmins";
+import { inviteRef, securityAuditStatement } from "@/lib/securityAudit";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ code: string }> };

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSession } from "@/lib/session";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useRead, useWrite } from "@/components/graphite/settings/use-settings";
@@ -23,7 +23,6 @@ export function Limits() {
   const [draft, setDraft] = useState<{ budget: string; warn: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
-  useEffect(() => { if (data && !draft) setDraft(saved); }, [data]); // eslint-disable-line react-hooks/exhaustive-deps -- the first read seeds the draft once
   const now = draft ?? saved;
   const dirty = Boolean(draft) && (now.budget !== saved.budget || now.warn !== saved.warn);
 

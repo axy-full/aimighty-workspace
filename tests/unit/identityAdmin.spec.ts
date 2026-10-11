@@ -552,6 +552,10 @@ async function teamRoutes(
     "@/lib/accountDb": await import("../../lib/accountDb"),
     "@/lib/teamInvitations": await import("../../lib/teamInvitations"),
     "@/lib/platformOwnerPrivacy": await import("../../lib/platformOwnerPrivacy"),
+    /* Seats on the roster, and the invitation's history line (lib/securityAudit.ts). */
+    "@/lib/planLimits": await import("../../lib/planLimits"),
+    "@/lib/securityAudit": await import("../../lib/securityAudit"),
+    "@/lib/teamAdmins": await import("../../lib/teamAdmins"),
   };
   const team = loadRoute<{ POST: Handler }>("app/api/team/route.ts", mocks);
   const resend = loadRoute<{ POST: Handler }>(

@@ -221,9 +221,11 @@ test("invitations, limits, rename, leaving and deleting each leave a line; delet
   const email = `invite-${randomBytes(4).toString("hex")}@example.test`;
   const made = (await (await send(admin, "POST", "/api/team", { email, name: "Invited H", role: "member" })).json()) as { code: string };
   expect(made.code).toBeTruthy();
-  const seats = ((await (await get(admin, "/api/team")).json()) as { seats: { used: number; ceiling: number | null }; invites: { code: string }[] });
+  const seats = (await (await get(admin, "/api/team")).json()) as { invites: { code: string }[] };
   expect(seats.invites.map((i) => i.code)).toContain(made.code);
-  expect(seats.seats.used).toBe(4);
+  /* Owner, admin, leaver and the open invitation hold a seat each; the studio plan sets no limit. */
+  expect(await (await get(admin, "/api/team/seats")).json()).toEqual({ used: 4, ceiling: null });
+  expect((await get(leaver, "/api/team/seats")).status()).toBeGreaterThanOrEqual(400);
   expect((await send(admin, "DELETE", `/api/team/invites/${made.code}`)).ok()).toBe(true);
   const afterInvites = await history(W.owner);
   const created = lines(afterInvites, "invite.created"), revoked = lines(afterInvites, "invite.revoked");

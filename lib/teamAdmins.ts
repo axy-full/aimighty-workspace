@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { Transaction } from "@libsql/client";
 import { AccountError } from "./accountDb";
 import type { OwnerMask } from "./platformOwnerPrivacy";
@@ -20,6 +19,3 @@ export async function assertAnotherAdmin(tx: Transaction, workspaceId: string, a
   const others = rows.filter((r) => String(r.id) !== accountId && !mask.hides({ id: r.id, email: r.email }));
   if (!others.length) throw new AccountError(LAST_ADMIN, 400);
 }
-
-/** The history line's id for an invitation: never the code itself, which is the link. */
-export const inviteRef = (code: string): string => createHash("sha256").update(code).digest("hex").slice(0, 16);

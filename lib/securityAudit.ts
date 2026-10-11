@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Client, InStatement } from "@libsql/client";
 
 /** Applied in each owning database: its mutation and receipt commit together. */
@@ -117,3 +117,6 @@ export async function readWorkspaceSecurityHistory(
   const events = merged.slice(0, limit), last = events.at(-1);
   return { events, nextCursor: merged.length > limit && last ? `${last.createdAt}:${last.id}` : null };
 }
+
+/** The history line's id for an invitation: a reference, never the code itself (the code is the link). */
+export const inviteRef = (code: string): string => createHash("sha256").update(code).digest("hex").slice(0, 16);

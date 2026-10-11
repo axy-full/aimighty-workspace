@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useSession } from "@/lib/session";
 import { useWorkspace } from "@/lib/workspace/state";
 import { lastActive, nameFromEmail, seatsLine } from "@/lib/v12/settingsConsole";
-import { useWrite } from "@/components/graphite/settings/use-settings";
+import { useRead, useWrite } from "@/components/graphite/settings/use-settings";
+import { Tooltip } from "../../ui";
 import { Problem, Sec, initialsOf, Note } from "./parts";
 
 /**
@@ -14,7 +15,6 @@ import { Problem, Sec, initialsOf, Note } from "./parts";
  */
 export type TeamBody = {
   mail?: { configured: boolean };
-  seats?: { used: number; ceiling: number | null };
   canSeeRoles: boolean;
   users: { id: string; email: string; name: string; role?: string; standing?: string; permanent?: boolean; disabled: boolean; lastSeen: number | null; support?: boolean }[];
   invites: { code: string; email: string; name: string; role?: string; expiresAt: number; sentAt: number | null; sendCount?: number }[];
@@ -28,6 +28,7 @@ export function People({ team }: { team: Team }) {
   const write = useWrite();
   const { toast } = useWorkspace();
   const { data, error, read } = team;
+  const seats = useRead<{ used: number; ceiling: number | null }>("/api/team/seats");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"member" | "admin">("member");
   const [busy, setBusy] = useState<string | null>(null);
@@ -43,7 +44,7 @@ export function People({ team }: { team: Team }) {
     setBusy(null);
     if (refused) { setNote({ ok: false, text: refused }); return false; }
     if (done) toast(done);
-    await read();
+    await read(); void seats.read();
     return true;
   };
   const invite = async () => {
@@ -70,7 +71,7 @@ export function People({ team }: { team: Team }) {
 
   return (
     <>
-      <Sec label="Invite a teammate" meta={data ? seatsLine(data.seats, users.length) : undefined} testId="v12-settings-invite">
+      <Sec label="Invite a teammate" meta={data ? seatsLine(seats.data, users.length) : undefined} testId="v12-settings-invite">
         <form className="v12-ws-form" onSubmit={(e) => { e.preventDefault(); void invite(); }}>
           <input className="v12-ws-field" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" aria-label="Email" data-testid="v12-settings-invite-email" />
           {canRole ? (
@@ -111,7 +112,9 @@ export function People({ team }: { team: Team }) {
                   )}
                   <span className="v12-ws-quiet">{lastActive(u.lastSeen, now)}</span>
                   {!you && !owner ? (
-                    <button type="button" className="v12-ws-btn v12-ws-btn-quiet" aria-label={`Actions for ${u.name}`} title="Remove from workspace" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); open(u.id, u.name, r.right - 200, r.bottom); }} data-testid="v12-settings-person-more">⋯</button>
+                    <Tooltip name="Remove from workspace" line="Or right-click the row." named>
+                      <button type="button" className="v12-ws-btn v12-ws-btn-quiet" aria-label={`Actions for ${u.name}`} onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); open(u.id, u.name, r.right - 200, r.bottom); }} data-testid="v12-settings-person-more">⋯</button>
+                    </Tooltip>
                   ) : <span />}
                 </div>
               );

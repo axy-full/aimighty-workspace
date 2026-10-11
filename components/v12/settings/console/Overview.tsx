@@ -32,6 +32,7 @@ export function Overview({ account, team }: { account: WorkspaceAccount | null; 
   const ledger = useRead<{ unit?: string; rows?: CreditLedgerRow[] }>(inCredits ? `/api/usage?rows=1&month=${month}&limit=6` : null);
   const usage = useRead<{ spentUsd?: number }>(!inCredits ? "/api/usage" : null);
   const limits = useRead<{ standing?: { running?: number } }>("/api/limits");
+  const seats = useRead<{ used: number; ceiling: number | null }>("/api/team/seats");
   const topups = useRead<Topups>(inCredits ? "/api/workspaces/topups" : null);
   const totals = monthTotalsOf(ledger.data);
   const pack = topups.data?.applies && topups.data.canRequest ? topUpPack(topups.data.packs) : null;
@@ -43,7 +44,7 @@ export function Overview({ account, team }: { account: WorkspaceAccount | null; 
       ? { label: "Credits left", value: balance != null ? fmtCredits(balance) : "—", sub: rule.base ? `of ${fmtCredits(rule.base)} a month` : "", warn: rule.low }
       : { label: "Billing", value: "At cost", sub: "In dollars, at the engines’ cost" },
     { label: inCredits ? "Spent this month" : "Spent · all time", value: spent ?? (ledger.error || usage.error ? "—" : "…"), sub: inCredits && totals && balance != null && rule.base ? `${Math.round((totals.charged / rule.base) * 100)} % of the month’s credits` : "" },
-    { label: "People", value: people != null ? String(people) : team.error ? "—" : "…", sub: team.data ? seatsLine(team.data.seats, people ?? 0) : "" },
+    { label: "People", value: people != null ? String(people) : team.error ? "—" : "…", sub: team.data ? seatsLine(seats.data, people ?? 0) : "" },
     { label: "Renders running", value: running != null ? String(running) : "—", sub: running === 0 ? "Nothing running" : "" },
   ];
   const activity = (ledger.data?.rows ?? []).filter((r) => r.credits > 0 || r.state === "held").slice(0, 5);

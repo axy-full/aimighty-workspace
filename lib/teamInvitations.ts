@@ -18,8 +18,7 @@ import {
 } from "./platform";
 import { passwordProblem, hashPassword } from "./auth";
 import { ceilingFor, ceilingMessage } from "./planLimits";
-import { securityAuditStatement } from "./securityAudit";
-import { inviteRef } from "./teamAdmins";
+import { inviteRef, securityAuditStatement } from "./securityAudit";
 import { planById } from "./plans";
 import { effectivePlanId, paidPlanEntitlementTx } from "./billingLedger";
 import type { WorkspaceRole, TenantWorkspace } from "./tenant";

@@ -23,7 +23,7 @@ export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string 
 ]);
 
 /** The sections this build draws. The rest still open the page that holds them today (SETTINGS_INTERIM). */
-export const SETTINGS_BUILT: readonly SettingsSectionId[] = Object.freeze(["team", "credits", "rules", "connections", "advanced", "console"]);
+export const SETTINGS_BUILT: readonly SettingsSectionId[] = Object.freeze(["team", "credits", "rules", "connections", "advanced"]);
 
 /**
  * The app address of Settings › Plan & credits, for a link sent outside the app (a push, an email). Never `/settings`:

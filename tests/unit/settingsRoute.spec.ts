@@ -33,6 +33,8 @@ function load(role: "admin" | "member" = "admin") {
       DEFAULTS,
       allSettings: async () => Object.fromEntries(writes.map(([k, v]) => [k, v])),
       setSetting: async (key: string, value: string, by: string) => { writes.push([key, value, by]); },
+      /* A limit is written with its history line in one batch (lib/settings.ts setLimitSetting); the write is what is checked here. */
+      setLimitSetting: async (key: string, value: string, by: string) => { writes.push([key, value, by]); return true; },
       getSetting: async (key: string) => writes.filter(([k]) => k === key).at(-1)?.[1] ?? "",
     },
     /* The budget and its re-lock go through one transactional writer (its own behaviour: tests/unit/demo-gaps-l4-people-only.spec.ts). */

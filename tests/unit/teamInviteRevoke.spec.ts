@@ -6,6 +6,7 @@ import path from "node:path";
 import ts from "typescript";
 import { createClient } from "@libsql/client";
 import * as archive from "../../lib/archive";
+import * as securityAudit from "../../lib/securityAudit";
 
 /*
  * Workspace › People › Revoke calls DELETE /api/team/invites/[code]. The link
@@ -25,6 +26,8 @@ function load(workspaceId: string) {
     "@/lib/tenant": { requireTenant: () => ({ id: workspaceId }) },
     "@/lib/platform": { platformDb: () => platform, platformReady: async () => {} },
     "@/lib/archive": archive,
+    /* The withdrawal leaves its history line in the same write. */
+    "@/lib/securityAudit": securityAudit,
   };
   const compiled = ts.transpileModule(readFileSync("app/api/team/invites/[code]/route.ts", "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -38,6 +41,7 @@ function load(workspaceId: string) {
 }
 
 test.beforeAll(async () => {
+  await platform.batch(securityAudit.SECURITY_AUDIT_SCHEMA);
   await platform.execute("CREATE TABLE workspace_invites(code TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, email TEXT, name TEXT, role TEXT, created_by TEXT, expires_at INTEGER, used_at INTEGER)");
   await platform.execute({
     sql: "INSERT INTO workspace_invites VALUES(?,?,?,?,?,?,?,?),(?,?,?,?,?,?,?,?),(?,?,?,?,?,?,?,?)",
@@ -57,6 +61,10 @@ test("revoking an unused invitation archives the whole row, then the link stops 
   const kept = (await platform.execute("SELECT * FROM archived_rows WHERE table_name='workspace_invites'")).rows;
   expect(kept).toHaveLength(1);
   expect(kept[0]).toMatchObject({ reason: "invite revoked", archived_by: "admin-1" });
+  /* One history line, by reference: the code is the link and is never written there. */
+  const lines = (await platform.execute("SELECT action,actor_id,workspace_id,target_type,target_id FROM security_audit")).rows;
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).toMatchObject({ action: "invite.revoked", actor_id: "admin-1", workspace_id: "ws-a", target_type: "invite", target_id: securityAudit.inviteRef("open-1") });
   expect(JSON.parse(String(kept[0].body))).toEqual({
     code: "open-1", workspace_id: "ws-a", email: "new@example.test", name: "New Person", role: "member", created_by: "owner-1", expires_at: 2_000_000_000_000, used_at: null,
   });
@@ -68,4 +76,6 @@ test("a used invitation and another workspace's invitation are neither archived 
   expect((await load("ws-a")("other-1")).status).toBe(200);
   expect((await platform.execute("SELECT code FROM workspace_invites ORDER BY code")).rows.map((r) => r.code)).toEqual(["other-1", "used-1"]);
   expect((await platform.execute("SELECT count(*) AS n FROM archived_rows")).rows[0].n).toBe(1);
+  /* Nothing withdrawn, no line. */
+  expect((await platform.execute("SELECT count(*) AS n FROM security_audit")).rows[0].n).toBe(1);
 });

@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
-import { platformReady } from "@/lib/platform";
+import { platformDb, platformReady } from "@/lib/platform";
 import { archiveAndDelete } from "@/lib/archive";
-import { accountTransaction, accountFailure } from "@/lib/accountDb";
-import { securityAuditStatement } from "@/lib/securityAudit";
-import { inviteRef } from "@/lib/teamAdmins";
+import { inviteRef, securityAuditStatement } from "@/lib/securityAudit";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ code: string }> };
@@ -21,12 +19,15 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   const ws = requireTenant();
   await platformReady();
   const { code } = await params;
+  /* The withdrawal and its history line land together; nothing withdrawn, no line. */
+  const tx = await platformDb().transaction("write");
   try {
-    /* The withdrawal and its history line land together; nothing withdrawn, no line. */
-    await accountTransaction(async (tx) => {
-      const gone = await archiveAndDelete(tx, "workspace_invites", "code = ? AND workspace_id = ? AND used_at IS NULL", [code, ws.id], { reason: "invite revoked", by: got.user.id });
-      if (gone > 0) await tx.execute(securityAuditStatement({ workspaceId: ws.id, actorId: got.user.id, action: "invite.revoked", targetType: "invite", targetId: inviteRef(code) }));
-    });
-  } catch (error) { return accountFailure(error); }
+    const gone = await archiveAndDelete(tx, "workspace_invites", "code = ? AND workspace_id = ? AND used_at IS NULL", [code, ws.id], { reason: "invite revoked", by: got.user.id });
+    if (gone > 0) await tx.execute(securityAuditStatement({ workspaceId: ws.id, actorId: got.user.id, action: "invite.revoked", targetType: "invite", targetId: inviteRef(code) }));
+    await tx.commit();
+  } catch (error) {
+    await tx.rollback().catch(() => {});
+    throw error;
+  } finally { tx.close(); }
   return NextResponse.json({ ok: true });
 }, { requireRequestScope: true });

@@ -4,8 +4,7 @@ import { mailConfigured, mailFrom, sendMail, inviteEmail, inviteOrigin, MAIL_LIN
 import { db, ready, now } from "@/lib/db";
 import { requireAdmin, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
-import { platformDb, platformReady, planOf } from "@/lib/platform";
-import { ceilingFor } from "@/lib/planLimits";
+import { platformDb, platformReady } from "@/lib/platform";
 import { creditsApply } from "@/lib/credits";
 import { accountFailure, AccountError } from "@/lib/accountDb";
 import { createWorkspaceInvite, mailWorkspaceInvite } from "@/lib/teamInvitations";
@@ -53,18 +52,12 @@ export const GET = withTenant(async function GET() {
      controls platform access, and the seats add up (lib/platformOwnerPrivacy.ts). */
   const mask = await ownerMaskFor(ws);
   const who = (r: any) => (mask.hides(r) ? { email: "", name: mask.name(r), support: true } : { email: r.email, name: r.name });
-  /* Seats the plan allows (null: no limit) and how many are taken: enabled members, and open invitations to someone not yet one. */
-  const plan = await planOf(ws).catch(() => null);
-  const seatCeiling = plan ? ceilingFor(plan, "members") : null;
-  const enabled = new Set((members.rows as any[]).filter((r) => Number(r.m_disabled) === 0).map((r) => String(r.email)));
-  const seatsUsed = enabled.size + new Set((invites.rows as any[]).map((r) => String(r.email)).filter((e) => !enabled.has(e))).size;
   const made = new Map((stats.rows as any[]).map((r) => [String(r.id), { clips: Number(r.clips), spend: Number(r.spend) }]));
 
   return NextResponse.json({
     mail: { configured: mailConfigured(), from: mailFrom() },
     workspace: { id: ws.id, name: ws.name, slug: ws.slug },
     requests: [],
-    seats: { used: seatsUsed, ceiling: seatCeiling },
     canSeeRoles,
     users: (members.rows as any[]).filter((r) => Number(r.m_disabled) === 0 || canSeeRoles).map((r) => {
       /* The support row says nothing about the account behind it: an id of

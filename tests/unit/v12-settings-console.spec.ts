@@ -114,7 +114,7 @@ test("the history knows invitations, limits and leaving; its details are fixed w
 });
 
 test("an invitation is named in the history by a reference that is not its link, the same each time", async () => {
-  const { inviteRef } = await import("../../lib/teamAdmins");
+  const { inviteRef } = await import("../../lib/securityAudit");
   const code = "Zm9yLXRlc3RzLW9ubHktdGhpcy1pcy1ub3QtYS1yZWFsLWNvZGU";
   expect(inviteRef(code)).toMatch(/^[0-9a-f]{16}$/);
   expect(inviteRef(code)).toBe(inviteRef(code));
@@ -170,7 +170,6 @@ test("sending an invitation again leaves a history line when it was sent, by ref
       "@/lib/accountDb": { accountFailure: (e: Error) => Response.json({ error: e.message }, { status: 400 }), AccountError },
       "@/lib/teamInvitations": { mailWorkspaceInvite: async (i: { deliver: (to: string, link: string) => Promise<unknown> }) => { await i.deliver("x@example.test", "https://example.test/invite/code-for-a"); } },
       "@/lib/securityAudit": await import("../../lib/securityAudit"),
-      "@/lib/teamAdmins": await import("../../lib/teamAdmins"),
     });
     const lines = async () => (await client.execute("SELECT action,actor_id,target_type,target_id FROM security_audit ORDER BY created_at")).rows.map((r) => ({ ...r }));
     const post = (code: string) => route.POST(new Request("http://localhost/api/team/invites/x/send", { method: "POST" }), { params: Promise.resolve({ code }) });
