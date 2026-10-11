@@ -33,7 +33,7 @@ test("(a) only fal's own word that the request was cancelled is a cancel signal:
   ]) expect(namesCancellation(error), String((error as Error).message)).toBe(false);
 });
 
-test("(b) a finished result with no video: free only when it says it was cancelled; with an error it is a failure, as before", () => {
+test("(b) which finished results are read as a cancellation: only one with no video that says so (the charge itself is in falCancelBilling.spec.ts)", () => {
   expect(resultSaysCancelled({ detail: "Request was cancelled." }, null)).toBe(true);
   expect(resultSaysCancelled({ error: "The model failed to produce a video." }, null)).toBe(false);
   expect(resultSaysCancelled({}, null)).toBe(false);
@@ -101,7 +101,25 @@ test("(c) the charged case is filed on the platform desk with the job id, the ti
   expect(details).toMatchObject({ jobId: "g-trail", provider: "fal", cancelAccepted: false, cancelAsked: { kind: "timeout", at: 1_001 }, afterCancel: { status: 404 }, gone: { status: 404, at: 2_000 } });
   expect(String(rows[0].details)).not.toMatch(/prompt|Bearer|https?:/i);
   expect(JSON.parse(lines[0])).toMatchObject({ event: "queued_cancel.charged_review", jobId: "g-trail", putStatus: null, goneStatus: 404 });
+  /* Filed again for the same job (an overlapping poll, a retried write): still one row, and the first note stays. */
+  expect(await fileCancelReview({ jobId: "g-trail", workspaceId: "ws_1", provider: "fal", trail, cancelAccepted: false, gone: replyOf(new FalHttpError(404, "later", null), 9_000) }, { clock: () => 9_500, log: () => undefined })).toBe(true);
+  const again = (await platformDb().execute("SELECT id, created_at FROM reports")).rows;
+  expect(again).toHaveLength(1);
+  expect(again[0]).toMatchObject({ id: "rp_cancel_g-trail", created_at: 3_000 });
   /* A platform database that cannot answer does not break the poll that filed it. */
   const down = await fileCancelReview({ jobId: "g-trail", workspaceId: null, provider: "fal", trail, cancelAccepted: false, gone: replyOf(new FalHttpError(404, "x", null)) }, { platform: async () => { throw new Error("down"); }, log: () => undefined });
   expect(down).toBe(false);
+});
+
+test("(c) filing is bounded: a platform database that never answers is waited for a moment, then left", async () => {
+  const { fileCancelReview } = await import("../../lib/cancelReview");
+  const trail: CancelTrail = { at: 1, put: null, after: null };
+  const started = Date.now();
+  const kept = await fileCancelReview({ jobId: "g-slow", workspaceId: null, provider: "fal", trail, cancelAccepted: false, gone: replyOf(new FalHttpError(404, "x", null)) },
+    { platform: () => new Promise(() => undefined), log: () => undefined, timeoutMs: 50 });
+  expect(kept).toBe(false);
+  expect(Date.now() - started).toBeLessThan(2_000);
+  /* A log line that throws does not stop it either. */
+  expect(await fileCancelReview({ jobId: "g-log", workspaceId: null, provider: "fal", trail, cancelAccepted: false, gone: replyOf(new FalHttpError(404, "x", null)) },
+    { platform: async () => ({ execute: async () => undefined }), log: () => { throw new Error("log down"); } })).toBe(true);
 });

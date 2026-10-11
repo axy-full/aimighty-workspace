@@ -28,7 +28,7 @@ async function tenantDb(workspaceId: string) {
 const unique = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 /** A video take waiting at its provider (`tag` says how the mocked vendor behaves) with the meter's reservation for it. */
-async function seed(w: World, provider: "byteplus" | "fal", tag: "queued" | "running" | "cancelerror" | "turnsrunning" | "silentgone") {
+async function seed(w: World, provider: "byteplus" | "fal", tag: "queued" | "running" | "cancelerror" | "turnsrunning" | "silentgone" | "timeoutgone") {
   const at = Date.now() - 20_000;
   const id = `gq${unique()}`;
   const handle = `mock_${provider === "fal" ? "fal" : "ark"}_${unique()}-${tag}_${Date.now()}`;
@@ -120,6 +120,28 @@ test.describe("queued cancel", () => {
     expect(after).toMatchObject({ row: "failed", asked: true });
     /* Not released: the reservation was not cleared to nothing on a guess. */
     expect(after.credits).toBe(HELD);
+  });
+
+  test("fal: a cancel that times out, then the request is gone (404): it stays charged, and is filed once on the platform desk with the job id and fal's answers", async ({ request }) => {
+    const w = await world(request, "Cancel fal timeout then gone");
+    const id = await seed(w, "fal", "timeoutgone");
+    const reply = await cancel(w, id);
+    expect(reply.status(), await reply.text()).toBe(503);
+    expect(await state(w, id)).toMatchObject({ row: "queued", asked: false, meter: "running", credits: HELD });
+    /* The take's own poll finds fal no longer has it (twice: still one note). */
+    await request.get(`/api/jobs/${encodeURIComponent(id)}`, { headers: w.headers });
+    await request.get(`/api/jobs/${encodeURIComponent(id)}`, { headers: w.headers });
+    expect(await state(w, id)).toMatchObject({ row: "failed", asked: false, credits: HELD });
+    const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+    try {
+      const rows = (await platform.execute({ sql: "SELECT id, reason, details, workspace_id, handled_at FROM reports WHERE url = ?", args: [`/api/generations/${id}/cancel`] })).rows;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ id: `rp_cancel_${id}`, workspace_id: w.workspaceId, handled_at: null });
+      expect(String(rows[0].reason)).toMatch(/^Queued cancel not confirmed/);
+      const details = JSON.parse(String(rows[0].details));
+      expect(details).toMatchObject({ jobId: id, provider: "fal", cancelAccepted: false, cancelAsked: { kind: "timeout" }, afterCancel: { status: 404 }, gone: { status: 404 } });
+      expect(String(rows[0].details)).not.toMatch(/mock_fal|A boat leaves the quay|https?:/);
+    } finally { platform.close(); }
   });
 
   test("two presses at once reach the provider once", async ({ request }) => {

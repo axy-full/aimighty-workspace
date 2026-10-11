@@ -272,9 +272,11 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean;store?:St
       /* We asked fal to cancel this job and could not confirm it, and fal no longer has it with no word of a cancellation: it stays
          charged (owner's decision on #639), and is filed for the owner to review and refund by hand (lib/cancelReview.ts). */
       const trail = (p as { cancelTrail?: CancelTrail }).cancelTrail;
+      const ended = await fail(gen, "The render service no longer has this job. Render again.", false, outcomeOfError(e, { provider: "fal", stage: "run" }));
+      /* After the outcome is written, and bounded: the note changes nothing about what is charged. */
       if (trail && typeof trail.at === "number")
         await fileCancelReview({ jobId: gen.id, workspaceId: currentTenant()?.workspace?.id ?? null, provider: "fal", trail, cancelAccepted: cancelAsked, gone: replyOf(e) });
-      return fail(gen, "The render service no longer has this job. Render again.", false, outcomeOfError(e, { provider: "fal", stage: "run" }));
+      return ended;
     }
     // A refusal (422) is final; anything else gets another pass, until the ceiling.
     if (/\b422\b|refus|safety|nsfw|moderat/i.test(msg))

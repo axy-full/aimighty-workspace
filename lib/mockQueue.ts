@@ -5,11 +5,12 @@
  *  - `-running`: is already being made, and refuses a cancel;
  *  - `-cancelerror`: waits, but the vendor cannot be reached to cancel it;
  *  - `-turnsrunning`: waits, the vendor accepts the cancel (fal's 202 is the same either way) and the job then reads running;
- *  - `-silentgone`: waits, the vendor accepts the cancel, and afterwards no longer knows the request, with no word of a cancellation.
+ *  - `-silentgone`: waits, the vendor accepts the cancel, and afterwards no longer knows the request, with no word of a cancellation;
+ *  - `-timeoutgone`: waits, the cancel times out (no answer), and afterwards the vendor no longer knows the request (a 404).
  * Nothing outside the mock reads them. Self-contained on purpose (no import from lib/mock.ts): a real id is never `mock_…`.
  */
-export type MockQueueKind = "queued" | "running" | "cancelerror" | "turnsrunning" | "silentgone";
-const KINDS: readonly MockQueueKind[] = ["queued", "running", "cancelerror", "turnsrunning", "silentgone"];
+export type MockQueueKind = "queued" | "running" | "cancelerror" | "turnsrunning" | "silentgone" | "timeoutgone";
+const KINDS: readonly MockQueueKind[] = ["queued", "running", "cancelerror", "turnsrunning", "silentgone", "timeoutgone"];
 
 export function mockQueueKind(id: string): MockQueueKind | null {
   if (!id.startsWith("mock_")) return null;
@@ -20,13 +21,16 @@ export function mockQueueKind(id: string): MockQueueKind | null {
 
 /** What the vendor says of a job after it accepted a cancel. */
 export type MockAftermath = "cancelled" | "running" | "gone";
-const after = new Map<string, MockAftermath>();
+/* On globalThis: the cancel route and a take's own poll are separate route bundles in a dev server, and both must see what the vendor said. */
+const shared = globalThis as typeof globalThis & { __mockQueueAfter?: Map<string, MockAftermath> };
+const after = (shared.__mockQueueAfter ??= new Map<string, MockAftermath>());
 export const mockAftermath = (id: string): MockAftermath | null => after.get(id) ?? null;
 
 /** The vendor's answer to a cancel: it accepts while the job is queued, refuses once it is being made, and may fail. */
 export function mockCancel(id: string): "accepted" | "running" {
   const kind = mockQueueKind(id);
   if (kind === "cancelerror") throw new Error("The vendor could not be reached to cancel this job.");
+  if (kind === "timeoutgone") { after.set(id, "gone"); throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" }); }
   if (kind === null || kind === "running") return "running";
   after.set(id, kind === "turnsrunning" ? "running" : kind === "silentgone" ? "gone" : "cancelled");
   return "accepted";
