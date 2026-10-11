@@ -1,0 +1,9 @@
+{
+  "name": "home-tiles",
+  "app": "/suites?project=project-f1d4660a&suite=particl&page=brief&view=home",
+  "prototype": "?",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
