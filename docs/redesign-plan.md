@@ -143,6 +143,30 @@ These settle the lead's decisions above and the open questions in the builder's 
 16. **"Moleculr"** is removed from UI text; the code is fixed, never the guard.
 17. **#639** gets option A, plus "N cr held · settles when the engine confirms" after a cancel is sent (NEEDS AKSHAY).
 
+## Owner decisions (Akshay, 11 Oct late night: prototype v14)
+
+1. **Prototype v14** (design/particl-prototype-14) is approved and is now **the one design**; it includes all of v13. v12 stays in the repo for reference.
+2. **Order:** finish tonight's queue first. Then Header, Enhance and Plans follow v14 exactly. Then Workspace settings (`?view=settings`), then the Platform console (`?view=admin`).
+3. **Build rules where the prototype has placeholders:**
+   1. All prices come from the live quote plus margin. The Enhance cost is the real text-model cost inside the one total, never a fixed "+1 cr".
+   2. Text-model pickers list only models with a working key, priced from the price table (as in #649). Engines appear only if they're in the registry (check Kling 3.0 Pro and Nano Banana Pro).
+   3. The low-credit warning fires at 20% of the month's credits, labelled "Low-credit warning".
+   4. House workspace: "House · pays at cost", no plan cards, no Top up, no top-up rows in history.
+   5. Plan names and prices come from config (the final plans above). Seats are display-only.
+   6. Header tab overflow measures real space (ResizeObserver), not 160 px a tab. Enhance ⓘ opens on hover, focus and tap.
+   7. The avatar shows the signed-in person's initials.
+   8. No sample names (Maggi, Dune Studies, Canva, ZigZag Films, MAYA, GUIDE, invite codes, Northwind, Lena, etc.) in shipped screens.
+4. **Workspace settings (NEEDS AKSHAY):**
+   - Admin-only sections are enforced on the server. Members get only Your usage, Plan (read only), Profile and Notifications.
+   - Every query is scoped to the signed-in user's workspace. Server tests prove an admin of A can't read or change anything in B (people, usage, billing, limits, rules) by URL or API.
+   - Role change, remove member, invites, limits and Delete workspace each get a server test and an audit line.
+   - Delete needs the typed name, checked on the server. The last admin can't be removed or demoted.
+5. **Platform console (NEEDS AKSHAY):**
+   - Owner-only, enforced on the server, and never reachable from a client workspace.
+   - Grant credits, Pause/Resume, Invites/Revoke and the Public site switches each get a server test and an audit line.
+   - Desktop only for now.
+6. Screenshots at 1440 × 900 and 1280 × 800 for each section. Both PRs stay open for the owner's review.
+
 ## Merge rule
 
 The lead merges into release/1 only when all of these hold:
