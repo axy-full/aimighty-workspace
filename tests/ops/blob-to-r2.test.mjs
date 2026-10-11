@@ -17,6 +17,7 @@ import {
   privateDirectory,
   targetKeys,
   verifyR2Only,
+  writeReport,
 } from "../../scripts/ops/blob-to-r2.mjs";
 
 // In-process only: an S3-compatible fake behind the real @aws-sdk/client-s3
@@ -619,4 +620,23 @@ test("verify --live: a database without workspaces, or a remote workspace withou
     liveSourceInventory(join(root, "bare.db"), spec, { ...ENV, PLATFORM_DATABASE_URL: href("bare.db"), KEYRING_SECRET: KEYRING }),
     (error) => /ws_tokenless/.test(error.message) && !error.message.includes("tokenless.example"),
   );
+});
+
+test("two reports written in the same millisecond both land, each under its own name", async (t) => {
+  const dir = await privateRoot(t);
+  const RealDate = Date;
+  const fixed = new RealDate("2026-10-10T12:00:00.000Z").getTime();
+  globalThis.Date = class extends RealDate {
+    constructor(...args) { super(...(args.length ? args : [fixed])); }
+    static now() { return fixed; }
+  };
+  let names;
+  try {
+    names = await Promise.all([writeReport(dir, "copy", { run: 1 }), writeReport(dir, "copy", { run: 2 }), writeReport(dir, "copy", { run: 3 })]);
+  } finally {
+    globalThis.Date = RealDate;
+  }
+  assert.equal(new Set(names).size, 3);
+  for (const name of names) assert.match(name, /^blob-to-r2-copy-2026-10-10T12-00-00-000Z(-\d+)?\.json$/);
+  assert.deepEqual((await Promise.all(names.map(async (name) => JSON.parse(await readFile(join(dir, name), "utf8")).run))).sort(), [1, 2, 3]);
 });

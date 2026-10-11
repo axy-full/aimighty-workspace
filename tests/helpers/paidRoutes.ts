@@ -68,12 +68,14 @@ export const NOT_SPENDING_FILES: Record<string, FileExcuse> = {
   "components/graphite/business/HooksTool.tsx": { why: "reads the Campaign agent's runs (a GET); 'See the price' opens the run dialog, whose own button quotes and then reserves up to the quote on a person's press", priced: ["components/workbench/AtomikRunDialog.tsx"] },
   "components/graphite/business/ReferenceTool.tsx": { why: "reads the Campaign agent's runs (a GET); 'See the price' opens the run dialog, whose own button quotes and then reserves up to the quote on a person's press; Apply the direction edits the brief", priced: ["components/workbench/AtomikRunDialog.tsx"] },
   "components/graphite/board/ads/cards/HookCards.tsx": { why: "the only paid-route string is a quote-only request (nothing reserved); 'Write N more' opens the run dialog, where the press that spends lives" },
+  "components/v12/shell/Header.tsx": { why: "the new header reads the approvals queue and the jobs tray for its tab dots and Activity's rows; its buttons only open things (a board, Make, Atomik, Settings); nothing here approves, releases or spends" },
   "components/graphite/board/agent/RecordTab.tsx": { why: "reads the approvals queue and the activity to list what was approved and what waits; its buttons only open things, and nothing here approves or spends" },
   "components/graphite/board/cards/cast/CastCard.tsx": { why: "reads the identity list (a GET) and shows the training price; 'Build identity' opens the Inspector and 'Lock as master' is free" },
   "components/graphite/board/inspector/CastBody.tsx": { why: "reads the identity list (a GET); its buttons copy, lock the master (free) or open Make; nothing here starts training" },
   "components/graphite/board/cards/plan/NextCard.tsx": { why: "reads one quote (quote-only) for the stills card and opens Make filled; Make shows its own price and a person presses it" },
   "components/graphite/board/cards/take/TakeCard.tsx": { why: "reads the project's checks (a GET); Retry is RetryTake's own button (priced from a quote, marked), which hands the recipe to Make to be priced again, and Release is ReleaseTake's own priced, marked button", priced: ["components/graphite/board/cards/take/RetryTake.tsx"] },
   "components/graphite/board/inspector/TakeBody.tsx": { why: "reads the project's checks (a GET) and one quote; 'Change with words · N cr' opens Make, where the press that spends is priced" },
+  "components/v12/settings/CreditsBilling.tsx": { why: "Settings › Credits & billing is display only: it reads one quote through useQuote (the engines route, a GET, for the plan cards' hero-take count; useQuote's other quote-only sources are why the scan reaches atomik and audio), and Top up opens today's top-up screen without requesting anything" },
 };
 
 /**

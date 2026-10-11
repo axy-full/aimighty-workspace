@@ -61,3 +61,29 @@ test("dispatchEvent posts the event with the bearer and answers true only for a 
   expect(await dispatchEvent(event, { env: { ...production, CRON_SECRET: undefined }, fetch: counting })).toBe(false);
   expect(posted).toBe(0);
 });
+
+test("WORKER_ORIGIN, when it is a usable origin, is where the worker is reached; otherwise APP_ORIGIN, exactly as before", async () => {
+  const event = { id: "render-ws-gen", name: EVENTS.render, data: { genId: "gen_1", kind: "image", workspaceId: "ws_1" } };
+  // Set: preferred over APP_ORIGIN, normalised to an origin; the bearer is unchanged.
+  expect(dispatchOrigin({ ...production, WORKER_ORIGIN: "http://127.0.0.1:3000/ignored/path" })).toBe("http://127.0.0.1:3000");
+  expect(dispatchOrigin({ ...production, WORKER_ORIGIN: " https://worker.example.test " })).toBe("https://worker.example.test");
+  const urls: string[] = [];
+  const spy = (async (url: string | URL | Request, init?: RequestInit) => {
+    urls.push(String(url));
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer fixture-cron-secret");
+    return new Response(null, { status: 202 });
+  }) as unknown as typeof fetch;
+  expect(await dispatchEvent(event, { env: { ...production, WORKER_ORIGIN: "http://127.0.0.1:3000" }, fetch: spy })).toBe(true);
+  expect(urls).toEqual(["http://127.0.0.1:3000/api/worker"]);
+  // Unset or empty: today's behaviour.
+  expect(dispatchOrigin(production)).toBe("https://app.example.test");
+  expect(dispatchOrigin({ ...production, WORKER_ORIGIN: "" })).toBe("https://app.example.test");
+  expect(dispatchOrigin({ VERCEL_PROJECT_PRODUCTION_URL: "app.example.test" })).toBe("https://app.example.test");
+  expect(dispatchOrigin({})).toBeNull();
+  // Invalid: ignored, never thrown, falls back to APP_ORIGIN.
+  for (const bad of ["not a url", "ftp://127.0.0.1:3000", "javascript:alert(1)", "127.0.0.1:3000", "//host"]) {
+    expect(dispatchOrigin({ ...production, WORKER_ORIGIN: bad }), bad).toBe("https://app.example.test");
+  }
+  expect(dispatchOrigin({ WORKER_ORIGIN: "nonsense" })).toBeNull();
+  expect(dispatchMode({ ...production, WORKER_ORIGIN: "nonsense" })).toBe("native");
+});

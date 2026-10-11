@@ -423,6 +423,8 @@ export type RigAgentMoneyView = {
 /** A render (or the check of its take) after the build, as the run card shows it. */
 export type RigAgentPaidStepView = {
   seq: number;
+  /** The board card this step is about (display only: it changes no price, fingerprint, total or approval). Absent in a view built without one. */
+  nodeId?: string | null;
   tool: "render" | "verify";
   title: string;
   state: RigAgentStepState;

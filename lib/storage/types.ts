@@ -86,4 +86,20 @@ export const isObjectExistsError = (error: unknown): error is ObjectExistsError 
  * would block the next checkpoint for a routine "already stored" retry.
  * Every other error keeps the wrappers' uncertainOnError: true.
  */
-export const uncertainUnlessExists = (error: unknown): boolean => !isObjectExistsError(error);
+export const uncertainUnlessExists = (error: unknown): boolean => !isObjectExistsError(error) && !isNothingWritten(error);
+
+/* A write that failed and is known to have left nothing behind: a streamed
+   multipart upload whose body failed (provider stall, over-cap, short file,
+   caller abort) before CompleteMultipartUpload was sent, and whose abort
+   succeeded. Like a precondition failure it is a certain outcome, so the
+   recovery fence must not keep it as an uncertain activity. Anything else
+   (abort failed, Complete in flight, a single PUT) stays uncertain. */
+const NOTHING_WRITTEN = Symbol.for("particl.storage.nothingWritten");
+
+export function markNothingWritten<E>(error: E): E {
+  if (typeof error === "object" && error !== null) Object.defineProperty(error, NOTHING_WRITTEN, { value: true });
+  return error;
+}
+
+export const isNothingWritten = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && (error as Record<symbol, unknown>)[NOTHING_WRITTEN] === true;

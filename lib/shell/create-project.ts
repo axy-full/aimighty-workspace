@@ -1,8 +1,11 @@
 import { newProject, type Project } from "@/lib/workbench/studio";
+import { FLAVORS } from "@/lib/v12/board/kinds";
 import type { BoardKindId } from "./screens";
 
 /** What a template or a brief hands the shell when it makes a project (Home's templates, ⌘K's "new …"). Every field is optional. */
-export type CreateSeed = { brief?: string; aspect?: string; deliverables?: string; boardKind?: BoardKindId };
+export type CreateSeed = { brief?: string; aspect?: string; deliverables?: string; boardKind?: BoardKindId;
+  /** The new interface's board kind and the rail a person edited before pressing Start (lib/v12/board/kinds.ts, stages.ts). */
+  boardFlavor?: NonNullable<Project["boardFlavor"]>; boardStages?: Project["boardStages"] };
 
 const ASPECTS: readonly string[] = ["16:9", "9:16", "1:1", "4:5"];
 export const PROJECT_NAME_MAX_LENGTH = 80;
@@ -19,5 +22,7 @@ export function seededProject(name: string, seed: CreateSeed = {}): Project {
   if (typeof seed.aspect === "string" && ASPECTS.includes(seed.aspect)) project.aspect = seed.aspect;
   if (typeof seed.deliverables === "string" && seed.deliverables.trim()) project.deliverables = seed.deliverables.slice(0, 10_000);
   if (seed.boardKind === "studio" || seed.boardKind === "ads" || seed.boardKind === "social") (project as Project & { boardKind?: BoardKindId }).boardKind = seed.boardKind;
+  if (seed.boardFlavor && FLAVORS.includes(seed.boardFlavor)) project.boardFlavor = seed.boardFlavor;
+  if (Array.isArray(seed.boardStages) && seed.boardStages.length) project.boardStages = seed.boardStages.slice(0, 24);
   return project;
 }

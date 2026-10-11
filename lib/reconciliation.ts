@@ -2,6 +2,11 @@ import type { Client } from "@libsql/client";
 import { acquireOperationLease, checkpointOperation, finishOperation, type OperationResult } from "./operationLease";
 
 export const RECONCILIATION_OPERATION = "workspace-reconciliation";
+/** How long a sweep keeps admitting work: visits get deadlineAt = start + this. */
+export const RECONCILIATION_BUDGET_MS = 140_000;
+/** The heartbeat route's ceiling: app/api/cron/sync/route.ts `maxDuration = 300`
+ *  (a route config must be a literal there; a unit spec keeps the two equal). */
+export const HEARTBEAT_MAX_DURATION_MS = 300_000;
 export type ReconciliationDependencies = {
   client: Client;
   visit: (workspaceId: string, deadlineAt: number) => Promise<{ failed: boolean; completed: number; deferred?: boolean }>;
@@ -16,7 +21,7 @@ export type ReconciliationDependencies = {
 export async function reconcileWorkspaces(deps: ReconciliationDependencies) {
   const clock = deps.clock ?? Date.now;
   const start = clock();
-  const deadlineAt = start + (deps.budgetMs ?? 140_000);
+  const deadlineAt = start + (deps.budgetMs ?? RECONCILIATION_BUDGET_MS);
   const limit = Math.max(1, Math.min(100, deps.maxWorkspaces ?? 25));
   const lease = await acquireOperationLease(deps.client, RECONCILIATION_OPERATION, 330_000, start);
   if (!lease) return { ok: true, skipped: "already_running" as const };
