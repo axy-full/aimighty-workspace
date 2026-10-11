@@ -40,6 +40,23 @@ export default function PrivacyPage() {
           Liveblocks carries live team editing on a shared board.
         </p>
       </P>
+      <P title="AI services">
+        <p>
+          To make a take or answer Atomik, the work you send goes to the service
+          that runs it, under its own terms, and nothing else does:
+        </p>
+        <ul className="flex flex-col gap-1">
+          <li><span className="text-ink">Anthropic</span>: your words to Atomik, and files attached to them.</li>
+          <li><span className="text-ink">OpenAI</span>: prompts and reference images, for stills and some of Atomik&rsquo;s writing.</li>
+          <li><span className="text-ink">Google</span>: prompts and reference images, for stills and some of Atomik&rsquo;s writing.</li>
+          <li><span className="text-ink">xAI</span>: prompts and reference images, for stills, video, voice and some of Atomik&rsquo;s writing.</li>
+          <li><span className="text-ink">BytePlus</span>: prompts, reference images and clips, for video.</li>
+          <li><span className="text-ink">fal</span>: prompts, reference images and clips, for video, identity renders and upscales.</li>
+          <li><span className="text-ink">Luma, through fal</span>: a finished clip, to re-cut to another shape.</li>
+          <li><span className="text-ink">Higgsfield, by its API</span>: prompts and photos, for identities and stills.</li>
+          <li><span className="text-ink">ElevenLabs</span>: scripts and audio, for speech, sound effects, music and dubbing.</li>
+        </ul>
+      </P>
       <P title="Who sees it">
         <p>
           Published project bibles and shared workspace assets are visible to
@@ -48,9 +65,7 @@ export default function PrivacyPage() {
           team and the ledger; the owner alone deletes the workspace or exports
           it. The platform&rsquo;s desk sees each workspace&rsquo;s spend,
           balance, engine health and any report about it, and can suspend a
-          workspace; it does not browse a workspace&rsquo;s takes. The engines
-          receive the prompt and the references needed to render one take, under
-          their own terms, and nothing else.
+          workspace; it does not browse a workspace&rsquo;s takes.
         </p>
       </P>
       <P title="How long">
