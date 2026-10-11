@@ -16,9 +16,9 @@ test("what the person attached alone is fine", () => {
 test("the cast's stills count against the ceiling too", () => {
   /* THE BUG: references were checked when they arrived from the browser,
      before expandCast pushes a still per cited name. Two attached images on
-     a two-image model plus "@Mara rides @Mule" left with four and nothing
+     a two-image model plus "@Keeper rides @Mule" left with four and nothing
      said so. */
-  const problem = ceilingProblem([img, img, img, img], kling, ["Mara", "Mule"]);
+  const problem = ceilingProblem([img, img, img, img], kling, ["Keeper", "Mule"]);
   expect(problem).toContain("at most 2");
   expect(problem).toContain("(4 attached)");
 });
@@ -26,8 +26,8 @@ test("the cast's stills count against the ceiling too", () => {
 test("the message names the cast, so it accuses the right thing", () => {
   /* Without this the error tells someone they attached four files when they
      attached two. */
-  expect(ceilingProblem([img, img, img], kling, ["Mara"])).toContain("@Mara");
-  expect(ceilingProblem([img, img, img], kling, ["Mara"])).toContain("attach their stills too");
+  expect(ceilingProblem([img, img, img], kling, ["Keeper"])).toContain("@Keeper");
+  expect(ceilingProblem([img, img, img], kling, ["Keeper"])).toContain("attach their stills too");
 });
 
 test("with nothing cited the message does not mention the cast", () => {
@@ -39,14 +39,14 @@ test("with nothing cited the message does not mention the cast", () => {
 test("a model that takes no reference images refuses the first one", () => {
   /* maxReferenceImages: 0 is real — a cited cast member alone would have
      pushed an image onto an engine that accepts none. */
-  expect(ceilingProblem([img], none, ["Mara"])).toContain("at most 0");
+  expect(ceilingProblem([img], none, ["Keeper"])).toContain("at most 0");
   expect(ceilingProblem([], none)).toBeNull();
 });
 
 test("frames and references still cannot be mixed once the cast has added one", () => {
   /* A cited name turns a clean first-frame render into a mixed one, which
      ModelArk treats as a different mode entirely. */
-  expect(ceilingProblem([first, img], seedance, ["Mara"])).toContain("can't be mixed");
+  expect(ceilingProblem([first, img], seedance, ["Keeper"])).toContain("can't be mixed");
   expect(ceilingProblem([first, last], seedance)).toBeNull();
 });
 
@@ -55,5 +55,5 @@ test("videos are not counted here, because the cast never adds one", () => {
 });
 
 test("exactly at the ceiling is not over it", () => {
-  expect(ceilingProblem([img, img], kling, ["Mara"])).toBeNull();
+  expect(ceilingProblem([img, img], kling, ["Keeper"])).toBeNull();
 });

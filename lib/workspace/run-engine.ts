@@ -40,6 +40,7 @@ import type {
   PlanContext,
   RunIO,
 } from "./plan-types";
+import { cinemaPriceWords } from "../cinemaHold";
 
 /** Upper bound of the visual pacing for instantaneous read/compute steps. */
 export const VISUAL_PACING_MS = 300;
@@ -112,6 +113,11 @@ export type ApproveResult =
 export function formatCredits(credits: number, unit: LiveQuote["unit"]) {
   const n = credits.toLocaleString("en-US");
   return unit === "cr" ? `${n} cr` : `${n} ${credits === 1 ? "credit" : "credits"}`;
+}
+
+/** A quote's price as its gate says it: the figure, or with a held part "about N cr, at most M cr" (lib/cinemaHold.ts). */
+export function quotePrice(quote: Pick<LiveQuote, "credits" | "unit" | "ceiling">): string {
+  return quote.ceiling != null && quote.unit === "cr" ? cinemaPriceWords(quote.credits, quote.ceiling) : formatCredits(quote.credits, quote.unit);
 }
 
 /* ---------------------------------------------------------------- tokens */
@@ -341,13 +347,18 @@ export class AtomikRunEngine {
         throw new Error("The quote came back without a credit price. Nothing was dispatched.");
       if (typeof part.fingerprint !== "string" || part.fingerprint.length === 0)
         throw new Error("The quote came back without a fingerprint. Nothing was dispatched.");
+      if (part.ceiling != null && !(Number.isInteger(part.ceiling) && part.ceiling >= part.credits))
+        throw new Error("The quote came back without a credit price. Nothing was dispatched.");
     }
     const credits = raw.parts.reduce((sum, part) => sum + part.credits, 0);
+    /* A part that holds its ceiling (Cinema Studio) is approved at its hold: the card says both figures. */
+    const held = raw.parts.some((part) => part.ceiling != null);
     const cap = quotedAt + QUOTE_MAX_AGE_MS;
     return {
       unit: raw.unit,
       parts: raw.parts,
       credits,
+      ...(held ? { ceiling: raw.parts.reduce((sum, part) => sum + (part.ceiling ?? part.credits), 0) } : {}),
       quotedAt,
       expiresAt: raw.expiresAt == null ? cap : Math.min(raw.expiresAt, cap),
       inputKey,
@@ -367,8 +378,8 @@ export class AtomikRunEngine {
     try {
       const quote = await this.fetchQuote(gate, ctx);
       if (!this.current(runId)) return false;
-      const before = previous ? formatCredits(previous.credits, previous.unit) : null;
-      const after = formatCredits(quote.credits, quote.unit);
+      const before = previous ? quotePrice(previous) : null;
+      const after = quotePrice(quote);
       const notice =
         before === null
           ? null

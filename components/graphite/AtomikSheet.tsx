@@ -2,7 +2,7 @@
 import { useAtomik } from "@/lib/workspace/atomik-host";
 import { agentStateLabel, priceText, runButton, stepRows } from "@/lib/workspace/atomik-view";
 import { pageDef } from "@/lib/workspace/pages";
-import { formatCredits } from "@/lib/workspace/run-engine";
+import { quotePrice } from "@/lib/workspace/run-engine";
 import { useWorkspace } from "@/lib/workspace/state";
 import { atomikSheetRuns } from "@/lib/shell/atomik-sheet";
 import { useShell } from "@/lib/shell/state";
@@ -36,7 +36,7 @@ export function AtomikSheet() {
   const openElsewhere = elsewhere?.open ?? null;
   const waiting = Boolean(gateRun) && (capability.owner || !runsOnOwnerAccount(gateRun ? atomik.plan(gateRun.page) : null));
   const quote = gateRun?.quote ?? null;
-  const gatePrice = quote ? formatCredits(quote.credits, quote.unit) : null;
+  const gatePrice = quote ? quotePrice(quote) : null;
 
   return (
     <div className="gx-veil" onClick={close} data-testid="atomik-veil">

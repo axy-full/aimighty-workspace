@@ -101,7 +101,7 @@ async function setup(name: string) {
     "next/server": { after: forbidDispatch },
   });
   const localFiles: string[] = [];
-  async function video(origin: "upload" | "generation" = "upload", bytes = readFileSync("public/fixtures/clip.mp4"), suffix = ""): Promise<VideoSource> {
+  async function video(origin: "upload" | "generation" = "upload", bytes = readFileSync("public/fixtures/clip-6s.mp4"), suffix = ""): Promise<VideoSource> {
     const id = `${name}_${origin}${suffix}`;
     if (origin === "upload") {
       const stored = await storage.storeUpload(id, "mp4", bytes, "video/mp4");
@@ -149,7 +149,7 @@ test("Genjutsu quote measures retained upload and generated originals instead of
     const source = await f.video(origin);
     const body = f.body(source, { duration: 0.01, ratio: "1:1", sourceSeconds: 0.01, genjutsuSource: { width: 1, height: 1, seconds: 0.01 }, higgsfieldVendorCostUsd: 0, higgsfieldCredentialFingerprint: "client-spoof" });
     const quote = prepared(await f.admission.prepareGeneration(body, actor));
-    expect(quote.compiled.params).toMatchObject({ ...source, sourceSeconds: 10, duration: 10, higgsfieldVendorCostUsd: 0.75, higgsfieldCredentialFingerprint: f.state.credential });
+    expect(quote.compiled.params).toMatchObject({ ...source, sourceSeconds: 6.033333333333333, duration: 6.033333333333333, higgsfieldVendorCostUsd: 0.75, higgsfieldCredentialFingerprint: f.state.credential });
     expect(quote.compiled.source).toMatchObject({ id: Object.values(source)[0], kind: "video", fromGeneration: origin === "generation" });
     expect(quote.compiled.projectId).toBe("project");
     expect(quote.request.workbenchProjectId).toBe("draft");
@@ -164,19 +164,19 @@ test("Genjutsu quote measures retained upload and generated originals instead of
   expect(f.state.dispatches).toEqual([]);
 }));
 
-test("Genjutsu uses inspected 4–30 second boundaries and refuses a short or unreadable original before pricing", async () => fixture("genjutsu_duration", async f => {
+test("Genjutsu uses inspected 4–8 second boundaries and refuses a short or unreadable original before pricing", async () => fixture("genjutsu_duration", async f => {
   const source = await f.video(), body = f.body(source);
-  for (const seconds of [4, 30]) {
+  for (const seconds of [4, 8]) {
     f.state.metadata = { width: 640, height: 360, seconds, firstTimestamp: 0 };
     const quote = prepared(await f.admission.prepareGeneration(body, actor));
     expect(quote.compiled.params).toMatchObject({ sourceSeconds: seconds, duration: seconds });
   }
-  for (const seconds of [0, 1, 3.999, 30.001, Infinity, NaN]) {
+  for (const seconds of [0, 1, 3.999, 8.001, 30, Infinity, NaN]) {
     f.state.metadata = { width: 640, height: 360, seconds, firstTimestamp: 0 };
     expect(await f.admission.prepareGeneration(body, actor), String(seconds)).toMatchObject({ ok: false, status: 400 });
   }
   f.state.metadata = { width: 640, height: 360, seconds: 3, firstTimestamp: 0 };
-  expect(await f.admission.prepareGeneration(body, actor)).toMatchObject({ body: { error: "Transform needs an original video between 4 and 30 seconds." } });
+  expect(await f.admission.prepareGeneration(body, actor)).toMatchObject({ body: { error: "Transform needs an original video between 4 and 8 seconds." } });
   f.state.metadata = null;
   // A real 1.5 s original is measured and refused, whatever the saved row claims.
   const short = await f.video("generation", readFileSync("tests/fixtures/astra-source.mp4"));
@@ -307,5 +307,25 @@ test("1080p output is offered and priced only by the live provider estimate for 
   f.state.estimateError = new MarketingError("Price unavailable", 503, "price_unavailable");
   expect(await f.admission.prepareGeneration(f.body(source, { references: refs, resolution: "1080p" }), actor)).toMatchObject({ ok: false, status: 503 });
   expect(await f.outputs()).toEqual([]);
+  expect(f.state.dispatches).toEqual([]);
+}));
+
+/* Owner, 6 October 2026: a source clip is 4 to 8 s for now, and 1080p stays allowed. The server says so at the quote and at the send. */
+test("an original longer than 8 s is refused at the quote and again at the send, in plain words, before anything is held or dispatched", async () => fixture("genjutsu_cap8", async f => {
+  const source = await f.video(), refs = [await f.image(1)];
+  f.state.metadata = { width: 1280, height: 720, seconds: 8, firstTimestamp: 0 };
+  const body = f.body(source, { references: refs, resolution: "1080p" });
+  const quote = prepared(await f.admission.prepareGeneration(body, actor));
+  expect(quote.compiled.params).toMatchObject({ resolution: "1080p", sourceSeconds: 8 });
+  const reason = "Transform needs an original video between 4 and 8 seconds.";
+  /* The quote of a longer clip. */
+  f.state.metadata = { width: 1280, height: 720, seconds: 8.5, firstTimestamp: 0 };
+  expect(await f.admission.prepareGeneration(body, actor)).toMatchObject({ ok: false, status: 400, body: { error: reason } });
+  /* The send of a quote made on an 8 s clip, when the stored original now measures longer: refused, nothing held, nothing dispatched. */
+  const response = await f.post(approved(body, quote), "genjutsu-cap8-send");
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({ error: reason });
+  expect(await f.outputs()).toEqual([]);
+  expect(await f.meters()).toEqual([]);
   expect(f.state.dispatches).toEqual([]);
 }));

@@ -75,9 +75,9 @@ test("what stays, stays offered: Cinema Studio 4.0, Motion Transfer, Object Swap
   expect(retiredReason(null)).toBeNull();
 });
 
-test("the offer lists filter on the flag: the engines route and the palette", () => {
+test("the offer lists filter on the flag: the engines route; ⌘K lists no models at all (the design's search has none)", () => {
   expect(source("app/api/engines/route.ts")).toMatch(/models: offeredModels\(\)\.filter\(/);
-  expect(source("components/graphite/Palette.tsx")).toMatch(/MODELS\.filter\(\(m\) => isOffered\(m\) && !m\.hidden\)/);
+  expect(source("components/graphite/Palette.tsx")).not.toMatch(/MODELS/);
 });
 
 test("an identity still reads Identity still · Standard, · 2 and · Cinema, everywhere a name is made", () => {
@@ -104,7 +104,7 @@ test("connected-catalogue ids on stored rows read as what they made, from the ea
   const cases: [string, string][] = [
     ["soul_2", "Identity still (earlier account)"], ["soul_v2", "Identity still (earlier account)"],
     ["text2image_soul_v2", "Identity still (earlier account)"], ["soul_cinematic", "Identity still (earlier account)"],
-    ["marketing_studio_image", "Marketing image (earlier account)"], ["ms_image", "Marketing image (earlier account)"],
+    ["marketing_studio_image", "Product image (earlier account)"], ["ms_image", "Product image (earlier account)"],
     ["gpt_image_2_5", "Image (earlier account)"], ["cinematic_studio_2_5", "Image (earlier account)"],
     ["veo3_1", "Video (earlier account)"], ["veo3_1_lite", "Video (earlier account)"], ["cinematic_studio_video", "Video (earlier account)"],
     ["cinematic_studio_3_0", "Video (earlier account)"], ["seed_audio", "Audio (earlier account)"],

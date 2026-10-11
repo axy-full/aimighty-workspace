@@ -3,7 +3,6 @@ import type { GenPreset } from "@/lib/shell/assets";
 import {
   ACCOUNT_RETIRED, ALTERNATIVE_LABEL, HISTORY_KEPT, OWNER_RUNS, alternativePrice, ownerRunEyebrow, type OwnerRunSurface,
 } from "@/lib/shell/connected-capability";
-import { sendGenPreset } from "@/lib/shell/gen-preset";
 import { useStudioAlternative } from "@/lib/shell/use-studio-alternative";
 import { useShell } from "@/lib/shell/state";
 import { Glyph } from "./icons";
@@ -11,11 +10,10 @@ import { Glyph } from "./icons";
 /**
  * Gen, opened on an output (and optionally a prompt and the engine a card
  * priced), on this workspace's credits: the preset goes through Gen's one
- * letterbox (lib/shell/gen-preset), then Gen opens and applies it.
+ * letterbox (lib/shell/gen-preset), then Make opens and applies it.
  */
 export function openGenOn(shell: ReturnType<typeof useShell>, preset: GenPreset) {
-  sendGenPreset({ ...preset, billing: "workspace" });
-  shell.goGen();
+  shell.openMake({ ...preset, billing: "workspace" });
 }
 
 /**

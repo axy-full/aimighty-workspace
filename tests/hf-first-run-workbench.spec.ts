@@ -1,9 +1,9 @@
 import { test, expect, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
-import { newProject, type Project } from "../lib/workbench/studio";
-import { DESKTOP, PHONE, forbidPaidWork, generation, mockLibrary, mockMedia } from "./helpers/workspaceFixtures";
+import { DESKTOP, PHONE, forbidPaidWork } from "./helpers/workspaceFixtures";
 import { smallTargets, smallText } from "./phoneFloors";
-import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
 
 /**
  * Studio's first run (idea 10). With no project open, a Studio stage used to
@@ -23,6 +23,12 @@ import { closeSuitesMenu, openSuitesMenu } from "./helpers/suitesMenu";
  * the test; the only engine is the mocked one, and nothing here reaches it.
  */
 const SIZES = [...PHONE, ...DESKTOP];
+/* Release 1: Studio's overview and its stage pages are gone. With no project, the board's address shows this same first-run card (screens.tsx ›
+   `board-no-project`: New project, Explore the starter production); Home carries its own (demo-s02-home-workbench) and the phone's Home starts a
+   project too (r1-phone-start-workbench). So these tests open the board of an empty workspace, on a desktop; the phone app draws Home and the
+   Record, not this card. Studio's overview, its "Up next" and its recent-projects list were deleted with the page, and with them the tests that
+   only read them. What stays is what the card owes: one project from one press, a starter that costs nothing, and a failure said in words. */
+test.beforeEach(async ({ page: _page }, info) => { test.skip(isCompact(info), "the phone app has no first-run card: its Home starts a project (r1-phone-start-workbench) and its Record is the board's address (demo-s10-phone-record)"); });
 
 async function open(page: Page, path: string) {
   await signInLocally(page.request);
@@ -91,59 +97,10 @@ async function floors(page: Page, scope: Locator, info: TestInfo) {
   }
 }
 
-test("with no project open, every Studio stage offers New project, the starter and the four steps — and the card holds the floors", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?suite=studio&page=brief&sp=brief");
-  const card = page.getByTestId("first-run");
-  await expect(card).toBeVisible({ timeout: 60_000 });
-  await expect(card).toHaveAttribute("data-stage", "brief");
-  await expect(page.getByTestId("brief-no-project")).toHaveText("Open or create a project to write its script.");
-  await expect(card.getByTestId("first-run-new")).toHaveText("New project");
-  await expect(card.getByTestId("first-run-starter")).toHaveText("Explore the starter production");
-  await expect(card.getByTestId("first-run-note")).toContainText("Nothing is generated or charged.");
-  const steps = card.getByTestId("first-run-steps").getByRole("button");
-  await expect(steps).toHaveCount(4);
-  expect(await steps.locator(".gx-first-step-label").allTextContents()).toEqual(["Brief", "Beats", "Boards", "Takes"]);
-  await expect(card.getByTestId("first-run-step-brief")).toHaveAttribute("aria-current", "step");
-  await expect(card.getByTestId("recent-projects")).toHaveCount(0);
-  await floors(page, card, info);
-  await clearsTabBar(page, card.getByTestId("first-run-step-takes"));
-
-  /* Each step opens its stage, which shows the same card with its own sentence and its step lit. */
-  for (const [id, title, lead] of [
-    ["beats", "Beats & Shots", "Open or create a project to break its script into beats."],
-    ["boards", "Storyboards", "Open or create a project to storyboard it."],
-    ["takes", "Takes", "Open or create a project to see its takes."],
-  ] as const) {
-    await page.getByTestId(`first-run-step-${id}`).click();
-    await expect(page.getByTestId("page-title")).toHaveText(title);
-    await expect(page.getByTestId("first-run")).toHaveAttribute("data-stage", id);
-    await expect(page.getByTestId(`${id}-no-project`)).toHaveText(lead);
-    await expect(page.getByTestId(`first-run-step-${id}`)).toHaveAttribute("aria-current", "step");
-  }
-  /* The stages off the four steps show it too; those whose bodies are tools keep them, under the card. */
-  for (const [id, page_, lead] of [
-    ["environment", "boards", "Open or create a project to build its world."],
-    ["cast", "cast", "Open or create a project to cast it."],
-    ["rig", "rig", "Open or create a project to use Rig."],
-    ["astra", "astra", "Open or create a project to use Astra 3D."],
-    ["edit", "edit", "Open or create a project to use Edit & Sound."],
-    ["deliver", "deliver", "Open or create a project to use Deliver."],
-  ] as const) {
-    await page.goto(`/suites?suite=studio&page=${page_}&sp=${id}`);
-    await expect(page.getByTestId(`${id}-no-project`)).toHaveText(lead, { timeout: 30_000 });
-    await expect(page.getByTestId("first-run")).toHaveAttribute("data-stage", id);
-    await expect(page.getByTestId("first-run").locator('[aria-current="step"]')).toHaveCount(0);
-  }
-  /* The Rig's own list is still there under the card, saying the same. */
-  await page.goto("/suites?suite=studio&page=rig&sp=rig");
-  await expect(page.getByTestId("rig-list")).toContainText("Open or create a project to see its shots.", { timeout: 30_000 });
-  expect(errors).toEqual([]);
-});
 
 test("New project on the card is the switcher's own create: a double press makes one project, and it opens", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?suite=studio&page=brief&sp=brief");
+  const errors = await open(page, "/suites?view=board");
   const creates: string[] = [];
   page.on("request", (request) => {
     if (request.method() === "PUT" && request.url().includes("/api/workbench/projects") && (request.postDataJSON() as { revision?: number } | null)?.revision === 0) creates.push(request.url());
@@ -152,7 +109,6 @@ test("New project on the card is the switcher's own create: a double press makes
   const form = page.getByTestId("first-run-new-form");
   await expect(form).toBeVisible();
   await expect(page.getByTestId("first-run-new-name")).toBeFocused();
-  if (PHONE.includes(info.project.name)) expect(await smallTargets(page, '[data-testid="first-run-new-form"]'), "form targets under 44×44").toEqual([]);
   /* Cancel puts the button back; nothing was made. */
   await page.getByTestId("first-run-new-cancel").click();
   await expect(page.getByTestId("first-run-new")).toHaveText("New project");
@@ -160,29 +116,26 @@ test("New project on the card is the switcher's own create: a double press makes
   /* The field stops at the longest name a project saves with (100; it allowed 120 and a longer name was refused after Create). */
   await page.getByTestId("first-run-new-name").fill("x".repeat(130));
   await expect(page.getByTestId("first-run-new-name")).toHaveValue("x".repeat(100));
-  /* A name that long: the switcher's pill ends it in an ellipsis rather than spilling. */
   const name = `Harbour ${Date.now().toString(36)} — the long lens series, shot at dusk on the frozen water with the crew`.slice(0, 100);
   await page.getByTestId("first-run-new-name").fill(name);
   await page.getByTestId("first-run-new-create").dblclick();
-  /* The toast shows for 2.6 s from the create; the project and Brief load after it, seconds later on a busy server. */
+  /* The toast shows for 2.6 s from the create; the project loads after it, seconds later on a busy server. */
   await expect(page.getByTestId("toast")).toContainText(`${name} is open`, { timeout: 30_000 });
-  await expect(page.getByTestId("project-name")).toHaveText(name, { timeout: 30_000 });
+  await expect(projectName(page)).toHaveText(name, { timeout: 30_000 });
   await expect(page.getByTestId("first-run")).toHaveCount(0);
-  await expect(page.getByTestId("brief-stage")).toBeVisible();
+  /* The project opens on its board. */
+  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
   expect(creates, "one press of Create, one project").toHaveLength(1);
-  const pill = (await page.getByTestId("project-switcher").boundingBox())!;
-  const label = (await page.getByTestId("project-name").boundingBox())!;
-  expect(label.y + label.height, "the name stays inside the pill").toBeLessThanOrEqual(pill.y + pill.height + 0.5);
-  expect(label.x + label.width, "the name stays inside the pill").toBeLessThanOrEqual(pill.x + pill.width + 0.5);
-  await page.getByTestId("project-switcher").click();
-  await expect(page.getByRole("listbox", { name: "Projects" }).getByRole("option")).toHaveCount(1);
-  await expect(page.getByRole("listbox", { name: "Projects" }).getByRole("option", { name: new RegExp(name) })).toBeVisible();
+  /* The header's project segment keeps the long name inside itself. */
+  const segment = (await page.locator('[data-suite-tab="project"]').boundingBox())!;
+  const label = (await page.locator('[data-suite-tab="project"] .gx-seg-label').boundingBox())!;
+  expect(label.x + label.width, "the name stays inside the segment").toBeLessThanOrEqual(segment.x + segment.width + 0.5);
   expect(errors).toEqual([]);
 });
 
 test("Explore the starter production opens it with its sample takes, charges nothing, and a second press opens the same one", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?suite=studio&page=brief&sp=brief");
+  const errors = await open(page, "/suites?view=board");
   const starter = page.getByTestId("first-run-starter");
   await expect(starter).toBeVisible({ timeout: 60_000 });
   const credits = (await page.getByTestId("workspace-credits").textContent())!;
@@ -194,10 +147,10 @@ test("Explore the starter production opens it with its sample takes, charges not
   await starter.dblclick();
   /* As above: read the 2.6 s toast before waiting for the production to load. */
   await expect(page.getByTestId("toast")).toContainText("Its takes are samples: nothing was generated or charged.", { timeout: 60_000 });
-  await expect(page.getByTestId("project-name")).toHaveText("Starter production", { timeout: 60_000 });
+  await expect(projectName(page)).toHaveText("Starter production", { timeout: 60_000 });
   expect(presses).toHaveLength(1);
   await expect(page.getByTestId("first-run")).toHaveCount(0);
-  await expect(page.getByTestId("brief-stage")).toBeVisible();
+  await expect(page.getByTestId("board")).toBeVisible({ timeout: 60_000 });
 
   /* The server's side: a lost reply retried opens the same draft and seeds nothing; one starter in the workspace; no take cost anything. */
   const me = await page.request.get("/api/me").then((r) => r.json()) as { id: string; workspace: { id: string } };
@@ -226,26 +179,12 @@ test("Explore the starter production opens it with its sample takes, charges not
   expect(played.headers()["content-type"]).toContain("video/mp4");
   await expect(page.getByTestId("workspace-credits"), "no credit moved").toHaveText(credits);
 
-  /* Its Studio home: the stages it lit and its next step — the first shot still to render. */
-  if (DESKTOP.includes(info.project.name)) await page.getByTestId("brand-home").click();
-  else if (info.project.name === "workbench-844x390") await page.goto("/suites?suite=studio&sp=stages");
-  else { await page.getByTestId("tabbar-home").click(); await page.getByTestId("home-suite-studio").click(); }
-  const home = page.getByTestId("studio-home");
-  await expect(home).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("page-title")).toHaveText("Starter production");
-  await expect(page.getByTestId("home-up-next")).toContainText("Up next · Shot 01");
-  await expect(page.getByTestId("home-stage-takes")).toContainText("7 takes");
-  await expect(page.getByTestId("home-stage-rig")).toContainText("3 shots · 1 rendered");
-  await expect(page.getByTestId("home-stage-cast")).toContainText("1 identity · 1 element");
-  await expect(page.getByTestId("home-recent").locator(".gx-home-take")).toHaveCount(6);
-  await floors(page, home, info);
-  await clearsTabBar(page, home.locator(".gx-home-recent, .gx-home > .gx-empty").last());
   expect(errors).toEqual([]);
 });
 
 test("a starter that could not be opened says so under the button, in view above the tab bar, and the button comes back", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?suite=studio&page=brief&sp=brief");
+  const errors = await open(page, "/suites?view=board");
   await expect(page.getByTestId("first-run-starter")).toBeVisible({ timeout: 60_000 });
   let presses = 0;
   await page.route("**/api/workbench/projects", (route) => {
@@ -258,12 +197,11 @@ test("a starter that could not be opened says so under the button, in view above
   await expect(problem).toHaveText("The starter production could not be opened. Try again.");
   await expect(page.getByTestId("first-run-starter")).toHaveText("Explore the starter production");
   await expect(page.getByTestId("first-run-starter")).not.toHaveAttribute("aria-disabled", "true");
-  /* In view, and never under the phone's tab bar. */
+  /* In view. */
   await expect.poll(async () => {
     const box = (await problem.boundingBox())!;
-    const bar = await page.getByTestId("tabbar").isVisible() ? (await page.getByTestId("tabbar").boundingBox())!.y : page.viewportSize()!.height;
-    return box.y >= 0 && box.y + box.height <= bar + 0.5;
-  }, { message: "the reason is on screen above the tab bar" }).toBe(true);
+    return box.y >= 0 && box.y + box.height <= page.viewportSize()!.height + 0.5;
+  }, { message: "the reason is on screen" }).toBe(true);
   expect(await dimText(page.getByTestId("first-run")), "labels no dimmer than #7C7C84").toEqual([]);
   /* Try again is the same button: one more press, one more request. */
   await page.getByTestId("first-run-starter").click();
@@ -272,130 +210,3 @@ test("a starter that could not be opened says so under the button, in view above
   expect(errors).toEqual([]);
 });
 
-/* Three projects of this person's; the library has a take still generating. Nothing is written. */
-const PROJECTS: Record<string, Project> = {
-  "ws-home": { ...newProject("Coastal light study"), id: "ws-home", productionProjectId: "prod-home", shotMappings: {}, brief: "A fox crosses a frozen harbour at dusk", shots: [{ id: "s1", name: "The crossing", assetId: "", duration: 120, sourceIn: 0, note: "" }] },
-  "ws-market": { ...newProject("Night market"), id: "ws-market", productionProjectId: "prod-market", shotMappings: {} },
-  "ws-dunes": { ...newProject("Dune light tests"), id: "ws-dunes", productionProjectId: "prod-dunes", shotMappings: {} },
-};
-async function withProjects(page: Page) {
-  const list = [
-    { id: "ws-home", name: "Coastal light study", revision: 3, updatedAt: Date.now() - 60_000 },
-    { id: "ws-market", name: "Night market", revision: 1, updatedAt: Date.now() - 3 * 3_600_000 },
-    { id: "ws-dunes", name: "Dune light tests", revision: 1, updatedAt: Date.now() - 2 * 86_400_000 },
-  ];
-  await page.route("**/api/workbench/projects**", (route) => {
-    if (route.request().method() !== "GET") return route.fulfill({ status: 400, json: { error: "Unexpected write in a read test." } });
-    const id = new URL(route.request().url()).searchParams.get("id") ?? "ws-home";
-    return route.fulfill({ json: { projects: list, productions: [], project: PROJECTS[id] ?? null, revision: 1, shared: null } });
-  });
-  await mockMedia(page);
-  await mockLibrary(page, { uploads: [], generations: [
-    generation({ id: "gen_run", title: "Wide on the water", prompt: "Wide on the water", status: "running", storedUrl: null }),
-    generation({ id: "gen_done", title: "Close on the rope", prompt: "Close on the rope" }),
-  ] });
-}
-
-test("desktop: the mark opens the Studio home — the next step, what is generating, the other projects — with the strip and no stage spec", async ({ page }, info) => {
-  test.skip(!DESKTOP.includes(info.project.name), "the desktop's home");
-  await signInLocally(page.request);
-  await forbidPaidWork(page);
-  await withProjects(page);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?suite=studio&page=rig&sp=rig");
-  await expect(page.getByTestId("project-name")).toHaveText("Coastal light study", { timeout: 60_000 });
-  await page.getByTestId("brand-home").click();
-  const home = page.getByTestId("studio-home");
-  await expect(home).toBeVisible();
-  await expect(page.getByTestId("page-title")).toHaveText("Coastal light study");
-  await expect(page.getByTestId("home-up-next")).toContainText("Up next · Shot 01");
-  const running = page.getByTestId("home-running");
-  await expect(running.getByTestId("home-run")).toHaveCount(1);
-  await expect(running.getByTestId("home-run")).toContainText("Wide on the water");
-  await expect(running.getByTestId("home-run")).toContainText("Generating");
-  const others = home.getByTestId("recent-projects");
-  await expect(others.getByTestId("recent-project")).toHaveCount(2);
-  expect(await others.locator(".gx-recent-name").allTextContents()).toEqual(["Night market", "Dune light tests"]);
-  await expect(others.locator(".gx-recent-age").first()).toHaveText("3 hr");
-  /* The strip stays, with no stage lit; the Inspector has no stage spec to show here. */
-  const strip = page.getByRole("navigation", { name: "Pages" });
-  await expect(strip.getByRole("button")).toHaveCount(10);
-  await expect(strip.locator('[aria-current="page"]')).toHaveCount(0);
-  await expect(page.getByTestId("inspector")).toHaveCount(0);
-  await floors(page, home, info);
-  /* A take picked here opens in the Inspector. */
-  await running.getByTestId("home-run").click();
-  await expect(page.getByTestId("inspector")).toBeVisible();
-  /* A recent project opens in one click. */
-  await others.getByRole("button", { name: /Night market/ }).click();
-  await expect(page.getByTestId("project-name")).toHaveText("Night market");
-  await expect(page.getByTestId("page-title")).toHaveText("Night market");
-  /* An empty project's next step is its brief. */
-  await expect(page.getByTestId("home-up-next")).toContainText("Up next · the brief");
-  await page.getByTestId("home-open-brief").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Brief & Script");
-  expect(errors).toEqual([]);
-});
-
-test("phone: with a project, the Studio home lists what is generating and the other projects, and its last row clears the tab bar", async ({ page }, info) => {
-  test.skip(!PHONE.includes(info.project.name), "the phone's Studio grid");
-  await signInLocally(page.request);
-  await forbidPaidWork(page);
-  await withProjects(page);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/suites?suite=studio&sp=stages");
-  const home = page.getByTestId("studio-home");
-  await expect(home).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByTestId("page-title")).toHaveText("Coastal light study");
-  await expect(page.getByTestId("home-running").getByTestId("home-run")).toContainText("Wide on the water");
-  const others = home.getByTestId("recent-projects");
-  await expect(others.getByTestId("recent-project")).toHaveCount(2);
-  await floors(page, home, info);
-  await clearsTabBar(page, others.getByTestId("recent-project").last());
-  await others.getByTestId("recent-project").last().click();
-  await expect(page.getByTestId("project-name")).toHaveText("Dune light tests");
-  expect(errors).toEqual([]);
-});
-
-test("with no project, the Studio home is the first run: from the mark on a desktop, from Home › Studio on a phone", async ({ page }, info) => {
-  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
-  const errors = await open(page, "/suites?suite=studio&page=brief&sp=brief");
-  await expect(page.getByTestId("first-run")).toBeVisible({ timeout: 60_000 });
-  if (DESKTOP.includes(info.project.name)) await page.getByTestId("brand-home").click();
-  else if (info.project.name === "workbench-844x390") { await page.getByTestId("brand-home").click(); await page.getByTestId("home-suite-studio").click(); }
-  else { await page.getByTestId("tabbar-home").click(); await page.getByTestId("home-suite-studio").click(); }
-  const home = page.getByTestId("studio-home");
-  await expect(home).toBeVisible();
-  await expect(page.getByTestId("page-title")).toHaveText("Start a production");
-  const card = home.getByTestId("first-run");
-  await expect(card).toHaveAttribute("data-stage", "home");
-  await expect(card.locator('[aria-current="step"]')).toHaveCount(0);
-  await expect(home.getByTestId("home-up-next")).toHaveCount(0);
-  await floors(page, home, info);
-  await clearsTabBar(page, card.getByTestId("first-run-step-takes"));
-  await card.getByTestId("first-run-step-beats").click();
-  await expect(page.getByTestId("page-title")).toHaveText("Beats & Shots");
-  expect(errors).toEqual([]);
-});
-
-test("the card and the Studio home sit inside the stage's boundary: a throw in either is that stage's fault card, and the shell keeps working", async ({ page }, info) => {
-  test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
-  await page.addInitScript(() => { (window as unknown as { __particlCrash?: unknown[] }).__particlCrash = ["first-run", "studio-home"]; });
-  const errors = await open(page, "/suites?suite=studio&page=brief&sp=brief");
-  const fault = page.locator('[data-testid="panel-fault"][data-fault="stage:brief"]');
-  await expect(fault).toBeVisible({ timeout: 60_000 });
-  await expect(fault).toContainText("Brief & Script stopped");
-  await openSuitesMenu(page);
-  await expect(page.getByRole("tablist", { name: "Suites" })).toBeVisible();
-  await closeSuitesMenu(page);
-  await expect(page.getByTestId("project-switcher")).toBeVisible();
-  await page.goto("/suites?suite=studio&sp=stages");
-  await expect(page.locator('[data-testid="panel-fault"][data-fault="stage:stages"]')).toBeVisible();
-  /* Disarmed, Try again brings the home back. */
-  await page.evaluate(() => { (window as unknown as { __particlCrash?: unknown[] }).__particlCrash = []; });
-  await page.locator('[data-testid="panel-fault"][data-fault="stage:stages"]').getByTestId("fault-retry").click();
-  await expect(page.getByTestId("studio-home").getByTestId("first-run")).toBeVisible();
-  expect(errors, "a caught throw never reaches the window").toEqual([]);
-});

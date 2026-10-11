@@ -12,13 +12,24 @@
 import { displayModelName, getModel } from "./models";
 
 /**
- * The longest wait_for_render may hold its request open. The route ends at
- * 300 seconds (app/api/mcp/route.ts › maxDuration), and a request killed
- * there answers with a platform error page instead of a reply the client can
- * read, so the wait stops well short of it and says "call again".
+ * The longest wait_for_render may hold its request open. No request stays
+ * silent for more than 100 seconds (owner decision, docs/long-flows.md › C5:
+ * a proxy such as Cloudflare cuts a silent request there), and the route
+ * itself ends at 300 seconds (app/api/mcp/route.ts › maxDuration). A request
+ * cut off answers with an error page instead of a reply the client can read,
+ * so the wait stops well short of both and says "call again".
  */
-export const WAIT_MAX_SECONDS = 270;
-export const WAIT_DEFAULT_SECONDS = 240;
+export const WAIT_MAX_SECONDS = 85;
+export const WAIT_DEFAULT_SECONDS = 60;
+/**
+ * Within one wait: no poll starts in its last 15 seconds, and every poll is
+ * cut off at the deadline (at least 3 seconds). A poll can be slow — on
+ * success it stores the video (lib/jobs.ts) — so the deadline bounds the
+ * whole call, not just the pauses between polls.
+ */
+const LAST_POLL_BEFORE_MS = 15_000;
+const POLL_EVERY_MS = 5_000;
+const MIN_POLL_MS = 3_000;
 /** How long one wait_for_render call waits: what was asked for, within 5 seconds and WAIT_MAX_SECONDS. */
 export function waitSeconds(requested: unknown): number {
   const asked = Number(requested ?? WAIT_DEFAULT_SECONDS);
@@ -56,15 +67,36 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "prepare_shot",
+    description:
+      "Prepare a video render for a person to approve in Particl. Nothing is rendered or spent: the shot waits in " +
+      "Particl until a person opens it, sees its price and approves it, or dismisses it. Use this with a token made " +
+      "to prepare jobs; it takes the same fields as render_shot.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "The shot: subject, action, setting, camera, light, mood." },
+        project: { type: "string", description: "Project name to suggest filing it under. Optional." },
+        model: { type: "string", description: "'2.5' (default) or '2.0'." },
+        duration: { type: "number", description: "Seconds, 1 to 30. Default 5." },
+        resolution: { type: "string", description: "480p | 720p | 1080p. Default 1080p." },
+        ratio: { type: "string", description: "16:9 (default), 9:16, 1:1, 4:3, 3:4, 21:9." },
+        audio: { type: "boolean", description: "Native audio track. Default false." },
+      },
+      required: ["prompt"],
+    },
+  },
+  {
     name: "wait_for_render",
     description:
       "Wait for a render to finish and report what it cost. Returns as soon as it succeeds or " +
-      "fails, or when the timeout is reached — it keeps rendering either way.",
+      `fails, or when the timeout is reached (at most ${WAIT_MAX_SECONDS} seconds) — it keeps rendering either way. ` +
+      "A reply that starts with \"Still\" means it is still rendering: call wait_for_render again with the same id.",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "string", description: "The render id from render_shot." },
-        timeout_seconds: { type: "number", description: `How long to wait. Default ${WAIT_DEFAULT_SECONDS}, max ${WAIT_MAX_SECONDS}; if it is still rendering, call again.` },
+        timeout_seconds: { type: "number", description: `Seconds to wait. Default ${WAIT_DEFAULT_SECONDS}, max ${WAIT_MAX_SECONDS} (a longer value waits ${WAIT_MAX_SECONDS}); if it is still rendering, call again.` },
       },
       required: ["id"],
     },
@@ -149,8 +181,9 @@ function describe(g: Gen): string {
 
 /** Calls the workspace's own API as the caller, so scopes and caps still apply. */
 export function makeCaller(origin: string, authorization: string) {
-  return async function call(pathname: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) {
+  return async function call(pathname: string, init: { method?: string; body?: unknown; headers?: Record<string, string>; signal?: AbortSignal } = {}) {
     const res = await fetch(`${origin}${pathname}`, {
+      signal: init.signal,
       method: init.method ?? "GET",
       headers: {
         Authorization: authorization,
@@ -206,6 +239,14 @@ export async function runTool(
   name: string, args: Args, call: Call, origin: string, options: { credits?: boolean } = {}
 ): Promise<string> {
   switch (name) {
+    case "prepare_shot": {
+      /* Files the job for a person (POST /api/prepared-jobs, a prepare token only); nothing is priced or sent. */
+      const out = (await call("/api/prepared-jobs", { method: "POST", body: {
+        prompt: args.prompt, project: args.project, model: args.model, duration: args.duration,
+        resolution: args.resolution, ratio: args.ratio, audio: args.audio,
+      } })) as { job: { id: string } };
+      return `Prepared ${out.job.id}. It waits in Particl › Settings › Connections until a person opens it in Make, sees its price and approves it, or dismisses it. Nothing was rendered or spent.`;
+    }
     case "render_shot": {
       const project = await resolveProject(call, args.project as string | undefined, "spend");
       const model = String(args.model ?? "2.5").includes("2.0")
@@ -267,7 +308,16 @@ export async function runTool(
       const started = Date.now(), deadline = started + timeout;
       let last: Gen | null = null;
       for (;;) {
-        const { generation } = (await call(`/api/jobs/${encodeURIComponent(String(args.id))}`)) as { generation: Gen };
+        /* Each poll is cut off at the deadline; a poll cut off is "still rendering", never an error. */
+        const cutoff = new AbortController();
+        const timer = setTimeout(() => cutoff.abort(new Error("The wait reached its deadline.")), Math.max(MIN_POLL_MS, deadline - Date.now()));
+        let generation: Gen;
+        try {
+          ({ generation } = (await call(`/api/jobs/${encodeURIComponent(String(args.id))}`, { signal: cutoff.signal })) as { generation: Gen });
+        } catch (error) {
+          if (cutoff.signal.aborted) break;
+          throw error;
+        } finally { clearTimeout(timer); }
         last = generation;
         if (generation.status === "succeeded") {
           return (
@@ -279,13 +329,14 @@ export async function runTool(
         if (generation.status === "failed" || generation.status === "cancelled") {
           return `Render ${generation.status}.\n\n${generation.error ?? "No reason given."}`;
         }
-        /* The last pause never runs past the deadline: the reply has to leave before the route is ended. */
-        const left = deadline - Date.now();
-        if (left <= 0) break;
-        await new Promise((r) => setTimeout(r, Math.min(5000, left)));
+        /* The next poll, if it can still start 15 s before the deadline; otherwise the reply leaves now. */
+        const now = Date.now();
+        const next = Math.min(now + POLL_EVERY_MS, deadline - LAST_POLL_BEFORE_MS);
+        if (next <= now) break;
+        await new Promise((r) => setTimeout(r, next - now));
       }
       return (
-        `Still ${last?.status ?? "rendering"} after ${Math.round(timeout / 1000)}s — it hasn't failed, ` +
+        `Still ${last?.status ?? "rendering"} after ${Math.round((Date.now() - started) / 1000)}s — it hasn't failed, ` +
         `just taken longer than we waited. Call wait_for_render again with the same id.`
       );
     }

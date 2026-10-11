@@ -1,8 +1,5 @@
 import { test, expect } from "@playwright/test";
-import {
-  INITIAL_STATE, applyUrl, fromSearch, generateAvailability, go, listFor, toSearch, withLists,
-} from "../../lib/workspace/navigation";
-import { keyContextFor } from "../../lib/workspace/keys";
+import { INITIAL_STATE, applyUrl, fromSearch, toSearch } from "../../lib/workspace/navigation";
 import type { AppState, SelectableItem } from "../../lib/workspace/types";
 import { newProject, type Asset, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import { assetOrigin, cardSource, cardUsers, cardVersions } from "../../lib/workspace/rig";
@@ -16,24 +13,6 @@ import { assetOrigin, cardSource, cardUsers, cardVersions } from "../../lib/work
 const shots: SelectableItem[] = [{ id: "s1", name: "Wide", status: "ready" }, { id: "s2", name: "Close", status: "ready" }];
 const onRig = (over: Partial<AppState> = {}): AppState => ({ ...INITIAL_STATE, view: "studio", suite: "particl", page: "rig", lists: { shots, takes: [], cast: [] }, ...over });
 
-test("a picked card stays picked on the Rig through every list refresh, and Generate still asks for a shot", () => {
-  const picked = onRig({ selKind: "node", selId: "look" });
-  /* The shot list arriving (or changing) repairs shots only: the card stays. */
-  expect([withLists(picked, { shots }).selKind, withLists(picked, { shots }).selId]).toEqual(["node", "look"]);
-  expect(withLists(picked, { shots: [] }).selId).toBe("look");
-  expect(go(picked, "particl", "rig").selKind).toBe("node");
-  expect(generateAvailability(picked, true)).toEqual({ enabled: false, reason: "Select a shot to generate." });
-  /* ← and → walk shots; a card has no list to walk. */
-  expect(listFor("node", picked.lists, picked.libFilter)).toBeNull();
-  expect(keyContextFor(picked).selectionCount).toBe(0);
-  /* Leaving the Rig repairs as it always has; coming back picks a shot. */
-  const takes = go(picked, "particl", "takes");
-  expect(takes.selKind).toBe("take");
-  const back = go(go(picked, "particl", "brief"), "particl", "rig");
-  expect([back.selKind, back.selId]).toEqual(["shot", "s1"]);
-  /* A card with no id is no selection: the shot repair runs. */
-  expect(withLists(onRig({ selKind: "node", selId: null }), { shots })).toMatchObject({ selKind: "shot", selId: "s1" });
-});
 
 test("a picked card is in the URL and comes back from it; on another page the URL's card is repaired away", () => {
   const picked = onRig({ selKind: "node", selId: "look", projectId: "p1" });

@@ -7,6 +7,7 @@ import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
 import type { Asset, Project } from "@/lib/workbench/studio";
 import { refreshProjectLibrary, uploadFilesToProject, type LibraryEntry } from "@/lib/workspace/library";
 import type { useDraftEditor } from "@/lib/workspace/use-draft-editor";
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 /**
  * What every Business own-tool page shares: the project draft (the
@@ -71,7 +72,7 @@ const IMPORT_MAX = 10 * 1024 * 1024;
  * a saved project — then stored like an upload. Free: nothing is generated.
  */
 export async function importToDraft(scope: string, editor: OwnEditor, project: Project, url: string, category: "Product" | "Brand"): Promise<Asset> {
-  if (!(await editor.ensureSaved())) throw new Error("Save the project before importing an image.");
+  if (!(await editor.ensureSaved())) throw new SaveFailedError();
   const response = await fetch("/api/workbench/moleculr/import-image", {
     method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
     body: JSON.stringify({ projectId: project.id, url }), signal: AbortSignal.timeout(30_000),

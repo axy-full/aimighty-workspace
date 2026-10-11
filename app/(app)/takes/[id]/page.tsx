@@ -1,12 +1,11 @@
-"use client";
+import { followOldRoute, type RawSearch } from "@/lib/shell/old-routes.server";
 
-import { use } from "react";
-import { usePageTitle } from "@/lib/usePageTitle";
-import ProvenanceCard from "@/components/ProvenanceCard";
-
-/** What produced one take (brief 3, surface 1c). */
-export default function TakePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  usePageTitle("Take");
-  return <ProvenanceCard takeId={id} />;
+/**
+ * A take's provenance card: the board's Shots region, with the take in the Inspector.
+ * Redirected, never drawn (docs/old-shells.md): lib/shell/old-routes.ts holds where it goes. Only the page goes; its data stays.
+ */
+export const dynamic = "force-dynamic";
+export default async function Moved({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<RawSearch> }) {
+  const { id } = await params;
+  await followOldRoute(`/takes/${id}`, await searchParams);
 }

@@ -1,12 +1,11 @@
-"use client";
+import { followOldRoute, type RawSearch } from "@/lib/shell/old-routes.server";
 
-import { use } from "react";
-import { usePageTitle } from "@/lib/usePageTitle";
-import ShotBindings from "@/components/ShotBindings";
-
-/** One shot's five slots (brief 3, surface 2c). */
-export default function ShotPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  usePageTitle("Shot");
-  return <ShotBindings shotId={id} />;
+/**
+ * A shot's bindings: the board's Shots region.
+ * Redirected, never drawn (docs/old-shells.md): lib/shell/old-routes.ts holds where it goes. Only the page goes; its data stays.
+ */
+export const dynamic = "force-dynamic";
+export default async function Moved({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<RawSearch> }) {
+  const { id } = await params;
+  await followOldRoute(`/shots/${id}`, await searchParams);
 }

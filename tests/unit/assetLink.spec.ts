@@ -84,7 +84,7 @@ test("a copied link carries the workspace, the production and the take, and neve
   const href = assetLinkHref({ origin: "https://studio.example/", workspace: "ws_1", production: "prj_wb_abc", asset: "generation:gen_1" })!;
   const url = new URL(href);
   expect(url.pathname).toBe("/suites");
-  expect(Object.fromEntries(url.searchParams)).toEqual({ page: "takes", sp: "takes", ws: "ws_1", production: "prj_wb_abc", asset: "generation:gen_1" });
+  expect(Object.fromEntries(url.searchParams)).toEqual({ view: "board", region: "shots", ws: "ws_1", production: "prj_wb_abc", asset: "generation:gen_1" });
   expect(url.searchParams.has("project")).toBe(false);
   expect(readAssetLink(url.search)).toEqual({ asset: "generation:gen_1", workspace: "ws_1", production: "prj_wb_abc", project: null, broken: false });
   /* Nothing to link: no production (an unsaved project), no workspace, or not a take. */

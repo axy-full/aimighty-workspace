@@ -31,7 +31,7 @@ export const GET = withTenant(async (req: Request) => {
       {
         configured: false,
         error:
-          "Connect the identity account before discovering Marketing Studio presets.",
+          "Connect the identity account before discovering Product image presets.",
         code: "not_configured",
       },
       { status: 503, headers },
@@ -60,7 +60,7 @@ export const GET = withTenant(async (req: Request) => {
         configured: true,
         error: known
           ? error.message
-          : "Marketing Studio presets are temporarily unavailable.",
+          : "Product image presets are temporarily unavailable.",
         code:
           error instanceof MarketingError
             ? error.code

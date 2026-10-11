@@ -146,6 +146,59 @@ try {
   await app.prepare();
   const api = await context();
   assert.equal((await json(await api.get("/api/health"), 200)).mock, true);
+  /* Release 1: sign-up is by invitation unless the platform owner opens it (lead decision 36; site.openSignup, off by default). First the
+     closed server, as shipped: the form says invite-only, and a sign-up, a resend and a verification without an invitation are all refused
+     before anything is written or mailed. */
+  const closed = await json(await api.get("/api/auth/signup"), 200);
+  assert.equal(closed.open, false);
+  assert.equal(closed.inviteOnly, true);
+  for (const [route, data] of [
+    ["/api/auth/signup", body],
+    ["/api/auth/signup/resend", { email: body.email }],
+    ["/api/auth/verify", { token: "not-a-real-proof" }],
+  ]) {
+    const refused = await json(await api.post(route, { data }), 403);
+    assert.equal(refused.inviteOnly, true, route + " must be refused as invite-only");
+  }
+  assert.equal(mail.length, 0, "a refused sign-up sends no mail");
+  assert.equal((await p.execute("SELECT id FROM accounts")).rows.length, 0, "a refused sign-up writes no account");
+  const registrations = (await p.execute("SELECT name FROM sqlite_master WHERE name='signup_registrations'")).rows.length;
+  if (registrations) assert.equal((await p.execute("SELECT email FROM signup_registrations")).rows.length, 0, "a refused sign-up writes no registration");
+  // The invitation path: a signup_invites row (the way tests/helpers/workbenchLocal.ts › signInLocally files one), then sign-up with its code.
+  // It needs no mailbox round trip, makes the account and workspace at once and signs the person in; it sends no mail.
+  const signupInvite = { ...body, name: "Invited customer", email: "invited@example.test", workspace: "Invited house", code: "local-rehearsal-invite-code-0123456789" };
+  await p.execute({
+    sql: "INSERT INTO signup_invites(code,email,name,note,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",
+    args: [signupInvite.code, signupInvite.email, signupInvite.name, "Local rehearsal", "test", Date.now(), Date.now() + 3_600_000],
+  });
+  const wrongEmail = await json(await api.post("/api/auth/signup", { data: { ...signupInvite, email: "someone-else@example.test" } }), 404);
+  assert.match(wrongEmail.error, /not valid for this email/);
+  assert.equal((await p.execute("SELECT id FROM accounts")).rows.length, 0, "an invitation does not open an account for another email");
+  const invitedUser = await context();
+  const welcomed = await json(await invitedUser.post("/api/auth/signup", { data: signupInvite }), 200);
+  assert.equal(welcomed.ok, true);
+  assert.equal(welcomed.next, "/suites?view=home");
+  assert.equal((await json(await invitedUser.get("/api/workspaces"), 200)).active, welcomed.workspace.id);
+  assert.equal(mail.length, 0, "the invitation path sends no mail");
+  assert.equal(
+    (await p.execute({ sql: "SELECT used_at FROM signup_invites WHERE code=?", args: [signupInvite.code] })).rows[0].used_at != null,
+    true,
+  );
+  assert.equal(
+    (await p.execute({ sql: "SELECT plan_id FROM workspaces WHERE id=?", args: [welcomed.workspace.id] })).rows[0].plan_id,
+    "invite",
+  );
+  // A spent invitation does not make a second account.
+  await json(await (await context()).post("/api/auth/signup", { data: signupInvite }), 409);
+  assert.equal((await p.execute("SELECT id FROM accounts WHERE email='invited@example.test'")).rows.length, 1);
+  // Open sign-up and its mailbox verification are still shipped code behind the owner's switch, so the rehearsal turns the switch on in its
+  // disposable platform database for the customer below, and off again as soon as that customer is verified.
+  const openSignup = (on) => p.execute({
+    sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site',?,?,NULL)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    args: [JSON.stringify({ openSignup: on, guestHome: false, guestWorkspace: null }), Date.now()],
+  });
+  await openSignup(true);
   assert.equal((await json(await api.get("/api/auth/signup"), 200)).open, true);
   await json(await api.post("/api/auth/signup", { data: body }), 202);
   assert.equal(mail.length, 1);
@@ -184,6 +237,10 @@ try {
     verified.next,
     "/billing?plan=agency&cadence=annual&onboarding=1",
   );
+  await openSignup(false);
+  assert.equal((await json(await api.get("/api/auth/signup"), 200)).open, false);
+  await json(await api.post("/api/auth/signup", { data: { ...body, email: "after-close@example.test" } }), 403);
+  assert.equal((await p.execute("SELECT id FROM accounts WHERE email='after-close@example.test'")).rows.length, 0);
   const first = verified.workspace;
   const mine = await json(await api.get("/api/workspaces"), 200);
   assert.equal(mine.active, first.id);
@@ -898,7 +955,7 @@ try {
     "Unexpected external request attempt: " + blockedHosts.join(","),
   );
   console.log(
-    "PASS: real HTTP signup/resend/verification/session/provisioning/team acceptance from the emailed invitation link (a copied link alone was refused)/revocation/rename/workspace creation and MCP read scope. The unfunded render was held without a paid submission; after local fixture funding the first mock render completed and its retry reused the same job. Mail stayed in the local sink; no checkout or external provider was called.",
+    "PASS: sign-up refused without an invitation while open sign-up is off (signup, resend and verify all 403, nothing written or mailed), an invitation code signs a person up at once, and real HTTP open signup/resend/verification/session/provisioning/team acceptance from the emailed invitation link (a copied link alone was refused)/revocation/rename/workspace creation and MCP read scope. The unfunded render was held without a paid submission; after local fixture funding the first mock render completed and its retry reused the same job. Mail stayed in the local sink; no checkout or external provider was called.",
   );
 } catch (error) {
   code = 1;

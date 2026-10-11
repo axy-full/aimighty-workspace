@@ -275,7 +275,7 @@ function VersionView({ id, version, api, engines, onBack }: { id: string; versio
 
 /* ── Editing: the next version ─────────────────────────────────────────── */
 
-function EditSkill({ skill, engines, api, onDone, onCancel }: { skill: SkillView; engines: EngineChoice[]; api: SkillsApi; onDone: (saved: SkillView) => void; onCancel: () => void }) {
+export function EditSkill({ skill, engines, api, onDone, onCancel }: { skill: SkillView; engines: EngineChoice[]; api: SkillsApi; onDone: (saved: SkillView) => void; onCancel: () => void }) {
   const [name, setName] = useState(skill.name);
   const [slug, setSlug] = useState(skill.slug);
   const [description, setDescription] = useState(skill.description);

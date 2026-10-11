@@ -24,7 +24,7 @@
   max-width: 1104px;
   margin: auto;
   padding: 20px 32px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .commercial-header {
   border-bottom: 1px solid var(--graphite-line);
@@ -72,9 +72,9 @@
   text-align: center;
 }
 .commercial-eyebrow {
-  font: 500 11px var(--graphite-font);
+  font: 500 12px var(--graphite-font);
   letter-spacing: .12em;
-  color: var(--graphite-muted);
+  color: var(--gx-text-2);
   text-transform: uppercase;
 }
 .commercial h1 {
@@ -115,7 +115,7 @@
   color: var(--graphite-ink);
 }
 .billing-cadence button span {
-  font-size: 10px;
+  font-size: 12px;
   margin-left: 6px;
   color: var(--graphite-success);
 }
@@ -147,15 +147,15 @@
   line-height: 1.15;
 }
 .plan-card h2 small {
-  font-size: 11px;
-  color: var(--graphite-muted);
+  font-size: 12px;
+  color: var(--gx-text-2);
   font-weight: 400;
   letter-spacing: 0;
   margin-left: 6px;
 }
 .plan-billing {
-  font-size: 11px;
-  color: var(--graphite-muted);
+  font-size: 12px;
+  color: var(--gx-text-2);
   margin: 6px 0 12px;
 }
 .plan-credits {
@@ -288,7 +288,7 @@
   border-top: 1px solid var(--graphite-line);
   padding-top: 24px;
   padding-bottom: 24px;
-  color: var(--graphite-muted);
+  color: var(--gx-text-2);
   font-size: 12px;
 }
 .auth-plan-choice {

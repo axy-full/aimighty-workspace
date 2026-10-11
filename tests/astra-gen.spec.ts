@@ -4,9 +4,20 @@ import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 import { workbenchScopeFor } from "../lib/workbench/request-scope";
 
-test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one request and reuses its output", async ({
+/**
+ * Topaz Astra video upscale, end to end against the mock backend: the original clip is the source, the price on the button is
+ * the server's quote for that request and moves with the frame rate, a paid request whose reply is lost is saved before it is
+ * sent and replayed whole (same body, same key) by Recover, never sent as a second request, and the result is a new take with
+ * the original left as it was. Retargeted from the old Gen page's Astra panel (retired in Release 1) to Make › Upscale, which
+ * keeps the same claim (usePaidAction) and the same routes. The panel's quick tools are the board's (desktop); a phone's Make
+ * is the simple form and has no tool row.
+ */
+const DESKTOPS = ["customer-1440x900", "customer-1920x1080"];
+
+test("Astra upscale quotes the original clip, reprices a changed frame rate, recovers one request and reuses its output", async ({
   page,
 }, info) => {
+  test.skip(!DESKTOPS.includes(info.project.name), "Make's quick tools are the board's; a phone's Make is the simple form");
   // A compiled production server deliberately cannot provision local tenant
   // databases. Reuse a previously provisioned, isolated fixture for that run.
   const existingEmail = process.env.PW_ASTRA_EXISTING_EMAIL;
@@ -43,6 +54,7 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
   let generationId = "";
   await page.route("**/api/generate", async (route) => {
     const request = route.request();
+    if (request.method() !== "POST") return route.fallback();
     submitted.push({
       body: request.postData(),
       key: request.headers()["idempotency-key"],
@@ -50,70 +62,52 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
     const response = await route.fetch();
     expect(response.ok(), await response.text()).toBe(true);
     generationId = (await response.json()).id;
+    /* The first reply is lost after the server took the request. */
     if (submitted.length === 1) return route.abort("failed");
     return route.fulfill({ response });
   });
-  await page.goto(`/generate?mode=video&project=${draft.id}`);
-  await page.getByRole("button", { name: "Engine", exact: true }).click();
-  await page
-    .getByRole("dialog", { name: "Choose a model" })
-    .getByRole("button", { name: /Topaz Astra 2/ })
-    .click();
-  const panel = page.getByRole("region", {
-    name: "Topaz Astra 2",
-    exact: true,
-  });
-  await expect(
-    panel.getByRole("button", { name: /Review upscale cost/ }),
-  ).toBeDisabled();
-  await panel.getByLabel("Upload Astra source", { exact: true }).setInputFiles({
+  await page.goto(`/suites?project=${draft.id}&view=board&make=upscale`);
+  await expect(page.getByTestId("upscale-tool")).toBeVisible();
+  const go = page.getByTestId("upscale-go");
+  const select = page.getByTestId("upscale-select");
+  await expect(go).toBeDisabled();
+  /* The project is open and saved once the tool asks for a source: the page is hydrated and the input listens. */
+  await expect(page.getByTestId("upscale-reason")).toHaveText("Choose a picture or a clip.", { timeout: 30_000 });
+  await page.getByLabel("Upload a source").setInputFiles({
     name: "Original clip.mp4",
     mimeType: "video/mp4",
     buffer: source,
   });
-  await expect(
-    panel.getByLabel("Astra source clip", { exact: true }),
-  ).toHaveValue(/^upload:/);
-  const sourceKey = await panel
-    .getByLabel("Astra source clip", { exact: true })
-    .inputValue();
-  await panel.getByRole("button", { name: /Review upscale cost/ }).click();
-  await expect(
-    panel.getByRole("button", { name: /Upscale video.*12 cr/ }),
-  ).toBeEnabled();
+  await expect(page.getByTestId("upscale-source")).toHaveText("Original clip.mp4", { timeout: 30_000 });
+  await expect(select).toHaveValue(/^upload:/);
+  const sourceKey = await select.inputValue();
+  await expect(page.getByTestId("upscale-model")).toHaveText("Topaz Astra 2");
+  /* 30 fps, then 60: each priced by its own quote, and nothing is sent by reading either. */
+  await expect(go).toHaveText(/^Upscale · (up to )?12 cr$/, { timeout: 30_000 });
+  await expect(go).toBeEnabled();
   expect(submitted).toHaveLength(0);
-  await panel
-    .getByLabel("Astra output frame rate", { exact: true })
-    .selectOption("60");
-  await expect(
-    panel.getByRole("button", { name: /Review upscale cost/ }),
-  ).toBeEnabled();
-  await panel.getByRole("button", { name: /Review upscale cost/ }).click();
-  const primary = panel.getByRole("button", { name: /Upscale video.*23 cr/ });
-  await expect(primary).toBeEnabled();
+  await page.getByRole("radio", { name: "4K · 60 fps" }).click();
+  await expect(go).toHaveText(/^Upscale · (up to )?23 cr$/, { timeout: 30_000 });
+  await expect(go).toBeEnabled();
   await page.screenshot({ path: info.outputPath("astra-video.png") });
-  const box = await primary.boundingBox(),
+  const box = await go.boundingBox(),
     viewport = page.viewportSize()!;
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
-  await primary.click();
-  await expect(
-    panel.getByRole("button", { name: /Recover Astra upscale/ }),
-  ).toBeEnabled();
+  await go.click();
+  await expect(go).toHaveText(/^Recover upscale/);
+  await expect(go).toBeEnabled();
+  expect(submitted).toHaveLength(1);
   await page.reload();
-  await expect(
-    panel.getByLabel("Astra output frame rate", { exact: true }),
-  ).toHaveValue("60");
-  await expect(
-    panel.getByLabel("Astra output frame rate", { exact: true }),
-  ).toBeDisabled();
-  await panel.getByRole("button", { name: /Recover Astra upscale/ }).click();
-  await expect(
-    page.getByText("Astra upscale queued. Its progress is in Your takes.", {
-      exact: true,
-    }),
-  ).toBeVisible();
+  /* The saved request is what is on offer, and nothing else can be changed or sent while it is unsettled. */
+  await expect(page.getByTestId("upscale-recover")).toBeVisible();
+  await expect(page.getByTestId("upscale-select")).toBeDisabled();
+  await expect(page.getByRole("radio", { name: "4K · 60 fps" })).toBeDisabled();
+  await expect(go).toHaveText(/^Recover upscale · (up to )?23 cr$/);
+  await go.click();
+  await expect(page.getByTestId("upscale-note")).toContainText("Queued");
+  /* The same request, byte for byte and under the same key: never a second one. */
   expect(submitted).toHaveLength(2);
   expect(submitted[1]).toEqual(submitted[0]);
   const getJob = () =>
@@ -144,23 +138,9 @@ test("Astra Gen quotes the original clip, invalidates changed FPS, recovers one 
     `/api/uploads/${sourceKey.split(":")[1]}`,
   );
   expect(await original.body()).toEqual(source);
-  await page.goto(`/generate?mode=video&project=${draft.id}`);
-  const takes = page.getByRole("button", { name: /^Takes/ });
-  if (await takes.isVisible()) await takes.click();
-  await page.getByRole("region", { name: "Workspace asset library", exact: true })
-    .getByRole("group", { name: "Asset source", exact: true })
-    .getByRole("button", { name: "Generations", exact: true }).click();
-  await page
-    .locator("article")
-    .filter({
-      has: page.locator(`a[href="/api/media/${generationId}?download=1"]`),
-    })
-    .getByRole("button", { name: /^Actions for / })
-    .click();
-  await page.getByRole("menuitem", { name: "Upscale video", exact: true }).click();
-  await expect(
-    panel.getByLabel("Astra source clip", { exact: true }),
-  ).toHaveValue(`generation:${generationId}`);
+  /* The result is a take in the project, offered as a source for the next upscale. */
+  await page.goto(`/suites?project=${draft.id}&view=board&make=upscale`);
+  await expect(page.getByTestId("upscale-select").locator(`option[value="generation:${generationId}"]`)).toHaveCount(1, { timeout: 30_000 });
   expect(errors).toEqual([]);
   expect(
     await page.evaluate(

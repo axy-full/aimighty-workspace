@@ -8,6 +8,8 @@ import { WORKSPACE_TABS } from "@/lib/shell/ia";
 import { DEFAULT_ENHANCER, ENHANCER_LABEL, ENHANCER_NOTE, ENHANCER_PROVIDERS, isEnhancerProvider, type EnhancerProvider } from "@/lib/shell/enhancer";
 import { revealClear } from "@/lib/shell/reveal";
 import { useShell } from "@/lib/shell/state";
+import { signOut } from "@/lib/shell/sign-out";
+import { switchWorkspace, useSwitchState } from "@/lib/shell/switch-workspace";
 import {
   auditEntries, checkoutUrl, grantRow, packLine, packRequestLabel, planLine, requestLine, requestRows, sessionRows, statementCsvHref, statementHref, statementMonthsOf, twoStepLine, usageRows,
   type BillingPlan, type BillingSubscription, type SecurityBody, type Topups, type UsageBody,
@@ -21,7 +23,6 @@ import { labels as AUDIT_LABELS } from "@/components/management/WorkspaceAudit";
 import { leftFrom, type RateGroup, type WorkspaceReach } from "@/lib/mediaReach";
 import { RateCard, ReachPair, ReachTile, leftAt } from "@/components/commercial/MediaReach";
 import { XaiEngineRow } from "./crew/XaiEngineRow";
-import { ConnectedAccountRow } from "./ConnectedAccountRow";
 import { ConnectRow } from "./ConnectRow";
 import { ManagementDashboard } from "./ManagementDashboard";
 
@@ -68,22 +69,26 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
   const shell = useShell();
   const session = useSession();
   const scopedFetch = useScopedFetch();
-  const [busy, setBusy] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  /* A switch running, from here or the avatar menu: the workspace being switched to, while the board's last edit saves and the route answers. */
+  const sw = useSwitchState();
+  const switching = sw.phase === "idle" ? null : sw.id;
+  const busy = signingOut || switching !== null;
   const [error, setError] = useState("");
   const credits = creditsLabel(account?.credits?.balance ?? null, session.rates.unit, session.rates.creditUsd);
   const change = async (action: "switch" | "logout", id?: string) => {
     if (busy) return;
-    setBusy(true); setError("");
-    try {
-      const response = await scopedFetch(action === "switch" ? "/api/workspaces/switch" : "/api/auth/logout", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action === "switch" ? { id } : {}),
-      });
-      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Your account could not be changed. Please try again.");
-      window.location.assign(action === "switch" ? "/suites" : "/login");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Your account could not be changed. Please try again.");
-      setBusy(false);
+    setError("");
+    if (action === "logout") {
+      setSigningOut(true);
+      const why = await signOut(scopedFetch);
+      if (why) { setError(why); setSigningOut(false); }
+      return;
     }
+    if (!id) return;
+    /* The board's last edit saved first, then the route, then the shell from the top (lib/shell/switch-workspace.ts). */
+    const why = await switchWorkspace({ id, fetch: scopedFetch, go: () => window.location.assign("/suites") });
+    if (why) setError(why);
   };
   const current = account?.workspace?.id ?? session.workspace?.id ?? null;
   const others = (session.workspaces ?? []).filter((w) => w.id !== current);
@@ -114,7 +119,7 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
             <span className="gx-eyebrow">{name}{session.role ? ` · ${session.role}` : ""}</span>
             {error ? <p role="alert" style={{ margin: 0, color: "var(--gx-failed-text)" }}>{error}</p> : null}
             {others.map((w) => (
-              <button key={w.id} type="button" className="gx-rowlink" disabled={busy} onClick={() => change("switch", w.id)}><span>Switch to {w.name}</span><span aria-hidden="true" style={{ color: "var(--gx-text-3)" }}>›</span></button>
+              <button key={w.id} type="button" className="gx-rowlink" disabled={busy} aria-busy={switching === w.id || undefined} onClick={() => change("switch", w.id)} data-testid={`switch-${w.id}`}><span>{switching === w.id ? `Switching to ${w.name}…` : `Switch to ${w.name}`}</span><span aria-hidden="true" style={{ color: "var(--gx-text-3)" }}>›</span></button>
             ))}
             {session.superAdmin ? <a className="gx-rowlink" href="/admin" data-testid="platform-desk"><span>Platform desk</span><span aria-hidden="true" style={{ color: "var(--gx-text-3)" }}>›</span></a> : null}
             <button type="button" className="gx-rowlink" disabled={busy} onClick={() => change("logout")} data-testid="sign-out"><span>Sign out</span><span aria-hidden="true" style={{ color: "var(--gx-text-3)" }}>›</span></button>
@@ -341,7 +346,7 @@ function People() {
         return (
           <div className="wsx-row" key={u.id} data-testid="ws-member">
             <span className="wsx-initials" aria-hidden="true">{initials(u.name)}</span>
-            <span style={{ minWidth: 0 }}><span className="wsx-name">{u.name}</span><span className="cw-dim">{u.email} · last seen {when(u.lastSeen)} · {u.clips} {u.clips === 1 ? "clip" : "clips"}{u.disabled ? " · disabled" : ""}{u.locked ? " · locked" : ""}</span></span>
+            <span style={{ minWidth: 0 }}><span className="wsx-name">{u.name}</span><span className="cw-dim">{u.email ? `${u.email} · ` : ""}last seen {when(u.lastSeen)} · {u.clips} {u.clips === 1 ? "clip" : "clips"}{u.disabled ? " · disabled" : ""}{u.locked ? " · locked" : ""}</span></span>
             <span className="wsx-actions">
               {u.role ? <span className="gx-pill">{u.standing === "owner" ? "owner" : u.role}</span> : null}
               {roles && !fixed && u.role === "member" ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(u.id, `/api/team/${encodeURIComponent(u.id)}`, "PATCH", { role: "admin" })}>Promote</button> : null}
@@ -357,11 +362,11 @@ function People() {
       {(data?.invites ?? []).map((i) => (
         <div className="wsx-row" key={i.code} data-testid="ws-invite-row">
           <span className="wsx-initials" aria-hidden="true">…</span>
-          <span style={{ minWidth: 0 }}><span className="wsx-name">{i.name}</span><span className="cw-dim">{i.email} · invited · expires {when(i.expiresAt)}</span></span>
+          <span style={{ minWidth: 0 }}><span className="wsx-name">{i.name}</span><span className="cw-dim">{i.email ? `${i.email} · ` : ""}invited · expires {when(i.expiresAt)}</span></span>
           <span className="wsx-actions">
             <span className="gx-pill">{i.role ?? "invited"}</span>
-            {data?.mail?.configured ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}/send`, "POST", undefined, `Sent to ${i.email} again.`)}>Resend</button> : null}
-            <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}`, "DELETE", undefined, `The link for ${i.email} no longer works.`)} data-testid="ws-invite-revoke">Revoke</button>
+            {data?.mail?.configured ? <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}/send`, "POST", undefined, `Sent to ${i.email || i.name} again.`)}>Resend</button> : null}
+            <button type="button" className="gx-hbtn" disabled={busy != null} onClick={() => void act(i.code, `/api/team/invites/${encodeURIComponent(i.code)}`, "DELETE", undefined, `The link for ${i.email || i.name} no longer works.`)} data-testid="ws-invite-revoke">Revoke</button>
           </span>
         </div>
       ))}
@@ -554,7 +559,6 @@ function Usage() {
 type Keys = { keys: { name: string; label: string; does: string; set: boolean }[] };
 function Engines() {
   const session = useSession();
-  const owner = session.role === "owner";
   /* Only the house workspace is handed a dollar table (lib/houseWorkspace.ts): it is never billed in credits. */
   const house = session.rates.unit === "usd";
   const { data, error } = useRead<Keys>("/api/workspaces/keys");
@@ -571,7 +575,7 @@ function Engines() {
           </div>
         ))}
       </div>
-      <ConnectedAccountRow owner={owner} />
+      {/* No "Earlier connected account" row: off for Release 1 with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts). */}
       <XaiEngineRow />
     </>
   );

@@ -206,7 +206,7 @@
   .outlinerFooter { padding: 24px 16px 0; }
 }
 /* A touch screen at any width, and every phone: each control is a 44px target and no text is under 12px (the owner's
-   phone floors, tests/astra-phone-floors-workbench.spec.ts). The timeline's scrubber is a 44px strip, its keyframe
+   phone floors, tests/phoneFloors.ts). The timeline's scrubber is a 44px strip, its keyframe
    markers a row of 44px targets under it; the rest keeps its layout. */
 @media (max-width: 767px), (pointer: coarse) {
   .brand p, .templatePicker, .addSelect, .panelHeading > span, .subheading, .sceneItem small, .outlinerFooter, .hint, .emptyHint, .propertyHeading p, .field, .numberField, .vector legend, .colorField, .colorField code, .checkbox, .sceneSettings summary, .propertySection h3 span, .playback label, .fps, .keyButton, .keyButton span, .timelineLabels, .viewportLabel, .viewportLabel > span:last-child, .viewportHelp, .assetNotice, .segment button, .mobileTabs button, .inspectorTabs button, .assistantButton, .objectActions button, .secondaryButton, .exportActions button, .keyListRow button, .error { font-size: 12px; }
@@ -225,3 +225,8 @@
   .keyMarkers:empty { display: none; }
   .keyMarkers button { top: 0; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; }
 }
+
+/* The viewport as a board overlay hosts it (props.quiet): its own labels are the host's, and what it says reads at 12 px or more. */
+.viewportRoot[data-quiet] .viewportLabel, .viewportRoot[data-quiet] .viewportHelp { display: none; }
+.viewportRoot[data-quiet] .assetNotice { font-size: 12px; background: var(--gx-card); color: var(--gx-text); border: 1px solid var(--gx-hair); }
+.viewportRoot[data-quiet] .viewportError { background: var(--gx-card); color: var(--gx-text-2); font-size: 13px; padding: 24px; }

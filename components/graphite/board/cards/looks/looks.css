@@ -1,0 +1,23 @@
+/*
+ * A look (design/particl-graphite/README.md § 3.1 c; the master's look tile): a 10 px card, the still over black,
+ * a 28 px round tick at its top right (filled with the accent once picked), then the name (15/600) and the engine
+ * line (14, at .6). The picked look's card takes the accent border. app/graphite.css tokens only.
+ */
+.gx-look {
+  position: relative; display: flex; flex-direction: column; width: 100%; min-width: 0;
+  background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); overflow: hidden;
+}
+.gx-look[data-picked] { border-color: var(--gx-accent); }
+.gx-look-media { position: relative; width: 100%; background: #000; overflow: hidden; }
+.gx-look-media img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.gx-look-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 0 12px; text-align: center; font-size: var(--gx-fs-meta); color: var(--gx-quiet); }
+.gx-look-tick {
+  position: absolute; right: 8px; top: 8px; width: 28px; height: 28px; padding: 0; display: grid; place-items: center;
+  border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.4); background: rgba(0, 0, 0, 0.45); color: #fff; cursor: pointer;
+}
+.gx-look-tick[aria-pressed="true"] { background: var(--gx-accent); border-color: var(--gx-accent); }
+.gx-look-tick:disabled { cursor: default; }
+.gx-look-body { padding: 10px 12px 12px; min-width: 0; }
+.gx-look-name { font-size: var(--gx-fs-card); font-weight: 600; letter-spacing: -0.01em; }
+.gx-look-meta { font-size: var(--gx-fs-body); color: var(--gx-text-2); }
+@media (max-width: 767px) { .gx-look-tick { width: 44px; height: 44px; right: 4px; top: 4px; } }

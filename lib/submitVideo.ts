@@ -1,4 +1,11 @@
 import { isHiggsfieldVideoModel } from "./cinemaStudioTypes";
+import { holdBandOf } from "./cinemaHold";
+
+/* Cinema Studio holds its ceiling (lib/cinemaHold.ts), and a take of it that ends with its outcome unknown is charged
+   nothing, its hold released (owner's decision, 6 October 2026; lib/meter.ts heldSettlement). The words say so. */
+const holds = (modelId: string) => holdBandOf(modelId) > 1;
+const stillReserved = (modelId: string) => (holds(modelId) ? "the credits it holds remain reserved" : "its estimated cost remains reserved");
+const endedUnknown = (modelId: string) => (holds(modelId) ? "Nothing was charged for it, and the credits it held are back." : null);
 import { higgsfieldSubmissionRejected } from "./higgsfield";
 import { saveHiggsfieldGenerationReceipt, restoreHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import type { RenderHandle } from "./engines/types";
@@ -166,7 +173,9 @@ async function submissionFailed(
   outcome: ProviderOutcome | null = null,
 ): Promise<SubmitOutcome> {
   let retainedCost: number | null = uncertain ? null : 0;
-  if (uncertain) {
+  /* A held take (Cinema Studio) ends uncertain at nothing, as its ledger does. */
+  if (uncertain && holds(job.model.id)) retainedCost = 0;
+  else if (uncertain) {
     try {
       await platformReady();
       const reserved = (
@@ -241,7 +250,7 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
         return {
           ok: false,
           cls: "uncertain",
-          error: `The provider accepted task ${prior.taskId}, but tracking could not be restored. No additional request was sent; its estimated cost remains reserved.`,
+          error: `The provider accepted task ${prior.taskId}, but tracking could not be restored. No additional request was sent; ${stillReserved(job.model.id)}.`,
         };
       }
     }
@@ -283,7 +292,7 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
             cls: "uncertain",
             error:
               row?.error ||
-              "Submission already started. No additional request was sent. Wait for confirmation; the estimated cost remains reserved.",
+              `Submission already started. No additional request was sent. Wait for confirmation; ${stillReserved(job.model.id)}.`,
           };
     }
 
@@ -343,7 +352,7 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
       return submissionFailed(
         job,
         uncertain
-          ? `${message} The provider may already have accepted this task. It was not sent again; its estimated cost remains reserved until the provider outcome is reconciled.`
+          ? `${message} The provider may already have accepted this task. It was not sent again${endedUnknown(job.model.id) ? `. ${endedUnknown(job.model.id)}` : "; its estimated cost remains reserved until the provider outcome is reconciled."}`
           : message,
         uncertain,
         await fundedOutcome(said, job.genId, job.model.provider).catch(() => said),
@@ -367,7 +376,7 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
         return { ok: true, taskId: submitted.taskId, attempts: 1 };
       return submissionFailed(
         job,
-        `The provider accepted task ${submitted.taskId}, but its tracking could not be saved. No additional request was sent; its estimated cost remains reserved. Keep this task ID for support to recover the result.`,
+        `The provider accepted task ${submitted.taskId}, but its tracking could not be saved. No additional request was sent${endedUnknown(job.model.id) ? `. ${endedUnknown(job.model.id)}` : "; its estimated cost remains reserved."} Keep this task ID for support to recover the result.`,
         true,
       );
     }

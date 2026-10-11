@@ -40,52 +40,56 @@ async function fixture(page: Page, superAdmin = true) {
     if (route.request().method() === 'POST') throw new Error('Verification must not start training or generation.');
     return route.fallback();
   });
-  const card = () => page.locator('.management-card').filter({has:page.getByRole('heading',{name:'Identity engine',exact:true})});
-  return { card, checks:()=>checks, reply:(value:unknown,code=200)=>{result=value;status=code;}, unavailable:()=>{saved=false;} };
+  return { scope, checks:()=>checks, reply:(value:unknown,code=200)=>{result=value;status=code;}, unavailable:()=>{saved=false;} };
 }
 
-test('platform management verifies manually with retail credit estimates and safe error results', async ({page},info) => {
-  const f = await fixture(page);
-  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('/settings#engines');
-  const card=f.card(), verify=card.getByRole('button',{name:'Verify connection',exact:true});
-  await expect(verify).toBeEnabled();
-  await expect(card).toContainText('No training or generation credits are spent.');
-  await expect(card.getByRole('textbox')).toHaveCount(0);
-  expect(f.checks()).toBe(0);
-  f.reply({...verified,providerReferenceId:'private-reference-not-for-ui',credentials:'private-key-not-for-ui'});
-  expect((await verify.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  await verify.click();
-  await expect(card.getByLabel('Identity account verification result')).toContainText('Authentication verified');
-  await expect(card).toContainText('720p: 3 credits estimated');
-  await expect(card).toContainText('1080p: 6 credits estimated');
-  await expect(card).not.toContainText('private-reference-not-for-ui');
-  await expect(card).not.toContainText('private-key-not-for-ui');
-  await expect(card).not.toContainText('$');
-  expect(f.checks()).toBe(1);
-  await card.scrollIntoViewIfNeeded();
-  await page.screenshot({path:info.outputPath('higgsfield-verification-success.png'),animations:'disabled'});
-  f.reply({configured:true,auth:'rejected',readyIdentityAvailable:false,error:'authentication_rejected',estimates:{'720p':{status:'skipped',error:'authentication_rejected'},'1080p':{status:'skipped',error:'authentication_rejected'}}});
-  await verify.click();
-  await expect(card.getByRole('alert')).toContainText('Authentication rejected');
-  await expect(card).not.toContainText('3 credits estimated');
-  f.reply({error:'Too many connection checks. Try again later.'},429);
-  await verify.click();
-  await expect(card.getByRole('alert')).toHaveText('Too many connection checks. Try again later.');
-  expect(f.checks()).toBe(3);
-  f.unavailable(); await page.reload();
-  await expect(verify).toBeDisabled();
-  await expect(card).toContainText('Configure the shared engine in the private deployment settings');
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
-  expect(errors).toEqual([]);
+
+/*
+ * Release 1: the old Settings page and its "Identity engine" card (components/management/HiggsfieldConnection.tsx, drawn by no page
+ * since the shell replaced /settings) are gone from every screen, so what stays here is what the route and the new Settings
+ * (Advanced > Models > Engines) hold: the platform owner's check is a route only the platform owner can call and it answers in credits,
+ * never a vendor's dollar; a studio owner sees availability and no credential control and no probe.
+ */
+test('the engine check is the platform owner\'s alone and answers in credits, never a vendor dollar', async ({ page }) => {
+  const f = await fixture(page, false);
+  /* A studio owner (no platform standing) is refused: no account-wide probe is theirs. Nothing is read or sent to the provider. */
+  const refused = await page.request.post('/api/workspaces/keys/higgsfield/verify', { headers: { 'X-Workbench-Scope': f.scope }, data: {} });
+  expect(refused.status(), await refused.text()).toBe(403);
+  expect(JSON.stringify(await refused.json())).not.toMatch(/estimate|credits|usd|\$/i);
 });
 
-test('studio owners see managed availability without account-wide probes or credential controls', async ({page}) => {
-  const f=await fixture(page,false);
-  await page.goto('/settings#engines');const card=f.card();
-  await expect(card).toContainText('Identity engine available');
-  await expect(card).toContainText('Generations use your organisation’s Particl credits.');
-  await expect(card.getByRole('textbox')).toHaveCount(0);
-  await expect(card.getByRole('button',{name:'Verify connection',exact:true})).toHaveCount(0);
+test('the platform owner\'s check answers with credit estimates only: no dollar field, no provider reference, no credential', async ({ page }, info) => {
+  test.skip(info.project.name !== 'workbench-1440x900', 'the route allows 5 checks per 5 minutes: one viewport');
+  const f = await fixture(page, true);
+  const response = await page.request.post('/api/workspaces/keys/higgsfield/verify', { headers: { 'X-Workbench-Scope': f.scope }, data: {} });
+  expect(response.status(), await response.text()).toBe(200);
+  const body = await response.json();
+  const text = JSON.stringify(body);
+  expect(Object.keys(body.estimates).sort()).toEqual(['1080p', '720p']);
+  for (const estimate of Object.values(body.estimates) as Record<string, unknown>[]) expect(estimate).not.toHaveProperty('usd');
+  expect(text).not.toMatch(/"usd"|\$|api[_-]?key|secret|token|reference/i);
+});
+
+test.fixme('platform management verifies manually from a Verify connection button, with credit estimates and safe error results (owner question: the card has no page in Release 1)', async () => {
+  /* Was: Identity engine card on /settings#engines (Verify connection, "No training or generation credits are spent.", 720p/1080p
+     "N credits estimated", the rejected and rate-limited results, a disabled button with the key unset). The route stays and is
+     covered above and in tests/unit/higgsfieldVerification.spec.ts; port the button to Settings > Advanced > Models > Engines for the
+     platform owner, or retire the route with the identity engine. */
+});
+
+test('studio owners see managed availability on Settings > Advanced > Engines, with no account-wide probe and no credential control', async ({ page }) => {
+  const f = await fixture(page, false);
+  await page.route('**/api/workspaces/keys', route => route.fulfill({ json: { mode: 'platform', managed: true, keyring: true, keys: [{ name: 'ark', label: 'Connected video account', does: 'Video', set: true, masked: null }, { name: 'openai', label: 'Connected language account', does: 'Thinking models', set: false, masked: null }] } }));
+  await page.goto('/suites?view=workspace&tab=advanced&open=models');
+  const view = page.getByTestId('settings-view');
+  await expect(page.getByTestId('settings-engines')).toContainText('1 available');
+  await page.getByTestId('settings-engines-show').click();
+  await expect(page.getByTestId('settings-engine')).toHaveText([/Connected video account[\s\S]*Available/, /Connected language account[\s\S]*Unavailable/]);
+  /* No credential control: no password or key field, no Verify or Save-key button, nothing masked. */
+  await expect(view.locator('input[type="password"], input[name*="key" i], input[aria-label*="key" i]')).toHaveCount(0);
+  await expect(page.getByTestId('settings-engine').getByRole('button')).toHaveCount(0);
+  await expect(page.getByTestId('settings-engine').getByRole('textbox')).toHaveCount(0);
+  await expect(view.getByRole('button', { name: /save key|replace key|remove key/i })).toHaveCount(0);
+  await expect(view).not.toContainText(/higgsfield|\$/i);
   expect(f.checks()).toBe(0);
 });

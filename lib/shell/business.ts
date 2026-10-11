@@ -5,6 +5,8 @@
  * (design/particl-graphite/README.md › What this design removes); its model
  * id stays, because past jobs and the account's records still name it.
  */
+import { PRODUCT_IMAGE_NAME } from "../uiNames";
+
 export const ADS_MODEL = "marketing_studio_video";
 export const IMAGE_ADS_MODEL = "marketing_studio_image";
 
@@ -23,7 +25,7 @@ export const IMAGE_AD_RESOLUTIONS = ["1k", "2k", "4k"] as const;
  * products and a batch of 1–20 images per job.
  */
 export const DTC_ADS_MODEL = "ms_image";
-export const IMAGE_AD_ENGINES = [[IMAGE_ADS_MODEL, "Marketing Studio Image"], [DTC_ADS_MODEL, "DTC Ads"]] as const;
+export const IMAGE_AD_ENGINES = [[IMAGE_ADS_MODEL, PRODUCT_IMAGE_NAME], [DTC_ADS_MODEL, "DTC Ads"]] as const;
 export const DTC_QUALITIES = ["low", "medium", "high"] as const;
 export const DTC_BATCH = { min: 1, max: 20 } as const;
 export const DTC_PRODUCTS_MAX = 4;
@@ -65,7 +67,7 @@ export function imageAdsBlock(state: ImageAdsState, extra: { connected: boolean;
 /** The DTC Ads Engine (`dtc-ads generate`) is a CLI flow the connected account's tools do not carry (checked against its advertised toolset). */
 export const DTC_COPY = "DTC Ads runs on the account’s ms_image engine: a style (the ad format) is required and has no default; a completed brand kit folds its logo, colours, fonts and tone into the prompt; up to four products; 1–20 images per job, cost scaling with the batch and the quality tier.";
 /** The ad-formats section, on the account's template catalogue. */
-export const AD_FORMATS_COPY = { title: "Ad formats", line: "The account’s Marketing Studio templates — UGC, product shots, motion, ads, posters, marketplace. Pick one, then create with it at the price the account quotes." } as const;
+export const AD_FORMATS_COPY = { title: "Ad formats", line: "The account’s ad templates — UGC, product shots, motion, ads, posters, marketplace. Pick one, then create with it at the price the account quotes." } as const;
 
 /* ── Setup ───────────────────────────────────────────────────────────── */
 /**
@@ -154,8 +156,8 @@ export function pruneImageAds(state: ImageAdsState, reads: SetupReads): ImageAds
 export type CatalogueStatus = "idle" | "loading" | "ready" | "error";
 /** What each composer calls its catalogue model when the account does not offer it. */
 export const CATALOGUE_LABEL: Record<string, string> = {
-  [ADS_MODEL]: "Marketing Studio video",
-  [IMAGE_ADS_MODEL]: "Marketing Studio Image",
+  [ADS_MODEL]: "Ad video",
+  [IMAGE_ADS_MODEL]: PRODUCT_IMAGE_NAME,
   [DTC_ADS_MODEL]: "DTC Ads",
 };
 /**

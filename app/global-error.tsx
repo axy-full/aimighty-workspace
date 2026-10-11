@@ -37,9 +37,9 @@ const CSS = `
     text-decoration: none; display: inline-flex; align-items: center; min-height: 44px;
   }
   .primary { background: #0A84FF; color: #FFFFFF; }
-  .plain { background: #1B1B1F; color: #F5F5F7; }
+  .plain { background: #000000; color: #F5F5F7; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14); }
   .ref {
-    margin-top: 18px; font-size: 12px; color: rgba(235, 235, 245, 0.45); word-break: break-word;
+    margin-top: 18px; font-size: 12px; color: rgba(235, 235, 245, 0.55); word-break: break-word;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 `;

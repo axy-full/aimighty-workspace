@@ -48,7 +48,7 @@
 .quoteFacts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 .quote .primary { min-height: 43px; font-size: 13px; }
 /* A touch screen at any width, and every phone: each control a 44px target (a disclosure by its summary, a download by
-   its whole chip) and no text under 12px (tests/astra-phone-floors-workbench.spec.ts). */
+   its whole chip) and no text under 12px (the owner's phone floors, tests/phoneFloors.ts). */
 @media (max-width: 767px), (pointer: coarse) {
   .panel { gap: 16px; }
   .panel p, .status, .notice strong, .notice a, .source, .error, .jobTitle span, .meta, .progress, .library, .details, .details code, .artifacts a, .button, .jobActions .button { font-size: 12px; }

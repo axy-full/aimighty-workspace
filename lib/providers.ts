@@ -17,7 +17,7 @@
  * models.ts. Nothing else in the app should learn its name.
  */
 
-export type ProviderId = "byteplus" | "google" | "elevenlabs" | "fal" | "vercel" | "higgsfield" | "openai" | "xai";
+export type ProviderId = "byteplus" | "google" | "elevenlabs" | "fal" | "vercel" | "higgsfield" | "openai" | "xai" | "anthropic";
 
 export type ProviderDef = {
   id: ProviderId;
@@ -85,7 +85,8 @@ export const PROVIDERS: ProviderDef[] = [
   {
     id: "google",
     label: "Connected image account",
-    serves: "Images",
+    /* Gemini text too, once TEXT_DIRECT switches Google on (lib/textRoute.ts). */
+    serves: "Images · Gemini text",
     envKey: "GEMINI_API_KEY",
     baseUrlEnv: "GEMINI_BASE_URL",
     defaultBaseUrl: "https://generativelanguage.googleapis.com",
@@ -200,10 +201,11 @@ export const PROVIDERS: ProviderDef[] = [
   },
   {
     /* xAI's Grok Imagine. Direct on the xAI key (the one Crew uses), billed as
-       an xAI charge; through the AI Gateway only when there is no key. */
+       an xAI charge; through the AI Gateway only when there is no key. Grok
+       text too, once TEXT_DIRECT switches xAI on (lib/textRoute.ts). */
     id: "xai",
     label: "xAI",
-    serves: "Grok Imagine stills",
+    serves: "Grok Imagine stills · Grok text",
     envKey: "XAI_API_KEY",
     baseUrlEnv: "XAI_BASE_URL",
     defaultBaseUrl: "https://api.x.ai/v1",
@@ -214,6 +216,27 @@ export const PROVIDERS: ProviderDef[] = [
       imageFormats: ["png", "jpeg", "jpg", "webp"],
     },
     rateLimit: "Per-team limits; a 429 is retried with backoff.",
+    billsFailures: false,
+  },
+  {
+    /* Claude text, straight from Anthropic once TEXT_DIRECT lists it
+       (lib/textRoute.ts): its own ledger line, its own top-ups and readings.
+       Until then Claude is gateway text on the gateway's line, and this
+       vendor reads as not configured even when its key is set. */
+    id: "anthropic",
+    label: "Anthropic",
+    serves: "Claude text",
+    envKey: "ANTHROPIC_API_KEY",
+    /* No override: the router's origin is fixed (lib/textRoute.ts DIRECT_BASE_URL). */
+    baseUrlEnv: "",
+    defaultBaseUrl: "https://api.anthropic.com/v1",
+    docs: "https://docs.anthropic.com/en/api/messages",
+    limits: {
+      maxImageBytes: 5 * 1024 * 1024, maxVideoBytes: 0, maxRequestBytes: 32 * 1024 * 1024,
+      minImagePx: 0, maxImagePx: 8000, minAspect: 0, maxAspect: 0,
+      imageFormats: ["jpeg", "jpg", "png", "gif", "webp"],
+    },
+    rateLimit: "Per-organisation tier limits; a 429 is refused and nothing is charged.",
     billsFailures: false,
   },
 ];
@@ -237,6 +260,7 @@ export function getProvider(pid: string): ProviderDef {
 import { gatewayReachable } from "./gateway";
 import { vendorKey, vendorKeyForEnv, type VendorKeyName } from "./vendorKeys";
 import { engineMock } from "./mock";
+import { isTextDirect } from "./textDirectVendors";
 
 /** Can this model run now: its vendor is usable, and a directOnly model has the vendor's own key (no gateway door). */
 export function modelConfigured(model: { provider: string; directOnly?: boolean }): boolean {
@@ -249,6 +273,8 @@ export function modelConfigured(model: { provider: string; directOnly?: boolean 
 export function providerConfigured(p: ProviderDef): boolean {
   if (engineMock()) return true;
   if (p.id === "vercel") return gatewayReachable();
+  /* Anthropic is only text, and only once TEXT_DIRECT routes Claude to it: a key alone changes nothing. */
+  if (p.id === "anthropic") return isTextDirect("anthropic") && Boolean(vendorKey("anthropic"));
   /* Through vendorKey, not the raw env: a workspace's own sealed key, or
      the platform's where it is lent — the same answer the render will get. */
   return Boolean(vendorKeyForEnv(p.envKey)) || (Boolean(GATEWAY_FALLBACK[p.id]) && gatewayReachable());
@@ -289,6 +315,7 @@ export function providerVia(p: ProviderDef): "key" | "gateway" | null {
      key is set would report the one vendor that is always reachable as
      not configured. */
   if (p.id === "vercel") return gatewayReachable() ? "gateway" : null;
+  if (p.id === "anthropic") return providerConfigured(p) ? "key" : null;
   if (GATEWAY_FALLBACK[p.id]) {
     if (vendorKeyForEnv(p.envKey)) return "key";
     return gatewayReachable() ? "gateway" : null;

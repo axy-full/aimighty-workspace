@@ -408,7 +408,7 @@ test("the Suites agent's plan carries the kept memory in the request it prices a
     project.id = `draft-${randomUUID()}`;
     project.productionProjectId = `prod_${randomUUID().slice(0, 8)}`;
     await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)", args: [`owner:${project.id}`, "owner", project.id, project.name, JSON.stringify(project), Date.now()] });
-    await insertRow("projects", { id: project.productionProjectId, name: "Mira", created_at: Date.now() });
+    await insertRow("projects", { id: project.productionProjectId, name: "Wren", created_at: Date.now() });
     const input = server.atomikRequestSchema.parse({ projectId: project.id, requestId: randomUUID(), request: "Plan the dune sequence", model: "auto", depth: "Quick", refs: [] });
     const before = await server.quoteAtomikJob(input, "owner", deps);
     await m.addMemory({ kind: "brand", text: "Mirrored dunes, ivory and gold, no neon." }, "owner");

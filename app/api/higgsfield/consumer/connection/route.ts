@@ -7,7 +7,7 @@ import {
   removeConsumerConnection,
 } from "@/lib/higgsfield-consumer/oauth";
 import { consumerCapacity, setAsideConsumerJob } from "@/lib/higgsfield-consumer/jobs";
-import { retiredResponse } from "@/lib/higgsfield-consumer/retired";
+import { retiredResponse, signInOff } from "@/lib/higgsfield-consumer/retired";
 import { AccountError, takeAccountLimit } from "@/lib/accountDb";
 export const runtime = "nodejs";
 const headers = { "Cache-Control": "private, no-store" };
@@ -19,9 +19,11 @@ const headers = { "Cache-Control": "private, no-store" };
  * `developer-probe` (a read of the account's developer API with Particl's
  * grant) is retired with the Higgsfield sign-in: it answers 410
  * (lib/higgsfield-consumer/retired.ts). GET (the connection and the slots)
- * and DELETE (Disconnect, which revokes the grant) stay.
+ * and DELETE (Disconnect, which revokes the grant) were kept until the owner
+ * had disconnected; for Release 1 every method is off (signInOff, below), so
+ * no request reads, refreshes or revokes a stored grant, and none is cleared.
  */
-export const POST = withTenant(async (req: Request) => {
+const keptPOST = withTenant(async (req: Request) => {
   const auth = await requireOwner();
   if (auth.response) return auth.response;
   const identity = { workspaceId: requireTenant().id, userId: auth.user.id };
@@ -43,7 +45,7 @@ export const POST = withTenant(async (req: Request) => {
   if (body?.action === "developer-probe") return retiredResponse();
   return Response.json({ error: "Review the request." }, { status: 400, headers });
 });
-export const GET = withTenant(async (req: Request) => {
+const keptGET = withTenant(async (req: Request) => {
   const auth = await requireOwner();
   if (auth.response) return auth.response;
   const identity = { workspaceId: requireTenant().id, userId: auth.user.id };
@@ -73,7 +75,7 @@ export const GET = withTenant(async (req: Request) => {
     );
   }
 });
-export const DELETE = withTenant(
+const keptDELETE = withTenant(
   async () => {
     const auth = await requireOwner();
     if (auth.response) return auth.response;
@@ -95,3 +97,8 @@ export const DELETE = withTenant(
   },
   { requireRequestScope: true },
 );
+
+/* Off for Release 1 with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts › signInOff): every method answers 410 and never reads a stored grant. */
+export const POST = signInOff(keptPOST);
+export const GET = signInOff(keptGET);
+export const DELETE = signInOff(keptDELETE);

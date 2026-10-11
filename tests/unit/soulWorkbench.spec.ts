@@ -3,8 +3,8 @@ import { newProject, type Asset } from '../../lib/workbench/studio';
 import { projectSchema } from '../../lib/workbench/studio-schema';
 import { soulIdentityAsset, soulReferenceAssets, identityCardState, identityCardLabels, type SoulIdentity } from '../../lib/workbench/soul-identity';
 
-const portrait: Asset = { id:'portrait',name:'Mira portrait',kind:'image',category:'Character',url:'/api/uploads/portrait-original',uploadId:'portrait-original',description:'Portrait original',prompt:'Soft window light',status:'Draft',locked:false,version:1,refs:[] };
-const identity: SoulIdentity = { id:'soul-local',projectId:null,name:'Mira',description:'Same character across shots',subjectType:'character',references:[{uploadId:'portrait-original'}],status:'ready',previewUrl:'/api/uploads/portrait-original',createdAt:1,updatedAt:1,creditsBilled:250,error:null };
+const portrait: Asset = { id:'portrait',name:'Wren portrait',kind:'image',category:'Character',url:'/api/uploads/portrait-original',uploadId:'portrait-original',description:'Portrait original',prompt:'Soft window light',status:'Draft',locked:false,version:1,refs:[] };
+const identity: SoulIdentity = { id:'soul-local',projectId:null,name:'Wren',description:'Same character across shots',subjectType:'character',references:[{uploadId:'portrait-original'}],status:'ready',previewUrl:'/api/uploads/portrait-original',createdAt:1,updatedAt:1,creditsBilled:250,error:null };
 
 test('Soul references include original uploads and generated stills once, excluding links, samples and movies', () => {
   const generated = {...portrait,id:'generated',uploadId:undefined,generationId:'still-render',url:'/api/media/still-render'};
@@ -18,7 +18,7 @@ test('Soul references include original uploads and generated stills once, exclud
 test('ready Soul binding retains downloadable originals and survives project persistence', () => {
   const project = {...newProject('Soul fixture'),assets:[portrait]};
   const attached = soulIdentityAsset(project,identity,'Character');
-  expect(attached).toMatchObject({name:'Mira',kind:'image',category:'Character',soulIdentityId:'soul-local',uploadId:'portrait-original',url:'/api/uploads/portrait-original',refs:[]});
+  expect(attached).toMatchObject({name:'Wren',kind:'image',category:'Character',soulIdentityId:'soul-local',uploadId:'portrait-original',url:'/api/uploads/portrait-original',refs:[]});
   expect(attached.generationId).toBeUndefined();
   const saved = projectSchema.parse({...project,assets:[...project.assets,attached]});
   expect(saved.assets.at(-1)?.soulIdentityId).toBe(identity.id);

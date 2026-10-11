@@ -1,4 +1,4 @@
-/* Mobile handoff only. Auth handlers, validation and desktop presentation are unchanged. */
+/* Mobile handoff, plus the touch-target floor at the end. Auth handlers, validation and desktop presentation are unchanged. */
 @media (max-width: 759px) {
   .wl,
   .auth-page {
@@ -63,7 +63,7 @@
   }
   .wl .wl-form > .flex { gap: 5px; margin-bottom: 6px; }
   .wl .wl-field,
-  .auth-page .wl-field { font: 500 10px/1.4 var(--graphite-font); letter-spacing: .12em; color: var(--gx-text-half); }
+  .auth-page .wl-field { font: 500 12px/1.4 var(--graphite-font); letter-spacing: .12em; color: var(--gx-text-2); }
   .wl .wl-field input,
   .auth-page .wl-field input {
     height: 44px;
@@ -101,7 +101,7 @@
     border-top: 1px solid var(--gx-card-border);
   }
   .auth-mobile-footer a { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-size: 13px; color: var(--gx-text-2); text-decoration: none; }
-  .auth-mobile-footer .auth-mobile-explore { font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-accent-text); }
+  .auth-mobile-footer .auth-mobile-explore { font-size: 12px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--gx-accent-text); }
   .auth-page { display: block; padding: env(safe-area-inset-top, 0px) 20px max(36px, env(safe-area-inset-bottom, 0px)); }
   .auth-page::before { display: none; }
   .auth-page .auth-card { min-height: 0; padding: 0; background: none; border: 0; }
@@ -125,4 +125,12 @@
   .auth-page a { color: var(--gx-accent-text); }
   .auth-page input[type="checkbox"] { width: 20px; height: 20px; flex: none; accent-color: var(--gx-accent); }
   .auth-page .auth-card:has(input[autocomplete="new-password"]) .page-h1 { font-size: 29px !important; font-weight: 600 !important; line-height: 1.2 !important; }
+}
+
+/* Any touch screen, the sign-in pages' own links: 44px targets (README › ten ease rules, 8). */
+@media (pointer: coarse) {
+  .wl .wl-atomik { min-height: 44px; }
+  .wl .wl-form-foot > .hdr-mono-link { display: block; min-height: 44px; }
+  .auth-page .hdr-mono-link,
+  .auth-page .auth-link { display: inline-flex; align-items: center; min-height: 44px; }
 }

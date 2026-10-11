@@ -6,7 +6,7 @@ import { stashGenPreset } from "@/lib/shell/gen-preset";
 import { APP_HREF, SIGN_IN_HREF } from "@/lib/marketing/links";
 
 const SAMPLE = "A woman in an ivory suit crosses a dune at golden hour; a chrome sphere reflects the sky. Slow dolly in, 35mm.";
-const GEN_HREF = `${APP_HREF}?view=gen`;
+const GEN_HREF = `${APP_HREF}?make=video`;
 
 /**
  * The hero's prompt bar. Nothing renders here and nothing is charged: the
@@ -49,9 +49,9 @@ export default function HeroPrompt({ model, label, short }: {
           <span className="mk-set">1080p</span>
           <span className="mk-set mk-set--on">Audio on</span>
           <span style={{ flex: 1 }} />
-          <span className="mk-prompt-meta mk-hide-phone">Opens in Gen</span>
+          <span className="mk-prompt-meta mk-hide-phone">Opens in Make</span>
           <button type="submit" className="mk-btn gx-primary mk-go">
-            Generate
+            Make
           </button>
         </div>
       </form>
@@ -61,7 +61,7 @@ export default function HeroPrompt({ model, label, short }: {
             <div className="mk-take-copy">
               <span className="mk-tag">Prompt kept · {label} · 16:9 · 5 s · 1080p</span>
               <span className="mk-take-prompt mk-wrap-text">{prompt.trim() || SAMPLE}</span>
-              <span className="mk-take-meta">Sign in and it opens in Gen.</span>
+              <span className="mk-take-meta">Sign in and it opens in Make.</span>
             </div>
             <div className="mk-take-actions">
               <a className="mk-btn mk-btn--sm gx-primary" href={`${SIGN_IN_HREF}?next=${encodeURIComponent(GEN_HREF)}`}>Sign in</a>

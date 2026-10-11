@@ -7,6 +7,7 @@ import { astraSceneDigest } from '@/lib/astra-blender/proposal';
 import { studioRequest } from '@/components/workbench/GenerationDialog';
 import { downloadFile } from '@/lib/workbench/studio-export';
 import styles from './astra-integration.module.css';
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
 type Export = { scene: AstraScene; script: string; files: { assetId: string; filename: string; url: string }[] };
 async function sourceBytes(url: string, remaining: number, scope: string) {
@@ -29,14 +30,14 @@ export function AstraExportPanel({ project, scope, enabled, onSave }: { project:
   async function exportBlender() {
     setBusy(true); setError('');
     try {
-      if (!(await onSave())) throw new Error('Save your scene before exporting.');
+      if (!(await onSave())) throw new SaveFailedError();
       const manifest = await studioRequest<Export>('/api/workbench/astra-blender/export', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench-Scope': scope }, body: JSON.stringify({ projectId: project.id, sceneDigest: await astraSceneDigest(project.astraBlender ?? createAstraScene('product')) }) });
       const files: Record<string, Uint8Array> = { 'scene.astra.json': strToU8(JSON.stringify(manifest.scene, null, 2)), 'render.py': strToU8(manifest.script) };
       let remaining = 100 * 1024 * 1024;
       for (const source of manifest.files) { const bytes = await sourceBytes(source.url, remaining, scope); files['assets/' + source.filename] = bytes; remaining -= bytes.length; }
-      files['README.txt'] = strToU8(`ASTRA / ${manifest.scene.name}\n\nThis is a portable scene package, not an already rendered .blend file.\nInstall Blender 5 or newer from https://www.blender.org/download/\nUnzip this folder and run the following, replacing paths with absolute paths:\n\nblender --background --factory-startup --disable-autoexec --python /path/to/render.py -- /path/to/output\n\nOn macOS the executable is normally /Applications/Blender.app/Contents/MacOS/Blender.\nThe script creates scene.blend, preview.png and scene.glb. Open scene.blend in Blender to continue editing or render the animation. Source media is preserved in assets/. The saved timeline and animation keys are included.\n\nThe browser viewport is a real-time preview. The native render uses Cycles/AgX, so lighting and text can differ. GLB export has material and light limitations; .blend is the native scene. No cloud render or paid model request is started by this export.\n`);
+      files['README.txt'] = strToU8(`3D scene / ${manifest.scene.name}\n\nThis is a portable scene package, not an already rendered .blend file.\nInstall Blender 5 or newer from https://www.blender.org/download/\nUnzip this folder and run the following, replacing paths with absolute paths:\n\nblender --background --factory-startup --disable-autoexec --python /path/to/render.py -- /path/to/output\n\nOn macOS the executable is normally /Applications/Blender.app/Contents/MacOS/Blender.\nThe script creates scene.blend, preview.png and scene.glb. Open scene.blend in Blender to continue editing or render the animation. Source media is preserved in assets/. The saved timeline and animation keys are included.\n\nThe browser viewport is a real-time preview. The native render uses Cycles/AgX, so lighting and text can differ. GLB export has material and light limitations; .blend is the native scene. No cloud render or paid model request is started by this export.\n`);
       const bytes = await new Promise<Uint8Array<ArrayBuffer>>((resolve, reject) => zip(files, { level: 1 }, (err, data) => err ? reject(err) : resolve(new Uint8Array(data))));
-      downloadFile(new Blob([bytes], { type: 'application/zip' }), 'astra-scene.zip');
+      downloadFile(new Blob([bytes], { type: 'application/zip' }), '3d-scene.zip');
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }

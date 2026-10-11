@@ -132,8 +132,8 @@ test("no Atomik code calls the connected step route, the recipes route or the ac
 
   const atomik = [
     ...walk("app/api/atomik"), ...walk("components/atomik"), ...walk("components/graphite/atomik"),
-    "components/graphite/AtomikGate.tsx", "components/graphite/AtomikSheet.tsx", "components/suites/AtomikSuite.tsx",
-    "components/workspace/spec/tools/AtomikTool.tsx", "lib/workspace/atomik-host.tsx",
+    "components/graphite/AtomikGate.tsx", "components/graphite/AtomikSheet.tsx",
+    "lib/workspace/atomik-host.tsx",
     ...readdirSync("lib").filter((name) => /^atomik.*\.tsx?$/.test(name)).map((name) => path.join("lib", name)),
   ].filter((file) => /\.(ts|tsx)$/.test(file));
   expect(atomik.length).toBeGreaterThan(20);
@@ -288,8 +288,12 @@ async function route(file: string, fake: Record<string, unknown>): Promise<Recor
       requireUser: async () => ({ user: { id: "owner", owner: true } }),
       requireRender: async () => ({ user: { id: "owner", owner: true } }),
     },
+    /* Not the sample workspace: the claim route's own check answers null. */
+    "@/lib/demo/spend-guard.server": { sampleWorkspaceOff: async () => null },
     "@/lib/atomik": fake,
     "@/lib/atomikAccountStep": await import("../../lib/atomikAccountStep"),
+    /* The claim route is people-only (a signed-in person, never a token): the owner here is one. */
+    "@/lib/security/people-only": await import("../../lib/security/people-only"),
     /* The claim route also refuses a step of an archived thread (lib/atomikThreads.ts); an account step is refused first. */
     "@/lib/atomikThreads": { ARCHIVED_NOTE: (await import("../../lib/atomikThreadsText")).ARCHIVED_NOTE, threadArchived: (fake.threadArchived as (() => Promise<boolean>) | undefined) ?? (async () => false) },
   };

@@ -1,0 +1,11 @@
+Particl prototype v12 · bug fixes on v11 · written 2026-10-10 · each item confirmed in a render
+
+1. Shots: cards never overlap; rows are 296 px (332 while rendering) so the tallest card fits; finished cards show only Approve · Reject (other actions live in right-click and ⋯). "Send" removed from cards.        seen at ?view=board&stage=Shots&render=batch
+2. Storyboard and Shots: 4 across at 1440 px, one 24 px gap for rows and columns; Tidy uses the same grid.      seen at ?view=board&stage=Storyboard and &stage=Shots
+3. Rig: Takes · The cut · Masters as three thumbnail nodes aligned with the shots (no lone "Deliver" box); MAYA and GUIDE crop to the face, products centred; shot names clamp to two lines with time and avatars beside; the first-time hint is a pill above the bar.      seen at ?view=board&v=rig
+4. Join sheet, desktop: two equal columns, every field inside the sheet at 1440 and 1280 (border-box sizing, min-width 0, inputs 100 %).      seen at ?guest=1&join=start
+5. Join sheet, phone: a one-column bottom sheet inside the 390 × 844 shell (the desktop sheet no longer renders on phone); visitor Home, the invite banner and the request-access confirmation render at phone size on a black backdrop.      seen at ?guest=1&device=phone&join=start · &requested=1 · &invite=team · ?guest=1&device=phone
+6. Request access: optional Company size (1–10 · 11–50 · 51–200 · 200+) on desktop and phone.
+7. README: open questions answered under DECISIONS.
+8. README: every price still marked "confirm" listed at the top.
+Not changed: everything else from v11.

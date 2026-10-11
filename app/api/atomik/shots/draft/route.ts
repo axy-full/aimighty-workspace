@@ -12,7 +12,8 @@ import { creditsApply } from "@/lib/credits";
 import { currentTenant } from "@/lib/tenant";
 
 import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
-import { withGenerationRequest } from "@/lib/generationRequests";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
+import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -40,11 +41,14 @@ export const POST = withTenant(async function POST(req: Request) {
      these two were left behind. */
   const got = await requireRender();
   if (got.response) return got.response;
-  const quoteOnly = (await req.clone().json().catch(() => ({}))).quoteOnly === true;
+  /* The body, read now: the run may finish after its reply (answerAfterMs). */
+  const body = await req.clone().json().catch(() => ({}));
+  const quoteOnly = body?.quoteOnly === true;
   if (quoteOnly) { const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure; }
+  /* The sample workspace spends nothing: answered before the request is claimed. A quote still answers. */
+  if (!quoteOnly) { const off = await sampleWorkspaceOff(); if (off) return off; }
   const run = async () => {
   try {
-  const body = await req.json().catch(() => ({}));
   const projectId = String(body.projectId ?? "");
   const n = Number(body.scene);
   if (!projectId || !Number.isInteger(n) || n < 1) return NextResponse.json({ error: "Which scene?" }, { status: 400 });
@@ -81,5 +85,5 @@ export const POST = withTenant(async function POST(req: Request) {
   return NextResponse.json({ scene: n, shots, model, effort: effort ?? "auto", ...writing });
   } catch (error) { return paidTextFailure(error); }
   };
-  return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run);
+  return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run, { answerAfterMs: ANSWER_AFTER_MS });
 });

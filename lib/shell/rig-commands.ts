@@ -6,7 +6,7 @@
  * Module-level slots, like drop-targets.ts, so the legacy tree stays untouched.
  */
 /** `projectId`: the project the shot was deleted from — the undo runs while that project is open. */
-export type RigUndo = { label: string; undo: () => void | Promise<void>; projectId?: string };
+export type RigUndo = { label: string; undo: () => void | Promise<void>; projectId?: string; /** The toast words, when the step is also said with an Undo button (lib/shell/state › pushUndo). */ say?: string };
 let deleteShot: ((id: string) => string | null) | null = null;
 let undoSink: ((entry: RigUndo) => void) | null = null;
 export function setRigDeleteHandler(handler: ((id: string) => string | null) | null) { deleteShot = handler; }

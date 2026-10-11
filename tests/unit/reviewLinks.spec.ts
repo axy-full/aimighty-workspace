@@ -57,6 +57,8 @@ async function reviewRoute(row: { kind: string; params?: string; bytes?: number 
       "@/lib/mediaRange": { byteRange },
       "@/lib/downloadName": { downloadFilename: async (_id: string, ext: string) => `SH030_v2.${ext}` },
       "@/lib/contentDisposition": await import("../../lib/contentDisposition"),
+      /* An older link: it opens the Approved takes (lib/security/review-link.ts). */
+      "@/lib/security/review-link": { scopeOf: async () => "approved" },
     },
   );
 }

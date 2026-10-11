@@ -1,13 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signInLocally } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
-import { goWorkbenchStage } from "./helpers/workbenchNavigation";
-import { legacyShell } from "./helpers/legacyShell";
+import { openAdvanced } from "./helpers/makeAdvanced";
 import { DESKTOP, forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 
 /**
- * Grok Voice reads in xAI's own voices. The Rig generation dialog and the
- * Make composer swap their voice list with the speech model, so a Grok line
+ * Grok Voice reads in xAI's own voices. The Make composer swaps its voice list with the speech model, so a Grok line
  * is never quoted (or reserved) with an ElevenLabs voice; and a workspace on
  * Grok Voice alone can speak, with sound and music (ElevenLabs') switched off.
  * The audio setup and quote are mocked at the browser in the real shape of
@@ -62,83 +60,57 @@ async function fixture(page: Page, setup: keyof typeof setups) {
   return { quotes };
 }
 
-async function openNode(page: Page) {
-  await goWorkbenchStage(page, "canvas");
-  if (page.viewportSize()!.width < 760) {
-    await page.locator(".mobile-node-viewbar").getByRole("tab", { name: "List", exact: true }).click();
-    await page.locator(".mobile-node-list button").filter({ hasText: "Night line" }).click();
-  } else {
-    const node = page.getByRole("article", { name: "Generate node: Night line", exact: true });
-    await node.focus();
-    await node.press("Enter");
-  }
-  await page.getByRole("button", { name: "Generate take", exact: true }).click();
-  return page.getByRole("dialog", { name: "Generate a new take", exact: true });
-}
 const optionLabels = (select: ReturnType<Page["getByRole"]>) => select.locator("option").allTextContents();
 /** The picker fits the viewport: the page never scrolls sideways. */
 const noSideScroll = (page: Page) => expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
 
-/* Every picker below runs at all five sizes; Edit & Sound's voice picker is desktop's alone (see its test). */
-test("the Rig dialog swaps to Grok Voice's own voices with the model, and quotes the line with one", async ({ page }, info) => {
+/* Make's own audio composer runs at the desktop sizes; the phone's simple Make has no voice list (demo-s10-phone-make-workbench). Edit & Sound's voice picker is desktop's alone (see its test). */
+test("the Make composer swaps to Grok Voice's voices, and a Grok-only workspace has only voice", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "the phone app draws its own simple Make with no voice list (demo-s10-phone-make-workbench); the desktop keeps every assertion here");
   const f = await fixture(page, "both");
-  await page.goto(await legacyShell(page, "/workbench?project=grok-voice-fixture&stage=canvas"));
-  const dialog = await openNode(page);
-  await dialog.getByRole("combobox", { name: "Audio type" }).selectOption("speech");
-  const voice = dialog.getByRole("combobox", { name: "Audio voice" });
-  await expect(voice).toHaveValue(ELEVEN_VOICE.id);
-  expect(await optionLabels(voice)).toEqual(["Rachel"]);
-  await dialog.getByRole("combobox", { name: "Speech model" }).selectOption("grok-tts");
+  await page.goto("/suites?make=audio&project=grok-voice-fixture");
+  await expect(page.getByTestId("gen-view")).toBeVisible();
+  await openAdvanced(page);
+  /* A voice, effects and music are the sound kinds Make offers when ElevenLabs is connected too. */
+  const kinds = page.getByRole("group", { name: "Sound", exact: true });
+  await kinds.getByRole("button", { name: /Voice/ }).click();
+  const list = page.getByTestId("make-engines");
+  await list.locator('[data-testid="make-engine-row"][data-engine="grok-tts"]').click();
+  await openAdvanced(page);
+  const voice = page.getByTestId("gen-voice");
+  /* Picking the speech model swaps the voice list with it: Grok's own voices, never Rachel. */
+  await expect(page.getByTestId("make-voice-name")).toHaveText("VoiceEve");
   await expect(voice).toHaveValue("eve");
   expect(await optionLabels(voice)).toEqual(["Eve", "Ara"]);
+  await page.getByTestId("gen-prompt").fill("Not tonight. The ice will hold.");
+  /* The line is quoted with Grok's voice, and never with an ElevenLabs one. */
+  await expect.poll(() => f.quotes.at(-1)).toMatchObject({ task: "speech", modelId: "grok-tts", voiceId: "eve" });
   await voice.selectOption("ara");
   await expect.poll(() => f.quotes.at(-1)).toMatchObject({ task: "speech", modelId: "grok-tts", voiceId: "ara" });
   expect(f.quotes.some((q) => q.modelId === "grok-tts" && q.voiceId === ELEVEN_VOICE.id)).toBe(false);
-  await noSideScroll(page);
-  await page.screenshot({ path: info.outputPath("rig-grok-voices.png") });
-});
-
-test("a workspace on Grok Voice alone speaks in the Rig dialog, with sound and music off", async ({ page }, info) => {
-  const f = await fixture(page, "grokOnly");
-  await page.goto(await legacyShell(page, "/workbench?project=grok-voice-fixture&stage=canvas"));
-  const dialog = await openNode(page);
-  const task = dialog.getByRole("combobox", { name: "Audio type" });
-  await expect(task).toHaveValue("speech");
-  await expect(task.locator('option[value="sound"]')).toHaveJSProperty("disabled", true);
-  await expect(task.locator('option[value="music"]')).toHaveJSProperty("disabled", true);
-  await expect(dialog.getByRole("combobox", { name: "Audio voice" })).toHaveValue("eve");
-  await expect.poll(() => f.quotes.at(-1)).toMatchObject({ task: "speech", modelId: "grok-tts", voiceId: "eve" });
-  await expect(dialog.getByRole("alert")).toHaveCount(0);
-  await noSideScroll(page);
-  await page.screenshot({ path: info.outputPath("rig-grok-only.png") });
-});
-
-test("the Make composer swaps to Grok Voice's voices, and a Grok-only workspace has only Dialogue", async ({ page }, info) => {
-  const f = await fixture(page, "both");
-  await page.goto("/generate?mode=audio");
-  await page.getByRole("group", { name: "Track kind" }).getByRole("button", { name: "Dialogue", exact: true }).click();
-  await page.getByRole("combobox", { name: "Model", exact: true }).selectOption("grok-tts");
-  const voices = page.getByRole("group", { name: "Voices" });
-  await expect(voices).toContainText("Eve");
-  await expect(voices).not.toContainText("Rachel");
-  await page.getByRole("textbox", { name: "Prompt", exact: true }).fill("Not tonight. The ice will hold.");
-  await expect.poll(() => f.quotes.at(-1)).toMatchObject({ task: "speech", modelId: "grok-tts", voiceId: "eve" });
+  await expect(page.getByTestId("make-engine-price")).toHaveText(/^(up to )?2 cr$/, { timeout: 30_000 });
+  await expect(page.getByTestId("gen-generate")).toHaveText(/^Make · (up to )?2 cr$/);
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
-  await fixture(page, "grokOnly");
+  const f2 = await fixture(page, "grokOnly");
   await page.reload();
-  const tracks = page.getByRole("group", { name: "Track kind" });
-  await expect(tracks.getByRole("button", { name: "Ambient", exact: true })).toBeDisabled();
-  await expect(tracks.getByRole("button", { name: "Music", exact: true })).toBeDisabled();
-  await expect(tracks.getByRole("button", { name: "Dialogue", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("group", { name: "Voices" })).toContainText("Eve");
+  await expect(page.getByTestId("gen-view")).toBeVisible();
+  await openAdvanced(page);
+  const only = page.getByRole("group", { name: "Sound", exact: true });
+  /* A workspace on Grok Voice alone speaks: effects and music (ElevenLabs') are not offered, and the voice is Grok's. */
+  await expect(only.getByRole("button", { name: /Voice/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("make-sound-sound")).toHaveCount(0);
+  await expect(page.getByTestId("make-sound-music")).toHaveCount(0);
+  await expect(page.getByTestId("make-voice-name")).toHaveText("VoiceEve");
+  /* ...and what it asks to be priced is Grok's voice, never an ElevenLabs one. */
+  await page.getByTestId("gen-prompt").fill("Not tonight. The ice will hold.");
+  await expect.poll(() => f2.quotes.at(-1)).toMatchObject({ task: "speech", modelId: "grok-tts", voiceId: "eve" });
   await noSideScroll(page);
   await page.screenshot({ path: info.outputPath("make-grok-only.png") });
 });
 
 test("Edit & Sound on Grok Voice alone: voice-over speaks, and the ElevenLabs doors say they are not connected", async ({ page }, info) => {
-  /* Phones (844x390 included) get the phone shell's Edit & Sound, whose doors are a
-     read-only list with no voice picker and no quote (workspace-edit-workbench.spec). */
+  /* Phones (844x390 included) get the phone shell's Cut, which watches and approves and has no Edit & Sound. */
   test.skip(!DESKTOP.includes(info.project.name), "desktop viewports");
   await signInLocally(page.request);
   await forbidPaidWork(page);
@@ -161,10 +133,16 @@ test("Edit & Sound on Grok Voice alone: voice-over speaks, and the ElevenLabs do
     quotes.push(body);
     return route.fulfill({ json: { estimatedCredits: 2, price: 2, unit: "cr" } });
   });
-  await page.goto(`/workspace?project=${project.id}&suite=particl&page=edit`);
-  await expect(page.getByTestId("page-title")).toHaveText("Edit & Sound");
-  await page.locator('[data-stem="sfx"]').getByRole("button", { name: "Generate" }).click();
-  const composer = page.getByTestId("composer-sfx");
+  /* Edit & Sound over the board (the old /workspace page's stem rows became its New voice line / sound effect / music doors). */
+  await page.goto(`/suites?project=${project.id}&view=board&region=cut`);
+  await expect(page.getByTestId("cut-card")).toBeVisible();
+  await expect(async () => {
+    await page.getByTestId("cut-open-edit").click({ timeout: 3_000 });
+    await expect(page.getByTestId("edit-sound")).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 40_000 });
+  await expect(page.getByTestId("es")).toBeVisible();
+  await page.getByTestId("es-new-effect").click();
+  const composer = page.getByTestId("es-compose");
   const kinds = composer.getByRole("group", { name: "Sound type" });
   for (const name of ["Sound effect", "Music", "Change voice", "Dub"]) await expect(kinds.getByRole("button", { name, exact: true })).toBeDisabled();
   await expect(composer.getByRole("alert")).toHaveText("Sound effect is not connected for this workspace.");

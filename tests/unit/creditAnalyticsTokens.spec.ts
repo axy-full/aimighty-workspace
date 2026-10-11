@@ -103,6 +103,8 @@ async function routes(ws: TenantWorkspace) {
     "@/lib/tokenCeiling": await import("../../lib/tokenCeiling"),
     "@/lib/cycle": await import("../../lib/cycle"),
     "@/lib/securityAudit": { securityAuditStatement: () => ({ sql: "SELECT 1", args: [] }) },
+    /* A prepare token's grant (lib/security/token-grants.ts, lane 5); its own tests are in demo-gaps-l5-review-558. */
+    "@/lib/security/token-grants": { grantPrepareStatement: () => ({ sql: "SELECT 1", args: [] }), preparing: async () => new Set<string>() },
   };
   const analytics = load<{ GET: Handler }>("app/api/analytics/route.ts", modules).GET;
   const tokens = load<{ GET: Handler }>("app/api/tokens/route.ts", modules).GET;

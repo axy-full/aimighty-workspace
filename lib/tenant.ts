@@ -61,7 +61,8 @@ export type TenantUser = {
 };
 
 /** `capCredits`: the monthly ceiling in credits (a workspace on the platform's keys); `capUsd`: the older dollar one. Either or both may be set. */
-export type TenantToken = { id: string; name: string; scope: "read" | "render"; capUsd: number | null; capCredits?: number | null };
+/** A token's scope: `read` lists and fetches; `prepare` (an outside agent, Gaps B) also prepares jobs a person approves, and spends nothing; `render` spends inside its ceiling. */
+export type TenantToken = { id: string; name: string; scope: "read" | "render" | "prepare"; capUsd: number | null; capCredits?: number | null };
 
 export type TenantStore = {
   workspace: TenantWorkspace | null;

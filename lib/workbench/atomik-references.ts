@@ -17,14 +17,14 @@ import {
   type AtomikVideoFrame,
 } from "./atomik-reference-types";
 
-const MAX_SOURCE_BYTES = 32 * 1024 * 1024;
+export const MAX_SOURCE_BYTES = 32 * 1024 * 1024;
 const MAX_VISUAL_BYTES = 256 * 1024;
 const SAMPLES = new Set([
   "/campaign/hero.webp",
   "/campaign/character.webp",
   "/campaign/environment.webp",
 ]);
-const IMAGE_MIMES = new Set([
+export const IMAGE_MIMES = new Set([
   "image/png",
   "image/jpeg",
   "image/webp",
@@ -185,9 +185,10 @@ export async function assertAtomikVideoSource(
   return { asset, source };
 }
 
-async function normalize(
+/** A bounded review copy of a still (512 px JPEG, at most 256 KB), as Atomik is shown one; also the board planner's attached images. */
+export async function normalize(
   bytes: Buffer,
-  asset: Asset,
+  asset: Pick<Asset, "id" | "name">,
   timeSeconds?: number,
 ): Promise<AtomikVisual> {
   if (bytes.length > MAX_SOURCE_BYTES)

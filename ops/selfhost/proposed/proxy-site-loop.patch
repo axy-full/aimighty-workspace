@@ -1,0 +1,24 @@
+diff --git a/proxy.ts b/proxy.ts
+index 278c16a2..0a2a51b4 100644
+--- a/proxy.ts
++++ b/proxy.ts
+@@ -44,7 +44,7 @@ export function proxy(request: NextRequest) {
+   const { pathname } = request.nextUrl;
+ 
+   /* /site is an implementation detail; its canonical address is the path above (an old one goes straight to its new). */
+-  if (pathname === "/site" || pathname.startsWith("/site/")) {
++  if (request.headers.get("x-site-rewrite") !== "1" && (pathname === "/site" || pathname.startsWith("/site/"))) {
+     /* `/site//x` would otherwise redirect to `//x`, a host-relative address. */
+     const path = pathname.slice(5).replace(/^\/{2,}/, "/") || "/";
+     return moved(request, MOVED_PAGES[path]?.to ?? path);
+@@ -66,7 +66,9 @@ export function proxy(request: NextRequest) {
+ function rewrite(request: NextRequest, pathname: string) {
+   const url = request.nextUrl.clone();
+   url.pathname = pathname;
+-  return NextResponse.rewrite(url);
++  const headers = new Headers(request.headers);
++  headers.set("x-site-rewrite", "1");
++  return NextResponse.rewrite(url, { request: { headers } });
+ }
+ 
+ export const config = {

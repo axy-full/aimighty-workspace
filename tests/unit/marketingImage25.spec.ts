@@ -153,7 +153,7 @@ test("a 403 is an insufficient balance: neutral on the platform's key with a pla
     expect(warnings.map(w => JSON.parse(w))).toEqual([1, 2].map(() => expect.objectContaining({ event: "higgsfield.insufficient_balance", surface: "marketing-studio" })));
   } finally { console.warn = warn; }
   globalThis.fetch = async () => new Response("PRIVATE CREDENTIAL", { status: 401 });
-  await expect(estimateMarketingInput(input)).rejects.toThrow("This connected account cannot access Marketing Studio.");
+  await expect(estimateMarketingInput(input)).rejects.toThrow("This connected account cannot access Product image.");
 });
 
 test("a 2.5 take re-prices from the same formula before its sole POST, sends it to its build's route and never reads the estimate", async () => {

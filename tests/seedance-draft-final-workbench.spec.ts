@@ -6,6 +6,12 @@ import path from "node:path";
 import { signInLocally, localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets } from "./phoneFloors";
+import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /**
  * Seedance 2.5 draft mode in Gen (lib/draftFinal.ts): "Draft first · 480p",
@@ -61,9 +67,10 @@ async function seeded(page: Page) {
 type Seeded = Awaited<ReturnType<typeof seeded>>;
 
 async function openGen(page: Page, project: Project) {
-  await page.goto(`/suites?view=gen&project=${project.id}`);
+  await page.goto(`/suites?make=video&project=${project.id}`);
   await expect(page.getByTestId("gen-view")).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByTestId("project-name")).toHaveText(project.name, { timeout: 30_000 });
+  await openAdvanced(page);
+  await expect(projectName(page)).toHaveText(project.name, { timeout: 30_000 });
 }
 
 /** What the server quotes for a request right now, in credits (POST /api/generate/quote). */
@@ -171,7 +178,7 @@ async function floors(page: Page, info: TestInfo, strip: Locator) {
   const bar = page.getByTestId("tabbar");
   if (await bar.isVisible()) {
     const gap = await strip.evaluate((el) => {
-      const scroller = document.querySelector<HTMLElement>('[data-testid="content"]')!;
+      const scroller = document.querySelector<HTMLElement>('[data-testid="gen-view"]')!;
       scroller.scrollTop = scroller.scrollHeight;
       const last = Array.from(el.querySelectorAll<HTMLElement>("*")).filter((n) => n.getClientRects().length).reduce((a, b) => (b.getBoundingClientRect().bottom > a.getBoundingClientRect().bottom ? b : a), el as HTMLElement);
       return document.querySelector('[data-testid="tabbar"]')!.getBoundingClientRect().top - last.getBoundingClientRect().bottom;
@@ -199,7 +206,45 @@ async function shot(page: Page, info: TestInfo, strip: Locator, name: string) {
   if (clip.width > 0 && clip.height > 0) await page.screenshot({ path: path.join(dir, `${name}-${size}-strip.png`), clip });
 }
 
-test("Draft first, then the 1080p final: approved at the price on each button, charged once each — the draft at the 480p price, the final at the 1080p price", async ({ page }, info) => {
+test("Draft first: approved at the price on the button, one 480p take, charged once at the 480p price", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  test.setTimeout(300_000);
+  const s = await seeded(page);
+  await openGen(page, s.project);
+  await page.getByTestId("gen-prompt").fill(WORDS);
+
+  /* Seedance 2.5 on this workspace's credits offers a draft first; it holds the size at 480p and one take. */
+  const toggle = page.getByTestId("gen-draft-toggle");
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: /480p/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: /1080p/ })).toBeDisabled();
+  await expect(page.getByTestId("gen-takes-count")).toHaveText("1");
+  const go = page.getByTestId("gen-generate");
+  await expect(go).toHaveText(/^Make draft · \d[\d,]* cr$/, { timeout: 60_000 });
+  const draftPrice = creditsIn(await go.textContent());
+  /* Exactly what any 480p take of these words costs. */
+  expect(draftPrice).toBe(await quoted(page, s, take(s, "480p")));
+  await go.click();
+  /* The accepted press closes Make. */
+  await expect(page.getByTestId("make-panel")).toHaveCount(0);
+
+  /* The books: one job, one charge, at the price on the button; one paid request, at that figure as its ceiling. */
+  const first = await settled(s, 1);
+  /* The job's own status read (as a card makes it) lets the mocked engine finish it and write its watermark. */
+  await expect.poll(async () => (await page.request.get(`/api/jobs/${first.jobs[0].id}`, { headers: { "X-Workbench-Scope": s.scope } }).then((r) => r.json())).generation?.status, { timeout: 90_000, intervals: [1_000] }).toBe("succeeded");
+  const { jobs, charges } = await settled(s, 1);
+  const [draft] = jobs;
+  expect(draft.params).toMatchObject({ draft: true, resolution: "480p", watermark: true });
+  expect(charges.map((c) => [c.id, c.status, c.credits])).toEqual([[draft.id, "succeeded", draftPrice]]);
+  const posts = s.sent.filter((x) => x.path === "/api/generate");
+  expect(posts).toHaveLength(1);
+  expect(posts[0].body).toMatchObject({ draft: true, resolution: "480p", maxCredits: draftPrice });
+  expect(s.errors).toEqual([]);
+});
+
+test.fixme("Draft first, then the 1080p final: approved at the price on each button, charged once each — the draft at the 480p price, the final at the 1080p price — the final's UI half has no Release 1 screen: DraftFinalBar is mounted only by the old Inspector and strip (components/graphite/DraftFinal.tsx); owner question: where does a draft's final live? Its server side runs in the API twins; the draft half runs above", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(300_000);
   const s = await seeded(page);
@@ -215,13 +260,14 @@ test("Draft first, then the 1080p final: approved at the price on each button, c
   await expect(page.getByRole("group", { name: "Resolution" }).getByRole("button", { name: "1080p" })).toBeDisabled();
   await expect(page.getByTestId("gen-takes-count")).toHaveText("1");
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveAttribute("aria-label", /^Generate draft · \d[\d,]* cr$/, { timeout: 60_000 });
+  await expect(go).toHaveAttribute("aria-label", /^Make draft · \d[\d,]* cr$/, { timeout: 60_000 });
   const draftPrice = creditsIn(await go.getAttribute("aria-label"));
   /* Exactly what any 480p take of these words costs. */
   expect(draftPrice).toBe(await quoted(page, s, take(s, "480p")));
   await go.click();
 
   /* The draft lands as its own strip, with its watermark, its date and its final's price. */
+  await page.getByTestId("make-tab-recent").click();
   const strip = page.getByTestId("gen-draft").first();
   await expect(strip.getByTestId("draft-final-facts")).toHaveText(/^Watermarked 480p draft · Final available until \w{3} \d{1,2}, \d{1,2}:\d{2}\s?[AP]M$/, { timeout: 120_000 });
   const make = strip.getByTestId("draft-final-make");
@@ -269,17 +315,10 @@ test("Draft first, then the 1080p final: approved at the price on each button, c
   await floors(page, info, strip);
   await shot(page, info, strip, "draft-final");
 
-  /* Studio › Takes, the review desk, files the pair under their one shot (a final is filed on its draft's), each card
-     named as the final or the draft, newest first. */
-  await page.goto(`/suites?suite=studio&page=takes&project=${s.project.id}`);
-  const grid = page.getByTestId("takes-grid");
-  await expect(grid.getByTestId("take-pair")).toHaveText(["FINAL", "DRAFT"], { timeout: 60_000 });
-  await expect(grid.locator("[data-pair]")).toHaveCount(2);
-  await expect(grid.getByTestId("takes-shot")).toHaveCount(1);
-
+  /* (The Takes desk that filed the pair under its shot is deleted with the stage pages: the board's Shots region draws it.) */
   /* The Library's flat grid keeps the pair together, each card named as the draft or the final. */
   await openGen(page, s.project);
-  if (await page.getByTestId("toggle-library").isVisible()) await page.getByTestId("toggle-library").click();
+  if (await page.getByTestId("make-open-library").isVisible()) await page.getByTestId("make-open-library").click();
   await expect(page.getByTestId("library").getByTestId("take-pair")).toHaveText(["FINAL", "DRAFT"], { timeout: 60_000 });
   expect(s.errors).toEqual([]);
 });
@@ -298,19 +337,96 @@ test("a draft is one take at its button's price: takes set before Draft first do
   await page.getByTestId("gen-prompt").fill(WORDS);
   const pill = page.getByTestId("workspace-credits");
   const go = page.getByTestId("gen-generate");
-  await page.getByRole("group", { name: "Takes per generate" }).getByRole("button", { name: "More" }).click();
-  await expect(go).toHaveText(`Generate 2 takes · ${(2 * price).toLocaleString("en-US")} cr`, { timeout: 60_000 });
+  await page.getByTestId("gen-takes-2").click();
+  await expect(go).toHaveText(`Make 2 takes · ${(2 * price).toLocaleString("en-US")} cr`, { timeout: 60_000 });
   await expect(pill).toHaveAttribute("data-low", "true");
   /* Draft first: one take, at one take's price, and that is the last quote the pill measures the balance against. */
   await page.getByTestId("gen-draft-toggle").click();
   await expect(page.getByTestId("gen-takes-count")).toHaveText("1");
-  await expect(go).toHaveAttribute("aria-label", `Generate draft · ${price.toLocaleString("en-US")} cr`);
+  await expect(go).toHaveText(`Make draft · ${price.toLocaleString("en-US")} cr`);
   await expect(pill).not.toHaveAttribute("data-low");
   expect(s.sent.filter((x) => x.path === "/api/generate")).toHaveLength(0);
   expect(s.errors).toEqual([]);
 });
 
-test("a draft past its seven days cannot make a final: the button is off, it says why, and nothing can be charged for one", async ({ page }, info) => {
+/** The server's side of a draft's final, with no screen: quote it fresh, then send it at that figure as its ceiling, with its own key. */
+async function finalByApi(page: Page, s: Seeded, draftId: string, maxCredits?: number) {
+  const reply = await page.request.post("/api/generate/quote", { headers: { "X-Workbench-Scope": s.scope }, data: { model: ENGINE, finalOf: draftId } });
+  const quote = await reply.json();
+  expect(reply.ok(), JSON.stringify(quote)).toBeTruthy();
+  const credits = Number(quote.estimatedCredits);
+  const data = { finalOf: draftId, model: ENGINE, refine: false, maxCredits: maxCredits ?? credits, quoteFingerprint: quote.fingerprint };
+  const sent = await page.request.post("/api/generate", { headers: { "X-Workbench-Scope": s.scope, "Idempotency-Key": `final-${randomUUID()}` }, data });
+  return { credits, sent, data, body: await sent.json() };
+}
+
+test("API: a draft past its seven days cannot make a final: the server refuses to price or send one, and nothing is charged for it", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "a route check, once");
+  test.setTimeout(240_000);
+  const s = await seeded(page);
+  const draftId = await draftByApi(page, s, WORDS);
+  /* Eight days on. */
+  const tenant = createClient({ url: s.tenantUrl, timeout: 10_000 });
+  try {
+    await tenant.execute({ sql: "UPDATE generations SET created_at=created_at-? WHERE id=?", args: [8 * MS_DAY, draftId] });
+  } finally {
+    tenant.close();
+  }
+  const quote = await page.request.post("/api/generate/quote", { headers: { "X-Workbench-Scope": s.scope }, data: { model: ENGINE, finalOf: draftId } });
+  expect(quote.status()).toBe(409);
+  expect((await quote.json()).error).toMatch(/expired on .* seven days/);
+  const forced = await page.request.post("/api/generate", { headers: { "X-Workbench-Scope": s.scope, "Idempotency-Key": `late-final-${randomUUID()}` }, data: { model: ENGINE, finalOf: draftId, maxCredits: 999 } });
+  expect(forced.status()).toBe(409);
+  expect((await forced.json()).error).toMatch(/expired/);
+  const { jobs, charges } = await settled(s, 1);
+  expect(jobs.map((j) => j.id)).toEqual([draftId]);
+  expect(charges).toHaveLength(1);
+});
+
+test("API: a draft's final runs to success at the 1080p quote: two charges, the draft's and the final's, and a request of exactly five keys", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "a route check, once");
+  test.setTimeout(300_000);
+  const s = await seeded(page);
+  const draftId = await draftByApi(page, s, WORDS);
+  const draftPrice = await quoted(page, s, { ...take(s, "480p"), draft: true });
+  const run = await finalByApi(page, s, draftId);
+  expect(run.sent.status(), JSON.stringify(run.body)).toBe(202);
+  /* The final is priced as any 1080p take of these words, and sent at that figure as its ceiling. */
+  const finalPrice = await quoted(page, s, take(s, "1080p"));
+  expect(run.credits).toBe(finalPrice);
+  expect(run.credits).toBeGreaterThan(draftPrice);
+  expect(Object.keys(run.data).sort()).toEqual(["finalOf", "maxCredits", "model", "quoteFingerprint", "refine"]);
+  expect(run.data.maxCredits).toBe(finalPrice);
+  await expect.poll(async () => (await page.request.get(`/api/jobs/${run.body.id}`, { headers: { "X-Workbench-Scope": s.scope } }).then((r) => r.json())).generation?.status, { timeout: 90_000, intervals: [1_000] }).toBe("succeeded");
+  const { jobs, charges } = await settled(s, 2);
+  const [draft, final] = jobs;
+  expect(draft.id).toBe(draftId);
+  expect(final.params).toMatchObject({ finalOf: draftId, resolution: "1080p", watermark: false });
+  expect(draft.params.finalGenId).toBe(final.id);
+  expect(charges.map((c) => [c.id, c.status, c.credits])).toEqual([[draftId, "succeeded", draftPrice], [final.id, "succeeded", finalPrice]]);
+});
+
+test("API: a final refused at moderation is not charged on the books, and the draft can make its final again at today's quote", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "a route check, once");
+  test.setTimeout(300_000);
+  const s = await seeded(page);
+  const draftId = await draftByApi(page, s, `${WORDS} [mock:final-refused]`);
+  const first = await finalByApi(page, s, draftId);
+  expect(first.sent.status(), JSON.stringify(first.body)).toBe(202);
+  /* Refused by the (mocked) engine once its status is read (as the card does): the final's job failed and its charge released. */
+  await expect.poll(async () => (await page.request.get(`/api/jobs/${first.body.id}`, { headers: { "X-Workbench-Scope": s.scope } }).then((r) => r.json())).generation?.status, { timeout: 90_000, intervals: [1_000] }).toBe("failed");
+  const { jobs, charges } = await settled(s, 2);
+  const final = jobs.find((j) => j.params.finalOf === draftId)!;
+  expect(final.status).toBe("failed");
+  expect(charges.find((c) => c.id === final.id)).toMatchObject({ status: "failed", credits: 0 });
+  expect(charges.find((c) => c.id === draftId)!.credits).toBeGreaterThan(0);
+  /* The draft's price for its final is the same again: it is still offered at the quote. */
+  const again = await page.request.post("/api/generate/quote", { headers: { "X-Workbench-Scope": s.scope }, data: { model: ENGINE, finalOf: draftId } });
+  expect(again.ok()).toBe(true);
+  expect(Number((await again.json()).estimatedCredits)).toBe(first.credits);
+});
+
+test.fixme("a draft past its seven days cannot make a final: the button is off, it says why, and nothing can be charged for one — no Release 1 screen for a draft's final; see the API twin above for the server side", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(240_000);
   const s = await seeded(page);
@@ -323,6 +439,7 @@ test("a draft past its seven days cannot make a final: the button is off, it say
     tenant.close();
   }
   await openGen(page, s.project);
+  await page.getByTestId("make-tab-recent").click();
   const strip = page.getByTestId("gen-draft").first();
   await expect(strip).toHaveAttribute("data-batch-id", `draft:${draftId}`, { timeout: 60_000 });
   const status = strip.getByTestId("draft-final-status");
@@ -348,12 +465,13 @@ test("a draft past its seven days cannot make a final: the button is off, it say
   expect(s.errors).toEqual([]);
 });
 
-test("a final refused at moderation is not charged on the books, its card says why, and the draft can make its final again at the price on the button", async ({ page }, info) => {
+test.fixme("a final refused at moderation is not charged on the books, its card says why, and the draft can make its final again at the price on the button — no Release 1 screen for a draft's final; see the API twin above for the server side", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   test.setTimeout(300_000);
   const s = await seeded(page);
   const draftId = await draftByApi(page, s, `${WORDS} [mock:final-refused]`);
   await openGen(page, s.project);
+  await page.getByTestId("make-tab-recent").click();
   const strip = page.getByTestId("gen-draft").first();
   await expect(strip).toHaveAttribute("data-batch-id", `draft:${draftId}`, { timeout: 60_000 });
   const make = strip.getByTestId("draft-final-make");
@@ -385,12 +503,13 @@ test("a final refused at moderation is not charged on the books, its card says w
   expect(s.errors).toEqual([]);
 });
 
-test("a final that never reached the server is checked on the next press, never sent again: the final goes once, under a new key", async ({ page }, info) => {
+test.fixme("a final that never reached the server is checked on the next press, never sent again: the final goes once, under a new key — no Release 1 screen for a draft's final (owner question); the lost-request check and key set-aside have no API twin yet", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   test.setTimeout(300_000);
   const s = await seeded(page);
   const draftId = await draftByApi(page, s, WORDS);
   await openGen(page, s.project);
+  await page.getByTestId("make-tab-recent").click();
   const strip = page.getByTestId("gen-draft").first();
   await expect(strip).toHaveAttribute("data-batch-id", `draft:${draftId}`, { timeout: 60_000 });
   const make = strip.getByTestId("draft-final-make");
@@ -412,6 +531,7 @@ test("a final that never reached the server is checked on the next press, never 
 
   /* The next press asks after the lost request by its key first: it never arrived, so it is set aside, and this press goes. */
   await page.reload();
+  await page.getByTestId("make-tab-recent").click();
   const again = page.getByTestId("gen-draft").first();
   await expect(again.getByTestId("draft-final-make")).toHaveAttribute("aria-label", `Make the 1080p final · ${finalPrice.toLocaleString("en-US")} cr`, { timeout: 60_000 });
   const mark = s.sent.length;
@@ -436,7 +556,7 @@ test("a final that never reached the server is checked on the next press, never 
 });
 
 
-test("a moved final quote needs fresh approval and sends no render", async ({ page }, info) => {
+test.fixme("a moved final quote needs fresh approval and sends no render — no Release 1 screen for a draft's final (owner question); a moved quote needing fresh approval has no screen to test", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const s = await seeded(page);
   await draftByApi(page, s, WORDS);
@@ -449,6 +569,7 @@ test("a moved final quote needs fresh approval and sends no render", async ({ pa
     return route.fulfill({ json: { ...data, estimatedCredits: Number(data.estimatedCredits) + (moved ? 1 : 0) } });
   });
   await openGen(page, s.project);
+  await page.getByTestId("make-tab-recent").click();
   const strip = page.getByTestId("gen-draft").first();
   const make = strip.getByTestId("draft-final-make");
   await expect(make).toHaveAttribute("aria-label", /^Make the 1080p final · \d[\d,]* cr$/, { timeout: 60_000 });

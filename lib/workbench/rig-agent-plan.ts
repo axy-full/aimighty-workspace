@@ -53,6 +53,12 @@ const clip = (text: string, max: number) => text.replace(/[\u0000-\u0008\u000b\u
 
 export type SnapshotCard = { id: string; kind: string; title: string; locked?: true; shot?: true; reference?: true };
 export type SnapshotAsset = { id: string; name: string; kind: "image" | "video"; category: string };
+/**
+ * A file the person attached to the ask (lib/workbench/rig-agent-attachments.ts): an image is shown to the planner
+ * as a picture, a text file is quoted, anything else is named. Only what it is, never its bytes: the planning
+ * figure and the charge read the same list.
+ */
+export type SnapshotAttachment = { id: string; name: string; kind: "image" | "text" | "file"; /** A text file's stored size, in bytes: what its excerpt can come to. */ bytes?: number };
 export type BoardSnapshot = {
   production: string;
   brief: string;
@@ -62,6 +68,8 @@ export type BoardSnapshot = {
   cast: { name: string; asset?: string; about?: string }[];
   places: { name: string; asset?: string; about?: string }[];
   boardShots: { number: string; title: string }[];
+  /** The files attached to the ask, when there are any (absent otherwise, so an ask without files reads as before). */
+  attached?: SnapshotAttachment[];
 };
 export const SNAPSHOT_LIMITS = { cards: 80, assets: 40, cast: 20, places: 20, boardShots: 24 } as const;
 
@@ -71,7 +79,7 @@ export const SNAPSHOT_LIMITS = { cards: 80, assets: 40, cast: 20, places: 20, bo
  * from, the cast and places the production already has, and its storyboard
  * shots. Bounded; titles and names are clipped; none of it is instruction.
  */
-export function boardSnapshot(project: Project, canvas: { nodes: CanvasNode[]; assets: Asset[] }, goal: string): BoardSnapshot {
+export function boardSnapshot(project: Project, canvas: { nodes: CanvasNode[]; assets: Asset[] }, goal: string, attached: readonly SnapshotAttachment[] = []): BoardSnapshot {
   const assets = new Map<string, Asset>();
   for (const a of [...canvas.assets, ...project.assets, ...(project.sharedAssets ?? [])]) if (!assets.has(a.id) && (a.kind === "image" || a.kind === "video")) assets.set(a.id, a);
   const known = (id: string | undefined) => (id && assets.has(id) ? id : undefined);
@@ -99,6 +107,7 @@ export function boardSnapshot(project: Project, canvas: { nodes: CanvasNode[]; a
     assets: ordered.slice(0, SNAPSHOT_LIMITS.assets).map((a) => ({ id: a.id, name: clip(a.name || a.id, 80), kind: a.kind as "image" | "video", category: clip(a.category || "", 40) })),
     cast, places,
     boardShots: boardShots(project.production?.beats).slice(0, SNAPSHOT_LIMITS.boardShots).map((s) => ({ number: s.number, title: clip(s.shot.description || s.scene || "Shot", 160) })),
+    ...(attached.length ? { attached: attached.map((a) => ({ id: a.id, name: clip(a.name || "Attached file", 80), kind: a.kind, ...(a.kind === "text" && a.bytes !== undefined ? { bytes: a.bytes } : {}) })) } : {}),
   };
 }
 
@@ -414,6 +423,8 @@ export type RigAgentMoneyView = {
 /** A render (or the check of its take) after the build, as the run card shows it. */
 export type RigAgentPaidStepView = {
   seq: number;
+  /** The board card this step is about (display only: it changes no price, fingerprint, total or approval). Absent in a view built without one. */
+  nodeId?: string | null;
   tool: "render" | "verify";
   title: string;
   state: RigAgentStepState;
@@ -435,6 +446,33 @@ export type RigAgentPaidStepView = {
   canRender: boolean;
   /** The approval a tap gives: the price the card shows. */
   fingerprint: string | null;
+  /** A fix: the step of the shot it renders again under the plan's approval. */
+  fixOf?: number | null;
+  /** Covered by the plan's one approval (no tap of its own). */
+  inPlan?: boolean;
+};
+
+/**
+ * The plan's one approval (lib/workbench/plan-approval.ts), as the plan card shows it: before it, the server's
+ * quote (T and the most the plan may spend, 2T); after it, who approved, what is used and the fixes drawn.
+ */
+export type RigAgentPlanView = {
+  /** The server's quote while the plan waits for its approval; null once approved, or while a render has no price. */
+  quote: { total: number; ceiling: number; approximate: boolean; fingerprint: string; covered: number[]; asks: number[] } | null;
+  /** Why the plan cannot be approved yet (a render not priced), when it cannot. */
+  blocked: string | null;
+  approval: {
+    mine: boolean; at: number; expiresAt: number; total: number; ceiling: number;
+    /** A listed render may settle above its quote: the total reads "up to". */
+    approximate: boolean;
+    /** What the plan's renders and fixes have used of the ceiling: settled at their final charge (after any refund), plus holds. */
+    used: number;
+    /** Fixes drawn, by the shot's step. */
+    fixes: Record<string, number>;
+    maxFixes: number;
+    open: boolean;
+    closedReason: string | null;
+  } | null;
 };
 export type RigAgentProposalView = {
   title: string; summary: string;
@@ -460,6 +498,8 @@ export type RigAgentRunView = {
   money: RigAgentMoneyView | null;
   /** The renders after the build, and the checks of their takes. */
   paid: RigAgentPaidStepView[];
+  /** The plan's one approval: its quote before, its record after. Null for a run with no renders. */
+  plan?: RigAgentPlanView | null;
   at: number;
 };
 

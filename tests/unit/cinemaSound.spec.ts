@@ -212,20 +212,26 @@ test("the Sound switch is off by default, offered only where the engines route s
   expect(generationRequestBody({ ...request, references: [{ uploadId: "room", role: "reference_audio" }] })).not.toHaveProperty("generateAudio");
 });
 
-test("the model sheet's priced read carries Gen's Sound switch; Cinema Studio's own row reads quoted, its figure on Generate", async () => {
+test("the model sheet's priced read carries Gen's Sound switch; Cinema Studio's row is priced at its sound, held: about N cr, at most 3N cr", async () => {
   const { rateQuery, needsPricedRead, rowPrice, UNTOUCHED } = await import("../../lib/workspace/model-picker");
   const at = { ...UNTOUCHED, picks: { generateAudio: true } };
   expect(new URLSearchParams(rateQuery(at)).get("pickSound")).toBe("1");
   expect(new URLSearchParams(rateQuery(UNTOUCHED)).has("pickSound")).toBe(false);
   const silentRate = { credits: 31, resolution: "720p", ratio: "16:9", duration: 5, approximate: true as const };
   const loudRate = { ...silentRate, credits: 36, sound: true as const };
-  /* Cinema Studio's row shows no figure (D0.2: it reads "quoted"), so no state of the switch makes the sheet ask for one. */
-  for (const row of [{ ...CINEMA_ROW, rate: silentRate }, { ...CINEMA_ROW, rate: loudRate }, { ...CINEMA_SILENT_ROW, rate: silentRate }])
-    for (const where of [UNTOUCHED, at]) expect(needsPricedRead([row], where)).toBe(false);
-  /* Whatever the list or a priced read carries for it, the row says quoted: the take's price, sound included, is the button's. */
+  /* Cinema Studio's row is priced like any row: the sheet asks for its rate only where the list's does not fit the switch. */
+  expect(needsPricedRead([{ ...CINEMA_ROW, rate: silentRate }], UNTOUCHED)).toBe(false);
+  expect(needsPricedRead([{ ...CINEMA_ROW, rate: silentRate }], at)).toBe(true);
+  expect(needsPricedRead([{ ...CINEMA_ROW, rate: loudRate }], UNTOUCHED)).toBe(true);
+  /* Where sound is not offered, the switch is not on its settings, so the silent rate fits. */
+  expect(needsPricedRead([{ ...CINEMA_SILENT_ROW, rate: silentRate }], at)).toBe(false);
+  /* With sound on, the row is the priced read's figure for a take with sound, said as what approving it holds. */
   const sheet = { key: rateQuery(at), models: { [CINEMA_STUDIO_MODEL_ID]: loudRate }, audio: null };
-  expect(rowPrice({ ...CINEMA_ROW, rate: silentRate }, {}, at, sheet)).toMatchObject({ credits: null, kind: "none", detail: "quoted" });
-  expect(rowPrice({ ...CINEMA_ROW, rate: silentRate }, {})).toMatchObject({ credits: null, kind: "none", detail: "quoted" });
+  expect(rowPrice({ ...CINEMA_ROW, rate: silentRate }, {}, at, sheet)).toMatchObject({ credits: 36, kind: "rate", approximate: true });
+  expect(rowPrice({ ...CINEMA_ROW, rate: silentRate }, {}, at, sheet).title).toMatch(/^About 36 cr, at most 108 cr per take/);
+  /* The list's silent figure is never shown for a take with sound. */
+  expect(rowPrice({ ...CINEMA_ROW, rate: silentRate }, {}, at)).toMatchObject({ credits: null, kind: "none" });
+  expect(rowPrice({ ...CINEMA_ROW, rate: silentRate }, {})).toMatchObject({ credits: 31, kind: "rate", approximate: true });
 });
 
 test("Recreate brings a Cinema Studio take's Sound switch back where sound is offered, and the card says why when it cannot", async () => {
@@ -460,7 +466,7 @@ test("unset, a take asked for with sound is refused before anything is reserved 
   const silent = prepared(await f.admission.prepareGeneration(f.body(), actor));
   /* Approved or not, true or merely truthy: the same refusal, and nothing reserved, kept or dispatched. */
   for (const [value, key] of [[true, "true"], ["yes", "truthy"], [1, "one"]] as const) {
-    const reply = await f.post({ ...f.body({ generateAudio: value }), maxCredits: silent.quote.estimatedCredits, quoteFingerprint: silent.quote.fingerprint }, `cinema-sound-refused-${key}`);
+    const reply = await f.post({ ...f.body({ generateAudio: value }), maxCredits: silent.quote.ceilingCredits, quoteFingerprint: silent.quote.fingerprint }, `cinema-sound-refused-${key}`);
     expect(reply.status, key).toBe(400);
     expect(await reply.json(), key).toEqual({ error: UNAVAILABLE });
   }
@@ -469,7 +475,7 @@ test("unset, a take asked for with sound is refused before anything is reserved 
   expect(f.dispatches).toEqual([]);
   /* Off (or said false), the take is the silent one it always was. */
   expect(prepared(await f.admission.prepareGeneration(f.body({ generateAudio: false }), actor)).quote.fingerprint).toBe(silent.quote.fingerprint);
-  const accepted = await f.post({ ...f.body(), maxCredits: silent.quote.estimatedCredits, quoteFingerprint: silent.quote.fingerprint }, "cinema-sound-silent");
+  const accepted = await f.post({ ...f.body(), maxCredits: silent.quote.ceilingCredits, quoteFingerprint: silent.quote.fingerprint }, "cinema-sound-silent");
   expect(accepted.status, await accepted.clone().text()).toBe(202);
   expect(f.dispatches).toHaveLength(1);
 }));
@@ -479,7 +485,7 @@ test("unset, a workspace that only carries the legacy flag is not the house: sou
   expect(refused).toMatchObject({ ok: false, status: 400 });
   expect(JSON.stringify(refused)).toContain(UNAVAILABLE);
   const silent = prepared(await f.admission.prepareGeneration(f.body(), actor));
-  const reply = await f.post({ ...f.body({ generateAudio: true }), maxCredits: silent.quote.estimatedCredits, quoteFingerprint: silent.quote.fingerprint }, "cinema-sound-flagged");
+  const reply = await f.post({ ...f.body({ generateAudio: true }), maxCredits: silent.quote.ceilingCredits, quoteFingerprint: silent.quote.fingerprint }, "cinema-sound-flagged");
   expect(reply.status).toBe(400);
   expect(await reply.json()).toEqual({ error: UNAVAILABLE });
   expect(await f.rows()).toEqual([]);
@@ -493,7 +499,7 @@ test("unset, the house workspace (by its id) may still ask for sound, at the fig
   expect(params(loud).generateAudio).toBe(true);
   expect(params(loud).higgsfieldVendorCostUsd).toBe(params(silent).higgsfieldVendorCostUsd);
   expect(loud.quote.fingerprint).not.toBe(silent.quote.fingerprint);
-  const accepted = await f.post({ ...f.body({ generateAudio: true }), maxCredits: loud.quote.estimatedCredits, quoteFingerprint: loud.quote.fingerprint }, "cinema-sound-house");
+  const accepted = await f.post({ ...f.body({ generateAudio: true }), maxCredits: loud.quote.ceilingCredits, quoteFingerprint: loud.quote.fingerprint }, "cinema-sound-house");
   const result = await accepted.json();
   expect(accepted.status, JSON.stringify(result)).toBe(202);
   expect(f.dispatches).toEqual([result.id]);
@@ -520,11 +526,11 @@ test("set, a take with sound is quoted with what sound adds, its approval is bou
   expect(referenced.quote.estimatedCredits).toBe(silent.quote.estimatedCredits);
 
   /* An approval given with the switch off is not one for sound: refused, nothing kept, nothing dispatched. */
-  const swapped = await f.post({ ...f.body({ generateAudio: true }), maxCredits: silent.quote.estimatedCredits, quoteFingerprint: silent.quote.fingerprint }, "cinema-sound-swapped");
+  const swapped = await f.post({ ...f.body({ generateAudio: true }), maxCredits: silent.quote.ceilingCredits, quoteFingerprint: silent.quote.fingerprint }, "cinema-sound-swapped");
   expect(swapped.status, await swapped.text()).toBe(409);
   expect(await f.rows()).toEqual([]);
   /* Approved with sound: accepted once, with the switch on the row and the figure it was approved at. */
-  const accepted = await f.post({ ...f.body({ generateAudio: true }), maxCredits: loud.quote.estimatedCredits, quoteFingerprint: loud.quote.fingerprint }, "cinema-sound-once");
+  const accepted = await f.post({ ...f.body({ generateAudio: true }), maxCredits: loud.quote.ceilingCredits, quoteFingerprint: loud.quote.fingerprint }, "cinema-sound-once");
   const result = await accepted.json();
   expect(accepted.status, JSON.stringify(result)).toBe(202);
   expect(f.dispatches).toEqual([result.id]);

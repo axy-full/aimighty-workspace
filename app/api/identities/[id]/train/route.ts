@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
-import { startTraining, trainCostUsd, identityForBrowser } from "@/lib/identities";
+import { startTraining, trainCostUsd, identityForBrowser, getIdentity } from "@/lib/identities";
+import { consentForTraining, projectKeysFor } from "@/lib/security/consent";
+import { ConsentError } from "@/lib/security/consent-words";
 import { allowanceCheck } from "@/lib/allowance";
 import { checkLimits } from "@/lib/limits";
 import { billCredits } from "@/lib/creditTerms";
 import { creditsApply } from "@/lib/credits";
 import { currentTenant } from "@/lib/tenant";
 import { trainApprovalProblem } from "@/lib/identityTraining";
+import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 
 import { withGenerationRequest, SpendReservationError } from "@/lib/generationRequests";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -38,6 +42,23 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = withTenant(async function POST(req: Request, { params }: Ctx) {
   const got = await requireRender();
   if (got.response) return got.response;
+  /* `consent: true` below is recorded as the person's consent (consent_by): people only, never a token or an agent. */
+  if (!isPerson({ user: got.user, token: got.token })) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
+  /* The sample workspace spends nothing: answered before the request is claimed. */
+  { const off = await sampleWorkspaceOff(); if (off) return off; }
+  /* Every training cites a live consent record for this identity's production and cast member, allowing identity
+     training (review of #558, M1): checked, and refused in words, before anything is claimed or sent. */
+  {
+    const peek = await req.clone().json().catch(() => ({})) as { consentId?: unknown; subjectKey?: unknown };
+    const identity = await getIdentity((await params).id);
+    if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    try {
+      await consentForTraining(peek.consentId, await projectKeysFor(identity.projectId, got.user.id), peek.subjectKey);
+    } catch (error) {
+      if (error instanceof ConsentError) return NextResponse.json({ error: error.message }, { status: error.status });
+      throw error;
+    }
+  }
   return withGenerationRequest(req, got.user.id, async () => {
   const { id } = await params;
   const body = await req.json().catch(() => ({}));

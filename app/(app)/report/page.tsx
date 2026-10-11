@@ -34,20 +34,20 @@ export default function ReportPage() {
           <Link href="/privacy" className="text-blue">Privacy &amp; retention</Link>
         </div>
         <h1 className="h1 mt-3">Report content</h1>
-        <p className="mt-3 max-w-[56ch] text-[15px] text-dim">A link or a take id, what is wrong, and a way to reach you if you want one. The desk reads every report.</p>
+        <p className="mt-3 max-w-[56ch] text-[15px] text-lead">A link or a take id, what is wrong, and a way to reach you if you want one. The desk reads every report.</p>
         {sent ? (
           <section className="card mt-6 px-5 py-5"><p className="text-[15px]">Thank you. It has reached the desk.</p></section>
         ) : (
           <form onSubmit={submit} className="card mt-6 flex flex-col gap-3 px-5 py-5">
-            <label className="flex flex-col gap-1 text-[12.5px] text-dim">Where
+            <label className="flex flex-col gap-1 text-[12.5px] text-lead">Where
               <input className="ctl" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="A link, or a take id" /></label>
-            <label className="flex flex-col gap-1 text-[12.5px] text-dim">What is wrong
+            <label className="flex flex-col gap-1 text-[12.5px] text-lead">What is wrong
               <select className="ctl" value={reason} onChange={(e) => setReason(e.target.value)}>
                 {REPORT_REASONS.map((r) => <option key={r} value={r}>{REASON_LABELS[r]}</option>)}
               </select></label>
-            <label className="flex flex-col gap-1 text-[12.5px] text-dim">Details, if any
+            <label className="flex flex-col gap-1 text-[12.5px] text-lead">Details, if any
               <textarea className="ctl !h-24" value={details} onChange={(e) => setDetails(e.target.value)} maxLength={2000} /></label>
-            <label className="flex flex-col gap-1 text-[12.5px] text-dim">Your email, if you want an answer
+            <label className="flex flex-col gap-1 text-[12.5px] text-lead">Your email, if you want an answer
               <input className="ctl" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
             <div><button type="submit" className="btn-primary" disabled={busy}>{busy ? "Sending…" : "Send the report"}</button></div>
             {err && <p className="text-[13px] text-lift">{err}</p>}

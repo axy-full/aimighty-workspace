@@ -6,6 +6,12 @@ import { newProject, type Project } from "../lib/workbench/studio";
 import { smallTargets, smallText } from "./phoneFloors";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, mockProjects } from "./helpers/workspaceFixtures";
 import { composePrompt, craftModules } from "../lib/studio";
+import { openAdvanced } from "./helpers/makeAdvanced";
+import { projectName } from "./helpers/projectName";
+import { isCompact } from "./helpers/shellMode";
+
+/* Release 1: the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here */
+test.beforeEach(async ({}, info) => { test.skip(isCompact(info), "the phone app draws its own simple Make (type, words, engine line with Change, References, Make at its price: demo-s10-phone-make-workbench), not this panel's composer; the desktop keeps every assertion here"); });
 
 /**
  * Gen's film vocabulary (idea 13): under Direction, six chips — Shot · Angle ·
@@ -73,13 +79,28 @@ async function open(page: Page, options: Options = {}) {
   page.on("pageerror", (error) => errors.push(error.message));
   /* React's own complaints (a duplicate key, a bad attribute) count as errors; a refused request is the fixtures'. */
   page.on("console", (m) => { if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) errors.push(m.text().slice(0, 300)); });
-  await page.goto("/suites?view=gen");
+  await page.goto("/suites?make=video");
   await expect(page.getByTestId("gen-view")).toBeVisible();
-  await expect(page.getByTestId("project-name")).toHaveText("Harbour film study");
+  await openAdvanced(page);
+  await expect(projectName(page)).toHaveText("Harbour film study");
   /* Hydrated: the composer has read its engines and priced itself once words arrive. */
-  await expect(page.getByTestId("gen-model")).toContainText("Seedance");
+  await expect(page.getByTestId("make-engine-line")).toContainText("Seedance", { timeout: 60_000 });
   return { errors, priced, lists, clips };
 }
+
+
+/**
+ * Again on a take's card in Make › Recent (it was the Inspector's Recreate), once it wears its price: the recipe lands in Make, which
+ * is on its Make tab with Advanced folded. `advanced` opens it again, retried: Make redraws as a recipe's references are read.
+ */
+async function recreate(page: Page, id: string) {
+  await page.getByTestId("make-tab-recent").click();
+  const again = page.locator(`[data-testid="make-recent-card"][data-take*="${id}"]`).getByTestId("make-again");
+  await expect(again).toBeEnabled({ timeout: 90_000 });
+  await again.click();
+  await expect(page.getByTestId("make-tab-make")).toHaveAttribute("aria-selected", "true");
+}
+const advanced = (page: Page) => expect(async () => { await openAdvanced(page); }).toPass({ timeout: 20_000 });
 
 const chip = (page: Page, key: string) => page.getByTestId(`gen-film-${key}`);
 /** What covers the chip's centre (the sticky Generate, the tab bar…), or null when the chip is on top. */
@@ -112,7 +133,7 @@ test("six Auto chips open a grid of loops and drawings; a pick and a #word are w
 
   const prompt = page.getByTestId("gen-prompt");
   await prompt.fill(WORDS);
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · 31 cr");
 
   /* Camera: Auto first, the moves, then the named techniques; the published loop plays, the rest are drawn. */
   await chip(page, "camera").click();
@@ -237,7 +258,7 @@ test("six Auto chips open a grid of loops and drawings; a pick and a #word are w
 
   /* Generate: the words carry the setup once, written the bank's way, and the setup goes as data. */
   const go = page.getByTestId("gen-generate");
-  await expect(go).toHaveText("Generate · 31 cr");
+  await expect(go).toHaveText("Make · 31 cr");
   await go.click();
   await expect.poll(() => priced.length).toBe(1);
   const spec = { shot: "cu", move: "push", lens: "35" };
@@ -251,11 +272,8 @@ test("six Auto chips open a grid of loops and drawings; a pick and a #word are w
 test("Recreate brings a take's setup back onto the chips and out of the words; a row no chip shows can be removed; Undo puts Auto back", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors, priced } = await open(page, { generations: [craned()] });
-  await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_crane']").click();
-  const inspector = page.getByTestId("asset-inspector");
-  await inspector.getByTestId("inspector-recreate").click();
-  await expect(page.getByTestId("gen-recipe-setup")).toHaveText("Wide · Crane · Backlit · Golden hour");
-  await expect(page.getByTestId("gen-recipe-setup")).toHaveAttribute("data-state", "kept");
+  await recreate(page, "gen_crane");
+  await advanced(page);
   const prompt = page.getByTestId("gen-prompt");
   await expect(prompt).toHaveValue("harbour at dusk, a boat drifts.");
   await expect(chip(page, "shot")).toHaveAttribute("aria-label", "Shot: Wide");
@@ -264,25 +282,19 @@ test("Recreate brings a take's setup back onto the chips and out of the words; a
   /* The hour has no chip of its own: it shows, and can be taken off. */
   const extras = page.getByTestId("gen-film-extras");
   await expect(extras).toContainText("Golden hour");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · 31 cr");
   await page.getByTestId("gen-generate").click();
   await expect.poll(() => priced.length).toBe(1);
   expect(priced[0]).toMatchObject({ prompt: composePrompt("harbour at dusk, a boat drifts.", SETUP), shotSpec: SETUP });
-  const setupNote = page.getByTestId("gen-recipe-why").locator("[data-note='setup']");
-  await expect(setupNote).toHaveCount(0);
-  /* On a still the crane is not sent: the card says so, and it is not a change made here. */
-  await page.getByRole("tab", { name: "Images" }).click();
-  await expect(page.getByTestId("gen-recipe-setup")).toHaveAttribute("data-state", "changed");
-  await expect(setupNote).toHaveText("Setup A still has no camera move");
-  await page.getByRole("tab", { name: "Video" }).click();
-  await expect(page.getByTestId("gen-recipe-setup")).toHaveAttribute("data-state", "kept");
-  await expect(setupNote).toHaveCount(0);
+  /* On a still the crane is not sent: a still has no Camera chip. (The old card's own line about the setup is not on Make's card.) */
+  await page.getByTestId("make-type-image").click();
+  await advanced(page);
+  await expect(chip(page, "camera")).toHaveCount(0);
+  await page.getByTestId("make-type-video").click();
+  await advanced(page);
+  await expect(chip(page, "camera")).toHaveAttribute("aria-label", "Camera: Crane");
   await extras.getByRole("button", { name: "Remove Time of day: Golden hour" }).click();
   await expect(extras).toHaveCount(0);
-  /* The card still names what the take carried, and now says the chips no longer hold it. */
-  await expect(page.getByTestId("gen-recipe-setup")).toHaveText("Wide · Crane · Backlit · Golden hour");
-  await expect(page.getByTestId("gen-recipe-setup")).toHaveAttribute("data-state", "changed");
-  await expect(setupNote).toHaveText("Setup Changed here");
   await shot(page, info, "film-recreate", "gen-recipe");
 
   await page.getByTestId("gen-recipe-undo").click();
@@ -317,7 +329,7 @@ test("the grid says when its loops cannot be read and reads them again; Escape a
   expect(lists).toHaveLength(2);
 
   /* A still: framing, lens, light and look — no camera travel. # lists shot sizes first. */
-  await page.getByRole("tab", { name: "Images" }).click();
+  await page.getByTestId("make-type-image").click();
   await expect(page.getByTestId("gen-film").locator(".gx-fv-chip")).toHaveCount(5);
   await expect(chip(page, "camera")).toHaveCount(0);
   const prompt = page.getByTestId("gen-prompt");
@@ -327,7 +339,7 @@ test("the grid says when its loops cannot be read and reads them again; Escape a
   /* A still has no camera move: #push offers nothing, so nothing opens. */
   await prompt.fill("#push");
   await expect(page.getByTestId("gen-hash")).toHaveCount(0);
-  await page.getByRole("tab", { name: "Audio" }).click();
+  await page.getByTestId("make-type-audio").click();
   await expect(page.getByTestId("gen-film")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
@@ -464,15 +476,15 @@ const served = () => generation({
 test("Recreate takes what the server added off a take's words, so one chip changed sends one setup", async ({ page }, info) => {
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   const { errors, priced } = await open(page, { generations: [served()] });
-  await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_net']").click();
-  await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
+  await recreate(page, "gen_net");
+  await advanced(page);
   const prompt = page.getByTestId("gen-prompt");
   await expect(prompt).toHaveValue(`${NET}.`);
   await expect(chip(page, "shot")).toHaveAttribute("aria-label", "Shot: Close-up");
   await expect(chip(page, "camera")).toHaveAttribute("aria-label", "Camera: Auto");
   await chip(page, "camera").click();
   await page.getByTestId("gen-film-sheet").locator("[data-option='move:pull']").click();
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · 31 cr");
   await page.getByTestId("gen-generate").click();
   await expect.poll(() => priced.length).toBe(1);
   expect(priced[0]).toMatchObject({ prompt: composePrompt(`${NET}.`, { shot: "cu", move: "pull" }), shotSpec: { shot: "cu", move: "pull" } });
@@ -492,18 +504,16 @@ test("a connected take's setup, kept only in its words, comes back onto the chip
   test.skip(!["workbench-390x844", "workbench-1440x900"].includes(info.project.name), "one phone, one desktop");
   /* A member recreates on this workspace's engines, so the one press stops at this workspace's price check. */
   const { errors, priced } = await open(page, { member: true, generations: [accountTake()] });
-  await page.getByTestId("gen-view").locator(".gx-asset-thumb[data-ctx='asset:generation:gen_account']").click();
-  await page.getByTestId("asset-inspector").getByTestId("inspector-recreate").click();
+  await recreate(page, "gen_account");
+  await advanced(page);
   const prompt = page.getByTestId("gen-prompt");
   await expect(prompt).toHaveValue(`${GULL}.`);
   await expect(chip(page, "camera")).toHaveAttribute("aria-label", "Camera: Push in");
   await expect(chip(page, "light")).toHaveAttribute("aria-label", "Light: Soft");
-  await expect(page.getByTestId("gen-recipe-setup")).toHaveText("Push in · Soft");
-  await expect(page.getByTestId("gen-recipe-setup")).toHaveAttribute("data-state", "kept");
   await chip(page, "camera").click();
   await page.getByTestId("gen-film-sheet").locator("[data-option='move:pull']").click();
-  await expect(page.getByTestId("gen-recipe-setup")).toHaveAttribute("data-state", "changed");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
+  await expect(chip(page, "camera")).toHaveAttribute("aria-label", "Camera: Pull out");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · 31 cr");
   await page.getByTestId("gen-generate").click();
   await expect.poll(() => priced.length).toBe(1);
   expect(priced[0]).toMatchObject({ prompt: composePrompt(`${GULL}.`, { move: "pull", light: "soft" }), shotSpec: { move: "pull", light: "soft" } });
@@ -541,11 +551,10 @@ test("a batch of four takes carries the chips' setup in every take it prices and
   await chip(page, "camera").click();
   await sheet.locator("[data-option='move:push']").click();
   await expect(chip(page, "camera")).toHaveAttribute("aria-label", "Camera: Push in");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate · 31 cr");
-  const stepper = page.getByRole("group", { name: "Takes per generate" });
-  for (let n = 1; n < 4; n++) await stepper.getByRole("button", { name: "More" }).click();
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make · 31 cr");
+  await page.getByTestId("gen-takes-4").click();
   await expect(page.getByTestId("gen-takes-count")).toHaveText("4");
-  await expect(page.getByTestId("gen-generate")).toHaveText("Generate 4 takes · 124 cr");
+  await expect(page.getByTestId("gen-generate")).toHaveText("Make 4 takes · 124 cr");
   await page.getByTestId("gen-generate").click();
 
   /* Four quotes, then four sends, each with the setup written in once and kept as data; one batch. */
@@ -555,8 +564,8 @@ test("a batch of four takes carries the chips' setup in every take it prices and
   expect(quotes.map((q) => q.variation)).toEqual([1, 2, 3, 4]);
   expect(sends.map((s) => s.variation)).toEqual([1, 2, 3, 4]);
   expect(new Set(sends.map((s) => s.batchId)).size).toBe(1);
-  await expect(page.getByRole("status").filter({ hasText: "4 takes sent at 124 cr." })).toBeVisible();
-  /* The box still holds the person's words. */
-  await expect(page.getByTestId("gen-prompt")).toHaveValue(WORDS);
+  await expect(page.getByTestId("toast")).toContainText("124 cr · 4 takes · rendering");
+  /* The accepted batch closes Make (the draft of the words is cleared with it). */
+  await expect(page.getByTestId("make-panel")).toHaveCount(0);
   expect(errors).toEqual([]);
 });

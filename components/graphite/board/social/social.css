@@ -1,0 +1,4 @@
+/* The Social board (components/graphite/board/social): its cards share the Ads board's (ads.css); this is the History drawer's room. */
+.bd-drawer.sb-history { width: 360px; }
+.sb-history-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 12px 12px; }
+.sb-history-body .gx-gen-grid { grid-template-columns: 1fr; }

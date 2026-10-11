@@ -4,6 +4,7 @@ import { connectedFailureText, connectedOriginal, type ConnectedJob } from "@/li
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 import { ConnectedCollector, announceCollected, listConnectedJobs, setSharedCollector, showConnectedJob } from "./connected-collector";
 import { announceJob } from "./jobs-bus";
+import { SIGN_IN_OFF } from "@/lib/higgsfield-consumer/retired";
 
 /** A re-listing on focus is at most this often. */
 const FOCUS_LIST_MS = 30_000;
@@ -33,7 +34,9 @@ export function useConnectedCollector(input: {
   const toastRef = useRef(toast);
   useEffect(() => { toastRef.current = toast; }, [toast]);
   useEffect(() => {
-    if (!scope || !owner) return;
+    /* Off for Release 1 with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts › SIGN_IN_OFF): no collector
+       is made, so nothing lists or reads the connected account's jobs, for the owner either. */
+    if (!scope || !owner || SIGN_IN_OFF) return;
     const collector = new ConnectedCollector({
       fetch: (url, init = {}) => {
         const headers = new Headers(init.headers);

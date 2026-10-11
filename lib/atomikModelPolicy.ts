@@ -1,3 +1,5 @@
+import { aliasModel } from "./modelAliases";
+
 /** Claude, OpenAI, Gemini and Grok text/planning models verified against
  * Gateway on 2026-09-15 (Grok's reasoning models on 2026-09-23, listed there
  * under `spacexai/`, priced by the live catalogue like every other). Availability and prices still come from the live catalogue.
@@ -5,23 +7,21 @@
  *
  * This is the verified text catalogue. Atomik plans on part of it
  * (ATOMIK_MODEL_IDS below); the prompt enhancer reads the whole of it.
+ * Models a provider does not serve on a direct call are not listed: a choice
+ * saved on one reads as its alias (lib/modelAliases.ts).
  */
 export const VERIFIED_TEXT_MODEL_IDS = [
   "anthropic/claude-sonnet-4.6",
   "google/gemini-3.1-pro-preview",
   "anthropic/claude-opus-4.7",
   "anthropic/claude-opus-4.6",
-  "openai/gpt-5.5-pro",
-  "anthropic/claude-3-haiku",
   "anthropic/claude-fable-5",
   "anthropic/claude-fable-5.1",
   "anthropic/claude-haiku-4.5",
   "anthropic/claude-opus-4",
   "anthropic/claude-opus-4.5",
   "anthropic/claude-opus-4.8",
-  "anthropic/claude-opus-4.8-fast",
   "anthropic/claude-opus-5",
-  "anthropic/claude-opus-5-fast",
   "anthropic/claude-sonnet-4",
   "anthropic/claude-sonnet-4.5",
   "anthropic/claude-sonnet-5",
@@ -53,7 +53,6 @@ export const VERIFIED_TEXT_MODEL_IDS = [
   "openai/gpt-5-mini",
   "openai/gpt-5-mini-fast",
   "openai/gpt-5-nano",
-  "openai/gpt-5-pro",
   "openai/gpt-5.1-codex",
   "openai/gpt-5.1-codex-max",
   "openai/gpt-5.1-codex-mini",
@@ -62,7 +61,6 @@ export const VERIFIED_TEXT_MODEL_IDS = [
   "openai/gpt-5.2",
   "openai/gpt-5.2-fast",
   "openai/gpt-5.2-codex",
-  "openai/gpt-5.2-pro",
   "openai/gpt-5.3-codex",
   "openai/gpt-5.3-codex-fast",
   "openai/gpt-5.4",
@@ -70,7 +68,6 @@ export const VERIFIED_TEXT_MODEL_IDS = [
   "openai/gpt-5.4-mini",
   "openai/gpt-5.4-mini-fast",
   "openai/gpt-5.4-nano",
-  "openai/gpt-5.4-pro",
   "openai/gpt-5.5",
   "openai/gpt-5.5-fast",
   "openai/gpt-5.6-luna",
@@ -88,12 +85,10 @@ export const VERIFIED_TEXT_MODEL_IDS = [
   "spacexai/grok-4.3",
   "spacexai/grok-4.20-reasoning",
   "spacexai/grok-4.1-fast-reasoning",
-  "openai/gpt-oss-20b",
   "openai/o1",
   "openai/o3",
   "openai/o3-fast",
   "openai/o3-mini",
-  "openai/o3-pro",
   "openai/o4-mini",
   "openai/o4-mini-fast"
 ] as const;
@@ -113,12 +108,12 @@ const inAtomikFamily = (id: string) => (ATOMIK_FAMILIES as readonly string[]).in
 /** Atomik's planner and agent models: the verified catalogue, Claude, OpenAI and Grok only. The first is the default. */
 export const ATOMIK_MODEL_IDS: readonly string[] = VERIFIED_TEXT_MODEL_IDS.filter(inAtomikFamily);
 
-/** Keep Auto's established production choices stable as the full picker expands. */
+/** Keep Auto's established production choices stable as the full picker expands. GPT-5.5 Pro left with the dropped ids; its alias, GPT-5.5, takes its place (lib/modelAliases.ts). */
 export const ATOMIK_AUTO_MODEL_IDS = [
   "anthropic/claude-sonnet-4.6",
   "anthropic/claude-opus-4.7",
   "anthropic/claude-opus-4.6",
-  "openai/gpt-5.5-pro"
+  "openai/gpt-5.5"
 ] as const;
 
 /** What Auto plans with when nothing else routes it: the first Atomik model. */
@@ -146,21 +141,26 @@ const retiredLead = (id: string) =>
   `${familyOf(id) === "google" ? "Gemini" : "That model"} is no longer offered in Atomik, which now plans with Claude, OpenAI and Grok.`;
 
 /**
- * A saved choice as Atomik reads it now. One it no longer offers (a chat
- * saved on Gemini) plans with Auto, the default, and carries the note that
- * says so; anything else is kept as it was.
+ * A saved choice as Atomik reads it now. A dropped id reads as its alias, the
+ * nearest model still offered (lib/modelAliases.ts), with nothing to say: the
+ * person's choice stands, on the model that runs. One Atomik no longer offers
+ * at all (a chat saved on Gemini) plans with Auto, the default, and carries the
+ * note that says so; anything else is kept as it was.
  */
 export function savedAtomikChoice(saved: string | null | undefined): { model: string; note: string | null } {
-  if (saved && isRetiredAtomikModel(saved)) return { model: "auto", note: `${retiredLead(saved)} This chat now uses Auto.` };
-  return { model: saved || "auto", note: null };
+  const id = aliasModel(saved);
+  if (id && isRetiredAtomikModel(id)) return { model: "auto", note: `${retiredLead(id)} This chat now uses Auto.` };
+  return { model: id || "auto", note: null };
 }
 
 /**
- * Explicit choices never fall back to a different paid model: a request
- * naming a retired one is refused with the reason, and the person picks again
+ * Explicit choices never fall back to a different paid model (a dropped id is
+ * read as its alias, the nearest offered model): a request naming a retired one is refused with the reason, and the person picks again
  * against a fresh estimate. Auto can only route within this policy.
  */
-export function selectAtomikModel(want: string, availableIds: readonly string[], routed?: string): string {
+export function selectAtomikModel(wanted: string, availableIds: readonly string[], routedTo?: string): string {
+  /* A dropped id (saved, routed or sent by an older page) is its alias before any check: that is the model quoted and run. */
+  const want = aliasModel(wanted), routed = aliasModel(routedTo);
   const available = new Set(availableIds.filter(isAtomikModel));
   if (want && want !== "auto") {
     if (isRetiredAtomikModel(want)) throw new Error(`${retiredLead(want)} Choose one of those, or Auto.`);
@@ -169,7 +169,8 @@ export function selectAtomikModel(want: string, availableIds: readonly string[],
     return want;
   }
   if (routed && available.has(routed)) return routed;
-  const first = ATOMIK_MODEL_IDS.find(id => available.has(id));
+  /* Auto's own choices first, as the workbench and board agents prefer them; then the rest of the catalogue in order. */
+  const first = [...ATOMIK_AUTO_MODEL_IDS, ...ATOMIK_MODEL_IDS].find(id => available.has(id));
   if (!first) throw new Error("No supported Atomik thinking model is connected. Check AI Gateway configuration.");
   return first;
 }

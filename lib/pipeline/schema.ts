@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AdmissionQuote, PreparedAdmission } from "../admissionTypes";
+import { holdBandOf } from "../cinemaHold";
 
 export const PIPELINE_LIMITS = {
   stages: 32,
@@ -257,4 +258,20 @@ export class PipelineError extends Error {
     super(message);
     this.name = "PipelineError";
   }
+}
+
+/**
+ * A pipeline stage approves the figure it quotes and nothing more, so a model
+ * that holds a multiple of its quote (Cinema Studio, lib/cinemaHold.ts: "about
+ * N cr, at most 3N cr") is never a stage model. It runs from Make, where the
+ * hold is shown. Browser-safe: the builder's model list reads the same test.
+ */
+export const pipelineOffersModel = (model: string | null | undefined) =>
+  holdBandOf(model) === 1;
+export const HELD_MODEL_REFUSAL =
+  "Cinema Studio runs from Make, where its full price is shown.";
+/** Refuses (409) a stage model whose approval would hold more than its quote. */
+export function refuseHeldModel(model: string | null | undefined) {
+  if (!pipelineOffersModel(model))
+    throw new PipelineError(HELD_MODEL_REFUSAL, 409, "pipeline_held_model");
 }

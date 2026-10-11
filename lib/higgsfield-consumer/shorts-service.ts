@@ -191,7 +191,7 @@ export async function quoteConsumerShorts(userId: string, draftId: string, input
     return consumerShortsView(previous);
   }
   if (!(await readDraft(userId, draftId)))
-    throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
+    throw new ConsumerVideoServiceError("project_missing", "This isn't available.", 404);
   // The style must be one the account lists as a library style now, not one
   // the request merely labels "cms": the standalone rule is enforced here,
   // not only by what the page lists (hourly cached, free read).

@@ -1,0 +1,20 @@
+/* ── A Library tile (the board's Library drawer, README § 1.1 frame o) and the same tile wherever a file is shown small:
+   the files a prompt box holds (components/graphite/AttachThumbs.tsx). One look: the picture at 4:3 on the canvas black, the name under it. ── */
+.bd-tile { display: flex; flex-direction: column; overflow: hidden; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: 8px; cursor: grab; }
+.bd-tile-media { position: relative; aspect-ratio: 4 / 3; background: var(--gx-root); overflow: hidden; }
+.bd-tile-media > img, .bd-tile-media video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.bd-tile-name { padding: 6px 8px 0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bd-tile:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+
+/* ── The files a prompt box holds, under the box: one small Library tile each, in a row that wraps. A press removes that file;
+   × shows on hover and keyboard focus, and always on a touch screen (no hover there). ── */
+.gx-at { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.gx-at > li { display: flex; min-width: 0; }
+.gx-at .gx-at-tile { position: relative; width: 88px; padding: 0; color: var(--gx-text); font: inherit; text-align: left; cursor: pointer; }
+.gx-at .gx-at-tile .bd-tile-name { padding: 4px 6px 6px; font-size: 12px; }
+.gx-at .gx-at-tile:hover:not(:disabled) { border-color: var(--gx-quiet); }
+.gx-at .gx-at-tile:disabled { cursor: default; opacity: 0.6; }
+.gx-at-x { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; line-height: 1; color: var(--gx-text); background: rgba(0, 0, 0, 0.72); border: 1px solid var(--gx-card-border); opacity: 0; transition: opacity 120ms ease; pointer-events: none; }
+.gx-at .gx-at-tile:hover:not(:disabled) .gx-at-x, .gx-at .gx-at-tile:focus-visible .gx-at-x { opacity: 1; }
+@media (hover: none) { .gx-at .gx-at-tile:not(:disabled) .gx-at-x { opacity: 1; } }
+@media (max-width: 767px), (pointer: coarse) { .gx-at .gx-at-tile { width: 76px; } }

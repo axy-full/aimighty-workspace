@@ -49,7 +49,7 @@ test("the builds are Moleculr's: 2.0 Alpha priced live, 2.5 Flare and Sunburst p
 test("Generate image says why it cannot run, in order", () => {
   const base: ImageAdState = { ...INITIAL_IMAGE_AD, prompt: "Bold hero shot on marble" };
   expect(imageAdBlock(base, { ...ready, hasProject: false })).toBe("Open a project first.");
-  expect(imageAdBlock(base, { ...ready, saved: false })).toBe("Save this project first.");
+  expect(imageAdBlock(base, { ...ready, saved: false })).toBe("Saving this project…");
   expect(imageAdBlock({ ...base, prompt: "  " }, ready)).toBe("Write the prompt.");
   expect(imageAdBlock({ ...base, prompt: "x".repeat(5001) }, ready)).toBe("Keep the prompt under 5,000 characters.");
   expect(imageAdBlock(base, ready)).toBeNull();

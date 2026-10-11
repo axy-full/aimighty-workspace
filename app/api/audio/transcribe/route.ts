@@ -1,8 +1,9 @@
 import { crossOriginProblem } from "@/lib/requestOrigin";
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
-import { withGenerationRequest, type GenerationRequest } from "@/lib/generationRequests";
+import { withGenerationRequest, ANSWER_AFTER_MS, type GenerationRequest } from "@/lib/generationRequests";
 import { transcribe } from "@/lib/transcription";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 /* A transcription's claim is known to be gone at twice this (TRANSCRIPTION_STALE_MS, lib/generationRequests.ts): raise both together. */
@@ -16,6 +17,8 @@ export const maxDuration = 300;
  * reply is asked about through POST /api/generate/check, never re-sent. The
  * transcript is saved before it is charged, so a reply lost at any point
  * after the provider's answer was saved still comes back from the check.
+ * One still running after ANSWER_AFTER_MS is answered "still being
+ * accepted" (the browser then asks the check) and finishes after the reply.
  */
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireRender();
@@ -26,5 +29,8 @@ export const POST = withTenant(async function POST(req: Request) {
     const reply = await transcribe(body, got.user.id, { claim });
     return NextResponse.json(reply.body, { status: reply.status, headers: { "Cache-Control": "no-store" } });
   };
-  return body?.quoteOnly === true ? perform() : withGenerationRequest(req, got.user.id, perform);
+  if (body?.quoteOnly === true) return perform();
+  /* The sample workspace spends nothing, with a project or without: answered before the request is claimed. */
+  { const off = await sampleWorkspaceOff(); if (off) return off; }
+  return withGenerationRequest(req, got.user.id, perform, { answerAfterMs: ANSWER_AFTER_MS });
 });

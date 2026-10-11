@@ -37,7 +37,7 @@ function QA({ q, children }: { q: string; children: React.ReactNode }) {
   return (
     <div className="border-t border-hair py-3 first:border-0">
       <p className="text-[14px] font-medium text-ink">{q}</p>
-      <div className="mt-1 text-[14px] leading-relaxed text-dim">{children}</div>
+      <div className="mt-1 text-[14px] leading-relaxed text-lead">{children}</div>
     </div>
   );
 }
@@ -53,7 +53,7 @@ export default function PlatformPage() {
       <div className="mx-auto w-full max-w-[760px] pb-10">
         <Link href="/settings" className="mt-6 inline-block text-[14px] text-blue">← Settings</Link>
         <h1 className="h1 mt-2">Platform</h1>
-        <p className="mt-3 max-w-[62ch] text-[15px] text-dim">
+        <p className="mt-3 max-w-[62ch] text-[15px] text-lead">
           What happens to a file, what happens when a vendor fails, and who can
           reach any of it. The numbers below are read off this deployment as
           the page loads.
@@ -61,7 +61,7 @@ export default function PlatformPage() {
 
         {/* ── R4 ─────────────────────────────────────────── */}
         <section className="card mt-8 px-5 py-4">
-          <p className="grouplabel">Assets</p>
+          <p className="grouplabel !text-[12px] !text-lead">Assets</p>
           <div className="mt-2">
             <QA q="Are files compressed?">
               No. An upload is written byte-for-byte, then re-read from storage
@@ -118,8 +118,8 @@ export default function PlatformPage() {
 
         {/* ── R7 ─────────────────────────────────────────── */}
         <section className="card mt-6 px-5 py-4">
-          <p className="grouplabel">Generation APIs</p>
-          <p className="mt-1 text-[13px] text-mute">
+          <p className="grouplabel !text-[12px] !text-lead">Generation APIs</p>
+          <p className="mt-1 text-[13px] text-lead">
             The GPUs are somebody else&rsquo;s. What this platform owns is the
             orchestration around them, so a vendor is data — its key, limits
             and failure behaviour declared in one place. Adding one is an entry
@@ -135,15 +135,15 @@ export default function PlatformPage() {
                   </span>
                   <span className="chip">{p.models.length} model{p.models.length === 1 ? "" : "s"}</span>
                 </p>
-                <p className="mt-1.5 text-[13px] text-dim">
+                <p className="mt-1.5 text-[13px] text-lead">
                   Images {mb(Number(p.limits.maxImageBytes))} · videos{" "}
                   {mb(Number(p.limits.maxVideoBytes))} · request{" "}
                   {mb(Number(p.limits.maxRequestBytes))} ·{" "}
                   {String(p.limits.minImagePx)}–{String(p.limits.maxImagePx)}px ·
                   aspect {String(p.limits.minAspect)}–{String(p.limits.maxAspect)}
                 </p>
-                <p className="mt-1 text-[13px] text-mute">{p.rateLimit}</p>
-                <p className="mt-1 text-[13px] text-mute">
+                <p className="mt-1 text-[13px] text-lead">{p.rateLimit}</p>
+                <p className="mt-1 text-[13px] text-lead">
                   {p.billsFailures
                     ? "Failed generations ARE billed by this vendor."
                     : "What this vendor did with a failed take's charge is read from its own reply, and shown on the take."}
@@ -155,7 +155,7 @@ export default function PlatformPage() {
 
         {/* ── R6 ─────────────────────────────────────────── */}
         <section className="card mt-6 px-5 py-4">
-          <p className="grouplabel">Reliability</p>
+          <p className="grouplabel !text-[12px] !text-lead">Reliability</p>
           <div className="mt-2">
             <QA q="What happens when a vendor call fails?">
               Failures are classified before anything is retried. A timeout, a
@@ -187,7 +187,7 @@ export default function PlatformPage() {
 
         {/* ── R11 ────────────────────────────────────────── */}
         <section className="card mt-6 px-5 py-4">
-          <p className="grouplabel">Security &amp; client data</p>
+          <p className="grouplabel !text-[12px] !text-lead">Security &amp; client data</p>
           <div className="mt-2">
             <QA q="Is traffic encrypted?">
               Yes — HTTPS end to end, including the signed links handed out for
@@ -226,7 +226,7 @@ export default function PlatformPage() {
 
         {/* ── R12 ────────────────────────────────────────── */}
         <section className="card mt-6 px-5 py-4">
-          <p className="grouplabel">IP &amp; ownership</p>
+          <p className="grouplabel !text-[12px] !text-lead">IP &amp; ownership</p>
           <div className="mt-2">
             <QA q="Who owns what is made here?">
               Two layers, and they answer differently.

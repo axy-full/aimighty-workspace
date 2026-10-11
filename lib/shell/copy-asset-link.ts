@@ -3,7 +3,7 @@ import { assetLinkHref } from "./asset-link";
 /** What Copy link says, whichever surface pressed it (the Inspector, the viewer). */
 export const LINK_SAY = {
   copied: "Link copied — it opens this take for people in this workspace.",
-  unsaved: "Save this project first: a link names its production.",
+  unsaved: "This project is still saving: a link names its production. Try again in a moment.",
   blocked: "This browser blocked the clipboard.",
 } as const;
 

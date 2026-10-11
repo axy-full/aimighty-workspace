@@ -1,0 +1,66 @@
+/*
+ * A frame on the board (design/particl-graphite/README.md § 3.1 d; the master's storyboard tile): a 10 px card,
+ * the picture in the project's aspect over black, then the shot's name (14/600) and its mono line (12, at .6).
+ * app/graphite.css tokens only.
+ */
+.gx-frame {
+  display: flex; flex-direction: column; width: 100%; min-width: 0;
+  background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); overflow: hidden;
+}
+.gx-frame-media { position: relative; width: 100%; background: #000; overflow: hidden; }
+.gx-frame-media .gx-frame-img, .gx-frame-media img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.gx-frame-empty {
+  position: absolute; inset: 0; display: grid; place-items: center; padding: 0 12px; text-align: center;
+  font-size: var(--gx-fs-meta); color: var(--gx-quiet);
+}
+.gx-frame-badge {
+  position: absolute; left: 8px; top: 8px; padding: 2px 7px; border-radius: var(--gx-r-pill);
+  font-family: var(--gx-mono); font-size: 12px; letter-spacing: .06em; color: #fff; background: rgba(0, 0, 0, 0.6);
+}
+.gx-frame-badge[data-tone="accent"] { background: var(--gx-accent); }
+.gx-frame-play {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center; padding-left: 2px; font-size: 12px; color: #fff; background: rgba(0, 0, 0, 0.55);
+}
+.gx-frame-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.gx-frame-bar > span { display: block; height: 100%; background: var(--gx-accent); transition: width var(--gx-t-progress) linear; }
+.gx-frame-bar[data-indeterminate] > span { width: 30%; animation: gx-frame-slide 1.4s var(--gx-ease) infinite; }
+@keyframes gx-frame-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .gx-frame-bar[data-indeterminate] > span { animation: none; width: 100%; opacity: .5; } }
+.gx-frame-body { padding: 8px 10px 10px; min-width: 0; }
+.gx-frame-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-frame-line { font-family: var(--gx-mono); font-size: 12px; line-height: 1.45; color: var(--gx-text-2); min-height: 35px; overflow-wrap: anywhere; }
+
+/* Draw the storyboard (README § 3.1 d; lead decision 28): the panel's primary button, a 34 px accent button. */
+.gx-draw { display: flex; flex-direction: column; gap: 6px; }
+.gx-draw-btn {
+  height: 34px; padding: 0 14px; border: 0; border-radius: var(--gx-r-ctl); background: var(--gx-accent); color: var(--gx-on-accent);
+  font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.gx-draw-btn[data-quiet] { background: transparent; border: 1px solid var(--gx-btn-border); color: var(--gx-text); font-weight: 500; }
+.gx-draw-btn:hover:not(:disabled) { background: var(--gx-accent-hover); }
+.gx-draw-btn[data-quiet]:hover:not(:disabled) { background: transparent; border-color: var(--gx-hover-border); }
+.gx-draw-btn:disabled { opacity: .45; cursor: default; }
+.gx-draw-why { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+@media (max-width: 767px) { .gx-draw-btn { min-height: 44px; } }
+
+/* Line drawings on a frame (gap screens): the action under the shot's line; tokens only. */
+.gx-ln { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
+.gx-ln-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gx-ln-state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gx-text-2); }
+.gx-ln-state i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-accent); }
+.gx-ln-state[data-tone="done"] { color: var(--gx-done-text); }
+.gx-ln-state[data-tone="done"] i { background: var(--gx-done); }
+.gx-ln-btn { height: 28px; padding: 0 10px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); white-space: nowrap; cursor: pointer; transition: border-color var(--gx-t) var(--gx-ease), background var(--gx-t) var(--gx-ease); }
+.gx-ln-btn:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx-ln-btn:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gx-ln-btn:disabled { color: var(--gx-disabled); cursor: default; }
+.gx-ln-btn[data-primary]:not(:disabled) { background: var(--gx-accent); border-color: transparent; color: var(--gx-on-accent); font-weight: 600; }
+.gx-ln-btn[data-primary]:hover:not(:disabled) { background: var(--gx-accent-hover); }
+.gx-ln-chip[aria-pressed="true"] { background: var(--gx-seg-on); border-color: var(--gx-hover-border); }
+.gx-ln-why { font-size: 13px; color: var(--gx-text-2); }
+.gx-ln-bar { position: relative; display: block; height: 3px; border-radius: 2px; overflow: hidden; background: var(--gx-hair); }
+.gx-ln-bar > span { display: block; width: 30%; height: 100%; background: var(--gx-accent); animation: gx-ln-slide 1.4s var(--gx-ease) infinite; }
+@keyframes gx-ln-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .gx-ln-bar > span { animation: none; width: 100%; opacity: .5; } }
+@media (max-width: 767px) { .gx-ln-btn { min-height: 44px; } }

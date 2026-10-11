@@ -1,3 +1,4 @@
+import { signInOff } from "@/lib/higgsfield-consumer/retired";
 import { requireSession, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { AccountError, takeAccountLimit } from "@/lib/accountDb";
@@ -13,7 +14,7 @@ const headers = {
 
 /** Own-account reporting remains available after a role change or disconnect.
  * No query argument may select another user, tenant or provider account. */
-export const GET = withTenant(
+const keptGET = withTenant(
   async (req: Request) => {
     const caller = await requireSession();
     if (caller.response) return caller.response;
@@ -51,3 +52,6 @@ export const GET = withTenant(
   },
   { requireRequestScope: true },
 );
+
+/* Off for Release 1 with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts › signInOff): every method answers 410 and never reads a stored grant. */
+export const GET = signInOff(keptGET);

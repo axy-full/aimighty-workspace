@@ -12,12 +12,9 @@ export function signInHrefFor(path: string | null, query = ""): string {
 }
 
 /**
- * Where a shell entry (/suites, /workspace) sends a request it cannot serve:
- * a visitor signs in and comes back to exactly this URL; an account with no
- * workspace goes to /workbench, which handles that case, with the whole query.
+ * Where a shell entry (/suites) sends a request it cannot serve: a visitor signs in and comes back to exactly this URL.
+ * (An account with no workspace is not sent anywhere: the shell says so itself, components/graphite/NoWorkspace.tsx.)
  */
-export function shellEntryRedirect(pathname: string, query: string, signedIn: boolean): string {
-  const search = query.replace(/^\?/, "");
-  if (!signedIn) return signInHrefFor(pathname, search);
-  return `/workbench${search ? `?${search}` : ""}`;
+export function shellEntryRedirect(pathname: string, query: string): string {
+  return signInHrefFor(pathname, query.replace(/^\?/, ""));
 }

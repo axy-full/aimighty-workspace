@@ -8,8 +8,11 @@ import { checkoutReady, paymentProvider, startCheckout } from "@/lib/payments";
 import { listTopups, requestTopup, cancelTopup, OPEN_LIMIT } from "@/lib/topups";
 import { listGrants, SUPER_ADMIN_EMAIL } from "@/lib/platform";
 import { sendMail, mailConfigured, inviteOrigin } from "@/lib/mail";
+import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 
 export const dynamic = "force-dynamic";
+
+const TOKEN_REFUSED = "Credits are asked for by a person, signed in. API tokens cannot top up.";
 
 /** The top-up screen's data: balance, packs, what is waiting, what came in. */
 export const GET = withTenant(async function GET() {
@@ -23,7 +26,8 @@ export const GET = withTenant(async function GET() {
   return NextResponse.json({
     applies,
     provider: paymentProvider(),
-    canRequest: applies && got.user.role === "admin",
+    /* A person's (CLAUDE.md rule 14: topping up is people-only); an API or MCP token reads, never requests. */
+    canRequest: applies && got.user.role === "admin" && !got.token,
     openLimit: OPEN_LIMIT,
     /* The unit the packs were priced at, stated alongside them. `credits` also
        carries it, but only when the billing read succeeded — and the top-up
@@ -42,6 +46,11 @@ export const GET = withTenant(async function GET() {
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
+  /* Topping up is a person's (CLAUDE.md rule 14): an API or MCP token, even one an admin made, never asks for credits. */
+  if (got.token) return NextResponse.json({ error: TOKEN_REFUSED }, { status: 403 });
+  /* Top-ups are people-only (owner rule; review of #558, L8): nor Atomik or a disabled account; nobody but a person
+     files a request, starts a checkout or withdraws one. */
+  if (!isPerson({ user: got.user, token: got.token })) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   const ws = requireTenant();
   if (!creditsApply(ws)) return NextResponse.json({ error: "The house workspace is never billed in credits; there is nothing to top up." }, { status: 400 });
   if (got.user.role !== "admin") return NextResponse.json({ error: "The owner or an admin asks for credits." }, { status: 403 });
@@ -77,6 +86,9 @@ export const POST = withTenant(async function POST(req: Request) {
 export const DELETE = withTenant(async function DELETE(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
+  if (got.token) return NextResponse.json({ error: TOKEN_REFUSED }, { status: 403 });
+  /* Top-ups are people-only (owner rule; review of #558, L8): nor Atomik or a disabled account. */
+  if (!isPerson({ user: got.user, token: got.token })) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   const ws = requireTenant();
   if (got.user.role !== "admin") return NextResponse.json({ error: "The owner or an admin withdraws a request." }, { status: 403 });
   const id = new URL(req.url).searchParams.get("id") ?? "";

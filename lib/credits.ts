@@ -63,11 +63,12 @@ export function fmtCredits(n: number): string {
  */
 export type CreditVerdict = { ok: true } | { ok: false; status: number; error: string };
 
-export async function creditCheck(vendor: VendorKeyName, estUsd = 0, engine?: EstimateTerms): Promise<CreditVerdict> {
+export async function creditCheck(vendor: VendorKeyName, estUsd = 0, engine?: EstimateTerms, band = 1): Promise<CreditVerdict> {
   if (!creditsApply(currentTenant()?.workspace) || !paidByPlatform(vendor)) return { ok: true };
   const state = await creditState();
   if (!state) return { ok: true };
-  const need = creditsFor(estUsd, engine);
+  /* A take that holds its ceiling needs its hold: its quote times its band (lib/cinemaHold.ts). */
+  const need = creditsFor(estUsd, engine) * (Number.isInteger(band) && band > 1 ? band : 1);
   if (state.balance <= 0 || state.balance < need) {
     const left = Math.max(0, Math.floor(state.balance));
     return {

@@ -1,6 +1,10 @@
-import { redirect } from "next/navigation";
-import { generationHref, type GenRouteSearch } from "@/lib/genRoute";
+import { followOldRoute, type RawSearch } from "@/lib/shell/old-routes.server";
 
-export default async function Moved({ searchParams }: { searchParams: Promise<GenRouteSearch> }) {
-  redirect(generationHref("audio", await searchParams)!);
+/**
+ * Old address of Gen, audio.
+ * Redirected, never drawn (docs/old-shells.md): lib/shell/old-routes.ts holds where it goes.
+ */
+export const dynamic = "force-dynamic";
+export default async function Moved({ searchParams }: { searchParams: Promise<RawSearch> }) {
+  await followOldRoute("/audio", await searchParams);
 }

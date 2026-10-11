@@ -82,7 +82,11 @@ export function stepRender(step: Renderable, projectId: string | null, context: 
 }
 
 /** A quote the admission route answered for one exact body; `approximate` when the take settles on its delivered output (a 2.5 build). */
-export type StepQuote = { estimatedCredits: number; price: number; fingerprint: string | null; approximate?: true };
+export type StepQuote = {
+  estimatedCredits: number; price: number; fingerprint: string | null; approximate?: true;
+  /** A take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts): "at most" this many credits, what Approve approves. */
+  ceilingCredits?: number;
+};
 
 /** The answer of /api/audio (quoteOnly) or /api/generate/quote, checked; null when it is not a usable quote. */
 export function readStepQuote(value: unknown, render: Pick<StepRender, "url">): StepQuote | null {
@@ -94,7 +98,10 @@ export function readStepQuote(value: unknown, render: Pick<StepRender, "url">): 
   if (v.unit !== "cr" && v.unit !== "usd") return null;
   /* /api/generate checks the compiled request against the quote's fingerprint; audio has none. */
   if (render.url === "/api/generate" && (typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint))) return null;
-  return { estimatedCredits: credits, price, fingerprint: typeof fingerprint === "string" ? fingerprint : null, ...(v.approximate === true ? { approximate: true as const } : {}) };
+  const ceiling = v.ceilingCredits;
+  if (ceiling != null && (typeof ceiling !== "number" || !Number.isInteger(ceiling) || ceiling < credits)) return null;
+  return { estimatedCredits: credits, price, fingerprint: typeof fingerprint === "string" ? fingerprint : null, ...(v.approximate === true ? { approximate: true as const } : {}),
+    ...(typeof ceiling === "number" ? { ceilingCredits: ceiling } : {}) };
 }
 
 /** A quote, or why there is none and whether asking again later could help. */
@@ -165,7 +172,8 @@ export function planTotal(prices: (number | null)[]): { total: number; unpriced:
 export function approvedBody(render: StepRender, quote: StepQuote): Record<string, unknown> {
   return {
     ...render.body,
-    maxCredits: quote.estimatedCredits,
+    /* What the take may charge: a Cinema Studio take's hold, else its quote (lib/cinemaHold.ts). */
+    maxCredits: quote.ceilingCredits ?? quote.estimatedCredits,
     ...(render.url === "/api/generate" && quote.fingerprint ? { quoteFingerprint: quote.fingerprint } : {}),
   };
 }

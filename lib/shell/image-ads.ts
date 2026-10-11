@@ -2,6 +2,7 @@ import { MARKETING_IMAGE_MODEL_ID, getModel } from "@/lib/models";
 import { MARKETING_BUILDS, marketingQualities, marketingQualityFor, type MarketingBuild, type MarketingQuality } from "@/lib/workbench/moleculr";
 import type { DispatchRequest } from "@/lib/workspace/generate-submit";
 import type { AdStill } from "./business";
+import { SAVING_NOW } from "../workbench/save-then-continue";
 
 /**
  * Business › Image ads, on Particl's API key for every workspace and every
@@ -112,7 +113,7 @@ export function qualityOff(state: Pick<ImageAdState, "build" | "preset">, qualit
 /** Why Generate image is off; null when it can run. */
 export function imageAdBlock(state: ImageAdState, extra: { hasProject: boolean; saved: boolean }): string | null {
   if (!extra.hasProject) return "Open a project first.";
-  if (!extra.saved) return "Save this project first.";
+  if (!extra.saved) return SAVING_NOW;
   if (!state.prompt.trim()) return "Write the prompt.";
   if (state.prompt.trim().length > IMAGE_AD_PROMPT_MAX) return `Keep the prompt under ${IMAGE_AD_PROMPT_MAX.toLocaleString("en-US")} characters.`;
   const stills = imageAdMedias(state).length;

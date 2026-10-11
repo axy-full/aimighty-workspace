@@ -146,6 +146,7 @@ async function writerRoutes(ws: TenantWorkspace, text: string) {
     "@/lib/credits": await import("../../lib/credits"),
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/paidText": paid,
+    "@/lib/demo/spend-guard.server": { sampleWorkspaceOff: async () => null },
     "@/lib/generationRequests": { withGenerationRequest: (_req: Request, _user: string, run: () => Promise<Response>) => run() },
   };
   return {

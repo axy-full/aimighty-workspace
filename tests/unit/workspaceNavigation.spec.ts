@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
-  INITIAL_STATE, applyUrl, fromSearch, generateAvailability, go, switchSuite, toSearch, withLibFilter, withLists,
+  CARRIED_PARAMS, INITIAL_STATE, applyUrl, fromSearch, generateAvailability, go, switchSuite, toSearch, withKept, withLibFilter, withLists,
 } from "../../lib/workspace/navigation";
 import type { AppState, SelectableItem } from "../../lib/workspace/types";
 
@@ -83,4 +83,17 @@ test("URL round trip, aliases and the home view", () => {
   expect(fromSearch("?page=rig&sel=shot:a:b")).toMatchObject({ sel: { kind: "shot", id: "a:b" } });
   const pageSel = go(loaded({ selKind: "shot", selId: "s1" }), "particl", "brief");
   expect(toSearch(pageSel)).not.toContain("sel=");
+});
+
+test("an old link's `account` stays on the URL the shell writes; a param nobody keeps does not", () => {
+  const written = toSearch(go(loaded(), "particl", "brief"));
+  const current = "?project=p1&page=swap&account=particl&stage=canvas&make=swap";
+  const kept = new URLSearchParams(withKept(written, current, [...CARRIED_PARAMS, "make"]));
+  expect(kept.get("account")).toBe("particl");
+  expect(kept.get("make")).toBe("swap");
+  expect(kept.get("page")).toBe("brief");
+  expect(kept.has("stage")).toBe(false);
+  /* Nothing to keep: the written query, as it was. */
+  expect(withKept(written, current, [])).toBe(written);
+  expect(new URLSearchParams(withKept(written, "?page=brief", CARRIED_PARAMS)).has("account")).toBe(false);
 });

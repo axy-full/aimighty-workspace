@@ -1,0 +1,44 @@
+/* Transcribe on a video or audio card, and its transcript panel (gap screens). Tokens only: app/graphite.css. */
+.gx-tr { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
+.gx-tr-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gx-tr-state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gx-text-2); }
+.gx-tr-state i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gx-accent); }
+.gx-tr-state[data-tone="done"] { color: var(--gx-done-text); }
+.gx-tr-state[data-tone="done"] i { background: var(--gx-done); }
+.gx-tr-state[data-tone="failed"] { color: var(--gx-waiting-text); }
+.gx-tr-state[data-tone="failed"] i { background: var(--gx-waiting); }
+.gx-tr-why { font-size: 13px; line-height: 1.4; color: var(--gx-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gx-tr-btn { height: 28px; padding: 0 10px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); white-space: nowrap; cursor: pointer; transition: border-color var(--gx-t) var(--gx-ease), background var(--gx-t) var(--gx-ease); }
+.gx-tr-btn:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx-tr-btn:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gx-tr-btn:disabled { color: var(--gx-disabled); cursor: default; }
+.gx-tr-btn[aria-pressed="true"] { background: var(--gx-seg-on); border-color: var(--gx-hover-border); }
+.gx-tr-bar { position: relative; display: block; height: 3px; border-radius: 2px; overflow: hidden; background: var(--gx-hair); }
+.gx-tr-bar > span { display: block; width: 30%; height: 100%; background: var(--gx-accent); animation: gx-tr-slide 1.4s var(--gx-ease) infinite; }
+@keyframes gx-tr-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .gx-tr-bar > span { animation: none; width: 100%; opacity: .5; } }
+@media (max-width: 767px) { .gx-tr-btn { min-height: 44px; } }
+
+/* The transcript panel: 420 px over the board's right edge, header, timed lines, footer actions. */
+.gx-tp { position: absolute; top: 0; right: 0; bottom: 0; z-index: 40; width: min(420px, 100%); display: flex; flex-direction: column; background: var(--gx-panel); border-left: 1px solid var(--gx-hair-strong); color: var(--gx-text); font-family: var(--gx-font); }
+.gx-tp-head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 16px 12px; border-bottom: 1px solid var(--gx-hair-strong); }
+.gx-tp-title { margin: 0; font-size: var(--gx-fs-panel); font-weight: 600; letter-spacing: var(--gx-ls-h2); }
+.gx-tp-meta { margin: 2px 0 0; font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+.gx-tp-lines { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+.gx-tp-line { display: grid; grid-template-columns: 64px 1fr; gap: 4px 12px; padding: 12px 16px; border-bottom: 1px solid var(--gx-hair-soft); }
+.gx-tp-at { font: 12px/1.6 var(--gx-mono); color: var(--gx-text-2); }
+.gx-tp-who { font: 12px/1.4 var(--gx-mono); letter-spacing: .06em; color: var(--gx-text-2); }
+.gx-tp-text { grid-column: 2; width: 100%; box-sizing: border-box; padding: 4px 6px; margin: -4px -6px; border: 1px solid transparent; border-radius: var(--gx-r-sm); background: transparent; color: var(--gx-text); font: 400 var(--gx-fs-body)/1.45 var(--gx-font); resize: none; overflow: hidden; }
+.gx-tp-text:hover { border-color: var(--gx-hair); }
+.gx-tp-text:focus { outline: none; border-color: var(--gx-accent); background: var(--gx-input); }
+.gx-tp-foot { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--gx-hair-strong); }
+.gx-tp-btn { height: 32px; padding: 0 12px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text); font: 500 13px/1 var(--gx-font); white-space: nowrap; cursor: pointer; }
+.gx-tp-btn:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx-tp-btn:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gx-tp-btn:disabled { color: var(--gx-disabled); cursor: default; }
+.gx-tp-btn[data-primary] { background: var(--gx-accent); border-color: transparent; color: var(--gx-on-accent); font-weight: 600; }
+.gx-tp-btn[data-primary]:hover:not(:disabled) { background: var(--gx-accent-hover); }
+@media (max-width: 767px) { .gx-tp { width: 100%; } .gx-tp-btn { min-height: 44px; } .gx-tp-line { grid-template-columns: 1fr; } .gx-tp-text { grid-column: 1; } }
+
+.gx-tp-earlier { flex: none; padding: 0 16px; max-height: 40%; overflow-y: auto; }
+.gx-tp-earlier:empty { display: none; }

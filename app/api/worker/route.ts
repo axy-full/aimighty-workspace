@@ -19,7 +19,7 @@ import { recoveryFence, reserveRecoveryContinuation, withRecoveryJob } from "@/l
  * handler.
  *
  * Concurrency is a platform-wide slot table (4 total, 2 per workspace —
- * Inngest's numbers). A refused slot is still a 202, with accepted:false:
+ * Inngest's numbers; native 3D renders 3 total). A refused slot is still a 202, with accepted:false:
  * the job stays queued, and the slot chain or the ten-minute cron picks it
  * up. It is deliberately NOT a signal to run inline.
  */

@@ -300,6 +300,23 @@ function PreviewLoop({ url, active, onFail }: { url: string; active: boolean; on
  * hashtag or a number they are a new line and the next field, as ever. A pick
  * sets its chip and takes the `#word` out of the words.
  */
+/** Scrolls the `#` list into its pane's visible part, clear of a sticky row pinned to the pane's foot. */
+function revealList(el: HTMLElement) {
+  let pane = el.parentElement;
+  while (pane && !(["auto", "scroll"].includes(getComputedStyle(pane).overflowY) && pane.scrollHeight > pane.clientHeight + 1)) pane = pane.parentElement;
+  const scroller = pane ?? document.scrollingElement;
+  if (!scroller) return;
+  const view = pane ? pane.getBoundingClientRect() : { top: 0, bottom: innerHeight };
+  const margin = Number.parseFloat(getComputedStyle(el).scrollMarginBottom) || 0;
+  const pinned = pane ? [...pane.querySelectorAll<HTMLElement>(".gx-gen-cta")].find((row) => getComputedStyle(row).position === "sticky") : undefined;
+  const top = Math.max(view.top, 0) + 6;
+  const bottom = Math.min(view.bottom, innerHeight - margin, pinned ? pinned.getBoundingClientRect().top - 6 : Infinity);
+  const box = el.getBoundingClientRect();
+  const end = box.top + Math.min(box.height, Math.max(bottom - top, 0));
+  if (box.top < top) scroller.scrollTop -= top - box.top;
+  else if (end > bottom) scroller.scrollTop += Math.min(end - bottom, box.top - top);
+}
+
 export function useFilmTypeahead({ type, prompt, setup, textarea, onPrompt, onSetup, bank }: {
   type: ComposerType; prompt: string; setup: FilmSetup; textarea: RefObject<HTMLTextAreaElement | null>;
   onPrompt: (prompt: string) => void; onSetup: (setup: FilmSetup) => void;
@@ -323,17 +340,18 @@ export function useFilmTypeahead({ type, prompt, setup, textarea, onPrompt, onSe
   /* The arrows' choice for what is typed now; else the one Enter would take unasked, if any. */
   const index = !token || !open ? -1 : active.query === token.query && active.index >= 0 ? Math.min(active.index, hits.length - 1) : hashDefault(token.query, hits);
 
-  /* As it opens, the list's first row comes into view if it is not (clear of what is pinned below: its scroll
-     margin); a row of pills, all of it. A list whose first rows already show is left where it is, so the words
-     do not move. */
+  /* As it opens, and as the words under it change, the list comes into view if it is not: clear of what is pinned
+     below (its scroll margin, and a sticky Make or Generate row in its pane) and of the pane's top; a row of pills,
+     all of it. A list that already shows is left where it is, so the words do not move. After the frame, so the
+     browser's own reveal of the caret has had its say. */
   const openedAt = open && token ? token.start : null;
+  const query = open && token ? token.query : null;
   useEffect(() => {
     const el = box.current;
     if (openedAt === null || !el) return;
-    const top = el.getBoundingClientRect().top;
-    const margin = Number.parseFloat(getComputedStyle(el).scrollMarginBottom) || 0;
-    if (top + Math.min(el.offsetHeight, 96) > innerHeight - margin) el.scrollIntoView({ block: "nearest" });
-  }, [openedAt]);
+    const frame = requestAnimationFrame(() => revealList(el));
+    return () => cancelAnimationFrame(frame);
+  }, [openedAt, query]);
   /* The active entry stays in view (on a phone the list is one scrolling row). */
   useEffect(() => {
     const row = openedAt !== null ? document.getElementById(`${listId}-${index}`) : null;

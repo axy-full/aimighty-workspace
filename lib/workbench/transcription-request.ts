@@ -42,8 +42,9 @@ export type TranscriptionOutcome =
    * Answered for good without a transcript, and let go: a new press is a new request at the price then shown.
    * `failed`: it was refused or failed (not merely never sent). `repriced`: refused because the estimate moved past
    * the price shown — the server's new estimate, for the button to show before anything else is pressed.
+   * `charged`: the credits the server says this request was charged, when its answer says (0: nothing was billed).
    */
-  | { state: "released"; reason: string; failed: boolean; repriced?: number }
+  | { state: "released"; reason: string; failed: boolean; repriced?: number; charged?: number }
   /**
    * Not known yet: the claim stays and nothing is sent. `waiting`: the server has no answer for it yet, or another window is
    * still sending it, so ask again shortly — after `retryInMs` when given.
@@ -266,7 +267,12 @@ async function sendClaimed(options: SendOptions): Promise<TranscriptionOutcome> 
     if (error.resolved) {
       clearPendingGeneration(storage, slot, attempt.key);
       const repriced = error.status === 409 ? error.data.estimatedCredits : undefined;
-      return { state: "released", reason: `${before}${error.message}`, failed: true, ...(typeof repriced === "number" && Number.isFinite(repriced) && repriced >= 0 ? { repriced } : {}) };
+      const charged = error.data.charged;
+      return {
+        state: "released", reason: `${before}${error.message}`, failed: true,
+        ...(typeof repriced === "number" && Number.isFinite(repriced) && repriced >= 0 ? { repriced } : {}),
+        ...(typeof charged === "number" && Number.isFinite(charged) && charged >= 0 ? { charged } : {}),
+      };
     }
     if (error.data.pending === true) return { state: "unknown", reason: `${before}${CHECKING}`, waiting: true };
     return { state: "unknown", reason: `${before}${error.status >= 500 ? LOST_REPLY : error.message}`, waiting: false };

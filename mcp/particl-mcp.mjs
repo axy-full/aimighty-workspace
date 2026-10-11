@@ -188,8 +188,8 @@ async function cli(argv) {
       // One wait is bounded by the workspace (it answers "Still …" before its
       // request would be cut off), so keep asking — for up to 20 minutes.
       let reply = "";
-      for (let round = 0; id && round < 5; round++) {
-        reply = await tool("wait_for_render", { id, timeout_seconds: 240 });
+      for (let round = 0; id && round < 14; round++) {
+        reply = await tool("wait_for_render", { id, timeout_seconds: 85 });
         if (!reply.startsWith("Still ")) break;
       }
       if (reply) console.log("\n" + reply);

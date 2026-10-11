@@ -12,7 +12,11 @@ import {
   type CreateSoulIdentityInput,
 } from "@/lib/soulIdentities";
 import { soulCharacterGenerationEnabled } from "@/lib/vendorRates";
+import { consentForTraining, linkConsentIdentity, projectKeysFor } from "@/lib/security/consent";
+import { ConsentError } from "@/lib/security/consent-words";
+import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 import { higgsfieldConfigured } from "@/lib/higgsfield";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 const headers = { "Cache-Control": "private, no-store" };
@@ -54,15 +58,34 @@ export const POST = withTenant(
   async (request: Request) => {
     const got = await requireRender();
     if (got.response) return got.response;
+    /* Training on a likeness records that the person consented (consent_at), and recording consent is people-only:
+       an API or MCP token, of any scope, and Atomik's agent identities are refused (lib/security/people-only.ts). */
+    if (!isPerson({ user: got.user, token: got.token }))
+      return Response.json({ error: PEOPLE_ONLY }, { status: 403, headers });
+    /* The sample workspace spends nothing: answered before the request is claimed. */
+    { const off = await sampleWorkspaceOff(); if (off) return off; }
+    /* Every training cites a live consent record (review of #558, M1): for the production the request names, the same
+       cast member, allowing identity training. Checked, and refused in words, before anything is claimed or sent. */
+    const peek = (await request.clone().json().catch(() => null)) as (CreateSoulIdentityInput & { consentId?: unknown; subjectKey?: unknown }) | null;
+    if (!peek || typeof peek !== "object") return Response.json({ error: "Send a valid identity request." }, { status: 400, headers });
+    let consentId: string;
+    try {
+      consentId = (await consentForTraining(peek.consentId, await projectKeysFor(peek.projectId, got.user.id), peek.subjectKey)).id;
+    } catch (error) {
+      if (error instanceof ConsentError) return Response.json({ error: error.message }, { status: error.status, headers });
+      throw error;
+    }
     return withGenerationRequest(request, got.user.id, async (claim) => {
       try {
         const body = (await request.json()) as CreateSoulIdentityInput;
         const identity = await createSoulIdentity(body, claim);
+        await linkConsentIdentity(consentId, identity.id);
         return Response.json({ identity }, { status: 202, headers });
       } catch (error) {
         if (
           error instanceof SoulIdentityError ||
-          error instanceof SpendReservationError
+          error instanceof SpendReservationError ||
+          error instanceof ConsentError
         )
           return Response.json(
             { error: error.message },

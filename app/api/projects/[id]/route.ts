@@ -3,6 +3,9 @@ import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { archiveDeleteStatements, archiveTransaction, type ArchiveStep } from "@/lib/archive";
+import { effectiveCapRow, setOwnCap, unlockAtCap, workspaceBudget } from "@/lib/caps";
+import { creditsApply } from "@/lib/credits";
+import { requireTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -25,11 +28,14 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const r = rs.rows[0] as any;
   if (!r) return NextResponse.json({ error: "No such project." }, { status: 404 });
+  /* The cap the gate enforces: its own, else the workspace's budget per production (lib/caps.ts projectCap). */
+  const inCredits = creditsApply(requireTenant());
+  const capped = effectiveCapRow({ capCredits: r.cap_credits == null ? null : Number(r.cap_credits) }, inCredits ? await workspaceBudget() : null, inCredits);
   return NextResponse.json({
     project: {
       id: String(r.id), name: String(r.name ?? ""), description: r.description == null ? "" : String(r.description),
       code: String(r.code ?? ""), category: String(r.category ?? ""),
-      capUsd: r.cap_usd == null ? null : Number(r.cap_usd), capCredits: r.cap_credits == null ? null : Number(r.cap_credits),
+      capUsd: r.cap_usd == null ? null : Number(r.cap_usd), ...capped,
       capUnlocked: Number(r.cap_unlocked ?? 0) === 1,
       productionId: r.production_id ? String(r.production_id) : null,
     },
@@ -42,21 +48,32 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   await ready();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
-  /* The cap, in the workspace's unit, and the unlock past it: an admin's alone. */
+  /* The cap, in the workspace's unit, and the unlock past it: an admin's alone, and a person's: an API or MCP token
+     (even one an admin made) never sets a budget or unlocks one (CLAUDE.md rule 14: spend limits are people-only). */
   if ("capCredits" in body || "capUsd" in body || "capUnlocked" in body) {
+    if (got.token) return NextResponse.json({ error: "A production's cap is set by a person, signed in. API tokens cannot change it." }, { status: 403 });
     if (got.user.role !== "admin") return NextResponse.json({ error: "An admin sets a production's cap." }, { status: 403 });
+    /* A new cap re-locks the production and re-arms its warning, in the same statement (lib/caps.ts setOwnCap). */
     if ("capCredits" in body) {
       const n = body.capCredits == null || body.capCredits === "" ? null : Math.round(Number(body.capCredits));
       if (n != null && (!Number.isFinite(n) || n < 0)) return NextResponse.json({ error: "A cap is a whole number of credits, or none." }, { status: 400 });
-      await db().execute({ sql: `UPDATE projects SET cap_credits = ?, cap_warned_at = NULL WHERE id = ?`, args: [n, id] });
+      await setOwnCap(id, "cr", n);
     }
     if ("capUsd" in body) {
       const n = body.capUsd == null || body.capUsd === "" ? null : Number(body.capUsd);
       if (n != null && (!Number.isFinite(n) || n < 0)) return NextResponse.json({ error: "A cap is an amount, or none." }, { status: 400 });
-      await db().execute({ sql: `UPDATE projects SET cap_usd = ?, cap_warned_at = NULL WHERE id = ?`, args: [n, id] });
+      await setOwnCap(id, "$", n);
     }
     if ("capUnlocked" in body) {
-      await db().execute({ sql: `UPDATE projects SET cap_unlocked = ? WHERE id = ?`, args: [body.capUnlocked ? 1 : 0, id] });
+      if (body.capUnlocked) {
+        /* An Unlock names the cap the admin was shown: it lands only on that cap, and only at it. */
+        const forCap = Number(body.forCap);
+        if (body.forCap == null || !Number.isFinite(forCap)) return NextResponse.json({ error: "Unlock needs the cap you were shown. Look again." }, { status: 409 });
+        const done = await unlockAtCap(id, forCap);
+        if (!done.ok) { invalidate(PROJECTS_KEY); return NextResponse.json({ error: done.error }, { status: done.status }); }
+      } else {
+        await db().execute({ sql: `UPDATE projects SET cap_unlocked = 0 WHERE id = ?`, args: [id] });
+      }
     }
     invalidate(PROJECTS_KEY);
     if (body.name === undefined && body.description === undefined && body.code === undefined && body.category === undefined) {

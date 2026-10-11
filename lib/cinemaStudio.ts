@@ -6,6 +6,7 @@ import { estimateCostUsd, listRate } from "./vendorPricing";
 import { costUsd } from "./models";
 import type { PricingWatch } from "./higgsfieldPricingWatch";
 import { cinemaSoundPricing, cinemaSoundUsd } from "./cinemaSoundPricing";
+import { holdBandOf } from "./cinemaHold";
 /** The deploy-time switch, beside the engine it switches (defined with the rates in lib/vendorRates.ts). */
 export { cinemaStudioEnabled } from "./vendorRates";
 import {
@@ -36,8 +37,9 @@ function settingsProblem(params: Pick<VideoParams, "resolution" | "ratio" | "dur
  * existing credit terms. The provider does not publish the exact frame for
  * each aspect, and its estimate endpoint states the formula but returns no
  * figure, so this is an APPROXIMATE quote: the take settles on its delivered
- * output (cinemaStudioSettlementUsd). Admission keeps the quote on the take
- * and dispatch refuses to send if the settings no longer price the same.
+ * output (cinemaStudioSettlement), never past the hold a person approved
+ * (lib/cinemaHold.ts). Admission keeps the quote on the take and dispatch
+ * refuses to send if the settings no longer price the same.
  * Null means no price: the settings or reference seconds are outside the
  * engine's contract.
  *
@@ -91,17 +93,38 @@ export function cinemaStudioDeliveredUsd(delivered: {
 }
 
 /**
- * The settled cost: the provider's own charge for the job when it states one,
- * else the delivered-output figure. Either is used only within half to three
- * times the quote; outside that band a unit or measurement mistake is assumed
- * and the quote stands, so a take can never bill far past what was shown.
+ * What a take holds and a person approves, in the engine's dollars: the quote
+ * at its band (lib/cinemaHold.ts holdBandOf), so "about N cr, at most 3N cr"
+ * is the whole of what Make asks for.
  */
+export function cinemaStudioHoldUsd(quoteUsd: number): number {
+  return quoteUsd * holdBandOf(CINEMA_STUDIO_MODEL_ID);
+}
+
+/** What a take settles at, and by how much the engine's figure passed what was approved (null when it did not). */
+export type CinemaStudioSettlement = { usd: number; overrunUsd: number | null };
+
+/**
+ * The settled cost: the provider's own charge for the job when it states one,
+ * else the delivered-output figure, else the quote. A figure under half the
+ * quote is taken for a unit or measurement mistake, and the quote stands: a
+ * take with no cost figure is charged its quote. A figure past the approved
+ * hold is never charged: the take settles at the hold, and `overrunUsd` says
+ * by how much the engine's figure passed it, for the platform to absorb and
+ * its admin desk to count (lib/meter.ts holdOverrunsSince). The take itself is
+ * kept and shown.
+ */
+export function cinemaStudioSettlement(quoteUsd: number, deliveredUsd: number | null, reportedUsd?: number | null): CinemaStudioSettlement {
+  const measured = (value: number | null | undefined): value is number =>
+    typeof value === "number" && Number.isFinite(value) && value >= quoteUsd * 0.5;
+  const actual = measured(reportedUsd) ? reportedUsd : measured(deliveredUsd) ? deliveredUsd : quoteUsd;
+  const holdUsd = cinemaStudioHoldUsd(quoteUsd);
+  return actual > holdUsd ? { usd: holdUsd, overrunUsd: actual - holdUsd } : { usd: actual, overrunUsd: null };
+}
+
+/** The settled cost alone (cinemaStudioSettlement). */
 export function cinemaStudioSettlementUsd(quoteUsd: number, deliveredUsd: number | null, reportedUsd?: number | null): number {
-  const sane = (value: number | null | undefined): value is number =>
-    typeof value === "number" && Number.isFinite(value) && value >= quoteUsd * 0.5 && value <= quoteUsd * 3;
-  if (sane(reportedUsd)) return reportedUsd;
-  if (sane(deliveredUsd)) return deliveredUsd;
-  return quoteUsd;
+  return cinemaStudioSettlement(quoteUsd, deliveredUsd, reportedUsd).usd;
 }
 
 /** The published pricing this engine is priced from, watched for change (lib/higgsfieldPricingWatch.ts). */

@@ -13,7 +13,7 @@ process.env.ENGINE_MOCK = "1";
  * that is enqueued to an event nobody serves would fall back to inline
  * execution on the request path, so the registration itself is pinned here.
  */
-test("the served worker list registers the Astra render function on its event with bounded concurrency", async () => {
+test("the served worker list registers the Astra render function on its event with concurrency three", async () => {
   const { functions, astraRender } = await import("../../lib/workers");
   const { EVENTS } = await import("../../lib/inngest");
   const ids = functions.map((fn) => fn.id());
@@ -31,8 +31,9 @@ test("the served worker list registers the Astra render function on its event wi
   expect(opts.triggers?.map((t) => t.event)).toEqual([EVENTS.astraRender]);
   expect(EVENTS.astraRender).toBe("astra-blender/render.requested");
   expect(opts.retries).toBe(2);
+  // Three at once platform-wide, on either backend: the self-hosted pool has three single-slot workers.
   expect(opts.concurrency).toEqual([
-    { limit: 4 },
+    { limit: 3 },
     { limit: 2, key: "event.data.workspaceId" },
   ]);
 });

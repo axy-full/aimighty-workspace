@@ -11,7 +11,7 @@ function project(): Project {
     ...newProject("Boards"), assets: [drawing("d1"), drawing("d2")], bins: [{ id: "b1", name: "Drawings", assetIds: ["d1", "d2"] }],
     production: { boards: { style: "live", model: "gemini-3.1-flash-image", frames: {
       "shot-1": { prompt: "A fox", sketch: { assetId: "d1", name: "d1.png" }, reading: "A fox, wide, left to right.", takes: [] },
-      "shot-2": { prompt: "Mara", sketch: { assetId: "d2", name: "d2.png" }, takes: [] },
+      "shot-2": { prompt: "Keeper", sketch: { assetId: "d2", name: "d2.png" }, takes: [] },
     } } },
   };
 }
@@ -40,8 +40,8 @@ test("a drawing used in the cut, the edit's sound, Environment or Cast is kept, 
   expect(() => deleteDrawing({ ...project(), production: { ...project().production, environment } }, "d1")).toThrow("a reference of “Harbour” in Environment");
   const plated = { ...environment, entries: [{ ...entry, references: [], plates: [{ assetId: "d1", at: "", source: "library" as const }], selected: "d1" }] };
   expect(() => deleteDrawing({ ...project(), production: { ...project().production, environment: plated } }, "d1")).toThrow("a plate of “Harbour” in Environment");
-  const cast = { entries: [{ id: "c1", name: "Mara", kind: "character" as const, description: "", prompt: "", referenceAssetId: "d1", takes: [] }] };
-  expect(() => deleteDrawing({ ...project(), production: { ...project().production, cast } }, "d1")).toThrow("reference of “Mara” in Cast & Elements");
+  const cast = { entries: [{ id: "c1", name: "Keeper", kind: "character" as const, description: "", prompt: "", referenceAssetId: "d1", takes: [] }] };
+  expect(() => deleteDrawing({ ...project(), production: { ...project().production, cast } }, "d1")).toThrow("reference of “Keeper” in Cast & Elements");
   // Unrelated uses of the other drawing do not block this one.
   const after = deleteDrawing({ ...project(), shots: [{ ...shot, assetId: "d2" }], production: { ...project().production, environment: { ...environment, entries: [{ ...entry, references: ["d2"] }] }, cast: { entries: [{ ...cast.entries[0], referenceAssetId: "d2" }] } } }, "d1");
   expect(after.assets.map((a) => a.id)).toEqual(["d2"]);

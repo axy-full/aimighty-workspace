@@ -20,15 +20,16 @@ const actions = [
   "account.password_reset", "account.mfa_enabled", "account.mfa_replaced", "account.mfa_disabled", "account.recovery_codes_rotated", "account.recovery_code_used", "account.sessions_revoked", "member.updated", "member.removed",
   "vendor_key.updated", "vendor_key.removed", "workspace.mode_changed", "workspace.mfa_required", "workspace.mfa_optional", "workspace.restored",
   "api_token.created", "api_token.revoked", "review_link.created", "review_link.revoked",
+  "identity_consent.recorded", "identity_consent.withdrawn",
 ] as const;
 export type SecurityAction = (typeof actions)[number];
-type Target = "account" | "member" | "workspace" | "vendor" | "api_token" | "review_link";
+type Target = "account" | "member" | "workspace" | "vendor" | "api_token" | "review_link" | "identity_consent";
 type Details = {
   role?: "admin" | "member";
   disabled?: boolean;
   unlocked?: boolean;
   mode?: "platform" | "own";
-  scope?: "read" | "render";
+  scope?: "read" | "render" | "prepare";
   expiresAt?: number;
 };
 export type SecurityAuditInput = {
@@ -49,13 +50,13 @@ function identifier(value: string | null) {
 /** Explicit fields only. Never accept prompts, names, emails, URLs or credentials. */
 export function securityAuditStatement(input: SecurityAuditInput, changedOnly = false): InStatement {
   if (!(actions as readonly string[]).includes(input.action) ||
-      !["account", "member", "workspace", "vendor", "api_token", "review_link"].includes(input.targetType))
+      !["account", "member", "workspace", "vendor", "api_token", "review_link", "identity_consent"].includes(input.targetType))
     throw new Error("Invalid security history action");
   const details = input.details ?? {};
   for (const [key, value] of Object.entries(details)) {
     const valid = key === "role" ? ["admin", "member"].includes(String(value))
       : key === "mode" ? ["platform", "own"].includes(String(value))
-      : key === "scope" ? ["read", "render"].includes(String(value))
+      : key === "scope" ? ["read", "render", "prepare"].includes(String(value))
       : key === "disabled" || key === "unlocked" ? typeof value === "boolean"
       : key === "expiresAt" ? typeof value === "number" && Number.isSafeInteger(value) && value >= 0
       : false;

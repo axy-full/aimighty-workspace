@@ -16,9 +16,9 @@ export function PolicyPage({ title, intro, updated, children }: { title: string;
           <Link href="/report" className="text-blue">Report content</Link>
         </div>
         <h1 className="h1 mt-3">{title}</h1>
-        <p className="mt-3 max-w-[62ch] text-[15px] text-dim">{intro}</p>
+        <p className="mt-3 max-w-[62ch] text-[15px] text-lead">{intro}</p>
         <div className="policy mt-6">{children}</div>
-        <p className="mt-10 text-[12px] text-mute">Last changed {updated}. Changes are made here, on the page, with the date.</p>
+        <p className="mt-10 text-[12px] text-lead">Last changed {updated}. Changes are made here, on the page, with the date.</p>
       </div>
     </div>
   );
@@ -27,8 +27,8 @@ export function PolicyPage({ title, intro, updated, children }: { title: string;
 export function P({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="card mt-4 px-5 py-4">
-      <p className="grouplabel">{title}</p>
-      <div className="mt-2 flex flex-col gap-2 text-[14.5px] leading-relaxed text-dim">{children}</div>
+      <p className="grouplabel !text-[12px] !text-lead">{title}</p>
+      <div className="mt-2 flex flex-col gap-2 text-[14.5px] leading-relaxed text-lead">{children}</div>
     </section>
   );
 }

@@ -5,9 +5,8 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 /**
  * Workspace › Engines: the way in for assistants, scripts and MCP clients.
  * Their API tokens act as the person who made them and spend on this
- * workspace; /connect is where one is made (with a monthly ceiling), revoked,
- * and pointed at each client. Nothing linked to it, so a leaked token could
- * only be revoked by someone who knew the URL. The count is here so a token
+ * workspace; Settings › Connections is where one is made (with a monthly
+ * ceiling), revoked and pointed at each client. The count is here so a token
  * nobody remembers making is noticed.
  */
 export function ConnectRow() {
@@ -25,7 +24,7 @@ export function ConnectRow() {
   return (
     <div className="gx-card" data-testid="engine-connect">
       <span className="gx-eyebrow">Assistants &amp; API tokens</span>
-      <a className="gx-rowlink" href="/connect" data-testid="workspace-connect-link">
+      <a className="gx-rowlink" href="/suites?view=workspace&tab=connections" data-testid="workspace-connect-link">
         <span>{line}</span>
         <span aria-hidden="true" style={{ color: "var(--gx-text-3)" }}>›</span>
       </a>

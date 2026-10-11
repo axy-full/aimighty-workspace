@@ -1,11 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { POLL, movedOn, poll, pollAfter, pollDelay, presentTimeout, type PollClock, type PollPresence } from "../../lib/poll";
-import { settledState } from "../../lib/shell/use-connected-job";
-import { READ_FAILED, readFailure } from "../../lib/shell/use-business";
 import { checkingProblem } from "../../lib/higgsfield-consumer/resume";
 import { activeMediaJob } from "../../lib/workbench/job-recovery";
 import { CONNECTED_READ_FLOOR_S } from "../../lib/higgsfield-consumer/generation-client";
-import type { ConnectedJob } from "../../lib/higgsfield-consumer/generation-client";
 
 /**
  * lib/poll: every page-side status read (Gen's takes, connected jobs, Ads,
@@ -352,12 +349,6 @@ test("now() reads at once (a Try again) and starts the pace over", async () => {
   poller.stop();
 });
 
-test("a good status read clears the problem a failed one put on a running connected job", () => {
-  const job = { id: "9d2b3c4e-5f60-4a7b-8c9d-000000000001", status: "accepted" } as ConnectedJob;
-  expect(settledState(job)).toEqual({ phase: "running", job });
-  expect("problem" in settledState(job)).toBe(false);
-});
-
 test("a one-off read's automatic retry waits while the tab is hidden and runs when it is back", async () => {
   const time = fakeClock();
   const page = fakePresence();
@@ -402,20 +393,6 @@ test("a failed status read on a running job is said in fixed words, never the ra
   expect(checkingProblem(err(401, "x", "reconnect_required"))).toBe("Reconnect the account in Workspace › Engines to finish this take. Checking again shortly.");
   expect(checkingProblem(err(507, "x", "original_quota"))).toBe("Workspace storage is full. Make room to collect this take. Checking again shortly.");
   expect(checkingProblem(err(502), "this ad")).toBe("Could not check this ad. Checking again shortly.");
-});
-
-test("a failed Setup or catalogue read says the account did not answer unless the route names a reason", () => {
-  const generic = { error: "The connected account could not complete this request. Check the saved job before trying again." };
-  expect(readFailure(503, generic)).toBe(READ_FAILED);
-  expect(readFailure(500, null)).toBe(READ_FAILED);
-  expect(readFailure(null, null)).toBe(READ_FAILED);
-  expect(readFailure(502, { error: "   " })).toBe(READ_FAILED);
-  expect(readFailure(429, { error: "Too many requests. Try again shortly." })).toBe("Too many requests. Try again shortly.");
-  expect(readFailure(401, { code: "reconnect_required", error: "Reconnect the connected account." })).toBe("Reconnect the connected account.");
-  expect(readFailure(503, { code: "discovery_unavailable", error: "The account's tools are not answering." })).toBe("The account's tools are not answering.");
-  /* A reason the route names is kept, even without a code; only the catch-all about a saved job is replaced. */
-  expect(readFailure(503, { error: "The connected catalogue is unavailable." })).toBe("The connected catalogue is unavailable.");
-  expect(readFailure(502, { error: "The connected account could not be read. Try again in a moment." })).toBe("The connected account could not be read. Try again in a moment.");
 });
 
 test("against the service's poll lease, no read is refused and a finished render is seen within one hint", async () => {

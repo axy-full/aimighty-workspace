@@ -8,6 +8,7 @@ import { requireTenant } from "@/lib/tenant";
 import { withPipelineActor } from "@/lib/pipeline/actor";
 import { PipelineError } from "@/lib/pipeline/schema";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -63,6 +64,8 @@ export const POST = withTenant(
       }
       if (!body || typeof body !== "object" || Array.isArray(body))
         throw new PipelineError("Check the pipeline action.");
+      /* The sample workspace spends nothing: nothing there is approved, resumed or advanced. A quote, a pause and a cancel still answer. */
+      if (["approve", "resume", "select", "recover"].includes(body.action)) { const off = await sampleWorkspaceOff(); if (off) return off; }
       const store = await pipelineStore(),
         id = (await ctx.params).id;
       let run = await store.getRun(auth.user.id, id);

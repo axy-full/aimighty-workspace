@@ -288,7 +288,7 @@ export type DispatchGate = { ok: true } | { ok: false; credits: number; reason: 
  */
 export function dispatchGate(shown: number | null, fresh: number): DispatchGate {
   if (shown !== null && shown === fresh) return { ok: true };
-  return { ok: false, credits: fresh, reason: `The price is now ${fresh.toLocaleString("en-US")} cr. Press Generate again to approve it.` };
+  return { ok: false, credits: fresh, reason: `The price is now ${fresh.toLocaleString("en-US")} cr. Press it again to approve it.` };
 }
 
 /* ── Copy ─────────────────────────────────────────────────────────────── */

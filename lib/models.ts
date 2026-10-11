@@ -4,6 +4,7 @@ import { CINEMA_STUDIO_MODEL_ID, CINEMA_STUDIO_RATIOS, CINEMA_STUDIO_RESOLUTIONS
 import { hasVendorName, neutralModelText } from "./vendorNames";
 import type { TaskId } from "./tasks";
 import { FPS } from "./transport";
+import { IDENTITY_RENDER_NAME, PRODUCT_IMAGE_NAME } from "./uiNames";
 /**
  * Model catalog + pricing — Seedance 2.x.
  *
@@ -516,7 +517,7 @@ export const MODELS: ModelDef[] = [
     note: "Cinema Studio 4.0 — 4–30 s at 480p or 720p, optional sound; reference stills and clips are cited in the prompt.",
   },
   {
-    id: MARKETING_IMAGE_MODEL_ID, label: "Marketing Studio Image", short: "Marketing", family: "higgsfield-marketing",
+    id: MARKETING_IMAGE_MODEL_ID, label: PRODUCT_IMAGE_NAME, short: "Marketing", family: "higgsfield-marketing",
     provider: "higgsfield", kind: "image", billing: "image", marketing: true, hidden: true, paramStyle: "fields",
     resolutions: ["2k", "1k", "4k"], ratios: ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"],
     durations: [], supportsAudio: false, supportsCameraFixed: false, maxReferenceImages: 16, maxReferenceVideos: 0, maxVideoSecondsTotal: 0,
@@ -524,7 +525,7 @@ export const MODELS: ModelDef[] = [
   },
   {
     id: SOUL_CHARACTER_MODEL_ID,
-    label: "Identity render", short: "IDENTITY", family: "soul", provider: "higgsfield",
+    label: IDENTITY_RENDER_NAME, short: "IDENTITY", family: "soul", provider: "higgsfield",
     kind: "image", billing: "image", soulIdentity: true, hidden: true, paramStyle: "fields",
     resolutions: ["720p", "1080p"], ratios: ["9:16", "16:9", "4:3", "3:4", "1:1", "2:3", "3:2"],
     durations: [], supportsAudio: false, supportsCameraFixed: false,
@@ -635,7 +636,7 @@ const EARLIER = {
   video: { label: "Video (earlier account)", short: "VIDEO" },
   audio: { label: "Audio (earlier account)", short: "AUDIO" },
   model3d: { label: "3D model (earlier account)", short: "3D" },
-  marketing: { label: "Marketing image (earlier account)", short: "MARKETING" },
+  marketing: { label: `${PRODUCT_IMAGE_NAME} (earlier account)`, short: "MARKETING" },
   analysis: { label: "Video analysis (earlier account)", short: "ANALYSIS" },
 } as const;
 export const RETIRED_LABELS: Readonly<Record<string, { label: string; short: string }>> = {

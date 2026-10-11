@@ -54,7 +54,7 @@ export function FormatTool({ editor, onOpen }: { editor: OwnEditor; onOpen: (pag
     /* Words, kind and frame through Gen's one letterbox, the product's stills through its reference inbox (lib/shell). */
     sendGenPreset({ prompt: ready.prompt, type: ready.type, note: ready.note, billing: "workspace", picks: { ratio: ready.ratio } });
     for (const ref of ready.references) sendReference(ref);
-    shell.goGen();
+    shell.openMake(ready.type);
     toast(`${template ? template.name : "Your direction"} is in Gen. It is priced there before anything runs.`);
   };
 

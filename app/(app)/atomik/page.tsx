@@ -1,12 +1,10 @@
-import AtomikSuite from "@/components/suites/AtomikSuite";
-import SwitchoverGate from "@/components/switchover/SwitchoverGate";
-import { switchNowOrGate, type RawSearch } from "@/lib/workspace/switchover.server";
+import { followOldRoute, type RawSearch } from "@/lib/shell/old-routes.server";
 
-export default async function AtomikIndex({ searchParams }: { searchParams: Promise<RawSearch> }) {
-  const { target, search } = await switchNowOrGate("/atomik", await searchParams);
-  return (
-    <SwitchoverGate target={target} search={search}>
-      <AtomikSuite />
-    </SwitchoverGate>
-  );
+/**
+ * The old Atomik suite page: Atomik is the panel, and the control room is its own pages.
+ * Redirected, never drawn (docs/old-shells.md): lib/shell/old-routes.ts holds where it goes.
+ */
+export const dynamic = "force-dynamic";
+export default async function Moved({ searchParams }: { searchParams: Promise<RawSearch> }) {
+  await followOldRoute("/atomik", await searchParams);
 }

@@ -64,6 +64,21 @@ test("Genjutsu sends exact original paths, preserves image order and never uses 
   for(const resolution of ["2160p","4k","1440p",""]) await expect(genjutsuInput(GENJUTSU_MODELS["motion-transfer"],"",resolution,source,refs)).rejects.toThrow(/480p, 720p or 1080p/);
 });
 
+/* Object swap replaces one element per run (design/particl-graphite/README.md › costs table): one source, one direction,
+   and every still of that element sent as `image_urls`, in order — eight is the most the route takes. */
+test("Object swap sends one source and every reference of its one element, up to eight",async()=>{
+  const {genjutsuInput}=await import("../../lib/genjutsu");
+  const source={id:"clip",kind:"video" as const,mime:"video/mp4",ext:"mp4",storedUrl:"/api/uploads/clip",role:"reference_video" as const};
+  const still=(n:number)=>({id:`look-${n}`,kind:"image" as const,mime:"image/png",ext:"png",storedUrl:`/api/uploads/look-${n}`,role:"reference_image" as const});
+  const eight=Array.from({length:8},(_,i)=>still(i+1));
+  const body=await genjutsuInput(GENJUTSU_MODELS["object-swap"],"Replace the bottle with the serum.","720p",source,eight);
+  expect(Object.keys(body).sort()).toEqual(["image_urls","prompt","resolution","video_url"]);
+  expect(body.video_url).toMatch(/uploads\/clip\.mp4$/);
+  expect(body.image_urls).toHaveLength(8);
+  body.image_urls.forEach((url,i)=>expect(url).toMatch(new RegExp(`uploads/look-${i+1}\\.png$`)));
+  await expect(genjutsuInput(GENJUTSU_MODELS["object-swap"],"","720p",source,[...eight,still(9)])).rejects.toThrow(/one to eight still references/);
+});
+
 test("Genjutsu requires a still reference before signing media or making requests",async()=>{
   const storage=await import("../../lib/storage");
   let signed=0;

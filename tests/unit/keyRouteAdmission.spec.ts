@@ -93,7 +93,7 @@ async function setup(name: string, actor: AdmissionActor) {
     "@/lib/inngest": { enqueueRender: async (id: string, kind: string) => { dispatches.push({ id, kind }); return true; } },
     "@/lib/genjutsu": { ...genjutsu, estimateGenjutsuInput: async (model: string, input: Awaited<ReturnType<typeof genjutsu.genjutsuInput>>) => { estimates.push(model); return genjutsu.estimateGenjutsuInput(model, input); } },
     /* A 10 s, 1280×720 source: inside every floor, today's and the documented ones (4 s; Object Swap's pixels). */
-    "@/lib/videoMetadata.server": { ...metadata, inspectOriginalVideo: async () => ({ width: 1280, height: 720, seconds: 10, firstTimestamp: 0 }) },
+    "@/lib/videoMetadata.server": { ...metadata, inspectOriginalVideo: async () => ({ width: 1280, height: 720, seconds: 6, firstTimestamp: 0 }) },
   });
   const handler = load<{ POST(request: Request): Promise<Response> }>("app/api/generate/route.ts", {
     "@/lib/auth": { withTenant: (fn: unknown) => fn, requireRender: async () => actor },
@@ -106,7 +106,7 @@ async function setup(name: string, actor: AdmissionActor) {
       const bytes = readFileSync("tests/fixtures/astra-source.mp4");
       const stored = await storage.storeUpload(id, "mp4", bytes, "video/mp4");
       localFiles.push(path.resolve(".data/uploads", `${id}.mp4`));
-      await database.db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,width,height,duration_s,created_at) VALUES(?,?,'video/mp4','mp4',?,?,?,'video',1280,720,10,0)", args: [id, `${id}.mp4`, bytes.length, stored.sha256, stored.url] });
+      await database.db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,width,height,duration_s,created_at) VALUES(?,?,'video/mp4','mp4',?,?,?,'video',1280,720,6,0)", args: [id, `${id}.mp4`, bytes.length, stored.sha256, stored.url] });
     } else {
       await database.db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at) VALUES(?,?,'image/png','png',128,'fixture-sha',?,'image',0)", args: [id, `${id}.png`, `/api/uploads/${id}`] });
     }
@@ -132,7 +132,7 @@ const bodyOf = (request: DispatchRequest) => {
   return generationRequestBody(request.input);
 };
 const approved = (body: Record<string, unknown>, quote: PreparedAdmission) => ({ ...body, maxCredits: quote.quote.estimatedCredits, quoteFingerprint: quote.quote.fingerprint });
-const media = (id: string, kind: "video" | "image"): ViralMedia => ({ id: `upload:${id}`, sourceId: id, origin: "upload", kind, name: id, url: `/api/uploads/${id}`, seconds: kind === "video" ? 10 : null });
+const media = (id: string, kind: "video" | "image"): ViralMedia => ({ id: `upload:${id}`, sourceId: id, origin: "upload", kind, name: id, url: `/api/uploads/${id}`, seconds: kind === "video" ? 6 : null });
 const still = (id: string) => ({ id: `upload:${id}`, name: id, sourceId: id, origin: "upload" as const, url: `/api/uploads/${id}` });
 
 for (const [who, actor] of [["the owner", OWNER], ["a member", MEMBER]] as const) {

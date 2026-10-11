@@ -4,17 +4,21 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/ops/preview-seed.cjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test:mobile": "playwright test tests/mobile.spec.ts",
+    "test:five-minute": "playwright test --config=playwright.five-minute.config.ts",
     "test:onboarding": "PW_BASE_URL=${PW_BASE_URL:-http://localhost:4550} playwright test --project=onboarding",
     "test:unit": "PW_BASE_URL=${PW_BASE_URL:-http://localhost:4550} playwright test --project=unit",
     "test:screens": "playwright test tests/screens.spec.ts",
     "postinstall": "node scripts/copy-pdf-worker.mjs && node scripts/copy-ocr-worker.mjs"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.57",
     "@ai-sdk/gateway": "4.0.86",
+    "@ai-sdk/google": "4.0.75",
     "@ai-sdk/openai": "4.0.70",
     "@ai-sdk/xai": "5.0.6",
     "@anthropic-ai/sdk": "^0.123.0",

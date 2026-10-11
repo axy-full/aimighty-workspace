@@ -287,12 +287,14 @@ return await withRecoveryActivity('provisioning', async () => {
     });
     // Initialize the tenant and its owner mirror before publishing a membership.
     // Failed initialization leaves only a resumable provisioning request.
+    const { mirrorIdentity, platformOwnerIdentity } = await import("./platformOwnerPrivacy");
+    const shown = mirrorIdentity(ws, { id: ownerId, email: String(account.email), name: String(account.name) }, await platformOwnerIdentity());
     await runInTenant(ws, async () => {
       const { db, ready } = await import("./db");
       await ready();
       await db().execute({
         sql: `INSERT INTO users(id,email,name,password_hash,role,disabled,created_at) VALUES(?,?,?,'!','admin',0,?) ON CONFLICT(id) DO UPDATE SET email=excluded.email,name=excluded.name,role='admin',disabled=0,deleted_at=NULL`,
-        args: [ownerId, String(account.email), String(account.name), now()],
+        args: [ownerId, shown.email, shown.name, now()],
       });
     });
     await accountTransaction(async (tx) => {

@@ -1,0 +1,7 @@
+/* A post on the Social board (board/social/posts/PostCard.tsx). Tokens only: app/graphite.css. */
+.sb-post-state { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.4; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.sb-dot { flex: none; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--gx-idle); }
+.sb-post-state[data-tone="needs"] .sb-dot { background: var(--gx-accent); }
+.sb-post-state[data-tone="done"] .sb-dot { background: var(--gx-done); }
+.sb-post-state[data-tone="bad"] { color: var(--gx-waiting-text); }
+.sb-post-state[data-tone="bad"] .sb-dot { background: var(--gx-waiting); }

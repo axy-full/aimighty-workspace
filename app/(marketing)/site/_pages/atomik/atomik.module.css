@@ -1,5 +1,5 @@
 /*
- * Atomik › Agent (the request and the plan it returns) and the recipe cards.
+ * Atomik › Agent: the request and the plan it returns.
  * Tokens come from app/graphite.css; everything shared (sections, chips,
  * tiles, windows, dots, buttons) is components/marketing/marketing.css. Measurements follow
  * design/particl-graphite/README.md › Screens › 5. Atomik.
@@ -27,7 +27,7 @@
 }
 .planHead { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .ring { display: inline-flex; flex: none; color: var(--gx-text); }
-.planLabel { font-family: "Kode Mono", monospace; font-size: 11px; letter-spacing: .14em; line-height: 1.5; color: var(--gx-accent-text); min-width: 0; }
+.planLabel { font-family: "Kode Mono", monospace; font-size: 12px; letter-spacing: .14em; line-height: 1.5; color: var(--gx-accent-text); min-width: 0; }
 .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .step {
   display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 12px; align-items: center;
@@ -43,13 +43,3 @@
 
 /* ── Pages: windows, then tiles, 20px apart (the design's gap) ───────── */
 .pages > :global(.mk-wrap) { gap: 20px; }
-/* A badge under the body: it qualifies one sentence, not the whole tile. */
-.gated { display: flex; }
-
-/* ── Recipe cards ─────────────────────────────────────────────────────── */
-.recipe { gap: 12px; }
-.recipe :global(.mk-name) { font-size: 21px; }
-.recipe :global(.mk-body) { flex: 1; }
-.cost { letter-spacing: .06em; }
-.chain { padding-top: 12px; border-top: 1px solid var(--gx-hair); }
-.foot { font-size: 12.5px; color: var(--gx-text-2); }

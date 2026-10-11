@@ -26,7 +26,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AtomikMark } from "@/components/AtomikMark";
 import { TRAIL } from "@/components/ParticlMark";
 import { Mark } from "@/components/ui/Mark";
+import { RequestAccessButton } from "@/components/RequestAccess";
 import { signInNotice } from "@/lib/authPages";
+import { safeNext } from "@/lib/safeNext";
 import "./auth-mobile.css";
 
 export default function WelcomeSignIn() {
@@ -83,7 +85,7 @@ export default function WelcomeSignIn() {
 
 function SignIn() {
   const params = useSearchParams();
-  return <SignInForm next={safeNext(params.get("next"))} notice={signInNotice(params)} />;
+  return <SignInForm next={safeNext(params.get("next"), typeof window === "undefined" ? null : window.location.origin)} notice={signInNotice(params)} />;
 }
 
 function SignInForm({ next, notice = null }: { next: string; notice?: string | null }) {
@@ -167,7 +169,7 @@ function SignInForm({ next, notice = null }: { next: string; notice?: string | n
         <p className="page-sub !m-0">Open your studio workspace.</p>
       </div>
       {notice && (
-        <p role="status" className="rail-help">
+        <p role="status" className="rail-help !text-[12px] !text-lead">
           {notice}
         </p>
       )}
@@ -214,7 +216,7 @@ function SignInForm({ next, notice = null }: { next: string; notice?: string | n
             value={code}
             onChange={(e) => setCode(e.target.value)}
           />
-          <span className="rail-help">
+          <span className="rail-help !text-[12px] !text-lead">
             Enter your authenticator code or one unused recovery code.
           </span>
         </label>
@@ -227,7 +229,7 @@ function SignInForm({ next, notice = null }: { next: string; notice?: string | n
         {busy ? "…" : "Sign in"}
       </button>
       {err && (
-        <p role="alert" className="rail-help text-lift">
+        <p role="alert" className="rail-help !text-[12px] text-lift">
           {err}
         </p>
       )}
@@ -238,9 +240,7 @@ function SignInForm({ next, notice = null }: { next: string; notice?: string | n
             View plans
           </Link>{" "}
           ·{" "}
-          <Link href="/signup" className="text-lead hover:text-ink">
-            Create a workspace
-          </Link>
+          <RequestAccessButton className="text-[color:var(--graphite-accent-text)] hover:text-ink" label="Request access" />
           <br />
           <Link href="/reset" className="text-lead hover:text-ink">
             Forgot password?
@@ -252,25 +252,4 @@ function SignInForm({ next, notice = null }: { next: string; notice?: string | n
       </div>
     </form>
   );
-}
-
-/**
- * A `next` that provably resolves to this origin, or "/". The obvious
- * check — starts with "/" and not "//" — is not enough: browsers normalise
- * a backslash to a slash, and the URL parser strips control characters
- * before resolving, so the test is a resolution, not a string shape.
- */
-function safeNext(raw: string | null): string {
-  if (!raw) return "/";
-  if (/[\u0000-\u001F\u007F]/.test(raw)) return "/";
-  if (typeof window === "undefined")
-    return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
-  try {
-    const here = window.location.origin;
-    const u = new URL(raw, here);
-    if (u.origin !== here) return "/";
-    return u.pathname + u.search + u.hash;
-  } catch {
-    return "/";
-  }
 }

@@ -44,7 +44,7 @@
 .mk-wrap { box-sizing: content-box; max-width: 1200px; margin: 0 auto; padding: clamp(64px, 9vw, 110px) clamp(16px, 4vw, 40px); display: flex; flex-direction: column; gap: 32px; min-width: 0; }
 .mk-head { display: flex; flex-direction: column; gap: 12px; }
 .mk-head--row { flex-direction: row; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
-.mk-eyebrow { font-family: "Kode Mono", monospace; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--gx-accent-text); font-weight: 500; }
+.mk-eyebrow { font-family: "Kode Mono", monospace; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--gx-accent-text); font-weight: 500; }
 .mk-h1 { font-family: Outfit, sans-serif; font-weight: 600; letter-spacing: -.035em; margin: 0; color: var(--gx-text); }
 .mk-h2 { font-family: Outfit, sans-serif; font-weight: 600; font-size: clamp(30px, 4vw, 46px); letter-spacing: -.03em; line-height: 1.05; margin: 0; color: var(--gx-text); }
 .mk-h3 { font-family: Outfit, sans-serif; font-weight: 600; font-size: clamp(24px, 2.6vw, 32px); letter-spacing: -.03em; line-height: 1.1; margin: 0; color: var(--gx-text); }
@@ -57,7 +57,7 @@
 a.mk-card { text-decoration: none; color: var(--gx-text) !important; }
 a.mk-card:hover { border-color: var(--gx-tint-border-45); }
 .mk-card--hl { border-color: var(--gx-tint-border-45); box-shadow: 0 0 0 4px var(--gx-tint-10); }
-.mk-tag { font-family: "Kode Mono", monospace; font-size: 10.5px; letter-spacing: .14em; color: var(--gx-accent-text); text-transform: uppercase; }
+.mk-tag { font-family: "Kode Mono", monospace; font-size: 12px; letter-spacing: .14em; color: var(--gx-accent-text); text-transform: uppercase; }
 .mk-tag--muted { color: var(--gx-text-2); }
 .mk-name { font-family: Outfit, sans-serif; font-weight: 600; font-size: 20px; letter-spacing: -.02em; line-height: 1.15; }
 .mk-body { font-size: 13.5px; line-height: 1.5; color: var(--gx-text-2); margin: 0; }
@@ -67,14 +67,14 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
 .mk-note { background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: 8px; padding: 14px 16px; font-size: 13.5px; line-height: 1.5; color: var(--gx-text-2); margin: 0; }
 .mk-note strong, .mk-note b { color: var(--gx-text); font-weight: 600; }
 .mk-fact { display: flex; flex-direction: column; gap: 6px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: 8px; padding: 14px 16px; min-width: 0; }
-.mk-fact-k { font-family: "Kode Mono", monospace; font-size: 10.5px; letter-spacing: .12em; color: var(--gx-accent-text); text-transform: uppercase; }
+.mk-fact-k { font-family: "Kode Mono", monospace; font-size: 12px; letter-spacing: .12em; color: var(--gx-accent-text); text-transform: uppercase; }
 .mk-fact-v { font-size: 14px; font-weight: 600; color: var(--gx-text); }
 .mk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.mk-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--gx-input-border); font: 10.5px "Kode Mono", monospace; letter-spacing: .04em; color: var(--gx-text-2); white-space: nowrap; }
+.mk-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--gx-input-border); font: 12px "Kode Mono", monospace; letter-spacing: .04em; color: var(--gx-text-2); white-space: nowrap; }
 .mk-chip--tint { border-color: var(--gx-tint-border); background: var(--gx-tint); color: var(--gx-accent-text); }
 .mk-chip b { color: var(--gx-accent-text); font-weight: 500; margin-right: 6px; }
-.mk-amber { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; background: color-mix(in srgb, var(--gx-waiting) 14%, transparent); border: 1px solid color-mix(in srgb, var(--gx-waiting) 35%, transparent); color: var(--gx-waiting-text); font: 10px "Kode Mono", monospace; letter-spacing: .08em; white-space: nowrap; }
-.mk-green { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; background: var(--gx-done-tint); border: 1px solid color-mix(in srgb, var(--gx-done) 35%, transparent); color: var(--gx-done-text); font: 10px "Kode Mono", monospace; letter-spacing: .08em; white-space: nowrap; }
+.mk-amber { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; background: color-mix(in srgb, var(--gx-waiting) 14%, transparent); border: 1px solid color-mix(in srgb, var(--gx-waiting) 35%, transparent); color: var(--gx-waiting-text); font: 12px "Kode Mono", monospace; letter-spacing: .08em; white-space: nowrap; }
+.mk-green { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; background: var(--gx-done-tint); border: 1px solid color-mix(in srgb, var(--gx-done) 35%, transparent); color: var(--gx-done-text); font: 12px "Kode Mono", monospace; letter-spacing: .08em; white-space: nowrap; }
 .mk-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
 .mk-dot--done { background: var(--gx-done); }
 .mk-dot--idle { border: 1.5px solid var(--gx-hover-border); }
@@ -91,7 +91,7 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
 .mk-window { border-radius: 12px; border: 1px solid var(--gx-pop-border); background: var(--gx-panel); box-shadow: var(--gx-shadow-dialog); overflow: hidden; min-width: 0; }
 .mk-window-bar { height: 38px; background: var(--gx-panel); display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--gx-hair-soft); }
 .mk-window-bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--gx-thumb); flex: none; }
-.mk-window-path { font: 11px "Kode Mono", monospace; color: var(--gx-text-2); margin-left: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mk-window-path { font: 12px "Kode Mono", monospace; color: var(--gx-text-2); margin-left: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .mk-window img { width: 100%; height: auto; }
 
 /* ── Suite header (every page but Gen) ────────────────────────────────── */
@@ -100,7 +100,7 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
 .mk-suite-head .mk-h1 { font-size: clamp(36px, 5.2vw, 64px); line-height: 1; max-width: 20ch; }
 .mk-suite-head .mk-lead { font-size: 17px; color: var(--gx-text-2); max-width: 62ch; }
 .mk-pages { display: flex; flex-wrap: wrap; gap: 6px; }
-.mk-page { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--gx-input-border); font: 11px "Kode Mono", monospace; letter-spacing: .04em; color: var(--gx-text-2); white-space: nowrap; }
+.mk-page { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--gx-input-border); font: 12px "Kode Mono", monospace; letter-spacing: .04em; color: var(--gx-text-2); white-space: nowrap; }
 .mk-page b { color: var(--gx-accent-text); font-weight: 500; }
 .mk-cta { display: flex; flex-wrap: wrap; gap: 10px; }
 /* The suite header already draws the hairline the next section would. */
@@ -113,7 +113,7 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
 .mk-suite-card-top { display: flex; align-items: center; justify-content: space-between; }
 .mk-glow { width: 6px; height: 6px; border-radius: 50%; background: var(--gx-accent); box-shadow: var(--gx-glow-live); }
 .mk-suite-card .mk-body { color: var(--gx-text-2); flex: 1; }
-.mk-suite-pages { font: 10.5px "Kode Mono", monospace; letter-spacing: .06em; line-height: 1.7; color: var(--gx-text-2); }
+.mk-suite-pages { font: 12px "Kode Mono", monospace; letter-spacing: .06em; line-height: 1.7; color: var(--gx-text-2); }
 .mk-plan-price { font-family: Outfit, sans-serif; font-weight: 600; font-size: 34px; letter-spacing: -.03em; line-height: 1; }
 .mk-plan-price small { font-size: 15px; font-weight: 500; color: var(--gx-text-2); letter-spacing: 0; }
 .mk-access { background: var(--gx-panel); }
@@ -135,7 +135,7 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
 .mk-footer-col a { font-size: 13.5px; color: var(--gx-text-2) !important; text-decoration: none; }
 .mk-footer-col a:hover { color: var(--gx-text) !important; }
 .mk-footer-bottom { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding-top: 20px; border-top: 1px solid var(--gx-hair); font-size: 12.5px; color: var(--gx-text-2); }
-.mk-footer-bottom .mk-tag { letter-spacing: .08em; font-size: 11px; color: var(--gx-text-2); }
+.mk-footer-bottom .mk-tag { letter-spacing: .08em; font-size: 12px; color: var(--gx-text-2); }
 
 /* ── Small parts ──────────────────────────────────────────────────────── */
 .mk-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
@@ -156,10 +156,10 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
 .mk-prompt textarea { display: block; width: 100%; resize: none; background: transparent; border: 0; outline: none; color: var(--gx-text); font: inherit; font-size: 16px; line-height: 1.5; padding: 6px 8px; min-height: 64px; }
 .mk-prompt-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--gx-hair); }
 .mk-model-chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 6px; border-radius: 6px; background: var(--gx-input); border: 1px solid var(--gx-input-border); font-size: 13px; font-weight: 600; white-space: nowrap; }
-.mk-model-tag { font-family: "Kode Mono", monospace; font-size: 10px; letter-spacing: .1em; padding: 3px 6px; border-radius: 4px; background: var(--gx-tint); color: var(--gx-accent-text); }
+.mk-model-tag { font-family: "Kode Mono", monospace; font-size: 12px; letter-spacing: .1em; padding: 3px 6px; border-radius: 4px; background: var(--gx-tint); color: var(--gx-accent-text); }
 .mk-set { display: inline-flex; align-items: center; height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--gx-input-border); font-size: 12.5px; color: var(--gx-text-2); white-space: nowrap; }
 .mk-set--on { border-color: var(--gx-tint-border); background: var(--gx-tint); color: var(--gx-accent-text); }
-.mk-prompt-meta { font-family: "Kode Mono", monospace; font-size: 11px; letter-spacing: .04em; color: var(--gx-text-2); }
+.mk-prompt-meta { font-family: "Kode Mono", monospace; font-size: 12px; letter-spacing: .04em; color: var(--gx-text-2); }
 .mk-go.mk-btn { border-radius: 10px; }
 .mk-hero-status { min-height: 44px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .mk-take { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 12px 14px; border-radius: 12px; max-width: 680px; width: 100%; background: var(--gx-card); border: 1px solid var(--gx-card-border); box-shadow: none; animation: mk-rise .4s var(--gx-ease) both; }
@@ -195,4 +195,13 @@ a.mk-card:hover { border-color: var(--gx-tint-border-45); }
   .mk-hero { min-height: 0; }
   .mk-hero-in { padding-top: 104px; padding-bottom: 36px; }
   .mk-go.mk-btn { flex: 1 1 100%; }
+}
+/* A phone on its side is wider than 720 but still a finger: the same 44px targets, nothing else. */
+@media (pointer: coarse) and (min-width: 721px) {
+  .mk-tab { min-height: 44px; }
+  .mk-brand { min-height: 44px; }
+  .mk-footer-col { gap: 0; }
+  .mk-footer-col a { min-height: 44px; display: flex; align-items: center; }
+  .mk-header .mk-btn { height: 44px; }
+  .mk-btn { min-height: 44px; }
 }

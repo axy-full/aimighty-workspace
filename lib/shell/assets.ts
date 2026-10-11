@@ -76,13 +76,14 @@ export const SAY = {
   cut: (name: string) => `Cut ${name} — paste to move it.`,
   pasted: (name: string, project: string) => `Pasted ${name} into ${project}`,
   moved: (name: string, project: string) => `Moved ${name} to ${project}`,
+  /* Nothing is erased: a generation is hidden in the trash and an upload is taken out of this project; Undo (the toast's button, ⌘Z) puts it back. */
   deleted: (asset: AssetRef) => asset.origin === "generation"
-    ? `Deleted ${asset.name} · ⌘Z to undo. The original stays on the server indefinitely.`
-    : `Deleted ${asset.name} from this project · ⌘Z to undo. The original stays in All assets.`,
+    ? `Moved ${asset.name} to trash`
+    : `Removed ${asset.name} from this project. The original stays in All assets.`,
   restored: (name: string) => `${name} restored`,
   referenced: (name: string, role: string) => `${name} added as ${role}`,
-  recreate: (name: string) => `${name}’s recipe is in Gen.`,
-  settingsOnly: (name: string) => `${name}’s model and settings are in Gen.`,
+  recreate: (name: string) => `${name}’s recipe is in Make.`,
+  settingsOnly: (name: string) => `${name}’s model and settings are in Make.`,
   promptCopied: "Prompt copied",
   copyBlocked: "This browser blocked the clipboard.",
   filed: (name: string, shot: string) => `${name} filed on ${shot}`,

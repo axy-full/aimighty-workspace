@@ -33,10 +33,10 @@ const take = (shotCode: string, version: number, resolution: string, duration: n
 export const DEMO_TAKES: DemoTake[] = [
   take("SH010", 1, "720p", 5, "static", "A quiet street at dawn, wet from the night, the first light along the rooftops. Locked off, wide."),
   take("SH010", 2, "1080p", 5, "push", "A quiet street at dawn, wet from the night, the first light along the rooftops. The camera pushes slowly in."),
-  take("SH020", 1, "720p", 5, "track", "@Mara rides @Mule down the wet street, standing on the pedals, the panniers swinging. The camera tracks alongside."),
-  take("SH020", 2, "1080p", 5, "handheld", "@Mara rides @Mule down the wet street, standing on the pedals. Handheld, close behind."),
-  take("SH020", 3, "1080p", 5, "technique:dollyzoom", "@Mara brakes hard as the light changes; a dolly zoom holds her while the street swells behind."),
-  take("SH030", 1, "1080p", 5, "static", "A close-up on the hand-off: a parcel passed from @Mara's glove to a waiting hand in a doorway, soft light."),
+  take("SH020", 1, "720p", 5, "track", "@Courier rides @Mule down the wet street, standing on the pedals, the panniers swinging. The camera tracks alongside."),
+  take("SH020", 2, "1080p", 5, "handheld", "@Courier rides @Mule down the wet street, standing on the pedals. Handheld, close behind."),
+  take("SH020", 3, "1080p", 5, "technique:dollyzoom", "@Courier brakes hard as the light changes; a dolly zoom holds her while the street swells behind."),
+  take("SH030", 1, "1080p", 5, "static", "A close-up on the hand-off: a parcel passed from @Courier's glove to a waiting hand in a doorway, soft light."),
   /* The one approved take sits on the LAST shot, and that is the whole
      point of where it is. A shot with an approved take is locked: the next
      render against it has to say why (lib/approval.ts). While this mark sat

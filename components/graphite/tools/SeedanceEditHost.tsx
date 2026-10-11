@@ -4,6 +4,7 @@ import SeedanceEdit from "@/components/make/SeedanceEdit";
 import { ToastHost } from "@/components/ui/Toast";
 import type { Project } from "@/lib/workbench/studio";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
+import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
 
 /** The Seedance engines that take the edit task (lib/models.ts › supportsTasks). */
 export const SEEDANCE_EDIT_MODELS = [
@@ -46,7 +47,7 @@ export function SeedanceEditHost({ scope, project, onBack, initialSource }: { sc
           </ToastHost>
         </div>
       ) : (
-        <p className="gx-reason" role="status">Save your project first.</p>
+        <p className="gx-reason" role="status">{SAVING_NOW}</p>
       )}
     </section>
   );

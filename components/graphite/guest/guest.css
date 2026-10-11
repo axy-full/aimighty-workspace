@@ -1,0 +1,148 @@
+/*
+ * Guest Home (design/particl-graphite/README.md § 3.7; the master's `?guest=1`). Tokens only (app/graphite.css);
+ * the box, templates and cards reuse Home's sheet (../home/home.css). Measured from the master at 1440 × 900 and
+ * 390 × 844: Sign up is the one filled button, Start and "Sign up to make this" are outlined, the dialog is 480 wide
+ * and centred on both axes, the phone sheet rises from the bottom, every phone control is 44 px.
+ */
+/* The site's root scrolls as a document (.gx.mk); Guest Home is an app screen, so it holds the window and scrolls inside. */
+.gx-guest { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; position: relative; background: var(--gx-root); }
+
+/* ── Header: Sign in (secondary) · Sign up (filled) ──────────────────── */
+.gx .gx-gh-header { gap: 14px; }
+.gx-gh-mark { border-radius: var(--gx-r-pill); padding: 2px 7px; background: var(--gx-tint); border: 1px solid var(--gx-tint-border); color: var(--gx-accent-text); }
+.gx-gh-title, .gx-gh-back { display: none; }
+.gx .gx-gh-search .gx-key { font-size: 12px; }
+.gx .gx-gh-signin { color: var(--gx-text); background: transparent; border-color: var(--gx-btn-border); font-weight: 500; }
+.gx .gx-gh-signin:hover { background: var(--gx-input-hover); color: var(--gx-text); }
+.gx .gx-gh-signup { height: 32px; }
+
+/* ── Home: an outlined Start, no price; the sample card's short cover ─ */
+.gx-gh-foot { justify-content: flex-end; }
+.gx .gx-gh-start {
+  height: var(--gx-h-generate); padding: 0 14px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-btn-border);
+  background: transparent; color: var(--gx-text); font-size: var(--gx-fs-control); font-weight: 600; white-space: nowrap; flex: none;
+}
+.gx .gx-gh-start:hover { border-color: var(--gx-hover-border); }
+.gx .gx-gh-sample { max-width: 100%; }
+/* No media until the sample is made: an empty 21:9 cover, so the title sits above the fold. */
+.gx-hm-cover.gx-gh-cover { aspect-ratio: 21 / 9; max-height: 300px; width: 100%; background: var(--gx-track); }
+
+/* ── The sample, read-only ───────────────────────────────────────────── */
+.gx-gs { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--gx-root); padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+.gx-gs-line { position: sticky; top: 0; z-index: 2; margin: 0; padding: 10px 24px; font-size: 13px; color: var(--gx-text); background: var(--gx-root); border-bottom: 1px solid var(--gx-hair-strong); }
+.gx .gx-gs-link { color: var(--gx-accent-text); font-weight: 600; }
+.gx .gx-gs-link:hover { color: var(--gx-accent-text-hover); }
+.gx-gs-col { max-width: 996px; margin: 0 auto; padding: 32px 24px 0; display: flex; flex-direction: column; gap: 40px; min-width: 0; }
+.gx-gs-brief { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); max-width: 460px; }
+.gx-gs-title { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: var(--gx-ls-h2); line-height: 1.2; color: var(--gx-text); }
+.gx-gs-wait { margin: 0; font-size: 14px; line-height: 1.55; color: var(--gx-text-2); }
+.gx-gs-group { position: relative; border: 1px solid var(--gx-hair-strong); border-radius: var(--gx-r-group, 14px); padding: 28px 24px 24px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.gx-gs-group-h { position: absolute; left: 16px; top: -11px; margin: 0; padding: 0 8px; background: var(--gx-root); font-size: 15px; font-weight: 600; letter-spacing: var(--gx-ls-h2); line-height: 22px; color: var(--gx-text); }
+.gx-gs-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.gx-gs-slots[data-wide] { grid-template-columns: 1fr; }
+.gx-gs-slot { display: block; aspect-ratio: 16 / 9; border-radius: var(--gx-r-card); border: 1px dashed var(--gx-dashed); background: var(--gx-card); }
+.gx-gs-slots[data-wide] .gx-gs-slot { aspect-ratio: 32 / 9; }
+.gx-gs-plan { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 16px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); }
+.gx-gs-plan-h { font-size: 15px; font-weight: 600; color: var(--gx-text); }
+.gx .gx-gs-gated {
+  height: 30px; padding: 0 12px; border-radius: var(--gx-r-ctl); border: 1px solid var(--gx-accent); background: transparent;
+  color: var(--gx-accent-text); font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.gx .gx-gs-gated:hover { background: var(--gx-tint); }
+.gx-gs-text { margin: 0; font-size: 15px; line-height: 1.55; color: var(--gx-text); overflow-wrap: anywhere; }
+.gx-gs-frame, .gx-gs-note { margin: 0; font-size: 13px; line-height: 1.5; color: var(--gx-text-2); }
+.gx-gs-plan--card { flex-direction: column; align-items: stretch; }
+.gx-gs-plan-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.gx-gs-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.gx-gs-step { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--gx-hair); font-size: 14px; color: var(--gx-text); }
+.gx-gs-step:first-child { border-top: 0; }
+.gx-gs-step-name { min-width: 0; overflow-wrap: anywhere; }
+.gx-gs-step-price { flex: none; white-space: nowrap; color: var(--gx-text); }
+.gx-gs-shot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gx-gs-shot-name { font-size: 14px; font-weight: 600; color: var(--gx-text); }
+.gx-gs-shot-meta { font-size: 13px; color: var(--gx-text-2); }
+.gx-gs-shot[data-state="waiting"] .gx-gs-shot-meta { color: var(--gx-waiting-text, var(--gx-text)); }
+.gx-gs-checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 0; }
+.gx-gs-check { padding: 10px 12px; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); }
+.gx-gs-check dt { font-size: 12px; font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-eyebrow); }
+.gx-gs-check dd { margin: 4px 0 0; font-size: 15px; color: var(--gx-text); }
+.gx-gs-pending { color: var(--gx-text-2); }
+
+/* ── The sign-up sheet: centred dialog; a bottom sheet on a phone ────── */
+.gx-su-layer { position: fixed; inset: 0; z-index: 90; }
+.gx-su-scrim { position: absolute; inset: 0; background: var(--gx-scrim); animation: gx-in var(--gx-t-pop) var(--gx-ease) both; }
+.gx-su {
+  position: absolute; inset: 0; margin: auto; height: fit-content; width: 480px; max-width: calc(100% - 48px); max-height: calc(100% - 48px);
+  overflow: auto; background: var(--gx-card); border: 1px solid var(--gx-dialog-border); border-radius: var(--gx-r-dialog, 10px);
+  box-shadow: var(--gx-shadow-dialog); padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; color: var(--gx-text);
+}
+.gx-su-grab { display: none; }
+.gx .gx-su-x { position: absolute; right: 8px; top: 8px; width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--gx-r-ctl); font-size: 18px; line-height: 1; color: var(--gx-text-2); text-align: center; }
+.gx .gx-su-x:hover { color: var(--gx-text); }
+.gx-su-eyebrow, .gx-su-label { margin: 0; font-size: var(--gx-fs-eyebrow); font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-eyebrow); }
+.gx-su-title { margin: 6px 0 0; font-size: 22px; font-weight: 600; letter-spacing: var(--gx-ls-h2); line-height: 1.15; }
+.gx-su-sub { margin: 6px 0 0; font-size: 14px; line-height: 1.5; color: var(--gx-text-2); }
+.gx-su-form { display: flex; flex-direction: column; gap: 12px; }
+.gx-su-field { display: flex; flex-direction: column; gap: 6px; }
+/* The kept brief: three lines and an ellipsis, inside its padding. */
+.gx-su-brief { margin: 0; padding: 10px 14px; background: var(--gx-input); border: 1px solid var(--gx-input-border); border-radius: var(--gx-r-card); font-size: 15px; line-height: 1.5; }
+.gx-su-brief > span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; max-height: 4.5em; overflow-wrap: anywhere; }
+.gx .gx-su-input { height: 44px; padding: 0 14px; background: var(--gx-input); border: 1px solid var(--gx-input-border); border-radius: var(--gx-r-card); font-size: 15px; color: var(--gx-text); min-width: 0; }
+.gx .gx-su-input:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 1px; }
+.gx .gx-su-input[readonly] { color: var(--gx-text-2); }
+.gx .gx-su-go { height: 44px; justify-content: center; font-size: 15px; text-decoration: none; }
+.gx-su-note { margin: 0; font-size: 13px; line-height: 1.55; color: var(--gx-text-2); }
+.gx-su-problem { margin: 0; font-size: 13px; line-height: 1.45; color: var(--gx-failed-text); }
+.gx-su-trap { position: absolute; left: -10000px; width: 1px; height: 1px; opacity: 0; }
+.gx-su-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; color: var(--gx-text-2); }
+.gx .gx-su-link { color: var(--gx-accent-text); font-weight: 600; font-size: 13px; text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
+
+/* ── /signup: the same card as a page of its own (lead decision 41) ───── */
+.gx.gx-signup-page { height: auto; min-height: 100dvh; overflow: visible; display: block; padding: 48px 16px calc(48px + env(safe-area-inset-bottom, 0px)); }
+.gx .gx-su.gx-su--page { position: relative; inset: auto; margin: 0 auto; height: auto; max-height: none; width: 480px; max-width: 100%; overflow: visible; }
+.gx .gx-su-brand { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; font-size: 15px; font-weight: 600; letter-spacing: -.01em; color: var(--gx-text); text-decoration: none; min-height: 32px; }
+.gx-su-check { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.55; color: var(--gx-text-2); cursor: pointer; }
+.gx-su-check > input { width: 18px; height: 18px; margin: 1px 0 0; flex: none; accent-color: var(--gx-accent); }
+.gx-su-docs { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: -4px; }
+.gx .gx-su-second { height: 44px; justify-content: center; font-size: 14px; }
+.gx-su-note strong { color: var(--gx-text); font-weight: 600; }
+
+/* ── Narrow and phone ────────────────────────────────────────────────── */
+@media (max-width: 1023px) {
+  .gx .gx-gh-search { display: none; }
+  /* Search folds away; Sign in and Sign up keep the right edge. */
+  .gx .gx-gh-signin { margin-left: auto; }
+}
+@media (max-width: 767px) {
+  /* The frame's phone header (P1, P2): a plain bar, not the signed-in shell's floating island. */
+  .gx .gx-gh-header { gap: 8px; padding: 0 12px; margin: 0; border: 0; border-bottom: 1px solid var(--gx-hair-strong); border-radius: 0; background: var(--gx-root); }
+  .gx .gx-gh-seg, .gx .gx-gh-search, .gx-gh-header .gx-brand svg, .gx-gh-header .gx-brand-name, .gx-gh-mark { display: none; }
+  .gx-gh-title { display: inline; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+  .gx-guest[data-view="sample"] .gx-gh-back { display: grid; place-items: center; width: 44px; height: 44px; margin-left: -10px; font-size: 24px; color: var(--gx-accent-text); }
+  .gx .gx-gh-signin { border-color: transparent; padding: 0 10px; }
+  .gx .gx-gh-signin, .gx .gx-gh-signup { height: 44px; font-size: 15px; }
+  .gx .gx-gh-signup { border-radius: var(--gx-r-pill); padding: 0 16px; }
+  .gx-gs-line { padding: 10px 16px; font-size: 14px; }
+  .gx .gx-gs-link { min-height: 44px; }
+  .gx-gs-col { padding: 24px 16px 0; gap: 28px; }
+  .gx-gs-brief { max-width: none; }
+  .gx-gs-group { padding: 24px 14px 14px; }
+  .gx-gs-slots { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .gx .gx-gs-gated { height: 44px; flex: 1 1 100%; }
+  .gx-su { inset: auto 0 0 0; margin: 0; width: 100%; max-width: none; max-height: calc(100% - 60px); border-radius: var(--gx-r-sheet, 16px) var(--gx-r-sheet, 16px) 0 0; border-width: 1px 0 0; padding: 10px 20px calc(24px + env(safe-area-inset-bottom, 0px)); gap: 14px; }
+  .gx-su-grab { display: block; width: 36px; height: 4px; border-radius: 2px; background: var(--gx-hair-strong); margin: 0 auto; }
+  .gx .gx-su-x { width: 44px; height: 44px; right: 6px; top: 6px; }
+  .gx .gx-su-link { min-height: 44px; font-size: 14px; }
+  .gx.gx-signup-page { padding: 16px 12px calc(32px + env(safe-area-inset-bottom, 0px)); }
+  .gx .gx-su.gx-su--page { inset: auto; margin: 0 auto; width: 100%; max-height: none; border-width: 1px; border-radius: var(--gx-r-card); padding: 20px 16px; gap: 14px; }
+  .gx .gx-su-brand { min-height: 44px; }
+  /* The whole row is the target for the terms box, at least 44 px tall. */
+  .gx-su-check { min-height: 44px; align-items: center; }
+  .gx-su-check > input { width: 22px; height: 22px; margin: 0; }
+}
+@media (max-width: 767px), (pointer: coarse) {
+  .gx .gx-gh-start, .gx .gx-gh-refs { height: 44px; }
+  .gx .gx-gh-signin, .gx .gx-gh-signup { height: 44px; }
+  .gx .gx-gs-gated, .gx .gx-gs-link, .gx .gx-su-link, .gx .gx-su-x, .gx .gx-su-brand { min-height: 44px; min-width: 44px; }
+  .gx-su-check { min-height: 44px; align-items: center; }
+}

@@ -85,7 +85,7 @@ function RequestAccessDialog({ onClose }: { onClose: () => void }) {
         {sent ? (
           <>
             <p className="text-[17px] font-semibold tracking-[-0.01em]">That&rsquo;s with management</p>
-            <p className="mt-1.5 text-[14px] leading-relaxed text-dim">
+            <p className="mt-1.5 text-[14px] leading-relaxed text-lead">
               If Particl is a fit for what you&rsquo;re making, you&rsquo;ll get an
               invitation by email. We read every one of these.
             </p>
@@ -95,24 +95,24 @@ function RequestAccessDialog({ onClose }: { onClose: () => void }) {
         ) : (
           <form onSubmit={submit}>
             <p className="text-[17px] font-semibold tracking-[-0.01em]">Ask for an invitation</p>
-            <p className="mt-1.5 text-[14px] leading-relaxed text-dim">
+            <p className="mt-1.5 text-[14px] leading-relaxed text-lead">
               Particl is invitation-only. Tell us where to reach you and a
               little about what you&rsquo;d make with it.
             </p>
 
             <label className="mt-4 block">
-              <span className="lbl">Email</span>
+              <span className="lbl !text-[12px] !text-lead">Email</span>
               <input ref={first} className="ctl mt-1.5" type="email" required
                 autoComplete="email" value={email}
                 onChange={(e) => setEmail(e.target.value)} />
             </label>
             <label className="mt-3 block">
-              <span className="lbl">Name</span>
+              <span className="lbl !text-[12px] !text-lead">Name</span>
               <input className="ctl mt-1.5" type="text" autoComplete="name"
                 value={name} onChange={(e) => setName(e.target.value)} />
             </label>
             <label className="mt-3 block">
-              <span className="lbl">What would you make?</span>
+              <span className="lbl !text-[12px] !text-lead">What would you make?</span>
               <textarea className="ctl mt-1.5 !h-auto py-2" rows={3} value={note}
                 onChange={(e) => setNote(e.target.value)} />
             </label>
@@ -126,7 +126,7 @@ function RequestAccessDialog({ onClose }: { onClose: () => void }) {
 
             <div className="mt-5 flex gap-2">
               <button type="button" onClick={onClose}
-                className="chip flex-1 justify-center !py-2.5 !text-[15px] !text-dim">Cancel</button>
+                className="chip flex-1 justify-center !py-2.5 !text-[15px] !text-lead">Cancel</button>
               <button type="submit" disabled={busy || !email.trim()}
                 className="btn-render flex-1 py-2.5 text-[15px] disabled:opacity-50">
                 {busy ? "Sending…" : "Send"}

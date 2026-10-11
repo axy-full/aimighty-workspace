@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
+import { requireTenant } from "@/lib/tenant";
+import { ownerMaskFor } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -11,9 +13,11 @@ export const GET = withTenant(async function GET() {
   if (got.response) return got.response;
   await ready();
   const rs = await db().execute(
-    `SELECT id, name FROM users WHERE disabled = 0 ORDER BY name`
+    `SELECT id, email, name FROM users WHERE disabled = 0 ORDER BY name`
   );
+  // The platform owner is not a teammate to mention outside the house (lib/platformOwnerPrivacy.ts).
+  const mask = await ownerMaskFor(requireTenant());
   return NextResponse.json({
-    members: rs.rows.map((r: any) => ({ id: r.id, name: r.name })),
+    members: mask.members(rs.rows as any[]).map((r: any) => ({ id: r.id, name: r.name })),
   });
 });

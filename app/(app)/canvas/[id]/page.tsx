@@ -1,11 +1,11 @@
-import { redirect } from "next/navigation";
+import { followOldRoute, type RawSearch } from "@/lib/shell/old-routes.server";
 
 /**
- * The old pan-and-zoom board. "Canvas" now means one screen — the
- * production's sequence under /projects/[id]/canvas — so this address
- * simply goes there.
+ * Old address of the sequence wall: the board.
+ * Redirected, never drawn (docs/old-shells.md): lib/shell/old-routes.ts holds where it goes.
  */
-export default async function OldCanvasPage({ params }: { params: Promise<{ id: string }> }) {
+export const dynamic = "force-dynamic";
+export default async function Moved({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<RawSearch> }) {
   const { id } = await params;
-  redirect(`/projects/${encodeURIComponent(id)}/canvas`);
+  await followOldRoute(`/canvas/${id}`, await searchParams);
 }

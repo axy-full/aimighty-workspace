@@ -419,13 +419,15 @@ test("Ask: after the build each render is priced and waits for one tap by the pe
     const deps = await depsFor(ws, r);
     const runId = await approvedRun(deps, { limit: 500 });
     const afterPlan = await balance(ws);
-    /* The build lands, then the first render is priced and waits. */
+    /* The build lands, then every render is priced (so the plan can be approved once at its total) and the first waits. */
     expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
     let run = await view();
     expect(run.built).toEqual({ cards: 4, wires: 4 });
     expect(run.paid.map((p) => [p.tool, p.title, p.state])).toEqual([
-      ["render", "01 — Opening", "waiting"], ["verify", "01 — Opening", "next"], ["render", "02 — The turn", "next"], ["verify", "02 — The turn", "next"],
+      ["render", "01 — Opening", "waiting"], ["verify", "01 — Opening", "next"], ["render", "02 — The turn", "waiting"], ["verify", "02 — The turn", "next"],
     ]);
+    /* The plan's quote is there to approve once; this test takes the tap-per-render path, which still works outside a plan. */
+    expect(run.plan?.quote).toMatchObject({ total: (await credits(0.3)) + (await credits(0.45)) });
     const first = run.paid[0];
     expect(first).toMatchObject({ quote: await credits(0.3), canRender: true, pause: null });
     expect(first.fingerprint).toMatch(/^[a-f0-9]{64}$/);
@@ -833,14 +835,14 @@ test("no charge without an approval: a price that moved after the tap is priced 
     await agent.advanceRigAgentRun(runId, deps);
     const first = (await view()).paid[0];
     await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: first.seq, fingerprint: first.fingerprint, userId: OWNER });
-    /* The shot changed after the tap: admission refuses the old approval, and nothing is reserved. */
+    /* The shot changed after the tap: priced again when its turn comes, the old approval no longer covers it, and nothing is sent or reserved. */
     r.priceNow.set("1", 0.9);
     expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
     let run = await view();
     expect(run.paid[0]).toMatchObject({ state: "waiting", quote: await credits(0.9) });
     expect(run.paid[0].fingerprint).not.toBe(first.fingerprint);
     expect(await renderRows()).toEqual([]);
-    expect(r.calls).toHaveLength(1);
+    expect(r.calls).toHaveLength(0);
     /* The switch off: no tap is taken, and the run pauses before its next paid step; on again, the tap sends it. */
     const previous = process.env.RIG_AGENT_ENABLED;
     process.env.RIG_AGENT_ENABLED = "0";
@@ -853,12 +855,12 @@ test("no charge without an approval: a price that moved after the tap is priced 
     process.env.RIG_AGENT_ENABLED = "0";
     try {
       expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "paused", more: false });
-      expect(r.calls).toHaveLength(1);
+      expect(r.calls).toHaveLength(0);
     } finally {
       if (previous === undefined) delete process.env.RIG_AGENT_ENABLED; else process.env.RIG_AGENT_ENABLED = previous;
     }
     await agent.advanceRigAgentRun(runId, deps);
-    expect(r.calls).toHaveLength(2);
+    expect(r.calls).toHaveLength(1);
     run = await view();
     expect(run.paid[0].state).toBe("rendering");
   });
@@ -938,4 +940,35 @@ test("a take's settlement records its step and wakes the run; while a render is 
     const nudged = Number((await db().execute({ sql: "SELECT wake_at FROM rig_agent_runs WHERE id=?", args: [runId] })).rows[0].wake_at);
     expect(nudged).toBeGreaterThan(Date.now());
   });
+});
+
+test("Auto stops to ask at the share of the production's budget (80 % unless set): the render that reaches it waits for a person's tap, with the budget in words; it never lets anything through", async () => {
+  await inRun("auto-budget", async (ws) => {
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { db } = await import("../../lib/db");
+    const { creditUsd, marginFor } = await import("../../lib/creditTerms");
+    /* Every shot is 10 cr; the production's budget is 25 cr, so the pause is at 20 cr (80 %, rounded down). */
+    const ten = (10 * creditUsd()) / marginFor("mock");
+    expect(await credits(ten)).toBe(10);
+    await db().execute("UPDATE projects SET cap_credits=25 WHERE id='prod-1'");
+    const r = renders(ws, () => ten);
+    const deps = await depsFor(ws, r);
+    const runId = await approvedRun(deps, { limit: 5000, mode: "auto", shots: 3 });
+    /* Shot 1: 0 + 10 is under the pause: Auto sends it without a tap. */
+    expect((await agent.advanceRigAgentRun(runId, deps)).state).toBe("running");
+    expect(r.calls).toHaveLength(1);
+    await settleTake((await renderRows())[0].id, "succeeded", ten);
+    /* Shot 2: 10 + 10 reaches 20: it waits for a person, and nothing is sent. */
+    expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
+    const run = await view();
+    /* Used counts everything the production was billed, Atomik's planning turn too (10 cr of shot 1 and the thinking). */
+    expect(run.reason).toMatch(/^Paused at 80 % of the budget: 1\d of 25 cr used\. Continue or stop\. 02 — The turn is next · about 10 cr\.$/);
+    expect(run.paid[2]).toMatchObject({ state: "waiting", canRender: true, quote: 10 });
+    expect(r.calls).toHaveLength(1);
+    /* The person continues: the tap is theirs, at its price, and it goes. */
+    await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: run.paid[2].seq, fingerprint: run.paid[2].fingerprint, userId: OWNER });
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(2);
+    /* The pause is the gate's ask only: an Auto run with no budget is untouched (the test above), and Ask always asks. */
+  }, 20_000);
 });

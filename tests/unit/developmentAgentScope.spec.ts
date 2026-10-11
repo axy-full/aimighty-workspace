@@ -60,7 +60,7 @@ async function insertRun(p: Project, at: number, kind: DevelopmentRequest['kind'
   return id;
 }
 const picture = (id: string, extra: Partial<Asset> = {}): Asset => ({ id, name: id, kind: 'image', category: 'Shot', url: `/api/media/${id}`, description: '', prompt: '', status: 'Draft', locked: false, version: 1, refs: [], ...extra });
-const sheet = { scriptSha256: 'a'.repeat(64), updatedAt: '2026-09-25T00:00:00Z', scenes: [{ id: 'scene-1', heading: 'EXT. HARBOUR - DUSK', summary: 'The fox crosses.', beats: [{ id: 'b1', text: 'The fox crosses the ice.' }], shots: [{ id: 'shot-1', description: 'Wide on the ice', framing: 'Wide', movement: 'Locked', lighting: 'Dusk', sound: 'Wind' }], characters: ['Mara'], locations: ['Harbour'], props: [] }] };
+const sheet = { scriptSha256: 'a'.repeat(64), updatedAt: '2026-09-25T00:00:00Z', scenes: [{ id: 'scene-1', heading: 'EXT. HARBOUR - DUSK', summary: 'The fox crosses.', beats: [{ id: 'b1', text: 'The fox crosses the ice.' }], shots: [{ id: 'shot-1', description: 'Wide on the ice', framing: 'Wide', movement: 'Locked', lighting: 'Dusk', sound: 'Wind' }], characters: ['Keeper'], locations: ['Harbour'], props: [] }] };
 
 test('rig wiring and casting get a breakdown\'s answer room, not a planner\'s 4,000 tokens', () => {
   expect(developmentAnswerTokens('rig')).toBe(16_000);
@@ -84,18 +84,18 @@ test('the Rig agent is offered the shot\'s own pictures first and the newest of 
   const p = project();
   const old = Array.from({ length: 200 }, (_, i) => picture(`old-${i + 1}`));
   p.assets = [...p.assets, ...old,
-    picture('frame', { generationId: 'gen-frame', category: 'Storyboard' }), picture('mara', { generationId: 'gen-mara', category: 'Character' }),
+    picture('frame', { generationId: 'gen-frame', category: 'Storyboard' }), picture('keeper', { generationId: 'gen-keeper', category: 'Character' }),
     picture('plate', { category: 'Environment' }), picture('newest')];
   p.production = {
     boards: { style: 'live', model: 'gemini-3.1-flash-image', frames: { 'shot-1': { prompt: '', takes: [{ genId: 'gen-frame', style: 'live', at: '' }], selected: 'gen-frame' } } },
-    cast: { entries: [{ id: 'c1', name: 'Mara', kind: 'character', description: '', prompt: 'Mara', takes: [{ genId: 'gen-mara', at: '' }], selected: 'gen-mara' }] },
+    cast: { entries: [{ id: 'c1', name: 'Keeper', kind: 'character', description: '', prompt: 'Keeper', takes: [{ genId: 'gen-keeper', at: '' }], selected: 'gen-keeper' }] },
     environment: { world: '', model: 'gemini-3.1-flash-image', entries: [{ id: 'e1', name: 'Harbour', notes: '', prompt: '', references: [], plates: [{ assetId: 'plate', at: '', source: 'render' }], selected: 'plate' }] },
   };
   const node = { ...p.nodes.find((n) => n.id === 'scene')!, boardShotId: 'shot-1' };
   const ids = rigAssetChoices(p, node).map((a) => a.id);
   expect(ids).toHaveLength(150);
   /* What the shot already uses (its own picture and its linked inputs), then its frame, the cast and the places. */
-  expect(ids.slice(0, 6)).toEqual(['hero', 'environment', 'character', 'frame', 'mara', 'plate']);
+  expect(ids.slice(0, 6)).toEqual(['hero', 'environment', 'character', 'frame', 'keeper', 'plate']);
   expect(ids).toContain('newest');
   expect(ids).toContain('old-200');
   expect(ids).not.toContain('old-1');
@@ -150,20 +150,20 @@ test('cast and environment read the whole script or ask for beats; they never re
   for (const kind of ['cast', 'environment'] as const) {
     await runInTenant(workspace(), async () => {
       const p = project();
-      p.script = 'INT. ROOM - DAY\n' + 'Mara waits.\n'.repeat(Math.ceil(AGENT_SCRIPT_CHARS / 10));
+      p.script = 'INT. ROOM - DAY\n' + 'Keeper waits.\n'.repeat(Math.ceil(AGENT_SCRIPT_CHARS / 10));
       await save(p);
       await expect(quoteDevelopmentJob(request(p, kind), 'owner', harness(() => ({})).deps)).rejects.toThrow('Break it into beats first');
     });
     await runInTenant(workspace(), async () => {
       const p = project();
-      p.script = 'INT. ROOM - DAY\n' + 'Mara waits.\n'.repeat(Math.ceil(AGENT_SCRIPT_CHARS / 10));
+      p.script = 'INT. ROOM - DAY\n' + 'Keeper waits.\n'.repeat(Math.ceil(AGENT_SCRIPT_CHARS / 10));
       p.production = { beats: sheet };
       await save(p);
       expect((await quoteDevelopmentJob(request(p, kind), 'owner', harness(() => ({})).deps)).calls).toBe(3);
     });
     await runInTenant(workspace(), async () => {
       const p = project();
-      p.script = 'INT. ROOM - DAY\nMara waits.\nEXT. PIER - NIGHT\nThe late arrival steps off the boat.';
+      p.script = 'INT. ROOM - DAY\nKeeper waits.\nEXT. PIER - NIGHT\nThe late arrival steps off the boat.';
       await save(p);
       const h = harness(() => ({}));
       await quoteDevelopmentJob(request(p, kind), 'owner', h.deps);

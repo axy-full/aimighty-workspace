@@ -1,4 +1,5 @@
 import { inngest, EVENTS } from "./inngest";
+import { ASTRA_RENDER_CONCURRENCY } from "./astra-blender/backend";
 import { RIG_AGENT_STOPPED, RIG_RENDER_SETTLED } from "./dispatch";
 import { withRecoveryJob } from "./recovery";
 import { continueRigAgent, rigAgentTick, type RigAgentEventData } from "./workbench/rig-agent";
@@ -11,6 +12,7 @@ import {
   renderSeal,
   renderSubmitVideo,
   workspaceOf,
+  type AstraEventData,
   type RenderEventData,
 } from "./worker-handlers";
 
@@ -102,20 +104,43 @@ export const render = inngest.createFunction(
   },
 );
 
+/** A busy job is tried again after this wait, up to this many times (past its 30-minute start expiry). */
+export const ASTRA_BUSY_WAIT = "30s";
+export const ASTRA_BUSY_ROUNDS = 64;
+
+type AstraSteps = {
+  run: (id: string, work: () => Promise<{ jobId: string; busy?: true }>) => Promise<{ jobId: string; busy?: boolean }>;
+  sleep: (id: string, duration: string) => Promise<unknown>;
+};
+
+/**
+ * One render, waiting while every render worker is busy. A busy answer means
+ * the job is back in the queue with nothing started and nothing billed; a
+ * sleeping run holds no concurrency, and each new attempt is its own
+ * memoised step, so a finished attempt is never repeated.
+ */
+export async function astraRenderWithWorkerWaits(data: AstraEventData, step: AstraSteps, handle: typeof handleAstraRender = handleAstraRender) {
+  let result = await step.run("render-persist-and-account", () => handle(data));
+  for (let round = 1; result.busy && round <= ASTRA_BUSY_ROUNDS; round++) {
+    await step.sleep(`wait-for-a-render-worker-${round}`, ASTRA_BUSY_WAIT);
+    result = await step.run(`render-persist-and-account-${round}`, () => handle(data));
+  }
+  return result;
+}
+
 export const astraRender = inngest.createFunction(
   {
     id: "astra-blender-render",
     name: "Render Astra 3D",
     triggers: [{ event: EVENTS.astraRender }],
-    concurrency: [{ limit: 4 }, { limit: 2, key: "event.data.workspaceId" }],
+    // Three renders at once, platform-wide, on either backend (the self-hosted pool has three workers).
+    concurrency: [{ limit: ASTRA_RENDER_CONCURRENCY }, { limit: 2, key: "event.data.workspaceId" }],
     retries: 2,
   },
   async ({ event, step }) =>
-    step.run("render-persist-and-account", () =>
-      handleAstraRender({
-        jobId: String(event.data.jobId),
-        workspaceId: String(event.data.workspaceId),
-      }),
+    astraRenderWithWorkerWaits(
+      { jobId: String(event.data.jobId), workspaceId: String(event.data.workspaceId) },
+      { run: (id, work) => step.run(id, work), sleep: (id, duration) => step.sleep(id, duration) },
     ),
 );
 

@@ -4,7 +4,7 @@ import { parseCharacters } from "../../lib/higgsfield-consumer/characters";
 /** Soul ID: the account's trained characters, bounded and text-only, wherever the reply nests them. */
 test("characters are read by soul_id or id, typed and statused only from the known words, and never from junk", () => {
   const reply = { characters: [
-    { soul_id: "soul_9f2a", name: "Mira / character study", type: "soul_2", status: "ready", preview_url: "https://cdn.example/mira.jpg" },
+    { soul_id: "soul_9f2a", name: "Wren / character study", type: "soul_2", status: "ready", preview_url: "https://cdn.example/wren.jpg" },
     { id: "abc-123", name: "", type: "soul_cinematic", status: "training", preview_url: "http://insecure.example/x.jpg" },
     { soul_id: "bad id with spaces", name: "Nope" },
     { soul_id: "x".repeat(300), name: "Too long" },
@@ -12,7 +12,7 @@ test("characters are read by soul_id or id, typed and statused only from the kno
     { soul_id: "soul_odd", name: "Odd", type: "lora", status: "queued" },
   ] };
   expect(parseCharacters(reply)).toEqual([
-    { soulId: "soul_9f2a", name: "Mira / character study", type: "soul_2", status: "ready", previewUrl: "https://cdn.example/mira.jpg" },
+    { soulId: "soul_9f2a", name: "Wren / character study", type: "soul_2", status: "ready", previewUrl: "https://cdn.example/wren.jpg" },
     { soulId: "abc-123", name: "abc-123", type: "soul_cinematic", status: "training", previewUrl: null },
     { soulId: "soul_odd", name: "Odd", type: null, status: null, previewUrl: null },
   ]);
@@ -37,27 +37,27 @@ test("the plan gate reads the account's plan under any of its spellings and call
 
 test("Build identity says why it cannot run, in the card's words, and runs when it can", () => {
   const paid = { connected: true, available: true, plan: "Pro", paid: true };
-  expect(soulBuildBlock({ name: "Mira", stills: 6, plan: paid, connected: false })).toBe("Connect the account in Workspace › Engines.");
+  expect(soulBuildBlock({ name: "Wren", stills: 6, plan: paid, connected: false })).toBe("Connect the account in Workspace › Engines.");
   expect(soulBuildBlock({ name: "  ", stills: 6, plan: paid, connected: true })).toBe("Name the identity.");
-  expect(soulBuildBlock({ name: "Mira", stills: 4, plan: paid, connected: true })).toBe(`Pick ${SOUL_BUILD_STILLS.min}–${SOUL_BUILD_STILLS.max} stills of the same person (4 picked).`);
-  expect(soulBuildBlock({ name: "Mira", stills: 21, plan: paid, connected: true })).toContain("21 picked");
-  expect(soulBuildBlock({ name: "Mira", stills: 6, plan: { ...paid, plan: "Free", paid: false }, connected: true })).toBe("A paid plan is required on the connected account — it reads as Free.");
+  expect(soulBuildBlock({ name: "Wren", stills: 4, plan: paid, connected: true })).toBe(`Pick ${SOUL_BUILD_STILLS.min}–${SOUL_BUILD_STILLS.max} stills of the same person (4 picked).`);
+  expect(soulBuildBlock({ name: "Wren", stills: 21, plan: paid, connected: true })).toContain("21 picked");
+  expect(soulBuildBlock({ name: "Wren", stills: 6, plan: { ...paid, plan: "Free", paid: false }, connected: true })).toBe("A paid plan is required on the connected account — it reads as Free.");
   /* An account that does not report its plan is not blocked here: it decides at training time. */
-  expect(soulBuildBlock({ name: "Mira", stills: 6, plan: { connected: true, available: false, plan: null, paid: null }, connected: true })).toBeNull();
-  expect(soulBuildBlock({ name: "Mira", stills: 6, plan: paid, connected: true })).toBeNull();
+  expect(soulBuildBlock({ name: "Wren", stills: 6, plan: { connected: true, available: false, plan: null, paid: null }, connected: true })).toBeNull();
+  expect(soulBuildBlock({ name: "Wren", stills: 6, plan: paid, connected: true })).toBeNull();
 });
 
 test("a create reply is parsed like the list: the new Soul ID and its status, whichever envelope the account uses", () => {
-  const mira = { soul_id: "soul_abc", name: "Mira", type: "soul_2", status: "training" };
-  expect(parseCharacterCreate(mira)).toMatchObject({ soulId: "soul_abc", name: "Mira", type: "soul_2", status: "training" });
-  expect(parseCharacterCreate({ character: mira })).toMatchObject({ soulId: "soul_abc" });
+  const wren = { soul_id: "soul_abc", name: "Wren", type: "soul_2", status: "training" };
+  expect(parseCharacterCreate(wren)).toMatchObject({ soulId: "soul_abc", name: "Wren", type: "soul_2", status: "training" });
+  expect(parseCharacterCreate({ character: wren })).toMatchObject({ soulId: "soul_abc" });
   expect(parseCharacterCreate({ data: { id: "soul_xyz", name: "Ada", type: "soul_cinematic" } })).toMatchObject({ soulId: "soul_xyz", type: "soul_cinematic", status: null });
   /* A list reply is the new identity only when it holds exactly one entry with the requested name:
      its first entry may be one the owner trained on higgsfield.ai. */
-  expect(parseCharacterCreate({ items: [mira] }, "Mira")).toMatchObject({ soulId: "soul_abc" });
-  expect(parseCharacterCreate({ items: [mira] })).toBeNull();
-  expect(parseCharacterCreate({ items: [mira] }, "Vanya")).toBeNull();
-  expect(parseCharacterCreate({ items: [{ soul_id: "soul_site", name: "Vanya", type: "soul_2" }, mira] }, "Mira")).toBeNull();
+  expect(parseCharacterCreate({ items: [wren] }, "Wren")).toMatchObject({ soulId: "soul_abc" });
+  expect(parseCharacterCreate({ items: [wren] })).toBeNull();
+  expect(parseCharacterCreate({ items: [wren] }, "Vanya")).toBeNull();
+  expect(parseCharacterCreate({ items: [{ soul_id: "soul_site", name: "Vanya", type: "soul_2" }, wren] }, "Wren")).toBeNull();
   expect(parseCharacterCreate({ ok: true })).toBeNull();
   expect(parseCharacterCreate(null)).toBeNull();
   /* Ids are bounded and shaped; a free-text id is not one. */
@@ -70,10 +70,10 @@ import { onlyParticlCharacters } from "../../lib/higgsfield-consumer/character-r
 test("the account's list is narrowed to the Soul IDs Particl built; the account still says their status", () => {
   const account = parseCharacters({ characters: [
     { soul_id: "soul_site_1", name: "Vanya", type: "soul_2", status: "ready" },
-    { soul_id: "soul_particl", name: "Mira", type: "soul_2", status: "training" },
+    { soul_id: "soul_particl", name: "Wren", type: "soul_2", status: "training" },
     { soul_id: "soul_site_2", name: "Aryan", type: "soul_2", status: "ready" },
   ] });
-  expect(onlyParticlCharacters(account, new Set(["soul_particl"]))).toEqual([{ soulId: "soul_particl", name: "Mira", type: "soul_2", status: "training", previewUrl: null }]);
+  expect(onlyParticlCharacters(account, new Set(["soul_particl"]))).toEqual([{ soulId: "soul_particl", name: "Wren", type: "soul_2", status: "training", previewUrl: null }]);
   expect(onlyParticlCharacters(account, new Set())).toEqual([]);
   /* One Particl built but the account no longer lists is gone too: the account owns the status. */
   expect(onlyParticlCharacters(account, new Set(["soul_deleted"]))).toEqual([]);

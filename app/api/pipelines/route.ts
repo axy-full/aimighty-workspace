@@ -1,9 +1,8 @@
 import { withTenant, requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { pipelineStore } from "@/lib/pipeline/store";
-import { publicRun } from "@/lib/pipeline/service";
+import { publicRun, pipelineStageModels } from "@/lib/pipeline/service";
 import { PipelineError } from "@/lib/pipeline/schema";
-import { MODELS } from "@/lib/models";
 import { SPEECH_MODELS, SFX_MODEL, MUSIC_MODEL } from "@/lib/elevenlabs";
 import { providerConfigured, PROVIDERS } from "@/lib/providers";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
@@ -56,14 +55,7 @@ export const GET = withTenant(async (req) => {
         })),
     };
   });
-  const models = MODELS.filter(
-    (m) =>
-      ["image", "video"].includes(m.kind) &&
-      !m.hidden &&
-      !m.stillTask &&
-      (!m.supportsTasks || m.supportsTasks.includes("generate")) &&
-      m.ratios.includes("16:9"),
-  ).map((m) => ({
+  const models = pipelineStageModels().map((m) => ({
     id: m.id,
     label: m.label,
     kind: m.kind,

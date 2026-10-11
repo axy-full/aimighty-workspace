@@ -1,141 +1,48 @@
 /*
- * Production suite (owner's brief, 23 September): the agent-driven Studio
- * stages — Brief & Script first (components/graphite/production). Scoped under `.gx` like the shell's own sheet, so
- * bundler sheet order never decides it. No serif anywhere; the script reads in
- * the shell's mono.
+ * What is left of the Production stages' sheet. The ten Studio stage pages are gone (the board is the whole production,
+ * components/graphite/board/), and so are their rules; this holds only what the pieces still mounted elsewhere read: the agent
+ * bar and its priced buttons, the Soul picker, the timeline cut, the take cells and the shot inputs. Scoped under `.gx`.
  */
-.gx .pd-stage { display: flex; flex-direction: column; gap: 16px; padding: 16px var(--gx-page-pad) 24px; min-width: 0; }
-@media (max-width: 767px) { .gx .pd-stage { padding: 12px 12px 24px; } }
 .gx .pd-agent { gap: 10px; }
 .gx .pd-agent-row { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 220px); gap: 16px; align-items: end; }
 .gx .pd-agent-row .gx-seg { width: max-content; }
 .gx .pd-agent-hint { margin: 0; font-size: 12px; }
-.gx .pd-tabs { width: max-content; }
+
 .gx .pd-row-head { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
 /* A take brought into view lands with its heading clear of the scroller's edge. */
 .gx .pd-row-head[data-section="edit-panel"] { scroll-margin-top: 16px; }
-.gx .pd-prompt { min-height: 200px; }
-.gx .pd-small { min-height: 84px; }
-.gx .pd-count { align-self: flex-end; font-family: var(--gx-mono); font-size: 12px; margin-top: -8px; }
+
 .gx .pd-more > summary { cursor: pointer; color: var(--gx-text-2); font-size: 13px; padding: 4px 0; }
 .gx .pd-more[open] { display: flex; flex-direction: column; gap: 12px; }
 /* On a touch screen the disclosure ("Add takes · 3 in this project") is a 44px target. */
 @media (max-width: 767px), (pointer: coarse) { .gx .pd-more > summary { min-height: 44px; padding: 12px 0; box-sizing: border-box; } }
 .gx .pd-recover { flex-direction: row; align-items: center; flex-wrap: wrap; }
 .gx .pd-recover .gx-hint { flex: 1; min-width: 220px; margin: 0; }
-.gx .pd-progress { gap: 10px; }
-.gx .pd-meter { height: 4px; border-radius: 2px; background: var(--gx-hair); overflow: hidden; }
-.gx .pd-meter > span { display: block; height: 100%; background: var(--gx-accent); transition: width .4s ease; }
-/* .pd-review names two things. This one is Brief's review card (BriefStage.tsx, a .gx-gen-card); the one under "Takes
-   as the review desk" below is Edit's row of review buttons (EditStage.tsx). Both rules reach both, so Brief's card also
-   takes the later rule's display, flex-wrap, align-items, gap (8px, not this 12px) and min-width. Left as it is: telling
-   them apart would change how Brief's card is laid out. */
-.gx .pd-review { gap: 12px; }
-.gx .pd-review .gx-workflow-title { margin: 0; }
-.gx .pd-review > .gx-hint { margin: 0; }
-.gx .pd-screenplay { margin: 0; max-height: 60vh; overflow: auto; padding: 16px 18px; border-radius: 8px; background: var(--gx-input); border: 1px solid var(--gx-hair); font-family: var(--gx-mono); font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--gx-text); }
-.gx .pd-screenplay:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 0; }
-.gx .pd-notes ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gx-text-2); }
-.gx .pd-notes .pd-assume { color: var(--gx-text-3); }
-.gx .pd-redraft { margin-top: 4px; }
-.gx .pd-editor { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.gx .pd-editor-head { flex-direction: row; align-items: center; flex-wrap: wrap; }
-.gx .pd-editor-head .gx-hint { flex: 1; min-width: 220px; margin: 0; }
-.gx .pd-save { margin: 0; font-size: 12px; }
+
 @media (max-width: 759px) {
   .gx .pd-agent-row { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .gx .pd-agent-row .gx-seg { width: 100%; }
   .gx .pd-agent-row .gx-seg .gx-seg-btn { flex: 1; }
-  .gx .pd-stage .gx-seg .gx-seg-btn { height: 44px; min-height: 44px; }
-  /* Five frame engines wrap inside the card on a phone instead of pushing it sideways. */
-  .gx .gx-seg.pd-engines { display: flex; flex-wrap: wrap; width: 100%; box-sizing: border-box; border-radius: 22px; }
-  .gx .gx-seg.pd-engines .gx-seg-btn { flex: 1 1 auto; }
+  
   .gx .pd-agent-model button, .gx .pd-agent-effort button { box-sizing: border-box; height: 46px; min-height: 46px; width: 100%; max-width: none; }
-  .gx .pd-tabs { width: 100%; }
-  .gx .pd-tabs .gx-seg-btn { flex: 1; }
-  .gx .pd-prompt { min-height: 160px; }
-  .gx .pd-screenplay { max-height: 55vh; padding: 12px; font-size: 12px; }
+  
+  
 }
 
-/* Beats: a beat board — one card per scene, its beats as numbered cards, its shots beneath. */
-.gx .pd-gate { gap: 10px; }
-.gx .pd-gate .gx-hint { margin: 0; }
-.gx .pd-offer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.gx .pd-offer .gx-hint { flex: 1; min-width: 220px; margin: 0; }
-/* A redraft that could not finish: the reason, and the notes offered back. */
-.gx .pd-failed { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.gx .pd-failed .gx-gen-error { flex: 1; min-width: 200px; }
-.gx .pd-board { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.gx .pd-scene { gap: 12px; border-left: 3px solid var(--gx-accent); }
-.gx .pd-scene:nth-child(4n+2) { border-left-color: var(--gx-purple); }
-.gx .pd-scene:nth-child(4n+3) { border-left-color: var(--gx-waiting); }
-.gx .pd-scene:nth-child(4n+4) { border-left-color: var(--gx-done); }
-/* Scene, shot and beat numbers are functional labels: --gx-text-2, since the .45 tertiary ink composites under #7C7C84. */
-.gx .pd-scene-n, .gx .pd-shot-n, .gx .pd-beat-n { font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-2); flex: none; }
-.gx .pd-scene-heading { flex: 1; min-width: 160px; width: auto; font-family: var(--gx-mono); text-transform: uppercase; letter-spacing: .02em; }
 .gx .pd-order { display: flex; gap: 4px; flex: none; }
 .gx .pd-order .gx-hbtn { min-width: 32px; justify-content: center; }
 @media (pointer: coarse) { .gx .pd-order .gx-hbtn { min-width: 44px; } }
-.gx .pd-cast-line { margin: 0; font-size: 12px; }
-.gx .pd-beats, .gx .pd-shots { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.gx .pd-beat { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: start; }
-.gx .pd-beat-n { padding-top: 10px; text-align: right; }
-.gx .pd-beat-text { min-height: 44px; }
-.gx .pd-add { align-self: flex-start; }
-.gx .pd-shot { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: transparent; }
+
 .gx .pd-seconds { display: flex; align-items: center; gap: 6px; }
 .gx .pd-seconds .gx-field { width: 84px; }
-.gx .pd-shot-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.gx .pd-shot-fields label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.gx .pd-shot-fields .gx-hint, .gx .pd-seconds .gx-hint { font-size: 12px; }
-.gx .pd-next { display: flex; justify-content: flex-end; }
+
+.gx .pd-seconds .gx-hint { font-size: 12px; }
+
 @media (max-width: 759px) {
-  .gx .pd-shot-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .gx .pd-order .gx-hbtn { min-width: 44px; }
-  .gx .pd-scene-heading { min-width: 0; flex-basis: 100%; order: 3; }
-  .gx .pd-next .gx-primary { width: 100%; justify-content: center; }
+  
 }
 
-/* Storyboards: the three looks, then one card per shot — its frame, its prompt, its drawing. */
-.gx .pd-styles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.gx .pd-style { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; border-radius: 8px; border: 1px solid var(--gx-hair); background: var(--gx-input); text-align: left; min-height: 64px; }
-.gx .pd-style[aria-checked="true"] { border-color: var(--gx-accent); box-shadow: inset 0 0 0 1px var(--gx-accent); }
-.gx .pd-style .gx-hint { font-size: 12px; }
-.gx .pd-style-name { font-weight: 600; font-size: 13px; }
-.gx .pd-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; min-width: 0; }
-.gx .pd-frame { gap: 10px; }
-.gx .pd-frame-image { position: relative; display: grid; place-items: center; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: var(--gx-input); border: 1px solid var(--gx-hair); }
-.gx .pd-frame-image[data-ratio="9:16"] { aspect-ratio: 9 / 16; }
-.gx .pd-frame-image[data-ratio="1:1"] { aspect-ratio: 1 / 1; }
-.gx .pd-frame-image[data-ratio="4:5"] { aspect-ratio: 4 / 5; }
-.gx .pd-frame-image img, .gx .pd-frame-image .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
-.gx .pd-frame-image .gx-badge { position: absolute; top: 8px; left: 8px; }
-.gx .pd-frame-scene { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--gx-mono); font-size: 12px; text-transform: uppercase; }
-.gx .pd-frame-desc { margin: 0; font-size: 12.5px; }
-.gx .pd-takes { display: flex; gap: 6px; overflow-x: auto; }
-.gx .pd-takes button { flex: none; width: 56px; height: 44px; border-radius: 6px; overflow: hidden; border: 1px solid var(--gx-hair); }
-.gx .pd-takes button[aria-checked="true"] { border-color: var(--gx-accent); }
-.gx .pd-takes img, .gx .pd-takes .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
-.gx .pd-frame-edit { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; border-top: 1px solid var(--gx-hair); }
-.gx .pd-sketch { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-.gx .pd-sketch img, .gx .pd-sketch .gx-lazy { width: 72px; height: 54px; object-fit: cover; border-radius: 6px; background: var(--gx-text); }
-.gx .pd-upload { position: relative; align-self: flex-start; cursor: pointer; display: inline-flex; align-items: center; }
-.gx .pd-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.gx .pd-reading { margin: 0; font-size: 12.5px; }
-@media (max-width: 759px) {
-  .gx .pd-styles { grid-template-columns: minmax(0, 1fr); }
-  .gx .pd-frames { grid-template-columns: minmax(0, 1fr); }
-  .gx .pd-takes button { height: 44px; min-width: 56px; }
-}
-
-/* Cast & Elements: one card per character or element; a character renders with its Soul ID on the platform's key. */
-.gx .pd-cast-name { flex: 1; min-width: 120px; width: auto; }
-.gx .pd-soul { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.gx .pd-soul select { min-height: 32px; max-width: 100%; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
-@media (max-width: 759px) { .gx .pd-soul select { min-height: 44px; font-size: 16px; } .gx .pd-cast-name { flex-basis: 100%; } }
-@media (pointer: coarse) { .gx .pd-soul select { min-height: 44px; font-size: 16px; } }
-.gx .pd-cast-render { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; min-width: 0; }
-.gx .pd-cast-render .pd-soul { flex-wrap: wrap; }
 /* A price on a button wraps rather than being cut. */
 .gx .pd-go { height: auto; min-height: 32px; max-width: 100%; white-space: normal; text-align: left; line-height: 1.3; padding-top: 6px; padding-bottom: 6px; }
 @media (max-width: 767px), (pointer: coarse) { .gx .pd-go { min-height: 44px; } }
@@ -148,7 +55,7 @@
 .gx .pd-consent input:focus-visible + .pd-check { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
 .gx .pd-consent .gx-hint { margin: 0; }
 .gx .pd-soul-versions { flex-wrap: wrap; max-width: 100%; }
-.gx .pd-cast-render .gx-seg { max-width: 100%; }
+
 @media (max-width: 759px) {
   /* Three families wrap inside the card on a phone instead of pushing it sideways. */
   .gx .gx-seg.pd-soul-versions { display: flex; width: 100%; box-sizing: border-box; }
@@ -191,31 +98,7 @@
 .gx .pxw-insp-version .pxw-link-button { flex-basis: 100%; text-align: left; font-size: 12px; }
 @media (max-width: 759px) { .gx .pxw-rig-add-inputs select { min-height: 44px; font-size: 16px; } .gx .pxw-insp-row-actions button { min-height: 44px; } }
 .gx .pd-agent--bare { padding: 0; }
-.gx .pd-drawings { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-.gx .pd-drawing { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: transparent; min-width: 0; }
-.gx .pd-drawing-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.gx .pd-drawing-pair img, .gx .pd-drawing-pair .gx-lazy, .gx .pd-drawing-out { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: var(--gx-text); }
-.gx .pd-drawing-out { display: grid; place-items: center; background: var(--gx-input); overflow: hidden; }
-.gx .pd-drawing select { min-height: 34px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
-@media (max-width: 759px) { .gx .pd-drawing select { min-height: 44px; font-size: 16px; } .gx .pd-drawings { grid-template-columns: minmax(0, 1fr); } }
 
-/* Beat board, like a Final Draft beat board: an act header tile, then the act's scene cards in a grid, tinted by act. */
-.gx .pd-act { display: flex; flex-direction: column; gap: 10px; --act: var(--gx-done); --act-bg: var(--gx-done-tint); }
-.gx .pd-act[data-act="2"] { --act: var(--gx-accent); --act-bg: var(--gx-tint); }
-.gx .pd-act[data-act="3"] { --act: var(--gx-purple); --act-bg: color-mix(in srgb, var(--gx-purple) 14%, transparent); }
-.gx .pd-act-head { display: flex; align-items: baseline; gap: 12px; padding: 14px 16px; border-radius: 8px; background: var(--act-bg); border: 1px solid var(--act); width: min(100%, 420px); }
-.gx .pd-act-name { font-size: 20px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
-.gx .pd-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; align-items: start; }
-.gx .pd-card-grid > .pd-scene--open { grid-column: 1 / -1; border-left-color: var(--act); }
-.gx .pd-beat-card { display: flex; flex-direction: column; gap: 8px; min-height: 150px; padding: 14px; border-radius: 8px; text-align: left; background: var(--act-bg); border: 1px solid color-mix(in srgb, var(--act) 55%, transparent); color: var(--gx-text); min-width: 0; cursor: pointer; }
-.gx .pd-beat-card:hover, .gx .pd-beat-card:focus-visible { border-color: var(--act); outline: none; }
-.gx .pd-beat-card-head { display: flex; align-items: baseline; gap: 8px; }
-.gx .pd-beat-card-title { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; }
-.gx .pd-beat-card-text { font-size: 13px; line-height: 1.45; color: var(--gx-text); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-.gx .pd-beat-card-beats { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--gx-text-2); display: flex; flex-direction: column; gap: 2px; }
-.gx .pd-beat-card-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-2); font-family: var(--gx-mono); }
-.gx .pd-act-select { min-height: 32px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
-@media (max-width: 759px) { .gx .pd-card-grid { grid-template-columns: minmax(0, 1fr); } .gx .pd-act-select { min-height: 44px; font-size: 16px; } }
 /* Takes in the card contract (components/graphite/TakeTile.tsx): the picture holds the project's frame. */
 .gx .pd-take-cell { position: relative; display: flex; min-width: 0; }
 .gx .pd-take-cell > .pd-take { flex: 1; }
@@ -227,145 +110,17 @@
 .gx .pd-take .gx-tile-reason.gx-tile-charge { display: block; overflow: visible; }
 .gx .pd-take.gx-skel { border-color: transparent; }
 
-/* The Rig's library: every generation, video, image, sound, upload, character, element and brief, dragged onto a shot. */
-.gx .pxw-rig-library { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--gx-hair); background: transparent; }
-.gx .pxw-rig-library-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.gx .pxw-rig-library-head .pxw-link-button { font-weight: 600; }
-.gx .pxw-rig-library-hint { font-size: 12px; color: var(--gx-text-2); }
-.gx .pxw-rig-library-groups { display: flex; gap: 6px; flex-wrap: wrap; }
-.gx .pxw-rig-library-groups button { min-height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--gx-hair); background: var(--gx-input); color: var(--gx-text-2); font-size: 12px; }
-.gx .pxw-rig-library-groups button[aria-checked="true"] { color: var(--gx-text); border-color: var(--gx-accent); }
-.gx .pxw-rig-library-groups button:disabled { opacity: .45; }
-.gx .pxw-rig-library-items { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
-.gx .pxw-rig-library-item { flex: none; width: 128px; display: flex; flex-direction: column; gap: 4px; padding: 6px; border-radius: 8px; border: 1px solid var(--gx-hair); background: var(--gx-input); cursor: grab; position: relative; }
-.gx .pxw-rig-library-thumb { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 9; border-radius: 4px; overflow: hidden; background: var(--gx-panel); color: var(--gx-text-3); font-size: 20px; }
-.gx .pxw-rig-library-thumb img, .gx .pxw-rig-library-thumb video, .gx .pxw-rig-library-thumb .gx-lazy { width: 100%; height: 100%; object-fit: cover; }
-.gx .pxw-rig-library-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gx .pxw-rig-library-item > .pxw-link-button { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; background: var(--gx-on-media); color: var(--gx-text); }
-@media (max-width: 759px) { .gx .pxw-rig-library-groups button { min-height: 44px; } .gx .pxw-rig-library-item > .pxw-link-button { width: 44px; height: 44px; top: 4px; right: 4px; } }
-
-/* Storyboards: pick frames to storyboard together; a picked frame is outlined. */
-.gx .pd-select-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.gx .pd-frame { position: relative; }
-.gx .pd-frame[data-picked] { outline: 2px solid var(--gx-accent); outline-offset: -2px; }
-.gx .pd-frame-pick { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--gx-text-2); cursor: pointer; min-height: 44px; }
-.gx .pd-frame-pick input { width: 20px; height: 20px; accent-color: var(--gx-accent); }
-/* Environment's library pickers (a reference, a plate), styled like the stage's other pickers. The widest file name in
-   the list never widens the row past the screen, and on a touch screen each is a 44px target. */
-.gx .pd-frame > .pd-row-head > select { flex: 1 1 200px; min-width: 0; max-width: 100%; min-height: 34px; padding: 0 8px; border-radius: 6px; background: var(--gx-input); color: var(--gx-text); border: 1px solid var(--gx-hair); font: inherit; font-size: 13px; }
-@media (max-width: 767px), (pointer: coarse) { .gx .pd-frame > .pd-row-head > select { min-height: 44px; font-size: 16px; } }
-/* Environment's place name sits in the card's column, not in a row as Cast's name does: it keeps the field's own height
-   (36px, 44px on a touch screen) instead of growing from nothing to 20px. */
-.gx .pd-frame > .gx-field.pd-cast-name { flex: none; }
-.gx .pd-drawing-delete { display: flex; flex-wrap: wrap; gap: 8px; }
-
 /* Grok transcription on a take: the lines by speaker, readable at a glance. */
 .gx .pd-transcript { display: grid; gap: 8px; max-height: 360px; overflow: auto; padding: 12px; border-radius: 14px; background: var(--gx-input); border: 1px solid var(--gx-hair); }
 .gx .pd-transcript-line { margin: 0; font-size: 14px; line-height: 1.5; color: var(--gx-text); }
 .gx .pd-transcript-line .gx-eyebrow { margin-right: 6px; }
-/* Environment: a place's references, as small thumbnails with a remove button; a Library tile hovering a place lights it. */
-.gx .pd-ref-chip { position: relative; display: inline-flex; width: 56px; height: 42px; border-radius: 8px; overflow: hidden; border: 1px solid var(--gx-hair); }
-.gx .pd-ref-chip img, .gx .pd-ref-chip video { width: 100%; height: 100%; object-fit: cover; }
-.gx .pd-ref-chip .gx-hbtn { position: absolute; top: 2px; right: 2px; min-width: 22px; height: 22px; padding: 0; font-size: 13px; line-height: 1; }
-@media (pointer: coarse) { .gx .pd-ref-chip { width: 72px; height: 54px; } .gx .pd-ref-chip .gx-hbtn { min-width: 44px; height: 44px; top: 0; right: 0; } }
-.gx .pd-frame[data-drop] { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
-
-/* Beats as a graph: act lanes, scenes along the story spine, beats beneath; pinch / ⌘-wheel zooms, wheel or drag pans. */
-.gx .pd-view-toggle { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; border: 1px solid var(--gx-hair); background: var(--gx-input); }
-.gx .pd-view-toggle button { min-height: 30px; padding: 0 14px; border-radius: 999px; border: 0; background: transparent; color: var(--gx-text-2); font: inherit; font-size: 13px; cursor: pointer; }
-.gx .pd-view-toggle button[aria-checked="true"] { background: var(--gx-input-hover); color: var(--gx-text); }
-@media (max-width: 759px), (pointer: coarse) { .gx .pd-view-toggle button { min-height: 44px; } }
-.gx .pd-graph-layout { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.gx .pd-graph-frame { position: relative; }
-/* The open scene's editor floats over the graph's right side, like a properties panel; on a phone it covers the graph until Done. */
-.gx .pd-graph-panel { position: absolute; top: 8px; right: 8px; bottom: 8px; z-index: 8; width: min(440px, 50%); overflow: auto; overscroll-behavior: contain; border-radius: 12px; box-shadow: var(--gx-shadow-pop); }
-.gx .pd-graph-panel { background: var(--gx-card); border: 1px solid var(--gx-hair); }
-.gx .pd-graph-panel > .pd-scene { margin: 0; min-height: 100%; background: var(--gx-card); border: 0; box-shadow: none; }
-@media (max-width: 759px) { .gx .pd-graph-panel { left: 8px; width: auto; } .gx .pd-graph-surface { height: clamp(320px, calc(100dvh - 400px), 560px); } .gx .pd-graph-zoom { position: static; margin-top: 8px; width: max-content; } }
-.gx .pd-graph { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.gx .pd-graph-surface { position: relative; overflow: hidden; height: clamp(420px, calc(100dvh - 300px), 1100px); border-radius: 12px; border: 1px solid var(--gx-hair); touch-action: none; cursor: grab; background-color: var(--gx-viewport); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='1' fill='white' fill-opacity='.07'/%3E%3C/svg%3E"); }
-.gx .pd-graph-surface:active { cursor: grabbing; }
-.gx .pd-graph-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
-.gx .pd-graph-lane { position: absolute; left: 0; --act: var(--gx-done); --act-bg: color-mix(in srgb, var(--gx-done) 6%, transparent); background: var(--act-bg); border-top: 1px solid color-mix(in srgb, var(--act) 40%, transparent); }
-.gx .pd-graph-lane[data-act="2"] { --act: var(--gx-accent); --act-bg: color-mix(in srgb, var(--gx-accent) 6%, transparent); }
-.gx .pd-graph-lane[data-act="3"] { --act: var(--gx-purple); --act-bg: color-mix(in srgb, var(--gx-purple) 6%, transparent); }
-.gx .pd-graph-lane-name { position: absolute; left: 24px; top: 10px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--act); }
-.gx .pd-graph-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
-.gx .pd-graph-spine { fill: none; stroke: var(--gx-text-3); stroke-width: 2; }
-.gx .pd-graph-chain { fill: none; stroke: var(--gx-thumb); stroke-width: 1.5; }
-.gx .pd-graph-scene { position: absolute; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 10px; text-align: left; font: inherit; color: var(--gx-text); cursor: grab; touch-action: none; --act: var(--gx-done); background: color-mix(in srgb, var(--act) 16%, var(--gx-card)); border: 1px solid color-mix(in srgb, var(--act) 55%, transparent); overflow: hidden; }
-.gx .pd-graph-scene[data-act="2"] { --act: var(--gx-accent); }
-.gx .pd-graph-scene[data-act="3"] { --act: var(--gx-purple); }
-.gx .pd-graph-scene:hover, .gx .pd-graph-scene:focus-visible { border-color: var(--act); outline: none; }
-.gx .pd-graph-scene[data-open] { border-color: var(--act); box-shadow: 0 0 0 2px var(--act); }
-.gx .pd-graph-scene[data-moving] { cursor: grabbing; z-index: 5; box-shadow: var(--gx-shadow-pop); }
-.gx .pd-graph-scene-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.gx .pd-graph-scene-title { flex: 1; min-width: 0; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gx .pd-graph-scene-text { font-size: 12.5px; line-height: 1.4; color: var(--gx-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.gx .pd-graph-scene-foot { margin-top: auto; font-size: 12px; color: var(--gx-text-3); font-family: var(--gx-mono); }
-.gx .pd-graph-beat { position: absolute; display: flex; align-items: center; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--gx-hair); background: var(--gx-card); font-size: 12.5px; line-height: 1.35; color: var(--gx-text); overflow: hidden; cursor: pointer; }
-.gx .pd-graph-beat[data-more] { justify-content: center; color: var(--gx-text-3); border-style: dashed; }
-.gx .pd-graph-zoom { position: absolute; left: 12px; bottom: 12px; z-index: 7; display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--gx-card); border: 1px solid var(--gx-hair); cursor: default; }
-.gx .pd-graph-zoom button { min-width: 36px; height: 32px; padding: 0 10px; border-radius: 999px; border: 0; background: transparent; color: var(--gx-text); font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer; }
-.gx .pd-graph-zoom button:hover { background: var(--gx-input-hover); }
-@media (pointer: coarse) { .gx .pd-graph-zoom button { min-width: 44px; height: 44px; } }
-.gx .pd-graph-note { margin: 0; }
-.gx .pd-import { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--gx-hair); }
-.gx .pd-import-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-
-/* Takes as the review desk (components/graphite/production/EditStage.tsx): the selected take with its
-   review, then one grid of every take — status chips, kind chips and a search above it, grouped by shot
-   and by batch. The grid may be windowed (components/workspace/VirtualItems.tsx): a heading takes its row,
-   and a shot's or a batch's first take starts one. */
-.gx .pd-selected { gap: 10px; }
-.gx .pd-selected-head { flex-wrap: wrap; row-gap: 6px; }
-.gx .pd-selected-name { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gx .pd-selected-chip { position: relative; display: inline-flex; flex: none; }
-.gx .pd-selected-chip .gx-tile-chip { position: static; max-width: none; }
-.gx .pd-selected-step { display: inline-flex; gap: 6px; flex: none; }
-/* Edit's review buttons. The same class as Brief's review card above, which this rule reaches too (see there). */
-.gx .pd-review { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
-.gx .pd-review-btn[aria-pressed="true"] { color: var(--gx-text); font-weight: 600; }
-.gx .pd-review-btn[data-review="picked"][aria-pressed="true"] { border-color: var(--gx-accent); background: var(--gx-tint); }
-.gx .pd-review-btn[data-review="approved"][aria-pressed="true"] { border-color: var(--gx-done); background: var(--gx-done-tint); }
-.gx .pd-review-btn[data-review="changes"][aria-pressed="true"] { border-color: var(--gx-waiting); background: color-mix(in srgb, var(--gx-waiting) 14%, transparent); }
-.gx .pd-review-trail { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
-.gx .pd-review-none { margin: 0; }
-.gx .pd-desk { gap: 12px; }
-.gx .pd-desk-filters { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.gx .pd-desk-find { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
-/* The kind chips may shrink to the row and wrap: .gx-chips is flex: none, which held them at one line's width and ran
-   them past the card once a phone's stage took its 12px gutter. */
-.gx .pd-desk-find > .gx-chips { flex: 0 1 auto; min-width: 0; }
-.gx .pd-desk-search { flex: 1 1 220px; width: auto; min-width: 0; max-width: 360px; }
-.gx .pd-desk-chip[data-status]:not([data-status="all"])::before { content: ""; width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: 1px; background: var(--dot); }
-.gx .pd-desk-n { margin-left: 6px; font-family: var(--gx-mono); font-size: 11px; color: var(--gx-text-2); }
-.gx .pd-desk-grid .pd-desk-head { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-top: 8px; border-top: 1px solid var(--gx-hair); }
-.gx .pd-desk-grid .pd-desk-head--strip { padding-top: 0; border-top: 0; }
-.gx .pd-desk-head-name { min-width: 0; font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gx .pd-desk-head--strip .pd-desk-head-name { font-weight: 500; font-size: 12px; color: var(--gx-text-2); }
-.gx .pd-desk-grid [data-row-start] { grid-column-start: 1; }
-.gx .pd-desk-empty { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.gx .pd-desk-empty .gx-empty { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-@media (max-width: 767px), (pointer: coarse) {
-  .gx .pd-desk-n { font-size: 12px; }
-  .gx .pd-desk-head-name { font-size: 13px; }
-  .gx .pd-desk-head--strip .pd-desk-head-name { font-size: 12px; }
-}
-@media (max-width: 759px) {
-  .gx .pd-desk-search { flex-basis: 100%; max-width: none; }
-  .gx .pd-selected-step { width: 100%; }
-  .gx .pd-selected-step .gx-hbtn { flex: 1; }
-}
 
 /* The thumb's floors on any phone, either way up. The rules above stop at 759px or ask for a coarse pointer, one or the
    other: this closes what each leaves (760–767px wide, a touch screen wider than 759px, a narrow window with a mouse). */
 @media (max-width: 767px), (pointer: coarse) {
   .gx .pd-order .gx-hbtn { min-width: 44px; }
-  .gx .pd-soul select, .gx .pd-drawing select, .gx .pd-act-select, .gx .pxw-rig-add-inputs select { min-height: 44px; font-size: 16px; }
-  .gx .pd-view-toggle button, .gx .pxw-insp-row-actions button, .gx .pxw-rig-library-groups button { min-height: 44px; }
-  .gx .pxw-rig-library-item > .pxw-link-button { width: 44px; height: 44px; top: 4px; right: 4px; }
-  .gx .pd-ref-chip { width: 72px; height: 54px; }
-  .gx .pd-ref-chip .gx-hbtn { min-width: 44px; height: 44px; top: 0; right: 0; }
-  .gx .pd-graph-zoom button { min-width: 44px; height: 44px; }
+  .gx .pxw-rig-add-inputs select{ min-height: 44px; font-size: 16px; }
+  .gx .pxw-insp-row-actions button { min-height: 44px; }
+  
+  
 }

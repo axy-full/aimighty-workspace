@@ -23,11 +23,17 @@ export type CtxCommand =
   | "use-as-reference" | "open-in-inspector"
   | "bypass" | "unplug"
   | "move" | "retry" | "delete" | "undo"
-  | "generate-here" | "open-library" | "toggle-inspector";
+  | "generate-here" | "open-library";
 
 export type CtxItem =
   | { sep: true }
-  | { sep?: false; command: CtxCommand; label: string; key?: string; danger?: boolean; disabled?: boolean; reason?: string };
+  | { sep?: false; command: CtxCommand; label: string; key?: string; danger?: boolean; disabled?: boolean; reason?: string; /** What the command costs, after its label ("Recreate · 43 cr"). */ price?: string; /** The price's hover: its dollar value. */ hover?: string; /** Set on a command that spends: priced once its figure is known, else unpriced and disabled (README § 5). */ spend?: "priced" | "unpriced" };
+
+/**
+ * What a command that spends costs, read from the server's own quote (lib/shell/recreate-price.ts): still being read, ready with
+ * the words and their dollar hover, or none, with why. A command with no price available is shown disabled with that reason.
+ */
+export type CtxPrice = { state: "reading" } | { state: "ready"; text: string; hover?: string } | { state: "unavailable"; reason: string };
 
 export type CtxCapabilities = {
   /** Commands this build can carry out for this target; the rest are shown, blocked, with the reason. */
@@ -36,6 +42,8 @@ export type CtxCapabilities = {
   why: Partial<Record<CtxCommand, string>>;
   hasClipboard: boolean;
   canUndo: boolean;
+  /** Commands that spend, with their price (README § 4: every control that spends shows it). */
+  price?: Partial<Record<CtxCommand, CtxPrice>>;
 };
 
 const item = (command: CtxCommand, label: string, key?: string, danger?: boolean): CtxItem => ({ command, label, key, danger });
@@ -62,8 +70,8 @@ export function ctxItems(target: CtxTarget, caps: CtxCapabilities): CtxItem[] {
   if (target.kind === "asset") list.push(item("use-as-reference", "Use as reference"), item("open-in-inspector", "Open in Inspector"));
   if (target.kind === "node") list.push(item("bypass", "Bypass"), item("unplug", "Unplug all inputs"));
   list.push(item("move", "Move to…"), item("retry", "Retry", "⌘R"), { sep: true }, item("delete", "Delete", "⌫", true), item("undo", "Undo", "⌘Z"));
-  if (target.kind === "empty") list.push({ sep: true }, item("generate-here", "Generate here…"), item("open-library", "Open Library"), item("toggle-inspector", "Toggle Inspector", "⌘J"));
-  const ALWAYS: CtxCommand[] = ["generate-here", "open-library", "toggle-inspector"];
+  if (target.kind === "empty") list.push({ sep: true }, item("generate-here", "Generate here…"), item("open-library", "Open Library"));
+  const ALWAYS: CtxCommand[] = ["generate-here", "open-library"];
   const offered = target.kind === "node"
     ? tidy(list.filter((entry) => entry.sep || SHARED.includes(entry.command) || caps.can[entry.command] || caps.why[entry.command]))
     : list;
@@ -73,7 +81,12 @@ export function ctxItems(target: CtxTarget, caps: CtxCapabilities): CtxItem[] {
     if (entry.command === "undo") return caps.canUndo ? entry : { ...entry, disabled: true, reason: "Nothing to undo." };
     if (entry.command === "paste" && !caps.hasClipboard) return { ...entry, disabled: true, reason: "Nothing copied yet." };
     if (target.kind === "empty") return { ...entry, disabled: true, reason: "Select an asset or a node first." };
-    if (caps.can[entry.command]) return entry;
+    const priced = caps.price?.[entry.command];
+    if (caps.can[entry.command]) {
+      if (!priced) return entry;
+      if (priced.state === "ready") return { ...entry, spend: "priced", price: priced.text, ...(priced.hover ? { hover: priced.hover } : {}) };
+      return priced.state === "reading" ? { ...entry, spend: "unpriced", disabled: true, reason: "Reading the price…" } : { ...entry, spend: "unpriced", disabled: true, reason: priced.reason };
+    }
     return { ...entry, disabled: true, reason: caps.why[entry.command] ?? "Not available for this selection." };
   });
 }

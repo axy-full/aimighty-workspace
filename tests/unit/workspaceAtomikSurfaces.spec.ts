@@ -46,7 +46,7 @@ test("button, chip and header states follow the run", () => {
   expect(runChip(run({ status: "paused" })).label).toBe("Resume run");
 
   const ok = { ok: true } as const;
-  const no = { ok: false, reason: "Needs Rig data" } as const;
+  const no = { ok: false, reason: "Needs Board data" } as const;
   expect(runButton(null, ok)).toEqual({ label: "Run this page", disabled: false, busy: false });
   expect(runButton(null, no).disabled).toBe(true);
   expect(runButton(run({ status: "waiting" }), ok)).toMatchObject({ label: "Waiting", disabled: true });
@@ -62,8 +62,8 @@ test("button, chip and header states follow the run", () => {
 
 test("a paid plan without its page's data is not runnable and never guesses a body", () => {
   const none = new Set<RequestKey>();
-  expect(missingRequest("rig", none)).toBe("Needs Rig data");
-  expect(missingRequest("models", none)).toBe("Needs Rig data");
+  expect(missingRequest("rig", none)).toBe("Needs Board data");
+  expect(missingRequest("models", none)).toBe("Needs Board data");
   expect(missingRequest("edit", none)).toBe("Needs Edit & Sound data");
   expect(missingRequest("motion", none)).toBe("Needs Motion Transfer data");
   expect(missingRequest("agent", none)).toBeNull();
@@ -71,7 +71,7 @@ test("a paid plan without its page's data is not runnable and never guesses a bo
 
   let provided = new Set<RequestKey>();
   const plans = withRequestGate(PLANS, () => provided);
-  expect(plans.rig.runnable(ctx)).toEqual({ ok: false, reason: "Needs Rig data" });
+  expect(plans.rig.runnable(ctx)).toEqual({ ok: false, reason: "Needs Board data" });
   /* Without a project, "open a project first" wins. */
   expect(plans.rig.runnable({ ...ctx, projectId: null }).ok).toBe(false);
   expect((plans.rig.runnable({ ...ctx, projectId: null }) as { reason: string }).reason).toMatch(/open a project/);

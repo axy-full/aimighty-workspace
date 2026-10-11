@@ -56,8 +56,8 @@ export function ProjectHead({ project, projects, loading, error = null, onPick, 
   project: Project | null; projects: ProjectSummary[]; loading: boolean; onPick: (id: string) => void;
   /** The project list could not be read: said here rather than "No project"; the banner under the head says why, with Try again. */
   error?: string | null;
-  /** Starts a project here and opens it; returns the refusal, or null. Without it, New project opens the older dialog. */
-  onCreate?: (name: string) => Promise<string | null>;
+  /** Starts a project here and opens it; returns the refusal, or null. Always given: the shell has no other place to start one. */
+  onCreate: (name: string) => Promise<string | null>;
 }) {
   const shell = useShell();
   const [open, setOpen] = useState(false);
@@ -95,11 +95,7 @@ export function ProjectHead({ project, projects, loading, error = null, onPick, 
             </button>
           ))}
           {/* New project starts here and opens it in this shell (owner, 23 September: it used to leave for the older workbench). */}
-          {!onCreate ? (
-            <a className="gx-popover-item gx-popover-item--new" href="/workbench?new=1" style={{ textDecoration: "none" }}>
-              <span aria-hidden="true">+</span>New project
-            </a>
-          ) : !naming ? (
+          {!naming ? (
             <button type="button" className="gx-popover-item gx-popover-item--new" onClick={() => setNaming(true)} data-testid="project-new">
               <span aria-hidden="true">+</span>New project
             </button>

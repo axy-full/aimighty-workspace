@@ -1,5 +1,7 @@
+import { storedActorMaskHere } from "./platformOwnerPrivacy";
 import { db, ready, now, id as newId } from "@/lib/db";
 import { unionNotes } from "@/lib/treatmentMerge";
+import { aliasModel } from "@/lib/modelAliases";
 
 /**
  * Atomik's documents: ideas and treatments. Shots are the shots table.
@@ -37,7 +39,8 @@ export function rowToIdea(r: any): Idea {
     id: r.id, num: Number(r.num ?? 0), projectId: r.project_id ?? null,
     logline: r.logline ?? "", tone: json<string[]>(r.tone, []), refs: json<string[]>(r.refs, []),
     state, pins: json<string[]>(r.pins, []), parkedBy: r.parked_by ?? null,
-    model: typeof r.model === "string" && r.model ? r.model : null,
+    /* The thinking model the idea was written with; a dropped id reads as its alias (lib/modelAliases.ts). */
+    model: typeof r.model === "string" && r.model ? aliasModel(r.model) : null,
     effort: typeof r.effort === "string" && r.effort ? r.effort : "auto",
     createdBy: r.created_by ?? "", createdAt: Number(r.created_at ?? 0), updatedAt: Number(r.updated_at ?? 0),
   };
@@ -71,7 +74,7 @@ export async function createIdea(input: { logline: string; tone: string[]; refs:
     sql: `INSERT INTO ideas (id, num, project_id, logline, tone, refs, state, pins, parked_by, created_by, created_at, updated_at, model, effort)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [iid, num, null, input.logline.slice(0, 600), JSON.stringify(input.tone.slice(0, 8)), JSON.stringify(input.refs.slice(0, 3)),
-           "open", "[]", null, input.createdBy, ts, ts, input.model?.slice(0, 120) || null, input.effort?.slice(0, 32) || null],
+           "open", "[]", null, input.createdBy, ts, ts, aliasModel(input.model?.slice(0, 120)) || null, input.effort?.slice(0, 32) || null],
   });
   return (await getIdea(iid))!;
 }
@@ -174,7 +177,9 @@ export async function upsertTreatment(input: {
 export async function listTreatmentVersions(projectId: string): Promise<TreatmentVersion[]> {
   await ready();
   const rs = await db().execute({ sql: `SELECT version, by, created_at FROM treatment_versions WHERE project_id = ? ORDER BY version DESC`, args: [projectId] });
-  return (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({ version: Number(r.version), by: String(r.by ?? ""), at: Number(r.created_at ?? 0) }));
+  // Outside the house the platform owner reads "Particl support" (lib/platformOwnerPrivacy.ts).
+  const shown = await storedActorMaskHere();
+  return (rs.rows as unknown as Record<string, unknown>[]).map((r) => ({ version: Number(r.version), by: String(shown(String(r.by ?? ""))), at: Number(r.created_at ?? 0) }));
 }
 
 /** One earlier draft, as the document it was. */
@@ -183,9 +188,10 @@ export async function getTreatmentVersion(projectId: string, version: number): P
   const rs = await db().execute({ sql: `SELECT * FROM treatment_versions WHERE project_id = ? AND version = ? ORDER BY created_at DESC LIMIT 1`, args: [projectId, version] });
   if (!rs.rows.length) return null;
   const r = rs.rows[0] as Record<string, unknown>;
+  const shown = await storedActorMaskHere();
   return {
     projectId, draft: Number(r.version), title: String(r.title ?? ""), logline: String(r.logline ?? ""), setup: json<Record<string, string>>(r.setup, {}),
-    scenes: json<Scene[]>(r.scenes, []), notes: json<Note[]>(r.notes, []), updatedBy: String(r.by ?? ""), updatedAt: Number(r.created_at ?? 0), at: Number(r.created_at ?? 0),
+    scenes: json<Scene[]>(r.scenes, []), notes: json<Note[]>(r.notes, []), updatedBy: String(shown(String(r.by ?? ""))), updatedAt: Number(r.created_at ?? 0), at: Number(r.created_at ?? 0),
   };
 }
 

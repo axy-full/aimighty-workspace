@@ -74,7 +74,7 @@ const MEDIUM: Record<EnhanceMode, string> = {
 /** One instruction for every provider (README › Interactions › Prompt enhancer). */
 export function enhancerSystem(context: EnhanceContext): string {
   return [
-    "You rewrite a rough idea into ONE concrete generation prompt. These are Higgsfield's published prompt rules.",
+    "You rewrite a rough idea into ONE concrete generation prompt. These are the engines' published prompt rules.",
     `Order it: ${MEDIUM[context.mode]}.`,
     "Be concrete and sensory. Keep it under 80 words; models distort with long prompts.",
     "Phrase negatives positively: \"tack sharp\" instead of \"no blur\", \"uninhabited landscape\" instead of \"no people\".",

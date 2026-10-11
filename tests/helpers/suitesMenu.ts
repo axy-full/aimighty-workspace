@@ -50,3 +50,32 @@ export async function tapSuiteTab(page: Page, name: string) {
     await expect(tab, `${name} is the selected suite`).toHaveAttribute("aria-selected", "true", { timeout: 5_000 });
   }).toPass({ timeout: 60_000 });
 }
+
+/**
+ * Goes somewhere through ⌘K search: Business, Viral and Crew left the header (header option B), and ⌘K is how they
+ * are reached until their boards ship. Opens Search from the header (on a phone through the menu), types `query`,
+ * and picks the row named `option`; checked by the dialog closing.
+ */
+export async function goViaSearch(page: Page, query: string, option: string | RegExp) {
+  const dialog = page.getByRole("dialog", { name: "Search" });
+  await expect(async () => {
+    if (!(await dialog.isVisible())) {
+      await openSuitesMenu(page);
+      await page.getByTestId("header-search").click({ timeout: 5_000 });
+    }
+    await dialog.getByRole("textbox", { name: "Search" }).fill(query, { timeout: 5_000 });
+    await dialog.getByRole("option", { name: option }).first().click({ timeout: 5_000 });
+    await expect(dialog).toHaveCount(0, { timeout: 5_000 });
+  }).toPass({ timeout: 60_000 });
+}
+
+/**
+ * Crew review is not a ⌘K row (the design's search lists Home, the board's regions, Make, Atomik and Settings); until it is a
+ * panel on the board, its room opens by its address, on the project already open.
+ */
+export async function goCrewReview(page: Page) {
+  const url = new URL(page.url());
+  url.searchParams.set("view", "crew");
+  url.searchParams.set("cp", "room");
+  await page.goto(url.toString());
+}

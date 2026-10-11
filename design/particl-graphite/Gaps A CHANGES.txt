@@ -1,0 +1,31 @@
+Particl · "every gap, now" · Batch A · CHANGES · written 2026-10-06
+
+Corrections applied (6 Oct) — to the committed master "Particl Suites.dc.html" (shared by Gaps A and Gaps B)
+  1. Thinking: every "Ask · up to N cr", "Start · up to N cr" (and the other Atomik thinking buttons and lines) reads "up to 9 cr", the code's own figure: the planner's ceiling for a new board (lib/workbench/rig-agent.ts planningCredits -> plannerCeilingUsd -> quotedCredits). Never "4 cr". What a plan actually settled at ("Thinking · 4 cr · billed when Atomik planned it") is a charge, not a ceiling, and stays.
+  2. The header balance matches the state shown: the short-by frames (money and Make) show 40 cr in the header.
+  3. Edit & Sound: the code's own export is the browser renderer (components/workbench/MovieExport.tsx: MP4 or WebM, up to 3 minutes, keep the page open, no credits). The frames say exactly that ("Rendering the movie · 62%", "rendered in your browser"); nothing claims a server render or a device render of the master. If server rendering is wanted, "Render master" would instead be disabled with the one line "Final render arrives with server rendering."
+  4. Per-shot admin cap is the code's default, 50 cr (lib/approvalRule.ts cleanShotCap). The "needs an admin" example is Shot 1 as a 10 s Seedance 2.5 shot at 86 cr; "Approve the rest" is 43 + 7 = 50 cr and leaves out only that step.
+  5. Sample budget per production: 400 cr, the 80 % pause at 320 cr; the plan (93 cr) plus its fix allowance (186 cr) fits.
+  6. Make: Auto enhance is on (1 cr), so the button reads "Make · 51 cr" (43 + 7 draft + 1).
+  7. Team roles are the code's owner / admin / member. Only those three roles, and no per-role approval limits. The Team frame draws You (owner), Admin, Member; the budget-and-cap view for a person who is not an admin is ?role=member.
+  8. The sample publishing handle is "@your-brand". Code and seed data never copy Maison Aurel, Northline or any other sample brand.
+  9. Loudness target is a choice per deliverable: Broadcast −23 LUFS or Web & social −14 LUFS (Edit & Sound and Deliver).
+  Also: the sample MCP token reads "ptk_example_····_····".
+  Where a line below still says otherwise, this section wins.
+
+Added in this round
+  1. 3D blocking: a card in the Storyboard and Shots regions; a full-screen overlay with viewport, objects list, camera (position, height, 24/35/50/85 mm, frame guide), a timeline for a simple move, "Use as reference for Shot N · free"; states empty, building, saved; phone view only.
+  2. Transcribe on a video, audio or Social source card: timestamps, editable lines, Use as script / Use as captions; running, done, failed with Nothing billed · Retry.
+  3. Line drawings: a card action that adds a line-art version to the same card.
+  4. Cut-out: a card action that adds a background-removed version, with a before/after toggle.
+  5. Crew review: a panel on any board, notes per take, approve or reject with a reason, a client share link and the client's own view (desktop and phone).
+  6. Identity on the Cast card: photos, a consent step only a person completes, Train Identity · 54 cr, training, ready, failed (desktop; consent on phone).
+  7. Edit & Sound in the Cut region: timeline, trims, music, voice, captions, loudness check, Render master · free; phone watch and approve only.
+
+Fixed during the pre-export check (2026-10-06)
+  - Names: every invented person removed from the master — the cast is "Lead" (was Mira), people are "You", "Admin", "Member" (were named), addresses are your-studio.com.
+  - One filled button per screen: the Atomik "Ask" button is outlined; the picked-look tick is a tint, not a filled button; the card that opened an overlay (3D blocking, Edit & Sound, Record consent) drops to outlined while the overlay is open; a settings page drops its filled action while a dialog is open.
+  - No save buttons: the spending-rules dialog saves as you type ("Done", "Undo changes").
+  - Contrast: disabled buttons read at 55 % white.
+  - Phone: the dock's count badge is 12 px.
+  - Prices: a failed post's Retry reads "Retry · free".

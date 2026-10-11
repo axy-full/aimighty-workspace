@@ -31,7 +31,7 @@ export type ReachStatus = "built-in";
 export type ReachRow = { id: string; label: string; line: string; group: "particl"; status: ReachStatus; open?: ReachOpen };
 
 const AGENT: ReachOpen = { suite: "atomik", page: "agent", label: "Agent" };
-const GEN: ReachOpen = { gen: true, label: "Gen" };
+const GEN: ReachOpen = { gen: true, label: "Make" };
 const SOUND: ReachOpen = { suite: "studio", page: "edit", label: "Edit & Sound" };
 
 export const PARTICL_REACH: readonly Omit<ReachRow, "status" | "group">[] = Object.freeze([
@@ -39,7 +39,7 @@ export const PARTICL_REACH: readonly Omit<ReachRow, "status" | "group">[] = Obje
   { id: "thinking", label: "Thinking models", line: "The model Atomik plans with, and how hard it thinks", open: { suite: "atomik", page: "models", label: "Models" } },
   { id: "engines", label: "Particl engines", line: "Video, stills and sound on Particl’s own engines", open: GEN },
   { id: "sound", label: "Voice, sound & music", line: "Narration, effects and score for the cut", open: SOUND },
-  { id: "astra", label: "Astra 3D", line: "Block a scene in 3D before anything renders", open: { suite: "studio", page: "astra", label: "Astra" } },
+  { id: "astra", label: "3D blocking", line: "Block a scene in 3D before anything renders", open: { suite: "studio", page: "astra", label: "3D blocking" } },
   { id: "assistant", label: "Your own assistant", line: `Particl’s ${TOOLS.length} tools in Claude or ChatGPT, with a token you control`, open: { tab: "connect", label: "Claude & ChatGPT" } },
 ]);
 
@@ -56,9 +56,12 @@ export const STATUS_LABEL: Record<ReachStatus, string> = {
 
 /** Tools that write: a read-only token is refused them (lib/auth withTenant refuses its non-GET calls). */
 const WRITES = new Set(["render_shot", "create_project"]);
+/** The one tool a prepare token writes with: a job a person approves (lib/security/prepared-jobs.ts). */
+const PREPARES = new Set(["prepare_shot"]);
 /** One line per tool; tests/unit/toolsConnections.spec.ts fails when lib/mcp.ts gains a tool this page does not describe. */
 export const MCP_TOOL_LINES: Readonly<Record<string, string>> = Object.freeze({
   render_shot: "Starts a video take and returns its id",
+  prepare_shot: "Prepares a video take; a person approves it in Particl",
   wait_for_render: "Waits for a take, then reports what it cost",
   list_renders: "Recent takes, by project, status or prompt",
   get_render: "One take, with a link to watch or save it",
@@ -67,9 +70,9 @@ export const MCP_TOOL_LINES: Readonly<Record<string, string>> = Object.freeze({
   usage_summary: "Spent, remaining, and what is running now",
 });
 
-export type McpToolRow = { name: string; line: string; token: "any" | "generate" };
+export type McpToolRow = { name: string; line: string; token: "any" | "generate" | "prepare" };
 export function mcpTools(): McpToolRow[] {
-  return TOOLS.map((tool) => ({ name: tool.name, line: MCP_TOOL_LINES[tool.name] ?? tool.description.split(". ")[0], token: WRITES.has(tool.name) ? "generate" : "any" }));
+  return TOOLS.map((tool) => ({ name: tool.name, line: MCP_TOOL_LINES[tool.name] ?? tool.description.split(". ")[0], token: WRITES.has(tool.name) ? "generate" : PREPARES.has(tool.name) ? "prepare" : "any" }));
 }
 
 /** Stands in for the token until one is made; tokens read `pk_<workspace>_…` (or `aw_…` in the original workspace). */
@@ -149,7 +152,7 @@ export function setupGuide(client: ClientId, origin: string, token: string): Set
 /* ── Tokens ───────────────────────────────────────────────────────────── */
 
 export type ApiToken = {
-  id: string; name: string; scope: "read" | "render";
+  id: string; name: string; scope: "read" | "render" | "prepare";
   lastUsed: number | null; createdAt: number;
   /** This month's spend, in the list's unit: credits billed, or the engine's dollars on a workspace's own keys. */
   spendThisMonth: number;
@@ -175,9 +178,15 @@ function ago(at: number, now: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+/** What a token may do, in words: a prepare token spends nothing itself; a person approves each job it prepares. */
+export function scopeWords(scope: ApiToken["scope"]): string {
+  return scope === "read" ? "Read-only" : scope === "prepare" ? "Prepares jobs only" : "Can generate";
+}
+
 /** The facts under a token's name: what it can do, this month's spend against its ceiling, when it was last used. */
 export function tokenFacts(token: ApiToken, unit: TokenUnit, now = Date.now()): string {
-  const parts = [token.scope === "read" ? "Read-only" : "Can generate"];
+  const parts = [scopeWords(token.scope)];
+  if (token.scope === "prepare") parts.push("a person approves each");
   if (token.scope === "render") {
     if (unit === "credits") {
       const spent = token.spendThisMonth;
@@ -214,7 +223,8 @@ export function parseTokens(value: unknown): { unit: TokenUnit; tokens: ApiToken
     const r = t as Record<string, unknown>;
     if (typeof r.id !== "string" || typeof r.name !== "string") return null;
     out.push({
-      id: r.id, name: r.name, scope: r.scope === "read" ? "read" : "render",
+      /* Only the word itself reads as spending: an unknown scope is shown as read-only. */
+      id: r.id, name: r.name, scope: r.scope === "render" ? "render" : r.scope === "prepare" ? "prepare" : "read",
       lastUsed: num(r.lastUsed), createdAt: num(r.createdAt) ?? 0,
       spendThisMonth: num(r.spendThisMonth) ?? 0,
       capCredits: num(r.capCredits), legacyCeiling: r.legacyCeiling === true,
@@ -240,7 +250,7 @@ export function readCeiling(raw: string, unit: TokenUnit): { value: number | nul
 }
 
 /** The body a POST /api/tokens sends: the ceiling in the workspace's unit, and none on a read-only token. */
-export function tokenBody(name: string, scope: "read" | "render", unit: TokenUnit, ceiling: number | null) {
-  if (scope === "read" || ceiling == null) return { name, scope };
+export function tokenBody(name: string, scope: "read" | "render" | "prepare", unit: TokenUnit, ceiling: number | null) {
+  if (scope !== "render" || ceiling == null) return { name, scope };
   return unit === "credits" ? { name, scope, capCredits: ceiling } : { name, scope, capUsd: ceiling };
 }

@@ -1,15 +1,51 @@
 name: Verify Particl
 on:
   pull_request:
-    branches: [main]
+    branches: [main, release/1]
   push:
-    branches: [main]
+    branches: [main, release/1]
 permissions:
   contents: read
 concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push to a pull request replaces its older run. A run on main or release/1 (the whole suite after a merge) is never
+  # cancelled by the next merge: its result is what says whether the last merge was safe (docs/ci.md).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  # What this run runs (scripts/ci-select.mjs, docs/ci.md): the whole browser suite after a merge and for any PR that touches
+  # money, sign-in, tenant separation or shared code; a slimmer set for a PR into release/1 that only touches new-interface
+  # files; no browser specs for documentation. The unit shards and core below run every time.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      mode: ${{ steps.select.outputs.mode }}
+      runs: ${{ steps.select.outputs.runs }}
+      five_minute: ${{ steps.select.outputs.five_minute }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Choose the browser specs
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.ref || github.ref_name }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          : > changed.txt
+          if [ "$EVENT" = pull_request ]; then
+            # If the list cannot be read, it stays empty and the plan is the whole suite.
+            gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)' > changed.txt \
+              || { echo "::warning::The changed files could not be listed: running the whole suite."; : > changed.txt; }
+          fi
+          node scripts/ci-select.mjs "$EVENT" "$BASE" < changed.txt > plan.json
+          cat plan.json
   unit:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -59,6 +95,8 @@ jobs:
       - name: Verify production bundle privacy
         run: npm run test:unit -- tests/unit/bundle.spec.ts
   browser-shards:
+    needs: plan
+    if: needs.plan.outputs.mode == 'full'
     strategy:
       fail-fast: false
       matrix:
@@ -121,6 +159,11 @@ jobs:
     timeout-minutes: 120
     env:
       ENGINE_MOCK: '1'
+      # Lets a mocked text or transcript reply be slowed by a marker in what a
+      # spec sends (lib/mock.ts mockDelayMs), so a paid run outlasts the 25 s
+      # early answer (tests/r1-paid-answer-pending-workbench.spec.ts). Only
+      # with ENGINE_MOCK=1, never in a production build.
+      PARTICL_TEST_MOCK_DELAYS: '1'
       APP_ORIGIN: http://localhost:4551
       PW_BASE_URL: http://localhost:4551
       PLATFORM_DATABASE_URL: file:.data/browser-platform.db
@@ -247,18 +290,125 @@ jobs:
             ci-results/
             dev-ci-*.log
           retention-days: 7
+  # The slimmer per-PR set (mode slim): the spec files this PR touches and the fixed guard set, each on a fresh dev server, in
+  # chunks (scripts/ci-run-specs.sh). Same environment as the full job above.
+  browser-slim:
+    needs: plan
+    if: needs.plan.outputs.mode == 'slim'
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [workbench, customer]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      ENGINE_MOCK: '1'
+      PARTICL_TEST_MOCK_DELAYS: '1'
+      APP_ORIGIN: http://localhost:4551
+      PW_BASE_URL: http://localhost:4551
+      PLATFORM_DATABASE_URL: file:.data/browser-platform.db
+      PW_PLATFORM_DATABASE_URL: file:.data/browser-platform.db
+      TURSO_DATABASE_URL: file:.data/browser-legacy.db
+      SUPER_ADMIN_EMAIL: platform-owner@example.test
+      CI_DEV_SOURCE_MAPS: 'off'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: This pull request's specs and the guard set
+        env:
+          SUITE: ${{ matrix.suite }}
+          RUNS: ${{ needs.plan.outputs.runs }}
+        run: |
+          echo "$RUNS" | jq -r --arg s "$SUITE" '.[] | select(.suite == $s) | "[plan] \(.name): \(.specs | join(" "))"'
+          failed=0
+          while IFS= read -r run; do
+            name=$(jq -r .name <<<"$run")
+            pattern=$(jq -r '.grep // "-"' <<<"$run")
+            mapfile -t specs < <(jq -r '.specs[]' <<<"$run")
+            echo "::group::$name"
+            scripts/ci-run-specs.sh "$SUITE" "$pattern" "${specs[@]}" || failed=1
+            echo "::endgroup::"
+          done < <(echo "$RUNS" | jq -c --arg s "$SUITE" '.[] | select(.suite == $s)')
+          exit $failed
+      - uses: actions/upload-artifact@v7
+        if: failure() || cancelled()
+        with:
+          name: browser-slim-failure-${{ matrix.suite }}
+          path: |
+            ci-results/
+            dev-ci-*.log
+          retention-days: 7
+  # The five-minute test (rule 17): a new person with an invitation reaches an approved first render, mocked, on a laptop and
+  # on a phone. In every mode but documentation-only. Reported by the browser gate, not required yet (docs/ci.md).
+  five-minute:
+    needs: plan
+    if: needs.plan.outputs.five_minute == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ENGINE_MOCK: '1'
+      PARTICL_TEST_MOCK_DELAYS: '1'
+      APP_ORIGIN: http://localhost:4551
+      PW_BASE_URL: http://localhost:4551
+      PLATFORM_DATABASE_URL: file:.data/browser-platform.db
+      PW_PLATFORM_DATABASE_URL: file:.data/browser-platform.db
+      TURSO_DATABASE_URL: file:.data/browser-legacy.db
+      SUPER_ADMIN_EMAIL: platform-owner@example.test
+      CI_DEV_SOURCE_MAPS: 'off'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Five-minute test
+        run: scripts/ci-run-specs.sh five-minute
+      - uses: actions/upload-artifact@v7
+        if: failure() || cancelled()
+        with:
+          name: five-minute-failure
+          path: |
+            ci-results/
+            dev-ci-*.log
+          retention-days: 7
   # Keep the existing required-check names. A failed or cancelled shard must
   # fail these gates instead of allowing a partial browser run to pass.
   browser:
     if: always()
-    needs: browser-shards
+    needs: [plan, browser-shards, browser-slim, five-minute]
     strategy:
       fail-fast: false
       matrix:
         suite: [workbench, customer]
     runs-on: ubuntu-latest
     steps:
-      - name: Require every browser shard
+      - name: Require the browser jobs this run's plan called for
         env:
-          SHARD_RESULT: ${{ needs.browser-shards.result }}
-        run: test "$SHARD_RESULT" = success
+          MODE: ${{ needs.plan.outputs.mode }}
+          SHARDS: ${{ needs.browser-shards.result }}
+          SLIM: ${{ needs.browser-slim.result }}
+          FIVE: ${{ needs.five-minute.result }}
+        run: |
+          echo "plan: $MODE; full shards: $SHARDS; slim: $SLIM"
+          # The five-minute test runs in every mode but docs and is reported here, but it is not required yet: it has never run in
+          # CI, so a slow or flaky first runs must not block every PR. It becomes required after 3 consecutive green runs on release/1
+          # (docs/ci.md).
+          echo "five-minute (reported, not required yet): $FIVE"
+          [ "$FIVE" = success ] || echo "::warning::The five-minute test result was $FIVE."
+          case "$MODE" in
+            # The whole suite: every shard passed.
+            full) test "$SHARDS" = success ;;
+            # The slim set: it passed, and the full shards were not asked for.
+            slim) test "$SLIM" = success && test "$SHARDS" = skipped ;;
+            # Documentation only: nothing was asked for, so nothing ran.
+            docs) test "$SHARDS" = skipped && test "$SLIM" = skipped ;;
+            # No plan (the plan job failed): fail, never pass on nothing.
+            *) echo "::error::No plan was made for this run."; exit 1 ;;
+          esac

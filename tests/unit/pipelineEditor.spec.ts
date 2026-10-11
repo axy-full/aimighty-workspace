@@ -3,13 +3,15 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { MODELS } from "../../lib/models";
+import { holdBandOf } from "../../lib/cinemaHold";
+import { CINEMA_STUDIO_MODEL_ID } from "../../lib/cinemaStudioTypes";
 import {
   buildPipelineSpec,
   effectivePipelineDraft,
   emptyPipelineDraft,
   pipelineMovieProject,
   type PipelineCatalog,
-} from "../../lib/pipeline/editor";
+} from "../helpers/pipelineEditor";
 import { compilePipeline } from "../../lib/pipeline/compile";
 import * as schema from "../../lib/pipeline/schema";
 import * as publicView from "../../lib/pipeline/public";
@@ -38,7 +40,7 @@ const catalog: PipelineCatalog = {
     music: "music-model",
   },
 };
-function service() {
+function service(store: Record<string, unknown> = {}) {
   const dependencies = {
     "../models": { MODELS },
     "../generationAdmission": {},
@@ -50,7 +52,7 @@ function service() {
     },
     "./schema": schema,
     "./public": publicView,
-    "./store": {},
+    "./store": store,
   };
   const compiled = ts.transpileModule(
     readFileSync(path.resolve("lib/pipeline/service.ts"), "utf8"),
@@ -267,4 +269,108 @@ test("movie handoff preserves selected IDs, frame timing, trim and soundtrack th
       },
     ),
   ).toThrow(/identity/);
+});
+
+test("a pipeline stage is never offered a held model (Cinema Studio); every other stage model still is", () => {
+  const offered = service()
+    .pipelineStageModels()
+    .map((m) => m.id);
+  /* Cinema Studio passes every other test a stage model must; only its hold keeps it out. */
+  expect(catalog.models.map((m) => m.id)).toContain(CINEMA_STUDIO_MODEL_ID);
+  expect(offered).not.toContain(CINEMA_STUDIO_MODEL_ID);
+  expect(offered.every((id) => holdBandOf(id) === 1)).toBe(true);
+  expect(offered).toEqual(
+    catalog.models
+      .filter((m) => ["image", "video"].includes(m.kind) && holdBandOf(m.id) === 1)
+      .map((m) => m.id),
+  );
+  expect(offered.length).toBeGreaterThan(1);
+});
+
+test("quoting a stage on a held model is refused before anything is prepared; other models quote", async () => {
+  const calls: string[] = [];
+  const definition = (model: string) => ({
+    id: "motion",
+    label: "Motion",
+    kind: "video",
+    model,
+    prompt: { source: "brief" },
+    inputs: [],
+    ratio: "16:9",
+    resolution: "720p",
+    seed: null,
+    units: 1,
+    duration: 5,
+    generateAudio: false,
+  });
+  const run = (model: string) => ({
+    revision: 4,
+    attempts: [],
+    compiled: {
+      spec: { context: { projectId: "production" } },
+      stages: [{ definition: definition(model), inputs: [], prompt: "Dawn" }],
+    },
+  });
+  let model = CINEMA_STUDIO_MODEL_ID;
+  const api = service({
+    stageOf: (r: ReturnType<typeof run>) => r.compiled.stages[0],
+    latestAttempt: () => undefined,
+  });
+  const store = {
+    getRun: async () => run(model),
+    stageInputs: async () => {
+      calls.push("inputs");
+      return { references: [], inputHash: "bound" };
+    },
+    quoteStage: async () => {
+      calls.push("quote");
+      return { id: "quote" };
+    },
+  };
+  const prepare = async () => {
+    calls.push("prepare");
+    return {
+      ok: false as const,
+      status: 409,
+      body: { error: "not reached" },
+    };
+  };
+  const actor = { user: { id: "account" } } as Parameters<
+    typeof api.quotePipelineStage
+  >[1];
+  await expect(
+    api.quotePipelineStage(
+      store as unknown as Parameters<typeof api.quotePipelineStage>[0],
+      actor,
+      "run",
+      4,
+      "motion",
+      undefined,
+      { image: prepare, audio: prepare },
+    ),
+  ).rejects.toMatchObject({
+    status: 409,
+    message: "Cinema Studio runs from Make, where its full price is shown.",
+  });
+  expect(calls).toEqual([]);
+  model = service()
+    .pipelineStageModels()
+    .find(
+      (m) =>
+        m.kind === "video" &&
+        m.resolutions.includes("720p") &&
+        m.durations.includes(5),
+    )!.id;
+  await expect(
+    api.quotePipelineStage(
+      store as unknown as Parameters<typeof api.quotePipelineStage>[0],
+      actor,
+      "run",
+      4,
+      "motion",
+      undefined,
+      { image: prepare, audio: prepare },
+    ),
+  ).rejects.toThrow(/not reached/);
+  expect(calls).toEqual(["inputs", "prepare"]);
 });

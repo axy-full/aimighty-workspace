@@ -1,12 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { CONNECTED_REACH, parseReach, reachFromTools, type ConnectedReachId } from "../../lib/higgsfield-consumer/reach";
-import { GENERATION_TOOLS } from "../../lib/higgsfield-consumer/generation-contract";
-import { STATUS_TOOLS } from "../../lib/higgsfield-consumer/toolset";
-import { MARKETING_TEMPLATE_TOOLS } from "../../lib/higgsfield-consumer/marketing-templates";
-import { VOICE_TOOLS } from "../../lib/higgsfield-consumer/voice-tools";
 import { TOOLS } from "../../lib/mcp";
 import { shellPage } from "../../lib/shell/ia";
+import { isStageId } from "../../lib/shell/stage-redirects";
 import {
   CLIENTS, DEFAULT_CEILING, MCP_TOOL_LINES, PARTICL_REACH, STATUS_LABEL, ceilingShare, mcpTools, parseTokens, reachRows,
   readCeiling, setupGuide, tokenBody, tokenFacts, type ApiToken, type ReachOpen,
@@ -16,41 +12,13 @@ import {
  * Atomik › Tools & connections (idea 20). Every row is backed by code that
  * runs and opens the page where it runs; since 28 September 2026 every row is
  * Particl's own (Atomik reaches no signed-in account); the assistant side is
- * Particl's own MCP server and tokens, in the workspace's unit. The connected
- * account's reach check (lib/higgsfield-consumer/reach.ts) is still read by
- * its own route, so its contract stays tested here.
+ * Particl's own MCP server and tokens, in the workspace's unit.
  */
-const fixture = (file: string) => (JSON.parse(readFileSync(`tests/fixtures/${file}`, "utf8")) as { tools: { name: string }[] }).tools.map((t) => t.name);
-const need = (id: ConnectedReachId) => CONNECTED_REACH.find((row) => row.id === id)!.needs.map((group) => [...group]);
-const voice = (name: string) => VOICE_TOOLS.find((tool) => tool.name === name)!;
-
-test("every connected row names the tools Particl's own code calls for it", () => {
-  const mcp = readFileSync("lib/higgsfield-consumer/mcp.ts", "utf8");
-  const status = [...STATUS_TOOLS];
-  expect(need("image")).toEqual([[GENERATION_TOOLS.image]]);
-  expect(need("video")).toEqual([[GENERATION_TOOLS.video]]);
-  expect(need("audio")).toEqual([[GENERATION_TOOLS.audio]]);
-  expect(need("motion")).toEqual([[GENERATION_TOOLS.video]]);
-  expect(need("follow")).toEqual([status]);
-  expect(need("voice")).toEqual([[voice("voice_change").create], status]);
-  expect(need("dub")).toEqual([[voice("dubbing").create], status]);
-  expect(need("reframe")).toEqual([[voice("reframe").create], status]);
-  expect(need("analysis")).toEqual([[voice("video_analysis").create], [voice("video_analysis").status]]);
-  expect(need("templates")).toEqual([[MARKETING_TEMPLATE_TOOLS.presets], [MARKETING_TEMPLATE_TOOLS.costs], [MARKETING_TEMPLATE_TOOLS.create], [MARKETING_TEMPLATE_TOOLS.status]]);
-  expect(mcp).toContain('const CHARACTERS_TOOL = "show_characters"');
-  expect(mcp).toContain('const ELEMENTS_TOOL = "show_reference_elements"');
-  expect(need("characters")).toEqual([["show_characters"], ["media_import_url"]]);
-  expect(need("elements")).toEqual([["show_reference_elements"], ["media_import_url"]]);
-  expect(mcp).toContain('name: "models_explore"');
-  expect(mcp).toContain('name:"media_import_url"');
-  expect(need("models")).toEqual([["models_explore"]]);
-  expect(need("files")).toEqual([["media_import_url"]]);
-  expect(new Set(CONNECTED_REACH.map((row) => row.id)).size).toBe(CONNECTED_REACH.length);
-});
-
 test("every row is Particl's own and opens a Suites page that exists; none reaches a signed-in account", () => {
   const exists = (open: ReachOpen) => {
     if ("gen" in open || "tab" in open) return true;
+    /* A Studio stage id opens the board's region for it (the stage pages are deleted). */
+    if (open.suite === "studio" && isStageId(open.page)) return true;
     const page = shellPage(open.suite, open.page);
     return Boolean(page && !page.phoneOnly);
   };
@@ -61,42 +29,6 @@ test("every row is Particl's own and opens a Suites page that exists; none reach
   expect(PARTICL_REACH.find((row) => row.id === "thinking")?.open).toMatchObject({ suite: "atomik", page: "models" });
   expect(STATUS_LABEL["built-in"]).toBe("Built in");
   for (const row of rows) expect(`${row.label} ${row.line}`, row.id).not.toMatch(/connected account|higgsfield|supercomputer|catalogue/i);
-});
-
-test("the live check reads the account's own tools: our client, another client, and a platform switch", () => {
-  const ours = reachFromTools(fixture("connected-tools-98.json"));
-  expect(ours.every((row) => row.available)).toBe(true);
-  const other = reachFromTools(fixture("connected-tools-91.json"));
-  /* The other client advertises no job_status and no marketing_studio_v2_*: follow-ups still run on jobs_wait/job_display. */
-  expect(other.filter((row) => !row.available).map((row) => row.id)).toEqual(["templates"]);
-  const off = reachFromTools(fixture("connected-tools-98.json"), { off: ["analysis"] });
-  expect(off.find((row) => row.id === "analysis")).toEqual({ id: "analysis", available: false, off: true });
-  expect(reachFromTools([]).every((row) => !row.available)).toBe(true);
-  /* Only ids and flags: nothing from the account's catalogue rides along. */
-  for (const row of off) expect(Object.keys(row).sort()).toEqual(row.off ? ["available", "id", "off"] : ["available", "id"]);
-});
-
-test("the reach check reads the same video-analysis switch as the voice tools, without loading that paid service", async () => {
-  expect(readFileSync("lib/higgsfield-consumer/voice-tool-service.ts", "utf8")).toContain('VIDEO_ANALYSIS_ENABLED = process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED === "1"');
-  const { analysisSwitchedOn } = await import("../../lib/higgsfield-consumer/discovery");
-  const before = process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED;
-  try {
-    delete process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED;
-    expect(analysisSwitchedOn()).toBe(false);
-    process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED = "1";
-    expect(analysisSwitchedOn()).toBe(true);
-  } finally {
-    if (before === undefined) delete process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED; else process.env.HF_CONSUMER_VIDEO_ANALYSIS_ENABLED = before;
-  }
-  const route = readFileSync("app/api/higgsfield/consumer/capabilities/route.ts", "utf8");
-  expect(route).not.toContain("voice-tool-service");
-});
-
-test("a reach reply is read defensively", () => {
-  const full = reachFromTools(fixture("connected-tools-91.json"));
-  expect(parseReach(full)).toEqual(full);
-  for (const bad of [null, {}, [{ id: "websites", available: true }], [{ id: "image", available: "yes" }], [{ id: "image", available: true }, { id: "image", available: false }], [{ id: "image", available: false, off: false }], [...full, full[0]]])
-    expect(parseReach(bad), JSON.stringify(bad).slice(0, 60)).toBeNull();
 });
 
 test("Particl's own MCP tools are all described, and the writing ones need a token that can generate", () => {
@@ -157,11 +89,6 @@ test("tokens read in the workspace's unit: credits never show a dollar, a blank 
   expect(tokenBody("Reader", "read", "credits", 500)).toEqual({ name: "Reader", scope: "read" });
 });
 
-test("the page lists no skill packs for a signed-in account and no connected-account card", () => {
-  const view = readFileSync("components/graphite/atomik/ToolsView.tsx", "utf8");
-  expect(view).not.toContain("SKILL_PACKS");
-  expect(view).not.toContain('data-testid="skill-row"');
-  expect(view).not.toContain('data-testid="reach-connected"');
-  expect(view).not.toMatch(/higgsfield-ai\/skills|connected account/i);
+test("the Tools page is still a shell page (Settings' Connections and Advanced carry what it listed)", () => {
   expect(shellPage("atomik", "skills")).toMatchObject({ label: "Tools", title: "Tools & connections", own: true });
 });

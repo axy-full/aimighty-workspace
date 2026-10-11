@@ -164,6 +164,8 @@ test("full encrypted WAL snapshot restores private drafts, mappings, ledger, cla
   assert.deepEqual(await restoreBackup(bundle, restored, { env: f.env }), {
     databases: 2,
     media: 2,
+    mediaKind: "local",
+    mediaByStore: { local: 2 },
     sealedValues: 2,
     verified: true,
   });

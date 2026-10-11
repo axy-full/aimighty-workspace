@@ -1,3 +1,4 @@
+import { maskStoredActor } from "./platformOwnerPrivacy";
 import { createHash } from "node:crypto";
 import type { Transaction } from "@libsql/client";
 import { db, ready, now, id } from "./db";
@@ -113,7 +114,7 @@ function eventFrom(row: Record<string, unknown>): LockEvent {
   return {
     id: String(row.id),
     action: String(row.action) === "unlock" ? "unlock" : "lock",
-    byName: String(row.by_name ?? ""),
+    byName: String(maskStoredActor(String(row.by_name ?? ""))),
     agent: row.agent != null && String(row.agent) !== "",
     reason: String(row.reason ?? ""),
     at: Number(row.at),
@@ -225,7 +226,7 @@ export async function lockMaster(input: { elementId?: string | null; canvas?: { 
   if (existing?.locked) {
     /* Locked already (from the element page, or another window): the card says so, and nothing else changes. */
     const last = (await db().execute({ sql: "SELECT by_name, agent, at FROM element_lock_events WHERE element_id=? AND action='lock' ORDER BY at DESC, rowid DESC LIMIT 1", args: [existing.id] })).rows[0];
-    const lockedBy = last ? (last.agent ? (last.by_name ? `Atomik for ${String(last.by_name)}` : "Atomik") : String(last.by_name ?? "")) : "";
+    const lockedBy = last ? (last.agent ? (last.by_name ? `Atomik for ${maskStoredActor(String(last.by_name))}` : "Atomik") : String(maskStoredActor(String(last.by_name ?? "")))) : "";
     const record = masterRecord({ at: Number(last?.at ?? existing.lockedAt ?? now()), by: lockedBy, elementId: existing.id, versionId: primaryVersion(existing)?.id ?? null, sha256: null });
     const result = await workbenchTransaction((tx) => markCards(tx, productionId, existing.id, record, authorOf(by), nodeId));
     return { element: existing, event: null, unchanged: true, node: result?.canvas.nodes[nodeId] ?? node, revision: result?.revision ?? saved.revision, sha256: null };

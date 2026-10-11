@@ -4,6 +4,8 @@ import {
   pipelineHash,
   type PublishedPipelineContext,
 } from "../../lib/pipeline/compile";
+import { PipelineError } from "../../lib/pipeline/schema";
+import { CINEMA_STUDIO_MODEL_ID } from "../../lib/cinemaStudioTypes";
 
 export const publication: PublishedPipelineContext = {
   projectId: "production",
@@ -251,4 +253,30 @@ test("bounded units, prompt size, and actual assembly duration are enforced", ()
     clips: [{ stageId: "motion", durationFrames: 5400 }],
   } as (typeof base.stages)[4];
   expect(() => compilePipeline(base, publication)).toThrow(/three minutes/);
+});
+
+test("a stage on a held model (Cinema Studio) is refused at save; every other model compiles", () => {
+  const held = spec();
+  held.stages[2] = {
+    ...held.stages[2],
+    model: CINEMA_STUDIO_MODEL_ID,
+  } as (typeof held.stages)[2];
+  let refusal: unknown;
+  try {
+    compilePipeline(held, publication);
+  } catch (error) {
+    refusal = error;
+  }
+  expect(refusal).toBeInstanceOf(PipelineError);
+  expect((refusal as PipelineError).status).toBe(409);
+  expect((refusal as PipelineError).message).toBe(
+    "Cinema Studio runs from Make, where its full price is shown.",
+  );
+  const image = spec();
+  image.stages[0] = {
+    ...image.stages[0],
+    model: CINEMA_STUDIO_MODEL_ID,
+  } as (typeof image.stages)[0];
+  expect(() => compilePipeline(image, publication)).toThrow(/runs from Make/);
+  expect(compilePipeline(spec(), publication).stages).toHaveLength(5);
 });

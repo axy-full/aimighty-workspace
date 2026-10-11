@@ -1,25 +1,29 @@
-import { acceptRecoveryJobTx } from "./recovery";
+import { after } from "next/server";
+import { acceptRecoveryJobTx, movableRecoveryRun } from "./recovery";
+import { detachable } from "./requestAttachment";
 import type { Client, InStatement, Transaction } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import { db, ready, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
 import { platformDb, platformReady } from "./platform";
 import { paidByPlatformEngine, platformSpendRecordsSince } from "./platformSpend";
-import { allowanceUsd } from "./allowance";
+import { allowanceUsd, allowanceUsdOfStored } from "./allowance";
 import { cycleBounds } from "./cycle";
 import { billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
 import { creditsApply } from "./credits";
 import { LEDGER_UNIT_PAUSED, ledgerOpenTx, restateFactor, workspaceUnitTx } from "./ledgerUnit";
 import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
-import { getSetting } from "./settings";
+import { freshSettings } from "./settings";
 import { workspaceLimits } from "./limits";
 import { cleanRule, cleanShotCap } from "./approvalRule";
 import type { MeterEvent } from "./meter";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx, CreditBalanceError } from "./billingLedger";
 import { admitToPoolTx, providerPoolReady, sharedPoolOf } from "./providerPool";
 import { workbenchScopeProblem } from "./workbench/request-scope";
+import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
 import { runLimitVerdict, runTally, toTenths, type RunCharge, type RunSpend } from "./runLimit";
+import { allowanceUsdOf } from "./cinemaHold";
 
 export class SpendReservationError extends Error {
   /** `perJob`: the refusal is about this job alone (its cost, project, shot or token), not the whole workspace. */
@@ -80,8 +84,37 @@ export async function bindGenerationRequest(claim: GenerationRequest, genId: str
   await db().execute(bindGenerationRequestStatement(claim, genId));
 }
 
-/** `atomicBinding`: every job this request can create binds its claim in the same write as the row. */
-export type GenerationRequestOptions = { atomicBinding?: boolean };
+/**
+ * How long a paid request that opts in (`answerAfterMs`) waits for its run
+ * before it answers "still being accepted" and finishes after the reply. Well
+ * under the 100 s a proxy allows a request to stay silent.
+ */
+export const ANSWER_AFTER_MS = 25_000;
+
+/**
+ * `atomicBinding`: every job this request can create binds its claim in the same write as the row.
+ *
+ * `answerAfterMs`: a run still going after this long is answered with the
+ * claim's own "still being accepted" (409, `pending`, Retry-After), the same
+ * answer a replay of a running claim gets, and it goes on after the reply
+ * (Next's after(), reserved as a recovery continuation first, which is the
+ * parent of what the run admits after the reply). It saves its
+ * reply on the claim exactly as it would have, so a replay under the same key
+ * is answered with that reply once it is there, and it never runs twice: one
+ * claim, one run, one reservation and one settlement per key. The run must
+ * take what it needs from the request before it starts (lib/requestAttachment.ts
+ * refuses the session's cookies and headers after the reply). Where no reply
+ * can be deferred (no request scope, the recovery fence closed), the request
+ * waits for its run as before.
+ *
+ * `afterReply`: tests only; Next's after() otherwise.
+ */
+export type GenerationRequestOptions = { atomicBinding?: boolean; answerAfterMs?: number; afterReply?: (work: () => Promise<unknown>) => void };
+
+const STILL_ACCEPTING = "This request is still being accepted. Retry with the same Idempotency-Key; it will not submit another generation.";
+/** The answer for a claim whose run has not finished: not final, so the client keeps the request and asks again. */
+const stillAccepting = (headers: Record<string, string> = {}) =>
+  Response.json({ error: STILL_ACCEPTING, pending: true }, { status: 409, headers: { ...headers, "Retry-After": "2" } });
 
 const UNADMITTED = "The request was interrupted before a job was created. Nothing was charged; try again.";
 /** Longer than any function may run (800 s), so the request that made a claim this old is gone. */
@@ -173,26 +206,59 @@ export async function withGenerationRequestData(
         return settled;
       }
     }
-    return Response.json({ error: "This request is still being accepted. Retry with the same Idempotency-Key; it will not submit another generation.", pending: true }, { status: 409, headers: { ...headers, "Retry-After": "2" } });
+    return stillAccepting(headers);
   }
   const claim = { userId, key };
-  try {
-    const response = await run(claim);
-    const json = await response.clone().text();
-    await db().execute({ sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=? WHERE user_id=? AND request_key=?`, args: [json, response.status, now(), userId, key] });
-    response.headers.set("Idempotency-Status", "complete");
-    return response;
-  } catch (error) {
-    /* Paused for a price change (lib/ledgerUnit.ts): nothing was reserved or sent, and the person is told so. */
-    if ((error as Error)?.message === LEDGER_UNIT_PAUSED) return Response.json({ error: LEDGER_UNIT_PAUSED }, { status: 503 });
-    // Keep the durable claim: a provider might have accepted an interrupted request.
-    console.error("Generation request interrupted:", (error as Error).message);
-    if (options.atomicBinding) {
-      const settled = await completeUnadmitted(userId, key).catch(() => null);
-      if (settled) return settled;
+  const settle = async (): Promise<Response> => {
+    try {
+      const response = await run(claim);
+      const json = await response.clone().text();
+      await db().execute({ sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=? WHERE user_id=? AND request_key=?`, args: [json, response.status, now(), userId, key] });
+      response.headers.set("Idempotency-Status", "complete");
+      return response;
+    } catch (error) {
+      /* Paused for a price change (lib/ledgerUnit.ts): nothing was reserved or sent, and the person is told so. */
+      if ((error as Error)?.message === LEDGER_UNIT_PAUSED) return Response.json({ error: LEDGER_UNIT_PAUSED }, { status: 503 });
+      // Keep the durable claim: a provider might have accepted an interrupted request.
+      console.error("Generation request interrupted:", (error as Error)?.message);
+      if (options.atomicBinding) {
+        const settled = await completeUnadmitted(userId, key).catch(() => null);
+        if (settled) return settled;
+      }
+      return Response.json({ error: "The request was interrupted. Retry with the same Idempotency-Key to recover its job; it will not be submitted twice." }, { status: 503 });
     }
-    return Response.json({ error: "The request was interrupted. Retry with the same Idempotency-Key to recover its job; it will not be submitted twice." }, { status: 503 });
-  }
+  };
+  if (!options.answerAfterMs) return settle();
+  return answerByDeadline(settle, options.answerAfterMs, options.afterReply ?? after);
+}
+
+/**
+ * The claim's run, answered by `ms` (GenerationRequestOptions.answerAfterMs):
+ * its own reply when it finishes in time, otherwise "still being accepted"
+ * with the run handed to after(). The run was started once, here, and only
+ * ever awaited after that: deferring it never starts it again.
+ */
+async function answerByDeadline(settle: () => Promise<Response>, ms: number, afterReply: (work: () => Promise<unknown>) => void): Promise<Response> {
+  /* Its own recovery parent, so its later admissions can hang off the continuation once the request is over. */
+  let moving!: ReturnType<typeof movableRecoveryRun<Response>>;
+  const run = detachable(() => { moving = movableRecoveryRun(settle); return moving.result; });
+  const ended: { response?: Response } = {};
+  void run.result.then((response) => { ended.response = response; }, () => {});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), ms); });
+  const first = await Promise.race([run.result, deadline]).finally(() => clearTimeout(timer));
+  if (first) return first;
+  /* after() first: outside a request it throws, and nothing is then reserved for a continuation that would never run. */
+  let continuation: (() => Promise<unknown>) | null = null;
+  try { afterReply(async () => { await continuation?.(); }); } catch { return run.result; }
+  /* Reserved before the reply, under the still-open request, so a deploy that drains sees the run until it ends and
+     admits what the run does after the reply (its parent from then on). Refused (the fence is closed): the request waits for it. */
+  try { continuation = await moving.reserveContinuation("paid-request"); } catch { return run.result; }
+  /* It finished while the continuation was reserved: its own reply, as if in time. */
+  if (ended.response) return ended.response;
+  /* From here the request is answered: nothing in the run may read its cookies or headers. */
+  run.detach();
+  return stillAccepting();
 }
 
 /**
@@ -348,6 +414,14 @@ type ReservationOptions = {
    * on the reservation, so every paid action of the run carries its id.
    */
   run?: RunSpend;
+  /**
+   * The take holds its ceiling, not its estimate: its bill at the quote times this band (a Cinema Studio
+   * take, lib/cinemaHold.ts). The hold is what the balance must cover, what is reserved, and it is recorded
+   * on the meter row (`hold_band`), so the take settles at its actual cost and never past the hold, and at
+   * its quote when it has no figure (lib/meter.ts). Being the take's worst case already, a run counts it
+   * once, at band 1.
+   */
+  holdBand?: number;
 };
 export async function reserveGenerationSpend(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   // Local libsql clients share a connection; never interleave transactions on it.
@@ -363,20 +437,27 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const cost = Number(event.engineCostUsd);
   if (!Number.isFinite(cost) || cost < 0) throw new SpendReservationError("This job has no valid cost estimate.", 400, true);
   const paid = paidByPlatformEngine(event.engine);
+  const holdBand = Number.isInteger(options.holdBand) && options.holdBand! > 1 ? options.holdBand! : 1;
   await ready();
+  /* The sample workspace spends nothing, for anyone, filed or not, save the one run its mark is lifted for (lib/demo/spend-guard.server.ts). */
+  const sample = await sampleWorkspaceRefusal({ runId: options.run?.id });
+  if (sample) throw new SpendReservationError(sample, 409, true);
   await reservationsReady();
   /* A still or video on the platform's shared provider key also takes a slot of its pool, in this same write. */
   const pool = sharedPoolOf(event);
   if (pool) await providerPoolReady();
-  const cap = projectId ? await projectCap(projectId) : null;
+  /* The caps and rules below as the database holds them now, never the 10 s memo: a cap an admin lowered, or a
+     per-shot cap switched on, on another server process a moment ago applies to this reservation. */
+  const settings = projectId || event.shotId ? await freshSettings() : null;
+  const cap = projectId ? await projectCap(projectId, settings!) : null;
   // Retain a pre-migration spending ceiling until the owner sets a credit cap.
   // Its private unit never appears in the refusal sent to customers.
   const legacyCap = projectId ? (await db().execute({ sql: "SELECT cap_usd,cap_credits,cap_unlocked FROM projects WHERE id=?", args: [projectId] })).rows[0] : null;
   const limits = await workspaceLimits();
   const shotCapExempt = options.shotCapExempt ?? currentTenant()?.user?.role === "admin";
-  const shotCap = event.shotId && !shotCapExempt && cleanRule(await getSetting("approvalRule")) === "cap"
-    ? cleanShotCap(await getSetting("shotCapCredits")) : null;
-  const ruleRaw = cap ? await getSetting("atCap") : null;
+  const shotCap = event.shotId && !shotCapExempt && cleanRule(settings!.approvalRule) === "cap"
+    ? cleanShotCap(settings!.shotCapCredits) : null;
+  const ruleRaw = cap ? settings!.atCap : null;
   const rule: CapRule = ruleRaw === "stop" || ruleRaw === "warn" ? ruleRaw : "producer";
   const monthlyCap = paid ? allowanceUsd() : null;
   const since = cycleBounds(1, now()).start;
@@ -395,12 +476,16 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   if (stopped) throw new SpendReservationError(stopped, 409, true);
   await billingTransaction(async (tx, ts) => {
     await acceptRecoveryJobTx(tx, ws.id, event.id, event.kind);
-    const standing = await tx.execute({ sql: `SELECT deleted_at,suspended_at FROM workspaces WHERE id=?`, args: [ws.id] });
+    const standing = await tx.execute({ sql: `SELECT deleted_at,suspended_at,allowance_usd FROM workspaces WHERE id=?`, args: [ws.id] });
     // Old internal/mock records may predate the workspace registry; a known deleted/suspended workspace never spends from a stale request scope.
     if (standing.rows[0]?.deleted_at != null) throw new SpendReservationError("This workspace has been deleted.", 410);
     if (standing.rows[0]?.suspended_at != null) throw new SpendReservationError("This workspace is suspended.", 403);
+    /* The monthly cap as it stands at this write, not as the request found it: a cap lowered on /admin while this
+       request was on its way applies to it. A cap that appeared since (none when the request began) counts the meter's
+       rows only; the pre-meter product records it would add hold nothing from this month. */
+    const capNow = !paid ? null : standing.rows[0] ? allowanceUsdOfStored(standing.rows[0].allowance_usd) : monthlyCap;
     await syncBillingLedger(tx, ws.id, ts);
-    const own = await tx.execute({ sql: `SELECT workspace_id,status,paid_by_platform,engine,kind,model,credit_usd,credit_margin FROM meter_events WHERE id=?`, args: [event.id] });
+    const own = await tx.execute({ sql: `SELECT workspace_id,status,paid_by_platform,engine,kind,model,credit_usd,credit_margin,hold_band FROM meter_events WHERE id=?`, args: [event.id] });
     if (own.rows[0] && own.rows[0].workspace_id !== ws.id) throw new SpendReservationError("This job belongs to another workspace.", 409, true);
     if (own.rows[0] && own.rows[0].status !== "running") throw new SpendReservationError("This job has already completed.", 409, true);
     const prior = own.rows[0];
@@ -421,7 +506,16 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     const charge = (usd: number) => creditsAtTerms(usd, terms) * restate;
     const billed = paid ? charge(cost) : 0;
     const existing = await tx.execute({ sql: `SELECT m.*, r.token_id AS reservation_token FROM meter_events m LEFT JOIN generation_reservations r ON r.id=m.id WHERE m.workspace_id=? AND m.id<>?`, args: [ws.id, event.id] });
-    try { await setCreditDebitTx(tx, ws.id, event.id, billed, ts); }
+    /* What this job reserves, and the balance must cover: its bill, or for a take held at its ceiling, the
+       bill times its band (Cinema Studio's "at most 3N cr"). Short of it, nothing is reserved (402). */
+    /* A running take reserved again keeps the hold it was approved at, asked for or not: a hold only ever stays. */
+    const keptBand = Math.max(holdBand, Number(prior?.hold_band) > 1 ? Number(prior!.hold_band) : 1);
+    const held = billed * keptBand;
+    const heldAtCeiling = paid && keptBand > 1;
+    /* Every cap below reads a take that holds its ceiling at its hold (credits: the hold; dollars: its cost times
+       the band), as the balance does, since that is what it may settle at; any other job at its estimate. */
+    const band = heldAtCeiling ? keptBand : 1;
+    try { await setCreditDebitTx(tx, ws.id, event.id, held, ts); }
     catch (error) { if (error instanceof CreditBalanceError) throw new SpendReservationError(error.message, 402); throw error; }
     const merged = new Map(baseline);
     merged.delete(event.id);
@@ -433,7 +527,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
         tokenId: r.reservation_token == null ? prior?.tokenId ?? null : String(r.reservation_token),
         cost: Math.max(prior?.cost ?? 0, Number(r.engine_cost_usd ?? 0)), credits: Number(r.billed_credits ?? 0), createdAt: Number(r.created_at), status: String(r.status), deleted: prior?.deleted ?? false });
       if (!Number(r.paid_by_platform)) monthly.delete(String(r.id));
-      else if (Number(r.created_at) >= since) monthly.set(String(r.id), Math.max(monthly.get(String(r.id)) ?? 0, Number(r.engine_cost_usd ?? 0)));
+      /* A take still running at its hold counts at its hold, as this one does below (lib/cinemaHold.ts allowanceUsdOf). */
+      else if (Number(r.created_at) >= since) monthly.set(String(r.id), Math.max(monthly.get(String(r.id)) ?? 0, allowanceUsdOf(r)));
     }
     const gone = now() - TRANSCRIPTION_STALE_MS;
     const running = [...merged.values()].filter((r) => !r.deleted && (r.status === "running" || r.status === "queued")
@@ -443,18 +538,18 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     if (running >= limits.concurrency) throw new SpendReservationError("Every job slot is reserved. Wait for an active job to finish, then try again.", 409);
     if (shotCap != null) {
       const shotCredits = [...merged.values()].filter((r) => r.shotId === event.shotId).reduce((sum, r) => sum + r.credits, 0);
-      if (shotCredits + charge(cost) > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
+      if (shotCredits + charge(cost) * band > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
     }
-    if (monthlyCap != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost > monthlyCap + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
+    if (capNow != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost * band > capNow + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
     if (cap) {
       const spent = [...merged.values()].filter((r) => r.projectId === projectId).reduce((sum, r) => sum + (cap.unit === "cr" ? r.credits : r.cost), 0);
-      const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? charge(cost + (baseline.get(event.id)?.cost ?? 0)) : cost + (baseline.get(event.id)?.cost ?? 0),
+      const verdict = capVerdict({ cap: cap.cap, spent, needs: cap.unit === "cr" ? charge(cost + (baseline.get(event.id)?.cost ?? 0)) * band : (cost + (baseline.get(event.id)?.cost ?? 0)) * band,
         rule, unlocked: cap.unlocked, warnPct: 80, unit: cap.unit });
       if (!verdict.allow) throw new SpendReservationError(verdict.error!, 409, true);
     }
     if (legacyCap?.cap_credits == null && legacyCap?.cap_usd != null) {
       const spent = [...merged.values()].filter((r) => r.projectId === projectId).reduce((sum, r) => sum + r.cost, 0);
-      const verdict = capVerdict({ cap: Number(legacyCap.cap_usd), spent, needs: cost + (baseline.get(event.id)?.cost ?? 0), rule,
+      const verdict = capVerdict({ cap: Number(legacyCap.cap_usd), spent, needs: (cost + (baseline.get(event.id)?.cost ?? 0)) * band, rule,
         unlocked: Boolean(legacyCap.cap_unlocked), warnPct: 80, unit: "$" });
       if (!verdict.allow) throw new SpendReservationError("This job exceeds the project's saved spending cap. Ask an admin to review its credit cap.", 409, true);
     }
@@ -465,26 +560,27 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const mine = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since);
       const job = cost + (baseline.get(event.id)?.cost ?? 0);
       const spending = creditsApply(ws)
-        ? (mine.reduce((sum, r) => sum + r.credits, 0) + charge(job)) * creditUsd()
-        : mine.reduce((sum, r) => sum + r.cost, 0) + job;
+        ? (mine.reduce((sum, r) => sum + r.credits, 0) + charge(job) * band) * creditUsd()
+        : mine.reduce((sum, r) => sum + r.cost, 0) + job * band;
       if (spending > options.token.capUsd + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed this token's monthly spending ceiling.", 429, true);
     }
     /* The same wall in credits, reckoned like the production cap above: what the
        token's jobs this month billed or reserved, plus this job at the engine's margin. */
     if (options.token?.capCredits != null) {
       const spent = [...merged.values()].filter((r) => r.tokenId === options.token!.id && r.createdAt >= since).reduce((sum, r) => sum + r.credits, 0);
-      const needs = charge(cost + (baseline.get(event.id)?.cost ?? 0));
+      const needs = charge(cost + (baseline.get(event.id)?.cost ?? 0)) * band;
       if (spent + needs > options.token.capCredits) throw new SpendReservationError(`This job and the reserved jobs would pass this token's ${options.token.capCredits.toLocaleString("en-US")} cr monthly ceiling.`, 429, true);
     }
     /* An Atomik run's approved limit, in whole tenths, under this same write lock: what the run's
        jobs have settled, what its jobs in flight could still settle at, and this job at its worst. */
     if (options.run) {
-      const job = runCredits({ paid, billed, costUsd: cost });
+      const job = runCredits({ paid, billed: held, costUsd: cost });
       const verdict = runLimitVerdict({
         limitTenths: toTenths(options.run.limitCredits),
         tally: runTally(await runCharges(options.run.id, { except: event.id, workspaceId: ws.id, platform: tx })),
         jobTenths: toTenths(job),
-        band: options.run.band,
+        /* A take held at its ceiling reserved its worst case already: counted once, never again at its band. */
+        band: heldAtCeiling ? 1 : options.run.band,
       });
       if (!verdict.ok) throw new SpendReservationError(RUN_LIMIT_REACHED, 409, true);
     }
@@ -494,10 +590,11 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const verdict = await admitToPoolTx(tx, pool, { id: event.id, workspaceId: ws.id, at: ts });
       if (!verdict.admit) throw new ProviderPoolBusyError(pool, verdict.why);
     }
-    await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin)`,
-      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, billed, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin] });
+    /* The hold is recorded on the take's row (`hold_band`): its settlement charges what it cost, never past the hold. */
+    await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin,hold_band)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin),hold_band=COALESCE(excluded.hold_band,meter_events.hold_band)`,
+      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, held, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin, heldAtCeiling ? keptBand : null] });
     await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id,run_id,run_band) VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
-      args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? Math.max(1, Math.round(options.run.band)) : null] });
+      args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? (heldAtCeiling ? 1 : Math.max(1, Math.round(options.run.band))) : null] });
   });
 }

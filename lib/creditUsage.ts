@@ -190,3 +190,26 @@ export async function creditUsage(viewer: LedgerViewer) {
     }),
   };
 }
+
+/**
+ * What each board settled in one month (UTC, as statements count), in credits, for Settings › Credits & billing's
+ * "Per board · this month" (components/v12/settings/CreditsBilling.tsx). Read-only: the platform ledger
+ * (`meter_events`), scoped to this workspace, and this workspace's own project names. Never a vendor cost.
+ */
+export async function creditsByBoard(range: { from: number; to: number }, limit = 20): Promise<{ id: string | null; name: string; n: number; credits: number }[]> {
+  await ready();
+  const ws = requireTenant();
+  const [rows, names] = await Promise.all([
+    platformDb().execute({
+      sql: `SELECT project_id,SUM(status='succeeded' AND kind IN ('video','image','audio')) AS n,SUM(${charge}) AS credits FROM meter_events
+            WHERE workspace_id=? AND created_at>=? AND created_at<? GROUP BY project_id HAVING credits>0 ORDER BY credits DESC LIMIT ?`,
+      args: [ws.id, range.from, range.to, limit],
+    }),
+    db().execute("SELECT id,name FROM projects"),
+  ]);
+  const label = new Map(names.rows.map((r) => [String(r.id), String(r.name)]));
+  return rows.rows.map((r) => {
+    const id = r.project_id == null ? null : String(r.project_id);
+    return { id: id && label.has(id) ? id : null, name: id == null ? "Unfiled" : (label.get(id) ?? "Deleted production"), n: Number(r.n ?? 0), credits: Number(r.credits ?? 0) };
+  });
+}

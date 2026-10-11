@@ -1,0 +1,61 @@
+<!-- Particl · Gaps A frames · written 2026-10-06 -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>/* Offline bundle: React, ReactDOM and Babel load from ./assets/vendor instead of unpkg. */window.__resources = Object.assign({}, window.__resources, { "https://unpkg.com/react@18.3.1/umd/react.production.min.js": "assets/vendor/react.production.min.js", "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js": "assets/vendor/react-dom.production.min.js", "https://unpkg.com/@babel/standalone@7.29.0/babel.min.js": "assets/vendor/babel.min.js" });</script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+html,body{margin:0;background:#000;color:#F5F5F7;-webkit-font-smoothing:antialiased;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Geist,system-ui,sans-serif}
+*{box-sizing:border-box}
+a{color:#6EB4FF;text-decoration:none}a:hover{color:#8FC4FF}
+</style>
+</helmet>
+<div style="padding:28px 32px 56px;display:flex;flex-direction:column;gap:32px;font-size:13px;line-height:1.45">
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-0.02em">Particl · every gap, now · batch A</h1>
+    <p style="margin:0;font-size:13px;color:rgba(235,235,245,0.6)">3D blocking, Transcribe, Line drawings, Cut-out, Crew review, Identity, Edit &amp; Sound — each on the board. Desktop 1440 × 900, phone 390 × 844.</p>
+  </div>
+  <sc-for list="{{ groups }}" as="g" hint-placeholder-count="7">
+    <section style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:baseline;gap:10px;border-bottom:1px solid rgba(255,255,255,0.09);padding-bottom:8px"><strong style="font-size:15px;font-weight:600">{{ g.title }}</strong><span style="font-size:13px;color:rgba(235,235,245,0.6)">{{ g.line }}</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
+        <sc-for list="{{ g.frames }}" as="f" hint-placeholder-count="3">
+          <div id="{{ f.id }}" style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px"><span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;font-weight:600;letter-spacing:0.06em;padding:2px 8px;border-radius:999px;background:rgba(10,132,255,0.14);border:1px solid rgba(10,132,255,0.35);color:#6EB4FF">{{ f.badge }}</span><strong style="font-size:13px;font-weight:600">{{ f.title }}</strong></div>
+            <div style="position:relative;width:{{ f.w }}px;height:{{ f.h }}px;overflow:hidden;border:1px solid rgba(255,255,255,0.12);border-radius:8px;background:#000"><iframe src="{{ f.src }}" title="{{ f.title }}" loading="lazy" style="width:{{ f.fw }}px;height:{{ f.fh }}px;border:0;display:block;transform:scale({{ f.scale }});transform-origin:0 0"></iframe></div>
+            <a href="{{ f.src }}" target="_blank" style="font-size:12px">Open ›</a>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const M = 'Particl%20Suites.dc.html';
+    const D = (badge, title, q) => ({ id: badge.toLowerCase(), badge, title, src: M + q, w: 576, h: 360, fw: 1440, fh: 900, scale: 0.4 });
+    const P = (badge, title, q) => ({ id: badge.toLowerCase(), badge, title, src: M + q, w: 234, h: 506, fw: 390, fh: 844, scale: 0.6 });
+    const groups = [
+      ['1 · 3D blocking', 'A card in Shots; a full-screen overlay; "Use as reference for Shot 3 · free"', [D('A1a', 'The 3D blocking card on the board', '?view=board&gap=blocking'), D('A1b', 'Empty scene', '?view=board&gap=blocking&state=empty'), D('A1c', 'Building: objects, camera, lens, move', '?view=board&gap=blocking&state=building'), D('A1d', 'Saved to Shot 3', '?view=board&gap=blocking&state=saved'), P('A1p', 'Phone · view only', '?device=phone&screen=blocking')]],
+      ['2 · Transcribe', 'On a video or audio card; price before it runs', [D('A2a', 'Ready · Transcribe · N cr', '?view=board&gap=transcribe'), D('A2b', 'Running', '?view=board&gap=transcribe&state=running'), D('A2c', 'Done · transcript, script or captions', '?view=board&gap=transcribe&state=done'), D('A2d', 'Failed · Nothing billed · Retry', '?view=board&gap=transcribe&state=failed')]],
+      ['3 · Line drawings', 'A card action on any frame; the result is a new version on the same card', [D('A3a', 'Ready', '?view=board&gap=lines'), D('A3b', 'Drawing', '?view=board&gap=lines&state=running'), D('A3c', 'v2 · line drawing', '?view=board&gap=lines&state=done')]],
+      ['4 · Cut-out', 'A card action on any still; before / after', [D('A4a', 'Ready', '?view=board&gap=cutout'), D('A4b', 'v2 · after', '?view=board&gap=cutout&state=done'), D('A4c', 'v2 · before', '?view=board&gap=cutout&state=done&compare=before')]],
+      ['5 · Crew review', 'A panel on any board; reject with a reason; a client link', [D('A5a', 'Crew review panel', '?view=board&gap=crew'), D('A5b', 'Reject with a reason', '?view=board&gap=crew&state=reject'), D('A5c', 'Client view · no sign-in', '?view=board&gap=client'), P('A5p', 'Client view · phone', '?device=phone&screen=client')]],
+      ['6 · Identity', 'On the Cast card; consent by a person only', [D('A6a', 'Photos · consent not recorded', '?view=board&gap=identity'), D('A6b', 'Record consent', '?view=board&gap=identity&state=consent'), D('A6c', 'Consent recorded · Train Identity · 54 cr', '?view=board&gap=identity&state=recorded'), D('A6d', 'Training', '?view=board&gap=identity&state=training'), D('A6e', 'Ready', '?view=board&gap=identity&state=ready'), D('A6f', 'Failed · Nothing billed', '?view=board&gap=identity&state=failed'), P('A6p', 'Record consent · phone', '?device=phone&screen=consent')]],
+      ['7 · Edit & Sound', 'The Cut region; timeline, trims, sound, captions, loudness, master', [D('A7a', 'Cut card on the board', '?view=board&gap=edit'), D('A7b', 'Edit & Sound open', '?view=board&gap=edit&state=open'), D('A7c', 'Loudness checked', '?view=board&gap=edit&state=check'), D('A7d', 'Rendering the movie', '?view=board&gap=edit&state=render'), P('A7p', 'Phone · watch and approve', '?device=phone&screen=cut')]]
+    ].map(([title, line, frames]) => ({ title, line, frames }));
+    return { groups };
+  }
+}
+</script>
+</body>
+</html>

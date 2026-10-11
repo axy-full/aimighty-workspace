@@ -1,3 +1,4 @@
+import { maskStoredActor } from "./platformOwnerPrivacy";
 import { db, ready, now, id } from "./db";
 import {
   cleanFailure, isStageState,
@@ -270,7 +271,7 @@ export async function recipeOf(projectId: string): Promise<RecipeGraph | null> {
     const byId = new Map(els.rows.map((e) => [String((e as any).id), e as any]));
     locked = wanted.map((id) => byId.get(id)).filter(Boolean).map((e) => ({
       id: String(e.id), name: String(e.name ?? ""), kind: String(e.kind ?? ""),
-      lockedBy: e.locked_by ?? null, lockedAt: e.locked_at == null ? null : Number(e.locked_at),
+      lockedBy: maskStoredActor(e.locked_by ?? null), lockedAt: e.locked_at == null ? null : Number(e.locked_at),
     }));
   }
 

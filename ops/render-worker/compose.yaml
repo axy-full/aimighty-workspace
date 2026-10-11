@@ -1,0 +1,104 @@
+# Astra render workers: three identical single-slot CPU Blender containers.
+# Each render gets one whole container, so its limits are real per-container
+# limits: 2 vCPU / 4 GB each, 6 vCPU / 12 GB in total, pinned to cores 12-17.
+#
+# Deploy as a Docker Compose resource in the self-host platform (Coolify), base
+# directory /ops/render-worker, compose file /compose.yaml. No domain, no port:
+# nothing here is published. Full click list and checks: README.md.
+#
+# Network: every worker is on `render-internal` only, which is `internal: true`
+# (no gateway: no internet). This file is the common starting point of the
+# networking decision in README.md, "Networking: owner decision":
+#   (a) network_mode on an internal network the advisor creates; the advisor
+#       attaches the production app to it after each app deploy;
+#   (b) workers on the platform's predefined network (Connect To Predefined
+#       Network, ticked in the platform UI by the owner or advisor) with a host
+#       DOCKER-USER rule dropping new connections from the workers;
+#   (c) a relay service in this stack (follow-up PR).
+# Why it is a decision: the self-host platform (Coolify) adds its own network,
+# which has a gateway, to every service without `network_mode`, and cannot add
+# a second network to a Dockerfile app. Whatever the option, README's egress
+# check is a hard gate before any real render.
+#
+# Secrets: one per worker, so code that escapes Blender and reads its own
+# worker's environment cannot drive the other two. render-N reads
+# ASTRA_WORKER_SECRET from the stack variable ASTRA_WORKER_SECRET_N (at least
+# 32 characters each, three different values, never in git). The production
+# app holds ASTRA_WORKER_URLS (comma list of http://<worker>:8790) and
+# ASTRA_WORKER_SECRETS (comma list, same order) and sends each worker its own
+# secret as `Authorization: Bearer <secret>`.
+
+services:
+  render-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true                  # tini reaps orphans; the server sweeps strays per session
+    restart: unless-stopped
+    environment:
+      ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET_1:?set ASTRA_WORKER_SECRET_1}
+    cpus: 2
+    cpuset: "12,13"
+    cpu_shares: 256
+    mem_limit: 4g
+    memswap_limit: 4g
+    pids_limit: 256
+    read_only: true
+    tmpfs:
+      - /vercel/sandbox:size=1g,uid=10001,gid=10001,mode=0700
+      - /tmp:size=256m,uid=10001,gid=10001,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 10s
+    networks: [render-internal]
+
+  render-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true                  # tini reaps orphans; the server sweeps strays per session
+    restart: unless-stopped
+    environment:
+      ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET_2:?set ASTRA_WORKER_SECRET_2}
+    cpus: 2
+    cpuset: "14,15"
+    cpu_shares: 256
+    mem_limit: 4g
+    memswap_limit: 4g
+    pids_limit: 256
+    read_only: true
+    tmpfs:
+      - /vercel/sandbox:size=1g,uid=10001,gid=10001,mode=0700
+      - /tmp:size=256m,uid=10001,gid=10001,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 10s
+    networks: [render-internal]
+
+  render-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true                  # tini reaps orphans; the server sweeps strays per session
+    restart: unless-stopped
+    environment:
+      ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET_3:?set ASTRA_WORKER_SECRET_3}
+    cpus: 2
+    cpuset: "16,17"
+    cpu_shares: 256
+    mem_limit: 4g
+    memswap_limit: 4g
+    pids_limit: 256
+    read_only: true
+    tmpfs:
+      - /vercel/sandbox:size=1g,uid=10001,gid=10001,mode=0700
+      - /tmp:size=256m,uid=10001,gid=10001,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 10s
+    networks: [render-internal]
+
+networks:
+  render-internal:
+    name: render-internal
+    internal: true

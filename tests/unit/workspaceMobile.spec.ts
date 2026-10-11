@@ -11,7 +11,6 @@ import {
   withLevel,
 } from "../../lib/workspace/mobile";
 import { applyUrl, fromSearch, go, goHome, INITIAL_STATE, toSearch } from "../../lib/workspace/navigation";
-import { PAGE_STATE_LABEL, pageStateOf, progressDot, stagesLine, suiteProgress } from "../../lib/workspace/progress";
 import type { AppState } from "../../lib/workspace/types";
 
 const base: AppState = { ...INITIAL_STATE, projectId: "p1" };
@@ -124,52 +123,5 @@ test("a screen tab reads active for its level, a sheet tab while its sheet is up
 
 /* ── The derived counters ───────────────────────────────────────────────── */
 
-test("a page is complete when a run completed it, and in progress while a run holds it", () => {
-  expect(pageStateOf(base, "brief")).toBe("empty");
-  expect(pageStateOf({ ...base, completed: { brief: true } }, "brief")).toBe("done");
-  const running: AppState = { ...base, run: { page: "rig", i: 1, status: "running", approved: false } };
-  expect(pageStateOf(running, "rig")).toBe("progress");
-  expect(pageStateOf(running, "brief")).toBe("empty");
-  const waiting: AppState = { ...base, run: { page: "rig", i: 2, status: "waiting", approved: false } };
-  expect(pageStateOf(waiting, "rig")).toBe("progress");
-  const finished: AppState = { ...base, run: { page: "rig", i: 4, status: "done", approved: true } };
-  expect(pageStateOf(finished, "rig")).toBe("empty");
-  expect(PAGE_STATE_LABEL.empty).toBe("Not started");
-});
 
-test("the suite counters count the suite's own pages, never a literal", () => {
-  const studio = suiteProgress(base, "particl");
-  expect(studio.total).toBe(8);
-  expect(studio.done).toBe(0);
-  expect(studio.pct).toBe(0);
-  expect(suiteProgress(base, "moleculr").total).toBe(1);
 
-  const some: AppState = {
-    ...base,
-    completed: { brief: true, boards: true, cast: true, astra: true, takes: true },
-    run: { page: "rig", i: 1, status: "running", approved: false },
-  };
-  const progress = suiteProgress(some, "particl");
-  expect(progress.done).toBe(5);
-  expect(progress.inProgress).toBe(1);
-  expect(progress.pct).toBe(63);
-  expect(progress.activeLabel).toBe("Rig");
-  expect(stagesLine(progress)).toBe("5 of 8 stages · Rig in progress");
-  expect(progressDot(progress)).toBe("var(--pxw-blue-ink)");
-});
-
-test("the project line claims only what the data supports", () => {
-  /* Nothing running: no second clause invented. */
-  expect(stagesLine(suiteProgress(base, "particl"))).toBe("0 of 8 stages");
-  /* Every stage complete: the dot goes green. */
-  const all: AppState = {
-    ...base,
-    completed: { brief: true, boards: true, cast: true, astra: true, rig: true, takes: true, edit: true, deliver: true },
-  };
-  const done = suiteProgress(all, "particl");
-  expect(stagesLine(done)).toBe("8 of 8 stages");
-  expect(done.pct).toBe(100);
-  expect(progressDot(done)).toBe("var(--pxw-green)");
-  /* A suite whose pages are tools counts tools. */
-  expect(stagesLine(suiteProgress(base, "atomik"), "tools")).toBe("0 of 9 tools");
-});

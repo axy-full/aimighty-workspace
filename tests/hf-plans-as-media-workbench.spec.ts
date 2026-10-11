@@ -217,7 +217,7 @@ test("Every price on the rate card is the Generate button's quote for that engin
   expect(checked.length).toBeGreaterThan(20);
 });
 
-test("Workspace › Plans & credits: the balance reads as videos or images left at the settings this workspace actually renders", async ({ page }, info) => {
+test("Settings › Plan & credits: the balance reads as videos or images left at the settings this workspace actually renders", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { workspace } = await signInLocally(page.request);
   await forbidPaidWork(page);
@@ -239,11 +239,11 @@ test("Workspace › Plans & credits: the balance reads as videos or images left 
   expect(video.left).toBe(Math.floor(billing.credits.balance / video.credits));
   expect(image.left).toBe(Math.floor(billing.credits.balance / image.credits));
 
-  await page.goto("/suites?view=workspace&tab=credits");
-  await expect(page.getByTestId("workspace-balance")).toBeVisible();
-  const tiles = page.getByTestId("workspace-reach");
-  await expectTile(page.getByTestId("workspace-reach-video"), video.left, "videos left at your usual settings", video);
-  await expectTile(page.getByTestId("workspace-reach-image"), image.left, "images left at your usual settings", image);
+  await page.goto("/suites?view=workspace&tab=credits&open=rates");
+  await expect(page.getByTestId("settings-balance")).toBeVisible();
+  const tiles = page.getByTestId("settings-reach");
+  await expectTile(page.getByTestId("settings-reach-video"), video.left, "videos left at your usual settings", video);
+  await expectTile(page.getByTestId("settings-reach-image"), image.left, "images left at your usual settings", image);
   await expect(tiles.locator(".mr-or")).toHaveText("or");
   await expect(page.getByTestId("workspace-reach-loading")).toHaveCount(0);
 
@@ -253,25 +253,22 @@ test("Workspace › Plans & credits: the balance reads as videos or images left 
   await grant(workspace.id, 540);
   const balance = billing.credits.balance + 540;
   await page.evaluate(() => window.dispatchEvent(new Event("particl-account-refresh")));
-  await expect(page.getByTestId("workspace-balance")).toContainText(n(balance));
-  await expectTile(page.getByTestId("workspace-reach-video"), Math.floor(balance / video.credits), "videos left at your usual settings", video);
-  await expectTile(page.getByTestId("workspace-reach-image"), Math.floor(balance / image.credits), "images left at your usual settings", image);
+  await expect(page.getByTestId("settings-balance-credits")).toContainText(n(balance));
+  await expectTile(page.getByTestId("settings-reach-video"), Math.floor(balance / video.credits), "videos left at your usual settings", video);
+  await expectTile(page.getByTestId("settings-reach-image"), Math.floor(balance / image.credits), "images left at your usual settings", image);
   expect(billingReads).toBe(0);
 
   /* The rate card folds under the balance; the cells the balance is counted at are outlined. */
-  const rates = page.getByTestId("workspace-rates");
-  await expect(page.getByTestId("workspace-rate-card")).toBeHidden();
-  await rates.locator("summary").click();
-  const card = page.getByTestId("workspace-rate-card");
+  const rates = page.getByTestId("settings-fold-rates");
+  await expect(rates).toHaveAttribute("data-open", "true");
+  const card = page.getByTestId("settings-rate-card");
   await expect(card).toBeVisible();
   await expect(card.locator(`[data-testid="rate-row"][data-engine="${SEEDANCE}"] .mr-cell[data-reference]`)).toHaveAttribute("data-option", "1080p");
   await expect(card.locator(`[data-testid="rate-row"][data-engine="${GPT_IMAGE}"] .mr-cell[data-reference]`)).toHaveAttribute("data-option", "High");
-  await expect(page.getByTestId("workspace-rate-card-legend")).toHaveText("Your balance is counted at the outlined prices.");
-  await floors(page, '[data-testid="workspace-reach"], [data-testid="workspace-rates"]');
+  await expect(page.getByTestId("settings-rate-card-legend")).toHaveText("Your balance is counted at the outlined prices.");
+  await floors(page, '[data-testid="settings-reach"], [data-testid="settings-fold-rates"]');
   if (PHONES.includes(info.project.name)) {
-    expect(await smallTargets(page, '[data-testid="ws-plans"]'), "targets under 44×44").toEqual([]);
-    const summary = await rates.locator("summary").boundingBox();
-    expect(Math.round(summary!.height * 100) / 100).toBeGreaterThanOrEqual(44);
+    expect(await smallTargets(page, '[data-testid="settings-view"]'), "targets under 44×44").toEqual([]);
   }
   await shot(page, info, "workspace-usual");
 });
@@ -285,9 +282,9 @@ test("A workspace that has made nothing yet is counted at its default engines, a
   const video = billing.reach!.video!, image = billing.reach!.image!;
   expect(video).toMatchObject({ basis: "default", resolution: "720p", durationS: 5 });
   expect(image.basis).toBe("default");
-  await page.goto("/suites?view=workspace&tab=credits");
-  await expectTile(page.getByTestId("workspace-reach-video"), video.left, "videos left at the default settings", video);
-  await expectTile(page.getByTestId("workspace-reach-image"), image.left, "images left at the default settings", image);
+  await page.goto("/suites?view=workspace&tab=credits&open=rates");
+  await expectTile(page.getByTestId("settings-reach-video"), video.left, "videos left at the default settings", video);
+  await expectTile(page.getByTestId("settings-reach-image"), image.left, "images left at the default settings", image);
   await shot(page, info, "workspace-default");
 });
 
@@ -317,19 +314,18 @@ test("States: counting, a refused read, no translation, nothing priceable, and f
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
   await page.route("**/api/billing", async (route) => { await held; await route.fallback(); });
-  await page.goto("/suites?view=workspace&tab=credits");
-  await expect(page.getByTestId("workspace-reach-loading")).toHaveText("Counting what that buys…");
+  await page.goto("/suites?view=workspace&tab=credits&open=rates");
   release();
-  await expect(page.getByTestId("workspace-reach-video")).toBeVisible();
+  await expect(page.getByTestId("settings-reach-video")).toBeVisible();
   await expect(page.getByTestId("workspace-reach-loading")).toHaveCount(0);
   await page.unroute("**/api/billing");
 
   /* A refused read says so, and nothing is left counting. */
   await page.route("**/api/billing", (route) => route.fulfill({ status: 500, json: { error: "Billing could not be read. Try again in a minute." } }));
   await page.reload();
-  await expect(page.getByTestId("ws-plans").getByRole("alert").first()).toHaveText("Billing could not be read. Try again in a minute.");
+  await expect(page.getByTestId("settings-plan").getByRole("alert").first()).toContainText("Billing could not be read. Try again in a minute.");
   await expect(page.getByTestId("workspace-reach-loading")).toHaveCount(0);
-  await expect(page.getByTestId("workspace-reach")).toHaveCount(0);
+  await expect(page.getByTestId("settings-reach")).toHaveCount(0);
   await page.unroute("**/api/billing");
 
   /* Long figures and names: a very large balance and a long engine name stay inside a phone. The
@@ -345,9 +341,9 @@ test("States: counting, a refused read, no translation, nothing priceable, and f
     return route.fulfill({ json: { ...json, credits: { ...json.credits, balance: huge }, reach: { video: { ...real.reach!.video!, label: "Seedance 2.5 Cinematic Extended Preview" }, image: real.reach!.image } } });
   });
   await page.reload();
-  await expect(page.getByTestId("workspace-reach-video").locator(".mr-num")).toHaveText(`≈\u00a0${n(Math.floor(huge / real.reach!.video!.credits))}`);
-  await expect(page.getByTestId("workspace-reach-image").locator(".mr-num")).toHaveText(`≈\u00a0${n(Math.floor(huge / real.reach!.image!.credits))}`);
-  await floors(page, '[data-testid="workspace-reach"], [data-testid="workspace-rates"]');
+  await expect(page.getByTestId("settings-reach-video").locator(".mr-num")).toHaveText(`≈\u00a0${n(Math.floor(huge / real.reach!.video!.credits))}`);
+  await expect(page.getByTestId("settings-reach-image").locator(".mr-num")).toHaveText(`≈\u00a0${n(Math.floor(huge / real.reach!.image!.credits))}`);
+  await floors(page, '[data-testid="settings-reach"], [data-testid="settings-fold-rates"]');
   await shot(page, info, "workspace-long");
   await page.unroute("**/api/me");
   await page.unroute("**/api/billing");

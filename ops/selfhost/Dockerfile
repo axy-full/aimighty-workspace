@@ -20,9 +20,9 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/public/vendor ./public/vendor
 COPY . .
-# NEXT_PUBLIC_* values are baked in at build time: tick "Build Variable" on
+# Values baked in at build time: tick "Build Variable" on APP_ORIGIN
+# (robots.txt, sitemap.xml and link previews are made at build),
 # NEXT_PUBLIC_APP_URL and NEXT_PUBLIC_VAPID_PUBLIC_KEY in the platform.
-# APP_ORIGIN is read at build too (robots.txt, sitemap.xml, link previews): tick "Build Variable".
 ARG APP_ORIGIN
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY
@@ -45,9 +45,16 @@ COPY --from=build --chown=app:app /app/.next/static ./.next/static
 COPY --from=build --chown=app:app /app/public ./public
 # Scheduled task script (see docs/selfhost-test.md): node:slim has no curl, so it uses node's fetch.
 COPY --chown=app:app ops/selfhost/cron-sync.mjs ./cron-sync.mjs
+# Process launcher next to server.js: runs WEB_CONCURRENCY copies of it on one port.
+COPY --chown=app:app ops/selfhost/cluster.mjs ./cluster.mjs
 USER app
 EXPOSE 3000
 # /api/health answers 200 {"ok":true,...} when the database is reachable; 503 otherwise.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "server.js"]
+# WEB_CONCURRENCY (runtime variable, never a build variable): how many Next server
+# processes share PORT; an integer 1..16, default 3. WEB_CONCURRENCY=1 is the
+# rollback switch: one process, exactly as `node server.js` ran. On stop, each
+# worker finishes its in-flight requests within CLUSTER_STOP_GRACE_MS (default
+# 290 s, under the platform's 300 s stop grace). See ops/selfhost/cluster.mjs.
+CMD ["node", "cluster.mjs"]

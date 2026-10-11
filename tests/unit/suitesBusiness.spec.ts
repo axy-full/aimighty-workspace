@@ -64,7 +64,7 @@ test("a composer's catalogue line never says Reading… for ever: a failure says
   const at = (over: Partial<Parameters<typeof catalogueBlock>[0]>) => catalogueBlock({ connected: true, status: "loading", error: null, offered: false, model: ADS_MODEL, ...over });
   expect(at({})).toBe("Reading the connected catalogue…");
   expect(at({ status: "error", error: "The account is busy." })).toBe("The account is busy.");
-  expect(at({ status: "ready" })).toBe("The connected account does not offer Marketing Studio video.");
+  expect(at({ status: "ready" })).toBe("The connected account does not offer Ad video.");
   expect(at({ status: "ready", offered: true })).toBeNull();
   /* Not connected has its own line. */
   expect(at({ connected: false })).toBeNull();

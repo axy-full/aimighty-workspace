@@ -7,6 +7,7 @@ import { noteTakenOut, recordMade, sameJson, type MadeRecords } from "../workben
 import type { Asset, Project } from "../workbench/studio";
 import { uploadWorkbench } from "../workbench/upload";
 import { useOptionalToast } from "./state";
+import { createHeldEdits, editsFrozen, registerDrain, sendsAllowed, subscribeSwitch } from "../shell/switch-workspace";
 
 /**
  * Editing the open project's draft from a workspace page, through the same
@@ -107,6 +108,11 @@ function save(scope: string, projectId: string): Promise<boolean> {
     const { project, revision, dirty } = e.state;
     if (e.stopped) return false;
     if (!project || !dirty) return true;
+    /* A workspace switch has asked its route: nothing more goes to this workspace; if it does not happen, this goes then. */
+    if (!sendsAllowed()) {
+      if (!e.timer) e.timer = setTimeout(() => void save(scope, projectId), RETRY_MS);
+      return false;
+    }
     const from = e.base ?? project;
     set(key, { saving: true, dirty: false });
     try {
@@ -145,7 +151,12 @@ async function saveAll(scope: string, projectId: string): Promise<boolean> {
   return !e.state.dirty;
 }
 
+/* Changes that came while a workspace switch ran (the app's own: a filed take, a placed sound; the page under the veil takes
+   none): run, in order, on the draft as it is once the switch did not happen (lib/shell/switch-workspace.ts). */
+const held = createHeldEdits<{ scope: string; projectId: string; fn: (p: Project) => Project }>();
+
 function change(scope: string, projectId: string, fn: (p: Project) => Project) {
+  if (editsFrozen()) { held.hold({ scope, projectId, fn }); return; }
   const key = keyOf(scope, projectId);
   const e = entry(key);
   if (!e.state.project) return;
@@ -160,6 +171,28 @@ function change(scope: string, projectId: string, fn: (p: Project) => Project) {
   e.stopped = false;
   if (e.timer) clearTimeout(e.timer);
   e.timer = setTimeout(() => void save(scope, projectId), SAVE_DELAY);
+}
+
+/**
+ * Before a workspace switch: every draft this store holds with edits not saved yet (open on a page or not), saved; a
+ * refused one is tried once more. True once the server holds them all. Registered for as long as the store exists: a
+ * draft keeps saving after its page closed, so the drain cannot go with the page.
+ */
+async function drainAll(): Promise<boolean> {
+  for (const [key, e] of [...entries]) {
+    if (!e.state.dirty && !e.state.saving && !e.timer) continue;
+    const [scope, projectId] = JSON.parse(key) as [string, string];
+    e.stopped = false;
+    if (!(await saveAll(scope, projectId))) return false;
+  }
+  return true;
+}
+if (typeof window !== "undefined") {
+  registerDrain(drainAll);
+  subscribeSwitch(() => {
+    if (editsFrozen() || !held.size) return;
+    for (const h of held.release()) change(h.scope, h.projectId, h.fn);
+  });
 }
 
 /** An uploaded original as a project asset — the workbench's own shape (Studio uploadFiles). */

@@ -1018,7 +1018,8 @@ async function routeFixture() {
         return input.id === held;
       },
     },
-    "@/lib/higgsfield-consumer/retired": await import("../../lib/higgsfield-consumer/retired"),
+    /* The connection route's handlers kept behind signInOff, as they ran before Release 1 (the switch itself: tests/unit/signinRetiredGuard.spec.ts). */
+    "@/lib/higgsfield-consumer/retired": { ...(await import("../../lib/higgsfield-consumer/retired")), signInOff: (kept: unknown) => kept },
     "@/lib/higgsfield-consumer/oauth": {
       ...(await modules()).oauth,
       beginConsumerAuthorization: async () => {
@@ -1186,26 +1187,26 @@ test("connecting answers 410 to everyone and starts nothing; Disconnect keeps it
   expect((await route.request("connection", "POST", scope, undefined, { action: "anything" })).status).toBe(400);
 });
 
-test("the callback of a sign-in started before the retirement never finishes it: it returns to Workspace › Engines saying so", async () => {
+test("the old sign-in return address lands on Settings › Connections with no message, and finishes nothing", async () => {
   const { oauth } = await modules();
-  expect(oauth.consumerCallbackLocation("retired")).toBe("https://particl.example/suites?view=workspace&tab=engines&higgsfield=retired");
-  const retiredModule = await import("../../lib/higgsfield-consumer/retired");
   let finished = 0;
   const dependencies: Record<string, unknown> = {
     "@/lib/higgsfield-consumer/oauth": { consumerCallbackLocation: oauth.consumerCallbackLocation, finishConsumerAuthorization: async () => { finished++; } },
-    "@/lib/higgsfield-consumer/retired": retiredModule,
   };
-  const loaded = { exports: {} as { GET(request?: Request): Promise<Response> } };
+  const loaded = { exports: {} as { GET(request: Request): Promise<Response> | Response } };
   new Function("require", "module", "exports", ts.transpileModule(readFileSync("app/api/higgsfield/consumer/callback/route.ts", "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText)((id: string) => {
     if (!(id in dependencies)) throw new Error(id);
     return dependencies[id];
   }, loaded, loaded.exports);
-  const response = await loaded.exports.GET(new Request("https://particl.example/api/higgsfield/consumer/callback?code=authorization-code&state=anything&iss=x"));
-  expect(response.status).toBe(303);
-  expect(response.headers.get("Location")).toBe("https://particl.example/suites?view=workspace&tab=engines&higgsfield=retired");
-  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-  expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+  for (const query of ["?code=authorization-code&state=anything&iss=x", "?error=access_denied&state=x", ""]) {
+    const response = await loaded.exports.GET(new Request(`https://particl.example/api/higgsfield/consumer/callback${query}`));
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe("/suites?view=workspace&tab=connections");
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+    expect(await response.text()).toBe("");
+  }
   expect(finished).toBe(0);
 });

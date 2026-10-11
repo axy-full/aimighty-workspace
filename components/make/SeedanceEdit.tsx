@@ -1,5 +1,6 @@
 "use client";
 
+import { spendAttrsText } from "@/lib/spend";
 import { useRef, useState, useImperativeHandle, type Ref } from "react";
 import { PromptAttach, keptNote, resolveAttached } from "@/components/PromptAttach";
 import { previewAttrs } from "@/lib/preview";
@@ -487,6 +488,8 @@ export default function SeedanceEdit({
               busy || uploading || !!paid.error || (!paid.pending && !canQuote)
             }
             onClick={() => void (paid.pending || quote ? submit() : review())}
+            aria-busy={busy || undefined}
+            {...spendAttrsText((paid.pending ? String(savedContext?.price ?? "Saved request") : quote ? priceLabel(quote) : null))}
           >
             <span>
               {busy

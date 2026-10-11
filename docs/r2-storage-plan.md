@@ -55,4 +55,6 @@ Package 1 landed the seam: `lib/storage/backend.ts` (interface, selector, `resol
 - An absolute `*.vercel-storage.com` URL in an old row always resolves to the Blob backend, whichever backend is selected, so those rows stay readable during the migration.
 - Recovery activities: the Blob backend keeps `blob-put`/`blob-delete`; R2 records `r2-put`/`r2-delete`. A conditional-write precondition failure (the key already exists) is a certain outcome and is not marked uncertain.
 
+**Status, 8 October 2026:** production runs `STORAGE_BACKEND=r2` with the Blob fallback (`docs/r2-migration.md`). The last Blob-to-R2 copy before the Vercel account closes is `scripts/ops/blob-to-r2.mjs` (see "Before Vercel is cancelled" in `docs/selfhost-test.md`). The paragraph below records the state when package 1 landed.
+
 **R2 is not yet used in production.** `lib/purge.ts`, `lib/storageCost.ts`, `app/api/health/route.ts`, `lib/deploymentReadiness.ts` and `scripts/ops/*` still call the Blob SDK directly (packages 3 and 4), downloads still stream through the routes (package 2), and no bucket, token or migration has run (package 5).

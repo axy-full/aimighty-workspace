@@ -1,6 +1,6 @@
 # Workspace two-step sign-in policy
 
-The workspace owner can require authenticator enrollment from People → Workspace sign-in policy. Existing workspaces default to optional; deployment does not enable the policy for any customer. The owner must enroll first and supply their current password and a fresh authenticator or recovery code for either policy change.
+The workspace owner can require authenticator enrollment from Settings › Team › Security → Required on this workspace (Turn on / Turn off; members see it read-only). Existing workspaces default to optional; deployment does not enable the policy for any customer. The owner must enroll first and supply their current password and a fresh authenticator or recovery code for either policy change.
 
 When required, unenrolled members retain access to their account-security page, workspace selection and account-level onboarding. Studio, Gen, private media, project data, usage and other tenant routes refuse reads and writes with `428 MFA_REQUIRED`. Studio, movie, billing and the application pages redirect to enrollment before serializing workspace data. The identity endpoint returns only minimal account/workspace information while blocked, without credits, rates, model defaults or production setup. Existing API tokens are refused until their account has enrolled; token standing is checked against the authoritative account and membership, even when a tenant mirror is stale.
 

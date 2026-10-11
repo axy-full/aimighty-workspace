@@ -5,7 +5,7 @@
  */
 
 import type { Plan, PlanContext, Runnable } from "./plan-types";
-import { formatCredits, type RunView } from "./run-engine";
+import { quotePrice, type RunView } from "./run-engine";
 
 export type StepTone = "done" | "now" | "gate" | "failed" | "idle";
 
@@ -20,7 +20,7 @@ export function stepRows(plan: Plan, run: RunView | null, ctx: PlanContext): Ste
     const failed = here && run!.status === "failed";
     const now = here && run!.status === "running";
     let meta = run?.details[i] ?? safeDetail(() => step.detail(ctx, {}));
-    if (gate && run?.quote && !done) meta = formatCredits(run.quote.credits, run.quote.unit);
+    if (gate && run?.quote && !done) meta = quotePrice(run.quote);
     const tone: StepTone = done ? "done" : failed ? "failed" : now ? "now" : gate ? "gate" : "idle";
     const mark = tone === "done" ? "✓" : tone === "now" ? "●" : tone === "failed" ? "!" : gate ? "$" : String(i + 1);
     return { label: step.label, meta, mark, tone, gate };
@@ -85,7 +85,7 @@ export function runButton(run: RunView | null, runnable: Runnable): RunButton {
 /** The "Run with Atomik" chip in the page header; "Approve 18 cr" in amber while its gate waits. */
 export function runChip(run: RunView | null): { label: string; tone: "idle" | "running" | "waiting" } {
   if (run?.status === "waiting" && run.quote)
-    return { label: `Approve ${formatCredits(run.quote.credits, run.quote.unit)}`, tone: "waiting" };
+    return { label: `Approve ${quotePrice(run.quote)}`, tone: "waiting" };
   if (run?.status === "waiting") return { label: "Approve", tone: "waiting" };
   if (run?.status === "running") return { label: "Pause run", tone: "running" };
   if (run?.status === "done") return { label: "Run again", tone: "idle" };
@@ -95,6 +95,6 @@ export function runChip(run: RunView | null): { label: string; tone: "idle" | "r
 
 /** The price beside the run button: the live quote once there is one, else the plan's label. */
 export function priceText(plan: Plan, run: RunView | null): string {
-  if (run?.quote) return formatCredits(run.quote.credits, run.quote.unit);
+  if (run?.quote) return quotePrice(run.quote);
   return plan.priceLabel;
 }

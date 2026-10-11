@@ -65,6 +65,9 @@ type Props = {
       it appears, so a caller that shows a timer should show `· 0:00` from
       the first frame. */
   costSuffix?: ReactNode;
+  /** The cost in words of its own, in place of the formatted figure: a Cinema Studio take's
+      "about 31 cr, at most 93 cr" (lib/cinemaHold.ts). It may wrap between its runs, never inside a figure. */
+  costText?: ReactNode;
   busy?: boolean;
   /** The label while busy; present tense. Defaults to the label itself. */
   busyLabel?: ReactNode;
@@ -95,7 +98,7 @@ const SHAPE = {
 } as const;
 
 export default function Button({
-  variant = "secondary", placement = "header", outlined = false, muted = false, cost, costPrefix, costSuffix,
+  variant = "secondary", placement = "header", outlined = false, muted = false, cost, costPrefix, costSuffix, costText,
   busy = false, busyLabel, children, className = "", disabled, type = "button", ...rest
 }: Props) {
   const { price } = useMoney();
@@ -126,8 +129,8 @@ export default function Button({
         )}
       </span>
       {cost !== undefined && (
-        <span className={`ui-mono ui-mono-cost ${filled ? "text-on-primary-cost" : "text-ink-muted"}`}>
-          {costPrefix}{price(cost)}{costSuffix}
+        <span className={`ui-mono ui-mono-cost ${filled ? "text-on-primary-cost" : "text-ink-muted"}${costText !== undefined ? " whitespace-normal text-right" : ""}`}>
+          {costText ?? <>{costPrefix}{price(cost)}{costSuffix}</>}
         </span>
       )}
     </button>

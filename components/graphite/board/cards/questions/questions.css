@@ -1,0 +1,47 @@
+/*
+ * Atomik's questions (design/particl-graphite/README.md § 3.1 b; the master's panel): a question at 14/600, chips
+ * 30 px high with 8 px corners (the chosen one in the accent tint), a field 34 px high, then the primary and the
+ * secondary button full width. On a phone every target is 44 px. app/graphite.css tokens only.
+ */
+.gx-q { display: flex; flex-direction: column; gap: 16px; }
+.gx-q-item { display: flex; flex-direction: column; gap: 8px; }
+.gx-q-text { font-size: var(--gx-fs-body); font-weight: 600; }
+.gx-q-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.gx-q-chip {
+  height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--gx-btn-border); background: transparent;
+  color: var(--gx-text); font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.gx-q-chip:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx-q-chip[aria-pressed="true"] { border-color: var(--gx-tint-border-50); background: var(--gx-tint); color: var(--gx-accent-text); }
+.gx-q-chip:disabled { color: var(--gx-disabled); cursor: default; }
+.gx-q-field {
+  height: 34px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--gx-input-border); background: var(--gx-input);
+  color: var(--gx-text); font: inherit; font-size: var(--gx-fs-body);
+}
+.gx-q-field::placeholder { color: var(--gx-placeholder); }
+.gx-q-actions { display: flex; flex-direction: column; gap: 8px; }
+.gx-q-primary {
+  height: 34px; padding: 0 14px; border: 0; border-radius: var(--gx-r-ctl); background: var(--gx-accent); color: var(--gx-on-accent);
+  font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.gx-q-primary:hover:not(:disabled) { background: var(--gx-accent-hover); }
+.gx-q-primary:disabled { opacity: .45; cursor: default; }
+.gx-q-secondary {
+  height: 32px; padding: 0 12px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl); background: transparent;
+  color: var(--gx-text); font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer;
+}
+.gx-q-secondary:hover:not(:disabled) { border-color: var(--gx-hover-border); }
+.gx-q-secondary:disabled { color: var(--gx-disabled); cursor: default; }
+.gx-q-why { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+/* One filled button per screen (README § 0, rule 1): while Make or one of its quick tools is open, that panel holds the
+   main action, so Show me looks steps down to the outline style (the dock's own buttons do the same, in agent.css and panel.css). */
+.gx:has(.gx-make) .gx-q-primary:not(.gx-make *) { background: transparent; color: var(--gx-text); border: 1px solid var(--gx-btn-border); }
+.gx:has(.gx-make) .gx-q-primary:not(.gx-make *):hover:not(:disabled) { background: transparent; border-color: var(--gx-hover-border); }
+/* Its price stays on it and stays readable (at least 12px, at least 55% white): a waiting button keeps its ink and its
+   border at the read floor rather than fading to the disabled tier, and the reason it waits is beside it. */
+.gx:has(.gx-make) .gx-q-primary:not(.gx-make *) { font-size: 13px; }
+.gx:has(.gx-make) .gx-q-primary:not(.gx-make *):disabled { opacity: 1; color: var(--gx-text-half); border-color: var(--gx-btn-border); }
+@media (max-width: 767px) {
+  .gx-q-chip, .gx-q-field, .gx-q-primary, .gx-q-secondary { min-height: 44px; }
+  .gx-q-field { font-size: 16px; }
+}

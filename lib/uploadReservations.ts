@@ -6,7 +6,10 @@ import { deleteChunks, deleteUpload } from "./storage";
 import { archiveAndDelete } from "./archive";
 
 export const UPLOAD_TTL_MS = 24 * 3600_000;
-export const UPLOAD_LEASE_MS = 20 * 60_000; // Longer than the 800-second finish function.
+/* Longer than the worst finish: a 2 GiB chat upload assembled in the
+   background on R2/Blob takes ~50-120 s, and Vercel stops the function at 800 s.
+   A finish that dies mid-way is reclaimed by an identical retry once it lapses. */
+export const UPLOAD_LEASE_MS = 20 * 60_000;
 export const CHUNK_LEASE_MS = 5 * 60_000;
 export const MAX_REFERENCE_BYTES = 200 * 1024 * 1024;
 export const MAX_CHAT_BYTES = 2 * 1024 * 1024 * 1024;
@@ -23,16 +26,18 @@ export class UploadError extends Error {
     this.name = "UploadError";
   }
 }
+/** What a failed finish tells the person: the refusal's own words, or a generic outage. Never an internal error. */
+export function uploadFailureBody(error: unknown): { error: string; status: number } {
+  if (error instanceof UploadError) return { error: error.message, status: error.status };
+  return {
+    error:
+      "The upload could not finish. Its reserved storage will be released after cleanup. Try again shortly.",
+    status: 503,
+  };
+}
 export function uploadFailure(error: unknown): Response {
-  if (error instanceof UploadError)
-    return Response.json({ error: error.message }, { status: error.status });
-  return Response.json(
-    {
-      error:
-        "The upload could not finish. Its reserved storage will be released after cleanup. Try again shortly.",
-    },
-    { status: 503 },
-  );
+  const { error: message, status } = uploadFailureBody(error);
+  return Response.json({ error: message }, { status });
 }
 export async function uploadReservationsReady() {
   await ready();
@@ -47,7 +52,7 @@ export async function uploadReservationsReady() {
         reserved_bytes INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
         lease TEXT, lease_until INTEGER, finish_key TEXT, upload_id TEXT NOT NULL,
         objects TEXT NOT NULL DEFAULT '[]', prepared TEXT, response TEXT,
-        cleanup_attempted_at INTEGER NOT NULL DEFAULT 0
+        cleanup_attempted_at INTEGER NOT NULL DEFAULT 0, failure TEXT
       )`,
           `CREATE TABLE IF NOT EXISTS astra_render_storage (job_id TEXT PRIMARY KEY, reserved_bytes INTEGER NOT NULL DEFAULT 0)`,
           `CREATE TABLE IF NOT EXISTS upload_chunks (
@@ -78,6 +83,14 @@ export async function uploadReservationsReady() {
             )
             .catch((error) => {
               // Another instance may have completed this additive migration.
+              if (!/duplicate column name/i.test(String(error))) throw error;
+            });
+        }
+        // Why a background finish ended, for the status a client polls.
+        if (!columns.rows.some((column) => column.name === "failure")) {
+          await client
+            .execute("ALTER TABLE upload_sessions ADD COLUMN failure TEXT")
+            .catch((error) => {
               if (!/duplicate column name/i.test(String(error))) throw error;
             });
         }
@@ -130,6 +143,7 @@ type Session = {
   objects: string;
   prepared: string | null;
   response: string | null;
+  failure: string | null;
 };
 async function sessionOf(
   tx: Transaction,
@@ -562,8 +576,12 @@ export async function completeUpload(
     return prepared.response;
   });
 }
-/** Failed storage writes may have been accepted remotely. Keep their lease before cleanup. */
-export async function abandonUpload(claim: FinishClaim) {
+/** Failed storage writes may have been accepted remotely. Keep their lease before cleanup.
+ * `failure` is what the session status shows a client polling a background finish. */
+export async function abandonUpload(
+  claim: FinishClaim,
+  failure?: { error: string; status: number },
+) {
   const aborting = await transaction(async (tx) => {
     const session = await sessionOf(tx, claim.key);
     if (
@@ -582,10 +600,11 @@ export async function abandonUpload(claim: FinishClaim) {
     }
     const hasObjects = (JSON.parse(session.objects) as unknown[]).length > 0;
     await tx.execute({
-      sql: "UPDATE upload_sessions SET state='aborting',expires_at=?,lease=NULL,lease_until=? WHERE id=? AND lease=?",
+      sql: "UPDATE upload_sessions SET state='aborting',expires_at=?,lease=NULL,lease_until=?,failure=? WHERE id=? AND lease=?",
       args: [
         now(),
         hasObjects ? session.lease_until : null,
+        failure ? JSON.stringify(failure) : null,
         claim.key,
         claim.lease,
       ],
@@ -767,8 +786,13 @@ export async function uploadSessionStatus(
   } else if (row.expires_at <= at && !["aborting", "aborted"].includes(state))
     state = "expired";
   else if (row.prepared && retryAfterMs === 0) state = "prepared";
+  const failure =
+    (state === "aborting" || state === "aborted") && row.failure
+      ? (JSON.parse(row.failure) as { error: string; status: number })
+      : undefined;
   return {
     state,
+    ...(failure ? { failure } : {}),
     storedChunks: chunks
       .filter((chunk) => chunk.state === "stored")
       .map((chunk) => Number(chunk.chunk_index)),

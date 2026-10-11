@@ -31,7 +31,7 @@ import {
 import { connectedExplainerPresets } from "@/lib/higgsfield-consumer/explainer-service";
 /* The standalone guard runs inside the quote services; a refusal answers 409 setup_not_particl. */
 import { ConsumerSetupError } from "@/lib/higgsfield-consumer/marketing-records";
-import { asksRetired, retiredResponse } from "@/lib/higgsfield-consumer/retired";
+import { asksRetired, retiredResponse, signInOff } from "@/lib/higgsfield-consumer/retired";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -129,7 +129,7 @@ function problem(error: unknown) {
     return Response.json({ error: "Send a valid JSON generation request." }, { status: 400, headers });
   return Response.json({ error: "The connected account could not complete this request. Check the saved job before trying again." }, { status: 503, headers });
 }
-export const GET = withTenant(async (req: Request) => {
+const keptGET = withTenant(async (req: Request) => {
   const owner = await requireOwner();
   if (owner.response) return owner.response;
   const draftId = new URL(req.url).searchParams.get("draftId") ?? "";
@@ -154,7 +154,7 @@ export const GET = withTenant(async (req: Request) => {
     return problem(error);
   }
 }, { requireRequestScope: true });
-export const POST = withTenant(async (req: Request) => {
+const keptPOST = withTenant(async (req: Request) => {
   const owner = await requireOwner();
   if (owner.response) return owner.response;
   try {
@@ -225,3 +225,7 @@ export const POST = withTenant(async (req: Request) => {
     return problem(error);
   }
 }, { requireRequestScope: true });
+
+/* Off for Release 1 with the Higgsfield sign-in (lib/higgsfield-consumer/retired.ts › signInOff): every method answers 410 and never reads a stored grant. */
+export const GET = signInOff(keptGET);
+export const POST = signInOff(keptPOST);

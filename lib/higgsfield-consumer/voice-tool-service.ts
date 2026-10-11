@@ -149,7 +149,7 @@ export async function quoteConsumerVoiceTool(userId: string, draftId: string, in
     return consumerVoiceToolView(previous);
   }
   if (!(await readDraft(userId, draftId)))
-    throw new ConsumerVideoServiceError("project_missing", "Save this project before requesting a quote.", 404);
+    throw new ConsumerVideoServiceError("project_missing", "This isn't available.", 404);
   // Argument validation precedes source resolution, imports and pricing.
   consumerVoiceToolParams(normalized, "00000000-0000-4000-8000-000000000000", normalized.tool === "reframe" ? { durationSeconds: 1 } : {});
   const access = await connected(userId);

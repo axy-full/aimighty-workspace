@@ -5,6 +5,7 @@ import { currentTenant } from "@/lib/tenant";
 import { effectiveModels } from "@/lib/defaultModels";
 import { getPlatformLayer } from "@/lib/platform";
 import { buildRateTable } from "@/lib/rateTable.server";
+import { newInterfaceFor } from "@/lib/newInterface.server";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export const GET = withTenant(async function GET() {
   return NextResponse.json({
     id, name, email, role,
     owner: got.user.owner, superAdmin: await isPlatformOwner(got.user),
-    workspace: store?.workspace ? { id: store.workspace.id, name: store.workspace.name, slug: store.workspace.slug, platformKeys: store.workspace.usesPlatformKeys, suspended: Boolean(store.workspace.suspendedAt), suspendedReason: store.workspace.suspendedReason, internalTest: Boolean(store.workspace.internalTest) } : null,
+    workspace: store?.workspace ? { id: store.workspace.id, name: store.workspace.name, slug: store.workspace.slug, platformKeys: store.workspace.usesPlatformKeys, suspended: Boolean(store.workspace.suspendedAt), suspendedReason: store.workspace.suspendedReason, internalTest: Boolean(store.workspace.internalTest), newInterface: await newInterfaceFor(store.workspace) } : null,
     workspaces: store?.workspaces ?? [],
     credits: await creditState().catch(() => null),
     /* The rates this browser may see, already in the unit this workspace

@@ -551,6 +551,7 @@ async function teamRoutes(
     "@/lib/credits": { creditsApply: () => true },
     "@/lib/accountDb": await import("../../lib/accountDb"),
     "@/lib/teamInvitations": await import("../../lib/teamInvitations"),
+    "@/lib/platformOwnerPrivacy": await import("../../lib/platformOwnerPrivacy"),
   };
   const team = loadRoute<{ POST: Handler }>("app/api/team/route.ts", mocks);
   const resend = loadRoute<{ POST: Handler }>(
@@ -667,6 +668,7 @@ async function acceptRoute(mailer: ReturnType<typeof mailbox>["mock"]) {
       },
       "@/lib/platform": { ...platform, switchSessionWorkspace: async () => {} },
       "@/lib/teamInvitations": await import("../../lib/teamInvitations"),
+      "@/lib/platformOwnerPrivacy": await import("../../lib/platformOwnerPrivacy"),
       "@/lib/policyAccept": await import("../../lib/policyAccept"),
       "@/lib/accountDb": await import("../../lib/accountDb"),
       "@/lib/mail": mailer,

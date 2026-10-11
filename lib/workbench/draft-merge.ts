@@ -1,6 +1,7 @@
 import { identityKey, merge3, sameJson, type MergeOptions } from "./merge";
 import { NODE_INPUTS } from "./node-graph";
 import type { Asset, CanvasNode, Project } from "./studio";
+import { trimVersions } from "../production/script-versions";
 import { saveSchema } from "./studio-schema";
 
 /**
@@ -65,6 +66,7 @@ export function mergeDraft(base: Project, mine: Project, theirs: Project, option
   merged = fitClips(merged, theirs, notes);
   merged = distinctBins(merged, theirs);
   merged = markEditedScript(merged);
+  merged = fitScriptVersions(merged);
   merged = recognizedPages(merged);
   if (valid(merged)) return merged;
   merged = fitDraft(merged, mine, theirs, notes);
@@ -79,6 +81,19 @@ export function mergeDraft(base: Project, mine: Project, theirs: Project, option
  */
 export function rebaseProject(sent: Project, local: Project, saved: Project): Project {
   return local === sent ? saved : mergeDraft(sent, local, saved);
+}
+
+/**
+ * Earlier scripts (lib/production/script-versions.ts) after two sides each added some: newest first by their dates, each once, and trimmed to the limits (the oldest go),
+ * so the list can never be what makes the merged draft unsavable. The same project when there is no list, or it is already as it should be.
+ */
+function fitScriptVersions(project: Project): Project {
+  const list = project.scriptVersions;
+  if (!list) return project;
+  const seen = new Set<string>();
+  const ordered = [...list].filter((v) => (seen.has(v.id) ? false : (seen.add(v.id), true))).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  const kept = trimVersions(ordered);
+  return kept.length === list.length && kept.every((v, i) => v === list[i]) ? project : { ...project, scriptVersions: kept.length ? kept : undefined };
 }
 
 const valid = (project: Project) => saveSchema.safeParse({ project, revision: 0 }).success;

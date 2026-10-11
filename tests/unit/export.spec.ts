@@ -3,7 +3,7 @@ import { takesCsv, type ExportRow } from "../../lib/exportRows";
 import { deletionAllowed } from "../../lib/deletion";
 
 const row = (o: Partial<ExportRow>): ExportRow => ({
-  id: "gen_1", createdAt: Date.UTC(2026, 8, 6), production: "Northline", shotCode: "SH010", shotTitle: "Rooftop, wide", take: "v1",
+  id: "gen_1", createdAt: Date.UTC(2026, 8, 6), production: "Granite", shotCode: "SH010", shotTitle: "Rooftop, wide", take: "v1",
   kind: "video", engine: "Seedance 2.5", resolution: "1080P", duration: "5s", status: "succeeded", credits: 40, usd: 0,
   prompt: 'A courier crosses, "quiet"', filename: "NORTH_SH010_SD25_v1_ap.mp4", url: "/api/media/gen_1", bytes: 991017, ...o,
 });

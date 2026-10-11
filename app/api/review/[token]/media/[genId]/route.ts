@@ -30,8 +30,10 @@ export const GET = async function GET(req: Request, { params }: Ctx) {
 
   const take = await runInTenant(found.workspace, async (): Promise<{ media: OriginalMedia; bytes: number | null } | null> => {
     await ready();
+    /* A Crew review link also plays the takes waiting for review in its production (lib/security/review-link.ts). */
+    const states = found.review ? "('picked','approved')" : "('approved')";
     const rs = await db().execute({
-      sql: `SELECT kind, params, bytes FROM generations WHERE id = ? AND project_id = ? AND review_state = 'approved' AND deleted = 0 AND status = 'succeeded' LIMIT 1`,
+      sql: `SELECT kind, params, bytes FROM generations WHERE id = ? AND project_id = ? AND review_state IN ${states} AND deleted = 0 AND status = 'succeeded' LIMIT 1`,
       args: [genId, found.share.projectId],
     });
     const row = rs.rows[0] as { kind?: unknown; params?: unknown; bytes?: unknown } | undefined;

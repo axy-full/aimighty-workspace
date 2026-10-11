@@ -1,7 +1,10 @@
-import { redirect } from "next/navigation";
-import { suiteHref } from "@/lib/suites";
-export default async function Page({ searchParams }: { searchParams: Promise<{ project?: string | string[]; page?: string | string[] }> }) {
-  const query = await searchParams;
-  const project = typeof query.project === "string" ? query.project : undefined;
-  redirect(suiteHref("subatomik", project, typeof query.page === "string" ? query.page : undefined));
+import { followOldRoute, type RawSearch } from "@/lib/shell/old-routes.server";
+
+/**
+ * The old spelling of /subatomik.
+ * Redirected, never drawn (docs/old-shells.md): lib/shell/old-routes.ts holds where it goes.
+ */
+export const dynamic = "force-dynamic";
+export default async function Moved({ searchParams }: { searchParams: Promise<RawSearch> }) {
+  await followOldRoute("/subatomik", await searchParams);
 }

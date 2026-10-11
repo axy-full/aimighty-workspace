@@ -16,12 +16,13 @@ export async function shotCreditsSoFar(shotId: string): Promise<number> {
  * member's take that would carry the shot past the cap is refused with the
  * sentence that says so; an admin's goes through. Null when nothing stops it.
  */
-export async function shotCapGate(o: { shotId: string; code: string; takeUsd: number; modelId: string; isAdmin: boolean }): Promise<string | null> {
+export async function shotCapGate(o: { shotId: string; code: string; takeUsd: number; modelId: string; isAdmin: boolean; band?: number }): Promise<string | null> {
   const rule = cleanRule(await getSetting("approvalRule"));
   if (rule !== "cap" || o.isAdmin) return null;
   const cap = cleanShotCap(await getSetting("shotCapCredits"));
   const shotCredits = await shotCreditsSoFar(o.shotId);
-  const takeCredits = billCredits(o.takeUsd, o.modelId);
+  /* A take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts) counts at its hold, not its estimate. */
+  const takeCredits = billCredits(o.takeUsd, o.modelId) * (Number.isInteger(o.band) && o.band! > 1 ? o.band! : 1);
   const v = shotCapVerdict({ rule, isAdmin: o.isAdmin, cap, shotCredits, takeCredits, code: o.code }, (n) => `${n} cr`);
   return v.blocked ? v.line : null;
 }

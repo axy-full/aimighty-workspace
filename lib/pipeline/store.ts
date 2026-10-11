@@ -11,7 +11,10 @@ import {
 } from "./compile";
 import {
   PIPELINE_LIMITS,
+  HELD_MODEL_REFUSAL,
   PipelineError,
+  pipelineOffersModel,
+  refuseHeldModel,
   type CompiledPipeline,
   type CompiledStage,
   type MediaKind,
@@ -82,6 +85,16 @@ const terminal = new Set<PipelineAttemptState>([
   "refused",
 ]);
 const json = <T>(value: unknown): T => JSON.parse(String(value)) as T;
+/** A stage, or a request prepared for it, on a model that holds more than its quote is refused (lib/pipeline/schema.ts). */
+function refuseHeld(
+  definition: CompiledStage["definition"],
+  prepared: PreparedStageAdmission[] = [],
+) {
+  if ("model" in definition) refuseHeldModel(definition.model);
+  for (const item of prepared)
+    if (typeof item.request.model === "string")
+      refuseHeldModel(item.request.model);
+}
 const conflict = () =>
   new PipelineError(
     "This run changed. Reload its current state before approving or editing it.",
@@ -432,6 +445,10 @@ export class PipelineStore {
         definition = stage.definition;
       if (!("units" in definition))
         throw new PipelineError("This stage does not need a paid quote.");
+      refuseHeld(
+        definition,
+        units.map((unit) => unit.prepared),
+      );
       if ((await this.resolved(tx, run, stage)).inputHash !== inputHash)
         throw new PipelineError(
           "The resolved inputs changed. Request a fresh quote.",
@@ -541,6 +558,11 @@ export class PipelineStore {
           409,
         );
       if (quote.approvedAt !== null) return run; // Lost approval response replays the existing attempts.
+      /* Before any attempt is queued: the quote shows N, a held model may charge its band times N. */
+      refuseHeld(
+        stageOf(run, quote.stageId).definition,
+        quote.units.map((unit) => unit.prepared),
+      );
       this.checkRevision(run, expectedRevision);
       if (
         quote.baseRevision !== run.revision ||
@@ -887,6 +909,28 @@ export class PipelineStore {
       if (!attempt || terminal.has(attempt.state) || run.state === "cancelled")
         return null;
       if (run.state === "paused") return null;
+      /* An attempt approved before held models were refused is never sent: it is refused, nothing reserved. */
+      if (
+        attempt.state === "queued" &&
+        !attempt.generationId &&
+        typeof attempt.prepared.request.model === "string" &&
+        !pipelineOffersModel(attempt.prepared.request.model)
+      ) {
+        await tx.execute({
+          sql: "UPDATE pipeline_attempts SET state='refused',error=?,updated_at=? WHERE workspace_id=? AND id=? AND state='queued'",
+          args: [HELD_MODEL_REFUSAL, at, this.workspaceId, attemptId],
+        });
+        const next = {
+          ...run,
+          attempts: run.attempts.map((item) =>
+            item.id === attemptId
+              ? { ...item, state: "refused" as const, error: HELD_MODEL_REFUSAL }
+              : item,
+          ),
+        };
+        await this.bump(tx, run, deriveRunState(next), at);
+        return null;
+      }
       if (attempt.state === "queued") {
         await tx.execute({
           sql: "UPDATE pipeline_attempts SET state='submitting',updated_at=? WHERE workspace_id=? AND id=? AND state='queued'",

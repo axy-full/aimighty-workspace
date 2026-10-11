@@ -60,7 +60,8 @@ async function fixture() {
     "@/lib/higgsfield-consumer/video-original": { ConsumerOriginalError },
     "@/lib/higgsfield-consumer/genjutsu-contract": contract,
     "@/lib/genjutsuTypes": genjutsuTypes,
-    "@/lib/higgsfield-consumer/retired": retired,
+    /* The handlers kept behind signInOff, as they ran before Release 1 (the switch itself: tests/unit/signinOffRelease1.spec.ts). */
+    "@/lib/higgsfield-consumer/retired": { ...retired, signInOff: (kept: unknown) => kept },
     "@/lib/higgsfield-consumer/genjutsu-sources": { ConsumerGenjutsuError },
     "@/lib/higgsfield-consumer/genjutsu-service": {
       consumerGenjutsuJobs: service("list", [job]),

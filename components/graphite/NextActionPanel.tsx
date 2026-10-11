@@ -132,7 +132,7 @@ export function NextActionPanel({ id, scope, entry, action, project, onClose, on
     <div className="gx-next-panel" id={id} ref={panel} role="group" aria-label={`${action.label} ${entry.take.name}`} data-testid="next-panel" data-action={action.id}>
       <div className="gx-next-panel-head">
         <span className="gx-next-panel-title">{action.label}</span>
-        {/* The engine that makes it, by the name Gen shows. */}
+        {/* The engine that makes it, by the name Make shows. */}
         <span className="gx-next-label" data-functional-label="">{action.engine}</span>
       </div>
       <p className="gx-next-note">A new take from this one; {entry.take.name} stays as it is.</p>
@@ -147,7 +147,7 @@ export function NextActionPanel({ id, scope, entry, action, project, onClose, on
         ) : null}
       </fieldset>
       <div className="gx-next-go-row">
-        <button type="button" className="gx-primary gx-gen-go gx-next-go" disabled={busy || following || shown == null} data-priced={shown != null ? "" : undefined}
+        <button type="button" className="gx-primary gx-gen-go gx-next-go" disabled={busy || following || shown == null} data-priced={shown != null ? "" : undefined} data-spend={shown != null ? "priced" : "unpriced"} data-spend-price={shown != null ? priceText ?? undefined : undefined}
           onClick={() => void press()} data-testid="next-go" aria-label={priceText ? `${word} · ${priceText}` : word}>
           {busy ? "Sending…" : <><span className="gx-go-act">{word}</span>{priceText ? <span className="gx-go-price"><span className="gx-go-sep">{" · "}</span>{priceText}</span> : null}</>}
         </button>
@@ -239,7 +239,7 @@ function Controls({ settings: s, facts, onChange }: { settings: NextSettings; fa
       if (s.media === "video") return (
         <>
           <Field label="Frame rate">{(l) => <Choice labelledBy={l} testId="next-fps" value={s.fps} onChange={(fps) => onChange({ ...s, fps })} options={[{ value: 30, label: "30 fps" }, { value: 60, label: "60 fps" }]} />}</Field>
-          <p className="gx-next-note">Astra chooses the output size, usually 4K, and keeps the clip’s length.</p>
+          <p className="gx-next-note">Topaz upscale chooses the output size, usually 4K, and keeps the clip’s length.</p>
         </>
       );
       return (

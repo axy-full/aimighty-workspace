@@ -51,7 +51,7 @@ const given = (value: unknown) => value != null && !(typeof value === "string" &
  * read-only token cannot spend, so it keeps no ceiling (a figure sent with
  * one is still read, so a typo is still refused).
  */
-export function tokenCeiling(body: { capUsd?: unknown; capCredits?: unknown }, o: { scope: "read" | "render"; inCredits: boolean }): TokenCeiling {
+export function tokenCeiling(body: { capUsd?: unknown; capCredits?: unknown }, o: { scope: "read" | "render" | "prepare"; inCredits: boolean }): TokenCeiling {
   if (o.inCredits) {
     if (given(body.capUsd)) return { error: "This workspace counts in credits. Set the ceiling in credits, or leave it blank for no limit." };
     const credits = given(body.capCredits) ? parseCreditCeiling(String(body.capCredits)) : { capCredits: null };

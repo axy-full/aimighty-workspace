@@ -11,6 +11,8 @@ import { studioRequest, StudioRequestError } from '@/components/workbench/Genera
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/workbench/ui/dialog';
 import { clearPendingAstraRender, persistPendingAstraRender, readPendingAstraRender, withAstraRenderLock, type PendingAstraRender } from './astra-render-recovery';
 import styles from './astra-render.module.css';
+import { SaveFailedError } from '@/lib/workbench/save-then-continue';
+import { spendAttrsText } from '@/lib/spend';
 
 const ENDPOINT = '/api/workbench/astra-blender/render';
 type NativeProject = Project & { astraNative?: AstraNativeSource };
@@ -29,18 +31,22 @@ function dateLabel(value: number | string) {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Saved run';
 }
+/* The ceiling the saved request was approved at (readPendingAstraRender has verified it is a whole number of credits). */
+function pendingCredits(record: PendingAstraRender): number { return (JSON.parse(record.body) as { maxCredits: number }).maxCredits; }
 function message(error: unknown) { return error instanceof Error ? error.message : 'The native render request could not be completed.'; }
 function verifyHistory(value: RenderState) {
   if (!value || !Array.isArray(value.jobs) || !value.runtime || typeof value.runtime.configured !== 'boolean') throw new Error('The native render status could not be read. Refresh render history.');
   return value;
 }
 
-export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshProject }: {
+export function AstraRenderPanel({ project, scope, enabled, blocked = null, onSave, onRefreshProject }: {
   project: NativeProject;
   scope: string;
   enabled: boolean;
   onSave: () => Promise<boolean>;
   onRefreshProject?: () => Promise<void>;
+  /** Why nothing here may spend (the host's sample-workspace line, lib/demo/sample.ts); the paid presses are disabled and say it. */
+  blocked?: string | null;
 }) {
   const [source, setSource] = useState<Source>(project.astraNative ? 'native' : 'scene');
   const [state, setState] = useState<RenderState | null>(null);
@@ -104,14 +110,14 @@ export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshPro
     if (mounted.current) { setPending(null); setQuote(null); setError(''); setState((previous) => previous ? { ...previous, jobs: [job, ...previous.jobs.filter((item) => item.id !== job.id)] } : previous); }
   };
   async function review() {
-    if (submitting.current || busy) return;
+    if (submitting.current || busy || blocked) return;
     setBusy(true); setError('');
     try {
       const saved = readPendingAstraRender(localStorage, scope, project.id);
       if (saved) { setPending(saved); throw new Error('Recover the previous render request before requesting another quote.'); }
       if (source === 'native' && !project.astraNative) throw new Error('Review and apply a native 3D proposal before rendering native code.');
       const sourceKey = sourceIdentity(project, source);
-      if (!(await latest.current.onSave())) throw new Error('Save this project before reviewing a native render quote.');
+      if (!(await latest.current.onSave())) throw new SaveFailedError();
       if (!mounted.current) return;
       if (sourceKey !== sourceIdentity(latest.current.project, source)) throw new Error('The source changed while saving. Review a quote for the latest source.');
       const sourceDigest = source === 'native' ? await astraNativeDigest(project.astraNative) : await astraSceneDigest(project.astraBlender ?? createAstraScene('product'));
@@ -126,7 +132,7 @@ export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshPro
   }
 
   async function submit(recovery?: PendingAstraRender) {
-    if (submitting.current || busy || !recovery && !quote) return;
+    if (submitting.current || busy || blocked || !recovery && !quote) return;
     submitting.current = true;
     setBusy(true); setError('');
     try {
@@ -135,7 +141,7 @@ export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshPro
         if (!recovery && quote) {
           if (quote.quote.expiresAt <= Date.now()) throw new Error('The render quote expired. Review a new quote.');
           if (quote.sourceKey !== sourceIdentity(latest.current.project, quote.source)) throw new Error('The source changed after this quote. Review a new quote before rendering.');
-          if (!(await latest.current.onSave())) throw new Error('Save the quoted source before starting the render.');
+          if (!(await latest.current.onSave())) throw new SaveFailedError();
           if (quote.sourceKey !== sourceIdentity(latest.current.project, quote.source)) throw new Error('The source changed while saving. Review a new quote before rendering.');
         }
         const body = recovery?.body ?? JSON.stringify({ projectId: project.id, requestId: quote!.requestId, source: quote!.source, sourceDigest: quote!.quote.sourceDigest, quoteOnly: false, quoteDigest: quote!.quote.quoteDigest, maxCredits: quote!.quote.estimateCredits });
@@ -178,12 +184,13 @@ export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshPro
   return <section className={styles.panel} aria-label="Native 3D renders">
     <div className={styles.heading}><h3>Render in the 3D runtime</h3><Server size={16} /></div>
     <p>Run the saved source in native 3D. Keep the finished image and editable scene in your project library, with GLB when compatible.</p>
-    <div className={styles.status} data-ready={state?.runtime.configured === true}><i />{state ? state.runtime.configured ? `3D runtime ${state.runtime.blenderVersion} · Ready` : 'Runtime setup required' : active ? 'Checking 3D runtime…' : 'Sign in to render this project'}</div>
+    <div className={styles.status} data-ready={state?.runtime.configured === true}><i />{state ? state.runtime.configured ? `3D runtime ${state.runtime.blenderVersion} · Ready` : 'Runtime setup required' : active ? 'Checking 3D runtime…' : enabled ? 'Save the project to link its budget first.' : 'Sign in to render this project'}</div>
     {state && !state.runtime.configured && <div className={styles.notice} role="status"><strong>Native rendering is unavailable</strong><p>{state.runtime.reason || 'A workspace administrator needs to connect the 3D runtime.'}</p><p>You can keep editing and download the portable 3D package.</p></div>}
     <label className={styles.source}>Render source<select aria-label="Native render source" value={source} disabled={busy || !!pending} onChange={(event) => { setSource(event.target.value as Source); setQuote(null); }}><option value="scene">3D workspace scene</option><option value="native" disabled={!project.astraNative}>Native 3D program{project.astraNative ? '' : ' · Apply a proposal first'}</option></select></label>
     <p>{source === 'native' ? `${sourceName || 'Native program'} runs in the 3D runtime. Its geometry is shown in the finished render, not in the browser scene editor.` : `${sourceName} uses the saved scene camera and output settings.`}</p>
-    <button className={`${styles.button} ${styles.primary}`} disabled={!active || !state?.runtime.configured || busy || !!pending || !!storageError || !!activeJobs || !!uncertainJobs || source === 'native' && !project.astraNative} onClick={() => void review()}>{busy ? 'Preparing render…' : activeJobs ? 'Render in progress' : uncertainJobs ? 'Awaiting render reconciliation' : 'Review render quote'}</button>
-    {pending && <div className={styles.notice}><strong>One render request needs confirmation</strong><p>Recovery checks the original request before resubmitting its same identity and price.</p><button className={styles.button} disabled={!active || busy} onClick={() => void submit(pending)}>Recover saved render request</button></div>}
+    <button className={`${styles.button} ${styles.primary}`} title={blocked ?? undefined} disabled={!!blocked || !active || !state?.runtime.configured || busy || !!pending || !!storageError || !!activeJobs || !!uncertainJobs || source === 'native' && !project.astraNative} onClick={() => void review()}>{busy ? 'Preparing render…' : activeJobs ? 'Render in progress' : uncertainJobs ? 'Awaiting render reconciliation' : 'Review render quote'}</button>
+    {pending && <div className={styles.notice}><strong>One render request needs confirmation</strong><p>Recovery checks the original request before resubmitting its same identity and price.</p><button className={styles.button} {...spendAttrsText(`up to ${pendingCredits(pending)} cr`)} title={blocked ?? undefined} disabled={!!blocked || !active || busy} onClick={() => void submit(pending)}>{`Recover saved render request · up to ${pendingCredits(pending)} cr`}</button></div>}
+    {blocked && <p className={styles.notice} role="status" data-testid="astra-render-blocked">{blocked}</p>}
     {(error || storageError || pollError) && <div className={styles.error} role="alert">{storageError || error || pollError}</div>}
     <div className={styles.historyHeading}><h4>Render history</h4><button className={styles.refresh} aria-label="Refresh native render history" disabled={!active || refreshing} onClick={async () => { setRefreshing(true); try { await refresh(); } finally { if (mounted.current) setRefreshing(false); } }}><RefreshCw size={13} /></button></div>
     {!state?.jobs.length && <p>No saved renders for this project yet.</p>}
@@ -218,7 +225,8 @@ export function AstraRenderPanel({ project, scope, enabled, onSave, onRefreshPro
       <p>{quote.quote.billingNote}</p>
       {(expired || staleQuote) && <div className={styles.error} role="alert">{staleQuote ? 'The source changed after this quote. Close this dialog and review a new quote.' : 'This quote expired. Close this dialog and review a new quote.'}</div>}
       {error && <div className={styles.error} role="alert">{error}</div>}
-      <button className={`${styles.button} ${styles.primary}`} disabled={busy || expired || staleQuote || !!pending} onClick={() => void submit()}>{busy ? 'Starting native render…' : `Start render · up to ${quote.quote.estimateCredits} cr`}</button>
+      {/* The paid press: its text carries the quoted ceiling, and the marker reads the same words (lib/spend.ts). */}
+      <button className={`${styles.button} ${styles.primary}`} {...spendAttrsText(`up to ${quote.quote.estimateCredits} cr`)} title={blocked ?? undefined} disabled={!!blocked || busy || expired || staleQuote || !!pending} onClick={() => void submit()}>{busy ? 'Starting native render…' : `Start render · up to ${quote.quote.estimateCredits} cr`}</button>
     </div></DialogContent></Dialog>}
   </section>;
 }

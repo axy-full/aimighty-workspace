@@ -1,0 +1,30 @@
+Particl · "every gap, now" · Batch B · CHANGES · written 2026-10-06
+
+Corrections applied (6 Oct) — to the committed master "Particl Suites.dc.html" (shared by Gaps A and Gaps B)
+  1. Thinking: every "Ask · up to N cr", "Start · up to N cr" (and the other Atomik thinking buttons and lines) reads "up to 9 cr", the code's own figure: the planner's ceiling for a new board (lib/workbench/rig-agent.ts planningCredits -> plannerCeilingUsd -> quotedCredits). Never "4 cr". What a plan actually settled at ("Thinking · 4 cr · billed when Atomik planned it") is a charge, not a ceiling, and stays.
+  2. The header balance matches the state shown: the short-by frames (money and Make) show 40 cr in the header.
+  3. Edit & Sound: the code's own export is the browser renderer (components/workbench/MovieExport.tsx: MP4 or WebM, up to 3 minutes, keep the page open, no credits). The frames say exactly that ("Rendering the movie · 62%", "rendered in your browser"); nothing claims a server render or a device render of the master. If server rendering is wanted, "Render master" would instead be disabled with the one line "Final render arrives with server rendering."
+  4. Per-shot admin cap is the code's default, 50 cr (lib/approvalRule.ts cleanShotCap). The "needs an admin" example is Shot 1 as a 10 s Seedance 2.5 shot at 86 cr; "Approve the rest" is 43 + 7 = 50 cr and leaves out only that step.
+  5. Sample budget per production: 400 cr, the 80 % pause at 320 cr; the plan (93 cr) plus its fix allowance (186 cr) fits.
+  6. Make: Auto enhance is on (1 cr), so the button reads "Make · 51 cr" (43 + 7 draft + 1).
+  7. Team roles are the code's owner / admin / member. Only those three roles, and no per-role approval limits. The Team frame draws You (owner), Admin, Member; the budget-and-cap view for a person who is not an admin is ?role=member.
+  8. The sample publishing handle is "@your-brand". Code and seed data never copy Maison Aurel, Northline or any other sample brand.
+  9. Loudness target is a choice per deliverable: Broadcast −23 LUFS or Web & social −14 LUFS (Edit & Sound and Deliver).
+  Also: the sample MCP token reads "ptk_example_····_····".
+  Where a line below still says otherwise, this section wins.
+
+Added in this round
+  8. Money states on the board: short with Top up; failed with Nothing billed · Retry; engine unavailable with the reason; a step needing an admin; paused at 80 % with Continue or Stop.
+  9. Takes: reject with a reason; the Undo toast.
+  10. Make details: film chips, shot control, Enhance with Auto, aspect, Draft first, resolution, length, Sound, voice, music length, number of takes; insufficient credits; failed.
+  11. Motion transfer and Object swap: start and end frames, reordering references, run status and Cancel.
+  12. Settings: an MCP token for Connections (shown once, Copy, Revoke); Team security (two-factor, roles); budget and per-shot cap, admin only (a member's view read-only).
+  13. Empty Ads and Social boards on first open; Social post states (draft, waiting for approval, scheduled, posted, failed).
+
+Fixed during the pre-export check (2026-10-06)
+  - Names: every invented person removed from the master — the cast is "Lead" (was Mira), people are "You", "Admin", "Member" (were named), addresses are your-studio.com.
+  - One filled button per screen: the Atomik "Ask" button is outlined; the picked-look tick is a tint, not a filled button; the card that opened an overlay (3D blocking, Edit & Sound, Record consent) drops to outlined while the overlay is open; a settings page drops its filled action while a dialog is open.
+  - No save buttons: the spending-rules dialog saves as you type ("Done", "Undo changes").
+  - Contrast: disabled buttons read at 55 % white.
+  - Phone: the dock's count badge is 12 px.
+  - Prices: a failed post's Retry reads "Retry · free".

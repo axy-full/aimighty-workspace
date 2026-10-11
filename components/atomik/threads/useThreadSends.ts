@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { useSession } from "@/lib/session";
 import { lockedClaim, paidActionStorageKey, type PendingPaidAction } from "@/lib/usePaidAction";
+import { sendError, sendSavedRequest, UNCONFIRMED } from "@/lib/pendingReplay";
 
 /**
  * A planning turn's saved request, one slot per Atomik thread.
@@ -99,7 +100,7 @@ export function useThreadSends(project: string | null) {
    * Send a thread's planning turn, saved first. `recovering` is the key of the
    * saved request being replayed: the replay is that exact request, or nothing.
    */
-  const run = useCallback(async (thread: string, url: string, body: Record<string, unknown>, recovering?: string) => {
+  const run = useCallback(async (thread: string, url: string, body: Record<string, unknown>, recovering?: string, options: { waitWhilePending?: boolean } = {}) => {
     if (!enabled) throw new Error("Sign in to the original workspace before starting this request.");
     const sentAs = JSON.stringify([ws, who]);
     const storageKey = paidActionStorageKey(ws, who, threadSurface(project, thread));
@@ -119,20 +120,25 @@ export function useThreadSends(project: string | null) {
       throw new Error(error instanceof Error && (error.message.startsWith("Recover the saved") || error.message.startsWith("The saved request was already")) ? error.message : UNREADABLE);
     }
     if (identity.current !== sentAs) throw new Error("The request is saved for recovery in its original workspace.");
-    const response = await fetch(request.url, {
+    /* `waitWhilePending` (a planning turn): a long turn is answered "still being accepted" and finishes on the server,
+       so the same saved request is asked again (same key, never a second run) until its reply is there, for a few
+       minutes at most (lib/pendingReplay.ts). Without it, sent once, as before. */
+    const sent = await sendSavedRequest(() => fetch(request.url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": request.key, "X-Workspace-Id": ws, "X-Actor-Email": who },
       body: request.body,
-    });
-    const data = await response.json().catch(() => null);
+    }), { waitWhilePending: options.waitWhilePending, stillWanted: () => identity.current === sentAs });
+    const { response, data } = sent;
+    if (identity.current !== sentAs) throw new Error("The request is saved for recovery in its original workspace.");
     const final = response.headers.get("Idempotency-Status") === "complete";
-    if (!response.ok) {
+    const failed = sendError(sent, !!options.waitWhilePending);
+    if (failed) {
       /* A reply the server recorded as final (a refusal, an archived thread) ends the saved request: it can only answer the same. */
-      if (final) await complete(storageKey, request.key);
-      throw new Error(data?.error || "The response could not be confirmed. Recover the saved request.");
+      if (!response.ok && final) await complete(storageKey, request.key);
+      throw new Error(failed);
     }
-    if (!data || typeof data !== "object" || Array.isArray(data) || (!final && typeof data.id !== "string" && typeof data.identity?.id !== "string"))
-      throw new Error("The response could not be confirmed. Recover the saved request.");
+    if (!data || typeof data !== "object" || Array.isArray(data) || (!final && typeof data.id !== "string" && typeof (data.identity as { id?: unknown } | undefined)?.id !== "string"))
+      throw new Error(UNCONFIRMED);
     /* Confirmed: the request is done wherever this person now is, so its slot is cleared. */
     await complete(storageKey, request.key);
     if (identity.current !== sentAs) throw new Error("The request is saved for recovery in its original workspace.");

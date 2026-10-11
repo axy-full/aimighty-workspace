@@ -2,6 +2,7 @@ import { syncCreditReceipts } from "./creditReceipts";
 import { db, ready, id as newId, now } from "./db";
 import { billedCreditsSum } from "./creditSql";
 import { creditsApply } from "./credits";
+import { spentBy, workspaceBudget } from "./caps";
 import { currentTenant } from "./tenant";
 import { STEPS } from "@/components/ui/Stepper";
 
@@ -79,6 +80,8 @@ export async function listProductions(): Promise<ProductionRow[]> {
   await ready();
   await syncCreditReceipts();
   const dollars = !creditsApply(currentTenant()?.workspace);
+  /* A credits project with no cap of its own follows the workspace's budget per production (lib/caps.ts projectCap). */
+  const budget = dollars ? null : await workspaceBudget();
   const [prods, projs] = await Promise.all([
     db().execute(`SELECT * FROM productions ORDER BY created_at DESC`),
     db().execute(`
@@ -97,15 +100,17 @@ export async function listProductions(): Promise<ProductionRow[]> {
       ) g ON g.project_id = p.id
       ORDER BY p.created_at ASC`),
   ]);
+  /* What each project has used, as the reservation gate counts it (lib/caps.ts spentBy): one figure on every screen. */
+  const used = dollars ? null : await spentBy("project_id", (projs.rows as Row[]).map((r) => String(r.id)));
   const byProd = new Map<string, ProjectRow[]>();
   for (const r of projs.rows as Row[]) {
     const row: ProjectRow = {
       id: String(r.id), productionId: String(r.production_id ?? ""), name: String(r.name), format: String(r.format ?? ""),
       runtimeSecs: r.runtime_target == null ? null : Number(r.runtime_target), step: cleanStep(r.step),
-      shots: Number(r.shots ?? 0), capCredits: r.cap_credits == null ? null : Number(r.cap_credits),
+      shots: Number(r.shots ?? 0), capCredits: r.cap_credits == null ? budget : Number(r.cap_credits),
       needYou: Number(r.need ?? 0), mediaCount: Number(r.media ?? 0),
       createdAt: Number(r.created_at ?? 0),
-      ...(dollars ? { capUsd: r.cap_usd == null ? null : Number(r.cap_usd), spentUsd: Number(r.spend ?? 0) } : { spentCredits: Number(r.credits ?? 0) }),
+      ...(dollars ? { capUsd: r.cap_usd == null ? null : Number(r.cap_usd), spentUsd: Number(r.spend ?? 0) } : { spentCredits: used?.get(String(r.id))?.credits ?? Number(r.credits ?? 0) }),
     };
     const list = byProd.get(row.productionId) ?? [];
     list.push(row); byProd.set(row.productionId, list);

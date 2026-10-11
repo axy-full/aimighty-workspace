@@ -5,6 +5,7 @@ import { platformDb as db, platformReady as ready, now, newId } from "@/lib/plat
 import { SUPER_ADMIN_EMAIL } from "@/lib/auth";
 import { mailConfigured, sendMail } from "@/lib/mail";
 import { clientIp } from "@/lib/clientIp";
+import { accessRequestNote } from "@/lib/accessRequestNote";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,9 @@ export const POST = recoveryRoute(async function POST(req: NextRequest) {
 
   const email = String(b.email ?? "").trim().toLowerCase();
   const name = String(b.name ?? "").trim().slice(0, 120);
-  const note = String(b.note ?? "").trim().slice(0, 1200);
+  /* What the person told us rides in the existing note (lib/accessRequestNote.ts), with no new column: what they make
+     and their brief (Guest Home, lead decision 39); the company, role and company size (the join sheet). */
+  const note = accessRequestNote(b);
   if (!looksLikeEmail(email)) {
     return NextResponse.json(
       { error: "That doesn't look like an email address." }, { status: 400 },

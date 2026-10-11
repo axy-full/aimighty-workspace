@@ -2,6 +2,7 @@ import { CATEGORIES, type ShotSpec } from "./studio";
 import { MODELS, DEFAULT_MODEL_ID } from "./models";
 import { TEXT_RATES } from "./refineGate";
 import { DEFAULT_PLANS, cleanPlans, type PlanDef } from "./plans";
+import { aliasModel } from "./modelAliases";
 
 /**
  * The platform layer: what every new workspace inherits and may change.
@@ -34,7 +35,7 @@ export type StarterCast = { name: string; kind: "character" | "location" | "prop
 export type StarterProduction = { name: string; code: string; description: string; shots: StarterShot[]; cast: StarterCast[] };
 
 export const STARTER_CAST: StarterCast = {
-  name: "Mara",
+  name: "Courier",
   kind: "character",
   description: "A courier in her thirties. Cropped dark hair, a weathered orange jacket, a canvas bag across the chest. Always mid-errand, never posed.",
 };
@@ -49,7 +50,7 @@ export const STARTER_PRODUCTION: StarterProduction = {
       description: "An establishing shot: a quiet street at dawn, wet from the night, the first light along the rooftops.",
       setup: { shot: "evs", time: "dawn" }, cast: [] },
     { code: "SH020", title: "The courier", planned: 5,
-      description: "@Mara crosses the street with the bag held close, the camera pushing in as she passes.",
+      description: "@Courier crosses the street with the bag held close, the camera pushing in as she passes.",
       setup: { shot: "ms", move: "push" }, cast: [STARTER_CAST.name] },
     { code: "SH030", title: "The hand-off", planned: 5,
       description: "A close-up: the package changes hands on a doorstep, soft light, nothing said.",
@@ -117,7 +118,9 @@ function cleanTextModels(v: unknown): TextModels {
   const out = { ...DEFAULT_TEXT_MODELS };
   if (!isObj(v)) return out;
   for (const job of TEXT_JOBS) {
-    const id = (v as Record<string, unknown>)[job];
+    /* A dropped id is its alias before the check, so a saved routing moves to the nearest model rather than to the default (lib/modelAliases.ts). */
+    const raw = (v as Record<string, unknown>)[job];
+    const id = typeof raw === "string" ? aliasModel(raw) : raw;
     if (typeof id === "string" && TEXT_MODEL_IDS.includes(id)) out[job] = id;
   }
   return out;
@@ -126,7 +129,7 @@ function cleanTextModels(v: unknown): TextModels {
 /** The model a text job runs on, from the layer's pair — never empty. */
 export function textModelFor(models: { text?: Partial<TextModels> } | null | undefined, job: TextJob): string {
   const id = models?.text?.[job];
-  return typeof id === "string" && id ? id : DEFAULT_TEXT_MODELS[job];
+  return typeof id === "string" && id ? aliasModel(id) : DEFAULT_TEXT_MODELS[job];
 }
 
 /** A real, visible engine of the kind — or nothing. */

@@ -13,6 +13,7 @@ import WorkspaceMenu, { type WorkbenchAccount } from "@/components/workbench/Wor
 import { clearPrivateLocal } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { withPageLeaveGuard } from "@/lib/usePageLeaveGuard";
+import { switchWorkspace } from "@/lib/shell/switch-workspace";
 import "./studio-navigation.css";
 
 type Section = "studio" | "gen" | "assets" | "workspace";
@@ -31,16 +32,19 @@ function sectionFor(path: string): Section {
 
 async function changeAccount(scopedFetch: ReturnType<typeof useScopedFetch>, action: "switch" | "logout", id?: string) {
   await withPageLeaveGuard(async () => {
-  const response = await scopedFetch(action === "switch" ? "/api/workspaces/switch" : "/api/auth/logout", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(action === "switch" ? { id } : {}),
-  });
+  /* The one switch (lib/shell/switch-workspace.ts). These pages hold no board, so there is nothing of one to save first. */
+  if (action === "switch") {
+    const why = await switchWorkspace({ id: id ?? "", fetch: scopedFetch, go: () => { clearPrivateLocal(); window.location.assign("/workbench"); } });
+    if (why) throw new Error(why);
+    return;
+  }
+  const response = await scopedFetch("/api/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Your account could not be changed. Please try again.");
   }
   clearPrivateLocal();
-  window.location.assign(action === "switch" ? "/workbench" : "/login");
+  window.location.assign("/login");
   });
 }
 
