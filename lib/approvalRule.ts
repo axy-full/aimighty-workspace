@@ -33,6 +33,32 @@ export function jobApprovalLineCredits(perCredit: number): number {
   return Math.floor((JOB_APPROVAL_LINE_USD / perCredit) * 10 + 1e-9) / 10;
 }
 
+/**
+ * Guardrail 4 at the press (SOW §7A): a single job priced above the platform's approval line needs an admin's own tap, whatever
+ * the workspace's approval rule, and whatever shot it is for. Judged on the job's price in credits (`credits`: a take at its hold,
+ * a batch's takes multiplied before they are compared where a quote stands for several), against `lineCredits`, the line at the
+ * workspace's price of a credit (`jobApprovalLineCredits`). Exactly at the line is not above it.
+ *
+ * Who clears it: an admin pressing it themselves (`isAdmin`, and a person). A member is refused with the sentence that says an admin
+ * must start it. An API token, an MCP client and Atomik (`machine`) are refused outright, admin or not: they prepare a job over the
+ * line, and an admin starts it (rule 14: approving spend is a person's alone). `figures` says whether the sentence may carry
+ * credits (a credit workspace); the house, which pays in dollars at cost, is never worded in credits.
+ */
+export const JOB_LINE_STATUS = 403;
+export function jobLineVerdict(o: { credits: number; lineCredits: number; isAdmin: boolean; machine: boolean; figures?: boolean },
+  credits: (n: number) => string = (n) => `${Math.round(n).toLocaleString("en-US")} cr`): { blocked: boolean; line: string } {
+  if (!(o.lineCredits > 0) || !(o.credits > o.lineCredits + 1e-9)) return { blocked: false, line: "" };
+  const figures = o.figures !== false;
+  if (o.machine)
+    return { blocked: true, line: figures
+      ? `A job over ${credits(o.lineCredits)} needs an admin's own tap. Atomik, an MCP client and API tokens can prepare it, never start it.`
+      : "A job this size needs an admin's own tap. Atomik, an MCP client and API tokens can prepare it, never start it." };
+  if (o.isAdmin) return { blocked: false, line: "" };
+  return { blocked: true, line: figures
+    ? `This job is ${credits(o.credits)}, over the ${credits(o.lineCredits)} that needs an admin. An admin has to start it.`
+    : "This job is over the size that needs an admin. An admin has to start it." };
+}
+
 /** What the composer says under the price, or nothing when anyone may press. */
 export function ruleLine(rule: ApprovalRule, cap: number, credits: (n: number) => string): string {
   if (rule === "cap") return `Over ${credits(cap)} on a shot needs an admin.`;

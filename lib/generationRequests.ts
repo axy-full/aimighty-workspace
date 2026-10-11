@@ -16,7 +16,8 @@ import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./bil
 import { capVerdict, projectCap, type CapRule } from "./caps";
 import { freshSettings } from "./settings";
 import { workspaceLimits } from "./limits";
-import { cleanRule, cleanShotCap } from "./approvalRule";
+import { JOB_LINE_STATUS, cleanRule, cleanShotCap, jobApprovalLineCredits, jobLineVerdict } from "./approvalRule";
+import { isAgentId } from "./security/people-only";
 import type { MeterEvent } from "./meter";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx, CreditBalanceError } from "./billingLedger";
 import { admitToPoolTx, providerPoolReady, sharedPoolOf } from "./providerPool";
@@ -422,6 +423,11 @@ type ReservationOptions = {
    * once, at band 1.
    */
   holdBand?: number;
+  /**
+   * Whether an admin's own tap started this job, for guardrail 4 (a job over the approval line, lib/approvalRule.ts). Omitted, the
+   * signed-in admin's; a held take's release decides from its author (lib/held.ts), not from whoever's poll released it.
+   */
+  adminTap?: boolean;
 };
 export async function reserveGenerationSpend(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   // Local libsql clients share a connection; never interleave transactions on it.
@@ -512,6 +518,14 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     const keptBand = Math.max(holdBand, Number(prior?.hold_band) > 1 ? Number(prior!.hold_band) : 1);
     const held = billed * keptBand;
     const heldAtCeiling = paid && keptBand > 1;
+    /* Guardrail 4 (SOW §7A): a NEW job priced above the approval line (at its hold, the most it can settle at) needs an admin's own tap, whatever the
+       workspace's rule or the job's shot. A token, an MCP client or an agent is refused outright. Nothing is reserved. A job already reserved keeps its reservation. */
+    if (paid && !prior && held > 0) {
+      const machine = options.token != null || currentTenant()?.token != null || isAgentId(event.createdBy);
+      const stop = jobLineVerdict({ credits: held, lineCredits: jobApprovalLineCredits(terms.creditUsd), machine,
+        isAdmin: options.adminTap ?? currentTenant()?.user?.role === "admin", figures: creditsApply(ws) });
+      if (stop.blocked) throw new SpendReservationError(stop.line, JOB_LINE_STATUS, true);
+    }
     /* Every cap below reads a take that holds its ceiling at its hold (credits: the hold; dollars: its cost times
        the band), as the balance does, since that is what it may settle at; any other job at its estimate. */
     const band = heldAtCeiling ? keptBand : 1;

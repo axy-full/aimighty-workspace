@@ -1,6 +1,6 @@
 import { billCreditsWith, marginFor, creditUsd, margins } from "./creditTerms";
 import { capVerdict, type CapRule, type CapUnit } from "./caps";
-import { shotCapVerdict, ruleLine, type ApprovalRule } from "./approvalRule";
+import { jobLineVerdict, shotCapVerdict, ruleLine, type ApprovalRule } from "./approvalRule";
 import { heldMessage } from "./held";
 import { ALLOWANCE_REACHED } from "./allowance";
 
@@ -212,6 +212,11 @@ export type Context = {
   rule: ApprovalRule;
   shotCap: number;
   isAdmin: boolean;
+  /**
+   * Guardrail 4 (lib/approvalRule.ts › jobLineVerdict): the approval line in credits at this workspace's price of a credit, and whether
+   * the asker is a machine (a token, an MCP client, Atomik). Absent: no line is judged here (the press still judges it).
+   */
+  jobLine?: { credits: number; machine: boolean };
 };
 
 const fmt = (n: number): string => `${Math.round(n).toLocaleString("en-US")} cr`;
@@ -227,6 +232,14 @@ export function verdictOf(q: Quote, c: Context): Verdict {
      Judging the set on its sum would stop a member under a rule the workspace
      never set; judging it with no history at all would wave through the second
      take of a shot already at its ceiling. */
+  /* Guardrail 4, whatever the rule and whatever the shot: a line priced above the approval line (its takes multiplied first: a line stands for
+     every take it carries) needs an admin's own tap; a machine is refused outright. The same words as the press (lib/approvalRule.ts). */
+  if (c.jobLine) {
+    for (const l of q.lines) {
+      const stop = jobLineVerdict({ credits: l.credits, lineCredits: c.jobLine.credits, isAdmin: c.isAdmin, machine: c.jobLine.machine }, fmt);
+      if (stop.blocked) return { allow: false, gate: "approval", line: stop.line, notice: "" };
+    }
+  }
   if (c.rule === "cap" && !c.isAdmin) {
     for (const l of q.lines) {
       const stop = shotCapVerdict({

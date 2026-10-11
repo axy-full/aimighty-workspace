@@ -1,6 +1,9 @@
 import { getSetting } from "./settings";
 import { billCredits } from "./creditTerms";
-import { cleanRule, cleanShotCap, shotCapVerdict } from "./approvalRule";
+import { cleanRule, cleanShotCap, jobApprovalLineCredits, jobLineVerdict, shotCapVerdict } from "./approvalRule";
+import { creditUsd } from "./creditTerms";
+import { creditsApply } from "./credits";
+import { currentTenant } from "./tenant";
 import { spentBy } from "./caps";
 
 /**
@@ -24,5 +27,17 @@ export async function shotCapGate(o: { shotId: string; code: string; takeUsd: nu
   /* A take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts) counts at its hold, not its estimate. */
   const takeCredits = billCredits(o.takeUsd, o.modelId) * (Number.isInteger(o.band) && o.band! > 1 ? o.band! : 1);
   const v = shotCapVerdict({ rule, isAdmin: o.isAdmin, cap, shotCredits, takeCredits, code: o.code }, (n) => `${n} cr`);
+  return v.blocked ? v.line : null;
+}
+
+/**
+ * Guardrail 4 before a take is parked or sent (lib/approvalRule.ts › jobLineVerdict): a job above the approval line needs an admin's own
+ * tap, whatever the rule and shot; a token, an MCP client or an agent is refused outright. The reservation (lib/generationRequests.ts)
+ * judges the same job again under its write lock and is the authority; this stops it earlier, so a member's over-line take is told so at the
+ * press and is never parked as held. Null when nothing stops it.
+ */
+export function jobLineGate(o: { takeUsd: number; modelId: string; band?: number; isAdmin: boolean; machine: boolean }): string | null {
+  const credits = billCredits(o.takeUsd, o.modelId) * (Number.isInteger(o.band) && o.band! > 1 ? o.band! : 1);
+  const v = jobLineVerdict({ credits, lineCredits: jobApprovalLineCredits(creditUsd()), isAdmin: o.isAdmin, machine: o.machine, figures: creditsApply(currentTenant()?.workspace) });
   return v.blocked ? v.line : null;
 }

@@ -110,7 +110,8 @@ import {
 } from "@/lib/identities";
 import { isBatchId } from "@/lib/variations";
 import { uploadSourceParams } from "@/lib/sourceClip";
-import { shotCapGate } from "@/lib/shotCap";
+import { jobLineGate, shotCapGate } from "@/lib/shotCap";
+import { isAgentId } from "@/lib/security/people-only";
 import { approvedTakeOf } from "@/lib/shots";
 import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
@@ -1383,6 +1384,11 @@ export async function executeGenerationAdmission(
           { status: 409 },
         );
       }
+      /* Guardrail 4: a job over the approval line needs an admin's own tap, whatever the rule or shot (lib/approvalRule.ts). */
+      {
+        const over = jobLineGate({ takeUsd: estStillUsd, modelId, isAdmin: got.user.role === "admin", machine: got.token != null || isAgentId(got.user.id) });
+        if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
+      }
       /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
       if (stillShot && stillShotCode) {
         const stop = await shotCapGate({
@@ -2059,6 +2065,11 @@ export async function executeGenerationAdmission(
         },
         { status: 409 },
       );
+    }
+    /* Guardrail 4: a job over the approval line needs an admin's own tap, whatever the rule or shot (lib/approvalRule.ts); its hold counts. */
+    {
+      const over = jobLineGate({ takeUsd: estUsd, modelId, band, isAdmin: got.user.role === "admin", machine: got.token != null || isAgentId(got.user.id) });
+      if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
     }
     /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
     if (shotId && shotCode) {
