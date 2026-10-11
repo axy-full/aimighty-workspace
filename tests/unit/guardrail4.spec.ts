@@ -108,15 +108,19 @@ test("the reservation: a member over the line is refused (403, nothing reserved)
   const { runInTenant } = await import("../../lib/tenant");
   const { platformDb, platformReady } = await import("../../lib/platform");
   const { ready } = await import("../../lib/db");
-  const ws = workspace("line");
   await platformReady();
-  await platformDb().execute({ sql: `INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,?,?,?)`, args: ["grant_line", ws.id, 100_000, "Test", 0] });
+  /* One funded workspace for each case, so no job slot (the workspace's concurrency) is spent by another case. */
+  const funded = async (name: string) => {
+    const ws = workspace(`line_${name}`);
+    await platformDb().execute({ sql: `INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,?,?,?)`, args: [`grant_line_${name}`, ws.id, 100_000, "Test", 0] });
+    return ws;
+  };
   const { over, under } = await costs();
   const reserved = async (id: string) => Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM generation_reservations WHERE id=?", args: [id] })).rows[0].n);
   const refusal = async (run: () => Promise<unknown>) => { try { await run(); } catch (e) { return e as InstanceType<typeof SpendReservationError>; } return null; };
   const as = (user: TenantUser | null, extra: { token?: { id: string; name: string; scope: "render" | "prepare"; capUsd: number | null } } = {}) => ({ user, ...extra });
 
-  await runInTenant(ws, async () => {
+  await runInTenant(await funded("member"), async () => {
     await ready();
     /* A member, whatever the rule (the default is "anyone") and with or without a shot: refused, 403, nothing reserved. */
     const noShot = await refusal(() => reserveGenerationSpend(event("gen_member_a", over)));
@@ -125,7 +129,7 @@ test("the reservation: a member over the line is refused (403, nothing reserved)
     expect(noShot!.message).toMatch(/An admin has to start it\./);
     expect(await reserved("gen_member_a")).toBe(0);
   }, as(person("u_member", "member")));
-  await runInTenant(ws, async () => {
+  await runInTenant(await funded("member2"), async () => {
     const withShot = await refusal(() => reserveGenerationSpend(event("gen_member_b", over, { shotId: "shot_x" })));
     expect(withShot).toMatchObject({ status: 403 });
     expect(await reserved("gen_member_b")).toBe(0);
@@ -134,12 +138,12 @@ test("the reservation: a member over the line is refused (403, nothing reserved)
     expect(await reserved("gen_member_c")).toBe(1);
   }, as(person("u_member", "member")));
   /* An admin's own tap clears it. */
-  await runInTenant(ws, async () => {
+  await runInTenant(await funded("admin"), async () => {
     await reserveGenerationSpend(event("gen_admin_a", over));
     expect(await reserved("gen_admin_a")).toBe(1);
   }, as(person("u_admin", "admin")));
   /* A token, admin's or not, is refused outright; so is an agent identity acting under an admin's session. */
-  await runInTenant(ws, async () => {
+  await runInTenant(await funded("token"), async () => {
     const t = await refusal(() => reserveGenerationSpend(event("gen_token_a", over), { token: { id: "tok1", capUsd: null, capCredits: null } }));
     expect(t).toMatchObject({ status: 403 });
     expect(t!.message).toMatch(/Atomik, an MCP client and API tokens can prepare it, never start it\./);
@@ -151,11 +155,29 @@ test("the reservation: a member over the line is refused (403, nothing reserved)
     expect(await reserved("gen_token_b")).toBe(1);
   }, as(person("u_admin", "admin"), { token: { id: "tok1", name: "agent", scope: "render", capUsd: null } }));
   /* A held take's release decides from its author: an admin author's clears it, a member author's does not. */
-  await runInTenant(ws, async () => {
+  await runInTenant(await funded("held"), async () => {
     await reserveGenerationSpend(event("gen_held_admin", over, { createdBy: "u_admin" }), { adminTap: true });
     expect(await reserved("gen_held_admin")).toBe(1);
     const m = await refusal(() => reserveGenerationSpend(event("gen_held_member", over, { createdBy: "u_member" }), { adminTap: false }));
+    expect(m?.message).toMatch(/An admin has to start it/);
     expect(m).toMatchObject({ status: 403 });
     expect(await reserved("gen_held_member")).toBe(0);
   }, as(null));
+});
+
+test("before a take is parked or sent (admission): the same words, the hold counts, and a member's over-line take is told at the press, never parked", async () => {
+  const { jobLineGate } = await import("../../lib/shotCap");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { over, under } = await costs();
+  await runInTenant(workspace("gate"), async () => {
+    const member = { isAdmin: false, machine: false, modelId: "mock" };
+    expect(jobLineGate({ takeUsd: over, ...member })).toMatch(/An admin has to start it\./);
+    expect(jobLineGate({ takeUsd: under, ...member })).toBeNull();
+    expect(jobLineGate({ takeUsd: over, ...member, isAdmin: true })).toBeNull();
+    expect(jobLineGate({ takeUsd: over, ...member, isAdmin: true, machine: true })).toMatch(/never start it\./);
+    expect(jobLineGate({ takeUsd: under, ...member, machine: true })).toBeNull();
+    /* A take that holds its ceiling counts at its hold: under the line at its estimate, over it at three times that. */
+    expect(jobLineGate({ takeUsd: under * 0.7, ...member })).toBeNull();
+    expect(jobLineGate({ takeUsd: under * 0.7, ...member, band: 3 })).toMatch(/An admin has to start it\./);
+  });
 });

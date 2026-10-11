@@ -461,6 +461,13 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const legacyCap = projectId ? (await db().execute({ sql: "SELECT cap_usd,cap_credits,cap_unlocked FROM projects WHERE id=?", args: [projectId] })).rows[0] : null;
   const limits = await workspaceLimits();
   const shotCapExempt = options.shotCapExempt ?? currentTenant()?.user?.role === "admin";
+  /* Guardrail 4's admin tap (lib/approvalRule.ts): the caller said (a held take's release decides from its author), else the signed-in admin's. It judges a
+     PRESS: a signed-in person, a token, an agent identity, or a release that states its tap. Background work with no actor at all carries what the request
+     it continues already passed at admission, which judged it (lib/shotCap.ts › jobLineGate); it is not asked again here without anyone to ask. */
+  const user = currentTenant()?.user;
+  const machineCaller = options.token != null || currentTenant()?.token != null || isAgentId(event.createdBy);
+  const adminTap = options.adminTap ?? (user ? user.role === "admin" : false);
+  const lineJudged = Boolean(user) || machineCaller || options.adminTap !== undefined;
   const shotCap = event.shotId && !shotCapExempt && cleanRule(settings!.approvalRule) === "cap"
     ? cleanShotCap(settings!.shotCapCredits) : null;
   const ruleRaw = cap ? settings!.atCap : null;
@@ -518,14 +525,6 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     const keptBand = Math.max(holdBand, Number(prior?.hold_band) > 1 ? Number(prior!.hold_band) : 1);
     const held = billed * keptBand;
     const heldAtCeiling = paid && keptBand > 1;
-    /* Guardrail 4 (SOW §7A): a NEW job priced above the approval line (at its hold, the most it can settle at) needs an admin's own tap, whatever the
-       workspace's rule or the job's shot. A token, an MCP client or an agent is refused outright. Nothing is reserved. A job already reserved keeps its reservation. */
-    if (paid && !prior && held > 0) {
-      const machine = options.token != null || currentTenant()?.token != null || isAgentId(event.createdBy);
-      const stop = jobLineVerdict({ credits: held, lineCredits: jobApprovalLineCredits(terms.creditUsd), machine,
-        isAdmin: options.adminTap ?? currentTenant()?.user?.role === "admin", figures: creditsApply(ws) });
-      if (stop.blocked) throw new SpendReservationError(stop.line, JOB_LINE_STATUS, true);
-    }
     /* Every cap below reads a take that holds its ceiling at its hold (credits: the hold; dollars: its cost times
        the band), as the balance does, since that is what it may settle at; any other job at its estimate. */
     const band = heldAtCeiling ? keptBand : 1;
@@ -597,6 +596,12 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
         band: heldAtCeiling ? 1 : options.run.band,
       });
       if (!verdict.ok) throw new SpendReservationError(RUN_LIMIT_REACHED, 409, true);
+    }
+    /* Guardrail 4 (SOW §7A): a NEW job priced above the approval line (at its hold, the most it can settle at) needs an admin's own tap, whatever the
+       workspace's rule or the job's shot. A token, an MCP client or an agent is refused outright. Judged after the balance and every cap have had their say, so a refusal they would give is still theirs. Nothing is reserved. A job already reserved keeps its reservation. */
+    if (paid && !prior && held > 0 && lineJudged) {
+      const stop = jobLineVerdict({ credits: held, lineCredits: jobApprovalLineCredits(terms.creditUsd), machine: machineCaller, isAdmin: adminTap, figures: creditsApply(ws) });
+      if (stop.blocked) throw new SpendReservationError(stop.line, JOB_LINE_STATUS, true);
     }
     /* Last, once everything else admits it: a take refused here waits only for a slot. Its slot and its
        reservation commit together, and the slot is free again the moment the reservation stops running. */
