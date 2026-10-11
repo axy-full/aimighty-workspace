@@ -609,7 +609,7 @@ export default function BillingClient({
                       ? `${formatUsd(annual)} billed annually`
                       : `${formatUsd(plan.priceUsd)}${plan.perSeat ? " a seat" : ""} billed monthly`}
                   </p>
-                  <p>{plan.perSeat ? "One shared workspace · credits pooled across seats · renew monthly" : "Unlimited members · included credits renew monthly"}</p>
+                  <p>{plan.perSeat ? "One shared workspace · credits pooled across seats · renew monthly" : plan.group === "individual" ? "One person · included credits renew monthly" : "Unlimited members · included credits renew monthly"}</p>
                   <button
                     aria-pressed={planId === plan.id}
                     className={`management-button ${planId === plan.id ? "primary" : ""}`}

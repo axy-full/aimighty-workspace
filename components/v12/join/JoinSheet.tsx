@@ -186,7 +186,7 @@ function RequestPath({ state, setState, primary }: { state: JoinState; setState:
 
 /**
  * A new-workspace invite (§ 8.4): the workspace's name, then the plan to look at, then today's sign-up page for the code.
- * The plan cards are the display-only placeholders (lib/marketing/planCards.ts); the choice is not carried anywhere, and
+ * The plan cards are the owner's plans, display only (lib/planCards.ts, from lib/plans.ts); the choice is not carried anywhere, and
  * the sign-up page and checkout stay as they are today.
  */
 function NewWorkspace({ state, setState, invite, back }: { state: JoinState; setState: Dispatch<SetStateAction<JoinState>>; invite: Extract<InviteKind, { kind: "new" }>; back: string }) {

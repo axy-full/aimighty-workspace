@@ -120,7 +120,9 @@ export default function PricingClient() {
                   <li>
                     {plan.perSeat
                       ? "One shared workspace · a seat for each person"
-                      : plan.maxMembers == null
+                      : plan.group === "individual"
+                        ? "One person"
+                        : plan.maxMembers == null
                         ? "Your whole team"
                         : `Up to ${plan.maxMembers} members`}
                   </li>

@@ -110,3 +110,18 @@ test("plans are a platform-layer key like the other five", () => {
   expect(mergeLayer({}).plans).toEqual(DEFAULT_PLANS);
   expect(mergeLayer({ plans: [{ id: "studio", priceUsd: 59 }] }).plans.find((p) => p.id === "studio")!.priceUsd).toBe(59);
 });
+
+test("the owner's plans claim only what the owner gave: credits, who it is for, and nothing invented", async () => {
+  const { planLines, PLAN_AUDIENCE } = await import("../../lib/marketing/plans");
+  for (const id of ["explore", "create", "master"]) {
+    const plan = planById(DEFAULT_PLANS, id)!;
+    const lines = planLines(plan, 250);
+    expect(lines, id).toEqual([`${plan.includedCredits.toLocaleString("en-US")} credits a month`, "One person"]);
+    expect(PLAN_AUDIENCE[id]).toBe("For one person.");
+    expect(plan.badge, `${id} carries no badge the owner did not give`).toBeNull();
+  }
+  for (const id of ["business100", "business250", "business500"]) {
+    const plan = planById(DEFAULT_PLANS, id)!;
+    expect(planLines(plan, 250), id).toEqual([`${plan.includedCredits.toLocaleString("en-US")} credits a seat a month`, "One pool of credits across every seat"]);
+  }
+});

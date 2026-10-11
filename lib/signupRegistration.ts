@@ -16,10 +16,10 @@ import {
 } from "./workspaceProvisioning";
 import { mailConfigured, sendMail } from "./mail";
 import { billingConfiguration } from "./billingConfig";
+import { CHOSEN_PLAN_IDS, DEFAULT_CHOSEN_PLAN, type PlanId } from "./plans";
 
 /* A plan a person picked on the pricing page: carried through sign-up as their choice, nothing more. Only a verified paid invoice grants credits. */
-type PaidPlan = "studio" | "agency" | "production" | "explore" | "create" | "master" | "business100" | "business250" | "business500";
-const CHOSEN_PLANS: readonly string[] = ["explore", "create", "master", "business100", "business250", "business500", "studio", "agency", "production"];
+type PaidPlan = Exclude<PlanId, "invite">;
 type Cadence = "monthly" | "annual";
 export type SignupChoice = { planId: PaidPlan; cadence: Cadence };
 export type SignupInput = {
@@ -45,9 +45,9 @@ type Registration = {
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 const cleanChoice = (plan?: string, cadence?: string): SignupChoice => ({
-  planId: CHOSEN_PLANS.includes(plan ?? "")
+  planId: (CHOSEN_PLAN_IDS as readonly string[]).includes(plan ?? "")
     ? (plan as PaidPlan)
-    : "explore",
+    : (DEFAULT_CHOSEN_PLAN as PaidPlan),
   cadence: cadence === "annual" ? "annual" : "monthly",
 });
 export const signupNext = (choice: SignupChoice) =>

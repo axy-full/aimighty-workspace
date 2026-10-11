@@ -8,6 +8,7 @@ import { billingPath, readAnswer, signupSignInPath } from "@/lib/authPages";
 import { decodeGuestBrief, guestBriefRaw, subscribeGuestBrief } from "@/lib/guest/brief";
 import { makeFirstBoardFromGuestBrief } from "@/lib/guest/first-board";
 import "@/components/graphite/shell.css";
+import { CHOSEN_PLAN_IDS, DEFAULT_CHOSEN_PLAN } from "@/lib/plans";
 import "@/components/graphite/guest/guest.css";
 
 /**
@@ -34,7 +35,7 @@ type SignupAvailability = {
 };
 class InviteOnly extends Error {}
 const validPlan = (value: string | null) =>
-  ["explore", "create", "master", "business100", "business250", "business500", "studio", "agency", "production"].includes(value || "") ? value! : "explore";
+  (CHOSEN_PLAN_IDS as readonly string[]).includes(value || "") ? value! : DEFAULT_CHOSEN_PLAN;
 
 export default function SignupPage() {
   return (

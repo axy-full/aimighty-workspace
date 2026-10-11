@@ -20,7 +20,7 @@ import "./billing.css";
 /**
  * Settings › Credits & billing in the new interface (docs/redesign-plan.md, item B2; docs/redesign/inventory.md § 5.6;
  * prototype `?view=billing`). Display only: every figure is a route's answer (lib/v12/billing.ts lists them) and the
- * plan cards are the display-only placeholders in lib/marketing/plans' sibling, lib/marketing/planCards.ts.
+ * plan cards are the owner's plans, display only (lib/planCards.ts, from lib/plans.ts).
  *
  * Top up does not request, charge or pay here: it opens today's flow, unchanged (Settings › Plan & credits with its packs
  * open, `onTopUp`). The house workspace pays in dollars and is never shown credit figures.

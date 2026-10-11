@@ -78,7 +78,7 @@ export const DEFAULT_PLANS: PlanDef[] = [
   { id: "agency", label: "Agency", priceUsd: 199, includedCredits: 1600, maxProductions: null, maxMembers: null, group: "legacy", offered: false, perSeat: false, badge: null },
   { id: "production", label: "Production", priceUsd: 999, includedCredits: 9000, maxProductions: null, maxMembers: null, group: "legacy", offered: false, perSeat: false, badge: null },
   { id: "explore", label: "Explore", priceUsd: 50, includedCredits: 500, maxProductions: null, maxMembers: null, group: "individual", offered: true, perSeat: false, badge: null },
-  { id: "create", label: "Create", priceUsd: 100, includedCredits: 1000, maxProductions: null, maxMembers: null, group: "individual", offered: true, perSeat: false, badge: "Most people" },
+  { id: "create", label: "Create", priceUsd: 100, includedCredits: 1000, maxProductions: null, maxMembers: null, group: "individual", offered: true, perSeat: false, badge: null },
   { id: "master", label: "Master", priceUsd: 250, includedCredits: 2500, maxProductions: null, maxMembers: null, group: "individual", offered: true, perSeat: false, badge: null },
   { id: "business100", label: "Business 100", priceUsd: 100, includedCredits: 1000, maxProductions: null, maxMembers: null, group: "business", offered: true, perSeat: true, badge: null },
   { id: "business250", label: "Business 250", priceUsd: 250, includedCredits: 2500, maxProductions: null, maxMembers: null, group: "business", offered: true, perSeat: true, badge: null },
@@ -109,6 +109,10 @@ export const cycleCredits = (plan: Pick<PlanDef, "includedCredits" | "perSeat">,
  * (lib/billingConfig.ts ANNUAL_DISCOUNT_PERCENT) and the annual cadence in checkout's own config are kept for when it returns.
  */
 export const YEARLY_SHOWN = false;
+
+/** The plans a person can carry through sign-up as their choice: every plan but Invite (the free default), and the one a new link starts on. */
+export const CHOSEN_PLAN_IDS: readonly PlanId[] = PLAN_IDS.filter((id) => id !== "invite");
+export const DEFAULT_CHOSEN_PLAN: PlanId = DEFAULT_PLANS.find((p) => p.offered)!.id;
 
 export const isPlanId = (v: unknown): v is PlanId => (PLAN_IDS as readonly string[]).includes(String(v));
 
