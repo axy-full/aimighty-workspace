@@ -116,5 +116,5 @@ test("a take queued for a free slot holds nothing yet: its figure is the start's
   expect(heldPrice({ ...waiting, stage: "submitting" }, label)).toBeNull();
   const started = job({ id: "go", price: { amount: 43, unit: "cr" } });
   const groups = activityGroups([waiting, started], [], { scope: "all", draftId: null, now: 60_000, heldWord: (j) => heldPrice(j, label) });
-  expect(groups.running.map((r) => r.meta)).toEqual(["Mirror film · Queued · 1 min so far", "Mirror film · Rendering · 1 min so far · 43 cr held"]);
+  expect(groups.running.map((r) => r.meta)).toEqual(["Mirror film · Queued · 1 min so far", "Mirror film · Rendering · 1 min so far · about 3 min left · 43 cr held"]);
 });

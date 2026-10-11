@@ -60,6 +60,9 @@ import { roundCardsFor, type RoundCardData } from "@/components/v12/rounds/round
 import { RoundCard } from "@/components/v12/rounds/RoundCard";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
+import { openBlocking } from "./blocking/blocking-store";
+import { useShotsBatch } from "@/components/v12/render/use-batch";
+import { NotifyAsk } from "@/components/v12/render/NotifyAsk";
 import { useRecordRound } from "@/components/v12/rounds/use-round";
 import { RoundBadge, useCopyWhatChanged } from "@/components/v12/rounds/RoundBadge";
 import { cleanRounds, latestRound } from "@/lib/v12/rounds";
@@ -252,6 +255,13 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     if (!id) { pick(new Set(), null); return; }
     pick(opts?.add ? new Set([...selection.ids, id]) : new Set([id]), id);
   }, [pick, selection.ids]);
+
+  /* The Shots stage as a batch (components/v12/render/use-batch.ts, redesign P3): its meta, the ready toast, the tab title, the opt-in. */
+  const batch = useShotsBatch({
+    cards: stageOwn, on: v12Frame && stage?.id === "shots",
+    onView: (nodeId) => { glide({ card: nodeId }); select(nodeId); },
+    selected: selection.ids,
+  });
 
   /* A client round's plan, once a person approves it, is kept in the draft (components/v12/rounds/use-round.ts). */
   useRecordRound({ on: v12Frame, project, items, run: agent, apply: rig.apply });
@@ -699,18 +709,21 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const inspected = v12Frame && details !== primary?.id ? null : primary;
   /* The stage header (inventory § 6.4): the stage's meta, the selection, the one primary where its action lives, the board menu. */
   const stageNow = stage ? stageStatus(stage, allCards, flavor) : null;
-  const stageMeta = page === "ppm" ? deckMeta(deckSections({ ...deckFacts(project), shots: shotRows(project.production?.beats, project.boardShotList).length }, false)) : stageNow && stageNow.summary && stageNow.summary !== "Nothing yet" ? stageNow.summary : null;
+  const stageMeta = page === "ppm" ? deckMeta(deckSections({ ...deckFacts(project), shots: shotRows(project.production?.beats, project.boardShotList).length }, false)) : batch.meta ?? (stageNow && stageNow.summary && stageNow.summary !== "Nothing yet" ? stageNow.summary : null);
   const crumb = selectionCrumb([...selection.ids].map((id) => {
     const data = placed.byId.get(id)?.data as { title?: unknown; name?: unknown } | undefined;
     return typeof data?.title === "string" && data.title ? data.title : typeof data?.name === "string" && data.name ? data.name : "1 card";
   }));
   const wants = stagePrimary(stage, allCards, flavor);
   const headPrimary = wants ? { label: wants.label, run: () => { select(wants.card); glide({ card: wants.card }); } } : null;
+  /* The 3D blocking card is not drawn on the new stages (a stray box under the grid): its way in is the board menu. */
+  const blocking = (allCards.find((c) => c.kind === "blocking")?.data as { nodeId?: string } | undefined)?.nodeId ?? null;
   const boardMenu = [
     { id: "library", label: "Library", shortcut: "L", onSelect: () => window.dispatchEvent(new Event(LIBRARY_OPEN_EVENT)) },
     { id: "history", label: "History", onSelect: () => setDrawer("history") },
     ...(round ? [{ id: "share-round", label: `Share R${round.n} · copy what changed`, onSelect: () => void copyRound() }] : []),
     ...(kind === "studio" ? [{ id: "render", label: "3D scene", onSelect: () => setDrawer("render") }] : []),
+    ...(v12Frame && blocking ? [{ id: "blocking", label: "3D blocking", onSelect: () => openBlocking(blocking) }] : []),
     { id: "fit", label: "Fit to view", shortcut: "0", onSelect: () => void flow.fitView({ padding: 0.08, duration: GLIDE_MS, ease: glideEase }) },
     ...(freeCards.length && !offline ? [{ id: "tidy", label: "Tidy", onSelect: () => void tidy() }] : []),
   ];
@@ -753,6 +766,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             <BoardBar ctx={ctx} selection={crumb} onClearSelection={() => pick(new Set(), null)} tool={tool} onDisarm={() => setTool("select")}
               onAttach={(picked) => void upload(picked)} library={items} onAsked={() => setDockOpen(true)} />
           ) : null}
+          {batch.offer && !list ? <NotifyAsk onTell={() => void batch.tellMe()} onNotNow={batch.notNow} /> : null}
           {list || page ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12Frame} />
           {v12Frame ? <ViewSwitch view={list ? "list" : "canvas"} onView={(v) => setList(v === "list")} /> : null}

@@ -50,12 +50,13 @@ const STRIP = 36;
  * The cards a grid stage lays out: today's, with
  *  - the review group (the take that waits, its versions) left out: a finished shot card carries Approve · Reject itself,
  *    and everything else the review card offered is in the card's review mode and Details;
+ *  - the 3D blocking card left out (its way in is the board menu's "3D blocking"): it is not a shot or a frame, and sat as a stray box under the grid;
  *  - the plan card out of the Storyboard group, so it sits under the grid at its own width (a group's columns are as wide as its widest card);
  *  - each shot, frame and group told it is drawn on the grid (`grid`), so it draws its card actions and no frame.
  */
 export function gridCards(cards: readonly BoardCard[]): BoardCard[] {
   return cards
-    .filter((card) => card.id !== REVIEW_GROUP && card.group !== REVIEW_GROUP)
+    .filter((card) => card.id !== REVIEW_GROUP && card.group !== REVIEW_GROUP && card.kind !== "blocking")
     .map((card) => {
       if (card.kind === "plan" && card.group) return { ...card, group: undefined };
       if (card.kind === "take" || card.kind === "frame" || card.kind === "cast" || card.kind === "group") return { ...card, data: { ...(card.data as object), grid: true } };
