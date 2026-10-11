@@ -159,8 +159,9 @@ test.describe("desktop, switch on", () => {
     await page.getByTestId("v12-board-menu").click();
     await expect(page.getByRole("menuitem", { name: "Share R2 · copy what changed" })).toBeVisible();
     await page.keyboard.press("Escape");
-    /* Nothing offers an MP4 or a Send: neither is built. */
-    await expect(page.getByText(/MP4|Send via/)).toHaveCount(0);
+    /* The round offers no MP4 and no Send: neither is built. (The Deliver page's own delivery grid names its MP4 rows; that is its own.) */
+    await expect(share.getByText(/MP4|Send via/)).toHaveCount(0);
+    await expect(page.getByTestId("v12-board-menu")).not.toContainText(/MP4|Send via/);
     expect(await noSideways(page)).toBe(true);
     expect(errors).toEqual([]);
   });

@@ -359,6 +359,13 @@ export const projectSchema = z.object({
   boardKind: z.enum(["studio", "ads", "social"]).optional(),
   /* The board's kind in the new interface (lib/v12/board/kinds.ts): Film, Pre-vis, Campaign, Social narrated or clips. Additive and optional, draft JSON only. */
   boardFlavor: z.enum(["film", "previs", "campaign", "narrated", "clips"]).optional(),
+  /* The Pre-vis shot list's cells a person wrote (lib/v12/ppm.ts), by the beat sheet's shot id; and the Deliver stage's languages (lib/v12/deliver.ts). Additive and optional, draft JSON only. */
+  boardShotList: z.record(z.string().regex(/^[A-Za-z0-9_-]{1,80}$/), z.object({
+    frame: z.string().max(200).optional(), dur: z.string().max(200).optional(), lens: z.string().max(200).optional(), move: z.string().max(200).optional(),
+    cast: z.string().max(200).optional(), location: z.string().max(200).optional(), props: z.string().max(200).optional(), wardrobe: z.string().max(200).optional(),
+    vo: z.string().max(200).optional(), notes: z.string().max(200).optional(),
+  }).strict()).optional().refine((v) => !v || Object.keys(v).length <= 400, "Too many shots"),
+  boardLanguages: z.array(z.string().regex(/^[a-z]{2,3}$/)).max(12).optional(),
   /* The board's stages as arranged in the new interface (lib/v12/board/stages.ts): additive and optional, draft JSON only. */
   boardStages: z.array(z.object({
     id: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/),
