@@ -11,6 +11,7 @@ import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
+import { listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -36,6 +37,14 @@ export const GET=withTenant(async(req:Request)=>{
      Ads draft carries a marketing brief; an empty one is not one). Only when asked: it parses each listed draft. */
   const kinds=new URL(req.url).searchParams.get('kinds')==='1';
   const KIND="CASE WHEN json_valid(body) THEN COALESCE(NULLIF(json_extract(body,'$.boardKind'),''),CASE WHEN NULLIF(json_extract(body,'$.marketingBrief'),'') IS NOT NULL OR NULLIF(json_extract(body,'$.moleculr'),'') IS NOT NULL THEN 'ads' END) END AS kind";
+  /* ?id=&owner=: a teammate's board, to look at (view-only: nothing here writes to it). ?team=1: every member's boards, the caller's marked. */
+  const ownerParam=new URL(req.url).searchParams.get('owner');
+  if(id&&ownerParam&&ownerParam!==auth.user.id){
+    const seen=await readTeamBoard(requireTenant(),auth.user.id,ownerParam,id);
+    if(!seen)return Response.json({error:'Not found'},{status:404,headers:noStore});
+    return projectResponse(req,{projects:[],productions:[],project:seen.project,revision:seen.revision,shared:null,viewOnly:{owner:seen.owner}});
+  }
+  const team=new URL(req.url).searchParams.get('team')==='1'?await listTeamBoards(requireTenant(),auth.user.id,{kinds}):null;
   const [list,productions,draft]=await Promise.all([
     db().execute({sql:`SELECT project_id AS id,name,revision,updated_at AS updatedAt${kinds?`,${KIND}`:''} FROM workbench_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 100`,args:[auth.user.id]}),
     db().execute('SELECT id,name FROM projects ORDER BY created_at DESC LIMIT 100'),
@@ -51,7 +60,7 @@ export const GET=withTenant(async(req:Request)=>{
       shared={...body,version:Number(row.version)};
     }
   }
-  return projectResponse(req,{projects:list.rows,productions:productions.rows,project:draft?.project||null,revision:draft?.revision||0,shared});
+  return projectResponse(req,{projects:list.rows,productions:productions.rows,project:draft?.project||null,revision:draft?.revision||0,shared,...(team?{team}:{})});
 });
 
 /** A feature film's project (and its shared copy) can pass Vercel's 4.5 MB response limit, so a large answer leaves gzipped; browsers unpack it. */
@@ -72,6 +81,9 @@ export const PUT=withTenant(async(req:Request)=>{
   if(!parsed.success)return Response.json({error:saveProblem(parsed.error)},{status:400});
   await workbenchReady();
   const {project:p,revision,write}=parsed.data;
+  /* A teammate's board opens view-only: a save of it is refused here, never kept as a second copy under this person's name. */
+  const theirs=await otherOwnersBoard(requireTenant(),auth.user.id,p.id);
+  if(theirs)return Response.json({error:viewOnlyRefusal(theirs.name),code:'view_only'},{status:403,headers:noStore});
   try{return Response.json(await saveDraft(auth.user.id,p,revision,write));}
   catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.',...(error instanceof DraftConflictError?{code:error.code}:{})},{status:409});}
 });
@@ -111,7 +123,11 @@ export const POST=withTenant(async(req:Request)=>{
     return projectResponse(req,{landed,project:now?.project??null,revision:now?.revision??0});
   }
   const draft=await readDraft(auth.user.id,body.projectId);
-  if(!draft)return Response.json({error:'Save your project first.'},{status:404});
+  if(!draft){
+    const theirs=await otherOwnersBoard(requireTenant(),auth.user.id,body.projectId);
+    if(theirs)return Response.json({error:viewOnlyRefusal(theirs.name),code:'view_only'},{status:403,headers:noStore});
+    return Response.json({error:'Save your project first.'},{status:404});
+  }
   if(body.action==='map-shot'){
     try{return Response.json({productionProjectId:draft.project.productionProjectId,shotId:await mapNodeShot(auth.user.id,draft.project,String(body.nodeId||''))})}
     catch(e){return Response.json({error:e instanceof Error?e.message:'Cannot map this node'},{status:400})}
