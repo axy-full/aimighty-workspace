@@ -18,6 +18,7 @@ import type { HomeViewProps } from "@/components/graphite/home/HomeView";
 import { useHomeNav } from "@/components/graphite/home/use-home-nav";
 import { useHomeStart } from "@/components/graphite/home/use-home-start";
 import { MAX_FILES } from "@/components/graphite/home/BriefBox";
+import { useBarSkills } from "@/components/v12/bar/use-bar-skills";
 import { Bar, BarChip, BarSheet, type BarMention } from "@/components/v12/bar/Bar";
 import { Price } from "@/components/v12/ui/Price";
 import { readGuestBrief, clearGuestBrief } from "@/lib/guest/brief";
@@ -114,6 +115,7 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
   const joined = useRef<"home" | "make" | null | undefined>(undefined);
   const { onDraft: setDraftOnce } = s;
   const bar = s.draft.text;
+  const skills = useBarSkills(bar, (text) => setDraftOnce((d) => ({ ...d, text })));
   const openMake = shell.openMake;
   useEffect(() => {
     if (joined.current === undefined)
@@ -206,6 +208,7 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
       <div className="v12-hm-bar" ref={barBox}>
         <Bar
           value={s.draft.text}
+          skills={skills}
           onChange={(text) => onDraft((d) => ({ ...d, text }))}
           onSubmit={send}
           placeholder={picked ? "Anything to add (optional)" : "Describe a film, ad or idea, or pick one above"}

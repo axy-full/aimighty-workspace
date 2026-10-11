@@ -1,6 +1,7 @@
 "use client";
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useOverlay } from "@/components/v12/ui/overlay";
+import { typingSlash } from "@/lib/v12/skills";
 import { Tooltip } from "@/components/v12/ui/Tooltip";
 import "./bar.css";
 
@@ -33,6 +34,29 @@ export type BarSend = {
   attrs?: Record<string, string | boolean | undefined>;
 };
 
+/** One row of the "/" skills list: its command, and its price drawn by the screen from the quote layer. */
+export type BarSkillRow = { key: string; slug: string; name: string; line?: string; price: ReactNode; /** Why it cannot be picked (not built), or null. */ off?: string | null };
+
+/**
+ * The "/" skills list (docs/redesign/inventory.md § 10.4): opens above the bar while the words are a command being typed
+ * (`/`, `/unb`). Picking a row only writes "/slug " into the words; the bar adds nothing that spends. Enter on a made
+ * command (`/unboxing`, alone or with words) is the screen's `onRun`: it opens what runs today (a saved skill's run form,
+ * a format's stage), whose own priced button and a person's tap are the only way anything is spent.
+ */
+export type BarSkills = {
+  /** The rows the command being typed matches, best first. */
+  listed: readonly BarSkillRow[];
+  loading?: boolean;
+  failed?: boolean;
+  onRetry?: () => void;
+  /** A row was picked (its command is already in the words, unless the row is off). */
+  onPick: (row: BarSkillRow) => void;
+  /** Enter on a made command: true when it named a skill and was handled (the send does not run). */
+  onRun: (text: string) => boolean;
+  /** Dialogs the screen opens for a run, drawn outside the bar's card. */
+  dialogs?: ReactNode;
+};
+
 export type BarProps = {
   value: string;
   onChange: (value: string) => void;
@@ -53,6 +77,8 @@ export type BarProps = {
   mentionsTitle?: string;
   /** Instead of "@Name " in the words, the screen takes the picked item (Make adds it as a reference). */
   onMention?: (mention: BarMention) => void;
+  /** The "/" skills list. Absent: "/" is just a character. */
+  skills?: BarSkills;
   /** Chips between [@] and the words (BarChip). */
   chips?: ReactNode;
   /** Above the row, inside the bar. */
@@ -67,7 +93,7 @@ export type BarProps = {
 };
 
 export function Bar(props: BarProps) {
-  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, onAttachPress, attachAccept, attachTitle = "Attach a file — Upload a file from your computer.", mentions, mentionsTitle = "From the library", onMention, chips, sheet, note, disabled, maxLength, docked, testId = "v12-bar" } = props;
+  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, onAttachPress, attachAccept, attachTitle = "Attach a file — Upload a file from your computer.", mentions, mentionsTitle = "From the library", onMention, skills, chips, sheet, note, disabled, maxLength, docked, testId = "v12-bar" } = props;
   const input = useRef<HTMLInputElement>(null);
   const files = useRef<HTMLInputElement>(null);
   const pop = useRef<HTMLDivElement>(null);
@@ -79,6 +105,21 @@ export function Bar(props: BarProps) {
   const listOpen = mentionOpen && Boolean(mentions?.length);
   const count = mentions?.length ?? 0;
   const current = Math.min(active, Math.max(0, count - 1));
+  /* The "/" skills list: open while the words are a command being typed, until Esc; its own highlighted row. */
+  const skillsPop = useRef<HTMLDivElement>(null);
+  const [slashOff, setSlashOff] = useState(false);
+  const [skillActive, setSkillActive] = useState(0);
+  const skillsId = useId();
+  const slashOpen = Boolean(skills) && typingSlash(value) && !slashOff && !mentionOpen;
+  const listed = slashOpen && skills ? skills.listed : [];
+  const skillCurrent = Math.min(skillActive, Math.max(0, listed.length - 1));
+  useOverlay("menu", slashOpen, () => setSlashOff(true), { refs: [skillsPop, input], outside: true });
+  const pickSkill = (row: BarSkillRow) => {
+    if (!row.off) onChange(`/${row.slug} `);
+    skills?.onPick(row);
+    setSkillActive(0);
+    input.current?.focus();
+  };
   const openList = () => { setActive(0); setMentionOpen(true); };
   const close = () => setMentionOpen(false);
   /* A menu on the overlay stack: Esc closes it before anything under it, and so does a click outside the list, the @ and the words. */
@@ -95,6 +136,10 @@ export function Bar(props: BarProps) {
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (listOpen && mentions && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); step(e.key === "ArrowDown" ? 1 : -1); return; }
     if (listOpen && mentions && e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); mention(mentions[current]); return; }
+    if (slashOpen && listed.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); setSkillActive((n) => (Math.min(n, listed.length - 1) + (e.key === "ArrowDown" ? 1 : listed.length - 1)) % listed.length); return; }
+    if (slashOpen && listed.length && e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); pickSkill(listed[skillCurrent]); return; }
+    if (e.key === "Escape" && slashOpen) { e.preventDefault(); e.stopPropagation(); setSlashOff(true); return; }
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && skills && value.startsWith("/") && skills.onRun(value)) { e.preventDefault(); return; }
     if (e.key === "Escape" && listOpen) { e.preventDefault(); e.stopPropagation(); close(); return; }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -128,6 +173,26 @@ export function Bar(props: BarProps) {
           ))}
         </div>
       ) : null}
+      {slashOpen && skills ? (
+        <div ref={skillsPop} className="v12-bar-skills" role="listbox" id={skillsId} aria-label="Skills" data-testid={`${testId}-skills`}>
+          <div className="v12-bar-skills-head">Skills · each shows its quote before it runs</div>
+          {skills.loading && !listed.length ? <p className="v12-bar-skills-note" role="status">Reading skills…</p> : null}
+          {skills.failed ? (
+            <p className="v12-bar-skills-note" role="alert">Your saved skills could not be read. {skills.onRetry ? <button type="button" className="v12-bar-skills-retry" onClick={skills.onRetry}>Try again</button> : null}</p>
+          ) : null}
+          {!skills.loading && !skills.failed && !listed.length ? <p className="v12-bar-skills-note" role="status">No skill has that name.</p> : null}
+          <div className="v12-bar-skills-grid">
+            {listed.map((row, i) => (
+              <button key={row.key} id={`${skillsId}-${i}`} type="button" role="option" aria-selected={i === skillCurrent} aria-disabled={row.off ? true : undefined} data-active={i === skillCurrent ? "" : undefined}
+                data-off={row.off ? "" : undefined} className="v12-bar-skill" title={row.off ?? (row.line ? `${row.name} · ${row.line}` : row.name)} tabIndex={-1}
+                onMouseDown={(e) => e.preventDefault()} onClick={() => pickSkill(row)} data-testid={`${testId}-skill`} data-slug={row.slug}>
+                <span className="v12-bar-skill-name">/{row.slug}</span>
+                <span className="v12-bar-skill-price">{row.price}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div className="v12-bar-card" data-disabled={disabled ? "" : undefined}>
         {sheet}
         <div className="v12-bar-row">
@@ -150,9 +215,9 @@ export function Bar(props: BarProps) {
           ) : null}
           {chips}
           <input ref={input} className="v12-bar-input" value={value} placeholder={placeholder} aria-label={label} maxLength={maxLength} disabled={disabled}
-            role={mentions ? "combobox" : undefined} aria-expanded={mentions ? listOpen : undefined} aria-controls={listOpen ? listId : undefined}
-            aria-activedescendant={listOpen ? `${listId}-${current}` : undefined} aria-autocomplete={mentions ? "list" : undefined}
-            onChange={(e) => { const next = e.target.value; onChange(next); if (mentions?.length && /(^|\s)@$/.test(next)) openList(); }}
+            role={mentions || skills ? "combobox" : undefined} aria-expanded={mentions || skills ? listOpen || slashOpen : undefined} aria-controls={listOpen ? listId : slashOpen ? skillsId : undefined}
+            aria-activedescendant={listOpen ? `${listId}-${current}` : slashOpen && listed.length ? `${skillsId}-${skillCurrent}` : undefined} aria-autocomplete={mentions || skills ? "list" : undefined}
+            onChange={(e) => { const next = e.target.value; onChange(next); setSlashOff(false); setSkillActive(0); if (mentions?.length && /(^|\s)@$/.test(next)) openList(); }}
             onKeyDown={onKey} data-testid={`${testId}-input`} />
           <button type="button" className={send.variant === "outlined" ? "v12-bar-send v12-bar-send-outlined" : send.variant === "quiet" ? "v12-bar-send v12-bar-send-quiet" : "v12-bar-send"} onClick={() => canSend && onSubmit()}
             disabled={!canSend} aria-busy={send.busy || undefined} title={send.title} data-testid={send.testId ?? `${testId}-send`} {...send.attrs}>
@@ -161,6 +226,7 @@ export function Bar(props: BarProps) {
         </div>
       </div>
       {note ? <p className={note.tone === "problem" ? "v12-bar-note v12-bar-problem" : "v12-bar-note"} role={note.tone === "problem" ? "alert" : "status"} data-testid={`${testId}-note`}>{note.text}</p> : null}
+      {skills?.dialogs}
     </div>
   );
 }

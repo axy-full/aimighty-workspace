@@ -84,6 +84,11 @@ export const UNPRICED = {
     why: "Product voice-over and Website walk-through have no creative brief in lib/workbench/moleculr-creative.ts and no engine path; nothing can be quoted or made.",
     hover: "This format is priced once it can be made.",
   },
+  skillPriceLater: {
+    action: "A saved \"/\" skill whose steps cannot all be priced before its words are filled in",
+    why: "A saved skill is priced by its free preview (POST /api/atomik/skills/[id]/run {dryRun:true}), which needs every parameter filled in and every engine chosen, and gives a figure only for steps with a list rate; a skill with a blank parameter, an engine to choose, or a voice or library step has no figure until its run form is filled in.",
+    hover: "This skill is priced when you fill in its words; each step shows its own price before it runs.",
+  },
 } as const satisfies Record<string, Unpriced>;
 
 export type UnpricedId = keyof typeof UNPRICED;
