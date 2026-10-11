@@ -87,6 +87,25 @@ These settle the lead's decisions above and the open questions in the builder's 
 
 8. **More owner decisions (10–11 Oct, night):** #622 Reuse seed: yes. #627's five: all yes (a separate site setting for the visitor pages, off by default; `?workspace=` pre-fill only with an invite code; company/role/size in the existing access-request note; "You don't have access to this board."; keep the test-only join page). Plans mapping: later, with payments. Lip-sync stays "quoted". Google sign-in: later. Whether teammates see each other's boards: still the owner's question; build nothing for it.
 
+## Owner decisions (Akshay, 11 Oct midday)
+
+1. **#627** is merged by the owner; the lead doesn't merge it.
+2. **#639 (Cancel for queued fal jobs):**
+   - (a) A job is free only on an explicit cancel signal; a 404/410 is not free.
+   - (b) A running job stopped after a 202 is free if fal returns no video, and charged if fal answers with an error.
+   - (c) A timed-out cancel followed by a 404 with no cancel on record stays charged. Each case is logged (job id, time, provider replies) for review and manual refund.
+   - It needs an Opus review and stays open as NEEDS AKSHAY.
+3. **#595 privacy text:** name each AI provider that receives prompts or files, with one line on what it receives: Anthropic, OpenAI, Google, xAI, BytePlus, fal, Higgsfield (API), ElevenLabs, Luma, Recraft, and any other engine in use. Remove "Vercel gateway" (no longer used). Keep "older files still in Vercel Blob" only if it is still true. The owner reads the final text before merging.
+4. **CI:** add `push: release/1` (full suite after every merge), then the slimmer per-PR set: units, core, the PR's own specs, and the guard set (spend-buttons, switch-off checks, five-minute test, customer smoke). The full suite still runs on any PR touching money, sign-in, tenant separation or shared code. It's one NEEDS AKSHAY PR. A red post-merge run comes before any other merge.
+5. **Rig:** show the board bar, and hide it only where it would cover nodes. The lead may merge once green and reviewed.
+6. **#631 wording:** "Approve the rest". The lead may merge once green and reviewed.
+7. **Flaky tests (workspaceCapDoors, storage-stream-memory):** a small tests-only PR that keeps every assertion. The lead may merge once green and reviewed.
+8. **Teammates' boards and Google sign-in:** still later; nothing is built.
+9. **Permanent rule:** never edit, weaken or add exceptions to a guard or safety test (spend-buttons, paid routes, privacy, switch-off, one-design, UI-names) to make a check pass. Fix the code instead, and ask the owner if a guard itself looks wrong.
+10. **Order, three lanes at most:** the CI PR, then #639, then the small PRs (Rig bar, wording, flakes, #595 text), then P6 resumes (Social kinds, Remix, "/" skills) on top of the merged Campaign board.
+11. **#642:** retake the screenshots with the Ask Atomik buttons and add them to the PR for the record.
+12. **11 Oct, 13:30–14:15 IST:** the owner deploys #609 to production. Keep #609 green, push nothing to main, and run no heavy work on the server in that window.
+
 ## Merge rule
 
 The lead merges into release/1 only when all of these hold:
