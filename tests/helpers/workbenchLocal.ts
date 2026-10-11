@@ -54,9 +54,32 @@ export async function signInLocally(api: APIRequestContext, name = "Workbench Te
     },
   });
   expect(signup.ok(), await signup.text()).toBeTruthy();
-  return (await signup.json()) as {
+  const signed = (await signup.json()) as {
     workspace: { id: string; name: string; slug: string };
   };
+  /* The new interface is on for every workspace (lib/newInterface.ts); the specs that assert today's screens keep their workspace on
+     them by the platform owner's opt-out, as the owner could from /admin. A spec of the new interface lifts it (signInToRedesign). */
+  await setNewInterfaceOff(signed.workspace.id, true);
+  return signed;
+}
+
+/** Lists a workspace as off (or lifts it) in the local platform database's site setting `newInterfaceOff`, as the platform owner would from /admin. */
+export async function setNewInterfaceOff(workspaceId: string, off: boolean) {
+  const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try {
+    const row = await db.execute({ sql: "SELECT value FROM platform_layer WHERE key = 'site'", args: [] });
+    const site = row.rows.length ? JSON.parse(String(row.rows[0].value)) as Record<string, unknown> : {};
+    const listed = Array.isArray(site.newInterfaceOff) ? (site.newInterfaceOff as string[]) : [];
+    /* Newest first and capped, so a long local run never pushes the list past the setting's limit. */
+    site.newInterfaceOff = (off ? [workspaceId, ...listed.filter((id) => id !== workspaceId)] : listed.filter((id) => id !== workspaceId)).slice(0, 40);
+    await db.execute({
+      sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, ?, 'test')
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+      args: [JSON.stringify(site), Date.now()],
+    });
+  } finally {
+    db.close();
+  }
 }
 
 /**
