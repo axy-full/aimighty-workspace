@@ -86,7 +86,7 @@ export function clientRoundModel(model: PlanModel, goal: string, shots: ShotOfNo
     return { ...step, meta: [`Asked: “${text}”`, step.meta].filter(Boolean).join(" · ") };
   });
   const title = model.phase === "proposal" || model.phase === "planning" ? "Client round" : `Round ${round}`;
-  const primary = model.primary && model.primary.kind === "plan" ? { ...model.primary, label: model.primary.label.replace(/^Approve\b/, "Approve all") } : model.primary;
+  const primary = model.primary && model.primary.kind === "plan" ? { ...model.primary, label: model.primary.label.replace(/^Approve\b(?! the rest)/, "Approve all") } : model.primary;
   return { ...model, title: changes ? `${title} · ${changes} ${changes === 1 ? "change" : "changes"}` : title, steps, primary };
 }
 
