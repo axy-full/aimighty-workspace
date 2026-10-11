@@ -196,6 +196,22 @@ test("Failed saves: each workspace is read in its own database; stored renders a
   ]);
 });
 
+test("Retry save: a save that worked is reported as saved even when its audit line cannot be written", async () => {
+  const { wsA } = await fixture();
+  const { retryFailedSave, forgetFailedSaves } = await import("../../lib/platformFailedSaves");
+  await render(wsA, `gen-audit-${run}`, null);
+  forgetFailedSaves();
+  const logged: string[] = [];
+  const log = console.error;
+  console.error = (...args: unknown[]) => { logged.push(String(args[0])); };
+  try {
+    /* An actor id the line refuses: the line cannot be written, the answer is still the real one. */
+    expect(await retryFailedSave({ workspaceId: wsA.id, id: `gen-audit-${run}`, actorId: "not an id!" }, async () => ({ stored: true }))).toEqual({ saved: true });
+  } finally { console.error = log; }
+  expect(logged.some((l) => l.includes("platform_audit.write_failed"))).toBe(true);
+  expect(await lines("target_id = ?", [`gen-audit-${run}`])).toEqual([]);
+});
+
 test("AI models: only engines in the registry with a working key and a price; only text models that can be saved and have a price", async () => {
   const { consoleModels } = await import("../../lib/platformConsole.server");
   const { TEXT_MODEL_IDS } = await import("../../lib/platformLayer");

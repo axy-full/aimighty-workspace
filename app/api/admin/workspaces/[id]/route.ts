@@ -82,8 +82,8 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }
   }
   if ("grantCredits" in body) {
     const n = Number(body.grantCredits);
-    if (!Number.isFinite(n) || n === 0 || Math.abs(n) > 1_000_000) {
-      return NextResponse.json({ error: "Credits to add: a number, negative to take some away." }, { status: 400 });
+    if (!Number.isInteger(n) || n === 0 || Math.abs(n) > 1_000_000) {
+      return NextResponse.json({ error: "Credits to add: a whole number, negative to take some away." }, { status: 400 });
     }
     /* `manual`, which counts as free. Management adding credits is usually
        goodwill; when it is a payment taken off-platform there is nowhere yet

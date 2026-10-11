@@ -52,6 +52,8 @@ export type PlatformAuditDetails = {
   part?: "setup" | "starter" | "rules" | "caps" | "models" | "plans";
   /** A failed save was tried again, and how it went. */
   saved?: boolean;
+  /** An invitation was sent again: false on the line written before the send (the attempt), true on the one after it went. */
+  sent?: boolean;
 };
 export type PlatformAuditInput = {
   actorId: string;
@@ -83,7 +85,7 @@ export function platformAuditStatement(input: PlatformAuditInput, changedOnly = 
   for (const [key, value] of Object.entries(details)) {
     const valid = key === "credits" ? typeof value === "number" && Number.isFinite(value)
       : key === "kind" ? value === "manual"
-      : key === "openSignup" || key === "visitorPages" || key === "guestHome" || key === "saved" ? typeof value === "boolean"
+      : key === "openSignup" || key === "visitorPages" || key === "guestHome" || key === "saved" || key === "sent" ? typeof value === "boolean"
       : key === "guestWorkspace" ? value === "set" || value === "cleared"
       : key === "newInterfaceWorkspaces" ? typeof value === "number" && Number.isInteger(value) && value >= 0
       : key === "part" ? PARTS.includes(String(value))

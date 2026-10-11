@@ -88,7 +88,11 @@ export async function retryFailedSave(
   } finally {
     forgetFailedSaves();
     /* A try is on the record whether or not it saved (and whether or not it threw); a refused one never started, so it leaves no line. */
-    if (attempted) await platformDb().execute(platformAuditStatement({ actorId: input.actorId, action: "save.retried", targetType: "take", targetId: input.id, workspaceId: input.workspaceId, details: { saved } }));
+    /* Its failure is logged and never changes the answer: a save that worked is not reported as an error because its line could not be written. */
+    if (attempted) {
+      try { await platformDb().execute(platformAuditStatement({ actorId: input.actorId, action: "save.retried", targetType: "take", targetId: input.id, workspaceId: input.workspaceId, details: { saved } })); }
+      catch (error) { console.error(JSON.stringify({ level: "error", event: "platform_audit.write_failed", action: "save.retried", message: error instanceof Error ? error.message : "unknown" })); }
+    }
   }
   return { saved };
 }

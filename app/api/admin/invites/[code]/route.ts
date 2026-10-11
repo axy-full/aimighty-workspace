@@ -38,14 +38,25 @@ export const POST = recoveryRoute(async function POST(req: Request, { params }: 
   const origin = inviteOrigin(req);
   if (origin === null) return NextResponse.json({ error: MAIL_LINK_UNSET }, { status: 409 });
   const link = `${origin}/signup?invite=${code}`;
+  /* The attempt is on the record before anything is sent: if its line cannot be written, nothing is sent, so a send is never unrecorded. */
+  const ref = inviteRef(code);
+  try {
+    await platformDb().batch([
+      { sql: `UPDATE signup_invites SET send_count = send_count + 1 WHERE code = ?`, args: [code] },
+      platformAuditStatement({ actorId: got.user.id, action: "invite.resent", targetType: "invite", targetId: ref, details: { sent: false } }, true),
+    ], "write");
+  } catch {
+    return NextResponse.json({ error: "It could not be recorded, so nothing was sent. Try again." }, { status: 503 });
+  }
   try {
     await sendMail({ to: String(row.email), ...signupInviteEmail({ name: String(row.name ?? ""), link, days: 14 }) });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }
+  /* It went. Its own line says so; if that cannot be written the attempt line above still stands, and the answer is still the true one. */
   await platformDb().batch([
-    { sql: `UPDATE signup_invites SET sent_at = ?, send_count = send_count + 1 WHERE code = ?`, args: [now(), code] },
-    platformAuditStatement({ actorId: got.user.id, action: "invite.resent", targetType: "invite", targetId: inviteRef(code) }, true),
-  ], "write");
+    { sql: `UPDATE signup_invites SET sent_at = ? WHERE code = ?`, args: [now(), code] },
+    platformAuditStatement({ actorId: got.user.id, action: "invite.resent", targetType: "invite", targetId: ref, details: { sent: true } }, true),
+  ], "write").catch((error: unknown) => { console.error(JSON.stringify({ level: "error", event: "platform_audit.write_failed", action: "invite.resent", message: error instanceof Error ? error.message : "unknown" })); });
   return NextResponse.json({ ok: true, sent: true });
 });

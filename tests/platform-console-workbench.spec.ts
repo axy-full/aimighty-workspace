@@ -90,6 +90,31 @@ test("the console is the owner's alone: a member and a stranger are refused by e
   await guest.close();
 });
 
+test("a bearer token never reaches a console route, even one minted by the platform owner", async ({ page, playwright }, info) => {
+  test.skip(info.project.name !== ONE, "server behaviour: once");
+  const me = await owner(page);
+  const headers = { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` };
+  const minted = await page.request.post("/api/tokens", { headers, data: { name: "Console bearer check", scope: "read" } });
+  expect(minted.ok(), await minted.text()).toBe(true);
+  const agent = await playwright.request.newContext({ baseURL: info.project.use.baseURL, extraHTTPHeaders: { Authorization: `Bearer ${(await minted.json() as { token: string }).token}` } });
+  const before = await audit("1=1");
+  try {
+    const routes: [string, string, unknown?][] = [
+      ["GET", "/api/admin/console"], ["GET", "/api/admin/console/models"], ["GET", "/api/admin/console/failed-saves"], ["POST", "/api/admin/console/failed-saves", { workspaceId: me.workspace.id, id: "x" }],
+      ["GET", `/api/admin/console/workspaces/${me.workspace.id}`], ["PATCH", `/api/admin/workspaces/${me.workspace.id}`, { grantCredits: 5 }], ["PATCH", `/api/admin/workspaces/${me.workspace.id}`, { suspended: true }],
+      ["POST", "/api/admin/invites", { email: "token-check@example.test" }], ["POST", "/api/admin/invites/nope"], ["DELETE", "/api/admin/invites/nope"],
+      ["PATCH", "/api/admin/site", { openSignup: true }], ["PATCH", "/api/admin/platform-layer", { key: "caps", value: { warnPct: 10 } }],
+    ];
+    for (const [method, url, data] of routes) {
+      const res = await agent.fetch(url, { method, ...(data ? { data } : {}) });
+      /* Refused either as "not signed in" (the route sees no browser session behind a bearer token) or as "browser session only"; never an answer. */
+      expect([401, 403], `${method} ${url}`).toContain(res.status());
+      expect(Object.keys(await res.json() as object), `${method} ${url}`).toEqual(["error"]);
+    }
+  } finally { await agent.dispose(); }
+  expect(await audit("1=1")).toEqual(before);
+});
+
 test("each of the owner's changes writes its audit line, and a refused one writes none", async ({ page, request }, info) => {
   test.skip(info.project.name !== ONE, "server behaviour: once");
   test.setTimeout(240_000);
@@ -107,6 +132,8 @@ test("each of the owner's changes writes its audit line, and a refused one write
   /* Not a number, zero: refused, and no line. */
   expect((await api.patch(`/api/admin/workspaces/${target.id}`, { data: { grantCredits: 0 } })).status()).toBe(400);
   expect((await api.patch(`/api/admin/workspaces/${target.id}`, { data: { grantCredits: "lots" } })).status()).toBe(400);
+  /* Whole credits only, on the server too: a direct request cannot grant a fraction. */
+  expect((await api.patch(`/api/admin/workspaces/${target.id}`, { data: { grantCredits: 2.5 } })).status()).toBe(400);
   expect((await audit("workspace_id = ? AND action = 'credits.granted'", [target.id])).length).toBe(1);
   /* The house workspace is never billed in credits: refused, no line. */
   const desk = await json(await api.get("/api/admin/invites")) as { workspaces: { id: string; house?: boolean }[] };
@@ -134,8 +161,9 @@ test("each of the owner's changes writes its audit line, and a refused one write
   expect(JSON.stringify(created)).not.toContain(code);
   expect(JSON.stringify(created)).not.toContain(email);
   const resent = await api.post(`/api/admin/invites/${code}`);
+  /* Without mail set up nothing is attempted and no line is written; with it, the attempt is on the record before the send, and the send has its own line. */
   if (resent.status() === 409) expect((await audit("action = 'invite.resent'")).length).toBe(0);
-  else expect((await audit("action = 'invite.resent'")).length).toBe(1);
+  else expect((await audit("action = 'invite.resent'")).map((l) => l.details)).toEqual([{ sent: false }, { sent: true }]);
   expect((await api.post("/api/admin/invites/not-a-code")).status()).toBe(404);
   const revoked = await api.delete(`/api/admin/invites/${code}`);
   expect(revoked.ok()).toBe(true);
