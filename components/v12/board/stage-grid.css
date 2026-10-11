@@ -26,5 +26,11 @@
 /* An Elements card's picture at the board's aspect, whole (prototype: the image at its true aspect, object-fit contain). */
 .v12 .gx-cast-well[data-whole] img, .v12 .gx-cast-well[data-whole] video { object-fit: contain; }
 
+/* The engine under a shot's title is in the face the cards speak in, not the mono of a time line (prototype). */
+.v12 .gx-take-line--engine { font: 12px/1.45 var(--gx-font); color: var(--gx-text-sec); min-height: 22px; }
+/* A take that did not finish: its reason takes one line (the full words are its tooltip), so Retry, the card's main action, stays inside the card. */
+.v12 .gx-take[data-grid] .gx-take-status { min-height: 0; gap: 4px 8px; }
+.v12 .gx-take[data-grid] .gx-take-why { flex: 1 1 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* "R2" on a take made for a client round: at the picture's top right, clear of Look anchor's tag at the left. */
 .v12 .gx-take-tag--round { left: auto; right: 8px; background: var(--gx-on-media); color: var(--gx-text); border: 1px solid var(--gx-done-border); }

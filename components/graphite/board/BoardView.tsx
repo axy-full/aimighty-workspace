@@ -14,7 +14,7 @@ import { useBoardCommands } from "@/lib/board/commands";
 import { canReorder, moved, reorderNodes, reorderSlot, siblingsOf, type ReorderSlot } from "@/lib/board/reorder";
 import { addFreeCard, addFreeMedia, FREE_MEDIA_WIDTH, moveFreeCards, removeFreeCards, restoreFreeCards, type FreeMove } from "@/lib/board/snap";
 import { tidyFree } from "@/lib/board/tidy";
-import { isBoardKind, type BoardBox, type BoardKind, type BoardPoint, type BoardSource, type RegionId } from "@/lib/board/types";
+import { isBoardKind, type BoardBox, type BoardCard, type BoardKind, type BoardPoint, type BoardSource, type RegionId } from "@/lib/board/types";
 import { readBoardView, saveBoardView } from "@/lib/board/view";
 import { useMadeOnBoard } from "@/lib/board/made";
 import { rigUndoSink } from "@/lib/shell/rig-commands";
@@ -54,11 +54,15 @@ import { CheckAgain } from "../CheckAgain";
 import { sampleGate } from "@/lib/demo/sample";
 import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
-import { stageLimit, addStage, currentStage, freeCards as unstagedCards, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
+import { stageLimit, stagePage, addStage, currentStage, freeCards as unstagedCards, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
-import { roundCardsFor } from "@/components/v12/rounds/round-derive";
+import { roundCardsFor, type RoundCardData } from "@/components/v12/rounds/round-derive";
+import { RoundCard } from "@/components/v12/rounds/RoundCard";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
+import { openBlocking } from "./blocking/blocking-store";
+import { useShotsBatch } from "@/components/v12/render/use-batch";
+import { NotifyAsk } from "@/components/v12/render/NotifyAsk";
 import { useRecordRound } from "@/components/v12/rounds/use-round";
 import { RoundBadge, useCopyWhatChanged } from "@/components/v12/rounds/RoundBadge";
 import { cleanRounds, latestRound } from "@/lib/v12/rounds";
@@ -67,6 +71,12 @@ import { useOverlay } from "@/components/v12/ui/overlay";
 import { StageRail, type StageEdit } from "@/components/v12/board/StageRail";
 import { StageHeader } from "@/components/v12/board/StageHeader";
 import { StageEmpty } from "@/components/v12/board/StageEmpty";
+import { cleanLanguages } from "@/lib/v12/deliver";
+import { isDubbingLanguage } from "@/lib/workbench/dubbing-options";
+import { deckFacts, deckMeta, deckSections, shotRows } from "@/lib/v12/ppm";
+import { DeliverStage } from "@/components/v12/board/DeliverStage";
+import { PpmStage } from "@/components/v12/board/PpmStage";
+import type { CutCardData } from "./cards/cut/cut-model";
 import { BoardToolbar, ViewSwitch } from "@/components/v12/board/BoardTools";
 import "@/components/v12/board/board.css";
 import "./board.css";
@@ -176,8 +186,15 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* A board with nothing on it yet opens on its first stage (the brief); one with work on it, where the kind opens. */
   const stage = v12Frame ? currentStage(stages, shell.params.stage ?? (allCards.length ? null : stages[0]?.id), flavor) : null;
   const stageOwn = useMemo(() => (stage ? stageCards(stage, allCards, flavor) : allCards), [stage, allCards, flavor]);
+  /* Film's Deliver and Pre-vis's PPM deck are pages of their own over the canvas, once the board has something for them. */
+  const pageWanted = stagePage(stage?.id, flavor);
+  const deliverCard = allCards.find((c) => c.kind === "deliver");
+  const cutNow = (deliverCard?.data as CutCardData | undefined)?.cut ?? null;
+  const page: "deliver" | "ppm" | null = pageWanted === "deliver" && cutNow && deliverCard ? "deliver" : pageWanted === "ppm" && allCards.length > 0 ? "ppm" : null;
+  /* A client round's share card (redesign P2-c) rides in the page when a page covers the canvas, so it is never hidden behind it. */
+  const roundShare = page ? allCards.find((c) => c.id === "round:deliver") ?? null : null;
   /* The board's free cards (a dropped tile, a note, an upload) show on whichever stage is open, where they were put. */
-  const stageAll = useMemo(() => (stage ? [...stageOwn, ...unstagedCards(allCards)] : allCards), [stage, stageOwn, allCards]);
+  const stageAll = useMemo(() => (stage ? [...stageOwn, ...unstagedCards(allCards)] : allCards).filter((c) => !(roundShare && c.id === roundShare.id)), [stage, stageOwn, allCards, roundShare]);
   /* The new interface's stage grid (components/v12/board/stage-grid.ts, redesign P2-b): on a grid stage, its groups N across with
      a 24 px gap and its shot cards one size. Off the switch, or on any other stage, today's definitions as they are. */
   const gridAcross = useStageColumns(v12Frame && onGrid(stage?.id));
@@ -187,7 +204,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
   /* A fresh board (nothing on any stage) keeps today's way in; a stage with nothing on it says what goes there. */
   const empty = !!project && (v12Frame ? allCards.length === 0 : placed.cards.length === 0);
-  const stageIsEmpty = v12Frame && !empty && stageOwn.length === 0;
+  const stageIsEmpty = v12Frame && !empty && stageOwn.length === 0 && !page;
 
   /* A drawer opens from the design's frame letter, or from `drawer=` (Viral's History page is the Social board's History drawer: lib/shell/ads-social.ts). */
   const [drawer, setDrawer] = useState<BoardDrawer | null>(() => frameDrawer(frame) ?? (shell.params.drawer === "history" || shell.params.drawer === "library" || shell.params.drawer === "render" ? shell.params.drawer : null));
@@ -238,6 +255,13 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     if (!id) { pick(new Set(), null); return; }
     pick(opts?.add ? new Set([...selection.ids, id]) : new Set([id]), id);
   }, [pick, selection.ids]);
+
+  /* The Shots stage as a batch (components/v12/render/use-batch.ts, redesign P3): its meta, the ready toast, the tab title, the opt-in. */
+  const batch = useShotsBatch({
+    cards: stageOwn, on: v12Frame && stage?.id === "shots",
+    onView: (nodeId) => { glide({ card: nodeId }); select(nodeId); },
+    selected: selection.ids,
+  });
 
   /* A client round's plan, once a person approves it, is kept in the draft (components/v12/rounds/use-round.ts). */
   useRecordRound({ on: v12Frame, project, items, run: agent, apply: rig.apply });
@@ -679,18 +703,21 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const inspected = v12Frame && details !== primary?.id ? null : primary;
   /* The stage header (inventory § 6.4): the stage's meta, the selection, the one primary where its action lives, the board menu. */
   const stageNow = stage ? stageStatus(stage, allCards, flavor) : null;
-  const stageMeta = stageNow && stageNow.summary && stageNow.summary !== "Nothing yet" ? stageNow.summary : null;
+  const stageMeta = page === "ppm" ? deckMeta(deckSections({ ...deckFacts(project), shots: shotRows(project.production?.beats, project.boardShotList).length }, false)) : batch.meta ?? (stageNow && stageNow.summary && stageNow.summary !== "Nothing yet" ? stageNow.summary : null);
   const crumb = selectionCrumb([...selection.ids].map((id) => {
     const data = placed.byId.get(id)?.data as { title?: unknown; name?: unknown } | undefined;
     return typeof data?.title === "string" && data.title ? data.title : typeof data?.name === "string" && data.name ? data.name : "1 card";
   }));
   const wants = stagePrimary(stage, allCards, flavor);
   const headPrimary = wants ? { label: wants.label, run: () => { select(wants.card); glide({ card: wants.card }); } } : null;
+  /* The 3D blocking card is not drawn on the new stages (a stray box under the grid): its way in is the board menu. */
+  const blocking = (allCards.find((c) => c.kind === "blocking")?.data as { nodeId?: string } | undefined)?.nodeId ?? null;
   const boardMenu = [
     { id: "library", label: "Library", shortcut: "L", onSelect: () => window.dispatchEvent(new Event(LIBRARY_OPEN_EVENT)) },
     { id: "history", label: "History", onSelect: () => setDrawer("history") },
     ...(round ? [{ id: "share-round", label: `Share R${round.n} · copy what changed`, onSelect: () => void copyRound() }] : []),
     ...(kind === "studio" ? [{ id: "render", label: "3D scene", onSelect: () => setDrawer("render") }] : []),
+    ...(v12Frame && blocking ? [{ id: "blocking", label: "3D blocking", onSelect: () => openBlocking(blocking) }] : []),
     { id: "fit", label: "Fit to view", shortcut: "0", onSelect: () => void flow.fitView({ padding: 0.08, duration: GLIDE_MS, ease: glideEase }) },
     ...(freeCards.length && !offline ? [{ id: "tidy", label: "Tidy", onSelect: () => void tidy() }] : []),
   ];
@@ -720,12 +747,21 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             </BoardCanvas>
           )}
           {empty && !list && board.Empty ? <board.Empty ctx={ctx} /> : empty && !list && kind === "studio" ? <EmptyBoard ctx={ctx} /> : null}
+          {page && !list ? (
+            <div className="v12-stage-page gx-scroll" data-testid="v12-stage-page" data-page={page}>
+              {page === "deliver" && cutNow && deliverCard
+                ? <DeliverStage cut={cutNow} cardId={deliverCard.id} ctx={ctx} languages={cleanLanguages(project.boardLanguages, isDubbingLanguage)} onLanguages={(next) => rig.apply((p) => ({ ...p, boardLanguages: next }))} />
+                : <PpmStage ctx={ctx} />}
+              {roundShare ? <div className="v12-stage-round" data-card-id={roundShare.id}><RoundCard card={roundShare as BoardCard<RoundCardData>} data={roundShare.data as RoundCardData} selected={false} ctx={ctx} /></div> : null}
+            </div>
+          ) : null}
           {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}
           {v12Frame && !list && !empty ? (
             <BoardBar ctx={ctx} selection={crumb} onClearSelection={() => pick(new Set(), null)} tool={tool} onDisarm={() => setTool("select")}
               onAttach={(picked) => void upload(picked)} library={items} onAsked={() => setDockOpen(true)} />
           ) : null}
-          {list ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
+          {batch.offer && !list ? <NotifyAsk onTell={() => void batch.tellMe()} onNotNow={batch.notNow} /> : null}
+          {list || page ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12Frame} />
           {v12Frame ? <ViewSwitch view={list ? "list" : "canvas"} onView={(v) => setList(v === "list")} /> : null}
           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}

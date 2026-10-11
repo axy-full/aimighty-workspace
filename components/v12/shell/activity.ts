@@ -1,4 +1,5 @@
 import { changing, trayWhen, type TrayJob } from "@/lib/jobsTray";
+import { jobTimeLeft } from "@/lib/v12/boardRing";
 import type { QueueItem } from "@/lib/control-room/queue";
 
 /**
@@ -49,7 +50,7 @@ export function activityGroups(jobs: readonly TrayJob[], items: readonly QueueIt
       const held = options.heldWord(job);
       return {
         kind: "running", id: job.id, name: job.name, draftId: job.draftId, job,
-        meta: [job.projectName ?? "Make", job.label, sinceWords(job, options.now), held ? `${held} held` : null].filter(Boolean).join(" · "),
+        meta: [job.projectName ?? "Make", job.label, sinceWords(job, options.now), jobTimeLeft(job, options.now), held ? `${held} held` : null].filter(Boolean).join(" · "),
       };
     });
   /* What today's Jobs pill offered and the frame would otherwise hide: a take that failed, or one whose outcome is not
