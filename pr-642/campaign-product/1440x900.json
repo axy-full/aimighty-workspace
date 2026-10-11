@@ -1,6 +1,6 @@
 {
   "name": "campaign-product",
-  "app": "/suites?project=project-e9b6b08c&suite=particl&page=brief&view=board&stage=product",
+  "app": "/suites?project=project-45ebecbc&suite=particl&page=brief&view=board&stage=product",
   "prototype": "?view=board&project=launch&stage=Product",
   "size": {
     "width": 1440,

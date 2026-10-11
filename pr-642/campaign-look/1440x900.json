@@ -1,6 +1,6 @@
 {
   "name": "campaign-look",
-  "app": "/suites?project=project-876c0762&suite=particl&page=brief&view=board&stage=look",
+  "app": "/suites?project=project-6f6ceec5&suite=particl&page=brief&view=board&stage=look",
   "prototype": "?view=board&project=launch&stage=Look",
   "size": {
     "width": 1440,

@@ -1,6 +1,6 @@
 {
   "name": "campaign-formats",
-  "app": "/suites?project=project-eacf3a95&suite=particl&page=brief&view=board&stage=formats",
+  "app": "/suites?project=project-5ef8515d&suite=particl&page=brief&view=board&stage=formats",
   "prototype": "?view=board&project=launch&stage=Formats",
   "size": {
     "width": 1280,
