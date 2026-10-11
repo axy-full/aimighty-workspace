@@ -119,6 +119,30 @@ These settle the lead's decisions above and the open questions in the builder's 
 9. **Close #609 after the launch**, "superseded by the release/1 launch".
 10. **Backup is done** (owner): platform-backup-20261011, tenant-backup-20261011 and .sql dumps; integrity ok; restore point 11:03 UTC.
 
+## Owner decisions (Akshay, 11 Oct evening: after launch)
+
+1. **Launch done.** Production runs release/1 (main 3ab53852) since 17:05 IST, 11 Oct.
+2. **Gateway removed.** `AI_GATEWAY_API_KEY` is deleted, and `TEXT_DIRECT=anthropic,google,xai` and `MODEL_CATALOG=static` are set. Claude (a workspace-scoped key), OpenAI, Gemini images and Atomik are verified working direct. #649 brings the model list to the verified ids at official prices.
+3. **Enhance toggle** in every generating composer, with the owner's tooltip copy: default On, remembered per person, price includes enhancement, viewer labels Enhanced/Raw with "See original". "Improve prompt" is dropped.
+4. **Header:** Activity pill and avatar pinned top-right; the Atomik field flexes after the tabs.
+5. **House workspace:** at-cost dollar prices everywhere (button, hold line, history); customers see credit prices. The hold line adds "· charged only when it's ready".
+6. **Credits & billing** is reachable from the avatar menu for every workspace, the house included (in dollars).
+7. **Teammates' boards:** every member of a workspace sees every board in it. Cross-workspace privacy is unchanged and proved by server tests (NEEDS AKSHAY).
+8. **Plans and names (final; display config; checkout later; NEEDS AKSHAY):**
+   - Individual, monthly: Explore $50 = 500 cr; Create $100 = 1,000 cr; Master $250 = 2,500 cr.
+   - Business, per seat per month, one shared workspace, credits pooled, one level per workspace: Business 100 ($100, 1,000 cr/seat), Business 250 ($250, 2,500 cr/seat), Business 500 ($500, 5,000 cr/seat). The card shows "from $100 per seat".
+   - Enterprise: "Get in touch".
+   - The low-credit warning fires at 20% of the cycle's credits, pooled for Business.
+9. **Visitor pages:** "Continue with Google" is hidden on the visitor join sheet until Google sign-in exists, then shown.
+10. **v12 for every workspace:** a small PR, merged by the owner after the next deploy is checked.
+11. **/admin** is the next design round.
+12. **Google sign-in (built tomorrow; NEEDS AKSHAY):** invite-only kept (a new person needs a valid invite; an existing member signs in when the verified Google email matches). No account is ever created from Google alone; scopes `openid email profile`; throttling as today.
+13. **Demo:** end of October.
+14. **Ownership:** Particl is owned by SensAI Studios LLP.
+15. **Remotion:** customer-facing Remotion renders stay off. When on, its $0.01 per render goes into the price.
+16. **"Moleculr"** is removed from UI text; the code is fixed, never the guard.
+17. **#639** gets option A, plus "N cr held · settles when the engine confirms" after a cancel is sent (NEEDS AKSHAY).
+
 ## Merge rule
 
 The lead merges into release/1 only when all of these hold:
