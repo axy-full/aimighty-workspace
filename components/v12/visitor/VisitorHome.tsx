@@ -6,7 +6,7 @@ import { wallLayout } from "@/lib/v12/home";
 import { HOW_IT_WORKS, showcase, visitorBrief, type ShowcaseTile } from "@/lib/v12/visitor";
 import { Bar, BarChip, BarSheet } from "@/components/v12/bar/Bar";
 import { Price } from "@/components/v12/ui/Price";
-import { useOverlay } from "@/components/v12/ui";
+import { Tooltip, useOverlay } from "@/components/v12/ui";
 import { useJoin } from "@/components/v12/join/JoinProvider";
 import { FitText } from "@/components/v12/home/FitText";
 
@@ -68,8 +68,10 @@ export function VisitorHome({ compact }: { compact: boolean }) {
                   data-faded={picked && !on ? "" : undefined} data-testid="v12-visitor-tile" data-tile={tile.id}>
                   {/* eslint-disable-next-line @next/next/no-img-element -- Particl's own public still */}
                   <img className="v12-hm-tile-media" src={tile.url} alt="" loading="lazy" />
-                  <button type="button" className="v12-hm-tile-pick" onClick={() => setPickedId((now) => (now === tile.id ? null : tile.id))} aria-pressed={on}
-                    aria-label={`${on ? "Picked" : "Pick"}: ${tile.title}`} title={`${tile.title} · ${tile.type} — Make one like this`} data-testid="v12-visitor-tile-pick" />
+                  <Tooltip name={`${tile.title} · ${tile.type}`} line="Make one like this" named>
+                    <button type="button" className="v12-hm-tile-pick" onClick={() => setPickedId((now) => (now === tile.id ? null : tile.id))} aria-pressed={on}
+                      aria-label={`${on ? "Picked" : "Pick"}: ${tile.title}`} data-testid="v12-visitor-tile-pick" />
+                  </Tooltip>
                   <span className="v12-hm-tile-label" aria-hidden="true">
                     <FitText className="v12-hm-tile-type" text={tile.type} box=".v12-hm-tile" inset={40} />
                     <FitText className="v12-hm-tile-title" text={tile.title} box=".v12-hm-tile" inset={40} />
