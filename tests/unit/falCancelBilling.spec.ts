@@ -181,3 +181,25 @@ test("filing that fails changes nothing about the charge: the same take, with th
     expect(await t.reviews()).toHaveLength(0);
   });
 });
+
+test("(c) a ledger step that throws after the outcome is written does not lose the note: still filed once, and the charge is the same", async () => {
+  const { FalHttpError } = await import("../../lib/fal");
+  const { platformDb } = await import("../../lib/platform");
+  await scenario(throwing(new FalHttpError(404, "The render service returned 404: not found.", null)), { params: { cancelTrail: TRAIL } }, async (t) => {
+    /* The meter refuses writes for a moment: the settlement after the outcome cannot be delivered (critical), and the sync throws. */
+    await platformDb().execute("CREATE TRIGGER blip_meter_insert BEFORE INSERT ON meter_events BEGIN SELECT RAISE(ABORT, 'platform database blip'); END");
+    await platformDb().execute("CREATE TRIGGER blip_meter_update BEFORE UPDATE ON meter_events BEGIN SELECT RAISE(ABORT, 'platform database blip'); END");
+    try {
+      await t.sync().then(() => undefined, () => undefined);
+    } finally {
+      await platformDb().execute("DROP TRIGGER blip_meter_insert");
+      await platformDb().execute("DROP TRIGGER blip_meter_update");
+    }
+    /* The outcome was written (unconfirmed: charged), and the case is on the desk exactly once. */
+    expect(await t.row()).toEqual({ status: "failed" });
+    expect(await t.charge()).toBeNull();
+    expect(await t.reviews()).toHaveLength(1);
+    await t.sync();
+    expect(await t.reviews()).toHaveLength(1);
+  });
+});
