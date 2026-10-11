@@ -358,7 +358,7 @@ test("ANTHROPIC_API_KEY set with TEXT_DIRECT empty: paid text, the meter, the le
 
 test("the writer's model list is PROMPT_MODELS, still reading GATEWAY_PROMPT_MODELS; the legacy Claude call only when REFINE_PROVIDER forces it", async () => {
   const { PROMPT_MODELS, refineProvider } = await import("../../lib/enhance");
-  expect(PROMPT_MODELS()).toEqual(["anthropic/claude-opus-5", "anthropic/claude-sonnet-5"]);
+  expect(PROMPT_MODELS()).toEqual(["anthropic/claude-sonnet-5.5", "anthropic/claude-sonnet-5"]);
   process.env.GATEWAY_PROMPT_MODELS = "anthropic/claude-haiku-4.5";
   expect(PROMPT_MODELS()).toEqual(["anthropic/claude-haiku-4.5"]);
   process.env.PROMPT_MODELS = "google/gemini-2.5-flash, anthropic/claude-sonnet-4.6";
@@ -377,12 +377,12 @@ test("the inline writer on a direct door: priced at usage × snapshot, on the ve
   await inWorkspace(async () => {
     const { enhancePrompt, activeWriter } = await import("../../lib/enhance");
     // The platform's enhance writer (DEFAULT_TEXT_MODELS), now on Anthropic's own API.
-    expect(await activeWriter()).toMatchObject({ provider: "gateway", model: "anthropic/claude-sonnet-5", via: "Model provider, direct", configured: true });
+    expect(await activeWriter()).toMatchObject({ provider: "gateway", model: "anthropic/claude-sonnet-5.5", via: "Model provider, direct", configured: true });
     const refined = await enhancePrompt({ prompt: "A tree in rain.", citations: [], provider: "gateway" });
     expect(transport.urls).toHaveLength(1);
-    expect(refined).toMatchObject({ text: "A lone tree in steady rain.", move: "static", ledger: "anthropic", model: "anthropic/claude-sonnet-5" });
-    // Claude Sonnet 5 at the snapshot: 100 × $2/M + 60 reads × $0.20/M + 40 writes × $2.50/M + 25 out × $10/M.
-    expect(refined.costUsd).toBeCloseTo(100 * 0.000002 + 60 * 0.0000002 + 40 * 0.0000025 + 25 * 0.00001, 15);
+    expect(refined).toMatchObject({ text: "A lone tree in steady rain.", move: "static", ledger: "anthropic", model: "anthropic/claude-sonnet-5.5" });
+    // Claude Sonnet 5.5 at its list price (provider-priced): 100 × $2/M + 60 reads × $0.10/M + 40 writes × $2.50/M + 25 out × $10/M.
+    expect(refined.costUsd).toBeCloseTo(100 * 0.000002 + 60 * 0.0000001 + 40 * 0.0000025 + 25 * 0.00001, 15);
   });
 });
 

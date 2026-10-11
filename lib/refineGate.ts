@@ -43,6 +43,10 @@ export const TEXT_RATES: Record<string, { input: number; output: number }> = {
   "anthropic/claude-opus-5": { input: 5.0, output: 25.0 },
   "anthropic/claude-sonnet-5": { input: 2.0, output: 10.0 },
   "anthropic/claude-haiku-4.5": { input: 1.0, output: 5.0 },
+  /* Anthropic list prices, platform.claude.com/docs/en/about-claude/pricing (11 Oct 2026); Haiku 5.5 at its rate for prompts up to 100,000 tokens. */
+  "anthropic/claude-opus-5.5": { input: 4.0, output: 20.0 },
+  "anthropic/claude-sonnet-5.5": { input: 2.0, output: 10.0 },
+  "anthropic/claude-haiku-5.5": { input: 0.1, output: 0.5 },
   "google/gemini-3.1-pro-preview": { input: 2.0, output: 12.0 },
 };
 

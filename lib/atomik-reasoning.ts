@@ -41,7 +41,7 @@ const OPENAI_NATIVE_MAX = new Set([
   "openai/gpt-5.6-terra", "openai/gpt-5.6-terra-fast",
   "openai/gpt-6-astra", "openai/gpt-6-astra-fast",
 ]);
-const CLAUDE_NATIVE_MAX = new Set(["anthropic/claude-opus-5", "anthropic/claude-opus-5-fast"]);
+const CLAUDE_NATIVE_MAX = new Set(["anthropic/claude-opus-5", "anthropic/claude-opus-5-fast", "anthropic/claude-opus-5.5"]);
 
 function controls(model: CatalogModel): ReasoningOption[] {
   if (model.reasoningOptions?.length) return model.reasoningOptions;
@@ -58,10 +58,12 @@ function outputLimit(model: CatalogModel): number {
   return Math.min(MAX_OUTPUT_TOKENS, limit, model.id === "anthropic/claude-sonnet-4.5" ? 8_192 : Infinity);
 }
 
+const ALWAYS_THINKS = /^anthropic\/claude-(?:fable-|opus-5|sonnet-5\.5|haiku-5\.5)/;
 function canDisable(model: CatalogModel, options: ReasoningOption[]): boolean {
   // Fable's catalog currently advertises toggle, but its native API rejects
-  // disabled thinking. Opus 5 also has effort-dependent disabling rules.
-  if (/^anthropic\/claude-(?:fable-|opus-5)/.test(model.id)) return false;
+  // disabled thinking, as do Opus 5.5, Sonnet 5.5 and Haiku 5.5 (Haiku only above high).
+  // Opus 5 also has effort-dependent disabling rules.
+  if (ALWAYS_THINKS.test(model.id)) return false;
   if (LEGACY_CLAUDE.has(model.id)) return true;
   if (!options.some(option => option.type === "toggle")) return false;
   if (model.owner === "anthropic") return true;
@@ -76,7 +78,7 @@ export function atomikEffortOptions(model: CatalogModel): AtomikEffortOption[] {
   for (const value of NAMED) {
     if (!named.has(value)) continue;
     if (value === "max" && !OPENAI_NATIVE_MAX.has(model.id) && !CLAUDE_NATIVE_MAX.has(model.id)) continue;
-    if (value === "none" && /^anthropic\/claude-(?:fable-|opus-5)/.test(model.id)) continue;
+    if (value === "none" && ALWAYS_THINKS.test(model.id)) continue;
     result.push({ value, label: LABELS[value], description: DESCRIPTIONS[value] });
   }
   // Prefer adaptive effort when it exists. Fixed token budgets are deprecated

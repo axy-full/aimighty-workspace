@@ -107,7 +107,7 @@ test("no offered list, default or Auto list names a dropped id; the catalogue ke
 });
 
 test("Auto keeps its choices with GPT-5.5 where GPT-5.5 Pro was, and never plans on a dropped id", async () => {
-  expect([...ATOMIK_AUTO_MODEL_IDS]).toEqual(["anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.7", "anthropic/claude-opus-4.6", "openai/gpt-5.5"]);
+  expect([...ATOMIK_AUTO_MODEL_IDS]).toEqual(["anthropic/claude-sonnet-5.5", "anthropic/claude-opus-5.5", "anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.7", "anthropic/claude-opus-4.6", "openai/gpt-5.5"]);
   /* An OpenAI-only workspace keeps an OpenAI Auto choice, not the cheapest model on the menu. */
   {
     const { atomikModels } = await import("../../lib/workbench/atomik-server");

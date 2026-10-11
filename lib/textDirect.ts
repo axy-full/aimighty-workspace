@@ -44,16 +44,48 @@ const int = (value: unknown): value is number => typeof value === 'number' && Nu
 export class TextNotSentError extends Error { readonly status = 422; override name = 'TextNotSentError'; }
 function notSent(message: string): never { throw new TextNotSentError(message); }
 
-/** What a log line may say about a provider failure: never the error object, whose request body carries the prompt. */
-export function providerErrorSummary(error: unknown): string {
-  const value = error && typeof error === 'object' ? error as { name?: unknown; statusCode?: unknown; code?: unknown; data?: unknown } : {};
-  const nested = record(record(value.data).error);
-  const code = value.code ?? nested.type ?? nested.code;
-  return `${typeof value.name === 'string' ? value.name : 'Error'} status=${typeof value.statusCode === 'number' ? value.statusCode : '-'} code=${typeof code === 'string' || typeof code === 'number' ? code : '-'}`;
+/** Text a provider wrote about a failure, made safe for a log line: one line, no key-shaped token, bounded. */
+function safeProviderText(value: unknown, max = 200): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return value.replace(/\s+/g, ' ').replace(/\b(?:sk|xai|AIza)[-_A-Za-z0-9]{12,}/g, '[redacted]').slice(0, max);
 }
 
-/** Claude models that take `effort` without adaptive thinking (as in developmentProviderOptions). */
-const CLAUDE_EFFORT_ONLY = /^anthropic\/claude-(?:sonnet|opus|haiku)-(?:4|4\.5)$/;
+/**
+ * What a log line may say about a provider failure: never the error object,
+ * whose request body carries the prompt. The provider's own error type and
+ * message (Anthropic: `{ error: { type, message } }`) are kept, truncated,
+ * because they name the field it refused; the prompt and the key never appear.
+ */
+export function providerErrorSummary(error: unknown): string {
+  const value = error && typeof error === 'object' ? error as { name?: unknown; statusCode?: unknown; code?: unknown; data?: unknown; responseBody?: unknown } : {};
+  let nested = record(record(value.data).error);
+  if (!Object.keys(nested).length && typeof value.responseBody === 'string') {
+    try { nested = record(record(JSON.parse(value.responseBody)).error); } catch { /* not JSON: no provider detail */ }
+  }
+  const code = value.code ?? nested.type ?? nested.code;
+  const message = safeProviderText(nested.message);
+  return `${typeof value.name === 'string' ? value.name : 'Error'} status=${typeof value.statusCode === 'number' ? value.statusCode : '-'} code=${typeof code === 'string' || typeof code === 'number' ? code : '-'}${message ? ` message=${JSON.stringify(message)}` : ''}`;
+}
+
+/**
+ * What each Claude model accepts on the Messages API (platform.claude.com, model
+ * migration guide, checked 11 October 2026). A request outside these is refused
+ * here, before anything is sent, rather than earning a 400 from Anthropic.
+ * - Effort (`output_config.effort`): Opus 4.5 takes it without adaptive thinking;
+ *   Opus 4, Sonnet 4, Sonnet 4.5 and Haiku 4.5 reject it; every newer model takes
+ *   it with adaptive thinking.
+ * - A thinking budget (`enabled` + `budget_tokens`) is removed from Opus 4.7 on,
+ *   Sonnet 5 on, Haiku 5.5 and Fable.
+ * - Thinking cannot be switched off on Fable, Opus 5.5, Sonnet 5.5 and Haiku 5.5
+ *   (Haiku only at high effort or below; refused here outright).
+ * - Sampling (`temperature`, `top_p`, `top_k`) is rejected from Opus 4.7 on,
+ *   Sonnet 5 on, Haiku 5.5 and Fable; older models take one of temperature or top_p.
+ */
+const CLAUDE_EFFORT_ONLY = /^anthropic\/claude-opus-4\.5$/;
+const CLAUDE_NO_EFFORT = /^anthropic\/claude-(?:sonnet-4|opus-4|sonnet-4\.5|haiku-4\.5)$/;
+const CLAUDE_NO_BUDGET = /^anthropic\/claude-(?:opus-4\.[78]|opus-5(?:\.\d+)?|sonnet-5(?:\.\d+)?|haiku-5(?:\.\d+)?|fable-.+)$/;
+const CLAUDE_ALWAYS_THINKS = /^anthropic\/claude-(?:fable-.+|opus-5\.5|sonnet-5\.5|haiku-5\.5)$/;
+const CLAUDE_NO_SAMPLING = CLAUDE_NO_BUDGET;
 const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 /** Anthropic's documented per-image limit for base64 input. */
 const ANTHROPIC_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -75,6 +107,18 @@ function text(content: unknown, what: string): string {
   return notSent(`The direct language request has unsupported ${what} content.`);
 }
 
+const ANTHROPIC_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+/** The image type from its first bytes (base64), or null when they are not one of the four Anthropic reads. */
+export function sniffImageType(base64: string): string | null {
+  let head: Buffer;
+  try { head = Buffer.from(base64.slice(0, 24), 'base64'); } catch { return null; }
+  if (head.length >= 8 && head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg';
+  if (head.length >= 6 && /^GIF8[79]a$/.test(head.subarray(0, 6).toString('latin1'))) return 'image/gif';
+  if (head.length >= 12 && head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  return null;
+}
+
 function image(vendor: DirectVendor, part: Record<string, unknown>) {
   const url = record(part.image_url).url, detail = record(part.image_url).detail;
   const data = typeof url === 'string' ? /^data:([a-z]+\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/i.exec(url) : null;
@@ -82,7 +126,12 @@ function image(vendor: DirectVendor, part: Record<string, unknown>) {
   if (!data) return notSent('The direct language request accepts only inline (data URL) images.');
   const base64 = data[2].replace(/\s+/g, '');
   if (vendor === 'anthropic' && Math.floor(base64.length * 3 / 4) > ANTHROPIC_IMAGE_BYTES) notSent('An image is larger than the provider accepts (5 MB). Use a smaller picture.');
-  return { type: 'file' as const, data: base64, mediaType: data[1].toLowerCase(),
+  // The bytes decide the type: Anthropic refuses (400) a picture whose data does not match its stated type,
+  // and a stored still can be labelled image/png while it holds a JPEG.
+  const declared = data[1].toLowerCase() === 'image/jpg' ? 'image/jpeg' : data[1].toLowerCase();
+  const mediaType = sniffImageType(base64) ?? declared;
+  if (vendor === 'anthropic' && !ANTHROPIC_IMAGE_TYPES.has(mediaType)) notSent('This picture type is not accepted. Use a JPEG, PNG, GIF or WebP.');
+  return { type: 'file' as const, data: base64, mediaType,
     ...(vendor === 'xai' && typeof detail === 'string' && ['low', 'high', 'auto'].includes(detail) ? { providerOptions: { xai: { imageDetail: detail } } } : {}) };
 }
 
@@ -111,6 +160,13 @@ function messages(vendor: DirectVendor, value: unknown): Pick<DirectTextRequest,
     } else notSent('The direct language request has unsupported message content.');
   }
   if (!out.length) notSent('The direct language request needs a user message.');
+  if (vendor === 'anthropic') {
+    // Anthropic refuses (400) an empty text block, and a final assistant turn (a prefill) on every current Claude model.
+    const empty = (content: unknown) => typeof content === 'string' ? !content.trim()
+      : Array.isArray(content) && content.some(part => record(part).type === 'text' && !String(record(part).text ?? '').trim());
+    if (instructions.some(item => empty(item.content)) || out.some(item => empty(item.content))) notSent('The direct language request has an empty message.');
+    if (out[out.length - 1].role !== 'user') notSent('The direct language request must end with a user message.');
+  }
   return { ...(instructions.length ? { instructions } : {}), messages: out };
 }
 
@@ -126,13 +182,16 @@ function reasoning(vendor: DirectVendor, model: string, input: Record<string, un
   if (int(budget) && budget >= maxTokens) notSent('The reasoning budget must leave room for the answer.');
   let maxOutputTokens = maxTokens;
   if (vendor === 'anthropic') {
-    if (off) own.thinking = { type: 'disabled' };
-    else if (int(budget)) {
+    if (off) {
+      if (CLAUDE_ALWAYS_THINKS.test(model)) notSent(`Thinking cannot be switched off for ${model}. Choose a lower effort instead.`);
+      own.thinking = { type: 'disabled' };
+    } else if (int(budget)) {
+      if (CLAUDE_NO_BUDGET.test(model)) notSent(`A thinking token budget is not available for ${model}. Choose an effort instead.`);
       own.thinking = { type: 'enabled', budgetTokens: budget };
       // The SDK adds the budget back onto max_tokens; the approved ceiling already includes it.
       maxOutputTokens = maxTokens - budget;
     } else if (effort !== undefined) {
-      if (!CLAUDE_EFFORTS.has(effort)) notSent(`That effort setting is not available for ${model}.`);
+      if (!CLAUDE_EFFORTS.has(effort) || CLAUDE_NO_EFFORT.test(model)) notSent(`That effort setting is not available for ${model}.`);
       own.effort = effort;
       if (!CLAUDE_EFFORT_ONLY.test(model)) own.thinking = { type: 'adaptive' };
     }
@@ -167,11 +226,16 @@ export function directTextRequest(vendor: DirectVendor, input: Record<string, un
     responseFormat = { type: 'json', schema: spec.schema as JSONObject, ...(typeof spec.name === 'string' ? { name: spec.name } : {}) };
   } else if (format.type !== undefined && format.type !== 'text') notSent('This language response format is unsupported.');
   const stop = input.stop === undefined ? undefined : Array.isArray(input.stop) ? input.stop.map(String) : [String(input.stop)];
+  // Claude: newer models refuse sampling outright, older ones take one of temperature or top_p, never both.
+  const sampling: Record<string, unknown> = vendor !== 'anthropic' ? input
+    : CLAUDE_NO_SAMPLING.test(model) ? {}
+    : typeof input.temperature === 'number' ? { temperature: input.temperature } : input;
+  if (vendor === 'anthropic' && stop?.some(s => !s.trim())) notSent('A stop sequence must contain more than whitespace.');
   return {
     ...messages(vendor, input.messages),
     ...reasoning(vendor, model, input, maxTokens),
-    ...(typeof input.temperature === 'number' ? { temperature: input.temperature } : {}),
-    ...(typeof input.top_p === 'number' ? { topP: input.top_p } : {}),
+    ...(typeof sampling.temperature === 'number' ? { temperature: sampling.temperature } : {}),
+    ...(typeof sampling.top_p === 'number' ? { topP: sampling.top_p } : {}),
     ...(stop ? { stopSequences: stop } : {}),
     responseFormat,
   };
@@ -259,7 +323,8 @@ async function directTextPost(vendor: DirectVendor, input: Record<string, unknow
     }) };
   } catch (error) {
     // Name, status and code only: an APICallError carries the request body, prompt included.
-    console.warn(`direct text ${vendor}: ${sent ? 'failed' : 'not sent'} ${providerErrorSummary(error)}`);
+    // Our own refusal says why (its text names the model and the setting, never the prompt).
+    console.warn(`direct text ${vendor}: ${sent ? 'failed' : 'not sent'} ${providerErrorSummary(error)}${error instanceof TextNotSentError ? ` reason=${JSON.stringify(error.message.slice(0, 200))}` : ''}`);
     if (!sent) {
       if (error instanceof TextNotSentError) return reply(error.status, error.message);
       // Missing key, unmapped id, refused endpoint or a request the SDK rejected locally: nothing left the process.

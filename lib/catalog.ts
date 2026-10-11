@@ -3,7 +3,9 @@ import { GATEWAY_BASE, gatewayAuth, gatewayReachable } from "./gateway";
 import { vendorKey } from './vendorKeys';
 import { openAIConnection } from './openai-models';
 import { engineMock } from './mock';
+import { textRouteWorks } from './textRoute';
 import { isTextDirect } from './textDirectVendors';
+import { isDroppedModel } from './modelAliases';
 import modelCatalogJson from './modelCatalog.json';
 
 /**
@@ -148,12 +150,21 @@ const providerOfOwner = (owner: string): CatalogProviderId | null =>
   Object.hasOwn(CATALOG_PROVIDER_OF_OWNER, owner) ? CATALOG_PROVIDER_OF_OWNER[owner] : null;
 
 export type CatalogSnapshotEntry = CatalogModel & { providerId: CatalogProviderId; pricedAt: string };
+/** A model the gateway did not list, priced from its provider's own list-price page (`source`) on `pricedAt`. */
+export type ProviderPricedEntry = CatalogSnapshotEntry & { source: string };
 export type CatalogSnapshot = {
   source: string;
   pricedAt: string;
   models: CatalogSnapshotEntry[];
   /** Offered ids the gateway did not list on `pricedAt`: unpriced, so never served. */
   missing: string[];
+  /**
+   * Models served on a direct door that the gateway did not list, each priced
+   * by hand from its provider's official list prices and dated. Kept apart so
+   * the gateway part stays exactly what the gateway served; the snapshot
+   * script carries these over untouched.
+   */
+  providerPriced?: ProviderPricedEntry[];
 };
 
 /**
@@ -179,14 +190,16 @@ export function buildCatalogSnapshot(data: unknown, ids: readonly string[], pric
 
 /** The snapshot's models, each as the plain CatalogModel the live read served, plus its provider. */
 export function snapshotModels(snapshot: CatalogSnapshot = modelCatalogJson as unknown as CatalogSnapshot): (CatalogModel & { providerId: CatalogProviderId })[] {
-  return (snapshot.models ?? []).flatMap(({ providerId, pricedAt, ...model }) => {
+  const gatewayIds = new Set((snapshot.models ?? []).map((m) => m.id));
+  const providerPriced = (snapshot.providerPriced ?? []).filter((m) => !gatewayIds.has(m.id)).map(({ source, ...m }) => { void source; return m; });
+  return [...(snapshot.models ?? []), ...providerPriced].flatMap(({ providerId, pricedAt, ...model }) => {
     void pricedAt;
     // A malformed entry is dropped rather than served under a guessed provider.
     return providerOfOwner(model.owner) === providerId ? [{ ...model, providerId }] : [];
   });
 }
 
-/** The provider's own key. Anthropic has no VendorKeyName until the direct router lands. */
+/** The provider's own key. */
 const PROVIDER_KEY: Record<CatalogProviderId, () => string | null> = {
   anthropic: () => vendorKey('anthropic'),
   google: () => vendorKey('gemini'),
@@ -197,12 +210,15 @@ const PROVIDER_KEY: Record<CatalogProviderId, () => string | null> = {
 /**
  * Offered only where the call will actually go. OpenAI (text goes direct) and
  * stills (models that output images; they go direct) need their provider's
- * key. Anthropic, Gemini and Grok text needs its own key once `TEXT_DIRECT`
- * routes that vendor directly, and only the gateway while it is still on it.
+ * key. Anthropic, Gemini and Grok text needs a working route (textRouteWorks):
+ * its own key and a mapped id once `TEXT_DIRECT` routes that vendor directly,
+ * and the gateway only while it is still on it.
  */
 function callable(model: CatalogModel, providerId: CatalogProviderId): boolean {
   if (providerId === 'openai' || model.outputModalities?.includes('image')) return Boolean(PROVIDER_KEY[providerId]());
-  return isTextDirect(providerId) ? Boolean(PROVIDER_KEY[providerId]()) : gatewayReachable();
+  // A dropped id is on no menu (it runs as its alias) but keeps its price for old ledger rows (lib/modelAliases.ts).
+  if (isDroppedModel(model.id)) return isTextDirect(providerId) ? Boolean(PROVIDER_KEY[providerId]()) : gatewayReachable();
+  return textRouteWorks(model.id);
 }
 
 /**
@@ -230,15 +246,31 @@ export function catalogSource(): 'gateway' | 'static' {
   return 'gateway';
 }
 
+/** The provider-priced snapshot entries (CatalogSnapshot.providerPriced) the live read lacks, where they can be called. */
+function providerPricedExtras(live: CatalogModel[]): CatalogModel[] {
+  const snapshot = modelCatalogJson as unknown as CatalogSnapshot;
+  const have = new Set(live.map((m) => m.id));
+  const mock = engineMock();
+  return (snapshot.providerPriced ?? []).flatMap(({ providerId, pricedAt, source, ...model }) => {
+    void pricedAt; void source;
+    return !have.has(model.id) && providerOfOwner(model.owner) === providerId && (mock || callable(model, providerId)) ? [model] : [];
+  });
+}
+
 export async function catalog(force = false): Promise<CatalogModel[]> {
   const fromSnapshot = catalogSource() === 'static';
-  const models = fromSnapshot ? staticCatalog() : await gatewayCatalog(force);
+  const read = fromSnapshot ? staticCatalog() : await gatewayCatalog(force);
+  const models = fromSnapshot ? read : [...read, ...providerPricedExtras(read)];
   if (!vendorKey('openai') || engineMock()) return models;
   const direct = await openAIConnection(force);
   const allowed = new Set(direct.models);
   return models.filter(model => {
-    // The snapshot is already limited to providers whose key is set.
-    if (model.owner !== 'openai') return fromSnapshot || gatewayReachable();
+    // The snapshot is already limited to the models that can be called.
+    if (model.owner !== 'openai') {
+      if (fromSnapshot) return true;
+      const text = model.type === 'language' && !model.outputModalities?.includes('image') && providerOfOwner(model.owner);
+      return text ? textRouteWorks(model.id) : gatewayReachable();
+    }
     // Text goes to OpenAI directly, so a text model must be one the key can
     // list, and nothing stands in for a missing id. Image, speech and the
     // other media types still run through the Gateway and follow its

@@ -1,7 +1,7 @@
+import { languageReachable } from "@/lib/language-provider";
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { catalog } from "@/lib/catalog";
-import { gatewayReachable } from "@/lib/gateway";
 import { withGenerationRequest } from "@/lib/generationRequests";
 import { displayModelName } from "@/lib/models";
 import { isVerifiedTextModel } from "@/lib/atomikModelPolicy";
@@ -13,7 +13,6 @@ import {
   DEFAULT_ENHANCER, ENHANCE_MAX_PROMPT, ENHANCE_MAX_TOKENS, ENHANCER_LABEL, enhancerMessages, isEnhanceMode, isEnhancerProvider,
   isRawPrompt, parseEnhanced, pickEnhancerModel, type EnhancerProvider,
 } from "@/lib/shell/enhancer";
-import { vendorKey } from "@/lib/vendorKeys";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +50,7 @@ export const POST = withTenant(async function POST(req: Request) {
       if (isRawPrompt(prompt)) return NextResponse.json({ error: "A raw: prompt is sent as written. Remove raw: to enhance it." }, { status: 400 });
       if (!isEnhanceMode(body.mode)) return NextResponse.json({ error: "Choose what you are generating first." }, { status: 400 });
       if (body.provider !== undefined && !isEnhancerProvider(body.provider)) return NextResponse.json({ error: "Choose a supported prompt enhancer." }, { status: 400 });
-      if (!gatewayReachable() && !vendorKey("openai"))
+      if (!languageReachable())
         return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
 
       const saved = await getSetting("promptEnhancer");

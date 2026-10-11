@@ -14,6 +14,7 @@ import { ASTRA_BLENDER_MODEL } from "../../lib/astra-blender/scene";
 import { OFFERED_CATALOG_IDS, PRICED_TEXT_IDS, SNAPSHOT_CATALOG_IDS, STILL_CATALOG_IDS } from "../../lib/catalogOffered";
 import { DROPPED_MODEL_IDS } from "../../lib/modelAliases";
 import committedJson from "../../lib/modelCatalog.json";
+import { UNMAPPED_DIRECT_MODEL_IDS } from "../../lib/textRoute";
 
 /*
  * lib/modelCatalog.json freezes the gateway's public /v1/models for the ids we
@@ -74,7 +75,8 @@ test("every model a feature can pick has input and output prices and a provider 
     ...ATOMIK_MODEL_IDS, ...Object.values(ENHANCER_MODELS).flat(), ...Object.values(DEFAULT_TEXT_MODELS), ASTRA_BLENDER_MODEL,
   ])];
   expect([...PRICED_TEXT_IDS].sort()).toEqual([...mustPrice].sort());
-  const byId = new Map(committed.models.map((m) => [m.id, m]));
+  // Gateway-listed entries and the provider-priced ones (models the gateway did not list, priced from the provider's page).
+  const byId = new Map([...committed.models, ...(committed.providerPriced ?? [])].map((m) => [m.id, m]));
   const problems: string[] = [];
   for (const id of mustPrice) {
     const m = byId.get(id);
@@ -110,8 +112,15 @@ test("the snapshot is dated, covers every offered id, and names a provider for e
   for (const id of DROPPED_MODEL_IDS) expect(OFFERED_CATALOG_IDS, id).not.toContain(id);
   expect(committed.pricedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   const ids = committed.models.map((m) => m.id);
-  expect(new Set(ids).size).toBe(ids.length);
-  expect([...ids, ...committed.missing].sort()).toEqual([...SNAPSHOT_CATALOG_IDS].sort());
+  const providerPriced = committed.providerPriced ?? [];
+  expect(new Set([...ids, ...providerPriced.map((m) => m.id)]).size).toBe(ids.length + providerPriced.length);
+  expect([...ids, ...providerPriced.map((m) => m.id), ...committed.missing].sort()).toEqual([...SNAPSHOT_CATALOG_IDS].sort());
+  // Each provider-priced entry names the official page it was priced from, and the day.
+  for (const m of providerPriced) {
+    expect(m.source, m.id).toMatch(/^https:\/\/(platform\.claude\.com|developers\.openai\.com|ai\.google\.dev|docs\.x\.ai)\//);
+    expect(m.pricedAt, m.id).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(m.providerId, m.id).toBe(CATALOG_PROVIDER_OF_OWNER[m.owner]);
+  }
   for (const m of committed.models) {
     expect(m.pricedAt, m.id).toBe(committed.pricedAt);
     expect(m.providerId, m.id).toBe(CATALOG_PROVIDER_OF_OWNER[m.owner]);
@@ -119,7 +128,7 @@ test("the snapshot is dated, covers every offered id, and names a provider for e
   }
   // Stills are listed too, so their door keeps its catalogue entry.
   expect(STILL_CATALOG_IDS.filter((id) => !ids.includes(id))).toEqual([]);
-  expect(snapshotModels().length).toBe(committed.models.length);
+  expect(snapshotModels().length).toBe(committed.models.length + (committed.providerPriced?.length ?? 0));
 });
 
 test(`the snapshot's prices are at most ${MAX_AGE_DAYS} days old`, () => {
@@ -228,7 +237,8 @@ test("in static mode Claude, Gemini and Grok text is offered where its calls wil
   // Each vendor follows its own route; unknown names in TEXT_DIRECT are ignored.
   process.env.TEXT_DIRECT = " anthropic ,nobody,xai";
   expect(offered(claude)).toEqual(claude);
-  expect(offered(grok)).toEqual(grok);
+  // A direct door offers only the ids it can send (an unmapped id has no working route).
+  expect(offered(grok)).toEqual(grok.filter((id) => !UNMAPPED_DIRECT_MODEL_IDS.includes(id)));
   expect(offered(gemini)).toEqual([]);
 });
 

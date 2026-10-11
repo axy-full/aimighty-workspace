@@ -8,10 +8,24 @@ import { gatewayAuth, gatewayReachable, GATEWAY_BASE } from './gateway';
 import { vendorKey } from './vendorKeys';
 import { recoveryFetch } from './recovery';
 import { assertTextProvider, directOpenAIKey, OPENAI_BASE, openAIFetch, openAIModelId, TEXT_PROVIDER_HEADER, usesOpenAIResponses } from './openai-direct';
-import { DIRECT_BASE_URL, DIRECT_KEY, directFetch, directKey, directModelId, isDirectRoute, redactProviderError, textRoute, type DirectVendor } from './textRoute';
+import { ANTHROPIC_NO_TOOL_HEADER, DIRECT_BASE_URL, DIRECT_KEY, directFetch, directKey, directModelId, isDirectRoute, redactProviderError, textRoute, type DirectVendor } from './textRoute';
 import { textDirectVendors } from './textDirectVendors';
+/** A direct door (TEXT_DIRECT) with its key: text that needs neither the gateway nor OpenAI. */
+export function directTextReachable() {
+  return [...textDirectVendors()].some(vendor => !!vendorKey(DIRECT_KEY[vendor]));
+}
 export function languageReachable() {
-  return gatewayReachable() || !!vendorKey('openai') || [...textDirectVendors()].some(vendor => !!vendorKey(DIRECT_KEY[vendor]));
+  return gatewayReachable() || !!vendorKey('openai') || directTextReachable();
+}
+/**
+ * The last step of a tool loop, where no tool may be called. Anthropic needs
+ * the tools still defined while the history holds tool calls (a 400 otherwise),
+ * so its direct door keeps them and sends `tool_choice: none`; elsewhere they
+ * are removed as well, since a provider may ignore the choice.
+ */
+export function finalToolStep(model: LanguageModel): { toolChoice: 'none'; activeTools?: never[] } {
+  const provider = typeof model === 'string' ? '' : model.provider;
+  return provider.startsWith('anthropic') ? { toolChoice: 'none' } : { toolChoice: 'none', activeTools: [] };
 }
 export async function languageAuth(model: string): Promise<Record<string, string>> {
   const route = textRoute(model);
@@ -29,6 +43,9 @@ function directLanguageModel(vendor: DirectVendor, model: string, fetcher: typeo
     : createXai(settings).languageModel(id);
   // Provider errors leave without the request body, so no caller's log can print the prompt.
   return wrapLanguageModel({ model: native, middleware: {
+    // Anthropic: keep the tools on a no-tool step (see ANTHROPIC_NO_TOOL_HEADER); the fetch guard sets tool_choice none.
+    transformParams: async ({ params }) => vendor === 'anthropic' && params.toolChoice?.type === 'none' && params.tools?.length
+      ? { ...params, toolChoice: { type: 'auto' }, headers: { ...params.headers, [ANTHROPIC_NO_TOOL_HEADER]: '1' } } : params,
     wrapGenerate: async ({ doGenerate }) => { try { return await doGenerate(); } catch (error) { throw redactProviderError(error); } },
     wrapStream: async ({ doStream }) => { try { return await doStream(); } catch (error) { throw redactProviderError(error); } },
   } });

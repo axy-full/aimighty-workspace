@@ -1,6 +1,9 @@
 import { APICallError } from "ai";
 import { vendorKey, vendorKeyEnv, type VendorKeyName } from "./vendorKeys";
 import { isTextDirect, type TextDirectVendor } from "./textDirectVendors";
+import { gatewayReachable } from "./gateway";
+import { engineMock } from "./mock";
+import modelCatalogJson from "./modelCatalog.json";
 
 /**
  * Which door a text model goes through (P4b, the gateway removal).
@@ -46,46 +49,52 @@ export const DIRECT_MODEL_IDS: Readonly<Record<string, string>> = {
   "anthropic/claude-opus-4.7": "claude-opus-4-7",
   "anthropic/claude-opus-4.8": "claude-opus-4-8",
   "anthropic/claude-opus-5": "claude-opus-5",
+  "anthropic/claude-opus-5.5": "claude-opus-5-5",
   "anthropic/claude-sonnet-4": "claude-sonnet-4-0",
   "anthropic/claude-sonnet-4.5": "claude-sonnet-4-5",
   "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
   "anthropic/claude-sonnet-5": "claude-sonnet-5",
+  "anthropic/claude-sonnet-5.5": "claude-sonnet-5-5",
+  "anthropic/claude-haiku-5.5": "claude-haiku-5-5",
   "anthropic/claude-fable-5": "claude-fable-5",
   "anthropic/claude-fable-5.1": "claude-fable-5-1",
   "google/gemini-2.5-flash": "gemini-2.5-flash",
   "google/gemini-2.5-flash-lite": "gemini-2.5-flash-lite",
   "google/gemini-2.5-pro": "gemini-2.5-pro",
   "google/gemini-3-flash": "gemini-3-flash-preview",
-  "google/gemini-3.1-flash-lite": "gemini-3.1-flash-lite-preview",
+  // Google shut the -preview id down; the stable id is the one it lists (ai.google.dev/gemini-api/docs/models, 11 Oct 2026).
+  "google/gemini-3.1-flash-lite": "gemini-3.1-flash-lite",
   "google/gemini-3.1-pro-preview": "gemini-3.1-pro-preview",
-  "google/gemini-3.5-flash": "gemini-3.5-flash",
   "google/gemini-3.5-flash-lite": "gemini-3.5-flash-lite",
   "google/gemini-3.6-flash": "gemini-3.6-flash",
-  "google/gemini-3.7-flash": "gemini-3.7-flash",
   "google/gemini-3.8-flash": "gemini-3.8-flash",
   "spacexai/grok-4.7": "grok-4.7",
   "spacexai/grok-4.6": "grok-4.6",
   "spacexai/grok-4.5": "grok-4.5",
   "spacexai/grok-4.3": "grok-4.3",
-  "spacexai/grok-4.20-reasoning": "grok-4.20-reasoning",
-  "spacexai/grok-4.1-fast-reasoning": "grok-4-1-fast-reasoning",
+  // xAI lists only the dated id (docs.x.ai/docs/models, 11 Oct 2026).
+  "spacexai/grok-4.20-reasoning": "grok-4.20-0309-reasoning",
   // The gateway lists Grok under `spacexai/`; `xai/` is the provider's own spelling of the same models.
   "xai/grok-4.7": "grok-4.7",
   "xai/grok-4.6": "grok-4.6",
   "xai/grok-4.5": "grok-4.5",
   "xai/grok-4.3": "grok-4.3",
-  "xai/grok-4.20-reasoning": "grok-4.20-reasoning",
-  "xai/grok-4.1-fast-reasoning": "grok-4-1-fast-reasoning",
+  "xai/grok-4.20-reasoning": "grok-4.20-0309-reasoning",
 };
 
 /**
- * Offered ids with no direct equivalent; the router refuses them. None today:
- * the three there were (the `-fast` listings, a gateway product, and Claude 3
- * Haiku, retired by Anthropic on 2026-04-19) left every menu on 8 October 2026,
- * and a choice saved on one reads as its alias before it reaches the router
- * (lib/modelAliases.ts).
+ * Offered ids with no direct equivalent; the router refuses them and no menu
+ * offers them while their vendor is direct (textRouteWorks). On 11 October 2026
+ * the provider's own model and price pages did not list these, so neither the
+ * id nor the price could be confirmed: Gemini 3.5 Flash, Gemini 3.7 Flash and
+ * Grok 4.1 Fast Reasoning. They stay on the gateway until the owner confirms them.
  */
-export const UNMAPPED_DIRECT_MODEL_IDS: readonly string[] = [];
+export const UNMAPPED_DIRECT_MODEL_IDS: readonly string[] = [
+  "google/gemini-3.5-flash",
+  "google/gemini-3.7-flash",
+  "spacexai/grok-4.1-fast-reasoning",
+  "xai/grok-4.1-fast-reasoning",
+];
 
 /** The vendor a model belongs to by its app prefix, whether or not it is switched on. */
 export function directVendorOf(model: string): DirectVendor | null {
@@ -106,6 +115,29 @@ export function textRoute(model: string): TextRoute {
   return vendor && isTextDirect(vendor) ? vendor : "gateway";
 }
 
+/** The ids the gateway listed when the snapshot was taken (lib/modelCatalog.json `models`); a provider-priced model is not among them. */
+const GATEWAY_LISTED = new Set<string>((modelCatalogJson as { models: { id: string }[] }).models.map((m) => m.id));
+
+/**
+ * Whether a text model has a door that works right now, so a menu may offer it:
+ * OpenAI on its own key; a vendor switched on in TEXT_DIRECT with its key set
+ * and the id mapped above; anything else only while the gateway is reachable
+ * and the gateway listed it.
+ * A gateway-only model is never offered once the gateway key is gone.
+ */
+export function textRouteWorks(model: string): boolean {
+  if (engineMock()) return true;   // nothing is sent under ENGINE_MOCK
+  const route = textRoute(model);
+  if (route === "openai") return true;
+  if (route === "gateway") return !model.startsWith("openai/") && gatewayReachable() && GATEWAY_LISTED.has(model);
+  return Boolean(vendorKey(DIRECT_KEY[route])) && Object.hasOwn(DIRECT_MODEL_IDS, model);
+}
+
+/** The ids, in order, that a menu may offer now (everything under ENGINE_MOCK, where nothing is sent). */
+export function routableTextModels(ids: readonly string[]): string[] {
+  return ids.filter((id) => engineMock() || textRouteWorks(id));
+}
+
 /** The provider's own id for an app id. Unlisted ids are refused. */
 export function directModelId(model: string): string {
   const id = Object.hasOwn(DIRECT_MODEL_IDS, model) ? DIRECT_MODEL_IDS[model] : undefined;
@@ -121,6 +153,26 @@ export function directKey(vendor: DirectVendor): string {
 }
 
 /**
+ * Set on an Anthropic call whose tools stay defined but may not be used
+ * (`tool_choice: none`), by the door's middleware (lib/language-provider.ts).
+ * The SDK drops the tools for `toolChoice: none`, and Anthropic refuses (400)
+ * a request whose history holds tool calls when no tools are defined, so the
+ * fetch below keeps them and sets the choice itself. The header never leaves
+ * the process.
+ */
+export const ANTHROPIC_NO_TOOL_HEADER = "x-particl-tool-choice-none";
+
+function anthropicToolChoiceNone(init: RequestInit | undefined): RequestInit | undefined {
+  const headers = new Headers(init?.headers);
+  if (!headers.has(ANTHROPIC_NO_TOOL_HEADER)) return init;
+  headers.delete(ANTHROPIC_NO_TOOL_HEADER);
+  if (typeof init?.body !== "string") return { ...init, headers };
+  const body = JSON.parse(init.body) as Record<string, unknown>;
+  if (Array.isArray(body.tools) && body.tools.length) body.tool_choice = { type: "none" };
+  return { ...init, headers, body: JSON.stringify(body) };
+}
+
+/**
  * Credentials go only to the vendor's own language endpoint, and a redirect is
  * refused before a client could forward an authenticated request elsewhere.
  * The same rule as `openAIFetch`.
@@ -130,7 +182,8 @@ export function directFetch(vendor: DirectVendor, fetcher: typeof fetch): typeof
   return (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     if (url.origin !== origin || !DIRECT_PATHS[vendor].test(url.pathname)) throw new Error("The language endpoint is not supported.");
-    return fetcher(input, { ...init, redirect: "error" });
+    const sent = vendor === "anthropic" ? anthropicToolChoiceNone(init) : init;
+    return fetcher(input, { ...sent, redirect: "error" });
   };
 }
 
