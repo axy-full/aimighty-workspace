@@ -49,8 +49,8 @@ export function AccountMenu({ account }: { account: WorkspaceAccount | null }) {
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       onSelect: () => { void switchWorkspace({ id: w.id, fetch: scopedFetch, go: () => window.location.assign("/suites") }).then((why) => { if (why) toast({ text: why }); }); },
     })),
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    ...(session.superAdmin ? [{ id: "platform-desk", label: "Platform desk", onSelect: () => window.location.assign("/admin") }] : []),
+    /* The platform owner's console (`?view=admin`, components/v12/platform): never in a client workspace's menu, only the owner's. */
+    ...(session.superAdmin ? [{ id: "platform-console", label: "Platform console", hint: <span className="v12-acct-owner">Owner</span>, onSelect: () => shell.goPlatform(), testId: "v12-account-platform" }] : []),
     { id: "sep", separator: true },
     {
       id: "sign-out", label: signingOut ? "Signing out…" : "Sign out", tone: "quiet", disabled: busy, testId: "v12-account-signout",

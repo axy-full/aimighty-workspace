@@ -4,7 +4,6 @@ import { requireSuperAdmin } from "@/lib/auth";
 import { platformDb, platformReady, now } from "@/lib/platform";
 import { inviteRef, platformAuditStatement } from "@/lib/platformAudit";
 import { mailConfigured, sendMail, inviteOrigin, signupInviteEmail, MAIL_LINK_UNSET } from "@/lib/mail";
-import { linkOrigin } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ code: string }> };

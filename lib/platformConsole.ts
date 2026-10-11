@@ -18,20 +18,18 @@ export type PlatformSection = {
   label: string;
   /** The one grey line under it. */
   line: string;
-  /** The small-caps group it sits under, or null for the first item. */
-  group: "PEOPLE" | "DEFAULTS" | "HEALTH" | null;
 };
 
 export const PLATFORM_SECTIONS: readonly PlatformSection[] = Object.freeze([
-  { id: "overview", label: "Overview", line: "How the platform is doing", group: null },
-  { id: "access", label: "Who can join", line: "Invitations and requests", group: "PEOPLE" },
-  { id: "site", label: "Public site", line: "Sign-up and visitor pages", group: "PEOPLE" },
-  { id: "workspaces", label: "All workspaces", line: "Credits, pause and resume", group: "PEOPLE" },
-  { id: "engines", label: "AI models", line: "Default engines and text models", group: "DEFAULTS" },
-  { id: "rules", label: "Style rules", line: "What the prompt writer is told", group: "DEFAULTS" },
-  { id: "caps", label: "Limits", line: "What every new workspace starts with", group: "DEFAULTS" },
-  { id: "plans", label: "Plans & prices", line: "What customers can choose", group: "DEFAULTS" },
-  { id: "risk", label: "Failed saves", line: "Renders with no stored copy", group: "HEALTH" },
+  { id: "overview", label: "Overview", line: "Numbers and health" },
+  { id: "access", label: "Who can join", line: "Invites and requests" },
+  { id: "site", label: "Public site", line: "What signed-out visitors see" },
+  { id: "workspaces", label: "All workspaces", line: "Plans, credits, pause" },
+  { id: "engines", label: "AI models", line: "Default engines and text models" },
+  { id: "rules", label: "Style rules", line: "House style for every prompt" },
+  { id: "caps", label: "Limits", line: "Caps on spend and load" },
+  { id: "plans", label: "Plans & prices", line: "What customers see" },
+  { id: "risk", label: "Failed saves", line: "Renders with no stored copy" },
 ] as const);
 
 export const PLATFORM_SECTION_PARAM = "section";

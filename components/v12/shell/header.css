@@ -133,3 +133,5 @@
   .v12 .v12-activity[data-tone="live"] .v12-activity-dot, .v12 .v12-act-dot[data-kind="running"] { animation: none; opacity: 1; }
   .v12 .v12-tab { transition: none; }
 }
+/* The platform console's menu line carries an Owner badge: only the platform owner ever sees it. */
+.v12 .v12-acct-owner { font-size: var(--gx-fs-eyebrow); font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-accent-text); }
