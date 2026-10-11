@@ -210,13 +210,13 @@ test("desktop: Remix opens Make with the take; Start with a picked tile asks Ato
   await expect(page.getByTestId("v12-make-bar-input")).not.toHaveValue("", { timeout: 30_000 });
   await expect(page.getByTestId("v12-make-go")).toHaveText(/^Make( \d takes)? · \d[\d,]* cr$/, { timeout: 60_000 });
   /* Back to Home (Make is a place: Esc does not leave it). */
-  await page.getByTestId("brand-home").click();
+  await page.getByTestId("v12-tab-home").getByRole("button", { name: "Home" }).click();
   await expect(page.getByTestId("v12-make")).toHaveCount(0);
   await expect(page.getByTestId("v12-home")).toBeVisible({ timeout: 30_000 });
   /* Focus on the words shows on the floating bar too (rule 15): a 2px ring that is not there without focus. */
   const card = page.getByTestId("v12-home-bar").locator(".v12-bar-card");
   const ring = () => card.evaluate((el) => { const c = getComputedStyle(el); return `${c.outlineStyle} ${c.outlineWidth} ${c.borderTopColor}`; });
-  await page.getByTestId("brand-home").focus();
+  await page.getByTestId("v12-tab-home").getByRole("button", { name: "Home" }).focus();
   const unfocused = await ring();
   await page.getByTestId("v12-home-bar-input").focus();
   expect(await ring()).not.toBe(unfocused);

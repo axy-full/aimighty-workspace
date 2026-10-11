@@ -16,7 +16,7 @@ export type SampleStep = { title: string; meta: string; credits: number; kind?: 
 
 export function samplePlanModel(steps: readonly SampleStep[], line: string): PlanModel {
   const rows: PlanStep[] = steps.map((s, i) => ({
-    seq: i + 1, kind: s.kind ?? "take", title: s.title, meta: s.meta, price: exact(s.credits), source: "run", unavailable: null, needsAdmin: false, asksAlone: null,
+    seq: i + 1, nodeId: null, kind: s.kind ?? "take", title: s.title, meta: s.meta, price: exact(s.credits), source: "run", unavailable: null, needsAdmin: false, asksAlone: null,
     state: "next", status: "Planned", reason: null, canRender: false, fingerprint: null,
   }));
   const total = rows.length ? priceSum(rows.map((r) => r.price)) : FREE;

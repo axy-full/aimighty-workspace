@@ -30,11 +30,11 @@ export const GET = recoveryRoute(async function GET(req: Request) {
   /* Two answers from one route, because it has two audiences.
    *
    * An uptime monitor needs to know the app is alive and can reach its
-   * database and its storage, and needs no credential to ask. Everything
-   * else here is a fingerprint of the deployment — how many renders the
-   * studio has, which vendor keys it holds, which door stills go through,
-   * the address invitations are sent from, the commit it is running, and
-   * the cron's last heartbeat. That was fine while nobody could find the
+   * database and its storage, and which commit is live (the repository is
+   * public), and needs no credential to ask. Everything else here is a
+   * fingerprint of the deployment — how many renders the studio has, which
+   * vendor keys it holds, which door stills go through, the address
+   * invitations are sent from, and the cron's last heartbeat. That was fine while nobody could find the
    * app; it is a briefing note now the front door is open.
    *
    * `deep` is stricter still: it WRITES to Vercel Blob, presigns, ranges
@@ -134,6 +134,8 @@ export const GET = recoveryRoute(async function GET(req: Request) {
               ? "missing"
               : "ok",
         storageVerified: false,
+        /* The short commit, so a deploy can be checked from outside (the repository is public). */
+        commit: (deployedCommit() ?? "local").slice(0, 7),
       },
       { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } },
     );

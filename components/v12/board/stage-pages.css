@@ -72,3 +72,6 @@
 .v12 td[data-col="dur"] .v12-ppm-cell { min-width: 56px; }
 .v12 td[data-col="vo"] .v12-ppm-cell, .v12 td[data-col="notes"] .v12-ppm-cell { min-width: 160px; }
 .v12 .v12-ppm-list { grid-column: 1 / -1; }
+
+/* A client round's share card inside a page (redesign P2-c): one card's width, under the page's own content. */
+.v12 .v12-stage-round { width: min(100%, 320px); height: 190px; margin: 0 24px 24px; }

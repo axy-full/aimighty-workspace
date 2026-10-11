@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openBoard } from "./helpers/boardV12";
+import { filmBoard, openBoard } from "./helpers/boardV12";
 
 /**
  * The board frame in the new interface (docs/redesign-plan.md P2-a1; components/v12/board/): the Film stage rail over
@@ -118,6 +118,26 @@ test.describe("desktop, switch on", () => {
     await expect(view.getByRole("radio", { name: "Strip" })).toBeDisabled();
     await expect(view.getByRole("radio", { name: "Rig" })).toBeDisabled();
     expect(await noSideways(page)).toBe(true);
+  });
+
+  test("a full rail (24 stages) cannot take another: + Stage is off and says why, and the draft still saves", async ({ page }) => {
+    const extra = Array.from({ length: 16 }, (_, i) => ({ id: `custom-extra${i}`, label: `Extra ${i + 1}`, custom: true as const }));
+    const builtIn = ["brief", "script", "cast", "elements", "storyboard", "shots", "cut", "deliver"].map((id) => ({ id }));
+    await openBoard(page, "/suites?view=board&stage=storyboard", { project: { ...filmBoard(), boardStages: [...builtIn, ...extra] } });
+    await expect(page.getByTestId("v12-stage-rail")).toBeVisible({ timeout: 60_000 });
+    await expect(rows(page)).toHaveCount(24);
+    const add = page.getByTestId("v12-stage-add");
+    await expect(add).toBeDisabled();
+    await expect(add).toHaveAttribute("title", "A board holds up to 24 stages. Remove one to add another.");
+    /* Remove one: the rail takes another again, and the draft saves (the whole draft would have been refused at 25). */
+    const row = rows(page).filter({ hasText: "Extra 16" });
+    await row.hover();
+    await row.getByTestId("v12-stage-menu").click();
+    const put = saved(page);
+    await page.getByRole("menuitem", { name: "Remove" }).click();
+    await put;
+    await expect(rows(page)).toHaveCount(23);
+    await expect(add).toBeEnabled();
   });
 
   test("switch off: today's board, its rail and its tool pill", async ({ page }) => {

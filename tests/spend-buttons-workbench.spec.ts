@@ -104,10 +104,33 @@ function read(page: Page): Promise<Found> {
   }, { figure: { source: CREDIT_FIGURE.source, flags: CREDIT_FIGURE.flags }, verb: { source: SPEND_LABEL.source, flags: SPEND_LABEL.flags } });
 }
 
+/**
+ * Waits for the page to have drawn its paid controls before it is counted (networkidle says the requests ended, not that the
+ * panel rendered what they returned): until it carries `minSpend` marked controls, then until what is found stops changing.
+ * It only waits. What counts as priced, and `minSpend`, are exactly as the probe states them; a page that never draws its
+ * controls still fails the probe's own assertions on what it did find.
+ */
+async function settled(page: Page, minSpend: number): Promise<Found> {
+  const deadline = Date.now() + 30_000;
+  let found = await read(page);
+  while (found.marked < minSpend && Date.now() < deadline) {
+    await page.waitForTimeout(250);
+    found = await read(page);
+  }
+  const shape = (f: Found) => JSON.stringify([f.marked, f.noPrice, f.unmarked]);
+  for (let stable = 0; stable < 3 && Date.now() < deadline;) {
+    await page.waitForTimeout(300);
+    const next = await read(page);
+    stable = shape(next) === shape(found) ? stable + 1 : 0;
+    found = next;
+  }
+  return found;
+}
+
 for (const probe of PROBES) {
   test(`${probe.strict ? "STRICT" : "RATCHET"} · ${probe.name}: every button that spends shows a price in credits`, async ({ page }) => {
     await open(page, probe.path);
-    const found = await read(page);
+    const found = await settled(page, probe.minSpend);
     if (process.env.SPEND_PROBE_REPORT) appendFileSync(process.env.SPEND_PROBE_REPORT, JSON.stringify({ probe: probe.name, path: probe.path, ...found }) + "\n");
     /* A marked control with no credit figure is never allowed. */
     expect(found.noPrice, "controls marked data-spend with no credit figure (and not disabled-unpriced)").toEqual([]);

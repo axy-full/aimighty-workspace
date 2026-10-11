@@ -653,7 +653,7 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
     - Daily: `/api/health`, 5xx in the app log, the cron heartbeat, the Inngest dashboard (failed syncs and runs), `dispatch.refused` and `[client-ip] ... one shared bucket` in the app log.
     - **OWNER:** the first real long job (an Astra render or a dubbing job) completes in the Inngest dashboard.
     - **The Vercel production deployment stays deployed and untouched as the DNS fallback for at least 1–2 days after step 8 (owner, 8 Oct); keep it longer if anything looks wrong.** The Vercel team and project stay in any case (Sandbox renders and its snapshot belong to them). Turso point-in-time restore covers the whole 14-day watch on the Scaler plan (30 days; check the window in the dashboard).
-    - The commit in the signed-in health answer comes from `GIT_COMMIT_SHA`, which the Dockerfile sets from Coolify's `SOURCE_COMMIT`. It reads `local` when no commit was passed to the build; that is cosmetic. Do not set `GIT_COMMIT_SHA` by hand.
+    - The commit in the health answer (seven characters, signed in or not) comes from `GIT_COMMIT_SHA`, which the Dockerfile sets from Coolify's `SOURCE_COMMIT`. It reads `local` when no commit was passed to the build; that is cosmetic. Do not set `GIT_COMMIT_SHA` by hand.
 15. **Rollback (by DNS while Vercel production is still deployed; by restore point within the 14-day watch).**
     1. **OWNER:** in Cloudflare, restore `particl.si` and `www.particl.si` to the values written down in step 2 (grey cloud, as today).
     2. **OWNER:** re-enable Vercel Cron Jobs (Vercel, the project, **Settings, Cron Jobs**, the enable button in place of **Disable Cron Jobs**; its exact label is not in Vercel's docs: check) and disable `cron-sync` on the server. **Keep the production app running** until at least the TTL has passed since the DNS change (plus a few minutes) and `dig +short particl.si @1.1.1.1` and `@8.8.8.8` show Vercel again, so visitors still on the old answer are served. Then stop it.
@@ -759,7 +759,7 @@ Found by searching the code for `@vercel/` packages, `api.vercel.com`, `vercel.s
 Each is passed, or waived by the owner in writing (cutover step 0).
 1. **P2 finish:** Coolify keys saved, dashboard domain, GitHub App, real visitor addresses, outside monitor, server snapshots. (The server firewall is cutover step 3; the Cloudflare certificate belongs to the later orange-cloud section.)
 2. **P3 media:** R2 on (`r2-configured`), media domain with signed links, thumbnails and posters; Blob downloads near zero.
-3. **P4 beside Vercel:** the `main` fixes (PR #566's list); self-hosted Inngest sized for 1,000 jobs with per-plan limits; staging with all 12 smoke checks.
+3. **P4 beside Vercel:** the `main` fixes (PR #566's list); self-hosted Inngest sized for 1,000 jobs with per-plan limits; staging with all 12 smoke checks. *(Corrected 10 Oct: production runs Inngest Cloud, configured above; no self-hosted Inngest.)*
 4. **The 1,000-job load test** passes on staging.
 5. **The credit switchover** (`CREDIT_USD` 0.10) is done on Vercel first, and that database is the one the new host uses.
 6. After cutover (not a blocker): cron moved, 14 days of watching, Vercel deployment and domains retired (keep the team, project and snapshot), exposed keys rotated, Blob retired only after every old object is in R2.

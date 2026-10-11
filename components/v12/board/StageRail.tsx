@@ -13,7 +13,7 @@ import { Menu, Tooltip, type MenuItem } from "@/components/v12/ui";
  */
 export type { StageEdit };
 
-export function StageRail({ kindLabel, onKind, dim, stages, current, status, readOnly, onPick, onEdit }: {
+export function StageRail({ kindLabel, onKind, dim, stages, current, status, readOnly, onPick, onEdit, addBlocked = null }: {
   kindLabel: string;
   /** The kind label cycles the kind (§ 6.2); absent or read-only, it is only a label. */
   onKind?: () => void;
@@ -26,6 +26,8 @@ export function StageRail({ kindLabel, onKind, dim, stages, current, status, rea
   readOnly: string | null;
   onPick: (id: string) => void;
   onEdit: (edit: StageEdit) => void;
+  /** Why "+ Stage" cannot add another (the rail is full), or null. */
+  addBlocked?: string | null;
 }) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
@@ -111,8 +113,8 @@ export function StageRail({ kindLabel, onKind, dim, stages, current, status, rea
           );
         })}
         {readOnly ? null : (
-          <Tooltip name="Add a stage" side="right">
-            <button ref={addAnchor} type="button" className="v12-rail-add" aria-haspopup="menu" aria-expanded={adding} onClick={() => setAdding(true)} data-testid="v12-stage-add">
+          <Tooltip name="Add a stage" line={addBlocked ?? undefined} side="right">
+            <button ref={addAnchor} type="button" className="v12-rail-add" aria-haspopup="menu" aria-expanded={adding} onClick={() => setAdding(true)} disabled={Boolean(addBlocked)} aria-disabled={Boolean(addBlocked) || undefined} data-testid="v12-stage-add" title={addBlocked ?? undefined}>
               <span className="v12-rail-add-mark" aria-hidden="true">+</span>Stage
             </button>
           </Tooltip>

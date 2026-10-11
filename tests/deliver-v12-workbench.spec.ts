@@ -37,7 +37,8 @@ test.describe("desktop, switch on", () => {
     await expect(other).toContainText(/_9x16_15s_v1$/);
     /* The naming pattern is the project's own, never a stand-in. */
     await expect(page.getByTestId("v12-deliver-grid-card")).toContainText("harbour-film_{aspect}_{dur}_v1");
-    for (const line of ["MP4 · H.264 · ProRes on request", "Burned-in + SRT", "VO · Music · SFX · WAV"]) await expect(page.getByTestId("v12-deliver-grid-card")).toContainText(line);
+    for (const line of ["ProRes isn’t built yet", "no burned-in captions or SRT", "Separate VO, music and SFX stems aren’t built yet"]) await expect(page.getByTestId("v12-deliver-grid-card")).toContainText(line);
+    await expect(page.getByTestId("v12-deliver-grid-card")).not.toContainText("on request");
     /* Adapt all is quoted and off; the cut's export waits for takes. */
     const adapt = page.getByTestId("v12-deliver-adapt-all");
     await expect(adapt).toBeDisabled();
@@ -54,10 +55,10 @@ test.describe("desktop, switch on", () => {
     /* Export pack: the four platforms by the prototype's words; posting is Later and a person's. */
     const pack = page.getByTestId("v12-deliver-pack");
     await expect(page.getByTestId("v12-deliver-platform")).toHaveCount(4);
-    for (const line of ["Reels", "MP4 · 9:16 · SRT", "Shorts", "YouTube", "Meta feed", "MP4 · 4:5 · 1:1", "Premiere / Resolve XML"]) await expect(pack).toContainText(line);
+    for (const line of ["Reels", "MP4 · 9:16", "Shorts", "YouTube", "Meta feed", "MP4 · 4:5 · 1:1", "Premiere / Resolve XML"]) await expect(pack).toContainText(line);
     await expect(page.getByTestId("v12-deliver-post")).toHaveText("Later · every post approved by a person");
     await expect(page.getByTestId("v12-deliver-export-pack")).toContainText("Export pack · free");
-    await expect(pack).toContainText("Audio stems and ProRes aren’t built yet.");
+    await expect(pack).toContainText("Separate audio stems, SRT captions and ProRes aren’t built yet.");
     /* No figure of credits anywhere on the page but the word quoted and free. */
     expect(await stagePage.innerText()).not.toMatch(/\d\s*cr\b/);
     expect(await noSideways(page)).toBe(true);
@@ -85,6 +86,18 @@ test.describe("desktop, switch on", () => {
     await expect(page.getByTestId("v12-deliver-language")).toHaveCount(0);
   });
 
+  test("Deliver: a full list of twelve languages takes no more; the select is off and says why", async ({ page }) => {
+    const codes = ["en", "es", "fr", "de", "it", "pt", "pl", "nl", "sv", "da", "fi", "no"];
+    await openBoard(page, "/suites?view=board&stage=deliver", { project: { ...filmBoard(), boardLanguages: codes } });
+    await expect(page.getByTestId("v12-deliver-languages")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("v12-deliver-language")).toHaveCount(12);
+    const select = page.getByTestId("v12-deliver-add-language");
+    await expect(select).toBeDisabled();
+    await expect(select).toHaveAttribute("title", "A board holds up to 12 languages. Remove one to add another.");
+    await page.getByRole("button", { name: "Remove English" }).click();
+    await expect(select).toBeEnabled();
+  });
+
   test("PPM deck: eight sections from what the board holds, the shot list editable and kept in the draft, a CSV, and the exports that are not built say so", async ({ page }) => {
     const board = { ...filmBoard(), boardKind: "studio" as const, boardFlavor: "previs" as const };
     const { errors, project } = await openBoard(page, "/suites?view=board&stage=ppm-deck", { project: board });
@@ -96,6 +109,8 @@ test.describe("desktop, switch on", () => {
     await expect(page.getByTestId("v12-ppm-section").nth(2)).toContainText("2 characters · Skipper, Deckhand");
     await expect(page.getByTestId("v12-ppm-section").nth(7)).toContainText("8 shots · editable table");
     await expect(page.getByTestId("v12-ppm-logo")).toHaveCount(0);
+    /* The header says how many sections hold something here, not a fixed eight (this board has no script). */
+    await expect(page.getByTestId("v12-stage-meta")).toHaveText("Draft · 7 sections");
     /* The shot list: the beat sheet's shots, eleven columns. */
     const rows = page.getByTestId("v12-ppm-row");
     await expect(rows).toHaveCount(8);

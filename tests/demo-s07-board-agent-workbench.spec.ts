@@ -18,10 +18,20 @@ const shot = async (page: Page, name: string, info: { project: { name: string } 
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: `${SHOTS}/${name}-${info.project.name.replace(/^workbench-/, "")}.png` });
 };
+/** Waits until the page has not navigated for `ms`: a cold dev server reloads the page while it compiles the board and the panel, and what was opened before the reload is gone. */
+const navigationQuiet = async (page: Page, ms: number) => {
+  let last = Date.now();
+  const onNav = () => { last = Date.now(); };
+  page.on("framenavigated", onNav);
+  try { await expect.poll(() => Date.now() - last, { timeout: 120_000, intervals: [250] }).toBeGreaterThanOrEqual(ms); }
+  finally { page.off("framenavigated", onNav); }
+};
 const noSideways = async (page: Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), "no horizontal overflow").toBeLessThanOrEqual(1);
 
 test("the dock: a rail that opens to Atomik, an ask at the server's price, a proposal approved through the queue", async ({ page }, info) => {
   test.skip(!desktop(page), "the board canvas is desktop only (phones open the project's Record, stream 10)");
+  /* A cold dev server compiles the board and the agent panel on first use, and may reload the page while it does: every wait below allows for that. */
+  test.setTimeout(300_000);
   const { project, headers, productionId } = await seedBoard(page);
   await forbidPaidWork(page);
   const generated: string[] = [];
@@ -30,24 +40,28 @@ test("the dock: a rail that opens to Atomik, an ask at the server's price, a pro
   page.on("request", (r) => { if (r.method() === "POST" && new URL(r.url()).pathname === "/api/workbench/team-canvas") asked.push(r.postDataJSON() as Record<string, unknown>); });
   await page.goto(`/suites?project=${project.id}&view=board`);
   const dock = page.getByTestId("board-agent-dock");
-  await expect(dock).toBeVisible();
+  await expect(dock).toBeVisible({ timeout: 120_000 });
+  await navigationQuiet(page, 4000);
   /* A board with a brief and no look yet opens the panel on its questions; collapse it to see the rail. */
   await expect(async () => {
-    if ((await dock.getAttribute("data-open")) === "true") await dock.getByTestId("agent-collapse").click({ timeout: 3000 });
+    if ((await dock.getAttribute("data-open", { timeout: 3000 })) === "true") await dock.getByTestId("agent-collapse").click({ timeout: 3000 });
     await expect(dock).toHaveAttribute("data-open", "false", { timeout: 3000 });
-  }).toPass({ timeout: 30_000 });
-  await expect(dock.getByTestId("agent-rail")).toContainText("Atomik");
+    /* The panel opens itself once, when Atomik's questions are read (a moment after the board mounts, later on a cold server): it has to stay folded. */
+    await page.waitForTimeout(2500);
+    await expect(dock).toHaveAttribute("data-open", "false", { timeout: 1000 });
+    await expect(dock.getByTestId("agent-rail")).toContainText("Atomik", { timeout: 3000 });
+  }).toPass({ timeout: 90_000 });
   expect((await dock.boundingBox())!.width).toBe(56);
   await shot(page, "dock-rail", info);
 
   /* A cold dev server may reload the page once while it compiles the panel: open it again if so. */
   await expect(async () => {
-    if ((await dock.getAttribute("data-open")) !== "true") await dock.getByTestId("agent-rail").click({ timeout: 3000 });
+    if ((await dock.getAttribute("data-open", { timeout: 3000 })) !== "true") await dock.getByTestId("agent-rail").click({ timeout: 3000 });
     await expect(dock).toHaveAttribute("data-open", "true", { timeout: 3000 });
-  }).toPass({ timeout: 30_000 });
+    await expect(page.getByTestId("board-agent-panel").getByTestId("agent-idle")).toContainText("I plan first and show the price", { timeout: 5000 });
+  }).toPass({ timeout: 60_000 });
   expect(Math.round((await dock.boundingBox())!.width)).toBe(340);
   const panel = page.getByTestId("board-agent-panel");
-  await expect(panel.getByTestId("agent-idle")).toContainText("I plan first and show the price");
   /* The ask's figure is the code's planning figure for this board now: the same one the server's read gives. */
   const read = await (await page.request.get(`/api/workbench/team-canvas?productionId=${productionId}&agent=1&projectId=${project.id}`, { headers })).json() as { agent: { ask: { planning: number } } };
   const planning = read.agent.ask.planning;

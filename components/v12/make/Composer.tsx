@@ -39,13 +39,15 @@ function Chip({ k, v, title, items, onOpen, onClose, testId }: { k: string; v: R
  * quote the server gives for exactly what will be sent, and the one priced send. Remix and Edit open today's quick
  * tools, which price themselves; the rest say why they are not here yet.
  */
-export function Composer({ input, asked, mentions }: {
+export function Composer({ input, asked, mentions, onClearSeed }: {
   /** Today's Make inputs (use-make.ts); Make is a page here, so a press that went through keeps it open. */
   input: Omit<MakeInput, "keepOpen" | "onBoard">;
   /** The mode the address asked for when the page opened (`mk=`). */
   asked: MakeMode | null;
   /** The workspace's own stills and clips, to pull in as references with @. */
   mentions: readonly ResultTile[];
+  /** Drops the seed the viewer set (its chip's ×). */
+  onClearSeed?: () => void;
 }) {
   const shell = useShell();
   const session = useSession();
@@ -139,9 +141,25 @@ export function Composer({ input, asked, mentions }: {
       {chips.map((c) => <Chip key={c.k} {...c} />)}
     </div>
   );
-  const refs = make.references.length ? (
+  /* The seed the next clip repeats, while the engine it was made on is picked (lib/workspace/use-composer `seed`). */
+  const seed = make.composer.seed;
+  /* Picking another engine drops the seed (it belongs to the engine it was made on). The engine the viewer loads arrives a moment
+     after the seed does, so it is dropped only after that engine has been the one picked. */
+  const seedFor = input.seed ?? null;
+  const seedMatched = useRef(false);
+  useEffect(() => { seedMatched.current = false; }, [seedFor?.value, seedFor?.model]);
+  useEffect(() => {
+    if (!seedFor || !model) return;
+    if (model.id === seedFor.model) seedMatched.current = true;
+    else if (seedMatched.current) onClearSeed?.();
+  }, [seedFor, model, onClearSeed]);
+  const seedChip = seed !== null ? (
+    <BarChip label={`Seed ${seed}`} onRemove={onClearSeed} removeTitle="Stop repeating this seed" testId="v12-make-seed" />
+  ) : null;
+  const refs = make.references.length || seedChip ? (
     <div className="v12-mk-refs" data-testid="v12-make-refs">
-      <span className="v12-mk-quiet">References</span>
+      {seedChip}
+      {make.references.length ? <span className="v12-mk-quiet">References</span> : null}
       {make.references.map((r) => (
         <BarChip key={r.key} tone="picked" thumb={r.url ?? null} media={r.kind === "video" ? "video" : "image"} label={r.name} onRemove={() => make.removeReference(r.key)} testId="v12-make-ref" />
       ))}

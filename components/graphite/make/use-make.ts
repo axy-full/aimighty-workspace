@@ -50,6 +50,8 @@ export type MakeInput = {
   listOpen?: boolean;
   /** Make is a page here, not a panel (the new interface's Make, components/v12/make): a press that went through keeps it open, its result in the grid. */
   keepOpen?: boolean;
+  /** A seed to repeat, and the engine it was made on (the new interface's "Reuse seed"); sent while that engine is picked. */
+  seed?: { value: number; model: string } | null;
 };
 
 /**
@@ -75,7 +77,7 @@ const CINEMA_SOUND_ONLY = "Cinema Studio takes sound references as WAV files upl
 /** How long the words rest before Make infers a type from them. */
 const INFER_AFTER_MS = 350;
 
-export function useMake({ scope, project, projects = "ready", workspaceName, onProject, balance, onBoard = false, listOpen: startOpen = false, keepOpen = false }: MakeInput) {
+export function useMake({ scope, project, projects = "ready", workspaceName, onProject, balance, onBoard = false, listOpen: startOpen = false, keepOpen = false, seed = null }: MakeInput) {
   const shell = useShell();
   const session = useSession();
   /* The words survive leaving Make (lib/draft.ts): closing the panel, a reload or Try again on a failed tile unmounts it, and a person
@@ -96,7 +98,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     if (!keepOpen) shell.closeMake();
   }, [ws, shell, surface, keepOpen]);
   const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent, hide: hiddenInMake,
-    preference: MAKE_MODEL_PREFERENCE, initialPicks: MAKE_PICKS });
+    preference: MAKE_MODEL_PREFERENCE, initialPicks: MAKE_PICKS, seed });
   const { state, model, offered, settings, submitting } = composer;
   const dispatch = composer.dispatch;
   /* Back from where the words were left: only into an empty box, before anything else (a recipe, ⌘K's "make …") lands in it. */

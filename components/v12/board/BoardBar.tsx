@@ -8,6 +8,7 @@ import type { BoardCtx } from "@/components/graphite/board/cards/types";
 import { useAgentRun } from "@/components/graphite/board/agent/use-board-agent";
 import { Bar, BarChip, type BarMention } from "@/components/v12/bar/Bar";
 import { Price } from "@/components/v12/ui/Price";
+import { clientRoundGoal, looksLikeClientFeedback, parseFeedback } from "@/lib/v12/rounds";
 import "./board-bar.css";
 
 /** The tools that arm and wait for a click on the canvas (the others open Make or the file picker at once). */
@@ -44,6 +45,7 @@ export function BoardBar({ ctx, selection, onClearSelection, tool, onDisarm, onA
   const [words, setWords] = useState("");
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
+  const feedback = useMemo(() => looksLikeClientFeedback(words), [words]);
   const sample = ctx.exploreOnly ?? null;
   const answer = agent.answer;
   const ask = agentAsk({ read: agent.ready, enabled: answer?.enabled ?? false, run: answer?.run ?? null, planning: agent.terms?.planning ?? null, words, busy, sample: sample !== null, offline: ctx.offline });
@@ -57,7 +59,8 @@ export function BoardBar({ ctx, selection, onClearSelection, tool, onDisarm, onA
     const pressed = ask.price.credits;
     await agent.refresh();
     const now = agent.latestPlanning();
-    const text = selection ? `About ${selection}: ${words.trim()}` : words.trim();
+    /* A client's reply is asked as what it is: today's ask, with a change per shot for Atomik to plan and price (lib/v12/rounds.ts). */
+    const text = feedback ? clientRoundGoal(words) : selection ? `About ${selection}: ${words.trim()}` : words.trim();
     const why = now !== null && now > pressed ? `Atomik’s thinking now costs up to ${now} cr, not ${pressed} cr. Press Ask again at the new price.`
       : await agent.plan(text, pressed, { aspect: ctx.project.aspect || null });
     setBusy(false);
@@ -90,6 +93,7 @@ export function BoardBar({ ctx, selection, onClearSelection, tool, onDisarm, onA
         mentionsTitle="From the library"
         chips={<>
           {selection ? <BarChip tone="selection" label={selection} onRemove={onClearSelection} removeTitle="Clear the selection · Esc" testId="v12-board-bar-selection" /> : null}
+          {feedback ? <BarChip label={`Client feedback · ${parseFeedback(words).length} ${parseFeedback(words).length === 1 ? "change" : "changes"}`} tone="selection" testId="v12-board-bar-feedback" /> : null}
           {armed ? <BarChip label={`${armed} · click the canvas`} onRemove={onDisarm} removeTitle="Cancel" testId="v12-board-bar-tool" /> : null}
         </>}
         note={note ? { tone: said ? "problem" : "note", text: note } : null}

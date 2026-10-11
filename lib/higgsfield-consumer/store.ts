@@ -36,9 +36,16 @@ export function consumerStoreReady() {
       client_id TEXT NOT NULL,redirect_uri TEXT NOT NULL,expires_at INTEGER NOT NULL,consumed_at INTEGER)`);
     // Which account a grant belongs to (a hash of the issuer and its subject),
     // so the same account signing in again keeps its jobs' grant. Additive.
-    const columns = await tx.execute("SELECT name FROM pragma_table_info('higgsfield_consumer_connections')");
-    if (!columns.rows.some((row) => String(row.name).toLowerCase() === "subject_hash"))
-      await tx.execute("ALTER TABLE higgsfield_consumer_connections ADD COLUMN subject_hash TEXT");
+    // The write transaction already orders processes booting together; a
+    // "duplicate column" is still accepted once the column is seen there.
+    const hasSubject = async () => (await tx.execute("SELECT name FROM pragma_table_info('higgsfield_consumer_connections')"))
+      .rows.some((row) => String(row.name).toLowerCase() === "subject_hash");
+    if (!(await hasSubject())) {
+      try { await tx.execute("ALTER TABLE higgsfield_consumer_connections ADD COLUMN subject_hash TEXT"); }
+      catch (error) {
+        if (!/duplicate column/i.test(error instanceof Error ? error.message : String(error)) || !(await hasSubject())) throw error;
+      }
+    }
   }).catch((error) => {
     ready = undefined;
     throw error;

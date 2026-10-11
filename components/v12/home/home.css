@@ -4,7 +4,7 @@
   background: var(--gx-root); color: var(--gx-text); font-family: var(--gx-font); font-size: var(--gx-fs-body);
 }
 .v12-hm-scroll {
-  flex: 1; min-height: 0; overflow: auto; padding: 16px 24px 160px; display: flex; flex-direction: column; gap: 20px;
+  flex: 1; min-height: 0; overflow: auto; padding: 16px 24px calc(var(--v12-bar-h, 120px) + 44px); display: flex; flex-direction: column; gap: 20px;
 }
 .v12-hm button { font: inherit; }
 .v12-hm button:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
@@ -39,8 +39,8 @@
   min-width: 0; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent;
   color: var(--gx-text); font-size: 13px; white-space: nowrap; cursor: pointer;
 }
-.v12-hm-wait-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
-.v12-hm-wait-where { color: rgba(235, 235, 245, 0.65); overflow: hidden; text-overflow: ellipsis; }
+.v12-hm-wait-name { font-weight: 600; }
+.v12-hm-wait-where { color: rgba(235, 235, 245, 0.65); }
 .v12-hm-wait-item .v12-hm-chip-btn { font-size: 13px; }
 .v12-hm-wait-x {
   flex: none; border: 0; background: transparent; color: var(--gx-text-2); font-size: 16px; line-height: 1; padding: 2px 4px; cursor: pointer;
@@ -58,17 +58,18 @@
   position: relative; border-radius: 10px; overflow: hidden; background: var(--gx-track); border: 1px solid var(--gx-card-border);
   transition: opacity 0.2s, box-shadow 0.2s;
 }
-.v12-hm-tile[data-faded] { opacity: 0.55; }
+/* A tile that is not the picked one fades its picture only: its words stay at full strength (rule 15: text is at least 55% white). */
+.v12-hm-tile[data-faded] .v12-hm-tile-media { opacity: 0.55; }
 .v12-hm-tile[data-picked] { border-color: var(--gx-accent); box-shadow: 0 0 0 1px var(--gx-accent); }
-.v12-hm-tile-media { width: 100%; height: 100%; object-fit: cover; display: block; }
+.v12-hm-tile-media { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity 0.2s; }
 .v12-hm-tile-pick { position: absolute; inset: 0; border: 0; padding: 0; background: transparent; cursor: pointer; z-index: 1; }
 .v12-hm-tile-pick:focus-visible { outline-offset: -3px; }
 .v12-hm-tile-label {
   position: absolute; left: 10px; bottom: 10px; max-width: calc(100% - 20px); display: flex; flex-direction: column; padding: 6px 10px;
   border-radius: 8px; background: rgba(0, 0, 0, 0.66); pointer-events: none; z-index: 2;
 }
-.v12-hm-tile-type { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.v12-hm-tile-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v12-hm-tile-type { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8); white-space: nowrap; overflow: hidden; }
+.v12-hm-tile-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; }
 .v12-hm-tile-hover {
   position: absolute; inset: 0; display: none; place-content: center; grid-auto-flow: column; gap: 6px;
   background: rgba(0, 0, 0, 0.38); z-index: 2; pointer-events: none;
@@ -88,7 +89,8 @@
 
 /* 3 · Your boards */
 .v12-hm-lower { display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; transition: opacity 0.2s; }
-.v12-hm-lower[data-dim] { opacity: 0.55; }
+/* A picked tile dims the boards' pictures, not their words, and the boards stay in reach above the bar. */
+.v12-hm-lower[data-dim] .v12-hm-board-cover { opacity: 0.55; }
 .v12-hm-boards-head { display: flex; align-items: baseline; gap: 6px; padding-bottom: 8px; flex-wrap: wrap; }
 .v12-hm-section-title { margin: 0; font-size: 15px; font-weight: 600; }
 .v12-hm-filters { display: inline-flex; gap: 4px; margin-left: 6px; flex-wrap: wrap; }
@@ -112,7 +114,7 @@
 .v12-hm-board-cover[data-cover="swatch"] { background: linear-gradient(135deg, var(--v12-from, #1C1C20), var(--v12-to, #0D0D10)); }
 .v12-hm-board:hover .v12-hm-board-cover { border-color: var(--gx-hover-border); }
 .v12-hm-board-media, .v12-hm-board-cover img, .v12-hm-board-cover video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.v12-hm-board-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.v12-hm-board-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; max-width: 100%; }
 .v12-hm-board-state { display: flex; align-items: center; gap: 6px; font-size: 12px; color: rgba(235, 235, 245, 0.68); min-width: 0; }
 .v12-hm-board-state .v12-hm-dot { width: 6px; height: 6px; }
 .v12-hm-show-all { margin-top: 12px; }
@@ -127,5 +129,5 @@
   .v12-hm-board-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .v12-hm-tile, .v12-hm-lower, .v12-hm-board-cover { transition: none; }
+  .v12-hm-tile, .v12-hm-tile-media, .v12-hm-lower, .v12-hm-board-cover { transition: none; }
 }

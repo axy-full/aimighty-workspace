@@ -148,7 +148,7 @@ test.describe("desktop", () => {
     await expect(page).toHaveURL(new RegExp(`project=${ids[1]}`));
   });
 
-  test("the + popover finds a board and makes a new one by kind on today's create path", async ({ page }) => {
+  test("the + popover finds a board and opens a New board tab on the kind picked; nothing is made until Start", async ({ page }) => {
     const { ids } = await redesignWithBoards(page, ["Mirror film", "Launch clips"]);
     await page.goto("/suites?view=home");
     await page.getByTestId("v12-tab-plus").click();
@@ -164,8 +164,16 @@ test.describe("desktop", () => {
     await page.getByTestId("v12-tab-plus").click();
     await page.getByTestId("v12-new-campaign").click();
     await expect(page.getByTestId("v12-plus")).toHaveCount(0);
-    await expect(page.getByTestId("v12-tab-board")).toHaveCount(2, { timeout: 30_000 });
-    await expect(page.locator('[data-testid="v12-tab-board"][data-active]')).toContainText("Untitled ad campaign");
+    /* A tab of its own, on the kind picked, and no board made. */
+    await expect(page.getByTestId("v12-tab-new-board")).toHaveAttribute("data-active", "", { timeout: 30_000 });
+    await expect(page.getByTestId("v12-newboard-title")).toHaveText("Paste the product page link");
+    await expect(page.getByTestId("v12-tab-board")).toHaveCount(1);
+    await expect(page.locator('[data-testid="v12-tab-board"][data-active]')).toHaveCount(0);
+    /* Closing it loses nothing and goes back to the board that was open. */
+    await page.getByTestId("v12-tab-new-board-close").click();
+    await expect(page.getByTestId("v12-tab-new-board")).toHaveCount(0);
+    await expect(boardTab(page, ids[1])).toHaveAttribute("data-active", "");
+    await expect(page.getByTestId("v12-newboard")).toHaveCount(0);
   });
 
   test("Activity opens what needs you and what runs; the avatar menu holds the balance, Top up and Sign out", async ({ page }) => {

@@ -109,7 +109,7 @@ export type Shell = {
   /** Home: `?view=home`, or today's Studio overview. */
   goHome: () => void;
   /** The board: `?view=board`, with the kind, a region, the List view or a start. */
-  goBoard: (opts?: { kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" | "history"; frame?: string; closeMake?: boolean }) => void;
+  goBoard: (opts?: { newBoard?: string | true; kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" | "history"; frame?: string; closeMake?: boolean }) => void;
   /** One of the control room's four pages (approvals, runs, memory, saved-skills): the same addresses as ever. */
   goControlRoom: (page: "approvals" | "runs" | "memory" | "saved-skills") => void;
   /** Opens Atomik's panel (or "how"), with the words handed over; today's Atomik Agent page when the panel has not landed. */
@@ -376,8 +376,10 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     navigate("?view=home");
   }, [navigate]);
 
-  const goBoard = useCallback((opts: { kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" | "history"; frame?: string; closeMake?: boolean } = {}) => {
+  const goBoard = useCallback((opts: { newBoard?: string | true; kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" | "history"; frame?: string; closeMake?: boolean } = {}) => {
     const q = new URLSearchParams({ view: "board" });
+    /* The new interface's "New board" tab (components/v12/board/NewBoard.tsx): a kind card to open on, or just the tab. */
+    if (opts.newBoard) { q.set("newboard", "1"); if (typeof opts.newBoard === "string") q.set("pick", opts.newBoard); }
     if (opts.kind) q.set("kind", opts.kind);
     if (opts.region) q.set("region", opts.region);
     /* The design's frame letter: `m` is the board's Crew review, `n` its Project record (lib/board/routes.ts). */

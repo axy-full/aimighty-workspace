@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import type { Generation } from "../../lib/jobs";
 import {
-  BOARD_FILTERS, FIRST_BOARDS, WALL_TILES, boardKindIn, filterBoards, pickedBrief, startQuote, waitingShown, wallLayout, wallRow, wallTile, wallTiles,
+  BOARD_FILTERS, FIRST_BOARDS, WALL_TILES, boardKindIn, filterBoards, fitWords, pickedBrief, startQuote, startWords, waitingLevels, waitingShown, waitingWords, wallLayout, wallRow, wallTile, wallTiles,
 } from "../../lib/v12/home";
 import { GOAL_MAX, startFigure } from "../../components/graphite/home/home-model";
 
@@ -134,5 +134,56 @@ test.describe("Start's figure: shown equals approved", () => {
     expect(startQuote({ spendOff: false, figure: null, thinking: { state: "error", message: "No read." }, dollars: false, creditUsd: 0.1 })).toEqual({ state: "error", message: "No read." });
     expect(startQuote({ spendOff: false, figure: null, thinking: { state: "off" }, dollars: false, creditUsd: 0.1 })).toEqual({ state: "error", message: "Atomik isn't on for this workspace yet." });
     expect(startQuote({ spendOff: true, figure: 14, thinking: ready, dollars: false, creditUsd: 0.1 }).state).toBe("idle");
+  });
+});
+
+test.describe("the Waiting strip's fit", () => {
+  test("levels run from the roomiest to the barest: all items with long names, fewer items, one item without its place", () => {
+    const levels = waitingLevels(2);
+    expect(levels[0]).toEqual({ shown: 2, budget: 60, where: true });
+    expect(levels.filter((l) => l.shown === 2).map((l) => l.budget)).toEqual([60, 40, 28, 20, 14]);
+    expect(levels.filter((l) => l.shown === 1 && l.where).map((l) => l.budget)).toEqual([60, 40, 28, 20, 14]);
+    expect(levels[levels.length - 1]).toEqual({ shown: 1, budget: 14, where: false });
+    /* Never fewer than one item, whatever is asked. */
+    expect(waitingLevels(0)[0].shown).toBe(1);
+    expect(waitingLevels(1).every((l) => l.shown === 1)).toBe(true);
+  });
+
+  test("a name and its place are cut at a word to the level's budget, and the place is left out at the barest level", () => {
+    const item = { title: "Keyframe retake for the opening sequence over the harbour", where: "Harbour film · Opening sequence, second pass" };
+    expect(waitingWords(item, { budget: 60, where: true })).toEqual({ name: item.title, where: item.where });
+    const tight = waitingWords(item, { budget: 20, where: true });
+    expect(tight.name).toBe("Keyframe retake for…");
+    expect(tight.where.endsWith("…")).toBe(true);
+    expect(waitingWords(item, { budget: 14, where: false }).where).toBe("");
+  });
+
+  test("fitWords: whole when it fits, else the most whole words with an ellipsis; only a first word too wide is cut inside", () => {
+    const width = (t: string) => t.length * 10;
+    expect(fitWords("A lighthouse at dusk, slow push-in", 400, width)).toBe("A lighthouse at dusk, slow push-in");
+    expect(fitWords("A lighthouse at dusk, slow push-in", 200, width)).toBe("A lighthouse at…");
+    expect(fitWords("A lighthouse at dusk, slow push-in", 220, width)).toBe("A lighthouse at dusk…");
+    expect(fitWords("Extraordinarily long", 80, width)).toBe("Extraor…");
+    expect(fitWords("anything", 0, width)).toBe("anything");
+    expect(fitWords("  two   spaces ", 400, width)).toBe("two spaces");
+  });
+});
+
+test.describe("Start's words in one unit", () => {
+  const ready = { state: "ready" };
+  const env = (creditUsd: number | null) => ({ creditUsd, dollars: (usd: number) => `$${usd.toFixed(2)}` });
+  test("credits: the marker, the button and the note say the same words", () => {
+    const quote = startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: false, creditUsd: 0.1 });
+    expect(startWords(quote, env(0.1))).toBe("up to 14 cr");
+  });
+  test("the house workspace: the same figure in dollars, in all three places", () => {
+    const quote = startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: true, creditUsd: 0.1 });
+    expect(startWords(quote, env(0.1))).toBe("up to $1.40");
+    expect(startWords(startQuote({ spendOff: false, figure: 20, thinking: ready, dollars: true, creditUsd: 0.1 }), env(0.1))).toBe("up to $2.00");
+  });
+  test("no figure yet, a failed read or no dollar price: no words, so the marker says unpriced", () => {
+    expect(startWords(startQuote({ spendOff: false, figure: null, thinking: { state: "loading" }, dollars: false, creditUsd: 0.1 }), env(0.1))).toBeNull();
+    expect(startWords(startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: true, creditUsd: null }), env(null))).toBeNull();
+    expect(startWords(startQuote({ spendOff: true, figure: 14, thinking: ready, dollars: false, creditUsd: 0.1 }), env(0.1))).toBeNull();
   });
 });

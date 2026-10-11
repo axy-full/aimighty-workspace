@@ -9,7 +9,7 @@ import { displayModelName } from "@/lib/models";
 import { recipePrompt, recreateBlock } from "@/lib/shell/recipe";
 import { GOAL_MAX, type BoardKind } from "@/components/graphite/home/home-model";
 import { upTo } from "@/lib/shell/price-words";
-import { IDLE, LOADING, NO_DOLLAR_PRICE, knownQuote, type Quote } from "./quote";
+import { IDLE, LOADING, NO_DOLLAR_PRICE, knownQuote, priceDisplay, type Quote } from "./quote";
 
 /* ── The wall ─────────────────────────────────────────────────────────── */
 
@@ -36,7 +36,8 @@ export type WallTile = {
 };
 
 const clean = (text: unknown) => (typeof text === "string" ? text.replace(/\s+/g, " ").trim() : "");
-const cut = (text: string, max: number) => {
+/** Text cut at a word to `max` characters, with an ellipsis; whole when it fits. Never cut by the stylesheet, which cuts mid-word. */
+export const cut = (text: string, max: number) => {
   if (text.length <= max) return text;
   const head = text.slice(0, max + 1);
   const at = head.lastIndexOf(" ");
@@ -159,3 +160,48 @@ export const FIRST_BOARDS = 12;
 
 /** Items the strip shows inline: two from 1400 px wide, else one (the prototype's). */
 export const waitingShown = (wide: boolean): number => (wide ? 2 : 1);
+
+/**
+ * How the strip makes its items fit, from the roomiest to the barest: `shown` items inline, each name (and where it is)
+ * cut at a word to `budget` characters. The last level drops "where it is" so one item always shows with its action whole.
+ * The strip takes the first level whose items fit its width (measured), and "+N more" counts the rest.
+ */
+export type WaitingLevel = { shown: number; budget: number; where: boolean };
+const WAITING_BUDGETS = [60, 40, 28, 20, 14] as const;
+export function waitingLevels(max: number): WaitingLevel[] {
+  const out: WaitingLevel[] = [];
+  for (let shown = Math.max(1, Math.floor(max)); shown >= 1; shown--) for (const budget of WAITING_BUDGETS) out.push({ shown, budget, where: true });
+  out.push({ shown: 1, budget: WAITING_BUDGETS[WAITING_BUDGETS.length - 1], where: false });
+  return out;
+}
+
+/** The word a strip item's name and place read as at a level: the name and "· board · place", each cut at a word. */
+export function waitingWords(item: { title: string; where: string }, level: Pick<WaitingLevel, "budget" | "where">): { name: string; where: string } {
+  return { name: cut(clean(item.title), level.budget), where: level.where && item.where ? cut(clean(item.where), level.budget) : "" };
+}
+
+/**
+ * Words that fit a width, cut at a word. `width` measures a string in px; `avail` is the room. Whole when it fits; else
+ * the most whole words plus an ellipsis; only a first word wider than the room is cut inside the word.
+ */
+export function fitWords(text: string, avail: number, width: (text: string) => number): string {
+  const full = clean(text);
+  if (!full || avail <= 0 || width(full) <= avail) return full;
+  const words = full.split(" ");
+  for (let n = words.length - 1; n >= 1; n--) {
+    const head = `${words.slice(0, n).join(" ").replace(/[\s,;:·–—-]+$/u, "")}…`;
+    if (width(head) <= avail) return head;
+  }
+  let head = words[0];
+  while (head.length > 1 && width(`${head}…`) > avail) head = head.slice(0, -1);
+  return `${head}…`;
+}
+
+/**
+ * The words a start button's hover and marker carry for the figure Start approves: what <Price> draws ("up to 14 cr", or
+ * the house workspace's dollars), so the marker, the button and the note always say the same unit. Null: nothing priced yet.
+ */
+export function startWords(quote: Quote, env: { creditUsd: number | null; dollars: (usd: number) => string }): string | null {
+  const shown = priceDisplay(quote, undefined, env);
+  return shown && shown.state === "ready" ? shown.text : null;
+}
