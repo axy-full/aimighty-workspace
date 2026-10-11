@@ -1,0 +1,9 @@
+{
+  "name": "skills",
+  "app": "/suites?project=project-be8f61bc&suite=particl&page=brief&view=home",
+  "prototype": "?view=home&q=%2F",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
