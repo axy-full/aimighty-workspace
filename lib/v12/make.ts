@@ -10,6 +10,7 @@ import { displayModelName } from "@/lib/models";
 import { recipePrompt, recreateBlock } from "@/lib/shell/recipe";
 import type { PriceValue } from "@/lib/shell/price-words";
 import { knownQuote, NO_DOLLAR_PRICE, type Quote } from "./quote";
+import type { UnpricedId } from "./unpriced";
 
 /* ── Prices ───────────────────────────────────────────────────────────── */
 
@@ -199,13 +200,15 @@ export function placeholderFor(mode: MakeMode, video?: { engine: string | null; 
  * The ops Remix and Edit show (inventory § 5.12, § 10.3), and what each does in Make today: a quick tool that prices
  * itself (Motion transfer, Object swap, Upscale), or not yet here (no engine, or only from a card on a board) with why.
  */
-export type MakeOp = { id: string; label: string; tool: "motion" | "swap" | "upscale" | null; why: string | null };
+export type MakeOp = { id: string; label: string; tool: "motion" | "swap" | "upscale" | null; why: string | null; /** Why the op shows "quoted" (lib/v12/unpriced.ts), for the ops Remix lists. */ reason?: UnpricedId };
 export const REMIX_OPS: readonly MakeOp[] = [
-  { id: "cut", label: "Cut into clips", tool: null, why: "Cutting a video into clips is not in Particl yet." },
-  { id: "motion", label: "Transfer motion", tool: "motion", why: null },
-  { id: "swap", label: "Swap an object", tool: "swap", why: null },
-  { id: "effect", label: "Add an effect", tool: null, why: "Saved looks come with Remix on the boards." },
+  { id: "cut", label: "Cut into clips", tool: null, why: "Cutting a video into clips is not in Particl yet.", reason: "remixCut" },
+  { id: "motion", label: "Transfer motion", tool: "motion", why: null, reason: "remixMotion" },
+  { id: "swap", label: "Swap an object", tool: "swap", why: null, reason: "remixSwap" },
+  { id: "effect", label: "Add an effect", tool: null, why: "Saved looks come with Remix on the boards.", reason: "remixEffect" },
 ];
+/** What a Remix op says when there is no source yet (prototype 12). */
+export const REMIX_NEEDS_SOURCE = "Paste a link or drop a video first.";
 export const EDIT_OPS: readonly MakeOp[] = [
   { id: "upscale", label: "Upscale", tool: "upscale", why: null },
   { id: "reframe", label: "Reframe / outpaint", tool: null, why: "Reframe a still from its card on a board." },

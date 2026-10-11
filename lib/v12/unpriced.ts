@@ -84,6 +84,26 @@ export const UNPRICED = {
     why: "Product voice-over and Website walk-through have no creative brief in lib/workbench/moleculr-creative.ts and no engine path; nothing can be quoted or made.",
     hover: "This format is priced once it can be made.",
   },
+  remixMotion: {
+    action: "Transfer motion (Make › Remix)",
+    why: "Motion transfer is priced by its own tool from the source clip's length and the resolution (a provider estimate); no quote exists before a source is chosen in it, and Make holds no source's length to ask one.",
+    hover: "The tool shows this price once you pick a source.",
+  },
+  remixSwap: {
+    action: "Swap an object (Make › Remix)",
+    why: "Object swap is priced by its own tool from the source clip's length and the resolution (a provider estimate); no quote exists before a source is chosen in it, and Make holds no source's length to ask one.",
+    hover: "The tool shows this price once you pick a source.",
+  },
+  remixCut: {
+    action: "Cut into clips (Make › Remix)",
+    why: "No engine cuts a video into clips yet (Social clips has no 'find moments' path), so nothing can be quoted or made.",
+    hover: "This is priced once clips can be cut.",
+  },
+  remixEffect: {
+    action: "Add an effect (Make › Remix)",
+    why: "Saved looks exist only as cards on a board; Make has no path that applies one, so nothing can be quoted or made from here.",
+    hover: "This is priced once a saved look can be applied from Make.",
+  },
 } as const satisfies Record<string, Unpriced>;
 
 export type UnpricedId = keyof typeof UNPRICED;

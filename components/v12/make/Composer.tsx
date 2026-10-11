@@ -6,7 +6,7 @@ import { spendAttrsOf, spendAttrsText } from "@/lib/spend";
 import { TAKES_MAX } from "@/lib/workspace/composer";
 import { useSession } from "@/lib/session";
 import { creditRate } from "@/lib/shell/price-words";
-import { EDIT_OPS, MAKE_MODES, REMIX_OPS, makeQuote, modeType, placeholderFor, type MakeMode, type MakeOp, type ResultTile } from "@/lib/v12/make";
+import { EDIT_OPS, MAKE_MODES, REMIX_NEEDS_SOURCE, REMIX_OPS, makeQuote, modeType, placeholderFor, type MakeMode, type MakeOp, type ResultTile } from "@/lib/v12/make";
 import { Bar, BarChip, type BarMention } from "@/components/v12/bar/Bar";
 import { Price } from "@/components/v12/ui/Price";
 import { Menu, type MenuItem } from "@/components/v12/ui/Popover";
@@ -74,7 +74,15 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   }, [pickType, unpick, recipeName]);
   const { state, model, settings, composer } = make;
   const ops = mode === "remix" ? REMIX_OPS : mode === "edit" ? EDIT_OPS : null;
-  const runOp = (op: MakeOp) => { if (op.tool) shell.openMake(op.tool); };
+  /* Remix works on a source: with none in the composer an op says so, and opens nothing. */
+  const [sourceNote, setSourceNote] = useState(false);
+  const hasSource = make.references.some((r) => r.kind === "video");
+  useEffect(() => { if (hasSource || mode !== "remix") setSourceNote(false); }, [hasSource, mode]);
+  const runOp = (op: MakeOp) => {
+    if (!op.tool) return;
+    if (mode === "remix" && !hasSource) { setSourceNote(true); return; }
+    shell.openMake(op.tool);
+  };
 
   /* The settings chips, for what the engine offers. */
   const chips: { k: string; v: ReactNode; title: string; items: MenuItem[]; onOpen?: () => void; onClose?: () => void; testId: string }[] = [];
@@ -114,7 +122,8 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
     files.forEach((f) => dt.items.add(f));
     make.dropOnWell(dt);
   };
-  const note = make.wellError ? { tone: "problem" as const, text: make.wellError }
+  const note = sourceNote ? { tone: "note" as const, text: REMIX_NEEDS_SOURCE }
+    : make.wellError ? { tone: "problem" as const, text: make.wellError }
     : make.result ? { tone: "problem" as const, text: make.result }
       : make.short ? { tone: "problem" as const, text: make.short }
         : make.notices[0] ? { tone: "note" as const, text: make.notices[0] }
@@ -133,8 +142,13 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
           {mode === "remix" ? <span className="v12-mk-quiet">{make.references[0]?.name ?? "Your source"} · what do we do with it?</span> : null}
           {ops.map((op) => (
             <button key={op.id} type="button" className="v12-mk-op" disabled={!op.tool} onClick={() => runOp(op)}
-              title={op.tool ? `${op.label} — opens the tool, which shows its price` : op.why ?? undefined} data-testid="v12-make-op" data-op={op.id}>{op.label}</button>
+              title={op.tool ? `${op.label} — opens the tool, which shows its price` : op.why ?? undefined} data-testid="v12-make-op" data-op={op.id}>
+              {op.label}{op.reason ? <> · <Price quote={null} reason={op.reason} /></> : null}
+            </button>
           ))}
+          {mode === "remix" ? (
+            <button type="button" className="v12-mk-op" onClick={() => shell.openAtomik("panel", "What should we do with this video: ")} data-testid="v12-make-remix-ask">Ask Atomik</button>
+          ) : null}
         </span>
       ) : null}
       <span className="v12-mk-grow" />
