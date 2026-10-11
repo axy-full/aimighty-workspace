@@ -28,7 +28,7 @@ async function tenantDb(workspaceId: string) {
 const unique = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 /** A video take waiting at its provider (`tag` says how the mocked vendor behaves) with the meter's reservation for it. */
-async function seed(w: World, provider: "byteplus" | "fal", tag: "queued" | "running" | "cancelerror" | "turnsrunning" | "silentgone" | "timeoutgone") {
+async function seed(w: World, provider: "byteplus" | "fal", tag: "queued" | "running" | "cancelerror" | "turnsrunning" | "silentgone" | "timeoutgone" | "asked") {
   const at = Date.now() - 20_000;
   const id = `gq${unique()}`;
   const handle = `mock_${provider === "fal" ? "fal" : "ark"}_${unique()}-${tag}_${Date.now()}`;
@@ -142,6 +142,15 @@ test.describe("queued cancel", () => {
       expect(details).toMatchObject({ jobId: id, provider: "fal", cancelAccepted: false, cancelAsked: { kind: "timeout" }, afterCancel: { status: 404 }, gone: { status: 404 } });
       expect(String(rows[0].details)).not.toMatch(/mock_fal|A boat leaves the quay|https?:/);
     } finally { platform.close(); }
+  });
+
+  test("fal: the engine accepts the cancel and has confirmed nothing yet: requested, marked as asked, the hold stands and nothing is released", async ({ request }) => {
+    const w = await world(request, "Cancel fal asked");
+    const id = await seed(w, "fal", "asked");
+    const reply = await cancel(w, id);
+    expect(reply.status(), await reply.text()).toBe(202);
+    expect(await reply.json()).toEqual({ status: "requested" });
+    expect(await state(w, id)).toMatchObject({ row: "queued", asked: true, meter: "running", credits: HELD });
   });
 
   test("two presses at once reach the provider once", async ({ request }) => {

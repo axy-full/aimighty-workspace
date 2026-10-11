@@ -53,3 +53,12 @@ test("the money line says it once, in the workspace's own unit, from the take's 
   expect(renderState({ ...base, price: { amount: 0.84, unit: "usd" } }, 30_000).money?.text).toMatch(/^\$0\.84\d* held · charged only when it’s ready$/);
   expect(renderState(base, 30_000).money?.text).toBe("Charged only when it’s ready");
 });
+
+test("Seedance, Kling or Topaz: a sent cancel waits for the engine and says nothing about billing; only its confirmation says nothing was billed", async () => {
+  const { providerAskOutcome, CANCEL_ASKED } = await import("../../lib/v12/renderCancel");
+  expect(providerAskOutcome("requested")).toEqual({ text: CANCEL_ASKED, cancelled: false, pending: true });
+  expect(CANCEL_ASKED).not.toMatch(/nothing (was |is )?billed|not billed|free/i);
+  expect(providerAskOutcome("cancelled")).toEqual({ text: CANCELLED_FREE_TOAST, cancelled: true, pending: false });
+  /* The rest are the provider answers as they were. */
+  for (const status of ["running", "succeeded", "failed", "odd", undefined]) expect(providerAskOutcome(status)).toEqual(providerQueueOutcome(status));
+});

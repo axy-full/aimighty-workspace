@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
-  BAR_CAP, BAR_WAITING, CANCELLED_FREE_TOAST, CANCEL_FREE, CANCEL_MAY_CHARGE, CANCEL_NOT_YOURS, CANCEL_PREPARING, CANCEL_PROVIDER_QUEUE, CANCEL_RUNNING, SLOW_SHORT, SLOW_TEXT,
+  BAR_CAP, BAR_WAITING, CANCELLED_FREE_TOAST, CANCEL_ASK, CANCEL_FREE, CANCEL_MAY_CHARGE, CANCEL_NOT_YOURS, CANCEL_PREPARING, CANCEL_PROVIDER_QUEUE, CANCEL_RUNNING, SLOW_SHORT, SLOW_TEXT,
   batchSummary, cancelOf, engineShort, fmtElapsed, fmtTimeLeft, renderState, stageOf, type RenderPrice, type RenderTake,
 } from "../../lib/v12/renderState";
 import { renderFactsFromRow } from "../../lib/v12/renderFacts";
@@ -307,10 +307,13 @@ test.describe("Cancel (plan decision 8)", () => {
 
   test("Seedance (Ark) and Kling or Topaz (fal) in their provider's queue: offered, free, and only to who may cancel; a running one never", () => {
     for (const [provider, model] of [["byteplus", SEEDANCE], ["fal", KLING]] as const) {
-      expect(cancelOf(take({ status: "queued", atProvider: true, provider, model }))).toEqual({ cancellable: true, via: "provider-queue", tooltip: CANCEL_FREE, toast: CANCELLED_FREE_TOAST });
+      expect(cancelOf(take({ status: "queued", atProvider: true, provider, model }))).toEqual({ cancellable: true, via: "provider-ask", tooltip: CANCEL_ASK, toast: null });
       expect(cancelOf(take({ status: "queued", atProvider: true, provider, model, mayCancel: false }))).toEqual({ cancellable: false, via: null, tooltip: CANCEL_NOT_YOURS, toast: null });
       expect(cancelOf(take({ status: "running", atProvider: true, provider, model }))?.cancellable).toBe(false);
     }
+    /* The engine is asked: the tooltip never promises nothing is billed before it confirms. */
+    expect(CANCEL_ASK).toBe("Ask the engine to cancel — free if it confirms");
+    expect(CANCEL_ASK).not.toMatch(/nothing (is )?billed|not billed/i);
     /* A take not at the provider yet is being prepared, not queued there. */
     expect(cancelOf(take({ status: "queued", atProvider: false, provider: "byteplus", model: SEEDANCE }))?.cancellable).toBe(false);
     /* A still on the same provider is not the video cancel path. */

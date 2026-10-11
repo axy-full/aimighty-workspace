@@ -71,7 +71,7 @@ export type RenderTake = {
 export type RenderStage = "held" | "queue" | "preparing" | "rendering" | "saving" | "ready" | "failed" | "cancelled";
 export type RenderTone = "grey" | "blue" | "amber" | "green" | "red";
 /** How a cancel would be done: a held take is discarded (lib/held discardHeldJob); a take in the provider's queue is cancelled there (POST /api/generations/:id/cancel). */
-export type CancelVia = "discard" | "provider-queue";
+export type CancelVia = "discard" | "provider-queue" | "provider-ask";
 
 export type RenderLine = {
   /** "Seedance 2.5 · usually 2–4 min · 1:12 so far" — or, slow, the whole sentence. */
@@ -127,6 +127,8 @@ export const SLOW_TEXT = "Taking longer than usual — the provider is slow righ
 export const SLOW_SHORT = "Taking longer than usual · still working";
 export const CANCEL_FREE = "Cancel this take — nothing is billed for a cancelled take";
 export const CANCEL_PREPARING = "It’s being sent to the engine now, so it can’t be cancelled.";
+/** Seedance and Kling or Topaz in their provider's queue: the engine is asked, and only its confirmation makes the take free. Never promises "nothing billed" before that. */
+export const CANCEL_ASK = "Ask the engine to cancel — free if it confirms";
 export const CANCEL_PROVIDER_QUEUE = "This engine’s queue can’t be cancelled from here yet. It’s charged only when it’s ready.";
 export const CANCEL_RUNNING = "It has started rendering, so it can’t be cancelled.";
 export const CANCEL_NOT_YOURS = "Only the person who made this take, or an admin, can cancel it.";
@@ -205,7 +207,8 @@ export function cancelOf(take: RenderTake, stage: RenderStage = stageOf(take)): 
     const queuedAtProvider = (take.provider === "byteplus" || take.provider === "fal") && take.kind === "video";
     if (higgsVideo && isCinemaStudioModel(take.model)) return refuse(CANCEL_MAY_CHARGE);
     if (!queuedAtProvider && !(higgsVideo && isGenjutsuModel(take.model))) return refuse(CANCEL_PROVIDER_QUEUE);
-    return take.mayCancel === false ? refuse(CANCEL_NOT_YOURS) : free("provider-queue");
+    if (take.mayCancel === false) return refuse(CANCEL_NOT_YOURS);
+    return queuedAtProvider ? { cancellable: true, via: "provider-ask", tooltip: CANCEL_ASK, toast: null } : free("provider-queue");
   }
   if (stage === "preparing") return refuse(CANCEL_PREPARING);
   return refuse(CANCEL_RUNNING);

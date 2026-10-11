@@ -6,11 +6,12 @@
  *  - `-cancelerror`: waits, but the vendor cannot be reached to cancel it;
  *  - `-turnsrunning`: waits, the vendor accepts the cancel (fal's 202 is the same either way) and the job then reads running;
  *  - `-silentgone`: waits, the vendor accepts the cancel, and afterwards no longer knows the request, with no word of a cancellation;
+ *  - `-asked`: waits, the vendor accepts a cancel and keeps the request queued (it has confirmed nothing yet);
  *  - `-timeoutgone`: waits, the cancel times out (no answer), and afterwards the vendor no longer knows the request (a 404).
  * Nothing outside the mock reads them. Self-contained on purpose (no import from lib/mock.ts): a real id is never `mock_…`.
  */
-export type MockQueueKind = "queued" | "running" | "cancelerror" | "turnsrunning" | "silentgone" | "timeoutgone";
-const KINDS: readonly MockQueueKind[] = ["queued", "running", "cancelerror", "turnsrunning", "silentgone", "timeoutgone"];
+export type MockQueueKind = "queued" | "running" | "cancelerror" | "turnsrunning" | "silentgone" | "timeoutgone" | "asked";
+const KINDS: readonly MockQueueKind[] = ["queued", "running", "cancelerror", "turnsrunning", "silentgone", "timeoutgone", "asked"];
 
 export function mockQueueKind(id: string): MockQueueKind | null {
   if (!id.startsWith("mock_")) return null;
@@ -32,6 +33,7 @@ export function mockCancel(id: string): "accepted" | "running" {
   if (kind === "cancelerror") throw new Error("The vendor could not be reached to cancel this job.");
   if (kind === "timeoutgone") { after.set(id, "gone"); throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" }); }
   if (kind === null || kind === "running") return "running";
+  if (kind === "asked") return "accepted";
   after.set(id, kind === "turnsrunning" ? "running" : kind === "silentgone" ? "gone" : "cancelled");
   return "accepted";
 }

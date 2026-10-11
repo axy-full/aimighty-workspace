@@ -34,7 +34,7 @@ export const BATCH_ROWS: (ShotRow | null)[] = [
   { status: "running", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 50, saving: true, reserved: 7 },
   { status: "running", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 48, reserved: 7 },
   { status: "queued", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 30, reserved: 7 },
-  { status: "queued", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 20, arkTaskId: "task-seed-7", reserved: 7 },
+  { status: "queued", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 20, arkTaskId: "task-seed-7", reserved: 7, extra: { falRequestId: "mock_fal_batch7-asked_1", falModel: "fal-ai/kling-video/v3" } },
   { status: "held", kind: "video", model: "fal-ai/kling-video/v3/standard", ageS: 10, held: { why: "slots", needs: 0, estUsd: 0 } },
 ];
 
