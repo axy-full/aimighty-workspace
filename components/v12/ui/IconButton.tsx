@@ -1,5 +1,5 @@
 "use client";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
 import { Tooltip, type TooltipContent } from "./Tooltip";
 import type { Side } from "./place";
 
@@ -14,12 +14,13 @@ export type IconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "chi
   size?: "sm" | "md";
   pressed?: boolean;
   side?: Side;
+  ref?: Ref<HTMLButtonElement>;
 };
 
-export function IconButton({ tooltip, children, label, size = "md", pressed, side, className, type = "button", ...rest }: IconButtonProps) {
+export function IconButton({ tooltip, children, label, size = "md", pressed, side, className, type = "button", ref, ...rest }: IconButtonProps) {
   return (
-    <Tooltip {...tooltip} side={side}>
-      <button {...rest} type={type} aria-label={label ?? tooltip.name} aria-pressed={pressed}
+    <Tooltip {...tooltip} side={side} named={!label || label === tooltip.name}>
+      <button {...rest} ref={ref} type={type} aria-label={label ?? tooltip.name} aria-pressed={pressed}
         className={["v12-iconbtn", className].filter(Boolean).join(" ")} data-size={size}>
         {children}
       </button>

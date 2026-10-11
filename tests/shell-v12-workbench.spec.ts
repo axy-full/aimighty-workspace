@@ -27,9 +27,10 @@ test("switch on: the new frame at desktop sizes, today's phone app at phone size
   const root = page.getByTestId("v12-root");
   await expect(root).toBeVisible();
   await expect(root).toHaveClass(/\bv12\b/);
-  /* The 56 px header slot holds today's header for now (A2 replaces it). */
+  /* The 56 px header slot holds the new header (components/v12/shell/Header.tsx), not today's. */
   const head = page.getByTestId("v12-head");
-  await expect(head.locator(".gx-header")).toBeVisible();
+  await expect(head.getByTestId("v12-header")).toBeVisible();
+  await expect(page.locator(".gx-header")).toHaveCount(0);
   const box = await head.boundingBox();
   expect(box?.height).toBe(56);
   expect(box?.y).toBe(0);

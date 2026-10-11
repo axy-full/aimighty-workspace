@@ -20,7 +20,7 @@ import type { CardProps } from "../cards/types";
  * package, EDL, FCPXML and Premiere XML. Nothing here is paid and nothing is sent anywhere.
  */
 
-const EXPORTS = [
+export const EXPORTS = [
   ["EDL", ".edl", "text/plain", makeEDL, "insp-export-edl"],
   ["FCPXML · Final Cut, Resolve", ".fcpxml", "application/xml", makeFCPXML, "insp-export-fcpxml"],
   ["XML · Premiere", ".xml", "application/xml", makeXMEML, "insp-export-xml"],

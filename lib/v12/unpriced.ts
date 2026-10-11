@@ -49,6 +49,31 @@ export const UNPRICED = {
     why: "No code path finishes a storyboard panel (clean lines and the final look; inventory § 4.3 card toolbar). Storyboard redraws exist (lib/production/boards.ts) but nothing defines a finish step to quote.",
     hover: "Finishing a panel has no price yet.",
   },
+  redrawNoRecord: {
+    action: "Redraw a shot whose take has no recorded request (the Rig's \"what a change will cost\")",
+    why: "A redraw is priced by quoting the request the take was made with (POST /api/generate/quote, the body Retry sends). A take with no generation record, or one whose request cannot be rebuilt, has no body to quote.",
+    hover: "This redraw has no price yet: its take has no recorded request.",
+  },
+  adaptCut: {
+    action: "Adapt a cut to another size or length (Deliver)",
+    why: "No route re-frames or re-times a finished cut: Make's Reframe is for a still from its card, and Upscale does not change size or length. Each version is priced once an engine path exists.",
+    hover: "Adapting is priced once it can be made.",
+  },
+  languageAdapt: {
+    action: "A language of a finished cut: dubbed voice, lip-sync and on-screen text (Deliver)",
+    why: "A dub is quoted from a stored source (POST /api/audio/dub {quoteOnly}), and the cut is rendered in the browser, so it is not one; lip-sync has no engine (lipSync above); translated on-screen text has no path.",
+    hover: "A language is priced once its parts can be made.",
+  },
+  campaignStills: {
+    action: "A still format's run (Campaign › Formats)",
+    why: "A still brief is priced by Make's composer at its own settings and references (POST /api/generate/quote needs them); a Photoshoot is a set of such stills, so no single quote covers it.",
+    hover: "Make shows this price before anything runs.",
+  },
+  campaignFormatNotBuilt: {
+    action: "A format with no brief or engine behind it (Campaign › Formats)",
+    why: "Product voice-over and Website walk-through have no creative brief in lib/workbench/moleculr-creative.ts and no engine path; nothing can be quoted or made.",
+    hover: "This format is priced once it can be made.",
+  },
 } as const satisfies Record<string, Unpriced>;
 
 export type UnpricedId = keyof typeof UNPRICED;

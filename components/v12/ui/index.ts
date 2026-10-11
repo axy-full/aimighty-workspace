@@ -4,7 +4,7 @@ export { IconButton, type IconButtonProps } from "./IconButton";
 export { Pill, type PillTone } from "./Pill";
 export { Segment, type SegmentOption } from "./Segment";
 export { Kbd } from "./Kbd";
-export { Popover, Menu, type MenuItem } from "./Popover";
+export { Popover, Menu, ContextMenu, type MenuItem } from "./Popover";
 export { Dialog, Sheet } from "./Dialog";
 export { ToastProvider, useToast, toastDuration, TOAST_MS, TOAST_ACTION_MS, type ToastInput, type ToastAction } from "./Toast";
 export { OverlayProvider, useOverlay, useOverlayStack } from "./overlay";

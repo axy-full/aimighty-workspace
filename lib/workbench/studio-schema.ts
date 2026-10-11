@@ -357,6 +357,30 @@ export const projectSchema = z.object({
   scriptFormat: z.enum(["screenplay", "adfilm"]).optional(),
   /* The board a project opens on (lib/board/kind.ts; lead decision 26): set when a template makes it. Absent: read from its data. */
   boardKind: z.enum(["studio", "ads", "social"]).optional(),
+  /* The board's kind in the new interface (lib/v12/board/kinds.ts): Film, Pre-vis, Campaign, Social narrated or clips. Additive and optional, draft JSON only. */
+  boardFlavor: z.enum(["film", "previs", "campaign", "narrated", "clips"]).optional(),
+  /* The Pre-vis shot list's cells a person wrote (lib/v12/ppm.ts), by the beat sheet's shot id; and the Deliver stage's languages (lib/v12/deliver.ts). Additive and optional, draft JSON only. */
+  boardShotList: z.record(z.string().regex(/^[A-Za-z0-9_-]{1,80}$/), z.object({
+    frame: z.string().max(200).optional(), dur: z.string().max(200).optional(), lens: z.string().max(200).optional(), move: z.string().max(200).optional(),
+    cast: z.string().max(200).optional(), location: z.string().max(200).optional(), props: z.string().max(200).optional(), wardrobe: z.string().max(200).optional(),
+    vo: z.string().max(200).optional(), notes: z.string().max(200).optional(),
+  }).strict()).optional().refine((v) => !v || Object.keys(v).length <= 400, "Too many shots"),
+  boardLanguages: z.array(z.string().regex(/^[a-z]{2,3}$/)).max(12).optional(),
+  /* The board's stages as arranged in the new interface (lib/v12/board/stages.ts): additive and optional, draft JSON only. */
+  boardStages: z.array(z.object({
+    id: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/),
+    label: z.string().max(40).optional(),
+    skipped: z.boolean().optional(),
+    custom: z.boolean().optional(),
+  }).strict()).max(24).optional(),
+  /* Client rounds in the new interface (lib/v12/rounds.ts): the approved rounds, what each changed and the take each shot had before. Additive and optional, draft JSON only. */
+  boardRounds: z.array(z.object({
+    n: z.number().int().min(2).max(99),
+    runId: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/),
+    at: z.number().int().min(0),
+    changes: z.array(z.object({ shot: z.number().int().min(1).max(999), text: z.string().max(200) }).strict()).max(60),
+    before: z.record(z.string().regex(/^\d{1,3}$/), z.string().max(100)),
+  }).strict()).max(20).optional(),
   scriptSource: z
     .object({
       assetId: z.string().max(100),

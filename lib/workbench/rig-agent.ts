@@ -173,7 +173,7 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
   const paid: RigAgentPaidStepView[] = steps.filter((s) => s.purpose === "take" || s.purpose === "verify").map((s) => {
     const title = s.fixOf != null ? `Fix · ${stepTitle(run, s)}` : stepTitle(run, s);
     if (s.purpose === "verify")
-      return { seq: s.seq, tool: "verify", title, state: s.state, quote: null, worst: null, pause: null, charged: s.creditsSettled, outcome: null, charge: null,
+      return { seq: s.seq, nodeId: s.nodeId, tool: "verify", title, state: s.state, quote: null, worst: null, pause: null, charged: s.creditsSettled, outcome: null, charge: null,
         reason: RIG_AGENT_VERIFY ? s.reason : VERIFY_LATER, canRender: false, fingerprint: null };
     const charge = s.jobId ? byId.get(s.jobId) : undefined;
     const ended = s.state === "done" || s.state === "failed";
@@ -184,7 +184,7 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
       : s.creditsSettled != null ? { credits: s.creditsSettled, settled: true } : null;
     const open = s.state === "waiting" || s.state === "paused";
     return {
-      seq: s.seq, tool: "render", title, state: s.state, quote: s.quoteCredits,
+      seq: s.seq, nodeId: s.nodeId, tool: "render", title, state: s.state, quote: s.quoteCredits,
       worst: s.quoteCredits == null ? null : fromTenths(toTenths(s.quoteCredits) * Math.max(1, s.band ?? 1)),
       pause: s.state === "paused" ? s.pause : null, charged, outcome, charge: ledger, reason: s.reason,
       canRender: mine && open && asking, fingerprint: open && s.admission ? s.admission.quote.fingerprint : null,

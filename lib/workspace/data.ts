@@ -8,7 +8,8 @@ import { knownCopy, rememberCopy } from "@/lib/shell/use-fresh-project";
    workbench already uses — /api/workbench/projects and /api/me — and add
    nothing server-side. */
 
-export type ProjectSummary = { id: string; name: string; revision?: number; updatedAt?: string };
+/** `kind`: the board it opens on, as the list reads it from the saved draft (lib/board/kind.ts boardKindOf); absent on an older list. */
+export type ProjectSummary = { id: string; name: string; revision?: number; updatedAt?: string; kind?: "studio" | "ads" | "social" | null };
 
 export type WorkspaceAccount = {
   workspace: { id: string; name: string } | null;

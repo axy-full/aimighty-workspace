@@ -23,7 +23,7 @@ const WARM_MS = 400;
 let lastHidden = 0;
 
 /** The tooltip as one sentence run for a screen reader: "Home. Your boards and what needs you. G H or ⌘1". */
-export function described(...parts: [string, string | undefined, string | undefined, boolean]): string {
+export function described(...parts: [string | undefined, string | undefined, string | undefined, boolean]): string {
   const [name, line, keys, more] = parts;
   const words = [name, line, keys].filter((p): p is string => Boolean(p));
   return words.map((p, i) => (i < words.length - 1 || more) && !/[.!?…]$/.test(p) ? `${p}.` : p).join(" ");
@@ -48,7 +48,9 @@ export function TooltipBody({ name, line, shortcut, price }: TooltipContent) {
  * a press; drawn above the page and kept on screen (components/v12/ui/place.ts). The child must be one focusable
  * element; it gets aria-describedby pointing at the tooltip.
  */
-export function Tooltip({ children, side = "bottom", delay = TIP_DELAY_MS, disabled = false, ...content }: TooltipContent & {
+export function Tooltip({ children, side = "bottom", delay = TIP_DELAY_MS, disabled = false, named = false, ...content }: TooltipContent & {
+  /** The control's own accessible name is already the tooltip's name: the description leaves it out, so it is not read twice. */
+  named?: boolean;
   children: ReactElement<{ "aria-describedby"?: string }>;
   side?: Side;
   delay?: number;
@@ -112,7 +114,7 @@ export function Tooltip({ children, side = "bottom", delay = TIP_DELAY_MS, disab
         {child}
         {/* The description is always there, so focus announces it at once; the drawn tooltip is for the eye. */}
         <span id={id} className="v12-sr">
-          {described(content.name, content.line, runs.length ? runs.join(" or ") : undefined, Boolean(content.price))}{content.price ? <> {content.price}</> : null}
+          {described(named ? undefined : content.name, content.line, runs.length ? runs.join(" or ") : undefined, Boolean(content.price))}{content.price ? <> {content.price}</> : null}
         </span>
       </span>
       {root ? createPortal(

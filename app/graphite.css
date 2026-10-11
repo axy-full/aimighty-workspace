@@ -180,6 +180,9 @@
   --gx-line-strong: rgba(255, 255, 255, 0.16);
   --gx-line-dashed: rgba(255, 255, 255, 0.2);   /* dashed, 0.18–0.24 */
   --gx-ring-thin: 0 0 0 1px #0A84FF;            /* ring on selection */
+  --gx-fill-hover: rgba(255, 255, 255, 0.06);   /* menu item and row hover */
+  --gx-fill-hover-soft: rgba(255, 255, 255, 0.04);
+  --gx-fill-hover-strong: rgba(255, 255, 255, 0.1);   /* a tab's ×, small glyph buttons */
   /* Text: two steps under primary, then the strong, quiet and disabled ones */
   --gx-text-sec: rgba(235, 235, 245, 0.62);     /* secondary */
   --gx-text-muted: rgba(235, 235, 245, 0.7);    /* muted: idle tabs, menu shortcuts */

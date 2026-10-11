@@ -30,6 +30,8 @@ export type CastStill = { url: string; kind: "image" | "video" };
 
 export type CastCardData = {
   variant: CastVariant;
+  /** Drawn on the new interface's stage grid (Elements): 260 wide, its picture at the board's aspect (components/v12/board/stage-grid.ts). */
+  grid?: boolean;
   /** Drawn from a canvas reference card ("node") or from the production's own list ("entry"). */
   source: "node" | "entry";
   nodeId: string | null;
