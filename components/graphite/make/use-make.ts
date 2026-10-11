@@ -22,7 +22,7 @@ import { composerButtonParts, EMPTY_PROMPT, READING_MODELS, shownTotal, type Com
 import { cleanSetup, composeForSend, recoverSetup, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { useComposer, type ComposerSent } from "@/lib/workspace/use-composer";
-import { hiddenInMake, MAKE_MODEL_PREFERENCE, MAKE_PICKS, makeQuoteValue, rowSettings } from "@/lib/shell/make-price";
+import { goFigure, hiddenInMake, MAKE_MODEL_PREFERENCE, MAKE_PICKS, makeQuoteValue, rowSettings } from "@/lib/shell/make-price";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
@@ -388,6 +388,8 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     /* The new interface's switch never holds a make hostage to an enhancer that cannot be priced: those words go as written, and say so. */
     && !(enhanceToggle !== null && enhancer.unavailable);
   const enhanceCredits = autoNeeds ? enhancer.credits : null;
+  /* The house's enhancement in the text model's own dollars (null for every other workspace, and while unknown). */
+  const enhanceUsd = autoNeeds ? enhancer.usd : null;
   const blocked = spendOff ?? blockedBase ?? (autoNeeds && enhanceCredits == null ? enhancer.blocked ?? "Pricing the enhancement…" : null);
   const make = useCallback(() => {
     if (recipeWait || spendOff) return;
@@ -436,8 +438,8 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   /* Auto's enhancement is in the figure: the button reads take + enhancement, and waits (unpriced) while the enhancement is still being priced. */
   const goPrice: MakePrice | null = spendOff || priceHeld || total == null || (autoNeeds && enhanceCredits == null) ? null
     : approximate ? { value: null, about: composer.buttonParts.price, credits: total, usd: liveUsd != null && !composer.quote?.takes ? liveUsd * count : null }
-      /* In dollars only when the whole figure is the take's own: not a batch re-quoted take by take, not with an enhancement added. */
-      : { value: makeQuoteValue(total + (enhanceCredits ?? 0), state.type), about: null, usd: takeUsd != null && !composer.quote?.takes && !(enhanceCredits && enhanceCredits > 0) ? takeUsd * count : null };
+      /* In dollars only when the whole figure is known in dollars (lib/shell/make-price.ts › goFigure): the take's own, plus the enhancement's when one is added. */
+      : { ...goFigure({ total, count, type: state.type, takeUsd, batchRequoted: Boolean(composer.quote?.takes), enhanceCredits, enhanceUsd }), about: null };
   const balanceNow = balance !== undefined ? balance : session.credits?.balance ?? null;
   /* Make stays pressable when the balance is short (the take waits, held, until credits arrive): the line only says so. */
   const short = !spendOff && !approximate && total != null && !submitting ? shortByWords(balanceNow, makeQuoteValue(total + (enhanceCredits ?? 0), state.type)) : null;

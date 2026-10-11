@@ -59,8 +59,7 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   /* An approximate price in words (Cinema Studio): credits for a credit workspace; for the house the engine's dollars, or no figure when it has none (never the customer price). */
   const aboutOf = (p: { about: string | null; usd?: number | null }) => (!money.dollars ? p.about : typeof p.usd === "number" ? houseAbout(p.usd) : "—");
   /* Enhance (lib/v12/enhance.ts): this person's own choice, else the workspace's default (Settings › Advanced), else On. The house, which pays in
-     dollars at cost, has none here: its enhancement cannot be added to the button's figure. */
-  const inDollars = session.rates.unit === "usd";
+     dollars at cost, has it too: its enhancement is priced in the text model's own dollars and added to the button's one figure. */
   const userId = session.userId ?? null;
   const workspaceId = session.workspace?.id ?? null;
   const defaults = useRead<{ settings: Record<string, string> }>("/api/settings");
@@ -72,11 +71,11 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
     return () => clearTimeout(at);
   }, [workspaceId, userId]);
   const enhanceOn = mine ?? workspaceEnhance(defaults.data?.settings.enhanceDefault);
-  const make = useMake({ ...input, onBoard: false, keepOpen: true, enhanceToggle: inDollars ? null : enhanceOn });
+  const make = useMake({ ...input, onBoard: false, keepOpen: true, enhanceToggle: enhanceOn });
   const { setAuto } = make.enhancer;
   /* Shown only once the position is known: this person's own choice, or else the workspace's default (or that it could not be read, which is On). */
   const enhanceKnown = mineRead.read && (mine !== null || defaults.data !== null || defaults.error !== null);
-  const enhanceShown = enhanceKnown && !inDollars && !make.spendOff && Boolean(make.model) && enhanceOffered(make.state.type);
+  const enhanceShown = enhanceKnown && !make.spendOff && Boolean(make.model) && enhanceOffered(make.state.type);
   useEffect(() => { setAuto(enhanceOn && enhanceShown); }, [setAuto, enhanceOn, enhanceShown]);
   const setEnhance = (next: boolean) => { setMine(next); writeEnhance(typeof window === "undefined" ? null : window.localStorage, workspaceId, userId, next); };
   /* The mode: Remix or Edit when picked here, else the composer's own type once picked, else Auto. */
