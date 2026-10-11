@@ -63,6 +63,9 @@ const NEVER = [
    API route is not presentational: full. ("placeholder" is not a hold.) */
 const MONEY_TEXT = /quote|price|\bcr\b|credit|charge|billed|\bhold|\bheld|refund|cancel|approv|ledger|workspace_id|fetch\(|\/api\//i;
 
+/* A guard or safety test: any change to one is a full run, and the plan says so for the owner's review. */
+const GUARD_TEST = /^tests\/.*(spend-buttons|spend-ratchet|paidRoutes|helpers\/spend|privacy|switch-off|newInterfaceSwitch|one-design|ui-names|tooltip-audit|signin.?retired|audit-money|r1-port-paid-sends)/i;
+export const isGuardTest = (path) => GUARD_TEST.test(path);
 const isDocs = (path) => DOCS.some((re) => re.test(path));
 const isTest = (path) => TESTS.some((re) => re.test(path));
 const isV12Component = (path) => /^components\/v12\//.test(path);
@@ -72,11 +75,12 @@ const isV12Component = (path) => /^components\/v12\//.test(path);
  * `exposed`: the new-interface files that something outside components/v12 imports, directly or through other new-interface files.
  */
 function slimOk(path, { read, exposed }) {
+  if (isGuardTest(path)) return false;
   if (isDocs(path)) return true;
   if (NEVER.some((re) => re.test(path)) && !isTest(path)) return false;
   if (isTest(path)) return true;
   if (!isV12Component(path)) return false;
-  if (/\.css$/.test(path)) return true;
+  if (/\.css$/.test(path)) return !exposed.has(path); // a stylesheet something outside components/v12 pulls in is shared
   if (!/\.tsx?$/.test(path)) return false;
   const text = read(path);
   if (text == null) return false;
@@ -120,6 +124,8 @@ export function select({ event, base, files, specs, read = () => null, exposed =
   const changed = unique(files.filter(Boolean));
   if (!changed.length) return full("no changed files could be read: the whole suite");
 
+  const guards = changed.filter(isGuardTest);
+  if (guards.length) reasons.push(`guard test changed: owner review (${guards.slice(0, 5).join(", ")}${guards.length > 5 ? ` and ${guards.length - 5} more` : ""})`);
   const loud = changed.filter((path) => !slimOk(path, { read, exposed }));
   if (loud.length) return full(`touches ${loud.slice(0, 5).join(", ")}${loud.length > 5 ? ` and ${loud.length - 5} more` : ""}: money, sign-in, tenant separation, shared code, or a new-interface file that is not presentational`);
 
@@ -155,7 +161,7 @@ export function select({ event, base, files, specs, read = () => null, exposed =
    an extension (the repository at the PR's head). */
 export function exposedV12(root = ".") {
   const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8", maxBuffer: 1 << 28 })
-    .split("\n").filter((p) => /\.(ts|tsx|mjs)$/.test(p) && /^(app|components|lib|tests|scripts)\//.test(p));
+    .split("\n").filter((p) => /\.(ts|tsx|mjs|css)$/.test(p) && /^(app|components|lib|tests|scripts)\//.test(p));
   const known = new Set(files.map((p) => p.replace(/\.(tsx?|mjs)$/, "")));
   const specifiers = (text) => [...text.matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g)].map((m) => m[1]);
   const resolve = (from, spec) => {
@@ -166,6 +172,7 @@ export function exposedV12(root = ".") {
   const edges = new Map();
   const seeds = new Set();
   for (const path of files) {
+    if (/\.css$/.test(path)) continue; // a stylesheet imports nothing that matters here; it is found as an import target
     let text;
     try { text = readFileSync(join(root, path), "utf8"); } catch { continue; }
     const into = specifiers(text).map((spec) => resolve(path, spec)).filter(Boolean);

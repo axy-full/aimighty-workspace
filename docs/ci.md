@@ -21,7 +21,7 @@ A PR runs slim only if every changed path is **presentational** or a test or doc
 Slim:
 
 - `docs/**`, top-level `*.md`, `design/**`
-- a new-interface **CSS** file under `components/v12/`, or a `components/v12/**` `.ts`/`.tsx` file that is presentational: its text has no `fetch(`, no `/api/`, and none of `quote`, `price`, `cr`, `credit`, `charge`, `billed`, `hold`, `refund`, `cancel`, `approv`, `ledger`, `workspace_id` (checked on the file at the PR's head by `scripts/ci-select.mjs`), and **nothing outside `components/v12/` imports it**, directly or through other new-interface files (computed from the import specifiers of the repository at the PR's head)
+- a new-interface **CSS** file under `components/v12/` that nothing outside it imports, or a `components/v12/**` `.ts`/`.tsx` file that is presentational: its text has no `fetch(`, no `/api/`, and none of `quote`, `price`, `cr`, `credit`, `charge`, `billed`, `hold`, `refund`, `cancel`, `approv`, `ledger`, `workspace_id` (checked on the file at the PR's head by `scripts/ci-select.mjs`), and **nothing outside `components/v12/` imports it**, directly or through other new-interface files (computed from the import specifiers of the repository at the PR's head)
 - `tests/*.spec.ts` (a changed spec runs itself), `tests/redesign/**`, non-guard `tests/unit/**` specs, `scripts/redesign/**`
 
 Always a full run:
@@ -29,7 +29,8 @@ Always a full run:
 - **everything in `lib/`, including `lib/v12/`**, and any `*.server.ts` anywhere
 - `app/**`, `middleware*`, and every component outside `components/v12/` (`components/graphite/**` including `BoardView.tsx`, `components/workbench/**`, …), and `components/v12/ui/**` (shared primitives)
 - a path naming money, sign-in or tenant separation: `quote`, `price`, `pricing`, `spend`, `unpriced`, `approval`, `credit`, `ledger`, `billing`, `budget`, `payment`, `stripe`, `topup`, `auth`, `session`, `signin`, `signup`, `invite`, `tenant`, `workspace`, `middleware`, `permission`, `privacy`
-- a new-interface file that is not presentational by the text rule above, or that a file outside `components/v12/` imports, or that was deleted (it cannot be read)
+- a new-interface file that is not presentational by the text rule above, or that a file outside `components/v12/` imports, or that was deleted (it cannot be read); this includes **CSS**: a stylesheet that something outside `components/v12/` pulls in (`board.css` via `BoardView.tsx`, `v12.css` via the shell) is shared
+- **any change to a guard or safety test** (`spend-buttons*`, `spend-ratchet.json`, `paidRoutes.ts`, privacy, switch-off, `newInterfaceSwitch`, `one-design*`, `ui-names*`, `v12-tooltip-audit`, `signin-retired*`, `audit-money*`, `r1-port-paid-sends*`): full, and the plan summary prints `guard test changed: owner review`
 - `tests/helpers/**` and the guard tests (`tests/unit/spend*`, `ui-names*`, `one-design*`, `signin*`, privacy, tooltip, `ci-select`, `spend-ratchet.json`)
 - `playwright*.config.ts`, `package.json`, `package-lock.json`, build configs, `scripts/ci-*`, and `.github/**` (the workflow itself)
 

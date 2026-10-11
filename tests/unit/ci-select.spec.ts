@@ -22,6 +22,8 @@ const pr = async (files: string[], base = "release/1", event = "pull_request", o
   const { select, exposedV12 } = await script();
   return select({ event, base, files, specs: SPECS, read: readReal, exposed: exposedV12(), ...over });
 };
+/* Nothing outside components/v12 imports anything: for the cases that need a stylesheet or a file to count as presentational. */
+const unexposed = { exposed: new Set<string>() };
 const specsOf = (plan: Plan) => plan.runs.flatMap((r) => r.specs);
 
 test("the suite patterns here are the playwright configs' own", async () => {
@@ -41,7 +43,7 @@ test("every merge into release/1 or main runs the whole suite, whatever it touch
 });
 
 test("a pull request into main runs the whole suite", async () => {
-  expect((await pr(["components/v12/rounds/rounds.css"], "main")).mode).toBe("full");
+  expect((await pr(["components/v12/rounds/rounds.css"], "main", "pull_request", unexposed)).mode).toBe("full");
 });
 
 test("money, sign-in, tenant, server and shared-code changes run the whole suite", async () => {
@@ -90,13 +92,42 @@ test("what a file outside components/v12 imports from it is exposed, directly or
   expect(exposed.has("components/v12/ui/Price")).toBe(true);
 });
 
+test("a stylesheet that something outside components/v12 imports is shared: the whole suite", async () => {
+  /* components/graphite/board/BoardView.tsx imports components/v12/board/board.css; the shell imports v12.css. */
+  for (const css of ["components/v12/board/board.css", "components/v12/v12.css"]) {
+    const plan = await pr([css]);
+    expect(plan.mode, css).toBe("full");
+  }
+  const { exposedV12 } = await script();
+  expect(exposedV12().has("components/v12/board/board.css")).toBe(true);
+  /* The same stylesheet with nothing importing it from outside is presentational. */
+  expect((await pr(["components/v12/board/board.css"], "release/1", "pull_request", unexposed)).mode).toBe("slim");
+});
+
+test("any change to a guard or safety test is a full run, and the plan says it needs the owner's review", async () => {
+  const guards = [
+    "tests/unit/spend-buttons.spec.ts", "tests/unit/spend-ratchet.json", "tests/spend-buttons-workbench.spec.ts", "tests/helpers/paidRoutes.ts", "tests/unit/platformOwnerPrivacy.spec.ts",
+    "tests/unit/v12-privacy.spec.ts", "tests/unit/new-interface-switch-off.spec.ts", "tests/unit/newInterfaceSwitch.spec.ts", "tests/unit/one-design-guard.spec.ts", "tests/unit/ui-names-guard.spec.ts",
+    "tests/unit/v12-tooltip-audit.spec.ts", "tests/signin-retired-workbench.spec.ts", "tests/unit/signinRetiredGuard.spec.ts", "tests/audit-money-workbench.spec.ts", "tests/r1-port-paid-sends-workbench.spec.ts",
+  ];
+  for (const file of guards) {
+    const plan = await pr([file], "release/1", "pull_request", unexposed);
+    expect(plan.mode, file).toBe("full");
+    expect(plan.reasons.join(" "), file).toContain("guard test changed: owner review");
+  }
+  /* An ordinary test next to a guard does not make the guard slim; an ordinary test alone still runs slim. */
+  const mixed = await pr(["tests/rounds-v12-workbench.spec.ts", "tests/unit/spend-buttons.spec.ts"], "release/1", "pull_request", unexposed);
+  expect(mixed.mode).toBe("full");
+  expect((await pr(["tests/rounds-v12-workbench.spec.ts"], "release/1", "pull_request", unexposed)).mode).toBe("slim");
+});
+
 test("a pull request whose changed files cannot be read runs the whole suite", async () => {
   expect((await pr([])).mode).toBe("full");
 });
 
 test("CSS and tests run slim: their own specs plus the fixed guard set, and nothing else", async () => {
   const { GUARDS } = await script();
-  const plan = await pr(["components/v12/rounds/rounds.css", "tests/unit/v12-rounds.spec.ts"]);
+  const plan = await pr(["components/v12/rounds/rounds.css", "tests/unit/v12-rounds.spec.ts"], "release/1", "pull_request", unexposed);
   expect(plan.mode).toBe("slim");
   expect(plan.fiveMinute).toBe(true);
   const workbench = plan.runs.find((r) => r.suite === "workbench" && r.grep === null)!;
@@ -122,11 +153,11 @@ test("a changed spec runs itself; a changed area maps to its own specs; an unmap
   const own = await pr(["tests/shots-v12-workbench.spec.ts"]);
   expect(own.mode).toBe("slim");
   expect(own.runs[0].specs).toContain("tests/shots-v12-workbench.spec.ts");
-  const board = await pr(["components/v12/board/board.css"]);
+  const board = await pr(["components/v12/board/board.css"], "release/1", "pull_request", unexposed);
   expect(board.mode).toBe("slim");
   expect(board.runs[0].specs).toContain("tests/campaign-v12-workbench.spec.ts");
   expect(board.runs[0].specs).not.toContain("tests/rig-v12-workbench.spec.ts");
-  const css = await pr(["components/v12/v12.css"]);
+  const css = await pr(["components/v12/v12.css"], "release/1", "pull_request", unexposed);
   expect(css.mode).toBe("slim");
   expect(css.runs[0].specs.length + (css.runs.find((r) => r.grep)?.specs.length ?? 0)).toBeGreaterThan(15);
   const customerSpec = await pr(["tests/customer.spec.ts"]);
@@ -139,7 +170,7 @@ test("a documentation-only change runs no browser specs and no five-minute test"
   expect(plan.runs).toEqual([]);
   expect(plan.fiveMinute).toBe(false);
   /* Docs next to a CSS file is not docs only. */
-  expect((await pr(["docs/ci.md", "components/v12/rounds/rounds.css"])).mode).toBe("slim");
+  expect((await pr(["docs/ci.md", "components/v12/rounds/rounds.css"], "release/1", "pull_request", unexposed)).mode).toBe("slim");
 });
 
 test("the workflow gates its jobs on the plan, keeps the required check names, reports the five-minute test without requiring it, and never cancels a post-merge run", async () => {
