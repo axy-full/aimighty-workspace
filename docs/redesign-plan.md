@@ -167,6 +167,38 @@ These settle the lead's decisions above and the open questions in the builder's 
    - Desktop only for now.
 6. Screenshots at 1440 × 900 and 1280 × 800 for each section. Both PRs stay open for the owner's review.
 
+## Owner decisions (Akshay, 11 Oct 23:45 IST)
+
+1. **Merge into release/1 on green CI plus a fresh review of the final head:** #639 (re-reviewed at ca0af4c6), #650, #652 (re-reviewed at ae86e428), #653, #662, #660, #666 and #664. #654, #655 and #656 merge after #661.
+2. **#647:**
+   - (a) The privacy page is allowed as a guard exception for naming processors.
+   - (b) Add a code guard that fails if `VERCEL` or `VERCEL_OIDC_TOKEN` is set in production (the owner is also checking Coolify).
+   - Then merge.
+3. **#657 Enhance:**
+   - The tooltip without the "—" is fine.
+   - **The house workspace gets the switch, priced at cost.**
+   - Reuse loads the enhanced words, and "See original" stays.
+   - Reading "Improve prompt" as the old Enhance row is fine.
+   - Board-bar Enhance: not now; a follow-up issue.
+   - Then merge.
+4. **#663 Google sign-in:** yes to "@gmail.com or a Google-hosted company domain (`hd` claim) only", with an invite still required. **Don't merge** until the owner has set `GOOGLE_OAUTH_CLIENT_ID`/`SECRET` and tested.
+5. **#661 Plans:**
+   - "Business" everywhere, including the public site; update the 7 Oct guard, since today's plan names supersede it.
+   - Per-seat Business pricing is confirmed (seats display-only).
+   - Fix the copy Opus flagged, then merge.
+6. **#665 v14 for everyone:** do the fixes (five-minute test, global off switch, test-helper race) and merge only after #661. Then send screenshots of a non-house workspace (Home, Make, a board, Settings, billing) and **wait for the owner's yes**.
+7. **#667 teammates' boards:**
+   - Ship view-only now.
+   - Editing comes next, with a "this changed since you opened it, reload" rule (no silent overwrite).
+   - The owner seeing the boards of workspaces they're a member of is fine.
+   - Fix the wording and the test, then **wait for the owner's yes**.
+8. **Workspace settings:**
+   - No per-person cap for now.
+   - **Workspace admins can change roles** (not owner-only), but nobody can remove or demote the last admin.
+   - Name-only profile edit is fine.
+9. **Usage:** above 60%, drop to 2 lanes and finish merges and fixes before building anything new.
+10. Deploy prep at 08:00 is unchanged.
+
 ## Merge rule
 
 The lead merges into release/1 only when all of these hold:
