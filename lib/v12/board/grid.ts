@@ -31,7 +31,7 @@ export function gridColumns(width: number): number {
 export const GRID_STAGES: ReadonlySet<string> = new Set(["storyboard", "shots", "elements"]);
 
 /** The row under a shot card's pictures and words: Approve · Reject on a finished take, the status line on one that has something to say. */
-export const GRID_ACTIONS = 40;
+export const GRID_ACTIONS = 60;
 
 export type GridSize = { w: number; h: number };
 
