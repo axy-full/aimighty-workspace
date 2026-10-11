@@ -5,13 +5,13 @@ import ts from "typescript";
 import { runInTenant, type TenantWorkspace } from "../../lib/tenant";
 import { getModel } from "../../lib/models";
 import { estimateImageCostUsd } from "../../lib/vendorPricing";
-import { billCredits } from "../../lib/creditTerms";
+import { billCredits, creditUsd } from "../../lib/creditTerms";
 import { NO_REFERENCES, quoteWorkbenchMedia, quoteWorkbenchMediaAtCost, workbenchRate } from "../../lib/workbench/media-quote";
 import { makeQuote } from "../../lib/v12/make";
-import { priceDisplay } from "../../lib/v12/quote";
+import { NO_AT_COST_PRICE, PAYS_AT_COST, priceDisplay } from "../../lib/v12/quote";
 import { exact } from "../../lib/shell/price-words";
 import { fmtLedgerUsd } from "../../lib/usageLedgerTerms";
-import { fmtRenderPrice, renderState, type RenderTake } from "../../lib/v12/renderState";
+import { fmtRenderPrice, moneyLine, renderState, type RenderTake } from "../../lib/v12/renderState";
 
 /**
  * The house workspace sees every price at cost (lib/houseWorkspace.ts); a customer sees credits. One take, one number: the
@@ -22,7 +22,7 @@ import { fmtRenderPrice, renderState, type RenderTake } from "../../lib/v12/rend
 const NB2 = "gemini-3.1-flash-image";
 const model = getModel(NB2);
 const params = { resolution: "512", ratio: "1:1", duration: 0 };
-const ENV = (dollars: boolean) => ({ creditUsd: 0.1, dollars: fmtLedgerUsd, _dollars: dollars });
+const ENV = (dollars: boolean) => ({ creditUsd: creditUsd(), dollars: fmtLedgerUsd, _dollars: dollars });
 const at = (take: Partial<RenderTake>): RenderTake => ({ id: "g", status: "running", kind: "image", model: NB2, provider: "google", createdAt: 0, ...take } as RenderTake);
 
 test("the quote: customers get credits only, the house also gets the engine's dollars, the same figure admission reserves", () => {
@@ -45,10 +45,11 @@ test("house: the button, the hold on the card and the settled charge are one fig
   const usd = estimateImageCostUsd(NB2, model.resolutions[0], 0)!.net;
   const quote = quoteWorkbenchMediaAtCost(model, { resolution: model.resolutions[0], ratio: model.ratios[0], duration: 0 }, NO_REFERENCES);
   /* The button's price: the quote's credits would read the customer's price in dollars; the quote's dollars read the engine's. */
-  const button = priceDisplay(makeQuote(exact(quote.credits!), { dollars: true, creditUsd: 0.1 }, quote.usd), undefined, ENV(true))!.text;
-  const wrong = priceDisplay(makeQuote(exact(quote.credits!), { dollars: true, creditUsd: 0.1 }), undefined, ENV(true))!.text;
-  expect(wrong, "without the engine's dollars the button reads the customer's price").toBe(fmtLedgerUsd(quote.credits! * 0.1));
-  expect(wrong).not.toBe(fmtLedgerUsd(usd));
+  const button = priceDisplay(makeQuote(exact(quote.credits!), { dollars: true, creditUsd: creditUsd() }, quote.usd), undefined, ENV(true))!.text;
+  /* Without the engine's dollars the house is shown no figure, never the customer price (credits at the margin, as dollars). */
+  const without = priceDisplay(makeQuote(exact(quote.credits!), { dollars: true, creditUsd: creditUsd() }), undefined, ENV(true))!.text;
+  expect(without).toBe("—");
+  expect(without).not.toBe(fmtLedgerUsd(quote.credits! * creditUsd()));
   /* The hold: what admission reserved (the meter's engine cost), as the card words it. */
   const held = renderState(at({ price: { amount: usd, unit: "usd" } }), 70_000).money!.text;
   /* The settled charge: the take's cost in dollars, as the tray words it. */
@@ -57,19 +58,19 @@ test("house: the button, the hold on the card and the settled charge are one fig
   expect(held).toBe(`${settled} held · charged only when it’s ready`);
   expect(renderState(at({ status: "running", price: { amount: usd, unit: "usd" } }), 70_000).tile).toBe(`Rendering · 1:10 so far · ${settled} held`);
   /* A batch of takes is the take's dollars times the count. */
-  expect(priceDisplay(makeQuote(exact(quote.credits! * 3), { dollars: true, creditUsd: 0.1 }, quote.usd! * 3), undefined, ENV(true))!.text).toBe(fmtLedgerUsd(usd * 3));
+  expect(priceDisplay(makeQuote(exact(quote.credits! * 3), { dollars: true, creditUsd: creditUsd() }, quote.usd! * 3), undefined, ENV(true))!.text).toBe(fmtLedgerUsd(usd * 3));
 });
 
 test("customer: the button, the hold and the settled charge are one figure, in credits", () => {
   const usd = estimateImageCostUsd(NB2, model.resolutions[0], 0)!.net;
   const credits = quoteWorkbenchMedia(model, { resolution: model.resolutions[0], ratio: model.ratios[0], duration: 0 }, NO_REFERENCES).credits!;
-  const button = priceDisplay(makeQuote(exact(credits), { dollars: false, creditUsd: 0.1 }), undefined, ENV(false))!.text;
+  const button = priceDisplay(makeQuote(exact(credits), { dollars: false, creditUsd: creditUsd() }), undefined, ENV(false))!.text;
   const held = renderState(at({ price: { amount: credits, unit: "cr" } }), 70_000).money!.text;
   expect(button).toBe(`${credits} cr`);
   expect(held).toBe(`${credits} cr held · charged only when it’s ready`);
   expect(fmtRenderPrice({ amount: credits, unit: "cr" })).toBe(button);
   /* The dollars sent for a customer's quote can never alter what they are shown. */
-  expect(priceDisplay(makeQuote(exact(credits), { dollars: false, creditUsd: 0.1 }, usd), undefined, ENV(false))!.text).toBe(button);
+  expect(priceDisplay(makeQuote(exact(credits), { dollars: false, creditUsd: creditUsd() }, usd), undefined, ENV(false))!.text).toBe(button);
   /* Cancel sent: the figure stands alone, with no promise beside it (see RenderMoney). */
   expect(renderState(at({ price: { amount: credits, unit: "cr" } }), 70_000).money!.short).toBe(`${credits} cr held`);
 });
@@ -125,4 +126,30 @@ test("a take in flight says on its Make tile, under its held figure, that it is 
   expect(tileTail(renderState(at({ status: "failed" }), 70_000))).toBeNull();
   /* Cinema Studio holds a band over its quote: its own words. */
   expect(tileTail(renderState(at({ model: "higgsfield-cinema-studio-4.0", provider: "higgsfield", price: { amount: 129, unit: "cr" } }), 70_000))).toBe("Charged what the engine reports");
+});
+
+test("the house is never shown the customer price in dollars: with no engine dollars it shows no figure, with them it says it pays at cost", () => {
+  const env = { creditUsd: creditUsd(), dollars: fmtLedgerUsd };
+  /* No dollars in the answer (an enhancement added, a price that moved): "—" with its reason, never credits turned into dollars. */
+  const none = priceDisplay(makeQuote(exact(1), { dollars: true, creditUsd: creditUsd() }), undefined, env)!;
+  expect(none).toMatchObject({ text: "—", title: NO_AT_COST_PRICE, state: "error" });
+  expect(none.text).not.toMatch(/\d/);
+  /* An estimate (sound) keeps its "up to", in dollars. */
+  expect(priceDisplay(makeQuote({ kind: "up-to", credits: 2 } as never, { dollars: true, creditUsd: creditUsd() }, 0.1234), undefined, env)!.text).toBe("up to $0.123");
+  /* The hover says so. */
+  const dollars = priceDisplay(makeQuote(exact(1), { dollars: true, creditUsd: creditUsd() }, 0.045), undefined, env)!;
+  expect([dollars.text, dollars.title]).toEqual(["$0.045", PAYS_AT_COST]);
+  expect(PAYS_AT_COST).toBe("Pays at cost");
+});
+
+test("Cinema Studio for the house: about and at most, in the engine's dollars; the customer's words stay credits", async () => {
+  const { houseAbout } = await import("../../lib/v12/make");
+  expect(houseAbout(0.42)).toBe("about $0.420, at most $1.26");
+});
+
+test("a cancel on its way: the money line keeps its figure and drops the promise; otherwise it keeps both", () => {
+  const state = renderState(at({ price: { amount: 0.045, unit: "usd" } }), 70_000);
+  expect(moneyLine(state.money!)).toEqual({ head: "$0.045 held", tail: " · charged only when it’s ready" });
+  expect(moneyLine(state.money!, true)).toEqual({ head: "$0.045 held", tail: "" });
+  expect(moneyLine(state.money!, true).head + moneyLine(state.money!, true).tail).not.toMatch(/charged only when/);
 });

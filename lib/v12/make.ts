@@ -9,20 +9,30 @@ import type { ComposerType } from "@/lib/workspace/composer";
 import { displayModelName } from "@/lib/models";
 import { recipePrompt, recreateBlock } from "@/lib/shell/recipe";
 import type { PriceValue } from "@/lib/shell/price-words";
-import { knownQuote, NO_DOLLAR_PRICE, type Quote } from "./quote";
+import { knownQuote, NO_AT_COST_PRICE, type Quote } from "./quote";
+import { fmtLedgerUsd } from "@/lib/usageLedgerTerms";
+import { STATED_CHARGE_BAND } from "@/lib/runLimit";
 
 /* ── Prices ───────────────────────────────────────────────────────────── */
 
 /**
  * A price today's Make gave (use-make: the server's quote, in credits) as the quote layer draws it: credits for a
- * workspace that pays in credits; dollars at the credit's price for the one that pays in dollars, as Home's Start does.
+ * workspace that pays in credits. The house workspace, which pays in dollars at the engines' cost, is drawn the engine's own
+ * dollars (`usd`, sent to it alone by the quote routes) and never the customer price turned into dollars: with none, no figure.
  */
 export function makeQuote(value: PriceValue | null | undefined, money: { dollars: boolean; creditUsd: number | null }, usd?: number | null): Quote {
   if (!money.dollars || !value || value.kind === "free") return knownQuote(value);
   /* The house workspace is shown the engine's own dollars: the figure its hold and its bill are in, never the customer price in credits turned into dollars. */
-  if (typeof usd === "number" && Number.isFinite(usd) && usd >= 0 && value.kind !== "up-to") return { state: "ready", price: { unit: "usd", usd, upTo: false } };
-  return money.creditUsd ? { state: "ready", price: { unit: "usd", usd: value.credits * money.creditUsd, upTo: value.kind === "up-to" } } : { state: "error", message: NO_DOLLAR_PRICE };
+  if (typeof usd === "number" && Number.isFinite(usd) && usd >= 0) return { state: "ready", price: { unit: "usd", usd, upTo: value.kind === "up-to" } };
+  /* Never the customer price turned into dollars (credits at the margin, rounded up): the house has the engine's own figure or none. */
+  return { state: "error", message: NO_AT_COST_PRICE };
 }
+
+/**
+ * Cinema Studio's price for the house workspace, in the engine's own dollars: "about $0.42, at most $1.26" (the credits wording,
+ * lib/cinemaHold.ts cinemaPriceWords, for a workspace that pays in credits). `usd` is the quote's figure for the whole press.
+ */
+export const houseAbout = (usd: number): string => `about ${fmtLedgerUsd(usd)}, at most ${fmtLedgerUsd(usd * STATED_CHARGE_BAND)}`;
 
 /* ── Results ──────────────────────────────────────────────────────────── */
 

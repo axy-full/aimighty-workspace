@@ -5,7 +5,8 @@
  * `useQuote` (lib/v12/useQuote.ts) and drawn by `<Price>` (components/v12/ui/Price.tsx). This file says what each route's
  * answer means as a price, and what a price looks like in each state. No figure is typed or worked out here: the wording
  * is lib/shell/price-words.ts ("N cr", "up to N cr", "free", with dollars on hover at the public price of a credit), and
- * the house workspace's dollars are worded by lib/price.ts (`useMoney().price`), as today's screens word them.
+ * the house workspace's dollars (the engine's own, at cost) are worded by lib/usageLedgerTerms.ts `fmtLedgerUsd`, as its hold
+ * and its bill are, so one take reads one figure everywhere.
  *
  * States:
  *  - idle: nothing to ask yet (no request). Draws nothing.
@@ -42,6 +43,10 @@ export function knownQuote(value: PriceValue | null | undefined): Quote {
   return value ? { state: "ready", price: { unit: "cr", value } } : { state: "error", message: QUOTE_FAULT };
 }
 
+/** The house workspace is never billed in credits: it pays the engines' own price, with no margin. The hover on every dollar price says so (the same words as the account menu's note, owner's: "pays at cost"). */
+export const PAYS_AT_COST = "Pays at cost";
+/** Why a house price shows no figure: the engine's own price was not part of the answer, and the customer price in credits is never shown to the house. */
+export const NO_AT_COST_PRICE = "Priced at cost once the engine's price is read.";
 export const QUOTE_FAULT = "The price could not be read. Try again.";
 export const NO_DOLLAR_PRICE = "This price is not available in dollars yet.";
 
@@ -173,8 +178,8 @@ export type PriceDisplay = {
 };
 
 /**
- * The drawing for a quote. `dollars` words a dollar amount the way the house workspace's screens do
- * (lib/price.ts `useMoney().price`); `creditUsd` is the public price of a credit (the session's `rates.creditUsd`,
+ * The drawing for a quote. `dollars` words a dollar amount the way the house workspace's hold and bill do
+ * (lib/usageLedgerTerms.ts `fmtLedgerUsd`); `creditUsd` is the public price of a credit (the session's `rates.creditUsd`,
  * filled from `creditUsd()`), for the hover.
  */
 export function priceDisplay(
@@ -195,7 +200,7 @@ export function priceDisplay(
       if (price.unit === "usd") {
         if (!figure(price.usd)) return { text: "—", title: QUOTE_FAULT, state: "error" };
         if (price.usd === 0) return { text: "free", title: null, state: "ready", kind: "free" };
-        return { text: `${price.upTo ? "up to " : ""}${env.dollars(price.usd)}`, title: null, state: "ready", kind: price.upTo ? "up-to" : "exact" };
+        return { text: `${price.upTo ? "up to " : ""}${env.dollars(price.usd)}`, title: PAYS_AT_COST, state: "ready", kind: price.upTo ? "up-to" : "exact" };
       }
       const view = priceView(price.value, env.creditUsd);
       if (!view) return { text: "—", title: QUOTE_FAULT, state: "error" };

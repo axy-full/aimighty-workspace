@@ -328,6 +328,8 @@ export function useComposer(options: {
   const [engines, setEngines] = useState<{ rows: EngineRow[]; error: string | null; loading: boolean }>({ rows: [], error: null, loading: true });
   const [enginesRead, setEnginesRead] = useState(0);
   const [audio, setAudio] = useState<NodeAudioSetup | null>(null);
+  /* A press that found the price moved sets the new figure; a house quote then reads its dollars again (they are not part of that answer). */
+  const [requote, setRequote] = useState(0);
   const [quoteAnswer, setQuoteAnswer] = useState<{ scope: string; quote: ComposerQuote | null } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   /* The last press that did not go through, for the panel's Result. It says nothing about the charge: a refusal here can be a lost reply,
@@ -418,7 +420,7 @@ export function useComposer(options: {
     const timer = setTimeout(() => {
       const ask = async (): Promise<ComposerQuote> => {
         if (audioBody) {
-          const result = await studioRequest<{ estimatedCredits?: number }>("/api/audio", {
+          const result = await studioRequest<{ estimatedCredits?: number; price?: number; unit?: string }>("/api/audio", {
             method: "POST", signal: controller.signal,
             headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
             body: JSON.stringify({ ...audioBody, quoteOnly: true }),
@@ -426,7 +428,8 @@ export function useComposer(options: {
           const credits = result.estimatedCredits;
           if (typeof credits !== "number" || !Number.isFinite(credits))
             return { key: quoteKey, credits: null, state: "unavailable", reason: "Sound cannot be priced with these settings." };
-          return { key: quoteKey, credits, state: "ready", reason: null };
+          /* The house workspace is told the engine's dollars beside the credits (unit "usd"): the figure it is shown. */
+          return { key: quoteKey, credits, state: "ready", reason: null, ...(result.unit === "usd" && typeof result.price === "number" && Number.isFinite(result.price) ? { usd: result.price } : {}) };
         }
         /* The Sound switch is in the read: the figure is for the take as it will be asked for. */
         const query = new URLSearchParams({ model: model!.id, resolution: settings.resolution, ratio: settings.ratio, duration: String(settings.duration),
@@ -450,7 +453,7 @@ export function useComposer(options: {
     return () => { clearTimeout(timer); controller.abort(); };
     /* `quoteKey` names every input the figure prices. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blockedForQuote, quoteKey, scope, target?.id]);
+  }, [blockedForQuote, quoteKey, scope, target?.id, requote]);
 
   const credits = liveCredits(quote, quoteKey);
   /* The price on Generate — the button's own total, every take — in this workspace's credits, is the header's last quote
@@ -614,6 +617,7 @@ export function useComposer(options: {
           if (outcome.state === "repriced") {
             batchShot.current = shotNow;
             setQuote({ key: now.quoteKey, credits: outcome.takes[0], state: "ready", reason: null, takes: outcome.takes });
+            if (now.quote?.usd !== undefined) setRequote((n) => n + 1);
             dispatch({ type: "notice", value: `${before}${outcome.reason}` });
             return;
           }
@@ -731,6 +735,7 @@ export function useComposer(options: {
         });
         if (outcome.state === "repriced") {
           setQuote({ key: now.quoteKey, credits: outcome.credits, state: "ready", reason: null });
+          if (now.quote?.usd !== undefined) setRequote((n) => n + 1);
           setRun(null);
           dispatch({ type: "notice", value: `${before}${outcome.reason}` });
           return;

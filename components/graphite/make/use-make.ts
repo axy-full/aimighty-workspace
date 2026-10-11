@@ -331,7 +331,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     /* Cinema Studio's row says what approving it holds: "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
     const about = priced != null && isCinemaStudioModel(m.id) ? cinemaPriceWords(priced) : null;
     const value = priced != null && !row.approximate ? makeQuoteValue(priced, m.type) : null;
-    return { value, about, credits: about ? priced : null, ...(value && typeof row.usd === "number" ? { usd: row.usd } : {}), detail: value ? rowSettings(m, priceAt, row.detail) : null, title: row.kind === "none" ? "Priced on Make once the words are in" : row.title };
+    return { value, about, credits: about ? priced : null, ...((value || about) && typeof row.usd === "number" ? { usd: row.usd } : {}), detail: value ? rowSettings(m, priceAt, row.detail) : null, title: row.kind === "none" ? "Priced on Make once the words are in" : row.title };
   }, [priceAt, rates, readingRates]);
 
   /* ── The words ───────────────────────────────────────────────────────── */
@@ -403,11 +403,12 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   /* A sound is a live estimate: "up to N cr" (lib/shell/make-price.ts › makeQuoteValue); a still or a clip is its card figure. */
   /* While a recreated take's references are still being read, the figure on hand is the quote without them: not what the take will cost, so no price shows. */
   /* The house workspace's figure in the engine's dollars (the same the reservation holds and the meter settles at): one take, from the live quote. */
-  const takeUsd = !approximate && composer.quote && composer.quote.key === composer.quoteKey && composer.quote.state === "ready" && typeof composer.quote.usd === "number" ? composer.quote.usd : null;
-  const linePrice: MakePrice | null = takeCredits == null || priceHeld ? null : approximate ? { value: null, about: aboutOneTake(), credits: shownTotal(composer.quote, composer.quoteKey, 1) } : { value: makeQuoteValue(takeCredits, state.type), about: null, usd: takeUsd };
+  const liveUsd = composer.quote && composer.quote.key === composer.quoteKey && composer.quote.state === "ready" && typeof composer.quote.usd === "number" ? composer.quote.usd : null;
+  const takeUsd = approximate ? null : liveUsd;
+  const linePrice: MakePrice | null = takeCredits == null || priceHeld ? null : approximate ? { value: null, about: aboutOneTake(), credits: shownTotal(composer.quote, composer.quoteKey, 1), usd: liveUsd } : { value: makeQuoteValue(takeCredits, state.type), about: null, usd: takeUsd };
   /* Auto's enhancement is in the figure: the button reads take + enhancement, and waits (unpriced) while the enhancement is still being priced. */
   const goPrice: MakePrice | null = spendOff || priceHeld || total == null || (autoNeeds && enhanceCredits == null) ? null
-    : approximate ? { value: null, about: composer.buttonParts.price, credits: total }
+    : approximate ? { value: null, about: composer.buttonParts.price, credits: total, usd: liveUsd != null && !composer.quote?.takes ? liveUsd * count : null }
       /* In dollars only when the whole figure is the take's own: not a batch re-quoted take by take, not with an enhancement added. */
       : { value: makeQuoteValue(total + (enhanceCredits ?? 0), state.type), about: null, usd: takeUsd != null && !composer.quote?.takes && !(enhanceCredits && enhanceCredits > 0) ? takeUsd * count : null };
   const balanceNow = balance !== undefined ? balance : session.credits?.balance ?? null;

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { FREE_QUOTE, IDLE, LOADING, NO_DOLLAR_PRICE, QUOTE_FAULT, knownQuote, priceDisplay, quoteFromResponse, quoteRequest, type MoneyTerms, type Quote, type QuoteSource } from "../../lib/v12/quote";
+import { FREE_QUOTE, IDLE, LOADING, NO_DOLLAR_PRICE, PAYS_AT_COST, QUOTE_FAULT, knownQuote, priceDisplay, quoteFromResponse, quoteRequest, type MoneyTerms, type Quote, type QuoteSource } from "../../lib/v12/quote";
 import { UNPRICED, isUnpricedId } from "../../lib/v12/unpriced";
 import { exact, upTo } from "../../lib/shell/price-words";
 import { creditUsd } from "../../lib/creditTerms";
@@ -65,7 +65,8 @@ test("an action with no quote path reads \"quoted\", only with a reason from lib
 test("the house workspace sees dollars as today's screens word them, and no credit figure", () => {
   const generate: QuoteSource = { route: "generate", body: {} };
   const house = quoteFromResponse(generate, true, { fingerprint: "f", estimatedCredits: 43, price: 2.87, unit: "usd" }, HOUSE);
-  expect(show(house)).toEqual({ text: "$2.87", title: null, state: "ready", kind: "exact" });
+  /* The hover on a dollar price says what the house pays: the engine's own price. */
+  expect(show(house)).toEqual({ text: "$2.87", title: PAYS_AT_COST, state: "ready", kind: "exact" });
   const approximate = quoteFromResponse(generate, true, { estimatedCredits: 43, price: 2.87, unit: "usd", approximate: true }, HOUSE);
   expect(show(approximate)!.text).toBe("up to $2.87");
   /* A held take in the house: its dollars scale to its ceiling, as its credits do. */
