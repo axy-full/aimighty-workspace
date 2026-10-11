@@ -98,6 +98,8 @@ export type RowPrice = {
   kind: "rate" | "loading" | "none";
   /** An approximate figure (the engine settles on what it delivers): shown as "about". */
   approximate?: boolean;
+  /** The row's price in the engine's own dollars (the house workspace alone). */
+  usd?: number;
 };
 
 /** Where Gen's composer stands: every Studio row is priced here, one take at a time. */
@@ -195,7 +197,7 @@ export function rowPrice(m: ComposerModel, _retired: unknown = null, at: PriceAt
     const cinema = isCinemaStudioModel(m.id);
     const approximate = cinema || rate.approximate;
     const words = cinema ? cinemaPriceWords(rate.credits) : `${rate.approximate ? "about " : ""}${rate.credits.toLocaleString("en-US")} cr`;
-    return { credits: rate.credits, unit: "cr", detail, kind: "rate", perTake, ...(approximate ? { approximate: true } : {}),
+    return { credits: rate.credits, unit: "cr", detail, kind: "rate", perTake, ...(approximate ? { approximate: true } : {}), ...(typeof rate.usd === "number" ? { usd: rate.usd } : {}),
       title: `${words.charAt(0).toUpperCase()}${words.slice(1)} per take at ${[detail, rate.ratio === "16:9" ? "16:9" : null].filter(Boolean).join(" · ")}, ${refs}` };
   }
   if (reading && fromSheet === undefined) return { ...LOADING, perTake: false };

@@ -9,7 +9,7 @@ import { creditRate } from "@/lib/shell/price-words";
 import { EnhanceSwitch } from "./EnhanceSwitch";
 import { ENHANCE_ASWRITTEN, enhanceKey, enhanceOffered, workspaceEnhance, writeEnhance } from "@/lib/v12/enhance";
 import { useRead } from "@/components/graphite/settings/use-settings";
-import { EDIT_OPS, MAKE_MODES, REMIX_OPS, makeQuote, modeType, placeholderFor, type MakeMode, type MakeOp, type ResultTile } from "@/lib/v12/make";
+import { EDIT_OPS, MAKE_MODES, REMIX_OPS, houseAbout, makeQuote, modeType, placeholderFor, type MakeMode, type MakeOp, type ResultTile } from "@/lib/v12/make";
 import { Bar, BarChip, type BarMention } from "@/components/v12/bar/Bar";
 import { Price } from "@/components/v12/ui/Price";
 import { Menu, type MenuItem } from "@/components/v12/ui/Popover";
@@ -56,6 +56,8 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   const session = useSession();
   /* Prices in the workspace's own unit: credits, or dollars for the workspace that pays in dollars. */
   const money = { dollars: session.rates.unit === "usd", creditUsd: creditRate(session.rates.creditUsd) };
+  /* An approximate price in words (Cinema Studio): credits for a credit workspace; for the house the engine's dollars, or no figure when it has none (never the customer price). */
+  const aboutOf = (p: { about: string | null; usd?: number | null }) => (!money.dollars ? p.about : typeof p.usd === "number" ? houseAbout(p.usd) : "—");
   /* Enhance (lib/v12/enhance.ts): this person's own choice, else the workspace's default (Settings › Advanced), else On. The house, which pays in
      dollars at cost, has none here: its enhancement cannot be added to the button's figure. */
   const inDollars = session.rates.unit === "usd";
@@ -104,11 +106,11 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   if (!ops && model) {
     chips.push({
       /* "Nano Banana 2 · 2K · 2 cr": the engine, its size and one take's price, the server's. */
-      k: "Model", v: <>{model.label}{settings.resolution && state.type !== "audio" ? ` · ${settings.resolution}` : ""}{make.linePrice?.value ? <> · <Price quote={makeQuote(make.linePrice.value, money)} testId="v12-make-chip-price" /></> : make.linePrice?.about ? ` · ${make.linePrice.about}` : null}</>,
+      k: "Model", v: <>{model.label}{settings.resolution && state.type !== "audio" ? ` · ${settings.resolution}` : ""}{make.linePrice?.value ? <> · <Price quote={makeQuote(make.linePrice.value, money, make.linePrice.usd)} testId="v12-make-chip-price" /></> : make.linePrice?.about ? ` · ${aboutOf(make.linePrice)}` : null}</>,
       title: "Engines from the rate card", testId: "v12-make-chip-model", onOpen: make.openList, onClose: make.closeList,
       items: make.offered.map((m) => {
         const row = make.rowValue(m);
-        return { id: m.id, label: m.label, onSelect: () => make.pickEngine(m), hint: row.value ? <Price quote={makeQuote(row.value, money)} /> : row.about ?? undefined };
+        return { id: m.id, label: m.label, onSelect: () => make.pickEngine(m), hint: row.value ? <Price quote={makeQuote(row.value, money, row.usd)} /> : row.about ? aboutOf(row) : undefined };
       }),
     });
     const ratios = (model.ratios ?? []).filter((r) => r !== "adaptive");
@@ -125,7 +127,7 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   }
 
   const price = make.go.price;
-  const priceNode = price?.value ? <Price quote={makeQuote(price.value, money)} testId="v12-make-price" /> : price?.about ? <span className="v12-price" data-price="about" data-testid="v12-make-price">{price.about}</span> : undefined;
+  const priceNode = price?.value ? <Price quote={makeQuote(price.value, money, price.usd)} testId="v12-make-price" /> : price?.about ? <span className="v12-price" data-price="about" data-testid="v12-make-price">{aboutOf(price)}</span> : undefined;
   const attrs = price?.value ? spendAttrsOf(price.value) : price?.about ? spendAttrsText(price.about) : { "data-spend": "unpriced" as const };
   const autoLine = mode === "auto" && model
     ? [`Auto · ${TYPE_WORD[state.type]}, so ${model.label}${settings.resolution && state.type !== "audio" ? ` at ${settings.resolution}` : ""}`]

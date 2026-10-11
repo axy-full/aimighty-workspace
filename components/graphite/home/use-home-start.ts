@@ -6,7 +6,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import type { ProjectSummary } from "@/lib/workspace/data";
 import { uploadFilesToProject } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
-import { EMPTY_DRAFT, TEMPLATES, cleanDraft, goalFor, startFigure, newProjectFor, reusable, type BoardKind, type HomeDraft, type HomeSeed, type MadeHere, type Template, type TemplateId } from "./home-model";
+import { EMPTY_DRAFT, TEMPLATES, cleanDraft, goalFor, startFigure, startFigureUsd, newProjectFor, reusable, type BoardKind, type HomeDraft, type HomeSeed, type MadeHere, type Template, type TemplateId } from "./home-model";
 import { askAtomik, planningFor, productionOf } from "./start";
 import { useThinkingPrice } from "./use-thinking-price";
 
@@ -33,7 +33,7 @@ function rememberMade(scope: string, made: MadeHere) {
 }
 
 /** A project Start made whose ask stopped (a higher figure, a refusal): the next press asks again for it rather than making another. */
-type Started = { id: string; productionId: string | null; text: string; figure: number | null };
+type Started = { id: string; productionId: string | null; text: string; figure: number | null; /** The same figure in the engines' dollars (the house workspace alone). */ usd?: number | null };
 const FILM = TEMPLATES[0];
 
 /**
@@ -51,7 +51,7 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
   onStarter?: () => Promise<string | null>;
   openBoard: OpenBoard;
   /** How a figure of credits reads in the note that a higher price needs another press: the new Home words it in the unit it shows (dollars for the house workspace). */
-  worded?: (credits: number) => string;
+  worded?: (credits: number, usd?: number | null) => string;
 }) {
   const { toast } = useWorkspace();
   const fetcher = useScopedFetch(scope);
@@ -70,6 +70,7 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
 
   /* The figure on Start: the server's for a new board, or the newer one it gave for the project Start already made. */
   const figureFor = (text: string): number | null => startFigure(started, thinking, text);
+  const figureUsdFor = (text: string): number | null => startFigureUsd(started, thinking, text);
   const figure = figureFor(draft.text);
 
   const onDraft = useCallback((next: HomeDraft | ((now: HomeDraft) => HomeDraft)) => {
@@ -148,8 +149,8 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
       const terms = await planningFor(fetcher, production.productionId, project.id);
       if ("error" in terms) { setStarted(project); setStartProblem(terms.error); return; }
       if (terms.planning > limit) {
-        setStarted({ ...project, figure: terms.planning });
-        setStartProblem(`For this brief, Atomik's thinking may cost ${worded ? worded(terms.planning) : priceWords(upTo(terms.planning))}. Press Start again to approve it.`);
+        setStarted({ ...project, figure: terms.planning, usd: terms.planningUsd ?? null });
+        setStartProblem(`For this brief, Atomik's thinking may cost ${worded ? worded(terms.planning, terms.planningUsd ?? null) : priceWords(upTo(terms.planning))}. Press Start again to approve it.`);
         return;
       }
       const asked = await askAtomik(fetcher, { productionId: production.productionId, draftId: project.id, goal, limit, requestId: crypto.randomUUID() });
@@ -184,5 +185,5 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
     }
   };
 
-  return { draft, onDraft, refs, setRefs, briefFile, setBriefFile, pending, problem, startProblem, thinking, retryThinking, figure, figureFor, create, start, open, openSample };
+  return { draft, onDraft, refs, setRefs, briefFile, setBriefFile, pending, problem, startProblem, thinking, retryThinking, figure, figureFor, figureUsdFor, create, start, open, openSample };
 }

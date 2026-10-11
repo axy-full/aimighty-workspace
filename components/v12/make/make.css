@@ -170,3 +170,4 @@
 .v12-mk-viewer-enh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
 .v12-mk-viewer-enh-label { color: var(--gx-text); font-weight: 600; }
 .v12-mk-viewer-original { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--gx-sunken); color: var(--gx-text-sec); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.v12-mk-render-tail { color: rgba(235, 235, 245, 0.65); }

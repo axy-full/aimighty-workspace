@@ -135,6 +135,23 @@ export const CANCEL_MAY_CHARGE = "This engine may charge for a take cancelled in
 /** The toast after a cancel that bills nothing (the only cancels offered). */
 export const CANCELLED_FREE_TOAST = "Cancelled · nothing billed · the frame stays";
 
+/** What follows the figure on a take's hold line while a cancel is on its way to the engine and not confirmed. */
+export const SETTLES_WHEN_CONFIRMED = "settles when the engine confirms";
+
+/**
+ * The money line's two runs: the figure ("$0.045 held") and what follows it ("· charged only when it’s ready"). While a cancel is on
+ * its way to the engine and not confirmed, "charged only when it’s ready" is not the whole story (a take that stops can be charged),
+ * so the same figure is followed by what is true: it "settles when the engine confirms".
+ */
+export function moneyLine(money: { text: string; short: string }, pending = false): { head: string; tail: string } {
+  if (pending) {
+    /* With no figure on the line (no price on the take) there is nothing to hold it beside: the line says only what is true. */
+    if (!money.text.startsWith(`${money.short} ·`)) return { head: `${SETTLES_WHEN_CONFIRMED.charAt(0).toUpperCase()}${SETTLES_WHEN_CONFIRMED.slice(1)}`, tail: "" };
+    return { head: money.short, tail: ` · ${SETTLES_WHEN_CONFIRMED}` };
+  }
+  return { head: money.short, tail: money.text.startsWith(money.short) ? money.text.slice(money.short.length) : "" };
+}
+
 /** A take's price in the unit its workspace pays in: "43 cr", "$0.840". */
 export const fmtRenderPrice = (p: RenderPrice): string => (p.unit === "usd" ? fmtLedgerUsd(p.amount) : fmtLedgerCredits(p.amount));
 const priced = (p: RenderPrice | null | undefined): RenderPrice | null =>
