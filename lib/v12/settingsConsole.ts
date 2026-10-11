@@ -17,7 +17,7 @@ const ADMIN: ConsoleNavItem[] = [
   { id: "defaults", label: "Defaults", line: "How new work starts" },
   { id: "rules", label: "Style rules", line: "House style for your prompts" },
   { id: "limits", label: "Limits", line: "Keep spend in check" },
-  { id: "workspace", label: "Workspace", line: "Name, logo, danger zone" },
+  { id: "workspace", label: "Workspace", line: "Name and danger zone" },
 ];
 /** A member reads only these (the server enforces it: every admin read and write is an admin's). */
 const MEMBER: ConsoleNavItem[] = [
@@ -52,7 +52,7 @@ export const TITLES: Record<ConsoleSection, { title: string; memberTitle?: strin
   defaults: { title: "Defaults", sub: () => "How new work starts in this workspace. Anyone can change these per take." },
   rules: { title: "Style rules", sub: () => "House style for every prompt in this workspace." },
   limits: { title: "Limits", sub: () => "Keep spend in check. Caps apply to new boards from now." },
-  workspace: { title: "Workspace", sub: () => "Name, logo and the things you cannot undo." },
+  workspace: { title: "Workspace", sub: () => "Its name, and the things you cannot undo." },
   profile: { title: "Profile", sub: () => "You, across every workspace you belong to." },
   notifications: { title: "Notifications", sub: () => "What Particl tells you about." },
 };

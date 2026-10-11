@@ -11,7 +11,7 @@ import type { TeamBody } from "./People";
  * Settings › Workspace: its name, and the things you cannot undo. The owner renames it and deletes it (the typed name is checked
  * again by the server, which refuses any other); an admin who is not the owner can leave it, unless they are the only admin.
  * Each of these leaves a line in the workspace's history. There is no logo here: uploads are filed under a board, and nothing
- * uploads a workspace's mark yet.
+ * uploads a workspace's mark yet (the `brandLogoUploadId` setting that review pages read has no uploader).
  */
 export function WorkspacePanel() {
   const session = useSession();

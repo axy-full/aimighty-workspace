@@ -194,8 +194,8 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard, embedded = false
           <section className="v12-bill-sec" data-testid="v12-billing-boards">
             <span className="v12-bill-eyebrow">Per board · this month</span>
             {boards.error ? <Problem text={boards.error} onRetry={() => void boards.read()} /> : perBoard === null ? <div className="v12-bill-empty">Reading…</div> : null}
-            {perBoard?.map((b) => (
-              <div key={b.id ?? b.name} className="v12-bill-board" data-testid="v12-billing-board">
+            {perBoard?.map((b, i) => (
+              <div key={`${b.id ?? b.name}:${i}`} className="v12-bill-board" data-testid="v12-billing-board">
                 <span><span className="v12-bill-board-name">{b.name}</span><span className="v12-bill-sub">{takesWords(b.n)}</span></span>
                 <span className="v12-bill-mono" title={creditsUsd(b.credits, rate) ?? undefined}>{fmtCredits(b.credits)}</span>
                 {b.id ? <button type="button" className="v12-bill-btn" onClick={() => onOpenBoard(b.id!)}>Open</button> : <span />}

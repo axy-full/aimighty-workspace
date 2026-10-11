@@ -42,8 +42,8 @@ export function Usage({ admin, onOpenProject }: { admin: boolean; onOpenProject:
       {admin ? (
         <Sec label="By board" testId="v12-settings-usage-boards">
           {boards.error ? <Problem text={boards.error} onRetry={() => void boards.read()} /> : perBoard === null ? <div className="v12-ws-empty">Reading…</div> : null}
-          {perBoard?.map((b) => (
-            <div key={b.id ?? b.name} className="v12-ws-bar" data-testid="v12-settings-usage-board">
+          {perBoard?.map((b, i) => (
+            <div key={`${b.id ?? b.name}:${i}`} className="v12-ws-bar" data-testid="v12-settings-usage-board">
               <span><span style={{ display: "block", fontWeight: 500 }}>{b.name}</span><span className="v12-ws-row-line">{takesWords(b.n)}</span></span>
               <span className="v12-ws-bar-track"><span className="v12-ws-bar-fill" style={{ width: `${Math.round((b.credits / top) * 100)}%` }} /></span>
               <span style={{ display: "inline-flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
@@ -57,8 +57,8 @@ export function Usage({ admin, onOpenProject }: { admin: boolean; onOpenProject:
       ) : null}
       <Sec label={admin ? "By person" : "You"} testId="v12-settings-usage-people">
         {people.error ? <Problem text={people.error} onRetry={() => void people.read()} /> : !people.data ? <div className="v12-ws-empty">Reading…</div> : null}
-        {rows.map((r) => (
-          <div key={r.name} className="v12-ws-bar" data-testid="v12-settings-usage-person">
+        {rows.map((r, i) => (
+          <div key={`${r.name}:${i}`} className="v12-ws-bar" data-testid="v12-settings-usage-person">
             <span className="v12-ws-who"><span className="v12-ws-av" aria-hidden="true">{initialsOf(r.name)}</span>{r.name}{r.you && admin ? <span className="v12-ws-you">you</span> : null}</span>
             <span className="v12-ws-bar-track"><span className="v12-ws-bar-fill" style={{ width: `${Math.round((r.credits / top) * 100)}%` }} /></span>
             <span className="v12-ws-mono" style={{ textAlign: "right" }} title={creditsUsd(r.credits, rate) ?? undefined}>{fmtCredits(r.credits)}</span>

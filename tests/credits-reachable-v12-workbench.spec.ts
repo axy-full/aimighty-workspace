@@ -31,7 +31,7 @@ test.describe("desktop, switch on", () => {
     const menu = await openAvatar(page);
     await expect(menu.getByTestId("v12-account-balance")).toHaveText(/\d[\d,]*\s*cr$/);
     await expect(menu.getByTestId("v12-account-topup")).toBeVisible();
-    await expect(menu.getByRole("menuitem")).toHaveText(["Top up", "Credits & billing", "Settings", "Sign out"]);
+    await expect(menu.getByRole("menuitem")).toHaveText(["Top up", "Workspace settings", "Credits & billing", "Sign out"]);
     await expect(menu.getByTestId("v12-account-ask-admin")).toHaveCount(0);
     await menu.getByTestId("v12-account-billing").click();
     await expect(page.getByTestId("v12-billing")).toBeVisible({ timeout: 60_000 });
@@ -56,7 +56,7 @@ test.describe("desktop, switch on", () => {
     const menu = await openAvatar(page);
     await expect(menu.getByTestId("v12-account-ask-admin")).toHaveText("Ask an admin for credits");
     await expect(menu.getByTestId("v12-account-topup")).toHaveCount(0);
-    await expect(menu.getByRole("menuitem")).toHaveText(["Credits & billing", "Settings", "Sign out"]);
+    await expect(menu.getByRole("menuitem")).toHaveText(["Workspace settings", "Credits & billing", "Sign out"]);
     await menu.getByTestId("v12-account-billing").click();
     await expect(page.getByTestId("v12-billing")).toBeVisible({ timeout: 60_000 });
     /* A member still reads the boards and the history: the existing rule. */
@@ -75,7 +75,8 @@ test.describe("desktop, switch on", () => {
     await menu.getByTestId("v12-account-billing").click();
     const screen = page.getByTestId("v12-billing");
     await expect(screen).toBeVisible({ timeout: 60_000 });
-    await expect(screen.getByRole("heading", { name: "Credits & billing" })).toBeVisible();
+    /* The page now sits inside Workspace settings, whose heading names it. */
+    await expect(page.getByTestId("v12-settings-title")).toHaveText("Credits & billing");
     await expect(page.getByTestId("v12-billing-house")).toContainText("In dollars, at the engines’ cost");
     await expect(page.getByTestId("v12-billing-spent")).toContainText("$12.50");
     await expect(page.getByTestId("v12-billing-no-topup")).toContainText("no credits to buy");
