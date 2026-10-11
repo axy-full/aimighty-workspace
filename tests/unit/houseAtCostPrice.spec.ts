@@ -190,3 +190,8 @@ test("the planner's ceiling reaches the house in dollars beside its credits, and
     if (before === undefined) delete process.env.RIG_AGENT_ENABLED; else process.env.RIG_AGENT_ENABLED = before;
   }
 });
+
+test("a cancel on its way with no figure on the take reads only what is true", () => {
+  const unpriced = renderState(at({}), 70_000).money!;
+  expect(moneyLine(unpriced, true)).toEqual({ head: "Settles when the engine confirms", tail: "" });
+});
