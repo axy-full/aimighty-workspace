@@ -1,9 +1,0 @@
-{
-  "name": "join-requested",
-  "app": "/v12-join?join=start&requested=1&prompt=A%2030%20s%20ad%20for%20a%20spice%20brand%20%C2%B7%20a%20desert%20camp%20at%20night",
-  "prototype": "?guest=1&join=start&requested=1",
-  "size": {
-    "width": 1440,
-    "height": 900
-  }
-}
