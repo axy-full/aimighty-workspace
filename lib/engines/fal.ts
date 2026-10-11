@@ -13,6 +13,9 @@ import { renderFalStill, submitTopazImage } from "../falImage";
  * motion control, Topaz Astra, and the identity trainer and renderer that
  * lib/identities.ts drives. Video is asynchronous on fal's own queue.
  */
+/** fal's finished result carries no video and says in words that the request was cancelled: the only result read as a cancellation. A result with no video and no such word is a failure, as before. */
+export const resultSaysCancelled = (out: unknown, url: string | null): boolean => !url && /cancel/i.test(JSON.stringify(out ?? ""));
+
 export const fal: EngineAdapter = {
   id: "fal",
   kinds: ["video", "image"],
@@ -119,7 +122,7 @@ export const fal: EngineAdapter = {
     );
     const url = out?.video?.url ?? null;
     /* fal says in words when a request ended because it was cancelled: only that is read as a cancellation (lib/falVideo.ts). */
-    if (!url && /cancel/i.test(JSON.stringify(out ?? ""))) {
+    if (resultSaysCancelled(out, url)) {
       return { status: "cancelled", videoUrl: null, totalTokens: null, error: "The render service cancelled this request.", vendorStartedAt: null, vendorEndedAt: null, raw: out };
     }
     if (!url)

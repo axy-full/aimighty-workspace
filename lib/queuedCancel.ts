@@ -21,6 +21,7 @@
  */
 import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 import { db, now, ready } from "./db";
+import { replyOf, type CancelReply, type CancelTrail } from "./cancelReview";
 import { engineFor } from "./engines";
 import type { RenderHandle } from "./engines/types";
 import { getGeneration, syncGeneration } from "./jobs";
@@ -47,6 +48,12 @@ export type QueuedCancelDeps = {
   unclaim(id: string): Promise<void>;
   /** Records that the provider accepted a cancel (`params.cancelRequestedAt`): what lets the take's sync end it as cancelled. */
   markAsked(id: string): Promise<void>;
+  /**
+   * Keeps what a cancel attempt saw on the take (`params.cancelTrail`: when, fal's answer to the PUT, and to the read after it), so
+   * that a job fal then reports gone with no word of a cancellation, which stays charged, can be filed for the owner to review
+   * (lib/cancelReview.ts). Optional: a take whose trail is not kept is billed exactly as before.
+   */
+  trail?(id: string, trail: CancelTrail): Promise<void>;
   /** The take's own sync (lib/jobs.ts syncGeneration): where a terminal provider answer becomes a row status and a ledger release. */
   settle(id: string): Promise<{ status: string }>;
 };
@@ -97,10 +104,16 @@ export async function cancelQueuedVideo(id: string, d: QueuedCancelDeps = realDe
         if (seen !== "running") await d.settle(id);
         return { status: seen === "cancelled" ? "cancelled" : seen };
       }
+      const attempt: CancelTrail = { at: now(), put: null, after: null };
+      await d.trail?.(id, attempt).catch(() => undefined);
       try { await d.cancel(row, handle); }
-      catch {
+      catch (putError) {
         /* A refusal can mean it started a moment ago: ask once more before saying anything. */
-        const again = await d.poll(row, handle).catch(() => null);
+        attempt.put = replyOf(putError);
+        let afterReply: CancelReply | null = null;
+        const again = await d.poll(row, handle).catch((readError) => { afterReply = replyOf(readError); return null; });
+        attempt.after = afterReply;
+        await d.trail?.(id, attempt).catch(() => undefined);
         if (again && again !== "queued") {
           if (again !== "running") await d.settle(id);
           return { status: again };
@@ -156,6 +169,9 @@ const realDeps: QueuedCancelDeps = {
   },
   async unclaim(id) {
     await db().execute({ sql: "UPDATE generations SET params=json_remove(params,'$.cancelClaimAt') WHERE id=? AND deleted=0", args: [id] });
+  },
+  async trail(id, trail) {
+    await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.cancelTrail',json(?)) WHERE id=? AND deleted=0", args: [JSON.stringify(trail), id] });
   },
   async markAsked(id) {
     await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.cancelRequestedAt',?), updated_at=? WHERE id=? AND deleted=0 AND status='queued'", args: [now(), now(), id] });

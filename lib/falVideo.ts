@@ -16,6 +16,7 @@ import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
  */
 import { ASTRA_MODEL, astraInput } from "./astra";
 import { falSubmit, FalHttpError } from "./fal";
+import { fileCancelReview, replyOf, type CancelTrail } from "./cancelReview";
 import { preflight } from "./preflight";
 import {
   presignedReadUrl, videoPath, imagePath, uploadPath, usingBlob,
@@ -176,7 +177,7 @@ export function falVideoCostUsd(modelId: string, p: FalVideoParams & { task?: st
  * take as cancelled, at no charge, after we asked fal to cancel it: a 404, a 410 or any other error is read as it always was, and a
  * request fal no longer knows keeps its hold (docs/redesign/cancel-billing.md; owner's decision pending).
  */
-function namesCancellation(error: unknown): boolean {
+export function namesCancellation(error: unknown): boolean {
   const body = error instanceof FalHttpError ? JSON.stringify(error.body ?? "") : "";
   return /cancel/i.test(`${(error as Error)?.message ?? ""} ${body}`);
 }
@@ -267,8 +268,14 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean;store?:St
     const msg = (e as Error).message;
     if (cancelAsked && namesCancellation(e))
       return fail(gen, CANCELLED_AT_FAL, true, silentOutcome("fal", "run", "canceled", null), "cancelled");
-    if (/\b404\b|not found/i.test(msg))
+    if (/\b404\b|not found/i.test(msg)) {
+      /* We asked fal to cancel this job and could not confirm it, and fal no longer has it with no word of a cancellation: it stays
+         charged (owner's decision on #639), and is filed for the owner to review and refund by hand (lib/cancelReview.ts). */
+      const trail = (p as { cancelTrail?: CancelTrail }).cancelTrail;
+      if (trail && typeof trail.at === "number")
+        await fileCancelReview({ jobId: gen.id, workspaceId: currentTenant()?.workspace?.id ?? null, provider: "fal", trail, cancelAccepted: cancelAsked, gone: replyOf(e) });
       return fail(gen, "The render service no longer has this job. Render again.", false, outcomeOfError(e, { provider: "fal", stage: "run" }));
+    }
     // A refusal (422) is final; anything else gets another pass, until the ceiling.
     if (/\b422\b|refus|safety|nsfw|moderat/i.test(msg))
       return fail(gen, msg, true, outcomeOfError(e, { provider: "fal", stage: "run" }));
