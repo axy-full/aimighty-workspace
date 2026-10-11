@@ -8,6 +8,7 @@ export const GOOGLE_REFUSALS = {
   denied: "Google sign-in was cancelled.",
   unavailable: "Google could not be reached. Try again in a moment.",
   unverified: "Google has not verified that email address, so it can’t be used to sign in.",
+  use_email: "Use Continue with email for this address: Google only vouches for Gmail addresses and verified Google Workspace domains.",
   no_account: "This Google account isn’t on Particl. Particl is invite-only: use the invite you were sent.",
   invite_invalid: "That invite isn’t valid, or it was already used or has expired.",
   invite_mismatch: "That invite was sent to a different email address than this Google account.",

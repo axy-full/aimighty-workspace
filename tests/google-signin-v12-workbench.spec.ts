@@ -58,7 +58,7 @@ test("the sign-in page offers Continue with Google when it is on, and says in a 
   expect(new URLSearchParams(started[0]).get("next")).toBe("/suites");
   expect(new URLSearchParams(started[0]).get("invite")).toBeNull();
   await noOverflow(page);
-  for (const [code, words] of [["no_account", "invite-only"], ["unverified", "has not verified"], ["invite_mismatch", "different email address"], ["two_step", "two-step"], ["expired", "Start again"], ["limited", "Too many attempts"]]) {
+  for (const [code, words] of [["no_account", "invite-only"], ["unverified", "has not verified"], ["invite_mismatch", "different email address"], ["two_step", "two-step"], ["expired", "Start again"], ["limited", "Too many attempts"], ["use_email", "Continue with email"]]) {
     await page.goto(`/login?google=${code}`);
     await expect(page.getByRole("status").filter({ hasText: words })).toBeVisible({ timeout: 60_000 });
   }

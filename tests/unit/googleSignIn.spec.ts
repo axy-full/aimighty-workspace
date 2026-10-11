@@ -25,11 +25,13 @@ const pair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const jwk = { ...pair.publicKey.export({ format: "jwk" }), kid: "k1", alg: "RS256", use: "sig" };
 const config = { clientId: CLIENT, clientSecret: "secret", redirectUri: "https://app.example.test/api/auth/google/callback" };
 
-type Claims = { email?: string; email_verified?: unknown; aud?: unknown; iss?: unknown; exp?: number; iat?: number; nonce?: string; name?: string };
+type Claims = { email?: string; email_verified?: unknown; aud?: unknown; iss?: unknown; exp?: number; iat?: number; nonce?: string; name?: string; hd?: string };
 function idToken(claims: Claims, over: { kid?: string; sign?: (data: string) => string } = {}) {
   const at = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: over.kid ?? "k1" })).toString("base64url");
-  const payload = Buffer.from(JSON.stringify({ iss: "https://accounts.google.com", aud: CLIENT, iat: at, exp: at + 3000, email_verified: true, name: "Pat Example", ...claims })).toString("base64url");
+  /* A Workspace address carries its domain as `hd`, as Google signs it; a test says `hd: undefined` for an address without one. */
+  const domain = String(claims.email ?? "").split("@")[1]?.toLowerCase() ?? "";
+  const payload = Buffer.from(JSON.stringify({ iss: "https://accounts.google.com", aud: CLIENT, iat: at, exp: at + 3000, email_verified: true, name: "Pat Example", hd: domain === "gmail.com" ? undefined : domain, ...claims })).toString("base64url");
   const data = `${header}.${payload}`;
   const signature = over.sign ? over.sign(data) : createSign("RSA-SHA256").update(data).sign(pair.privateKey).toString("base64url");
   return `${data}.${signature}`;
@@ -37,7 +39,7 @@ function idToken(claims: Claims, over: { kid?: string; sign?: (data: string) => 
 
 let counter = 0;
 /** One sign-in attempt, end to end: the cookie the start would have set, and Google answering with the given ID token claims. */
-async function attempt(input: { claims: Claims; invite?: string; accept?: boolean; source?: string; override?: { kid?: string; sign?: (d: string) => string }; mutate?: { state?: string; nonce?: string; cookie?: (c: string) => string } }) {
+async function attempt(input: { keys?: (force: boolean) => Promise<(typeof jwk)[]>; claims: Claims; invite?: string; accept?: boolean; source?: string; override?: { kid?: string; sign?: (d: string) => string }; mutate?: { state?: string; nonce?: string; cookie?: (c: string) => string } }) {
   const g = await import("../../lib/googleSignIn");
   const request = g.newGoogleRequest();
   const nonce = input.mutate?.nonce ?? request.nonce;
@@ -50,10 +52,11 @@ async function attempt(input: { claims: Claims; invite?: string; accept?: boolea
   const source = input.source ?? `src-${++counter}`;
   const run = (cookieValue = cookie) => g.completeGoogleCallback(
     { query: { code: "the-one-time-code", state: input.mutate?.state ?? request.state, error: null }, cookie: input.mutate?.cookie ? input.mutate.cookie(cookieValue) : cookieValue, source },
-    { config, fetcher, keys: async () => [jwk] },
+    { config, fetcher, keys: input.keys ?? (async () => [jwk]) },
   );
   return { run, cookie, request, seen, source };
 }
+const gmail = (label: string) => `${label}${++counter}@gmail.com`;
 const refusal = async (promise: Promise<unknown>) => promise.then(() => null, (error: { code?: string }) => error.code ?? String(error));
 
 async function accounts(email?: string) {
@@ -237,4 +240,95 @@ test("Google is told nothing the person did not choose, and the callback reads n
   expect(text.googleStartPath({})).toBe("/api/auth/google/start");
   for (const code of Object.keys(text.GOOGLE_REFUSALS)) expect(text.isGoogleRefusal(code)).toBe(true);
   expect(text.isGoogleRefusal("<script>")).toBe(false);
+});
+
+test("Google vouches for a Gmail address, or a Workspace address whose signed domain is its own; any other address is sent to email", async () => {
+  const g = await import("../../lib/googleSignIn");
+  expect(g.googleVouchesFor("a@gmail.com", "")).toBe(true);
+  expect(g.googleVouchesFor("A@GMAIL.COM", "")).toBe(true);
+  expect(g.googleVouchesFor("a@studio.example", "studio.example")).toBe(true);
+  expect(g.googleVouchesFor("a@studio.example", "")).toBe(false);
+  expect(g.googleVouchesFor("a@studio.example", "other.example")).toBe(false);
+  expect(g.googleVouchesFor("a@evilgmail.com", "")).toBe(false);
+  expect(g.googleVouchesFor("a@gmail.com.evil.test", "")).toBe(false);
+  /* A past owner of x@company.com with a Google account made with that address: verified, but Google is not the authority for it. */
+  const { createAccount } = await import("../../lib/platform");
+  const { hashPassword } = await import("../../lib/auth");
+  const existing = await createAccount(`ex-employee${++counter}@company.example`, "Ex", hashPassword(password));
+  expect(await refusal((await attempt({ claims: { email: existing.email, hd: undefined } })).run())).toBe("use_email");
+  expect(await refusal((await attempt({ claims: { email: existing.email, hd: "somewhere-else.example" } })).run())).toBe("use_email");
+  const ok = await (await attempt({ claims: { email: existing.email, hd: "company.example" } })).run();
+  expect((await sessionOf(ok.session))?.account_id).toBe(existing.id);
+  const mine = await createAccount(gmail("person"), "Gmail person", hashPassword(password));
+  const viaGmail = await (await attempt({ claims: { email: mine.email, hd: undefined } })).run();
+  expect((await sessionOf(viaGmail.session))?.account_id).toBe(mine.id);
+  /* A new person with an invitation: the same rule. */
+  const { ws } = await member();
+  await invite(ws.id, "newbie@company.example", "invite-company-addr-1");
+  expect(await refusal((await attempt({ claims: { email: "newbie@company.example", hd: undefined }, invite: "invite-company-addr-1", accept: true })).run())).toBe("use_email");
+  expect(await accounts("newbie@company.example")).toHaveLength(0);
+  const gm = gmail("invitee");
+  await invite(ws.id, gm, "invite-gmail-addr-1");
+  const joined = await (await attempt({ claims: { email: gm, hd: undefined }, invite: "invite-gmail-addr-1", accept: true })).run();
+  expect(joined.joined).toBe(true);
+});
+
+test("the token's audience is this client alone, and it must say when it was issued", async () => {
+  const { user } = await member();
+  expect(await refusal((await attempt({ claims: { email: user.email, aud: [CLIENT] } })).run())).toBe("expired");
+  expect(await refusal((await attempt({ claims: { email: user.email, iat: undefined } })).run())).toBe("expired");
+  expect(await refusal((await attempt({ claims: { email: user.email, iat: Math.floor(Date.now() / 1000) + 3600 } })).run())).toBe("expired");
+  expect(await refusal((await attempt({ claims: { email: user.email, iat: Math.floor(Date.now() / 1000) - 3 * 86_400 } })).run())).toBe("expired");
+});
+
+test("an unknown key id asks Google's keys once more before it fails", async () => {
+  const { user } = await member();
+  const asked: boolean[] = [];
+  const rotated = await (await attempt({ claims: { email: user.email }, keys: async (force) => { asked.push(force); return force ? [jwk] : []; } })).run();
+  expect(asked).toEqual([false, true]);
+  expect((await sessionOf(rotated.session))?.account_id).toBe(user.id);
+  const still: boolean[] = [];
+  expect(await refusal((await attempt({ claims: { email: user.email }, keys: async (force) => { still.push(force); return []; } })).run())).toBe("expired");
+  expect(still).toEqual([false, true]);
+  const g = await import("../../lib/googleSignIn");
+  expect(g.kidOf(idToken({ email: "a@gmail.com", hd: undefined }))).toBe("k1");
+  expect(g.kidOf("not-a-token")).toBeNull();
+});
+
+test("a disabled or deleted account is refused even with an invitation, and Google's own errors count as refusals unless the person just declined", async () => {
+  const { ws } = await member();
+  const { createAccount, platformDb } = await import("../../lib/platform");
+  const { hashPassword } = await import("../../lib/auth");
+  const off = await createAccount(`disabled${++counter}@company.example`, "Off", hashPassword(password));
+  await platformDb().execute({ sql: "UPDATE accounts SET disabled=1 WHERE id=?", args: [off.id] });
+  await invite(ws.id, off.email, "invite-for-disabled-1");
+  expect(await refusal((await attempt({ claims: { email: off.email }, invite: "invite-for-disabled-1", accept: true })).run())).toBe("no_account");
+  const gone = await createAccount(`deleted${++counter}@company.example`, "Gone", hashPassword(password));
+  await platformDb().execute({ sql: "UPDATE accounts SET deleted_at=? WHERE id=?", args: [Date.now(), gone.id] });
+  await invite(ws.id, gone.email, "invite-for-deleted-1");
+  expect(await refusal((await attempt({ claims: { email: gone.email }, invite: "invite-for-deleted-1", accept: true })).run())).toBe("no_account");
+  /* error=: declining is not counted, anything else is (eight of them lock the source). */
+  const g = await import("../../lib/googleSignIn");
+  const call = async (source: string, error: string) => {
+    const request = g.newGoogleRequest();
+    const cookie = g.sealGoogleCookie({ state: request.state, nonce: request.nonce, verifier: request.verifier, invite: "", accept: false, next: "/", exp: Date.now() + g.STATE_TTL_MS });
+    return refusal(g.completeGoogleCallback({ query: { code: null, state: request.state, error }, cookie, source }, { config }));
+  };
+  for (let i = 0; i < 10; i++) expect(await call("declining-source", "access_denied")).toBe("denied");
+  const codes: (string | null)[] = [];
+  for (let i = 0; i < 10; i++) codes.push(await call("erroring-source", "server_error"));
+  expect(codes.slice(0, 8)).toEqual(Array(8).fill("expired"));
+  expect(codes.slice(8)).toEqual(["limited", "limited"]);
+});
+
+test("an existing member whose invitation cannot be accepted is not left signed in", async () => {
+  const { user } = await member();
+  const other = await member();
+  await invite(other.ws.id, user.email, "invite-to-gone-workspace");
+  const { platformDb } = await import("../../lib/platform");
+  await platformDb().execute({ sql: "UPDATE workspaces SET deleted_at=? WHERE id=?", args: [Date.now(), other.ws.id] });
+  const sessions = async () => Number((await platformDb().execute({ sql: "SELECT COUNT(*) n FROM p_sessions WHERE account_id=?", args: [user.id] })).rows[0].n);
+  const before = await sessions();
+  expect(await refusal((await attempt({ claims: { email: user.email }, invite: "invite-to-gone-workspace" })).run())).toBe("invite_invalid");
+  expect(await sessions(), "the session made for the attempt was ended").toBe(before);
 });

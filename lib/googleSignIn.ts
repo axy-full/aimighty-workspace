@@ -1,6 +1,6 @@
 import { createHash, createHmac, createPublicKey, randomBytes, timingSafeEqual, verify as verifySignature } from "node:crypto";
 import { AccountError, accountTransaction } from "./accountDb";
-import { createSession, isSuperAdmin, sourceLocked, noteSourceFailure } from "./auth";
+import { createSession, destroySession, isSuperAdmin, sourceLocked, noteSourceFailure } from "./auth";
 import { now, platformDb, platformReady, switchSessionWorkspace } from "./platform";
 import { acceptWorkspaceInvitation } from "./teamInvitations";
 import { configuredOrigin } from "./site";
@@ -9,6 +9,9 @@ import { GOOGLE_REFUSALS, type GoogleRefusal } from "./googleSignInText";
 /**
  * "Continue with Google" (the owner's rules, 11 Oct 2026): a standard OpenID Connect authorization-code flow with PKCE, state and nonce.
  *
+ *  - Google vouches for an address only where it is the mailbox's authority: an @gmail.com address, or a Google Workspace address whose
+ *    signed `hd` claim is that address's own domain. For any other address (a past owner of x@company.com with a Google account made
+ *    with that address) `email_verified` is not enough, so Google is refused there and the person uses Continue with email.
  *  - Invite-only stays. A person with an account signs in when Google's VERIFIED email is the account's email. A new person needs a
  *    valid team invitation, and Google's verified email must be the address that invitation names: that is also the proof of the
  *    mailbox the emailed link gives. No account is ever created from Google alone, and a Google account is never linked by anything
@@ -35,6 +38,8 @@ export const GOOGLE_CALLBACK_PATH = "/api/auth/google/callback";
 export const GOOGLE_COOKIE = "particl-google";
 export const STATE_TTL_MS = 10 * 60_000;
 const SKEW_MS = 60_000;
+/** An ID token is read within a day of being issued (Google's last an hour). */
+const IAT_MAX_AGE_MS = 24 * 3_600_000;
 /** The pseudo-address the Google refusals are counted under in today's sign-in throttle (lib/auth.ts noteSourceFailure). */
 export const GOOGLE_THROTTLE_KEY = "google-sign-in";
 
@@ -135,9 +140,11 @@ export async function exchangeCode(config: GoogleConfig, code: string, verifier:
 
 export type Jwk = { kid?: string; kty?: string; alg?: string; n?: string; e?: string; use?: string };
 let certs: { at: number; keys: Jwk[] } | null = null;
-/** Google's published signing keys, kept for an hour. */
-export async function googleKeys(fetcher: Fetcher = fetch): Promise<Jwk[]> {
-  if (certs && Date.now() - certs.at < 3_600_000) return certs.keys;
+const KEYS_TTL_MS = 3_600_000, KEYS_REFETCH_MS = 60_000;
+/** Google's published signing keys, kept for an hour. `force` asks again (a key id not in the list: Google rotated), at most once a minute. */
+export async function googleKeys(fetcher: Fetcher = fetch, force = false): Promise<Jwk[]> {
+  const age = certs ? Date.now() - certs.at : Infinity;
+  if (certs && age < (force ? KEYS_REFETCH_MS : KEYS_TTL_MS)) return certs.keys;
   let response: Response;
   try { response = await fetcher(GOOGLE_CERTS_URL, timed()); } catch { throw new GoogleRefused("unavailable"); }
   const body = await response.json().catch(() => null) as { keys?: Jwk[] } | null;
@@ -146,7 +153,20 @@ export async function googleKeys(fetcher: Fetcher = fetch): Promise<Jwk[]> {
   return certs.keys;
 }
 
-export type GoogleClaims = { email: string; name: string };
+/** The key id an ID token names, or null. */
+export function kidOf(token: string): string | null {
+  try { const kid = (JSON.parse(Buffer.from(token.split(".")[0] ?? "", "base64url").toString("utf8")) as { kid?: unknown }).kid; return typeof kid === "string" ? kid : null; } catch { return null; }
+}
+
+/** Google vouches for an address only for @gmail.com, or for a Workspace address whose signed `hd` is the address's own domain. */
+export function googleVouchesFor(email: string, hd: string): boolean {
+  const at = email.lastIndexOf("@");
+  if (at < 1) return false;
+  const domain = email.slice(at + 1).toLowerCase();
+  return domain === "gmail.com" || (hd !== "" && hd === domain);
+}
+
+export type GoogleClaims = { email: string; name: string; hd: string };
 
 /**
  * Reads an ID token the way OpenID Connect asks: RS256 signature against Google's keys, issuer, audience (this client), expiry,
@@ -169,16 +189,19 @@ export async function verifyIdToken(token: string, input: { clientId: string; no
   } catch { valid = false; }
   if (!valid) throw new GoogleRefused("expired");
   const at = input.at ?? now();
-  const aud = payload.aud;
   if (typeof payload.iss !== "string" || !GOOGLE_ISSUERS.includes(payload.iss)) throw new GoogleRefused("expired");
-  if (!(aud === input.clientId || (Array.isArray(aud) && aud.includes(input.clientId)))) throw new GoogleRefused("expired");
+  /* This client and no other: a list of audiences is not read (it would need an `azp` check this flow has no use for). */
+  if (payload.aud !== input.clientId) throw new GoogleRefused("expired");
   if (typeof payload.exp !== "number" || payload.exp * 1000 < at - SKEW_MS) throw new GoogleRefused("expired");
-  if (typeof payload.iat === "number" && payload.iat * 1000 > at + SKEW_MS) throw new GoogleRefused("expired");
+  if (typeof payload.iat !== "number" || payload.iat * 1000 > at + SKEW_MS || payload.iat * 1000 < at - IAT_MAX_AGE_MS) throw new GoogleRefused("expired");
   if (typeof payload.nonce !== "string" || !equalText(payload.nonce, input.nonce)) throw new GoogleRefused("expired");
   const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
   if (!email || email.length > 320) throw new GoogleRefused("unverified");
   if (!(payload.email_verified === true || payload.email_verified === "true")) throw new GoogleRefused("unverified");
-  return { email, name: typeof payload.name === "string" ? payload.name.trim().slice(0, 80) : "" };
+  const hd = typeof payload.hd === "string" ? payload.hd.trim().toLowerCase() : "";
+  /* `email_verified` says the mailbox was proved to Google; it does not make Google the authority for it. */
+  if (!googleVouchesFor(email, hd)) throw new GoogleRefused("use_email");
+  return { email, name: typeof payload.name === "string" ? payload.name.trim().slice(0, 80) : "", hd };
 }
 
 /* ── The decision: who this verified email may become ───────────────────── */
@@ -201,8 +224,10 @@ export async function signInWithVerifiedEmail(input: { email: string; name: stri
   const email = input.email.trim().toLowerCase();
   /* The platform owner signs in with its password and factor: never with Google. */
   if (isSuperAdmin(email)) throw new GoogleRefused("two_step");
-  const account = (await platformDb().execute({ sql: "SELECT id,name,disabled FROM accounts WHERE email=? AND deleted_at IS NULL LIMIT 1", args: [email] })).rows[0] as Row | undefined;
-  const live = account && !Number(account.disabled) ? account : null;
+  const account = (await platformDb().execute({ sql: "SELECT id,name,disabled,deleted_at FROM accounts WHERE email=? LIMIT 1", args: [email] })).rows[0] as Row | undefined;
+  /* A disabled or deleted account is not signed in, and its address is not a new person's either (an invitation does not revive it). */
+  if (account && (Number(account.disabled) || account.deleted_at != null)) throw new GoogleRefused("no_account");
+  const live = account ?? null;
 
   let invite: Row | null = null;
   if (input.invite) {
@@ -225,8 +250,14 @@ export async function signInWithVerifiedEmail(input: { email: string; name: stri
       accountId = String(live.id);
       session = await createSession(accountId);
       if (invite) {
-        const result = await acceptWorkspaceInvitation({ code: String(invite.code), signedInAccountId: accountId, signedInSession: session });
-        workspaceId = result.workspace.id; joined = true;
+        try {
+          const result = await acceptWorkspaceInvitation({ code: String(invite.code), signedInAccountId: accountId, signedInSession: session });
+          workspaceId = result.workspace.id; joined = true;
+        } catch (error) {
+          /* Joining needed the session, but a sign-in whose invitation failed is not a sign-in: the session is ended, not handed back. */
+          await destroySession(session).catch(() => {});
+          throw error;
+        }
       }
     } else {
       if (!input.accepted) throw new GoogleRefused("policy");
@@ -240,6 +271,7 @@ export async function signInWithVerifiedEmail(input: { email: string; name: stri
     if (error instanceof GoogleRefused) throw error;
     /* Central session issuance refuses a password-only session for an account with two-step sign-in. */
     if (error instanceof AccountError && error.status === 403 && /two-step/i.test(error.message)) throw new GoogleRefused("two_step");
+    if (error instanceof AccountError && error.status === 403) throw new GoogleRefused("no_account");
     if (error instanceof AccountError && (error.status === 404 || error.status === 409 || error.status === 410)) throw new GoogleRefused("invite_invalid");
     throw error;
   }
@@ -254,7 +286,7 @@ export type CallbackInput = {
   cookie: string | undefined;
   source: string;
 };
-export type CallbackDeps = { config: GoogleConfig; fetcher?: Fetcher; keys?: () => Promise<Jwk[]>; at?: number; env?: Env };
+export type CallbackDeps = { config: GoogleConfig; fetcher?: Fetcher; keys?: (force: boolean) => Promise<Jwk[]>; at?: number; env?: Env };
 
 /** Counts a refusal against the source as a wrong password is (lib/auth.ts), so probing here is throttled as hard as there. */
 async function refuse(source: string, code: GoogleRefusal): Promise<never> {
@@ -271,13 +303,19 @@ export async function completeGoogleCallback(input: CallbackInput, deps: Callbac
   if (await sourceLocked(input.source, GOOGLE_THROTTLE_KEY)) throw new GoogleRefused("limited");
   const cookie = openGoogleCookie(input.cookie, at, deps.env);
   if (!cookie) return refuse(input.source, "expired");
-  if (input.query.error) throw new GoogleRefused(input.query.error === "access_denied" ? "denied" : "expired");
+  /* Declining at Google is not an attack; any other error from it is counted like a refusal. */
+  if (input.query.error) return input.query.error === "access_denied" ? Promise.reject(new GoogleRefused("denied")) : refuse(input.source, "expired");
   if (!input.query.state || !input.query.code || !equalText(input.query.state, cookie.state)) return refuse(input.source, "expired");
   if (!(await spendState(cookie.state))) return refuse(input.source, "expired");
   let claims: GoogleClaims;
   try {
     const idToken = await exchangeCode(deps.config, input.query.code, cookie.verifier, deps.fetcher);
-    claims = await verifyIdToken(idToken, { clientId: deps.config.clientId, nonce: cookie.nonce, keys: await (deps.keys ?? (() => googleKeys(deps.fetcher)))(), at });
+    const getKeys = deps.keys ?? ((force: boolean) => googleKeys(deps.fetcher, force));
+    let keys = await getKeys(false);
+    /* A key id Google has published since the list was kept: asked for once more (at most once a minute), then judged. */
+    const kid = kidOf(idToken);
+    if (kid && !keys.some((k) => k.kid === kid)) keys = await getKeys(true);
+    claims = await verifyIdToken(idToken, { clientId: deps.config.clientId, nonce: cookie.nonce, keys, at });
   } catch (error) {
     if (error instanceof GoogleRefused) return refuse(input.source, error.code);
     throw error;
