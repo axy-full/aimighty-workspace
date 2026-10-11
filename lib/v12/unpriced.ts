@@ -54,6 +54,16 @@ export const UNPRICED = {
     why: "A redraw is priced by quoting the request the take was made with (POST /api/generate/quote, the body Retry sends). A take with no generation record, or one whose request cannot be rebuilt, has no body to quote.",
     hover: "This redraw has no price yet: its take has no recorded request.",
   },
+  adaptCut: {
+    action: "Adapt a cut to another size or length (Deliver)",
+    why: "No route re-frames or re-times a finished cut: Make's Reframe is for a still from its card, and Upscale does not change size or length. Each version is priced once an engine path exists.",
+    hover: "Adapting is priced once it can be made.",
+  },
+  languageAdapt: {
+    action: "A language of a finished cut: dubbed voice, lip-sync and on-screen text (Deliver)",
+    why: "A dub is quoted from a stored source (POST /api/audio/dub {quoteOnly}), and the cut is rendered in the browser, so it is not one; lip-sync has no engine (lipSync above); translated on-screen text has no path.",
+    hover: "A language is priced once its parts can be made.",
+  },
 } as const satisfies Record<string, Unpriced>;
 
 export type UnpricedId = keyof typeof UNPRICED;

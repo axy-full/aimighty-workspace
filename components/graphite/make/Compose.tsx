@@ -27,7 +27,7 @@ const SAY_WHAT = "Say what to make.";
 const priceLabelOf = (price: MakePrice) => price.about ?? priceWords(price.value);
 
 /**
- * Make's composer, as "Make frames.dc.html" 1, 3 and 7 draw it: the words with the type switch inside their box
+ * Make's composer, as the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12) 1, 3 and 7 draw it: the words with the type switch inside their box
  * (inferred from the words until a type is picked), the references with Add, the engine line with Change, where the
  * result goes and Make at its price, then the quick tools. Make waits with its reason, and stays pressable when credits
  * are short: the take then waits, held, until they arrive (the line above says so).

@@ -44,6 +44,8 @@ export type GenerationBodyInput = {
   cinema?: Record<string, string> | null;
   /** Cinema Studio 4.0's Sound switch: sent only when it is on. Absent, admission keeps the take silent. */
   generateAudio?: boolean;
+  /** A seed to repeat (Make's "Reuse seed"): a clip's only, sent when set. Admission records it; Seedance passes it to the engine. */
+  seed?: number | null;
   /**
    * Viral's Motion Transfer and Object Swap on the API key: one source video
    * and 1–8 ordered stills (`references`), filed to the project with no shot
@@ -79,6 +81,7 @@ export function generationRequestBody(input: GenerationBodyInput): Record<string
     ...(input.draft && input.kind === "video" ? { draft: true } : {}),
     ...(input.cinema && Object.keys(input.cinema).length ? { cinema: input.cinema } : {}),
     ...(input.generateAudio === true && input.kind === "video" ? { generateAudio: true } : {}),
+    ...(typeof input.seed === "number" && Number.isFinite(input.seed) && input.kind === "video" ? { seed: input.seed } : {}),
   };
 }
 

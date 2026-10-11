@@ -1,0 +1,30 @@
+/* The stage grid on the new interface's board (redesign P2-b; components/v12/board/stage-grid.ts). Tokens only. */
+
+/* A group on a grid stage has no frame and no title; a run's Stop and cost stay as a strip along its top. */
+.v12 .bd[data-v12] .gx-group[data-grid] { border: 0; border-radius: 0; }
+.v12 .bd[data-v12] .gx-group[data-grid] .gx-group-label { left: 0; top: 0; padding: 0; background: transparent; max-width: 100%; }
+
+/* Every card on the stage is one box: the card fills it, so a row's cards share one bottom as well as one top. */
+.v12 .bd[data-v12][data-stage="storyboard"] .gx-frame { height: 100%; box-sizing: border-box; }
+
+/* A shot card's row: Approve · Reject. */
+.v12 .gx-take-grid-acts { display: flex; gap: 8px; align-items: center; min-height: 32px; padding-top: 2px; }
+.v12 .gx-take-btn--hot { border-color: var(--gx-accent); color: var(--gx-accent-text); font-weight: 600; }
+.v12 .gx-take-btn--hot:disabled { border-color: var(--gx-line-control); color: var(--gx-done-text); opacity: 1; }
+/* Reject asks why over the card, so the card keeps its size. */
+.v12 .gx-take-grid-reject { position: absolute; inset: 0; z-index: 3; padding: 10px; overflow-y: auto; background: var(--gx-card); }
+.v12 .gx-take-grid-reject .gx-take-ask { border-top: 0; padding-top: 0; }
+
+/* A selected frame's row: its line drawings and ⓘ Details. */
+.v12 .gx-frame-acts { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+.v12 .gx-frame-acts > .gx-ln { flex: 1 1 auto; min-width: 0; }
+.v12 .gx-frame-acts > .gx-frame-details { flex: none; margin-top: 8px; margin-left: auto; }
+
+/* The selected card: the accent border and ring (prototype L556), on the card itself. */
+.v12 .bd[data-v12] .bd-node[data-selected] > .gx-take, .v12 .bd[data-v12] .bd-node[data-selected] > .gx-frame { border-color: var(--gx-accent); box-shadow: var(--gx-ring-selected); }
+
+/* An Elements card's picture at the board's aspect, whole (prototype: the image at its true aspect, object-fit contain). */
+.v12 .gx-cast-well[data-whole] img, .v12 .gx-cast-well[data-whole] video { object-fit: contain; }
+
+/* "R2" on a take made for a client round: at the picture's top right, clear of Look anchor's tag at the left. */
+.v12 .gx-take-tag--round { left: auto; right: 8px; background: var(--gx-on-media); color: var(--gx-text); border: 1px solid var(--gx-done-border); }

@@ -17,8 +17,9 @@ export const SPEND_SURFACES: SpendSurface[] = [
   { id: "board", name: "the board's paid actions", claims: (p) => p.startsWith("components/graphite/board/") },
   {
     id: "make", name: "the Make panel and quick tools (Motion transfer, Object swap, Edit, upscale)",
-    /* GenView is the Gen page that the Make panel (#512) replaces; the viral view hosts the quick tools until #514 moves them into Make. */
-    claims: (p) => is(p, ["components/graphite/MakePanel.tsx", "components/graphite/GenView.tsx", "components/graphite/viral/ViralView.tsx"]) || p.startsWith("components/graphite/make/") || p.startsWith("components/make/"),
+    /* GenView is the Gen page that the Make panel (#512) replaces; the viral view hosts the quick tools until #514 moves them into Make.
+       components/v12/make is Make as a page in the new interface (redesign C3): the same Make, so the same strict rule. */
+    claims: (p) => is(p, ["components/graphite/MakePanel.tsx", "components/graphite/GenView.tsx", "components/graphite/viral/ViralView.tsx"]) || p.startsWith("components/graphite/make/") || p.startsWith("components/make/") || p.startsWith("components/v12/make/"),
   },
 ];
 

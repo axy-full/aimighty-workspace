@@ -47,7 +47,9 @@ export function V12Header({ account, project, projects, onPick }: {
   const tabs = useBoardTabs(session.requestScope ?? null, known);
 
   const onBoard = shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
-  const activeBoard = onBoard && !shell.make && project ? project.id : null;
+  /* "New board" (components/v12/board/NewBoard.tsx) is a tab of its own while it is open: the board tabs are not the active one. */
+  const newBoardOpen = onBoard && shell.params.newboard === "1";
+  const activeBoard = onBoard && !shell.make && !newBoardOpen && project ? project.id : null;
   /* A board that opens gets its tab. */
   const openId = onBoard && project ? project.id : null;
   const { update } = tabs;
@@ -73,6 +75,11 @@ export function V12Header({ account, project, projects, onPick }: {
   }, [shownScreen, makeOpen, closeMake]);
   const goMake = () => shell.openMake();
   const goBoard = (id: string) => { if (id !== project?.id) onPick(id); shell.goBoard({ closeMake: true }); };
+  /* Closing the New board tab makes nothing and loses nothing: back to the board that was open, or Home. */
+  const closeNewBoard = () => {
+    if (project) shell.setScreenParams({ newboard: null, pick: null }, "push");
+    else goHome();
+  };
   const atomikOpen = shell.atomik !== null;
   const toggleAtomik = () => {
     if (!isLanded("atomik")) { shell.goSuite("atomik"); return; }
@@ -195,6 +202,19 @@ export function V12Header({ account, project, projects, onPick }: {
             </div>
           );
         })}
+        {newBoardOpen ? (
+          <div className="v12-tab" data-board="" data-active={shell.make ? undefined : ""} data-testid="v12-tab-new-board">
+            <Tooltip name="New board" line="Pick a kind and say what to make.">
+              <button type="button" className="v12-tab-main" aria-current={shell.make ? undefined : "page"} onClick={() => shell.goBoard({ newBoard: shell.params.pick ?? true, closeMake: true })}>
+                <span className="v12-tab-dot" data-state="idle" aria-hidden="true" />
+                <span className="v12-tab-label">New board</span>
+              </button>
+            </Tooltip>
+            <IconButton tooltip={{ name: "Close tab" }} label="Close New board" size="sm" className="v12-tab-x" onClick={closeNewBoard} data-testid="v12-tab-new-board-close">
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
+            </IconButton>
+          </div>
+        ) : null}
         {hidden.length ? (
           <Tooltip name="More boards">
             <button ref={moreAnchor} type="button" className="v12-tab-more" aria-haspopup="menu" aria-expanded={more} onClick={() => setMore((v) => !v)} data-testid="v12-tab-more">
