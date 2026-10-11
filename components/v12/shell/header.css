@@ -49,8 +49,9 @@
 .v12 .v12-iconbtn.v12-tab-plus { width: var(--gx-h-tab); height: var(--gx-h-tab); border-radius: var(--gx-r-tab); color: var(--gx-text-strong); }
 
 /* The merged Atomik field */
+/* Flexible: it takes all the room the tabs leave, so the Activity pill, the low-credit chip and the avatar stay pinned to the right edge. */
 .v12 .v12-field {
-  flex: 0 1 300px; min-width: 200px; height: var(--gx-h-input); display: flex; align-items: center;
+  flex: 1 1 200px; min-width: 200px; height: var(--gx-h-input); display: flex; align-items: center;
   background: var(--gx-input); border: 1px solid var(--gx-input-border); border-radius: var(--gx-r-btn);
 }
 .v12 .v12-header .v12-field-ask {
