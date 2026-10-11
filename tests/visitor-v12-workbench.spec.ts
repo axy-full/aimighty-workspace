@@ -263,8 +263,8 @@ test("desktop: an invite link — team, new workspace (name, plan) and expired �
   await expect(page.getByTestId("v12-join-title")).toHaveText("Create your workspace");
   await page.getByTestId("v12-join-workspace").fill("North Quay Films");
   await page.getByTestId("v12-join-continue").click();
-  await expect(page.getByTestId("v12-join-plan")).toHaveCount(3);
-  await expect(page.getByTestId("v12-join-new")).toContainText("Prices are placeholders · confirm. Nothing runs without a price shown first.");
+  await expect(page.getByTestId("v12-join-plan")).toHaveCount(4);
+  await expect(page.getByTestId("v12-join-new")).toContainText("Monthly plans. Checkout is not open yet. Nothing runs without a price shown first.");
   await page.getByTestId("v12-join-plan").nth(1).click();
   await expect(page.getByTestId("v12-join-plan").nth(1)).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("v12-join-continue").click();

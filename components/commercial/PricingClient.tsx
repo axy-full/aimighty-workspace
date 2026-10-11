@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { PlanDef } from "@/lib/plans";
+import { YEARLY_SHOWN, type PlanDef } from "@/lib/plans";
 import type { RateGroup, ReferenceTakes, TakeReach } from "@/lib/mediaReach";
 import CommercialLayout from "./CommercialLayout";
 import { PlanReach, RateCard } from "./MediaReach";
@@ -52,7 +52,7 @@ export default function PricingClient() {
           monthly credit allowance for the work ahead.
         </p>
       </section>
-      <div className="billing-cadence" role="group" aria-label="Billing period">
+      {YEARLY_SHOWN && <div className="billing-cadence" role="group" aria-label="Billing period">
         <button
           aria-pressed={cadence === "monthly"}
           onClick={() => setCadence("monthly")}
@@ -65,7 +65,7 @@ export default function PricingClient() {
         >
           Annual <span>Save {discount}%</span>
         </button>
-      </div>
+      </div>}
       {error && (
         <p role="alert" className="commercial-notice">
           {error}{" "}
@@ -89,7 +89,7 @@ export default function PricingClient() {
       )}
       <div className="plan-grid">
         {data?.plans
-          .filter((plan) => plan.id !== "invite")
+          .filter((plan) => plan.offered)
           .map((plan) => {
             const yearly =
               Math.round(plan.priceUsd * 12 * (1 - discount / 100) * 100) / 100;
@@ -99,7 +99,7 @@ export default function PricingClient() {
                 <span className="commercial-eyebrow">{plan.label}</span>
                 <h2>
                   {formatUsd(monthly)}
-                  <small>/ month</small>
+                  <small>{plan.perSeat ? "/ seat / month" : "/ month"}</small>
                 </h2>
                 <p className="plan-billing">
                   {cadence === "annual"
@@ -108,7 +108,7 @@ export default function PricingClient() {
                 </p>
                 <p className="plan-credits">
                   <strong>{plan.includedCredits.toLocaleString()}</strong>{" "}
-                  credits every month
+                  {plan.perSeat ? "credits a seat every month, pooled across seats" : "credits every month"}
                 </p>
                 <PlanReach
                   videos={plan.reach?.videos}
@@ -118,9 +118,11 @@ export default function PricingClient() {
                 />
                 <ul>
                   <li>
-                    {plan.maxMembers == null
-                      ? "Your whole team · no seat fees"
-                      : `Up to ${plan.maxMembers} members`}
+                    {plan.perSeat
+                      ? "One shared workspace · a seat for each person"
+                      : plan.maxMembers == null
+                        ? "Your whole team"
+                        : `Up to ${plan.maxMembers} members`}
                   </li>
                   <li>
                     {plan.maxProductions == null

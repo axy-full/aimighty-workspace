@@ -34,7 +34,7 @@ type SignupAvailability = {
 };
 class InviteOnly extends Error {}
 const validPlan = (value: string | null) =>
-  ["studio", "agency", "production"].includes(value || "") ? value! : "studio";
+  ["explore", "create", "master", "business100", "business250", "business500", "studio", "agency", "production"].includes(value || "") ? value! : "explore";
 
 export default function SignupPage() {
   return (

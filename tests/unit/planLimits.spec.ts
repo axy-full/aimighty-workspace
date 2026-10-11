@@ -9,10 +9,10 @@ const studio = planById(DEFAULT_PLANS, "studio")!;
 test("only Invite counts anything", () => {
   expect(ceilingFor(invite, "productions")).toBe(1);
   expect(ceilingFor(invite, "members")).toBe(3);
-  for (const id of ["studio", "agency", "production"]) {
+  for (const id of ["studio", "agency", "production", "explore", "create", "master", "business100", "business250", "business500"]) {
     const p = planById(DEFAULT_PLANS, id)!;
     expect(ceilingFor(p, "productions"), id).toBeNull();
-    expect(ceilingFor(p, "members"), `${id}: no seat fees on any paid plan`).toBeNull();
+    expect(ceilingFor(p, "members"), `${id}: no plan but Invite caps people (a business plan's seats are counted at checkout, later)`).toBeNull();
   }
 });
 

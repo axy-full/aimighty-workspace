@@ -7,12 +7,20 @@ import { count } from "./format";
  * links, and neither exists yet, so neither is claimed.
  */
 export function planLines(plan: PlanDef, inviteCredits: number): string[] {
-  const members = plan.maxMembers == null ? "Unlimited people · no seat fees" : `${plan.maxMembers} people`;
+  const members = plan.perSeat ? "One pool of credits across every seat"
+    : plan.maxMembers == null ? "Unlimited people" : `${plan.maxMembers} people`;
   const productions = plan.maxProductions == null ? "Unlimited productions" : `${plan.maxProductions} production${plan.maxProductions === 1 ? "" : "s"}`;
   const credits = plan.id === "invite"
     ? `${count(inviteCredits)} credits once`
+    : plan.perSeat ? `${count(plan.includedCredits)} credits a seat a month`
     : `${count(plan.includedCredits)} credits a month`;
   const extra: Record<string, string[]> = {
+    explore: ["Review links", "Exports"],
+    create: ["Review links", "Exports and post tools"],
+    master: ["Everything in Create"],
+    business100: ["Review links", "Exports and post tools"],
+    business250: ["Everything in the level below"],
+    business500: ["Everything in the level below", "Team admin and audit"],
     studio: ["Review links", "Exports", "Post tools"],
     agency: ["Review links", "Exports and post tools", "Monthly statements"],
     production: ["Everything in Agency", "Team admin and audit", "Setup hours"],
@@ -21,6 +29,12 @@ export function planLines(plan: PlanDef, inviteCredits: number): string[] {
 }
 
 export const PLAN_AUDIENCE: Record<string, string> = {
+  explore: "One person, trying work on a real brief.",
+  create: "One person making work every week.",
+  master: "One person who runs on it.",
+  business100: "A team sharing one pool of credits.",
+  business250: "A team making more, every week.",
+  business500: "A studio that runs on it.",
   invite: "Try it on a real brief, one production.",
   studio: "A small team making work every week.",
   agency: "Several productions running at once.",

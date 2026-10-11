@@ -8,7 +8,7 @@ import { HOUSE_NOT_BILLED } from "@/lib/houseWorkspace";
 import type { CreditLedgerRow } from "@/lib/usageLedgerTerms";
 import type { BillingSubscription, Topups } from "@/lib/shell/workspace-view";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
-import { HERO_TAKE, PLAN_CARDS, type PlanCard } from "@/lib/marketing/planCards";
+import { HERO_TAKE, PLAN_CARDS, type PlanCard } from "@/lib/planCards";
 import { LOW_CREDIT_PERCENT } from "@/lib/v12/lowCredit";
 import { useLowCredit } from "@/lib/v12/useLowCredit";
 import { useQuote } from "@/lib/v12/useQuote";
@@ -116,7 +116,7 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
           <section className="v12-bill-sec" data-testid="v12-billing-plans">
             <div className="v12-bill-head">
               <span className="v12-bill-eyebrow">Plans</span>
-              <span className="v12-bill-meta">Placeholders · names and prices are not final</span>
+              <span className="v12-bill-meta">Monthly · checkout is not open yet</span>
             </div>
             <div className="v12-bill-cards">
               {PLAN_CARDS.map((card) => <PlanCardView key={card.id} card={card} perTake={perTake} rate={rate} />)}
@@ -165,7 +165,7 @@ function PlanCardView({ card, perTake, rate }: { card: PlanCard; perTake: number
   return (
     <div className="v12-bill-card" data-testid="v12-billing-plan-card" data-plan={card.id}>
       <span className="v12-bill-card-name">{card.name}</span>
-      <span className="v12-bill-mono" title={creditsUsd(card.credits, rate) ?? undefined}>{fmtCredits(card.credits)} · ${card.priceUsd.toLocaleString("en-US")}</span>
+      <span className="v12-bill-mono" title={creditsUsd(card.credits, rate) ?? undefined}>{card.perSeat ? "from " : ""}{fmtCredits(card.credits)} · ${card.priceUsd.toLocaleString("en-US")}{card.perSeat ? " a seat" : ""}</span>
       {line ? <span className="v12-bill-sub">{line}</span> : null}
     </div>
   );

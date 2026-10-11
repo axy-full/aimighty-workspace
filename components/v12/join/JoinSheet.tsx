@@ -1,7 +1,7 @@
 "use client";
 import { useId, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
 import { Dialog } from "../ui";
-import { PLAN_CARDS } from "@/lib/marketing/planCards";
+import { PLAN_CARDS } from "@/lib/planCards";
 import { fmtCredits } from "@/lib/price";
 import { saveJoinReturn } from "@/lib/v12/joinReturn";
 import { COMPANY_SIZES, ROLES, cleanCode, emailPath, inviteTitle, joinTitle, loginPath, requestBody, requestProblem, signupPath, type InviteKind, type RequestFields } from "./join-model";
@@ -214,13 +214,13 @@ function NewWorkspace({ state, setState, invite, back }: { state: JoinState; set
               <button key={p.id} type="button" className="v12-join-plan" aria-pressed={p.id === plan.id} data-plan={p.id} data-testid="v12-join-plan"
                 onClick={() => setState((now) => ({ ...now, plan: p.id }))}>
                 <span className="v12-join-plan-name">{p.name}</span>
-                <span className="v12-join-plan-price">{fmtCredits(p.credits)} · ${p.priceUsd.toLocaleString("en-US")}</span>
+                <span className="v12-join-plan-price">{p.perSeat ? "from " : ""}{fmtCredits(p.credits)} · ${p.priceUsd.toLocaleString("en-US")}{p.perSeat ? " a seat" : ""}</span>
                 <span className="v12-join-plan-line">{p.line === "hero-takes" ? "Hero takes are priced once you are in" : p.line}</span>
               </button>
             ))}
           </div>
-          <p className="v12-join-note">Prices are placeholders · confirm. Nothing runs without a price shown first.</p>
-          <button type="button" className="v12-join-btn v12-join-primary" onClick={go} data-testid="v12-join-continue">Continue · {fmtCredits(plan.credits)} · ${plan.priceUsd.toLocaleString("en-US")}</button>
+          <p className="v12-join-note">Monthly plans. Checkout is not open yet. Nothing runs without a price shown first.</p>
+          <button type="button" className="v12-join-btn v12-join-primary" onClick={go} data-testid="v12-join-continue">Continue · {plan.perSeat ? "from " : ""}{fmtCredits(plan.credits)} · ${plan.priceUsd.toLocaleString("en-US")}{plan.perSeat ? " a seat" : ""}</button>
         </>
       )}
     </div>

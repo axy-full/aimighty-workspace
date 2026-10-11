@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { boardRows, cycleDates, cycleNow, heroTakes, historyRows, planNowOf, signedCredits, takesWords, whenWords } from "../../lib/v12/billing";
 import { fmtCredits } from "../../lib/price";
-import { PLAN_CARDS, PLAN_CARDS_ARE_PLACEHOLDERS, HERO_TAKE } from "../../lib/marketing/planCards";
+import { PLAN_CARDS, HERO_TAKE } from "../../lib/planCards";
 import { DEFAULT_PLANS } from "../../lib/plans";
 import type { CreditLedgerRow } from "../../lib/usageLedgerTerms";
 
@@ -58,15 +58,16 @@ test("the plan is the server's (paid, else the admin's label); absent on an olde
   expect(planNowOf({})).toBeNull();
 });
 
-test("the plan cards are one display-only placeholder config, apart from today's plans", () => {
-  expect(PLAN_CARDS_ARE_PLACEHOLDERS).toBe(true);
-  expect(PLAN_CARDS.map((c) => c.name)).toEqual(["Starter", "Studio", "Team"]);
+test("the plan cards are the owner's plans, read from lib/plans.ts, apart from what checkout grants", () => {
+  expect(PLAN_CARDS.map((c) => c.name)).toEqual(["Explore", "Create", "Master", "Business"]);
   for (const card of PLAN_CARDS) {
     expect(card.credits).toBeGreaterThan(0);
     expect(card.priceUsd).toBeGreaterThan(0);
   }
-  /* Checkout's plans are untouched and not these. */
-  expect(DEFAULT_PLANS.map((p) => p.id)).toEqual(["invite", "studio", "agency", "production"]);
+  /* The figures are the plans' own: one person's, then Business from its lowest level, a seat. */
+  expect(PLAN_CARDS.map((c) => [c.credits, c.priceUsd, c.perSeat])).toEqual([[500, 50, false], [1000, 100, false], [2500, 250, false], [1000, 100, true]]);
+  /* The legacy plans stay resolvable and are not shown. */
+  expect(DEFAULT_PLANS.map((p) => p.id)).toEqual(expect.arrayContaining(["invite", "studio", "agency", "production"]));
   expect(HERO_TAKE.duration).toBeGreaterThan(0);
   /* "about N hero takes" counts whole takes at the quoted price, and says nothing without one. */
   expect(heroTakes(500, 43)).toBe(11);
