@@ -172,7 +172,13 @@ test("Atomik's thinking (Home Start, the new-board bar, the board bar): the hous
 });
 
 test("the planner's ceiling reaches the house in dollars beside its credits, and a customer workspace never receives the dollars", async () => {
-  const before = process.env.RIG_AGENT_ENABLED;
+  /* The planner is priced the way a plan reserves it: the mock planner's price under ENGINE_MOCK=1. Without it (CI's unit job sets none) the price comes from
+     the deployment's keys and catalogue, of which a test machine has neither, so the figure is rightly absent: this test sets what it needs and puts back what
+     an earlier spec in the same worker left, in the other direction too. */
+  const names = ["ENGINE_MOCK", "RIG_AGENT_ENABLED", "TEXT_DIRECT", "MODEL_CATALOG", "VERCEL", "VERCEL_OIDC_TOKEN", "AI_GATEWAY_API_KEY"] as const;
+  const saved = Object.fromEntries(names.map((n) => [n, process.env[n]]));
+  for (const n of names) delete process.env[n];
+  process.env.ENGINE_MOCK = "1";
   process.env.RIG_AGENT_ENABLED = "1";
   try {
     const { newBoardAskTerms } = await import("../../lib/workbench/rig-agent");
@@ -187,7 +193,7 @@ test("the planner's ceiling reaches the house in dollars beside its credits, and
     expect(customer.ask).not.toHaveProperty("planningUsd");
     expect(JSON.stringify(customer)).not.toContain("planningUsd");
   } finally {
-    if (before === undefined) delete process.env.RIG_AGENT_ENABLED; else process.env.RIG_AGENT_ENABLED = before;
+    for (const n of names) { if (saved[n] === undefined) delete process.env[n]; else process.env[n] = saved[n]; }
   }
 });
 
