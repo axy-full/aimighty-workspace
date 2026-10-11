@@ -66,7 +66,7 @@ export function Access({ desk, refresh }: { desk: AdminDesk | null; refresh: () 
       <h2 className="v12-pc-h2">Invites</h2>
       <div className="v12-pc-table" role="table" aria-label="Invites" data-testid="pc-invites">
         <div className="v12-pc-tr v12-pc-th v12-pc-invcols" role="row">
-          <span role="columnheader">Email</span><span role="columnheader">Name</span><span role="columnheader">State</span><span role="columnheader">Note</span><span role="columnheader">Expires</span><span role="columnheader" className="v12-sr">Actions</span>
+          <span role="columnheader">Email</span><span role="columnheader">Name</span><span role="columnheader">State</span><span role="columnheader">Note</span><span role="columnheader">Expires</span><span role="columnheader" aria-label="Actions" />
         </div>
         {(desk?.invites ?? []).map((i) => (
           <InviteRow key={i.code} invite={i} items={items(i)} onContext={(at) => setMenu({ invite: i, at })} />

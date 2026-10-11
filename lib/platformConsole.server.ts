@@ -18,7 +18,8 @@ import { PLATFORM_TEXT_PROVIDER_LABELS } from "@/lib/platformConsole";
  * the same price paths the product uses.
  */
 
-const MONTH_MS_FLOOR = (now: number): number => { const d = new Date(now); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1); };
+/** The calendar month (UTC) `now` falls in: its first millisecond, and the first millisecond of the next. */
+const monthOf = (now: number): [number, number] => { const d = new Date(now); return [Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1), Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)]; };
 
 export type ConsoleOverview = {
   workspaces: number;
@@ -41,7 +42,7 @@ export async function consoleOverview(at = Date.now()): Promise<ConsoleOverview>
     p.execute(`SELECT COUNT(DISTINCT m.account_id) AS n FROM memberships m
                JOIN workspaces w ON w.id = m.workspace_id JOIN accounts a ON a.id = m.account_id
                WHERE m.disabled = 0 AND w.deleted_at IS NULL AND a.disabled = 0 AND a.deleted_at IS NULL`),
-    p.execute({ sql: `SELECT COALESCE(SUM(credits),0) AS n FROM credit_grants WHERE created_at >= ? AND credits > 0 AND kind <> 'purchase'`, args: [MONTH_MS_FLOOR(at)] }),
+    p.execute({ sql: `SELECT COALESCE(SUM(credits),0) AS n FROM credit_grants WHERE created_at >= ? AND created_at < ? AND credits > 0 AND kind <> 'purchase'`, args: monthOf(at) }),
     p.execute({ sql: `SELECT COUNT(*) AS n FROM signup_invites WHERE used_at IS NULL AND expires_at > ?`, args: [at] }),
     p.execute(`SELECT COUNT(*) AS n FROM access_requests WHERE handled_at IS NULL`),
     failedSavesCount().catch(() => null),
@@ -126,7 +127,7 @@ export async function consoleModels(): Promise<ConsoleModels> {
   const layer = await getPlatformLayer();
   const engines: ConsoleEngine[] = [];
   for (const model of workbenchGenerationModels()) {
-    if ((model.kind !== "video" && model.kind !== "image") || model.marketing || model.soulIdentity || model.cinemaStudio) continue;
+    if ((model.kind !== "video" && model.kind !== "image") || model.retired || model.marketing || model.soulIdentity || model.cinemaStudio) continue;
     if (!modelConfigured(model) || !modelOfKind(model.id, model.kind)) continue;
     const rate = workbenchRate(model);
     if (!rate) continue;

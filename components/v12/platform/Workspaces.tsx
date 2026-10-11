@@ -66,7 +66,7 @@ export function Workspaces({ desk, refresh, open, onOpen }: { desk: AdminDesk | 
 function Sheet({ id, summary, onClose, changed }: { id: string; summary: AdminWorkspace | null; onClose: () => void; changed: () => void }) {
   const toast = useToast();
   const panel = useRef<HTMLElement>(null);
-  const { data, error, refresh } = useAdminRead<WorkspaceSheet>(`/api/admin/workspaces/${encodeURIComponent(id)}`, 0);
+  const { data, error, refresh } = useAdminRead<WorkspaceSheet>(`/api/admin/console/workspaces/${encodeURIComponent(id)}`, 0);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [pausing, setPausing] = useState(false);
@@ -137,7 +137,7 @@ function Sheet({ id, summary, onClose, changed }: { id: string; summary: AdminWo
                 <h3 className="v12-pc-h3">Grant credits</h3>
                 <div className="v12-pc-grantrow">
                   <label className="v12-pc-unit"><input className="v12-pc-input v12-pc-num" inputMode="numeric" aria-label="Credits to add" placeholder="Credits" value={amount} disabled={data.house} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} data-testid="pc-grant-amount" /><span>cr</span></label>
-                  <input className="v12-pc-input v12-pc-grow" aria-label="Reason" placeholder="Reason · shows in their history" value={reason} disabled={data.house} onChange={(e) => setReason(e.target.value)} data-testid="pc-grant-reason" />
+                  <input className="v12-pc-input v12-pc-grow" aria-label="Reason" placeholder="Reason · they see it" value={reason} disabled={data.house} onChange={(e) => setReason(e.target.value)} data-testid="pc-grant-reason" />
                 </div>
                 <span title={data.house ? HOUSE_NOT_BILLED : !grantOk ? "Type how many credits to add" : undefined} className="v12-pc-inline">
                   <button type="submit" className="v12-pc-primary" disabled={busy || data.house || !grantOk} data-testid="pc-grant-send">Grant credits</button>

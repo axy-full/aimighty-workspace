@@ -58,7 +58,7 @@ export function Rules() {
       </Head>
       <div className="v12-pc-table" role="table" aria-label="Style rules" data-testid="pc-rules">
         <div className="v12-pc-tr v12-pc-th v12-pc-rulecols" role="row">
-          <span role="columnheader" className="v12-sr">Order</span><span role="columnheader">Scope</span><span role="columnheader">Where it applies</span><span role="columnheader">Rule</span><span role="columnheader" className="v12-sr">On</span><span role="columnheader" className="v12-sr">Remove</span>
+          <span role="columnheader" aria-label="Order" /><span role="columnheader">Scope</span><span role="columnheader">Where it applies</span><span role="columnheader">Rule</span><span role="columnheader" aria-label="On" /><span role="columnheader" aria-label="Remove" />
         </div>
         {(rules ?? []).map((r, i) => (
           <div key={r.id} role="row" className="v12-pc-tr v12-pc-rulecols" data-testid="pc-rule" data-over={over === r.id || undefined} data-off={!r.on || undefined}
@@ -82,10 +82,10 @@ export function Rules() {
               <Segment<RuleApply> label="Where it applies" size="sm" value={r.apply} onChange={(apply) => change(r.id, { apply })} options={[{ id: "writer", label: "For the writer" }, { id: "prompt", label: "In the prompt" }]} />
             </span>
             <span role="cell">
-              <input className="v12-pc-ruletext" aria-label="Rule" value={r.text} maxLength={400} placeholder="Write the rule" data-testid="pc-rule-text"
+              <textarea className="v12-pc-ruletext" aria-label="Rule" rows={1} value={r.text} maxLength={400} placeholder="Write the rule" data-testid="pc-rule-text"
                 ref={(el) => { if (el && focusNew.current === r.id) { focusNew.current = null; el.focus(); } }}
-                onChange={(e) => change(r.id, { text: e.target.value }, false)} onBlur={() => { if (r.text.trim()) void save(rules ?? []); }}
-                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+                onChange={(e) => change(r.id, { text: e.target.value.replace(/\n/g, " ") }, false)} onBlur={() => { if (r.text.trim()) void save(rules ?? []); }}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLTextAreaElement).blur(); } }} />
             </span>
             <span role="cell"><Switch on={r.on} label={`Rule ${i + 1} on`} onChange={(on) => change(r.id, { on })} /></span>
             <span role="cell" className="v12-pc-end">

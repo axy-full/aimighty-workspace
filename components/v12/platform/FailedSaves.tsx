@@ -27,7 +27,7 @@ export function FailedSaves({ onChanged }: { onChanged: () => void }) {
       <Head title="Failed saves" line="Renders that finished but have no stored copy. The heartbeat tries again every few minutes; Retry save tries now." />
       <div className="v12-pc-table" role="table" aria-label="Failed saves" data-testid="pc-risk">
         <div className="v12-pc-tr v12-pc-th v12-pc-riskcols" role="row">
-          <span role="columnheader">Workspace</span><span role="columnheader">Take</span><span role="columnheader">Engine</span><span role="columnheader">Since</span><span role="columnheader">Last error</span><span role="columnheader" className="v12-sr">Retry</span>
+          <span role="columnheader">Workspace</span><span role="columnheader">Take</span><span role="columnheader">Engine</span><span role="columnheader">Since</span><span role="columnheader">Last error</span><span role="columnheader" aria-label="Retry" />
         </div>
         {(data?.items ?? []).map((r) => (
           <div key={`${r.workspaceId}:${r.id}`} className="v12-pc-tr v12-pc-riskcols" role="row" data-testid="pc-risk-row">

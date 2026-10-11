@@ -8,19 +8,8 @@ import { releaseHeldJobs } from "@/lib/held";
 import { restoreDeletedWorkspace } from "@/lib/purge";
 import { HOUSE_NOT_BILLED, isHouseWorkspace } from "@/lib/houseWorkspace";
 import { CAP_MAX_USD } from "@/lib/allowanceDesk";
-import { workspaceSheet } from "@/lib/platformConsole.server";
 
 export const dynamic = "force-dynamic";
-
-/** One workspace for the platform console's side sheet: its plan, people, credit history and the owner's own changes to it. */
-export const GET = recoveryRoute(async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const got = await requireSuperAdmin();
-  if (got.response) return got.response;
-  const { id } = await params;
-  const sheet = await workspaceSheet(id);
-  if (!sheet) return NextResponse.json({ error: "No such workspace." }, { status: 404 });
-  return NextResponse.json(sheet, { headers: { "Cache-Control": "no-store" } });
-});
 
 /**
  * One workspace, from the platform owner's desk: how much of the
