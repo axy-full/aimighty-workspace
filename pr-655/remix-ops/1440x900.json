@@ -1,0 +1,9 @@
+{
+  "name": "remix-ops",
+  "app": "/suites?suite=particl&page=brief&view=home&make=video",
+  "prototype": "?view=make&mk=Remix",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
