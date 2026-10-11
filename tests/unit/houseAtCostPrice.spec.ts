@@ -147,10 +147,10 @@ test("Cinema Studio for the house: about and at most, in the engine's dollars; t
   expect(houseAbout(0.42)).toBe("about $0.420, at most $1.26");
 });
 
-test("a cancel on its way: the money line keeps its figure and drops the promise; otherwise it keeps both", () => {
+test("a cancel on its way: the money line keeps its figure and says it settles when the engine confirms; otherwise it keeps both", () => {
   const state = renderState(at({ price: { amount: 0.045, unit: "usd" } }), 70_000);
   expect(moneyLine(state.money!)).toEqual({ head: "$0.045 held", tail: " · charged only when it’s ready" });
-  expect(moneyLine(state.money!, true)).toEqual({ head: "$0.045 held", tail: "" });
+  expect(moneyLine(state.money!, true)).toEqual({ head: "$0.045 held", tail: " · settles when the engine confirms" });
   expect(moneyLine(state.money!, true).head + moneyLine(state.money!, true).tail).not.toMatch(/charged only when/);
 });
 

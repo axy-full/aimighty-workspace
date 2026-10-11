@@ -135,12 +135,17 @@ export const CANCEL_MAY_CHARGE = "This engine may charge for a take cancelled in
 /** The toast after a cancel that bills nothing (the only cancels offered). */
 export const CANCELLED_FREE_TOAST = "Cancelled · nothing billed · the frame stays";
 
+/** What follows the figure on a take's hold line while a cancel is on its way to the engine and not confirmed. */
+export const SETTLES_WHEN_CONFIRMED = "settles when the engine confirms";
+
 /**
  * The money line's two runs: the figure ("$0.045 held") and what follows it ("· charged only when it’s ready"). While a cancel is on
- * its way to the engine and not confirmed the figure stands alone: a take that stops can be charged, so the promise is not made.
+ * its way to the engine and not confirmed, "charged only when it’s ready" is not the whole story (a take that stops can be charged),
+ * so the same figure is followed by what is true: it "settles when the engine confirms".
  */
 export function moneyLine(money: { text: string; short: string }, pending = false): { head: string; tail: string } {
-  return { head: money.short, tail: !pending && money.text.startsWith(money.short) ? money.text.slice(money.short.length) : "" };
+  if (pending) return { head: money.short, tail: ` · ${SETTLES_WHEN_CONFIRMED}` };
+  return { head: money.short, tail: money.text.startsWith(money.short) ? money.text.slice(money.short.length) : "" };
 }
 
 /** A take's price in the unit its workspace pays in: "43 cr", "$0.840". */

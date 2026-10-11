@@ -48,10 +48,10 @@ export function RenderOverlay({ state, onCancel, cancelling = false, pending = f
 export function RenderMoney({ state, pending = false }: { state: RenderState; pending?: boolean }) {
   const money = state.money;
   if (!money || state.failed) return null;
-  /* A cancel is on its way to the engine and not confirmed: "charged only when it’s ready" is no longer the whole story (a take that stops can be charged), so the figure stands alone. */
+  /* A cancel is on its way to the engine and not confirmed: the figure stays, and the line says it settles when the engine confirms. */
   const { head, tail } = moneyLine(money, pending);
   return (
-    <div className="v12-rc-money" title={money.text} data-testid="v12-render-money"><span>{head}</span>{tail ? <span className="v12-rc-tail">{tail}</span> : null}</div>
+    <div className="v12-rc-money" title={`${head}${tail}`} data-testid="v12-render-money"><span>{head}</span>{tail ? <span className="v12-rc-tail">{tail}</span> : null}</div>
   );
 }
 
