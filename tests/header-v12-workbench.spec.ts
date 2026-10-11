@@ -193,7 +193,7 @@ test.describe("desktop", () => {
     await page.getByTestId("v12-avatar").click();
     const account = page.getByTestId("v12-account-menu");
     await expect(account.getByTestId("v12-account-balance")).toHaveText(/\d[\d,]*\s*cr$/);
-    await expect(account.getByRole("menuitem")).toHaveText(["Top up", "Credits & billing", "Settings", "Sign out"]);
+    await expect(account.getByRole("menuitem")).toHaveText(["Top up", "Workspace settings", "Credits & billing", "Sign out"]);
     await account.getByTestId("v12-account-topup").click();
     await expect(account).toHaveCount(0);
     await expect(page).toHaveURL(/[?&](tab|section|view)=/);

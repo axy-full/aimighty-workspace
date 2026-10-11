@@ -57,8 +57,8 @@ export function AccountMenu({ account }: { account: WorkspaceAccount | null }) {
   const current = session.workspace?.id ?? null;
   const others = (session.workspaces ?? []).filter((w) => w.id !== current);
   const items: MenuItem[] = [
-    { id: "billing", label: "Credits & billing", onSelect: () => goSettings("credits"), testId: "v12-account-billing" },
-    { id: "settings", label: "Settings", onSelect: () => goSettings("team"), testId: "v12-account-settings" },
+    { id: "settings", label: "Workspace settings", onSelect: () => shell.goConsole(), testId: "v12-account-settings" },
+    { id: "billing", label: "Credits & billing", onSelect: () => shell.goConsole("billing"), testId: "v12-account-billing" },
     ...others.map((w) => ({
       id: `switch-${w.id}`, label: `Switch to ${w.name}`, disabled: busy,
       /* A full load, as today's menu does (components/graphite/SettingsMenu.tsx): the shell starts again in the other workspace. */

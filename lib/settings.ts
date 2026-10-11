@@ -35,6 +35,8 @@ export const DEFAULTS = {
    * projectCap). An admin sets it in Settings › Spending rules; a production's own cap wins over it.
    */
   productionBudgetCredits: "",
+  /** The shape a new board starts in (Settings › Defaults): "16:9", "9:16", "1:1" or "4:5"; blank is Particl's own, 16:9. */
+  defaultAspect: "",
   /** The engine a new composer opens on, per kind; blank inherits the platform's default. */
   defaultVideoModel: "",
   defaultImageModel: "",

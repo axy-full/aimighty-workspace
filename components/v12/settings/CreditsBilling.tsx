@@ -29,8 +29,12 @@ import "./billing.css";
  */
 type Billing = { canManage?: boolean; plans?: PlanDefLike[]; subscription?: BillingSubscription | null; cycles?: BillingCycle[]; plan?: unknown };
 
-export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
+export function CreditsBilling({ account, onTopUp, onOpenBoard, embedded = false, readOnly = false }: {
   account: WorkspaceAccount | null;
+  /** Inside Workspace settings (components/v12/settings/console): the console draws the title, the page's own padding and scroll are not used. */
+  embedded?: boolean;
+  /** A member's Plan: the plan, the balance and the Low-credit warning, nothing to change and no spend by board or history. */
+  readOnly?: boolean;
   /** Today's top-up flow. */
   onTopUp: () => void;
   /** Opens a board by its project id. */
@@ -48,10 +52,10 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
   const [now] = useState(() => Date.now());
   const month = monthKey(now);
   const billing = useRead<Billing>(inCredits ? "/api/billing" : null);
-  const topups = useRead<Topups>(inCredits ? "/api/workspaces/topups" : null);
-  const ledger = useRead<{ unit?: string; rows?: CreditLedgerRow[] }>(inCredits ? `/api/usage?rows=1&month=${month}&limit=20` : null);
-  const boards = useRead<unknown>(inCredits ? `/api/usage/boards?month=${month}` : null);
-  const hero = useQuote(inCredits ? { route: "engine", ...HERO_TAKE } : null);
+  const topups = useRead<Topups>(inCredits && !readOnly ? "/api/workspaces/topups" : null);
+  const ledger = useRead<{ unit?: string; rows?: CreditLedgerRow[] }>(inCredits && !readOnly ? `/api/usage?rows=1&month=${month}&limit=20` : null);
+  const boards = useRead<unknown>(inCredits && !readOnly ? `/api/usage/boards?month=${month}` : null);
+  const hero = useQuote(inCredits && !readOnly ? { route: "engine", ...HERO_TAKE } : null);
   /* The house reads the same Usage routes in their dollar form: the board totals (all time) and the month's dollar ledger. */
   const usage = useRead<{ spentUsd?: number; byProject?: unknown }>(inDollars ? "/api/usage" : null);
   const dollarLedger = useRead<{ unit?: string; rows?: DollarLedgerRow[] }>(inDollars ? `/api/usage?rows=1&month=${month}&limit=20` : null);
@@ -71,12 +75,14 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
   const perTake = hero.state === "ready" && hero.price.unit === "cr" && hero.price.value.kind !== "free" ? hero.price.value.credits : null;
 
   return (
-    <div className="v12-bill" data-testid="v12-billing" data-screen-label="Settings · Credits & billing">
+    <div className="v12-bill" data-embedded={embedded || undefined} data-testid="v12-billing" data-screen-label="Settings · Credits & billing">
       <div className="v12-bill-col">
-        <div>
-          <div className="v12-bill-eyebrow">Settings</div>
-          <h1 className="v12-bill-h1">Credits &amp; billing</h1>
-        </div>
+        {embedded ? null : (
+          <div>
+            <div className="v12-bill-eyebrow">Settings</div>
+            <h1 className="v12-bill-h1">Credits &amp; billing</h1>
+          </div>
+        )}
 
         <section className="v12-bill-sec" data-testid="v12-billing-balance">
           <div className="v12-bill-head">
@@ -115,12 +121,14 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
                   <span>{cycleDates(cycle)} <span className="v12-bill-quiet">· {fmtCredits(cycle.credits)} included</span></span>
                 </div>
               ) : null}
-              <div className="v12-bill-row" data-testid="v12-billing-month">
-                <span>This month</span>
-                <span className="v12-bill-mono">{totals ? monthLine(totals) : ledger.error ? "—" : "Reading…"}</span>
-              </div>
+              {readOnly ? null : (
+                <div className="v12-bill-row" data-testid="v12-billing-month">
+                  <span>This month</span>
+                  <span className="v12-bill-mono">{totals ? monthLine(totals) : ledger.error ? "—" : "Reading…"}</span>
+                </div>
+              )}
               <div className="v12-bill-row" data-testid="v12-billing-low" data-low={rule.low ? "true" : "false"}>
-                <span>Low-balance chip</span>
+                <span>Low-credit warning</span>
                 {rule.low ? (
                   <span className="v12-bill-low"><span className="v12-bill-dot" aria-hidden="true" />Showing now · below {fmtCredits(rule.threshold ?? 0)}</span>
                 ) : (
@@ -128,11 +136,11 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
                 )}
               </div>
               {billing.error ? <Problem text={billing.error} onRetry={() => void billing.read()} /> : null}
-              {pack ? (
+              {readOnly ? null : pack ? (
                 <div className="v12-bill-act">
                   <button type="button" className="v12-bill-primary" onClick={onTopUp} title={`$${pack.usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} data-testid="v12-billing-top-up">{topUpLabel(pack)}</button>
                 </div>
-              ) : askAdmin ? (
+              ) : readOnly ? null : askAdmin ? (
                 <div className="v12-bill-act"><span className="v12-bill-quiet" data-testid="v12-billing-ask-admin">Ask an admin: the owner or an admin requests credits.</span></div>
               ) : null}
             </>
@@ -170,7 +178,7 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
           </section>
         ) : null}
 
-        {inCredits ? (
+        {inCredits && !readOnly ? (
           <section className="v12-bill-sec" data-testid="v12-billing-plans">
             <div className="v12-bill-head">
               <span className="v12-bill-eyebrow">Plans</span>
@@ -182,7 +190,7 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
           </section>
         ) : null}
 
-        {inCredits ? (
+        {inCredits && !readOnly ? (
           <section className="v12-bill-sec" data-testid="v12-billing-boards">
             <span className="v12-bill-eyebrow">Per board · this month</span>
             {boards.error ? <Problem text={boards.error} onRetry={() => void boards.read()} /> : perBoard === null ? <div className="v12-bill-empty">Reading…</div> : null}
@@ -197,7 +205,7 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
           </section>
         ) : null}
 
-        {inCredits ? (
+        {inCredits && !readOnly ? (
           <section className="v12-bill-sec" data-testid="v12-billing-history">
             <span className="v12-bill-eyebrow">History</span>
             {ledger.error ? <Problem text={ledger.error} onRetry={() => void ledger.read()} /> : null}

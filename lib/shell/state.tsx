@@ -90,6 +90,8 @@ export type Shell = {
   /** Gen is Make's panel now: kept for the header, which calls it until it calls openMake. It opens Make. */
   goGen: () => void;
   goWorkspace: (tab?: WorkspaceTabId, opts?: { open?: string }) => void;
+  /** Workspace settings, the new interface's console (prototype v14): `?view=settings&section=…`, in the shell's own spelling. */
+  goConsole: (section?: string) => void;
   /* ── The new interface (lib/shell/screens.ts). Each helper falls back to today's page when the switch is off or the
      screen has not landed, so a caller never has to ask. ── */
   /** `&settings=1` opened the page: the header opens the avatar menu once, and the address has already dropped it. */
@@ -487,6 +489,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       setPaletteOpen(false);
       apply({ ...params, view: "workspace", tab: wanted, make: stayMake(params.make), extra: { ...carry(params.extra), ...(opts?.open ? { [OPEN]: opts.open } : {}) } }, "push");
     },
+    goConsole: (section) => { setPaletteOpen(false); navigateRef.current?.(`?view=workspace&tab=console${section ? `&section=${encodeURIComponent(section)}` : ""}`); },
     wsOpen: params.view === "workspace" ? params.extra?.[OPEN] ?? null : null,
     settingsRequested,
     consumeSettingsRequest: () => setSettingsRequested(false),

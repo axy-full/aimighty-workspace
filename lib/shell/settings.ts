@@ -12,7 +12,7 @@ import type { Row } from "./screen-rows";
  * (components/graphite/settings/) read the same ids from here.
  */
 
-export type SettingsSectionId = "team" | "credits" | "rules" | "connections" | "advanced";
+export type SettingsSectionId = "team" | "credits" | "rules" | "connections" | "advanced" | "console";
 
 export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string }[] = Object.freeze([
   { id: "team", label: "Team" },
@@ -23,7 +23,7 @@ export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string 
 ]);
 
 /** The sections this build draws. The rest still open the page that holds them today (SETTINGS_INTERIM). */
-export const SETTINGS_BUILT: readonly SettingsSectionId[] = Object.freeze(["team", "credits", "rules", "connections", "advanced"]);
+export const SETTINGS_BUILT: readonly SettingsSectionId[] = Object.freeze(["team", "credits", "rules", "connections", "advanced", "console"]);
 
 /**
  * The app address of Settings › Plan & credits, for a link sent outside the app (a push, an email). Never `/settings`:
@@ -31,9 +31,15 @@ export const SETTINGS_BUILT: readonly SettingsSectionId[] = Object.freeze(["team
  */
 export const SETTINGS_CREDITS = "/suites?view=workspace&tab=credits";
 
-export const isSettingsSection = (value: unknown): value is SettingsSectionId => SETTINGS_SECTIONS.some((s) => s.id === value);
+/**
+ * `console` is Workspace settings (prototype v14; components/v12/settings/console): the new interface's whole settings screen, with
+ * its own sections in `section=` (lib/v12/settingsConsole.ts). It is not one of the five segments, so it is not in SETTINGS_SECTIONS.
+ */
+export const SETTINGS_CONSOLE = "console";
+export const SETTINGS_SECTION_PARAM = "section";
+export const isSettingsSection = (value: unknown): value is SettingsSectionId => value === SETTINGS_CONSOLE || SETTINGS_SECTIONS.some((s) => s.id === value);
 export const isBuiltSection = (value: unknown): value is SettingsSectionId => isSettingsSection(value) && SETTINGS_BUILT.includes(value);
-export const sectionLabel = (id: SettingsSectionId): string => SETTINGS_SECTIONS.find((s) => s.id === id)!.label;
+export const sectionLabel = (id: SettingsSectionId): string => SETTINGS_SECTIONS.find((s) => s.id === id)?.label ?? "Workspace settings";
 
 /** The fold a link unfolds: `?view=workspace&tab=team&open=security`. */
 export const SETTINGS_OPEN_PARAM = "open";
@@ -111,8 +117,12 @@ const OFF_ROWS: Row[] = [
 export const SETTINGS_SCREEN: ScreenModule = Object.freeze({
   id: "settings",
   landed: true,
-  params: [SETTINGS_OPEN_PARAM],
-  rows: ON_ROWS,
+  params: [SETTINGS_OPEN_PARAM, SETTINGS_SECTION_PARAM],
+  rows: [...ON_ROWS,
+    /* Prototype v14's addresses: Workspace settings (`?view=settings&section=…`) and the old Billing view land on the console. */
+    { from: "?view=settings", to: `?view=workspace&tab=${SETTINGS_CONSOLE}` },
+    { from: "?view=billing", to: `?view=workspace&tab=${SETTINGS_CONSOLE}&${SETTINGS_SECTION_PARAM}=billing` },
+  ],
   fallback: OFF_ROWS,
 });
 
