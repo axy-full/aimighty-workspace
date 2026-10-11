@@ -145,6 +145,8 @@ test.describe("desktop", () => {
     await expect(memberPage.getByTestId("v12-settings-title")).toHaveText("Your usage");
     await expect(memberPage.getByTestId("v12-settings-usage-person")).toHaveCount(1);
     await expect(memberPage.getByTestId("v12-settings-usage-person")).toContainText("6");
+    /* The header is their own row's total, not the workspace's. */
+    await expect(memberPage.getByTestId("v12-settings-usage-total")).toHaveText("6 cr spent");
     await expect(memberPage.getByTestId("v12-settings-usage-boards")).toHaveCount(0);
     await expect(memberPage.getByText("Console Owner")).toHaveCount(0);
     await memberPage.getByTestId("v12-settings-nav-billing").click();

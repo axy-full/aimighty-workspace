@@ -154,6 +154,9 @@ test("a member reads only what a member may: every admin read and write is refus
   expect(((await (await get(W.owner, "/api/team")).json()) as { users: unknown[] }).users).toHaveLength(2);
   expect((await history(W.owner)).filter((e) => ["member.updated", "member.removed", "limits.updated", "workspace.renamed"].includes(e.action))).toHaveLength(0);
 
+  /* Spend by board is the workspace's: a member is refused it (owner rule: members get only their own usage). */
+  expect((await get(member, `/api/usage/boards?month=${month}`)).status()).toBe(403);
+  expect((await get(W.owner, `/api/usage/boards?month=${month}`)).ok()).toBe(true);
   /* What a member does get: the plan, their own spend and name, their own notifications. */
   expect((await get(member, "/api/billing")).ok()).toBe(true);
   expect((await get(member, "/api/me/notify")).ok()).toBe(true);
@@ -161,9 +164,17 @@ test("a member reads only what a member may: every admin read and write is refus
   expect(own.people).toHaveLength(1);
   expect(own.people[0]).toMatchObject({ you: true, credits: 5 });
   expect(JSON.stringify(own)).not.toContain("Settings Owner M");
+  /* Many other people's bigger spend cannot crowd a member's row out of a limited read: their own rows are chosen in SQL first. */
+  await platform((db) => db.batch(Array.from({ length: 60 }, (_, i) => ({
+    sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,0,?,1,?,?,?)",
+    args: [`crowd_${i}_${randomBytes(4).toString("hex")}`, W.ws.id, "image", "nano-banana", "nano-banana", "succeeded", 100 + i, `ghost-${i}`, Date.now(), Date.now()],
+  })), "write"));
+  const crowded = (await (await get(member, `/api/usage/people?month=${month}`)).json()) as { people: { you: boolean; credits: number }[] };
+  expect(crowded.people).toEqual([expect.objectContaining({ you: true, credits: 5 })]);
   const all = (await (await get(W.owner, `/api/usage/people?month=${month}`)).json()) as { people: { credits: number; you: boolean }[] };
-  expect(all.people.map((p) => p.credits).sort((a, b) => a - b)).toEqual([5, 12]);
-  expect(all.people.filter((p) => p.you)).toHaveLength(1);
+  /* An admin reads at most fifty people, biggest first. */
+  expect(all.people).toHaveLength(50);
+  expect(all.people.filter((p) => p.you)).toHaveLength(0);
 });
 
 test("any admin changes roles; the owner and the last admin are never demoted or removed, at once or by leaving; each change leaves a line", async ({ browser }) => {
@@ -202,6 +213,20 @@ test("any admin changes roles; the owner and the last admin are never demoted or
   expect((await send(X.owner, "POST", "/api/workspaces/leave")).status()).toBe(400);
   const stillAdmin = (await (await get(X.owner, "/api/team")).json()) as { users: { id: string; role: string }[] };
   expect(stillAdmin.users.find((u) => u.id === X.owner.id)?.role).toBe("admin");
+  /* Two admins demoting each other at the same moment: exactly one succeeds, the other is refused, and an admin remains. */
+  expect((await send(X.owner, "PATCH", `/api/team/${y.id}`, { role: "admin" })).ok()).toBe(true);
+  for (let round = 0; round < 3; round++) {
+    const answers = await Promise.all([send(X.owner, "PATCH", `/api/team/${y.id}`, { role: "member" }), send(y, "PATCH", `/api/team/${X.owner.id}`, { role: "member" })]);
+    const statuses = answers.map((a) => a.status());
+    expect(statuses.filter((code) => code === 200), `round ${round}: ${statuses}`).toHaveLength(1);
+    expect(statuses.filter((code) => code >= 400), `round ${round}: ${statuses}`).toHaveLength(1);
+    const admins = (await platform((db) => db.execute({ sql: "SELECT account_id FROM memberships WHERE workspace_id=? AND role='admin'", args: [X.ws.id] }))).rows.map((r) => String(r.account_id));
+    expect(admins, `round ${round}`).toHaveLength(1);
+    /* Put the demoted one back as an admin, through the one who stayed. */
+    const stayed = admins[0] === X.owner.id ? X.owner : y;
+    const demoted = stayed === X.owner ? y : X.owner;
+    expect((await send(stayed, "PATCH", `/api/team/${demoted.id}`, { role: "admin" })).ok()).toBe(true);
+  }
   /* Two admins: one may go, and the one who stays cannot. */
   expect((await send(X.owner, "PATCH", `/api/team/${y.id}`, { role: "admin" })).ok()).toBe(true);
   expect((await send(y, "POST", "/api/workspaces/leave")).ok()).toBe(true);

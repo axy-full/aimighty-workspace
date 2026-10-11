@@ -23,12 +23,14 @@ export function Usage({ admin, onOpenProject }: { admin: boolean; onOpenProject:
   const [now] = useState(() => Date.now());
   const months = monthChoices(now);
   const [month, setMonth] = useState(months[0].key);
-  const ledger = useRead<unknown>(inCredits ? `/api/usage?rows=1&month=${month}&limit=1` : null);
+  /* The workspace's month total is an admin's; a member's header is their own row below (the ledger's totals have no author filter). */
+  const ledger = useRead<unknown>(inCredits && admin ? `/api/usage?rows=1&month=${month}&limit=1` : null);
   const boards = useRead<unknown>(inCredits && admin ? `/api/usage/boards?month=${month}` : null);
   const people = useRead<People>(inCredits ? `/api/usage/people?month=${month}` : null);
-  const totals = monthTotalsOf(ledger.data);
-  const perBoard = boardRows(boards.data);
   const rows = people.data?.people ?? [];
+  const totals = monthTotalsOf(ledger.data);
+  const mine = rows.reduce((n, r) => n + r.credits, 0);
+  const perBoard = boardRows(boards.data);
   const top = Math.max(1, ...rows.map((r) => r.credits), ...(perBoard ?? []).map((b) => b.credits));
   if (!inCredits) return <Sec><div className="v12-ws-empty" data-testid="v12-settings-usage-house">This workspace is billed in dollars at the engines’ cost: see Credits &amp; billing.</div></Sec>;
   return (
@@ -37,7 +39,7 @@ export function Usage({ admin, onOpenProject }: { admin: boolean; onOpenProject:
         <div className="v12-ws-seg" role="group" aria-label="Month">
           {months.map((m) => <button key={m.key} type="button" aria-pressed={m.key === month} onClick={() => setMonth(m.key)} data-testid={`v12-settings-month-${m.key === months[0].key ? "this" : "last"}`}>{m.label}</button>)}
         </div>
-        <span className="v12-ws-meta" data-testid="v12-settings-usage-total">{totals ? monthLine(totals) : ledger.error ? "—" : "Reading…"}</span>
+        <span className="v12-ws-meta" data-testid="v12-settings-usage-total">{admin ? (totals ? monthLine(totals) : ledger.error ? "—" : "Reading…") : (people.data ? `${fmtCredits(mine)} spent` : people.error ? "—" : "Reading…")}</span>
       </div>
       {admin ? (
         <Sec label="By board" testId="v12-settings-usage-boards">

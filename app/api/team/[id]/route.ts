@@ -45,7 +45,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   if (support && (body.unlock === true || body.role !== undefined)) {
     return NextResponse.json({ error: "Particl support's account belongs to the platform. This workspace can disable or remove it." }, { status: 403 });
   }
-  /* Any admin changes roles (owner decision, 12 Oct 2026). The owner's own standing stays protected below, and the last admin cannot be demoted. */
+  /* Any admin changes roles (owner decision, 11 Oct 2026 23:45 IST). The owner's own standing stays protected below, and the last admin cannot be demoted. */
   if (target.role === "owner") {
     const harmful = (body.role !== undefined && body.role !== "admin") || (body.disabled !== undefined && Boolean(body.disabled));
     if (harmful) return NextResponse.json(PROTECTED, { status: 400 });

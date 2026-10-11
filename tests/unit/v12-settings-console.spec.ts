@@ -3,7 +3,6 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClient } from "@libsql/client";
-import { loadRoute } from "../helpers/routeModule";
 
 /* The console's pure side (lib/v12/settingsConsole.ts), the shell's spellings for it, and the history lines. The routes themselves are held in tests/workspace-settings-v12-workbench.spec.ts. */
 const directory = mkdtempSync(join(tmpdir(), "particl-settings-console-"));
@@ -150,39 +149,29 @@ test("the last admin guard counts live admins other than the one leaving, and ne
   } finally { client.close(); }
 });
 
-test("sending an invitation again leaves a history line when it was sent, by reference, and none when mail is not set up or the invitation is not this workspace's", async () => {
-  const { SECURITY_AUDIT_SCHEMA } = await import("../../lib/securityAudit");
-  const client = createClient({ url: `file:${join(directory, "resend.db")}` });
-  try {
-    await client.batch([
-      ...SECURITY_AUDIT_SCHEMA,
-      "CREATE TABLE workspace_invites(code TEXT PRIMARY KEY, workspace_id TEXT, email TEXT, name TEXT, role TEXT, used_at INTEGER, expires_at INTEGER, send_count INTEGER DEFAULT 0)",
-      "INSERT INTO workspace_invites(code,workspace_id,email,name,role,expires_at) VALUES('code-for-a','ws-a','x@example.test','X','member',9999999999999),('code-for-b','ws-b','y@example.test','Y','member',9999999999999)",
-    ]);
-    const { AccountError } = await import("../../lib/accountDb");
-    let mail = true;
-    const delivered: string[] = [];
-    const route = loadRoute<{ POST: (req: Request, ctx: { params: Promise<{ code: string }> }) => Promise<Response> }>("app/api/team/invites/[code]/send/route.ts", {
-      "@/lib/auth": { requireAdmin: async () => ({ user: { id: "admin-1", name: "Admin" } }), withTenant: (handler: unknown) => handler },
-      "@/lib/tenant": { requireTenant: () => ({ id: "ws-a", name: "Workspace A" }) },
-      "@/lib/platform": { platformDb: () => client, platformReady: async () => {} },
-      "@/lib/mail": { mailConfigured: () => mail, sendMail: async (m: unknown) => { delivered.push(JSON.stringify(m)); }, inviteEmail: () => ({ subject: "s", text: "t" }), inviteOrigin: () => "https://example.test", MAIL_LINK_UNSET: "unset" },
-      "@/lib/accountDb": { accountFailure: (e: Error) => Response.json({ error: e.message }, { status: 400 }), AccountError },
-      "@/lib/teamInvitations": { mailWorkspaceInvite: async (i: { deliver: (to: string, link: string) => Promise<unknown> }) => { await i.deliver("x@example.test", "https://example.test/invite/code-for-a"); } },
-      "@/lib/securityAudit": await import("../../lib/securityAudit"),
-    });
-    const lines = async () => (await client.execute("SELECT action,actor_id,target_type,target_id FROM security_audit ORDER BY created_at")).rows.map((r) => ({ ...r }));
-    const post = (code: string) => route.POST(new Request("http://localhost/api/team/invites/x/send", { method: "POST" }), { params: Promise.resolve({ code }) });
-    mail = false;
-    expect((await post("code-for-a")).status).toBe(400);
-    expect(await lines()).toEqual([]);
-    mail = true;
-    expect((await post("code-for-b")).status).toBe(404);
-    expect(await lines()).toEqual([]);
-    expect((await post("code-for-a")).status).toBe(200);
-    const [line] = await lines();
-    expect(line).toMatchObject({ action: "invite.resent", actor_id: "admin-1", target_type: "invite" });
-    expect(String(line.target_id)).toMatch(/^[0-9a-f]{16}$/);
-    expect(delivered).toHaveLength(1);
-  } finally { client.close(); }
+test("a limit change reads its old value inside the write: saves at once leave exactly one line for one real change", async () => {
+  const { setLimitSetting } = await import("../../lib/settings");
+  const { db, ready } = await import("../../lib/db");
+  const { platformReady, platformDb, rowToWorkspace } = await import("../../lib/platform");
+  const { runInTenant } = await import("../../lib/tenant");
+  await platformReady();
+  await platformDb().execute({
+    sql: "INSERT INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at) VALUES('ws-limits','ws-limits','Limits house',?,1,'owner',0,0)",
+    args: [`file:${join(directory, "ws-limits.db")}`],
+  });
+  const ws = rowToWorkspace((await platformDb().execute({ sql: "SELECT * FROM workspaces WHERE id='ws-limits'", args: [] })).rows[0]);
+  await runInTenant(ws, async () => {
+    await ready();
+    const lines = async () => (await db().execute("SELECT details FROM security_audit WHERE action='limits.updated' AND workspace_id='ws-limits' ORDER BY created_at,rowid")).rows.map((r) => JSON.parse(String(r.details)) as { limit: string; value: number });
+    /* Five saves of the same new value at the same time: 80 (the default) to 70 happens once. */
+    const results = await Promise.all(Array.from({ length: 5 }, (_, i) => setLimitSetting("capWarnPct", "70", `admin-${i}`, "ws-limits")));
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(await lines()).toEqual([{ limit: "warn", value: 70 }]);
+    /* The same value again, and a different one, in turn. */
+    expect(await setLimitSetting("capWarnPct", "70", "admin-9", "ws-limits")).toBe(false);
+    expect(await setLimitSetting("capWarnPct", "90", "admin-9", "ws-limits")).toBe(true);
+    expect(await lines()).toEqual([{ limit: "warn", value: 70 }, { limit: "warn", value: 90 }]);
+    expect(await setLimitSetting("shotCapCredits", "60", "admin-9", "ws-limits")).toBe(true);
+    expect((await lines()).at(-1)).toEqual({ limit: "shot", value: 60 });
+  });
 });

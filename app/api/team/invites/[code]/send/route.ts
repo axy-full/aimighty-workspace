@@ -5,7 +5,6 @@ import { platformDb, platformReady } from "@/lib/platform";
 import { mailConfigured, sendMail, inviteEmail, inviteOrigin, MAIL_LINK_UNSET } from "@/lib/mail";
 import { accountFailure, AccountError } from "@/lib/accountDb";
 import { mailWorkspaceInvite } from "@/lib/teamInvitations";
-import { inviteRef, securityAuditStatement } from "@/lib/securityAudit";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ code: string }> };
@@ -25,8 +24,7 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   if (origin === null) return NextResponse.json({ error: MAIL_LINK_UNSET }, { status: 503 });
   try {
     // The seat, the per-invitation cap and the mail limits come first; a failed send gives its slot back.
-    await mailWorkspaceInvite({ ws, code, origin, checkSeat: true, deliver: (to, link) => sendMail({ to, ...inviteEmail({ name: String(iv.name), inviter: `${got.user.name} (${ws.name})`, link, role: String(iv.role), expiresAt: Number(iv.expires_at), origin }) }) });
-    await platformDb().execute(securityAuditStatement({ workspaceId: ws.id, actorId: got.user.id, action: "invite.resent", targetType: "invite", targetId: inviteRef(code) }));
+    await mailWorkspaceInvite({ ws, code, origin, checkSeat: true, actorId: got.user.id, deliver: (to, link) => sendMail({ to, ...inviteEmail({ name: String(iv.name), inviter: `${got.user.name} (${ws.name})`, link, role: String(iv.role), expiresAt: Number(iv.expires_at), origin }) }) });
     return NextResponse.json({ ok: true, sent: true });
   } catch (e) {
     if (e instanceof AccountError) return accountFailure(e);

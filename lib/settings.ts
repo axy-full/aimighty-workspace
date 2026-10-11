@@ -151,17 +151,23 @@ export const isLimitSetting = (key: string): boolean => key in LIMIT_OF;
  */
 export async function setLimitSetting(key: "capWarnPct" | "shotCapCredits", value: string, userId: string, workspaceId: string): Promise<boolean> {
   await ready();
-  const was = (await allSettings())[key] ?? DEFAULTS[key];
-  const clean = (v: string) => (key === "capWarnPct" ? cleanWarnPct(v) : cleanBudget(v));
-  const changed = clean(was) !== clean(value);
-  await db().batch([
-    {
+  const clean = (v: unknown) => (key === "capWarnPct" ? cleanWarnPct(v) : cleanBudget(v));
+  /* The old value is read inside the write, so two saves at once cannot each see the same "before" and both (or neither) leave a line. */
+  const tx = await db().transaction("write");
+  try {
+    const before = (await tx.execute({ sql: "SELECT value FROM settings WHERE key = ?", args: [key] })).rows[0];
+    const changed = clean(before?.value ?? DEFAULTS[key]) !== clean(value);
+    await tx.execute({
       sql: `INSERT INTO settings (key, value, updated_by, updated_at) VALUES (?,?,?,?)
             ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`,
       args: [key, value, userId, now()],
-    },
-    ...(changed ? [securityAuditStatement({ workspaceId, actorId: userId, action: "limits.updated", targetType: "limits", targetId: LIMIT_OF[key], details: { limit: LIMIT_OF[key], value: clean(value) } })] : []),
-  ], "write");
-  invalidateSettings();
-  return changed;
+    });
+    if (changed) await tx.execute(securityAuditStatement({ workspaceId, actorId: userId, action: "limits.updated", targetType: "limits", targetId: LIMIT_OF[key], details: { limit: LIMIT_OF[key], value: clean(value) } }));
+    await tx.commit();
+    invalidateSettings();
+    return changed;
+  } catch (error) {
+    await tx.rollback().catch(() => {});
+    throw error;
+  } finally { tx.close(); }
 }

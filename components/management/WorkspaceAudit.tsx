@@ -41,6 +41,7 @@ export const labels: Record<string, string> = {
   "member.removed": "Removed member",
   "member.left": "Left the workspace",
   "invite.created": "Invited someone",
+  "invite.resend_attempted": "Tried to send an invitation again",
   "invite.resent": "Sent an invitation again",
   "invite.revoked": "Withdrew an invitation",
   "limits.updated": "Changed a spending limit",

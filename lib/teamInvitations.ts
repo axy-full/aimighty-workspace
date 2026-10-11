@@ -269,6 +269,8 @@ export async function mailWorkspaceInvite(input: {
   origin: string;
   deliver: (to: string, link: string) => Promise<unknown>;
   checkSeat?: boolean;
+  /** Who asked, for the history (lib/securityAudit.ts): the attempt is on the record before anything is sent, and the send's own line is written with its count. */
+  actorId?: string;
 }) {
   await accountDbReady();
   const iv = (
@@ -291,16 +293,25 @@ export async function mailWorkspaceInvite(input: {
   if (input.checkSeat) await assertInviteSeat(input.ws);
   const email = String(iv.email),
     slot = await takeInviteMailSlot(input.ws.id, email);
+  const line = (action: "invite.resend_attempted" | "invite.resent") =>
+    securityAuditStatement({ workspaceId: input.ws.id, actorId: input.actorId ?? null, action, targetType: "invite", targetId: inviteRef(input.code) });
   try {
+    /* The attempt is on the record before anything is sent: if its line cannot be written, nothing is sent, so a send is never unrecorded. */
+    if (input.actorId) await platformDb().execute(line("invite.resend_attempted"));
     await input.deliver(email, invitationMailLink(input.origin, input.code));
   } catch (error) {
     await slot.release().catch(() => {});
     throw error;
   }
-  await platformDb().execute({
-    sql: "UPDATE workspace_invites SET sent_at=?,send_count=send_count+1 WHERE code=? AND workspace_id=?",
-    args: [now(), input.code, input.ws.id],
-  });
+  /* It went: the count and the send's own line commit together. If that write fails the mail has still gone and the attempt line stands, so the answer stays true. */
+  try {
+    await platformDb().batch([
+      { sql: "UPDATE workspace_invites SET sent_at=?,send_count=send_count+1 WHERE code=? AND workspace_id=?", args: [now(), input.code, input.ws.id] },
+      ...(input.actorId ? [line("invite.resent")] : []),
+    ], "write");
+  } catch (error) {
+    console.error(JSON.stringify({ level: "error", event: "invite_resend_record_failed", message: error instanceof Error ? error.message : "unknown" }));
+  }
 }
 export async function acceptWorkspaceInvitation(input: {
   code: string;

@@ -26,7 +26,7 @@ export const GET = withTenant(async function GET() {
   const ws = requireTenant();
   const inCredits = creditsApply(ws);
   await Promise.all([ready(), platformReady()]);
-  /* An admin sees and sets standing (owner decision, 12 Oct 2026): `requireAdmin` above is the whole gate. */
+  /* An admin sees and sets standing (owner decision, 11 Oct 2026 23:45 IST): `requireAdmin` above is the whole gate. */
   const canSeeRoles = true;
 
   const [members, invites, stats] = await Promise.all([

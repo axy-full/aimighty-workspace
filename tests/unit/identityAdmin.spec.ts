@@ -262,6 +262,34 @@ test("invitation email is limited per workspace an hour and per address a day, w
   }
 });
 
+test("a resend is on the record before it is sent; its own line goes with its count; a refused send leaves the attempt and no send; a refusal before sending leaves nothing", async () => {
+  const { createWorkspaceInvite, mailWorkspaceInvite } = await import("../../lib/teamInvitations");
+  const { inviteRef } = await import("../../lib/securityAudit");
+  const { platformDb } = await import("../../lib/platform");
+  const { user, ws } = await workspace("Record house");
+  const p = platformDb();
+  const code = `record-${tag}`;
+  await createWorkspaceInvite({ ws, code, email: mail("record"), name: "Record", role: "member", createdBy: user.id, expiresAt: Date.now() + 3 * 86400_000 });
+  const lines = async () => (await p.execute({ sql: "SELECT action,actor_id,target_id FROM security_audit WHERE workspace_id=? AND action LIKE 'invite.%' ORDER BY created_at,rowid", args: [ws.id] })).rows.map((r) => String(r.action));
+  expect(await lines()).toEqual(["invite.created"]);
+  /* The attempt line is already written when the mail provider is called. */
+  const seen: string[][] = [];
+  await mailWorkspaceInvite({ ws, code, origin: "http://localhost", actorId: user.id, deliver: async () => { seen.push(await lines()); } });
+  expect(seen).toEqual([["invite.created", "invite.resend_attempted"]]);
+  expect(await lines()).toEqual(["invite.created", "invite.resend_attempted", "invite.resent"]);
+  const count = async () => Number((await p.execute({ sql: "SELECT send_count FROM workspace_invites WHERE code=?", args: [code] })).rows[0].send_count);
+  expect(await count()).toBe(1);
+  const named = (await p.execute({ sql: "SELECT DISTINCT target_id FROM security_audit WHERE workspace_id=? AND action IN ('invite.resend_attempted','invite.resent')", args: [ws.id] })).rows;
+  expect(named.map((r) => String(r.target_id))).toEqual([inviteRef(code)]);
+  /* A provider that refuses: the attempt stands, no send is recorded, nothing is counted. */
+  await expect(mailWorkspaceInvite({ ws, code, origin: "http://localhost", actorId: user.id, deliver: async () => { throw new Error("The mail provider refused."); } })).rejects.toThrow(/refused/);
+  expect(await lines()).toEqual(["invite.created", "invite.resend_attempted", "invite.resent", "invite.resend_attempted"]);
+  expect(await count()).toBe(1);
+  /* An unknown invitation is refused before anything is written. */
+  await expect(mailWorkspaceInvite({ ws, code: "no-such-code", origin: "http://localhost", actorId: user.id, deliver: async () => {} })).rejects.toThrow(/No such invitation/);
+  expect((await lines()).length).toBe(4);
+});
+
 test("emailing an invitation checks its cap and seat first, and a failed send spends nothing", async () => {
   const {
     createWorkspaceInvite,

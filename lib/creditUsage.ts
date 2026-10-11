@@ -222,12 +222,14 @@ export async function creditsByBoard(range: { from: number; to: number }, limit 
 export async function creditsByPerson(range: { from: number; to: number }, viewer: LedgerViewer, limit = 50): Promise<{ name: string; you: boolean; n: number; credits: number }[]> {
   await ready();
   const ws = requireTenant();
+  /* A member's own rows only, chosen in SQL before the LIMIT: another person's spend is never read, and cannot crowd theirs out. */
+  const own = viewer.admin ? "" : " AND created_by = ?";
   const rows = await platformDb().execute({
     sql: `SELECT created_by,SUM(status='succeeded' AND kind IN ('video','image','audio')) AS n,SUM(${charge}) AS credits FROM meter_events
-          WHERE workspace_id=? AND created_at>=? AND created_at<? GROUP BY created_by HAVING credits>0 ORDER BY credits DESC LIMIT ?`,
-    args: [ws.id, range.from, range.to, limit],
+          WHERE workspace_id=? AND created_at>=? AND created_at<?${own} GROUP BY created_by HAVING credits>0 ORDER BY credits DESC LIMIT ?`,
+    args: [ws.id, range.from, range.to, ...(viewer.admin ? [] : [viewer.id]), limit],
   });
-  const kept = rows.rows.filter((r) => viewer.admin || (r.created_by != null && String(r.created_by) === viewer.id));
+  const kept = rows.rows;
   const who = await names(kept.map((r) => (r.created_by == null ? "" : String(r.created_by))), viewer);
   return kept.map((r) => {
     const id = r.created_by == null ? "" : String(r.created_by);
