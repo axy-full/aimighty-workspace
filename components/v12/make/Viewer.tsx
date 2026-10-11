@@ -10,6 +10,8 @@ import { useOverlay, useV12PortalRoot } from "@/components/v12/ui/overlay";
 import { useFocusReturn } from "@/components/v12/ui/Popover";
 import { takesSeed } from "@/lib/workspace/composer";
 import { Price } from "@/components/v12/ui/Price";
+import { Tooltip } from "@/components/v12/ui/Tooltip";
+import { keyOf } from "@/lib/v12/keymap";
 
 /** Why "Reuse seed" can't be pressed here: this engine takes no seed (today only Seedance does). */
 export const SEED_LATER = "This engine doesn't repeat a seed. Variations puts these words and settings in the composer.";
@@ -71,8 +73,12 @@ export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReuseSeed, o
           ) : null}
           {n > 1 ? (
             <>
-              <button type="button" className="v12-mk-viewer-step" data-side="prev" onClick={() => onIndex((index - 1 + n) % n)} title="Previous take · ←" aria-label="Previous take" data-testid="v12-make-viewer-prev">‹</button>
-              <button type="button" className="v12-mk-viewer-step" data-side="next" onClick={() => onIndex((index + 1) % n)} title="Next take · →" aria-label="Next take" data-testid="v12-make-viewer-next">›</button>
+              <Tooltip name="Previous take" shortcut={keyOf("viewer-prev")} named>
+                <button type="button" className="v12-mk-viewer-step" data-side="prev" onClick={() => onIndex((index - 1 + n) % n)} aria-label="Previous take" data-testid="v12-make-viewer-prev">‹</button>
+              </Tooltip>
+              <Tooltip name="Next take" shortcut={keyOf("viewer-next")} named>
+                <button type="button" className="v12-mk-viewer-step" data-side="next" onClick={() => onIndex((index + 1) % n)} aria-label="Next take" data-testid="v12-make-viewer-next">›</button>
+              </Tooltip>
             </>
           ) : null}
           <span className="v12-mk-viewer-count" data-testid="v12-make-viewer-count">{index + 1} / {n}</span>
@@ -80,7 +86,9 @@ export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReuseSeed, o
         <div className="v12-mk-viewer-side">
           <div className="v12-mk-viewer-top">
             <span className="v12-mk-quiet">{tile.type}</span>
-            <button type="button" className="v12-mk-viewer-x" onClick={onClose} title="Close · Esc" aria-label="Close" data-testid="v12-make-viewer-close">×</button>
+            <Tooltip name="Close" shortcut={keyOf("viewer-close")} named>
+              <button type="button" className="v12-mk-viewer-x" onClick={onClose} aria-label="Close" data-testid="v12-make-viewer-close">×</button>
+            </Tooltip>
           </div>
           <button type="button" className="v12-mk-viewer-prompt" onClick={() => onReuse(tile)} disabled={Boolean(tile.reuseBlock)}
             title={tile.reuseBlock ?? "Load this prompt and its settings into the composer"} data-testid="v12-make-viewer-prompt">{tile.prompt}</button>

@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { Kbd } from "./Kbd";
 import { useOverlay, useV12PortalRoot } from "./overlay";
 import type { OverlayLayer } from "./overlay-stack";
 import { place, placeStart, type Side } from "./place";
@@ -25,7 +24,7 @@ export function useFocusReturn(open: boolean, panel: RefObject<HTMLElement | nul
  * A popover beside the control that opened it: on the overlay stack (Esc, outside click), drawn above the page and
  * kept on screen. Focus moves into it and comes back to the control when it closes.
  */
-export function Popover({ open, onClose, anchor, label, children, align = "start", side = "bottom", layer = "menu", role = "dialog", width, className, onKeyDown, autoFocus = true, testId }: {
+export function Popover({ open, onClose, anchor, label, children, align = "start", side = "bottom", layer = "menu", role = "dialog", width, className, onKeyDown, autoFocus = true, focusPanel = false, testId }: {
   open: boolean;
   onClose: () => void;
   anchor: RefObject<HTMLElement | null>;
@@ -41,6 +40,8 @@ export function Popover({ open, onClose, anchor, label, children, align = "start
   className?: string;
   onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   autoFocus?: boolean;
+  /** Focus goes to the panel itself, not its first control (a menu opened by a pointer: ↓ then reaches its first item). */
+  focusPanel?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const portal = useV12PortalRoot();
@@ -83,7 +84,7 @@ export function Popover({ open, onClose, anchor, label, children, align = "start
     if (panel.current.contains(document.activeElement)) return;
     /* A menu starts on its first item that can be chosen; anything else on its first control. */
     const first = role === "menu" ? '[role="menuitem"]:not([aria-disabled="true"])' : FOCUSABLE;
-    (panel.current.querySelector<HTMLElement>(first) ?? panel.current).focus({ preventScroll: true });
+    ((focusPanel ? null : panel.current.querySelector<HTMLElement>(first)) ?? panel.current).focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when it is first placed.
   }, [open, at === null]);
 
@@ -101,14 +102,23 @@ export function Popover({ open, onClose, anchor, label, children, align = "start
 }
 
 export type MenuItem =
-  | { id: string; label: string; shortcut?: string; onSelect: () => void; disabled?: boolean; tone?: "danger" | "quiet"; hint?: ReactNode; testId?: string }
+  | {
+      id: string; label: string; shortcut?: string; onSelect: () => void; disabled?: boolean; tone?: "danger" | "quiet"; hint?: ReactNode; testId?: string;
+      /** A price drawn after the label, " · 43 cr" (the prototype's menus): the quote layer's <Price>, never a written figure. */
+      price?: ReactNode;
+      /** Opens a menu beside this item ("New ▸"): → or Enter opens it, ← or Esc comes back. `onSelect` is not called. */
+      submenu?: readonly MenuItem[];
+      /** Why the item is disabled, on hover. */
+      title?: string;
+    }
   | { separator: true; id: string };
 
 /**
  * A menu: a popover of commands (role menu). ↑/↓, Home and End move, Enter or Space runs one and closes the menu, Tab
- * and Esc close it. A shortcut shown here is one that works (docs/redesign/inventory.md § 4.2: none drawn unwired).
+ * and Esc close it, → opens an item's submenu and ← closes it. A shortcut shown here is one that works (docs/redesign/
+ * inventory.md § 4.2: none drawn unwired; lib/v12/keymap.ts has them all).
  */
-export function Menu({ open, onClose, anchor, label, items, side = "bottom", align = "start", width = 220, head, testId }: {
+export function Menu({ open, onClose, anchor, label, items, side = "bottom", align = "start", width = 220, head, testId, layer, focusPanel }: {
   open: boolean;
   onClose: () => void;
   anchor: RefObject<HTMLElement | null>;
@@ -120,8 +130,22 @@ export function Menu({ open, onClose, anchor, label, items, side = "bottom", ali
   /** Drawn above the items (the account menu's balance row); its controls are reached with Tab, the items with ↑/↓. */
   head?: ReactNode;
   testId?: string;
+  layer?: OverlayLayer;
+  /** Opened by a pointer: focus the menu, not its first item (no focus ring on an item nobody chose); ↓ reaches it. */
+  focusPanel?: boolean;
 }) {
+  const [sub, setSub] = useState<string | null>(null);
+  const subAnchor = useRef<HTMLButtonElement | null>(null);
+  const subItem = sub ? items.find((item) => !("separator" in item) && item.id === sub) : undefined;
+  const subItems = subItem && !("separator" in subItem) ? subItem.submenu : undefined;
+  /* A closed menu forgets its open submenu (set while rendering, as React advises for state that follows a prop). */
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) { setWasOpen(open); if (!open) setSub(null); }
+  const openSub = (id: string, button: HTMLButtonElement) => { subAnchor.current = button; setSub(id); };
+
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    /* A submenu's keys are its own (it is a child of this panel in the React tree, not in the page). */
+    if (!event.currentTarget.contains(event.target as Node)) return;
     const all = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])'));
     const at = all.indexOf(document.activeElement as HTMLElement);
     const go = (i: number) => { event.preventDefault(); all[(i + all.length) % all.length]?.focus(); };
@@ -129,20 +153,70 @@ export function Menu({ open, onClose, anchor, label, items, side = "bottom", ali
     else if (event.key === "ArrowUp") go(at < 0 ? all.length - 1 : at - 1);
     else if (event.key === "Home") go(0);
     else if (event.key === "End") go(all.length - 1);
+    else if (event.key === "ArrowRight") {
+      const here = all[at] as HTMLButtonElement | undefined;
+      if (here?.dataset.sub) { event.preventDefault(); openSub(here.dataset.sub, here); }
+    }
     /* Tab leaves the menu back on the control that opened it, so a dialog's own Tab trap still holds around it. */
     else if (event.key === "Tab") { event.preventDefault(); event.stopPropagation(); onClose(); anchor.current?.focus(); }
   };
   return (
-    <Popover open={open} onClose={onClose} anchor={anchor} label={label} role="menu" side={side} align={align} width={width} onKeyDown={onKeyDown} className="v12-menu" testId={testId}>
+    <Popover open={open} onClose={onClose} anchor={anchor} label={label} role="menu" side={side} align={align} width={width} onKeyDown={onKeyDown} className="v12-menu" testId={testId} layer={layer} focusPanel={focusPanel}>
       {head}
       {items.map((item) => "separator" in item ? <div key={item.id} role="separator" className="v12-menu-sep" /> : (
         <button key={item.id} type="button" role="menuitem" className="v12-menu-item" data-tone={item.tone} data-testid={item.testId} aria-disabled={item.disabled || undefined}
-          tabIndex={-1} onClick={() => { if (item.disabled) return; onClose(); item.onSelect(); }}>
-          <span className="v12-menu-label">{item.label}</span>
+          aria-haspopup={item.submenu ? "menu" : undefined} aria-expanded={item.submenu ? sub === item.id : undefined} data-sub={item.submenu ? item.id : undefined}
+          title={item.title} data-item={item.id} tabIndex={-1}
+          onClick={(e) => {
+            if (item.disabled) return;
+            if (item.submenu) { openSub(item.id, e.currentTarget); return; }
+            onClose(); item.onSelect();
+          }}>
+          <span className="v12-menu-label">{item.label}{item.price ? <span className="v12-menu-price"> · {item.price}</span> : null}{item.submenu ? <span className="v12-menu-more" aria-hidden="true"> ▸</span> : null}</span>
           {item.hint ? <span className="v12-menu-hint">{item.hint}</span> : null}
-          {item.shortcut ? <Kbd keys={item.shortcut.split(" ")} /> : null}
+          {item.shortcut ? <kbd className="v12-menu-key" aria-label={`Shortcut ${item.shortcut}`}>{item.shortcut}</kbd> : null}
         </button>
       ))}
+      {subItems ? (
+        <SubMenu anchor={subAnchor} label={subItem && !("separator" in subItem) ? subItem.label : label} items={subItems} width={width}
+          onBack={() => { setSub(null); subAnchor.current?.focus(); }} onDone={() => { setSub(null); onClose(); }} layer={layer} />
+      ) : null}
     </Popover>
+  );
+}
+
+/** A submenu beside its item: ← or Esc closes it back onto the item; running one of its items closes both. */
+function SubMenu({ anchor, label, items, width, onBack, onDone, layer }: {
+  anchor: RefObject<HTMLButtonElement | null>; label: string; items: readonly MenuItem[]; width: number; onBack: () => void; onDone: () => void; layer?: OverlayLayer;
+}) {
+  const wrapped = items.map((item) => ("separator" in item ? item : { ...item, onSelect: () => { onDone(); item.onSelect(); } }));
+  return (
+    <div onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); event.stopPropagation(); onBack(); } }}>
+      <Menu open onClose={onBack} anchor={anchor} label={label} items={wrapped} side="right" width={Math.min(width, 200)} layer={layer} testId="v12-submenu" />
+    </div>
+  );
+}
+
+/**
+ * A menu at a point (a right-click): drawn at the cursor and kept on screen, on the overlay stack like every menu.
+ * The point is a zero-size anchor at the cursor, so it places, flips and focuses as a menu under a control does.
+ */
+export function ContextMenu({ at, onClose, label, items, width = 260, testId }: {
+  /** `pointer: false`: opened from the keyboard (the menu key, ⇧F10), so its first item takes focus. */
+  at: { x: number; y: number; pointer?: boolean } | null;
+  onClose: () => void;
+  label: string;
+  items: readonly MenuItem[];
+  width?: number;
+  testId?: string;
+}) {
+  const point = useRef<HTMLSpanElement>(null);
+  const portal = useV12PortalRoot();
+  if (!at || !portal) return null;
+  return (
+    <>
+      {createPortal(<span ref={point} aria-hidden="true" className="v12-menu-point" style={{ left: at.x, top: at.y }} />, portal)}
+      <Menu key={`${at.x},${at.y}`} open onClose={onClose} anchor={point} label={label} items={items} width={width} testId={testId} focusPanel={at.pointer !== false} />
+    </>
   );
 }
