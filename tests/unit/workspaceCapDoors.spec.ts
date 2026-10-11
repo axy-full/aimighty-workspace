@@ -30,6 +30,20 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET = "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 delete process.env.PLATFORM_ALLOWANCE_USD;
+/* A worker runs several spec files one after another in one process, so what an earlier file left behind is still here. Two things
+   decide whether a text door reaches the hold: the model catalogue's one-hour cache (a file that served it a catalogue leaves the
+   price of every text model known, and the door then holds: "reaches the hold uncapped") and the keys and switches in the
+   environment that say which catalogue and engines are reachable. This file starts from neither: those variables are unset, and
+   the catalogue module and everything that imports it are loaded afresh. (ENGINE_MOCK stays set above.) */
+for (const key of ["MODEL_CATALOG", "TEXT_DIRECT", "OPENAI_API_KEY", "AI_GATEWAY_API_KEY", "AI_GATEWAY_BASE_URL", "VERCEL", "VERCEL_OIDC_TOKEN"]) delete process.env[key];
+{
+  const loaded = createRequire(path.resolve("package.json")).cache;
+  const importers = new Map<string, Set<string>>();
+  for (const [file, mod] of Object.entries(loaded)) for (const child of mod?.children ?? []) (importers.get(child.id) ?? importers.set(child.id, new Set()).get(child.id)!).add(file);
+  const stale = [path.resolve("lib/catalog.ts")];
+  for (let i = 0; i < stale.length; i++) for (const up of importers.get(stale[i]) ?? []) if (!stale.includes(up)) stale.push(up);
+  for (const file of stale) delete loaded[file];
+}
 
 const person = (id: string): AdmissionActor["user"] =>
   ({ id, email: `${id}@example.invalid`, name: id, role: "admin", owner: true, disabled: false, createdAt: 0, lastSeen: null });
@@ -39,6 +53,8 @@ const OWNER: AdmissionActor = { user: person("owner") };
 const CAP_REFUSAL = /monthly cap on the platform's engines|monthly spending cap/;
 
 const nodeRequire = createRequire(path.resolve("package.json"));
+/** An app module from the one registry the routes below are loaded from (not Playwright's own import, which keeps a registry of its own: two copies of a class would not be instanceof each other). */
+const mod = <T,>(name: string): T => nodeRequire(resolveSource(path.resolve("package.json"), `@/${name}`)) as T;
 function resolveSource(from: string, name: string): string {
   const base = name.startsWith("@/") ? path.resolve(name.slice(2)) : path.resolve(path.dirname(from), name);
   for (const candidate of [`${base}.ts`, `${base}.tsx`, path.join(base, "index.ts"), base]) if (existsSync(candidate)) return candidate;
@@ -113,9 +129,9 @@ let providerCalls = 0;
 /** A workspace of its own database with 10,000 credits, an own cap (null: none) and two productions; every network call refused, and
  *  every one counted but the engine catalogue's free read (`/models`). */
 async function scope(ws: string, capUsd: number | null, fn: () => Promise<void>, actor: AdmissionActor = OWNER) {
-  const { platformReady, platformDb, rowToWorkspace, grantCredits } = await import("../../lib/platform");
-  const { runInTenant } = await import("../../lib/tenant");
-  const { ready, db } = await import("../../lib/db");
+  const { platformReady, platformDb, rowToWorkspace, grantCredits } = mod<typeof import("../../lib/platform")>("lib/platform");
+  const { runInTenant } = mod<typeof import("../../lib/tenant")>("lib/tenant");
+  const { ready, db } = mod<typeof import("../../lib/db")>("lib/db");
   await platformReady();
   await platformDb().execute({
     sql: "INSERT INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour,allowance_usd) VALUES(?,?,?,?,1,'owner',0,0,20,200,?)",
@@ -142,18 +158,18 @@ async function scope(ws: string, capUsd: number | null, fn: () => Promise<void>,
 }
 
 async function meterRows() {
-  const { platformDb } = await import("../../lib/platform");
-  const { requireTenant } = await import("../../lib/tenant");
+  const { platformDb } = mod<typeof import("../../lib/platform")>("lib/platform");
+  const { requireTenant } = mod<typeof import("../../lib/tenant")>("lib/tenant");
   return (await platformDb().execute({ sql: "SELECT id,status,engine_cost_usd,billed_credits FROM meter_events WHERE workspace_id=?", args: [requireTenant().id] })).rows;
 }
 async function reservations(): Promise<number> {
-  const { platformDb } = await import("../../lib/platform");
-  const { requireTenant } = await import("../../lib/tenant");
+  const { platformDb } = mod<typeof import("../../lib/platform")>("lib/platform");
+  const { requireTenant } = mod<typeof import("../../lib/tenant")>("lib/tenant");
   try { return (await platformDb().execute({ sql: "SELECT * FROM generation_reservations WHERE workspace_id=?", args: [requireTenant().id] })).rows.length; }
   catch (error) { if (/no such table/i.test(String(error))) return 0; throw error; }
 }
 async function balance(): Promise<number> {
-  const { creditState } = await import("../../lib/credits");
+  const { creditState } = mod<typeof import("../../lib/credits")>("lib/credits");
   return (await creditState())?.balance ?? NaN;
 }
 /** What a press could have spent: a hold (a running or billed meter row), a reservation, a call out, a credit. */
@@ -169,7 +185,7 @@ async function spent() {
 const NOTHING = { holds: 0, reservations: 0, provider: 0, balance: 10000 };
 
 async function press(entry: (typeof DOORS)[number], key: string): Promise<{ status: number; body: Record<string, unknown> }> {
-  const { requireTenant } = await import("../../lib/tenant");
+  const { requireTenant } = mod<typeof import("../../lib/tenant")>("lib/tenant");
   const req = new Request(`http://localhost/api/${entry.dir.replace("[id]", entry.id ?? "x")}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": key.replace(/[^A-Za-z0-9.:_-]/g, "-"), "X-Workbench-Scope": `particl-active-${requireTenant().id}-owner` },
@@ -208,7 +224,7 @@ for (const entry of DOORS)
   });
 
 test("Make's render, still and sound: the hold counts a job still running at its estimate, and the next press past the cap is refused", async () => {
-  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { reserveGenerationSpend } = mod<typeof import("../../lib/generationRequests")>("lib/generationRequests");
   const presses = [
     DOORS.find((d) => d.dir === "generate")!,
     { dir: "generate", body: { model: "gemini-3.1-flash-image", prompt: "raw: A tree", ratio: "16:9", resolution: "1K", projectId: "film" } },
@@ -237,7 +253,7 @@ test("Atomik's paid text (a planning turn, ideas, Enhance, a memory read): reser
   /* The vendor boundary, counted: what it sees on the meter when it is called. */
   const submit = async () => { sent++; holdsSeen.push((await meterRows()).filter((r) => r.status === "running").length); return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: "An idea." } }], usage: { cost: 0.01 } }) }; };
   await scope(name("text-open"), null, async () => {
-    const { runPaidText } = await import("../../lib/paidText");
+    const { runPaidText } = mod<typeof import("../../lib/paidText")>("lib/paidText");
     await runPaidText({ ...request, id: "text_open" }, { model, submit } as never);
     expect((await meterRows()).map((r) => String(r.id))).toEqual(["text_open"]);
     expect(sent).toBe(1);
@@ -245,7 +261,7 @@ test("Atomik's paid text (a planning turn, ideas, Enhance, a memory read): reser
     expect(holdsSeen).toEqual([1]);
   });
   await scope(name("text-wall"), 0, async () => {
-    const { runPaidText } = await import("../../lib/paidText");
+    const { runPaidText } = mod<typeof import("../../lib/paidText")>("lib/paidText");
     const refused = await runPaidText({ ...request, id: "text_wall" }, { model, submit } as never).then(() => null, (e) => e);
     expect(refused).toMatchObject({ status: 429 });
     expect(String((refused as Error).message)).toMatch(CAP_REFUSAL);
@@ -255,8 +271,8 @@ test("Atomik's paid text (a planning turn, ideas, Enhance, a memory read): reser
 });
 
 test("the reservation counts holds, not only settled spend: room comes back when a held job fails at no cost or settles below its hold", async () => {
-  const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
-  const { meter } = await import("../../lib/meter");
+  const { reserveGenerationSpend, SpendReservationError } = mod<typeof import("../../lib/generationRequests")>("lib/generationRequests");
+  const { meter } = mod<typeof import("../../lib/meter")>("lib/meter");
   await scope(name("holds"), 1, async () => {
     const job = (id: string, usd: number) => ({ id, kind: "text" as const, engine: "vercel", model: "m", status: "running" as const, engineCostUsd: usd, createdBy: "owner" });
     await reserveGenerationSpend(job("a", 0.6));
@@ -280,7 +296,7 @@ test("the reservation counts holds, not only settled spend: room comes back when
 });
 
 test("the cap is the workspace's own: another workspace's spend never counts against it, and of two holds raced at room for one, exactly one is admitted", async () => {
-  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { reserveGenerationSpend } = mod<typeof import("../../lib/generationRequests")>("lib/generationRequests");
   const job = (id: string, usd: number) => ({ id, kind: "text" as const, engine: "vercel", model: "m", status: "running" as const, engineCostUsd: usd, createdBy: "owner" });
   /* A workspace with no cap spends past the other's figure. */
   await scope(name("open-neighbour"), null, async () => {
@@ -297,9 +313,9 @@ test("the cap is the workspace's own: another workspace's spend never counts aga
 });
 
 test("a cap lowered on /admin while a request is on its way applies to it: the reservation reads the cap inside its own write", async () => {
-  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
-  const { platformDb } = await import("../../lib/platform");
-  const { requireTenant } = await import("../../lib/tenant");
+  const { reserveGenerationSpend } = mod<typeof import("../../lib/generationRequests")>("lib/generationRequests");
+  const { platformDb } = mod<typeof import("../../lib/platform")>("lib/platform");
+  const { requireTenant } = mod<typeof import("../../lib/tenant")>("lib/tenant");
   /* The request's workspace was read with no cap; the platform owner sets $0 before it reserves. */
   await scope(name("lowered"), null, async () => {
     await platformDb().execute({ sql: "UPDATE workspaces SET allowance_usd=0 WHERE id=?", args: [requireTenant().id] });
@@ -315,9 +331,9 @@ test("a cap lowered on /admin while a request is on its way applies to it: the r
 });
 
 test("a take parked before the cap fell starts nothing: neither a person's release nor the server's own pass reserves or sends it", async () => {
-  const { releaseHeldJobs } = await import("../../lib/held");
+  const { releaseHeldJobs } = mod<typeof import("../../lib/held")>("lib/held");
   await scope(name("held"), 0, async () => {
-    const { db } = await import("../../lib/db");
+    const { db } = mod<typeof import("../../lib/db")>("lib/db");
     await db().execute({
       sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,billed_to,task)
             VALUES('gen_parked','video','byteplus','dreamina-seedance-2-0-260128','test',?,'held','owner',?,?,'byteplus','generate')`,
@@ -475,10 +491,10 @@ test("every paid route names the module that reserves for it, and its imports re
 
 /** A Crew room of its own, in a workspace with `capUsd` (null: none) and 10,000 credits, its owner a member. */
 async function crewRoom(capUsd: number | null) {
-  const { platformReady, platformDb, getWorkspace, grantCredits } = await import("../../lib/platform");
-  const { runInTenant } = await import("../../lib/tenant");
-  const { createSession, claimRound, listMembers } = await import("../../lib/crew/store");
-  const { DEFAULT_CONTEXT } = await import("../../lib/crew/room");
+  const { platformReady, platformDb, getWorkspace, grantCredits } = mod<typeof import("../../lib/platform")>("lib/platform");
+  const { runInTenant } = mod<typeof import("../../lib/tenant")>("lib/tenant");
+  const { createSession, claimRound, listMembers } = mod<typeof import("../../lib/crew/store")>("lib/crew/store");
+  const { DEFAULT_CONTEXT } = mod<typeof import("../../lib/crew/room")>("lib/crew/room");
   await platformReady();
   const id = name("crew"), owner = `owner_${id}`;
   await platformDb().batch([
@@ -499,10 +515,10 @@ async function crewRoom(capUsd: number | null) {
 }
 
 test("a Crew round reserves before it asks the engine: the engine sees the round's running hold, and at an own $0 cap it is never asked", async () => {
-  const { runInTenant } = await import("../../lib/tenant");
-  const { listMembers } = await import("../../lib/crew/store");
-  const { newProject } = await import("../../lib/workbench/studio");
-  const { SpendReservationError } = await import("../../lib/generationRequests");
+  const { runInTenant } = mod<typeof import("../../lib/tenant")>("lib/tenant");
+  const { listMembers } = mod<typeof import("../../lib/crew/store")>("lib/crew/store");
+  const { newProject } = mod<typeof import("../../lib/workbench/studio")>("lib/workbench/studio");
+  const { SpendReservationError } = mod<typeof import("../../lib/generationRequests")>("lib/generationRequests");
   const xai = nodeRequire(path.resolve("lib/crew/xai.ts"));
   let asked = 0;
   const holdsSeen: number[] = [];
