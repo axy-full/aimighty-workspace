@@ -81,11 +81,11 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   if (!ops && model) {
     chips.push({
       /* "Nano Banana 2 · 2K · 2 cr": the engine, its size and one take's price, the server's. */
-      k: "Model", v: <>{model.label}{settings.resolution && state.type !== "audio" ? ` · ${settings.resolution}` : ""}{make.linePrice?.value ? <> · <Price quote={makeQuote(make.linePrice.value, money)} testId="v12-make-chip-price" /></> : make.linePrice?.about ? ` · ${make.linePrice.about}` : null}</>,
+      k: "Model", v: <>{model.label}{settings.resolution && state.type !== "audio" ? ` · ${settings.resolution}` : ""}{make.linePrice?.value ? <> · <Price quote={makeQuote(make.linePrice.value, money, make.linePrice.usd)} testId="v12-make-chip-price" /></> : make.linePrice?.about ? ` · ${make.linePrice.about}` : null}</>,
       title: "Engines from the rate card", testId: "v12-make-chip-model", onOpen: make.openList, onClose: make.closeList,
       items: make.offered.map((m) => {
         const row = make.rowValue(m);
-        return { id: m.id, label: m.label, onSelect: () => make.pickEngine(m), hint: row.value ? <Price quote={makeQuote(row.value, money)} /> : row.about ?? undefined };
+        return { id: m.id, label: m.label, onSelect: () => make.pickEngine(m), hint: row.value ? <Price quote={makeQuote(row.value, money, row.usd)} /> : row.about ?? undefined };
       }),
     });
     const ratios = (model.ratios ?? []).filter((r) => r !== "adaptive");
@@ -102,7 +102,7 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   }
 
   const price = make.go.price;
-  const priceNode = price?.value ? <Price quote={makeQuote(price.value, money)} testId="v12-make-price" /> : price?.about ? <span className="v12-price" data-price="about" data-testid="v12-make-price">{price.about}</span> : undefined;
+  const priceNode = price?.value ? <Price quote={makeQuote(price.value, money, price.usd)} testId="v12-make-price" /> : price?.about ? <span className="v12-price" data-price="about" data-testid="v12-make-price">{price.about}</span> : undefined;
   const attrs = price?.value ? spendAttrsOf(price.value) : price?.about ? spendAttrsText(price.about) : { "data-spend": "unpriced" as const };
   const autoLine = mode === "auto" && model
     ? [`Auto · ${TYPE_WORD[state.type]}, so ${model.label}${settings.resolution && state.type !== "audio" ? ` at ${settings.resolution}` : ""}`]

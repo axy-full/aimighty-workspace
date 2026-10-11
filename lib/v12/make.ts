@@ -17,8 +17,10 @@ import { knownQuote, NO_DOLLAR_PRICE, type Quote } from "./quote";
  * A price today's Make gave (use-make: the server's quote, in credits) as the quote layer draws it: credits for a
  * workspace that pays in credits; dollars at the credit's price for the one that pays in dollars, as Home's Start does.
  */
-export function makeQuote(value: PriceValue | null | undefined, money: { dollars: boolean; creditUsd: number | null }): Quote {
+export function makeQuote(value: PriceValue | null | undefined, money: { dollars: boolean; creditUsd: number | null }, usd?: number | null): Quote {
   if (!money.dollars || !value || value.kind === "free") return knownQuote(value);
+  /* The house workspace is shown the engine's own dollars: the figure its hold and its bill are in, never the customer price in credits turned into dollars. */
+  if (typeof usd === "number" && Number.isFinite(usd) && usd >= 0 && value.kind !== "up-to") return { state: "ready", price: { unit: "usd", usd, upTo: false } };
   return money.creditUsd ? { state: "ready", price: { unit: "usd", usd: value.credits * money.creditUsd, upTo: value.kind === "up-to" } } : { state: "error", message: NO_DOLLAR_PRICE };
 }
 
@@ -214,3 +216,10 @@ export const EDIT_OPS: readonly MakeOp[] = [
   { id: "lipsync", label: "Lip-sync", tool: null, why: "Lip-sync has no engine yet." },
   { id: "motion", label: "Motion transfer", tool: "motion", why: null },
 ];
+
+/** What a take in flight says beside its held figure, on a line of its own so the tile's first line stays one line: "charged only when it’s ready" (or what the engine reports). */
+export function tileTail(state: { stage: string; slow: boolean; money: { text: string; short: string } | null }): string | null {
+  if ((state.stage !== "rendering" && state.stage !== "saving") || state.slow || !state.money || !state.money.text.startsWith(state.money.short)) return null;
+  const tail = state.money.text.slice(state.money.short.length).replace(/^\s*·\s*/, "").trim();
+  return tail ? `${tail.charAt(0).toUpperCase()}${tail.slice(1)}` : null;
+}

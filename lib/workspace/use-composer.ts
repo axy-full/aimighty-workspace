@@ -432,12 +432,12 @@ export function useComposer(options: {
         const query = new URLSearchParams({ model: model!.id, resolution: settings.resolution, ratio: settings.ratio, duration: String(settings.duration),
           ...(settings.generateAudio ? { audio: "1" } : {}) });
         const references = state.references.length ? mediaQuoteReferences(state.references.map(referenceAsset)) : "";
-        const result = await studioRequest<{ credits: number | null; approximate?: boolean }>(`${API}/engines?${query}${references ? `&${references}` : ""}`, {
+        const result = await studioRequest<{ credits: number | null; approximate?: boolean; usd?: number }>(`${API}/engines?${query}${references ? `&${references}` : ""}`, {
           signal: controller.signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store",
         });
         if (typeof result.credits !== "number" || !Number.isFinite(result.credits))
           return { key: quoteKey, credits: null, state: "unavailable", reason: "This model cannot be priced with these settings." };
-        return { key: quoteKey, credits: result.credits, state: "ready", reason: null, ...(result.approximate === true ? { approximate: true } : {}) };
+        return { key: quoteKey, credits: result.credits, state: "ready", reason: null, ...(result.approximate === true ? { approximate: true } : {}), ...(typeof result.usd === "number" && Number.isFinite(result.usd) ? { usd: result.usd } : {}) };
       };
       void ask()
         .then((value) => { if (!controller.signal.aborted) setQuote(value); })
