@@ -79,7 +79,6 @@ import { PpmStage } from "@/components/v12/board/PpmStage";
 import { ProductStage } from "@/components/v12/board/campaign/ProductStage";
 import { LookStage } from "@/components/v12/board/campaign/LookStage";
 import { FormatsStage } from "@/components/v12/board/campaign/FormatsStage";
-import { VariantsStage } from "@/components/v12/board/campaign/VariantsStage";
 import type { CutCardData } from "./cards/cut/cut-model";
 import { BoardToolbar, ViewSwitch } from "@/components/v12/board/BoardTools";
 import "@/components/v12/board/board.css";
@@ -194,7 +193,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const pageWanted = stagePage(stage?.id, flavor);
   const deliverCard = allCards.find((c) => c.kind === "deliver");
   const cutNow = (deliverCard?.data as CutCardData | undefined)?.cut ?? null;
-  /* Campaign's Product, Look, Formats and Variants are pages from the start: Product is where a campaign begins. */
+  /* Campaign's Product, Look and Formats are pages from the start: Product is where a campaign begins. */
   const page: StagePageKind | null = pageWanted === "deliver" ? (cutNow && deliverCard ? "deliver" : null) : pageWanted === "ppm" ? (allCards.length > 0 ? "ppm" : null) : pageWanted;
   /* A client round's share card (redesign P2-c) rides in the page when a page covers the canvas, so it is never hidden behind it. */
   const roundShare = page ? allCards.find((c) => c.id === "round:deliver") ?? null : null;
@@ -765,8 +764,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
                 : page === "ppm" ? <PpmStage ctx={ctx} />
                 : page === "product" ? <ProductStage ctx={ctx} />
                 : page === "look" ? <LookStage ctx={ctx} />
-                : page === "formats" ? <FormatsStage ctx={ctx} />
-                : page === "variants" ? <VariantsStage ctx={ctx} /> : null}
+                : page === "formats" ? <FormatsStage ctx={ctx} /> : null}
 
             </div>
           ) : null}

@@ -29,12 +29,3 @@
 .v12 .v12-cp-skill[data-state="off"] .v12-cp-example { filter: grayscale(1); opacity: 0.45; }
 .v12 .v12-cp-line { margin: 0; font-size: var(--gx-fs-body); line-height: 1.45; color: var(--gx-text-strong); }
 .v12 .v12-cp-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-
-/* Variants: hooks down, sizes across */
-.v12 .v12-cp-vtable { display: flex; flex-direction: column; gap: 8px; overflow-x: auto; }
-.v12 .v12-cp-vrow { display: grid; grid-template-columns: minmax(180px, 1.4fr) repeat(3, minmax(140px, 1fr)); gap: 8px; align-items: stretch; min-width: 640px; }
-.v12 .v12-cp-vhead { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
-.v12 .v12-cp-hook { align-self: center; font-size: var(--gx-fs-body); overflow-wrap: anywhere; }
-.v12 .v12-cp-cell { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--gx-card-border); border-radius: 8px; background: transparent; color: var(--gx-text); font: inherit; font-size: var(--gx-fs-meta); text-align: left; cursor: pointer; }
-.v12 .v12-cp-cell:hover:not(:disabled) { border-color: var(--gx-hover-border); }
-.v12 .v12-cp-cell:disabled { color: var(--gx-disabled); cursor: default; }

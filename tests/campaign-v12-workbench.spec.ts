@@ -7,7 +7,7 @@ import { EMPTY_MOLECULR } from "../lib/workbench/moleculr";
  * The Campaign board's stages in the new interface (redesign P6-a; components/v12/board/campaign; docs/redesign/inventory.md
  * § 10.1): Product reads a page through today's two free reads and keeps packshots real; Look holds the moodboard and the
  * brand's mandatories as the brand kit can answer them; Formats is an even grid of eight skill cards, each with one price or
- * "quoted"; Variants is hooks by sizes. Nothing spends: the pages' reads are answered here by fixtures, and Make is only opened.
+ * "quoted". Variants and Deliver keep today's cards for now. Nothing spends: the pages' reads are answered here by fixtures, and Make is only opened.
  */
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
 const PHONE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -152,33 +152,18 @@ test.describe("desktop, switch on", () => {
     expect(await noSideways(page)).toBe(true);
   });
 
-  test("Variants: hooks down, sizes across; a cell opens Make with its hook; versions and the first row say they are not built", async ({ page }) => {
-    const project = campaign({ moleculr: { ...EMPTY_MOLECULR, productName: "Linen bowl", hooks: ["Soft light, every day.", "What’s in your glaze?"], creative: { path: "template", category: "ugc", direction: "", aspect: "9:16", seconds: 15, templateId: "ugc-silent" } } as never });
-    await openBoard(page, "/suites?view=board&stage=variants", { project });
-    const seen = await mocks(page);
-    await expect(page.getByTestId("v12-variants-stage")).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByTestId("v12-variants-state")).toContainText("Unboxing · 2 hooks");
-    await expect(page.getByRole("columnheader")).toHaveText(["", "Reels 9:16", "Feed 4:5", "YouTube 16:9"]);
-    await expect(page.getByTestId("v12-variant-row")).toHaveCount(2);
-    await expect(page.getByTestId("v12-variant-cell")).toHaveCount(6);
-    await expect(page.getByTestId("v12-variant-cell").first()).toContainText(/\d[\d,]* cr|—|…/, { timeout: 30_000 });
-    await expect(page.getByTestId("v12-variants-versions")).toContainText("aren’t built yet");
-    await expect(page.getByTestId("v12-variants-first-row")).toBeDisabled();
-    await page.locator('[data-testid="v12-variant-cell"][data-ratio="4:5"]').first().click();
-    await expect(page.getByTestId("v12-make")).toBeVisible({ timeout: 30_000 });
-    /* Make opens at that cell\u2019s size, with the board\u2019s brief. */
-    await expect(page.getByTestId("v12-make")).toContainText("Aspect 4:5");
-    expect(seen.paid).toEqual([]);
+  test("switch off: today's Ads board, with none of the stage pages", async ({ page }) => {
+    await openBoard(page, "/suites?view=board&stage=formats", { on: false, project: campaign() });
+    await expect(page.locator(".react-flow__pane")).toBeVisible({ timeout: 60_000 });
+    for (const id of ["v12-product-stage", "v12-look-stage", "v12-formats-stage", "v12-stage-page"]) await expect(page.getByTestId(id)).toHaveCount(0);
     expect(await noSideways(page)).toBe(true);
   });
 
-  test("Variants without a format or hooks says what to do first", async ({ page }) => {
+  test("Variants keeps today's cards: the hooks and the ads, no page of its own yet", async ({ page }) => {
     await openBoard(page, "/suites?view=board&stage=variants", { project: campaign() });
-    await expect(page.getByTestId("v12-variants-stage")).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByTestId("v12-variants-needs-format")).toBeVisible();
-    await expect(page.getByTestId("v12-variants-needs-hooks")).toBeVisible();
-    await page.getByTestId("v12-variants-go-formats").click();
-    await expect(page.getByTestId("v12-formats-stage")).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator(".react-flow__pane")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("v12-stage-page")).toHaveCount(0);
+    expect(await noSideways(page)).toBe(true);
   });
 });
 

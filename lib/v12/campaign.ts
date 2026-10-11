@@ -1,6 +1,6 @@
 /**
- * The Campaign board's stages in the new interface (docs/redesign/inventory.md § 10.1; prototype L582–L585): Product, Look,
- * Formats and Variants, as data. Pure: no React, no fetch (tests/unit/v12-campaign.spec.ts).
+ * The Campaign board's stages in the new interface (docs/redesign/inventory.md § 10.1; prototype L582–L585): Product, Look
+ * and Formats, as data. Pure: no React, no fetch (tests/unit/v12-campaign.spec.ts).
  *
  * Everything here reads what today's Ads board already holds (the brief's product and brand kit, lib/workbench/moleculr*.ts)
  * and what its reads return (lib/workbench/product-extraction-types.ts, brand-extraction-types.ts). A format is a creative
@@ -127,18 +127,3 @@ export function formatQuote(format: CampaignFormat, ratio?: string): { source: Q
   if (typeof first !== "string") return { reason: "campaignStills" };
   return { source: { route: "engine", model: first, resolution: MAKE_PICKS.resolution ?? "1080p", ratio: ratio ?? template.aspect, duration: 5 } };
 }
-
-/* ── Variants ─────────────────────────────────────────────────────────── */
-
-/** The grid's columns (prototype): the sizes a hook is made for. */
-export const VARIANT_COLUMNS = [
-  { id: "reels", label: "Reels 9:16", ratio: "9:16" },
-  { id: "feed", label: "Feed 4:5", ratio: "4:5" },
-  { id: "youtube", label: "YouTube 16:9", ratio: "16:9" },
-] as const;
-export const VARIANTS_NOTE = [
-  ["Rows", "opening hooks · written against the brief"],
-  ["Columns", "Reels 9:16 · Feed 4:5 · YouTube 16:9"],
-] as const;
-export const VERSIONS_WHY = "Versions of an approved ad (keeping its motion and cuts) aren’t built yet.";
-export const FIRST_ROW_WHY = "Make runs one ad at a time today, so each cell is made in Make with its own price.";
