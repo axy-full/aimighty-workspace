@@ -34,7 +34,8 @@ export default function PrivacyPage() {
       <P title="Who sees it">
         <p>
           Published project bibles and shared workspace assets are visible to
-          your team. Private workbench drafts are scoped to their author. Access
+          your team. A board is listed for every member of its workspace and
+          opens view-only for everyone but its maker, who alone edits it. Access
           also depends on role: members render, pick and approve; admins run the
           team and the ledger; the owner alone deletes the workspace or exports
           it. The platform&rsquo;s desk sees each workspace&rsquo;s spend,

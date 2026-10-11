@@ -14,6 +14,7 @@ import { platformDb, platformReady } from "@/lib/platform";
 import { ownerMaskFor, resolveMemberId, supportMemberId } from "@/lib/platformOwnerPrivacy";
 import type { TenantWorkspace } from "@/lib/tenant";
 import { readDraft, workbenchReady } from "./records";
+export { viewOnlyLine, viewOnlyRefusal } from "./view-only";
 
 export type BoardOwner = { id: string; name: string; support?: true };
 export type TeamBoard = { id: string; name: string; revision: number; updatedAt: number; kind?: string | null; owner: BoardOwner; mine: boolean };
@@ -77,6 +78,19 @@ export async function otherOwnersBoard(ws: Pick<TenantWorkspace, "id">, me: stri
   return { id: "", name: "a teammate" };
 }
 
-/** What a view-only board says in the stage header. */
-export const viewOnlyLine = (ownerName: string) => `${ownerName}’s board · view only`;
-export const viewOnlyRefusal = (ownerName: string) => `This is ${ownerName}’s board; it opens view-only here, so it was not saved.`;
+/**
+ * A teammate's board asked for by its id alone (a board link): the one board with that id in this workspace that belongs to an active member
+ * other than the caller. Null when there is none, or none the caller may see.
+ */
+export async function findTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string, id: string): Promise<{ project: NonNullable<Awaited<ReturnType<typeof readDraft>>>["project"]; revision: number; owner: BoardOwner } | null> {
+  await workbenchReady();
+  const rows = (await db().execute({ sql: "SELECT owner FROM workbench_projects WHERE project_id=? AND owner<>? ORDER BY updated_at DESC", args: [id, me] })).rows;
+  const people = await activeMembers(ws);
+  for (const row of rows) {
+    const owner = await ownerOf(ws, people, String(row.owner));
+    if (!owner) continue;
+    const draft = await readDraft(String(row.owner), id);
+    if (draft) return { ...draft, owner };
+  }
+  return null;
+}

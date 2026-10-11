@@ -70,22 +70,29 @@ test("a member lists every board of their workspace, their own marked, with each
   expect(back.team!.find((b) => b.id === a.draftId)).toMatchObject({ mine: true });
 });
 
-test("a teammate's board opens view-only: whole, with its maker; asked without the maker it is not theirs", async () => {
+test("a teammate's board opens view-only, whole, with its maker: by its id alone (a board link) or with the maker named", async () => {
   const seen = await (await teammate.get(`/api/workbench/projects?id=${a.draftId}&owner=${a.userId}`, { headers: teammateHeaders })).json() as Team;
   expect(seen.project?.id).toBe(a.draftId);
   expect(seen.viewOnly?.owner).toMatchObject({ id: a.userId });
   expect(seen.viewOnly?.owner.name).toContain("Board Owner");
-  const own = await (await teammate.get(`/api/workbench/projects?id=${a.draftId}`, { headers: teammateHeaders })).json() as Team;
-  expect(own.project ?? null).toBeNull();
-  expect(own.viewOnly).toBeUndefined();
-  /* A person's own id as the maker is just their own board. */
-  const self = await teammate.get(`/api/workbench/projects?id=${a.draftId}&owner=${teammateId}`, { headers: teammateHeaders });
-  expect((await self.json() as Team).project ?? null).toBeNull();
+  const link = await (await teammate.get(`/api/workbench/projects?id=${a.draftId}`, { headers: teammateHeaders })).json() as Team;
+  expect(link.project?.id).toBe(a.draftId);
+  expect(link.viewOnly?.owner.id).toBe(a.userId);
+  /* The maker's own read of it is not view-only. */
+  const mine = await (await a.api.get(`/api/workbench/projects?id=${a.draftId}`, { headers: a.headers })).json() as Team;
+  expect(mine.project?.id).toBe(a.draftId);
+  expect(mine.viewOnly).toBeUndefined();
+  /* Naming oneself as the maker is no different: the board is not theirs, so it opens view-only. */
+  const self = await (await teammate.get(`/api/workbench/projects?id=${a.draftId}&owner=${teammateId}`, { headers: teammateHeaders })).json() as Team;
+  expect(self.viewOnly?.owner.id).toBe(a.userId);
   /* Who is not a member is not a maker: a made-up id, and the id of another workspace's person. */
   for (const owner of ["usr_nobody", outsider.userId]) {
     const r = await teammate.get(`/api/workbench/projects?id=${a.draftId}&owner=${owner}`, { headers: teammateHeaders });
     expect(r.status(), owner).toBe(404);
   }
+  /* A board that exists nowhere in the workspace is just not found, however it is asked for. */
+  const none = await (await teammate.get("/api/workbench/projects?id=no-such-board", { headers: teammateHeaders })).json() as Team;
+  expect(none.project ?? null).toBeNull();
 });
 
 test("a save of a teammate's board is refused, and the maker's board is exactly as it was", async () => {

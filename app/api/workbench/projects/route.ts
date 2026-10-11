@@ -11,7 +11,7 @@ import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
-import { listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
+import { findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -50,6 +50,11 @@ export const GET=withTenant(async(req:Request)=>{
     db().execute('SELECT id,name FROM projects ORDER BY created_at DESC LIMIT 100'),
     id?readDraft(auth.user.id,id):null,
   ]);
+  /* Asked for by id alone and not this person's own: a teammate's board (a board link), to look at. */
+  if(id&&!draft){
+    const seen=await findTeamBoard(requireTenant(),auth.user.id,id);
+    if(seen)return projectResponse(req,{projects:list.rows,productions:productions.rows,project:seen.project,revision:seen.revision,shared:null,viewOnly:{owner:seen.owner},...(team?{team}:{})});
+  }
   let shared=null;
   if(draft?.project.productionProjectId){
     const row=(await db().execute({sql:'SELECT body,version,owner FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[draft.project.productionProjectId]})).rows[0];

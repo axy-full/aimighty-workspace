@@ -6,6 +6,7 @@ import { useProjectCards, useProjectCover, type ProjectCardModel } from "@/compo
 import type { ProjectSummary } from "@/lib/workspace/data";
 import { BOARD_FILTERS, FIRST_BOARDS, filterBoards, type BoardFilter } from "@/lib/v12/home";
 import { useBoardKinds } from "./use-board-kinds";
+import { useTeamBoards } from "./use-team-boards";
 import { menuFor } from "@/lib/v12/menus";
 import { ContextMenu, useToast } from "../ui";
 import { copyBoardLink, menuItems, useMenuAt } from "../menus/menu-items";
@@ -69,6 +70,11 @@ export function YourBoards({ scope, projects, status, error, onRetry, now, appro
   const kinds = useBoardKinds(scope, projects);
   const listed = filterBoards(projects.map((p) => ({ ...p, kind: kinds.get(p.id) ?? p.kind })), filter);
   const cards = useProjectCards(listed, now, approvals);
+  /* The workspace's other members' boards, to look at (view-only): under this person's own, with their makers' names. */
+  const team = useTeamBoards(scope, projects.map((p) => `${p.id}:${p.revision ?? ""}`).join(","));
+  const teamListed = filterBoards(team.map((b) => ({ ...b.summary })), filter);
+  const teamCards = useProjectCards(teamListed, now, null);
+  const makers = new Map(team.map((b) => [b.summary.id, b.owner]));
   const shown = all ? cards : cards.slice(0, FIRST_BOARDS);
   /* A board card's right-click menu (redesign A3): Open, as a click does, and Copy link, as the tab menu's. */
   const toast = useToast();
@@ -103,6 +109,17 @@ export function YourBoards({ scope, projects, status, error, onRetry, now, appro
           <button type="button" className="v12-hm-link v12-hm-show-all" onClick={() => setAll(true)} data-testid="v12-home-boards-all">Show all {cards.length.toLocaleString("en-US")}</button>
         ) : null}
       </div>
+      {teamCards.length ? (
+        <div className="v12-hm-boards-body" data-testid="v12-home-team-boards">
+          <h3 className="v12-hm-section-title v12-hm-team-title" id="v12-hm-team-title">Teammates’ boards</h3>
+          <ul className="v12-hm-board-grid" aria-labelledby="v12-hm-team-title">
+            {teamCards.map((card) => (
+              <BoardCard key={card.id} scope={scope} disabled={disabled} onOpen={onOpen} onMenu={() => undefined}
+                card={{ ...card, line: { text: `${makers.get(card.id) ?? "A teammate"}’s board · view only`, tone: "quiet" } }} />
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {boardMenu.menu && menuCard ? (
         <ContextMenu at={boardMenu.menu.at} onClose={boardMenu.close} label={menuCard.name} width={200} testId="v12-board-menu"
           items={menuItems(menuFor("board", new Set(disabled ? ["copy-link"] : ["open", "copy-link"])), (id) => { if (id === "open") onOpen(menuCard.id); else copyBoardLink(menuCard.id, toast); })} />
