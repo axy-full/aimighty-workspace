@@ -146,7 +146,11 @@ export const SETTLES_WHEN_CONFIRMED = "settles when the engine confirms";
  * so the same figure is followed by what is true: it "settles when the engine confirms".
  */
 export function moneyLine(money: { text: string; short: string }, pending = false): { head: string; tail: string } {
-  if (pending) return { head: money.short, tail: ` · ${SETTLES_WHEN_CONFIRMED}` };
+  if (pending) {
+    /* With no figure on the line (no price on the take) there is nothing to hold it beside: the line says only what is true. */
+    if (!money.text.startsWith(`${money.short} ·`)) return { head: `${SETTLES_WHEN_CONFIRMED.charAt(0).toUpperCase()}${SETTLES_WHEN_CONFIRMED.slice(1)}`, tail: "" };
+    return { head: money.short, tail: ` · ${SETTLES_WHEN_CONFIRMED}` };
+  }
   return { head: money.short, tail: money.text.startsWith(money.short) ? money.text.slice(money.short.length) : "" };
 }
 

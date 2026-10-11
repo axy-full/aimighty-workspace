@@ -70,6 +70,11 @@ test("the hold line while a cancel is on its way keeps its figure and says it se
   expect(moneyLine(line)).toEqual({ head: "7 cr held", tail: " · charged only when it’s ready" });
   expect(moneyLine(line, true)).toEqual({ head: "7 cr held", tail: " · settles when the engine confirms" });
   expect(SETTLES_WHEN_CONFIRMED).toBe("settles when the engine confirms");
+  /* No figure on the take: nothing to hold the words beside, so only what is true, never "Charged when ready". */
+  const unpriced = renderState({ id: "g", status: "queued", kind: "video", model: "fal-ai/kling-video/v3/standard", provider: "fal", createdAt: 0, atProvider: true } as never, 30_000).money!;
+  expect(unpriced.short).toBe("Charged when ready");
+  expect(moneyLine(unpriced, true)).toEqual({ head: "Settles when the engine confirms", tail: "" });
+  expect(moneyLine(unpriced)).toEqual({ head: "Charged when ready", tail: "" });
   /* The same figure either way: never a second price. */
   expect(moneyLine(line, true).head).toBe(moneyLine(line).head);
   expect(`${moneyLine(line, true).head}${moneyLine(line, true).tail}`).not.toMatch(/charged only when|nothing billed/i);
