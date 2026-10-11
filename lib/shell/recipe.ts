@@ -39,6 +39,11 @@ export type GenPreset = {
   sound?: RecipeSound;
   /** A connected take: whether the account was asked to enhance the words (settings.enhance_prompt). */
   enhance?: boolean;
+  /**
+   * The words a take was typed as, when its own words are the enhancer's (params.enhanced, lib/v12/enhance.ts): the loaded words are already
+   * enhanced, so Make's Enhance switch does not enhance them a second time. Editing them clears it.
+   */
+  enhancedFrom?: string;
   /** The take this recipe came from. */
   from?: { id: string; name: string };
   /** Use settings only: the model and its settings; the words and references in Gen stay. */
@@ -161,6 +166,7 @@ export function recreatePreset(g: RecipeSource, options: { name: string; setting
     ...(Object.keys(cinema).length ? { cinema } : {}),
     ...(Object.keys(sound).length ? { sound } : {}),
     ...(enhance !== undefined ? { enhance } : {}),
+    ...(params.enhanced === true && text(params.enhancedFrom) ? { enhancedFrom: text(params.enhancedFrom) } : {}),
     from: { id: g.id, name: options.name },
     ...(options.settingsOnly ? { settingsOnly: true } : {}),
     note: `${options.settingsOnly ? "Settings" : "Recreate"} · ${options.name}`,

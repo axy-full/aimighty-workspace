@@ -275,6 +275,12 @@ export type ComposerHost = {
  */
 export type ComposerSent = { projectId: string; nodeId: string; name: string; jobId: string | null; batchId: string | null; credits: number; takes: number; held: boolean };
 
+/** The request's `enhanced` label for the words in the box now (Make's Enhance toggle), or nothing for a screen without one. */
+function enhancedField(now: { enhancedOf?: (prompt: string) => false | { from: string } | undefined; state: { prompt: string } }): { enhanced?: false | { from: string } } {
+  const label = now.enhancedOf?.(now.state.prompt);
+  return label === undefined ? {} : { enhanced: label };
+}
+
 export function useComposer(options: {
   scope: string;
   open: boolean;
@@ -315,6 +321,12 @@ export function useComposer(options: {
    * changes no price; the quote is asked for the same body, seed included, so its fingerprint covers it.
    */
   seed?: { value: number; model: string } | null;
+  /**
+   * Whether the words were enhanced first (Make's Enhance toggle, lib/v12/enhance.ts), asked at the moment of the press for the
+   * words in the box: `{ from }` the words as typed, `false` for words sent as written, undefined for a screen with no toggle. Sent
+   * with a still's or clip's request as a label (admission records it); never part of a price.
+   */
+  enhanced?: (prompt: string) => false | { from: string } | undefined;
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
@@ -471,8 +483,9 @@ export function useComposer(options: {
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */
-  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed });
-  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed }; });
+  const enhancedOf = options.enhanced;
+  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed, enhancedOf });
+  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed, enhancedOf }; });
   const busy = useRef(false);
 
   /** The project to file into: the open one, or a new "Untitled" through the ordinary creation path. */
@@ -610,6 +623,7 @@ export function useComposer(options: {
                   ratio: settings.ratio, resolution: settings.resolution, duration: settings.duration, references: references(), firstFrameAssetId: "",
                   batch: { id: batchId, variation }, shotSpec: now.sent.shotSpec, cinema: now.sent.cinema,
                   ...(now.seed !== null ? { seed: variationSeed(now.seed, variation) } : {}),
+                  ...enhancedField(now),
                   ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },
               };
@@ -727,6 +741,7 @@ export function useComposer(options: {
                   shotSpec: now.sent.shotSpec,
                   cinema: now.sent.cinema,
                   ...(now.seed !== null ? { seed: now.seed } : {}),
+                  ...enhancedField(now),
                   ...(settings.draft ? { draft: true } : {}),
                   ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },

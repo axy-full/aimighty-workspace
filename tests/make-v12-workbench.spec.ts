@@ -147,10 +147,14 @@ test("desktop: results in justified rows, the composer, prompt reuse, the viewer
   await page.getByRole("menuitem", { name: "1" }).click();
   await expect(go).toHaveText(/^Make · \d[\d,]* cr$/, { timeout: 60_000 });
   const shown = Number((await go.innerText()).match(/· ([\d,]+) cr$/)![1].replace(/,/g, ""));
+  /* Enhance is On by default (redesign: the owner's switch), so the button's figure is the take plus its enhancement, and the two
+     requests carry one approval each: together they are the figure on the button (the take alone is tests/enhance-v12-workbench.spec.ts's Off case). */
+  const enhanced = page.waitForRequest((r) => new URL(r.url()).pathname === "/api/prompt/enhance" && r.method() === "POST" && r.postDataJSON()?.quoteOnly !== true);
   const sent = page.waitForRequest((r) => new URL(r.url()).pathname === "/api/generate" && r.method() === "POST");
   await go.click();
+  const enhanceBody = (await enhanced).postDataJSON() as { maxCredits?: number };
   const body = (await sent).postDataJSON() as { maxCredits?: number };
-  expect(body.maxCredits, "the approval is the figure on the button").toBe(shown);
+  expect((enhanceBody.maxCredits ?? 0) + (body.maxCredits ?? 0), "the approvals together are the figure on the button").toBe(shown);
   await expect(make).toBeVisible();
   await expect(page.getByTestId("v12-make-count")).toHaveText("7 results", { timeout: 90_000 });
   await noOverflow(page);
