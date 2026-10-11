@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { fitBoardTabs } from "./tabs";
 
 /** useLayoutEffect on the client (measures before paint), a plain effect where there is no layout to measure. */
