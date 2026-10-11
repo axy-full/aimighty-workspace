@@ -1,0 +1,9 @@
+{
+  "name": "enhance-tip",
+  "app": "/suites?project=project-a32732e8&suite=particl&page=brief&view=home&make=image",
+  "prototype": "?view=make&tip=enhance",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

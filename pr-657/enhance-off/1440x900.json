@@ -1,0 +1,9 @@
+{
+  "name": "enhance-off",
+  "app": "/suites?project=project-49e59d88&suite=particl&page=brief&view=home&make=image",
+  "prototype": "?view=make&enhance=off",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
