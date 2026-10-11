@@ -1,4 +1,4 @@
-# release/1 to production: fast launch (Mon 12 Oct 2026)
+# release/1 to production: fast launch (today, Sun 11 Oct 2026)
 
 For the owner and his advisor. Written Sun 11 Oct against `release/1` at 65042dca. Nothing in it has been done yet.
 
@@ -23,7 +23,7 @@ Turso keeps point-in-time restore. The Scaler plan has a 30-day window (docs/sel
 **Commands** (on your laptop or the box, wherever the `turso` CLI is logged in to the org):
 
 ```sh
-mkdir -p ~/particl-backups/2026-10-12-predeploy && cd ~/particl-backups/2026-10-12-predeploy
+mkdir -p ~/particl-backups/2026-10-11-predeploy && cd ~/particl-backups/2026-10-11-predeploy
 date -u +%Y-%m-%dT%H:%M:%SZ | tee restore-point.txt          # the PITR timestamp
 turso db list | tee dbs.txt                                     # every database in the org
 turso db shell <platform-db> "SELECT id, slug, db_name, legacy, deleted_at FROM workspaces" | tee workspaces.txt
@@ -183,14 +183,14 @@ How many rows they touch **can't be known without production database access**. 
 ## 9. #609 vs release/1
 
 - **Deploy release/1 directly. Don't merge #609.** #609 backports #606 (multi-process, `WEB_CONCURRENCY`) to main, and release/1 already has #606 (b3e95735). Merging #609 first would put a commit on main that release/1 lacks, which turns a clean merge into a possible conflict, all to ship code that arrives anyway. Close #609 once release/1 is on main.
-- **How release/1 reaches main: reuse #546.** GitHub allows only one open PR per branch pair, and #546 is already `release/1 → main`, so a fresh PR would be refused while #546 is open. Retitle it **"Release 1 → main (launch, Mon 12 Oct)"** and replace its "do not merge" body.
+- **How release/1 reaches main: reuse #546.** GitHub allows only one open PR per branch pair, and #546 is already `release/1 → main`, so a fresh PR would be refused while #546 is open. Retitle it **"Release 1 → main (launch, Sun 11 Oct)"** and replace its "do not merge" body.
 - **Merge with "Create a merge commit"**, never squash or rebase. Squash would flatten 1,350 commits into one and split the branches' history. Main isn't branch-protected, so wait for #546's checks to go green on release/1's final commit before merging.
 
 ## 10. Runbook (owner, in order)
 
 | Step | Do | Check before going on |
 |---|---|---|
-| 0 | Freeze `release/1`: nothing more merges into it today. Note its head sha. | #546 checks are green on that sha |
+| 0 | Freeze `release/1`: tell the lead "freeze"; nothing more merges into it. Note its head sha. | The post-merge full run on that sha (Actions → Verify, event `push`, branch release/1) is green, **and** #546's checks are green on that sha |
 | 1 | **Backup** (§1) | The §1 check passes; `restore-point.txt` is saved |
 | 2 | Coolify → app → **Configuration**: Resource limits **CPUs 3**, **Memory 6 GB**. **Environment variables**: `WEB_CONCURRENCY=3`, `WORKER_ORIGIN=http://127.0.0.1:3000` (runtime, not build). **General/Advanced**: **Include Source Commit in Build** on. Confirm `ENGINE_MOCK` isn't set and `ANTHROPIC_API_KEY` is. **Save** (don't deploy yet). | Rollback tab lists the current main image |
 | 3 | GitHub: merge **#546** with **Create a merge commit** | `main` head = the merge commit; note its first 7 characters |
