@@ -7,6 +7,7 @@ import { downloadFile, exportPackage } from "@/lib/workbench/studio-export";
 import { makeFCPXML, makeXMEML } from "@/lib/workbench/editorial-xml";
 import { ADAPT_WHY, EDIT_HAS, languageLimit, EDIT_LACKS, GRID_SECONDS, LANGUAGE_PARTS, LANGUAGE_WHY, MANDATORIES, MANDATORIES_WHY, PACK_ROWS, PACK_WHY, POST_DIRECTLY, deliverGrid, deliverLines, gridSummary, nameStem, type DeliverCell } from "@/lib/v12/deliver";
 import { FREE_QUOTE } from "@/lib/v12/quote";
+import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { Price } from "@/components/v12/ui/Price";
 import { deliverRows, type CutData } from "@/components/graphite/board/cards/cut/cut-model";
 import { SpecRowView } from "@/components/graphite/board/cards/deliver/SpecRow";
@@ -100,7 +101,7 @@ export function DeliverStage({ cut, cardId, ctx, languages, onLanguages }: {
             <div className="v12-sp-line" key={code} data-testid="v12-deliver-language" data-code={code}>
               <dt>{dubbingLanguageLabel(code)}</dt>
               <dd title={LANGUAGE_WHY}>{LANGUAGE_PARTS.join(" · ")} · <Price quote={null} reason="languageAdapt" />
-                {act ? <button type="button" className="v12-sp-x" aria-label={`Remove ${dubbingLanguageLabel(code)}`} onClick={() => { const refused = onLanguages(languages.filter((c) => c !== code)); if (refused) ctx.toast(refused); }}>×</button> : null}
+                {act ? <Tooltip name={`Remove ${dubbingLanguageLabel(code)}`} named><button type="button" className="v12-sp-x" aria-label={`Remove ${dubbingLanguageLabel(code)}`} onClick={() => { const refused = onLanguages(languages.filter((c) => c !== code)); if (refused) ctx.toast(refused); }}>×</button></Tooltip> : null}
               </dd>
             </div>
           ))}
