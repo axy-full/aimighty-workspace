@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { signInToRedesign } from "./helpers/newInterface";
