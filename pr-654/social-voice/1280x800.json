@@ -1,0 +1,9 @@
+{
+  "name": "social-voice",
+  "app": "/suites?project=project-c90713af&suite=particl&page=brief&view=board&stage=voice",
+  "prototype": "?view=board&project=social&stage=Voice",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}
