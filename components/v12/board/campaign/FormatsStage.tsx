@@ -33,9 +33,12 @@ export function FormatsStage({ ctx }: { ctx: BoardCtx }) {
           <h2 className="v12-sp-title">Formats</h2>
           <p className="v12-sp-why" data-testid="v12-formats-line">{pickedFormat ? `${pickedFormat.title} · Make shows its price before anything runs.` : "Pick a format. Make runs it, and shows its price before anything runs."}</p>
         </div>
-        <button type="button" className="v12-sp-btn v12-sp-primary" disabled={!canWrite || !pickedFormat} onClick={make} data-testid="v12-formats-make">
-          {pickedFormat ? <>Make · <FormatPrice format={pickedFormat} /></> : "Pick a format"}
-        </button>
+        <div className="v12-sp-acts">
+          <button type="button" className="v12-sp-btn" onClick={() => ctx.askAtomik("Which of these formats fits the product, and why: ")} data-testid="v12-formats-ask">Ask Atomik</button>
+          <button type="button" className="v12-sp-btn v12-sp-primary" disabled={!canWrite || !pickedFormat} onClick={make} data-testid="v12-formats-make">
+            {pickedFormat ? <>Make · <FormatPrice format={pickedFormat} /></> : "Pick a format"}
+          </button>
+        </div>
       </header>
       <div className="v12-cp-grid" data-testid="v12-formats-grid">
         {CAMPAIGN_FORMATS.map((format) => {

@@ -152,6 +152,20 @@ test.describe("desktop, switch on", () => {
     expect(await noSideways(page)).toBe(true);
   });
 
+  test("every stage page offers Ask Atomik, which fills the words in its field and spends nothing", async ({ page }) => {
+    const project = campaign({ moleculr: { ...EMPTY_MOLECULR, productName: "Linen bowl", productDescription: "A hand-thrown bowl." } as never });
+    await openBoard(page, "/suites?view=board&stage=product", { project });
+    const seen = await mocks(page);
+    const field = page.locator("textarea:visible").last();
+    for (const [stage, ask, words] of [["product", "v12-product-ask", /Read the product page/], ["look", "v12-look-ask", /Gather a mood/], ["formats", "v12-formats-ask", /Which of these formats fits/]] as const) {
+      await page.getByTestId("v12-stage-rail").getByText(stage === "product" ? "Product" : stage === "look" ? "Look" : "Formats", { exact: true }).click();
+      await expect(page.getByTestId(ask)).toBeVisible({ timeout: 60_000 });
+      await page.getByTestId(ask).click();
+      await expect(field).toHaveValue(words, { timeout: 15_000 });
+    }
+    expect(seen.paid, "asking fills a field and runs nothing").toEqual([]);
+  });
+
   test("switch off: today's Ads board, with none of the stage pages", async ({ page }) => {
     await openBoard(page, "/suites?view=board&stage=formats", { on: false, project: campaign() });
     await expect(page.locator(".react-flow__pane")).toBeVisible({ timeout: 60_000 });

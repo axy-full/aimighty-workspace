@@ -85,6 +85,9 @@ export function ProductStage({ ctx }: { ctx: BoardCtx }) {
             {read?.status === "reading" ? "Reading…" : made ? "Read again" : "Read the page"}
           </button>
         </form>
+        <div className="v12-sp-acts">
+          <button type="button" className="v12-sp-btn" onClick={() => ctx.askAtomik("Read the product page and fill in the product details: ")} data-testid="v12-product-ask">Ask Atomik</button>
+        </div>
         {problem ? <p className="v12-sp-why v12-sp-problem" role="alert" data-testid="v12-product-problem">{problem}</p> : null}
         {read?.status === "failed" && !problem ? <p className="v12-sp-why v12-sp-problem" role="alert" data-testid="v12-product-failed">{read.error ?? "The page could not be read."} You can write the details by hand with Edit.</p> : null}
         <dl className="v12-sp-lines">

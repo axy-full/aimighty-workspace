@@ -574,7 +574,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     kind, scope, project, productionId: project.productionProjectId ?? null, offline, readOnly: gate.readOnly, exploreOnly: gate.exploreOnly, selection, select, glide,
     openInspector: (id: string) => { select(id); if (v12Frame) setDetails(id); },
     openReview: (takeId?: string) => seams.call("review", takeId),
-    askAtomik: (words: string) => seams.call("atomik", words),
+    /* In the new frame the panel is closed until asked for, and only an open panel takes the words: open it, then fill it. */
+    askAtomik: (words: string) => { if (v12Frame) { setDockOpen(true); window.setTimeout(() => seams.call("atomik", words), 80); } else seams.call("atomik", words); },
     openMake: (type) => shell.openMake(type),
     /* A step a person can take back is said with its Undo (the shell's toast, top right), and ⌘Z does the same. */
     toast: (text, undo) => { if (undo) undoable(undo.label, undo.run, withUndoHint(text)); else ws.toast(text); },
@@ -772,7 +773,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
                 : page === "product" ? <ProductStage ctx={ctx} />
                 : page === "look" ? <LookStage ctx={ctx} />
                 : page === "formats" ? <FormatsStage ctx={ctx} /> : null}
-
+              {roundShare ? <div className="v12-stage-round" data-card-id={roundShare.id}><RoundCard card={roundShare as BoardCard<RoundCardData>} data={roundShare.data as RoundCardData} selected={false} ctx={ctx} /></div> : null}
             </div>
           ) : null}
           {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}
