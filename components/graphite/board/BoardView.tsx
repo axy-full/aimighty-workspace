@@ -81,6 +81,7 @@ import { PpmStage } from "@/components/v12/board/PpmStage";
 import { ProductStage } from "@/components/v12/board/campaign/ProductStage";
 import { LookStage } from "@/components/v12/board/campaign/LookStage";
 import { FormatsStage } from "@/components/v12/board/campaign/FormatsStage";
+import { VoiceStage } from "@/components/v12/board/social/VoiceStage";
 import type { CutCardData } from "./cards/cut/cut-model";
 import { BoardToolbar, ViewSwitch } from "@/components/v12/board/BoardTools";
 import "@/components/v12/board/board.css";
@@ -772,7 +773,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
                 : page === "ppm" ? <PpmStage ctx={ctx} />
                 : page === "product" ? <ProductStage ctx={ctx} />
                 : page === "look" ? <LookStage ctx={ctx} />
-                : page === "formats" ? <FormatsStage ctx={ctx} /> : null}
+                : page === "formats" ? <FormatsStage ctx={ctx} />
+                : page === "voice" ? <VoiceStage ctx={ctx} /> : null}
               {roundShare ? <div className="v12-stage-round" data-card-id={roundShare.id}><RoundCard card={roundShare as BoardCard<RoundCardData>} data={roundShare.data as RoundCardData} selected={false} ctx={ctx} /></div> : null}
             </div>
           ) : null}
