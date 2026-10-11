@@ -33,8 +33,8 @@ test("a bed is instrumental, at Make's own opening length, and nothing to price 
 });
 
 test("Make opens in its audio mode with the words, and for a narration the voice", () => {
-  expect(narrationOpening(" Hello ", "v1", "Voice A")).toEqual({ prompt: "Hello", type: "audio", billing: "workspace", note: "Narration · Voice A", sound: { voiceId: "v1" } });
-  expect(narrationOpening("Hello", "v1", null).note).toBe("Narration");
+  expect(narrationOpening(" Hello ", "v1", "Voice A", "speech-model")).toEqual({ prompt: "Hello", type: "audio", billing: "workspace", model: "speech-model", note: "Narration · Voice A", sound: { voiceId: "v1" } });
+  expect(narrationOpening("Hello", "v1", null, "m").note).toBe("Narration");
   expect(bedOpening("Slow strings")).toMatchObject({ type: "audio", model: "eleven_music", note: "Music bed", sound: { instrumental: true, seconds: BED_SECONDS } });
 });
 

@@ -85,6 +85,35 @@ test.describe("desktop, switch on", () => {
     expect(errors).toEqual([]);
   });
 
+  test("Make lands on the narration's own model even when the person's last audio model was another, and quotes what the button showed", async ({ page }) => {
+    await openBoard(page, "/suites?view=board&stage=voice", { project: narrated() });
+    const seen = await mocks(page);
+    /* The person's last audio model becomes the music engine: a bed was opened in Make just before. */
+    await expect(page.getByTestId("v12-bed")).toBeVisible({ timeout: 60_000 });
+    await page.getByTestId("v12-bed-text").fill("Slow strings, warm room.");
+    await expect(page.getByTestId("v12-bed-make")).toHaveText(/up to \d+ cr/, { timeout: 30_000 });
+    await page.getByTestId("v12-bed-make").click();
+    await expect(page.getByTestId("v12-make")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("v12-make-chip-model")).toContainText(/music/i, { timeout: 30_000 });
+    /* Back on the board, the narration: Make must land on the speech model, not stay on the music one. */
+    await page.getByRole("navigation", { name: "Tabs" }).getByText("Spoken piece").first().click();
+    await page.getByTestId("v12-stage-rail").getByText("Voice", { exact: true }).click();
+    await expect(page.getByTestId("v12-voice-lines")).toBeVisible({ timeout: 60_000 });
+    await page.getByTestId("v12-voice-lines").fill(LINES);
+    const make = page.getByTestId("v12-voice-make");
+    await expect(make).toHaveText(/^Make the narration · up to \d+ cr$/, { timeout: 30_000 });
+    const stageBody = seen.quotes.filter((q) => q.task === "speech").at(-1)!;
+    expect(stageBody).toMatchObject({ text: LINES, voiceId: "voice-a", modelId: "speech-model-a" });
+    const before = seen.quotes.length;
+    await make.click();
+    await expect(page.getByTestId("v12-make")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("v12-make-chip-model")).toContainText(/speech model a/i, { timeout: 30_000 });
+    await expect(page.getByTestId("v12-make-chip-model")).not.toContainText(/music/i);
+    /* Make's own quote-only request for what it now holds is the stage's request. */
+    await expect.poll(() => seen.quotes.slice(before).some((q) => JSON.stringify(q) === JSON.stringify(stageBody)), { timeout: 30_000 }).toBe(true);
+    expect(seen.paid).toEqual([]);
+  });
+
   test("Music bed shows only where music can be made, with its own live price, and opens Make's audio mode", async ({ page }) => {
     await openBoard(page, "/suites?view=board&stage=voice", { project: narrated() });
     const seen = await mocks(page);

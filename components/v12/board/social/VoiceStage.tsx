@@ -2,9 +2,12 @@
 import { useState } from "react";
 import type { BoardCtx } from "@/components/graphite/board/cards/types";
 import { Price } from "@/components/v12/ui/Price";
+import { useSession } from "@/lib/session";
+import { useMoney } from "@/lib/price";
+import { creditRate } from "@/lib/shell/price-words";
 import { sendGenPreset } from "@/lib/shell/gen-preset";
 import { spendAttrsOf } from "@/lib/spend";
-import type { Quote } from "@/lib/v12/quote";
+import { priceDisplay, type Quote } from "@/lib/v12/quote";
 import { LINES_MAX, bedBody, bedOpening, canMakeBed, canNarrate, narrationBody, narrationOpening } from "@/lib/v12/social";
 import { useAudioQuote } from "@/lib/v12/useQuote";
 import { useAudioSetup } from "./use-audio-setup";
@@ -22,6 +25,10 @@ import "./social.css";
  */
 export function VoiceStage({ ctx }: { ctx: BoardCtx }) {
   const { setup, failed } = useAudioSetup(ctx.scope);
+  const { rates } = useSession();
+  const money = useMoney();
+  /* The words <Price> shows for a quote, so a control's marker reads what the person reads. */
+  const words = (quote: Quote) => priceDisplay(quote, undefined, { creditUsd: creditRate(rates.creditUsd), dollars: money.price })?.text ?? "";
   const [voiceId, setVoiceId] = useState("");
   const [lines, setLines] = useState("");
   const [bed, setBed] = useState("");
@@ -39,7 +46,7 @@ export function VoiceStage({ ctx }: { ctx: BoardCtx }) {
 
   const makeNarration = () => {
     if (!voice || !narrationAsked) return;
-    sendGenPreset(narrationOpening(lines, voice.id, voice.name));
+    sendGenPreset(narrationOpening(lines, voice.id, voice.name, modelId));
     ctx.openMake("audio");
   };
   const makeBed = () => {
@@ -56,9 +63,9 @@ export function VoiceStage({ ctx }: { ctx: BoardCtx }) {
       </header>
 
       <section className="v12-sp-card" aria-labelledby="v12-vo-narrator-h" data-testid="v12-narrator">
-        <header className="v12-sp-head"><span className="v12-sp-eyebrow">Narrator</span><span className="v12-sp-state">{narrate ? "Picked" : "Not set up"}</span></header>
+        <header className="v12-sp-head"><span className="v12-sp-eyebrow">Narrator</span><span className="v12-sp-state">{voice ? "Picked" : "Not set up"}</span></header>
         <h3 className="v12-sp-title" id="v12-vo-narrator-h">{voice ? voice.name : setup || failed ? "No voice yet" : "Reading the voices…"}</h3>
-        {failed ? <p className="v12-sp-why v12-sp-problem" role="alert" data-testid="v12-voice-failed">{failed}</p> : null}
+        {failed || setup?.voicesError ? <p className="v12-sp-why v12-sp-problem" role="alert" data-testid="v12-voice-failed">{failed ?? setup?.voicesError}</p> : null}
         {setup && !setup.configured ? <p className="v12-sp-why" data-testid="v12-voice-off">Sound is not connected for this workspace.</p> : null}
         {setup?.configured && !narrate ? <p className="v12-sp-why" data-testid="v12-voice-off">This workspace has no voice to read in.</p> : null}
         {narrate ? (
@@ -72,7 +79,7 @@ export function VoiceStage({ ctx }: { ctx: BoardCtx }) {
               <textarea className="v12-so-text" rows={5} maxLength={LINES_MAX} value={lines} onChange={(e) => setLines(e.target.value)} placeholder="What the narrator says, in order." disabled={!canAct} data-testid="v12-voice-lines" />
             </label>
             <div className="v12-sp-acts">
-              <button type="button" className="v12-sp-btn v12-sp-primary" onClick={makeNarration} disabled={!canAct || !narrationAsked || narrationQuote.state !== "ready"} data-testid="v12-voice-make" {...spendAttrsOfQuote(narrationQuote)}>
+              <button type="button" className="v12-sp-btn v12-sp-primary" onClick={makeNarration} disabled={!canAct || !narrationAsked || narrationQuote.state !== "ready"} data-testid="v12-voice-make" {...spendAttrsOfQuote(narrationQuote, words)}>
                 {narrationAsked ? <>Make the narration · <Price quote={narrationQuote} /></> : "Write the lines first"}
               </button>
               <button type="button" className="v12-sp-btn" onClick={() => ctx.askAtomik("Write the narration lines for this video: ")} data-testid="v12-voice-ask">Ask Atomik</button>
@@ -89,7 +96,7 @@ export function VoiceStage({ ctx }: { ctx: BoardCtx }) {
             <textarea className="v12-so-text" rows={2} maxLength={LINES_MAX} value={bed} onChange={(e) => setBed(e.target.value)} placeholder="The mood, the tempo, the instruments." disabled={!canAct} data-testid="v12-bed-text" />
           </label>
           <div className="v12-sp-acts">
-            <button type="button" className="v12-sp-btn" onClick={makeBed} disabled={!canAct || !bedAsked || bedQuote.state !== "ready"} data-testid="v12-bed-make" {...spendAttrsOfQuote(bedQuote)}>
+            <button type="button" className="v12-sp-btn" onClick={makeBed} disabled={!canAct || !bedAsked || bedQuote.state !== "ready"} data-testid="v12-bed-make" {...spendAttrsOfQuote(bedQuote, words)}>
               {bedAsked ? <>Make a bed · <Price quote={bedQuote} /></> : "Describe the bed first"}
             </button>
             <button type="button" className="v12-sp-btn" onClick={() => ctx.askAtomik("Describe a music bed for this video: ")} data-testid="v12-bed-ask">Ask Atomik</button>
@@ -101,10 +108,11 @@ export function VoiceStage({ ctx }: { ctx: BoardCtx }) {
 }
 
 /** The control's spend marker: the quote's own figure once it has one, else unpriced (and disabled). */
-function spendAttrsOfQuote(quote: Quote) {
+function spendAttrsOfQuote(quote: Quote, words: (quote: Quote) => string) {
   if (quote.state === "ready") {
     const price = quote.price;
-    return price.unit === "cr" ? spendAttrsOf(price.value) : { "data-spend": "priced" as const, "data-spend-price": `$${price.usd.toFixed(2)}` };
+    /* A credit workspace's figure marks the control as its own price; the house workspace pays in dollars, so it carries the words <Price> shows. */
+    return price.unit === "cr" ? spendAttrsOf(price.value) : { "data-spend": "priced" as const, "data-spend-price": words(quote) };
   }
   return { "data-spend": "unpriced" as const };
 }

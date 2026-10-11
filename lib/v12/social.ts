@@ -34,8 +34,10 @@ export function bedBody(description: string): Record<string, unknown> | null {
 
 /** What Make opens with: its audio mode, the words, and for a narration the voice. */
 export type MakeOpening = { prompt: string; type: "audio"; billing: "workspace"; note: string; model?: string; sound?: { voiceId?: string; instrumental?: boolean; seconds?: number } };
-export const narrationOpening = (lines: string, voiceId: string, voiceName: string | null): MakeOpening => ({
-  prompt: lines.trim().slice(0, LINES_MAX), type: "audio", billing: "workspace",
+export const narrationOpening = (lines: string, voiceId: string, voiceName: string | null, modelId: string): MakeOpening => ({
+  /* The model rides with it: Make keeps the person's last audio model otherwise, which may be a sound-effects or music engine priced
+     differently from the button, and would take the lines as the wrong kind of prompt. */
+  prompt: lines.trim().slice(0, LINES_MAX), type: "audio", billing: "workspace", model: modelId,
   note: voiceName ? `Narration · ${voiceName}` : "Narration", sound: { voiceId },
 });
 export const bedOpening = (description: string): MakeOpening => ({
