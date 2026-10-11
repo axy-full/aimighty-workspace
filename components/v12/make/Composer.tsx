@@ -66,7 +66,9 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
     else if (asked === "auto") unpick();
   }, [asked, pickType, unpick]);
   const mode: MakeMode = extra ?? (make.picked ? make.state.type : "auto");
+  const [sourceAsked, setSourceAsked] = useState(false);
   const onMode = useCallback((next: MakeMode) => {
+    setSourceAsked(false);
     if (next === "remix" || next === "edit") { setExtra({ mode: next, recipe: recipeName }); return; }
     setExtra(null);
     const type = modeType(next);
@@ -75,7 +77,6 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   const { state, model, settings, composer } = make;
   const ops = mode === "remix" ? REMIX_OPS : mode === "edit" ? EDIT_OPS : null;
   /* Remix works on a source: with none in the composer an op says so, and opens nothing. */
-  const [sourceAsked, setSourceAsked] = useState(false);
   const hasSource = make.references.some((r) => r.kind === "video");
   const sourceNote = sourceAsked && mode === "remix" && !hasSource;
   const runOp = (op: MakeOp) => {
