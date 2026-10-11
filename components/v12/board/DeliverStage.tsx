@@ -7,6 +7,7 @@ import { downloadFile, exportPackage } from "@/lib/workbench/studio-export";
 import { makeFCPXML, makeXMEML } from "@/lib/workbench/editorial-xml";
 import { ADAPT_WHY, EDIT_HAS, languageLimit, EDIT_LACKS, GRID_SECONDS, LANGUAGE_PARTS, LANGUAGE_WHY, MANDATORIES, MANDATORIES_WHY, PACK_ROWS, PACK_WHY, POST_DIRECTLY, deliverGrid, deliverLines, gridSummary, nameStem, type DeliverCell } from "@/lib/v12/deliver";
 import { FREE_QUOTE } from "@/lib/v12/quote";
+import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { Price } from "@/components/v12/ui/Price";
 import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { deliverRows, type CutData } from "@/components/graphite/board/cards/cut/cut-model";
