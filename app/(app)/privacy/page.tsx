@@ -56,6 +56,9 @@ export default function PrivacyPage() {
           <li><span className="text-ink">Higgsfield, by its API</span>: prompts and photos, for identities and stills.</li>
           <li><span className="text-ink">ElevenLabs</span>: scripts and audio, for speech, sound effects, music and dubbing.</li>
         </ul>
+        <p>
+          Each goes straight to that service. There is no AI gateway or relay in between.
+        </p>
       </P>
       <P title="Who sees it">
         <p>
