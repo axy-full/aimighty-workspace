@@ -30,8 +30,9 @@ export function workspaceLine(workspace: string | null | undefined, role: string
   return [readableName(workspace) ?? "Your workspace", role].filter(Boolean).join(" · ");
 }
 
-/** The avatar's letters: the person's initials ("AP"); with no readable name, the workspace's; else "P". */
-export function avatarInitials(person: { name: string | null }, workspace: string | null | undefined): string {
+/** The avatar's letters: the person's initials ("AP"); with no readable name, their address's first letter; then the workspace's; else "P". */
+export function avatarInitials(person: { name: string | null; email?: string | null }, workspace: string | null | undefined): string {
   const of = (text: string | null) => (text ?? "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
-  return of(readableName(person.name)) || of(readableName(workspace)) || "P";
+  const mail = ((person.email ?? "").trim().split("@")[0] ?? "").replace(/[^A-Za-z]/g, "").slice(0, 1).toUpperCase();
+  return of(readableName(person.name)) || mail || of(readableName(workspace)) || "P";
 }
