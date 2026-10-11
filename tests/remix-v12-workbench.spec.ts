@@ -29,7 +29,7 @@ test.describe("desktop, switch on", () => {
     /* Each "quoted" carries its own reason on hover. */
     const hovers = await ops.evaluateAll((els) => els.map((el) => el.querySelector("[data-price-state='quoted']")?.getAttribute("title") ?? ""));
     expect(hovers.every((h) => h.length > 10)).toBe(true);
-    expect(new Set(hovers).size, "no two ops share one reason").toBe(hovers.length - 1 > 0 ? 3 : 4);
+    expect(new Set(hovers).size, "no two ops share one reason").toBe(4);
     await expect(page.locator('[data-op="cut"]')).toBeDisabled();
     await expect(page.locator('[data-op="effect"]')).toBeDisabled();
     await expect(page.getByTestId("v12-make-go")).toBeDisabled();

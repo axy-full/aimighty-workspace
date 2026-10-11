@@ -91,8 +91,8 @@ export const UNPRICED = {
   },
   remixSwap: {
     action: "Swap an object (Make › Remix)",
-    why: "Object swap is priced by its own tool from the source clip's length and the resolution (a provider estimate); no quote exists before a source is chosen in it, and Make holds no source's length to ask one.",
-    hover: "The tool shows this price once you pick a source.",
+    why: "Object swap is priced by its own tool from the source clip's length and the resolution (a provider estimate), and it needs a source frame and the picture of what replaces the object; no quote exists before both are chosen in it, and Make holds neither to ask one.",
+    hover: "The tool shows this price once you pick the clip and what replaces the object.",
   },
   remixCut: {
     action: "Cut into clips (Make › Remix)",

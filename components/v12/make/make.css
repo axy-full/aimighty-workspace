@@ -99,8 +99,8 @@
   height: 30px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--gx-btn-border); background: transparent;
   color: var(--gx-text); font-size: 12px; font-weight: 500; white-space: nowrap; cursor: pointer;
 }
-.v12-mk-op:hover:not(:disabled) { border-color: var(--gx-hover-border); }
-.v12-mk-op:disabled { color: var(--gx-disabled); cursor: default; }
+.v12-mk-op:hover:not([aria-disabled="true"]) { border-color: var(--gx-hover-border); }
+.v12-mk-op[aria-disabled="true"] { color: var(--gx-disabled); cursor: default; }
 .v12-mk-chip {
   height: 30px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text);
   font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer;

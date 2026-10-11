@@ -141,8 +141,9 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
       {ops ? (
         <span className="v12-mk-ops" role="group" aria-label={mode === "remix" ? "Remix" : "Edit"} data-testid="v12-make-ops">
           {mode === "remix" ? <span className="v12-mk-quiet">{make.references[0]?.name ?? "Your source"} · what do we do with it?</span> : null}
+          {/* aria-disabled, not disabled: a disabled button gets no hover in some browsers, and the price's reason is on that hover. */}
           {ops.map((op) => (
-            <button key={op.id} type="button" className="v12-mk-op" disabled={!op.tool} onClick={() => runOp(op)}
+            <button key={op.id} type="button" className="v12-mk-op" aria-disabled={!op.tool || undefined} onClick={() => runOp(op)}
               title={op.tool ? `${op.label} — opens the tool, which shows its price` : op.why ?? undefined} data-testid="v12-make-op" data-op={op.id}>
               {op.label}{op.reason ? <> · <Price quote={null} reason={op.reason} /></> : null}
             </button>
