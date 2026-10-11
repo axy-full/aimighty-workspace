@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import { useSession } from "@/lib/session";
 import { exact, upTo } from "@/lib/shell/price-words";
-import { useStageQuotes } from "@/lib/production/use-stage-quotes";
+import { useGenerateQuotes } from "@/lib/production/use-generate-quotes";
 import { retryQuoteBody } from "@/lib/workspace/retry-request";
 import { addInput, removeInput } from "@/lib/production/rig-build";
 import { knownQuote, type Quote } from "@/lib/v12/quote";
@@ -175,7 +175,7 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
     const body = g ? retryQuoteBody({ ...g, status: "failed" }) : null;
     return body ? [[s.nodeId, { body }]] : [];
   })), [affected]);
-  const { quotes, tryAgain } = useStageQuotes(scope, requests);
+  const { quotes, tryAgain } = useGenerateQuotes(scope, requests);
   const price = impactPrice(affected, requests, quotes);
   const priceQuote: Quote | null = price.state === "ready" ? knownQuote(price.approximate ? upTo(price.total) : exact(price.total))
     : price.state === "loading" ? { state: "loading" }
