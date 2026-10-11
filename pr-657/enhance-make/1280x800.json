@@ -1,0 +1,9 @@
+{
+  "name": "enhance-make",
+  "app": "/suites?project=project-5dd619b2&suite=particl&page=brief&view=home&make=image",
+  "prototype": "?view=make",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}

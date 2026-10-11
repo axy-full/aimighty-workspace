@@ -1,0 +1,9 @@
+{
+  "name": "enhance-viewer",
+  "app": "/suites?project=project-950058d7&suite=particl&page=brief&view=home&make=video",
+  "prototype": "?view=make&viewer=1",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}
