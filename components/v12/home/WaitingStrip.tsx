@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { pressable, sortQueue, type QueueItem } from "@/lib/control-room/queue";
 import type { PressOutcome } from "@/lib/control-room/approve";
 import { spendAttrsOf } from "@/lib/spend";
 import { knownQuote } from "@/lib/v12/quote";
 import { Price } from "@/components/v12/ui/Price";
+import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { waitingLevels, waitingWords, type WaitingLevel } from "@/lib/v12/home";
 
 /**
@@ -40,9 +42,13 @@ export function WaitingStrip({ items, shown, onApprove, onOpen, onMore, onHide }
     const el = list.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     let width = el.clientWidth;
-    const seen = new ResizeObserver(() => { if (el.clientWidth !== width) { width = el.clientWidth; setTick((n) => n + 1); } });
+    /* Refit before the next paint (flushSync), from the window's own resize as well as the list's: the strip never shows
+       an action cut off for a frame, and a tooltip's extra render cannot make it late. */
+    const refit = () => { if (el.clientWidth !== width) { width = el.clientWidth; flushSync(() => setTick((n) => n + 1)); } };
+    const seen = new ResizeObserver(refit);
     seen.observe(el);
-    return () => seen.disconnect();
+    window.addEventListener("resize", refit);
+    return () => { seen.disconnect(); window.removeEventListener("resize", refit); };
   }, [has]);
   /* After every render: still too wide, one level barer (it ends at the barest level, so it cannot loop). */
   // eslint-disable-next-line react-hooks/exhaustive-deps -- measures the DOM after each render on purpose
@@ -63,7 +69,9 @@ export function WaitingStrip({ items, shown, onApprove, onOpen, onMore, onHide }
         {inline.map((item) => <Item key={item.id} item={item} level={use} onApprove={onApprove} onOpen={() => onOpen(item)} />)}
       </ul>
       {more > 0 ? <button type="button" className="v12-hm-chip-btn" onClick={onMore} title="See everything waiting for you" data-testid="v12-home-waiting-more">+{more} more</button> : null}
-      <button type="button" className="v12-hm-wait-x" onClick={onHide} title="Hide for now" aria-label="Hide for now" data-testid="v12-home-waiting-hide">×</button>
+      <Tooltip name="Hide for now" named>
+        <button type="button" className="v12-hm-wait-x" onClick={onHide} aria-label="Hide for now" data-testid="v12-home-waiting-hide">×</button>
+      </Tooltip>
     </section>
   );
 }

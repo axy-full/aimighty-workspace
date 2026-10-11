@@ -69,9 +69,10 @@ export async function openPrototype(page: Page, query: string): Promise<void> {
 
 /**
  * Writes the app screenshot (the page as it is now), the prototype screenshot (opened in a second page of the same
- * context) and one image with both side by side, app on the left.
+ * context) and one image with both side by side, app on the left. `prepare` sets the prototype's state that no URL
+ * reaches (a right-click menu) before its screenshot.
  */
-export async function captureBeside(appPage: Page, name: string, protoQuery: string): Promise<{ dir: string; files: string[] }> {
+export async function captureBeside(appPage: Page, name: string, protoQuery: string, prepare?: (proto: Page) => Promise<void>): Promise<{ dir: string; files: string[] }> {
   const size = appPage.viewportSize() ?? { width: 1440, height: 900 };
   const dir = path.resolve(process.env.REDESIGN_SHOTS_DIR ?? "../redesign-shots", name);
   await mkdir(dir, { recursive: true });
@@ -80,6 +81,7 @@ export async function captureBeside(appPage: Page, name: string, protoQuery: str
   const proto = await appPage.context().newPage();
   try {
     await openPrototype(proto, protoQuery);
+    if (prepare) { await prepare(proto); await proto.waitForTimeout(400); }
     const protoShot = await proto.screenshot({ animations: "disabled" });
     const gap = 16;
     const beside = await sharp({ create: { width: size.width * 2 + gap, height: size.height, channels: 3, background: "#808080" } })

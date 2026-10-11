@@ -16,6 +16,8 @@ import { PlusPopover } from "./PlusPopover";
 import { boardStates } from "./activity";
 import { afterClose, closeOthers, closeTab, headerKey, openTab, restoreTab, visibleTabs } from "./tabs";
 import { useBoardTabs } from "./use-board-tabs";
+import { copyBoardLink } from "../menus/menu-items";
+import { keyOf } from "@/lib/v12/keymap";
 import "./header.css";
 
 /** The most boards GET /api/workbench/projects returns (app/api/workbench/projects/route.ts). */
@@ -136,10 +138,7 @@ export function V12Header({ account, project, projects, onPick }: {
   const plusAnchor = useRef<HTMLButtonElement>(null);
   const [plus, setPlus] = useState(false);
 
-  const copyLink = (id: string) => {
-    const url = `${window.location.origin}/suites?view=board&project=${encodeURIComponent(id)}`;
-    void navigator.clipboard?.writeText(url).then(() => toast({ text: "Link copied" }), () => toast({ text: "The link could not be copied" }));
-  };
+  const copyLink = (id: string) => copyBoardLink(id, toast);
   const tabItems: MenuItem[] = tabMenu ? [
     { id: "open", label: "Open", onSelect: () => goBoard(tabMenu) },
     { id: "copy", label: "Copy link", onSelect: () => copyLink(tabMenu), testId: "v12-tab-copy" },
@@ -153,10 +152,10 @@ export function V12Header({ account, project, projects, onPick }: {
     { id: "new", label: "+ New board", onSelect: () => setPlus(true) },
   ];
 
-  const ordinal = (i: number) => (i + 3 <= 9 ? `⌘${i + 3}` : undefined);
+  const ordinal = (i: number) => (i + 3 <= 9 ? keyOf(`tab-${i + 3}`) : undefined);
   return (
     <header className="v12-header" data-testid="v12-header" data-row="header">
-      <Tooltip name="Home" shortcut={["G H", "⌘1"]}>
+      <Tooltip name="Home" shortcut={[keyOf("home-seq"), keyOf("home")]}>
         <button type="button" className="v12-logo" onClick={goHome} aria-label="particl, Home" data-testid="v12-logo">
           <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">
             {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
@@ -167,7 +166,7 @@ export function V12Header({ account, project, projects, onPick }: {
 
       <nav className="v12-tabs" aria-label="Tabs" data-testid="v12-tabs">
         <div className="v12-tab" data-active={shell.screen === "home" && !shell.make ? "" : undefined} data-testid="v12-tab-home">
-          <Tooltip name="Home" shortcut={["G H", "⌘1"]}>
+          <Tooltip name="Home" shortcut={[keyOf("home-seq"), keyOf("home")]}>
             <button type="button" className="v12-tab-main" onClick={goHome} aria-current={shell.screen === "home" && !shell.make ? "page" : undefined}>
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 8l6-5 6 5v6h-4v-4H6v4H2z" /></svg>
               <span className="v12-tab-label">Home</span>
@@ -175,7 +174,7 @@ export function V12Header({ account, project, projects, onPick }: {
           </Tooltip>
         </div>
         <div className="v12-tab" data-active={shell.make ? "" : undefined} data-testid="v12-tab-make">
-          <Tooltip name="Make" line="Single pieces." shortcut="⌘2">
+          <Tooltip name="Make" line="Single pieces." shortcut={keyOf("make")}>
             <button type="button" className="v12-tab-main" onClick={goMake} aria-current={shell.make ? "page" : undefined}>
               <span className="v12-tab-spark" aria-hidden="true">✦</span>
               <span className="v12-tab-label">Make</span>
@@ -228,14 +227,14 @@ export function V12Header({ account, project, projects, onPick }: {
       </nav>
 
       <div className="v12-field" data-open={atomikOpen ? "" : undefined} data-testid="v12-atomik-field">
-        <Tooltip name="Ask Atomik, search or go to" line="Ask a question, find a board, stage, card or library item, or run an action." shortcut="⌘K">
+        <Tooltip name="Ask Atomik, search or go to" line="Ask a question, find a board, stage, card or library item, or run an action." shortcut={keyOf("palette")}>
           <button type="button" className="v12-field-ask" onClick={() => shell.setPalette(true)} aria-keyshortcuts="Meta+K" data-testid="v12-ask">
             <span className="v12-field-mark" aria-hidden="true">◆</span>
-            <span className="v12-field-text">Ask Atomik, search or go to · ⌘K</span>
+            <span className="v12-field-text">Ask Atomik, search or go to · {keyOf("palette")}</span>
           </button>
         </Tooltip>
         <IconButton className="v12-field-panel" pressed={atomikOpen} onClick={toggleAtomik} aria-keyshortcuts="Meta+J" data-testid="v12-atomik-panel"
-          tooltip={{ name: "Atomik panel", line: atomikOpen ? "Close the conversation panel." : "Open the conversation: plans, questions and approvals.", shortcut: "⌘J" }}>
+          tooltip={{ name: "Atomik panel", line: atomikOpen ? "Close the conversation panel." : "Open the conversation: plans, questions and approvals.", shortcut: keyOf("atomik-panel") }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2" /><path d="M10 3v10" /></svg>
         </IconButton>
       </div>
