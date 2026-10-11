@@ -24,6 +24,8 @@ import { useWall } from "./use-wall";
 import { Wall } from "./Wall";
 import { WaitingStrip } from "./WaitingStrip";
 import { YourBoards } from "./YourBoards";
+import { WallMenu } from "../menus/WallMenu";
+import { useMenuAt } from "../menus/menu-items";
 import "./home.css";
 
 const WIDE = "(min-width: 1400px)";
@@ -85,6 +87,8 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
   const [pickedId, setPickedId] = useState<string | null>(null);
   const picked = wall.tiles.find((tile) => tile.id === pickedId) ?? null;
   const pick = (tile: WallTile) => setPickedId((now) => (now === tile.id ? null : tile.id));
+  /* The wall's right-click menu (redesign A3): "Make one like this" picks the tile, never unpicks it. */
+  const wallMenu = useMenuAt<string>();
   /* A picked tile is a selection on the overlay stack: Esc clears it after any menu or dialog above it. */
   useOverlay("selection", Boolean(picked), () => setPickedId(null));
 
@@ -143,10 +147,12 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
     if (!host || !bar) return;
     const set = () => host.style.setProperty("--v12-bar-h", `${Math.ceil(bar.getBoundingClientRect().height)}px`);
     set();
-    if (typeof ResizeObserver === "undefined") return;
+    /* The window's own resize too: the bar can change height (it wraps) before the observer is told. */
+    window.addEventListener("resize", set);
+    if (typeof ResizeObserver === "undefined") return () => window.removeEventListener("resize", set);
     const seen = new ResizeObserver(set);
     seen.observe(bar);
-    return () => seen.disconnect();
+    return () => { seen.disconnect(); window.removeEventListener("resize", set); };
   }, []);
 
   const mentions: BarMention[] = wall.tiles.map((tile) => ({ id: tile.id, name: tile.title, kind: tile.type, thumb: tile.url, media: tile.media }));
@@ -166,7 +172,8 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
           <WaitingStrip items={items} shown={waitingShown(wide)} onApprove={approvals.approve}
             onOpen={() => nav.openApprovals()} onMore={() => nav.openApprovals()} onHide={hide} />
         ) : null}
-        <Wall tiles={wall.tiles} status={wall.status} row={wallRow(stripOn)} picked={picked?.id ?? null} onPick={pick} onRemix={remix} />
+        <Wall tiles={wall.tiles} status={wall.status} row={wallRow(stripOn)} picked={picked?.id ?? null} onPick={pick} onRemix={remix} onMenu={(e, tile) => wallMenu.open(e, tile.id)} />
+        <WallMenu scope={scope} tiles={wall.tiles} menu={wallMenu.menu} onClose={wallMenu.close} onChoose={(tile) => setPickedId(tile.id)} onRemix={remix} />
         <div className="v12-hm-lower" data-dim={picked ? "" : undefined}>
           <YourBoards scope={scope} projects={projects} status={status} error={error} onRetry={onRetry} now={now} approvals={approvalsByDraft}
             disabled={busy} onOpen={s.open} onNew={() => void s.create(BLANK)} />
