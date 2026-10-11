@@ -1,0 +1,9 @@
+{
+  "name": "campaign-formats",
+  "app": "/suites?project=project-265c858a&suite=particl&page=brief&view=board&stage=formats",
+  "prototype": "?view=board&project=launch&stage=Formats",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "campaign-product",
+  "app": "/suites?project=project-ceed3a7d&suite=particl&page=brief&view=board&stage=product",
+  "prototype": "?view=board&project=launch&stage=Product",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}
