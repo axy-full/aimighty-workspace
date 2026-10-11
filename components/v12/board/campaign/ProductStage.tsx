@@ -81,7 +81,7 @@ export function ProductStage({ ctx }: { ctx: BoardCtx }) {
           <span className="v12-sp-state">{read?.status === "reading" ? "Reading…" : "Free"}</span></header>
         <form className="v12-cp-form" onSubmit={(e) => { e.preventDefault(); if (canWrite) void readIt(); }}>
           <input className="v12-cp-input" aria-label="Product page link" placeholder="https://" value={link} onChange={(e) => { setLink(e.target.value); setProblem(""); }} disabled={!canWrite || read?.status === "reading"} data-testid="v12-product-url" />
-          <button type="submit" className={made ? "v12-sp-btn" : "v12-sp-btn v12-sp-primary"} disabled={!canWrite || !link.trim() || read?.status === "reading"} aria-busy={read?.status === "reading" || undefined} data-testid="v12-product-read">
+          <button type="submit" className={made || review ? "v12-sp-btn" : "v12-sp-btn v12-sp-primary"} disabled={!canWrite || !link.trim() || read?.status === "reading"} aria-busy={read?.status === "reading" || undefined} data-testid="v12-product-read">
             {read?.status === "reading" ? "Reading…" : made ? "Read again" : "Read the page"}
           </button>
         </form>
