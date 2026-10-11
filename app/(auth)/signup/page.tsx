@@ -77,7 +77,8 @@ function Signup() {
   const [available, setAvailable] = useState<SignupAvailability | null>(null),
     [name, setName] = useState(""),
     [email, setEmail] = useState(""),
-    [workspace, setWorkspace] = useState(""),
+    /* The join sheet's new-workspace invite carries the name its visitor typed (components/v12/join): only a starting value for this field. */
+    [workspace, setWorkspace] = useState(() => (code ? (params.get("workspace") ?? "").trim().slice(0, 100) : "")),
     [password, setPassword] = useState(""),
     [confirm, setConfirm] = useState(""),
     [accept, setAccept] = useState(false),
