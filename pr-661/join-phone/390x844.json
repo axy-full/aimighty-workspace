@@ -1,0 +1,9 @@
+{
+  "name": "join-phone",
+  "app": "/v12-join?join=start&phone=1&prompt=A%2030%20s%20ad%20for%20a%20spice%20brand%20%C2%B7%20a%20desert%20camp%20at%20night",
+  "prototype": "?guest=1&device=phone&join=start",
+  "size": {
+    "width": 390,
+    "height": 844
+  }
+}
