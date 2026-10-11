@@ -8,8 +8,7 @@ import { db, now } from '../db';
 import { catalog, textCostUsd, textQuoteCostUsd, type CatalogModel } from '../catalog';
 import { atomikModels, getAtomikProject } from './atomik-server';
 import { atomikReasoningAllowance, atomikReasoningRequest } from '../atomik-reasoning';
-import { gatewayReachable } from '../gateway';
-import { languageAuth, languageModel } from '../language-provider';
+import { languageAuth, languageModel, languageReachable } from '../language-provider';
 import type { TextRoute } from '../textRoute';
 import { allowanceCheck } from '../allowance';
 import { reserveGenerationSpend } from '../generationRequests';
@@ -868,7 +867,7 @@ export async function listDevelopmentJobs(owner: string, projectId: string, requ
 }
 export async function developmentState(owner: string, projectId: string, requestId?: string) {
   const jobs = await listDevelopmentJobs(owner, projectId, requestId);
-  const configured = gatewayReachable() || !!vendorKey('openai');
+  const configured = languageReachable();
   const models = configured ? developmentModels(await catalog()) : [];
   return { configured: configured && !!models.length, models, jobs };
 }
