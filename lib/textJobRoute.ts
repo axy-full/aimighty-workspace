@@ -10,6 +10,7 @@
  */
 import { enhanceModelFor, enhanceRunsModel } from "./enhance";
 import { isAtomikModel, selectAtomikModel } from "./atomikModelPolicy";
+import { aliasModel } from "./modelAliases";
 import { textRouteWorks } from "./textRoute";
 import { TEXT_JOBS, type TextJob } from "./platformLayer";
 
@@ -23,13 +24,28 @@ export function textModelsByJob(routable: readonly string[]): Record<TextJob, st
   return Object.fromEntries(TEXT_JOBS.map((job) => [job, routable.filter((id) => jobRunsModel(job, id))])) as Record<TextJob, string[]>;
 }
 
-/** What a saved choice does for its job: runs as saved, or the model that runs in its place (null: nothing connected can run it). */
+/**
+ * What a saved choice does for its job: runs as saved, or the model that runs in its place (null: nothing connected can run it).
+ * It answers the way the job really runs, not by what the admin's list offers:
+ *  - prompt enhancement asks only the writer's own rules (a price in its rate table, a working route; `enhanceModelFor`), and when
+ *    not even the stand-in has a route, nothing can run it;
+ *  - ideas and shot lists run `resolveModel` (lib/atomik.ts), which reads the saved choice against every language model the
+ *    catalogue serves (`served`), not against the priced list the admin picks from: a Claude, OpenAI or Grok model that is served
+ *    runs as saved even when it is not priced for the list, and a stand-in is what Auto would pick among all of them.
+ * `served` is every language model the catalogue lists (default: the routable list, for callers that have no more).
+ */
 export type TextEffect = { saved: string; runnable: boolean; runs: string | null };
-export function textEffect(job: TextJob, saved: string, routable: readonly string[]): TextEffect {
-  const listed = routable.includes(saved) && jobRunsModel(job, saved);
-  if (listed) return { saved, runnable: true, runs: saved };
-  if (job === "enhance") return { saved, runnable: false, runs: enhanceModelFor(saved) || null };
-  /* Atomik reads a choice it cannot run as Auto: the first of its own list that is connected. */
-  try { return { saved, runnable: false, runs: selectAtomikModel("auto", routable) }; }
-  catch { return { saved, runnable: false, runs: null }; }
+export function textEffect(job: TextJob, saved: string, routable: readonly string[], served: readonly string[] = routable): TextEffect {
+  if (job === "enhance") {
+    const runs = enhanceModelFor(saved);
+    if (!textRouteWorks(runs)) return { saved, runnable: false, runs: null };
+    return { saved, runnable: runs === saved, runs };
+  }
+  /* The same call resolveModel makes for a job's own Auto: the saved choice is the routed model, tried against everything served. */
+  try {
+    const runs = selectAtomikModel("auto", served, saved);
+    return { saved, runnable: runs === aliasModel(saved), runs };
+  } catch {
+    return { saved, runnable: false, runs: null };
+  }
 }

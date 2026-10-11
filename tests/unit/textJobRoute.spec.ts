@@ -50,25 +50,69 @@ test("a saved choice that cannot run says what runs in its place; one that can s
   expect(textEffect("idea", gemini, [gemini]).runs).toBeNull();
 });
 
-test("the admin route sends each job its own list and what a saved choice does", async () => {
-  const layer = { ...DEFAULT_LAYER, models: { ...DEFAULT_LAYER.models, text: { enhance: "openai/gpt-5.5", idea: "google/gemini-3.1-pro-preview", shot: "anthropic/claude-opus-5.5" } } };
+/** The admin route, loaded with its imports stubbed: `routable` is the priced list, `served` every language model the catalogue lists. */
+async function adminRoute(text: Record<string, string>, routable: string[], served: string[]) {
+  const layer = { ...DEFAULT_LAYER, models: { ...DEFAULT_LAYER.models, text } };
   const deps: Record<string, unknown> = {
     "next/server": { NextResponse: { json: (body: unknown) => ({ json: async () => body }) } },
     "@/lib/recovery": { recoveryRoute: (h: unknown) => h },
     "@/lib/auth": { requireSuperAdmin: async () => ({ user: { id: "u" } }) },
     "@/lib/platform": { platformLayerState: async () => ({ value: layer, stored: [] }), setPlatformLayer: async () => null, resetPlatformLayer: async () => null },
     "@/lib/platformLayer": await import("../../lib/platformLayer"),
-    "@/lib/catalog": { routableTextModelIds: async () => ROUTABLE },
+    "@/lib/catalog": { routableTextModelIds: async () => routable, catalog: async () => served.map((id) => ({ id, type: "language" })) },
     "@/lib/textJobRoute": await import("../../lib/textJobRoute"),
     "@/lib/studio": { CATEGORIES: [] },
   };
   const compiled = ts.transpileModule(readFileSync(path.resolve("app/api/admin/platform-layer/route.ts"), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const mod = { exports: {} as { GET: () => Promise<{ json: () => Promise<Record<string, any>> }> } }; // eslint-disable-line @typescript-eslint/no-explicit-any
   new Function("require", "module", "exports", compiled)((name: string) => { if (!(name in deps)) throw new Error(`Unexpected import ${name}`); return deps[name]; }, mod, mod.exports);
-  const body = await (await mod.exports.GET()).json();
+  return (await mod.exports.GET()).json();
+}
+
+test("the admin route sends each job its own list and what a saved choice does", async () => {
+  const body = await adminRoute({ enhance: "openai/gpt-5.5", idea: "google/gemini-3.1-pro-preview", shot: "anthropic/claude-opus-5.5" }, ROUTABLE, ROUTABLE);
   expect(body.textModelsByJob.idea.some((id: string) => id.startsWith("google/"))).toBe(false);
   expect(body.textModelsByJob.enhance.includes("openai/gpt-5.5")).toBe(false);
   expect(body.textEffects.idea).toMatchObject({ runnable: false, runs: "anthropic/claude-sonnet-5.5" });
   expect(body.textEffects.enhance).toMatchObject({ runnable: false, runs: "anthropic/claude-sonnet-5.5" });
   expect(body.textEffects.shot).toMatchObject({ runnable: true });
+});
+
+test("a saved enhance choice never reads \"X runs instead\" with X itself: it runs as saved, names the real stand-in, or says nothing can run it", async () => {
+  const saved = "anthropic/claude-sonnet-5.5";
+  /* Priced, with a working route, but not on the admin's list: the writer runs it as saved. */
+  expect(textEffect("enhance", saved, [])).toEqual({ saved, runnable: true, runs: saved });
+  /* No model in the writer's list has a route (no engine mock, no keys, no gateway): the old rule's stand-in was the first of the list, which could be the saved model itself. */
+  const keep = { mock: process.env.ENGINE_MOCK, list: process.env.PROMPT_MODELS, direct: process.env.TEXT_DIRECT };
+  try {
+    delete process.env.ENGINE_MOCK; delete process.env.TEXT_DIRECT;
+    process.env.PROMPT_MODELS = saved;
+    expect(enhanceModelFor(saved)).toBe(saved);
+    expect(textEffect("enhance", saved, ROUTABLE)).toEqual({ saved, runnable: false, runs: null });
+    process.env.PROMPT_MODELS = "google/gemini-3.1-pro-preview";
+    expect(textEffect("enhance", saved, ROUTABLE)).toEqual({ saved, runnable: false, runs: null });
+  } finally {
+    for (const [name, value] of [["ENGINE_MOCK", keep.mock], ["PROMPT_MODELS", keep.list], ["TEXT_DIRECT", keep.direct]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+  }
+  /* With routes, a saved model the writer is not priced for gets the first of its list that works. */
+  const gpt = ROUTABLE.find((id) => id.startsWith("openai/"))!;
+  const effect = textEffect("enhance", gpt, ROUTABLE);
+  expect(effect.runs).not.toBe(gpt);
+  expect(effect.runs).toBe(enhanceModelFor(gpt));
+});
+
+test("ideas and shots read a saved choice against everything the catalogue serves, as Atomik does at run time, not the admin's priced list", async () => {
+  const gemini = "google/gemini-3.1-pro-preview", opus = "anthropic/claude-opus-5.5", grok = "spacexai/grok-4.7";
+  /* A served Claude that is not on the priced list still runs as saved. */
+  expect(textEffect("idea", opus, [grok], [opus, grok])).toEqual({ saved: opus, runnable: true, runs: opus });
+  /* The stand-in is what Auto picks among everything served (the current Claude first), not the first of the priced list. */
+  expect(textEffect("shot", gemini, [grok], [opus, grok])).toEqual({ saved: gemini, runnable: false, runs: opus });
+  expect(textEffect("shot", gemini, [grok], [opus, grok]).runs).toBe(selectAtomikModel("auto", [opus, grok], gemini));
+  /* Served-but-unlisted saved models are not an error; nothing Atomik runs served means no stand-in. */
+  expect(textEffect("idea", gemini, [grok], [gemini])).toEqual({ saved: gemini, runnable: false, runs: null });
+  /* A dropped id reads as its alias: what runs is the alias, and it is not "as saved". */
+  const body = await adminRoute({ idea: gemini, shot: opus, enhance: "anthropic/claude-sonnet-5.5" }, [grok], [opus, grok]);
+  expect(body.textEffects.idea).toEqual({ saved: gemini, runnable: false, runs: opus });
+  expect(body.textEffects.shot).toEqual({ saved: opus, runnable: true, runs: opus });
+  expect(body.textModelsByJob.shot).toEqual([grok]);
 });
