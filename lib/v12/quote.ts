@@ -47,6 +47,15 @@ export function knownQuote(value: PriceValue | null | undefined): Quote {
 export const PAYS_AT_COST = "Pays at cost";
 /** Why a house price shows no figure: the engine's own price was not part of the answer, and the customer price in credits is never shown to the house. */
 export const NO_AT_COST_PRICE = "Priced at cost once the engine's price is read.";
+/**
+ * Atomik's thinking as a button's price: credits for a workspace that pays in them; for the house the planner's own dollars (`usd`, sent
+ * to it alone), or no figure with a reason when it has none. The press approves the credits either way.
+ */
+export function planningQuote(value: PriceValue | null | undefined, usd: number | null | undefined, dollarsApply: boolean): Quote {
+  if (!dollarsApply) return knownQuote(value);
+  if (!value || value.kind === "free") return knownQuote(value);
+  return typeof usd === "number" && Number.isFinite(usd) && usd > 0 ? dollars(usd, true) : { state: "error", message: NO_AT_COST_PRICE };
+}
 export const QUOTE_FAULT = "The price could not be read. Try again.";
 export const NO_DOLLAR_PRICE = "This price is not available in dollars yet.";
 
@@ -160,9 +169,9 @@ export function quoteFromResponse(source: QuoteSource, ok: boolean, body: unknow
       const thinking = thinkingFrom(body);
       if (thinking.state === "error") return { state: "error", message: thinking.message };
       if (thinking.state !== "ready") return { state: "error", message: thinking.state === "off" ? "Building with Atomik is off in this workspace." : QUOTE_FAULT };
-      /* For the house the planner's credits are its dollars counted in whole credits at the price of one, with no
-         margin (lib/credits.ts quotedCredits), so their dollar value is the ceiling in dollars. */
-      if (terms.paysInDollars) return terms.creditUsd ? dollars(thinking.credits * terms.creditUsd, true) : { state: "error", message: NO_DOLLAR_PRICE };
+      /* The house is sent the planner's own dollars beside the credits (lib/workbench/rig-agent.ts planningUsd) and shown those,
+         never the credits turned into dollars; without them, no figure. */
+      if (terms.paysInDollars) return typeof thinking.usd === "number" ? dollars(thinking.usd, true) : { state: "error", message: NO_AT_COST_PRICE };
       return credits(thinking.credits, "up-to");
     }
   }

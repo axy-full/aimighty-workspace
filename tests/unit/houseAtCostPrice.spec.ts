@@ -153,3 +153,40 @@ test("a cancel on its way: the money line keeps its figure and drops the promise
   expect(moneyLine(state.money!, true)).toEqual({ head: "$0.045 held", tail: "" });
   expect(moneyLine(state.money!, true).head + moneyLine(state.money!, true).tail).not.toMatch(/charged only when/);
 });
+
+test("Atomik's thinking (Home Start, the new-board bar, the board bar): the house reads the planner's dollars or no figure; a customer reads credits", async () => {
+  const { planningQuote } = await import("../../lib/v12/quote");
+  const { thinkingFrom } = await import("../../lib/shell/thinking-price");
+  const env = { creditUsd: creditUsd(), dollars: fmtLedgerUsd };
+  const body = { agent: { enabled: true, ask: { planning: 4, planningUsd: 0.373 } } };
+  expect(thinkingFrom(body)).toEqual({ state: "ready", credits: 4, usd: 0.373 });
+  /* A credit workspace is never sent the dollars, and never reads them. */
+  expect(thinkingFrom({ agent: { enabled: true, ask: { planning: 4 } } })).toEqual({ state: "ready", credits: 4 });
+  const credits = priceDisplay(planningQuote({ kind: "up-to", credits: 4 }, 0.373, false), undefined, env)!;
+  expect(credits.text).toBe("up to 4 cr");
+  const house = priceDisplay(planningQuote({ kind: "up-to", credits: 4 }, 0.373, true), undefined, env)!;
+  expect([house.text, house.title]).toEqual(["up to $0.373", PAYS_AT_COST]);
+  expect(priceDisplay(planningQuote({ kind: "up-to", credits: 4 }, null, true), undefined, env)).toMatchObject({ text: "—", title: NO_AT_COST_PRICE });
+  /* The press still approves the credits: the dollars change what is shown, not the limit. */
+  expect(thinkingFrom(body)).toMatchObject({ credits: 4 });
+});
+
+test("the planner's ceiling reaches the house in dollars beside its credits, and a customer workspace never receives the dollars", async () => {
+  const before = process.env.RIG_AGENT_ENABLED;
+  process.env.RIG_AGENT_ENABLED = "1";
+  try {
+    const { newBoardAskTerms } = await import("../../lib/workbench/rig-agent");
+    const asked = async (id: string) => runInTenant(workspace(id), () => newBoardAskTerms());
+    const house = await asked("ws_legacy");
+    const customer = await asked("ws_customer");
+    expect(house.ask?.planning ?? 0).toBeGreaterThan(0);
+    expect(house.ask?.planningUsd ?? 0).toBeGreaterThan(0);
+    /* The customer's credits carry the margin; the house's are its dollars counted in whole credits (lib/credits.ts quotedCredits). */
+    expect(customer.ask?.planning ?? 0).toBeGreaterThanOrEqual(house.ask?.planning ?? 0);
+    expect(Math.ceil((house.ask!.planningUsd as number) / creditUsd() - 1e-9)).toBe(house.ask?.planning);
+    expect(customer.ask).not.toHaveProperty("planningUsd");
+    expect(JSON.stringify(customer)).not.toContain("planningUsd");
+  } finally {
+    if (before === undefined) delete process.env.RIG_AGENT_ENABLED; else process.env.RIG_AGENT_ENABLED = before;
+  }
+});

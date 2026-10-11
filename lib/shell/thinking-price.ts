@@ -8,7 +8,7 @@
  */
 export type Thinking =
   | { state: "loading" }
-  | { state: "ready"; credits: number }
+  | { state: "ready"; credits: number; /** The planner's ceiling in the engines' own dollars: the house workspace alone is sent it. */ usd?: number }
   | { state: "off" }
   | { state: "unpriced" }
   | { state: "error"; message: string };
@@ -17,9 +17,12 @@ export const THINKING_READ_FAILED = "Atomik's thinking price didn't load.";
 
 /** The answer of the agent read, as Home words it. Exported for the unit spec. */
 export function thinkingFrom(body: unknown): Thinking {
-  const agent = (body as { agent?: { enabled?: unknown; ask?: { planning?: unknown } | null } } | null)?.agent;
+  const agent = (body as { agent?: { enabled?: unknown; ask?: { planning?: unknown; planningUsd?: unknown } | null } } | null)?.agent;
   if (!agent || typeof agent.enabled !== "boolean") return { state: "error", message: THINKING_READ_FAILED };
   if (!agent.enabled) return { state: "off" };
   const planning = agent.ask?.planning;
-  return typeof planning === "number" && Number.isFinite(planning) && planning > 0 ? { state: "ready", credits: planning } : { state: "unpriced" };
+  const usd = agent.ask?.planningUsd;
+  return typeof planning === "number" && Number.isFinite(planning) && planning > 0
+    ? { state: "ready", credits: planning, ...(typeof usd === "number" && Number.isFinite(usd) && usd > 0 ? { usd } : {}) }
+    : { state: "unpriced" };
 }

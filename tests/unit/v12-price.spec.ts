@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { FREE_QUOTE, IDLE, LOADING, NO_DOLLAR_PRICE, PAYS_AT_COST, QUOTE_FAULT, knownQuote, priceDisplay, quoteFromResponse, quoteRequest, type MoneyTerms, type Quote, type QuoteSource } from "../../lib/v12/quote";
+import { FREE_QUOTE, IDLE, LOADING, NO_AT_COST_PRICE, NO_DOLLAR_PRICE, PAYS_AT_COST, QUOTE_FAULT, knownQuote, priceDisplay, quoteFromResponse, quoteRequest, type MoneyTerms, type Quote, type QuoteSource } from "../../lib/v12/quote";
 import { UNPRICED, isUnpricedId } from "../../lib/v12/unpriced";
 import { exact, upTo } from "../../lib/shell/price-words";
 import { creditUsd } from "../../lib/creditTerms";
@@ -82,7 +82,9 @@ test("the house workspace sees dollars as today's screens word them, and no cred
   expect(quoteFromResponse({ route: "engine", model: "m", resolution: "1080p", ratio: "16:9" }, true, { credits: 43 }, HOUSE)).toEqual({ state: "error", message: NO_DOLLAR_PRICE });
   /* Atomik keeps the house's dollars; the planner's credits for the house are its dollars at the price of a credit. */
   expect(show(quoteFromResponse({ route: "atomik", body: {} }, true, { model: "x", effort: "low", estimateCredits: 9, estimateUsd: 0.4 }, HOUSE))!.text).toBe("up to $0.40");
-  expect(show(quoteFromResponse({ route: "board-start" }, true, { agent: { enabled: true, ask: { planning: 4 } } }, HOUSE))!.text).toBe(`up to ${houseDollars(4 * RATE)}`);
+  /* Atomik's thinking for the house: the planner's own dollars (sent to it beside the credits), never the credits turned into dollars. */
+  expect(show(quoteFromResponse({ route: "board-start" }, true, { agent: { enabled: true, ask: { planning: 4, planningUsd: 0.37 } } }, HOUSE))!.text).toBe(`up to ${houseDollars(0.37)}`);
+  expect(quoteFromResponse({ route: "board-start" }, true, { agent: { enabled: true, ask: { planning: 4 } } }, HOUSE)).toEqual({ state: "error", message: NO_AT_COST_PRICE });
 });
 
 test("each quote route's answer becomes the right form", () => {
