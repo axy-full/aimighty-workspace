@@ -1,6 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { signInToRedesign } from "./newInterface";
-import { signInLocally } from "./workbenchLocal";
+import { createClient } from "@libsql/client";
+import { localPlatformDbUrl, signInLocally } from "./workbenchLocal";
 import { forbidPaidWork, mockLibrary, mockMedia, mockProjects } from "./workspaceFixtures";
 import { newProject, type Project } from "../../lib/workbench/studio";
 
@@ -14,7 +15,7 @@ export const BILLING_PATH = "/suites?view=workspace&tab=credits";
 const MIN = 60_000;
 const DAY = 86_400_000;
 
-export async function openBilling(page: Page, opts: { on?: boolean; low?: boolean; canRequest?: boolean } = {}) {
+export async function openBilling(page: Page, opts: { on?: boolean; low?: boolean; canRequest?: boolean; house?: boolean; path?: string } = {}) {
   if (opts.on === false) await signInLocally(page.request);
   else {
     await signInToRedesign(page.request);
@@ -66,8 +67,38 @@ export async function openBilling(page: Page, opts: { on?: boolean; low?: boolea
       return route.fulfill({ response, json: { ...body, credits: body.credits ? { ...body.credits, balance: 0 } : body.credits } });
     });
   }
+  if (opts.house) {
+    /* The house workspace (lib/houseWorkspace.ts), for real: its row is seeded as the legacy import writes it (as the platform desk's
+       spec does), this person is made its owner, and the session switches to it. The server then hands it a dollar table. */
+    const me = await (await page.request.get("/api/me")).json() as { id: string };
+    const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+    try {
+      const at = Date.now();
+      await platform.execute({
+        sql: `INSERT OR IGNORE INTO workspaces (id, slug, name, db_url, db_token_enc, legacy, uses_platform_keys, owner_id, created_at, updated_at)
+              VALUES ('ws_legacy', 'house-billing', 'House', '(primary)', NULL, 1, 1, ?, ?, ?)`,
+        args: [me.id, at, at],
+      });
+      await platform.execute({ sql: "INSERT OR REPLACE INTO memberships (workspace_id, account_id, role, disabled, created_at) VALUES ('ws_legacy', ?, 'owner', 0, ?)", args: [me.id, at] });
+    } finally { platform.close(); }
+    const switched = await page.request.post("/api/workspaces/switch", { data: { id: "ws_legacy" } });
+    expect(switched.ok(), await switched.text()).toBe(true);
+    await page.route(/\/api\/usage\/summary(\?.*)?$/, (route) => route.fulfill({ json: { pending: 0, spentUsd: 12.5, purchasedUsd: 0, remainingUsd: -12.5, credits: null, promptSpendUsd: 0.4, vendors: [] } }));
+    await page.route(/\/api\/usage(\?.*)?$/, (route) => {
+      const q = new URL(route.request().url()).searchParams;
+      if (q.get("rows") === "1") return route.fulfill({ json: { unit: "usd", month: q.get("month"), months: [q.get("month")], totals: { jobs: 3, charged: 3, notBilled: 0 }, next: null, rows: [
+        { id: "h1", at: now - 20 * MIN, who: "You", engine: "Nano Banana 2", kind: "image", usd: 0.04, state: "charged" },
+        { id: "h2", at: now - DAY, who: "You", engine: "Seedance 2.5", kind: "video", usd: 1.8, state: "charged" },
+        { id: "h3", at: now - 3 * DAY, who: "You", engine: "Kling 3.0 Standard", kind: "video", usd: 0, state: "not-billed" },
+      ] } });
+      return route.fulfill({ json: { spentUsd: 12.5, purchasedUsd: 0, remainingUsd: -12.5, byProject: [
+        { name: "Launch film", n: 8, spend: 7.2, credits: 0 }, { name: "Product film", n: 4, spend: 3.9, credits: 0 }, { name: "Unfiled", n: 3, spend: 1.4, credits: 0 },
+      ], byModel: [], byMonth: [], recent: [], vendors: [], byPerson: [] } });
+    });
+    await page.route(/\/api\/usage\/boards(\?.*)?$/, (route) => route.fulfill({ json: { unit: "usd", month: "", boards: [] } }));
+  }
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(BILLING_PATH);
+  await page.goto(opts.path ?? BILLING_PATH);
   return { errors };
 }
