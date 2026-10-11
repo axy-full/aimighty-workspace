@@ -56,6 +56,8 @@ import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
 import { stageLimit, stagePage, addStage, currentStage, freeCards as unstagedCards, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
+import { RigView } from "@/components/v12/rig/RigView";
+import { rigModel } from "@/components/v12/rig/model";
 import { roundCardsFor, type RoundCardData } from "@/components/v12/rounds/round-derive";
 import { RoundCard } from "@/components/v12/rounds/RoundCard";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
@@ -231,6 +233,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     setInView(best);
   }, [board.rail, placed.regions, store]);
   const [list, setList] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("list") === "1");
+  /* The Rig, the new interface's fourth view (components/v12/rig): what feeds what. `v=rig` opens on it. */
+  const [rigView, setRigView] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("v") === "rig");
+  const rigOn = v12Frame && rigView && !list;
+  /* The Rig's reading of the whole board (every stage's cards, not only this stage's). */
+  const rigModelNow = useMemo(() => (rigOn && project ? rigModel({ cards: allCards, project, library: items }) : null), [rigOn, allCards, project, items]);
   const glide = useCallback((to: RegionId | { card: string }) => {
     if (list) setList(false);
     const zoom = flow.getZoom();
@@ -762,14 +769,16 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             </div>
           ) : null}
           {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}
-          {v12Frame && !list && !empty ? (
+          {rigOn ? <RigView model={rigModelNow!} project={project} scope={scope} userId={userId ?? null} apply={rig.apply} readOnly={offline || Boolean(gate.readOnly)}
+            onStage={(id) => { setRigView(false); goStage(id); }} onAsk={(words) => { setDockOpen(true); window.setTimeout(() => ctx.askAtomik(words), 80); }} /> : null}
+          {v12Frame && !list && !rigOn && !empty ? (
             <BoardBar ctx={ctx} selection={crumb} onClearSelection={() => pick(new Set(), null)} tool={tool} onDisarm={() => setTool("select")}
               onAttach={(picked) => void upload(picked)} library={items} onAsked={() => setDockOpen(true)} />
           ) : null}
           {batch.offer && !list ? <NotifyAsk onTell={() => void batch.tellMe()} onNotNow={batch.notNow} /> : null}
-          {list || page ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
+          {list || page || rigOn ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12Frame} />
-          {v12Frame ? <ViewSwitch view={list ? "list" : "canvas"} onView={(v) => setList(v === "list")} /> : null}
+          {v12Frame ? <ViewSwitch view={list ? "list" : rigOn ? "rig" : "canvas"} onView={(v) => { setList(v === "list"); setRigView(v === "rig"); }} /> : null}
           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}
           {pill ? <p className="bd-sample" role="status" data-testid="board-sample" data-lifted={pill === LIFT_LINE || undefined}>{pill}{pill === CHECK_LINE ? <> <CheckAgain className="bd-link" /></> : null}</p> : null}
           {live ? <WhoIsHere peers={peers} /> : null}
