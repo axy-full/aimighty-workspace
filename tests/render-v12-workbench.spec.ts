@@ -117,8 +117,9 @@ test.describe("desktop, switch on", () => {
     await expect(page.getByTestId("v12-toast")).not.toContainText(/nothing billed|not billed/i);
     await expect(shots(page).nth(6).getByTestId("v12-render-cancel-sent")).toBeVisible({ timeout: 30_000 });
     await expect(shots(page).nth(6).getByTestId("v12-render-cancel")).toHaveCount(0);
-    await expect(shots(page).nth(6).getByTestId("v12-render-money")).toHaveText("7 cr held · charged only when it’s ready");
-    await expect(shots(page).nth(6)).not.toContainText(/nothing billed/i);
+    /* The hold stands, from the same price: the line says what is true now, that it settles when the engine confirms (not "charged only when it's ready"). */
+    await expect(shots(page).nth(6).getByTestId("v12-render-money")).toHaveText("7 cr held · settles when the engine confirms");
+    await expect(shots(page).nth(6)).not.toContainText(/nothing billed|charged only when/i);
     /* The held take is discarded for good: that one is free, said so. */
     await shots(page).nth(7).getByTestId("v12-render-cancel").click();
     await expect(page.getByTestId("v12-toast")).toContainText("Cancelled · nothing billed · the frame stays", { timeout: 30_000 });
