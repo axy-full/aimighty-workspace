@@ -90,3 +90,16 @@ export function previewQuote(preview: SkillRunPreview): Quote | { reason: Unpric
 
 /** A refusal from the preview that means "the words are not filled in yet" (a parameter with no default), not a fault. */
 export const needsWords = (message: string): boolean => /^Fill in /.test(message);
+
+/**
+ * A short-lived read kept per workspace scope: the same scope within `ttlMs` shares one read; another scope never reuses it, so
+ * a workspace switch cannot see the last workspace's answer, even inside the window.
+ */
+export function scopedFresh<T>(ttlMs: number) {
+  let last: { scope: string; at: number; value: T } | null = null;
+  return (scope: string, now: number, make: () => T): T => {
+    if (last && last.scope === scope && now - last.at <= ttlMs) return last.value;
+    last = { scope, at: now, value: make() };
+    return last.value;
+  };
+}

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { BUILT_IN_ROWS, commandOf, matchRows, needsWords, previewQuote, skillRows, slugFor, typingSlash } from "../../lib/v12/skills";
+import { BUILT_IN_ROWS, commandOf, matchRows, needsWords, previewQuote, scopedFresh, skillRows, slugFor, typingSlash } from "../../lib/v12/skills";
 import { UNPRICED } from "../../lib/v12/unpriced";
 import type { SkillRunPreview, SkillRunStep, SkillView } from "../../lib/atomikSkillsText";
 
@@ -72,4 +72,20 @@ test("a blank parameter is not a fault, and the one new 'quoted' reason is liste
   expect(UNPRICED.skillPriceEngine.hover).toMatch(/engine/i);
   expect(UNPRICED.skillPriceEngine.hover).not.toMatch(/fill in its words/);
   expect(UNPRICED.skillPriceStep.hover).not.toMatch(/fill in its words/);
+});
+
+test("a short-lived read is kept per workspace scope: the same scope shares it for its window, another scope never reuses it", () => {
+  const read = scopedFresh<string>(10_000);
+  let asked = 0;
+  const make = (label: string) => () => { asked++; return label; };
+  expect(read("ws-a", 0, make("a1"))).toBe("a1");
+  expect(read("ws-a", 5_000, make("a2"))).toBe("a1");
+  expect(asked).toBe(1);
+  /* A switch inside the window asks afresh and never gets workspace A's answer. */
+  expect(read("ws-b", 6_000, make("b1"))).toBe("b1");
+  expect(asked).toBe(2);
+  /* Switching back does not bring A's old answer back either: only the latest scope is held. */
+  expect(read("ws-a", 7_000, make("a3"))).toBe("a3");
+  expect(read("ws-a", 17_001, make("a4"))).toBe("a4");
+  expect(read("ws-a", 17_002, make("a5"))).toBe("a4");
 });

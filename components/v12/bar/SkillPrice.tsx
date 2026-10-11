@@ -2,7 +2,8 @@
 import { useEffect, useState } from "react";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { formatQuote } from "@/lib/v12/campaign";
-import { needsWords, previewQuote, type SkillRow } from "@/lib/v12/skills";
+import { needsWords, previewQuote, scopedFresh, type SkillRow } from "@/lib/v12/skills";
+import { useSession } from "@/lib/session";
 import { LOADING, QUOTE_FAULT, type Quote } from "@/lib/v12/quote";
 import type { UnpricedId } from "@/lib/v12/unpriced";
 import { useEngineQuote } from "@/lib/v12/useQuote";
@@ -26,34 +27,30 @@ function BuiltInPrice({ row }: { row: Extract<SkillRow, { kind: "built-in" }> })
 }
 
 type Read = { quote: Quote } | { reason: UnpricedId };
-/* One preview per skill version, and per setting of the engines Atomik may use, while the page is open: typing a command re-draws the
+/* One preview per workspace, per skill version, and per setting of the engines Atomik may use, while the page is open: typing a command re-draws the
    list, never re-asks, and switching an engine on or off in Settings › Engines starts the next preview afresh. */
 const READ = new Map<string, Read>();
 
 /** The workspace's engines-off setting (`atomikEngines`), read for the list (at most every 10 s), as the part of a preview's key that says which engines were allowed. Null while it is read. */
 const OFF_FRESH_MS = 10_000;
-let lastOff: { at: number; value: Promise<string> } | null = null;
-function useEnginesOff(): string | null {
+const enginesOffRead = scopedFresh<Promise<string>>(OFF_FRESH_MS);
+function useEnginesOff(scope: string): string | null {
   const fetcher = useScopedFetch();
   const [key, setKey] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    if (!lastOff || Date.now() - lastOff.at > OFF_FRESH_MS) {
-      lastOff = {
-        at: Date.now(),
-        value: fetcher("/api/settings", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null))
-          .then((body: { settings?: { atomikEngines?: unknown } } | null) => (typeof body?.settings?.atomikEngines === "string" ? body.settings.atomikEngines : "?")).catch(() => "?"),
-      };
-    }
-    void lastOff.value.then((value) => { if (live) setKey(value); });
+    const value = enginesOffRead(scope, Date.now(), () => fetcher("/api/settings", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null))
+      .then((body: { settings?: { atomikEngines?: unknown } } | null) => (typeof body?.settings?.atomikEngines === "string" ? body.settings.atomikEngines : "?")).catch(() => "?"));
+    void value.then((v) => { if (live) setKey(v); });
     return () => { live = false; };
-  }, [fetcher]);
+  }, [fetcher, scope]);
   return key;
 }
 
 function SavedPrice({ row, api }: { row: Extract<SkillRow, { kind: "saved" }>; api: SkillsApi }) {
-  const enginesOff = useEnginesOff();
-  const key = `${row.skill.id}:${row.skill.version}:${row.skill.updatedAt}:${enginesOff}`;
+  const scope = useSession().requestScope ?? "";
+  const enginesOff = useEnginesOff(scope);
+  const key = `${scope}:${row.skill.id}:${row.skill.version}:${row.skill.updatedAt}:${enginesOff}`;
   const [read, setRead] = useState<{ key: string; value: Read } | null>(null);
   useEffect(() => {
     if (enginesOff === null || READ.has(key)) return;
