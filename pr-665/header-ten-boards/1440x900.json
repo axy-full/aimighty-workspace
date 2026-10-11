@@ -1,0 +1,9 @@
+{
+  "name": "header-ten-boards",
+  "app": "/suites?project=project-9f47612d&suite=particl&page=brief&view=home",
+  "prototype": "?view=home&tabs=10",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}

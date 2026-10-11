@@ -1,0 +1,9 @@
+{
+  "name": "header",
+  "app": "/suites?project=project-d7494ab8&suite=particl&page=brief&view=home",
+  "prototype": "?view=home",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
