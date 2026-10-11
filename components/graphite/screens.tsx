@@ -1,6 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Boundary, { type Fault } from "@/components/Boundary";
 import { PanelFault } from "./PanelFault";
 import type { WorkspaceAccount, useProjects } from "@/lib/workspace/data";
@@ -11,6 +11,7 @@ import type { Shell } from "@/lib/shell/state";
 import { useNewInterface } from "@/lib/session";
 import { useCompact } from "@/lib/shell/use-compact";
 import { KIND_CARDS } from "@/lib/v12/board/kinds";
+import { NoAccessBoard } from "@/components/v12/board/NoAccessBoard";
 import type { BoardKindId, ScreenId } from "@/lib/shell/screens";
 import { FirstRun, type ProjectActions } from "./FirstRun";
 import { isControlRoomPage } from "./control-room/pages";
@@ -107,6 +108,15 @@ function BoardOrNew({ ctx }: { ctx: ScreenContext }) {
   const { shell, scope, project, items, library } = ctx;
   const v12 = useNewInterface();
   const compact = useCompact();
+  /* A link to a board that is not this person's (in another workspace, or gone): the server answers the id with nothing and the
+     shell falls back to their own first board. In the new interface that is said ("You don't have access"), never drawn as that
+     other board or as an empty one. Only the board the address named when this screen opened counts. */
+  const [asked, setAsked] = useState<string | null>(() => (typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("project")));
+  const ready = ctx.data.status === "ready";
+  const found = Boolean(asked) && (project?.id === asked || ctx.data.projects.some((p) => p.id === asked));
+  /* Found: the address was a board of theirs, and from here on the screen follows the address as always. */
+  if (asked && ready && found) setAsked(null);
+  if (v12 && !compact && asked && ready && !found && shell.params.newboard !== "1") return <NoAccessBoard onHome={shell.goHome} />;
   if (v12 && !compact && shell.params.newboard === "1") {
     const pick = KIND_CARDS.find((k) => k.id === shell.params.pick)?.id ?? null;
     return <NewBoardEntry scope={scope} onCreate={ctx.onCreate} initialKind={pick} />;
