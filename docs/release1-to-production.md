@@ -225,6 +225,17 @@ How many rows they touch **can't be known without production database access**. 
 
 ## 12. Counts in /admin
 
+**Today, read-only, before and after the deploy** (no code change; the same `turso` login as §1). Run against the platform database:
+
+```sh
+turso db shell <platform-db> "SELECT count(*) AS workspaces FROM workspaces WHERE deleted_at IS NULL"
+turso db shell <platform-db> "SELECT count(*) AS people FROM accounts WHERE deleted_at IS NULL"
+turso db shell <platform-db> "SELECT kind, count(*) AS grants, COALESCE(sum(credits),0) AS credits FROM credit_grants GROUP BY kind"
+```
+
+These only read. Write the three answers next to `restore-point.txt`; after the deploy they should be the same.
+
+
 **What /admin shows today** (app/(app)/admin/page.tsx, data from `/api/admin/invites`, platform owner only):
 
 - **Workspaces: yes.** Go to https://particl.si/admin and scroll to **Workspaces**. The header reads "*N* on this deployment, *M* deleted".
