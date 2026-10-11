@@ -263,10 +263,12 @@ test("desktop: an invite link â€” team, new workspace (name, plan) and expired â
   await expect(page.getByTestId("v12-join-title")).toHaveText("Create your workspace");
   await page.getByTestId("v12-join-workspace").fill("North Quay Films");
   await page.getByTestId("v12-join-continue").click();
-  await expect(page.getByTestId("v12-join-plan")).toHaveCount(4);
+  await expect(page.getByTestId("v12-plan-card")).toHaveCount(3);
   await expect(page.getByTestId("v12-join-new")).toContainText("Monthly plans. Checkout is not open yet. Nothing runs without a price shown first.");
-  await page.getByTestId("v12-join-plan").nth(1).click();
-  await expect(page.getByTestId("v12-join-plan").nth(1)).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("v12-plan-card").nth(1).getByTestId("v12-plan-choose").click();
+  await expect(page.getByTestId("v12-plan-card").nth(1).getByTestId("v12-plan-choose")).toHaveText("Chosen");
+  await page.getByRole("radio", { name: "Business" }).click();
+  await expect(page.getByTestId("v12-plan-seats-total")).toContainText("5 seats");
   await page.getByTestId("v12-join-continue").click();
   await expect(page).toHaveURL(new RegExp(`/signup\\?invite=${fresh.code}&workspace=North%20Quay%20Films$`), { timeout: 30_000 });
   await expect(page.getByTestId("signup-workspace")).toHaveValue("North Quay Films", { timeout: 30_000 });

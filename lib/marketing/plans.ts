@@ -27,9 +27,6 @@ export function planLines(plan: PlanDef, inviteCredits: number): string[] {
 }
 
 export const PLAN_AUDIENCE: Record<string, string> = {
-  explore: "For one person.",
-  create: "For one person.",
-  master: "For one person.",
   business100: "For a team: one pool of credits.",
   business250: "For a team: one pool of credits.",
   business500: "For a team: one pool of credits.",

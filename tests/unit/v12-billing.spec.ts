@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { boardRows, cycleDates, cycleNow, heroTakes, historyRows, planNowOf, signedCredits, takesWords, whenWords } from "../../lib/v12/billing";
 import { fmtCredits } from "../../lib/price";
-import { PLAN_CARDS, HERO_TAKE } from "../../lib/planCards";
+import { BUSINESS_FROM_USD, BUSINESS_LEVELS, HERO_TAKE, INDIVIDUAL_CARDS, seatTotal } from "../../lib/planCards";
 import { DEFAULT_PLANS } from "../../lib/plans";
 import type { CreditLedgerRow } from "../../lib/usageLedgerTerms";
 
@@ -58,14 +58,20 @@ test("the plan is the server's (paid, else the admin's label); absent on an olde
   expect(planNowOf({})).toBeNull();
 });
 
-test("the plan cards are the owner's plans, read from lib/plans.ts, apart from what checkout grants", () => {
-  expect(PLAN_CARDS.map((c) => c.name)).toEqual(["Explore", "Create", "Master", "Business"]);
-  for (const card of PLAN_CARDS) {
-    expect(card.credits).toBeGreaterThan(0);
-    expect(card.priceUsd).toBeGreaterThan(0);
-  }
-  /* The figures are the plans' own: one person's, then Business from its lowest level, a seat. */
-  expect(PLAN_CARDS.map((c) => [c.credits, c.priceUsd, c.perSeat])).toEqual([[500, 50, false], [1000, 100, false], [2500, 250, false], [1000, 100, true]]);
+test("the plan cards are the owner's plans (prototype v14), read from lib/plans.ts, apart from what checkout grants", () => {
+  expect(INDIVIDUAL_CARDS.map((c) => [c.name, c.priceUsd, c.credits, c.blurb])).toEqual([
+    ["Explore", 50, 500, "For trying Particl: first films and campaigns."],
+    ["Create", 100, 1000, "For making every week."],
+    ["Master", 250, 2500, "For full productions."],
+  ]);
+  expect(BUSINESS_LEVELS.map((l) => [l.name, l.perSeatUsd, l.perSeatCredits])).toEqual([["Business 100", 100, 1000], ["Business 250", 250, 2500], ["Business 500", 500, 5000]]);
+  expect(BUSINESS_FROM_USD).toBe(100);
+  /* The seats stepper's total: seats times a seat's price, and the credits pooled across the seats. */
+  const level250 = DEFAULT_PLANS.find((p) => p.id === "business250")!;
+  expect(seatTotal(level250, 5)).toEqual({ seats: 5, usd: 1250, credits: 12500 });
+  expect(seatTotal(level250, 0).seats, "never fewer than one seat").toBe(1);
+  expect(seatTotal(level250, 1000).seats, "never more than the stepper allows").toBe(99);
+  expect(seatTotal(DEFAULT_PLANS.find((p) => p.id === "business100")!, 5)).toEqual({ seats: 5, usd: 500, credits: 5000 });
   /* The legacy plans stay resolvable and are not shown. */
   expect(DEFAULT_PLANS.map((p) => p.id)).toEqual(expect.arrayContaining(["invite", "studio", "agency", "production"]));
   expect(HERO_TAKE.duration).toBeGreaterThan(0);

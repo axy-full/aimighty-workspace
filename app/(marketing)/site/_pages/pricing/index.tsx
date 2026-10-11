@@ -20,7 +20,7 @@ export default async function Pricing() {
   const unit = `$${creditRateUsd(perCredit) ?? perCredit}`;
   const card = (plan: PlanDef, badge?: string): PlanCard => ({
     id: plan.id, label: plan.label, price: usd(plan.priceUsd), unit: "/mo", badge, cta: "Request access",
-    audience: PLAN_AUDIENCE[plan.id] ?? "", lines: planLines(plan, inviteCredits),
+    audience: plan.blurb ?? PLAN_AUDIENCE[plan.id] ?? "", lines: planLines(plan, inviteCredits),
   });
   const individual = plansIn(plans, "individual").map((plan) => card(plan, plan.badge ?? undefined));
   const levels = plansIn(plans, "business");

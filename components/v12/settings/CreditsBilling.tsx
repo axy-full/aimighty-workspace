@@ -8,11 +8,10 @@ import { HOUSE_PLAN } from "@/lib/plans";
 import type { CreditLedgerRow } from "@/lib/usageLedgerTerms";
 import type { BillingSubscription, Topups } from "@/lib/shell/workspace-view";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
-import { HERO_TAKE, PLAN_CARDS, type PlanCard } from "@/lib/planCards";
+import { PlanPicker } from "./PlanPicker";
 import { LOW_CREDIT_PERCENT } from "@/lib/v12/lowCredit";
 import { useLowCredit } from "@/lib/v12/useLowCredit";
-import { useQuote } from "@/lib/v12/useQuote";
-import { boardRows, cycleDates, cycleNow, heroTakes, historyRows, planNowOf, signedCredits, takesWords, type BillingCycle } from "@/lib/v12/billing";
+import { boardRows, cycleDates, cycleNow, historyRows, planNowOf, signedCredits, takesWords, type BillingCycle } from "@/lib/v12/billing";
 import { monthKey, monthLine, monthTotalsOf, planView, topUpLabel, topUpPack, type PlanDefLike } from "@/components/graphite/settings/model";
 import { useRead } from "@/components/graphite/settings/use-settings";
 import "./billing.css";
@@ -41,12 +40,12 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
   const rule = useLowCredit(balance);
   /* The month as the page opened: the ledger files a job by when it started (UTC). */
   const [now] = useState(() => Date.now());
+  const [chooseNote, setChooseNote] = useState(false);
   const month = monthKey(now);
   const billing = useRead<Billing>(inCredits ? "/api/billing" : null);
   const topups = useRead<Topups>(inCredits ? "/api/workspaces/topups" : null);
   const ledger = useRead<{ unit?: string; rows?: CreditLedgerRow[] }>(inCredits ? `/api/usage?rows=1&month=${month}&limit=20` : null);
   const boards = useRead<unknown>(inCredits ? `/api/usage/boards?month=${month}` : null);
-  const hero = useQuote(inCredits ? { route: "engine", ...HERO_TAKE } : null);
 
   const totals = monthTotalsOf(ledger.data);
   const plan = planNowOf(billing.data);
@@ -57,7 +56,6 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
   const askAdmin = Boolean(topups.data?.applies && !topups.data.canRequest);
   const history = historyRows(ledger.data?.unit === "credits" ? ledger.data.rows : [], topups.data?.history ?? [], now);
   const perBoard = boardRows(boards.data);
-  const perTake = hero.state === "ready" && hero.price.unit === "cr" && hero.price.value.kind !== "free" ? hero.price.value.credits : null;
 
   return (
     <div className="v12-bill" data-testid="v12-billing" data-screen-label="Settings · Credits & billing">
@@ -118,9 +116,8 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
               <span className="v12-bill-eyebrow">Plans</span>
               <span className="v12-bill-meta">Monthly · checkout is not open yet</span>
             </div>
-            <div className="v12-bill-cards">
-              {PLAN_CARDS.map((card) => <PlanCardView key={card.id} card={card} perTake={perTake} rate={rate} />)}
-            </div>
+            <PlanPicker current={plan?.id ?? null} onChoose={() => setChooseNote(true)} />
+            {chooseNote ? <div className="v12-bill-quiet" role="status" data-testid="v12-billing-choose-note">Checkout is not open yet. Nothing was changed.</div> : null}
           </section>
         ) : null}
 
@@ -155,18 +152,6 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
           </section>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-function PlanCardView({ card, perTake, rate }: { card: PlanCard; perTake: number | null; rate: number | null }) {
-  const takes = card.line === "hero-takes" ? heroTakes(card.credits, perTake) : null;
-  const line = card.line === "hero-takes" ? (takes != null ? `about ${takes} hero takes` : null) : card.line;
-  return (
-    <div className="v12-bill-card" data-testid="v12-billing-plan-card" data-plan={card.id}>
-      <span className="v12-bill-card-name">{card.name}</span>
-      <span className="v12-bill-mono" title={creditsUsd(card.credits, rate) ?? undefined}>{card.perSeat ? "from " : ""}{fmtCredits(card.credits)} · ${card.priceUsd.toLocaleString("en-US")}{card.perSeat ? " a seat" : ""}</span>
-      {line ? <span className="v12-bill-sub">{line}</span> : null}
     </div>
   );
 }

@@ -117,9 +117,10 @@ test("the owner's plans claim only what the owner gave: credits, who it is for, 
     const plan = planById(DEFAULT_PLANS, id)!;
     const lines = planLines(plan, 250);
     expect(lines, id).toEqual([`${plan.includedCredits.toLocaleString("en-US")} credits a month`, "One person"]);
-    expect(PLAN_AUDIENCE[id]).toBe("For one person.");
+    expect(PLAN_AUDIENCE[id], "the card's line is the config's blurb").toBeUndefined();
     expect(plan.badge, `${id} carries no badge the owner did not give`).toBeNull();
   }
+  expect(["explore", "create", "master"].map((id) => planById(DEFAULT_PLANS, id)!.blurb)).toEqual(["For trying Particl: first films and campaigns.", "For making every week.", "For full productions."]);
   for (const id of ["business100", "business250", "business500"]) {
     const plan = planById(DEFAULT_PLANS, id)!;
     expect(planLines(plan, 250), id).toEqual([`${plan.includedCredits.toLocaleString("en-US")} credits a seat a month`, "One pool of credits across every seat"]);
