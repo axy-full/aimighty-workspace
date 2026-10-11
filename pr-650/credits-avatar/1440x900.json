@@ -1,0 +1,9 @@
+{
+  "name": "credits-avatar",
+  "app": "/suites?project=ws-billing&suite=particl&page=brief&view=workspace&tab=team&sp=board",
+  "prototype": "?",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
