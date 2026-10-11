@@ -75,20 +75,23 @@ test.describe("desktop", () => {
     await expect(page.getByTestId("atomik-palette")).toHaveCount(0);
   });
 
-  test("closing a tab keeps the board: Undo brings the tab back; the tab menu closes others; five boards put one under +1", async ({ page }) => {
-    const { ids } = await redesignWithBoards(page, ["One", "Two", "Three", "Four", "Five"]);
+  test("closing a tab keeps the board: Undo brings the tab back; the tab menu closes others; boards that do not fit go under +N", async ({ page }) => {
+    /* Ten boards with long names: more than any desktop width shows, so some go under +N ▾ (how many is the next test's). */
+    const names = Array.from({ length: 10 }, (_, i) => `Board ${i + 1} with a long working title`);
+    const { ids } = await redesignWithBoards(page, names);
     await openAsTabs(page, ids);
-    /* Four show; the fifth goes under +1 ▾. */
-    await expect(page.getByTestId("v12-tab-board")).toHaveCount(4);
-    await expect(page.getByTestId("v12-tab-more")).toHaveText("+1 ▾");
+    const shown = await page.getByTestId("v12-tab-board").count();
+    expect(shown).toBeGreaterThan(0);
+    expect(shown).toBeLessThan(10);
+    await expect(page.getByTestId("v12-tab-more")).toHaveText(`+${10 - shown} ▾`);
     await page.getByTestId("v12-tab-more").click();
-    await expect(page.getByTestId("v12-more-menu")).toContainText("Five");
+    await expect(page.getByTestId("v12-more-menu")).toContainText("Board 10");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("v12-more-menu")).toHaveCount(0);
 
     await boardTab(page, ids[1]).getByTestId("v12-tab-close").click();
     await expect(boardTab(page, ids[1])).toHaveCount(0);
-    await expect(page.getByTestId("v12-toast")).toContainText("Two closed · the board is kept");
+    await expect(page.getByTestId("v12-toast")).toContainText("Board 2 with a long working title closed · the board is kept");
     await page.getByTestId("v12-toast-action").click();
     await expect(boardTab(page, ids[1])).toBeVisible();
 
@@ -103,8 +106,8 @@ test.describe("desktop", () => {
     await page.getByTestId("v12-tab-plus").click();
     const plus = page.getByTestId("v12-plus");
     await expect(plus.getByTestId("v12-plus-closed").first()).toBeVisible();
-    await plus.getByTestId("v12-plus-closed").filter({ hasText: "Two" }).getByRole("button", { name: "Reopen" }).click();
-    await expect(boardTab(page, ids[1])).toHaveAttribute("data-active", "");
+    await plus.getByTestId("v12-plus-closed").filter({ hasText: "Board 10 with" }).getByRole("button", { name: "Reopen" }).click();
+    await expect(boardTab(page, ids[9])).toHaveAttribute("data-active", "");
   });
 
   test("closing the open board's tab moves to its neighbour, and Undo puts the closed board back on screen", async ({ page }) => {
@@ -176,6 +179,33 @@ test.describe("desktop", () => {
     await expect(page.getByTestId("v12-newboard")).toHaveCount(0);
   });
 
+  test("how many board tabs show is what fits: three at 1440, two at 1280, six at 1920; the field never below 280, the pill and avatar never move", async ({ page }) => {
+    test.setTimeout(240_000);
+    const names = Array.from({ length: 10 }, (_, i) => `Board ${i + 1} with a long working title`);
+    const { ids } = await redesignWithBoards(page, names);
+    await openAsTabs(page, ids);
+    const right = async () => { const a = (await page.getByTestId("v12-avatar").boundingBox())!, p = (await page.getByTestId("v12-activity").boundingBox())!; return { avatarRight: a.x + a.width, pillX: p.x }; };
+    for (const [width, height, count] of [[1440, 900, 3], [1280, 800, 2], [1920, 1080, 6]] as const) {
+      await page.setViewportSize({ width, height });
+      await expect(page.getByTestId("v12-tab-board"), `${width}: board tabs`).toHaveCount(count);
+      await expect(page.getByTestId("v12-tab-more")).toHaveText(`+${10 - count} ▾`);
+      const field = (await page.getByTestId("v12-atomik-field").boundingBox())!;
+      expect(field.width, `${width}: the field`).toBeGreaterThanOrEqual(280);
+      expect(field.width, `${width}: the field`).toBeLessThanOrEqual(560.5);
+      const pinned = await right();
+      /* The avatar ends 16 px from the window's edge, like the logo's margin on the left. */
+      expect(Math.abs(width - 16 - pinned.avatarRight), `${width}: the avatar`).toBeLessThanOrEqual(1);
+      /* The tabs and the field never run under the right group. */
+      const nav = (await page.getByTestId("v12-tabs").boundingBox())!;
+      expect(nav.x + nav.width, `${width}: tabs end before the field`).toBeLessThanOrEqual(field.x + 0.5);
+      expect(field.x + field.width, `${width}: the field ends before the pill`).toBeLessThanOrEqual(pinned.pillX + 0.5);
+      await noHorizontalOverflow(page);
+    }
+    /* Going back to the narrower window brings the overflow back with no reload. */
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(page.getByTestId("v12-tab-board")).toHaveCount(3);
+  });
+
   test("Activity opens what needs you and what runs; the avatar menu holds the balance, Top up and Sign out", async ({ page }) => {
     await redesignWithBoards(page, ["Mirror film"]);
     await page.goto("/suites?view=home");
@@ -193,7 +223,7 @@ test.describe("desktop", () => {
     await page.getByTestId("v12-avatar").click();
     const account = page.getByTestId("v12-account-menu");
     await expect(account.getByTestId("v12-account-balance")).toHaveText(/\d[\d,]*\s*cr$/);
-    await expect(account.getByRole("menuitem")).toHaveText(["Top up", "Credits & billing", "Settings", "Sign out"]);
+    await expect(account.getByRole("menuitem")).toHaveText(["Top up", "Workspace settings", "Credits & billing", "Sign out"]);
     await account.getByTestId("v12-account-topup").click();
     await expect(account).toHaveCount(0);
     await expect(page).toHaveURL(/[?&](tab|section|view)=/);

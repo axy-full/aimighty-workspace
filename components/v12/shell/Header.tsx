@@ -16,7 +16,8 @@ import { PlusPopover } from "./PlusPopover";
 import { boardStates } from "./activity";
 import { boardRings } from "@/lib/v12/boardRing";
 import { useTick } from "../render/use-render";
-import { afterClose, closeOthers, closeTab, headerKey, openTab, restoreTab, visibleTabs } from "./tabs";
+import { MAX_BOARD_TABS, afterClose, closeOthers, closeTab, headerKey, openTab, restoreTab, visibleTabs } from "./tabs";
+import { useTabFit } from "./use-tab-fit";
 import { useBoardTabs } from "./use-board-tabs";
 import { copyBoardLink } from "../menus/menu-items";
 import { keyOf } from "@/lib/v12/keymap";
@@ -60,8 +61,11 @@ export function V12Header({ account, project, projects, onPick }: {
   const { update } = tabs;
   useEffect(() => { if (openId) update((now) => openTab(now, openId)); }, [openId, update]);
 
-  const { shown, hidden } = visibleTabs(tabs.state.open, activeBoard);
   const nameOf = (id: string) => projects.find((p) => p.id === id)?.name ?? (project?.id === id ? project.name : "Board");
+  /* As many board tabs as really fit (prototype v14): the field shrinks to 280 first, then the rest go under "+N ▾". */
+  const headerRef = useRef<HTMLElement>(null);
+  const fit = useTabFit(headerRef, tabs.state.open, activeBoard);
+  const { shown, hidden } = visibleTabs(tabs.state.open, activeBoard, fit ?? MAX_BOARD_TABS);
   const states = useMemo(() => boardStates(tray?.jobs ?? [], approvals.items), [tray?.jobs, approvals.items]);
   /* The ring on a board tab with work running (redesign P3): its share, and about how long is left. */
   const running = states.size > 0 && [...states.values()].includes("live");
@@ -161,7 +165,7 @@ export function V12Header({ account, project, projects, onPick }: {
 
   const ordinal = (i: number) => (i + 3 <= 9 ? keyOf(`tab-${i + 3}`) : undefined);
   return (
-    <header className="v12-header" data-testid="v12-header" data-row="header">
+    <header ref={headerRef} className="v12-header" data-testid="v12-header" data-row="header">
       <Tooltip name="Home" shortcut={[keyOf("home-seq"), keyOf("home")]}>
         <button type="button" className="v12-logo" onClick={goHome} aria-label="particl, Home" data-testid="v12-logo">
           <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">
@@ -248,9 +252,21 @@ export function V12Header({ account, project, projects, onPick }: {
         </IconButton>
       </div>
 
-      <ActivityPill approvals={approvals} draftId={onBoard && project ? project.id : null} onBoard={goBoard} />
-      <LowCreditChip balance={account?.credits?.balance ?? null} />
-      <AccountMenu account={account} />
+      {/* The right group is pinned to the edge at every width: nothing in the header pushes it. */}
+      <div className="v12-right" data-testid="v12-right">
+        <ActivityPill approvals={approvals} draftId={onBoard && project ? project.id : null} onBoard={goBoard} />
+        <LowCreditChip balance={account?.credits?.balance ?? null} />
+        <AccountMenu account={account} />
+      </div>
+      {/* The board tabs as they would draw, unseen, so the header can tell how many fit. */}
+      <div className="v12-tabs-measure" aria-hidden="true">
+        {tabs.state.open.map((id) => (
+          <div key={id} className="v12-tab" data-board="" data-m={id}>
+            <span className="v12-tab-main"><span className="v12-tab-dot" /><span className="v12-tab-label">{nameOf(id)}</span></span>
+            <span className="v12-tab-xspace" />
+          </div>
+        ))}
+      </div>
 
       <Menu open={tabMenu !== null} onClose={() => setTabMenu(null)} anchor={tabAnchor} label="Tab" items={tabItems} width={200} testId="v12-tab-menu" />
       <Menu open={more} onClose={() => setMore(false)} anchor={moreAnchor} label="More boards" items={moreItems} width={280} testId="v12-more-menu" />
