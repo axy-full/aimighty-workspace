@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { TRAIL } from "@/components/ui/Mark";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
@@ -14,9 +14,14 @@ import { ActivityPill } from "./Activity";
 import { AccountMenu } from "./AccountMenu";
 import { PlusPopover } from "./PlusPopover";
 import { boardStates } from "./activity";
+import { boardRings } from "@/lib/v12/boardRing";
+import { useTick } from "../render/use-render";
 import { afterClose, closeOthers, closeTab, headerKey, openTab, restoreTab, visibleTabs } from "./tabs";
 import { useBoardTabs } from "./use-board-tabs";
+import { copyBoardLink } from "../menus/menu-items";
+import { keyOf } from "@/lib/v12/keymap";
 import "./header.css";
+import "../render/render.css";
 
 /** The most boards GET /api/workbench/projects returns (app/api/workbench/projects/route.ts). */
 const PROJECTS_LIST_LIMIT = 100;
@@ -47,7 +52,9 @@ export function V12Header({ account, project, projects, onPick }: {
   const tabs = useBoardTabs(session.requestScope ?? null, known);
 
   const onBoard = shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
-  const activeBoard = onBoard && !shell.make && project ? project.id : null;
+  /* "New board" (components/v12/board/NewBoard.tsx) is a tab of its own while it is open: the board tabs are not the active one. */
+  const newBoardOpen = onBoard && shell.params.newboard === "1";
+  const activeBoard = onBoard && !shell.make && !newBoardOpen && project ? project.id : null;
   /* A board that opens gets its tab. */
   const openId = onBoard && project ? project.id : null;
   const { update } = tabs;
@@ -56,6 +63,10 @@ export function V12Header({ account, project, projects, onPick }: {
   const { shown, hidden } = visibleTabs(tabs.state.open, activeBoard);
   const nameOf = (id: string) => projects.find((p) => p.id === id)?.name ?? (project?.id === id ? project.name : "Board");
   const states = useMemo(() => boardStates(tray?.jobs ?? [], approvals.items), [tray?.jobs, approvals.items]);
+  /* The ring on a board tab with work running (redesign P3): its share, and about how long is left. */
+  const running = states.size > 0 && [...states.values()].includes("live");
+  const ringNow = useTick(running, 5_000);
+  const rings = useMemo(() => boardRings(tray?.jobs ?? [], ringNow), [tray?.jobs, ringNow]);
 
   /* Home as a tab shows Home: Make closes. The shell's goHome keeps Make over the page it moves to, so Make closes once
      Home is the screen (one address write each, never two from the same old address). */
@@ -73,6 +84,11 @@ export function V12Header({ account, project, projects, onPick }: {
   }, [shownScreen, makeOpen, closeMake]);
   const goMake = () => shell.openMake();
   const goBoard = (id: string) => { if (id !== project?.id) onPick(id); shell.goBoard({ closeMake: true }); };
+  /* Closing the New board tab makes nothing and loses nothing: back to the board that was open, or Home. */
+  const closeNewBoard = () => {
+    if (project) shell.setScreenParams({ newboard: null, pick: null }, "push");
+    else goHome();
+  };
   const atomikOpen = shell.atomik !== null;
   const toggleAtomik = () => {
     if (!isLanded("atomik")) { shell.goSuite("atomik"); return; }
@@ -129,10 +145,7 @@ export function V12Header({ account, project, projects, onPick }: {
   const plusAnchor = useRef<HTMLButtonElement>(null);
   const [plus, setPlus] = useState(false);
 
-  const copyLink = (id: string) => {
-    const url = `${window.location.origin}/suites?view=board&project=${encodeURIComponent(id)}`;
-    void navigator.clipboard?.writeText(url).then(() => toast({ text: "Link copied" }), () => toast({ text: "The link could not be copied" }));
-  };
+  const copyLink = (id: string) => copyBoardLink(id, toast);
   const tabItems: MenuItem[] = tabMenu ? [
     { id: "open", label: "Open", onSelect: () => goBoard(tabMenu) },
     { id: "copy", label: "Copy link", onSelect: () => copyLink(tabMenu), testId: "v12-tab-copy" },
@@ -146,10 +159,10 @@ export function V12Header({ account, project, projects, onPick }: {
     { id: "new", label: "+ New board", onSelect: () => setPlus(true) },
   ];
 
-  const ordinal = (i: number) => (i + 3 <= 9 ? `⌘${i + 3}` : undefined);
+  const ordinal = (i: number) => (i + 3 <= 9 ? keyOf(`tab-${i + 3}`) : undefined);
   return (
     <header className="v12-header" data-testid="v12-header" data-row="header">
-      <Tooltip name="Home" shortcut={["G H", "⌘1"]}>
+      <Tooltip name="Home" shortcut={[keyOf("home-seq"), keyOf("home")]}>
         <button type="button" className="v12-logo" onClick={goHome} aria-label="particl, Home" data-testid="v12-logo">
           <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">
             {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
@@ -160,7 +173,7 @@ export function V12Header({ account, project, projects, onPick }: {
 
       <nav className="v12-tabs" aria-label="Tabs" data-testid="v12-tabs">
         <div className="v12-tab" data-active={shell.screen === "home" && !shell.make ? "" : undefined} data-testid="v12-tab-home">
-          <Tooltip name="Home" shortcut={["G H", "⌘1"]}>
+          <Tooltip name="Home" shortcut={[keyOf("home-seq"), keyOf("home")]}>
             <button type="button" className="v12-tab-main" onClick={goHome} aria-current={shell.screen === "home" && !shell.make ? "page" : undefined}>
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 8l6-5 6 5v6h-4v-4H6v4H2z" /></svg>
               <span className="v12-tab-label">Home</span>
@@ -168,7 +181,7 @@ export function V12Header({ account, project, projects, onPick }: {
           </Tooltip>
         </div>
         <div className="v12-tab" data-active={shell.make ? "" : undefined} data-testid="v12-tab-make">
-          <Tooltip name="Make" line="Single pieces." shortcut="⌘2">
+          <Tooltip name="Make" line="Single pieces." shortcut={keyOf("make")}>
             <button type="button" className="v12-tab-main" onClick={goMake} aria-current={shell.make ? "page" : undefined}>
               <span className="v12-tab-spark" aria-hidden="true">✦</span>
               <span className="v12-tab-label">Make</span>
@@ -178,14 +191,16 @@ export function V12Header({ account, project, projects, onPick }: {
         {shown.map((id, i) => {
           const name = nameOf(id);
           const state = states.get(id);
+          const ring = state === "live" ? rings.get(id) ?? null : null;
           const stateWord = state === "waiting" ? "waiting for you" : state === "live" ? "rendering" : "open";
           const active = id === activeBoard;
           return (
             <div key={id} className="v12-tab" data-board="" data-active={active ? "" : undefined} data-testid="v12-tab-board" data-id={id}
               onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); tabAnchor.current = e.currentTarget; setTabMenu(id); }}>
-              <Tooltip name={name} line={stateWord === "open" ? undefined : `${stateWord[0].toUpperCase()}${stateWord.slice(1)}.`} shortcut={ordinal(i)}>
+              <Tooltip name={name} line={ring ? `${ring.words}.` : stateWord === "open" ? undefined : `${stateWord[0].toUpperCase()}${stateWord.slice(1)}.`} shortcut={ordinal(i)}>
                 <button type="button" className="v12-tab-main" onClick={() => goBoard(id)} aria-current={active ? "page" : undefined}>
-                  <span className="v12-tab-dot" data-state={state ?? "idle"} aria-hidden="true" />
+                  {ring ? <span className="v12-tab-ring" style={{ "--p": `${Math.round(ring.pct * 100)}%` } as CSSProperties} data-testid="v12-tab-ring" aria-hidden="true" />
+                    : <span className="v12-tab-dot" data-state={state ?? "idle"} aria-hidden="true" />}
                   <span className="v12-tab-label">{name}</span>
                 </button>
               </Tooltip>
@@ -195,6 +210,19 @@ export function V12Header({ account, project, projects, onPick }: {
             </div>
           );
         })}
+        {newBoardOpen ? (
+          <div className="v12-tab" data-board="" data-active={shell.make ? undefined : ""} data-testid="v12-tab-new-board">
+            <Tooltip name="New board" line="Pick a kind and say what to make.">
+              <button type="button" className="v12-tab-main" aria-current={shell.make ? undefined : "page"} onClick={() => shell.goBoard({ newBoard: shell.params.pick ?? true, closeMake: true })}>
+                <span className="v12-tab-dot" data-state="idle" aria-hidden="true" />
+                <span className="v12-tab-label">New board</span>
+              </button>
+            </Tooltip>
+            <IconButton tooltip={{ name: "Close tab" }} label="Close New board" size="sm" className="v12-tab-x" onClick={closeNewBoard} data-testid="v12-tab-new-board-close">
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
+            </IconButton>
+          </div>
+        ) : null}
         {hidden.length ? (
           <Tooltip name="More boards">
             <button ref={moreAnchor} type="button" className="v12-tab-more" aria-haspopup="menu" aria-expanded={more} onClick={() => setMore((v) => !v)} data-testid="v12-tab-more">
@@ -208,14 +236,14 @@ export function V12Header({ account, project, projects, onPick }: {
       </nav>
 
       <div className="v12-field" data-open={atomikOpen ? "" : undefined} data-testid="v12-atomik-field">
-        <Tooltip name="Ask Atomik, search or go to" line="Ask a question, find a board, stage, card or library item, or run an action." shortcut="⌘K">
+        <Tooltip name="Ask Atomik, search or go to" line="Ask a question, find a board, stage, card or library item, or run an action." shortcut={keyOf("palette")}>
           <button type="button" className="v12-field-ask" onClick={() => shell.setPalette(true)} aria-keyshortcuts="Meta+K" data-testid="v12-ask">
             <span className="v12-field-mark" aria-hidden="true">◆</span>
-            <span className="v12-field-text">Ask Atomik, search or go to · ⌘K</span>
+            <span className="v12-field-text">Ask Atomik, search or go to · {keyOf("palette")}</span>
           </button>
         </Tooltip>
         <IconButton className="v12-field-panel" pressed={atomikOpen} onClick={toggleAtomik} aria-keyshortcuts="Meta+J" data-testid="v12-atomik-panel"
-          tooltip={{ name: "Atomik panel", line: atomikOpen ? "Close the conversation panel." : "Open the conversation: plans, questions and approvals.", shortcut: "⌘J" }}>
+          tooltip={{ name: "Atomik panel", line: atomikOpen ? "Close the conversation panel." : "Open the conversation: plans, questions and approvals.", shortcut: keyOf("atomik-panel") }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2" /><path d="M10 3v10" /></svg>
         </IconButton>
       </div>

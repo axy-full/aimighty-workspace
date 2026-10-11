@@ -1,4 +1,4 @@
-import { displayModelName, isRetiredModel } from "../models";
+import { displayModelName, findModel, isRetiredModel } from "../models";
 import { DRAFT_RESOLUTION } from "../draftFinal";
 import { audioTaskAvailable, speechVoicesFor, type NodeAudioSetup, type NodeAudioTask } from "../workbench/generation-audio";
 import { isCinemaStudioModel } from "../cinemaStudioTypes";
@@ -455,6 +455,22 @@ export type ComposerQuote = {
 };
 
 /**
+ * Whether an engine repeats a take from its seed: today only the Ark video engines (Seedance), which pass it to the provider
+ * (lib/ark.ts `seed`). Every other engine ignores one, so a seed is offered and sent for these alone.
+ */
+export const takesSeed = (modelId: string | null | undefined): boolean => {
+  const m = findModel(modelId);
+  return m !== null && m.kind === "video" && m.provider === "byteplus";
+};
+
+/**
+ * The seed of take `variation` (1-based) of a batch asked for with one seed: take 1 repeats it exactly and each other take
+ * differs by one (as lib/pipeline/service.ts varies its units), so a batch never pays N times for the same clip.
+ */
+export const variationSeed = (seed: number, variation: number): number =>
+  variation <= 1 ? seed : (seed + variation - 1) % 2_147_483_648;
+
+/**
  * The exact inputs a price belongs to. Anything a person can change that moves
  * the price is in here, so a stale figure can never be sent.
  */
@@ -471,6 +487,8 @@ export function quoteKeyFor(input: {
   seconds: number;
   instrumental: boolean;
   voiceId: string;
+  /** A seed to repeat: it prices the same, but it is part of the request the figure is approved for. */
+  seed?: number | null;
 }): string {
   const priced = input.type === "audio" ? input.prompt : "";
   return JSON.stringify([
@@ -482,6 +500,7 @@ export function quoteKeyFor(input: {
     ...(input.settings.draft ? ["draft"] : []),
     /* The Sound switch: on, the take is another request, priced (and approved) again; off, the key is as it was. */
     ...(input.settings.generateAudio ? ["sound"] : []),
+    ...(input.seed != null ? ["seed", input.seed] : []),
   ]);
 }
 

@@ -13,6 +13,8 @@ import { useIdentities } from "@/lib/workspace/identities";
 import { useState } from "react";
 import type { BoardCard } from "@/lib/board/types";
 import { defineCard, type BoardCtx, type CardProps } from "../types";
+import { GRID_CARD } from "@/lib/v12/board/grid";
+import { wellHeight } from "../take/TakeCard";
 import { CastWell } from "./CastWell";
 import { CutoutAction } from "./CutoutAction";
 import { cutoutView } from "./cutout-model";
@@ -67,7 +69,7 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
   const picture = cut?.done && showing === "before" && cut.before ? cut.before : data.still;
   return (
     <article className="gx-cast" data-variant={data.variant} data-tone={status.tone} aria-label={castLabel(data) || VARIANT_LABEL[data.variant]} data-testid="cast-card">
-      <CastWell still={picture} name={data.title} transparent={Boolean(cut?.done && showing === "after")} />
+      <CastWell still={picture} name={data.title} transparent={Boolean(cut?.done && showing === "after")} height={data.grid ? wellHeight(GRID_CARD, ctx.project.aspect) : undefined} />
       <div className="gx-cast-body">
         <div className="gx-cast-kicker">{VARIANT_LABEL[data.variant]}{data.master ? " · master" : ""}</div>
         <div className="gx-cast-title" data-testid="cast-title">{data.title.trim() || VARIANT_LABEL[data.variant]}</div>
@@ -98,6 +100,12 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
       </div>
     </article>
   );
+}
+
+/** A card on the new interface's grid: its body as it is, its picture at the board's aspect at 260 wide. */
+export function gridCastHeight(data: CastCardData, aspect: string): number {
+  const base = CAST_SIZE[data.variant].h - WELL + wellHeight(GRID_CARD, aspect);
+  return data.cutout ? base + CUTOUT_ROW : base;
 }
 
 export const castDef = defineCard<CastCardData>({

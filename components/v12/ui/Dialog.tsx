@@ -5,6 +5,7 @@ import { IconButton } from "./IconButton";
 import { useOverlay, useV12PortalRoot } from "./overlay";
 import type { OverlayLayer } from "./overlay-stack";
 import { useFocusReturn } from "./Popover";
+import { keyOf } from "@/lib/v12/keymap";
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -68,7 +69,7 @@ export function Dialog({ open, onClose, label, title, head, children, footer, va
         tabIndex={-1} className={["v12-dialog", className].filter(Boolean).join(" ")} data-variant={variant} data-testid={testId} style={width ? { width } : undefined} onKeyDown={trap}>
         <div className="v12-dialog-head">
           {head ?? (title ? <h2 id={titleId} className="v12-dialog-title">{title}</h2> : <span />)}
-          <IconButton tooltip={{ name: closeTip, line: closeLine, shortcut: "Esc" }} label="Close" size="sm" className="v12-dialog-x" onClick={onClose} data-testid="v12-dialog-close">
+          <IconButton tooltip={{ name: closeTip, line: closeLine, shortcut: keyOf("close") }} label="Close" size="sm" className="v12-dialog-x" onClick={onClose} data-testid="v12-dialog-close">
             <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
           </IconButton>
         </div>

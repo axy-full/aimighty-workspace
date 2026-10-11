@@ -137,7 +137,7 @@
   .gx-make-dest { flex: 1 1 0; }
 }
 
-/* ── Make with the new interface switched on (components/graphite/make/*; README § 3.2, "Make frames.dc.html").
+/* ── Make with the new interface switched on (components/graphite/make/*; README § 3.2, the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12)).
    The aside keeps `.gx-make` above (its place, its width, the phone's full width) and adds `.gx-mk`. Sizes are the
    master's: words at 17 px in a 10 px box, 96 px reference tiles, a 14 px engine line with Change, a 36 px Make. ── */
 .gx .gx-make.gx-mk { right: var(--board-dock, 0px); }

@@ -28,6 +28,8 @@ export type StepEstimate = { credits: number; approximate: boolean } | { unavail
 
 export type PlanStep = {
   seq: number;
+  /** The board card the step renders (read only: used to say which shot it is). */
+  nodeId: string | null;
   /** "take": a shot rendered as video; "still": an image-mode shot (a keyframe). Only takes count toward the fix allowance. */
   kind: "take" | "still";
   title: string;
@@ -211,7 +213,7 @@ export function planModel(input: PlanInput): PlanModel | null {
       ? (p.outcome === "not_billed" ? "Failed · nothing billed" : p.outcome === "charged" ? "Failed · charged" : "Failed")
       : `${STATUS[p.state]}${settled}`;
     return {
-      seq: p.seq, kind: input.stills?.has(p.seq) ? "still" : "take", title: p.title, meta: input.meta?.[p.seq] ?? "", price, source,
+      seq: p.seq, nodeId: p.nodeId ?? null, kind: input.stills?.has(p.seq) ? "still" : "take", title: p.title, meta: input.meta?.[p.seq] ?? "", price, source,
       unavailable: unavailable ? `Unavailable · ${unavailable}` : null,
       needsAdmin: overCap || (p.state === "paused" && p.pause === "admin"),
       /* Outside the plan's one approval, with its own price (owner decision L5): it needs an admin, or it is over the per-render line. */

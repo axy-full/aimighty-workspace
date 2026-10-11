@@ -1,6 +1,7 @@
 "use client";
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useOverlay } from "@/components/v12/ui/overlay";
+import { Tooltip } from "@/components/v12/ui/Tooltip";
 import "./bar.css";
 
 /**
@@ -26,8 +27,8 @@ export type BarSend = {
   /** The hover: the price's dollar value, or why it cannot be pressed. */
   title?: string;
   testId?: string;
-  /** Home's Start is the screen's one filled primary; a board's Ask is outlined. */
-  variant?: "filled" | "outlined";
+  /** Home's Start is the screen's one filled primary; a board's Ask is outlined; "quiet" is grey, waiting on a choice (Make's "Pick what to do"). */
+  variant?: "filled" | "outlined" | "quiet";
   /** The spend opt-in (lib/spend spendAttrsOf) for a send that spends. */
   attrs?: Record<string, string | boolean | undefined>;
 };
@@ -60,11 +61,13 @@ export type BarProps = {
   note?: { tone: "note" | "problem"; text: string } | null;
   disabled?: boolean;
   maxLength?: number;
+  /** Docked in a band (Make's composer) rather than floating over the page: no shadow. */
+  docked?: boolean;
   testId?: string;
 };
 
 export function Bar(props: BarProps) {
-  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, onAttachPress, attachAccept, attachTitle = "Attach a file — Upload a file from your computer.", mentions, mentionsTitle = "From the library", onMention, chips, sheet, note, disabled, maxLength, testId = "v12-bar" } = props;
+  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, onAttachPress, attachAccept, attachTitle = "Attach a file — Upload a file from your computer.", mentions, mentionsTitle = "From the library", onMention, chips, sheet, note, disabled, maxLength, docked, testId = "v12-bar" } = props;
   const input = useRef<HTMLInputElement>(null);
   const files = useRef<HTMLInputElement>(null);
   const pop = useRef<HTMLDivElement>(null);
@@ -101,7 +104,7 @@ export function Bar(props: BarProps) {
   const canSend = !send.disabled && !send.busy && !disabled;
 
   return (
-    <div className="v12-bar" data-testid={testId}>
+    <div className={docked ? "v12-bar v12-bar-docked" : "v12-bar"} data-testid={testId}>
       {listOpen && mentions ? (
         <div ref={pop} className="v12-bar-pop" role="listbox" id={listId} aria-label={mentionsTitle} data-testid={`${testId}-mentions`}
           onKeyDown={(e) => {
@@ -130,16 +133,20 @@ export function Bar(props: BarProps) {
         <div className="v12-bar-row">
           {onAttach ? (
             <>
-              <button type="button" className="v12-bar-icon v12-bar-plus" onClick={() => (onAttachPress ? onAttachPress() : files.current?.click())} disabled={disabled}
-                title={attachTitle} aria-label="Attach a file" data-testid={`${testId}-attach`}>+</button>
+              <Tooltip name="Attach a file" line={attachTitle} side="top">
+                <button type="button" className="v12-bar-icon v12-bar-plus" onClick={() => (onAttachPress ? onAttachPress() : files.current?.click())} disabled={disabled}
+                  aria-label="Attach a file" data-testid={`${testId}-attach`}>+</button>
+              </Tooltip>
               <input ref={files} type="file" multiple hidden tabIndex={-1} accept={attachAccept} data-testid={`${testId}-attach-input`}
                 onChange={(e) => { const list = Array.from(e.target.files ?? []); e.target.value = ""; if (list.length) onAttach(list); }} />
             </>
           ) : null}
           {mentions ? (
-            <button ref={at} type="button" className="v12-bar-icon v12-bar-at" onClick={() => { if (listOpen) close(); else { openList(); input.current?.focus(); } }} disabled={disabled || !mentions.length}
-              title={mentions.length ? "Mention something from the library" : "Nothing in the library to mention yet"} aria-label="Mention something from the library"
-              aria-expanded={listOpen} aria-controls={listOpen ? listId : undefined} data-testid={`${testId}-mention-button`}>@</button>
+            <Tooltip name={mentions.length ? "Mention something from the library" : "Nothing in the library to mention yet"} side="top" named={Boolean(mentions.length)}>
+              <button ref={at} type="button" className="v12-bar-icon v12-bar-at" onClick={() => { if (listOpen) close(); else { openList(); input.current?.focus(); } }} disabled={disabled || !mentions.length}
+                aria-label="Mention something from the library"
+                aria-expanded={listOpen} aria-controls={listOpen ? listId : undefined} data-testid={`${testId}-mention-button`}>@</button>
+            </Tooltip>
           ) : null}
           {chips}
           <input ref={input} className="v12-bar-input" value={value} placeholder={placeholder} aria-label={label} maxLength={maxLength} disabled={disabled}
@@ -147,7 +154,7 @@ export function Bar(props: BarProps) {
             aria-activedescendant={listOpen ? `${listId}-${current}` : undefined} aria-autocomplete={mentions ? "list" : undefined}
             onChange={(e) => { const next = e.target.value; onChange(next); if (mentions?.length && /(^|\s)@$/.test(next)) openList(); }}
             onKeyDown={onKey} data-testid={`${testId}-input`} />
-          <button type="button" className={send.variant === "outlined" ? "v12-bar-send v12-bar-send-outlined" : "v12-bar-send"} onClick={() => canSend && onSubmit()}
+          <button type="button" className={send.variant === "outlined" ? "v12-bar-send v12-bar-send-outlined" : send.variant === "quiet" ? "v12-bar-send v12-bar-send-quiet" : "v12-bar-send"} onClick={() => canSend && onSubmit()}
             disabled={!canSend} aria-busy={send.busy || undefined} title={send.title} data-testid={send.testId ?? `${testId}-send`} {...send.attrs}>
             {send.busy ? (send.busyLabel ?? `${send.label}…`) : send.price ? <span>{send.label} · {send.price}</span> : send.label}
           </button>
@@ -165,16 +172,16 @@ export function BarChip({ label, thumb, media, onRemove, removeTitle = "Remove",
   media?: "image" | "video" | null;
   onRemove?: () => void;
   removeTitle?: string;
-  /** "picked": a filled chip with a picture (Home's picked tile); otherwise an outlined one (a file). */
-  tone?: "picked" | "file";
+  /** "picked": a filled chip with a picture (Home's picked tile); "selection": a board's selection, blue-tinted; otherwise an outlined one (a file). */
+  tone?: "picked" | "file" | "selection";
   testId?: string;
 }) {
   return (
-    <span className={tone === "picked" ? "v12-bar-chip v12-bar-chip-picked" : "v12-bar-chip"} data-testid={testId}>
+    <span className={tone === "picked" ? "v12-bar-chip v12-bar-chip-picked" : tone === "selection" ? "v12-bar-chip v12-bar-chip-selection" : "v12-bar-chip"} data-testid={testId}>
       {/* eslint-disable-next-line @next/next/no-img-element -- Particl's own media route, already sized */}
       {thumb ? (media === "video" ? <video className="v12-bar-chip-thumb" src={thumb} muted playsInline preload="metadata" aria-hidden="true" /> : <img className="v12-bar-chip-thumb" src={thumb} alt="" />) : null}
       <span className="v12-bar-chip-label">{label}</span>
-      {onRemove ? <button type="button" className="v12-bar-chip-x" onClick={onRemove} title={removeTitle} aria-label={removeTitle}>×</button> : null}
+      {onRemove ? <Tooltip name={removeTitle} named><button type="button" className="v12-bar-chip-x" onClick={onRemove} aria-label={removeTitle}>×</button></Tooltip> : null}
     </span>
   );
 }
