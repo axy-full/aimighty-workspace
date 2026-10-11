@@ -163,6 +163,47 @@ test.describe("desktop, switch on", () => {
     expect(read.settings.enhanceDefault).toBe("on");
   });
 
+  test("Variations of an Enhanced take loads words that are already enhanced: no second enhancement, until they are edited", async ({ page }) => {
+    test.setTimeout(300_000);
+    await seedHome(page, { takes: 3 });
+    await page.route(/\/api\/jobs\?limit=/, async (route) => {
+      try {
+        const reply = await route.fetch();
+        const body = await reply.json() as { generations?: Record<string, unknown>[] };
+        const a = body.generations?.[0];
+        if (a) a.params = { ...(a.params as object), enhanced: true, enhancedFrom: "a kite, grey sea" };
+        await route.fulfill({ response: reply, json: body });
+      } catch { await route.fallback().catch(() => undefined); }
+    });
+    const enhanceCalls: string[] = [];
+    page.on("request", (r) => { if (isEnhanceCall(r)) enhanceCalls.push(r.url()); });
+    await page.goto("/suites?view=make&viewer=1");
+    await expect(page.getByTestId("v12-make-viewer")).toBeVisible({ timeout: 90_000 });
+    await page.getByTestId("v12-make-viewer-reuse").click();
+    const go = page.getByTestId("v12-make-go");
+    await expect(page.getByTestId("v12-make-bar-input")).not.toHaveValue("", { timeout: 30_000 });
+    await expect(toggle(page)).toHaveAttribute("aria-checked", "true");
+    await expect(go).toHaveText(/^Make( \d takes)? · \d[\d,]* cr$/, { timeout: 60_000 });
+    const loaded = await page.getByTestId("v12-make-bar-input").inputValue();
+    /* On, the figure is the take alone: the same as with the switch Off. */
+    const figure = async () => { const m = (await go.innerText()).match(/· ([\d,]+) cr$/); return m ? Number(m[1].replace(/,/g, "")) : -1; };
+    const withOn = await figure();
+    await toggle(page).click();
+    await expect.poll(figure, { timeout: 30_000 }).toBe(withOn);
+    await toggle(page).click();
+    await expect.poll(figure, { timeout: 30_000 }).toBe(withOn);
+    /* The press sends them as the take they came from: Enhanced, from the typed words, nothing enhanced again. */
+    const sent = page.waitForRequest(isGenerate);
+    await go.click();
+    const body = (await sent).postDataJSON() as { enhanced?: { from: string } | false; maxCredits?: number };
+    expect(body.enhanced).toEqual({ from: "a kite, grey sea" });
+    expect(body.maxCredits).toBe(withOn);
+    expect(enhanceCalls, "no second enhancement").toEqual([]);
+    /* Edited words are the person's again: Enhance prices and runs for them. */
+    await page.getByTestId("v12-make-bar-input").fill(`${loaded} Wide lens.`);
+    await expect.poll(figure, { timeout: 60_000 }).toBeGreaterThan(withOn);
+  });
+
   test("the viewer's prompt line is the enhanced words, See original is what was typed, and Raw says Raw; an older take says nothing", async ({ page }) => {
     test.setTimeout(300_000);
     await seedHome(page, { takes: 3 });

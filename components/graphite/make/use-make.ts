@@ -177,6 +177,8 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
       if (next.type) dispatch({ type: "type", value: next.type });
       if (next.model) dispatch({ type: "model", value: next.model });
       if (next.prompt) dispatch({ type: "prompt", value: next.prompt });
+      /* Words an enhancement wrote (a reused Enhanced take) are not enhanced again; any other words clear the mark. */
+      if (next.prompt) setLastEnhanced(next.enhancedFrom ? { from: next.enhancedFrom, to: next.prompt } : null);
       if (next.picks) dispatch({ type: "pick", value: next.picks });
       if (next.sound?.seconds) dispatch({ type: "seconds", value: next.sound.seconds });
       if (next.sound?.instrumental !== undefined) dispatch({ type: "instrumental", value: next.sound.instrumental });
@@ -200,6 +202,10 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     const onCinema = !lost && Boolean(next.model && isCinemaStudioModel(next.model));
     const cinema = cleanCinemaControls(next.cinema);
     setPicked(true);
+    if (!settingsOnly) {
+      const loaded = found ? found.words : withoutSetup(next.prompt, shot);
+      setLastEnhanced(next.enhancedFrom ? { from: next.enhancedFrom, to: loaded } : null);
+    }
     dispatch({
       type: "recipe",
       value: {
@@ -233,7 +239,12 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
           ? { tag: null, kind: assets[i]!.kind, origin: r.origin, gone: false, reason: assets[i]!.kind === "audio" && onCinema ? CINEMA_SOUND_ONLY : "References are images and videos." }
           : { tag: tags.now[i], kind: kinds[i], origin: r.origin, gone: true, reason: result.status === "rejected" && result.reason instanceof Error ? result.reason.message : "Not found in this workspace." });
       });
-      if (tags.prompt !== latest.current.prompt) dispatch({ type: "prompt", value: tags.prompt });
+      if (tags.prompt !== latest.current.prompt) {
+        /* The citations were renumbered in words an enhancement wrote: they are still those words. */
+        const before = latest.current.prompt;
+        setLastEnhanced((now) => (now && now.to === before ? { from: now.from, to: tags.prompt } : now));
+        dispatch({ type: "prompt", value: tags.prompt });
+      }
       const frames = usable.some((asset, i) => asset && /first_frame|last_frame/.test(refs[i].role ?? ""));
       setRecipe((now) => (now?.epoch === epoch ? { ...now, refs: { total: refs.length, reading: false, missing, renumbered, frames } } : now));
     });

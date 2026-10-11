@@ -3,6 +3,7 @@ import { ENHANCE_ASWRITTEN, ENHANCE_TIP_LINE, ENHANCE_TIP_NAME, enhanceKey, enha
 import { ENHANCE_DEFAULT_OPTIONS, settingProblem } from "../../lib/settingValues";
 import { generationRequestBody } from "../../lib/workbench/generation-request";
 import { DEFAULTS } from "../../lib/settings";
+import { recreatePreset } from "../../lib/shell/recipe";
 
 /** Make's Enhance toggle as data (lib/v12/enhance.ts): where it applies, what a person last chose, what a take records. */
 const store = (initial: Record<string, string> = {}) => {
@@ -60,4 +61,12 @@ test("the request carries the label and nothing else changes with it", () => {
   expect(generationRequestBody({ ...base, enhanced: false })).toEqual({ ...plain, enhanced: false });
   expect(generationRequestBody({ ...base, enhanced: { from: "typed" } })).toEqual({ ...plain, enhanced: { from: "typed" } });
   expect(ENHANCE_ASWRITTEN).toMatch(/as written/);
+});
+
+test("Reuse of an Enhanced take marks the loaded words as already enhanced, and any other take does not", () => {
+  const take = (params: Record<string, unknown>) => ({ id: "gen_1", kind: "image", model: "m", prompt: "A paper kite drifts over a grey sea, low sun.", params: { ratio: "16:9", resolution: "1K", ...params } }) as never;
+  expect(recreatePreset(take({ enhanced: true, enhancedFrom: "a kite over the sea" }), { name: "x" }).enhancedFrom).toBe("a kite over the sea");
+  expect(recreatePreset(take({ enhanced: false, enhancedFrom: "a kite over the sea" }), { name: "x" }).enhancedFrom).toBeUndefined();
+  expect(recreatePreset(take({}), { name: "x" }).enhancedFrom).toBeUndefined();
+  expect(recreatePreset(take({ enhanced: true }), { name: "x" }).enhancedFrom).toBeUndefined();
 });
