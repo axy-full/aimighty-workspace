@@ -13,7 +13,7 @@ import "./join.css";
 /**
  * The join sheet (docs/redesign/inventory.md § 8.3, § 8.5; prototype L59–L69, L34–L42): Particl is invite-only.
  * Desktop: a 720 px dialog with two equal columns, "I have an invite" and "Request access". Phone: the same as one
- * column in a bottom sheet, with Continue with email beside Continue with Google (FIX 4) and the whole request form.
+ * column in a bottom sheet, with Continue with email (and Continue with Google once Google sign-in exists: ./google.ts) and the whole request form.
  *
  * It signs nobody in itself: a code goes to today's pages (/invite/‹code› for a team invite, /signup?invite=‹code› for
  * a new workspace), which verify exactly what they verify today, and a request goes to today's POST /api/access-request.
@@ -126,7 +126,7 @@ function InvitePath({ state, setState, invite, back }: { state: JoinState; setSt
   );
 }
 
-/** `primary`: the sheet's one filled button, unless a team invite makes Continue with Google the next step. */
+/** `primary`: the sheet's one filled button, unless a team invite makes Continue with email the next step. */
 function RequestPath({ state, setState, primary }: { state: JoinState; setState: Dispatch<SetStateAction<JoinState>>; primary: boolean }) {
   const id = useId();
   const [busy, setBusy] = useState(false);

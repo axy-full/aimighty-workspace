@@ -7,5 +7,4 @@
  */
 export const GOOGLE_SIGN_IN = {
   ready: false,
-  notYet: "Google sign-in isn’t on yet. Use Continue with email.",
 } as const;
