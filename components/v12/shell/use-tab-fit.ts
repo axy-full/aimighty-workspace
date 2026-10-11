@@ -39,9 +39,9 @@ function measureFit(root: HTMLElement, open: readonly string[], active: string |
  * Activity pill and the avatar never move). It measures real space, not a width per tab: the header's inner width, the logo, the
  * right group, the field's minimum, the fixed tabs (Home, Make, +), and each open board's tab as it would draw, from a hidden copy
  * (`.v12-tabs-measure`, one `[data-m]` per board). Re-measured when the window, the right group or the copy changes size.
- * `null` until measured (the header then shows its default count).
+ * `null` until measured, or until `ready` (every open board named): the header then shows its default count.
  */
-export function useTabFit(header: RefObject<HTMLElement | null>, open: readonly string[], active: string | null): number | null {
+export function useTabFit(header: RefObject<HTMLElement | null>, open: readonly string[], active: string | null, ready = true): number | null {
   const [fit, setFit] = useState<number | null>(null);
   const latest = useRef({ open, active });
   const moreWidth = useRef(MORE_WIDTH);
@@ -66,5 +66,6 @@ export function useTabFit(header: RefObject<HTMLElement | null>, open: readonly 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `measure` reads refs only; the observer is made once.
   }, [header]);
 
-  return fit;
+  /* Until every open board has its real name, the tabs are not measured: a board with no name yet is a short "Board", and counting it so would show every tab and then pull them back. */
+  return ready ? fit : null;
 }

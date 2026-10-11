@@ -64,7 +64,8 @@ export function V12Header({ account, project, projects, onPick }: {
   const nameOf = (id: string) => projects.find((p) => p.id === id)?.name ?? (project?.id === id ? project.name : "Board");
   /* As many board tabs as really fit (prototype v14): the field shrinks to 280 first, then the rest go under "+N ▾". */
   const headerRef = useRef<HTMLElement>(null);
-  const fit = useTabFit(headerRef, tabs.state.open, activeBoard);
+  const namesKnown = tabs.state.open.every((id) => projects.some((p) => p.id === id) || project?.id === id);
+  const fit = useTabFit(headerRef, tabs.state.open, activeBoard, namesKnown);
   const { shown, hidden } = visibleTabs(tabs.state.open, activeBoard, fit ?? MAX_BOARD_TABS);
   const states = useMemo(() => boardStates(tray?.jobs ?? [], approvals.items), [tray?.jobs, approvals.items]);
   /* The ring on a board tab with work running (redesign P3): its share, and about how long is left. */

@@ -80,10 +80,12 @@ test.describe("desktop", () => {
     const names = Array.from({ length: 10 }, (_, i) => `Board ${i + 1} with a long working title`);
     const { ids } = await redesignWithBoards(page, names);
     await openAsTabs(page, ids);
-    const shown = await page.getByTestId("v12-tab-board").count();
-    expect(shown).toBeGreaterThan(0);
-    expect(shown).toBeLessThan(10);
-    await expect(page.getByTestId("v12-tab-more")).toHaveText(`+${10 - shown} ▾`);
+    /* The tabs settle once every board has its name: some of the ten go under +N, whatever the window, and the +N counts exactly those. */
+    await expect.poll(async () => {
+      const shown = await page.getByTestId("v12-tab-board").count();
+      const more = await page.getByTestId("v12-tab-more").textContent({ timeout: 1000 }).catch(() => null);
+      return shown > 0 && shown < 10 && more === `+${10 - shown} ▾`;
+    }, { timeout: 30_000 }).toBe(true);
     await page.getByTestId("v12-tab-more").click();
     await expect(page.getByTestId("v12-more-menu")).toContainText("Board 10");
     await page.keyboard.press("Escape");
