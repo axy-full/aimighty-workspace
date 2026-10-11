@@ -1,7 +1,7 @@
 import { isEnhancerProvider } from "@/lib/shell/enhancer";
 import { NextResponse } from "next/server";
 import { requireUser, requireAdmin, withTenant } from "@/lib/auth";
-import { allSettings, setSetting, DEFAULTS } from "@/lib/settings";
+import { allSettings, setSetting, setLimitSetting, DEFAULTS } from "@/lib/settings";
 import { getPlatformLayer } from "@/lib/platform";
 import { resolveModels, modelOfKind } from "@/lib/platformLayer";
 import { settingProblem } from "@/lib/settingValues";
@@ -45,8 +45,9 @@ export const PATCH = withTenant(async function PATCH(req: Request) {
   for (const [k, v] of entries) {
     /* The budget per production is written with its re-lock in one transaction (lib/caps.ts setWorkspaceBudget). */
     if (k === "productionBudgetCredits") {
-      if (await setWorkspaceBudget(String(v).slice(0, 400), got.user.id, creditsApply(requireTenant()))) invalidate(PROJECTS_KEY);
-    } else await setSetting(k, String(v).slice(0, 400), got.user.id);
+      if (await setWorkspaceBudget(String(v).slice(0, 400), got.user.id, creditsApply(requireTenant()), { workspaceId: requireTenant().id })) invalidate(PROJECTS_KEY);
+    } else if (k === "capWarnPct" || k === "shotCapCredits") await setLimitSetting(k, String(v).slice(0, 400), got.user.id, requireTenant().id);
+    else await setSetting(k, String(v).slice(0, 400), got.user.id);
     changed.push(k);
   }
   if (!changed.length) return NextResponse.json({ error: "Nothing to change." }, { status: 400 });

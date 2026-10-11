@@ -8,6 +8,8 @@
  */
 import { db, ready, now } from "@/lib/db";
 import { memoGet, memoPut, memoDrop } from "@/lib/memo";
+import { securityAuditStatement } from "@/lib/securityAudit";
+import { cleanBudget, cleanWarnPct } from "@/lib/budgetPause";
 
 export const DEFAULTS = {
   /** R9 — the platform names the file, never the API. */
@@ -135,4 +137,29 @@ export async function setSetting(key: string, value: string, userId: string): Pr
     args: [key, value, userId, now()],
   });
   invalidateSettings();
+}
+
+/** The settings that are limits (Settings › Limits): a change to one is written with its history line, in one batch. */
+const LIMIT_OF: Readonly<Record<string, "warn" | "shot">> = { capWarnPct: "warn", shotCapCredits: "shot" };
+export const isLimitSetting = (key: string): boolean => key in LIMIT_OF;
+
+/**
+ * `setSetting` for a limit (the warning share, the cap per shot): when the value really changes, the security history line
+ * ("limits.updated", who, which limit, to what) commits with it (lib/securityAudit.ts). Same value again writes no line.
+ */
+export async function setLimitSetting(key: "capWarnPct" | "shotCapCredits", value: string, userId: string, workspaceId: string): Promise<boolean> {
+  await ready();
+  const was = (await allSettings())[key] ?? DEFAULTS[key];
+  const clean = (v: string) => (key === "capWarnPct" ? cleanWarnPct(v) : cleanBudget(v));
+  const changed = clean(was) !== clean(value);
+  await db().batch([
+    {
+      sql: `INSERT INTO settings (key, value, updated_by, updated_at) VALUES (?,?,?,?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`,
+      args: [key, value, userId, now()],
+    },
+    ...(changed ? [securityAuditStatement({ workspaceId, actorId: userId, action: "limits.updated", targetType: "limits", targetId: LIMIT_OF[key], details: { limit: LIMIT_OF[key], value: clean(value) } })] : []),
+  ], "write");
+  invalidateSettings();
+  return changed;
 }

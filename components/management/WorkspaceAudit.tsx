@@ -39,6 +39,13 @@ export const labels: Record<string, string> = {
   "account.sessions_revoked": "Ended account sessions",
   "member.updated": "Changed member access",
   "member.removed": "Removed member",
+  "member.left": "Left the workspace",
+  "invite.created": "Invited someone",
+  "invite.resent": "Sent an invitation again",
+  "invite.revoked": "Withdrew an invitation",
+  "limits.updated": "Changed a spending limit",
+  "workspace.renamed": "Renamed the workspace",
+  "workspace.deleted": "Deleted the workspace",
   "vendor_key.updated": "Updated provider key",
   "vendor_key.removed": "Removed provider key",
   "workspace.mode_changed": "Changed model access",
@@ -60,6 +67,8 @@ const targetLabels: Record<string, string> = {
   api_token: "API token",
   review_link: "Review link",
   identity_consent: "Identity consent",
+  invite: "Invitation",
+  limits: "Limits",
 };
 const empty: AuditPage = { events: [], nextCursor: null, actors: {} };
 

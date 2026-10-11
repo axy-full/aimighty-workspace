@@ -6,6 +6,9 @@ import { effectiveModels } from "@/lib/defaultModels";
 import { getPlatformLayer } from "@/lib/platform";
 import { buildRateTable } from "@/lib/rateTable.server";
 import { newInterfaceFor } from "@/lib/newInterface.server";
+import { accountTransaction, accountFailure } from "@/lib/accountDb";
+import { platformReady, now } from "@/lib/platform";
+import { repairPendingMemberships } from "@/lib/teamInvitations";
 
 export const dynamic = "force-dynamic";
 
@@ -39,3 +42,30 @@ export const GET = withTenant(async function GET() {
     setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
   });
 }, { allowMfaEnrollment: true });
+
+/**
+ * Change the signed-in person's own name (Settings › Profile). Theirs alone: the route takes no id, so no one sets another's. The
+ * name is the account's, so it changes in every workspace they belong to (each copy is refreshed by the membership mirror, as a
+ * role change is). Their address changes only through the emailed flow, and there is no photo to set.
+ */
+export const PATCH = withTenant(async function PATCH(req: Request) {
+  const got = await requireUser();
+  if (got.response) return got.response;
+  const body = await req.json().catch(() => ({}));
+  const name = typeof body.name === "string" ? body.name.trim().replace(/\s+/g, " ") : "";
+  if (!name || name.length > 80) return NextResponse.json({ error: "Use a name between 1 and 80 characters." }, { status: 400 });
+  await platformReady();
+  try {
+    await accountTransaction(async (tx) => {
+      await tx.execute({ sql: "UPDATE accounts SET name=? WHERE id=? AND deleted_at IS NULL", args: [name, got.user.id] });
+      await tx.execute({
+        sql: `INSERT INTO membership_mirrors(workspace_id,account_id,updated_at)
+              SELECT workspace_id, account_id, ? FROM memberships WHERE account_id=?
+              ON CONFLICT(workspace_id,account_id) DO UPDATE SET updated_at=excluded.updated_at`,
+        args: [now(), got.user.id],
+      });
+    });
+  } catch (error) { return accountFailure(error); }
+  await repairPendingMemberships(got.user.id).catch(() => {});
+  return NextResponse.json({ ok: true, name });
+}, { requireRequestScope: true });

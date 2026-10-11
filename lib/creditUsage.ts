@@ -4,7 +4,7 @@ import { platformDb } from "./platform";
 import { billingStateFor } from "./billingLedger";
 import { modelLabel } from "./models";
 import { PROVIDERS } from "./providers";
-import { spendByPerson, type LedgerViewer } from "./usageLedger";
+import { names, spendByPerson, type LedgerViewer } from "./usageLedger";
 import { visibleUsageParams } from "./usageParams";
 
 type Row = Record<string, unknown>;
@@ -211,5 +211,26 @@ export async function creditsByBoard(range: { from: number; to: number }, limit 
   return rows.rows.map((r) => {
     const id = r.project_id == null ? null : String(r.project_id);
     return { id: id && label.has(id) ? id : null, name: id == null ? "Unfiled" : (label.get(id) ?? "Deleted production"), n: Number(r.n ?? 0), credits: Number(r.credits ?? 0) };
+  });
+}
+
+/**
+ * What each person settled in one month (UTC), in credits, for Settings › Usage "By person" and a member's "Your usage".
+ * Owners and admins read a row per person by name; a member reads only their own row and nothing about anyone else: the rows of
+ * others are not even sent (lib/usageLedger.ts has the ledger's own rule for names). Read-only, this workspace only.
+ */
+export async function creditsByPerson(range: { from: number; to: number }, viewer: LedgerViewer, limit = 50): Promise<{ name: string; you: boolean; n: number; credits: number }[]> {
+  await ready();
+  const ws = requireTenant();
+  const rows = await platformDb().execute({
+    sql: `SELECT created_by,SUM(status='succeeded' AND kind IN ('video','image','audio')) AS n,SUM(${charge}) AS credits FROM meter_events
+          WHERE workspace_id=? AND created_at>=? AND created_at<? GROUP BY created_by HAVING credits>0 ORDER BY credits DESC LIMIT ?`,
+    args: [ws.id, range.from, range.to, limit],
+  });
+  const kept = rows.rows.filter((r) => viewer.admin || (r.created_by != null && String(r.created_by) === viewer.id));
+  const who = await names(kept.map((r) => (r.created_by == null ? "" : String(r.created_by))), viewer);
+  return kept.map((r) => {
+    const id = r.created_by == null ? "" : String(r.created_by);
+    return { name: id ? (who.get(id) ?? "Former member") : "Atomik and automatic jobs", you: id === viewer.id, n: Number(r.n ?? 0), credits: Number(r.credits ?? 0) };
   });
 }

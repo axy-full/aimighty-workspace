@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
-import { platformDb, platformReady } from "@/lib/platform";
+import { platformReady } from "@/lib/platform";
 import { archiveAndDelete } from "@/lib/archive";
+import { accountTransaction, accountFailure } from "@/lib/accountDb";
+import { securityAuditStatement } from "@/lib/securityAudit";
+import { inviteRef } from "@/lib/teamAdmins";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ code: string }> };
@@ -18,6 +21,12 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   const ws = requireTenant();
   await platformReady();
   const { code } = await params;
-  await archiveAndDelete(platformDb(), "workspace_invites", "code = ? AND workspace_id = ? AND used_at IS NULL", [code, ws.id], { reason: "invite revoked", by: got.user.id });
+  try {
+    /* The withdrawal and its history line land together; nothing withdrawn, no line. */
+    await accountTransaction(async (tx) => {
+      const gone = await archiveAndDelete(tx, "workspace_invites", "code = ? AND workspace_id = ? AND used_at IS NULL", [code, ws.id], { reason: "invite revoked", by: got.user.id });
+      if (gone > 0) await tx.execute(securityAuditStatement({ workspaceId: ws.id, actorId: got.user.id, action: "invite.revoked", targetType: "invite", targetId: inviteRef(code) }));
+    });
+  } catch (error) { return accountFailure(error); }
   return NextResponse.json({ ok: true });
 }, { requireRequestScope: true });

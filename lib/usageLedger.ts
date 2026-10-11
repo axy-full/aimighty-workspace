@@ -121,7 +121,7 @@ export function meteredEngine(kind: string, engine: string, model: string): stri
 }
 
 /** The names a viewer may read: everyone's for owners and admins, a member's own otherwise. */
-async function names(ids: string[], viewer: LedgerViewer): Promise<Map<string, string>> {
+export async function names(ids: string[], viewer: LedgerViewer): Promise<Map<string, string>> {
   const wanted = [...new Set(ids.filter((id) => id && mayName(viewer, id)))];
   if (!wanted.length) return new Map();
   const rs = await db().execute({ sql: `SELECT id,name FROM users WHERE id IN (${wanted.map(() => "?").join(",")})`, args: wanted });

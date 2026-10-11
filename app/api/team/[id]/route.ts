@@ -1,11 +1,12 @@
 import { securityAuditStatement } from "@/lib/securityAudit";
 import { NextResponse } from "next/server";
-import { requireAdmin, withTenant, isPlatformOwner } from "@/lib/auth";
+import { requireAdmin, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { platformDb, platformReady, now, getPlatformLayer } from "@/lib/platform";
 import {accountTransaction,accountFailure,AccountError} from "@/lib/accountDb";
 import {repairPendingMemberships,ensureMemberSeat} from "@/lib/teamInvitations";
 import { ownerMaskFor, publicActorName, resolveMemberId } from "@/lib/platformOwnerPrivacy";
+import { assertAnotherAdmin } from "@/lib/teamAdmins";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -44,11 +45,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   if (support && (body.unlock === true || body.role !== undefined)) {
     return NextResponse.json({ error: "Particl support's account belongs to the platform. This workspace can disable or remove it." }, { status: 403 });
   }
-  const owner = got.user.owner || (await isPlatformOwner(got.user));
-
-  if (body.role !== undefined && !owner) {
-    return NextResponse.json({ error: "Only the workspace owner can change what someone is." }, { status: 403 });
-  }
+  /* Any admin changes roles (owner decision, 12 Oct 2026). The owner's own standing stays protected below, and the last admin cannot be demoted. */
   if (target.role === "owner") {
     const harmful = (body.role !== undefined && body.role !== "admin") || (body.disabled !== undefined && Boolean(body.disabled));
     if (harmful) return NextResponse.json(PROTECTED, { status: 400 });
@@ -58,10 +55,13 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   }
 
   const layer=await getPlatformLayer();
+  const mask=await ownerMaskFor(ws);
   try{await accountTransaction(async tx=>{
     const fresh=(await tx.execute({sql:'SELECT role,disabled FROM memberships WHERE workspace_id=? AND account_id=?',args:[ws.id,id]})).rows[0];
     if(!fresh)throw new AccountError("No such member",404);
     if(fresh.role==="owner"&&(body.role!==undefined||body.disabled===true))throw new AccountError(PROTECTED.error,400);
+    /* An admin demoted or switched off must not be the last one (the owner is protected above; this is the rule under it). */
+    if(fresh.role==="admin"&&(body.role==="member"||body.disabled===true))await assertAnotherAdmin(tx,ws.id,id,mask);
     if(body.disabled===false&&fresh.disabled)await ensureMemberSeat(tx,ws,layer);
     if ((body.role === "admin" || body.role === "member") && target.role !== "owner")
       await tx.execute({sql:"UPDATE memberships SET role=? WHERE workspace_id=? AND account_id=? AND role<>'owner'",args:[body.role,ws.id,id]});
@@ -95,10 +95,12 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   const target = await member(ws.id, id);
   if (!target) return NextResponse.json({ error: "No such member" }, { status: 404 });
   if (target.role === "owner") return NextResponse.json(PROTECTED, { status: 400 });
+  const mask=await ownerMaskFor(ws);
   try{await accountTransaction(async tx=>{
     const fresh=(await tx.execute({sql:"SELECT role FROM memberships WHERE workspace_id=? AND account_id=?",args:[ws.id,id]})).rows[0];
     if(!fresh)throw new AccountError("No such member",404);
     if(fresh.role==="owner")throw new AccountError(PROTECTED.error,400);
+    if(fresh.role==="admin")await assertAnotherAdmin(tx,ws.id,id,mask);
     await tx.execute({sql:"DELETE FROM memberships WHERE workspace_id=? AND account_id=? AND role<>'owner'",args:[ws.id,id]});
     await tx.execute({sql:'DELETE FROM p_sessions WHERE account_id=? AND workspace_id=?',args:[id,ws.id]});
     await tx.execute({sql:'DELETE FROM workspace_invites WHERE workspace_id=? AND email=? AND used_at IS NULL',args:[ws.id,String(target.email)]});

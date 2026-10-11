@@ -6,6 +6,7 @@ import { creditsFor, type EstimateTerms } from "./billingTerms";
 import { getSetting, invalidateSettings } from "./settings";
 import { workspaceAdmins, platformDb, platformReady } from "./platform";
 import { notify } from "./push";
+import { securityAuditStatement } from "./securityAudit";
 import { budgetPause, budgetPauseLine, cleanBudget, cleanWarnPct, type BudgetPause } from "./budgetPause";
 
 export { budgetPause, budgetPauseLine, cleanBudget, cleanWarnPct, type BudgetPause };
@@ -239,7 +240,7 @@ export async function setOwnCap(projectId: string, unit: CapUnit, value: number 
  * production that follows it (no cap of its own) is re-locked and its warning re-armed. A workspace not billed in
  * credits has no budget to enforce, so nothing there is re-locked. Returns whether the budget changed.
  */
-export async function setWorkspaceBudget(value: string, userId: string, inCredits: boolean): Promise<boolean> {
+export async function setWorkspaceBudget(value: string, userId: string, inCredits: boolean, audit?: { workspaceId: string }): Promise<boolean> {
   const changed = await inWrite(async (tx) => {
     const before = (await tx.execute({ sql: "SELECT value FROM settings WHERE key = 'productionBudgetCredits'", args: [] })).rows[0];
     const was = cleanBudget(before?.value ?? ""), next = cleanBudget(value);
@@ -250,6 +251,8 @@ export async function setWorkspaceBudget(value: string, userId: string, inCredit
     });
     if (was === next) return false;
     if (inCredits) await tx.execute({ sql: "UPDATE projects SET cap_unlocked = 0, cap_warned_at = NULL WHERE cap_credits IS NULL", args: [] });
+    /* The change and its history line commit together (lib/securityAudit.ts). */
+    if (audit) await tx.execute(securityAuditStatement({ workspaceId: audit.workspaceId, actorId: userId, action: "limits.updated", targetType: "limits", targetId: "board", details: { limit: "board", value: next } }));
     return true;
   });
   invalidateSettings();

@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { mailConfigured, mailFrom, sendMail, inviteEmail, inviteOrigin, MAIL_LINK_UNSET } from "@/lib/mail";
 import { db, ready, now } from "@/lib/db";
-import { requireAdmin, withTenant, isPlatformOwner } from "@/lib/auth";
+import { requireAdmin, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
-import { platformDb, platformReady } from "@/lib/platform";
+import { platformDb, platformReady, planOf } from "@/lib/platform";
+import { ceilingFor } from "@/lib/planLimits";
 import { creditsApply } from "@/lib/credits";
 import { accountFailure, AccountError } from "@/lib/accountDb";
 import { createWorkspaceInvite, mailWorkspaceInvite } from "@/lib/teamInvitations";
@@ -26,7 +27,8 @@ export const GET = withTenant(async function GET() {
   const ws = requireTenant();
   const inCredits = creditsApply(ws);
   await Promise.all([ready(), platformReady()]);
-  const canSeeRoles = got.user.owner || (await isPlatformOwner(got.user));
+  /* An admin sees and sets standing (owner decision, 12 Oct 2026): `requireAdmin` above is the whole gate. */
+  const canSeeRoles = true;
 
   const [members, invites, stats] = await Promise.all([
     platformDb().execute({
@@ -51,12 +53,18 @@ export const GET = withTenant(async function GET() {
      controls platform access, and the seats add up (lib/platformOwnerPrivacy.ts). */
   const mask = await ownerMaskFor(ws);
   const who = (r: any) => (mask.hides(r) ? { email: "", name: mask.name(r), support: true } : { email: r.email, name: r.name });
+  /* Seats the plan allows (null: no limit) and how many are taken: enabled members, and open invitations to someone not yet one. */
+  const plan = await planOf(ws).catch(() => null);
+  const seatCeiling = plan ? ceilingFor(plan, "members") : null;
+  const enabled = new Set((members.rows as any[]).filter((r) => Number(r.m_disabled) === 0).map((r) => String(r.email)));
+  const seatsUsed = enabled.size + new Set((invites.rows as any[]).map((r) => String(r.email)).filter((e) => !enabled.has(e))).size;
   const made = new Map((stats.rows as any[]).map((r) => [String(r.id), { clips: Number(r.clips), spend: Number(r.spend) }]));
 
   return NextResponse.json({
     mail: { configured: mailConfigured(), from: mailFrom() },
     workspace: { id: ws.id, name: ws.name, slug: ws.slug },
     requests: [],
+    seats: { used: seatsUsed, ceiling: seatCeiling },
     canSeeRoles,
     users: (members.rows as any[]).filter((r) => Number(r.m_disabled) === 0 || canSeeRoles).map((r) => {
       /* The support row says nothing about the account behind it: an id of
@@ -90,11 +98,10 @@ export const POST = withTenant(async function POST(req: Request) {
   if (got.response) return got.response;
   const ws = requireTenant();
   await platformReady();
-  const mayChooseRole = got.user.owner || (await isPlatformOwner(got.user));
   const body = await req.json().catch(() => ({}));
   const email = String(body.email ?? "").trim().toLowerCase();
   const name = String(body.name ?? "").trim();
-  const role = mayChooseRole && body.role === "admin" ? "admin" : "member";
+  const role = body.role === "admin" ? "admin" : "member";
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return NextResponse.json({ error: "That doesn't look like an email address" }, { status: 400 });
   const already = await platformDb().execute({

@@ -18,6 +18,8 @@ import {
 } from "./platform";
 import { passwordProblem, hashPassword } from "./auth";
 import { ceilingFor, ceilingMessage } from "./planLimits";
+import { securityAuditStatement } from "./securityAudit";
+import { inviteRef } from "./teamAdmins";
 import { planById } from "./plans";
 import { effectivePlanId, paidPlanEntitlementTx } from "./billingLedger";
 import type { WorkspaceRole, TenantWorkspace } from "./tenant";
@@ -140,6 +142,8 @@ export async function createWorkspaceInvite(input: {
         input.expiresAt,
       ],
     });
+    /* The invitation and its history line commit together; the line names the invitation by a reference, never its link. */
+    await tx.execute(securityAuditStatement({ workspaceId: input.ws.id, actorId: input.createdBy, action: "invite.created", targetType: "invite", targetId: inviteRef(input.code), details: { role: input.role, expiresAt: input.expiresAt } }));
   });
 }
 /** A re-send only helps while the plan still has a seat for the invitee. */
