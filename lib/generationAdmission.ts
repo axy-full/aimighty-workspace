@@ -625,6 +625,12 @@ export async function executeGenerationAdmission(
         { status: 400 },
       );
     }
+    /* A seed to repeat is a whole number the engine accepts; anything else is refused before a quote. It changes no price. */
+    if (body.seed !== "" && body.seed != null) {
+      const seed = Number(body.seed);
+      if (!Number.isInteger(seed) || seed < 0 || seed > 4_294_967_295)
+        return admissionReply({ error: "A seed is a whole number from 0 to 4294967295." }, { status: 400 });
+    }
     if (modelId === ASTRA_MODEL) {
       try { astra = astraSettings(body.astra); }
       catch(error) { return admissionReply({error:(error as Error).message},{status:400}); }

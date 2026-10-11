@@ -56,11 +56,15 @@ import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
 import { stageLimit, addStage, currentStage, freeCards as unstagedCards, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
+import { roundCardsFor } from "@/components/v12/rounds/round-derive";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
 import { openBlocking } from "./blocking/blocking-store";
 import { useShotsBatch } from "@/components/v12/render/use-batch";
 import { NotifyAsk } from "@/components/v12/render/NotifyAsk";
+import { useRecordRound } from "@/components/v12/rounds/use-round";
+import { RoundBadge, useCopyWhatChanged } from "@/components/v12/rounds/RoundBadge";
+import { cleanRounds, latestRound } from "@/lib/v12/rounds";
 import { BoardBar } from "@/components/v12/board/BoardBar";
 import { useOverlay } from "@/components/v12/ui/overlay";
 import { StageRail, type StageEdit } from "@/components/v12/board/StageRail";
@@ -164,9 +168,10 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* What Make filed while this board was open (the "Made in Make" band; session only, never saved). */
   const [madeNow, setMadeNow] = useState<{ projectId: string; nodeId: string }[]>([]);
   const madeHere = useMemo<MadeEntry[]>(() => madeNow.filter((m) => m.projectId === project?.id).map((m) => ({ nodeId: m.nodeId })), [madeNow, project?.id]);
-  const allCards = useMemo(() => (src ? [...registry.derive(src), ...madeCards(src, madeHere)] : []), [madeHere, registry, src]);
   /* The new interface (docs/redesign-plan.md P2-a): one stage at a time, each a slice of today's cards (lib/v12/board/stages.ts). */
   const v12Frame = v12 && !compact;
+  /* A client round's cards (redesign P2-c) belong to the new frame alone: today's board, and the compact one, never show them. */
+  const allCards = useMemo(() => (src ? [...roundCardsFor(registry.derive(src), v12Frame), ...madeCards(src, madeHere)] : []), [madeHere, registry, src, v12Frame]);
   const savedStages = project?.boardStages;
   /* The kind a person sees (Film, Pre-vis, Campaign, Social · narrated or clips) sits over today's three board kinds. */
   const flavor = flavorOf(kind, project?.boardFlavor);
@@ -175,11 +180,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const stage = v12Frame ? currentStage(stages, shell.params.stage ?? (allCards.length ? null : stages[0]?.id), flavor) : null;
   const stageOwn = useMemo(() => (stage ? stageCards(stage, allCards, flavor) : allCards), [stage, allCards, flavor]);
   /* The board's free cards (a dropped tile, a note, an upload) show on whichever stage is open, where they were put. */
-  const stageShown = useMemo(() => (stage ? [...stageOwn, ...unstagedCards(allCards)] : allCards), [stage, stageOwn, allCards]);
+  const stageAll = useMemo(() => (stage ? [...stageOwn, ...unstagedCards(allCards)] : allCards), [stage, stageOwn, allCards]);
   /* The new interface's stage grid (components/v12/board/stage-grid.ts, redesign P2-b): on a grid stage, its groups N across with
      a 24 px gap and its shot cards one size. Off the switch, or on any other stage, today's definitions as they are. */
   const gridAcross = useStageColumns(v12Frame && onGrid(stage?.id));
-  const cards = useMemo(() => (gridAcross ? gridCards(stageShown) : stageShown), [gridAcross, stageShown]);
+  const cards = useMemo(() => (gridAcross ? gridCards(stageAll) : stageAll), [gridAcross, stageAll]);
   const layoutDefs = useMemo(() => (gridAcross ? gridDefs(registry.defs, cards, project?.aspect ?? "16:9", gridAcross) : registry.defs), [gridAcross, registry.defs, cards, project?.aspect]);
   const placed = useMemo(() => placeBoard(cards, layoutDefs, board.bands, project?.aspect ?? "16:9"), [cards, layoutDefs, board.bands, project?.aspect]);
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
@@ -243,6 +248,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     onView: (nodeId) => { glide({ card: nodeId }); select(nodeId); },
     selected: selection.ids,
   });
+
+  /* A client round's plan, once a person approves it, is kept in the draft (components/v12/rounds/use-round.ts). */
+  useRecordRound({ on: v12Frame, project, items, run: agent, apply: rig.apply });
+  const round = v12Frame ? latestRound(cleanRounds(project?.boardRounds)) : null;
+  const copyRound = useCopyWhatChanged(project?.name ?? "", round, undefined);
 
   /* ── The first view: an old link's region; where this device left it; the first section that needs you; the top at 100 % ── */
   const projectId = project?.id ?? null;
@@ -691,6 +701,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const boardMenu = [
     { id: "library", label: "Library", shortcut: "L", onSelect: () => window.dispatchEvent(new Event(LIBRARY_OPEN_EVENT)) },
     { id: "history", label: "History", onSelect: () => setDrawer("history") },
+    ...(round ? [{ id: "share-round", label: `Share R${round.n} · copy what changed`, onSelect: () => void copyRound() }] : []),
     ...(kind === "studio" ? [{ id: "render", label: "3D scene", onSelect: () => setDrawer("render") }] : []),
     ...(v12Frame && blocking ? [{ id: "blocking", label: "3D blocking", onSelect: () => openBlocking(blocking) }] : []),
     { id: "fit", label: "Fit to view", shortcut: "0", onSelect: () => void flow.fitView({ padding: 0.08, duration: GLIDE_MS, ease: glideEase }) },
@@ -705,7 +716,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             readOnly={offline ? "Offline" : gate.readOnly ?? null} onPick={goStage} onEdit={editStages} addBlocked={stageLimit(stages.length)} />
         ) : <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} render={kind === "studio"} />}
         <div className="bd-main" data-testid="board-canvas">
-          {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={headPrimary} menu={boardMenu}
+          {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={headPrimary} menu={boardMenu} badge={round ? <RoundBadge board={project.name || "Board"} round={round} /> : null}
             onBoard={() => { if (stages[0]) goStage(stages[0].id); }} onStage={() => pick(new Set(), null)} /> : null}
           <StageColumn on={v12Frame}>
           {list ? <List ctx={ctx} cards={placed.cards} /> : (

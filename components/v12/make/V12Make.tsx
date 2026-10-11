@@ -72,9 +72,11 @@ export function V12Make({ initialSearch, onOpened, scope, project, projects, pro
 
   /* Prompt reuse: the take's words and settings land in the composer itself (lib/shell/recipe recreatePreset, read by
      use-make's preset inbox), and a take used as a reference arrives through the reference inbox it reads too. */
+  const [seed, setSeed] = useState<{ value: number; model: string } | null>(null);
   const reuse = useCallback((tile: ResultTile) => {
     if (tile.reuseBlock) return;
     setView({ id: null, first: false });
+    setSeed(null);
     sendGenPreset(recreatePreset(tile.source, { name: tile.prompt.slice(0, 60) }));
     toast({ text: "Prompt and settings loaded into the composer" });
   }, [toast]);
@@ -83,7 +85,15 @@ export function V12Make({ initialSearch, onOpened, scope, project, projects, pro
     setView({ id: null, first: false });
     toast({ text: "Added to the composer's references" });
   }, [toast]);
-  const input = useMemo(() => ({ scope, project, projects, workspaceName, onProject, balance }), [scope, project, projects, workspaceName, onProject, balance]);
+  /* Reuse seed: the take's words and settings, as Variations, and its seed, sent with the next clip while its engine is picked. */
+  const reuseSeed = useCallback((tile: ResultTile, value: number) => {
+    if (tile.reuseBlock) return;
+    setView({ id: null, first: false });
+    sendGenPreset(recreatePreset(tile.source, { name: tile.prompt.slice(0, 60) }));
+    setSeed({ value, model: tile.model });
+    toast({ text: `Seed ${value} set · it stays until you remove it` });
+  }, [toast]);
+  const input = useMemo(() => ({ scope, project, projects, workspaceName, onProject, balance, seed }), [scope, project, projects, workspaceName, onProject, balance, seed]);
 
   return (
     <div className="v12-mk" data-testid="v12-make" data-v12-make="" data-screen-label="Make">
@@ -100,9 +110,9 @@ export function V12Make({ initialSearch, onOpened, scope, project, projects, pro
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.5" /><path d="M6 3v10" /></svg>
           Library
         </button>
-        <Composer input={input} asked={first.mode} mentions={results.tiles} />
+        <Composer input={input} asked={first.mode} mentions={results.tiles} onClearSeed={() => setSeed(null)} />
       </div>
-      <Viewer tiles={viewable} index={viewing} onIndex={setViewing} onClose={() => setViewing(null)} onReuse={reuse} onReference={reference} paysInDollars={paysInDollars} />
+      <Viewer tiles={viewable} index={viewing} onIndex={setViewing} onClose={() => setViewing(null)} onReuse={reuse} onReuseSeed={reuseSeed} onReference={reference} paysInDollars={paysInDollars} />
     </div>
   );
 }

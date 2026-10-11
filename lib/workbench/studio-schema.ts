@@ -366,6 +366,14 @@ export const projectSchema = z.object({
     skipped: z.boolean().optional(),
     custom: z.boolean().optional(),
   }).strict()).max(24).optional(),
+  /* Client rounds in the new interface (lib/v12/rounds.ts): the approved rounds, what each changed and the take each shot had before. Additive and optional, draft JSON only. */
+  boardRounds: z.array(z.object({
+    n: z.number().int().min(2).max(99),
+    runId: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/),
+    at: z.number().int().min(0),
+    changes: z.array(z.object({ shot: z.number().int().min(1).max(999), text: z.string().max(200) }).strict()).max(60),
+    before: z.record(z.string().regex(/^\d{1,3}$/), z.string().max(100)),
+  }).strict()).max(20).optional(),
   scriptSource: z
     .object({
       assetId: z.string().max(100),

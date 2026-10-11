@@ -31,3 +31,6 @@
 /* A take that did not finish: its reason takes one line (the full words are its tooltip), so Retry, the card's main action, stays inside the card. */
 .v12 .gx-take[data-grid] .gx-take-status { min-height: 0; gap: 4px 8px; }
 .v12 .gx-take[data-grid] .gx-take-why { flex: 1 1 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* "R2" on a take made for a client round: at the picture's top right, clear of Look anchor's tag at the left. */
+.v12 .gx-take-tag--round { left: auto; right: 8px; background: var(--gx-on-media); color: var(--gx-text); border: 1px solid var(--gx-done-border); }
