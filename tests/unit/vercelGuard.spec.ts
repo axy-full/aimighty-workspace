@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { productionIntended, vercelIdentityInProduction, vercelIdentityProblem, vercelIdentityVars } from "../../lib/vercelGuard";
 import { gatewayAuth, gatewayReachable } from "../../lib/gateway";
-import { deploymentIdentityAllowed } from "../../lib/vendorKeys";
+import { deploymentIdentityAllowed, vendorKey } from "../../lib/vendorKeys";
 
 /** No Vercel identity in production (lib/vercelGuard.ts): the truth table, the gateway, and what the report says. */
 const NAMES = ["ENGINE_MOCK", "AI_GATEWAY_API_KEY", "VERCEL", "VERCEL_ENV", "VERCEL_OIDC_TOKEN", "PARTICL_DEPLOYMENT"] as const;
@@ -27,6 +27,10 @@ test("VERCEL or VERCEL_OIDC_TOKEN set in production is a problem, named and neve
   expect(vercelIdentityInProduction({ PARTICL_DEPLOYMENT: "production", VERCEL_OIDC_TOKEN: "secret-token-value" })).toEqual(["VERCEL_OIDC_TOKEN"]);
   expect(vercelIdentityInProduction({ PARTICL_DEPLOYMENT: "production", VERCEL: "1", VERCEL_OIDC_TOKEN: "x" })).toEqual(["VERCEL", "VERCEL_OIDC_TOKEN"]);
   expect(vercelIdentityInProduction({ VERCEL: "1", VERCEL_ENV: "production" })).toEqual(["VERCEL"]);
+  /* The gateway's own key is the same finding: it would open the gateway the privacy page says is not in use. */
+  expect(vercelIdentityInProduction({ PARTICL_DEPLOYMENT: "production", AI_GATEWAY_API_KEY: "a-key-value" })).toEqual(["AI_GATEWAY_API_KEY"]);
+  expect(vercelIdentityProblem({ PARTICL_DEPLOYMENT: "production", AI_GATEWAY_API_KEY: "a-key-value" })).not.toContain("a-key-value");
+  expect(vercelIdentityInProduction({ PARTICL_DEPLOYMENT: "staging", AI_GATEWAY_API_KEY: "a-key-value" })).toEqual([]);
   expect(vercelIdentityProblem({ PARTICL_DEPLOYMENT: "production", VERCEL_OIDC_TOKEN: "secret-token-value" })).not.toContain("secret-token-value");
   expect(vercelIdentityProblem({ PARTICL_DEPLOYMENT: "production", VERCEL: "1" })).toContain("VERCEL");
   /* Clean production, blanks, staging, preview, development: no problem. */
@@ -35,22 +39,21 @@ test("VERCEL or VERCEL_OIDC_TOKEN set in production is a problem, named and neve
   expect(vercelIdentityVars({ VERCEL: "1" })).toEqual(["VERCEL"]);
 });
 
-test("in production the gateway opens only with AI_GATEWAY_API_KEY: the deployment identity is never used, set or not", async () => {
-  for (const env of [{ PARTICL_DEPLOYMENT: "production" }, { PARTICL_DEPLOYMENT: "production", VERCEL: "1", VERCEL_OIDC_TOKEN: "t" }, { VERCEL: "1", VERCEL_ENV: "production", VERCEL_OIDC_TOKEN: "t" }]) {
+test("in production the gateway is closed: its key is not read, its identity is not used, whatever is set", async () => {
+  for (const env of [{ PARTICL_DEPLOYMENT: "production" }, { PARTICL_DEPLOYMENT: "production", VERCEL: "1", VERCEL_OIDC_TOKEN: "t" }, { VERCEL: "1", VERCEL_ENV: "production", VERCEL_OIDC_TOKEN: "t" },
+    { PARTICL_DEPLOYMENT: "production", AI_GATEWAY_API_KEY: "a-key" }, { PARTICL_DEPLOYMENT: "production", AI_GATEWAY_API_KEY: "a-key", VERCEL_OIDC_TOKEN: "t" }]) {
     await within(env, async () => {
       expect(deploymentIdentityAllowed()).toBe(false);
+      expect(vendorKey("gateway"), JSON.stringify(env)).toBeNull();
       expect(gatewayReachable(), JSON.stringify(env)).toBe(false);
       await expect(gatewayAuth()).rejects.toThrow();
     });
   }
-  await within({ PARTICL_DEPLOYMENT: "production", AI_GATEWAY_API_KEY: "a-key" }, async () => {
-    expect(gatewayReachable()).toBe(true);
-    expect(await gatewayAuth()).toEqual({ Authorization: "Bearer a-key" });
-  });
 });
 
 test("outside production nothing changes: a Vercel identity still opens the gateway (previews, development)", async () => {
   await within({ VERCEL: "1", VERCEL_ENV: "preview" }, () => { expect(deploymentIdentityAllowed()).toBe(true); expect(gatewayReachable()).toBe(true); });
   await within({ VERCEL_OIDC_TOKEN: "t" }, () => { expect(gatewayReachable()).toBe(true); });
+  await within({ AI_GATEWAY_API_KEY: "a-key", PARTICL_DEPLOYMENT: "staging" }, async () => { expect(gatewayReachable()).toBe(true); expect(vendorKey("gateway")).toBe("a-key"); expect(await gatewayAuth()).toEqual({ Authorization: "Bearer a-key" }); });
   await within({}, () => { expect(gatewayReachable()).toBe(false); });
 });

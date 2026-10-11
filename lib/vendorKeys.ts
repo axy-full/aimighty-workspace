@@ -23,6 +23,8 @@ export const VENDOR_KEYS: { name: VendorKeyName; label: string; does: string }[]
 ];
 
 export function vendorKey(name: VendorKeyName): string | null {
+  /* The Vercel AI gateway is closed in production (lib/vercelGuard.ts): a key for it is never read there, so nothing can open it. */
+  if (name === "gateway" && productionIntended()) return null;
   const context = currentTenant();
   const accepted = context?.acceptedCredential;
   if (accepted?.workspaceId === context?.workspace?.id && accepted?.vendor === name)
@@ -42,7 +44,7 @@ export function vendorKeyForEnv(envName: string): string | null {
 }
 
 /**
- * The gateway may use the deployment's own identity (Vercel's OIDC token) everywhere EXCEPT production, where it is never used:
- * the gateway is reachable there only with AI_GATEWAY_API_KEY (lib/vercelGuard.ts).
+ * The gateway may use the deployment's own identity (Vercel's OIDC token) everywhere EXCEPT production, where it is never used and
+ * the gateway key is never read either (vendorKey above): the gateway is closed there (lib/vercelGuard.ts).
  */
 export function deploymentIdentityAllowed(): boolean { return !productionIntended(); }

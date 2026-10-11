@@ -136,7 +136,7 @@ export function uiWordsIn(fileName: string, source: string): UiWord[] {
  * tests/unit/processorNameException.spec.ts holds the exception to exactly this.
  */
 export const PROCESSOR_NAME_EXCEPTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({ "app/(app)/privacy/page.tsx": ["Higgsfield"] });
-const processorName = (fileName: string, word: string): boolean => PROCESSOR_NAME_EXCEPTIONS[fileName.replace(/\\/g, "/")]?.includes(word) ?? false;
+const processorName = (fileName: string, word: string): boolean => Object.hasOwn(PROCESSOR_NAME_EXCEPTIONS, fileName) && PROCESSOR_NAME_EXCEPTIONS[fileName].includes(word);
 
 /* ------------------------------------------------------------------------------------------ */
 /* The wider net (tests/unit/ui-names-guard.spec.ts): every banned name in every UI string.   */

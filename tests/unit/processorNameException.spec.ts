@@ -24,7 +24,7 @@ test("the privacy page may name the processor, in either scan", () => {
 });
 
 test("no other file may, and no other banned name may be said on that page", () => {
-  for (const other of ["app/(app)/terms/page.tsx", "components/graphite/Header.tsx", "app/(app)/privacy/other.tsx", "privacy/page.tsx"]) {
+  for (const other of ["app/(app)/terms/page.tsx", "components/graphite/Header.tsx", "app/(app)/privacy/other.tsx", "privacy/page.tsx", "app\\(app)\\privacy\\page.tsx", "./app/(app)/privacy/page.tsx"]) {
     expect(bannedNamesIn(other, say(HIGGSFIELD)).map((h) => h.word), other).toEqual([HIGGSFIELD]);
     expect(uiWordsIn(other, say(HIGGSFIELD)).map((h) => h.word), other).toEqual([HIGGSFIELD]);
   }
