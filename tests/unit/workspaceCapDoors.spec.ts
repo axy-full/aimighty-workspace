@@ -35,7 +35,11 @@ delete process.env.PLATFORM_ALLOWANCE_USD;
    price of every text model known, and the door then holds: "reaches the hold uncapped") and the keys and switches in the
    environment that say which catalogue and engines are reachable. This file starts from neither: those variables are unset, and
    the catalogue module and everything that imports it are loaded afresh. (ENGINE_MOCK stays set above.) */
-for (const key of ["MODEL_CATALOG", "TEXT_DIRECT", "OPENAI_API_KEY", "AI_GATEWAY_API_KEY", "AI_GATEWAY_BASE_URL", "VERCEL", "VERCEL_OIDC_TOKEN"]) delete process.env[key];
+const CLEARED_ENV = ["MODEL_CATALOG", "TEXT_DIRECT", "OPENAI_API_KEY", "AI_GATEWAY_API_KEY", "AI_GATEWAY_BASE_URL", "VERCEL", "VERCEL_OIDC_TOKEN"];
+const ENV_BEFORE = Object.fromEntries(CLEARED_ENV.map((key) => [key, process.env[key]]));
+for (const key of CLEARED_ENV) delete process.env[key];
+/* Put back for the next file in this worker. */
+test.afterAll(() => { for (const key of CLEARED_ENV) { if (ENV_BEFORE[key] === undefined) delete process.env[key]; else process.env[key] = ENV_BEFORE[key]; } });
 {
   const loaded = createRequire(path.resolve("package.json")).cache;
   const importers = new Map<string, Set<string>>();
