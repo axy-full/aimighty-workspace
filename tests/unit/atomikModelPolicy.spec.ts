@@ -54,7 +54,9 @@ test("Auto without a route prefers its own choices: OpenAI-only plans on GPT-5.5
   expect(selectAtomikModel("auto", openai)).toBe("openai/gpt-5.5");
   expect(selectAtomikModel("auto", claude)).toBe("anthropic/claude-sonnet-4.6");
   expect(selectAtomikModel("auto", ["anthropic/claude-haiku-4.5", "anthropic/claude-opus-4.6"])).toBe("anthropic/claude-opus-4.6");
-  expect(selectAtomikModel("auto", [...openai, ...claude])).toBe("anthropic/claude-sonnet-4.6");
+  /* Auto's own list (Sonnet 5.5, Opus 5.5, Sonnet 5, Opus 5, GPT-5.5) outranks an older Claude. */
+  expect(selectAtomikModel("auto", [...openai, ...claude])).toBe("openai/gpt-5.5");
+  expect(selectAtomikModel("auto", [...openai, ...claude, "anthropic/claude-sonnet-5"])).toBe("anthropic/claude-sonnet-5");
   /* The platform's route still wins when it is served, even outside Auto's list; a dropped route is its alias. */
   expect(selectAtomikModel("auto", [...openai, ...claude], "openai/gpt-4o-mini")).toBe("openai/gpt-4o-mini");
   expect(selectAtomikModel("auto", openai, "anthropic/claude-opus-5")).toBe("openai/gpt-5.5");

@@ -11,6 +11,10 @@ import { aliasModel } from "./modelAliases";
  * saved on one reads as its alias (lib/modelAliases.ts).
  */
 export const VERIFIED_TEXT_MODEL_IDS = [
+  /* The current Claude first (owner, 11 Oct 2026): Atomik's default and the planner menu lead with them. */
+  "anthropic/claude-sonnet-5.5",
+  "anthropic/claude-opus-5.5",
+  "anthropic/claude-haiku-5.5",
   "anthropic/claude-sonnet-4.6",
   "google/gemini-3.1-pro-preview",
   "anthropic/claude-opus-4.7",
@@ -25,9 +29,6 @@ export const VERIFIED_TEXT_MODEL_IDS = [
   "anthropic/claude-sonnet-4",
   "anthropic/claude-sonnet-4.5",
   "anthropic/claude-sonnet-5",
-  "anthropic/claude-opus-5.5",
-  "anthropic/claude-sonnet-5.5",
-  "anthropic/claude-haiku-5.5",
   "google/gemini-2.5-flash",
   "google/gemini-2.5-flash-lite",
   "google/gemini-2.5-pro",
@@ -111,14 +112,13 @@ const inAtomikFamily = (id: string) => (ATOMIK_FAMILIES as readonly string[]).in
 /** Atomik's planner and agent models: the verified catalogue, Claude, OpenAI and Grok only. The first is the default. */
 export const ATOMIK_MODEL_IDS: readonly string[] = VERIFIED_TEXT_MODEL_IDS.filter(inAtomikFamily);
 
-/** Auto's choices, first available wins: the current Claude (owner, 11 Oct 2026: Sonnet 5.5 and Opus 5.5), then the
- * established ones so Auto still plans when only an older Claude or OpenAI is connected. GPT-5.5 Pro left with the dropped ids; its alias, GPT-5.5, takes its place (lib/modelAliases.ts). */
+/** Auto's choices, first available wins: the current Claude (owner, 11 Oct 2026: Sonnet 5.5 and Opus 5.5), then Sonnet 5
+ * and Opus 5, then OpenAI's GPT-5.5, so Auto still plans when only one of those is connected. GPT-5.5 Pro left with the dropped ids; its alias, GPT-5.5, takes its place (lib/modelAliases.ts). */
 export const ATOMIK_AUTO_MODEL_IDS = [
   "anthropic/claude-sonnet-5.5",
   "anthropic/claude-opus-5.5",
-  "anthropic/claude-sonnet-4.6",
-  "anthropic/claude-opus-4.7",
-  "anthropic/claude-opus-4.6",
+  "anthropic/claude-sonnet-5",
+  "anthropic/claude-opus-5",
   "openai/gpt-5.5"
 ] as const;
 

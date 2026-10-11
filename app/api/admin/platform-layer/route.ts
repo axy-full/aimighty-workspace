@@ -2,8 +2,8 @@ import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/auth";
 import { platformLayerState, setPlatformLayer, resetPlatformLayer } from "@/lib/platform";
-import { DEFAULT_LAYER, LAYER_KEYS, TEXT_MODEL_IDS, type LayerKey } from "@/lib/platformLayer";
-import { routableTextModels } from "@/lib/textRoute";
+import { DEFAULT_LAYER, LAYER_KEYS, type LayerKey } from "@/lib/platformLayer";
+import { routableTextModelIds } from "@/lib/catalog";
 import { CATEGORIES } from "@/lib/studio";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export const GET = recoveryRoute(async function GET() {
   const state = await platformLayerState();
   const bank = CATEGORIES.filter((c) => c.key === "move" || c.key === "technique").flatMap((c) =>
     c.options.map((o) => ({ kind: c.key, value: o.value, label: o.label, module: (o as { module?: string }).module ?? "" })));
-  return NextResponse.json({ layer: state.value, stored: state.stored, defaults: DEFAULT_LAYER, textModels: routableTextModels(TEXT_MODEL_IDS), cameraBank: bank });
+  return NextResponse.json({ layer: state.value, stored: state.stored, defaults: DEFAULT_LAYER, textModels: await routableTextModelIds(), cameraBank: bank });
 });
 
 /** Override one part of the layer, or put it back to the default. */

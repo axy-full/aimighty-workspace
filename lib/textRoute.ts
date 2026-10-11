@@ -42,37 +42,27 @@ const DIRECT_PATHS: Record<DirectVendor, RegExp> = {
  * `GET /v1/models` during the owner's smoke run before switching a vendor on.
  */
 export const DIRECT_MODEL_IDS: Readonly<Record<string, string>> = {
-  "anthropic/claude-haiku-4.5": "claude-haiku-4-5",
-  "anthropic/claude-opus-4": "claude-opus-4-0",
-  "anthropic/claude-opus-4.5": "claude-opus-4-5",
-  "anthropic/claude-opus-4.6": "claude-opus-4-6",
-  "anthropic/claude-opus-4.7": "claude-opus-4-7",
-  "anthropic/claude-opus-4.8": "claude-opus-4-8",
+  /* Only ids the owner's own keys listed on 11 October 2026 (each provider's free model list). */
   "anthropic/claude-opus-5": "claude-opus-5",
   "anthropic/claude-opus-5.5": "claude-opus-5-5",
-  "anthropic/claude-sonnet-4": "claude-sonnet-4-0",
-  "anthropic/claude-sonnet-4.5": "claude-sonnet-4-5",
-  "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
   "anthropic/claude-sonnet-5": "claude-sonnet-5",
   "anthropic/claude-sonnet-5.5": "claude-sonnet-5-5",
   "anthropic/claude-haiku-5.5": "claude-haiku-5-5",
   "anthropic/claude-fable-5": "claude-fable-5",
   "anthropic/claude-fable-5.1": "claude-fable-5-1",
-  "google/gemini-2.5-flash": "gemini-2.5-flash",
-  "google/gemini-2.5-flash-lite": "gemini-2.5-flash-lite",
-  "google/gemini-2.5-pro": "gemini-2.5-pro",
   "google/gemini-3-flash": "gemini-3-flash-preview",
-  // Google shut the -preview id down; the stable id is the one it lists (ai.google.dev/gemini-api/docs/models, 11 Oct 2026).
+  // Google shut the -preview id down; the key lists the stable id (11 Oct 2026).
   "google/gemini-3.1-flash-lite": "gemini-3.1-flash-lite",
   "google/gemini-3.1-pro-preview": "gemini-3.1-pro-preview",
+  "google/gemini-3.5-flash": "gemini-3.5-flash",
   "google/gemini-3.5-flash-lite": "gemini-3.5-flash-lite",
   "google/gemini-3.6-flash": "gemini-3.6-flash",
-  "google/gemini-3.8-flash": "gemini-3.8-flash",
+  "google/gemini-3.7-flash": "gemini-3.7-flash",
   "spacexai/grok-4.7": "grok-4.7",
   "spacexai/grok-4.6": "grok-4.6",
   "spacexai/grok-4.5": "grok-4.5",
   "spacexai/grok-4.3": "grok-4.3",
-  // xAI lists only the dated id (docs.x.ai/docs/models, 11 Oct 2026).
+  // The key lists only the dated id (docs.x.ai/docs/models agrees, 11 Oct 2026).
   "spacexai/grok-4.20-reasoning": "grok-4.20-0309-reasoning",
   // The gateway lists Grok under `spacexai/`; `xai/` is the provider's own spelling of the same models.
   "xai/grok-4.7": "grok-4.7",
@@ -83,17 +73,38 @@ export const DIRECT_MODEL_IDS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Offered ids with no direct equivalent; the router refuses them and no menu
- * offers them while their vendor is direct (textRouteWorks). On 11 October 2026
- * the provider's own model and price pages did not list these, so neither the
- * id nor the price could be confirmed: Gemini 3.5 Flash, Gemini 3.7 Flash and
- * Grok 4.1 Fast Reasoning. They stay on the gateway until the owner confirms them.
+ * Offered ids with no direct equivalent: the owner's keys did not list them on
+ * 11 October 2026. The router refuses them, and no menu offers them while their
+ * vendor is direct (textRouteWorks); they stay on the gateway while it is reachable.
  */
 export const UNMAPPED_DIRECT_MODEL_IDS: readonly string[] = [
-  "google/gemini-3.5-flash",
-  "google/gemini-3.7-flash",
+  "anthropic/claude-haiku-4.5",
+  "anthropic/claude-opus-4",
+  "anthropic/claude-opus-4.5",
+  "anthropic/claude-opus-4.6",
+  "anthropic/claude-opus-4.7",
+  "anthropic/claude-opus-4.8",
+  "anthropic/claude-sonnet-4",
+  "anthropic/claude-sonnet-4.5",
+  "anthropic/claude-sonnet-4.6",
+  "google/gemini-2.5-flash",
+  "google/gemini-2.5-flash-lite",
+  "google/gemini-2.5-pro",
+  "google/gemini-3.8-flash",
   "spacexai/grok-4.1-fast-reasoning",
   "xai/grok-4.1-fast-reasoning",
+];
+
+/**
+ * Mapped (the router sends them) but on no menu: the provider's official price
+ * page does not confirm the price the snapshot holds (11 October 2026).
+ * Gemini 3.5 Flash and 3.7 Flash are not on Google's price page; Gemini 3.1
+ * Flash-Lite's cached-input rate there ($0.025/M) differs from the snapshot's ($0.03/M).
+ */
+export const DIRECT_PRICE_TO_CONFIRM: readonly string[] = [
+  "google/gemini-3.5-flash",
+  "google/gemini-3.7-flash",
+  "google/gemini-3.1-flash-lite",
 ];
 
 /** The vendor a model belongs to by its app prefix, whether or not it is switched on. */
@@ -121,7 +132,7 @@ const GATEWAY_LISTED = new Set<string>((modelCatalogJson as { models: { id: stri
 /**
  * Whether a text model has a door that works right now, so a menu may offer it:
  * OpenAI on its own key; a vendor switched on in TEXT_DIRECT with its key set
- * and the id mapped above; anything else only while the gateway is reachable
+ * and the id mapped above (and its price confirmed); anything else only while the gateway is reachable
  * and the gateway listed it.
  * A gateway-only model is never offered once the gateway key is gone.
  */
@@ -130,12 +141,7 @@ export function textRouteWorks(model: string): boolean {
   const route = textRoute(model);
   if (route === "openai") return true;
   if (route === "gateway") return !model.startsWith("openai/") && gatewayReachable() && GATEWAY_LISTED.has(model);
-  return Boolean(vendorKey(DIRECT_KEY[route])) && Object.hasOwn(DIRECT_MODEL_IDS, model);
-}
-
-/** The ids, in order, that a menu may offer now (everything under ENGINE_MOCK, where nothing is sent). */
-export function routableTextModels(ids: readonly string[]): string[] {
-  return ids.filter((id) => engineMock() || textRouteWorks(id));
+  return Boolean(vendorKey(DIRECT_KEY[route])) && Object.hasOwn(DIRECT_MODEL_IDS, model) && !DIRECT_PRICE_TO_CONFIRM.includes(model);
 }
 
 /** The provider's own id for an app id. Unlisted ids are refused. */
@@ -153,12 +159,13 @@ export function directKey(vendor: DirectVendor): string {
 }
 
 /**
- * Set on an Anthropic call whose tools stay defined but may not be used
- * (`tool_choice: none`), by the door's middleware (lib/language-provider.ts).
- * The SDK drops the tools for `toolChoice: none`, and Anthropic refuses (400)
- * a request whose history holds tool calls when no tools are defined, so the
- * fetch below keeps them and sets the choice itself. The header never leaves
- * the process.
+ * Hardening (not the cause of any observed failure): set on an Anthropic call
+ * whose tools stay defined but may not be used (`tool_choice: none`), by the
+ * door's middleware (lib/language-provider.ts). The SDK drops the tools for
+ * `toolChoice: none`, while the Messages API expects tools to stay defined when
+ * the history holds tool_use / tool_result blocks; the fetch below keeps them
+ * and sets the choice itself, a valid request either way. The header never
+ * leaves the process.
  */
 export const ANTHROPIC_NO_TOOL_HEADER = "x-particl-tool-choice-none";
 

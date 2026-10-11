@@ -58,11 +58,12 @@ const xaiReply = { id: "resp_xai_fixture", object: "response", created_at: 1, mo
  * that reply costs at the snapshot, worked by hand.
  */
 const VENDORS = [
-  { vendor: "anthropic", model: "anthropic/claude-sonnet-4.6", origin: "https://api.anthropic.com", reply: anthropicReply,
+  /* Ids the owner's keys list (11 Oct 2026): Claude Sonnet 5 and Gemini 3.5 Flash-Lite. */
+  { vendor: "anthropic", model: "anthropic/claude-sonnet-5", origin: "https://api.anthropic.com", reply: anthropicReply,
     refusal: { status: 429, body: { type: "error", error: { type: "rate_limit_error", message: "Fixture." } } },
-    // 100 uncached × $3/M + 60 cache reads × $0.30/M + 40 cache writes × $3.75/M + 25 out × $15/M
-    usd: 100 * 0.000003 + 60 * 0.0000003 + 40 * 0.00000375 + 25 * 0.000015 },
-  { vendor: "google", model: "google/gemini-2.5-flash", origin: "https://generativelanguage.googleapis.com", reply: googleReply,
+    // 100 uncached × $2/M + 60 cache reads × $0.20/M + 40 cache writes × $2.50/M + 25 out × $10/M
+    usd: 100 * 0.000002 + 60 * 0.0000002 + 40 * 0.0000025 + 25 * 0.00001 },
+  { vendor: "google", model: "google/gemini-3.5-flash-lite", origin: "https://generativelanguage.googleapis.com", reply: googleReply,
     refusal: { status: 400, body: { error: { code: 400, message: "Fixture.", status: "INVALID_ARGUMENT" } } },
     // 80 uncached × $0.30/M + 120 cache reads × $0.03/M + (30 answer + 50 thought) out × $2.50/M
     usd: 80 * 0.0000003 + 120 * 0.00000003 + 80 * 0.0000025 },

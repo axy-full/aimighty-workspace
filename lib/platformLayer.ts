@@ -1,6 +1,6 @@
 import { CATEGORIES, type ShotSpec } from "./studio";
 import { MODELS, DEFAULT_MODEL_ID } from "./models";
-import { TEXT_RATES } from "./refineGate";
+import { VERIFIED_TEXT_MODEL_IDS } from "./atomikModelPolicy";
 import { DEFAULT_PLANS, cleanPlans, type PlanDef } from "./plans";
 import { aliasModel } from "./modelAliases";
 
@@ -107,8 +107,9 @@ export const TEXT_JOB_LABELS: Record<TextJob, string> = { enhance: "Prompt enhan
 export type TextModels = Record<TextJob, string>;
 /** Owner, 11 Oct 2026: enhancement on Sonnet 5.5, ideas and shots on Opus 5.5. */
 export const DEFAULT_TEXT_MODELS: TextModels = { enhance: "anthropic/claude-sonnet-5.5", idea: "anthropic/claude-opus-5.5", shot: "anthropic/claude-opus-5.5" };
-/** The text models a console may name: the gateway-prefixed ids the rates table knows. */
-export const TEXT_MODEL_IDS: string[] = Object.keys(TEXT_RATES).filter((k) => k.includes("/"));
+/** The text models a console may name: the verified text catalogue. Which of them it offers is the server's
+ *  (routableTextModelIds, lib/catalog.ts): those with a working route and a price. */
+export const TEXT_MODEL_IDS: string[] = [...VERIFIED_TEXT_MODEL_IDS];
 
 /** The engine a composer opens on, per kind, and the model per text job. The platform's choice; a workspace's Defaults & caps may name another engine. */
 export type PlatformModels = { video: string; image: string; text: TextModels };

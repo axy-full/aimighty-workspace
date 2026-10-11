@@ -57,7 +57,7 @@ export const POST = withTenant(async function POST(req: Request) {
       const provider: EnhancerProvider = isEnhancerProvider(body.provider) ? body.provider : isEnhancerProvider(saved) ? saved : DEFAULT_ENHANCER;
       const models = (await catalog()).filter((m) => m.type === "language" && isVerifiedTextModel(m.id));
       const available = models.map((m) => m.id);
-      const routed = provider === "higgsfield" ? textModelFor((await getPlatformLayer().catch(() => null))?.models ?? null, "idea") : null;
+      const routed = provider === "higgsfield" ? textModelFor((await getPlatformLayer().catch(() => null))?.models ?? null, "enhance") : null;
       const writer = pickEnhancerModel(provider, available, routed);
       if (!writer) return NextResponse.json({ error: `${ENHANCER_LABEL[provider]} isn't available to write prompts right now. Choose another enhancer in Workspace › General.` }, { status: 503 });
 

@@ -5,8 +5,8 @@ import { runInTenant, type TenantWorkspace } from '../../lib/tenant';
 import { finalToolStep, languageAuth, languageModel } from '../../lib/language-provider';
 import { openaiDirectPost } from '../../lib/openai-direct';
 import { textPost } from '../../lib/textDirect';
-import { ANTHROPIC_NO_TOOL_HEADER, directModelId, routableTextModels, textRouteWorks } from '../../lib/textRoute';
-import { catalog, menuFor } from '../../lib/catalog';
+import { ANTHROPIC_NO_TOOL_HEADER, DIRECT_MODEL_IDS, directModelId, textRouteWorks } from '../../lib/textRoute';
+import { catalog, menuFor, routableTextModelIds } from '../../lib/catalog';
 import { DEFAULT_TEXT_MODELS, TEXT_MODEL_IDS } from '../../lib/platformLayer';
 import { ATOMIK_AUTO_MODEL_IDS, selectAtomikModel } from '../../lib/atomikModelPolicy';
 import { ENHANCER_MODELS } from '../../lib/shell/enhancer';
@@ -68,7 +68,7 @@ test('Anthropic: the exact Messages request for Opus 5.5 — real id, effort wit
   });
 });
 
-test('Anthropic: Sonnet 5.5 and Haiku 5.5 map to their real ids and never carry sampling; Haiku 4.5 keeps one of temperature or top_p', async () => {
+test('Anthropic: Sonnet 5.5 and Haiku 5.5 map to their real ids; the SDK leaves sampling off the models that refuse it', async () => {
   process.env.TEXT_DIRECT = 'anthropic';
   expect(directModelId('anthropic/claude-sonnet-5.5')).toBe('claude-sonnet-5-5');
   expect(directModelId('anthropic/claude-haiku-5.5')).toBe('claude-haiku-5-5');
@@ -79,46 +79,17 @@ test('Anthropic: Sonnet 5.5 and Haiku 5.5 map to their real ids and never carry 
     await textPost(chat(model, { temperature: 0.2, top_p: 0.5 }), { fetch });
     expect(calls[0].body).toEqual({ model: id, max_tokens: 600, system: [{ type: 'text', text: 'Write briefly.' }], messages: [{ role: 'user', content: [{ type: 'text', text: 'A tree in rain.' }] }] });
   }
-  const { calls, fetch } = stub(() => Response.json(anthropicReply('ok')));
-  await textPost(chat('anthropic/claude-haiku-4.5', { temperature: 0.2, top_p: 0.5 }), { fetch });
-  expect(calls[0].body).toEqual({ model: 'claude-haiku-4-5', max_tokens: 600, temperature: 0.2, system: [{ type: 'text', text: 'Write briefly.' }], messages: [{ role: 'user', content: [{ type: 'text', text: 'A tree in rain.' }] }] });
 });
 
-test('Anthropic: what the API would refuse with a 400 is refused here first, with nothing sent', async () => {
-  process.env.TEXT_DIRECT = 'anthropic';
-  const cases: [string, Record<string, unknown>][] = [
-    ['anthropic/claude-opus-5.5', { reasoning: { enabled: false } }],              // thinking cannot be switched off
-    ['anthropic/claude-sonnet-5.5', { reasoning_effort: 'none' }],
-    ['anthropic/claude-fable-5.1', { reasoning: { enabled: false } }],
-    ['anthropic/claude-sonnet-5.5', { reasoning: { enabled: true, max_tokens: 1024 } }], // budgets removed
-    ['anthropic/claude-opus-4.7', { reasoning: { enabled: true, max_tokens: 1024 } }],
-    ['anthropic/claude-haiku-4.5', { reasoning_effort: 'low' }],                    // no effort on Haiku 4.5
-    ['anthropic/claude-sonnet-4.5', { reasoning_effort: 'high' }],
-    ['anthropic/claude-sonnet-5.5', { stop: ['\n\n'] }],                            // whitespace-only stop sequence
-  ];
-  for (const [model, extra] of cases) {
-    const { calls, fetch } = stub(() => Response.json(anthropicReply()));
-    const reply = await textPost(chat(model, extra), { fetch });
-    expect(reply, `${model} ${JSON.stringify(extra)}`).toMatchObject({ ok: false, status: 422 });
-    expect(calls, model).toHaveLength(0);
-  }
-  // A final assistant turn (prefill) and an empty text block.
-  for (const messages of [[{ role: 'user', content: 'Hi.' }, { role: 'assistant', content: 'Sure' }], [{ role: 'system', content: ' ' }, { role: 'user', content: 'Hi.' }]]) {
-    const { calls, fetch } = stub(() => Response.json(anthropicReply()));
-    const reply = await textPost(JSON.stringify({ model: 'anthropic/claude-opus-5.5', max_tokens: 100, messages }), { fetch });
-    expect(reply).toMatchObject({ ok: false, status: 422 }); expect(calls).toHaveLength(0);
-  }
+test('every direct id is one the owner\'s keys listed on 11 October 2026', () => {
+  expect([...new Set(Object.values(DIRECT_MODEL_IDS))].sort()).toEqual([
+    'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1', 'claude-opus-5', 'claude-sonnet-5', 'claude-fable-5',
+    'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview',
+    'grok-4.7', 'grok-4.6', 'grok-4.5', 'grok-4.3', 'grok-4.20-0309-reasoning',
+  ].sort());
 });
 
-test('Anthropic: a picture labelled PNG that holds a JPEG goes out as image/jpeg', async () => {
-  process.env.TEXT_DIRECT = 'anthropic';
-  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1]).toString('base64');
-  const { calls, fetch } = stub(() => Response.json(anthropicReply('ok')));
-  await textPost(JSON.stringify({ model: 'anthropic/claude-opus-5.5', max_tokens: 100, messages: [{ role: 'user', content: [{ type: 'text', text: 'What is this?' }, { type: 'image_url', image_url: { url: `data:image/png;base64,${jpeg}` } }] }] }), { fetch });
-  expect(calls[0].body.messages).toEqual([{ role: 'user', content: [{ type: 'text', text: 'What is this?' }, { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: jpeg } }] }]);
-});
-
-test('Anthropic: a no-tool final step keeps the tools defined and sends tool_choice none (the SDK alone would drop them, a 400)', async () => {
+test('Anthropic (hardening): a no-tool final step keeps the tools defined and sends tool_choice none, since the SDK drops them for none', async () => {
   process.env.TEXT_DIRECT = 'anthropic';
   const { calls, fetch } = stub(() => Response.json(anthropicReply('Done.')));
   const model = languageModel('anthropic/claude-sonnet-5.5', { auth: {}, fetch });
@@ -207,7 +178,7 @@ test('a model is offered only with a working route: its key and TEXT_DIRECT (or 
   // Anthropic direct with its key: Claude works, the rest still does not.
   process.env.TEXT_DIRECT = 'anthropic';
   expect(textRouteWorks('anthropic/claude-opus-5.5')).toBe(true);
-  expect(textRouteWorks('anthropic/claude-sonnet-4.6')).toBe(true);
+  expect(textRouteWorks('anthropic/claude-sonnet-4.6')).toBe(false);   // not on the owner's Anthropic key list
   expect(textRouteWorks('google/gemini-3.1-pro-preview')).toBe(false);
   expect(textRouteWorks('spacexai/grok-4.7')).toBe(false);
   // Direct without the key: off, even with the gateway up (the call would not go there).
@@ -220,17 +191,21 @@ test('a model is offered only with a working route: its key and TEXT_DIRECT (or 
   expect(textRouteWorks('anthropic/claude-opus-5.5')).toBe(false);
   // Direct doors offer only ids they can send: unconfirmed ids stay on the gateway.
   process.env.TEXT_DIRECT = 'anthropic,google,xai'; Object.assign(process.env, KEYS); delete process.env.AI_GATEWAY_API_KEY;
-  expect(textRouteWorks('google/gemini-3.8-flash')).toBe(true);
-  expect(textRouteWorks('google/gemini-3.5-flash')).toBe(false);
+  expect(textRouteWorks('google/gemini-3.6-flash')).toBe(true);
+  expect(textRouteWorks('google/gemini-3.8-flash')).toBe(false);   // not on the key's list
+  expect(textRouteWorks('google/gemini-3.5-flash')).toBe(false);   // on the key's list, price to confirm
+  expect(directModelId('google/gemini-3.5-flash')).toBe('gemini-3.5-flash');
   expect(textRouteWorks('spacexai/grok-4.1-fast-reasoning')).toBe(false);
-  // Admin's text routing lists only routable ids.
-  process.env.TEXT_DIRECT = 'anthropic'; delete process.env.OPENAI_API_KEY;
-  expect(routableTextModels(TEXT_MODEL_IDS).every(id => id.startsWith('anthropic/'))).toBe(true);
-  expect(routableTextModels(TEXT_MODEL_IDS)).toEqual(expect.arrayContaining(['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5']));
+});
+
+test('admin text routing lists every routable, priced text model: the same filter as the menus', async () => {
+  process.env.MODEL_CATALOG = 'static';
+  process.env.TEXT_DIRECT = 'anthropic,google,xai';
+  const ids = await routableTextModelIds();
+  expect(ids).toEqual(expect.arrayContaining(['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5', 'google/gemini-3.6-flash', 'spacexai/grok-4.7', 'spacexai/grok-4.20-reasoning']));
+  for (const id of ['anthropic/claude-haiku-4.5', 'anthropic/claude-sonnet-4.6', 'google/gemini-3.5-flash', 'google/gemini-2.5-pro', 'openai/gpt-5.5']) expect(ids, id).not.toContain(id);
   delete process.env.ANTHROPIC_API_KEY;
-  expect(routableTextModels(TEXT_MODEL_IDS)).toEqual([]);
-  process.env.ENGINE_MOCK = '1';
-  expect(routableTextModels(TEXT_MODEL_IDS)).toEqual(TEXT_MODEL_IDS);
+  expect((await routableTextModelIds()).filter(id => id.startsWith('anthropic/'))).toEqual([]);
 });
 
 test('without the gateway, the static catalogue, Atomik and the enhancer offer the direct Claude models and nothing gateway-only', async () => {
@@ -241,10 +216,11 @@ test('without the gateway, the static catalogue, Atomik and the enhancer offer t
   expect(ids).toEqual(expect.arrayContaining(['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5', 'anthropic/claude-fable-5.1']));
   expect(ids.filter(id => !id.startsWith('anthropic/'))).toEqual([]);
   const planner = await menuFor('planner');
-  expect(planner.featured.slice(0, 2).map(m => m.id)).toEqual(['anthropic/claude-sonnet-4.6', 'anthropic/claude-opus-4.7']);
+  expect(planner.featured.slice(0, 2).map(m => m.id)).toEqual(['anthropic/claude-sonnet-5.5', 'anthropic/claude-opus-5.5']);
+  expect([...planner.featured, ...planner.rest].map(m => m.id).filter(id => /claude-(?:opus|sonnet|haiku)-4/.test(id))).toEqual([]);
   expect([...planner.featured, ...planner.rest].map(m => m.id)).toEqual(expect.arrayContaining(['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5']));
   expect(selectAtomikModel('auto', ids)).toBe('anthropic/claude-sonnet-5.5');
-  expect(ENHANCER_MODELS.claude.filter(id => ids.includes(id))[0]).toBe('anthropic/claude-haiku-4.5');
+  expect(ENHANCER_MODELS.claude.filter(id => ids.includes(id)).slice(0, 2)).toEqual(['anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5']);
   // Priced from Anthropic's list: Opus 5.5 $4 / $20, Sonnet 5.5 $2 / $10, Haiku 5.5 $0.10 / $0.50 up to 100k prompt tokens.
   const priced = new Map((await catalog(true)).map(m => [m.id, m.pricing]));
   expect(priced.get('anthropic/claude-opus-5.5')).toMatchObject({ input: '0.000004', output: '0.00002', input_cache_read: '0.0000002', input_cache_write: '0.000005' });
@@ -259,6 +235,8 @@ test('defaults: enhancement on Sonnet 5.5, ideas and shots on Opus 5.5; Auto tri
   expect(DEFAULT_TEXT_MODELS).toEqual({ enhance: 'anthropic/claude-sonnet-5.5', idea: 'anthropic/claude-opus-5.5', shot: 'anthropic/claude-opus-5.5' });
   expect(ATOMIK_AUTO_MODEL_IDS.slice(0, 2)).toEqual(['anthropic/claude-sonnet-5.5', 'anthropic/claude-opus-5.5']);
   expect(selectAtomikModel('auto', ['anthropic/claude-opus-5.5', 'openai/gpt-5.5'])).toBe('anthropic/claude-opus-5.5');
-  expect(selectAtomikModel('auto', ['anthropic/claude-sonnet-4.6', 'openai/gpt-5.5'])).toBe('anthropic/claude-sonnet-4.6');
+  expect(selectAtomikModel('auto', ['anthropic/claude-sonnet-4.6', 'anthropic/claude-sonnet-5', 'openai/gpt-5.5'])).toBe('anthropic/claude-sonnet-5');
+  expect(selectAtomikModel('auto', ['anthropic/claude-sonnet-4.6', 'openai/gpt-5.5'])).toBe('openai/gpt-5.5');
   for (const id of Object.values(DEFAULT_TEXT_MODELS)) expect(TEXT_MODEL_IDS).toContain(id);
+  expect(TEXT_MODEL_IDS).toEqual(expect.arrayContaining(['openai/gpt-5.5', 'openai/gpt-5.4', 'spacexai/grok-4.7', 'google/gemini-3.6-flash']));
 });

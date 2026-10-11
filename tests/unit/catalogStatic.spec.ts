@@ -200,7 +200,7 @@ test("with the static catalogue, OpenAI text still needs an id the key can list;
   const ids = (await catalog(true)).map((m) => m.id);
   expect(ids.filter((id) => id.startsWith("openai/gpt-6") || id === "openai/gpt-5-mini")).toEqual(["openai/gpt-6-astra"]);
   expect(ids).toContain("openai/gpt-image-2");
-  expect(ids).toContain("anthropic/claude-sonnet-4.6");
+  expect(ids).toContain("anthropic/claude-sonnet-5");
   expect(ids).toContain("spacexai/grok-4.7");
   expect(ids).not.toContain("google/veo-3.1-generate-001");
 });
@@ -213,10 +213,11 @@ test("in static mode Claude, Gemini and Grok text is offered where its calls wil
   const offered = (ids: string[]) => { const served = new Set(staticCatalog(snapshot).map((m) => m.id)); return ids.filter((id) => served.has(id)); };
   const gateway = (up: boolean) => { if (up) process.env.AI_GATEWAY_API_KEY = "gw-unit-static"; else delete process.env.AI_GATEWAY_API_KEY; };
 
-  // 1. Direct with key: offered even with the gateway down.
+  // 1. Direct with key: offered even with the gateway down (the ids the direct door can send).
+  const sendable = (ids: string[]) => ids.filter((id) => !UNMAPPED_DIRECT_MODEL_IDS.includes(id));
   gateway(false);
   process.env.TEXT_DIRECT = "anthropic";
-  expect(offered(claude)).toEqual(claude);
+  expect(offered(claude)).toEqual(sendable(claude));
 
   // 2. Direct without key: hidden, even with the gateway up (the call would not go there).
   gateway(true);
@@ -236,9 +237,9 @@ test("in static mode Claude, Gemini and Grok text is offered where its calls wil
 
   // Each vendor follows its own route; unknown names in TEXT_DIRECT are ignored.
   process.env.TEXT_DIRECT = " anthropic ,nobody,xai";
-  expect(offered(claude)).toEqual(claude);
+  expect(offered(claude)).toEqual(sendable(claude));
   // A direct door offers only the ids it can send (an unmapped id has no working route).
-  expect(offered(grok)).toEqual(grok.filter((id) => !UNMAPPED_DIRECT_MODEL_IDS.includes(id)));
+  expect(offered(grok)).toEqual(sendable(grok));
   expect(offered(gemini)).toEqual([]);
 });
 

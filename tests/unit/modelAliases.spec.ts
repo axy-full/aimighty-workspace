@@ -107,7 +107,7 @@ test("no offered list, default or Auto list names a dropped id; the catalogue ke
 });
 
 test("Auto keeps its choices with GPT-5.5 where GPT-5.5 Pro was, and never plans on a dropped id", async () => {
-  expect([...ATOMIK_AUTO_MODEL_IDS]).toEqual(["anthropic/claude-sonnet-5.5", "anthropic/claude-opus-5.5", "anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.7", "anthropic/claude-opus-4.6", "openai/gpt-5.5"]);
+  expect([...ATOMIK_AUTO_MODEL_IDS]).toEqual(["anthropic/claude-sonnet-5.5", "anthropic/claude-opus-5.5", "anthropic/claude-sonnet-5", "anthropic/claude-opus-5", "openai/gpt-5.5"]);
   /* An OpenAI-only workspace keeps an OpenAI Auto choice, not the cheapest model on the menu. */
   {
     const { atomikModels } = await import("../../lib/workbench/atomik-server");
@@ -121,7 +121,7 @@ test("Auto keeps its choices with GPT-5.5 where GPT-5.5 Pro was, and never plans
   const openaiOnly = atomikModels(["openai/gpt-5.5-pro", "openai/gpt-5.5"].map(entry));
   expect(openaiOnly.map((m) => m.id)).toEqual(["openai/gpt-5.5"]);
   expect(selectPlannerModel("auto", openaiOnly)).toBe("openai/gpt-5.5");
-  expect(selectPlannerModel("auto", atomikModels(["openai/gpt-5.5-pro", "openai/gpt-5.5", "anthropic/claude-sonnet-4.6"].map(entry)))).toBe("anthropic/claude-sonnet-4.6");
+  expect(selectPlannerModel("auto", atomikModels(["openai/gpt-5.5-pro", "openai/gpt-5.5", "anthropic/claude-sonnet-5"].map(entry)))).toBe("anthropic/claude-sonnet-5");
   expect(selectAtomikModel("auto", ["openai/gpt-5.5-pro", "openai/gpt-5.5"])).toBe("openai/gpt-5.5");
 });
 
@@ -139,7 +139,8 @@ test("each read point resolves a dropped id to its alias before the check, witho
   expect(selectPlannerModel("anthropic/claude-opus-5-fast", [{ id: "anthropic/claude-opus-5" }])).toBe("anthropic/claude-opus-5");
   /* platform_layer "models".text: cleaned on read, and the route read from it. */
   const stored = { text: { enhance: "anthropic/claude-3-haiku", idea: "anthropic/claude-opus-5-fast", shot: "openai/gpt-5.5-pro" } };
-  expect(cleanModels(stored).text).toEqual({ enhance: "anthropic/claude-haiku-4.5", idea: "anthropic/claude-opus-5", shot: DEFAULT_TEXT_MODELS.shot });
+  /* Any verified text model can be routed now (admin lists the routable ones), so the Pro alias GPT-5.5 stands. */
+  expect(cleanModels(stored).text).toEqual({ enhance: "anthropic/claude-haiku-4.5", idea: "anthropic/claude-opus-5", shot: "openai/gpt-5.5" });
   expect(mergeLayer({ models: stored }).models.text.enhance).toBe("anthropic/claude-haiku-4.5");
   expect(textModelFor(stored, "shot")).toBe("openai/gpt-5.5");
   /* GATEWAY_PROMPT_MODELS: the env default. */

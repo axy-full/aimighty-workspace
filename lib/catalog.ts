@@ -1,9 +1,9 @@
-import { ATOMIK_MODEL_IDS, isAtomikModel } from "./atomikModelPolicy";
+import { ATOMIK_MODEL_IDS, isAtomikModel, isVerifiedTextModel } from "./atomikModelPolicy";
 import { GATEWAY_BASE, gatewayAuth, gatewayReachable } from "./gateway";
 import { vendorKey } from './vendorKeys';
 import { openAIConnection } from './openai-models';
 import { engineMock } from './mock';
-import { textRouteWorks } from './textRoute';
+import { textRoute, textRouteWorks } from './textRoute';
 import { isTextDirect } from './textDirectVendors';
 import { isDroppedModel } from './modelAliases';
 import modelCatalogJson from './modelCatalog.json';
@@ -282,6 +282,17 @@ export async function catalog(force = false): Promise<CatalogModel[]> {
     if (model.type !== 'language') return fromSnapshot || gatewayReachable();
     return direct.verified && allowed.has(model.id.slice('openai/'.length));
   });
+}
+
+/**
+ * Every text model a platform text job (enhance, ideas, shots) can be routed
+ * to now: served by the catalogue (so it has a working route), on the verified
+ * text list, and priced for a quote on the door it takes. Admin's routing
+ * selects offer exactly these.
+ */
+export async function routableTextModelIds(): Promise<string[]> {
+  return (await catalog()).filter((m) => m.type === 'language' && !m.outputModalities?.includes('image') && isVerifiedTextModel(m.id)
+    && textQuoteCostUsd(m, 1_000, 100, textRoute(m.id) !== 'gateway') != null).map((m) => m.id);
 }
 
 export async function byType(type: CatalogType): Promise<CatalogModel[]> {

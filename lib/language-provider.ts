@@ -18,10 +18,10 @@ export function languageReachable() {
   return gatewayReachable() || !!vendorKey('openai') || directTextReachable();
 }
 /**
- * The last step of a tool loop, where no tool may be called. Anthropic needs
- * the tools still defined while the history holds tool calls (a 400 otherwise),
- * so its direct door keeps them and sends `tool_choice: none`; elsewhere they
- * are removed as well, since a provider may ignore the choice.
+ * The last step of a tool loop, where no tool may be called. Hardening: on
+ * Anthropic's direct door the tools stay defined while the history holds tool
+ * calls and `tool_choice: none` is sent (ANTHROPIC_NO_TOOL_HEADER); elsewhere
+ * they are removed as well, since a provider may ignore the choice.
  */
 export function finalToolStep(model: LanguageModel): { toolChoice: 'none'; activeTools?: never[] } {
   const provider = typeof model === 'string' ? '' : model.provider;

@@ -58,10 +58,10 @@ function outputLimit(model: CatalogModel): number {
   return Math.min(MAX_OUTPUT_TOKENS, limit, model.id === "anthropic/claude-sonnet-4.5" ? 8_192 : Infinity);
 }
 
-const ALWAYS_THINKS = /^anthropic\/claude-(?:fable-|opus-5|sonnet-5\.5|haiku-5\.5)/;
+const ALWAYS_THINKS = /^anthropic\/claude-(?:fable-|opus-5|sonnet-5\.5)/;
 function canDisable(model: CatalogModel, options: ReasoningOption[]): boolean {
   // Fable's catalog currently advertises toggle, but its native API rejects
-  // disabled thinking, as do Opus 5.5, Sonnet 5.5 and Haiku 5.5 (Haiku only above high).
+  // disabled thinking, as do Opus 5.5 and Sonnet 5.5.
   // Opus 5 also has effort-dependent disabling rules.
   if (ALWAYS_THINKS.test(model.id)) return false;
   if (LEGACY_CLAUDE.has(model.id)) return true;
