@@ -12,6 +12,7 @@ import { COMPOSER, COMPOSER_LENGTH, FLAVOR_BOARD, KIND_CARDS, boardName, detectC
 import { KIND_LABEL, applyStageEdit, stageLimit, stagesOf, type SavedStage, type StageEdit } from "@/lib/v12/board/stages";
 import { IDLE, LOADING, QUOTE_FAULT, knownQuote, type Quote } from "@/lib/v12/quote";
 import { Price } from "@/components/v12/ui/Price";
+import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { useToast } from "@/components/v12/ui";
 import { StageRail } from "./StageRail";
 import { StageHeader } from "./StageHeader";
@@ -154,7 +155,7 @@ export function NewBoard({ scope, onCreate, initialKind }: { scope: string; onCr
                 {files.map((f, i) => (
                   <span key={`${f.name}-${i}`} className="v12-attached" data-testid="v12-newboard-file">
                     {f.name}
-                    <button type="button" aria-label={`Remove ${f.name}`} title="Remove" onClick={() => setFiles((now) => now.filter((_, at) => at !== i))}>×</button>
+                    <Tooltip name={`Remove ${f.name}`} named><button type="button" aria-label={`Remove ${f.name}`} onClick={() => setFiles((now) => now.filter((_, at) => at !== i))}>×</button></Tooltip>
                   </span>
                 ))}
                 {composer.chips.map((row) => (

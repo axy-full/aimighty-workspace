@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import type { TrayJob } from "@/lib/jobsTray";
 import { downloadHref } from "@/lib/format";
 import { byDay, justify, resultsCount, type ResultTile } from "@/lib/v12/make";
 import { renderState } from "@/lib/v12/renderState";
 import type { TypicalTimesReply } from "@/lib/v12/typicalTimes";
 import { renderTakeOf } from "./use-results";
+import { Tooltip } from "@/components/v12/ui/Tooltip";
 
 /** The width the grid has to fill, read as it changes. */
 function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
@@ -42,7 +43,7 @@ const ACTIVE = new Set(["held", "queued", "running"]);
  * words, which load the prompt and its settings into the composer. A take in flight shows its render state (C1); one
  * that did not finish says whether anything was billed and offers Retry, which loads it into the composer to price again.
  */
-export function Results({ tiles, status, typical, trayPrices, paysInDollars, selected, onSelect, onOpen, onReuse }: {
+export function Results({ tiles, status, typical, trayPrices, paysInDollars, selected, onSelect, onOpen, onReuse, onMenu }: {
   tiles: readonly ResultTile[];
   status: "loading" | "ready" | "error";
   typical: TypicalTimesReply | null;
@@ -52,6 +53,8 @@ export function Results({ tiles, status, typical, trayPrices, paysInDollars, sel
   onSelect: (id: string) => void;
   onOpen: (tile: ResultTile) => void;
   onReuse: (tile: ResultTile) => void;
+  /** A right-click on a result (redesign A3: components/v12/menus/MakeMenu.tsx). */
+  onMenu?: (event: MouseEvent, tile: ResultTile) => void;
 }) {
   const [box, width] = useWidth<HTMLDivElement>();
   const now = useNow(tiles.some((t) => ACTIVE.has(t.source.status)));
@@ -74,7 +77,8 @@ export function Results({ tiles, status, typical, trayPrices, paysInDollars, sel
               <div key={r} className="v12-mk-row" style={{ height: row.height }}>
                 {row.items.map(({ item, width: w }) => (
                   <Tile key={item.id} tile={item} width={w} now={now} typical={typical} trayPrice={trayPrices.get(item.id)} paysInDollars={paysInDollars}
-                    selected={selected.has(item.id)} onSelect={() => onSelect(item.id)} onOpen={() => onOpen(item)} onReuse={() => onReuse(item)} />
+                    selected={selected.has(item.id)} onSelect={() => onSelect(item.id)} onOpen={() => onOpen(item)} onReuse={() => onReuse(item)}
+                    onMenu={onMenu ? (e) => onMenu(e, item) : undefined} />
                 ))}
               </div>
             ))}
@@ -85,9 +89,9 @@ export function Results({ tiles, status, typical, trayPrices, paysInDollars, sel
   );
 }
 
-function Tile({ tile, width, now, typical, trayPrice, paysInDollars, selected, onSelect, onOpen, onReuse }: {
+function Tile({ tile, width, now, typical, trayPrice, paysInDollars, selected, onSelect, onOpen, onReuse, onMenu }: {
   tile: ResultTile; width: number; now: number; typical: TypicalTimesReply | null; trayPrice: TrayJob["price"] | undefined; paysInDollars: boolean;
-  selected: boolean; onSelect: () => void; onOpen: () => void; onReuse: () => void;
+  selected: boolean; onSelect: () => void; onOpen: () => void; onReuse: () => void; onMenu?: (event: MouseEvent) => void;
 }) {
   const g = tile.source;
   const done = g.status === "succeeded" && tile.url;
@@ -95,7 +99,7 @@ function Tile({ tile, width, now, typical, trayPrice, paysInDollars, selected, o
   const style = { flex: `0 0 ${width}px` } as CSSProperties;
   return (
     <div className="v12-mk-tile" style={style} data-kind={tile.kind} data-state={state?.stage ?? "ready"} data-selected={selected ? "" : undefined}
-      data-testid="v12-make-tile" data-take={tile.id}>
+      data-testid="v12-make-tile" data-take={tile.id} onContextMenu={onMenu}>
       {done ? (
         <>
           {tile.kind === "image" ? (
@@ -108,11 +112,15 @@ function Tile({ tile, width, now, typical, trayPrice, paysInDollars, selected, o
               <svg width="28" height="28" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M2 8v0M4.5 5.5v5M7 3v10M9.5 5v6M12 6.5v3M14 8v0" /></svg>
             </span>
           )}
-          <button type="button" className="v12-mk-open" onClick={onOpen} aria-label={`Open: ${tile.prompt}`} data-testid="v12-make-tile-open" />
+          <Tooltip name={tile.type} line="Open it in the viewer; right-click for more.">
+            <button type="button" className="v12-mk-open" onClick={onOpen} aria-label={`Open: ${tile.prompt}`} data-testid="v12-make-tile-open" />
+          </Tooltip>
           {tile.kind === "video" ? <span className="v12-mk-play" aria-hidden="true">▶</span> : null}
-          <button type="button" className="v12-mk-check" onClick={onSelect} aria-pressed={selected} title="Select — Add this result to a selection." aria-label="Select" data-testid="v12-make-tile-select">
-            {selected ? "✓" : ""}
-          </button>
+          <Tooltip name="Select" line="Add this result to a selection." named>
+            <button type="button" className="v12-mk-check" onClick={onSelect} aria-pressed={selected} aria-label="Select" data-testid="v12-make-tile-select">
+              {selected ? "✓" : ""}
+            </button>
+          </Tooltip>
           <a className="v12-mk-download" href={downloadHref(tile.url!)} download title="Download — The full-resolution original of this take. Free." aria-label="Download, free" data-testid="v12-make-tile-download">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 2v9M4.5 7.5L8 11l3.5-3.5M3 13h10" /></svg>
           </a>
