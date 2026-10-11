@@ -126,6 +126,8 @@ async function scope(ws: string, capUsd: number | null, fn: () => Promise<void>,
   expect(row.allowanceUsd).toBe(capUsd);
   const original = globalThis.fetch;
   providerCalls = 0;
+  /* The catalogue is offline here: a list another spec read earlier in this worker must not stand in for it. */
+  (await import("../../lib/catalog")).forgetCatalogCache();
   globalThis.fetch = async (input: string | URL | Request) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (!/\/models(?:[?#]|$)/.test(url)) providerCalls++;

@@ -61,8 +61,14 @@ export function wallTile(g: Generation): WallTile | null {
   return { id: g.id, url, media: g.kind, type, title, prompt, remixBlock: recreateBlock(g), source: g };
 }
 
-/** The newest stored stills and clips, newest first, at most WALL_TILES. */
-export function wallTiles(list: readonly Generation[]): WallTile[] {
+/** How many takes the wall keeps in reserve behind its six: a take whose picture cannot be loaded is left out and the next one takes its place. */
+export const WALL_CANDIDATES = WALL_TILES * 2;
+
+/** A video tile's address: the clip's first moments, so a browser that loads only its header still draws a frame (a still picture, never a black box). */
+export const clipFrameUrl = (url: string): string => (url.includes("#") ? url : `${url}#t=0.1`);
+
+/** The newest stored stills and clips, newest first, at most `cap` (the wall's six, or its reserve). */
+export function wallTiles(list: readonly Generation[], cap = WALL_TILES): WallTile[] {
   const seen = new Set<string>();
   const out: WallTile[] = [];
   for (const g of [...list].sort((a, b) => b.createdAt - a.createdAt)) {
@@ -70,7 +76,7 @@ export function wallTiles(list: readonly Generation[]): WallTile[] {
     seen.add(g.id);
     const tile = wallTile(g);
     if (tile) out.push(tile);
-    if (out.length === WALL_TILES) break;
+    if (out.length === cap) break;
   }
   return out;
 }
