@@ -9,19 +9,21 @@ import { Btn, Note, Row, Section } from "../parts";
  * Individual (Explore, Create, Master, each with its line), Business (from the lowest level per seat, its three levels) and Enterprise ("Get in
  * touch"). Every name, price and credit figure is read from the platform layer's plans that GET /api/billing already returned (the defaults
  * when it has none); nothing is typed here. Display only: Choose says what the desktop's says, and nothing is charged or changed.
+ * They are their own view, opened from Plan & credits' "See plans" row, so the credits page itself holds no dollar but the balance row's and the top-up
+ * label (the ledger spec's strayDollars floor).
  */
 const money = (usd: number) => `$${usd.toLocaleString("en-US")}`;
 const count = (n: number) => n.toLocaleString("en-US");
 export const PLAN_NOTE = "Checkout is not open yet. Nothing was changed.";
 
-export function PlanRows({ plans, current }: { plans: readonly unknown[] | undefined; current: string | null }) {
+export function PlanRows({ plans, current, onBack }: { plans: readonly unknown[] | undefined; current: string | null; onBack: () => void }) {
   const layer: PlanDef[] = plans && plans.length ? cleanPlans(plans) : DEFAULT_PLANS;
   const individual = individualCards(layer);
   const levels = businessLevels(layer);
   /* The note shows in the section whose button was tapped, and is brought into view: on a phone the other sections are off screen. */
   const [note, setNote] = useState<"individual" | "business" | "enterprise" | null>(null);
   const noteRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (note) noteRef.current?.scrollIntoView({ block: "nearest" }); }, [note]);
+  useEffect(() => { if (note) noteRef.current?.scrollIntoView({ block: "center" }); }, [note]);
   const shown = (where: "individual" | "business" | "enterprise") => (note === where ? <div ref={noteRef}><Note ok text={PLAN_NOTE} testId="settings-plan-choose-note" /></div> : null);
   const choose = (id: string, where: "individual" | "business") => (
     <Btn disabled={current === id} onClick={() => setNote(where)} testId="settings-plan-choose">{current === id ? "Current plan" : "Choose"}</Btn>
@@ -29,6 +31,7 @@ export function PlanRows({ plans, current }: { plans: readonly unknown[] | undef
   return (
     <>
       <Section label="Plans" meta="Monthly · checkout is not open yet" testId="settings-plans-individual">
+        <Row name="Plan & credits"><Btn onClick={onBack} testId="settings-plans-back">Back</Btn></Row>
         {individual.map((card) => (
           <Row key={card.id} name={card.name} line={card.blurb ?? undefined} value={`${money(card.priceUsd)}/month · ${count(card.credits)} credits`} testId="settings-plan-card">
             {choose(card.id, "individual")}

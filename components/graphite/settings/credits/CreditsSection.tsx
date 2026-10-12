@@ -43,6 +43,7 @@ export function CreditsSection({ account, open }: { account: WorkspaceAccount | 
   const ledger = useRead<unknown>(inCredits ? `/api/usage?rows=1&month=${month}` : null);
   const totals = monthTotalsOf(ledger.data);
 
+  const [plansView, setPlansView] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const writing = useRef(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -97,6 +98,9 @@ export function CreditsSection({ account, open }: { account: WorkspaceAccount | 
     </button>
   ) : null;
 
+  /* The plans are their own view (a tap from the Plan section), so this page carries no plan price. */
+  if (plansView && inCredits && billing.data) return <PlanRows plans={billing.data.plans} current={billing.data.subscription?.planId ?? null} onBack={() => setPlansView(false)} />;
+
   return (
     <>
       <Section label="Balance" meta={inCredits ? "one wallet for the workspace" : undefined} action={topUp} testId="settings-balance">
@@ -122,13 +126,13 @@ export function CreditsSection({ account, open }: { account: WorkspaceAccount | 
         {billing.error ? <Problem text={billing.error} onRetry={() => void billing.read()} /> : !billing.data ? <Row name="Reading the plan…" /> : null}
         {plan.included != null ? <Row name="Included" line="per month · no rollover" value={creditsText(plan.included)} valueTitle={creditsUsd(plan.included, rate)} testId="settings-plan-included" /> : null}
         {plan.status ? <Row name="Status" value={plan.status} /> : null}
+        {inCredits && billing.data ? <Row name="Plans" testId="settings-plans-row"><Btn onClick={() => setPlansView(true)} testId="settings-plans-open">See plans</Btn></Row> : null}
         {billing.data ? (
           <Row name={plan.renews ? plan.renews.word : "Plan"} value={plan.renews?.date} line={plan.renews ? undefined : "Plans are chosen on the billing page"} testId="settings-plan-renews">
             {billing.data.canManage ? <LinkBtn href="/billing" testId="settings-change-plan">{billing.data.subscription?.planId ? "Change plan" : "Choose a plan"}</LinkBtn> : null}
           </Row>
         ) : null}
       </Section>
-      {inCredits && billing.data ? <PlanRows plans={billing.data.plans} current={billing.data.subscription?.planId ?? null} /> : null}
 
       {applies ? (
         <Folded name="packs" open={open} label="Packs and requests" meta={waiting.length ? `${waiting.length} waiting` : "a request, approved by the platform"}>

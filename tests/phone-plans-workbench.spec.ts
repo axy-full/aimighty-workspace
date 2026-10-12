@@ -27,16 +27,26 @@ async function open(page: Page, planId: string) {
   });
   await page.goto("/suites?view=workspace&tab=credits");
   await expect(page.getByTestId("settings-title")).toHaveText("Plan & credits", { timeout: 90_000 });
-  await expect(page.getByTestId("settings-plans-individual")).toBeVisible({ timeout: 60_000 });
+  /* The credits page itself carries no plan price (the ledger spec's strayDollars floor): the plans are one tap away, in their own view. */
+  await expect(page.getByTestId("settings-plans-open")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("settings-plans-individual")).toHaveCount(0);
+  expect(await page.getByTestId("settings-view").innerText()).not.toMatch(/\/month|per seat/);
 }
+const seePlans = async (page: Page) => { await page.getByTestId("settings-plans-open").click(); await expect(page.getByTestId("settings-plans-individual")).toBeVisible(); };
 
 test.describe("phone", () => {
   test.beforeEach(({}, info) => test.skip(!PHONES.includes(info.project.name), "phone sizes"));
 
   test("the plans are the desktop's: Individual, Business, Enterprise; a retired plan's price is never shown", async ({ page }, info) => {
     await open(page, "studio");
-    const view = page.getByTestId("settings-view");
-    const text = await view.innerText();
+    /* The retired plan's name, and nothing of its price, on the credits page. */
+    await expect(page.getByTestId("settings-plan")).toContainText("Studio");
+    const credits = await page.getByTestId("settings-view").innerText();
+    expect(credits).not.toMatch(/Studio\s*·\s*\$/);
+    expect(credits).not.toContain("$49");
+    expect(await smallTargets(page, '[data-testid="settings-view"]'), "credits page targets under 44x44").toEqual([]);
+    await seePlans(page);
+    const text = await page.getByTestId("settings-view").innerText();
     /* Individual: name, price a month and credits, from the one plan source. */
     const individual = page.getByTestId("settings-plan-card");
     await expect(individual).toHaveCount(INDIVIDUAL_CARDS.length);
@@ -54,9 +64,7 @@ test.describe("phone", () => {
     await expect(page.getByTestId("settings-plans-business")).toContainText(`from $${BUSINESS_FROM_USD} per seat`);
     await expect(page.getByTestId("settings-plan-enterprise")).toContainText(ENTERPRISE.blurb);
     await expect(page.getByTestId("settings-plan-enterprise").getByRole("button", { name: ENTERPRISE.line })).toBeVisible();
-    /* The retired plan's name, and nothing of its price, anywhere on the page. */
-    await expect(page.getByTestId("settings-plan")).toContainText("Studio");
-    expect(text).not.toMatch(/Studio\s*·\s*\$/);
+    /* The plans view holds no retired price either. */
     expect(text).not.toContain("$49");
     /* Display only: Choose says so and changes nothing (no write goes out). */
     const writes: string[] = [];
@@ -83,9 +91,19 @@ test.describe("phone", () => {
     if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.getByTestId("settings-plans-individual").scrollIntoViewIfNeeded(); await page.waitForTimeout(500); await page.screenshot({ path: path.join(SHOTS, `plans-${info.project.name.replace("workbench-", "")}.png`), animations: "disabled" }); await page.getByTestId("settings-plans-enterprise").scrollIntoViewIfNeeded(); await page.waitForTimeout(500); await page.screenshot({ path: path.join(SHOTS, `plans-business-${info.project.name.replace("workbench-", "")}.png`), animations: "disabled" }); }
   });
 
+  test("Back returns to Plan & credits, which holds no plan price", async ({ page }) => {
+    await open(page, "studio");
+    await seePlans(page);
+    await page.getByTestId("settings-plans-back").click();
+    await expect(page.getByTestId("settings-plans-individual")).toHaveCount(0);
+    await expect(page.getByTestId("settings-balance")).toBeVisible();
+    await expect(page.getByTestId("settings-plan")).toContainText("Studio");
+  });
+
   test("a workspace on one of the new plans sees it as Current plan", async ({ page }) => {
     await open(page, "create");
     await expect(page.getByTestId("settings-plan")).toContainText("Create");
+    await seePlans(page);
     const create = page.getByTestId("settings-plan-card").filter({ hasText: "Create" });
     await expect(create.getByRole("button", { name: "Current plan" })).toBeDisabled();
     await expect(page.getByTestId("settings-plan-card").filter({ hasText: "Explore" }).getByRole("button", { name: "Choose" })).toBeEnabled();
