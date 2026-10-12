@@ -1,3 +1,4 @@
+import { mayReachProject } from "@/lib/draftProject";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -28,7 +29,8 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
   });
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const r = rs.rows[0] as any;
-  if (!r) return NextResponse.json({ error: "No such project." }, { status: 404 });
+  /* A private board (`prj_wb_…`) is its owner's alone (lib/draftProject.ts): to anyone else it is as absent as an unknown id. */
+  if (!r || !(await mayReachProject(got.user, String(r.id), "read"))) return NextResponse.json({ error: "No such project." }, { status: 404 });
   /* The cap the gate enforces: its own, else the workspace's budget per production (lib/caps.ts projectCap). */
   const inCredits = creditsApply(requireTenant());
   const capped = effectiveCapRow({ capCredits: r.cap_credits == null ? null : Number(r.cap_credits) }, inCredits ? await workspaceBudget() : null, inCredits);
@@ -48,6 +50,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
+  /* A private board's project is its owner's alone: to anyone else it is as absent as an unknown id (lib/draftProject.ts). */
+  if (!(await mayReachProject(got.user, id))) return NextResponse.json({ error: "No such project." }, { status: 404 });
   const body = await req.json().catch(() => ({}));
   /* The cap, in the workspace's unit, and the unlock past it: an admin's alone, and a person's: an API or MCP token
      (even one an admin made) never sets a budget or unlocks one (CLAUDE.md rule 14: spend limits are people-only). */
@@ -109,6 +113,8 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
+  /* A private board's project is its owner's alone: to anyone else it is as absent as an unknown id (lib/draftProject.ts). This comes first. */
+  if (!(await mayReachProject(got.user, id))) return NextResponse.json({ error: "No such project." }, { status: 404 });
   /* Deleting a project is its owner's or an admin's (lib/workAccess.ts); an unknown id is answered as it always was ("No such project."). */
   if ((await db().execute({ sql: `SELECT 1 FROM projects WHERE id = ?`, args: [id] })).rows.length && !(await mayChangeProject(got.user, id)))
     return NextResponse.json({ error: NOT_YOURS.project }, { status: 403 });

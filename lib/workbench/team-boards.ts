@@ -12,6 +12,7 @@
  * The platform owner reads as "Particl support" with an opaque id outside the house (lib/platformOwnerPrivacy.ts), as on the Team page.
  */
 import { db } from "@/lib/db";
+import { DRAFT_PROJECT_PREFIX, mappedId, TEAM_SHARED_SQL } from "@/lib/draftProject";
 import { platformDb, platformReady } from "@/lib/platform";
 import { ownerMaskFor, resolveMemberId, supportMemberId } from "@/lib/platformOwnerPrivacy";
 import type { TenantWorkspace } from "@/lib/tenant";
@@ -43,8 +44,8 @@ async function ownerOf(ws: Pick<TenantWorkspace, "id">, people: Map<string, Pers
 
 const KIND = "CASE WHEN json_valid(body) THEN COALESCE(NULLIF(json_extract(body,'$.boardKind'),''),CASE WHEN NULLIF(json_extract(body,'$.marketingBrief'),'') IS NOT NULL OR NULLIF(json_extract(body,'$.moleculr'),'') IS NOT NULL THEN 'ads' END) END AS kind";
 
-/** What makes a draft shared: the author's flag in its own JSON (and a draft whose JSON can't be read is private). */
-const SHARED = "json_valid(body) AND json_extract(body,'$.teamShared') = 1";
+/** What makes a draft shared: the author's flag in its own JSON (and a draft whose JSON can't be read is private). The one definition, shared with the project gate (lib/draftProject.ts). */
+const SHARED = TEAM_SHARED_SQL;
 
 /** The boards shared with the team by the workspace's active members, newest first, the caller's own marked (a private draft is in no one's list). */
 export async function listTeamBoards(ws: Pick<TenantWorkspace, "id">, me: string, options: { kinds?: boolean } = {}): Promise<TeamBoard[]> {
@@ -104,4 +105,19 @@ export async function findTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string,
     if (draft && draft.project.teamShared === true) return { ...draft, owner };
   }
   return null;
+}
+
+/** The SHARED board whose own production project is `productionId` (lib/draftProject.ts): its draft id and its maker as a teammate sees them; null when that board is not shared or its maker is not an active member. */
+export async function sharedBoardOfProduction(ws: Pick<TenantWorkspace, "id">, productionId: string): Promise<{ draftId: string; owner: BoardOwner } | null> {
+  await workbenchReady();
+  const rows = (await db().execute({ sql: `SELECT owner, project_id FROM workbench_projects WHERE ${SHARED}`, args: [] })).rows;
+  const hit = rows.find((row) => mappedId(DRAFT_PROJECT_PREFIX, ws.id, String(row.owner), String(row.project_id)) === productionId);
+  if (!hit) return null;
+  const owner = await ownerOf(ws, await activeMembers(ws), String(hit.owner));
+  return owner ? { draftId: String(hit.project_id), owner } : null;
+}
+
+/** The maker of the SHARED board whose own production project is `productionId`, as a teammate sees them. */
+export async function sharedBoardOwnerOf(ws: Pick<TenantWorkspace, "id">, productionId: string): Promise<BoardOwner | null> {
+  return (await sharedBoardOfProduction(ws, productionId))?.owner ?? null;
 }

@@ -107,6 +107,7 @@ async function listRoutes(ws: { current: unknown }) {
     "@/lib/platform": await import("../../lib/platform"),
     "@/lib/planLimits": await import("../../lib/planLimits"),
     "@/lib/archive": await import("../../lib/archive"),
+    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/caps": await import("../../lib/caps"),
     "@/lib/workbench/request-scope": await import("../../lib/workbench/request-scope"),
     /* Signed in as an admin of whichever workspace the test has chosen. */
