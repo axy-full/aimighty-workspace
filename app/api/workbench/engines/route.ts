@@ -1,9 +1,10 @@
 import { withTenant, requireUser } from '@/lib/auth';
 import { modelConfigured } from '@/lib/providers';
-import { MediaQuoteError, workbenchGenerationModels, referencePrices, quoteWorkbenchMedia, rendersSound, workbenchRate, workbenchUse, workbenchAudioRates, NO_REFERENCES, type RateAt, type ReferencePrices } from '@/lib/workbench/media-quote';
+import { MediaQuoteError, workbenchGenerationModels, referencePrices, quoteWorkbenchMedia, quoteWorkbenchMediaAtCost, rendersSound, workbenchRate, workbenchUse, workbenchAudioRates, NO_REFERENCES, type RateAt, type ReferencePrices } from '@/lib/workbench/media-quote';
 import { requireReadySoulIdentity } from '@/lib/soulIdentities';
 import { requireTenant } from '@/lib/tenant';
 import { cinemaSoundOffered } from '@/lib/cinemaSoundPricing';
+import { creditsApply, quotedCredits } from '@/lib/credits';
 
 export const GET = withTenant(async (req: Request) => {
   const got = await requireUser();
@@ -12,6 +13,8 @@ export const GET = withTenant(async (req: Request) => {
   const configured = workbenchGenerationModels().filter(model => modelConfigured(model));
   /* Cinema Studio's Sound switch: offered once its sound is priced, and in the house workspace (lib/cinemaSoundPricing.ts). */
   const soundHere = cinemaSoundOffered(requireTenant());
+  /* The house workspace is never billed in credits and sees every price at the engine's cost (lib/houseWorkspace.ts): its figures also carry the engine's dollars, the ones admission reserves. Credit workspaces never receive them. */
+  const atCost = !creditsApply(requireTenant());
   const listed = (at: RateAt, refs: ReferencePrices | null) => configured.map(model => ({ id: model.id, label: model.label, kind: model.kind, family: model.family,
     resolutions: model.resolutions, ratios: model.ratios, durations: model.durations, untestedResolutions: model.untestedResolutions,
     maxReferenceImages: model.maxReferenceImages, maxReferenceVideos: model.maxReferenceVideos, soulIdentity: model.soulIdentity || undefined, marketing: model.marketing || undefined,
@@ -27,7 +30,7 @@ export const GET = withTenant(async (req: Request) => {
        and uploadId/genId/imageRefs its references — each engine then resolves them as composerSettings does. */
     const text = (name: string) => { const v = q.get(name); return v && v.length <= 24 ? v : undefined; };
     const pickDuration = Number(q.get('pickDuration'));
-    const at: RateAt = { aspect: text('aspect'), picks: { ratio: text('pickRatio'), resolution: text('pickResolution'), ...(Number.isInteger(pickDuration) && pickDuration > 0 ? { duration: pickDuration } : {}), ...(q.get('pickDraft') === '1' ? { draft: true } : {}), ...(q.get('pickSound') === '1' ? { generateAudio: true } : {}) }, soundOffered: soundHere };
+    const at: RateAt = { aspect: text('aspect'), picks: { ratio: text('pickRatio'), resolution: text('pickResolution'), ...(Number.isInteger(pickDuration) && pickDuration > 0 ? { duration: pickDuration } : {}), ...(q.get('pickDraft') === '1' ? { draft: true } : {}), ...(q.get('pickSound') === '1' ? { generateAudio: true } : {}) }, soundOffered: soundHere, atCost };
     const references = [...q.getAll('uploadId').map(uploadId => ({ uploadId })), ...q.getAll('genId').map(genId => ({ genId }))];
     const imageRefs = Number(q.get('imageRefs') || 0);
     /* References that cannot be priced leave every rate empty: Generate then says why. */
@@ -52,8 +55,12 @@ export const GET = withTenant(async (req: Request) => {
     const refPrices = await referencePrices(references, Number(q.get('imageRefs') || q.get('refs') || 0));
     /* `audio=1`: the take is asked for with sound (Cinema Studio's Sound switch); priced as the engine bills it, and
        refused for Cinema Studio where its sound is not offered. */
-    const quote = quoteWorkbenchMedia(model, { resolution: q.get('resolution') || model.resolutions[0], ratio: q.get('ratio') || '16:9', duration: Number(q.get('duration') || 5), audio: q.get('audio') === '1', soundOffered: soundHere }, refPrices);
-    return Response.json({ models, ...quote }, { headers });
+    const quote = (atCost ? quoteWorkbenchMediaAtCost : quoteWorkbenchMedia)(model, { resolution: q.get('resolution') || model.resolutions[0], ratio: q.get('ratio') || '16:9', duration: Number(q.get('duration') || 5), audio: q.get('audio') === '1', soundOffered: soundHere }, refPrices);
+    /* The house is approved in what admission reserves: the engine's dollars counted in credits at no margin (lib/credits.ts › quotedCredits, the
+       figure /api/generate/quote answers). The rate card's credits carry the customer margin, so the composer's gate (the figure on the button
+       against the fresh quote) never matched and the house's Make could not be pressed ("The price is now N cr"). A held, approximate take keeps its own. */
+    const answer = atCost && !('approximate' in quote && quote.approximate) && 'usd' in quote && typeof quote.usd === 'number' && Number.isFinite(quote.usd) ? { ...quote, credits: quotedCredits(quote.usd) } : quote;
+    return Response.json({ models, ...answer }, { headers });
   } catch (error) {
     return Response.json({ error: error instanceof MediaQuoteError ? error.message : 'The reference estimate could not be read.' }, { status: error instanceof MediaQuoteError ? error.status : 500, headers });
   }

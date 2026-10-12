@@ -14,6 +14,7 @@ import { engineMock } from "@/lib/mock";
 import { dispatchMode } from "@/lib/dispatch";
 import { recentDispatches } from "@/lib/dispatch-log";
 import { deployedCommit } from "@/lib/deployment";
+import { vercelIdentityInProduction } from "@/lib/vercelGuard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -117,7 +118,9 @@ export const GET = recoveryRoute(async function GET(req: Request) {
   const ok =
     database !== "unreachable" &&
     !storage.endsWith("-BROKEN") &&
-    storage !== "missing";
+    storage !== "missing" &&
+    /* A production server with a Vercel identity fails its health check (lib/vercelGuard.ts): a deploy that has one is rolled back, not served. */
+    vercelIdentityInProduction().length === 0;
   if (!full) {
     return NextResponse.json(
       {
@@ -188,6 +191,8 @@ export const GET = recoveryRoute(async function GET(req: Request) {
           process.env.VAPID_PRIVATE_KEY &&
           process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
         ),
+        /* Names only, and only to a signed-in person: the Vercel identity variables set in production, which there must be none of. */
+        ...(vercelIdentityInProduction().length ? { vercelIdentityInProduction: vercelIdentityInProduction() } : {}),
         region: process.env.VERCEL_REGION ?? "local",
         commit: (deployedCommit() ?? "local").slice(0, 7),
       },
