@@ -18,7 +18,7 @@ export function JoinGallery() {
   return (
     <OverlayProvider>
       <ToastProvider bottom={24}>
-        <JoinProvider compact={compact || q.get("phone") === "1"} back="/v12-join"
+        <JoinProvider compact={compact || q.get("phone") === "1"} back="/v12-join" google={q.get("google") === "1"}
           initial={{ open: isJoinReason(join), reason, requested: q.get("requested") === "1", prompt: q.get("prompt") ?? "", detail: q.get("detail"),
             fields: { name: "", email: "", company: "", role: "", size: "", want: q.get("prompt") ?? "" } }}>
           <div className="v12" style={{ minHeight: "100dvh", padding: 24, background: "var(--gx-root)", color: "var(--gx-text)", fontFamily: "var(--gx-font)", fontSize: 13 }}>
