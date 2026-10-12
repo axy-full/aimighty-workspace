@@ -5,7 +5,7 @@ import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
 import { z } from 'zod';
 import { engineMock } from '../mock';
 import type { GatewayReply } from '../gateway';
-import { languageModel } from '../language-provider';
+import { finalToolStep, languageModel } from '../language-provider';
 import { SUITE_AGENT_COPY, suiteAgentResultSchema, type SuiteAgentResult } from './suite-agent-plan';
 import type { SuiteId } from '../suites';
 import { ATOMIK_IMAGE_TOKENS, ATOMIK_MAX_VISUALS } from './atomik-reference-types';
@@ -126,7 +126,7 @@ export function createSuiteAgent(envelope: SuiteAgentEnvelope, model: LanguageMo
       budget.assertWithinBudget();
       if (stepNumber >= SUITE_AGENT_STEPS || suiteAgentInputTokens(envelope, messages) > envelope.inputTokenBudget) throw new SuiteAgentBudgetError();
       // A provider may ignore toolChoice, so final-step tools are also removed.
-      return stepNumber >= SUITE_AGENT_STEPS - 1 ? { toolChoice: 'none' as const, activeTools: [] } : {};
+      return stepNumber >= SUITE_AGENT_STEPS - 1 ? finalToolStep(model) : {};
     },
     onStepFinish: async step => {
       await onStep?.({ step: ++completed, tools: step.toolCalls.map(call => call.toolName), inputTokens: step.usage.inputTokens, outputTokens: step.usage.outputTokens });

@@ -24,8 +24,12 @@ export type EnhancerHost = {
   setAuto: (value: boolean) => void;
   /** The quoted price, or null while it is unknown. */
   credits: number | null;
+  /** The house workspace alone (which pays in dollars at cost): the same quote in the text model's own dollars, an estimate the real cost cannot pass. Null for everyone else, and while unknown. */
+  usd: number | null;
   /** Why Enhance cannot run right now, said on the control. */
   blocked: string | null;
+  /** The enhancer was asked for a price and could not give one (not "still pricing"): why. The new interface sends the words as written then. */
+  unavailable: string | null;
   busy: boolean;
   enhanced: string | null;
   provider: EnhancerProvider | null;
@@ -44,11 +48,13 @@ const bodyOf = (input: EnhancerInput) => ({ prompt: input.prompt.trim(), mode: i
 export function useEnhancer(input: EnhancerInput): EnhancerHost {
   const scoped = useScopedFetch();
   const [auto, setAuto] = useState(false);
-  const [quote, setQuote] = useState<{ key: string; credits: number | null; reason: string | null } | null>(null);
+  const [quote, setQuote] = useState<{ key: string; credits: number | null; usd: number | null; reason: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ prompt: string; provider: EnhancerProvider; charged: number | null; body: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  /* The house workspace pays in dollars at cost: its enhancement is priced in the text model's own dollars, and a quote without them is no quote. */
+  const inDollars = useSession().rates.unit === "usd";
   const words = input.prompt.trim();
   const raw = isRawPrompt(input.prompt);
   const key = JSON.stringify(bodyOf(input));
@@ -62,20 +68,22 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
     const timer = setTimeout(async () => {
       try {
         const response = await scoped("/api/prompt/enhance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...JSON.parse(key), quoteOnly: true }) });
-        const json = await response.json().catch(() => null) as { estimateCredits?: number; error?: string } | null;
+        const json = await response.json().catch(() => null) as { estimateCredits?: number; estimateUsd?: number; error?: string } | null;
         if (!live) return;
-        setQuote(response.ok && typeof json?.estimateCredits === "number"
-          ? { key, credits: json.estimateCredits, reason: null }
-          : { key, credits: null, reason: json?.error ?? "The enhancer cannot be priced right now." });
+        const usd = typeof json?.estimateUsd === "number" && Number.isFinite(json.estimateUsd) && json.estimateUsd >= 0 ? json.estimateUsd : null;
+        setQuote(response.ok && typeof json?.estimateCredits === "number" && (!inDollars || usd != null)
+          ? { key, credits: json.estimateCredits, usd: inDollars ? usd : null, reason: null }
+          : { key, credits: null, usd: null, reason: json?.error ?? "The enhancer cannot be priced right now." });
       } catch (caught) {
-        if (live) setQuote({ key, credits: null, reason: caught instanceof Error ? caught.message : "The enhancer cannot be priced right now." });
+        if (live) setQuote({ key, credits: null, usd: null, reason: caught instanceof Error ? caught.message : "The enhancer cannot be priced right now." });
       }
     }, QUOTE_DELAY_MS);
     return () => { live = false; clearTimeout(timer); };
-  }, [key, quotable, scoped]);
+  }, [key, quotable, scoped, inDollars]);
 
   const current = quote && quote.key === key ? quote : null;
   const credits = quotable ? current?.credits ?? null : null;
+  const usd = quotable ? current?.usd ?? null : null;
   const blocked = off ? off
     : !words ? "Write a few words first."
     : raw ? "raw: is sent as written."
@@ -119,7 +127,7 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
   const shown = result && result.body === key ? result : null;
 
   return {
-    auto: auto && !off, setAuto, credits, blocked, busy, error,
+    auto: auto && !off, setAuto, credits, usd, blocked, unavailable: quotable ? current?.reason ?? null : null, busy, error,
     enhanced: shown?.prompt ?? null, provider: shown?.provider ?? null, charged: shown?.charged ?? null,
     enhance: () => void enhance(), run: enhance, dismiss,
   };

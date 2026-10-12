@@ -1,14 +1,14 @@
 "use client";
 import type { CSSProperties } from "react";
 import { useSession } from "@/lib/session";
-import { useMoney } from "@/lib/price";
+import { fmtLedgerUsd } from "@/lib/usageLedgerTerms";
 import { creditRate } from "@/lib/shell/price-words";
 import { priceDisplay, type PriceDisplay, type Quote } from "@/lib/v12/quote";
 import type { UnpricedId } from "@/lib/v12/unpriced";
 
 /**
  * A price in the new interface: "N cr", "up to N cr" or "free", with its dollar value on hover at the public price of a
- * credit. The house workspace, which pays in dollars, sees dollars, worded as today's screens word them (lib/price.ts).
+ * credit. The house workspace, which pays in dollars, sees the engine's dollars worded as its hold and its bill are (lib/usageLedgerTerms.ts fmtLedgerUsd: "$0.045", "$0.840"), so the same take reads the same figure everywhere.
  *
  * The figure is always the server's, from `useQuote` (lib/v12/useQuote.ts) or a figure the server already gave
  * (`knownQuote`). While it loads the price reads "…", and when it fails "—" with the reason on hover: never a number.
@@ -25,8 +25,7 @@ export type PriceProps = { className?: string; style?: CSSProperties; testId?: s
 
 export function Price(props: PriceProps) {
   const { rates } = useSession();
-  const money = useMoney();
-  const display = priceDisplay(props.quote, props.reason, { creditUsd: creditRate(rates.creditUsd), dollars: money.price });
+  const display = priceDisplay(props.quote, props.reason, { creditUsd: creditRate(rates.creditUsd), dollars: fmtLedgerUsd });
   return <PriceView display={display} className={props.className} style={props.style} testId={props.testId} />;
 }
 

@@ -1,8 +1,7 @@
-import { vendorKey } from '@/lib/vendorKeys';
+import { languageReachable } from '@/lib/language-provider';
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 
-import { gatewayReachable } from "@/lib/gateway";
 import { requestEffort, resolveModel } from "@/lib/atomik";
 
 import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
@@ -67,7 +66,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const brief = String(body.brief ?? "").trim().slice(0, 2000);
   const toneIn = String(body.tone ?? "").trim().slice(0, 300);
   if (!brief) return NextResponse.json({ error: "Write a few words first." }, { status: 400 });
-  if (!gatewayReachable() && !vendorKey('openai')) {
+  if (!languageReachable()) {
     return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
   }
 

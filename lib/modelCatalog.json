@@ -8885,5 +8885,222 @@
       ]
     }
   ],
-  "missing": []
+  "missing": [],
+  "providerPriced": [
+    {
+      "providerId": "anthropic",
+      "pricedAt": "2026-10-11",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "id": "anthropic/claude-opus-5.5",
+      "name": "Claude Opus 5.5",
+      "owner": "anthropic",
+      "type": "language",
+      "contextWindow": 1000000,
+      "maxTokens": 128000,
+      "inputModalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "outputModalities": [
+        "text"
+      ],
+      "tags": [
+        "reasoning",
+        "tool-use",
+        "explicit-caching",
+        "file-input",
+        "vision",
+        "structured-output"
+      ],
+      "supportedParameters": [
+        "max_tokens",
+        "stop",
+        "tools",
+        "tool_choice",
+        "reasoning",
+        "include_reasoning",
+        "response_format",
+        "structured_outputs"
+      ],
+      "reasoningOptions": [
+        {
+          "type": "effort",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        }
+      ],
+      "temperature": false,
+      "description": "Claude Opus 5.5, priced from Anthropic's list prices: $4 / $20 per million input / output tokens, cache hits $0.20, 5-minute cache writes $5.",
+      "pricing": {
+        "input": "0.000004",
+        "output": "0.00002",
+        "input_cache_read": "0.0000002",
+        "input_cache_write": "0.000005"
+      }
+    },
+    {
+      "providerId": "anthropic",
+      "pricedAt": "2026-10-11",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "id": "anthropic/claude-sonnet-5.5",
+      "name": "Claude Sonnet 5.5",
+      "owner": "anthropic",
+      "type": "language",
+      "contextWindow": 1000000,
+      "maxTokens": 128000,
+      "inputModalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "outputModalities": [
+        "text"
+      ],
+      "tags": [
+        "reasoning",
+        "tool-use",
+        "explicit-caching",
+        "file-input",
+        "vision",
+        "structured-output"
+      ],
+      "supportedParameters": [
+        "max_tokens",
+        "stop",
+        "tools",
+        "tool_choice",
+        "reasoning",
+        "include_reasoning",
+        "response_format",
+        "structured_outputs"
+      ],
+      "reasoningOptions": [
+        {
+          "type": "effort",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        }
+      ],
+      "temperature": false,
+      "description": "Claude Sonnet 5.5, priced from Anthropic's list prices: $2 / $10 per million input / output tokens, cache hits $0.10, 5-minute cache writes $2.50.",
+      "pricing": {
+        "input": "0.000002",
+        "output": "0.00001",
+        "input_cache_read": "0.0000001",
+        "input_cache_write": "0.0000025"
+      }
+    },
+    {
+      "providerId": "anthropic",
+      "pricedAt": "2026-10-11",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "id": "anthropic/claude-haiku-5.5",
+      "name": "Claude Haiku 5.5",
+      "owner": "anthropic",
+      "type": "language",
+      "contextWindow": 1000000,
+      "maxTokens": 128000,
+      "inputModalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "outputModalities": [
+        "text"
+      ],
+      "tags": [
+        "reasoning",
+        "tool-use",
+        "explicit-caching",
+        "file-input",
+        "vision",
+        "structured-output"
+      ],
+      "supportedParameters": [
+        "max_tokens",
+        "stop",
+        "tools",
+        "tool_choice",
+        "reasoning",
+        "include_reasoning",
+        "response_format",
+        "structured_outputs"
+      ],
+      "reasoningOptions": [
+        {
+          "type": "effort",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        }
+      ],
+      "temperature": false,
+      "description": "Claude Haiku 5.5, priced from Anthropic's list prices: $0.10 / $0.50 per million input / output tokens for prompts up to 100,000 tokens, $0.50 / $2.50 over; cache hits $0.01 / $0.05, 5-minute cache writes $0.125 / $0.625.",
+      "pricing": {
+        "input": "0.0000001",
+        "input_tiers": [
+          {
+            "cost": "0.0000001",
+            "min": 0,
+            "max": 100001
+          },
+          {
+            "cost": "0.0000005",
+            "min": 100001
+          }
+        ],
+        "output": "0.0000005",
+        "output_tiers": [
+          {
+            "cost": "0.0000005",
+            "min": 0,
+            "max": 100001
+          },
+          {
+            "cost": "0.0000025",
+            "min": 100001
+          }
+        ],
+        "input_cache_read": "0.00000001",
+        "input_cache_read_tiers": [
+          {
+            "cost": "0.00000001",
+            "min": 0,
+            "max": 100001
+          },
+          {
+            "cost": "0.00000005",
+            "min": 100001
+          }
+        ],
+        "input_cache_write": "0.000000125",
+        "input_cache_write_tiers": [
+          {
+            "cost": "0.000000125",
+            "min": 0,
+            "max": 100001
+          },
+          {
+            "cost": "0.000000625",
+            "min": 100001
+          }
+        ]
+      }
+    }
+  ]
 }

@@ -10,7 +10,7 @@
  *
  * Pure: no React, no fetch.
  */
-import type { CreditLedgerRow } from "@/lib/usageLedgerTerms";
+import type { CreditLedgerRow, DollarLedgerRow } from "@/lib/usageLedgerTerms";
 import type { TopupGrant } from "@/lib/shell/workspace-view";
 
 export type BillingCycle = { id?: string; startsAt: number; endsAt: number; credits: number };
@@ -93,4 +93,40 @@ export function planNowOf(body: unknown): BillingPlanNow {
 export function heroTakes(credits: number, perTake: number | null | undefined): number | null {
   if (!(typeof perTake === "number" && Number.isFinite(perTake) && perTake > 0)) return null;
   return Math.floor(credits / perTake);
+}
+
+/* ── The house workspace: dollars, at the engines' cost ───────────────────────────────────────────────────────────────
+   The house pays no credits (lib/houseWorkspace.ts), so it reads the dollar ledger and the Usage page's own totals, as they
+   are: GET /api/usage?rows=1 (one job per row, in dollars) and GET /api/usage (spend by board, all time). Nothing is priced here. */
+
+/** A board's spend as GET /api/usage's `byProject` gives it: all time, in dollars. */
+export type DollarBoard = { name: string; n: number; usd: number };
+
+export function dollarBoards(body: unknown): DollarBoard[] | null {
+  const list = (body as { byProject?: unknown } | null)?.byProject;
+  if (!Array.isArray(list)) return null;
+  return list
+    .filter((r): r is { name: string; n?: unknown; spend: number } => Boolean(r) && typeof (r as { name?: unknown }).name === "string" && Number.isFinite((r as { spend?: unknown }).spend))
+    .map((r) => ({ name: r.name, n: Number(r.n) || 0, usd: r.spend }));
+}
+
+/** One History row in dollars: when, what, and what the job cost. */
+export type DollarHistoryRow = { id: string; at: number; when: string; what: string; usd: number };
+
+/** The month's dollar ledger, newest first: jobs that cost something (a job that cost nothing has no row, as in the credit history). */
+export function dollarHistoryRows(ledger: readonly DollarLedgerRow[] | null | undefined, now: number, limit = 8): DollarHistoryRow[] {
+  const out: DollarHistoryRow[] = [];
+  for (const r of ledger ?? []) {
+    if (!(typeof r.usd === "number" && Number.isFinite(r.usd) && r.usd > 0)) continue;
+    if (r.state !== "charged" && r.state !== "failed-charged") continue;
+    const what = [kindWord(r.kind), r.engine, r.state === "failed-charged" ? "failed" : null].filter(Boolean).join(" · ");
+    out.push({ id: `job:${r.id}`, at: r.at, when: whenWords(r.at, now), what, usd: r.usd });
+  }
+  return out.sort((a, b) => b.at - a.at).slice(0, limit);
+}
+
+/** Spent all time, as GET /api/usage/summary gives it for a dollar workspace; null when the answer has no figure. */
+export function spentUsdOf(body: unknown): number | null {
+  const v = (body as { spentUsd?: unknown } | null)?.spentUsd;
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
 }
