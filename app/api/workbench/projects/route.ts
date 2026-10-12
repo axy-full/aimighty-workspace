@@ -133,6 +133,16 @@ export const POST=withTenant(async(req:Request)=>{
     if(theirs)return Response.json({error:viewOnlyRefusal(theirs.name),code:'view_only'},{status:403,headers:noStore});
     return Response.json({error:'Save your project first.'},{status:404});
   }
+  if(body.action==='team-share'){
+    /* The author shares a board with the workspace's team, or stops (lib/workbench/team-boards.ts): one flag in the draft's own JSON, so nothing
+       else about it changes. Only the author's own draft is found here; a teammate's gets the same "not saved" answer as every other write. */
+    if(typeof body.shared!=='boolean')return Response.json({error:'Say whether to share this board.'},{status:400});
+    if(body.shared===(draft.project.teamShared===true))return Response.json({ok:true,shared:body.shared,revision:draft.revision});
+    try{
+      const saved=await saveDraft(auth.user.id,{...draft.project,teamShared:body.shared},draft.revision);
+      return Response.json({ok:true,shared:body.shared,revision:saved.revision});
+    }catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.',...(error instanceof DraftConflictError?{code:error.code}:{})},{status:409});}
+  }
   if(body.action==='map-shot'){
     try{return Response.json({productionProjectId:draft.project.productionProjectId,shotId:await mapNodeShot(auth.user.id,draft.project,String(body.nodeId||''))})}
     catch(e){return Response.json({error:e instanceof Error?e.message:'Cannot map this node'},{status:400})}

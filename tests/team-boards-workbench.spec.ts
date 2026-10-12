@@ -5,13 +5,15 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { newProject } from "../lib/workbench/studio";
 
 /**
- * TEAMMATES' BOARDS (owner, 11 Oct 2026): every member of a workspace sees every board in it, and opens a teammate's view-only.
+ * TEAMMATES' BOARDS (owner, 12 Oct 2026): a member of a workspace opens, view-only, the boards a teammate has SHARED with the team. A board is
+ * private until its author shares it (`teamShared`, set by the author alone); a private draft is never listed or read by anyone else.
  * Server side, on the local ENGINE_MOCK server through the real routes:
- *  - a member of A lists and reads A's boards (their own marked as theirs), and a teammate's board comes with its maker's name;
+ *  - a private board is in no one's list and is not readable by a teammate (by id, or with its maker named); once its author shares it, a member
+ *    of A lists and reads it (their own marked as theirs), and it comes with its maker's name; stopping sharing takes it away again;
  *  - a save of a teammate's board is refused and the maker's board is unchanged (never a second copy under the saver's name);
  *  - a member of ANOTHER workspace gets nothing of A's through any of those routes (by id, by the owner's id, claiming A's scope);
  *  - a person who leaves (or is switched off) stops seeing the boards.
- * Boards are private drafts of their maker inside the workspace's own database; productions, takes and files were already the
+ * Boards are drafts of their maker inside the workspace's own database; productions, takes and files were already the
  * workspace's, and stay so (the takes and picture of A's board are asked for below as the outsider too).
  */
 const base = process.env.PW_BASE_URL || "http://localhost:4551";
@@ -50,27 +52,54 @@ test.afterAll(async () => { await Promise.all([a?.api, outsider?.api, teammate].
 type Team = { team?: { id: string; name: string; mine: boolean; owner: { id: string; name: string } }[]; project?: { id: string } | null; viewOnly?: { owner: { id: string; name: string } }; projects?: { id: string }[] };
 const asJson = async (r: Awaited<ReturnType<APIRequestContext["get"]>>) => ({ status: r.status(), text: await r.text() });
 
-test("a member lists every board of their workspace, their own marked, with each maker's name", async () => {
+const share = (api: APIRequestContext, headers: Record<string, string>, projectId: string, shared: boolean) => api.post("/api/workbench/projects", { headers: { ...headers, "Content-Type": "application/json" }, data: { action: "team-share", projectId, shared } });
+
+test("a board is private until its author shares it: unlisted and unreadable to a teammate, then listed with its maker's name, and gone again when sharing stops", async () => {
   /* The teammate has a board of their own too. */
   const mine = { ...newProject(`Teammate board ${a.mark}`) };
   const saved = await teammate.put("/api/workbench/projects", { headers: teammateHeaders, data: { project: mine, revision: 0 } });
   expect(saved.ok(), await saved.text()).toBe(true);
+  /* Nothing is shared yet: every existing board is private, so no list names one, and a private draft is read by its maker alone. */
+  const none = await (await teammate.get("/api/workbench/projects?team=1", { headers: teammateHeaders })).json() as Team;
+  expect(none.team).toEqual([]);
+  expect((await (await teammate.get(`/api/workbench/projects?id=${a.draftId}`, { headers: teammateHeaders })).json() as Team).project ?? null).toBeNull();
+  expect((await teammate.get(`/api/workbench/projects?id=${a.draftId}&owner=${a.userId}`, { headers: teammateHeaders })).status()).toBe(404);
+  /* A teammate cannot share someone else's board, and the author's board is still private after the try. */
+  const refused = await share(teammate, teammateHeaders, a.draftId, true);
+  expect(refused.status()).toBe(403);
+  expect((await teammate.get(`/api/workbench/projects?id=${a.draftId}&owner=${a.userId}`, { headers: teammateHeaders })).status()).toBe(404);
+  /* The author shares: it is listed for the teammate, with its maker. */
+  const on = await share(a.api, a.headers, a.draftId, true);
+  expect(on.ok(), await on.text()).toBe(true);
+  expect(await on.json()).toMatchObject({ ok: true, shared: true });
+  expect((await share(teammate, teammateHeaders, mine.id, true)).ok()).toBe(true);
   const body = await (await teammate.get("/api/workbench/projects?team=1", { headers: teammateHeaders })).json() as Team;
   const owners = body.team!.find((b) => b.id === a.draftId)!;
-  expect(owners, "the owner's board is listed for the teammate").toBeTruthy();
+  expect(owners, "the owner's shared board is listed for the teammate").toBeTruthy();
   expect(owners.mine).toBe(false);
   expect(owners.owner.name).toContain("Board Owner");
   expect(owners.owner.id).toBe(a.userId);
   expect(body.team!.find((b) => b.id === mine.id)).toMatchObject({ mine: true });
   /* The plain list is still the person's own boards alone. */
   expect(body.projects!.map((p) => p.id)).toEqual([mine.id]);
-  /* And the owner sees the teammate's, the same way round. */
+  /* And the owner sees the teammate's shared board, the same way round. */
   const back = await (await a.api.get("/api/workbench/projects?team=1", { headers: a.headers })).json() as Team;
   expect(back.team!.find((b) => b.id === mine.id)).toMatchObject({ mine: false, owner: { name: teammateName } });
   expect(back.team!.find((b) => b.id === a.draftId)).toMatchObject({ mine: true });
+  /* Stopping takes it away again; sharing it again brings it back (the rest of this file reads it shared). */
+  expect((await share(a.api, a.headers, a.draftId, false)).ok()).toBe(true);
+  expect((await (await teammate.get("/api/workbench/projects?team=1", { headers: teammateHeaders })).json() as Team).team!.some((b) => b.id === a.draftId)).toBe(false);
+  expect((await teammate.get(`/api/workbench/projects?id=${a.draftId}&owner=${a.userId}`, { headers: teammateHeaders })).status()).toBe(404);
+  expect((await share(a.api, a.headers, a.draftId, true)).ok()).toBe(true);
+  /* Saying the same thing twice changes nothing. */
+  const before = await (await a.api.get(`/api/workbench/projects?id=${a.draftId}`, { headers: a.headers })).json() as { revision: number; project: { teamShared?: boolean } };
+  expect(before.project.teamShared).toBe(true);
+  expect((await share(a.api, a.headers, a.draftId, true)).ok()).toBe(true);
+  expect((await (await a.api.get(`/api/workbench/projects?id=${a.draftId}`, { headers: a.headers })).json() as { revision: number }).revision).toBe(before.revision);
+  expect((await share(a.api, a.headers, a.draftId, "yes" as unknown as boolean)).status()).toBe(400);
 });
 
-test("a teammate's board opens view-only, whole, with its maker: by its id alone (a board link) or with the maker named", async () => {
+test("a teammate's shared board opens view-only, whole, with its maker: by its id alone (a board link) or with the maker named", async () => {
   const seen = await (await teammate.get(`/api/workbench/projects?id=${a.draftId}&owner=${a.userId}`, { headers: teammateHeaders })).json() as Team;
   expect(seen.project?.id).toBe(a.draftId);
   expect(seen.viewOnly?.owner).toMatchObject({ id: a.userId });

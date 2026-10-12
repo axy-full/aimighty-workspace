@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 /*
- * Teammates' boards (lib/workbench/team-boards.ts) on real platform and workspace databases in a temp directory: who is listed, how
+ * Teammates' boards (lib/workbench/team-boards.ts) on real platform and workspace databases in a temp directory: only boards their author shared
+ * with the team are listed or read (`teamShared`; a private draft never is), who is listed, how
  * the platform owner reads inside a client workspace (as "Particl support", with an id of that workspace only), who may read a board,
  * and that a person who is switched off is no longer a maker. Nothing renders and nothing is billed.
  */
@@ -50,18 +51,21 @@ async function setup() {
   const ws = (await resumeWorkspace(requestId, clientOwner.id)).workspace!;
   await addMember(ws, owner, "admin");
   await addMember(ws, member, "member");
-  const board = (id: string, name: string, kind: string | null) => JSON.stringify({ id, name, ...(kind ? { boardKind: kind } : {}), nodes: [], shots: [] });
+  const board = (id: string, name: string, kind: string | null, shared = true) => JSON.stringify({ id, name, ...(kind ? { boardKind: kind } : {}), ...(shared ? { teamShared: true } : {}), nodes: [], shots: [] });
   await runInTenant(ws, async () => {
     await workbenchReady();
-    for (const [who, id, name, kind] of [[clientOwner.id, "b-client", "Client board", "social"], [member.id, "b-member", "Member board", null], [owner.id, "b-owner", "Owner board", null], [elsewhere.id, "b-elsewhere", "Left-over board", null]] as const)
-      await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)", args: [`${who}:${id}`, who, id, name, board(id, name, kind), Date.now()] });
+    /* Shared by their author, except the ones marked private: a private draft, one with the flag false, and one whose JSON can't be read. */
+    for (const [who, id, name, kind, shared] of [[clientOwner.id, "b-client", "Client board", "social", true], [member.id, "b-member", "Member board", null, true], [owner.id, "b-owner", "Owner board", null, true], [elsewhere.id, "b-elsewhere", "Left-over board", null, true], [clientOwner.id, "b-client-private", "Client private draft", null, false], [member.id, "b-member-private", "Member private draft", null, false]] as const)
+      await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)", args: [`${who}:${id}`, who, id, name, board(id, name, kind, shared), Date.now()] });
+    await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)", args: [`${clientOwner.id}:b-client-off`, clientOwner.id, "b-client-off", "Client flag off", JSON.stringify({ id: "b-client-off", name: "Client flag off", teamShared: false, nodes: [], shots: [] }), Date.now()] });
+    await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)", args: [`${clientOwner.id}:b-client-bad`, clientOwner.id, "b-client-bad", "Client unreadable", "{not json", Date.now()] });
   });
   return { ws, owner, clientOwner, member, elsewhere, runInTenant };
 }
 let made: ReturnType<typeof setup> | null = null;
 const fixture = () => (made ??= setup());
 
-test("every active member's boards are listed with their makers; the caller's own is marked; someone who is not a member is not listed", async () => {
+test("only the boards their author shared are listed, with their makers; the caller's own is marked; a private draft and someone who is not a member are not listed", async () => {
   const { ws, member, clientOwner, runInTenant } = await fixture();
   const { listTeamBoards } = await import("../../lib/workbench/team-boards");
   const list = await runInTenant(ws, () => listTeamBoards(ws, member.id, { kinds: true }));
@@ -70,6 +74,9 @@ test("every active member's boards are listed with their makers; the caller's ow
   expect(byId["b-client"]).toMatchObject({ mine: false, kind: "social", owner: { id: clientOwner.id, name: CLIENT.name } });
   /* A person with a row here who is no member of this workspace is not a maker. */
   expect(byId["b-elsewhere"]).toBeUndefined();
+  /* A private draft is in no one's list, not even its author's (Home lists those the ordinary way); a flag that is false or a body that can't be read is private. */
+  for (const id of ["b-client-private", "b-member-private", "b-client-off", "b-client-bad"]) expect(byId[id], id).toBeUndefined();
+  expect(list.map((b) => b.id).sort()).toEqual(["b-client", "b-member", "b-owner"]);
 });
 
 test("the platform owner reads as Particl support inside a client workspace, with an id that is that workspace's own; their address and name are nowhere", async () => {
@@ -95,6 +102,11 @@ test("a board is read only through its real maker, and only when that maker is a
   expect(await read(clientOwner.id, "b-member")).toBeNull();      // not that person's board
   expect(await read(elsewhere.id, "b-elsewhere")).toBeNull();     // not a member here
   expect(await read(member.id, "b-member")).toBeNull();           // one's own is read the ordinary way
+  /* A private draft is not readable by a teammate, however it is asked for: with its maker named, or by its id alone. */
+  for (const id of ["b-client-private", "b-client-off", "b-client-bad"]) {
+    expect(await read(clientOwner.id, id), id).toBeNull();
+    expect(await runInTenant(ws, () => findTeamBoard(ws, member.id, id)), id).toBeNull();
+  }
   expect((await runInTenant(ws, () => findTeamBoard(ws, member.id, "b-client")))?.owner.id).toBe(clientOwner.id);
   expect(await runInTenant(ws, () => findTeamBoard(ws, member.id, "b-member"))).toBeNull();
   expect(await runInTenant(ws, () => findTeamBoard(ws, member.id, "b-elsewhere"))).toBeNull();

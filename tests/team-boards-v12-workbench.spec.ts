@@ -5,7 +5,8 @@ import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { mockMedia } from "./helpers/workspaceFixtures";
 
 /**
- * Teammates' boards in the new interface (owner, 11 Oct 2026): Home lists the other members' boards under the person's own, each saying whose it
+ * Teammates' boards in the new interface (owner, 12 Oct 2026): a board is private until its author shares it, from one item in the board's ⋯ menu and
+ * its right-click menu on Home ("Share with team", saved with Undo, the author's alone). Home then lists the boards teammates shared under the person's own, each saying whose it
  * is; one opens view-only ("<name>'s board · view only"), refuses every edit, and sends not one save. Desktop with the switch on; the phone
  * app is unchanged (no list of teammates' boards there). Local ENGINE_MOCK server.
  */
@@ -36,6 +37,25 @@ test("desktop: Home lists a teammate's board with its maker; it opens view-only 
     const saves: string[] = [];
     mate.on("request", (request) => { if (request.method() === "PUT" && new URL(request.url()).pathname === "/api/workbench/projects") saves.push(request.url()); });
 
+    /* Private until shared: the teammate's Home has no teammates' boards, and the board is not theirs to read. */
+    await mate.goto("/suites?view=home");
+    await expect(mate.getByTestId("v12-home-bar")).toBeVisible({ timeout: 90_000 });
+    await expect(mate.getByTestId("v12-home-team-boards")).toHaveCount(0);
+    expect((await (await mate.request.get(`/api/workbench/projects?id=${made.project.id}`, { headers: { "X-Workbench-Scope": `particl-active-${owner.workspace.id}-${me.id}` } })).json() as { project: unknown }).project ?? null).toBeNull();
+
+    /* The author shares from the board's ⋯ menu: one item, with its one-line hover, saved at once, with Undo. */
+    await page.getByTestId("v12-board-menu").click();
+    const shareItem = page.getByTestId("v12-menu-share-team");
+    await expect(shareItem).toHaveText("Share with team");
+    await expect(shareItem).toHaveAttribute("title", "Teammates can view this board. Only you can edit it.");
+    await shareItem.click();
+    await expect(page.getByText(/^Shared with team/).first()).toBeVisible();
+    await expect.poll(async () => ((await (await page.request.get(`/api/workbench/projects?id=${made.project.id}`, { headers: { "X-Workbench-Scope": `particl-active-${owner.workspace.id}-${owner.id}` } })).json()) as { project: { teamShared?: boolean } }).project.teamShared, { timeout: 30_000 }).toBe(true);
+    await page.getByTestId("v12-board-menu").click();
+    await expect(page.getByTestId("v12-menu-share-team")).toHaveText("Stop sharing with team");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("v12-menu-share-team")).toHaveCount(0);
+
     await mate.goto("/suites?view=home");
     const section = mate.getByTestId("v12-home-team-boards");
     await expect(section).toBeVisible({ timeout: 90_000 });
@@ -48,6 +68,11 @@ test("desktop: Home lists a teammate's board with its maker; it opens view-only 
     await card.click();
     await expect(mate.getByTestId("v12-view-only")).toHaveText(`${owner.name}’s board · view only`, { timeout: 90_000 });
     await expect(mate.getByTestId("v12-stage-primary")).toHaveCount(0);
+    /* Sharing is the author's: a teammate's ⋯ menu has no such item. */
+    await mate.getByTestId("v12-board-menu").click();
+    await expect(mate.getByRole("menu").getByRole("menuitem").first()).toBeVisible();
+    await expect(mate.getByTestId("v12-menu-share-team")).toHaveCount(0);
+    await mate.keyboard.press("Escape");
     await expect(mate.getByTestId("v12-stage-rail")).toBeVisible();
     /* The tools that make something are off, and a note cannot be put down. */
     await expect(mate.getByTestId("v12-board-tools").getByRole("button", { name: /^Note/ })).toBeDisabled();
@@ -65,6 +90,16 @@ test("desktop: Home lists a teammate's board with its maker; it opens view-only 
     await page.goto("/suites?view=home");
     await expect(page.getByTestId("v12-home-board").first()).toBeVisible({ timeout: 90_000 });
     await expect(page.getByTestId("v12-home-team-boards")).toHaveCount(0);
+    /* The board card's right-click menu carries the same one item, in its other state, and Undo takes the change back. */
+    await page.getByTestId("v12-home-board").first().click({ button: "right" });
+    const stop = page.getByTestId("v12-menu-share-team");
+    await expect(stop).toHaveText("Stop sharing with team");
+    await expect(stop).toHaveAttribute("title", "Teammates can view this board. Only you can edit it.");
+    await stop.click();
+    await expect(page.getByTestId("v12-toast")).toContainText("No longer shared with the team");
+    await expect.poll(async () => ((await (await mate.request.get(`/api/workbench/projects?id=${made.project.id}`, { headers: { "X-Workbench-Scope": scope } })).json()) as { project: unknown }).project ?? null, { timeout: 30_000 }).toBeNull();
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect.poll(async () => ((await (await mate.request.get(`/api/workbench/projects?id=${made.project.id}`, { headers: { "X-Workbench-Scope": scope } })).json()) as { project: unknown }).project ? true : false, { timeout: 30_000 }).toBe(true);
   } finally { await context.close(); }
 });
 

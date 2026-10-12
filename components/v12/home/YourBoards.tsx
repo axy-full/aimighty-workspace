@@ -8,7 +8,9 @@ import { BOARD_FILTERS, FIRST_BOARDS, filterBoards, type BoardFilter } from "@/l
 import { useBoardKinds } from "./use-board-kinds";
 import { useTeamBoards } from "./use-team-boards";
 import { menuFor } from "@/lib/v12/menus";
-import { ContextMenu, useToast } from "../ui";
+import { ContextMenu, useToast, type MenuItem } from "../ui";
+import { useScopedFetch } from "@/lib/useScopedFetch";
+import { SHARE_TEAM } from "@/lib/workbench/view-only";
 import { copyBoardLink, menuItems, useMenuAt } from "../menus/menu-items";
 import { FitText } from "./FitText";
 
@@ -71,7 +73,7 @@ export function YourBoards({ scope, projects, status, error, onRetry, now, appro
   const listed = filterBoards(projects.map((p) => ({ ...p, kind: kinds.get(p.id) ?? p.kind })), filter);
   const cards = useProjectCards(listed, now, approvals);
   /* The workspace's other members' boards, to look at (view-only): under this person's own, with their makers' names. */
-  const team = useTeamBoards(scope, projects.map((p) => `${p.id}:${p.revision ?? ""}`).join(","));
+  const { boards: team, mineShared } = useTeamBoards(scope, projects.map((p) => `${p.id}:${p.revision ?? ""}`).join(","));
   const teamListed = filterBoards(team.map((b) => ({ ...b.summary })), filter);
   const teamCards = useProjectCards(teamListed, now, null);
   const makers = new Map(team.map((b) => [b.summary.id, b.owner]));
@@ -79,6 +81,20 @@ export function YourBoards({ scope, projects, status, error, onRetry, now, appro
   /* A board card's right-click menu (redesign A3): Open, as a click does, and Copy link, as the tab menu's. */
   const toast = useToast();
   const boardMenu = useMenuAt<string>();
+  /* Share with team: the author's own boards only; saved at once, with Undo. What was just flipped shows before the list is read again. */
+  const fetcher = useScopedFetch(scope);
+  const [flipped, setFlipped] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const isShared = (id: string) => flipped.get(id) ?? mineShared.has(id);
+  const setShared = async (id: string, to: boolean): Promise<boolean> => {
+    const reply = await fetcher("/api/workbench/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "team-share", projectId: id, shared: to }) }).catch(() => null);
+    if (!reply?.ok) { toast({ text: "Sharing was not changed. Try again." }); return false; }
+    setFlipped((now) => new Map(now).set(id, to));
+    return true;
+  };
+  const toggleShare = async (id: string) => {
+    const to = !isShared(id);
+    if (await setShared(id, to)) toast({ text: to ? SHARE_TEAM.shared : SHARE_TEAM.stopped, action: { label: "Undo", run: () => void setShared(id, !to) } });
+  };
   const menuCard = boardMenu.menu ? cards.find((c) => c.id === boardMenu.menu!.target) ?? null : null;
   return (
     <section className="v12-hm-boards" aria-labelledby="v12-hm-boards-title" data-testid="v12-home-boards">
@@ -122,7 +138,10 @@ export function YourBoards({ scope, projects, status, error, onRetry, now, appro
       ) : null}
       {boardMenu.menu && menuCard ? (
         <ContextMenu at={boardMenu.menu.at} onClose={boardMenu.close} label={menuCard.name} width={200} testId="v12-board-menu"
-          items={menuItems(menuFor("board", new Set(disabled ? ["copy-link"] : ["open", "copy-link"])), (id) => { if (id === "open") onOpen(menuCard.id); else copyBoardLink(menuCard.id, toast); })} />
+          items={[
+            ...menuItems(menuFor("board", new Set(disabled ? ["copy-link"] : ["open", "copy-link"])), (id) => { if (id === "open") onOpen(menuCard.id); else copyBoardLink(menuCard.id, toast); }),
+            ...(disabled ? [] : [{ separator: true, id: "share-sep" } as MenuItem, { id: "share-team", label: isShared(menuCard.id) ? SHARE_TEAM.stop : SHARE_TEAM.share, title: SHARE_TEAM.tip, testId: "v12-menu-share-team", onSelect: () => void toggleShare(menuCard.id) } as MenuItem]),
+          ]} />
       ) : null}
     </section>
   );
