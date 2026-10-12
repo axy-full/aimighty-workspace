@@ -1,4 +1,4 @@
-import { reachableOr } from "@/lib/draftProject";
+import { projectExists, reachableOr } from "@/lib/draftProject";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -43,6 +43,8 @@ export const PUT = withTenant(async function PUT(req: Request) {
   /* Only a board's owner writes its treatment; to anyone else it is a production that does not exist. */
   await ready();
   const projectId = await reachableOr(got.user, named, "write");
+  /* Asked before anything is written: a board that is not theirs and one that does not exist get the same answer. */
+  if (!(await projectExists(projectId))) return NextResponse.json({ error: "No such project." }, { status: 404 });
   const scenes: Scene[] = Array.isArray(body.scenes) ? body.scenes : [];
   const notes: Note[] = Array.isArray(body.notes) ? body.notes : [];
   const expected = body.expectedUpdatedAt;

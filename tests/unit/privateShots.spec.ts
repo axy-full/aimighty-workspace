@@ -124,6 +124,8 @@ test("a render or a quote is filed only into a project its writer may write: no 
   const { platformDb, platformReady } = await import("../../lib/platform");
   const { alignLedgerUnit } = await import("../helpers/ledgerUnit");
   await platformReady();
+  /* The reservation table is created by the first render that reserves; make sure it exists, so a count that fails is an error and not a zero. */
+  await platformDb().execute("CREATE TABLE IF NOT EXISTS generation_reservations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, token_id TEXT)");
   await alignLedgerUnit();
   await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,?,?,?)", args: [`grant_ps_${run}`, ws.id, 5000, "Test", Date.now()] });
   const body = (extra: Record<string, unknown>) => ({ model: "grok-imagine-video", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, ...extra });
@@ -158,6 +160,8 @@ test("client links, the treatment, the scene drafter and the cast: a private boa
   const { tenant, database, privateProject } = await fixture(ws);
   const { platformDb, platformReady } = await import("../../lib/platform");
   await platformReady();
+  /* The reservation table is created by the first render that reserves; make sure it exists, so a count that fails is an error and not a zero. */
+  await platformDb().execute("CREATE TABLE IF NOT EXISTS generation_reservations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, token_id TEXT)");
   let who = as("u_owner");
   const reviewLinks = loadRoute<typeof import("../../app/api/review-links/route")>("app/api/review-links/route.ts", () => who);
   const treatment = loadRoute<typeof import("../../app/api/atomik/treatment/route")>("app/api/atomik/treatment/route.ts", () => who);
@@ -173,7 +177,7 @@ test("client links, the treatment, the scene drafter and the cast: a private boa
     await db.execute({ sql: "INSERT INTO cast_members(id,project_id,name,created_at) VALUES(?,?,?,1)", args: [`cast_${run}`, privateProject, "SecretCast"] });
     await db.execute({ sql: "INSERT INTO cast_members(id,project_id,name,created_at) VALUES(?,?,?,1)", args: [`cast_o_${run}`, "prod_open", "OpenCast"] });
   }, { user: user("u_owner") });
-  const count = async (sql: string, args: unknown[] = []) => Number((await platformDb().execute({ sql, args: args as never[] }).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n);
+  const count = async (sql: string, args: unknown[] = []) => Number((await platformDb().execute({ sql, args: args as never[] })).rows[0].n);
   const moneyRows = async () => (await count("SELECT COUNT(*) AS n FROM meter_events WHERE workspace_id=?", [ws.id])) + (await count("SELECT COUNT(*) AS n FROM generation_reservations WHERE workspace_id=?", [ws.id]));
   const asking = async (actor: ReturnType<typeof as>, fn: () => Promise<Response>) => { who = actor; return tenant.runInTenant(ws, async () => { try { return answer(await fn()); } catch (e) { return Promise.resolve(["threw", String((e as Error).message)] as const); } }, { user: actor.user, token: actor.token as never }); };
   const unknownId = "prj_wb_doesnotexist0000000000";
@@ -207,6 +211,18 @@ test("client links, the treatment, the scene drafter and the cast: a private boa
     }
   }
   expect(await tenant.runInTenant(ws, moneyRows, { user: user("u_owner") }), "nothing was reserved or metered").toBe(before);
+  /* An unreachable board and an unknown id are refused outright, before any insert: the same explicit 404, and nothing under the sentinel id. */
+  for (const actor of readers) {
+    for (const target of [privateProject, unknownId]) {
+      expect(await asking(actor, () => treatment.PUT(json("PUT", { projectId: target, title: "Hijack", scenes: [], notes: [] }), undefined as never)), `${actor.user.id}: treatment PUT ${target}`).toEqual([404, { error: "No such project." }]);
+      expect(await asking(actor, () => cast.POST(json("POST", { projectId: target, name: "Hijack" }), undefined as never)), `${actor.user.id}: cast POST ${target}`).toEqual([404, { error: "No such project." }]);
+    }
+  }
+  const sentinel = await tenant.runInTenant(ws, async () => {
+    const rows = async (sql: string) => (await database.db().execute({ sql, args: ["\u0000unknown", unknownId] })).rows.length;
+    return [await rows("SELECT 1 FROM treatments WHERE project_id IN (?,?)"), await rows("SELECT 1 FROM cast_members WHERE project_id IN (?,?)"), await rows("SELECT 1 FROM projects WHERE id IN (?,?)")];
+  }, { user: user("u_owner") });
+  expect(sentinel, "nothing was written under the sentinel or the unknown id").toEqual([0, 0, 0]);
   const titles = await tenant.runInTenant(ws, async () => (await database.db().execute({ sql: "SELECT title FROM treatments WHERE project_id=?", args: [privateProject] })).rows.map((r) => r.title), { user: user("u_owner") });
   expect(titles).not.toContain("Hijack");
   /* Shared: view-only, so reads open to a teammate and every write still does not. */
@@ -224,12 +240,14 @@ test("a render admitted with a claim on a private board writes no hold, claim ro
   const { platformDb, platformReady } = await import("../../lib/platform");
   const { alignLedgerUnit } = await import("../helpers/ledgerUnit");
   await platformReady();
+  /* The reservation table is created by the first render that reserves; make sure it exists, so a count that fails is an error and not a zero. */
+  await platformDb().execute("CREATE TABLE IF NOT EXISTS generation_reservations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, token_id TEXT)");
   await alignLedgerUnit();
   await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,?,?,?)", args: [`grant_pse_${run}`, ws.id, 5000, "Test", Date.now()] });
   const counts = async () => tenant.runInTenant(ws, async () => ({
     generations: Number((await database.db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n),
     meter: Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM meter_events WHERE workspace_id=?", args: [ws.id] })).rows[0].n),
-    reservations: Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM generation_reservations WHERE workspace_id=?", args: [ws.id] }).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n),
+    reservations: Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM generation_reservations WHERE workspace_id=?", args: [ws.id] })).rows[0].n),
     held: Number((await database.db().execute("SELECT COUNT(*) AS n FROM generations WHERE status='held'")).rows[0].n),
   }), { user: user("u_owner") });
   const body = (projectId: string) => ({ model: "grok-imagine-video", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, projectId, maxCredits: 5000 });

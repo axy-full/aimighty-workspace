@@ -1,4 +1,4 @@
-import { projectLister, reachableOr } from "@/lib/draftProject";
+import { projectExists, projectLister, reachableOr } from "@/lib/draftProject";
 import { mediaMutation, validateMediaSources } from "@/lib/mediaMutation";
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
@@ -41,6 +41,8 @@ export const POST = withTenant(async function POST(req: Request) {
     body.projectId && body.projectId !== "all" && body.projectId !== "unfiled"
       ? await reachableOr(got.user, String(body.projectId), "write")
       : null;
+  /* Asked before anything is written: a board that is not theirs and one that does not exist get the same answer. */
+  if (projectId !== null && !(await projectExists(projectId))) return NextResponse.json({ error: "No such project." }, { status: 404 });
 
   const result = await mediaMutation(async (tx) => {
     // Two @Mayas a production can see would make a citation ambiguous.

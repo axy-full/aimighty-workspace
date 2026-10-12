@@ -100,3 +100,9 @@ export const NO_SUCH_PROJECT = "\u0000unknown";
 export async function reachableOr(person: { id: string } | null, projectId: string, access: "read" | "write" = "write", ex: Exec = db()): Promise<string> {
   return (await mayReachProject(person, projectId, access, ex)) ? projectId : NO_SUCH_PROJECT;
 }
+
+/** Whether `projectId` names a project of this workspace: a write that goes to a project asks this before it inserts, so an unknown id and an unreachable one are refused the same way, here, and not by whatever a foreign key does. */
+export async function projectExists(projectId: string, ex: Exec = db()): Promise<boolean> {
+  if (projectId === NO_SUCH_PROJECT) return false;
+  return (await ex.execute({ sql: "SELECT 1 AS found FROM projects WHERE id = ? LIMIT 1", args: [projectId] })).rows.length > 0;
+}
