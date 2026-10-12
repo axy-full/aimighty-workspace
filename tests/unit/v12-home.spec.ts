@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
 import type { Generation } from "../../lib/jobs";
 import {
-  BOARD_FILTERS, FIRST_BOARDS, WALL_TILES, boardKindIn, filterBoards, fitWords, pickedBrief, startQuote, startWords, waitingLevels, waitingShown, waitingWords, wallLayout, wallRow, wallTile, wallTiles,
+  BOARD_FILTERS, FIRST_BOARDS, WALL_TILES, boardKindIn, filterBoards, fitWords, pickedBrief, startQuote, startWords, waitingLevels, waitingShown, waitingWords, WALL_CANDIDATES, clipFrameUrl, wallLayout, wallRow, wallTile, wallTiles,
 } from "../../lib/v12/home";
-import { GOAL_MAX, startFigure } from "../../components/graphite/home/home-model";
+import { GOAL_MAX, startFigure, startFigureUsd } from "../../components/graphite/home/home-model";
+import { NO_AT_COST_PRICE } from "../../lib/v12/quote";
 
 /**
  * Home in the new interface (lib/v12/home.ts): the wall is the workspace's own stored stills and clips on the
@@ -113,27 +114,30 @@ test.describe("Start's figure: shown equals approved", () => {
   });
 
   test("credits read up to N cr from that one figure", () => {
-    expect(startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: false, creditUsd: 0.1 }))
+    expect(startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: false }))
       .toEqual({ state: "ready", price: { unit: "cr", value: { kind: "up-to", credits: 14 } } });
   });
 
-  test("the house workspace sees the same figure in dollars (N × the price of a credit), never a second quote", () => {
-    const q = startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: true, creditUsd: 0.1 });
-    expect(q.state).toBe("ready");
-    if (q.state !== "ready" || q.price.unit !== "usd") throw new Error("expected dollars");
-    expect(q.price.usd).toBeCloseTo(1.4, 10);
-    expect(q.price.upTo).toBe(true);
-    /* The newer figure moves the dollars with it. */
-    const after = startQuote({ spendOff: false, figure: startFigure({ text: "w", figure: 20 }, ready, "w"), thinking: ready, dollars: true, creditUsd: 0.1 });
-    expect(after.state === "ready" && after.price.unit === "usd" ? after.price.usd : null).toBeCloseTo(2, 10);
-    expect(startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: true, creditUsd: null }).state).toBe("error");
+  test("the house workspace sees the planner's own dollars (at cost), never the credits turned into dollars", () => {
+    const q = startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: true, usd: 0.37 });
+    expect(q).toEqual({ state: "ready", price: { unit: "usd", usd: 0.37, upTo: true } });
+    /* The newer figure (a refused press) carries its own dollars with it. */
+    const started = { text: "w", figure: 20, usd: 0.52 };
+    const after = startQuote({ spendOff: false, figure: startFigure(started, ready, "w"), thinking: ready, dollars: true, usd: startFigureUsd(started, { state: "ready", usd: 0.37 }, "w") });
+    expect(after).toEqual({ state: "ready", price: { unit: "usd", usd: 0.52, upTo: true } });
+    expect(startFigureUsd(null, { state: "ready", usd: 0.37 }, "w")).toBe(0.37);
+    /* No dollars in the answer: no figure and a reason, never 14 x the price of a credit. */
+    expect(startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: true, usd: null })).toEqual({ state: "error", message: NO_AT_COST_PRICE });
+    expect(startFigureUsd({ text: "w", figure: 20 }, { state: "ready", usd: 0.37 }, "w")).toBeNull();
+    /* A credit workspace never reads dollars. */
+    expect(startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: false, usd: 0.37 })).toEqual({ state: "ready", price: { unit: "cr", value: { kind: "up-to", credits: 14 } } });
   });
 
   test("no figure: loading, or why not; the sample workspace shows none", () => {
-    expect(startQuote({ spendOff: false, figure: null, thinking: { state: "loading" }, dollars: false, creditUsd: 0.1 }).state).toBe("loading");
-    expect(startQuote({ spendOff: false, figure: null, thinking: { state: "error", message: "No read." }, dollars: false, creditUsd: 0.1 })).toEqual({ state: "error", message: "No read." });
-    expect(startQuote({ spendOff: false, figure: null, thinking: { state: "off" }, dollars: false, creditUsd: 0.1 })).toEqual({ state: "error", message: "Atomik isn't on for this workspace yet." });
-    expect(startQuote({ spendOff: true, figure: 14, thinking: ready, dollars: false, creditUsd: 0.1 }).state).toBe("idle");
+    expect(startQuote({ spendOff: false, figure: null, thinking: { state: "loading" }, dollars: false }).state).toBe("loading");
+    expect(startQuote({ spendOff: false, figure: null, thinking: { state: "error", message: "No read." }, dollars: false })).toEqual({ state: "error", message: "No read." });
+    expect(startQuote({ spendOff: false, figure: null, thinking: { state: "off" }, dollars: false })).toEqual({ state: "error", message: "Atomik isn't on for this workspace yet." });
+    expect(startQuote({ spendOff: true, figure: 14, thinking: ready, dollars: false }).state).toBe("idle");
   });
 });
 
@@ -173,17 +177,30 @@ test.describe("Start's words in one unit", () => {
   const ready = { state: "ready" };
   const env = (creditUsd: number | null) => ({ creditUsd, dollars: (usd: number) => `$${usd.toFixed(2)}` });
   test("credits: the marker, the button and the note say the same words", () => {
-    const quote = startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: false, creditUsd: 0.1 });
+    const quote = startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: false });
     expect(startWords(quote, env(0.1))).toBe("up to 14 cr");
   });
   test("the house workspace: the same figure in dollars, in all three places", () => {
-    const quote = startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: true, creditUsd: 0.1 });
+    const quote = startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: true, usd: 1.4 });
     expect(startWords(quote, env(0.1))).toBe("up to $1.40");
-    expect(startWords(startQuote({ spendOff: false, figure: 20, thinking: ready, dollars: true, creditUsd: 0.1 }), env(0.1))).toBe("up to $2.00");
+    expect(startWords(startQuote({ spendOff: false, figure: 20, thinking: ready, dollars: true, usd: 2 }), env(0.1))).toBe("up to $2.00");
   });
   test("no figure yet, a failed read or no dollar price: no words, so the marker says unpriced", () => {
-    expect(startWords(startQuote({ spendOff: false, figure: null, thinking: { state: "loading" }, dollars: false, creditUsd: 0.1 }), env(0.1))).toBeNull();
-    expect(startWords(startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: true, creditUsd: null }), env(null))).toBeNull();
-    expect(startWords(startQuote({ spendOff: true, figure: 14, thinking: ready, dollars: false, creditUsd: 0.1 }), env(0.1))).toBeNull();
+    expect(startWords(startQuote({ spendOff: false, figure: null, thinking: { state: "loading" }, dollars: false }), env(0.1))).toBeNull();
+    expect(startWords(startQuote({ spendOff: false, figure: 14, thinking: ready, dollars: true, usd: null }), env(null))).toBeNull();
+    expect(startWords(startQuote({ spendOff: true, figure: 14, thinking: ready, dollars: false }), env(0.1))).toBeNull();
+  });
+});
+
+test.describe("the wall's reserve and a clip's frame", () => {
+  test("the wall keeps six, and a reserve behind them for a take whose picture cannot load", () => {
+    const list = Array.from({ length: 20 }, (_, i) => gen({ id: `t${i}`, createdAt: T0 + i }));
+    expect(wallTiles(list)).toHaveLength(WALL_TILES);
+    expect(wallTiles(list, WALL_CANDIDATES)).toHaveLength(WALL_CANDIDATES);
+    expect(wallTiles(list, WALL_CANDIDATES).slice(0, WALL_TILES).map((t) => t.id)).toEqual(wallTiles(list).map((t) => t.id));
+  });
+  test("a clip's address asks for its first moments, so a browser that loads only its header still draws a frame", () => {
+    expect(clipFrameUrl("/api/media/v1")).toBe("/api/media/v1#t=0.1");
+    expect(clipFrameUrl("/api/media/v1#t=2")).toBe("/api/media/v1#t=2");
   });
 });

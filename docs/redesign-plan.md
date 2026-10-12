@@ -111,6 +111,10 @@ Flags: **$** money · **AUTH** sign-in · **DB** schema · **ENV** env/secrets. 
 
 The last graphite files (`Particl Suites.dc.html`, README, PROMPT and assets) go when the last screen they describe is rebuilt.
 
+## Follow-ups
+
+- **Enhance in the board bar.** Prototype v14 draws the Enhance switch in the board bar when a placed image or clip is selected. The board bar is Ask-only today: the press is a plan Atomik prices, and its steps then run with the prompt Atomik wrote, so a switch there would change nothing. Doing it means enhancing each planned still or clip step server-side, priced in the plan and approved once (a plan-pricing and approval change, so it is the owner's call: yes or no). The Make composer has Enhance, in credit workspaces and in the house (priced at cost, in dollars).
+
 ## Screenshots
 
 For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signInToRedesign()`, sets the state, and calls `captureBeside(page, "<screen>", "<prototype query>")`.

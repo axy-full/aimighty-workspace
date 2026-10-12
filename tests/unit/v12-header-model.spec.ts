@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { EMPTY_TABS, afterClose, closeOthers, closeTab, headerKey, openTab, parseTabs, pruneTabs, restoreTab, visibleTabs } from "../../components/v12/shell/tabs";
+import { EMPTY_TABS, afterClose, fitBoardTabs, closeOthers, closeTab, headerKey, openTab, parseTabs, pruneTabs, restoreTab, visibleTabs } from "../../components/v12/shell/tabs";
 import { LOOK_MS, activityGroups, activityLabel, activityTone, boardStates, heldPrice } from "../../components/v12/shell/activity";
 import type { TrayJob } from "../../lib/jobsTray";
 import type { QueueItem } from "../../lib/control-room/queue";
@@ -35,6 +35,24 @@ test("four board tabs show and the rest go under +N; the open board always shows
   expect(afterClose(["a", "b", "c"], "b")).toBe("a");
   expect(afterClose(["a", "b"], "a")).toBe("b");
   expect(afterClose(["a"], "a")).toBeNull();
+});
+
+test("as many board tabs show as fit, counting the +N button, and the open board always shows", () => {
+  const open = ["a", "b", "c", "d", "e"];
+  const widths = Object.fromEntries(open.map((id) => [id, 100]));
+  const fit = (room: number, active: string | null = null, moreWidth = 50) => fitBoardTabs({ open, active, widths, moreWidth, room });
+  expect(fit(500)).toBe(5);
+  /* Four of five would need 400 + 50 for "+1 ▾". */
+  expect(fit(449)).toBe(3);
+  expect(fit(450)).toBe(4);
+  expect(fit(250)).toBe(2);
+  expect(fit(10)).toBe(0);
+  expect(fit(10, "e")).toBe(1);
+  /* Tabs of different widths: the shown set is what visibleTabs shows for that count. */
+  const uneven = { a: 40, b: 40, c: 40, d: 200, e: 40 };
+  expect(fitBoardTabs({ open, active: null, widths: uneven, moreWidth: 50, room: 200 })).toBe(3);
+  expect(fitBoardTabs({ open, active: "d", widths: uneven, moreWidth: 50, room: 200 })).toBe(1);
+  expect(fitBoardTabs({ open: [], active: null, widths: {}, moreWidth: 50, room: 0 })).toBe(0);
 });
 
 test("a stored value that is not tabs is the empty state", () => {
