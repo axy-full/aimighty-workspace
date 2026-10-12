@@ -316,6 +316,14 @@ test("the routes that gate who may change work ask reach first: a private board'
     await sees("take moved into the board", () => asking(actor, () => jobs.PATCH(req("PATCH", { projectId: privateProject }), ctx(mine.take))), () => asking(actor, () => jobs.PATCH(req("PATCH", { projectId: unknownProject }), ctx(mine.take))));
     expect(await asking(actor, () => jobs.PATCH(req("PATCH", { projectId: privateProject }), ctx(mine.take)))).toEqual([404, { error: "No such project." }]);
     await sees("take filed against the board's shot", () => asking(actor, () => jobs.PATCH(req("PATCH", { shotId: priv.shot }), ctx(mine.take))), () => asking(actor, () => jobs.PATCH(req("PATCH", { shotId: unknownShot }), ctx(mine.take))));
+    /* A title sent with a shot that is not there, or one in a private board: the same answer, and the title did not land. */
+    const titleOf = async () => String((await rows("SELECT title FROM generations WHERE id=?", [mine.take]))[0].title);
+    const before = await titleOf();
+    const unknownShotAnswer = await asking(actor, () => jobs.PATCH(req("PATCH", { title: `Sneak ${actor.user.id}`, shotId: unknownShot }), ctx(mine.take)));
+    expect(unknownShotAnswer).toEqual([404, { error: "That shot is gone." }]);
+    expect(await titleOf(), "the title did not land with an unknown shot").toBe(before);
+    expect(await asking(actor, () => jobs.PATCH(req("PATCH", { title: `Sneak ${actor.user.id}`, shotId: priv.shot }), ctx(mine.take)))).toEqual(unknownShotAnswer);
+    expect(await titleOf(), "the title did not land with a private shot").toBe(before);
     /* The production over a private board. */
     await sees("production PATCH", () => asking(actor, () => productions.PATCH(req("PATCH", { name: "Hijack" }), ctx("prod_priv"))), () => asking(actor, () => productions.PATCH(req("PATCH", { name: "Hijack" }), ctx(unknownProduction))));
     expect(await asking(actor, () => productions.PATCH(req("PATCH", { name: "Hijack" }), ctx("prod_priv")))).toEqual([404, { error: "No such production." }]);

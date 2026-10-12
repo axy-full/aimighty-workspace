@@ -60,7 +60,8 @@ async function notThere(user: { id: string; role: "admin" | "member"; owner?: bo
   }
   if (body.shotId !== undefined && body.shotId) {
     const shot = await getShot(String(body.shotId));
-    if (shot && !(await mayReachProject(user, shot.projectId, "write"))) return NextResponse.json({ error: "That shot is gone." }, { status: 404 });
+    /* A shot that is not there and one in a private board are refused alike, here, before any other change in the request lands. */
+    if (!shot || !(await mayReachProject(user, shot.projectId, "write"))) return NextResponse.json({ error: "That shot is gone." }, { status: 404 });
     if (shot && !(await mayChangeWork(user, shot))) return NextResponse.json({ error: NOT_YOURS.moveToShot }, { status: 403 });
   }
   return null;
