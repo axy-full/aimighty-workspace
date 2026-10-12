@@ -563,6 +563,14 @@ test("filing a take against a shot moves it into the shot's project: B cannot fi
     expect([row.project_id, row.shot_id]).toEqual([draftProject, null]);
     h.as("u_mate");
     expect(await status(h, secret)).toBe(404);
+    /* The id that is checked is the id that is written: anything but a string (or null / "" for none) is refused before any read or write. */
+    for (const body of [{ shotId: [`shot_fs_${run}`] }, { shotId: 5 }, { shotId: { id: `shot_fs_${run}` } }, { projectId: ["prod_shared"] }, { projectId: 0 }, { projectId: { id: "prod_shared" } }, { projectId: false }]) {
+      const res = await patch(`gen_fs_private_${run}`, body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    const unchanged = (await h.database.db().execute({ sql: "SELECT project_id, shot_id FROM generations WHERE id=?", args: [`gen_fs_private_${run}`] })).rows[0];
+    expect([unchanged.project_id, unchanged.shot_id], "nothing changed").toEqual([draftProject, null]);
+    expect(await status(h, secret), "and the upload stays closed").toBe(404);
     /* A shared take filed against a shot of its own project is not a move. */
     expect((await patch(`gen_fs_shared_${run}`, { shotId: `shot_fs_${run}` })).status).toBe(200);
   }, asUser("u_mate"));

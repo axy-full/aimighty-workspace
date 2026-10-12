@@ -62,20 +62,27 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   if (scopeProblem) return NextResponse.json({ error: scopeProblem }, { status: 409 });
   await ready();
   const { id } = await params;
-  const body = await req.json().catch(() => ({}));
+  const body = (await req.json().catch(() => null)) ?? {};
+  /* A project and a shot are each named by one id: a string, or null / "" for none. Anything else (an array, a number, an object) is refused here, before any
+     read or write, so the id that is checked below is the very id that is written. */
+  const idOf = (value: unknown): string | null | "bad" => (value === null || value === "" ? null : typeof value === "string" ? value : "bad");
+  const projectTo = body.projectId === undefined ? undefined : idOf(body.projectId);
+  const shotTo = body.shotId === undefined ? undefined : idOf(body.shotId);
+  if (projectTo === "bad" || shotTo === "bad")
+    return NextResponse.json({ error: "A project or a shot is named by its id, or left empty for none." }, { status: 400 });
   /* A move to another project (or to none) changes who may open the uploads the take names: asked like an addition, before anything is written
      (lib/projectMove.ts). A take in a draft's own project leaves it only with its owner. Refused as an unknown take is. */
-  if (body.projectId !== undefined) {
+  if (projectTo !== undefined) {
     const cur = (await db().execute({ sql: "SELECT project_id, params FROM generations WHERE id=?", args: [id] })).rows[0];
     if (cur) {
-      try { await assertMoveAllowed(db(), { from: cur.project_id == null ? null : String(cur.project_id), to: body.projectId ? String(body.projectId) : null, named: [parseJson(cur.params)] }); }
+      try { await assertMoveAllowed(db(), { from: cur.project_id == null ? null : String(cur.project_id), to: projectTo, named: [parseJson(cur.params)] }); }
       catch (error) { if (error instanceof MoveRefused) return NextResponse.json({ error: "Not found" }, { status: 404 }); throw error; }
     }
   }
   /* Filing a take against a shot moves it into the shot's project (the COALESCE in the update below): asked like any move, before anything is written,
      and refused as a missing shot is. */
-  if (typeof body.shotId === "string" && body.shotId) {
-    const shot = await getShot(body.shotId);
+  if (shotTo) {
+    const shot = await getShot(shotTo);
     const cur = shot ? (await db().execute({ sql: "SELECT project_id, params FROM generations WHERE id=?", args: [id] })).rows[0] : null;
     if (shot && cur) {
       const from = cur.project_id == null ? null : String(cur.project_id);
@@ -138,10 +145,10 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     if (problem) return NextResponse.json({ error: problem }, { status: 409 });
     invalidate(PROJECTS_KEY);
   }
-  if (body.projectId !== undefined) {
+  if (projectTo !== undefined) {
     await db().execute({
       sql: `UPDATE generations SET project_id=?, updated_at=? WHERE id=?`,
-      args: [body.projectId || null, Date.now(), id],
+      args: [projectTo, Date.now(), id],
     });
   }
   // A name for the render. Empty clears it — the clip id comes back.
@@ -202,8 +209,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
      track takes none and keeps the number it has. The render follows the
      shot into its production. `version` is NOT NULL (lib/db.ts): unfiling
      puts back the default an unfiled render carries, never NULL. */
-  if (body.shotId !== undefined) {
-    const shotId = body.shotId ? String(body.shotId) : null;
+  if (shotTo !== undefined) {
+    const shotId = shotTo;
     if (shotId) {
       const shot = await getShot(shotId);
       if (!shot) return NextResponse.json({ error: "That shot is gone." }, { status: 404 });
