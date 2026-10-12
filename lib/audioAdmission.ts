@@ -342,7 +342,7 @@ export async function executeAudioAdmission(
   /* The approval unit (lib/credits.ts quotedCredits): never a margin beside the dollars in `price`. */
   const estimatedCredits = quotedCredits(vendorUsd, terms);
   /* Guardrail 4 at the quote and before anything is created: a sound over the approval line needs an admin's own tap (lib/shotCap.ts › jobLineNow). */
-  const over = jobLineNow(estimatedCredits);
+  const over = jobLineNow({ credits: estimatedCredits, usd: vendorUsd, key: vendor, actor: got, auto: options.run?.auto === true });
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
   if (quoteOnly)
     return admissionReply({

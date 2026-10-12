@@ -177,7 +177,7 @@ export async function executeDubbingAdmission(
   const estimatedCredits = quotedCredits(reservedUsd, "elevenlabs");
   const inCredits = creditsApply(requireTenant());
   /* Guardrail 4 at the quote, before the dub take or its job row is written: no failed take is left in the Library (lib/shotCap.ts › jobLineNow). */
-  const over = jobLineNow(estimatedCredits);
+  const over = jobLineNow({ credits: estimatedCredits, usd: reservedUsd, key: "elevenlabs", actor: got, auto: options.run?.auto === true });
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
   if (quoteOnly)
     return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : reservedUsd, unit: inCredits ? "cr" : "usd", sourceSeconds: seconds, minutes, mode });

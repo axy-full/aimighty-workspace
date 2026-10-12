@@ -1,10 +1,12 @@
 import { getSetting } from "./settings";
-import { billCredits } from "./creditTerms";
+import { billCredits, billCreditsWith } from "./creditTerms";
 import { cleanRule, cleanShotCap, jobApprovalLineCredits, jobLineVerdict, shotCapVerdict } from "./approvalRule";
 import { creditUsd } from "./creditTerms";
 import { creditsApply } from "./credits";
 import { currentTenant } from "./tenant";
 import { paidByPlatform } from "./platformSpend";
+import { isHouseWorkspace } from "./houseWorkspace";
+import type { VendorKeyName } from "./vendorKeys";
 import { isAgentId } from "./security/people-only";
 import { spentBy } from "./caps";
 
@@ -36,24 +38,35 @@ export async function shotCapGate(o: { shotId: string; code: string; takeUsd: nu
  * Guardrail 4 before a job is parked, quoted or sent (lib/approvalRule.ts › jobLineVerdict): a job above the approval line needs an
  * admin's own tap, whatever the rule and shot; a token, an MCP client or an agent is refused outright. The reservation
  * (lib/generationRequests.ts) judges the same job again under its write lock and is the authority; this stops it earlier, so a member's
- * over-line take is told so at the press or the quote and is never parked as held or left as a failed take. Only work the platform pays
- * for is judged (`paid`): a job on no credit of the platform's has no credit price to refuse. Null when nothing stops it.
+ * over-line take is told so at the press or the quote and is never parked as held or left as a failed take.
+ *
+ * Judged: work the platform pays for (`paidByPlatform` for the door's own vendor key), and **the house workspace, at cost**: its job is
+ * the engine's dollars counted in credits at no margin (the unit `quotedCredits` approves it in, lib/credits.ts), against the same line,
+ * worded without a figure. Work on no credit of the platform's and not the house (an own-key workspace, if one ever exists) is not judged.
+ * Null when nothing stops it.
  */
-export function jobLineGateAt(o: { credits: number; paid: boolean; isAdmin: boolean; machine: boolean }): string | null {
-  if (!o.paid) return null;
-  const v = jobLineVerdict({ credits: o.credits, lineCredits: jobApprovalLineCredits(creditUsd()), isAdmin: o.isAdmin, machine: o.machine, figures: creditsApply(currentTenant()?.workspace) });
+export function jobLineGateAt(o: { credits: number; usd: number; band?: number; key: VendorKeyName; isAdmin: boolean; machine: boolean }): string | null {
+  const ws = currentTenant()?.workspace;
+  const house = isHouseWorkspace(ws);
+  if (!house && !paidByPlatform(o.key)) return null;
+  const band = Number.isInteger(o.band) && o.band! > 1 ? o.band! : 1;
+  const credits = house ? billCreditsWith(o.usd, 1, creditUsd()) * band : o.credits * band;
+  const v = jobLineVerdict({ credits, lineCredits: jobApprovalLineCredits(creditUsd()), isAdmin: o.isAdmin, machine: o.machine, figures: creditsApply(ws) });
   return v.blocked ? v.line : null;
 }
 
-/** The same, for a take's engine cost: its price in credits at its hold (a take that holds its ceiling counts at its band). */
-export function jobLineGate(o: { takeUsd: number; modelId: string; band?: number; paid: boolean; isAdmin: boolean; machine: boolean }): string | null {
-  const credits = billCredits(o.takeUsd, o.modelId) * (Number.isInteger(o.band) && o.band! > 1 ? o.band! : 1);
-  return jobLineGateAt({ credits, paid: o.paid, isAdmin: o.isAdmin, machine: o.machine });
+/** The same, for a take's engine cost: its price in credits (a take that holds its ceiling counts at its band). */
+export function jobLineGate(o: { takeUsd: number; modelId: string; band?: number; key: VendorKeyName; isAdmin: boolean; machine: boolean }): string | null {
+  return jobLineGateAt({ credits: billCredits(o.takeUsd, o.modelId), usd: o.takeUsd, band: o.band, key: o.key, isAdmin: o.isAdmin, machine: o.machine });
 }
 
-/** The same, for a quote or admission that reads who is asking from the request (audio, dubbing, text): the signed-in admin, or a token or agent as a machine. */
-export function jobLineNow(credits: number): string | null {
+/**
+ * The same, for a quote or admission with no take to price: the person or machine asking is the admission's actor when it names one
+ * (an admin's own session is a tap; a token, an MCP client or an agent identity is a machine), else the request's tenant. `key` is the door's own vendor key.
+ */
+export function jobLineNow(o: { credits: number; usd: number; key: VendorKeyName; actor?: { user: { id: string; role: string }; token?: unknown }; /** The step was approved by Atomik's Auto, not by a person: a machine. */ auto?: boolean }): string | null {
   const store = currentTenant();
-  return jobLineGateAt({ credits, paid: paidByPlatform("ark"), isAdmin: store?.user?.role === "admin" && store?.token == null,
-    machine: store?.token != null || isAgentId(store?.user?.id) });
+  const user = o.actor?.user ?? store?.user;
+  const token = o.actor ? o.actor.token : store?.token;
+  return jobLineGateAt({ credits: o.credits, usd: o.usd, key: o.key, isAdmin: user?.role === "admin" && token == null, machine: o.auto === true || token != null || isAgentId(user?.id) });
 }

@@ -8,6 +8,8 @@ import type {
   AdmissionActor,
 } from "../../lib/admissionTypes";
 
+import type { TenantWorkspace } from "../../lib/tenant";
+
 const dir = mkdtempSync(path.join(tmpdir(), "particl-guardrail-4-admission-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
@@ -71,21 +73,23 @@ async function scope(
   const { runInTenant } = await import("../../lib/tenant");
   const { ready, db } = await import("../../lib/db");
   await platformReady();
-  await platformDb().execute({
-    sql: "INSERT OR IGNORE INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour) VALUES(?,?,?,?,1,'owner',0,0,20,200)",
-    args: [id, name, name, `file:${path.join(dir, name + ".db")}`],
-  });
-  if (id !== "ws_legacy") await grantCredits(id, 10000, "Test", "owner", "manual");
-  for (const [account, role] of [["owner", "owner"], ["u_member", "member"]] as const)
-    await platformDb().execute({ sql: "INSERT OR IGNORE INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,?,?,0,0)", args: [id, account, role] });
-  const ws = rowToWorkspace(
-    (
-      await platformDb().execute({
-        sql: "SELECT * FROM workspaces WHERE id=?",
-        args: [id],
-      })
-    ).rows[0],
-  );
+  /* The house's id is fixed (ws_legacy) and other specs in this worker make its row themselves (platformOwnerPrivacy), so the house here is a scope built in
+     this file and never a workspaces, memberships or credit row left behind in the shared platform database. */
+  let ws: TenantWorkspace;
+  if (id === "ws_legacy") {
+    ws = { id, slug: "house", name: "House", legacy: true, dbUrl: `file:${path.join(dir, name + ".db")}`, dbToken: null, keys: {}, usesPlatformKeys: false, allowanceUsd: null,
+      gatewayKeyId: null, ownerId: "owner", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: 20, rendersPerHour: 200,
+      storageQuotaBytes: null, deletedAt: null };
+  } else {
+    await platformDb().execute({
+      sql: "INSERT OR IGNORE INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour) VALUES(?,?,?,?,1,'owner',0,0,20,200)",
+      args: [id, name, name, `file:${path.join(dir, name + ".db")}`],
+    });
+    await grantCredits(id, 10000, "Test", "owner", "manual");
+    for (const [account, role] of [["owner", "owner"], ["u_member", "member"]] as const)
+      await platformDb().execute({ sql: "INSERT OR IGNORE INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,?,?,0,0)", args: [id, account, role] });
+    ws = rowToWorkspace((await platformDb().execute({ sql: "SELECT * FROM workspaces WHERE id=?", args: [id] })).rows[0]);
+  }
   const fetch = globalThis.fetch;
   globalThis.fetch = async () => {
     throw new Error("Network forbidden in admission parity test");
@@ -213,11 +217,32 @@ test("through admission: an admin's own tap clears it (the quote answers, the pr
   }, "g4-line", { ...admin, token: { id: "tok_g4", name: "agent", scope: "render", capUsd: null } } as AdmissionActor);
 });
 
-test("a member on their own key (the house workspace, which pays no credits) is not refused and is shown no credit price", async () =>
-  scope("g4-house", async (service) => {
+/* The house pays no credits and is judged at cost: this clip's hold (3 × its ~$14 estimate, counted in credits at no margin) is over the 200 cr line, so a member is told an admin must start it, in words with no figure. */
+test("the house is judged at cost: a member over the line is told an admin must start it, with no credit figure; an admin clears it; a token is refused; under it nothing changes", async () => {
+  await scope("g4-house", async (service) => {
+    const before = [(await rows()).length, (await meters()).length];
+    const q = await quoteRoute(service).POST(quoteRequest(OVER));
+    const answer = await q.clone().json();
+    expect(q.status, JSON.stringify(answer)).toBe(403);
+    expect(answer).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/An admin has to start it\./) });
+    expect(String(answer.error)).not.toMatch(/\bcr\b|\d/);
+    const pressed = await press(service, OVER, "g4-house-member");
+    expect(pressed.status).toBe(403);
+    expect(await pressed.json()).toMatchObject({ needsAdmin: true });
+    expect([(await rows()).length, (await meters()).length], "nothing created, nothing reserved").toEqual(before);
+    expect((await quoteRoute(service).POST(quoteRequest(UNDER))).status).toBe(200);
+  }, "ws_legacy", member);
+  await scope("g4-house", async (service) => {
     const q = await quoteRoute(service).POST(quoteRequest(OVER));
     expect(q.status, JSON.stringify(await q.clone().json())).toBe(200);
     expect((await q.json()).unit).toBe("usd");
-    const made = await press(service, OVER, "g4-house-press");
+    const made = await press(service, OVER, "g4-house-admin");
     expect(made.status, JSON.stringify(await made.clone().json())).toBeLessThan(300);
-  }, "ws_legacy", member));
+  }, "ws_legacy", admin);
+  await scope("g4-house", async (service) => {
+    const viaToken = await quoteRoute(service).POST(quoteRequest(OVER));
+    expect(viaToken.status).toBe(403);
+    expect(await viaToken.json()).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/never start it\./) });
+    expect((await press(service, OVER, "g4-house-token")).status).toBe(403);
+  }, "ws_legacy", { ...admin, token: { id: "tok_g4h", name: "agent", scope: "render", capUsd: null } } as AdmissionActor);
+});

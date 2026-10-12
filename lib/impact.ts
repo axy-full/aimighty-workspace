@@ -286,7 +286,7 @@ export async function contextFor(projectIds: (string | null)[], opts: { isAdmin:
     shotCap: cleanShotCap(shotCap),
     isAdmin: opts.isAdmin,
     /* Guardrail 4: the approval line at this workspace's price of a credit, whoever asks (lib/approvalRule.ts). */
-    jobLine: { credits: jobApprovalLineCredits(creditUsd()), machine: opts.machine ?? (currentTenant()?.token != null || isAgentId(currentTenant()?.user?.id)) },
+    jobLine: { credits: jobApprovalLineCredits(creditUsd()), machine: opts.machine ?? (currentTenant()?.token != null || isAgentId(currentTenant()?.user?.id)), house: !inCredits, perCredit: creditUsd() },
   };
 }
 

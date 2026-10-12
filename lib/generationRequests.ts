@@ -11,6 +11,7 @@ import { allowanceUsd, allowanceUsdOfStored } from "./allowance";
 import { cycleBounds } from "./cycle";
 import { billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
 import { creditsApply } from "./credits";
+import { isHouseWorkspace } from "./houseWorkspace";
 import { LEDGER_UNIT_PAUSED, ledgerOpenTx, restateFactor, workspaceUnitTx } from "./ledgerUnit";
 import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
@@ -608,8 +609,12 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     }
     /* Guardrail 4 (SOW §7A): a NEW job priced above the approval line (at its hold, the most it can settle at) needs an admin's own tap, whatever the
        workspace's rule or the job's shot. A token, an MCP client or an agent is refused outright. Judged after the balance and every cap have had their say, so a refusal they would give is still theirs. Nothing is reserved. A job already reserved keeps its reservation. */
-    if (paid && !prior && held > 0 && lineJudged) {
-      const stop = jobLineVerdict({ credits: held, lineCredits: jobApprovalLineCredits(terms.creditUsd), machine: machineCaller, isAdmin: adminTap, figures: creditsApply(ws) });
+    /* The house pays no credits, so it is judged at cost: the engine's dollars counted in credits at no margin, the unit quotedCredits approves it in
+       (lib/credits.ts), against the same line, worded without a figure. A workspace that is neither the house nor on the platform's credits is not judged. */
+    const house = isHouseWorkspace(ws);
+    if ((paid || house) && !prior && lineJudged && (house ? cost > 0 : held > 0)) {
+      const atCost = billCreditsWith(cost, 1, terms.creditUsd) * keptBand;
+      const stop = jobLineVerdict({ credits: house ? atCost : held, lineCredits: jobApprovalLineCredits(terms.creditUsd), machine: machineCaller, isAdmin: adminTap, figures: creditsApply(ws) });
       if (stop.blocked) throw new SpendReservationError(stop.line, JOB_LINE_STATUS, true);
     }
     /* Last, once everything else admits it: a take refused here waits only for a slot. Its slot and its

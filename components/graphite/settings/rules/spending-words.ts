@@ -25,7 +25,7 @@ export type SpendingRules = {
 export type SpendingLines = {
   /** "Members up to 50 cr a shot; an admin above it." */
   ruleLine: string | null;
-  /** "Any job over 200 cr needs a person's approval, even under Auto." */
+  /** "Any job over 200 cr needs an admin’s tap, even under Auto." */
   platformLineText: string | null;
   /** "Every paid step waits for a person." */
   modeLine: string;

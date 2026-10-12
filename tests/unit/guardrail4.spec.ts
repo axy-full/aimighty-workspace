@@ -175,7 +175,7 @@ test("before a take is parked or sent (admission): the same words, the hold coun
   const { runInTenant } = await import("../../lib/tenant");
   const { over, under } = await costs();
   await runInTenant(workspace(`gate_${run}`), async () => {
-    const member = { isAdmin: false, machine: false, modelId: "mock", paid: true };
+    const member = { isAdmin: false, machine: false, modelId: "mock", key: "ark" as const };
     expect(jobLineGate({ takeUsd: over, ...member })).toMatch(/An admin has to start it\./);
     expect(jobLineGate({ takeUsd: under, ...member })).toBeNull();
     expect(jobLineGate({ takeUsd: over, ...member, isAdmin: true })).toBeNull();
@@ -187,21 +187,40 @@ test("before a take is parked or sent (admission): the same words, the hold coun
   });
 });
 
-test("own-key work is not judged: a quote line the platform does not pay for, and an admission gate told it is not paid", async () => {
+test("work the platform does not pay for is not judged at the quote; the house is judged at cost at the quote, the press and the reservation, worded without a figure", async () => {
   const { jobLineGate } = await import("../../lib/shotCap");
   const { runInTenant } = await import("../../lib/tenant");
-  const { over } = await costs();
   const free = quoteOf([{ ...unit(usdFor(300)), platformPays: false }]);
   expect(free.totalCredits).toBeGreaterThan(LINE);
   expect(verdictOf(free, { ...base, jobLine: { credits: LINE, machine: false } })).toMatchObject({ allow: true });
   expect(verdictOf(free, { ...base, jobLine: { credits: LINE, machine: true } })).toMatchObject({ allow: true });
-  await runInTenant(workspace(`own_${run}`), async () => {
-    expect(jobLineGate({ takeUsd: over, modelId: "mock", paid: false, isAdmin: false, machine: false })).toBeNull();
-    expect(jobLineGate({ takeUsd: over, modelId: "mock", paid: true, isAdmin: false, machine: false })).not.toBeNull();
+  /* The house, at the quote: its line is the engine's dollars at the price of a credit, no margin. $25 is 250 cr at cost, $15 is 150. */
+  const house = { ...base, jobLine: { credits: LINE, machine: false, house: true, perCredit: 0.1 } };
+  const big = quoteOf([{ ...unit(25), platformPays: false }]);
+  const small = quoteOf([{ ...unit(15), platformPays: false }]);
+  const member = verdictOf(big, house);
+  expect(member).toMatchObject({ allow: false, gate: "approval" });
+  expect(member.line).not.toMatch(/\bcr\b|\d/);
+  expect(verdictOf(big, { ...house, isAdmin: true })).toMatchObject({ allow: true });
+  expect(verdictOf(big, { ...house, isAdmin: true, jobLine: { ...house.jobLine, machine: true } })).toMatchObject({ allow: false, gate: "approval" });
+  expect(verdictOf(small, house)).toEqual(verdictOf(small, base));
+  expect(verdictOf(small, { ...house, jobLine: { ...house.jobLine, machine: true } })).toEqual(verdictOf(small, base));
+  /* The press (admission), in the house: the same words and none of the figures; the hold counts; an admin clears it; a machine never. */
+  const houseWs = { ...workspace(`gate_house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false };
+  await runInTenant(houseWs, async () => {
+    const m = { isAdmin: false, machine: false, modelId: "mock", key: "ark" as const };
+    const refused = jobLineGate({ takeUsd: 25, ...m });
+    expect(refused).toMatch(/An admin has to start it\./);
+    expect(refused).not.toMatch(/\bcr\b|\d/);
+    expect(jobLineGate({ takeUsd: 15, ...m })).toBeNull();
+    expect(jobLineGate({ takeUsd: 15, ...m, band: 2 })).not.toBeNull();
+    expect(jobLineGate({ takeUsd: 25, ...m, isAdmin: true })).toBeNull();
+    expect(jobLineGate({ takeUsd: 25, ...m, isAdmin: true, machine: true })).toMatch(/never start it\./);
+    expect(jobLineGate({ takeUsd: 15, ...m, machine: true })).toBeNull();
   });
 });
 
-test("the reservation at the line: exactly 200 cr is allowed, 201 cr is refused; an own-key (house) job over it is not judged", async () => {
+test("the reservation at the line: exactly 200 cr is allowed, 201 cr is refused; the house is judged at cost", async () => {
   const { reserveGenerationSpend } = await import("../../lib/generationRequests");
   const { runInTenant } = await import("../../lib/tenant");
   const { platformDb, platformReady } = await import("../../lib/platform");
@@ -223,14 +242,27 @@ test("the reservation at the line: exactly 200 cr is allowed, 201 cr is refused;
       if (allowed) await attempt; else await expect(attempt).rejects.toMatchObject({ status: 403 });
     }, { user: person("u_member", "member") });
   }
-  /* The house pays no credits: its jobs are not judged, member or not, token or not. */
+  /* The house is judged at cost: $25 is 250 cr at no margin, $15 is 150. A member needs an admin, an admin's tap clears it, a token is refused outright, under the line is unchanged. */
   const house = { ...workspace(`house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false };
+  const refusal = async (work: () => Promise<unknown>) => { try { await work(); } catch (e) { return e as Error & { status?: number }; } return null; };
   await runInTenant(house, async () => {
     await ready();
-    await reserveGenerationSpend(event(`gen_house_${run}`, over_(at201)));
+    const m = await refusal(() => reserveGenerationSpend(event(`gen_house_m_${run}`, 25)));
+    expect(m).toMatchObject({ status: 403 });
+    expect(m!.message).toMatch(/An admin has to start it\./);
+    expect(m!.message).not.toMatch(/\bcr\b|\d/);
+    await reserveGenerationSpend(event(`gen_house_u_${run}`, 15));
+    const t = await refusal(() => reserveGenerationSpend(event(`gen_house_t_${run}`, 25), { token: { id: "tok_h", capUsd: null, capCredits: null } }));
+    expect(t).toMatchObject({ status: 403 });
+    expect(t!.message).toMatch(/never start it/);
+    const a = await refusal(() => reserveGenerationSpend(event(`gen_house_a_${run}`, 25, { createdBy: "agent:run_9" })));
+    expect(a).toMatchObject({ status: 403 });
   }, { user: person("u_member", "member") });
+  await runInTenant(house, async () => {
+    await ready();
+    await reserveGenerationSpend(event(`gen_house_admin_${run}`, 25));
+  }, { user: person("u_admin", "admin") });
 });
-const over_ = (usd: number) => usd * 4;
 
 test("no actor: a reservation with nobody behind it is refused over the line unless its caller marks it a continuation; a known author is judged as themselves", async () => {
   const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
@@ -325,12 +357,24 @@ test("audio, dubbing and text quotes: the same words at the quote, for a member 
   const { paidTextQuoteResponse } = await import("../../lib/paidText");
   const { runInTenant } = await import("../../lib/tenant");
   const ws = workspace(`quotes_${run}`);
-  await runInTenant(ws, async () => { expect(jobLineNow(300)).toMatch(/An admin has to start it\./); expect(jobLineNow(150)).toBeNull(); },
+  const at = (credits: number) => ({ credits, usd: credits / 10, key: "elevenlabs" as const });
+  await runInTenant(ws, async () => { expect(jobLineNow(at(300))).toMatch(/An admin has to start it\./); expect(jobLineNow(at(150))).toBeNull(); },
     { user: person("u_member", "member") });
-  await runInTenant(ws, async () => { expect(jobLineNow(300)).toBeNull(); }, { user: person("u_admin", "admin") });
-  await runInTenant(ws, async () => { expect(jobLineNow(300)).toMatch(/never start it\./); expect(jobLineNow(150)).toBeNull(); },
+  await runInTenant(ws, async () => { expect(jobLineNow(at(300))).toBeNull(); }, { user: person("u_admin", "admin") });
+  await runInTenant(ws, async () => { expect(jobLineNow(at(300))).toMatch(/never start it\./); expect(jobLineNow(at(150))).toBeNull(); },
     { user: person("u_admin", "admin"), token: { id: "tok", name: "agent", scope: "render", capUsd: null } });
-  await runInTenant(ws, async () => { expect(jobLineNow(300)).toMatch(/never start it\./); }, { user: person("agent:run_1", "admin") });
+  await runInTenant(ws, async () => { expect(jobLineNow(at(300))).toMatch(/never start it\./); }, { user: person("agent:run_1", "admin") });
+  /* The house, judged at cost: $25 is over the line, $15 is not, and the words carry no figure. */
+  const house = { ...workspace(`quotes_house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false };
+  await runInTenant(house, async () => {
+    const refused = jobLineNow({ credits: 0, usd: 25, key: "elevenlabs" });
+    expect(refused).toMatch(/An admin has to start it\./);
+    expect(refused).not.toMatch(/\bcr\b|\d/);
+    expect(jobLineNow({ credits: 0, usd: 15, key: "elevenlabs" })).toBeNull();
+  }, { user: person("u_member", "member") });
+  await runInTenant(house, async () => { expect(jobLineNow({ credits: 0, usd: 25, key: "elevenlabs" })).toBeNull(); }, { user: person("u_admin", "admin") });
+  await runInTenant(house, async () => { expect(jobLineNow({ credits: 0, usd: 25, key: "elevenlabs" })).toMatch(/never start it\./); },
+    { user: person("u_admin", "admin"), token: { id: "tok", name: "agent", scope: "render", capUsd: null } });
   /* A text quote over the line is refused with needsAdmin; under it, the quote is as ever. */
   const quote = (credits: number) => ({ model: "m", effort: "auto", estimateCredits: credits, estimateUsd: credits / 10 });
   await runInTenant(ws, async () => {
@@ -351,30 +395,109 @@ test("the quote's context: a token's quote is a machine's, an agent's too, a per
   await runInTenant(ws, async () => {
     await ready();
     const person_ = await contextFor([], { isAdmin: true });
-    expect(person_.jobLine).toEqual({ credits: LINE, machine: false });
+    expect(person_.jobLine).toEqual({ credits: LINE, machine: false, house: false, perCredit: 0.1 });
     expect(verdictOf(big, person_).allow).toBe(true);
   }, { user: person("u_admin", "admin") });
   await runInTenant(ws, async () => {
     await ready();
     /* A token that carries an admin's identity (GET /api/rig/bindings/[id] answers it this): refused, as the press would. */
     const ctx = await contextFor([], { isAdmin: true });
-    expect(ctx.jobLine).toEqual({ credits: LINE, machine: true });
+    expect(ctx.jobLine).toEqual({ credits: LINE, machine: true, house: false, perCredit: 0.1 });
     expect(verdictOf(big, ctx)).toMatchObject({ allow: false, gate: "approval" });
   }, { user: person("u_admin", "admin"), token: { id: "tok", name: "agent", scope: "render", capUsd: null } });
   await runInTenant(ws, async () => {
     await ready();
     expect((await contextFor([], { isAdmin: false })).jobLine?.machine).toBe(true);
   }, { user: person("agent:run_2", "member") });
+  /* The house is judged at cost: its context says so, and a $25 line is refused for a member and passes for an admin, a $15 one for both. */
+  const house = { ...workspace(`ctx_house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false };
+  const houseQuote = (usd: number) => quoteOf([{ ...unit(usd), platformPays: false }]);
+  await runInTenant(house, async () => {
+    await ready();
+    const ctx = await contextFor([], { isAdmin: false });
+    expect(ctx.jobLine).toMatchObject({ house: true, perCredit: 0.1, machine: false });
+    expect(verdictOf(houseQuote(25), ctx)).toMatchObject({ allow: false, gate: "approval" });
+    expect(verdictOf(houseQuote(15), ctx).allow).toBe(true);
+  }, { user: person("u_member", "member") });
+  await runInTenant(house, async () => {
+    await ready();
+    expect(verdictOf(houseQuote(25), await contextFor([], { isAdmin: true })).allow).toBe(true);
+  }, { user: person("u_admin", "admin") });
 });
 
-test("dubbing refuses before the dub take or its job row is written, so no failed take is left in the Library; audio before its claim; both at the quote", async () => {
+/** A stored audio original with a recorded length, as the dubbing spec seeds one (its bytes on disk are the fixture tone). */
+async function seedLongSource(seconds: number) {
+  const { mkdirSync, writeFileSync, readFileSync, rmSync } = await import("node:fs");
+  const { db } = await import("../../lib/db");
+  const id = `g4dub${run}`;
+  const uploads = path.join(repoRoot, ".data", "uploads");
+  mkdirSync(uploads, { recursive: true });
+  const bytes = readFileSync(path.join(repoRoot, "public/fixtures/tone.mp3"));
+  const file = path.join(uploads, `${id}.mp3`);
+  writeFileSync(file, bytes);
+  await db().execute("INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('project','Project',0)");
+  await db().execute({
+    sql: "INSERT OR IGNORE INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,duration_s,created_at) VALUES(?,?,?,?,?,?,NULL,NULL,?,?,?,?)",
+    args: [id, "Long.mp3", "audio/mpeg", "mp3", bytes.length, "x", `/api/uploads/${id}`, "audio", seconds, Date.now()],
+  });
+  return { id, cleanup: () => rmSync(file, { force: true }) };
+}
+const repoRoot = path.resolve(__dirname, "../..");
+
+test("dubbing, run for real: an hour of source (about $30) is refused for a member and a machine before any take or job row is written, at the quote and at the press; an admin's tap clears it", async () => {
+  const { executeDubbingAdmission } = await import("../../lib/dubbing");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const { db, ready } = await import("../../lib/db");
+  await platformReady();
+  const ws = workspace(`dub_${run}`);
+  await platformDb().execute({ sql: `INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,?,?,?)`, args: [`grant_dub_${run}`, ws.id, 100_000, "Test", Date.now()] });
+  for (const [who, role] of [["u_member", "member"], ["u_admin", "admin"], ["agent:run_dub", "admin"]] as const)
+    await platformDb().execute({ sql: "INSERT OR IGNORE INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,?,?,0,0)", args: [ws.id, who, role] });
+  const rows = async (table: string) => Number((await db().execute(`SELECT COUNT(*) AS n FROM ${table}`)).rows[0].n);
+  const noop = { defer: async () => {} };
+  const member = { user: person("u_member", "member") };
+  const admin = { user: person("u_admin", "admin") };
+  const agent = { user: person("agent:run_dub", "admin") };
+  const token = { user: person("u_admin", "admin"), token: { id: "tok_dub", name: "agent", scope: "render" as const, capUsd: null } };
+  let cleanup = () => {};
+  let id = "";
+  /* The admission asserts the actor is the signed-in tenant, so each actor runs in its own scope. */
+  await runInTenant(ws, async () => { await ready(); const seeded = await seedLongSource(3600); id = seeded.id; cleanup = seeded.cleanup; }, member);
+  const body = () => ({ sourceUploadId: id, sourceLang: "en", targetLang: "es", mode: "v1", projectId: "project" });
+  try {
+    for (const [who, words] of [[member, /An admin has to start it\./], [agent, /never start it\./], [token, /never start it\./]] as const) {
+      await runInTenant(ws, async () => {
+        await ready();
+        /* At the quote, then at the press (a generous approval, so only this guardrail can stop it). */
+        for (const quoteOnly of [true, false]) {
+          const reply = await executeDubbingAdmission({ ...body(), quoteOnly, maxCredits: 5000 }, who, noop);
+          expect(reply.status, `${who.user.id} quoteOnly ${quoteOnly}`).toBe(403);
+          expect(reply.body, `${who.user.id} quoteOnly ${quoteOnly}`).toMatchObject({ needsAdmin: true });
+          expect(String(reply.body.error)).toMatch(words);
+        }
+        expect(await rows("generations")).toBe(0);
+        expect(await rows("dubbing_jobs")).toBe(0);
+      }, who);
+    }
+    /* An admin's own tap is not stopped by the line: the quote answers. */
+    await runInTenant(ws, async () => {
+      await ready();
+      const quote = await executeDubbingAdmission({ ...body(), quoteOnly: true }, admin, noop);
+      expect(quote.status).toBe(200);
+      expect(Number(quote.body.estimatedCredits)).toBeGreaterThan(LINE);
+    }, admin);
+  } finally { cleanup(); }
+});
+
+test("audio: the line is judged at the quote, before the claim (tripwire; audio cannot reach 200 cr with real inputs: 5,000 characters of speech price about 14 cr, five minutes of music about 13, a sound effect 1)", async () => {
   const { readFileSync } = await import("node:fs");
-  const dub = readFileSync("lib/dubbing.ts", "utf8");
-  expect(dub.indexOf("jobLineNow(estimatedCredits)"), "dubbing judges the line").toBeGreaterThan(0);
-  expect(dub.indexOf("jobLineNow(estimatedCredits)")).toBeLessThan(dub.indexOf("if (quoteOnly)"));
-  expect(dub.indexOf("jobLineNow(estimatedCredits)")).toBeLessThan(dub.indexOf("INSERT INTO generations"));
-  expect(dub.indexOf("jobLineNow(estimatedCredits)")).toBeLessThan(dub.indexOf("claimBinding("));
-  const audio = readFileSync("lib/audioAdmission.ts", "utf8");
-  expect(audio.indexOf("jobLineNow(estimatedCredits)"), "audio judges the line").toBeGreaterThan(0);
-  expect(audio.indexOf("jobLineNow(estimatedCredits)")).toBeLessThan(audio.indexOf("if (quoteOnly)"));
+  const dub = readFileSync(path.join(repoRoot, "lib/dubbing.ts"), "utf8");
+  const dubAt = dub.indexOf("jobLineNow({");
+  expect(dubAt, "dubbing judges the line").toBeGreaterThan(0);
+  for (const later of ["if (quoteOnly)", "INSERT INTO generations", "claimBinding("]) expect(dubAt, later).toBeLessThan(dub.indexOf(later, dubAt));
+  const audio = readFileSync(path.join(repoRoot, "lib/audioAdmission.ts"), "utf8");
+  const audioAt = audio.indexOf("jobLineNow({");
+  expect(audioAt, "audio judges the line").toBeGreaterThan(0);
+  expect(audioAt).toBeLessThan(audio.indexOf("if (quoteOnly)", audioAt));
 });

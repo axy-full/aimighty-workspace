@@ -145,7 +145,7 @@ export async function quotePaidText(input: QuotedTextInput, override?: CatalogMo
 }
 export function paidTextQuoteResponse(quote: PaidTextQuote): Response {
   /* Guardrail 4 at the quote: a text job over the approval line needs an admin's own tap (lib/shotCap.ts › jobLineNow). */
-  const over = jobLineNow(quote.estimateCredits);
+  const over = jobLineNow({ credits: quote.estimateCredits, usd: quote.estimateUsd ?? 0, key: textKeyName(quote.model) });
   if (over) return Response.json({ error: over, needsAdmin: true }, { status: 403, headers: { "Cache-Control": "no-store" } });
   return Response.json(atomikPublicResponse(quote, creditsApply(currentTenant()?.workspace)), { headers: { "Cache-Control": "no-store" } });
 }
