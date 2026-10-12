@@ -35,11 +35,26 @@ The running log of the overnight redesign build. A restarted session reads this 
 
 ## Prices with no live quote path ("quoted")
 
-- Lip-sync (no engine: Sync existed only on the retired Higgsfield sign-in path)
-- Make turnaround (no code)
-- Start from a tile (no code)
-- A plan's fix (priced only when its turn comes)
-- "/" skills (no per-skill quote)
+Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of #655 at cc4270cc, 12 Oct. The owner's override lets these show "quoted" until a live quote path exists.
+
+- Lip-sync
+- Make turnaround
+- Start from a tile
+- Fix (from a board plan)
+- A built-in "/" skill (Unboxing, Try-on, Tutorial, Photoshoot, Narrated video and the rest of the prototype's list)
+- Hook review
+- Finish panel
+- Start, as a visitor
+- Make, as a visitor
+- Redraw a shot whose take has no recorded request (the Rig's "what a change will cost")
+- Adapt a cut to another size or length (Deliver)
+- A language of a finished cut: dubbed voice, lip-sync and on-screen text (Deliver)
+- A still format's run (Campaign › Formats)
+- A format with no brief or engine behind it (Campaign › Formats)
+- Transfer motion (Make › Remix)
+- Swap an object (Make › Remix)
+- Cut into clips (Make › Remix)
+- Add an effect (Make › Remix)
 
 ## Next (when resumed)
 
@@ -199,3 +214,4 @@ The running log of the overnight redesign build. A restarted session reads this 
 - 12 Oct, 21:45 IST: **#681 at 02143335**: option (b) built (a 'can't open' card for someone else's private board; GET ?reach= answers like an unknown production; shared boards open view-only, with saves 403 view_only and canvas writes 404). Guard suites-asset-link restated to require (b) on the owner's direct word, with :183 the same cause. 10/10 at five sizes, 85 units. In CI (38276001245) with a fresh Opus privacy review. **#680 at 92ff8378**: productions with two or more people's boards are admin-only; Opus fresh review; CI 38271795176. **NEW #683** phone plan page (a754a2f5): Opus review, then CI. #665 merged release/1 (42332921); the five-minute swap was refused again by the permission check, so it goes back to the owner. #655's run cancelled to give #681 the slot. Correction: the video-frame flake is a single known failure (38262825703), not three; lane A has about 45 minutes on it. Lane C: the sample read-only PR, cut from #681.
 - 12 Oct, 21:49 IST: **#680 Opus APPROVED at 92ff8378** (the final production rule; nothing found that games it). **#683 Opus approved the money display**, with two fixes asked (the Choose note in view, and $49 dropped from planView().meta); lane A does them after the flake time-box. **#681 at 02143335: Opus asked for one guard addition** (after unshare, ?id= gives null and the private upload gives 404 through the API); lane C is adding it. Opus also found three OLDER private-board gaps, not from #681: GET /api/shots lists private boards' shots and node text; POST /api/shots writes into any project; generationAdmission accepts any projectId and its 404 reveals that prj_wb_ ids exist. NEW PR fix/r1-private-shots (lane C, Opus review), to go in deploy #2 before testers.
 - 12 Oct, 22:31 IST: **#685 (private shots and renders, 90965b2e): Opus CHANGES NEEDED.** Still open: review links (an admin can mint a public link to a private board), the atomik draft, treatment and cast routes, and the shot and take edits by id. #680's workAccess must check reach first (404 like an unknown id) before maker-or-admin; unconditional reach for timing; plus a no-hold test. Lane C is fixing these ahead of the sample PR. OWNER QUESTION: should GET /api/jobs and MCP list_renders and get_render hide private boards' takes (prompts, prj_wb_ ids)? #681 (25c3f8a0) and #655 are in CI.
+- 12 Oct, 22:42 IST: #655 (Remix prices) Opus money review: clean (no typed figures; ops only open their priced tool; Ask Atomik only fills the field; no source, no run; no vendor cost). The one ask is done: the 'quoted' list above is regenerated from lib/v12/unpriced.ts (18 entries, including #655's four Remix ops), since it was behind the code. #655 green 24/24 on 064b0cbd; it merges after #681 in the order. #683 in CI.
