@@ -16,6 +16,7 @@ import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { Btn, Fold, Folded, LinkBtn, Note, Problem, Row, Section } from "../parts";
 import { creditPriceLine, creditsWithUsd, monthKey, monthLine, monthTotalsOf, planView, topUpLabel, topUpPack, type PlanDefLike } from "../model";
 import { lostConnection, useRead, useWrite } from "../use-settings";
+import { PlanRows } from "./PlanRows";
 
 /**
  * Settings › Plan & credits (README § 3.5; Workspace's Plans & credits and Usage tabs, § 1.2).
@@ -87,6 +88,8 @@ export function CreditsSection({ account, open }: { account: WorkspaceAccount | 
   };
 
   const plan = planView(billing.data?.plans, billing.data?.subscription);
+  /* The plan's name as the desktop says it: no price beside it (the plans below carry the prices; a retired plan's old price is never shown). */
+  const planName = billing.data?.subscription?.planId ? (billing.data.plans?.find((p) => p.id === billing.data!.subscription!.planId)?.label ?? billing.data.subscription.planId) : plan.meta;
   const shown = balance != null && inCredits ? creditsWithUsd(balance, rate) : null;
   const topUp = first && canRequest ? (
     <button type="button" className="gs-primary" disabled={busy != null || full} title={full ? `${openLimit} requests are waiting` : undefined} onClick={() => void request(first.id)} data-testid="settings-top-up">
@@ -115,7 +118,7 @@ export function CreditsSection({ account, open }: { account: WorkspaceAccount | 
         {note ? <div ref={noteRef}><Note ok={note.ok} text={note.text} testId="settings-credits-note" /></div> : null}
       </Section>
 
-      <Section label="Plan" meta={billing.data ? plan.meta : undefined} testId="settings-plan">
+      <Section label="Plan" meta={billing.data ? planName : undefined} testId="settings-plan">
         {billing.error ? <Problem text={billing.error} onRetry={() => void billing.read()} /> : !billing.data ? <Row name="Reading the plan…" /> : null}
         {plan.included != null ? <Row name="Included" line="per month · no rollover" value={creditsText(plan.included)} valueTitle={creditsUsd(plan.included, rate)} testId="settings-plan-included" /> : null}
         {plan.status ? <Row name="Status" value={plan.status} /> : null}
@@ -125,6 +128,7 @@ export function CreditsSection({ account, open }: { account: WorkspaceAccount | 
           </Row>
         ) : null}
       </Section>
+      {inCredits && billing.data ? <PlanRows plans={billing.data.plans} current={billing.data.subscription?.planId ?? null} /> : null}
 
       {applies ? (
         <Folded name="packs" open={open} label="Packs and requests" meta={waiting.length ? `${waiting.length} waiting` : "a request, approved by the platform"}>
