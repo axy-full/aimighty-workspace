@@ -124,8 +124,8 @@ export default function BillingClient({
     [busy, setBusy] = useState(""),
     [newName, setNewName] = useState("");
   /* The choice carried from sign-up or the pricing page; a carried "annual" reads as monthly while yearly is hidden (lib/plans.ts). */
-  const [planId, setPlanId] = useState<string>(chosenPlanFrom(initialPlan));
-  const [cadence, setCadence] = useState<"monthly" | "annual">(cadenceFrom(initialCadence));
+  const [planId, setPlanId] = useState<string>(() => chosenPlanFrom(initialPlan));
+  const [cadence, setCadence] = useState<"monthly" | "annual">(() => cadenceFrom(initialCadence));
   const applyAccount = useCallback(
     ({ responses, bodies }: Awaited<ReturnType<typeof loadAccount>>) => {
       const [billingResponse, workspaceResponse, plansResponse, topupResponse] =
