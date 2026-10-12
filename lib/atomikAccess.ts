@@ -15,8 +15,9 @@ import { isAgentId } from "./security/people-only";
  * The one exception: an admin, for another MEMBER's step that is over the workspace's per-shot cap or over guardrail 4's line right now (so it needs an admin's tap),
  * who is shown its id, title and price and nothing else (`adminStepSheet`). Once it needs no admin it is gone for them too. Another admin's step needs only its owner.
  *
- * TODO(owner decision, asked 12 Oct): who may CLAIM and approve such a step (app/api/atomik/steps/[id]/claim) is unchanged here, as is what the claim returns to
- * an admin. Until the owner decides, the queue offers an admin no Approve, Open or Not now on another person's step: it shows the title and the price.
+ * Claiming a step (app/api/atomik/steps/[id]/claim: it marks the step running, which approves its spend, and returns its prompt) is the step's person's alone, like
+ * every other door. TODO(owner decision, asked 12 Oct): an admin's path to claim another member's over-the-cap or over-the-line step waits for the owner; until then it
+ * is closed, and the queue offers an admin no Approve, Open or Not now on another person's step: it shows the title and the price.
  */
 export const CHAT_GONE = "That chat is gone.";
 export const STEP_GONE = "That step is gone.";

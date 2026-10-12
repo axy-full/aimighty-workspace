@@ -129,8 +129,10 @@ function ApprovalRow({ item, approvals, online, now, onTopUp, onPlan, onThread }
     toast(out.ok ? `${item.title} approved${words && words !== "free" ? ` · ${words}${held ? " held" : ""}` : ""}` : out.reason);
   };
   let action: React.ReactNode;
+  /* Another person's step an admin is shown (lib/atomikAccess.ts): its price, and nothing to open or press. */
+  if (item.open.kind === "none") action = item.price ? <span className="ph-row-price" data-testid="phone-row-price"><Price value={item.price} /></span> : null;
   /* An Atomik plan's step is approved with its plan's Continue, never from this row: Open shows the plan, as on the desktop. */
-  if (item.approve?.kind === "thread") action = item.open.kind === "none" ? (item.price ? <span className="ph-row-price" data-testid="phone-row-price"><Price value={item.price} /></span> : null) : (
+  else if (item.approve?.kind === "thread") action = (
     <button type="button" className="ph-btn" onClick={() => onThread(item)} aria-label={`Open the plan: ${item.title}`} data-testid="phone-row-open">Open</button>
   );
   /* The sample spends nothing: its row says so in its line, and offers no priced button. */

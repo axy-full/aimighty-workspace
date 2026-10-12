@@ -27,11 +27,12 @@ const ws = ((id: string): TenantWorkspace => ({
 const user = (id: string, role: "admin" | "member" = "member") => ({ id, email: `${id}@example.test`, name: id, role, owner: id === "u_owner", disabled: false, lastSeen: null, createdAt: 0 });
 type Who = ReturnType<typeof user>;
 
+let asToken = false;
 function loadRoute<T>(file: string, who: () => Who): T {
   const root = process.cwd();
   const real = createRequire(path.resolve(file));
   const fakes: Record<string, unknown> = {
-    "@/lib/auth": { withTenant: (handler: unknown) => handler, requireUser: async () => ({ user: who() }), requireRender: async () => ({ user: who() }), requireSession: async () => ({ user: who() }) },
+    "@/lib/auth": { withTenant: (handler: unknown) => handler, requireUser: async () => ({ user: who() }), requireRender: async () => ({ user: who(), ...(asToken ? { token: { id: "tok", name: "t", scope: "render" } } : {}) }), requireSession: async () => ({ user: who() }) },
   };
   const filename = path.resolve(file);
   const compiled = ts.transpileModule(readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
@@ -54,6 +55,7 @@ test("a chat and its steps are their person's: lists leave others out, every doo
   const chat = R<typeof import("../../app/api/atomik/[id]/route")>("app/api/atomik/[id]/route.ts");
   const threadsRoute = R<typeof import("../../app/api/atomik/threads/route")>("app/api/atomik/threads/route.ts");
   const stepRoute = R<typeof import("../../app/api/atomik/steps/[id]/route")>("app/api/atomik/steps/[id]/route.ts");
+  const claim = R<typeof import("../../app/api/atomik/steps/[id]/claim/route")>("app/api/atomik/steps/[id]/claim/route.ts");
   const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
   const req = (method: string, body?: unknown) => new Request("https://particl.test/x", { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
   await tenant.runInTenant(ws, async () => {
@@ -114,9 +116,26 @@ test("a chat and its steps are their person's: lists leave others out, every doo
   }), { user: owner });
   expect(rows).toEqual({ title: { title: "ach_a chat", deleted: 0 }, status: "proposed", messages: 2 });
 
+  /* Claiming a step approves its spend and hands back its prompt: only the step's person claims it. An admin, a member and a token on another's step, and a step that is not there, all
+     get the same 404, and the step stays proposed. */
+  const claimed = (actor: Who, step: string, token = false) => { asToken = token; return asking(actor, () => claim.POST(req("POST") as never, ctx(step))).finally(() => { asToken = false; }); };
+  const unknownClaim = await claimed(admin, "st_nothing");
+  expect(unknownClaim).toEqual(GONE_STEP);
+  for (const [label, actor, token] of [["an admin", admin, false], ["a member", other, false], ["the owner of the workspace", owner, false], ["a token of a member", other, true], ["a token of an admin", admin, true]] as const)
+    expect(await claimed(actor, "st_ach_a", token), `${label}: claim on another's step`).toEqual(unknownClaim);
+  expect(await claimed(admin, "st_ach_big"), "an admin's claim on an over-the-line step waits for the owner").toEqual(unknownClaim);
+  const states = await tenant.runInTenant(ws, async () => (await db().execute({ sql: "SELECT id, status, attempt, claimed_by FROM atomik_steps ORDER BY id", args: [] })).rows.map((r) => [r.id, r.status, r.attempt, r.claimed_by]), { user: owner });
+  expect(states, "no step was touched").toEqual([["st_ach_a", "proposed", 0, null], ["st_ach_b", "proposed", 0, null], ["st_ach_big", "proposed", 0, null]]);
+  /* An unknown id answers a model or effort change as another member's chat does (not a 200). */
+  expect(await asking(admin, () => chat.PATCH(req("PATCH", { model: "auto" }) as never, ctx("ach_nothing")))).toEqual([404, { error: "That thread is gone." }]);
+  expect(await asking(other, () => chat.PATCH(req("PATCH", { model: "auto" }) as never, ctx("ach_a")))).toEqual([404, { error: "That thread is gone." }]);
+
   /* The owner reaches theirs. */
   expect((await asking(mate, () => chat.GET(req("GET") as never, ctx("ach_a"))))[0]).toBe(200);
   expect((await asking(mate, () => stepRoute.GET(req("GET") as never, ctx("st_ach_a"))))[0]).toBe(200);
+  const mine = await claimed(mate, "st_ach_a");
+  expect(mine[0], "the step's own person still claims it").toBe(200);
+  expect(mine[1]).toMatchObject({ step: { id: "st_ach_a", status: "running" } });
   expect((await asking(mate, () => chat.PATCH(req("PATCH", { title: "Renamed" }) as never, ctx("ach_a"))))[0]).toBe(200);
 
   /* An admin: another member's step under the line is gone; over it, only its id, title and price, and nothing to change. */

@@ -4,6 +4,7 @@ import { claimStep, getStep, reconcileRunningSteps, stepForBrowser } from "@/lib
 import { ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
 import { ARCHIVED_NOTE, threadArchived } from "@/lib/atomikThreads";
 import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
+import { STEP_GONE, stepIsMine } from "@/lib/atomikAccess";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
@@ -24,13 +25,15 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) {
   const got = await requireRender();
   if (got.response) return got.response;
+  const { id } = await ctx.params;
+  /* Only the step's person claims it (lib/atomikAccess.ts): claiming marks it running, which approves its spend, and hands back its prompt. Anyone else (an admin included, a
+     token too) is told it is gone, as an unknown step is, and the step is left as it was. TODO(owner decision, asked 12 Oct): an admin's path to claim another member's
+     over-the-cap or over-the-line step waits for the owner's decision; until then it is closed. */
+  if ((await stepIsMine(id, got.user)) !== true) return NextResponse.json({ error: STEP_GONE }, { status: 404 });
   /* Claiming a step is approving its spend: a person's press, never a token's (owner rule; lib/security/people-only.ts). */
   if (!isPerson({ user: got.user, token: got.token })) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   /* The sample workspace spends nothing: no step is taken there. */
   { const off = await sampleWorkspaceOff(); if (off) return off; }
-  const { id } = await ctx.params;
-  /* TODO(owner decision, asked 12 Oct; lib/atomikAccess.ts): who may claim a step that is another person's (an admin, for one over the cap or line) and what the claim returns to them
-     are unchanged here. Today any signed-in person who can name a step id claims it and is handed the step. */
 
   /* A step planned on the connected account is never claimed: nothing here
      runs on that account any more, so it stays exactly as it was. */

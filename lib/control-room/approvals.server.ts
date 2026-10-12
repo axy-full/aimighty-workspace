@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { projectLister } from "@/lib/draftProject";
 import { db, ready } from "@/lib/db";
 import { platformDb, platformReady } from "@/lib/platform";
@@ -313,10 +314,11 @@ async function threadItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: 
     const productionId = text(r.project_id);
     const mine = String(r.chat_owner ?? "") === viewer.id;
     if (!mine) {
-      /* Title and price only, and the step's own id: no chat id, so nothing opens the chat. Nothing is offered to press until the owner decides who may claim it
+      /* Title and price only: no chat id and no step id, so nothing opens, claims or names it. Nothing is offered to press until the owner decides an admin's path
          (TODO in lib/atomikAccess.ts). */
       return {
-        id: `thread:${String(r.id)}`,
+        /* An opaque key (stable for this reader), not the chat's or the step's id: nothing in the item names the step. */
+        id: `thread-step:${createHash("sha256").update(`${ctx.workspaceId}:${viewer.id}:${String(r.id)}`).digest("hex").slice(0, 16)}`,
         source: "thread",
         title: shortText(text(r.title) ?? "A step"),
         where: "Atomik",
@@ -330,7 +332,7 @@ async function threadItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: 
         note: null,
         step: null,
         sample: false,
-        approve: { kind: "thread", chatId: null, stepId: String(r.id), productionId: null },
+        approve: null,
         decline: null,
         open: { kind: "none" },
       };
