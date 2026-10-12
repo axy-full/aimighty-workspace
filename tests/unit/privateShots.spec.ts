@@ -264,3 +264,83 @@ test("a render admitted with a claim on a private board writes no hold, claim ro
   for (const actor of [as("u_mate"), as("u_admin", "admin"), as("u_mate", "member", true)]) expect(await admit(actor, privateProject), actor.user.id).toEqual(unknown);
   expect(await counts(), "no take, hold, meter row or reservation was written").toEqual(before);
 });
+
+test("the routes that gate who may change work ask reach first: a private board's shot, take, project list and production answer exactly as an unknown id does, for a teammate, an admin and a token; where it can be reached the work rules still refuse", async () => {
+  const ws = workspace(`ps-f-${run}`);
+  const { tenant, database, privateProject } = await fixture(ws);
+  let who = as("u_owner");
+  const shotRoute = loadRoute<typeof import("../../app/api/shots/[id]/route")>("app/api/shots/[id]/route.ts", () => who);
+  const reorder = loadRoute<typeof import("../../app/api/shots/reorder/route")>("app/api/shots/reorder/route.ts", () => who);
+  const sync = loadRoute<typeof import("../../app/api/shots/sync/route")>("app/api/shots/sync/route.ts", () => who);
+  const jobs = loadRoute<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts", () => who);
+  const productions = loadRoute<typeof import("../../app/api/productions/[id]/route")>("app/api/productions/[id]/route.ts", () => who);
+  const unknownProject = "prj_wb_doesnotexist0000000000", unknownShot = "shot_doesnotexist", unknownTake = "gen_doesnotexist", unknownProduction = "prod_doesnotexist";
+  await tenant.runInTenant(ws, async () => {
+    const db = database.db();
+    await db.execute({ sql: "INSERT INTO productions(id,name,created_at) VALUES('prod_priv','Private production',0),('prod_plain','Plain production',0)", args: [] });
+    await db.execute({ sql: "UPDATE projects SET production_id='prod_priv' WHERE id=?", args: [privateProject] });
+    await db.execute({ sql: "UPDATE projects SET production_id='prod_plain' WHERE id='prod_open'", args: [] });
+    await db.execute({ sql: "UPDATE shots SET created_by='u_mate' WHERE id=?", args: [`shot_priv_${run}`] });
+    await db.execute({ sql: "INSERT INTO shots(id,project_id,code,title,description,setup,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,1,1)", args: [`shot_mine_${run}`, "prod_open", "SH020", "Mine", "", "{}", "u_mate"] });
+    await db.execute({ sql: "INSERT INTO shots(id,project_id,code,title,description,setup,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,1,1)", args: [`shot_theirs_${run}`, "prod_open", "SH030", "Theirs", "", "{}", "u_owner"] });
+    for (const [id, project, by] of [[`gen_priv_${run}`, privateProject, "u_mate"], [`gen_mine_${run}`, "prod_open", "u_mate"], [`gen_theirs_${run}`, "prod_open", "u_owner"]])
+      await db.execute({ sql: "INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,title,deleted,created_by,project_id,stored_url) VALUES(?,'m','p','{}','succeeded',1,1,'image','A take',0,?,?,?)", args: [id, by, project, `/api/media/${id}`] });
+  }, { user: user("u_owner") });
+  const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+  const req = (method: string, body?: unknown) => new Request("https://particl.test/x", { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  /* Timestamps differ by run; the rest of an answer is compared whole. */
+  const answer = async (res: Response) => { const body = await res.json().catch(() => null) as Record<string, unknown> | null; if (body) delete body.at; return [res.status, body] as const; };
+  const asking = (actor: ReturnType<typeof as>, fn: () => Promise<Response>) => { who = actor; return tenant.runInTenant(ws, async () => { try { return answer(await fn()); } catch (e) { return ["threw", String((e as Error).message)] as const; } }, { user: actor.user, token: actor.token as never }); };
+  const rows = (sql: string, args: unknown[] = []) => tenant.runInTenant(ws, async () => (await database.db().execute({ sql, args: args as never })).rows, { user: user("u_owner") });
+  const people = [as("u_mate"), as("u_admin", "admin"), as("u_mate", "member", true)];
+  const priv = { shot: `shot_priv_${run}`, take: `gen_priv_${run}` }, mine = { shot: `shot_mine_${run}`, take: `gen_mine_${run}` }, theirs = { shot: `shot_theirs_${run}`, take: `gen_theirs_${run}` };
+
+  for (const actor of people) {
+    const sees = (label: string, a: () => Promise<readonly [unknown, unknown]>, b: () => Promise<readonly [unknown, unknown]>) =>
+      a().then(async (got) => expect(got, `${actor.user.id}${actor.token ? " token" : ""}: ${label}`).toEqual(await b()));
+    const unknown404 = await asking(actor, () => shotRoute.PATCH(req("PATCH", { title: "x" }), ctx(unknownShot)));
+    expect(unknown404, "an unknown shot").toEqual([404, { error: "No such shot." }]);
+    /* The shot itself: change, move, delete. */
+    await sees("shot PATCH", () => asking(actor, () => shotRoute.PATCH(req("PATCH", { title: "Hijack" }), ctx(priv.shot))), () => asking(actor, () => shotRoute.PATCH(req("PATCH", { title: "Hijack" }), ctx(unknownShot))));
+    await sees("shot DELETE", () => asking(actor, () => shotRoute.DELETE(req("DELETE"), ctx(priv.shot))), () => asking(actor, () => shotRoute.DELETE(req("DELETE"), ctx(unknownShot))));
+    /* Moving the actor's own shot INTO a private board, or into a project that is not there. */
+    await sees("shot moved into the board", () => asking(actor, () => shotRoute.PATCH(req("PATCH", { projectId: privateProject }), ctx(mine.shot))), () => asking(actor, () => shotRoute.PATCH(req("PATCH", { projectId: unknownProject }), ctx(mine.shot))));
+    expect(await asking(actor, () => shotRoute.PATCH(req("PATCH", { projectId: privateProject }), ctx(mine.shot)))).toEqual([404, { error: "No such project." }]);
+    /* The order of a board's shots, and sending its list. */
+    await sees("reorder", () => asking(actor, () => reorder.POST(req("POST", { projectId: privateProject, ids: [priv.shot] }), ctx(""))), () => asking(actor, () => reorder.POST(req("POST", { projectId: unknownProject, ids: [priv.shot] }), ctx(""))));
+    await sees("sync", () => asking(actor, () => sync.POST(req("POST", { projectId: privateProject }), ctx(""))), () => asking(actor, () => sync.POST(req("POST", { projectId: unknownProject }), ctx(""))));
+    /* The take: change, trash, delete, review, and moving one of the actor's own into a board or against a shot of one. */
+    for (const body of [{ title: "Hijack" }, { reviewState: "approved" }, { trashed: true }, { projectId: null }, { useAs: "first" }])
+      await sees(`take PATCH ${JSON.stringify(body)}`, () => asking(actor, () => jobs.PATCH(req("PATCH", body), ctx(priv.take))), () => asking(actor, () => jobs.PATCH(req("PATCH", body), ctx(unknownTake))));
+    await sees("take DELETE", () => asking(actor, () => jobs.DELETE(req("DELETE"), ctx(priv.take))), () => asking(actor, () => jobs.DELETE(req("DELETE"), ctx(unknownTake))));
+    await sees("take moved into the board", () => asking(actor, () => jobs.PATCH(req("PATCH", { projectId: privateProject }), ctx(mine.take))), () => asking(actor, () => jobs.PATCH(req("PATCH", { projectId: unknownProject }), ctx(mine.take))));
+    expect(await asking(actor, () => jobs.PATCH(req("PATCH", { projectId: privateProject }), ctx(mine.take)))).toEqual([404, { error: "No such project." }]);
+    await sees("take filed against the board's shot", () => asking(actor, () => jobs.PATCH(req("PATCH", { shotId: priv.shot }), ctx(mine.take))), () => asking(actor, () => jobs.PATCH(req("PATCH", { shotId: unknownShot }), ctx(mine.take))));
+    /* The production over a private board. */
+    await sees("production PATCH", () => asking(actor, () => productions.PATCH(req("PATCH", { name: "Hijack" }), ctx("prod_priv"))), () => asking(actor, () => productions.PATCH(req("PATCH", { name: "Hijack" }), ctx(unknownProduction))));
+    expect(await asking(actor, () => productions.PATCH(req("PATCH", { name: "Hijack" }), ctx("prod_priv")))).toEqual([404, { error: "No such production." }]);
+  }
+  /* Nothing was written: the private shot, take and production are as they were, and nothing landed in the board. */
+  expect((await rows("SELECT title FROM shots WHERE id=?", [priv.shot]))[0].title).toBe("Secret title");
+  expect(await rows("SELECT id FROM shots WHERE id=?", [priv.shot])).toHaveLength(1);
+  expect(await rows("SELECT id FROM generations WHERE id=? AND deleted=0 AND title='A take'", [priv.take])).toHaveLength(1);
+  expect((await rows("SELECT name FROM productions WHERE id='prod_priv'"))[0].name).toBe("Private production");
+  expect(await rows("SELECT id FROM shots WHERE project_id=? AND id<>?", [privateProject, priv.shot])).toHaveLength(0);
+  expect(await rows("SELECT id FROM generations WHERE project_id=? AND id<>?", [privateProject, priv.take])).toHaveLength(0);
+  expect((await rows("SELECT project_id FROM shots WHERE id=?", [mine.shot]))[0].project_id, "the moved shot stayed").toBe("prod_open");
+
+  /* The owner still does all of it on their own board. */
+  expect((await asking(as("u_owner"), () => shotRoute.PATCH(req("PATCH", { title: "Renamed" }), ctx(priv.shot))))[0]).toBe(200);
+  expect((await asking(as("u_owner"), () => productions.PATCH(req("PATCH", { name: "Renamed" }), ctx("prod_priv"))))[0]).toBe(200);
+  /* Where the board CAN be reached, the work rules still refuse someone else's work in their own words (lib/workAccess.ts). */
+  const refused = await asking(as("u_mate"), () => shotRoute.PATCH(req("PATCH", { title: "Hijack" }), ctx(theirs.shot)));
+  expect(refused[0]).toBe(403);
+  expect(JSON.stringify(refused[1])).toContain("someone else's work");
+  expect((await asking(as("u_mate"), () => jobs.PATCH(req("PATCH", { title: "Hijack" }), ctx(theirs.take))))[0]).toBe(403);
+  expect((await asking(as("u_mate"), () => jobs.PATCH(req("PATCH", { title: "Mine" }), ctx(mine.take))))[0], "their own take, in a project they can reach").toBe(200);
+  expect((await asking(as("u_mate"), () => productions.PATCH(req("PATCH", { name: "Hijack" }), ctx("prod_plain"))))[0], "a production of no one's board is an admin's").toBe(403);
+  expect((await asking(as("u_admin", "admin"), () => productions.PATCH(req("PATCH", { name: "Renamed" }), ctx("prod_plain"))))[0]).toBe(200);
+  /* Shared, the board is to look at: still not to change. */
+  await tenant.runInTenant(ws, () => database.db().execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.teamShared',json('true')) WHERE owner='u_owner'", args: [] }), { user: user("u_owner") });
+  expect(await asking(as("u_admin", "admin"), () => shotRoute.PATCH(req("PATCH", { title: "Hijack" }), ctx(priv.shot)))).toEqual([404, { error: "No such shot." }]);
+});

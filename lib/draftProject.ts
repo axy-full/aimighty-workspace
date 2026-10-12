@@ -106,3 +106,16 @@ export async function projectExists(projectId: string, ex: Exec = db()): Promise
   if (projectId === NO_SUCH_PROJECT) return false;
   return (await ex.execute({ sql: "SELECT 1 AS found FROM projects WHERE id = ? LIMIT 1", args: [projectId] })).rows.length > 0;
 }
+
+/**
+ * Whether `person` can see that a production is there: one whose every project is a private board of someone else's is, to them, a production that does not exist
+ * (a production with no project of its own, or with any project they may read, is the workspace's). Asked before the rules about who may CHANGE a production
+ * (lib/workAccess.ts), so a refusal never confirms that a private board's production exists.
+ */
+export async function productionReachable(person: { id: string } | null, productionId: string, ex: Exec = db()): Promise<boolean> {
+  if (!person) return true;
+  const rows = (await ex.execute({ sql: "SELECT id FROM projects WHERE production_id = ?", args: [productionId] })).rows;
+  if (!rows.length) return true;
+  for (const row of rows) if (await mayReachProject(person, String(row.id), "read", ex)) return true;
+  return false;
+}

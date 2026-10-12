@@ -13,6 +13,7 @@ import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { discardHeldJob } from "@/lib/held";
 import { withLedgerCharges } from "@/lib/usageLedger";
+import { NO_SUCH_PROJECT, mayReachProject } from "@/lib/draftProject";
 import { NOT_YOURS, mayChangeProject, mayChangeWork } from "@/lib/workAccess";
 import type { Transaction } from "@libsql/client";
 
@@ -31,6 +32,12 @@ async function discardHeld(tx: Transaction, id: string, row: Record<string, unkn
   return (await discardHeldJob(id, tx)) ? null : ACTIVE;
 }
 
+/** The take's id as the rest of the route should read it: a take filed in a private board that this person may not write is read as an id that names no take, so every answer after is an unknown take's. */
+async function takeIdFor(user: { id: string }, id: string): Promise<string> {
+  const row = (await db().execute({ sql: "SELECT project_id FROM generations WHERE id=?", args: [id] })).rows[0];
+  return row && row.project_id != null && !(await mayReachProject(user, String(row.project_id), "write")) ? NO_SUCH_PROJECT : id;
+}
+
 /** A take someone else made: its maker, the board's owner or an admin changes it (lib/workAccess.ts). A missing take is an unknown id and is left to the route's own answer for one. Null when the person may. */
 async function notYours(user: { id: string; role: "admin" | "member"; owner?: boolean }, id: string): Promise<Response | null> {
   const row = (await db().execute({ sql: "SELECT created_by, project_id, status FROM generations WHERE id=?", args: [id] })).rows[0];
@@ -45,11 +52,15 @@ async function notYours(user: { id: string; role: "admin" | "member"; owner?: bo
 async function notThere(user: { id: string; role: "admin" | "member"; owner?: boolean }, body: { projectId?: unknown; shotId?: unknown }): Promise<Response | null> {
   if (body.projectId !== undefined && body.projectId) {
     const target = String(body.projectId);
-    if ((await db().execute({ sql: "SELECT 1 FROM projects WHERE id=?", args: [target] })).rows.length && !(await mayChangeProject(user, target)))
+    /* A private board is its owner's to write and asking comes first: it is answered as a project that is not there, as is a project that is not there. */
+    if (!(await db().execute({ sql: "SELECT 1 FROM projects WHERE id=?", args: [target] })).rows.length || !(await mayReachProject(user, target, "write")))
+      return NextResponse.json({ error: "No such project." }, { status: 404 });
+    if (!(await mayChangeProject(user, target)))
       return NextResponse.json({ error: NOT_YOURS.moveToProject }, { status: 403 });
   }
   if (body.shotId !== undefined && body.shotId) {
     const shot = await getShot(String(body.shotId));
+    if (shot && !(await mayReachProject(user, shot.projectId, "write"))) return NextResponse.json({ error: "That shot is gone." }, { status: 404 });
     if (shot && !(await mayChangeWork(user, shot))) return NextResponse.json({ error: NOT_YOURS.moveToShot }, { status: 403 });
   }
   return null;
@@ -85,7 +96,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   const scopeProblem = workbenchScopeProblem(req, requireTenant().id, got.user.id, !got.token);
   if (scopeProblem) return NextResponse.json({ error: scopeProblem }, { status: 409 });
   await ready();
-  const { id } = await params;
+  const id = await takeIdFor(got.user, (await params).id);
   const body = await req.json().catch(() => ({}));
   /* A review is checked before anything is written: a state the trail knows
      (an unknown word used to clear a sign-off), a take still in the project,
@@ -260,7 +271,7 @@ export const DELETE = withTenant(async function DELETE(req: Request, { params }:
   const scopeProblem = workbenchScopeProblem(req, requireTenant().id, got.user.id, !got.token);
   if (scopeProblem) return NextResponse.json({ error: scopeProblem }, { status: 409 });
   await ready();
-  const { id } = await params;
+  const id = await takeIdFor(got.user, (await params).id);
   await workbenchReady();
   await mediaDeletionReady();
   const refused = await notYours(got.user, id);
