@@ -1,5 +1,4 @@
-import { isDraftProject, mayReachProject, ownsDraftProject } from "@/lib/draftProject";
-import { assertMoveAllowed, MoveRefused, parseJson } from "@/lib/projectMove";
+import { heldBoardsProductionId, heldBoardsProjectId, isDraftProject, mayReachProject, ownsDraftProject } from "@/lib/draftProject";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -121,16 +120,15 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
       { sql: `SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_library_uploads'`, args: [] },
     ]);
     if (!found.rows.length) return false;
-    /* A draft's own project is one person's board: only its owner deletes it. Its renders and identities then fall to Unfiled, which is shared (the
-       database sets their project to NULL), so it is asked like a move out: the owner must be able to open every upload they name (lib/projectMove.ts). */
-    if (isDraftProject(id)) {
+    /* A draft's own project is one person's board: only its owner deletes it. Its takes and identities are then re-filed into a hidden project of the
+       owner's own (never unfiled: the database would drop them into the shared pool, and the uploads they name would open to the team). */
+    const privateBoard = isDraftProject(id);
+    const holding = privateBoard ? heldBoardsProjectId(requireTenant().id, got.user.id) : null;
+    if (privateBoard) {
       if (!(await ownsDraftProject(got.user.id, id, tx))) return false;
-      const named = [
-        ...(await tx.execute({ sql: "SELECT params FROM generations WHERE project_id=?", args: [id] })).rows.map((r) => parseJson(r.params)),
-        ...(await tx.execute({ sql: "SELECT photos, cover_upload_id FROM identities WHERE project_id=?", args: [id] })).rows.map((r) => ({ photos: parseJson(r.photos), uploadId: r.cover_upload_id })),
-      ];
-      try { await assertMoveAllowed(tx, { from: id, to: null, named }, { id: got.user.id, role: got.user.role }); }
-      catch (error) { if (error instanceof MoveRefused) return false; throw error; }
+      const at = Date.now();
+      await tx.execute({ sql: `INSERT OR IGNORE INTO productions (id,name,created_at) VALUES (?,?,?)`, args: [heldBoardsProductionId(requireTenant().id, got.user.id), "Deleted boards", at] });
+      await tx.execute({ sql: `INSERT OR IGNORE INTO projects (id,name,description,created_at,production_id) VALUES (?,?,?,?,?)`, args: [holding!, "Deleted boards", "", at, heldBoardsProductionId(requireTenant().id, got.user.id)] });
     }
     const elementIds = elements.rows.map((r) => String((r as unknown as { id: string }).id));
     const holes = elementIds.map(() => "?").join(",");
@@ -163,8 +161,9 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
               FROM generations WHERE project_id = ? HAVING COUNT(*) > 0`,
         args: [id, got.user.id, Date.now(), id],
       },
-      { sql: `UPDATE generations SET project_id = NULL WHERE project_id = ?`, args: [id] },
-      { sql: `UPDATE identities SET project_id = NULL WHERE project_id = ?`, args: [id] },
+      /* Renders fall back to Unfiled; a private board's go to its owner's hidden project instead. */
+      { sql: `UPDATE generations SET project_id = ? WHERE project_id = ?`, args: [holding, id] },
+      { sql: `UPDATE identities SET project_id = ? WHERE project_id = ?`, args: [holding, id] },
       ...(await archiveDeleteStatements(tx, steps)),
     ]);
     return true;

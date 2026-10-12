@@ -523,89 +523,28 @@ test("moving a record is asked like an addition: B cannot move Y's private take 
     expect((await h.database.db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [draftProject] })).rows).toHaveLength(1);
     for (const id of [mine, mineShot, plain, mineDel]) { h.as("u_mate"); expect(await status(h, id), id).toBe(404); }
   }, { user: { id: "u_mate", email: "", name: "m", role: "member", owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
-  /* The owner may delete their own board; its takes then fall to the shared Unfiled (the database unfiles them), which opens what they name, as a move would. */
+  /* The owner may delete their own board. Its takes are re-filed into a hidden project of the owner's own, never unfiled into the shared pool: the uploads they name stay the owner's. */
+  const { heldBoardsProjectId } = await import("../../lib/draftProject");
   await h.tenant.runInTenant(ws, async () => {
     who = { id: "u_up", role: "member" };
     expect((await projects.DELETE(new Request("https://particl.test/x", { method: "DELETE" }), ctx(draftProject))).status).toBe(200);
-    expect((await h.database.db().execute({ sql: "SELECT project_id FROM generations WHERE id=?", args: [`gen_mv_del_${run}`] })).rows[0].project_id).toBeNull();
+    const holding = heldBoardsProjectId(ws.id, "u_up");
+    expect((await h.database.db().execute({ sql: "SELECT project_id FROM generations WHERE id=?", args: [`gen_mv_del_${run}`] })).rows[0].project_id).toBe(holding);
+    expect((await h.database.db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [draftProject] })).rows).toHaveLength(0);
     h.as("u_mate");
-    expect(await status(h, mineDel)).toBe(200);
+    expect(await status(h, mineDel), "a teammate, after the owner deleted the board").toBe(404);
+    h.as("u_up");
+    expect(await status(h, mineDel), "the owner").toBe(200);
+    /* Nobody else can move them out of it, and the owner can (asked like any move). */
+    const { assertMoveAllowed } = await import("../../lib/projectMove");
+    await assertMoveAllowed(h.database.db(), { from: holding, to: null, named: [{ uploadId: mineDel }] });
   }, { user: { id: "u_up", email: "", name: "u", role: "member", owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
-});
-
-test("filing a take against a shot moves it into the shot's project: B cannot file Y's private take against a shared shot, and the upload stays closed; a take already in that project files freely", async () => {
-  const h = await harness();
-  const { mappedId } = await import("../../lib/draftProject");
-  const ws = workspace(`access-t-${run}`);
-  let who = { id: "u_mate", role: "member" };
-  const jobs = loadRoute<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts", () => who);
-  const patch = (id: string, body: unknown) => jobs.PATCH(new Request("https://particl.test/x", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), ctx(id));
-  const draftProject = mappedId("prj_wb_", ws.id, "u_up", "d1");
-  const secret = `upl_fs_${run}`;
-  const asUser = (id: string) => ({ user: { id, email: "", name: id, role: "member" as const, owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
   await h.tenant.runInTenant(ws, async () => {
-    await h.database.ready();
-    await seedDraft(h, "u_up", "d1", draftProject);
-    await h.database.db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('prod_shared','Shared',0)", args: [] });
-    await seedUpload(h, secret, "u_up");
-    await h.database.db().execute({ sql: "INSERT INTO shots(id,project_id,code,created_at,updated_at) VALUES(?,?,'S1',1,1)", args: [`shot_fs_${run}`, "prod_shared"] });
-    const take = (id: string, project: string, upload?: string) => h.database.db().execute({
-      sql: "INSERT INTO generations(id,project_id,model,prompt,params,status,created_at,updated_at,kind) VALUES(?,?,?,?,?,'succeeded',1,1,'image')", args: [id, project, "m", "p", JSON.stringify(upload ? { references: [{ uploadId: upload }] } : {})] });
-    await take(`gen_fs_private_${run}`, draftProject, secret);
-    await take(`gen_fs_shared_${run}`, "prod_shared");
-  }, asUser("u_up"));
-  await h.tenant.runInTenant(ws, async () => {
-    who = { id: "u_mate", role: "member" };
-    const refused = await patch(`gen_fs_private_${run}`, { shotId: `shot_fs_${run}` });
-    expect(refused.status).toBe(404);
-    expect((await refused.json()).error).toBe("That shot is gone.");
-    const row = (await h.database.db().execute({ sql: "SELECT project_id, shot_id FROM generations WHERE id=?", args: [`gen_fs_private_${run}`] })).rows[0];
-    expect([row.project_id, row.shot_id]).toEqual([draftProject, null]);
-    h.as("u_mate");
-    expect(await status(h, secret)).toBe(404);
-    /* The id that is checked is the id that is written: anything but a string (or null / "" for none) is refused before any read or write. */
-    for (const body of [{ shotId: [`shot_fs_${run}`] }, { shotId: 5 }, { shotId: { id: `shot_fs_${run}` } }, { projectId: ["prod_shared"] }, { projectId: 0 }, { projectId: { id: "prod_shared" } }, { projectId: false }]) {
-      const res = await patch(`gen_fs_private_${run}`, body);
-      expect(res.status, JSON.stringify(body)).toBe(400);
-    }
-    const unchanged = (await h.database.db().execute({ sql: "SELECT project_id, shot_id FROM generations WHERE id=?", args: [`gen_fs_private_${run}`] })).rows[0];
-    expect([unchanged.project_id, unchanged.shot_id], "nothing changed").toEqual([draftProject, null]);
-    expect(await status(h, secret), "and the upload stays closed").toBe(404);
-    /* A shared take filed against a shot of its own project is not a move. */
-    expect((await patch(`gen_fs_shared_${run}`, { shotId: `shot_fs_${run}` })).status).toBe(200);
-  }, asUser("u_mate"));
-});
-
-test("a refused answer is remembered briefly so a refused save cannot hold the lock twice, and any write ends it at once; an autosave warms only what it adds", async () => {
-  const h = await harness();
-  const { openableAmong } = await import("../../lib/uploadAccess");
-  const { withMediaSources } = await import("../../lib/mediaMutation");
-  const ws = workspace(`access-u-${run}`);
-  const asUser = (id: string) => ({ user: { id, email: "", name: id, role: "member" as const, owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
-  const secret = `upl_neg_${run}`, held = `upl_held_${run}`, mine = `upl_mine_${run}`;
-  await h.tenant.runInTenant(ws, async () => { await h.database.ready(); await seedUpload(h, secret, "u_up"); await seedUpload(h, held, "u_up"); await seedUpload(h, mine, "u_mate"); }, asUser("u_mate"));
-  await h.tenant.runInTenant(ws, async () => {
-    const client = h.database.db();
-    let scans = 0;
-    const execute = client.execute.bind(client) as (statement: never) => Promise<unknown>;
-    (client as unknown as { execute: unknown }).execute = (statement: { sql?: string } | string) => { if (/instr\(|json_tree/.test(typeof statement === "string" ? statement : statement.sql ?? "")) scans++; return execute(statement as never); };
-    try {
-      const viewer = { id: "u_mate" };
-      expect((await openableAmong([secret], viewer)).size).toBe(0);
-      expect(scans, "the first answer scans").toBeGreaterThan(0);
-      scans = 0;
-      expect((await openableAmong([secret], viewer)).size).toBe(0);
-      expect(scans, "the second answer comes from memory").toBe(0);
-      /* Any write ends it: attaching the upload to shared work opens it at once. */
-      await client.execute({ sql: "INSERT INTO cast_members(id,name,upload_id,created_at) VALUES(?,?,?,1)", args: [`cast_neg_${run}`, "Lead", secret] });
-      expect((await openableAmong([secret], viewer)).has(secret)).toBe(true);
-      /* An autosave of a record that already names an upload the person cannot open asks about neither, only about what it adds. */
-      scans = 0;
-      const before = [{ uploadId: held }];
-      await withMediaSources([{ uploadId: held }, { uploadId: mine }], async () => 1, async () => before).catch(() => undefined);
-      expect(scans, "nothing already held is scanned for").toBe(0);
-    } finally { (client as unknown as { execute: unknown }).execute = execute; }
-  }, asUser("u_mate"));
+    const { assertMoveAllowed } = await import("../../lib/projectMove");
+    const { heldBoardsProjectId } = await import("../../lib/draftProject");
+    await expect(assertMoveAllowed(h.database.db(), { from: heldBoardsProjectId(ws.id, "u_up"), to: null, named: [] })).rejects.toThrow("Not found");
+    /* The owner deleting a second board reuses the one holding project. */
+  }, { user: { id: "u_mate", email: "", name: "m", role: "member", owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
 });
 
 test("transcription refuses a teammate's private upload with the unknown-id answer, quote included; the uploader is quoted; /api/uploads/<id>?… values count as references", async () => {

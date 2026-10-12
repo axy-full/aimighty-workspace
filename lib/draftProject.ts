@@ -18,10 +18,19 @@ export function mappedId(prefix: string, ...parts: string[]) {
 export const DRAFT_PROJECT_PREFIX = "prj_wb_";
 export const isDraftProject = (projectId: string | null | undefined): boolean => typeof projectId === "string" && projectId.startsWith(DRAFT_PROJECT_PREFIX);
 
+/**
+ * Where a person's takes and identities go when they delete one of their private boards: a project of their own that nobody else can list or reach
+ * (`prj_wb_…`, so nothing in it is shared). Without it the database would unfile them (`ON DELETE SET NULL`) into the shared pool, and the uploads they
+ * name would open to the team. One per person; made the first time they delete a board.
+ */
+export const heldBoardsProjectId = (workspaceId: string, userId: string) => mappedId(DRAFT_PROJECT_PREFIX, workspaceId, userId, "deleted-boards");
+export const heldBoardsProductionId = (workspaceId: string, userId: string) => mappedId("prod_wb_", workspaceId, userId, "deleted-boards");
+
 /** Whether `userId` owns the draft whose own production project is `projectId`: the id is a hash of the workspace, the owner and the draft, so it is recomputed for each of the person's drafts (an indexed read). */
 export async function ownsDraftProject(userId: string, projectId: string, ex: Exec = db()): Promise<boolean> {
   if (!isDraftProject(projectId)) return false;
   const workspace = requireTenant().id;
+  if (projectId === heldBoardsProjectId(workspace, userId)) return true;
   const drafts = (await ex.execute({ sql: "SELECT project_id FROM workbench_projects WHERE owner=?", args: [userId] })).rows;
   return drafts.some((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, userId, String(row.project_id)) === projectId);
 }
@@ -58,6 +67,7 @@ export async function projectLister(person: { id: string } | null, ex: Exec = db
   if (!person) return () => true;
   const workspace = requireTenant().id;
   const own = new Set((await ex.execute({ sql: "SELECT project_id FROM workbench_projects WHERE owner=?", args: [person.id] })).rows.map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, person.id, String(row.project_id))));
+  own.add(heldBoardsProjectId(workspace, person.id));
   const shared = new Set((await ex.execute({ sql: "SELECT owner, project_id FROM workbench_projects WHERE json_valid(body) AND json_extract(body,'$.teamShared')=1", args: [] })).rows
     .map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id))));
   return (projectId) => !isDraftProject(projectId) || own.has(projectId!) || shared.has(projectId!);
