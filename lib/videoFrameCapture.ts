@@ -20,6 +20,25 @@ function mediaEvent(video: HTMLVideoElement, event: "loadeddata" | "seeked", sta
   });
 }
 
+/**
+ * Resolves once the browser has presented a new video frame. A canvas drawn from a video the moment `loadeddata` or `seeked` fires can read a blank
+ * frame (the picture is decoded but not yet presented): about 1 capture in 200 came out black, and the last frame could differ from one run to the
+ * next. Waiting for the frame is the browser's own signal for "this picture is on screen". A browser that cannot say, or a hidden page (which presents
+ * no frames), has nothing to wait for.
+ */
+function framePresented(video: HTMLVideoElement, signal: AbortSignal) {
+  type Rvfc = HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number; cancelVideoFrameCallback?: (id: number) => void };
+  const v = video as Rvfc;
+  return new Promise<void>((resolve, reject) => {
+    if (!v.requestVideoFrameCallback || document.hidden) { resolve(); return; }
+    const cleanup = () => signal.removeEventListener("abort", fail);
+    const id = v.requestVideoFrameCallback(() => { cleanup(); resolve(); });
+    function fail() { v.cancelVideoFrameCallback?.(id); cleanup(); reject(new Error("Frame extraction was cancelled or timed out.")); }
+    signal.addEventListener("abort", fail, { once: true });
+    if (signal.aborted) fail();
+  });
+}
+
 /** Decode only after an explicit click. Scope is checked by the authenticated
  * same-origin media route; bounded bytes become a temporary local object URL.
  * No CDN redirect, external URL, provider call or upload is made here. */
@@ -58,6 +77,9 @@ export async function captureVideoFrame(source: VideoFrameSource, edge: VideoFra
     if (!bytes) throw new Error("The original video is empty.");
     objectUrl = URL.createObjectURL(new Blob(chunks, { type: mime }));
     video.muted = true; video.playsInline = true; video.preload = "auto";
+    /* Registered before the load, so the first picture's presentation is not missed; a failure before it is awaited is the load's own. */
+    const first = framePresented(video, active);
+    first.catch(() => {});
     await mediaEvent(video, "loadeddata", () => { video.src = objectUrl!; video.load(); }, active);
     const width = video.videoWidth, height = video.videoHeight, durationSeconds = video.duration;
     if (![width, height, durationSeconds].every(value => Number.isFinite(value) && value > 0) || durationSeconds > VIDEO_FRAME_LIMITS.seconds || width > VIDEO_FRAME_LIMITS.dimension || height > VIDEO_FRAME_LIMITS.dimension || width * height > VIDEO_FRAME_LIMITS.pixels)
@@ -65,7 +87,14 @@ export async function captureVideoFrame(source: VideoFrameSource, edge: VideoFra
     // Seek just inside the final sample rather than beyond the media endpoint.
     // At time zero loadeddata already exposes the first decoded picture.
     const timeSeconds = edge === "start" ? 0 : Math.max(0, durationSeconds - Math.min(0.001, durationSeconds / 2));
-    if (timeSeconds !== video.currentTime) await mediaEvent(video, "seeked", () => { video.currentTime = timeSeconds; }, active);
+    /* The first picture is on screen before anything else is asked of the video: a seek then has only its own frame to wait for. */
+    await first;
+    if (timeSeconds !== video.currentTime) {
+      const shown = framePresented(video, active);
+      shown.catch(() => {});
+      await mediaEvent(video, "seeked", () => { video.currentTime = timeSeconds; }, active);
+      await shown;
+    }
     cancelled(active);
     canvas.width = width; canvas.height = height;
     const context = canvas.getContext("2d");
