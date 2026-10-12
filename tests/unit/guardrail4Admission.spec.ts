@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import ts from "typescript";
+import { keepingHouseJobsClean } from "../helpers/houseJobs";
 import type {
   AdmissionActor,
 } from "../../lib/admissionTypes";
@@ -219,30 +220,32 @@ test("through admission: an admin's own tap clears it (the quote answers, the pr
 
 /* The house pays no credits and is judged at cost: this clip's hold (3 × its ~$14 estimate, counted in credits at no margin) is over the 200 cr line, so a member is told an admin must start it, in words with no figure. */
 test("the house is judged at cost: a member over the line is told an admin must start it, with no credit figure; an admin clears it; a token is refused; under it nothing changes", async () => {
-  await scope("g4-house", async (service) => {
-    const before = [(await rows()).length, (await meters()).length];
-    const q = await quoteRoute(service).POST(quoteRequest(OVER));
-    const answer = await q.clone().json();
-    expect(q.status, JSON.stringify(answer)).toBe(403);
-    expect(answer).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/An admin has to start it\./) });
-    expect(String(answer.error)).not.toMatch(/\bcr\b|\d/);
-    const pressed = await press(service, OVER, "g4-house-member");
-    expect(pressed.status).toBe(403);
-    expect(await pressed.json()).toMatchObject({ needsAdmin: true });
-    expect([(await rows()).length, (await meters()).length], "nothing created, nothing reserved").toEqual(before);
-    expect((await quoteRoute(service).POST(quoteRequest(UNDER))).status).toBe(200);
-  }, "ws_legacy", member);
-  await scope("g4-house", async (service) => {
-    const q = await quoteRoute(service).POST(quoteRequest(OVER));
-    expect(q.status, JSON.stringify(await q.clone().json())).toBe(200);
-    expect((await q.json()).unit).toBe("usd");
-    const made = await press(service, OVER, "g4-house-admin");
-    expect(made.status, JSON.stringify(await made.clone().json())).toBeLessThan(300);
-  }, "ws_legacy", admin);
-  await scope("g4-house", async (service) => {
-    const viaToken = await quoteRoute(service).POST(quoteRequest(OVER));
-    expect(viaToken.status).toBe(403);
-    expect(await viaToken.json()).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/never start it\./) });
-    expect((await press(service, OVER, "g4-house-token")).status).toBe(403);
-  }, "ws_legacy", { ...admin, token: { id: "tok_g4h", name: "agent", scope: "render", capUsd: null } } as AdmissionActor);
+  await keepingHouseJobsClean(async () => {
+    await scope("g4-house", async (service) => {
+      const before = [(await rows()).length, (await meters()).length];
+      const q = await quoteRoute(service).POST(quoteRequest(OVER));
+      const answer = await q.clone().json();
+      expect(q.status, JSON.stringify(answer)).toBe(403);
+      expect(answer).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/An admin has to start it\./) });
+      expect(String(answer.error)).not.toMatch(/\bcr\b|\d/);
+      const pressed = await press(service, OVER, "g4-house-member");
+      expect(pressed.status).toBe(403);
+      expect(await pressed.json()).toMatchObject({ needsAdmin: true });
+      expect([(await rows()).length, (await meters()).length], "nothing created, nothing reserved").toEqual(before);
+      expect((await quoteRoute(service).POST(quoteRequest(UNDER))).status).toBe(200);
+    }, "ws_legacy", member);
+    await scope("g4-house", async (service) => {
+      const q = await quoteRoute(service).POST(quoteRequest(OVER));
+      expect(q.status, JSON.stringify(await q.clone().json())).toBe(200);
+      expect((await q.json()).unit).toBe("usd");
+      const made = await press(service, OVER, "g4-house-admin");
+      expect(made.status, JSON.stringify(await made.clone().json())).toBeLessThan(300);
+    }, "ws_legacy", admin);
+    await scope("g4-house", async (service) => {
+      const viaToken = await quoteRoute(service).POST(quoteRequest(OVER));
+      expect(viaToken.status).toBe(403);
+      expect(await viaToken.json()).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/never start it\./) });
+      expect((await press(service, OVER, "g4-house-token")).status).toBe(403);
+    }, "ws_legacy", { ...admin, token: { id: "tok_g4h", name: "agent", scope: "render", capUsd: null } } as AdmissionActor);
+  });
 });

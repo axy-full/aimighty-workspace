@@ -6,6 +6,7 @@ import type { TenantUser, TenantWorkspace } from "../../lib/tenant";
 import { JOB_APPROVAL_LINE_USD, jobApprovalLineCredits, jobLineVerdict } from "../../lib/approvalRule";
 import { quoteOf, verdictOf, type Context, type Unit } from "../../lib/quote";
 import { alignLedgerUnit } from "../helpers/ledgerUnit";
+import { keepingHouseJobsClean } from "../helpers/houseJobs";
 
 /**
  * Pricing guardrail 4 (SOW §7A): any single job estimated above the platform's approval line (JOB_APPROVAL_LINE_USD, 200 cr at a credit's
@@ -245,23 +246,25 @@ test("the reservation at the line: exactly 200 cr is allowed, 201 cr is refused;
   /* The house is judged at cost: $25 is 250 cr at no margin, $15 is 150. A member needs an admin, an admin's tap clears it, a token is refused outright, under the line is unchanged. */
   const house = { ...workspace(`house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false };
   const refusal = async (work: () => Promise<unknown>) => { try { await work(); } catch (e) { return e as Error & { status?: number }; } return null; };
-  await runInTenant(house, async () => {
-    await ready();
-    const m = await refusal(() => reserveGenerationSpend(event(`gen_house_m_${run}`, 25)));
-    expect(m).toMatchObject({ status: 403 });
-    expect(m!.message).toMatch(/An admin has to start it\./);
-    expect(m!.message).not.toMatch(/\bcr\b|\d/);
-    await reserveGenerationSpend(event(`gen_house_u_${run}`, 15));
-    const t = await refusal(() => reserveGenerationSpend(event(`gen_house_t_${run}`, 25), { token: { id: "tok_h", capUsd: null, capCredits: null } }));
-    expect(t).toMatchObject({ status: 403 });
-    expect(t!.message).toMatch(/never start it/);
-    const a = await refusal(() => reserveGenerationSpend(event(`gen_house_a_${run}`, 25, { createdBy: "agent:run_9" })));
-    expect(a).toMatchObject({ status: 403 });
-  }, { user: person("u_member", "member") });
-  await runInTenant(house, async () => {
-    await ready();
-    await reserveGenerationSpend(event(`gen_house_admin_${run}`, 25));
-  }, { user: person("u_admin", "admin") });
+  await keepingHouseJobsClean(async () => {
+    await runInTenant(house, async () => {
+      await ready();
+      const m = await refusal(() => reserveGenerationSpend(event(`gen_house_m_${run}`, 25)));
+      expect(m).toMatchObject({ status: 403 });
+      expect(m!.message).toMatch(/An admin has to start it\./);
+      expect(m!.message).not.toMatch(/\bcr\b|\d/);
+      await reserveGenerationSpend(event(`gen_house_u_${run}`, 15));
+      const t = await refusal(() => reserveGenerationSpend(event(`gen_house_t_${run}`, 25), { token: { id: "tok_h", capUsd: null, capCredits: null } }));
+      expect(t).toMatchObject({ status: 403 });
+      expect(t!.message).toMatch(/never start it/);
+      const a = await refusal(() => reserveGenerationSpend(event(`gen_house_a_${run}`, 25, { createdBy: "agent:run_9" })));
+      expect(a).toMatchObject({ status: 403 });
+    }, { user: person("u_member", "member") });
+    await runInTenant(house, async () => {
+      await ready();
+      await reserveGenerationSpend(event(`gen_house_admin_${run}`, 25));
+    }, { user: person("u_admin", "admin") });
+  });
 });
 
 test("no actor: a reservation with nobody behind it is refused over the line unless its caller marks it a continuation; a known author is judged as themselves", async () => {
