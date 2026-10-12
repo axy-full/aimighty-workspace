@@ -339,7 +339,7 @@ export async function askRigAgent(input: { productionId: string; draftId: string
   const mode: RigAgentMode = input.mode ?? "ask";
   if (!RIG_AGENT_MODES.includes(mode)) throw new RigAgentError("Choose Ask or Auto.", 400);
   /* An ask writes no canvas row itself, it makes a run: in the sample the spend guard below answers it (409), as it always has, not the board's view-only lock. */
-  await requireProduction(input.productionId, input.userId, (await sampleMarkNow())?.projectId === input.productionId ? "read" : "write");
+  await requireProduction(input.productionId, input.userId, await accessToAsk(input.productionId));
   const draft = await readDraft(input.userId, input.draftId);
   if (!draft) throw new RigAgentError("Open this project's Rig first.", 404);
   if (draft.project.productionProjectId !== input.productionId) throw new RigAgentError("This project is not saved to that production.", 409);
@@ -382,8 +382,13 @@ export async function askRigAgent(input: { productionId: string; draftId: string
   return viewOf(run.id, input.userId);
 }
 
+/** What a person's ask or press on a run needs of its production. In the sample it is READ: the ask and its presses write no board row themselves (the run does, as an agent), and the sample's own spend guard answers them; every other board needs write. */
+async function accessToAsk(productionId: string): Promise<"read" | "write"> {
+  return (await sampleMarkNow())?.projectId === productionId ? "read" : "write";
+}
+
 async function runFor(productionId: string, runId: string): Promise<RunRow> {
-  await requireProduction(productionId);
+  await requireProduction(productionId, undefined, await accessToAsk(productionId));
   if (!(await rigAgentExists())) throw new RigAgentError("That build is not on this production.", 404);
   const run = await runOfProduction(db(), productionId, runId);
   if (!run) throw new RigAgentError("That build is not on this production.", 404);

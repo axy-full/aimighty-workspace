@@ -1,3 +1,4 @@
+import { sampleWriteRefusal } from "@/lib/demo/readonly.server";
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -60,6 +61,8 @@ export const POST = withTenant(async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const projectId = String(body.projectId ?? "");
   if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
+  /* The marked sample takes no card, from anyone (lib/demo/readonly.server.ts). */
+  { const refused = await sampleWriteRefusal(projectId); if (refused) return refused; }
 
   const kind = ["generation", "upload", "note", "heading"].includes(body.kind) ? body.kind : "note";
   const ts = now();

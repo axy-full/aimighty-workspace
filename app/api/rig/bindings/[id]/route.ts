@@ -1,4 +1,5 @@
 import { syncCreditReceipts } from "@/lib/creditReceipts";
+import { sampleRowRefusal } from "@/lib/demo/readonly.server";
 import { NextResponse } from "next/server";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import { db, ready, now } from "@/lib/db";
@@ -127,6 +128,8 @@ export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) 
   const { id: shotId } = await params;
   const shot = await shotOf(shotId);
   if (!shot) return NextResponse.json({ error: "No such shot." }, { status: 404 });
+  /* The marked sample's shots take no wire, from anyone (lib/demo/readonly.server.ts). */
+  { const refused = await sampleRowRefusal("shots", shotId); if (refused) return refused; }
 
   const body = await req.json().catch(() => ({}));
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */

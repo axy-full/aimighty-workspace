@@ -153,6 +153,8 @@ export const POST=withTenant(async(req:Request)=>{
     if(theirs)return Response.json({error:viewOnlyRefusal(theirs.name),code:'view_only'},{status:403,headers:noStore});
     return Response.json({error:'Save your project first.'},{status:404});
   }
+  /* The sample's copies and the board it was marked from are nobody's to share, publish or map into the sample: view-only for everyone (lib/demo/readonly.server.ts). */
+  if(body.action==='team-share'||body.action==='map-shot'||body.action==='publish'){const{sampleDraftRefusal}=await import('@/lib/demo/readonly.server');const refused=await sampleDraftRefusal(auth.user.id,draft.project);if(refused)return refused;}
   if(body.action==='team-share'){
     /* The author shares a board with the workspace's team, or stops (lib/workbench/team-boards.ts): one flag in the draft's own JSON, so nothing
        else about it changes. Only the author's own draft is found here; a teammate's gets the same "not saved" answer as every other write. */

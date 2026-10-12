@@ -440,7 +440,7 @@ export async function executeGenerationAdmission(
       });
       /* A private board is its owner's, and a shared one a teammate's to look at (lib/draftProject.ts): filing into either is refused as a missing project is,
          before anything is quoted, held or reserved, so the answer says nothing about whether it exists. An Atomik run (no person) is not asked. */
-      const reach = await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "write");
+      const reach = await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "admit");
       if (!project.rows.length || !reach)
         return admissionReply({ error: "No such project." }, { status: 404 });
     }
@@ -451,8 +451,8 @@ export async function executeGenerationAdmission(
     }
     if (body.shotId) {
       const shot = await getShot(String(body.shotId));
-      /* A shot of a board this person may not write is as absent as an unknown one; the question is asked either way. */
-      const shotReach = await mayReachProject(isAgentId(got.user.id) ? null : got.user, shot?.projectId, "write");
+      /* A shot of a board this person may not write is as absent as an unknown one; the question is asked either way. "admit": a render into the sample is answered by the sample's own spend guard (409), not as a missing project. */
+      const shotReach = await mayReachProject(isAgentId(got.user.id) ? null : got.user, shot?.projectId, "admit");
       if (!shot || !shotReach)
         return admissionReply({ error: "No such shot." }, { status: 404 });
       if (body.projectId && shot.projectId !== String(body.projectId))

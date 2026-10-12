@@ -108,5 +108,7 @@ export async function linkProjectLibraryUpload(owner: string, projectId: string,
 export async function unlinkProjectLibraryUpload(owner: string, projectId: string, uploadId: string) {
   const scope = await resolveProjectLibrary(owner,projectId);
   if (!uploadId || uploadId.length>200) throw new ProjectLibraryError('Choose a stored upload.');
+  /* The marked sample's filings are nobody's to remove (lib/demo/readonly.server.ts). */
+  if (await isSampleProject(scope.productionProjectId)) throw new ProjectLibraryError(viewOnlyRefusal((await sampleViewOnly(requireTenant())).owner.name), 403);
   await archiveAndDelete(db(), "project_library_uploads", 'project_id=? AND upload_id=?', [scope.productionProjectId,uploadId]);
 }

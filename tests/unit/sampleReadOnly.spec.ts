@@ -130,3 +130,115 @@ test("every viewer is refused every write into the sample production, and every 
     await expect(requireProduction(sample, undefined, "write")).resolves.toBeUndefined();
   }, { user: user("u_owner", "admin") });
 });
+
+test("every other way in is shut too: cast, treatment, cards, assets, wires, boards, notes, the production's own name, sharing, publishing, mapping, filings, for the owner, an admin and a member alike", async () => {
+  const ws = workspace(`sro-b-${run}`);
+  const { tenant, database, sample, newProject } = await fixture(ws);
+  let who = user("u_mate");
+  const R = <T,>(file: string) => loadRoute<T>(file, () => who);
+  const cast = R<typeof import("../../app/api/cast/route")>("app/api/cast/route.ts");
+  const castId = R<typeof import("../../app/api/cast/[id]/route")>("app/api/cast/[id]/route.ts");
+  const treatment = R<typeof import("../../app/api/atomik/treatment/route")>("app/api/atomik/treatment/route.ts");
+  const cards = R<typeof import("../../app/api/canvas/route")>("app/api/canvas/route.ts");
+  const card = R<typeof import("../../app/api/canvas/[id]/route")>("app/api/canvas/[id]/route.ts");
+  const elements = R<typeof import("../../app/api/rig/elements/route")>("app/api/rig/elements/route.ts");
+  const element = R<typeof import("../../app/api/rig/elements/[id]/route")>("app/api/rig/elements/[id]/route.ts");
+  const bindings = R<typeof import("../../app/api/rig/bindings/[id]/route")>("app/api/rig/bindings/[id]/route.ts");
+  const current = R<typeof import("../../app/api/rig/attributes/[id]/current/route")>("app/api/rig/attributes/[id]/current/route.ts");
+  const boards = R<typeof import("../../app/api/rig/boards/route")>("app/api/rig/boards/route.ts");
+  const board = R<typeof import("../../app/api/rig/boards/[id]/route")>("app/api/rig/boards/[id]/route.ts");
+  const notes = R<typeof import("../../app/api/notes/route")>("app/api/notes/route.ts");
+  const productions = R<typeof import("../../app/api/productions/[id]/route")>("app/api/productions/[id]/route.ts");
+  const reorder = R<typeof import("../../app/api/shots/reorder/route")>("app/api/shots/reorder/route.ts");
+  const sync = R<typeof import("../../app/api/shots/sync/route")>("app/api/shots/sync/route.ts");
+  const studio = R<typeof import("../../app/api/workbench/projects/route")>("app/api/workbench/projects/route.ts");
+  const jobs = R<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts");
+  const shot = R<typeof import("../../app/api/shots/[id]/route")>("app/api/shots/[id]/route.ts");
+  const demo = R<typeof import("../../app/api/demo/sample/route")>("app/api/demo/sample/route.ts");
+  const { unlinkProjectLibraryUpload, ProjectLibraryError } = await import("../../lib/workbench/project-library");
+  const { sampleDraftRefusal } = await import("../../lib/demo/readonly.server");
+  await tenant.runInTenant(ws, async () => {
+    const db = database.db();
+    await db.execute({ sql: "INSERT INTO cast_members(id,project_id,name,created_at) VALUES(?,?,?,1)", args: [`cast_s_${run}`, sample, "SampleCast"] });
+    await db.execute({ sql: "INSERT INTO canvas_items(id,project_id,kind,text,created_at,updated_at) VALUES(?,?,'note','hi',1,1)", args: [`cv_s_${run}`, sample] });
+    await db.execute({ sql: "INSERT INTO boards(id,project_id,name,created_at,updated_at) VALUES(?,?,'Board',1,1)", args: [`bd_s_${run}`, sample] });
+    await db.execute({ sql: "INSERT INTO elements(id,project_id,kind,name,created_at,updated_at) VALUES(?,?,'character','Lead',1,1)", args: [`el_s_${run}`, sample] });
+    await db.execute({ sql: "INSERT INTO element_attributes(id,element_id,kind,created_at,updated_at) VALUES(?,?,'face',1,1)", args: [`at_s_${run}`, `el_s_${run}`] });
+  }, { user: user("u_owner", "admin") });
+  const code = async (res: Response) => [res.status, (await res.clone().json().catch(() => ({}))).code] as const;
+  const VIEW = [403, "view_only"] as const;
+  for (const [label, id, role] of VIEWERS) {
+    who = user(id, role);
+    await tenant.runInTenant(ws, async () => {
+      const opened = await (await demo.POST(json("POST", { action: "open" }), undefined as never)).json();
+      const copy = opened.project as { id: string; productionProjectId?: string };
+      const original = { ...newProject("d1"), id: "d1", productionProjectId: sample };
+      /* Legacy and Rig rows that sit in the sample. */
+      expect(await code(await castId.PATCH(json("PATCH", { description: "x" }), ctx(`cast_s_${run}`))), `${label}: cast PATCH`).toEqual(VIEW);
+      expect(await code(await castId.DELETE(new Request("https://particl.test/x", { method: "DELETE" }), ctx(`cast_s_${run}`))), `${label}: cast DELETE`).toEqual(VIEW);
+      expect((await cast.POST(json("POST", { projectId: sample, name: `New${id}` }), undefined as never)).status, `${label}: cast POST`).toBe(404);
+      expect((await treatment.PUT(json("PUT", { projectId: sample, title: "Hijack", scenes: [], notes: [] }), undefined as never)).status, `${label}: treatment PUT`).toBe(404);
+      expect(await code(await cards.POST(json("POST", { projectId: sample, kind: "note", text: "x" }), undefined as never)), `${label}: card POST`).toEqual(VIEW);
+      expect(await code(await card.PATCH(json("PATCH", { x: 5 }), ctx(`cv_s_${run}`))), `${label}: card PATCH`).toEqual(VIEW);
+      expect(await code(await card.DELETE(new Request("https://particl.test/x", { method: "DELETE" }), ctx(`cv_s_${run}`))), `${label}: card DELETE`).toEqual(VIEW);
+      expect(await code(await elements.POST(json("POST", { projectId: sample, name: `El${id}` }), undefined as never)), `${label}: asset POST`).toEqual(VIEW);
+      expect(await code(await element.PUT(json("PUT", { locked: true }), ctx(`el_s_${run}`))), `${label}: asset lock`).toEqual(VIEW);
+      expect(await code(await bindings.PUT(json("PUT", { changes: [] }), ctx(`shot_s_${run}`))), `${label}: wires`).toEqual(VIEW);
+      expect(await code(await current.POST(json("POST", { versionId: "v" }), ctx(`at_s_${run}`))), `${label}: current version`).toEqual(VIEW);
+      expect(await code(await boards.POST(json("POST", { projectId: sample, name: "B" }), undefined as never)), `${label}: board POST`).toEqual(VIEW);
+      expect(await code(await board.PUT(json("PUT", { name: "Hijack", nodes: [], wires: [] }), ctx(`bd_s_${run}`))), `${label}: board PUT`).toEqual(VIEW);
+      expect(await code(await notes.POST(json("POST", { genId: `gen_s_${run}`, text: "a note" }), undefined as never)), `${label}: note on a take`).toEqual(VIEW);
+      expect(await code(await productions.PATCH(json("PATCH", { name: "Hijack" }), ctx("prod_g"))), `${label}: the production's name`).toEqual(VIEW);
+      expect(await code(await reorder.POST(json("POST", { projectId: sample, ids: [`shot_s_${run}`] }), undefined as never)), `${label}: reorder`).toEqual(VIEW);
+      expect(await code(await sync.POST(json("POST", { projectId: sample }), undefined as never)), `${label}: sync`).toEqual(VIEW);
+      expect(await code(await jobs.DELETE(new Request("https://particl.test/x", { method: "DELETE" }), ctx(`gen_s_${run}`))), `${label}: a take's deletion`).toEqual(VIEW);
+      /* Sharing, publishing and mapping from the sample's copy and from the board it was marked from. */
+      expect(await sampleDraftRefusal(id, copy), `${label}: a copy`).not.toBeNull();
+      expect(await sampleDraftRefusal("u_owner", original), `${label}: the original`).not.toBeNull();
+      expect(await sampleDraftRefusal(id, newProject(`own-${id}`)), `${label}: their own board is not asked`).toBeNull();
+      if (id === "u_owner") for (const action of [{ action: "team-share", shared: true }, { action: "map-shot", nodeId: "n" }, { action: "publish", expectedBibleVersion: 0 }]) {
+        expect(await code(await studio.POST(json("POST", { projectId: "d1", ...action }), undefined as never)), `${label}: ${action.action} on the marked board`).toEqual(VIEW);
+      }
+      for (const action of [{ action: "team-share", shared: true }, { action: "map-shot", nodeId: "n" }, { action: "publish", expectedBibleVersion: 0 }])
+        expect(await code(await studio.POST(json("POST", { projectId: copy.id, ...action }), undefined as never)), `${label}: ${action.action} on their copy`).toEqual(VIEW);
+      await expect(unlinkProjectLibraryUpload(id, copy.id, "upl_x"), `${label}: a library unlink`).rejects.toBeInstanceOf(ProjectLibraryError);
+      /* The order: a shot id that is not there is answered as unknown; a sample shot says view only before anything else. */
+      expect((await shot.PATCH(json("PATCH", { title: "x" }), ctx("shot_nope"))).status).toBe(404);
+      expect(await code(await shot.DELETE(new Request("https://particl.test/x", { method: "DELETE" }), ctx(`shot_s_${run}`))), `${label}: a sample shot is never a silent ok`).toEqual(VIEW);
+    }, { user: who });
+  }
+  /* Nothing was written into the sample. */
+  await tenant.runInTenant(ws, async () => {
+    const db = database.db();
+    const n = async (sql: string, args: unknown[] = []) => Number((await db.execute({ sql, args: args as never })).rows[0].n);
+    expect(await n("SELECT COUNT(*) AS n FROM cast_members WHERE project_id=?", [sample])).toBe(1);
+    expect(await n("SELECT COUNT(*) AS n FROM canvas_items WHERE project_id=?", [sample])).toBe(1);
+    expect(await n("SELECT COUNT(*) AS n FROM boards WHERE project_id=?", [sample])).toBe(1);
+    expect(await n("SELECT COUNT(*) AS n FROM elements WHERE project_id=?", [sample])).toBe(1);
+    expect(await n("SELECT COUNT(*) AS n FROM notes")).toBe(0);
+    expect(await n("SELECT COUNT(*) AS n FROM treatments WHERE project_id=?", [sample])).toBe(0);
+    expect(await n("SELECT COUNT(*) AS n FROM shots WHERE project_id=?", [sample])).toBe(1);
+    expect((await db.execute({ sql: "SELECT name FROM productions WHERE id='prod_g'", args: [] })).rows[0].name).toBe("Group");
+    expect((await db.execute({ sql: "SELECT locked FROM elements WHERE id=?", args: [`el_s_${run}`] })).rows[0].locked).toBe(0);
+    expect(await n("SELECT COUNT(*) AS n FROM generations WHERE id=? AND deleted=0", [`gen_s_${run}`])).toBe(1);
+  }, { user: user("u_owner", "admin") });
+});
+
+test("a lift lets the RUN write the sample (it writes as an agent), not the person who lifted it: their own presses and edits still answer view-only", async () => {
+  const ws = workspace(`sro-c-${run}`);
+  const { tenant, sample } = await fixture(ws);
+  const { requireProduction } = await import("../../lib/workbench/team-canvas");
+  const { liftSampleMark } = await import("../../lib/demo/mark.server");
+  const { sampleWriteRefusal } = await import("../../lib/demo/readonly.server");
+  await tenant.runInTenant(ws, async () => {
+    await liftSampleMark({ ...user("u_owner", "admin"), owner: true } as never);
+    /* The run: an agent, or no person at all. */
+    await expect(requireProduction(sample, "agent:rar_run1", "write")).resolves.toBeUndefined();
+    await expect(requireProduction(sample, null, "write")).resolves.toBeUndefined();
+    expect(await sampleWriteRefusal(sample, null)).toBeNull();
+    /* The lifter's own hands: a canvas edit, a saved shot, a filing, and the board agent's presses (they ask to READ it). */
+    await expect(requireProduction(sample, "u_owner", "write")).rejects.toThrow(/not in this workspace/);
+    expect((await sampleWriteRefusal(sample, { id: "u_owner" }))?.status).toBe(403);
+    await expect(requireProduction(sample, "u_owner", "read")).resolves.toBeUndefined();
+  }, { user: user("u_owner", "admin") });
+});

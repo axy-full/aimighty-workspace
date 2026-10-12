@@ -47,31 +47,24 @@ export async function isMarkedSample(projectId: string, ex: Exec = db()): Promis
  * undoing the mark (Settings) lifts it. Making one's own board from it is the one thing that stays.
  */
 export async function sampleMarkNow(ex: Exec = db()): Promise<{ projectId: string; draftOwner: string; draftId: string; markedBy: string } | null> {
-  const row = (await ex.execute({ sql: "SELECT value FROM settings WHERE key=? LIMIT 1", args: [SAMPLE_SETTING_KEY] })).rows[0];
+  let row;
+  /* A workspace database not yet set up has no settings table and so no mark. */
+  try { row = (await ex.execute({ sql: "SELECT value FROM settings WHERE key=? LIMIT 1", args: [SAMPLE_SETTING_KEY] })).rows[0]; }
+  catch (error) { if (/no such table/i.test(String((error as { cause?: unknown; message?: unknown }).cause ?? (error as Error).message))) return null; throw error; }
   if (!row) return null;
   try { const mark = parseSampleMark(JSON.parse(String(row.value))); return mark ? { projectId: mark.projectId, draftOwner: mark.draftOwner, draftId: mark.draftId, markedBy: mark.markedBy } : null; } catch { return null; }
 }
 /**
- * The sample as a place to write: the mark, except while the owner or an admin has lifted it for one run (lib/demo/lift.server.ts) and is the person
- * asking: the run they asked for builds in the sample, so it is theirs to write until the lift ends (it ends by itself, and nobody else is let in).
+ * Whether `projectId` is the marked sample: read-only for every person, whoever they are and whatever lift is on. The one-run lift (lib/demo/lift.server.ts) lets
+ * the RUN spend, and a run writes as an agent or with no person, which is never asked here; the lifter's own presses are not the run's work.
  */
-async function sampleLocked(ex: Exec, asker?: string | null): Promise<Awaited<ReturnType<typeof sampleMarkNow>>> {
-  const mark = await sampleMarkNow(ex);
-  if (!mark) return null;
-  const me = asker ?? currentTenant()?.user?.id;
-  if (me) {
-    const { liveSampleLift } = await import("./demo/lift.server");
-    if ((await liveSampleLift(ex))?.liftedBy === me) return null;
-  }
-  return mark;
-}
-export async function isSampleProject(projectId: string | null | undefined, ex: Exec = db(), asker?: string | null): Promise<boolean> {
+export async function isSampleProject(projectId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
   if (!projectId) return false;
-  return (await sampleLocked(ex, asker))?.projectId === projectId;
+  return (await sampleMarkNow(ex))?.projectId === projectId;
 }
 /** Whether saving this draft would write the sample: a copy someone opened of it (`sample-…`), the marker's own board it was marked from, or any draft linked to it. */
 export async function isSampleDraft(owner: string, draftId: string, productionId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
-  const mark = await sampleLocked(ex);
+  const mark = await sampleMarkNow(ex);
   if (!mark) return false;
   return draftId.startsWith("sample-") || (mark.draftOwner === owner && mark.draftId === draftId) || (!!productionId && productionId === mark.projectId);
 }
@@ -110,10 +103,10 @@ export function currentPerson(): { id: string; role?: string } | null {
  * Whether `person` may reach the draft project `projectId`: its owner, for reading and writing; the marked sample, for everyone, as before; a board the
  * author has shared (`teamShared`), for READING only. Any other project is the workspace's.
  */
-export async function mayReachProject(person: { id: string } | null, projectId: string | null | undefined, access: "read" | "write" = "write", ex: Exec = db()): Promise<boolean> {
+export async function mayReachProject(person: { id: string } | null, projectId: string | null | undefined, access: "read" | "write" | "admit" = "write", ex: Exec = db()): Promise<boolean> {
   if (!person) return true;
   /* The sample is nobody's to write: not its marker's, not the workspace owner's or an admin's. */
-  if (access === "write" && (await isSampleProject(projectId, ex, person.id))) return false;
+  if (access === "write" && (await isSampleProject(projectId, ex))) return false;
   if (!isDraftProject(projectId)) return true;
   if (await ownsDraftProject(person.id, projectId!, ex)) return true;
   if (await isMarkedSample(projectId!, ex)) return true;

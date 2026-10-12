@@ -1,3 +1,4 @@
+import { sampleWriteRefusal } from "@/lib/demo/readonly.server";
 import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
 import { listElements, ensureRig, createElement, addVersion, syncTrainedVersions } from "@/lib/elements";
@@ -46,6 +47,8 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!name) return NextResponse.json({ error: "Name it first — you'll type it as @Name." }, { status: 400 });
   const kind = isElementKind(b?.kind) ? b.kind : "character";
   const projectId = typeof b?.projectId === "string" && b.projectId ? b.projectId : null;
+  /* The marked sample takes no asset, from anyone (lib/demo/readonly.server.ts). */
+  { const refused = await sampleWriteRefusal(projectId); if (refused) return refused; }
   const fromGenId = typeof b?.fromGenId === "string" && b.fromGenId ? b.fromGenId : null;
   const fromUploadId = typeof b?.fromUploadId === "string" && b.fromUploadId ? b.fromUploadId : null;
   const castId = typeof b?.castId === "string" && b.castId ? b.castId : null;
