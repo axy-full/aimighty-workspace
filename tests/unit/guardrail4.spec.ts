@@ -207,7 +207,7 @@ test("work the platform does not pay for is not judged at the quote; the house i
   expect(verdictOf(small, house)).toEqual(verdictOf(small, base));
   expect(verdictOf(small, { ...house, jobLine: { ...house.jobLine, machine: true } })).toEqual(verdictOf(small, base));
   /* The press (admission), in the house: the same words and none of the figures; the hold counts; an admin clears it; a machine never. */
-  const houseWs = { ...workspace(`gate_house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false };
+  const houseWs = { ...workspace(`gate_house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false, concurrency: 1000, rendersPerHour: 100_000 };
   await runInTenant(houseWs, async () => {
     const m = { isAdmin: false, machine: false, modelId: "mock", key: "ark" as const };
     const refused = jobLineGate({ takeUsd: 25, ...m });
@@ -244,7 +244,8 @@ test("the reservation at the line: exactly 200 cr is allowed, 201 cr is refused;
     }, { user: person("u_member", "member") });
   }
   /* The house is judged at cost: $25 is 250 cr at no margin, $15 is 150. A member needs an admin, an admin's tap clears it, a token is refused outright, under the line is unchanged. */
-  const house = { ...workspace(`house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false };
+  /* The house's job slots and hourly count are shared by every unit file in the worker (its id is fixed): this fixture states its own generous limits, so a refusal here is guardrail 4's and never a slot's. */
+  const house = { ...workspace(`house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false, concurrency: 1000, rendersPerHour: 100_000 };
   const refusal = async (work: () => Promise<unknown>) => { try { await work(); } catch (e) { return e as Error & { status?: number }; } return null; };
   await keepingHouseJobsClean(async () => {
     await runInTenant(house, async () => {
@@ -347,7 +348,7 @@ test("one press is one job in the house, at cost: 4 x $6 (60 cr at cost each) fr
   const { platformDb, platformReady } = await import("../../lib/platform");
   const { ready } = await import("../../lib/db");
   await platformReady();
-  const house = { ...workspace(`press_house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false };
+  const house = { ...workspace(`press_house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false, concurrency: 1000, rendersPerHour: 100_000 };
   const reserved = async (id: string) => Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM generation_reservations WHERE id=?", args: [id] })).rows[0].n);
   const refusal = async (work: () => Promise<unknown>) => { try { await work(); } catch (e) { return e as Error & { status?: number }; } return null; };
   await keepingHouseJobsClean(async () => {
@@ -374,6 +375,30 @@ test("one press is one job in the house, at cost: 4 x $6 (60 cr at cost each) fr
       expect(await reserved(`gen_hpress_a_${run}`)).toBe(1);
     }, { user: person("u_admin", "admin") });
   });
+});
+
+test("a held Cinema Studio take counts at its band in its press's sum (its held estimate is the quote; its hold is three times that), a held ordinary take at its estimate", async () => {
+  const { batchTally } = await import("../../lib/batchLine");
+  const { heldInfo } = await import("../../lib/held");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { platformReady } = await import("../../lib/platform");
+  const { db, ready } = await import("../../lib/db");
+  await platformReady();
+  await runInTenant(workspace(`heldband_${run}`), async () => {
+    await ready();
+    const id = `b_hb${run}`;
+    const heldRow = (gen: string, model: string, usd: number) => db().execute({
+      sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at) VALUES(?,?,?,?,'t',?,'held','u_member',?,?)`,
+      args: [gen, "video", "byteplus", model, JSON.stringify({ batchId: id, held: { ...heldInfo(usd, "video", model, "credits"), at: 1 } }), Date.now(), Date.now()],
+    });
+    await heldRow(`gen_hb_cinema_${run}`, "higgsfield-cinema-studio-4.0", 5);
+    await heldRow(`gen_hb_plain_${run}`, "dreamina-seedance-2-0-260128", 4);
+    const tally = await batchTally({ id, size: 2 });
+    expect(tally.count).toBe(2);
+    expect(tally.usd).toBeCloseTo(5 * 3 + 4, 6);
+    /* Its credits were already at the band (heldInfo's `needs`). */
+    expect(tally.credits).toBe(heldInfo(5, "video", "higgsfield-cinema-studio-4.0").needs + heldInfo(4, "video", "dreamina-seedance-2-0-260128").needs);
+  }, { user: person("u_member", "member") });
 });
 
 test("no actor: a reservation with nobody behind it is refused over the line unless its caller marks it a continuation; a known author is judged as themselves", async () => {
@@ -477,7 +502,7 @@ test("audio, dubbing and text quotes: the same words at the quote, for a member 
     { user: person("u_admin", "admin"), token: { id: "tok", name: "agent", scope: "render", capUsd: null } });
   await runInTenant(ws, async () => { expect(jobLineNow(at(300))).toMatch(/never start it\./); }, { user: person("agent:run_1", "admin") });
   /* The house, judged at cost: $25 is over the line, $15 is not, and the words carry no figure. */
-  const house = { ...workspace(`quotes_house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false };
+  const house = { ...workspace(`quotes_house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false, concurrency: 1000, rendersPerHour: 100_000 };
   await runInTenant(house, async () => {
     const refused = jobLineNow({ credits: 0, usd: 25, key: "elevenlabs" });
     expect(refused).toMatch(/An admin has to start it\./);
@@ -522,7 +547,7 @@ test("the quote's context: a token's quote is a machine's, an agent's too, a per
     expect((await contextFor([], { isAdmin: false })).jobLine?.machine).toBe(true);
   }, { user: person("agent:run_2", "member") });
   /* The house is judged at cost: its context says so, and a $25 line is refused for a member and passes for an admin, a $15 one for both. */
-  const house = { ...workspace(`ctx_house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false };
+  const house = { ...workspace(`ctx_house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false, concurrency: 1000, rendersPerHour: 100_000 };
   const houseQuote = (usd: number) => quoteOf([{ ...unit(usd), platformPays: false }]);
   await runInTenant(house, async () => {
     await ready();

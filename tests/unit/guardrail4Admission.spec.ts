@@ -79,7 +79,7 @@ async function scope(
   let ws: TenantWorkspace;
   if (id === "ws_legacy") {
     ws = { id, slug: "house", name: "House", legacy: true, dbUrl: `file:${path.join(dir, name + ".db")}`, dbToken: null, keys: {}, usesPlatformKeys: false, allowanceUsd: null,
-      gatewayKeyId: null, ownerId: "owner", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: 20, rendersPerHour: 200,
+      gatewayKeyId: null, ownerId: "owner", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: 1000, rendersPerHour: 100_000,
       storageQuotaBytes: null, deletedAt: null };
   } else {
     await platformDb().execute({

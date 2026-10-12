@@ -2,6 +2,7 @@ import { db } from "./db";
 import { platformDb, platformReady } from "./platform";
 import { requireTenant } from "./tenant";
 import { isBatchId } from "./variations";
+import { holdBandOf } from "./cinemaHold";
 
 /**
  * Guardrail 4 counts one press as one job. A press of 2–4 takes is N requests that carry the same batch id and the press's size (`batchSize`);
@@ -27,7 +28,7 @@ export async function batchTally(ref: BatchRef | undefined, except?: string): Pr
   if (!ref) return NO_BATCH;
   const ws = requireTenant();
   const takes = (await db().execute({
-    sql: `SELECT id,status,json_extract(params,'$.held.needs') AS held_needs,json_extract(params,'$.held.estUsd') AS held_usd FROM generations
+    sql: `SELECT id,status,model,json_extract(params,'$.held.needs') AS held_needs,json_extract(params,'$.held.estUsd') AS held_usd FROM generations
           WHERE json_extract(params,'$.batchId')=? AND deleted=0 AND status NOT IN ('failed','cancelled','canceled')`,
     args: [ref.id],
   })).rows.filter((r) => String(r.id) !== except);
@@ -41,8 +42,8 @@ export async function batchTally(ref: BatchRef | undefined, except?: string): Pr
   const tally = { count: 0, credits: 0, usd: 0 };
   for (const t of takes) {
     const m = metered.get(String(t.id));
-    /* A take waiting held has no meter row yet: it counts at what its hold says it needs. */
-    const own = m ?? (t.status === "held" ? { credits: Number(t.held_needs ?? 0), usd: Number(t.held_usd ?? 0) } : null);
+    /* A take waiting held has no meter row yet: it counts at what its hold says it needs: its credits are already at the band, its dollars are held at the estimate and counted here at the band. */
+    const own = m ?? (t.status === "held" ? { credits: Number(t.held_needs ?? 0), usd: Number(t.held_usd ?? 0) * holdBandOf(String(t.model ?? "")) } : null);
     if (!own) continue;
     tally.count += 1; tally.credits += own.credits; tally.usd += own.usd;
   }
