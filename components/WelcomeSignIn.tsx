@@ -28,6 +28,8 @@ import { TRAIL } from "@/components/ParticlMark";
 import { Mark } from "@/components/ui/Mark";
 import { RequestAccessButton } from "@/components/RequestAccess";
 import { signInNotice } from "@/lib/authPages";
+import { googleStartPath } from "@/lib/googleSignInText";
+import { useGoogleSignIn } from "@/lib/useGoogleSignIn";
 import { safeNext } from "@/lib/safeNext";
 import "./auth-mobile.css";
 
@@ -96,6 +98,7 @@ function SignInForm({ next, notice = null }: { next: string; notice?: string | n
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const google = useGoogleSignIn();
 
   /**
    * Sign in, and say what went wrong in words a person can act on.
@@ -232,6 +235,11 @@ function SignInForm({ next, notice = null }: { next: string; notice?: string | n
         <p role="alert" className="rail-help !text-[12px] text-lift">
           {err}
         </p>
+      )}
+      {google && (
+        <a href={googleStartPath({ next })} className="btn-secondary !h-[46px] justify-center !text-[14px]" data-testid="signin-google">
+          Continue with Google
+        </a>
       )}
       <div className="wl-form-foot">
         <span>

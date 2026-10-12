@@ -45,7 +45,7 @@ export type JoinState = {
   showRequest: boolean;
 };
 
-export function JoinProvider({ children, initial, compact = false, back = "/" }: {
+export function JoinProvider({ children, initial, compact = false, back = "/", google = false }: {
   children: ReactNode;
   /** The sheet as the address opens it (`?join=…&requested=1`). */
   initial?: Partial<JoinState>;
@@ -53,6 +53,8 @@ export function JoinProvider({ children, initial, compact = false, back = "/" }:
   compact?: boolean;
   /** Where "Log in" comes back to. */
   back?: string;
+  /** Continue with Google is drawn (Google sign-in is on here). */
+  google?: boolean;
 }) {
   const [state, setState] = useState<JoinState>(() => ({
     open: false, reason: "start", detail: null, prompt: "", requested: false, fields: EMPTY_FIELDS, code: "", workspace: "", step: "name", plan: "", showRequest: false, ...initial,
@@ -80,7 +82,7 @@ export function JoinProvider({ children, initial, compact = false, back = "/" }:
   return (
     <JoinContext.Provider value={api}>
       {children}
-      <JoinSheet state={state} setState={setState} invite={invite} compact={compact} back={back} onClose={closeJoin} />
+      <JoinSheet state={state} setState={setState} invite={invite} compact={compact} back={back} google={google} onClose={closeJoin} />
     </JoinContext.Provider>
   );
 }
