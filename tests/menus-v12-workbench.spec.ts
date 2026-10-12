@@ -90,9 +90,9 @@ test.describe("desktop, switch on", () => {
     await expect(menu).toHaveCount(0);
     await expect(page.getByTestId("v12-home-tile-picked")).toHaveCount(1);
 
-    /* A board card on Home: Open and Copy link. */
+    /* A board card on Home: Open and Copy link, and, on the viewer's own board (not a sample), Share with team. */
     await page.getByTestId("v12-home-board").first().click({ button: "right" });
-    expect(await menuLabels(page, "v12-board-menu")).toEqual(["Open", "Copy link"]);
+    expect(await menuLabels(page, "v12-board-menu")).toEqual(["Open", "Copy link", "Share with team"]);
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("v12-board-menu")).toHaveCount(0);
     /* The picked tile is a selection under the menu: the next Esc clears it. */
