@@ -5,7 +5,7 @@ import type { Client, InStatement, Transaction } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import { db, ready, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
-import { platformDb, platformReady } from "./platform";
+import { membershipRole, platformDb, platformReady } from "./platform";
 import { paidByPlatformEngine, platformSpendRecordsSince } from "./platformSpend";
 import { allowanceUsd, allowanceUsdOfStored } from "./allowance";
 import { cycleBounds } from "./cycle";
@@ -428,6 +428,11 @@ type ReservationOptions = {
    * signed-in admin's; a held take's release decides from its author (lib/held.ts), not from whoever's poll released it.
    */
   adminTap?: boolean;
+  /**
+   * Background work that continues a request admission already judged against guardrail 4, with nobody to ask now (no signed-in person, no
+   * token, no agent, no author). Only such a caller sets it; any other reservation with no actor is judged as no admin's.
+   */
+  continuation?: boolean;
 };
 export async function reserveGenerationSpend(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   // Local libsql clients share a connection; never interleave transactions on it.
@@ -461,13 +466,17 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const legacyCap = projectId ? (await db().execute({ sql: "SELECT cap_usd,cap_credits,cap_unlocked FROM projects WHERE id=?", args: [projectId] })).rows[0] : null;
   const limits = await workspaceLimits();
   const shotCapExempt = options.shotCapExempt ?? currentTenant()?.user?.role === "admin";
-  /* Guardrail 4's admin tap (lib/approvalRule.ts): the caller said (a held take's release decides from its author), else the signed-in admin's. It judges a
-     PRESS: a signed-in person, a token, an agent identity, or a release that states its tap. Background work with no actor at all carries what the request
-     it continues already passed at admission, which judged it (lib/shotCap.ts › jobLineGate); it is not asked again here without anyone to ask. */
+  /* Guardrail 4's admin tap (lib/approvalRule.ts): the caller said (a held take's release decides from its author), else the signed-in admin's, else
+     (background work for a person, nobody signed in) the job's author: the workspace's owner or an admin member. A token, an MCP client, an agent
+     identity and a step Atomik's Auto approved itself are machines. A reservation with no actor at all is judged as no admin's, so refused over
+     the line, unless its caller marks it `continuation`: work that continues a request admission already judged. */
   const user = currentTenant()?.user;
-  const machineCaller = options.token != null || currentTenant()?.token != null || isAgentId(event.createdBy);
-  const adminTap = options.adminTap ?? (user ? user.role === "admin" : false);
-  const lineJudged = Boolean(user) || machineCaller || options.adminTap !== undefined;
+  const machineCaller = options.token != null || currentTenant()?.token != null || isAgentId(event.createdBy) || options.run?.auto === true;
+  const author = event.createdBy && !isAgentId(event.createdBy) ? event.createdBy : null;
+  const adminTap = options.adminTap ?? (user ? user.role === "admin"
+    : author ? ws.ownerId === author || await membershipRole(ws.id, author).then((role) => role === "owner" || role === "admin").catch(() => false) : false);
+  const noActor = !user && !machineCaller && !author && options.adminTap === undefined;
+  const lineJudged = !(noActor && options.continuation === true);
   const shotCap = event.shotId && !shotCapExempt && cleanRule(settings!.approvalRule) === "cap"
     ? cleanShotCap(settings!.shotCapCredits) : null;
   const ruleRaw = cap ? settings!.atCap : null;

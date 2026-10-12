@@ -1386,7 +1386,7 @@ export async function executeGenerationAdmission(
       }
       /* Guardrail 4: a job over the approval line needs an admin's own tap, whatever the rule or shot (lib/approvalRule.ts). */
       {
-        const over = jobLineGate({ takeUsd: estStillUsd, modelId, isAdmin: got.user.role === "admin", machine: got.token != null || isAgentId(got.user.id) });
+        const over = jobLineGate({ takeUsd: estStillUsd, modelId, paid: paidByPlatform(renderKeyNameFor(model.provider)), isAdmin: got.user.role === "admin", machine: got.token != null || isAgentId(got.user.id) || options.run?.auto === true });
         if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
       }
       /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
@@ -2068,7 +2068,7 @@ export async function executeGenerationAdmission(
     }
     /* Guardrail 4: a job over the approval line needs an admin's own tap, whatever the rule or shot (lib/approvalRule.ts); its hold counts. */
     {
-      const over = jobLineGate({ takeUsd: estUsd, modelId, band, isAdmin: got.user.role === "admin", machine: got.token != null || isAgentId(got.user.id) });
+      const over = jobLineGate({ takeUsd: estUsd, modelId, band, paid: paidByPlatform(renderKeyNameFor(model.provider)), isAdmin: got.user.role === "admin", machine: got.token != null || isAgentId(got.user.id) || options.run?.auto === true });
       if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
     }
     /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */

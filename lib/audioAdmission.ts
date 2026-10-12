@@ -59,6 +59,7 @@ import {
   admitPrepared,
   assertAdmissionActor,
 } from "./admissionSupport";
+import { jobLineNow } from "./shotCap";
 
 const MAX_TEXT = 5000;
 export type AudioTask = "speech" | "sound" | "music" | "dialogue" | "voiceChange";
@@ -340,6 +341,9 @@ export async function executeAudioAdmission(
   const terms = currentBillingTerms("audio", modelId);
   /* The approval unit (lib/credits.ts quotedCredits): never a margin beside the dollars in `price`. */
   const estimatedCredits = quotedCredits(vendorUsd, terms);
+  /* Guardrail 4 at the quote and before anything is created: a sound over the approval line needs an admin's own tap (lib/shotCap.ts › jobLineNow). */
+  const over = jobLineNow(estimatedCredits);
+  if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
   if (quoteOnly)
     return admissionReply({
       estimatedCredits,

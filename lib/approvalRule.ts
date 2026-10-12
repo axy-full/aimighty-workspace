@@ -22,8 +22,10 @@ export function cleanShotCap(v: unknown): number {
  * workspace's cost approval rule, whatever the workspace's own setting. It is a price, so in credits it
  * follows the price of a credit (the SOW's "200 cr" is this line at a credit's US$0.10), and the same
  * line reads as fewer credits when a credit costs more.
- * Its single source: change the line here. Atomik's Rig runs use it as the most one job may cost without
- * asking (lib/workbench/rig-agent-limits.ts); nothing else enforces it yet.
+ * Its single source: change the line here. It is enforced at the press (jobLineVerdict below): in the reservation
+ * (lib/generationRequests.ts), in admission and the audio, dubbing and text quotes (lib/shotCap.ts), and in the quote
+ * verdict (lib/quote.ts). Atomik's Rig runs also use it as the most one Auto job may cost without asking
+ * (lib/workbench/rig-agent-limits.ts); an Auto step is a machine here and never starts a job over it.
  */
 export const JOB_APPROVAL_LINE_USD = 20;
 

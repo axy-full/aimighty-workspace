@@ -236,6 +236,8 @@ export function verdictOf(q: Quote, c: Context): Verdict {
      every take it carries) needs an admin's own tap; a machine is refused outright. The same words as the press (lib/approvalRule.ts). */
   if (c.jobLine) {
     for (const l of q.lines) {
+      /* Only work the platform pays for has a credit price to refuse. */
+      if (!l.platformPays) continue;
       const stop = jobLineVerdict({ credits: l.credits, lineCredits: c.jobLine.credits, isAdmin: c.isAdmin, machine: c.jobLine.machine }, fmt);
       if (stop.blocked) return { allow: false, gate: "approval", line: stop.line, notice: "" };
     }

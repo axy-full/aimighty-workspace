@@ -11,6 +11,7 @@ import { creditsApply, creditState } from "./credits";
 import { projectCapSpent, spentBy } from "./caps";
 import { cleanRule, cleanShotCap, jobApprovalLineCredits } from "./approvalRule";
 import { creditUsd } from "./creditTerms";
+import { isAgentId } from "./security/people-only";
 import { shotCreditsSoFar } from "./shotCap";
 import { quoteOf, verdictOf, liveTerms, stampOf, publicQuote, type PublicQuote, type Quote, type Unit, type Verdict, type Context, type Cap } from "./quote";
 
@@ -285,7 +286,7 @@ export async function contextFor(projectIds: (string | null)[], opts: { isAdmin:
     shotCap: cleanShotCap(shotCap),
     isAdmin: opts.isAdmin,
     /* Guardrail 4: the approval line at this workspace's price of a credit, whoever asks (lib/approvalRule.ts). */
-    jobLine: { credits: jobApprovalLineCredits(creditUsd()), machine: opts.machine === true },
+    jobLine: { credits: jobApprovalLineCredits(creditUsd()), machine: opts.machine ?? (currentTenant()?.token != null || isAgentId(currentTenant()?.user?.id)) },
   };
 }
 
