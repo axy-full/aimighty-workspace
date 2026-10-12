@@ -252,6 +252,20 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 
 - **Enhance in the board bar** (from #657, owner 11 Oct: not now). In the board bar Atomik plans the steps and writes each prompt, so a switch there would change nothing a person typed. To make it real, enhance each planned still/clip step server-side, with its real text-model cost in the plan's total and approved once (rule 14), and label each take Enhanced/Raw like Make's. Done when: the switch shows in the board bar when a placed image/video card is selected (v14); the plan prices enhancement per step; the approval covers it; tests prove the approved total equals what's shown, and that nothing is enhanced or charged with the switch off.
 - **Teammates editing boards** (from #667, owner 11 Oct): next, with a "this changed since you opened it, reload" rule; no silent overwrite.
+- **Delete the old interface** (owner, 12 Oct). Planned now, not built until its trigger. **Trigger:** #665 (v14 for everyone) has been live in production and stable for 7 days, meaning no rollback, no switch-off of a customer workspace, and no open regression traced to v14. **Then:** a NEEDS AKSHAY PR that deletes the old interface code and the new-interface switch (`lib/newInterface.ts`, the per-workspace `ni_off:` rows, the global switch in /admin › Site), so only one design exists in the app. **Scope to plan:**
+  - the old shell and screens that v14 replaced (the graphite workbench screens, Studio and old Home);
+  - their style sheets, which the one-design guard's allow-list then shrinks to zero;
+  - the specs that only test the old screens, deleted with them (never weakened). Guard specs that name the switch get the owner's direct word before any change.
+  - docs/old-design-inventory.md, emptied.
+
+  **Done when:** no import of the switch remains; the one-design guard's old-sheet allow-list is empty; the five-minute test (v14) and the full suite pass; and screenshots at the five sizes show only v14.
+- **Uploads access** (owner, 12 Oct): a member opens an upload only if they uploaded it, or it's on a board shared with the team, or production or shared work already exposes it. Being built by lane C, NEEDS AKSHAY, with an Opus privacy review.
+
+## Housekeeping rules (owner, 12 Oct)
+
+1. `design/` keeps only `particl-prototype-14` (the design) and `particl-prototype-12` (reference). Older prototype versions are deleted in a small design-files-only PR (#673 removes `design/particl-graphite`).
+2. The old interface is deleted 7 days after #665 has been live and stable (see Follow-ups).
+3. Droplet hygiene: at the end of each work session, remove finished worktrees, unzipped prototype copies and any test servers, and never leave processes running. Report free disk space (`df -h /`) in each status.
 
 ## Owner decisions (Akshay, 12 Oct morning)
 
