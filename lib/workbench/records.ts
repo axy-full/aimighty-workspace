@@ -9,6 +9,7 @@ import type { Project } from './studio';
 import type { Client, Transaction } from '@libsql/client';
 import {publishedContext} from './published-context';
 import {referencedMedia} from '@/lib/mediaBindings';
+import {assertUploadsOpenable} from '@/lib/uploadAccess';
 import {diffForTeam} from './team-canvas-model';
 import {applyTeamCanvasPatch, teamCanvasReady, TeamCanvasError} from './team-canvas';
 import {scheduleCanvasPush} from './canvas-push';
@@ -82,6 +83,9 @@ export async function validateStoredMedia(tx:Transaction,value:unknown) {
       if(missing)throw new Error(`A referenced ${kind} is no longer available (${missing}). Remove or replace it before saving or publishing. Your saved work has not changed.`);
     }
   }
+  /* The person saving or publishing must be able to open every upload it names (lib/uploadAccess.ts); said as a missing one is. */
+  try { await assertUploadsOpenable(tx,refs.uploads); }
+  catch { throw new Error('A referenced upload is no longer available. Remove or replace it before saving or publishing. Your saved work has not changed.'); }
 }
 
 /** Create the real production records once, under the same plan ceiling/default cap as /api/projects. */

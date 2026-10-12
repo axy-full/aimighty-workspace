@@ -75,6 +75,8 @@ async function load(kind: "uploads" | "jobs", cleanupFails = false) {
     },
     "@/lib/contentDisposition": await import("../../lib/contentDisposition"),
     "@/lib/serveType": {},
+    /* This file loads the route for its DELETE (a stricter loader than most); GET's access check (tests/unit/uploadAccess.spec.ts) is not exercised here. */
+    "@/lib/uploadAccess": { uploadOpenableBy: async () => true },
     "@/lib/recovery": { reserveRecoveryContinuation: async (_kind: string, handler: unknown) => handler },
     "@/lib/jobs": {},
     "@/lib/shots": {},

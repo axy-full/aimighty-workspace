@@ -205,6 +205,169 @@ test("rows from before the column are filled from the chat message that carried 
   });
 });
 
+/** A draft owned by `owner`, linked to its own production project (`prj_wb_…`, lib/workbench/records.ts › linkProduction), as every private board is. */
+async function seedDraft(h: H, owner: string, draft: string, projectId: string) {
+  const { newProject } = await import("../../lib/workbench/studio");
+  const { projectLibraryReady } = await import("../../lib/workbench/project-library");
+  await projectLibraryReady();
+  await h.database.db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES(?,?,0)", args: [projectId, projectId] });
+  await h.database.db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,0)",
+    args: [`${owner}:${draft}`, owner, draft, draft, JSON.stringify({ ...newProject(draft), id: draft, productionProjectId: projectId, assets: [] })] });
+}
+
+test("a private board's uploads stay private: the automatic filing into a draft's own project grants nothing, a filing into a shared project does", async () => {
+  const h = await harness();
+  const { linkProjectLibraryUpload } = await import("../../lib/workbench/project-library");
+  await h.tenant.runInTenant(workspace(`access-h-${run}`), async () => {
+    await h.database.ready();
+    await seedDraft(h, "u_up", "draft1", "prj_wb_one");
+    await h.database.db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('prod_shared','Shared',0)", args: [] });
+    /* What the composer does for every upload into a board: it files it into the draft's own production project. */
+    const mine = `upl_board_${run}`;
+    await seedUpload(h, mine, "u_up");
+    await linkProjectLibraryUpload("u_up", "draft1", mine);
+    expect((await h.database.db().execute({ sql: "SELECT project_id FROM project_library_uploads WHERE upload_id=?", args: [mine] })).rows.map((r) => r.project_id)).toEqual(["prj_wb_one"]);
+    h.as("u_mate");
+    expect(await status(h, mine), "a teammate, with the draft's filing in place").toBe(404);
+    h.as("u_up");
+    expect(await status(h, mine)).toBe(200);
+    /* A take and a board made inside the draft's project do not share its references either. */
+    const viaTake = `upl_dtake_${run}`, viaBoard = `upl_dboard_${run}`;
+    await seedUpload(h, viaTake, "u_up"); await seedUpload(h, viaBoard, "u_up");
+    await h.database.db().execute({ sql: "INSERT INTO generations(id,project_id,model,prompt,params,status,created_at,updated_at,kind) VALUES(?,?,?,?,?,'succeeded',1,1,'image')", args: [`gen_d_${run}`, "prj_wb_one", "m", "p", JSON.stringify({ references: [{ uploadId: viaTake }] })] });
+    await h.database.db().execute({ sql: "INSERT INTO boards(id,project_id,name,nodes,wires,created_at,updated_at) VALUES(?,?,?,?,?,1,1)", args: [`brd_d_${run}`, "prj_wb_one", "B", JSON.stringify([{ uploadId: viaBoard }]), "[]"] });
+    h.as("u_mate");
+    expect(await status(h, viaTake)).toBe(404);
+    expect(await status(h, viaBoard)).toBe(404);
+    /* The same work in a shared project does. */
+    h.as("u_up");
+    const shared = `upl_shared_${run}`;
+    await seedUpload(h, shared, "u_up");
+    await h.database.db().execute({ sql: "INSERT INTO project_library_uploads(project_id,upload_id,created_by,created_at) VALUES('prod_shared',?,'u_up',1)", args: [shared] });
+    h.as("u_mate");
+    expect(await status(h, shared)).toBe(200);
+  });
+});
+
+test("nobody can file, chat, attach or save their way into someone else's private upload", async () => {
+  const h = await harness();
+  const { linkProjectLibraryUpload, ProjectLibraryError } = await import("../../lib/workbench/project-library");
+  const { withMediaSources } = await import("../../lib/mediaMutation");
+  const { writeCanvasRow, teamCanvasReady } = await import("../../lib/workbench/team-canvas");
+  const { parseTeamCanvas } = await import("../../lib/workbench/team-canvas-model");
+  const id = `upl_secret_${run}`;
+  const as = (user: string) => ({ user: { id: user, email: "", name: user, role: "member" as const, owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
+  const ws = workspace(`access-i-${run}`);
+  await h.tenant.runInTenant(ws, async () => { await h.database.ready(); await seedUpload(h, id, "u_up"); await seedDraft(h, "u_mate", "dmate", "prj_wb_mate"); await teamCanvasReady();
+    await h.database.db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('prod',?,0)", args: ["Production"] }); });
+  await h.tenant.runInTenant(ws, async () => {
+    /* A library filing, as the B's draft would do it. */
+    await expect(linkProjectLibraryUpload("u_mate", "dmate", id)).rejects.toBeInstanceOf(ProjectLibraryError);
+    await expect(linkProjectLibraryUpload("u_mate", "dmate", id)).rejects.toMatchObject({ status: 404 });
+    /* A chat message, a board, a shot's setup and a take's references all go through the same attach (lib/mediaMutation.ts). */
+    for (const value of [{ uploadId: id }, [{ id: "n", uploadId: id }], { setup: { look: { uploadId: id } } }, { references: [{ uploadId: id }] }, { url: `/api/uploads/${id}` }])
+      await expect(withMediaSources(value, async () => 1), JSON.stringify(value)).rejects.toThrow(/no longer available/);
+    /* The shared canvas. */
+    const canvas = parseTeamCanvas({ nodes: { n1: { id: "n1", uploadId: id } } });
+    const refused = await h.database.db().transaction("write").then(async (tx) => { try { await writeCanvasRow(tx, "prod", canvas, 0, "u_mate"); return null; } catch (e) { return e as Error; } finally { await tx.rollback(); tx.close(); } });
+    expect(refused?.message).toMatch(/no longer available/);
+    /* The same refusal an unknown id gets: nothing says the upload exists. */
+    const unknown = await withMediaSources({ uploadId: "upl_nothing" }, async () => 1).catch((e: Error) => e.message);
+    const hidden = await withMediaSources({ uploadId: id }, async () => 1).catch((e: Error) => e.message);
+    expect(hidden).toBe(unknown);
+  }, as("u_mate"));
+  /* None of it opened anything. */
+  await h.tenant.runInTenant(ws, async () => { h.as("u_mate"); expect(await status(h, id)).toBe(404); }, as("u_mate"));
+  /* The uploader, and anyone once shared work holds it, can attach it; a stray mention of the id in a note shares nothing. */
+  await h.tenant.runInTenant(ws, async () => {
+    await withMediaSources({ uploadId: id }, async () => 1);
+    await h.database.db().execute({ sql: "INSERT INTO boards(id,project_id,name,nodes,wires,created_at,updated_at) VALUES(?,?,?,?,?,1,1)", args: [`brd_note_${run}`, "prod", "B", JSON.stringify([{ note: `see ${id} and ${id}` }]), "[]"] });
+  }, as("u_up"));
+  await h.tenant.runInTenant(ws, async () => { h.as("u_mate"); expect(await status(h, id), "an id in a note").toBe(404); }, as("u_mate"));
+  await h.tenant.runInTenant(ws, async () => {
+    await h.database.db().execute({ sql: "INSERT INTO boards(id,project_id,name,nodes,wires,created_at,updated_at) VALUES(?,?,?,?,?,1,1)", args: [`brd_real_${run}`, "prod", "B", JSON.stringify([{ uploadId: id }]), "[]"] });
+  }, as("u_up"));
+  await h.tenant.runInTenant(ws, async () => { h.as("u_mate"); expect(await status(h, id), "on a shared board").toBe(200); await withMediaSources({ uploadId: id }, async () => 1); }, as("u_mate"));
+});
+
+test("the library list and the planner's library show a person only what they may open, and still page completely", async () => {
+  const h = await harness();
+  const { listLibraryUploads } = await import("../../lib/uploadLibrary");
+  const { plannerLibrary } = await import("../../lib/atomikLibrary");
+  const ws = workspace(`access-j-${run}`);
+  await h.tenant.runInTenant(ws, async () => {
+    await h.database.ready();
+    const { workbenchReady } = await import("../../lib/workbench/records");
+    await workbenchReady();
+    await seedDraft(h, "u_mate", "dmate", "prj_wb_mate");
+    await h.database.db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('prod','Production',0)", args: [] });
+    const seed = async (n: string, uploader: string | null, at: number) => h.database.db().execute({
+      sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,created_at,kind,uploader_id) VALUES(?,?,'image/png','png',1,'secret-hash',640,480,'',?,'image',?)", args: [`upl_l_${n}_${run}`, `${n}.png`, at, uploader] });
+    /* Newest first: seven of A's private uploads in a row, then B's own, one shared, one unowned. */
+    for (let i = 0; i < 7; i++) await seed(`priv${i}`, "u_up", 100 - i);
+    await seed("mine", "u_mate", 50); await seed("shared", "u_up", 40); await seed("old", null, 30);
+    await h.database.db().execute({ sql: "INSERT INTO cast_members(id,project_id,name,upload_id,created_at) VALUES(?,'prod','Lead',?,1)", args: [`cast_l_${run}`, `upl_l_shared_${run}`] });
+    const all = async (viewer: string) => {
+      const out: string[] = []; let cursor: string | null = null;
+      do {
+        const page: { uploads: { id: string; sha256: string }[]; nextCursor: string | null } = await listLibraryUploads(new URLSearchParams(`limit=2${cursor ? `&cursor=${cursor}` : ""}`), undefined, undefined, { id: viewer });
+        out.push(...page.uploads.map((u) => u.id)); cursor = page.nextCursor;
+      } while (cursor);
+      return out;
+    };
+    const mate = await all("u_mate");
+    expect(mate.map((id) => id.replace(`_${run}`, ""))).toEqual(["upl_l_mine", "upl_l_shared", "upl_l_old"]);
+    expect((await all("u_up")).length).toBe(9);
+    /* The planner's library: B's draft names A's private upload (a draft saved before this rule), and it is neither listed nor cited. */
+    await h.database.db().execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.assets',json(?)) WHERE owner='u_mate'", args: [JSON.stringify([{ id: "a1", name: "x", uploadId: `upl_l_priv0_${run}`, url: `/api/uploads/upl_l_priv0_${run}`, kind: "image" }])] });
+    const listed = async (owner: string) => (await plannerLibrary({ owner, projectId: "prj_wb_mate", studioProjectId: "dmate" })).map((item) => item.id);
+    expect(await listed("u_mate")).not.toContain(`upl_l_priv0_${run}`);
+  });
+});
+
+test("the identity preview's Soul references count as shared work; the backfill runs only when the column is new and takes the first poster", async () => {
+  const h = await harness();
+  const id = `upl_soul_${run}`;
+  await h.tenant.runInTenant(workspace(`access-k-${run}`), async () => {
+    await h.database.ready();
+    await h.database.db().execute("CREATE TABLE IF NOT EXISTS soul_identities (id TEXT PRIMARY KEY, references_json TEXT NOT NULL)");
+    await seedUpload(h, id, "u_up");
+    h.as("u_mate");
+    expect(await status(h, id)).toBe(404);
+    await h.database.db().execute({ sql: "INSERT INTO soul_identities(id,references_json) VALUES('soul1',?)", args: [JSON.stringify([{ uploadId: id }])] });
+    expect(await status(h, id)).toBe(200);
+  });
+  /* A database that already has the column is not backfilled again; a new column takes the first message's author. */
+  const file = path.join(dir, `legacy2-${run}.db`);
+  const legacy = createClient({ url: `file:${file}` });
+  await legacy.batch([
+    "CREATE TABLE uploads (id TEXT PRIMARY KEY, filename TEXT NOT NULL, mime TEXT NOT NULL, ext TEXT NOT NULL, bytes INTEGER NOT NULL, sha256 TEXT NOT NULL, width INTEGER, height INTEGER, stored_url TEXT NOT NULL, created_at INTEGER NOT NULL, uploader_id TEXT)",
+    "CREATE TABLE messages (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', mentions TEXT NOT NULL DEFAULT '[]', upload_id TEXT, created_at INTEGER NOT NULL)",
+    `INSERT INTO uploads VALUES('upl_had_${run}','a.png','image/png','png',1,'x',NULL,NULL,'',1,NULL)`,
+    `INSERT INTO messages VALUES('m1','u_late','','[]','upl_had_${run}',9)`,
+  ], "write");
+  legacy.close();
+  await h.tenant.runInTenant({ ...workspace(`access-l-${run}`), dbUrl: `file:${file}` }, async () => {
+    await h.database.ready();
+    expect((await h.database.db().execute("SELECT uploader_id FROM uploads")).rows[0].uploader_id).toBeNull();
+    expect((await h.database.db().execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_messages_upload'")).rows).toHaveLength(1);
+  });
+  const file2 = path.join(dir, `legacy3-${run}.db`);
+  const old = createClient({ url: `file:${file2}` });
+  await old.batch([
+    "CREATE TABLE uploads (id TEXT PRIMARY KEY, filename TEXT NOT NULL, mime TEXT NOT NULL, ext TEXT NOT NULL, bytes INTEGER NOT NULL, sha256 TEXT NOT NULL, width INTEGER, height INTEGER, stored_url TEXT NOT NULL, created_at INTEGER NOT NULL)",
+    "CREATE TABLE messages (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', mentions TEXT NOT NULL DEFAULT '[]', upload_id TEXT, created_at INTEGER NOT NULL)",
+    `INSERT INTO uploads VALUES('upl_two_${run}','a.png','image/png','png',1,'x',NULL,NULL,'',1)`,
+    `INSERT INTO messages VALUES('m2','u_second','','[]','upl_two_${run}',9)`,
+    `INSERT INTO messages VALUES('m1','u_first','','[]','upl_two_${run}',3)`,
+  ], "write");
+  old.close();
+  await h.tenant.runInTenant({ ...workspace(`access-m-${run}`), dbUrl: `file:${file2}` }, async () => {
+    await h.database.ready();
+    expect((await h.database.db().execute("SELECT uploader_id FROM uploads")).rows[0].uploader_id).toBe("u_first");
+  });
+});
+
 test("the preview door (thumbnails) answers the same: the uploader gets the picture, a teammate a 404 before any cached preview is looked up", async () => {
   const h = await harness();
   const sharp = (await import("sharp")).default;

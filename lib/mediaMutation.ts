@@ -1,6 +1,7 @@
 import type { Transaction } from "@libsql/client";
 import { db, ready } from "./db";
 import { MediaSourceError, referencedMedia } from "./mediaBindings";
+import { assertUploadsOpenable } from "./uploadAccess";
 
 /** Validate and attach in the same write transaction used by guarded deletion. */
 export async function validateMediaSources(
@@ -26,6 +27,8 @@ export async function validateMediaSources(
         );
     }
   }
+  /* The writer must be able to open every upload it attaches (lib/uploadAccess.ts): attaching someone's private upload to shared work is not a way to open it. */
+  await assertUploadsOpenable(tx, refs.uploads);
 }
 
 /** Database work only: callbacks must use tx, never db(), storage or a provider. */

@@ -35,7 +35,7 @@ export const GET = withTenant(async function GET(req: Request) {
   const problem = workbenchScopeProblem(req, requireTenant().id, got.user.id, false);
   if (problem) return NextResponse.json({ error: problem }, { status: 409 });
   try {
-    return NextResponse.json(await listLibraryUploads(new URL(req.url).searchParams), {
+    return NextResponse.json(await listLibraryUploads(new URL(req.url).searchParams, undefined, undefined, got.user), {
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch (error) {

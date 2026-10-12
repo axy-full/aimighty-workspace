@@ -60,6 +60,7 @@ export async function uploadReservationsReady() {
         state TEXT NOT NULL, lease TEXT, lease_until INTEGER, PRIMARY KEY(session_id,chunk_index)
       )`,
           `CREATE INDEX IF NOT EXISTS upload_sessions_expiry ON upload_sessions(state,expires_at)`,
+          `CREATE INDEX IF NOT EXISTS upload_sessions_upload ON upload_sessions(upload_id)`,
           `CREATE TABLE IF NOT EXISTS consumer_video_originals (
             job_id TEXT PRIMARY KEY, generation_id TEXT NOT NULL UNIQUE,
             owner_id TEXT NOT NULL, draft_id TEXT NOT NULL, provider_job_id TEXT NOT NULL,

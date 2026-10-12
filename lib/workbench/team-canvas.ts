@@ -1,3 +1,6 @@
+import { referencedMedia } from "../mediaBindings";
+import { assertUploadsOpenable } from "../uploadAccess";
+import { isAgentId } from "../security/people-only";
 import { z } from "zod";
 import type { Client, Transaction } from "@libsql/client";
 import { db, ready, now } from "@/lib/db";
@@ -133,6 +136,16 @@ export async function writeCanvasRow(tx: Transaction, productionId: string, next
   const body = JSON.stringify(next);
   if (body.length > PROJECT_JSON_BYTES) throw new TeamCanvasError("This canvas has reached the 24 MB project limit.", 413);
   const revision = previous + 1;
+  /* A person who puts an upload on the shared canvas must be able to open it (lib/uploadAccess.ts): only uploads the canvas does not already hold are asked,
+     so saving a canvas never fails over what is already there. */
+  if (!isAgentId(by)) {
+    const before = (await tx.execute({ sql: "SELECT body FROM workbench_team_canvas WHERE production_id=?", args: [productionId] })).rows[0];
+    let held = new Set<string>();
+    try { held = referencedMedia(JSON.parse(String(before?.body ?? "null"))).uploads; } catch { /* an unreadable earlier canvas holds nothing */ }
+    const added = [...referencedMedia(next).uploads].filter((id) => !held.has(id));
+    try { await assertUploadsOpenable(tx, added, { id: by }); }
+    catch { throw new TeamCanvasError("A referenced upload is no longer available. Remove or replace it before saving.", 409); }
+  }
   await tx.execute({
     sql: `INSERT INTO workbench_team_canvas(production_id,body,revision,updated_by,updated_at) VALUES(?,?,?,?,?)
           ON CONFLICT(production_id) DO UPDATE SET body=excluded.body,revision=excluded.revision,updated_by=excluded.updated_by,updated_at=excluded.updated_at`,

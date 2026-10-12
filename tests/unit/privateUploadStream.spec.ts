@@ -125,12 +125,14 @@ for (const variant of [
         },
       },
     });
+    const access: [string, string][] = [];
     const route = load<typeof import("../../app/api/uploads/[id]/route")>(
       "app/api/uploads/[id]/route.ts",
       {
         "@/lib/storage": storage,
-        /* This spec is about the bytes (ranges, lengths, headers) behind a fake database; who may open an upload is tests/unit/uploadAccess.spec.ts. */
-        "@/lib/uploadAccess": { uploadOpenableBy: async () => true },
+        /* This spec is about the bytes (ranges, lengths, headers) behind a fake database; who may open an upload is tests/unit/uploadAccess.spec.ts.
+           The stub records the question and says yes only to the fixture's viewer, so the route is shown to ask, and to ask for this id and this person. */
+        "@/lib/uploadAccess": { uploadOpenableBy: async (id: string, viewer: { id: string }) => { access.push([id, viewer.id]); return viewer.id === "internal-fixture"; } },
         "@/lib/auth": {
           withTenant: (handler: unknown) => handler,
           requireUser: async () => ({ user: { id: "internal-fixture" } }),
@@ -180,6 +182,7 @@ for (const variant of [
       expect(response.headers.get("cache-control")).toBe("private, no-store");
       expect(Buffer.from(await response.arrayBuffer())).toEqual(expected);
     });
+    expect(access).toEqual([["fixture", "internal-fixture"]]);
     expect(calls).toHaveLength(1);
     expect(calls[0].name).toBe("ws/private-stream-studio/uploads/fixture.mp4");
     expect(calls[0].options.abortSignal).toBe(req.signal);
