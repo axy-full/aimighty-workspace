@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { LOW_CREDIT_PERCENT, lowCredit } from "../../lib/v12/lowCredit";
-import { DEFAULT_PLANS, planById } from "../../lib/plans";
+import { DEFAULT_PLANS, cycleCredits, planById } from "../../lib/plans";
 import { signupCredits } from "../../lib/creditTerms";
 import { LowCreditChipView, lowCreditHover } from "../../components/v12/shell/LowCreditChip";
 
@@ -89,4 +89,19 @@ test("the chip reads as the prototype, names the balance on hover, and a click o
   expect(style).toMatchObject({ height: 32, borderRadius: 999, fontSize: 13, fontWeight: 500, border: "1px solid rgba(255, 159, 10, 0.5)" });
   (chip.props.onClick as (e: { stopPropagation: () => void }) => void)({ stopPropagation: () => {} });
   expect(opened).toBe(1);
+});
+
+test("Business: the base is the cycle's pooled total (a seat's credits times its seats), and 20% of that is the line", () => {
+  const level = planById(DEFAULT_PLANS, "business100")!;
+  const pooled = cycleCredits(level, 5);
+  expect(pooled).toBe(5000);
+  const rule = (balance: number) => lowCredit({ balance, planIncludedCredits: pooled, welcomeGrant: welcome, paysInCredits: true });
+  /* 20% of the pool is 1,000: exactly there is not low, a credit under is. */
+  expect(rule(1000)).toEqual({ low: false, remainingPct: 20, threshold: 1000, base: 5000 });
+  expect(rule(999).low).toBe(true);
+  /* One seat's credits alone would put the line at 200: the pool, not a seat, is what the warning measures. */
+  expect(rule(400).low).toBe(true);
+  expect(lowCredit({ balance: 400, planIncludedCredits: cycleCredits(level, 1), welcomeGrant: welcome, paysInCredits: true }).low).toBe(false);
+  /* The base is only what the ledger funded: a plan an admin only labelled grants nothing, so with no cycle there is no plan base. */
+  expect(lowCredit({ balance: 5, planIncludedCredits: 0, welcomeGrant: 0, paysInCredits: true })).toEqual({ low: false, remainingPct: null, threshold: null, base: null });
 });

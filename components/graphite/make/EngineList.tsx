@@ -123,6 +123,7 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
   const set = composer.dispatch;
   const project = composer.project;
   const audio = state.type === "audio";
+  const soundKinds = SOUND_KINDS.flatMap(({ task, label }) => { const engine = make.offered.find((m) => m.audioTask === task); return engine ? [{ task, label, engine }] : []; });
   const takes = settings.draft ? 1 : state.count;
   const choices = TAKE_CHOICES.includes(takes) ? TAKE_CHOICES : [...TAKE_CHOICES, takes].sort((a, b) => a - b);
   const enhanceNote = !enhancer.auto ? "off"
@@ -184,16 +185,14 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
         </div>
       ) : null}
 
-      {audio ? (
+      {/* The Sound field is drawn once there is a kind to pick: until the engine list has loaded it would be an empty group, and a screen (or a test) that sees the field would see no choice in it. */}
+      {audio && soundKinds.length ? (
         <div className="gx-mk-field" data-testid="make-sound-kind">
           <span className="gx-mk-eyebrow">Sound</span>
           <div className="gx-mk-chips" role="group" aria-label="Sound">
-            {SOUND_KINDS.map(({ task, label }) => {
-              const engine = make.offered.find((m) => m.audioTask === task);
-              return engine ? (
-                <button key={task} type="button" className="gx-chip" aria-pressed={model?.audioTask === task} onClick={() => set({ type: "model", value: engine.id })} data-testid={`make-sound-${task}`}>{model?.audioTask === task ? "✓ " : ""}{label}</button>
-              ) : null;
-            })}
+            {soundKinds.map(({ task, label, engine }) => (
+              <button key={task} type="button" className="gx-chip" aria-pressed={model?.audioTask === task} onClick={() => set({ type: "model", value: engine.id })} data-testid={`make-sound-${task}`}>{model?.audioTask === task ? "✓ " : ""}{label}</button>
+            ))}
           </div>
         </div>
       ) : null}

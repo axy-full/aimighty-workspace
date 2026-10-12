@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ParticlMark } from "@/components/ParticlMark";
 import type { SitePrices } from "@/lib/marketing/prices.server";
 import { planLines } from "@/lib/marketing/plans";
+import { BUSINESS, ENTERPRISE, businessFromUsd, plansIn } from "@/lib/plans";
 import { usd } from "@/lib/marketing/format";
 import { APP_HREF, PRICING_HREF, SIGN_IN_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
 import AccessForm from "./AccessForm";
@@ -73,19 +74,33 @@ function Shell() {
 }
 
 function PricingTeaser({ prices }: { prices: SitePrices }) {
+  const individual = plansIn(prices.plans, "individual");
+  const from = businessFromUsd(prices.plans);
   return (
     <Section id="pricing" panel label="Pricing">
-      <Head eyebrow="Pricing" title="Credits, not seats."
-        lead={`1 credit = US${usd(prices.perCredit)}. Plans differ on credits and features, never headcount.`}
+      <Head eyebrow="Pricing" title="Pick a plan. Credits are the unit."
+        lead={`1 credit = US${usd(prices.perCredit)}. One person pays a month for their credits; a team pays a seat a month, and the credits are pooled.`}
         aside={<Link href={PRICING_HREF} className="mk-btn mk-btn--secondary" style={{ height: 38 }}>Plans, packs and the rate card →</Link>} />
       <Grid col={230}>
-        {prices.plans.map((plan) => (
-          <Link key={plan.id} href={PRICING_HREF} className={`mk-card${plan.id === "agency" ? " mk-card--hl" : ""}`}>
-            <span className={`mk-tag${plan.id === "agency" ? "" : " mk-tag--muted"}`}>{plan.label}</span>
-            <span className="mk-plan-price">{usd(plan.priceUsd)}{plan.priceUsd > 0 && <small>/mo</small>}</span>
+        {individual.map((plan) => (
+          <Link key={plan.id} href={PRICING_HREF} className={`mk-card${plan.badge ? " mk-card--hl" : ""}`}>
+            <span className={`mk-tag${plan.badge ? "" : " mk-tag--muted"}`}>{plan.label}</span>
+            <span className="mk-plan-price">{usd(plan.priceUsd)}<small>/mo</small></span>
             <span className="mk-body">{planLines(plan, prices.inviteCredits).slice(0, 3).join(" · ")}</span>
           </Link>
         ))}
+        {from != null && (
+          <Link href={PRICING_HREF} className="mk-card">
+            <span className="mk-tag mk-tag--muted">{BUSINESS.label}</span>
+            <span className="mk-plan-price">from {usd(from)}<small> per seat</small></span>
+            <span className="mk-body">One pool of credits across every seat</span>
+          </Link>
+        )}
+        <Link href={PRICING_HREF} className="mk-card">
+          <span className="mk-tag mk-tag--muted">{ENTERPRISE.label}</span>
+          <span className="mk-plan-price">{ENTERPRISE.line}</span>
+          <span className="mk-body">{ENTERPRISE.blurb[0].toUpperCase() + ENTERPRISE.blurb.slice(1)}</span>
+        </Link>
       </Grid>
     </Section>
   );

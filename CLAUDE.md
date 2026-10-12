@@ -120,7 +120,33 @@ region of UI (`--color-panel`). Rule 5 says one vocabulary, decided once, so
 the tier work uses **plan** for the subscription and keeps `tier` meaning what
 it already means.
 
-| Tier | Price | Included | Members |
+**AMENDED 11 October 2026 — the owner's final plans, and the reversal of "no seat fees".** Display
+configuration only: checkout is later, and no credit math, margin or `CREDIT_USD` changes. The plans (`lib/plans.ts`) are:
+
+| Plan | Price | Included credits |
+|---|---|---|
+| **Explore** (one person) | $50/mo | 500 cr |
+| **Create** (one person) | $100/mo | 1,000 cr |
+| **Master** (one person) | $250/mo | 2,500 cr |
+| **Business 100** (a team) | $100 per seat per month | 1,000 cr per seat |
+| **Business 250** (a team) | $250 per seat per month | 2,500 cr per seat |
+| **Business 500** (a team) | $500 per seat per month | 5,000 cr per seat |
+| **Enterprise** | Get in touch | no price, no plan id |
+
+- **Business is one shared workspace, priced per seat per month, with credits pooled across the seats** (a workspace's cycle
+  credits are its seats times the level's credits). **One level per workspace: no mixing.** The plan card reads "from $100 per seat".
+  **This reverses the earlier rule "No seat fees on any paid tier. Differentiate on credits, priority and features, never
+  headcount."** (owner, 11 October 2026). Business seats are display only until checkout counts them: no paid or Business plan caps members in code; Invite keeps its 3 (`lib/planLimits.ts`). `applyPaidSubscriptionPeriod` (`lib/billingLedger.ts`) accepts only the old plan ids (studio, agency, production) until checkout extends it.
+- Every figure is $0.10 a credit. Monthly only: the yearly period is hidden (its config, `ANNUAL_DISCOUNT_PERCENT`, is kept).
+- **Invite** ($0, 250 cr once, 1 production, 3 members) stays as the hidden default for a new workspace, and **Studio ($49, 400 cr),
+  Agency ($199, 1,600 cr) and Production ($999, 9,000 cr)** stay as hidden legacy plans: a workspace on one still resolves it, and none
+  is offered. The public site names the team plans "Business" too (owner, 12 October 2026: the 7 Oct ban on the word is lifted; it still may not print "workspace").
+- **Low-credit warning:** at 20% of the cycle's credits (the pooled total for Business), from the ledger's funded cycle
+  (`billing_cycles.credits`), else the welcome grant, else no warning. A plan an admin only labels grants nothing and warns nothing.
+
+The earlier rows (kept for the record; offered no longer except as the hidden legacy plans above):
+
+| Earlier plan | Price | Included | Members |
 |---|---|---|---|
 | **Invite** | $0 | 250 cr once, 1 production | 3 |
 | **Studio** | $49/mo | 400 cr, ~~250 standard panels~~, review links, exports, post tools | unlimited |
@@ -128,8 +154,9 @@ it already means.
 | **Production** | $999/mo | 9,000 cr, ~~3,000 panels~~, admin console, setup hours | unlimited |
 
 - **Included credits expire at cycle end. No rollover.** (Panels struck, 10 September — see the amendment above.)
-- **No seat fees on any paid tier.** Differentiate on credits, priority and features, never headcount.
-- **Annual: 20% off.** Auto-cancel: if a workspace has generated nothing in the 60 days before renewal, don't renew — let it lapse and say so.
+- ~~**No seat fees on any paid tier.** Differentiate on credits, priority and features, never headcount.~~ Reversed 11 October 2026 for Business plans (above); the individual plans have one person.
+- ~~**Annual: 20% off.**~~ Not offered for now: the owner's plans are monthly (11 October 2026); the rule stands if yearly returns.
+- **Auto-cancel:** if a workspace has generated nothing in the 60 days before renewal, don't renew — let it lapse and say so.
 - ~~Panel inclusions are on the standard engine only.~~ Struck 10 September with the panel rows. Pro stills and all video draw credits regardless of plan — which, with panels gone, is simply: everything draws credits.
 
 ### Packs
