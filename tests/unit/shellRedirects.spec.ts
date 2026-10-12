@@ -6,7 +6,7 @@ import { resolveSuite } from "../../lib/workspace/pages";
 import { fromSearch } from "../../lib/workspace/navigation";
 
 /**
- * Old links → new (design/particl-graphite/README.md § 1.2; lib/shell/ia.ts). Every old page and link is either
+ * Old links → new (the retired graphite README § 1.2, kept word for word in docs/redesign/old-links.md; lib/shell/ia.ts). Every old page and link is either
  * rewritten (OLD_TO_NEW) or still served by its old page until the package that replaces it ships (PENDING);
  * D0 PR 3a ships only the rewrites of the design file's spellings into the app's.
  */
@@ -128,7 +128,7 @@ const README_ROWS: Record<string, string[]> = {
 };
 
 test("every README § 1.2 link, in the design file's form and the app's, is in exactly one of OLD_TO_NEW and PENDING", () => {
-  const readme = read("design", "particl-graphite", "README.md");
+  const readme = read("docs", "redesign", "old-links.md");
   const section = readme.slice(readme.indexOf("### 1.2"), readme.indexOf("## 2 ·"));
   const rows = section.split("\n").filter((line) => line.startsWith("| `") || line.startsWith("| &")).map((line) => line.slice(2, line.indexOf(" | ")));
   expect(rows.sort()).toEqual(Object.keys(README_ROWS).sort());
