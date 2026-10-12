@@ -489,7 +489,7 @@ function PlanChip({ w, plans, busy, patch }: {
   w: Ws; plans: PlanDef[]; busy: boolean; patch: (body: Record<string, unknown>) => void;
 }) {
   const on = plans.find((p) => p.id === w.planId) ?? null;
-  const label = on ? `${on.label}${on.priceUsd ? ` · $${on.priceUsd}/mo` : ""}` : "No plan";
+  const label = on ? `${on.label}${on.priceUsd ? ` · $${on.priceUsd}${on.perSeat ? " a seat" : ""}/mo` : ""}` : "No plan";
   return (
     <label className={`chip !py-0.5 !text-[12px] ${on ? "is-on" : ""}`} title={on
       ? `${on.label}: ${on.includedCredits.toLocaleString()} credits a cycle${on.maxProductions ? `, ${on.maxProductions} project${on.maxProductions === 1 ? "" : "s"}` : ""}${on.maxMembers ? `, ${on.maxMembers} members` : ""}. Included credits are not granted yet.`
@@ -501,7 +501,7 @@ function PlanChip({ w, plans, busy, patch }: {
         onChange={(e) => patch({ planId: e.target.value || null })}
       >
         <option value="">No plan</option>
-        {plans.map((p) => <option key={p.id} value={p.id}>{p.label}{p.priceUsd ? ` · $${p.priceUsd}/mo` : ""}</option>)}
+        {plans.map((p) => <option key={p.id} value={p.id}>{p.label}{p.priceUsd ? ` · $${p.priceUsd}${p.perSeat ? " a seat" : ""}/mo` : ""}{p.offered ? "" : " (not offered)"}</option>)}
       </select>
       {label}
     </label>

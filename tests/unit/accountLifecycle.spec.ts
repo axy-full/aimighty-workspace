@@ -81,7 +81,8 @@ test("email proof creates an isolated zero-grant workspace once and preserves pa
   expect(stored.password_hash).not.toBe(password);
   const verified = await verifySignup(reg.token);
   expect(signupNext(verified)).toBe(
-    "/billing?plan=agency&cadence=annual&onboarding=1",
+    /* Yearly is hidden (lib/plans.ts YEARLY_SHOWN): the carried "annual" is kept as monthly. */
+    "/billing?plan=agency&cadence=monthly&onboarding=1",
   );
   await expect(verifySignup(reg.token)).rejects.toMatchObject({ status: 409 });
   expect(

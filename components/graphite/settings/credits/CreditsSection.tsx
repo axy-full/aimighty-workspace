@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
+import { HOUSE_PLAN } from "@/lib/plans";
 import { creditRate, creditsText, creditsUsd } from "@/lib/shell/price-words";
 import { revealClear } from "@/lib/shell/reveal";
 import type { SettingsFold } from "@/lib/shell/settings";
@@ -106,7 +107,7 @@ export function CreditsSection({ account, open }: { account: WorkspaceAccount | 
             {ledger.error ? <Problem text={ledger.error} onRetry={() => void ledger.read()} /> : null}
           </>
         ) : (
-          <Row name="Credits" line="This workspace runs on its own engines and is not billed in credits." value="—" testId="settings-balance-credits" />
+          <Row name="Credits" line={HOUSE_PLAN.line} value="—" testId="settings-balance-credits" />
         )}
         {applies && !canRequest && topups.data ? <Row name="Top up" line="Ask an admin: the owner or an admin requests credits." testId="settings-top-up-ask" /> : null}
         {canRequest && full ? <Row name="Top up" line={`${openLimit} requests are waiting. Withdraw one, or wait for an answer.`} testId="settings-top-up-full" /> : null}

@@ -3,9 +3,9 @@ import type { PlanDef } from "./plans";
 /**
  * The two ceilings a plan counts (SOW §7A).
  *
- * Only Invite has any: one project, three members. Every paid plan is
- * uncounted, because §7A is explicit — "No seat fees on any paid tier.
- * Differentiate on credits, priority and features, never headcount."
+ * Only Invite has any: one project, three members. Every other plan is
+ * uncounted. A Business plan is priced per seat (CLAUDE.md § Pricing, 11 October
+ * 2026), but its seats are counted by checkout, later: nothing caps members here.
  *
  * **A workspace on NO plan has no ceilings.** That is not an oversight, it is
  * the state every workspace is in until somebody is put on one, and it is

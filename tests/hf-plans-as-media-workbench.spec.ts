@@ -24,7 +24,7 @@ test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreEr
 type Take = { kind: "video" | "image"; engine: string; label: string; resolution: string; ratio: string; durationS: number | null; audio: boolean; credits: number };
 type WorkspaceTake = Take & { basis: "usual" | "default"; left: number };
 type Group = { kind: "video" | "image"; axis: string; seconds: number | null; rows: { engine: string; label: string; audio: boolean; cells: { option: string; credits: number }[] }[] };
-type Plans = { plans: { id: string; label: string; includedCredits: number; reach?: { videos: number | null; images: number | null } }[]; reference: { video: Take | null; image: Take | null } | null; rates: Group[] | null };
+type Plans = { plans: { id: string; label: string; includedCredits: number; offered?: boolean; reach?: { videos: number | null; images: number | null } }[]; reference: { video: Take | null; image: Take | null } | null; rates: Group[] | null };
 type Billing = { credits: { balance: number }; reach: { video: WorkspaceTake | null; image: WorkspaceTake | null } | null; rates: Group[] | null };
 
 const SEEDANCE = "dreamina-seedance-2-5-260628";
@@ -152,7 +152,9 @@ test("Pricing: every plan says what a month of its credits makes, at the Generat
   expect(JSON.stringify({ reference: body.reference, rates: body.rates, reach: body.plans.map((p) => p.reach) })).not.toMatch(/usd|margin|cost|\$/i);
 
   await page.goto("/pricing");
-  const paid = body.plans.filter((p) => p.id !== "invite");
+  /* The plans the page offers (the owner's final list; the legacy plans are hidden). */
+  const paid = body.plans.filter((p) => p.offered);
+  expect(paid.length).toBeGreaterThan(0);
   for (const plan of paid) {
     const reach = page.getByTestId(`plan-reach-${plan.id}`);
     const videos = Math.floor(plan.includedCredits / video.credits), images = Math.floor(plan.includedCredits / image.credits);
@@ -297,11 +299,23 @@ test("Billing: the balance and each plan read as takes too", async ({ page }, in
   await page.goto("/billing");
   const balance = page.getByTestId("billing-balance-reach");
   await expectTile(balance.locator(".mr-tile").first(), billing.reach!.video!.left, "videos left at the default settings", billing.reach!.video!);
-  const agency = plans.plans.find((p) => p.id === "agency")!;
-  await expectTile(page.getByTestId("billing-plan-reach-agency").locator(".mr-tile").first(), agency.reach!.videos!, "videos a month", plans.reference!.video!);
+  const offered = plans.plans.find((p) => p.offered)!;
+  await expectTile(page.getByTestId(`billing-plan-reach-${offered.id}`).locator(".mr-tile").first(), offered.reach!.videos!, "videos a month", plans.reference!.video!);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "no horizontal overflow").toBe(true);
   await floors(page, '[data-testid="billing-balance-reach"], [data-testid^="billing-plan-reach-"]');
   await shot(page, info, "billing");
+});
+
+test("Billing: the plan a link carries is preselected, and a carried annual reads as monthly while yearly is hidden", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name), "every configured viewport");
+  await signInLocally(page.request);
+  await forbidPaidWork(page);
+  await page.goto("/billing?plan=business250&cadence=annual");
+  const card = page.locator(".management-plan.is-selected");
+  await expect(card).toHaveCount(1, { timeout: 60_000 });
+  await expect(card.locator("h3")).toHaveText("Business 250");
+  await expect(page.getByText(/billed annually|annually/i)).toHaveCount(0);
+  await expect(card).toContainText("billed monthly");
 });
 
 test("States: counting, a refused read, no translation, nothing priceable, and figures too big for a phone", async ({ page }, info) => {
@@ -309,6 +323,7 @@ test("States: counting, a refused read, no translation, nothing priceable, and f
   await signInLocally(page.request);
   await forbidPaidWork(page);
   const real = (await (await page.request.get("/api/billing")).json()) as Billing;
+  const offeredCount = ((await (await page.request.get("/api/plans")).json()) as Plans).plans.filter((p) => p.offered).length;
 
   /* Loading: the balance says it is counting, then the figures replace it. */
   let release!: () => void;
@@ -354,7 +369,7 @@ test("States: counting, a refused read, no translation, nothing priceable, and f
     return route.fulfill({ json: { ...json, reference: null, rates: null, plans: json.plans.map((plan: object) => ({ ...plan, reach: undefined })) } });
   });
   await page.goto("/pricing");
-  await expect(page.locator(".plan-card")).toHaveCount(3);
+  await expect(page.locator(".plan-card")).toHaveCount(offeredCount);
   await expect(page.locator(".mr-tile")).toHaveCount(0);
   await expect(page.getByTestId("rate-card")).toHaveCount(0);
   await page.unroute("**/api/plans");
