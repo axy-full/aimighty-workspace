@@ -234,3 +234,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of #655 at 
   - project-library and team-canvas: keep both.
   - The sample's uploads must answer 200 for every viewer.
   Nit (follow-up): reserve the draft id 'deleted-boards'.
+- 13 Oct, 03:00 IST: #688 round 2: every chat door is closed (Opus grepped every reader and writer); the one blocker is the claim route (an admin or anyone with a step id could claim another's step and get its prompt). Fail-closed fix: claim is owner-only, and the step id is dropped from the admin's item. The admin approve path waits for the owner's decision. #686 undo fix pushed (107475f4). #683 pushed (e26ec6e9); lane A's report pending.
