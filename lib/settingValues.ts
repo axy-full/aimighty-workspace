@@ -29,6 +29,9 @@ export const AT_CAP_OPTIONS: readonly (readonly [string, string])[] = [
 
 export const CAP_WARN_OPTIONS: readonly (readonly [string, string])[] = [50, 70, 80, 90].map((n) => [String(n), `${n}% of the cap`] as const);
 
+/** The shapes a board can start in (lib/shell/create-project.ts reads the same four). */
+export const ASPECT_OPTIONS: readonly string[] = ["16:9", "9:16", "1:1", "4:5"];
+
 export const ENHANCE_DEFAULT_OPTIONS: readonly (readonly [string, string])[] = [
   ["on", "On"],
   ["off", "Off"],
@@ -48,6 +51,7 @@ export function settingProblem(key: string, value: unknown): string | null {
     case "approvalRule": return allowed(APPROVAL_OPTIONS, value) ? null : "Choose anyone, cap or producer.";
     case "editOutputFormat": return allowed(EDIT_FORMAT_OPTIONS, value) ? null : "Choose mp4 or mov.";
     case "atCap": return allowed(AT_CAP_OPTIONS, value) ? null : "Choose producer, stop or warn.";
+    case "defaultAspect": return String(value ?? "") === "" || ASPECT_OPTIONS.includes(String(value)) ? null : "Choose 16:9, 9:16, 1:1 or 4:5.";
     case "enhanceDefault": return allowed(ENHANCE_DEFAULT_OPTIONS, value) ? null : "Choose on or off.";
     case "shotCapCredits": return wholeCredits(value) ? null : "The cap is a whole number of credits, 1 or more.";
     case "productionBudgetCredits": return String(value ?? "").trim() === "" || wholeCredits(value) ? null : "The budget is a whole number of credits, 1 or more, or none.";

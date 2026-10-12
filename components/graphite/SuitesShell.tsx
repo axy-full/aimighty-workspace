@@ -59,7 +59,7 @@ import { PanelFault } from "./PanelFault";
 import type { ProjectActions } from "./FirstRun";
 import { AtomikMount, PhoneMount, ScreenBody, SettingsBody, type ScreenContext } from "./screens";
 import { isLanded } from "@/lib/shell/screens";
-import { seededProject, type CreateSeed } from "@/lib/shell/create-project";
+import { seededProject, workspaceAspect, type CreateSeed } from "@/lib/shell/create-project";
 
 /** What this build cannot do yet says so on the item; build step 3 (assets) wires the rest to the library's own routes. */
 
@@ -313,6 +313,8 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
   const pickProject = (id: string) => { if (linkControl.link) linkControl.dismiss(); try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); };
   const createProject = async (name: string) => {
     const created = newProject(name.slice(0, PROJECT_NAME_MAX));
+    const aspect = await workspaceAspect((url) => fetch(url, { cache: "no-store" }));
+    if (aspect) created.aspect = aspect;
     const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);
     if (!response?.ok) return ((await response?.json().catch(() => null))?.error as string | undefined) ?? "The project could not be created. Try again.";
     pickProject(created.id);
@@ -322,6 +324,7 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
   /* The same path with a seed's fields set (Home's templates, a brief): answers the new project's id, or why it could not be made. */
   const createFromSeed = async (name: string, seed: CreateSeed = {}): Promise<{ id: string; productionId?: string | null } | { error: string }> => {
     const created = seededProject(name, seed);
+    if (!seed.aspect) { const aspect = await workspaceAspect((url) => fetch(url, { cache: "no-store" })); if (aspect) created.aspect = aspect; }
     const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);
     const body = (await response?.json().catch(() => null)) as { error?: unknown; project?: { productionProjectId?: unknown }; productionProjectId?: unknown } | null;
     if (!response?.ok) return { error: typeof body?.error === "string" ? body.error : "The project could not be created. Try again." };

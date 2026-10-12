@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { mailConfigured, mailFrom, sendMail, inviteEmail, inviteOrigin, MAIL_LINK_UNSET } from "@/lib/mail";
 import { db, ready, now } from "@/lib/db";
-import { requireAdmin, withTenant, isPlatformOwner } from "@/lib/auth";
+import { requireAdmin, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { platformDb, platformReady } from "@/lib/platform";
 import { creditsApply } from "@/lib/credits";
@@ -26,7 +26,8 @@ export const GET = withTenant(async function GET() {
   const ws = requireTenant();
   const inCredits = creditsApply(ws);
   await Promise.all([ready(), platformReady()]);
-  const canSeeRoles = got.user.owner || (await isPlatformOwner(got.user));
+  /* An admin sees and sets standing (owner decision, 11 Oct 2026 23:45 IST): `requireAdmin` above is the whole gate. */
+  const canSeeRoles = true;
 
   const [members, invites, stats] = await Promise.all([
     platformDb().execute({
@@ -90,11 +91,10 @@ export const POST = withTenant(async function POST(req: Request) {
   if (got.response) return got.response;
   const ws = requireTenant();
   await platformReady();
-  const mayChooseRole = got.user.owner || (await isPlatformOwner(got.user));
   const body = await req.json().catch(() => ({}));
   const email = String(body.email ?? "").trim().toLowerCase();
   const name = String(body.name ?? "").trim();
-  const role = mayChooseRole && body.role === "admin" ? "admin" : "member";
+  const role = body.role === "admin" ? "admin" : "member";
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return NextResponse.json({ error: "That doesn't look like an email address" }, { status: 400 });
   const already = await platformDb().execute({

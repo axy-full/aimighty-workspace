@@ -29,7 +29,7 @@ async function purgeReady() {
 
 /** Access ends atomically. The database and every file stay for good (owner,
  * 2026-09-24); retireDeletedWorkspaces only takes the gateway key away. */
-export async function markWorkspaceDeleted(id: string): Promise<void> {
+export async function markWorkspaceDeleted(id: string, actorId: string | null = null): Promise<void> {
 return await withRecoveryActivity('purge', async () => {
 
   await purgeReady();
@@ -47,6 +47,8 @@ return await withRecoveryActivity('purge', async () => {
         sql: `UPDATE workspaces SET deleted_at=COALESCE(deleted_at,?),updated_at=? WHERE id=? AND legacy=0`,
         args: [ts, ts, id],
       },
+      /* Who ended it, in the same write (read from the platform database by the platform owner: the workspace itself is closed). */
+      securityAuditStatement({ workspaceId: id, actorId, action: "workspace.deleted", targetType: "workspace", targetId: id }, true),
       {
         sql: `UPDATE memberships SET disabled=1 WHERE workspace_id=?`,
         args: [id],

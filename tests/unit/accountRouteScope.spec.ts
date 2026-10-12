@@ -69,6 +69,8 @@ function load(action: Action, ctx: Context | null) {
     },
     "@/lib/deletion": {},
     "@/lib/purge": {},
+    /* Rename writes its history line (lib/securityAudit.ts); no test here renames. */
+    "@/lib/securityAudit": {},
   };
   const compiled = ts.transpileModule(readFileSync(paths[action], "utf8"), {
     compilerOptions: {

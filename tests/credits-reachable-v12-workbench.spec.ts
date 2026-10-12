@@ -75,7 +75,8 @@ test.describe("desktop, switch on", () => {
     await menu.getByTestId("v12-account-billing").click();
     const screen = page.getByTestId("v12-billing");
     await expect(screen).toBeVisible({ timeout: 60_000 });
-    await expect(screen.getByRole("heading", { name: "Credits & billing" })).toBeVisible();
+    /* The page now sits inside Workspace settings, whose heading names it. */
+    await expect(page.getByTestId("v12-settings-title")).toHaveText("Credits & billing");
     await expect(page.getByTestId("v12-billing-house")).toContainText("In dollars, at the engines’ cost");
     await expect(page.getByTestId("v12-billing-spent")).toContainText("$12.50");
     await expect(page.getByTestId("v12-billing-no-topup")).toContainText("no credits to buy");

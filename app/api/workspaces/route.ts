@@ -10,6 +10,7 @@ import {requestWorkspace,resumeWorkspace,pendingWorkspaces,workspaceCreationRead
 import {accountFailure,sameOriginProblem,AccountError} from "@/lib/accountDb";
 import { deletionAllowed } from "@/lib/deletion";
 import { markWorkspaceDeleted } from "@/lib/purge";
+import { securityAuditStatement } from "@/lib/securityAudit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration=300;
@@ -49,7 +50,10 @@ export const PATCH=withTenant(async(req:Request)=>{
   const body=await req.json().catch(()=>({})),name=String(body.name??'').trim();
   if(!name||name.length>80)return Response.json({error:'Use a workspace name between 1 and 80 characters.'},{status:400});
   const ws=requireTenant();
-  await platformDb().execute({sql:'UPDATE workspaces SET name=?,updated_at=? WHERE id=? AND deleted_at IS NULL',args:[name,now(),ws.id]});
+  await platformDb().batch([
+    {sql:'UPDATE workspaces SET name=?,updated_at=? WHERE id=? AND deleted_at IS NULL',args:[name,now(),ws.id]},
+    securityAuditStatement({workspaceId:ws.id,actorId:got.user.id,action:"workspace.renamed",targetType:"workspace",targetId:ws.id},true),
+  ],"write");
   return Response.json({ok:true,workspace:{id:ws.id,name,slug:ws.slug}});
 }, { requireRequestScope: true });
 
@@ -69,7 +73,7 @@ export const DELETE = recoveryRoute(async function DELETE(req: Request) {
   const body = await req.json().catch(() => ({}));
   const verdict = deletionAllowed({ name: ws.name, legacy: ws.legacy, role: ctx.role }, String(body.name ?? ""));
   if (!verdict.ok) return NextResponse.json({ error: verdict.error }, { status: 400 });
-  await markWorkspaceDeleted(ws.id);
+  await markWorkspaceDeleted(ws.id, ctx.user.id);
   const left = ctx.workspaces.filter((w) => w.id !== ws.id);
   return NextResponse.json({ ok: true, deleted: ws.id, next: left[0]?.id ?? null });
 });

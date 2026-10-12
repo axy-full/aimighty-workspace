@@ -54,8 +54,9 @@ const MONTH = (col: string) => `strftime('%Y-%m',datetime(${col}/1000,'unixepoch
 type Cursor = { at: number; id: string };
 /**
  * Who is reading. Everyone's spend by person is the owners' and admins' (the
- * rule /api/analytics keeps): a member reads every job and its amount, and a
- * name only on their own — a teammate's job says "Teammate".
+ * rule /api/analytics keeps). The per-job ledger (`?rows=1`, its totals, its months and its CSV) goes further: an owner or an
+ * admin reads the workspace's jobs; a member reads only their own, and a teammate's job is not in any of it. (The
+ * by-person body of GET /api/usage, with no `rows`, still tells a member their own row by name and the rest as one "Teammate".)
  */
 export type LedgerViewer = { id: string; admin: boolean };
 const TEAMMATE = "Teammate";
@@ -104,6 +105,18 @@ function filters(q: LedgerQuery, time: string, key: string, where: string[], arg
   if (page && q.cursor) { where.push(`(${time}<? OR (${time}=? AND ${key}<?))`); args.push(q.cursor.at, q.cursor.at, q.cursor.id); }
 }
 
+/**
+ * What narrows a member's ledger to their own jobs: nothing for an owner or an admin. A job is a member's when the
+ * record names them as its author, or (an older record with no author) when the take it billed for is theirs.
+ */
+async function ownJobs(viewer: LedgerViewer, own: string, key: string, where: string[], args: (string | number)[]): Promise<void> {
+  if (viewer.admin) return;
+  const taken = await db().execute({ sql: "SELECT id FROM generations WHERE created_by=?", args: [viewer.id] });
+  const ids = JSON.stringify(taken.rows.map((r) => String(r.id)));
+  where.push(`(${own}=? OR (${own} IS NULL AND ${key} IN (SELECT value FROM json_each(?))))`);
+  args.push(viewer.id, ids);
+}
+
 function next<T extends { at: number; id: string }>(rows: T[], limit: number): { rows: T[]; next: string | null } {
   if (rows.length <= limit) return { rows, next: null };
   const page = rows.slice(0, limit);
@@ -121,7 +134,7 @@ export function meteredEngine(kind: string, engine: string, model: string): stri
 }
 
 /** The names a viewer may read: everyone's for owners and admins, a member's own otherwise. */
-async function names(ids: string[], viewer: LedgerViewer): Promise<Map<string, string>> {
+export async function names(ids: string[], viewer: LedgerViewer): Promise<Map<string, string>> {
   const wanted = [...new Set(ids.filter((id) => id && mayName(viewer, id)))];
   if (!wanted.length) return new Map();
   const rs = await db().execute({ sql: `SELECT id,name FROM users WHERE id IN (${wanted.map(() => "?").join(",")})`, args: wanted });
@@ -153,6 +166,7 @@ async function creditRows(ws: TenantWorkspace, q: LedgerQuery, viewer: LedgerVie
   const where = ["workspace_id=?"];
   const args: (string | number)[] = [ws.id];
   filters(q, "created_at", "id", where, args);
+  await ownJobs(viewer, "created_by", "id", where, args);
   const rs = await platformDb().execute({
     sql: `SELECT id,kind,engine,model,status,paid_by_platform,${CHARGE} AS credits,created_by,created_at FROM meter_events
           WHERE ${where.join(" AND ")} ORDER BY created_at DESC,id DESC LIMIT ?`,
@@ -186,15 +200,19 @@ async function creditRows(ws: TenantWorkspace, q: LedgerQuery, viewer: LedgerVie
   }), q.limit);
 }
 
-async function creditMonths(ws: TenantWorkspace): Promise<string[]> {
-  const rs = await platformDb().execute({ sql: `SELECT ${MONTH("created_at")} AS m FROM meter_events WHERE workspace_id=? GROUP BY m ORDER BY m DESC LIMIT 36`, args: [ws.id] });
+async function creditMonths(ws: TenantWorkspace, viewer: LedgerViewer): Promise<string[]> {
+  const where = ["workspace_id=?"];
+  const args: (string | number)[] = [ws.id];
+  await ownJobs(viewer, "created_by", "id", where, args);
+  const rs = await platformDb().execute({ sql: `SELECT ${MONTH("created_at")} AS m FROM meter_events WHERE ${where.join(" AND ")} GROUP BY m ORDER BY m DESC LIMIT 36`, args });
   return rs.rows.map((r) => String(r.m));
 }
 
-async function creditTotals(ws: TenantWorkspace, q: LedgerQuery): Promise<CreditLedgerPage["totals"]> {
+async function creditTotals(ws: TenantWorkspace, q: LedgerQuery, viewer: LedgerViewer): Promise<CreditLedgerPage["totals"]> {
   const where = ["workspace_id=?"];
   const args: (string | number)[] = [ws.id];
   filters({ ...q, id: null }, "created_at", "id", where, args, false);
+  await ownJobs(viewer, "created_by", "id", where, args);
   const rs = await platformDb().execute({
     sql: `SELECT COUNT(*) AS jobs,
                  COALESCE(SUM(CASE WHEN status<>'running' THEN ${CHARGE} ELSE 0 END),0) AS charged,
@@ -213,6 +231,7 @@ async function dollarRows(q: LedgerQuery, viewer: LedgerViewer): Promise<{ rows:
   const where = [LISTED];
   const args: (string | number)[] = [];
   filters(q, "g.created_at", "g.id", where, args);
+  if (!viewer.admin) { where.push("g.created_by=?"); args.push(viewer.id); }
   const rs = await db().execute({
     sql: `SELECT g.id,g.kind,g.model,g.status,g.created_at,g.created_by,g.provider_outcome,${DOLLARS} AS usd,${DISCARDED} AS discarded
           FROM generations g WHERE ${where.join(" AND ")} ORDER BY g.created_at DESC,g.id DESC LIMIT ?`,
@@ -235,15 +254,16 @@ async function dollarRows(q: LedgerQuery, viewer: LedgerViewer): Promise<{ rows:
   }), q.limit);
 }
 
-async function dollarMonths(): Promise<string[]> {
-  const rs = await db().execute(`SELECT ${MONTH("g.created_at")} AS m FROM generations g WHERE ${LISTED} GROUP BY m ORDER BY m DESC LIMIT 36`);
+async function dollarMonths(viewer: LedgerViewer): Promise<string[]> {
+  const rs = await db().execute({ sql: `SELECT ${MONTH("g.created_at")} AS m FROM generations g WHERE ${LISTED}${viewer.admin ? "" : " AND g.created_by=?"} GROUP BY m ORDER BY m DESC LIMIT 36`, args: viewer.admin ? [] : [viewer.id] });
   return rs.rows.map((r) => String(r.m));
 }
 
-async function dollarTotals(q: LedgerQuery): Promise<DollarLedgerPage["totals"]> {
+async function dollarTotals(q: LedgerQuery, viewer: LedgerViewer): Promise<DollarLedgerPage["totals"]> {
   const where = [LISTED];
   const args: (string | number)[] = [];
   filters({ ...q, id: null }, "g.created_at", "g.id", where, args, false);
+  if (!viewer.admin) { where.push("g.created_by=?"); args.push(viewer.id); }
   const rs = await db().execute({
     sql: `SELECT COUNT(*) AS jobs,
                  COALESCE(SUM(CASE WHEN g.status IN ('succeeded','failed','cancelled') THEN COALESCE(${DOLLARS},0) ELSE 0 END),0) AS charged,
@@ -342,10 +362,10 @@ export async function usageLedgerPage(q: LedgerQuery, viewer: LedgerViewer): Pro
   const first = !q.cursor && !q.id;
   if (creditsApply(ws)) {
     await platformReady();
-    const [page, months, totals] = await Promise.all([creditRows(ws, q, viewer), first ? creditMonths(ws) : null, first ? creditTotals(ws, q) : null]);
+    const [page, months, totals] = await Promise.all([creditRows(ws, q, viewer), first ? creditMonths(ws, viewer) : null, first ? creditTotals(ws, q, viewer) : null]);
     return { unit: "credits", month: q.month, ...(months ? { months } : {}), ...(totals ? { totals } : {}), rows: page.rows, next: page.next };
   }
-  const [page, months, totals] = await Promise.all([dollarRows(q, viewer), first ? dollarMonths() : null, first ? dollarTotals(q) : null]);
+  const [page, months, totals] = await Promise.all([dollarRows(q, viewer), first ? dollarMonths(viewer) : null, first ? dollarTotals(q, viewer) : null]);
   return { unit: "usd", month: q.month, ...(months ? { months } : {}), ...(totals ? { totals } : {}), rows: page.rows, next: page.next };
 }
 

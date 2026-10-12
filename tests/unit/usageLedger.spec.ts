@@ -196,13 +196,18 @@ test("a credit workspace reads the ledger: credits from admission, never a dolla
     expect((await usageLedgerPage(q(`&id=${id("held")}`), admin("u_owner"))).rows.map((r) => r.state)).toEqual(["held"]);
     expect((await usageLedgerPage(q(`&id=${id("neighbour")}`), admin("u_owner"))).rows).toEqual([]);
 
-    /* Everyone's spend by person is the owners' and admins': a member reads every job, and a name only on their own. */
+    /* The ledger is the owners' and admins' to read whole. A member reads only their own jobs: a teammate's job is not in the
+       rows, the totals or the months, and asking for it by id finds nothing. */
     const member = inCredits(await usageLedgerPage(q(), { id: "u_producer", admin: false }));
-    expect(member.rows.map((r) => r.credits)).toEqual(all.rows.map((r) => r.credits));
-    expect(new Set(member.rows.map((r) => r.who))).toEqual(new Set(["Teammate"]));
+    expect(member.rows).toEqual([]);
+    expect(member.totals).toEqual({ jobs: 0, charged: 0, held: 0, notBilled: 0 });
+    expect(member.months).toEqual([]);
     expect(JSON.stringify(member)).not.toContain("Editor");
-    const author = await usageLedgerPage(q(), { id: "u_editor", admin: false });
+    expect(inCredits(await usageLedgerPage(q(`&id=${id("settled")}`), { id: "u_producer", admin: false })).rows).toEqual([]);
+    const author = inCredits(await usageLedgerPage(q(), { id: "u_editor", admin: false }));
+    expect(author.rows.map((r) => r.id).sort()).toEqual(all.rows.map((r) => r.id).sort());
     expect(new Set(author.rows.map((r) => r.who))).toEqual(new Set(["Editor"]));
+    expect(author.totals).toEqual(all.totals);
 
     /* The file: the same rows, in credits. */
     const csv = ledgerCsv(all);
@@ -216,10 +221,41 @@ test("a credit workspace reads the ledger: credits from admission, never a dolla
     expect(file.split("\r\n").filter(Boolean)).toHaveLength(7);
     expect(file).not.toMatch(/usd|\$/i);
     expect((await usageLedgerResponse(new Request("http://local/api/usage?rows=1&month=26-9"), admin("u_editor"))).status).toBe(400);
-    /* A member's file carries no teammate's name either. */
+    /* A member's file carries no teammate's job or name either: only the header. */
     const memberFile = await (await usageLedgerResponse(new Request("http://local/api/usage?rows=1&format=csv"), { id: "u_producer", admin: false })).text();
     expect(memberFile).not.toContain("Editor");
-    expect(memberFile).toContain("Teammate");
+    expect(memberFile.split("\r\n").filter(Boolean)).toHaveLength(1);
+
+    /* An older job with no author on the meter is the member's when the take it billed for is theirs, and no one else's. */
+    const { db } = await import("../../lib/db");
+    await db().execute({ sql: "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES('u_producer','producer@example.test','Producer','x','member',0)" });
+    await db().execute({
+      sql: "INSERT INTO generations(id,model,prompt,params,status,kind,provider,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+      args: [id("legacy_mine"), "gemini-3.1-flash-image", "a harbour", "{}", "succeeded", "image", "google", "u_producer", at, at],
+    });
+    await platformDb().execute({
+      sql: `INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,'image','google','gemini-3.1-flash-image','succeeded',0.039,1,1,NULL,?,?)`,
+      args: [id("legacy_mine"), ws.id, at, at],
+    });
+    const mine = inCredits(await usageLedgerPage(q(), { id: "u_producer", admin: false }));
+    expect(mine.rows.map((r) => r.id)).toEqual([id("legacy_mine")]);
+    expect(mine.rows[0].who).toBe("Producer");
+    expect(mine.totals).toEqual({ jobs: 1, charged: 1, held: 0, notBilled: 0 });
+    expect(inCredits(await usageLedgerPage(q(), { id: "u_editor", admin: false })).rows.map((r) => r.id)).not.toContain(id("legacy_mine"));
+    expect(inCredits(await usageLedgerPage(q(), admin("u_owner"))).rows).toHaveLength(9);
+  });
+
+  /* Another workspace: nothing here is readable from it, by an admin or a member, by listing or by id. */
+  await runInTenant(other, async () => {
+    const { ready } = await import("../../lib/db");
+    await ready();
+    for (const viewer of [admin("u_owner"), { id: "u_producer", admin: false }, { id: "u_editor", admin: false }]) {
+      const seen = inCredits(await usageLedgerPage(q(), viewer));
+      expect(seen.rows.map((r) => r.id)).not.toContain(id("held"));
+      expect(seen.rows.map((r) => r.id)).not.toContain(id("legacy_mine"));
+      for (const key of ["held", "settled", "legacy_mine"]) expect(inCredits(await usageLedgerPage(q(`&id=${id(key)}`), viewer)).rows).toEqual([]);
+    }
+    expect(inCredits(await usageLedgerPage(q(), admin("u_owner"))).rows.map((r) => r.id)).toEqual([id("neighbour")]);
   });
 });
 
@@ -298,6 +334,15 @@ test("the house workspace reads its takes in dollars; the connected account's an
     expect(page.totals).toEqual({ jobs: 8, charged: 1.3, notBilled: 2 });
     expect(JSON.stringify(page)).not.toContain("credits");
     expect(ledgerCsv(page).split("\r\n")[0]).toBe("date,time_utc,who,engine,kind,status,usd,failure,provider_charge");
+    /* A member reads only their own takes, in the rows, the totals and the months; another member reads none. */
+    const own = await usageLedgerPage(q(), { id: "u_producer", admin: false });
+    expect(own.rows.map((r) => r.id)).toEqual(page.rows.map((r) => r.id));
+    expect(own.totals).toEqual(page.totals);
+    const stranger = await usageLedgerPage(q(), { id: "u_stranger", admin: false });
+    expect(stranger.rows).toEqual([]);
+    expect(stranger.totals).toEqual({ jobs: 0, charged: 0, notBilled: 0 });
+    expect(stranger.months).toEqual([]);
+    expect((await usageLedgerPage(q("&id=d_charged"), { id: "u_stranger", admin: false })).rows).toEqual([]);
   });
 });
 

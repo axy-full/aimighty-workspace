@@ -15,7 +15,7 @@ import { newProject, type CanvasNode } from "../lib/workbench/studio";
  * not in /api/usage, not in the file, not in the Inspector, not on the page.
  * A workspace that pays its vendors reads its takes in dollars. The viewer's
  * connected account is listed apart, in that provider's credits as quoted.
- * A member reads their own name and "Teammate" for everyone else's spend.
+ * A member reads only their own jobs in the ledger, and "Teammate" for everyone else's spend in the by-person bars.
  * Real local routes on a mock engine; nothing is rendered or paid for.
  * Screenshots are opt-in: USAGE_LEDGER_SHOTS=<dir>.
  */
@@ -408,7 +408,7 @@ test("the ledger says it is reading, says when there is nothing yet, and a refus
   await shot(page, info, "ledger-states");
 });
 
-test("a member reads their own name and “Teammate” for everyone else's spend: on Usage, Plans & credits and the Dashboard, and in every /api/usage answer", async ({ page }, info) => {
+test("a member reads only their own jobs in the ledger, and no teammate's name: on Usage, Plans & credits and the Dashboard, and in every /api/usage answer", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   /* The owner makes the workspace; a second account joins it as a member. */
   const { workspace } = await signInLocally(page.request, "Ledger Owner");
@@ -449,12 +449,12 @@ test("a member reads their own name and “Teammate” for everyone else's spend
     for (const other of teammates) expect(text, `${where} shows ${other}`).not.toContain(other);
   };
 
-  /* Usage: the member's own job by name, a teammate's as "Teammate". */
+  /* Usage: the member's own job by name, and no job of a teammate's at all. */
   await page.goto("/suites?view=workspace&tab=usage");
   const rows = page.getByTestId("ws-ledger-row");
-  await expect(rows).toHaveCount(3, { timeout: 60_000 });
+  await expect(rows).toHaveCount(1, { timeout: 60_000 });
   await expect(rows.filter({ hasText: "Ledger Member" })).toHaveCount(1);
-  await expect(rows.filter({ hasText: "Teammate" })).toHaveCount(2);
+  await expect(rows.filter({ hasText: "Teammate" })).toHaveCount(0);
   await expect(page.getByTestId("settings-usage-row")).toHaveCount(1);
   await noTeammate("Usage");
   await shot(page, info, "member-usage");

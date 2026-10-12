@@ -97,7 +97,8 @@ function settle(q: URLSearchParams): void {
 const withoutOddView = (search: string): string => {
   const q = new URLSearchParams(search);
   const view = q.get("view");
-  if (view && view !== "crew" && view !== "gen" && view !== "make" && !VIEWS.includes(view)) q.delete("view");
+  /* `settings` and `billing` are prototype v14's spellings of Workspace settings: the Settings screen's rows (lib/shell/settings.ts) take them. */
+  if (view && view !== "crew" && view !== "gen" && view !== "make" && view !== "settings" && view !== "billing" && !VIEWS.includes(view)) q.delete("view");
   return text(q);
 };
 

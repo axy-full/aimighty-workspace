@@ -81,7 +81,7 @@ test.describe("the Settings contract (lib/shell/settings.ts)", () => {
     expect(off("?view=workspace&tab=credits")).toBeNull();
     expect(off("?view=workspace&tab=credits&open=usage")).toBe("?view=workspace&tab=usage");
     expect(off("?view=workspace&tab=rules")).toBe("?suite=atomik&page=budget");
-    expect(SETTINGS_SCREEN).toMatchObject({ id: "settings", landed: true, params: ["open"] });
+    expect(SETTINGS_SCREEN).toMatchObject({ id: "settings", landed: true, params: ["open", "section"] });
   });
 });
 

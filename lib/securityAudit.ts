@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Client, InStatement } from "@libsql/client";
 
 /** Applied in each owning database: its mutation and receipt commit together. */
@@ -17,13 +17,14 @@ export const SECURITY_AUDIT_SCHEMA = [
 
 const actions = [
   "session.created", "session.revoked", "session.workspace_changed",
-  "account.password_reset", "account.mfa_enabled", "account.mfa_replaced", "account.mfa_disabled", "account.recovery_codes_rotated", "account.recovery_code_used", "account.sessions_revoked", "member.updated", "member.removed",
+  "account.password_reset", "account.mfa_enabled", "account.mfa_replaced", "account.mfa_disabled", "account.recovery_codes_rotated", "account.recovery_code_used", "account.sessions_revoked", "member.updated", "member.removed", "member.left",
+  "invite.created", "invite.resend_attempted", "invite.resent", "invite.revoked", "limits.updated", "workspace.renamed", "workspace.deleted",
   "vendor_key.updated", "vendor_key.removed", "workspace.mode_changed", "workspace.mfa_required", "workspace.mfa_optional", "workspace.restored",
   "api_token.created", "api_token.revoked", "review_link.created", "review_link.revoked",
   "identity_consent.recorded", "identity_consent.withdrawn",
 ] as const;
 export type SecurityAction = (typeof actions)[number];
-type Target = "account" | "member" | "workspace" | "vendor" | "api_token" | "review_link" | "identity_consent";
+type Target = "account" | "member" | "workspace" | "vendor" | "api_token" | "review_link" | "identity_consent" | "invite" | "limits";
 type Details = {
   role?: "admin" | "member";
   disabled?: boolean;
@@ -31,6 +32,10 @@ type Details = {
   mode?: "platform" | "own";
   scope?: "read" | "render" | "prepare";
   expiresAt?: number;
+  /** Which limit changed (Settings › Limits): the spend cap per board, where the warning starts, or the cap per shot. */
+  limit?: "board" | "warn" | "shot";
+  /** What a limit was set to (credits, or a percent); null when it was cleared. */
+  value?: number | null;
 };
 export type SecurityAuditInput = {
   workspaceId: string | null;
@@ -50,7 +55,7 @@ function identifier(value: string | null) {
 /** Explicit fields only. Never accept prompts, names, emails, URLs or credentials. */
 export function securityAuditStatement(input: SecurityAuditInput, changedOnly = false): InStatement {
   if (!(actions as readonly string[]).includes(input.action) ||
-      !["account", "member", "workspace", "vendor", "api_token", "review_link", "identity_consent"].includes(input.targetType))
+      !["account", "member", "workspace", "vendor", "api_token", "review_link", "identity_consent", "invite", "limits"].includes(input.targetType))
     throw new Error("Invalid security history action");
   const details = input.details ?? {};
   for (const [key, value] of Object.entries(details)) {
@@ -59,6 +64,8 @@ export function securityAuditStatement(input: SecurityAuditInput, changedOnly = 
       : key === "scope" ? ["read", "render", "prepare"].includes(String(value))
       : key === "disabled" || key === "unlocked" ? typeof value === "boolean"
       : key === "expiresAt" ? typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+      : key === "limit" ? ["board", "warn", "shot"].includes(String(value))
+      : key === "value" ? value === null || (typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
       : false;
     if (!valid) throw new Error("Invalid security history detail");
   }
@@ -110,3 +117,6 @@ export async function readWorkspaceSecurityHistory(
   const events = merged.slice(0, limit), last = events.at(-1);
   return { events, nextCursor: merged.length > limit && last ? `${last.createdAt}:${last.id}` : null };
 }
+
+/** The history line's id for an invitation: a reference, never the code itself (the code is the link). */
+export const inviteRef = (code: string): string => createHash("sha256").update(code).digest("hex").slice(0, 16);

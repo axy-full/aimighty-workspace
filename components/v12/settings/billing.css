@@ -35,3 +35,7 @@
 @media (max-width: 720px) {
   .v12-bill-cards { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Inside Workspace settings: the console's own column and scroll hold it. */
+.v12-bill[data-embedded] { flex: none; min-height: 0; overflow: visible; padding: 0; background: transparent; }
+.v12-bill[data-embedded] .v12-bill-col { max-width: none; margin: 0; }

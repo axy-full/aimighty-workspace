@@ -9,9 +9,10 @@ import { RulesSection } from "./rules/RulesSection";
 import { ConnectionsSection } from "./connections/ConnectionsSection";
 import { AdvancedSection } from "./advanced/AdvancedSection";
 import { useGoSettings } from "./navigate";
-import { useNewInterface } from "@/lib/session";
+import { useNewInterface, useSession } from "@/lib/session";
 import { useShell } from "@/lib/shell/state";
 import { CreditsBilling } from "@/components/v12/settings/CreditsBilling";
+import { WorkspaceConsole } from "@/components/v12/settings/console/WorkspaceConsole";
 import "./settings.css";
 
 /**
@@ -29,17 +30,22 @@ const FOOT: Partial<Record<SettingsSectionId, string>> = {
   rules: "Spending rules belong to people: Atomik prepares and explains, you decide.",
 };
 
-export function SettingsView({ account, section, open, onOpenProject }: { account: WorkspaceAccount | null; section: string; open: string | null; onOpenProject?: (id: string) => void }) {
+export function SettingsView({ account, section: asked, open, onOpenProject }: { account: WorkspaceAccount | null; section: string; open: string | null; onOpenProject?: (id: string) => void }) {
   const go = useGoSettings();
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const newInterface = useNewInterface();
+  const session = useSession();
   const shell = useShell();
+  /* Workspace settings (prototype v14) is the new interface's desktop screen; anywhere else its address opens Team, the old page's first section. */
+  const consoleOn = newInterface && !shell.phone.on;
+  if (asked === "console" && consoleOn) return <WorkspaceConsole account={account} onOpenProject={(id) => onOpenProject?.(id)} />;
+  const section = asked === "console" ? "team" : asked;
   if (!isBuiltSection(section)) return <WorkspaceView account={account} />;
   const fold = isSettingsFold(open) ? open : null;
   /* With the new interface on, a desktop window's Credits & billing is prototype 12's screen (components/v12/settings).
      Its Top up opens today's flow unchanged: this section with its packs open, which still draws today's screen. */
   if (newInterface && !shell.phone.on && section === "credits" && !fold) {
-    return <CreditsBilling account={account} onTopUp={() => go("credits", "packs")} onOpenBoard={(id) => onOpenProject?.(id)} />;
+    return <CreditsBilling readOnly={session.role === "member"} account={account} onTopUp={() => go("credits", "packs")} onOpenBoard={(id) => onOpenProject?.(id)} />;
   }
   /* In the new interface on a desktop window the section is called what its page is: Credits & billing (the phone and today's screens keep Plan & credits). */
   const labelOf = (id: SettingsSectionId, label: string) => (newInterface && !shell.phone.on && id === "credits" ? "Credits & billing" : label);

@@ -8,6 +8,8 @@
  */
 import { db, ready, now } from "@/lib/db";
 import { memoGet, memoPut, memoDrop } from "@/lib/memo";
+import { securityAuditStatement } from "@/lib/securityAudit";
+import { cleanBudget, cleanWarnPct } from "@/lib/budgetPause";
 
 export const DEFAULTS = {
   /** R9 — the platform names the file, never the API. */
@@ -33,6 +35,8 @@ export const DEFAULTS = {
    * projectCap). An admin sets it in Settings › Spending rules; a production's own cap wins over it.
    */
   productionBudgetCredits: "",
+  /** The shape a new board starts in (Settings › Defaults): "16:9", "9:16", "1:1" or "4:5"; blank is Particl's own, 16:9. */
+  defaultAspect: "",
   /** The engine a new composer opens on, per kind; blank inherits the platform's default. */
   defaultVideoModel: "",
   defaultImageModel: "",
@@ -140,4 +144,35 @@ export async function setSetting(key: string, value: string, userId: string): Pr
     args: [key, value, userId, now()],
   });
   invalidateSettings();
+}
+
+/** The settings that are limits (Settings › Limits): a change to one is written with its history line, in one batch. */
+const LIMIT_OF: Readonly<Record<string, "warn" | "shot">> = { capWarnPct: "warn", shotCapCredits: "shot" };
+export const isLimitSetting = (key: string): boolean => key in LIMIT_OF;
+
+/**
+ * `setSetting` for a limit (the warning share, the cap per shot): when the value really changes, the security history line
+ * ("limits.updated", who, which limit, to what) commits with it (lib/securityAudit.ts). Same value again writes no line.
+ */
+export async function setLimitSetting(key: "capWarnPct" | "shotCapCredits", value: string, userId: string, workspaceId: string): Promise<boolean> {
+  await ready();
+  const clean = (v: unknown) => (key === "capWarnPct" ? cleanWarnPct(v) : cleanBudget(v));
+  /* The old value is read inside the write, so two saves at once cannot each see the same "before" and both (or neither) leave a line. */
+  const tx = await db().transaction("write");
+  try {
+    const before = (await tx.execute({ sql: "SELECT value FROM settings WHERE key = ?", args: [key] })).rows[0];
+    const changed = clean(before?.value ?? DEFAULTS[key]) !== clean(value);
+    await tx.execute({
+      sql: `INSERT INTO settings (key, value, updated_by, updated_at) VALUES (?,?,?,?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_by=excluded.updated_by, updated_at=excluded.updated_at`,
+      args: [key, value, userId, now()],
+    });
+    if (changed) await tx.execute(securityAuditStatement({ workspaceId, actorId: userId, action: "limits.updated", targetType: "limits", targetId: LIMIT_OF[key], details: { limit: LIMIT_OF[key], value: clean(value) } }));
+    await tx.commit();
+    invalidateSettings();
+    return changed;
+  } catch (error) {
+    await tx.rollback().catch(() => {});
+    throw error;
+  } finally { tx.close(); }
 }

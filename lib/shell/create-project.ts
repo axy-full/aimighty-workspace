@@ -7,7 +7,8 @@ export type CreateSeed = { brief?: string; aspect?: string; deliverables?: strin
   /** The new interface's board kind and the rail a person edited before pressing Start (lib/v12/board/kinds.ts, stages.ts). */
   boardFlavor?: NonNullable<Project["boardFlavor"]>; boardStages?: Project["boardStages"] };
 
-const ASPECTS: readonly string[] = ["16:9", "9:16", "1:1", "4:5"];
+import { ASPECT_OPTIONS } from "@/lib/settingValues";
+const ASPECTS: readonly string[] = ASPECT_OPTIONS;
 export const PROJECT_NAME_MAX_LENGTH = 80;
 
 /**
@@ -25,4 +26,19 @@ export function seededProject(name: string, seed: CreateSeed = {}): Project {
   if (seed.boardFlavor && FLAVORS.includes(seed.boardFlavor)) project.boardFlavor = seed.boardFlavor;
   if (Array.isArray(seed.boardStages) && seed.boardStages.length) project.boardStages = seed.boardStages.slice(0, 24);
   return project;
+}
+
+/**
+ * The shape a new board starts in when the person did not pick one: the workspace's default (Settings › Defaults, the
+ * `defaultAspect` setting), read once from GET /api/settings, or null for Particl's own. A failed read is no default, never a
+ * blocked board.
+ */
+export async function workspaceAspect(read: (url: string) => Promise<Response>): Promise<string | null> {
+  try {
+    const response = await read("/api/settings");
+    if (!response.ok) return null;
+    const body = (await response.json().catch(() => null)) as { settings?: Record<string, unknown> } | null;
+    const value = body?.settings?.defaultAspect;
+    return typeof value === "string" && ASPECTS.includes(value) ? value : null;
+  } catch { return null; }
 }
