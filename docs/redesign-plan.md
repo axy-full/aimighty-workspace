@@ -347,3 +347,43 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 - Google sign-in is tested on production (invite → Google → joined; plain /login with Google). It stays in Google's **Testing** mode. The owner publishes it once the privacy fixes are live (#681, the canvas hole; the owner-or-admin rule for changing others' work) and before inviting outside testers.
 
 - #681 (the private canvas): merge when green (owner, 12 Oct evening).
+
+## Owner decisions (Akshay, 12 Oct 21:05 IST)
+
+These answer the lead's 21:00 status page.
+
+1. **#681, private-board canvas: option (b).**
+   - A copied link to a take on a PRIVATE board shows "a production you can't open" until the owner shares the board. Once it's shared, the link opens view-only.
+   - "My direct word: change the take-link privacy guard test to require (b). It's a tightening."
+   - (c), offering "Share with team" when copying a link on a private board, is a later small UI follow-up.
+   - Merge #681 when green. Top priority tonight.
+2. **#680, only the owner or an admin changes others' work.**
+   - The setup-only change to the rule-14 guard `demo-gaps-l4-people-only`: "my direct word, yes". No check weakened.
+   - Yes to the setup-only edits in never-delete, studioRoutes, mediaMutation, appPagesAuditDb, takesReviewRoute, mediaBindings and shot-filing.
+   - Projects with no recorded creator (e.g. the starter) are admin-only. No creator column and no migration now.
+   - A production holding several people's boards can be renamed or marked delivered by workspace admins only. Each person manages their own boards.
+   - Fresh review on the final head, then merge when green.
+3. **#665, v14 for every workspace.**
+   - Yes to a small PR making the PHONE plan page match the desktop: Explore $50/500, Create $100/1,000, Master $250/2,500; Business 100/250/500 per seat; Enterprise "Get in touch"; no "Studio · $49" anywhere.
+   - Five-minute test: "my direct word, swap the laptop journey to the v14 journey (your 12/12, 7-tap version)".
+   - The owner reviews the #665 screenshots and says yes separately, so #665 stays NEEDS AKSHAY.
+4. **Sample production:** read-only for every viewer. A small PR, merged when green.
+5. **Approvals queue (next build, after #681):**
+   - Members see only their own Atomik chat steps.
+   - Admins see another member's step only when it needs an admin's tap (e.g. over 200 cr), and then only its title and price.
+   - NEEDS AKSHAY, with an Opus privacy review.
+6. **Order tonight:**
+   - a) #681, #680, sample read-only, then the phone plan page. Each merges into release/1 when green, after a fresh review.
+   - b) #654, then #655 and #656, one at a time.
+   - c) When release/1 is green with #681 and #680 in, open DEPLOY #2 (deploy/2026-10-13 → main), not merged. List its contents, its migrations (MUST be none) and its env names.
+   - d) Bring #675 up to date and review it, ready for deploy #3.
+7. **Deploy #3** (the migrations, #675 and #668) is tomorrow morning, after the owner's database backup with their advisor. Prepare its PR only once deploy #2 is live.
+8. After deploy #2 is live and the owner has checked it, the owner publishes Google out of Testing and starts inviting testers. Not before.
+9. **Usage:** stay at 2 lanes. Sonnet does builds; Opus reviews only money, privacy and sign-in. If the owner reports usage above 75%, drop to 1 lane.
+10. **Rules unchanged:**
+    - Never touch main, Coolify, Cloudflare, DNS or deploys.
+    - No paid generations, and no secrets anywhere.
+    - Test servers run on 127.0.0.1 only.
+    - Clean up worktrees and temp files at the end of the session.
+
+Status by 09:00 IST: what merged (real PR numbers and commits), deploy #2's PR number and contents, what's NEEDS AKSHAY with the exact yes or no needed, CI state, and disk.
