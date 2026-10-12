@@ -262,6 +262,10 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 - **Board ids unique across members** (from the #667 review): a teammate's save that names another member's private board id creates a separate copy under their own key, the same as on release/1. If both are later shared, a plain `?id=` link opens the newer one, though the header still names the real maker. Fix: refuse a new save whose id another member already uses, with the unknown-id answer.
 - **Who sees Atomik chat steps** (owner, 12 Oct evening). In the approvals queue, members see only their own Atomik chat steps. A workspace admin sees another member's step only when it needs an admin's approval (e.g. the over-200 cr rule from #670), and then only its title and price, never the chat. A small NEEDS AKSHAY PR with an Opus privacy review, after #681 merges.
 - **Uploads access** (owner, 12 Oct): a member opens an upload only if they uploaded it, or it's on a board shared with the team, or production or shared work already exposes it. Being built by lane C, NEEDS AKSHAY, with an Opus privacy review.
+- **After #681 merges, from the #680 review** (12 Oct):
+  - `lib/workAccess.ts`'s `projectMaker` scans and parses every draft on each non-admin check. Swap it for #681's indexed `ownsDraftProject`, so "maker" has one definition.
+  - `POST /api/shots` lets any member add shots to any project, a private board's included. Gate it with #681's private-board rule.
+  - Setting an element's current version (`app/api/rig/attributes/[id]/current`) clears approvals on takes in other people's shots. Decide whether that side effect should follow the owner-or-admin rule.
 
 ## Housekeeping rules (owner, 12 Oct)
 
