@@ -193,6 +193,9 @@ test("a teammate's link to a take on a PRIVATE board says it is a production the
     expect((await reader.page.request.get(`/api/workbench/projects?id=${other.id}`, { headers: reader.headers }).then((r) => r.json())).project).toBeNull();
     /* Stopped, it is a production they can't open again. */
     await share(sender, made.draft.id, false);
+    /* Revoked through the API too: the draft reads as nothing, and its library and private upload are not found. */
+    expect((await reader.page.request.get(`/api/workbench/projects?id=${made.draft.id}`, { headers: reader.headers }).then((r) => r.json())).project).toBeNull();
+    expect((await reader.page.request.get(`/api/workbench/library?projectId=${made.draft.id}&source=uploads&id=${made.privateUpload}`, { headers: reader.headers })).status()).toBe(404);
     await reader.page.goto(link.pathname + link.search);
     await expect(reader.page.getByTestId("link-card")).toHaveAttribute("data-phase", "unavailable");
     await expect(reader.page.getByTestId("link-lead")).toHaveText(CANT_OPEN);
