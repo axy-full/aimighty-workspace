@@ -43,10 +43,15 @@ export async function isMarkedSample(projectId: string, ex: Exec = db()): Promis
 
 /** The serialized form of the flag the author sets on a shared board; a plain substring test on it keeps a workspace with no shared boards at one cheap pass. */
 const SHARED_FLAG = '"teamShared":true';
-const SHARED_BOARDS = `SELECT owner, project_id FROM workbench_projects WHERE instr(body, '${SHARED_FLAG}')>0 AND json_valid(body) AND json_extract(body,'$.teamShared')=1`;
+/**
+ * What makes a draft shared with the team: the author's flag in its own saved JSON (a draft whose JSON can't be read is private). The one definition:
+ * lib/workbench/team-boards.ts lists and reads shared boards with it, and this file's gate and project lists ask the same question with it.
+ */
+export const TEAM_SHARED_SQL = "json_valid(body) AND json_extract(body,'$.teamShared') = 1";
+const SHARED_BOARDS = `SELECT owner, project_id FROM workbench_projects WHERE instr(body, '${SHARED_FLAG}')>0 AND ${TEAM_SHARED_SQL}`;
 
 /**
- * Whether the author has shared this draft's board with the team: `teamShared: true` in the draft's saved body (set by the author, lane A's #667). Nothing
+ * Whether the author has shared this draft's board with the team: `teamShared: true` in the draft's saved body (set by the author, #667's `lib/workbench/team-boards.ts`). Nothing
  * writes the flag on release/1, so this answers false for every board until it exists; it is the one place the gate learns about sharing. A shared board is
  * for teammates to READ (view-only); writes stay the owner's.
  */

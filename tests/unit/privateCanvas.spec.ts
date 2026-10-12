@@ -182,22 +182,46 @@ test("the marked sample production is everyone's, read and write, as before; an 
   }, person("u_mate"));
 });
 
-test("a shared board (teamShared) is a teammate's to read only: the canvas route reads, every write stays the owner's", async () => {
+test("a shared board (teamShared, set the way the author sets it) is a teammate's to read only: the canvas route reads, every write stays the owner's; unshared, or never shared, it is not found", async () => {
   const ws = workspace(`pc-g-${run}`);
   const { tenant, database, privateProject } = await boards(ws);
   const { requireProduction } = await import("../../lib/workbench/team-canvas");
   let who = { id: "u_mate", role: "member" };
   const route = loadRoute<typeof import("../../app/api/workbench/team-canvas/route")>("app/api/workbench/team-canvas/route.ts", () => who);
+  const studio = loadRoute<typeof import("../../app/api/workbench/projects/route")>("app/api/workbench/projects/route.ts", () => who);
+  const read = () => route.GET(new Request(`https://particl.test/api/workbench/team-canvas?productionId=${privateProject}`), undefined as never);
+  const write = () => route.PATCH(new Request("https://particl.test/api/workbench/team-canvas", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ productionId: privateProject, upsertNodes: [], removeNodes: [], upsertAssets: [], order: null }) }), undefined as never);
+  const share = (shared: boolean) => studio.POST(new Request("https://particl.test/x", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "team-share", projectId: "d1", shared }) }), undefined as never);
+  /* Never shared: not found, for the read and for the write. */
   await tenant.runInTenant(ws, async () => {
-    await database.db().execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.teamShared',json('true')) WHERE owner='u_owner'", args: [] });
+    expect((await read()).status).toBe(404);
+    expect((await write()).status).toBe(404);
+  }, person("u_mate"));
+  /* The author shares it. */
+  await tenant.runInTenant(ws, async () => {
+    who = { id: "u_owner", role: "member" };
+    const shared = await share(true);
+    expect(shared.status, JSON.stringify(await shared.clone().json())).toBe(200);
+  }, person("u_owner"));
+  await tenant.runInTenant(ws, async () => {
+    who = { id: "u_mate", role: "member" };
     await expect(requireProduction(privateProject, undefined, "read")).resolves.toBeUndefined();
     await expect(requireProduction(privateProject, undefined, "write")).rejects.toThrow(/not in this workspace/);
-    const read = await route.GET(new Request(`https://particl.test/api/workbench/team-canvas?productionId=${privateProject}`), undefined as never);
-    expect(read.status).toBe(200);
-    const write = await route.PATCH(new Request("https://particl.test/api/workbench/team-canvas", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ productionId: privateProject, upsertNodes: [], removeNodes: [], upsertAssets: [], order: null }) }), undefined as never);
-    expect(write.status).toBe(404);
+    const got = await read();
+    expect(got.status).toBe(200);
+    expect((await got.json()).canvas.nodes.n1.title).toBe("Secret");
+    expect((await write()).status, "a write is the owner's").toBe(404);
   }, person("u_mate"));
-  void who;
+  /* The author stops sharing: not found again. */
+  await tenant.runInTenant(ws, async () => {
+    who = { id: "u_owner", role: "member" };
+    expect((await share(false)).status).toBe(200);
+  }, person("u_owner"));
+  await tenant.runInTenant(ws, async () => {
+    who = { id: "u_mate", role: "member" };
+    expect((await read()).status).toBe(404);
+  }, person("u_mate"));
+  void database;
 });
 
 test("the project's own page, its deletion and edit, opening it, linking a draft to it, its budget and its runs are the owner's alone", async () => {

@@ -35,6 +35,7 @@ import { useTeamCanvas, type TeamCanvasApi } from "./use-team-canvas";
 import { useCutouts, type CutoutsApi } from "./use-cutouts";
 import { useBoardOpen } from "@/lib/board/active";
 import { SaveFailedError } from '@/lib/workbench/save-then-continue';
+import { viewOnlyRefusal, type ViewOnly } from "@/lib/workbench/view-only";
 import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
 import { createHeldEdits, editsFrozen, registerDrain, sendsAllowed, subscribeSwitch, whileSwitching } from "@/lib/shell/switch-workspace";
 
@@ -75,7 +76,7 @@ import { createHeldEdits, editsFrozen, registerDrain, sendsAllowed, subscribeSwi
  * `ancestors`: shots an undo put back, as they were when deleted — merged from, if another window has them too.
  * `made`: what the Rig's builds made (shots from boards, inputs, filed takes), as made — merged from likewise.
  */
-type Draft = { project: Project; revision: number; base: Project; writer: DraftWriter; ancestors: Map<string, CanvasNode>; made: MadeRecords };
+type Draft = { project: Project; revision: number; base: Project; writer: DraftWriter; ancestors: Map<string, CanvasNode>; made: MadeRecords; /** A teammate's board, to look at: it takes no edit and is never saved (lib/workbench/team-boards.ts). */ viewOnly?: ViewOnly };
 /**
  * A project the person left with edits not saved yet: they keep being saved until they are, or the project is back.
  * `inflight` is the attempt out now (what it saved, or null); coming back waits for it.
@@ -91,6 +92,8 @@ export type RigContext = {
   shots: RigShot[];
   jobs: MediaJob[];
   saveState: "saved" | "saving" | "error";
+  /** A teammate's board, to look at: it takes no edit and is never saved. Null on one's own. */
+  viewOnly: ViewOnly | null;
   saveError: string | null;
   selected: RigShot | null;
   selectedNode: CanvasNode | null;
@@ -206,14 +209,17 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chain = useRef<Promise<boolean>>(Promise.resolve(true));
 
+  /* Whose board this is when it is a teammate's (view-only), set with the draft itself. */
+  const [viewOnly, setViewOnly] = useState<ViewOnly | null>(null);
   const setDraft = useCallback((next: Draft | null) => {
     draftRef.current = next;
     setDraftState(next);
+    setViewOnly(next?.viewOnly ?? null);
   }, []);
 
   const load = useCallback(async (id: string, signal?: AbortSignal): Promise<Draft | null> => {
-    const data = await draftRequest<{ project?: Project | null; revision: number }>(`${API}/projects?id=${encodeURIComponent(id)}`, scope, { signal });
-    return data.project ? { project: data.project, revision: data.revision, base: data.project, writer: draftWriter(), ancestors: new Map(), made: new Map() } : null;
+    const data = await draftRequest<{ project?: Project | null; revision: number; viewOnly?: ViewOnly }>(`${API}/projects?id=${encodeURIComponent(id)}`, scope, { signal });
+    return data.project ? { project: data.project, revision: data.revision, base: data.project, writer: draftWriter(), ancestors: new Map(), made: new Map(), ...(data.viewOnly ? { viewOnly: data.viewOnly } : {}) } : null;
   }, [scope]);
 
   /* Set once the team canvas hook exists below: its waiting edit goes out before the draft save. */
@@ -290,6 +296,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     if (editsFrozen()) { heldWrites.hold({ fn, publish, made }); return; }
     const current = draftRef.current;
     if (!current) return;
+    /* A teammate's board takes no edit and saves nothing (not even a take filed into it by a poll). */
+    if (current.viewOnly) return;
     let changed = fn(current.project);
     if (changed === current.project) return;
     /* An edit of this window's own that would change a locked master keeps the master as it is (the server's rule, applied here
@@ -551,6 +559,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const blocked = !project ? null
+    : viewOnly ? viewOnlyRefusal(viewOnly.owner.name)
     : submitting ? "Submitting this take…"
     : !selected ? null
     : !model ? "Choose an available engine for this shot."
@@ -710,6 +719,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const patchShot = useCallback((id: string, patch: ShotPatch): string | null => {
     const switching = whileSwitching();
     if (switching) return switching;
+    const viewing = draftRef.current?.viewOnly ? viewOnlyRefusal(draftRef.current.viewOnly.owner.name) : null; /* a teammate's board takes no edit */
+    if (viewing) return viewing;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     try {
@@ -725,6 +736,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const addShot = useCallback(() => {
     const switching = whileSwitching();
     if (switching) { setNotice(switching); return; }
+    const viewing = draftRef.current?.viewOnly ? viewOnlyRefusal(draftRef.current.viewOnly.owner.name) : null; /* a teammate's board takes no edit */
+    if (viewing) { setNotice(viewing); return; }
     const current = draftRef.current;
     if (!current) return;
     try {
@@ -836,6 +849,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const connect = useCallback((source: string, target: string): string | null => {
     const switching = whileSwitching();
     if (switching) return switching;
+    const viewing = draftRef.current?.viewOnly ? viewOnlyRefusal(draftRef.current.viewOnly.owner.name) : null; /* a teammate's board takes no edit */
+    if (viewing) return viewing;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     const result = connectNodes(current.project, source, target);
@@ -849,6 +864,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const apply = useCallback((fn: (project: Project) => Project | { project: Project; id?: string }, pick?: boolean): string | null => {
     const switching = whileSwitching();
     if (switching) return switching;
+    const viewing = draftRef.current?.viewOnly ? viewOnlyRefusal(draftRef.current.viewOnly.owner.name) : null; /* a teammate's board takes no edit */
+    if (viewing) return viewing;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     try {
@@ -894,6 +911,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const removeShot = useCallback((id: string): string | null => {
     const switching = whileSwitching();
     if (switching) return switching;
+    const viewing = draftRef.current?.viewOnly ? viewOnlyRefusal(draftRef.current.viewOnly.owner.name) : null; /* a teammate's board takes no edit */
+    if (viewing) return viewing;
     const current = draftRef.current;
     if (!current) return "Open a project first.";
     let out: ReturnType<typeof removeShots>;
@@ -942,10 +961,10 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const teamView = useMemo(() => ({ mode: team.mode, peers: team.peers, presence: team.presence, server: team.server, tidy: team.tidy, refresh: team.refresh }), [team.mode, team.peers, team.presence, team.server, team.tidy, team.refresh]);
   const masters = team.locks;
   const value = useMemo<RigContext>(() => ({
-    status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, saveError, selected, selectedNode, selectedCard,
+    status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, viewOnly, saveError, selected, selectedNode, selectedCard,
     select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, team: teamView,
     masters, canUnlock, lockMaster, unlockMaster, cutouts: cut.cutouts, quoteCutout: cut.quote, startCutout: cut.start,
-  }), [projectId, status, error, project, shots, mediaJobs, saveState, saveError, selected, selectedNode, selectedCard, select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, teamView, masters, canUnlock, lockMaster, unlockMaster, cut.cutouts, cut.quote, cut.start]);
+  }), [projectId, status, error, project, shots, mediaJobs, saveState, viewOnly, saveError, selected, selectedNode, selectedCard, select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, teamView, masters, canUnlock, lockMaster, unlockMaster, cut.cutouts, cut.quote, cut.start]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
