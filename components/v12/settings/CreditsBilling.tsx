@@ -174,7 +174,7 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
               <span className="v12-bill-eyebrow">Plans</span>
               <span className="v12-bill-meta">Monthly · checkout is not open yet</span>
             </div>
-            <PlanPicker current={plan?.id ?? null} onChoose={() => setChooseNote(true)} />
+            <PlanPicker plans={billing.data?.plans} current={plan?.id ?? null} onChoose={() => setChooseNote(true)} />
             {chooseNote ? <div className="v12-bill-quiet" role="status" data-testid="v12-billing-choose-note">Checkout is not open yet. Nothing was changed.</div> : null}
           </section>
         ) : null}

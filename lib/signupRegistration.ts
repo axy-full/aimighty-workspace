@@ -16,7 +16,7 @@ import {
 } from "./workspaceProvisioning";
 import { mailConfigured, sendMail } from "./mail";
 import { billingConfiguration } from "./billingConfig";
-import { CHOSEN_PLAN_IDS, DEFAULT_CHOSEN_PLAN, type PlanId } from "./plans";
+import { cadenceFrom, chosenPlanFrom, type PlanId } from "./plans";
 
 /* A plan a person picked on the pricing page: carried through sign-up as their choice, nothing more. Only a verified paid invoice grants credits. */
 type PaidPlan = Exclude<PlanId, "invite">;
@@ -45,10 +45,9 @@ type Registration = {
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 const cleanChoice = (plan?: string, cadence?: string): SignupChoice => ({
-  planId: (CHOSEN_PLAN_IDS as readonly string[]).includes(plan ?? "")
-    ? (plan as PaidPlan)
-    : (DEFAULT_CHOSEN_PLAN as PaidPlan),
-  cadence: cadence === "annual" ? "annual" : "monthly",
+  planId: chosenPlanFrom(plan) as PaidPlan,
+  /* Yearly is hidden (lib/plans.ts YEARLY_SHOWN): a carried "annual" is kept as monthly until it returns. */
+  cadence: cadenceFrom(cadence),
 });
 export const signupNext = (choice: SignupChoice) =>
   "/billing?" +

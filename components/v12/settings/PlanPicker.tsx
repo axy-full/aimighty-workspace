@@ -1,20 +1,37 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Segment } from "@/components/v12/ui/Segment";
-import { BUSINESS, BUSINESS_FROM_USD, BUSINESS_LEVELS, ENTERPRISE, INDIVIDUAL_CARDS, seatTotal } from "@/lib/planCards";
-import { DEFAULT_PLANS, planById } from "@/lib/plans";
+import { BUSINESS, ENTERPRISE, businessFrom, businessLevels, individualCards, seatTotal } from "@/lib/planCards";
+import { DEFAULT_PLANS, cleanPlans, planById, type PlanDef } from "@/lib/plans";
 import "./plan-picker.css";
 
 /**
  * The plans in the new interface (prototype v14), in Settings › Credits & billing and on the new-workspace "Choose a plan" step: a
  * toggle Individual · Business; Individual cards with their one line; Business ("from" the lowest level per seat) with its three levels
  * and a seats stepper that shows the total; Enterprise ("Get in touch", no price). Every name, price, credit figure and line is
- * lib/plans.ts's (through lib/planCards.ts); nothing is typed here. Display only: Choose opens nothing that charges.
+ * the platform console's layer of lib/plans.ts (through lib/planCards.ts), the one the public site and /pricing read; nothing is typed
+ * here. The screen that has the layer already passes it; otherwise it is read from GET /api/plans (public). Display only: Choose opens
+ * nothing that charges.
  */
+function usePlanLayer(given: readonly unknown[] | undefined): PlanDef[] {
+  const [read, setRead] = useState<PlanDef[] | null>(null);
+  useEffect(() => {
+    if (given) return;
+    let live = true;
+    fetch("/api/plans", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((j: { plans?: unknown } | null) => {
+      if (live && Array.isArray(j?.plans)) setRead(cleanPlans(j.plans));
+    }).catch(() => { /* the defaults stay */ });
+    return () => { live = false; };
+  }, [given]);
+  return given ? cleanPlans(given) : read ?? DEFAULT_PLANS;
+}
+
 const money = (usd: number) => `$${usd.toLocaleString("en-US")}`;
 const count = (n: number) => n.toLocaleString("en-US");
 
-export function PlanPicker({ current = null, selected = null, chooseLabel = "Choose", onChoose }: {
+export function PlanPicker({ plans, current = null, selected = null, chooseLabel = "Choose", onChoose }: {
+  /** The platform layer's plans, when the screen has them (Settings reads them with the billing); else read here. */
+  plans?: readonly unknown[];
   /** The plan the workspace is on, shown as "Current plan". */
   current?: string | null;
   /** A plan picked in a flow that keeps a choice (the join sheet). */
@@ -22,11 +39,17 @@ export function PlanPicker({ current = null, selected = null, chooseLabel = "Cho
   chooseLabel?: string;
   onChoose: (planId: string) => void;
 }) {
+  const layer = usePlanLayer(plans);
+  const INDIVIDUAL_CARDS = individualCards(layer);
+  const BUSINESS_LEVELS = businessLevels(layer);
+  const BUSINESS_FROM_USD = businessFrom(layer);
   const business = (id: string | null) => BUSINESS_LEVELS.some((l) => l.id === id);
   const [group, setGroup] = useState<"individual" | "business">(business(current ?? selected) ? "business" : "individual");
-  const [level, setLevel] = useState<string>(business(current ?? selected) ? (current ?? selected)! : BUSINESS_LEVELS[0].id);
+  const [chosenLevel, setLevel] = useState<string | null>(business(current ?? selected) ? (current ?? selected) : null);
   const [seats, setSeats] = useState<number>(BUSINESS.seats.initial);
-  const levelPlan = planById(DEFAULT_PLANS, level) ?? DEFAULT_PLANS.find((p) => p.id === BUSINESS_LEVELS[0].id)!;
+  /* A level the layer no longer offers falls back to its first. */
+  const level = chosenLevel && business(chosenLevel) ? chosenLevel : BUSINESS_LEVELS[0]?.id ?? "";
+  const levelPlan = planById(layer, level) ?? layer.find((p) => p.id === BUSINESS_LEVELS[0]?.id) ?? DEFAULT_PLANS.find((p) => p.group === "business")!;
   const total = seatTotal(levelPlan, seats);
   const action = (id: string) => (
     <button type="button" className="v12-pp-btn" disabled={current === id} aria-pressed={selected === id || undefined} onClick={() => onChoose(id)} data-testid="v12-plan-choose">

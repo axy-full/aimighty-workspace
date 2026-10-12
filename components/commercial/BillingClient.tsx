@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { YEARLY_SHOWN, type PlanDef } from "@/lib/plans";
+import { YEARLY_SHOWN, cadenceFrom, chosenPlanFrom, type PlanDef } from "@/lib/plans";
 import ManagementPage, {
   ManagementCard,
   ManagementNotice,
@@ -123,14 +123,9 @@ export default function BillingClient({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(""),
     [newName, setNewName] = useState("");
-  const [planId, setPlanId] = useState(
-    ["studio", "agency", "production"].includes(initialPlan || "")
-      ? initialPlan!
-      : "studio",
-  );
-  const [cadence, setCadence] = useState<"monthly" | "annual">(
-    initialCadence === "annual" ? "annual" : "monthly",
-  );
+  /* The choice carried from sign-up or the pricing page; a carried "annual" reads as monthly while yearly is hidden (lib/plans.ts). */
+  const [planId, setPlanId] = useState<string>(chosenPlanFrom(initialPlan));
+  const [cadence, setCadence] = useState<"monthly" | "annual">(cadenceFrom(initialCadence));
   const applyAccount = useCallback(
     ({ responses, bodies }: Awaited<ReturnType<typeof loadAccount>>) => {
       const [billingResponse, workspaceResponse, plansResponse, topupResponse] =

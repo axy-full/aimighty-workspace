@@ -35,7 +35,7 @@ export default async function Pricing() {
       ...planLines(levels[0] ?? plans[0], inviteCredits).slice(3),
     ],
   };
-  const enterprise: PlanCard = { id: ENTERPRISE.id, label: ENTERPRISE.label, price: null, unit: "", cta: "Get in touch", audience: "Your own terms, volume and setup.", lines: [] };
+  const enterprise: PlanCard = { id: ENTERPRISE.id, label: ENTERPRISE.label, price: null, unit: "", cta: "Get in touch", audience: ENTERPRISE.blurb[0].toUpperCase() + ENTERPRISE.blurb.slice(1), lines: [] };
 
   return (
     <SitePage active="pricing">

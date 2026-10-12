@@ -99,7 +99,7 @@ function PricingTeaser({ prices }: { prices: SitePrices }) {
         <Link href={PRICING_HREF} className="mk-card">
           <span className="mk-tag mk-tag--muted">{ENTERPRISE.label}</span>
           <span className="mk-plan-price">{ENTERPRISE.line}</span>
-          <span className="mk-body">Your own terms, volume and setup</span>
+          <span className="mk-body">{ENTERPRISE.blurb[0].toUpperCase() + ENTERPRISE.blurb.slice(1)}</span>
         </Link>
       </Grid>
     </Section>

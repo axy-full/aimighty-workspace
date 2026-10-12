@@ -126,3 +126,26 @@ test("the owner's plans claim only what the owner gave: credits, who it is for, 
     expect(planLines(plan, 250), id).toEqual([`${plan.includedCredits.toLocaleString("en-US")} credits a seat a month`, "One pool of credits across every seat"]);
   }
 });
+
+test("the plan a link or sign-up carries is any chosen plan id, and a carried annual reads as monthly while yearly is hidden", async () => {
+  const { chosenPlanFrom, cadenceFrom, DEFAULT_CHOSEN_PLAN, YEARLY_SHOWN } = await import("../../lib/plans");
+  for (const id of ["explore", "create", "master", "business100", "business250", "business500", "studio", "agency", "production"]) expect(chosenPlanFrom(id)).toBe(id);
+  expect(chosenPlanFrom("invite")).toBe(DEFAULT_CHOSEN_PLAN);
+  expect(chosenPlanFrom("nonsense")).toBe(DEFAULT_CHOSEN_PLAN);
+  expect(chosenPlanFrom(null)).toBe(DEFAULT_CHOSEN_PLAN);
+  expect(YEARLY_SHOWN).toBe(false);
+  expect(cadenceFrom("annual")).toBe("monthly");
+  expect(cadenceFrom("monthly")).toBe("monthly");
+  expect(cadenceFrom(undefined)).toBe("monthly");
+});
+
+test("the in-app cards read the platform layer they are given: one console edit shows the same price everywhere", async () => {
+  const { DEFAULT_PLANS } = await import("../../lib/plans");
+  const { individualCards, businessLevels, businessFrom } = await import("../../lib/planCards");
+  const edited = DEFAULT_PLANS.map((p) => (p.id === "create" ? { ...p, priceUsd: 120, includedCredits: 1200 } : p.id === "business100" ? { ...p, priceUsd: 90 } : p.id === "master" ? { ...p, offered: false } : p));
+  expect(individualCards(edited).map((c) => [c.id, c.priceUsd, c.credits])).toEqual([["explore", 50, 500], ["create", 120, 1200]]);
+  expect(businessLevels(edited).map((l) => [l.id, l.perSeatUsd])).toEqual([["business100", 90], ["business250", 250], ["business500", 500]]);
+  expect(businessFrom(edited)).toBe(90);
+  /* No business plan offered: the defaults' "from", never a crash. */
+  expect(businessFrom(DEFAULT_PLANS.map((p) => (p.group === "business" ? { ...p, offered: false } : p)))).toBe(100);
+});

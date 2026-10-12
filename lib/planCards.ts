@@ -1,4 +1,4 @@
-import { DEFAULT_PLANS, BUSINESS, ENTERPRISE, cycleCredits, plansIn, type PlanDef } from "@/lib/plans";
+import { DEFAULT_PLANS, BUSINESS, ENTERPRISE, businessFromUsd, cycleCredits, plansIn, type PlanDef } from "@/lib/plans";
 
 /**
  * The plans the new interface shows (prototype v14: Settings › Credits & billing and the new-workspace "Choose a plan" step), from the
@@ -12,13 +12,20 @@ import { DEFAULT_PLANS, BUSINESS, ENTERPRISE, cycleCredits, plansIn, type PlanDe
 export type IndividualCard = { id: string; name: string; credits: number; priceUsd: number; blurb: string | null };
 export type BusinessLevel = { id: string; name: string; perSeatUsd: number; perSeatCredits: number };
 
-const individual = plansIn(DEFAULT_PLANS, "individual");
-const levels = plansIn(DEFAULT_PLANS, "business");
+/**
+ * The cards of a set of plans. The screens pass the platform console's layer (GET /api/plans, /api/billing), the same one the public
+ * site and /pricing read, so one console edit shows the same price everywhere; the constants below are the defaults of lib/plans.ts.
+ */
+export const individualCards = (plans: readonly PlanDef[]): IndividualCard[] =>
+  plansIn(plans, "individual").map((plan): IndividualCard => ({ id: plan.id, name: plan.label, credits: plan.includedCredits, priceUsd: plan.priceUsd, blurb: plan.blurb }));
+export const businessLevels = (plans: readonly PlanDef[]): BusinessLevel[] =>
+  plansIn(plans, "business").map((plan): BusinessLevel => ({ id: plan.id, name: plan.label, perSeatUsd: plan.priceUsd, perSeatCredits: plan.includedCredits }));
+/** The least a seat costs a month: the heading's "from" (the defaults' when no business plan is offered). */
+export const businessFrom = (plans: readonly PlanDef[]): number => businessFromUsd(plans) ?? businessFromUsd(DEFAULT_PLANS) ?? 0;
 
-export const INDIVIDUAL_CARDS: readonly IndividualCard[] = Object.freeze(individual.map((plan): IndividualCard => ({ id: plan.id, name: plan.label, credits: plan.includedCredits, priceUsd: plan.priceUsd, blurb: plan.blurb })));
-export const BUSINESS_LEVELS: readonly BusinessLevel[] = Object.freeze(levels.map((plan): BusinessLevel => ({ id: plan.id, name: plan.label, perSeatUsd: plan.priceUsd, perSeatCredits: plan.includedCredits })));
-/** The least a seat costs a month: the heading's "from". */
-export const BUSINESS_FROM_USD: number = Math.min(...levels.map((plan) => plan.priceUsd));
+export const INDIVIDUAL_CARDS: readonly IndividualCard[] = Object.freeze(individualCards(DEFAULT_PLANS));
+export const BUSINESS_LEVELS: readonly BusinessLevel[] = Object.freeze(businessLevels(DEFAULT_PLANS));
+export const BUSINESS_FROM_USD: number = businessFrom(DEFAULT_PLANS);
 export { BUSINESS, ENTERPRISE };
 
 /** A business level at a number of seats: what it comes to a month, and the credits pooled across the seats. */

@@ -119,6 +119,11 @@ export const YEARLY_SHOWN = false;
 export const CHOSEN_PLAN_IDS: readonly PlanId[] = PLAN_IDS.filter((id) => id !== "invite");
 export const DEFAULT_CHOSEN_PLAN: PlanId = DEFAULT_PLANS.find((p) => p.offered)!.id;
 
+/** A plan carried in an address or a sign-up (a choice, nothing more): any chosen plan id, else the first offered one. */
+export const chosenPlanFrom = (v: unknown): PlanId => ((CHOSEN_PLAN_IDS as readonly string[]).includes(String(v)) ? (String(v) as PlanId) : DEFAULT_CHOSEN_PLAN);
+/** A cadence carried the same way: "annual" only while yearly is shown (YEARLY_SHOWN), else monthly, so no annual figure appears. */
+export const cadenceFrom = (v: unknown): "monthly" | "annual" => (YEARLY_SHOWN && v === "annual" ? "annual" : "monthly");
+
 export const isPlanId = (v: unknown): v is PlanId => (PLAN_IDS as readonly string[]).includes(String(v));
 
 /** A stored plan id, or null for a workspace on no plan at all. */
