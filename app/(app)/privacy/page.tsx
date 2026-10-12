@@ -65,8 +65,7 @@ export default function PrivacyPage() {
           Published project bibles and shared workspace assets are visible to
           your team. A board is private to its maker until they share it with the
           team; a shared board is listed for its workspace&rsquo;s members and
-          opens view-only for all but its maker; Atomik memory and identities
-          stay with their person. Access
+          opens view-only for all but its maker. Access
           also depends on role: members render, pick and approve; admins run the
           team and the ledger; the owner alone deletes the workspace or exports
           it. The platform&rsquo;s desk sees each workspace&rsquo;s spend,

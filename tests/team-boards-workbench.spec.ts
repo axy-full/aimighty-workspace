@@ -64,14 +64,17 @@ test("a board is private until its author shares it: unlisted and unreadable to 
   expect(none.team).toEqual([]);
   expect((await (await teammate.get(`/api/workbench/projects?id=${a.draftId}`, { headers: teammateHeaders })).json() as Team).project ?? null).toBeNull();
   expect((await teammate.get(`/api/workbench/projects?id=${a.draftId}&owner=${a.userId}`, { headers: teammateHeaders })).status()).toBe(404);
-  /* A teammate cannot share someone else's board, and the author's board is still private after the try. */
+  /* A teammate cannot share someone else's board: for a private one it is an id they have no board for (404, naming no one), and the board is still private after the try. */
   const refused = await share(teammate, teammateHeaders, a.draftId, true);
-  expect(refused.status()).toBe(403);
+  expect(refused.status()).toBe(404);
+  expect(await refused.text()).not.toContain("Board Owner");
   expect((await teammate.get(`/api/workbench/projects?id=${a.draftId}&owner=${a.userId}`, { headers: teammateHeaders })).status()).toBe(404);
   /* The author shares: it is listed for the teammate, with its maker. */
   const on = await share(a.api, a.headers, a.draftId, true);
   expect(on.ok(), await on.text()).toBe(true);
   expect(await on.json()).toMatchObject({ ok: true, shared: true });
+  /* Once shared, a teammate can see it, so their try to change its sharing is the view-only refusal. */
+  expect((await share(teammate, teammateHeaders, a.draftId, false)).status()).toBe(403);
   expect((await share(teammate, teammateHeaders, mine.id, true)).ok()).toBe(true);
   const body = await (await teammate.get("/api/workbench/projects?team=1", { headers: teammateHeaders })).json() as Team;
   const owners = body.team!.find((b) => b.id === a.draftId)!;
@@ -149,6 +152,29 @@ test("a save of a teammate's board is refused, and the maker's board is exactly 
   /* And the teammate has no copy of it. */
   const theirs = await (await teammate.get("/api/workbench/projects", { headers: teammateHeaders })).json() as Team;
   expect(theirs.projects!.some((p) => p.id === a.draftId)).toBe(false);
+});
+
+test("a teammate's save or action naming a PRIVATE board answers as an unknown id would, and names no one", async () => {
+  /* A's private board: never shared. */
+  const priv = { ...newProject(`Private only ${a.mark}`) };
+  expect((await a.api.put("/api/workbench/projects", { headers: a.headers, data: { project: priv, revision: 0 } })).ok()).toBe(true);
+  const unknown = "project-nobody-has-this";
+  /* An action on it, and the same action on an id nobody has: the same answer, naming no maker. */
+  for (const action of ["map-shot", "publish"]) {
+    const forPrivate = await teammate.post("/api/workbench/projects", { headers: teammateHeaders, data: { action, projectId: priv.id, nodeId: "n", expectedBibleVersion: 0 } });
+    const forUnknown = await teammate.post("/api/workbench/projects", { headers: teammateHeaders, data: { action, projectId: unknown, nodeId: "n", expectedBibleVersion: 0 } });
+    expect(forPrivate.status(), action).toBe(forUnknown.status());
+    expect(forPrivate.status(), action).toBe(404);
+    expect(await forPrivate.text(), action).toBe(await forUnknown.text());
+  }
+  /* A save naming it is not refused as "view-only" and says nothing of its maker (it is the teammate's own new draft, as for any id). */
+  const put = await teammate.put("/api/workbench/projects", { headers: teammateHeaders, data: { project: { ...newProject("Mine"), id: priv.id }, revision: 0 } });
+  expect(put.status()).not.toBe(403);
+  expect(leaks(await put.text(), [...a.secrets, "Board Owner", "view_only"])).toEqual([]);
+  /* The maker's board is exactly as it was, still private. */
+  const own = await (await a.api.get(`/api/workbench/projects?id=${priv.id}`, { headers: a.headers })).json() as { project: { name: string; teamShared?: boolean } };
+  expect(own.project.name).toBe(priv.name);
+  expect(own.project.teamShared).toBeUndefined();
 });
 
 test("the workspace's takes and files were already its members', and stay so: a teammate reads them, an outsider does not", async () => {

@@ -11,6 +11,8 @@ import { menuFor } from "@/lib/v12/menus";
 import { ContextMenu, useToast, type MenuItem } from "../ui";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { SHARE_TEAM } from "@/lib/workbench/view-only";
+import { isSampleDraftId } from "@/lib/demo/sample";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { copyBoardLink, menuItems, useMenuAt } from "../menus/menu-items";
 import { FitText } from "./FitText";
 
@@ -83,6 +85,8 @@ export function YourBoards({ scope, projects, status, error, onRetry, now, appro
   const boardMenu = useMenuAt<string>();
   /* Share with team: the author's own boards only; saved at once, with Undo. What was just flipped shows before the list is read again. */
   const fetcher = useScopedFetch(scope);
+  /* A sample board, or any board of the sample workspace, is nobody's to share (the ⋯ menu leaves the item out the same way). */
+  const spendOff = useSampleWorkspace();
   const [flipped, setFlipped] = useState<ReadonlyMap<string, boolean>>(new Map());
   const isShared = (id: string) => flipped.get(id) ?? mineShared.has(id);
   const setShared = async (id: string, to: boolean): Promise<boolean> => {
@@ -140,7 +144,7 @@ export function YourBoards({ scope, projects, status, error, onRetry, now, appro
         <ContextMenu at={boardMenu.menu.at} onClose={boardMenu.close} label={menuCard.name} width={200} testId="v12-board-menu"
           items={[
             ...menuItems(menuFor("board", new Set(disabled ? ["copy-link"] : ["open", "copy-link"])), (id) => { if (id === "open") onOpen(menuCard.id); else copyBoardLink(menuCard.id, toast); }),
-            ...(disabled ? [] : [{ separator: true, id: "share-sep" } as MenuItem, { id: "share-team", label: isShared(menuCard.id) ? SHARE_TEAM.stop : SHARE_TEAM.share, tip: SHARE_TEAM.tip, testId: "v12-menu-share-team", onSelect: () => void toggleShare(menuCard.id) } as MenuItem]),
+            ...(disabled || spendOff || isSampleDraftId(menuCard.id) ? [] : [{ separator: true, id: "share-sep" } as MenuItem, { id: "share-team", label: isShared(menuCard.id) ? SHARE_TEAM.stop : SHARE_TEAM.share, tip: SHARE_TEAM.tip, testId: "v12-menu-share-team", onSelect: () => void toggleShare(menuCard.id) } as MenuItem]),
           ]} />
       ) : null}
     </section>

@@ -113,6 +113,8 @@ test("a board is read only through its real maker, and only when that maker is a
   /* A save of a teammate's board is a view-only refusal naming its maker; one's own, or a new id, is not. */
   expect((await runInTenant(ws, () => otherOwnersBoard(ws, member.id, "b-client")))?.name).toBe(CLIENT.name);
   expect(await runInTenant(ws, () => otherOwnersBoard(ws, member.id, "b-member"))).toBeNull();
+  /* A private draft of someone else's is no one's to know of: it answers as an unknown id does, and names no one. A shared board of someone who is not a member here too. */
+  for (const id of ["b-client-private", "b-client-off", "b-client-bad", "b-elsewhere"]) expect(await runInTenant(ws, () => otherOwnersBoard(ws, member.id, id)), id).toBeNull();
   expect(await runInTenant(ws, () => otherOwnersBoard(ws, member.id, "brand-new"))).toBeNull();
 });
 

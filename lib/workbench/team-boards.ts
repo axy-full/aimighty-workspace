@@ -74,16 +74,19 @@ export async function readTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string,
   return draft && draft.project.teamShared === true ? { ...draft, owner } : null;
 }
 
-/** The maker of a board that is not the caller's, when the caller has no such board themselves: a save of it must not become a second copy. */
+/**
+ * The maker of a SHARED board that is not the caller's, when the caller has no such board themselves: a save of it must not become a second copy.
+ * A private draft is no one's to know of: it answers null, exactly as an id nobody has would, and names no one.
+ */
 export async function otherOwnersBoard(ws: Pick<TenantWorkspace, "id">, me: string, id: string): Promise<BoardOwner | null> {
   await workbenchReady();
   /* The caller's own board (the common save) is one primary-key read; only a new id looks further. */
   if ((await db().execute({ sql: "SELECT 1 FROM workbench_projects WHERE key=?", args: [`${me}:${id}`] })).rows.length) return null;
-  const rows = (await db().execute({ sql: "SELECT owner FROM workbench_projects WHERE project_id=?", args: [id] })).rows;
+  const rows = (await db().execute({ sql: `SELECT owner FROM workbench_projects WHERE project_id=? AND ${SHARED}`, args: [id] })).rows;
   if (!rows.length) return null;
   const people = await activeMembers(ws);
   for (const row of rows) { const owner = await ownerOf(ws, people, String(row.owner)); if (owner) return owner; }
-  return { id: "", name: "a teammate" };
+  return null;
 }
 
 /**
@@ -98,7 +101,7 @@ export async function findTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string,
     const owner = await ownerOf(ws, people, String(row.owner));
     if (!owner) continue;
     const draft = await readDraft(String(row.owner), id);
-    if (draft) return { ...draft, owner };
+    if (draft && draft.project.teamShared === true) return { ...draft, owner };
   }
   return null;
 }

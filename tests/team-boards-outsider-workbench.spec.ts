@@ -58,13 +58,23 @@ test("an outsider reads neither the shared board nor the private one: by id, by 
   }
 });
 
-test("an outsider cannot share, unshare, save or open A's boards either", async () => {
+test("an outsider cannot share, unshare or save A's boards either, and A's boards stay as they were", async () => {
   for (const id of [sharedId, a.draftId]) {
     for (const headers of [outsider.headers, { ...outsider.headers, "X-Workbench-Scope": a.scope }]) {
       const r = await outsider.api.post("/api/workbench/projects", { headers: { ...headers, "Content-Type": "application/json" }, data: { action: "team-share", projectId: id, shared: id === sharedId ? false : true } });
       expect(r.status(), `team-share ${id}`).toBeGreaterThanOrEqual(400);
     }
   }
+  /* A save naming either board changes nothing of A's and says nothing of A (it is the outsider's own draft, if anything). */
+  const revisions = async () => Promise.all([sharedId, a.draftId].map(async (id) => ((await (await a.api.get(`/api/workbench/projects?id=${id}`, { headers: a.headers })).json()) as { revision: number }).revision));
+  const before = await revisions();
+  for (const id of [sharedId, a.draftId]) {
+    for (const headers of [outsider.headers, { ...outsider.headers, "X-Workbench-Scope": a.scope }]) {
+      const put = await outsider.api.put("/api/workbench/projects", { headers: { ...headers, "Content-Type": "application/json" }, data: { project: { ...newProject("Intruder"), id }, revision: 0 } });
+      expect(leaks(await put.text(), [...a.secrets, shared.name, "Board Owner", "view_only"]), `put ${id}`).toEqual([]);
+    }
+  }
+  expect(await revisions()).toEqual(before);
   /* A's boards are exactly as they were: the shared one still shared, the private one still private, to a member of A. */
   const own = await (await a.api.get(`/api/workbench/projects?id=${sharedId}`, { headers: a.headers })).json() as { project: { teamShared?: boolean } };
   expect(own.project.teamShared).toBe(true);
