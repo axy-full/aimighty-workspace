@@ -234,6 +234,14 @@ test("refusals count against the source as wrong passwords do, and a locked sour
   expect(await refusal((await attempt({ claims: { email: "nobody-else@example.test" }, source: "a-quiet-source" })).run())).toBe("no_account");
 });
 
+test("an invite and the policy ride along only from Particl's own pages; a link from another site is a plain sign-in", async () => {
+  const g = await import("../../lib/googleSignIn");
+  const query = new URLSearchParams({ invite: "good-invite-code-1", accept: "1", next: "/x" });
+  expect(g.startIntent(query, "same-origin")).toEqual({ invite: "good-invite-code-1", accept: true });
+  for (const site of ["cross-site", "same-site", "none", null]) expect(g.startIntent(query, site)).toEqual({ invite: "", accept: false });
+  expect(g.startIntent(new URLSearchParams({ invite: "<bad>", accept: "yes" }), "same-origin")).toEqual({ invite: "", accept: false });
+});
+
 test("Google is told nothing the person did not choose, and the callback reads no token but the ID token", async () => {
   const text = await import("../../lib/googleSignInText");
   expect(text.googleStartPath({ invite: "abc12345", accept: true, next: "/x" })).toBe("/api/auth/google/start?invite=abc12345&accept=1&next=%2Fx");

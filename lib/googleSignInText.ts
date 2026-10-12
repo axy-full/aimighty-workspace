@@ -11,6 +11,7 @@ export const GOOGLE_REFUSALS = {
   use_email: "Use Continue with email for this address: Google only vouches for Gmail addresses and verified Google Workspace domains.",
   no_account: "This Google account isn’t on Particl. Particl is invite-only: use the invite you were sent.",
   invite_invalid: "That invite isn’t valid, or it was already used or has expired.",
+  full: "That workspace has no free seats. Ask its admin.",
   invite_mismatch: "That invite was sent to a different email address than this Google account.",
   signup_invite: "That invite sets up a new workspace. Use Continue with email for it.",
   policy: "Read the content policy and terms to join, then try again.",

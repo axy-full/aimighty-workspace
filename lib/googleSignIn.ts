@@ -133,8 +133,14 @@ export async function exchangeCode(config: GoogleConfig, code: string, verifier:
     }));
   } catch { throw new GoogleRefused("unavailable"); }
   if (response.status >= 500) throw new GoogleRefused("unavailable");
-  const body = await response.json().catch(() => null) as { id_token?: unknown } | null;
-  if (!response.ok || typeof body?.id_token !== "string" || !body.id_token) throw new GoogleRefused("expired");
+  const body = await response.json().catch(() => null) as { id_token?: unknown; error?: unknown } | null;
+  if (!response.ok || typeof body?.id_token !== "string" || !body.id_token) {
+    /* Google's own error code only (redirect_uri_mismatch, invalid_client, invalid_grant): a wrong APP_ORIGIN or secret shows in the log,
+     * never the code, the secret or the body. */
+    const reason = typeof body?.error === "string" && /^[a-z_]{1,40}$/.test(body.error) ? body.error : "-";
+    console.warn(`[google] token exchange refused: ${response.status} ${reason}`);
+    throw new GoogleRefused("expired");
+  }
   return body.id_token;
 }
 
@@ -213,6 +219,17 @@ const INVITE_CODE = /^[A-Za-z0-9_-]{8,128}$/;
 export const cleanInviteCode = (raw: unknown): string => (typeof raw === "string" && INVITE_CODE.test(raw.trim()) ? raw.trim() : "");
 
 /**
+ * What the start keeps from its query (app/api/auth/google/start). An invite and the policy accepted ride along only when the browser
+ * says the navigation came from Particl's own pages (`Sec-Fetch-Site: same-origin`, which a page cannot set). A link on another site, or
+ * a browser that does not say, gets a plain sign-in: otherwise `?invite=…&accept=1` sent by a workspace's admin would join the person to
+ * that workspace from Google's chooser alone, without the Join screen and without them reading the policy.
+ */
+export function startIntent(query: URLSearchParams, fetchSite: string | null): { invite: string; accept: boolean } {
+  if (fetchSite !== "same-origin") return { invite: "", accept: false };
+  return { invite: cleanInviteCode(query.get("invite")), accept: query.get("accept") === "1" };
+}
+
+/**
  * What a verified Google email is allowed to do (the owner's rules above). Pure of Google: the email is already proven.
  *  - an existing, live account whose email it is signs in, and with an invite for that same address also joins that one workspace;
  *  - a new person needs an open team invitation naming this address, and joins that workspace only (the account's password is a random
@@ -273,6 +290,7 @@ export async function signInWithVerifiedEmail(input: { email: string; name: stri
     if (error instanceof AccountError && error.status === 403 && /two-step/i.test(error.message)) throw new GoogleRefused("two_step");
     if (error instanceof AccountError && error.status === 403) throw new GoogleRefused("no_account");
     if (error instanceof AccountError && (error.status === 404 || error.status === 409 || error.status === 410)) throw new GoogleRefused("invite_invalid");
+    if (error instanceof AccountError && error.status === 402) throw new GoogleRefused("full");
     throw error;
   }
   if (workspaceId) await switchSessionWorkspace(session, workspaceId);
