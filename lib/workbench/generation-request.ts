@@ -37,13 +37,19 @@ export type GenerationBodyInput = {
   /** The shot setup picked from the camera bank (Gen's film vocabulary), kept on the take so Recreate brings it back. */
   shotSpec?: Record<string, string> | null;
   /** One take of a batch (Gen's takes 2–4): admission stores both, and Takes shows the siblings as one strip. */
-  batch?: { id: string; variation: number };
+  batch?: { id: string; variation: number; size?: number };
   /** Seedance 2.5 draft mode (lib/draftFinal.ts): a 480p watermarked draft whose 1080p final is made after. */
   draft?: boolean;
   /** Cinema Studio 4.0's creative controls (lib/cinemaStudioTypes.ts): only picked ones; none is every control on Auto. */
   cinema?: Record<string, string> | null;
   /** Cinema Studio 4.0's Sound switch: sent only when it is on. Absent, admission keeps the take silent. */
   generateAudio?: boolean;
+  /**
+   * Whether the words were run through Enhance first (Make's Enhance toggle): `{ from }` carries the words as the person typed them
+   * (the take is then labelled Enhanced, and "See original" shows them), `false` says they went as written (Raw). Absent: the screen
+   * has no toggle. A label only: it changes no price and no fingerprint.
+   */
+  enhanced?: false | { from: string };
   /** A seed to repeat (Make's "Reuse seed"): a clip's only, sent when set. Admission records it; Seedance passes it to the engine. */
   seed?: number | null;
   /**
@@ -77,11 +83,12 @@ export function generationRequestBody(input: GenerationBodyInput): Record<string
     ...(input.kind === "video" ? { firstFrameAssetId: input.firstFrameAssetId ?? "" } : {}),
     ...(model.soulIdentity && input.soul ? input.soul : {}),
     ...(input.shotSpec && Object.keys(input.shotSpec).length ? { shotSpec: input.shotSpec } : {}),
-    ...(input.batch ? { batchId: input.batch.id, variation: input.batch.variation } : {}),
+    ...(input.batch ? { batchId: input.batch.id, variation: input.batch.variation, ...(input.batch.size && input.batch.size > 1 ? { batchSize: input.batch.size } : {}) } : {}),
     ...(input.draft && input.kind === "video" ? { draft: true } : {}),
     ...(input.cinema && Object.keys(input.cinema).length ? { cinema: input.cinema } : {}),
     ...(input.generateAudio === true && input.kind === "video" ? { generateAudio: true } : {}),
     ...(typeof input.seed === "number" && Number.isFinite(input.seed) && input.kind === "video" ? { seed: input.seed } : {}),
+    ...(input.enhanced === false ? { enhanced: false } : input.enhanced ? { enhanced: { from: input.enhanced.from } } : {}),
   };
 }
 

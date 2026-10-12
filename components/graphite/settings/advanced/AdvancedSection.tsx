@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { MODELS, displayModelName, isOffered } from "@/lib/models";
 import { DEFAULT_ENHANCER, ENHANCER_LABEL, ENHANCER_NOTE, ENHANCER_PROVIDERS, isEnhancerProvider, type EnhancerProvider } from "@/lib/shell/enhancer";
-import { EDIT_FORMAT_OPTIONS } from "@/lib/settingValues";
+import { EDIT_FORMAT_OPTIONS, ENHANCE_DEFAULT_OPTIONS } from "@/lib/settingValues";
 import { requestAccountRefresh } from "@/lib/workspace/data";
 import { useSession } from "@/lib/session";
 import { useShell } from "@/lib/shell/state";
@@ -101,6 +101,15 @@ function Models({ open }: { open: SettingsFold | null }) {
           {ENHANCER_PROVIDERS.map((p) => (
             <button key={p} type="button" role="radio" aria-checked={enhancer === p} className="gs-btn" disabled={!admin || busy || !settings.data}
               onClick={() => { if (p !== enhancer) void save({ promptEnhancer: p }, { promptEnhancer: enhancer }, `Prompt enhancer: ${ENHANCER_LABEL[p]}.`); }} data-testid={`settings-enhancer-${p}`}>{ENHANCER_LABEL[p]}</button>
+          ))}
+        </span>
+      </Row>
+      <Row name="Enhance in Make" line="Where Make starts the Enhance switch for people here. Anyone's own choice overrides it." testId="settings-enhance-default">
+        <span className="gs-choice" role="radiogroup" aria-label="Enhance in Make">
+          {ENHANCE_DEFAULT_OPTIONS.map(([id, text]) => (
+            <button key={id} type="button" role="radio" aria-checked={(value("enhanceDefault") || "on") === id} className="gs-btn" disabled={!admin || busy || !settings.data}
+              onClick={() => { const current = value("enhanceDefault") || "on"; if (id !== current) void save({ enhanceDefault: id }, { enhanceDefault: current }, `Enhance in Make starts ${text}.`); }}
+              data-testid={`settings-enhance-default-${id}`}>{text}</button>
           ))}
         </span>
       </Row>

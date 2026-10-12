@@ -310,7 +310,8 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
   }, [openProjectId, requestScope]);
   /* One way to open, start and explore a project, whichever surface asks: the switcher, a stage's first-run card, the Studio home. */
   /* Choosing a project leaves a link that has not opened yet: that project, not the link's, is what opens. */
-  const pickProject = (id: string) => { if (linkControl.link) linkControl.dismiss(); try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); };
+  /* A teammate's board (not in this person's own list) opens view-only and is not remembered as where they left off. */
+  const pickProject = (id: string) => { if (linkControl.link) linkControl.dismiss(); if (data.projects.some((p) => p.id === id)) try { localStorage.setItem(scope, id); } catch { /* the URL still carries it */ } selectProject(id); };
   const createProject = async (name: string) => {
     const created = newProject(name.slice(0, PROJECT_NAME_MAX));
     const response = await fetch("/api/workbench/projects", { method: "PUT", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify({ project: created, revision: 0 }) }).catch(() => null);

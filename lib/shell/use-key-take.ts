@@ -45,6 +45,17 @@ export type KeyRun =
 export const KEY_ESTIMATE_LIFETIME_MS = 5 * 60_000;
 const NO_ESTIMATE = "The estimate could not be read. Nothing was sent.";
 
+/** What a cancel's answer says (POST /api/generations/:id/cancel): sent, done, or too late: each in its own words, none of them a claim about billing. */
+export function cancelWords(status: string | undefined): string {
+  switch (status) {
+    case "requested": return "Cancel requested. The take says what the provider did once it answers.";
+    case "cancelled": return "Cancelled. The take says what it cost.";
+    case "succeeded": return "It had already finished, so it could not be cancelled.";
+    case "failed": return "It had already stopped. The take says what it cost.";
+    default: return "It had already started, so it could not be cancelled.";
+  }
+}
+
 /**
  * A settled take's words, the Takes page's own (lib/workspace/takes.ts): what happened, what the provider did with
  * the charge and the next step when that is on record (lib/errors.ts failureLine), else just that it failed and why.
@@ -136,7 +147,7 @@ export function useKeyTake(scope: string, projectId: string | null, slot: string
     setNote(null);
     try {
       const result = await studioRequest<{ status?: string }>(`/api/generations/${encodeURIComponent(jobId)}/cancel`, { method: "POST", headers: { "X-Workbench-Scope": scope } });
-      setNote(result.status === "requested" ? "Cancel requested. The take says what the provider did once it answers." : "It had already started, so it could not be cancelled.");
+      setNote(cancelWords(result.status));
     } catch (error) {
       setNote(error instanceof Error ? neutralCopy(error.message, "The cancel could not be confirmed. Try again.") : "The cancel could not be confirmed. Try again.");
     } finally {

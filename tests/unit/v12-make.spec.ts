@@ -177,12 +177,15 @@ test.describe("Make's prices in the workspace's unit", () => {
     const credits = { dollars: false, creditUsd: 0.1 };
     const dollars = { dollars: true, creditUsd: 0.1 };
     expect(makeQuote({ kind: "exact", credits: 8 }, credits)).toEqual({ state: "ready", price: { unit: "cr", value: { kind: "exact", credits: 8 } } });
-    expect(makeQuote({ kind: "exact", credits: 8 }, dollars)).toMatchObject({ state: "ready", price: { unit: "usd", upTo: false } });
-    expect((makeQuote({ kind: "exact", credits: 8 }, dollars) as { price: { usd: number } }).price.usd).toBeCloseTo(0.8, 6);
-    expect(makeQuote({ kind: "up-to", credits: 43 }, dollars)).toMatchObject({ price: { unit: "usd", upTo: true } });
+    /* The house is shown the engine's own dollars (sent to it beside the credits), never the customer price turned into dollars. */
+    expect(makeQuote({ kind: "exact", credits: 8 }, dollars, 0.52)).toEqual({ state: "ready", price: { unit: "usd", usd: 0.52, upTo: false } });
+    expect(makeQuote({ kind: "up-to", credits: 43 }, dollars, 2.87)).toMatchObject({ price: { unit: "usd", usd: 2.87, upTo: true } });
+    expect(makeQuote({ kind: "exact", credits: 8 }, dollars).state).toBe("error");
+    expect(makeQuote({ kind: "up-to", credits: 43 }, dollars).state).toBe("error");
     expect(makeQuote({ kind: "free" }, dollars)).toEqual({ state: "ready", price: { unit: "cr", value: { kind: "free" } } });
     /* No figure, or no credit price to turn it into dollars: never a number. */
     expect(makeQuote(null, credits).state).toBe("error");
     expect(makeQuote({ kind: "exact", credits: 8 }, { dollars: true, creditUsd: null }).state).toBe("error");
+    expect(makeQuote({ kind: "exact", credits: 8 }, credits, 0.52)).toEqual({ state: "ready", price: { unit: "cr", value: { kind: "exact", credits: 8 } } });
   });
 });
