@@ -36,27 +36,27 @@ type Exec = { execute(statement: InStatement): Promise<ResultSet> };
 export type Viewer = { id: string; role?: string };
 
 /** A draft's own production project (lib/workbench/records.ts › linkProduction): one person's, so nothing in it is shared. */
-const SHARED_PROJECT = `(project_id IS NULL OR project_id NOT LIKE 'prj\\_wb\\_%' ESCAPE '\\')`;
-
+const SHARED = (column: string) => `(${column} IS NULL OR ${column} NOT LIKE 'prj\\_wb\\_%' ESCAPE '\\')`;
+/** Every `where` below is written against the source table's alias `t`. */
 type Source =
   | { table: string; direct: string; where?: string }
   | { table: string; json: string; where?: string; photos?: true };
-/** In the order they are asked: the cheapest and smallest first. */
+/** In the order they are asked: the cheapest and smallest first. Nothing in a draft's own production project (`prj_wb_…`) grants, in any source. */
 const SOURCES: readonly Source[] = [
-  { table: "project_library_uploads", direct: "upload_id", where: SHARED_PROJECT },
-  { table: "cast_members", direct: "upload_id", where: SHARED_PROJECT },
-  { table: "attribute_versions", direct: "upload_id" },
+  { table: "project_library_uploads", direct: "upload_id", where: SHARED("t.project_id") },
+  { table: "cast_members", direct: "upload_id", where: SHARED("t.project_id") },
+  { table: "attribute_versions", direct: "upload_id", where: `EXISTS(SELECT 1 FROM elements e WHERE e.id=t.element_id AND ${SHARED("e.project_id")})` },
   { table: "messages", direct: "upload_id" },
-  { table: "identities", direct: "cover_upload_id", where: SHARED_PROJECT },
+  { table: "identities", direct: "cover_upload_id", where: SHARED("t.project_id") },
   { table: "shot_presets", direct: "cover_upload_id" },
-  { table: "identities", json: "photos", photos: true, where: SHARED_PROJECT },
+  { table: "identities", json: "photos", photos: true, where: SHARED("t.project_id") },
   { table: "shot_presets", json: "refs" },
-  { table: "soul_identities", json: "references_json" },
-  { table: "workbench_team_canvas", json: "body" },
-  { table: "boards", json: "nodes", where: SHARED_PROJECT },
+  { table: "soul_identities", json: "references_json", where: SHARED("t.production_project_id") },
+  { table: "workbench_team_canvas", json: "body", where: SHARED("t.production_id") },
+  { table: "boards", json: "nodes", where: SHARED("t.project_id") },
   { table: "workbench_bibles", json: "body" },
-  { table: "shots", json: "setup", where: SHARED_PROJECT },
-  { table: "generations", json: "params", where: `deleted=0 AND ${SHARED_PROJECT}` },
+  { table: "shots", json: "setup", where: SHARED("t.project_id") },
+  { table: "generations", json: "params", where: `t.deleted=0 AND ${SHARED("t.project_id")}` },
 ];
 
 const missingTable = (error: unknown) => /no such table|no such column/i.test(String((error as Error)?.message));
@@ -69,46 +69,45 @@ const uploadsIn = (text: unknown, photos?: boolean): Set<string> => {
 
 /** Whether shared work uses upload `id` (one id: used by a single open). */
 async function usedBySharedWork(ex: Exec, id: string): Promise<boolean> {
-  for (const source of SOURCES) {
-    try {
-      if ("direct" in source) {
-        if ((await ex.execute({ sql: `SELECT 1 FROM ${source.table} WHERE ${source.direct}=?${source.where ? ` AND ${source.where}` : ""} LIMIT 1`, args: [id] })).rows.length) return true;
-      } else {
-        const rows = (await ex.execute({ sql: `SELECT ${source.json} AS v FROM ${source.table} WHERE instr(${source.json},?)>0${source.where ? ` AND ${source.where}` : ""} LIMIT 25`, args: [id] })).rows;
-        if (rows.some((row) => uploadsIn(row.v, source.photos).has(id))) return true;
-      }
-    } catch (error) {
-      if (!missingTable(error)) throw error;
-    }
-  }
-  return false;
+  return (await sharedAmong(ex, [id])).has(id);
 }
 
-/** The ids among `ids` that shared work uses: one pass per source for the whole set (a list, or a save that attaches several). */
+/** Past this many ids a body is read with one json_tree pass (a hash lookup per value) instead of a substring test per id. */
+const FEW = 6;
+
+/** The ids among `ids` that shared work uses: one pass per source for the whole set (a list, or a save that adds several). */
 async function sharedAmong(ex: Exec, ids: readonly string[]): Promise<Set<string>> {
   const used = new Set<string>();
   for (let start = 0; start < ids.length; start += 200) {
     const batch = ids.slice(start, start + 200);
-    const marks = batch.map(() => "?").join(",");
     for (const source of SOURCES) {
       const open = batch.filter((id) => !used.has(id));
       if (!open.length) break;
+      const filter = source.where ? ` AND ${source.where}` : "";
       try {
         if ("direct" in source) {
-          const rows = (await ex.execute({ sql: `SELECT DISTINCT ${source.direct} AS a FROM ${source.table} WHERE ${source.direct} IN (${marks})${source.where ? ` AND ${source.where}` : ""}`, args: batch })).rows;
+          const rows = (await ex.execute({ sql: `SELECT DISTINCT t.${source.direct} AS a FROM ${source.table} t WHERE t.${source.direct} IN (${open.map(() => "?").join(",")})${filter}`, args: open })).rows;
           for (const row of rows) used.add(String(row.a));
+        } else if (open.length <= FEW) {
+          /* A few ids: a plain substring test per id picks the candidate rows; only those are parsed and read exactly. */
+          const rows = (await ex.execute({
+            sql: `SELECT t.${source.json} AS v FROM ${source.table} t WHERE (${open.map(() => `instr(t.${source.json},?)>0`).join(" OR ")})${filter} LIMIT 200`,
+            args: open,
+          })).rows;
+          for (const row of rows) for (const id of uploadsIn(row.v, source.photos)) if (open.includes(id)) used.add(id);
         } else {
-          /* The ids a body names under the keys the app writes, and every /api/uploads/ value (read exactly below). */
+          /* Many ids: the values a body holds under the keys the app writes (or as an /api/uploads/<id> value), matched to exactly the ids asked. */
+          const urls = open.map((id) => `/api/uploads/${id}`);
+          const keyed = "photos" in source ? "1" : "j.key IN ('uploadId','sourceUploadId','coverUploadId')";
           const rows = (await ex.execute({
             sql: `SELECT DISTINCT j.atom AS a FROM ${source.table} t, json_tree(t.${source.json}) j
-                  WHERE json_valid(t.${source.json})${source.where ? ` AND ${source.where.replace(/\bproject_id\b/g, "t.project_id").replace(/\bdeleted\b/g, "t.deleted")}` : ""}
-                    AND j.type='text' AND ((j.atom IN (${marks}) AND ${"photos" in source ? "1" : "j.key IN ('uploadId','sourceUploadId','coverUploadId')"}) OR j.atom LIKE '/api/uploads/%')`,
-            args: batch,
+                  WHERE json_valid(t.${source.json})${filter} AND j.type='text'
+                    AND ((j.atom IN (${open.map(() => "?").join(",")}) AND ${keyed}) OR j.atom IN (${urls.map(() => "?").join(",")}))`,
+            args: [...open, ...urls],
           })).rows;
           for (const row of rows) {
             const atom = String(row.a);
-            if (atom.startsWith("/")) for (const found of uploadsIn(JSON.stringify(atom)).values()) used.add(found);
-            else used.add(atom);
+            used.add(atom.startsWith("/api/uploads/") ? atom.slice("/api/uploads/".length) : atom);
           }
         }
       } catch (error) {
@@ -143,7 +142,13 @@ export async function openableAmong(ids: readonly string[], viewer: Viewer, ex: 
       else rest.push(id);
     }
   }
-  if (rest.length) for (const id of await sharedAmong(ex, rest)) ok.add(id);
+  if (rest.length) {
+    for (const id of await sharedAmong(ex, rest)) {
+      ok.add(id);
+      if (yes.size >= MAX_YES) yes.clear();
+      yes.set(`${workspace}:${id}`, Date.now() + YES_MS);
+    }
+  }
   return ok;
 }
 

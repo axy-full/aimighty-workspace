@@ -242,7 +242,8 @@ async function verifiedPhotos(
   });
   const ok = new Set(rs.rows.map((r: any) => r.id as string));
   /* The person naming the photos must be able to open each (lib/uploadAccess.ts). */
-  await assertUploadsOpenable(tx, ok);
+  try { await assertUploadsOpenable(tx, ok); }
+  catch { throw new MediaSourceError("A referenced upload is no longer available as an image. Remove or replace it before saving."); }
   if (wanted.some((x) => !ok.has(x)))
     throw new MediaSourceError(
       "A referenced upload is no longer available as an image. Remove or replace it before saving.",

@@ -63,7 +63,7 @@ export async function listLibraryUploads(params: URLSearchParams, project?: { pr
   const accepted: Row[] = [];
   let more = false;
   let scannedLast: Row | undefined;
-  for (let round = 0; round < 8; round++) {
+  for (let round = 0; round < 3; round++) {
     const rows = await page(cursor);
     more = rows.length > limit;
     const scanned = rows.slice(0, limit);

@@ -3,10 +3,14 @@ import { db, ready } from "./db";
 import { MediaSourceError, referencedMedia } from "./mediaBindings";
 import { assertUploadsOpenable } from "./uploadAccess";
 
+/** What the record this write replaces already holds (read inside the same transaction), so only what the write adds is asked. */
+export type PriorOf = (tx: Transaction) => Promise<unknown>;
+
 /** Validate and attach in the same write transaction used by guarded deletion. */
 export async function validateMediaSources(
   tx: Transaction,
   value: unknown,
+  priorOf?: PriorOf,
 ): Promise<void> {
   const refs = referencedMedia(value);
   for (const [table, ids] of [
@@ -27,8 +31,12 @@ export async function validateMediaSources(
         );
     }
   }
-  /* The writer must be able to open every upload it attaches (lib/uploadAccess.ts): attaching someone's private upload to shared work is not a way to open it. */
-  await assertUploadsOpenable(tx, refs.uploads);
+  /* The writer must be able to open every upload it ADDS (lib/uploadAccess.ts): attaching someone's private upload to shared work is not a way to open it.
+     What the record already holds is not asked again, so saving never fails over what is already there and costs nothing under the write lock. */
+  if (refs.uploads.size) {
+    const held = priorOf ? referencedMedia(await priorOf(tx)).uploads : new Set<string>();
+    await assertUploadsOpenable(tx, [...refs.uploads].filter((id) => !held.has(id)));
+  }
 }
 
 /** Database work only: callbacks must use tx, never db(), storage or a provider. */
@@ -52,9 +60,10 @@ export async function mediaMutation<T>(
 export async function withMediaSources<T>(
   value: unknown,
   write: (tx: Transaction) => Promise<T>,
+  priorOf?: PriorOf,
 ): Promise<T> {
   return mediaMutation(async (tx) => {
-    await validateMediaSources(tx, value);
+    await validateMediaSources(tx, value, priorOf);
     return write(tx);
   });
 }

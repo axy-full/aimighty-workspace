@@ -71,7 +71,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
       await tx.execute({ sql: `UPDATE bindings SET project_id=? WHERE shot_id=?`, args: [moveTo, shotId] });
     }
     await tx.execute({ sql: `UPDATE shots SET ${sets.join(", ")} WHERE id = ?`, args });
-  });
+  }, async (tx) => { try { return JSON.parse(String((await tx.execute({ sql: "SELECT setup FROM shots WHERE id=?", args: [shotId] })).rows[0]?.setup ?? "null")); } catch { return null; } });
   /* Both projects' shot and approval counts changed. */
   if (moveTo) invalidate(PROJECTS_KEY);
   return NextResponse.json({ shot: await getShot(shotId) });

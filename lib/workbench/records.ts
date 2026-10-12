@@ -9,7 +9,7 @@ import type { Project } from './studio';
 import type { Client, Transaction } from '@libsql/client';
 import {publishedContext} from './published-context';
 import {referencedMedia} from '@/lib/mediaBindings';
-import {assertUploadsOpenable} from '@/lib/uploadAccess';
+import {assertUploadsOpenable,currentViewer,openableAmong} from '@/lib/uploadAccess';
 import {diffForTeam} from './team-canvas-model';
 import {applyTeamCanvasPatch, teamCanvasReady, TeamCanvasError} from './team-canvas';
 import {scheduleCanvasPush} from './canvas-push';
@@ -70,7 +70,7 @@ export async function workbenchTransaction<T>(fn:(tx:Transaction)=>Promise<T>):P
 
 /** Validate under the same write lock as saving; a concurrent deletion cannot
  * leave a newly saved snapshot pointing at a source it just removed. */
-export async function validateStoredMedia(tx:Transaction,value:unknown) {
+export async function validateStoredMedia(tx:Transaction,value:unknown,prior?:unknown) {
   const refs=referencedMedia(value);
   for(const [kind,ids] of [['upload',refs.uploads],['generation',refs.generations]] as const){
     const all=[...ids];
@@ -83,9 +83,15 @@ export async function validateStoredMedia(tx:Transaction,value:unknown) {
       if(missing)throw new Error(`A referenced ${kind} is no longer available (${missing}). Remove or replace it before saving or publishing. Your saved work has not changed.`);
     }
   }
-  /* The person saving or publishing must be able to open every upload it names (lib/uploadAccess.ts); said as a missing one is. */
-  try { await assertUploadsOpenable(tx,refs.uploads); }
-  catch { throw new Error('A referenced upload is no longer available. Remove or replace it before saving or publishing. Your saved work has not changed.'); }
+  /* The person saving or publishing must be able to open every upload this save ADDS (lib/uploadAccess.ts): what the draft already names is not asked again,
+     so a draft that names a teammate's upload keeps saving. Refused in the words a missing upload gets, id included. */
+  const held=prior===undefined?new Set<string>():referencedMedia(prior).uploads;
+  const added=[...refs.uploads].filter(id=>!held.has(id));
+  try { await assertUploadsOpenable(tx,added); }
+  catch {
+    const open=await openableAmong(added,currentViewer()??{id:''},tx);
+    throw new Error(`A referenced upload is no longer available (${added.find(id=>!open.has(id))}). Remove or replace it before saving or publishing. Your saved work has not changed.`);
+  }
 }
 
 /** Create the real production records once, under the same plan ceiling/default cap as /api/projects. */
@@ -160,7 +166,10 @@ export async function saveDraft(owner:string, project:Project, revision:number, 
       const seen=(await tx.execute({sql:'SELECT seq FROM workbench_draft_writes WHERE owner=? AND draft_id=? AND writer=?',args:[owner,project.id,write.writer]})).rows[0];
       if(seen && Number(seen.seq)>=write.seq)throw new DraftConflictError('This save was already checked. Your changes have not overwritten anything.');
     }
-    await validateStoredMedia(tx,project);
+    /* What the draft held before this save: only what it adds is asked of the person saving. */
+    let before:unknown;
+    try { before=JSON.parse(String((await tx.execute({sql:'SELECT body FROM workbench_projects WHERE key=?',args:[owner+':'+project.id]})).rows[0]?.body??'null')); } catch { before=undefined; }
+    await validateStoredMedia(tx,project,before??undefined);
     const mappings=Object.fromEntries((await tx.execute({sql:'SELECT node_id,shot_id FROM workbench_shots WHERE owner=? AND draft_id=?',args:[owner,project.id]})).rows.map(r=>[String(r.node_id),String(r.shot_id)]));
     const body={...project,productionProjectId:pid,shotMappings:mappings};
     const result=await tx.execute({sql:`INSERT INTO workbench_projects (key,owner,project_id,name,body,revision,updated_at) VALUES (?,?,?,?,?,1,?)
