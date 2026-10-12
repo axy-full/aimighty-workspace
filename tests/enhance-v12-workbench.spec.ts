@@ -45,6 +45,9 @@ test.describe("desktop, switch on", () => {
     await expect(toggle(page)).toHaveCount(0);
     await page.getByRole("radio", { name: "Image" }).click();
     await expect(toggle(page)).toBeVisible();
+    /* The bar reflows when the quote lands: the price joins the button and the Auto line shortens, which moves the ⓘ about 40 px left. A hover sent before
+       that leaves the pointer where the ⓘ was (pointerleave, so no tooltip), so hover only once the price is there. */
+    await expect(page.getByTestId("v12-make-go")).toHaveText(/· [\d,]+ cr$/);
     /* The ⓘ is its own control: the tooltip opens on hover, on focus, and a tap or click pins it until a click elsewhere or Esc. */
     const tip = page.getByTestId("v12-tooltip");
     await info(page).hover();
