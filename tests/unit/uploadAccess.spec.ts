@@ -634,3 +634,72 @@ test("the review page's logo and the other doors keep their own rules: only the 
   /* A review link's logo is a workspace setting shown to a guest by token: unchanged. */
   expect(door("app/api/review/[token]/logo/route.ts")).toBe(false);
 });
+
+test("a board its author shared with the team shows its uploads to a teammate, in the open and in the list; unshared, they are the uploader's again", async () => {
+  const h = await harness();
+  const { mappedId } = await import("../../lib/draftProject");
+  const { listLibraryUploads } = await import("../../lib/uploadLibrary");
+  const ws = workspace(`access-sh-${run}`);
+  const board = mappedId("prj_wb_", ws.id, "u_up", "d1");
+  const inBody = `upl_sh_body_${run}`, inTake = `upl_sh_take_${run}`, later = `upl_sh_later_${run}`, mine = `upl_sh_mine_${run}`, other = `upl_sh_other_${run}`;
+  const share = (shared: boolean) => h.database.db().execute({ sql: `UPDATE workbench_projects SET body=json_set(body,'$.teamShared',json('${shared}')) WHERE owner='u_up'`, args: [] });
+  const listedIds = async (only?: string) => ((await listLibraryUploads(new URLSearchParams(), undefined, only ? { id: only } : undefined, { id: "u_mate" })) as { uploads?: { id: string }[] }).uploads?.map((u) => u.id) ?? [];
+  await h.tenant.runInTenant(ws, async () => {
+    await h.database.ready();
+    await seedDraft(h, "u_up", "d1", board);
+    for (const id of [inBody, inTake, later, mine]) await seedUpload(h, id, "u_up");
+    await seedUpload(h, other, "u_other");
+    /* The draft's own body and a take of its own project name them. */
+    await h.database.db().execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.assets',json(?)) WHERE owner='u_up'", args: [JSON.stringify([{ id: "a", uploadId: inBody }])] });
+    await h.database.db().execute({ sql: "INSERT INTO generations(id,project_id,model,prompt,params,status,created_at,updated_at,kind) VALUES(?,?,?,?,?,'succeeded',1,1,'image')", args: [`gen_sh_${run}`, board, "m", "p", JSON.stringify({ references: [{ uploadId: inTake }, { uploadId: later }] })] });
+    h.as("u_mate");
+    for (const id of [inBody, inTake, later]) expect(await status(h, id), `${id}: private`).toBe(404);
+    /* Shared: a teammate looks at the board, and so at what is on it. */
+    await share(true);
+    expect(await status(h, inBody), "the draft's own body").toBe(200);
+    expect(await status(h, inTake), "a take of the shared board").toBe(200);
+    expect(await status(h, other), "an upload nothing shared names").toBe(404);
+    const open = await h.access.openableAmong([inBody, inTake, mine, other], { id: "u_mate" });
+    expect([...open].sort()).toEqual([inBody, inTake].sort());
+    expect(await listedIds(inBody), "the list shows what the shared board holds").toEqual([inBody]);
+    expect(await listedIds(inTake)).toEqual([inTake]);
+    expect(await listedIds(mine), "and not what only its uploader uses").toEqual([]);
+    /* Unshared: the grant ends (an answer already given stays for at most 30 seconds, so only what was not opened meanwhile is asked here). */
+    await share(false);
+    h.as("u_mate");
+    expect(await status(h, later), "after the author stops sharing").toBe(404);
+    const after = await h.access.openableAmong([later, mine, other], { id: "u_mate" });
+    expect([...after]).toEqual([]);
+    expect(await listedIds(), "the list hides what was not opened meanwhile").not.toContain(later);
+    h.as("u_up");
+    expect(await status(h, later), "the uploader").toBe(200);
+  });
+});
+
+test("the sample: a teammate opens their own copy of it (its uploads are the marker's, shown to everyone), and its uploads open", async () => {
+  const h = await harness();
+  const { mappedId } = await import("../../lib/draftProject");
+  const { openSampleDraft } = await import("../../lib/demo/open.server");
+  const { readDraft } = await import("../../lib/workbench/records");
+  const ws = workspace(`access-sm-${run}`);
+  const sample = mappedId("prj_wb_", ws.id, "u_up", "d1");
+  const art = `upl_sm_art_${run}`, take = `upl_sm_take_${run}`;
+  const asUser = (id: string) => ({ user: { id, email: "", name: id, role: "member" as const, owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
+  await h.tenant.runInTenant(ws, async () => {
+    await h.database.ready();
+    await seedDraft(h, "u_up", "d1", sample);
+    await seedUpload(h, art, "u_up"); await seedUpload(h, take, "u_up");
+    await h.database.db().execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.assets',json(?)) WHERE owner='u_up'", args: [JSON.stringify([{ id: "a", uploadId: art }])] });
+    await h.database.db().execute({ sql: "INSERT INTO generations(id,project_id,model,prompt,params,status,created_at,updated_at,kind) VALUES(?,?,?,?,?,'succeeded',1,1,'image')", args: [`gen_sm_${run}`, sample, "m", "p", JSON.stringify({ references: [{ uploadId: take }] })] });
+    await h.database.db().execute({ sql: "INSERT INTO settings(key,value,updated_by,updated_at) VALUES('sampleProduction',?,'u_up',1)", args: [JSON.stringify({ version: 1, projectId: sample, name: "Sample", draftOwner: "u_up", draftId: "d1", markedBy: "u_up", markedAt: 5 })] });
+  }, asUser("u_up"));
+  await h.tenant.runInTenant(ws, async () => {
+    h.as("u_mate");
+    expect(await status(h, art), "the sample's art, before any copy").toBe(200);
+    const opened = await openSampleDraft("u_mate");
+    expect(opened.created).toBe(true);
+    expect(await readDraft("u_mate", opened.project.id), "their own copy was saved").not.toBeNull();
+    expect(await status(h, art)).toBe(200);
+    expect(await status(h, take)).toBe(200);
+  }, asUser("u_mate"));
+});

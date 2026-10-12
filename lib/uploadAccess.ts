@@ -4,6 +4,7 @@ import { currentTenant, requireTenant } from "./tenant";
 import { MediaSourceError, referencedMedia } from "./mediaBindings";
 import { writeGenerationOf } from "./recoveryDatabaseClient";
 import { isAgentId } from "./security/people-only";
+import { sharedBoards } from "./draftProject";
 
 /**
  * Who may open an upload (its bytes, a thumbnail, its metadata, its place in a list). The tenant database already keeps every workspace to itself; inside
@@ -46,17 +47,24 @@ const remember = (key: string, generation: number) => { if (no.size >= MAX_YES) 
 type Exec = { execute(statement: InStatement): Promise<ResultSet> };
 export type Viewer = { id: string; role?: string };
 
-/** A draft's own production project (lib/workbench/records.ts › linkProduction): one person's, so nothing in it is shared. */
-const SHARED = (column: string) => `(${column} IS NULL OR ${column} NOT LIKE 'prj\\_wb\\_%' ESCAPE '\\')`;
+/**
+ * What counts as shared inside the rows below, for one pass: `list` is the SQL list of the draft production projects (`prj_wb_…`) a teammate may look at, and
+ * `drafts` the condition that picks those boards' saved drafts (lib/draftProject.ts › sharedBoards: the team-shared boards and the marked sample, one definition).
+ */
+type Shared = { list: string; drafts: string };
+const literal = (value: string) => `'${value.replace(/'/g, "''")}'`;
+/** A draft's own production project (lib/workbench/records.ts › linkProduction) is one person's, so nothing in it is shared, unless its author shared it (or it is the marked sample). */
+const SHARED = (column: string) => (c: Shared) => `(${column} IS NULL OR ${column} NOT LIKE 'prj\\_wb\\_%' ESCAPE '\\' OR ${column} IN (${c.list}))`;
 /** Every `where` below is written against the source table's alias `t`. */
+type Where = (c: Shared) => string;
 type Source =
-  | { table: string; direct: string; where?: string }
-  | { table: string; json: string; where?: string; photos?: true };
+  | { table: string; direct: string; where?: Where }
+  | { table: string; json: string; where?: Where; photos?: true };
 /** In the order they are asked: the cheapest and smallest first. Nothing in a draft's own production project (`prj_wb_…`) grants, in any source. */
 const SOURCES: readonly Source[] = [
   { table: "project_library_uploads", direct: "upload_id", where: SHARED("t.project_id") },
   { table: "cast_members", direct: "upload_id", where: SHARED("t.project_id") },
-  { table: "attribute_versions", direct: "upload_id", where: `EXISTS(SELECT 1 FROM elements e WHERE e.id=t.element_id AND ${SHARED("e.project_id")})` },
+  { table: "attribute_versions", direct: "upload_id", where: (c) => `EXISTS(SELECT 1 FROM elements e WHERE e.id=t.element_id AND ${SHARED("e.project_id")(c)})` },
   { table: "messages", direct: "upload_id" },
   { table: "identities", direct: "cover_upload_id", where: SHARED("t.project_id") },
   { table: "shot_presets", direct: "cover_upload_id" },
@@ -67,7 +75,9 @@ const SOURCES: readonly Source[] = [
   { table: "boards", json: "nodes", where: SHARED("t.project_id") },
   { table: "workbench_bibles", json: "body" },
   { table: "shots", json: "setup", where: SHARED("t.project_id") },
-  { table: "generations", json: "params", where: `t.deleted=0 AND ${SHARED("t.project_id")}` },
+  { table: "generations", json: "params", where: (c) => `t.deleted=0 AND ${SHARED("t.project_id")(c)}` },
+  /* What a teammate sees on a board shared with the team (and on the marked sample) is the author's own saved draft: its cards, its assets, its cast. */
+  { table: "workbench_projects", json: "body", where: (c) => c.drafts },
 ];
 
 const missingTable = (error: unknown) => /no such table|no such column/i.test(String((error as Error)?.message));
@@ -89,12 +99,19 @@ const FEW = 6;
 /** The ids among `ids` that shared work uses: one pass per source for the whole set (a list, or a save that adds several). */
 async function sharedAmong(ex: Exec, ids: readonly string[]): Promise<Set<string>> {
   const used = new Set<string>();
+  if (!ids.length) return used;
+  /* Which draft boards are shared is asked once for the whole pass. */
+  const boards = await sharedBoards(ex).catch((error: unknown) => { if (missingTable(error)) return { projects: [] as string[], drafts: [] as { owner: string; draftId: string }[] }; throw error; });
+  const shared: Shared = {
+    list: boards.projects.length ? boards.projects.map(literal).join(",") : "''",
+    drafts: boards.drafts.length ? `(${boards.drafts.map((d) => `(t.owner=${literal(d.owner)} AND t.project_id=${literal(d.draftId)})`).join(" OR ")})` : "0",
+  };
   for (let start = 0; start < ids.length; start += 200) {
     const batch = ids.slice(start, start + 200);
     for (const source of SOURCES) {
       const open = batch.filter((id) => !used.has(id));
       if (!open.length) break;
-      const filter = source.where ? ` AND ${source.where}` : "";
+      const filter = source.where ? ` AND ${source.where(shared)}` : "";
       try {
         if ("direct" in source) {
           const rows = (await ex.execute({ sql: `SELECT DISTINCT t.${source.direct} AS a FROM ${source.table} t WHERE t.${source.direct} IN (${open.map(() => "?").join(",")})${filter}`, args: open })).rows;

@@ -92,14 +92,32 @@ export async function mayReachProject(person: { id: string } | null, projectId: 
 }
 
 /** A filter for lists of projects: what `person` may see among them (reading). One read of the person's drafts, of shared boards and of the sample mark, then a set lookup per row. */
+/**
+ * The boards a teammate may look at, by the one definition: every draft its author has shared with the team (`teamShared`), and the marked sample
+ * (lib/demo/mark.server.ts), for everyone. `projects` are those boards' own project ids (`prj_wb_…`); `drafts` the saved drafts behind them (owner and draft id),
+ * whose bodies are what a teammate sees. Whoever opens the boards sees what these hold; the project filter and the upload rule both read this.
+ */
+export async function sharedBoards(ex: Exec = db()): Promise<{ projects: string[]; drafts: { owner: string; draftId: string }[] }> {
+  const workspace = requireTenant().id;
+  const rows = (await ex.execute({ sql: SHARED_BOARDS, args: [] })).rows;
+  const projects = rows.map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id)));
+  const drafts = rows.map((row) => ({ owner: String(row.owner), draftId: String(row.project_id) }));
+  const mark = (await ex.execute({ sql: "SELECT value FROM settings WHERE key=? LIMIT 1", args: [SAMPLE_SETTING_KEY] })).rows[0];
+  if (mark) {
+    try {
+      const sample = parseSampleMark(JSON.parse(String(mark.value)));
+      if (sample) { projects.push(sample.projectId); drafts.push({ owner: sample.draftOwner, draftId: sample.draftId }); }
+    } catch { /* an unreadable mark marks nothing */ }
+  }
+  return { projects, drafts };
+}
+
 export async function projectLister(person: { id: string } | null, ex: Exec = db()): Promise<(projectId: string | null | undefined) => boolean> {
   if (!person) return () => true;
   const workspace = requireTenant().id;
   const own = new Set((await ex.execute({ sql: "SELECT project_id FROM workbench_projects WHERE owner=?", args: [person.id] })).rows.map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, person.id, String(row.project_id))));
   own.add(heldBoardsProjectId(workspace, person.id));
-  const shared = new Set((await ex.execute({ sql: SHARED_BOARDS, args: [] })).rows.map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id))));
-  const mark = (await ex.execute({ sql: "SELECT value FROM settings WHERE key=? LIMIT 1", args: [SAMPLE_SETTING_KEY] })).rows[0];
-  let sample: string | null = null;
-  if (mark) { try { sample = parseSampleMark(JSON.parse(String(mark.value)))?.projectId ?? null; } catch { sample = null; } }
-  return (projectId) => !isDraftProject(projectId) || own.has(projectId!) || shared.has(projectId!) || projectId === sample;
+  const boards = await sharedBoards(ex);
+  const shared = new Set(boards.projects);
+  return (projectId) => !isDraftProject(projectId) || own.has(projectId!) || shared.has(projectId!);
 }
