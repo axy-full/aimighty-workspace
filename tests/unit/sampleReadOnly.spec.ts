@@ -133,6 +133,7 @@ test("every viewer is refused every write into the sample production, and every 
 
 test("every other way in is shut too: cast, treatment, cards, assets, wires, boards, notes, the production's own name, sharing, publishing, mapping, filings, for the owner, an admin and a member alike", async () => {
   const ws = workspace(`sro-b-${run}`);
+  const agentRun = `rar_${"a".repeat(24)}`;
   const { tenant, database, sample, newProject } = await fixture(ws);
   let who = user("u_mate");
   const R = <T,>(file: string) => loadRoute<T>(file, () => who);
@@ -155,6 +156,11 @@ test("every other way in is shut too: cast, treatment, cards, assets, wires, boa
   const jobs = R<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts");
   const shot = R<typeof import("../../app/api/shots/[id]/route")>("app/api/shots/[id]/route.ts");
   const demo = R<typeof import("../../app/api/demo/sample/route")>("app/api/demo/sample/route.ts");
+  const recipe = R<typeof import("../../app/api/rig/recipe/[id]/route")>("app/api/rig/recipe/[id]/route.ts");
+  const runsRoute = R<typeof import("../../app/api/rig/runs/route")>("app/api/rig/runs/route.ts");
+  const runState = R<typeof import("../../app/api/rig/runs/[id]/state/route")>("app/api/rig/runs/[id]/state/route.ts");
+  const runFix = R<typeof import("../../app/api/rig/runs/[id]/fix/route")>("app/api/rig/runs/[id]/fix/route.ts");
+  const teamCanvas = R<typeof import("../../app/api/workbench/team-canvas/route")>("app/api/workbench/team-canvas/route.ts");
   const { unlinkProjectLibraryUpload, ProjectLibraryError } = await import("../../lib/workbench/project-library");
   const { sampleDraftRefusal } = await import("../../lib/demo/readonly.server");
   await tenant.runInTenant(ws, async () => {
@@ -164,6 +170,11 @@ test("every other way in is shut too: cast, treatment, cards, assets, wires, boa
     await db.execute({ sql: "INSERT INTO boards(id,project_id,name,created_at,updated_at) VALUES(?,?,'Board',1,1)", args: [`bd_s_${run}`, sample] });
     await db.execute({ sql: "INSERT INTO elements(id,project_id,kind,name,created_at,updated_at) VALUES(?,?,'character','Lead',1,1)", args: [`el_s_${run}`, sample] });
     await db.execute({ sql: "INSERT INTO element_attributes(id,element_id,kind,created_at,updated_at) VALUES(?,?,'face',1,1)", args: [`at_s_${run}`, `el_s_${run}`] });
+    await db.execute({ sql: "INSERT INTO runs(id,recipe_id,project_id,started_at,updated_at) VALUES(?,?,?,1,1)", args: [`run_s_${run}`, "rcp", sample] });
+    /* The lifter's run on the sample: asked by the owner. */
+    const { rigAgentReady, insertRun } = await import("../../lib/workbench/rig-agent-store");
+    await rigAgentReady();
+    await insertRun(db as never, { id: agentRun, productionId: sample, draftId: "d1", owner: "u_owner", requestId: "req1", goal: "The dunes", model: "auto", at: 1, limit: { credits: 50, mode: "ask", jobCeiling: 200 } });
   }, { user: user("u_owner", "admin") });
   const code = async (res: Response) => [res.status, (await res.clone().json().catch(() => ({}))).code] as const;
   const VIEW = [403, "view_only"] as const;
@@ -192,6 +203,16 @@ test("every other way in is shut too: cast, treatment, cards, assets, wires, boa
       expect(await code(await reorder.POST(json("POST", { projectId: sample, ids: [`shot_s_${run}`] }), undefined as never)), `${label}: reorder`).toEqual(VIEW);
       expect(await code(await sync.POST(json("POST", { projectId: sample }), undefined as never)), `${label}: sync`).toEqual(VIEW);
       expect(await code(await jobs.DELETE(new Request("https://particl.test/x", { method: "DELETE" }), ctx(`gen_s_${run}`))), `${label}: a take's deletion`).toEqual(VIEW);
+      /* Recipes, pipeline runs and the board agent's run: the sample takes none, and only a run's own person presses it (for a lift run, the lifter). */
+      expect(await code(await recipe.POST(json("POST", { name: "R" }), ctx(sample))), `${label}: a recipe`).toEqual(VIEW);
+      expect(await code(await runsRoute.POST(json("POST", { projectId: sample }), undefined as never)), `${label}: a pipeline run`).toEqual(VIEW);
+      expect(await code(await runState.POST(json("POST", { state: "paused" }), ctx(`run_s_${run}`))), `${label}: a run's state`).toEqual(VIEW);
+      expect(await code(await runFix.POST(json("POST", { stageId: "s", fixId: "f" }), ctx(`run_s_${run}`))), `${label}: a run's fix`).toEqual(VIEW);
+      for (const act of ["agent.undo", "agent.stop"]) {
+        const res = await teamCanvas.POST(json("POST", { action: act, productionId: sample, runId: agentRun }), undefined as never);
+        if (id === "u_owner") expect(await code(res), `${label}: their own run's ${act}`).not.toEqual(VIEW);
+        else expect(await code(res), `${label}: another's run ${act}`).toEqual(VIEW);
+      }
       /* Sharing, publishing and mapping from the sample's copy and from the board it was marked from. */
       expect(await sampleDraftRefusal(id, copy), `${label}: a copy`).not.toBeNull();
       expect(await sampleDraftRefusal("u_owner", original), `${label}: the original`).not.toBeNull();
@@ -216,6 +237,9 @@ test("every other way in is shut too: cast, treatment, cards, assets, wires, boa
     expect(await n("SELECT COUNT(*) AS n FROM boards WHERE project_id=?", [sample])).toBe(1);
     expect(await n("SELECT COUNT(*) AS n FROM elements WHERE project_id=?", [sample])).toBe(1);
     expect(await n("SELECT COUNT(*) AS n FROM notes")).toBe(0);
+    expect(await n("SELECT COUNT(*) AS n FROM recipes WHERE project_id=?", [sample])).toBe(0);
+    expect(await n("SELECT COUNT(*) AS n FROM runs WHERE project_id=?", [sample])).toBe(1);
+    expect((await db.execute({ sql: "SELECT state FROM runs WHERE id=?", args: [`run_s_${run}`] })).rows[0].state).toBe("running");
     expect(await n("SELECT COUNT(*) AS n FROM treatments WHERE project_id=?", [sample])).toBe(0);
     expect(await n("SELECT COUNT(*) AS n FROM shots WHERE project_id=?", [sample])).toBe(1);
     expect((await db.execute({ sql: "SELECT name FROM productions WHERE id='prod_g'", args: [] })).rows[0].name).toBe("Group");

@@ -203,6 +203,8 @@ export const POST = withTenant(async (req: Request) => {
       if (off) return off;
     }
     const { productionId } = action;
+    /* On the sample a run is its own person's to stop, undo, set aside or change (for a lift run, the lifter); anyone else is refused as view-only (lib/demo/readonly.server.ts). */
+    if ("runId" in action) { const { sampleRunRefusal } = await import("@/lib/demo/readonly.server"); const refused = await sampleRunRefusal(productionId, action.runId, { id: userId }); if (refused) return refused; }
     const run =
       action.action === "agent.plan" ? await askRigAgent({ productionId, draftId: action.projectId, userId, requestId: action.requestId, goal: action.goal, model: action.model, limit: action.limit, mode: action.mode, attachments: action.attachments })
       : action.action === "agent.approve" ? await approveRigAgent({ productionId, runId: action.runId, fingerprint: action.fingerprint, userId })

@@ -1,3 +1,4 @@
+import { sampleWriteRefusal } from "@/lib/demo/readonly.server";
 import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
 import { recipeOf, startRun } from "@/lib/runs";
@@ -16,6 +17,8 @@ export const POST = withTenant(async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
   const projectId = typeof b.projectId === "string" ? b.projectId : "";
   if (!projectId) return NextResponse.json({ error: "Which project?" }, { status: 400 });
+  /* The marked sample records no run, from anyone (lib/demo/readonly.server.ts). */
+  { const refused = await sampleWriteRefusal(projectId); if (refused) return refused; }
   const recipe = await recipeOf(projectId);
   if (!recipe) return NextResponse.json({ error: "This project has no recipe yet. Save a board as one first." }, { status: 404 });
   const runId = await startRun(recipe.id, projectId, recipe.stages.map((s) => ({ stageId: s.id, units: s.totalUnits || 1, credits: s.credits })), got.user.id);

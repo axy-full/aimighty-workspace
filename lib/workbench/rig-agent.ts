@@ -387,8 +387,10 @@ async function accessToAsk(productionId: string): Promise<"read" | "write"> {
   return (await sampleMarkNow())?.projectId === productionId ? "read" : "write";
 }
 
-async function runFor(productionId: string, runId: string): Promise<RunRow> {
-  await requireProduction(productionId, undefined, await accessToAsk(productionId));
+/** The run, for a press by `userId`. In the sample that is READ for the run's own person alone (for a lift run, the lifter): anyone else's press is a write there, and is refused. */
+async function runFor(productionId: string, runId: string, userId: string): Promise<RunRow> {
+  const mine = (await accessToAsk(productionId)) === "read" && (await rigAgentExists()) && (await runOfProduction(db(), productionId, runId))?.owner === userId;
+  await requireProduction(productionId, userId, mine ? "read" : "write");
   if (!(await rigAgentExists())) throw new RigAgentError("That build is not on this production.", 404);
   const run = await runOfProduction(db(), productionId, runId);
   if (!run) throw new RigAgentError("That build is not on this production.", 404);
@@ -398,7 +400,7 @@ async function runFor(productionId: string, runId: string): Promise<RunRow> {
 /** Approve the proposal as shown (its fingerprint): the build starts. Only the person who asked approves it. */
 export async function approveRigAgent(input: { productionId: string; runId: string; fingerprint: string; userId: string }): Promise<RigAgentRunView> {
   if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
-  const found = await runFor(input.productionId, input.runId);
+  const found = await runFor(input.productionId, input.runId, input.userId);
   if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this board can approve it.", 403);
   const started = await workbenchTransaction(async (tx) => {
     const run = (await getRun(tx, input.runId))!;
@@ -417,7 +419,7 @@ export async function approveRigAgent(input: { productionId: string; runId: stri
 
 /** Not now: the proposal is set aside and nothing is built. Only the person who asked declines it. */
 export async function declineRigAgent(input: { productionId: string; runId: string; userId: string }): Promise<RigAgentRunView> {
-  const found = await runFor(input.productionId, input.runId);
+  const found = await runFor(input.productionId, input.runId, input.userId);
   if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this board can set it aside.", 403);
   await workbenchTransaction(async (tx) => {
     const changed = await patchRun(tx, found.id, { state: "stopped", reason: "Not built: set aside.", finished_at: now(), wake_at: null }, ["awaiting_approval", "planning"]);
@@ -428,7 +430,7 @@ export async function declineRigAgent(input: { productionId: string; runId: stri
 
 /** Stop a build (anyone on the team): what is on the board stays, and can be undone. */
 export async function stopRigAgent(input: { productionId: string; runId: string; userId: string }): Promise<RigAgentRunView> {
-  const found = await runFor(input.productionId, input.runId);
+  const found = await runFor(input.productionId, input.runId, input.userId);
   await stopRun(found.id, "Stopped before it finished.");
   return viewOf(input.runId, input.userId);
 }
@@ -498,7 +500,7 @@ async function paidStepFor(runId: string, seq: number, tx: Parameters<typeof get
  */
 export async function renderRigAgentStep(input: { productionId: string; runId: string; seq: number; fingerprint?: string | null; userId: string }): Promise<RigAgentRunView> {
   if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
-  const found = await runFor(input.productionId, input.runId);
+  const found = await runFor(input.productionId, input.runId, input.userId);
   if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this run can approve its renders.", 403);
   const moved = await workbenchTransaction(async (tx) => {
     const step = await paidStepFor(found.id, input.seq, tx);
@@ -530,7 +532,7 @@ export async function renderRigAgentStep(input: { productionId: string; runId: s
 
 /** Skip a render that waits (the person who asked): it is not sent, nothing is charged, and the run carries on. */
 export async function skipRigAgentStep(input: { productionId: string; runId: string; seq: number; userId: string }): Promise<RigAgentRunView> {
-  const found = await runFor(input.productionId, input.runId);
+  const found = await runFor(input.productionId, input.runId, input.userId);
   if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this run can skip its renders.", 403);
   const moved = await workbenchTransaction(async (tx) => {
     const step = await paidStepFor(found.id, input.seq, tx);
@@ -551,7 +553,7 @@ export async function skipRigAgentStep(input: { productionId: string; runId: str
 export async function raiseRigAgentLimit(input: { productionId: string; runId: string; limit: number; userId: string }): Promise<RigAgentRunView> {
   if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
   if (!isRunLimitAmount(input.limit, MAX_RUN_LIMIT)) throw new RigAgentError("Set a limit for this run: a number of credits, in tenths at most.", 400);
-  const found = await runFor(input.productionId, input.runId);
+  const found = await runFor(input.productionId, input.runId, input.userId);
   if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this run can raise its limit.", 403);
   const moved = await workbenchTransaction(async (tx) => {
     const run = (await getRun(tx, found.id))!;
@@ -581,7 +583,7 @@ export async function raiseRigAgentLimit(input: { productionId: string; runId: s
 export async function approveRigAgentPlan(input: { productionId: string; runId: string; fingerprint: string; userId: string }): Promise<RigAgentRunView> {
   if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
   if (!isPersonApprover(input.userId)) throw new RigAgentError(PEOPLE_ONLY, 403);
-  const found = await runFor(input.productionId, input.runId);
+  const found = await runFor(input.productionId, input.runId, input.userId);
   if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this plan can approve it.", 403);
   await rigAgentReady();
   const line = effectiveJobCeiling(found.perJobCap, await rigJobCeiling());
@@ -636,7 +638,7 @@ export const RETRY_UNKNOWN = "What this render was charged isn't known yet. Try 
 export async function retryRigAgentStep(input: { productionId: string; runId: string; seq: number; userId: string }): Promise<RigAgentRunView> {
   if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
   if (!isPersonApprover(input.userId)) throw new RigAgentError(PEOPLE_ONLY, 403);
-  const found = await runFor(input.productionId, input.runId);
+  const found = await runFor(input.productionId, input.runId, input.userId);
   if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this run can retry its renders.", 403);
   await rigAgentReady();
   const before = await paidStepFor(found.id, input.seq, db());
@@ -681,7 +683,7 @@ export async function retryRigAgentStep(input: { productionId: string; runId: st
 export async function fixRigAgentShot(input: { productionId: string; runId: string; seq: number; userId: string }): Promise<RigAgentRunView> {
   if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
   if (!isPersonApprover(input.userId)) throw new RigAgentError(PEOPLE_ONLY, 403);
-  const found = await runFor(input.productionId, input.runId);
+  const found = await runFor(input.productionId, input.runId, input.userId);
   if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this plan can fix its shots.", 403);
   await rigAgentReady();
   /* A shot whose latest render failed with nothing billed is retried free, not fixed (owner decision L4). */
@@ -742,7 +744,7 @@ export async function fixRigAgentShot(input: { productionId: string; runId: stri
  * progress is stopped first. Undoing twice changes nothing more.
  */
 export async function undoRigAgent(input: { productionId: string; runId: string; userId: string }, options: { waitMs?: number } = {}): Promise<RigAgentRunView> {
-  const found = await runFor(input.productionId, input.runId);
+  const found = await runFor(input.productionId, input.runId, input.userId);
   if (!found.approvedAt) throw new RigAgentError("Nothing was built from this proposal.", 409);
   if (found.undoneAt) return viewOf(found.id, input.userId);
   if (ACTIVE_STATES.includes(found.state)) await stopRun(found.id, "Stopped for an undo.");

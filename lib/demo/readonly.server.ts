@@ -23,6 +23,7 @@ const PROJECT_OF = {
   elements: "SELECT project_id FROM elements WHERE id=?",
   shots: "SELECT project_id FROM shots WHERE id=?",
   generations: "SELECT project_id FROM generations WHERE id=?",
+  runs: "SELECT project_id FROM runs WHERE id=?",
   element_attributes: "SELECT e.project_id AS project_id FROM element_attributes a JOIN elements e ON e.id=a.element_id WHERE a.id=?",
 } as const;
 
@@ -46,4 +47,16 @@ export async function sampleDraftRefusal(owner: string, project: { id: string; p
   if (!(await isSampleDraft(owner, project.id, project.productionProjectId))) return null;
   const mark = await sampleMarkNow();
   return mark ? sampleWriteRefusal(mark.projectId, { id: owner }) : null;
+}
+
+/**
+ * A change to a board agent's run (stop, undo, decline, skip, a limit, a fix) on the sample: only the run's own person may press it, and for a lift run that is the
+ * lifter. Anyone else is refused as view-only, whoever they are. Not asked off the sample, or of a run that is not there (the route's own answer for one stands).
+ */
+export async function sampleRunRefusal(productionId: string, runId: string, person = currentPerson()): Promise<Response | null> {
+  if (!person || !(await isSampleProject(productionId))) return null;
+  const row = await db().execute({ sql: "SELECT owner FROM rig_agent_runs WHERE id=? AND production_id=?", args: [runId, productionId] })
+    .then((r) => r.rows[0], (error: unknown) => { if (/no such table/i.test(String(error))) return undefined; throw error; });
+  if (!row || String(row.owner) === person.id) return null;
+  return sampleWriteRefusal(productionId, person);
 }
