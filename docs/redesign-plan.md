@@ -274,6 +274,7 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 - **Copy-link nudge, option (c)** (owner, 12 Oct 21:05): "Copy link" on a private board offers "Share with team" first. A small UI follow-up after #681.
 - **A disabled member's shared board** (#681 review nit): `draftIsTeamShared` and `projectLister` (`lib/draftProject.ts`) don't require the maker to be active, while `sharedBoardOfProduction` does. So the board stays listed and readable while `?reach` says it can't be opened. Inconsistent, but nothing new leaks. Align them.
 - **Admission's agent exemption** (#685 review): `lib/generationAdmission.ts` treats every `agent:*` or server caller as reaching any project. Today only `/api/generate` calls admission, with a person or token, so this can't be reached. Before any server-side run calls admission, resolve the run's owner and check that person's reach.
+- **Over-line steps in workspaces not billed in credits** (#688 review): `priceOf` returns null when the workspace isn't in credits, so an admin never sees another member's over-line step there. If those workspaces have a dollar over-line rule, the admin's tap can't be reached from the queue.
 
 ## Housekeeping rules (owner, 12 Oct)
 
