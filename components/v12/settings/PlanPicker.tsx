@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Segment } from "@/components/v12/ui/Segment";
+import { Tooltip } from "@/components/v12/ui";
 import { BUSINESS, ENTERPRISE, businessFrom, businessLevels, individualCards, seatTotal } from "@/lib/planCards";
 import { DEFAULT_PLANS, cleanPlans, planById, type PlanDef } from "@/lib/plans";
 import "./plan-picker.css";
@@ -90,9 +91,13 @@ export function PlanPicker({ plans, current = null, selected = null, chooseLabel
             ))}
           </div>
           <div className="v12-pp-seats" role="group" aria-label="Seats">
-            <button type="button" className="v12-pp-step" aria-label="Fewer seats" disabled={seats <= BUSINESS.seats.min} onClick={() => setSeats((n) => Math.max(BUSINESS.seats.min, n - 1))} data-testid="v12-plan-seats-less">−</button>
+            <Tooltip name="Fewer seats" named side="top">
+              <button type="button" className="v12-pp-step" aria-label="Fewer seats" disabled={seats <= BUSINESS.seats.min} onClick={() => setSeats((n) => Math.max(BUSINESS.seats.min, n - 1))} data-testid="v12-plan-seats-less">−</button>
+            </Tooltip>
             <span className="v12-pp-total" role="status" data-testid="v12-plan-seats-total">{total.seats} {total.seats === 1 ? "seat" : "seats"} · {money(total.usd)}/month · {count(total.credits)} credits</span>
-            <button type="button" className="v12-pp-step" aria-label="More seats" disabled={seats >= BUSINESS.seats.max} onClick={() => setSeats((n) => Math.min(BUSINESS.seats.max, n + 1))} data-testid="v12-plan-seats-more">+</button>
+            <Tooltip name="More seats" named side="top">
+              <button type="button" className="v12-pp-step" aria-label="More seats" disabled={seats >= BUSINESS.seats.max} onClick={() => setSeats((n) => Math.min(BUSINESS.seats.max, n + 1))} data-testid="v12-plan-seats-more">+</button>
+            </Tooltip>
             {action(level)}
           </div>
         </div>
