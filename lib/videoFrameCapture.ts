@@ -24,7 +24,7 @@ function mediaEvent(video: HTMLVideoElement, event: "loadeddata" | "seeked", sta
  * Resolves once the browser has presented a new video frame. A canvas drawn from a video the moment `loadeddata` or `seeked` fires can read a blank
  * frame (the picture is decoded but not yet presented): about 1 capture in 200 came out black, and the last frame could differ from one run to the
  * next. Waiting for the frame is the browser's own signal for "this picture is on screen". A browser that cannot say, or a hidden page (which presents
- * no frames), has nothing to wait for.
+ * no frames), has nothing to wait for; a browser that never signals for a detached, paused video is covered by `presentedWithin`.
  */
 function framePresented(video: HTMLVideoElement, signal: AbortSignal) {
   type Rvfc = HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number; cancelVideoFrameCallback?: (id: number) => void };
@@ -37,6 +37,14 @@ function framePresented(video: HTMLVideoElement, signal: AbortSignal) {
     signal.addEventListener("abort", fail, { once: true });
     if (signal.aborted) fail();
   });
+}
+
+/** The longest the new wait may take once it is asked for. Where the browser signals (Chromium) the signal wins; where it never does for this detached
+ * video, the picture is drawn after this, as it was before the wait existed. Only caps the new wait: the capture's own timeout is unchanged. */
+const PRESENT_WAIT_MS = 250;
+async function presentedWithin(presented: Promise<void>) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try { await Promise.race([presented, new Promise<void>((resolve) => { timer = setTimeout(resolve, PRESENT_WAIT_MS); })]); } finally { clearTimeout(timer); }
 }
 
 /** Decode only after an explicit click. Scope is checked by the authenticated
@@ -88,12 +96,12 @@ export async function captureVideoFrame(source: VideoFrameSource, edge: VideoFra
     // At time zero loadeddata already exposes the first decoded picture.
     const timeSeconds = edge === "start" ? 0 : Math.max(0, durationSeconds - Math.min(0.001, durationSeconds / 2));
     /* The first picture is on screen before anything else is asked of the video: a seek then has only its own frame to wait for. */
-    await first;
+    await presentedWithin(first);
     if (timeSeconds !== video.currentTime) {
       const shown = framePresented(video, active);
       shown.catch(() => {});
       await mediaEvent(video, "seeked", () => { video.currentTime = timeSeconds; }, active);
-      await shown;
+      await presentedWithin(shown);
     }
     cancelled(active);
     canvas.width = width; canvas.height = height;
