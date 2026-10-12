@@ -121,14 +121,6 @@ const read = async (ws: TenantWorkspace, sql: string, args: unknown[] = []) => {
   const { db } = await import("../../lib/db");
   return runInTenant(ws, async () => (await db().execute({ sql, args: args as never })).rows);
 };
-/** Marks the board as the workspace's sample production (lib/demo/mark.server.ts): the one private-looking board everyone reaches, so the owner-or-admin rule is what decides on it. */
-async function markAsSample(ws: TenantWorkspace, board: string) {
-  const { runInTenant } = await import("../../lib/tenant");
-  const { db } = await import("../../lib/db");
-  await runInTenant(ws, async () => {
-    await db().execute({ sql: "INSERT OR REPLACE INTO settings(key,value,updated_by,updated_at) VALUES('sampleProduction',?,'u_admin',0)", args: [JSON.stringify({ version: 1, projectId: board, name: "Board", draftOwner: PEOPLE.maker.id, draftId: ids.draft, markedBy: "u_admin", markedAt: 0 })] });
-  });
-}
 const refusal = async (r: Response) => ({ status: r.status, error: String(((await r.json().catch(() => ({}))) as { error?: string }).error ?? "") });
 
 test("a take: its maker, the board's owner or an admin change it; anyone else is refused in plain words and nothing changes", async () => {
@@ -267,17 +259,13 @@ test("a project: its owner or an admin renames or deletes it; anyone else is ref
     expect(await refusal(await api.projectDelete(board)), who).toEqual({ status: 404, error: "No such project." });
   }
   expect(await name(board)).toBe("Board");
-  /* A board everyone reaches (the marked sample) is where the owner-or-admin rule decides: 403 in plain words. */
-  await markAsSample(ws, board);
-  api.as("stranger");
-  expect(await refusal(await api.projectPatch(board, { name: "Mine now" }))).toEqual({ status: 403, error: NOT_YOURS.project });
-  expect(await refusal(await api.projectDelete(board))).toEqual({ status: 403, error: NOT_YOURS.project });
-  api.as("teammate");
-  expect((await api.projectPatch(board, { name: "x" })).status).toBe(403);
-  expect((await api.projectDelete(board)).status).toBe(403);
-  api.as("strangerToken");
-  expect((await api.projectDelete(board)).status).toBe(403);
-  expect(await name(board)).toBe("Board");
+  /* A project with no draft behind it (made through POST /api/projects, or seeded) records no creator: it is an admin's alone, so a member or a teammate gets 403 in plain words. */
+  for (const who of ["stranger", "teammate", "strangerToken"]) {
+    api.as(who);
+    expect(await refusal(await api.projectPatch("plain", { name: "Mine now" })), who).toEqual({ status: 403, error: NOT_YOURS.project });
+    expect(await refusal(await api.projectDelete("plain")), who).toEqual({ status: 403, error: NOT_YOURS.project });
+  }
+  expect(await name("plain")).toBe("Plain");
   expect((await read(ws, "SELECT id FROM shots WHERE project_id=?", [board])).length).toBe(2);
 
   /* A project made with no board of anyone's behind it records no creator: only an admin. */
@@ -322,9 +310,7 @@ test("a draft that names a project as its production does not make its owner tha
   expect(await runInTenant(ws, () => projectMaker(board))).toBe(PEOPLE.maker.id);
   api.as("teammate");
   expect((await api.projectPatch(board, { name: "Mine now" })).status).toBe(404);
-  await markAsSample(ws, board);
-  expect(await refusal(await api.projectPatch(board, { name: "Mine now" }))).toEqual({ status: 403, error: NOT_YOURS.project });
-  expect(await refusal(await api.projectDelete(board))).toEqual({ status: 403, error: NOT_YOURS.project });
+  expect((await api.projectDelete(board)).status).toBe(404);
   expect((await api.shotPatch("s-maker", { title: "no" })).status).toBe(403);
   api.as("maker");
   expect((await api.projectPatch(board, { name: "Still the maker's" })).status).toBe(200);
