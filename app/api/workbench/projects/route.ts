@@ -12,7 +12,7 @@ import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
-import { findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
+import { sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -52,9 +52,10 @@ export const GET=withTenant(async(req:Request)=>{
     id?readDraft(auth.user.id,id):null,
   ]);
   /* Asked for by id alone and not this person's own: a teammate's board (a board link), to look at. */
+  const listed=await projectLister(auth.user);
   if(id&&!draft){
     const seen=await findTeamBoard(requireTenant(),auth.user.id,id);
-    if(seen)return projectResponse(req,{projects:list.rows,productions:productions.rows,project:seen.project,revision:seen.revision,shared:null,viewOnly:{owner:seen.owner},...(team?{team}:{})});
+    if(seen)return projectResponse(req,{projects:list.rows,productions:productions.rows.filter(r=>listed(String(r.id))),project:seen.project,revision:seen.revision,shared:null,viewOnly:{owner:seen.owner},...(team?{team}:{})});
   }
   let shared=null;
   if(draft?.project.productionProjectId){
@@ -66,7 +67,6 @@ export const GET=withTenant(async(req:Request)=>{
       shared={...body,version:Number(row.version)};
     }
   }
-  const listed=await projectLister(auth.user);
   return projectResponse(req,{projects:list.rows,productions:productions.rows.filter(r=>listed(String(r.id))),project:draft?.project||null,revision:draft?.revision||0,shared,...(team?{team}:{})});
 });
 
@@ -117,10 +117,12 @@ export const POST=withTenant(async(req:Request)=>{
     const row=(await db().execute({sql:'SELECT id,name,description FROM projects WHERE id=?',args:[body.projectId]})).rows[0];
     /* A private board is its owner's alone: to anyone else it is as absent as an unknown id (lib/draftProject.ts). */
     if(!row||!(await mayReachProject(auth.user,body.projectId,'read')))return Response.json({error:'Project not found'},{status:404});
+    /* A teammate's SHARED board is theirs to look at, not to save: it opens view-only (no draft of their own is made or saved against it), as a board link does. */
+    const viewOnly=(await mayReachProject(auth.user,body.projectId,'write'))?null:(await sharedBoardOwnerOf(requireTenant(),body.projectId))??{id:'',name:'A teammate'};
     const latest=(await db().execute({sql:'SELECT body,version FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[body.projectId]})).rows[0];
     const shared=latest?JSON.parse(String(latest.body)):null;
     const p:Project={...newProject(String(row.name)),description:String(row.description||''),productionProjectId:String(row.id),...(shared?{brief:shared.brief,script:shared.script,scriptFormat:shared.scriptFormat==='adfilm'?'adfilm':'screenplay',scriptSource:shared.scriptSource,scriptReviews:shared.scriptReviews,direction:shared.direction,assets:shared.assets,nodes:shared.nodes,sharedAssets:shared.assets,sharedNodes:shared.nodes,sharedAssetIds:shared.assets.map((a:{id:string})=>a.id),sharedNodeIds:shared.nodes.map((n:{id:string})=>n.id),bibleVersion:Number(latest!.version)}:{})};
-    return projectResponse(req,{project:p,revision:0});
+    return projectResponse(req,{project:p,revision:0,...(viewOnly?{viewOnly:{owner:viewOnly}}:{})});
   }
   if(body.action==='check-write'){
     /* A save whose reply was lost: did it land (and at which revision)? Checking fences it off, so the answer is final; the draft comes back as it is now. */

@@ -12,7 +12,7 @@
  * The platform owner reads as "Particl support" with an opaque id outside the house (lib/platformOwnerPrivacy.ts), as on the Team page.
  */
 import { db } from "@/lib/db";
-import { TEAM_SHARED_SQL } from "@/lib/draftProject";
+import { DRAFT_PROJECT_PREFIX, mappedId, TEAM_SHARED_SQL } from "@/lib/draftProject";
 import { platformDb, platformReady } from "@/lib/platform";
 import { ownerMaskFor, resolveMemberId, supportMemberId } from "@/lib/platformOwnerPrivacy";
 import type { TenantWorkspace } from "@/lib/tenant";
@@ -105,4 +105,12 @@ export async function findTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string,
     if (draft && draft.project.teamShared === true) return { ...draft, owner };
   }
   return null;
+}
+
+/** The maker of the SHARED board whose own production project is `productionId` (lib/draftProject.ts), as a teammate sees them; null when that board is not shared or its maker is not an active member. */
+export async function sharedBoardOwnerOf(ws: Pick<TenantWorkspace, "id">, productionId: string): Promise<BoardOwner | null> {
+  await workbenchReady();
+  const rows = (await db().execute({ sql: `SELECT owner, project_id FROM workbench_projects WHERE ${SHARED}`, args: [] })).rows;
+  const hit = rows.find((row) => mappedId(DRAFT_PROJECT_PREFIX, ws.id, String(row.owner), String(row.project_id)) === productionId);
+  return hit ? ownerOf(ws, await activeMembers(ws), String(hit.owner)) : null;
 }

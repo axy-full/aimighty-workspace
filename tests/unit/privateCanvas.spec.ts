@@ -309,3 +309,80 @@ test("analytics, the credit-usage boards, the ideas list: a private board's spen
   expect(forMate.some((b) => b.name === "A private board" && b.credits === 12)).toBe(true);
   expect((await boardsUsed("u_owner")).some((b) => b.id === privateProject)).toBe(true);
 });
+
+test("Activity, the decided list and the project names of the control room: a private board's runs, titles, spend and decisions are its owner's alone", async () => {
+  const ws = workspace(`pc-j-${run}`);
+  const { tenant, database, privateProject } = await boards(ws);
+  process.env.RIG_AGENT_ENABLED = "1";
+  const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+  const { readActivity } = await import("../../lib/control-room/activity.server");
+  const { readApprovals, projectsOf } = await import("../../lib/control-room/approvals.server");
+  const runId = `rar_${"8".repeat(24)}`;
+  await tenant.runInTenant(ws, async () => {
+    await rigAgentReady();
+    const now = Date.now();
+    await database.db().execute({ sql: `INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,mode,cap_credits,per_job_cap,model,state,lease_until,created_at,updated_at,approved_by,approved_at)
+      VALUES(?,?,'d1','u_owner','req_pc2','A hidden goal for the private board','ask',100,200,'auto','needs_you',0,?,?,'u_owner',?)`, args: [runId, privateProject, now - 5000, now - 5000, now - 4000] });
+    await database.db().execute({ sql: `INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,prepared,state,quote_credits,band,admission,created_at,updated_at)
+      VALUES(?,?,1,'render','Render the hidden opening','take','[]','waiting',30,1,?,1,1)`, args: [`${runId}:1`, runId, JSON.stringify({ quote: { fingerprint: "b".repeat(64) } })] });
+  }, person("u_owner"));
+  const mate = { id: "u_mate", role: "member" }, owner = { id: "u_owner", role: "member" };
+  await tenant.runInTenant(ws, async () => {
+    const all = JSON.stringify(await readActivity(mate, null));
+    expect(all).not.toContain("hidden goal");
+    expect(all).not.toContain("hidden opening");
+    expect(all).not.toContain(privateProject);
+    expect(all).not.toContain("Private board");
+    /* Asking for it by id answers as an unknown id does. */
+    const asked = await readActivity(mate, privateProject);
+    const unknown = await readActivity(mate, "prj_wb_doesnotexist0000000000");
+    expect({ ...asked, productionId: null }).toEqual({ ...unknown, productionId: null });
+    /* The decided list and the queue's project names. */
+    const approvals = JSON.stringify(await readApprovals(mate));
+    expect(approvals).not.toContain("hidden goal");
+    expect(approvals).not.toContain(privateProject);
+    expect((await projectsOf("u_mate", [privateProject])).get(privateProject)).toEqual({ productionId: null, draftId: null, name: null });
+  }, person("u_mate"));
+  await tenant.runInTenant(ws, async () => {
+    expect(JSON.stringify(await readActivity(owner, null))).toContain("hidden goal");
+    expect(JSON.stringify(await readActivity(owner, privateProject))).toContain("hidden opening");
+    expect(JSON.stringify((await readApprovals(owner)).decided)).toContain("hidden goal");
+    expect((await projectsOf("u_owner", [privateProject])).get(privateProject)?.name).toBe("Private board");
+  }, person("u_owner"));
+});
+
+test("opening a teammate's shared board from the production gives a view-only open, with no draft of their own and no misleading save error; the id-only read lists no private board", async () => {
+  const ws = workspace(`pc-k-${run}`);
+  const { tenant, database, privateProject } = await boards(ws);
+  let who = { id: "u_owner", role: "member" };
+  const studio = loadRoute<typeof import("../../app/api/workbench/projects/route")>("app/api/workbench/projects/route.ts", () => who);
+  const post = (body: unknown) => studio.POST(new Request("https://particl.test/x", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), undefined as never);
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  await platformReady();
+  /* The maker is an active member of this workspace (a board link only reads boards of active members). */
+  await platformDb().execute({ sql: "INSERT OR IGNORE INTO accounts (id, email, name, password_hash, created_at) VALUES ('u_owner', ?, 'Owner Person', 'x', 0)", args: [`owner-${run}@example.test`] });
+  await platformDb().execute({ sql: "INSERT OR IGNORE INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,?,'member',0,0)", args: [ws.id, "u_owner"] });
+  await tenant.runInTenant(ws, async () => {
+    await database.db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('prj_wb_other0000000000000000','Someone else',0)", args: [] });
+    expect((await post({ action: "team-share", projectId: "d1", shared: true })).status).toBe(200);
+  }, person("u_owner"));
+  await tenant.runInTenant(ws, async () => {
+    who = { id: "u_mate", role: "member" };
+    const opened = await post({ action: "open", projectId: privateProject });
+    expect(opened.status).toBe(200);
+    const body = await opened.json();
+    expect(body.viewOnly).toBeTruthy();
+    expect(body.project.productionProjectId).toBe(privateProject);
+    expect((await database.db().execute({ sql: "SELECT COUNT(*) AS n FROM workbench_projects WHERE owner='u_mate'", args: [] })).rows[0].n, "no draft was made for the teammate").toBe(0);
+    /* The board link (id alone) lists no private board's production. */
+    const link = await studio.GET(new Request("https://particl.test/api/workbench/projects?id=d1"), undefined as never);
+    const seen = await link.json();
+    expect(seen.viewOnly).toBeTruthy();
+    expect(JSON.stringify(seen.productions)).not.toContain("prj_wb_other0000000000000000");
+  }, person("u_mate"));
+  await tenant.runInTenant(ws, async () => {
+    who = { id: "u_owner", role: "member" };
+    const mine = await post({ action: "open", projectId: privateProject });
+    expect((await mine.json()).viewOnly, "the owner's own open is not view-only").toBeUndefined();
+  }, person("u_owner"));
+});
