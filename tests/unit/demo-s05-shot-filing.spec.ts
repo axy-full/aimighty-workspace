@@ -49,7 +49,7 @@ async function seed(ws: TenantWorkspace) {
   await runInTenant(ws, async () => {
     await ready();
     const take = (id: string, kind: string) => ({
-      sql: `INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,title) VALUES(?,'fixture','A prompt','{}','succeeded',100,100,?,?)`,
+      sql: `INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,title,created_by) VALUES(?,'fixture','A prompt','{}','succeeded',100,100,?,?,'member')`,
       args: [id, kind, `Take ${id}`],
     });
     await db().batch([
