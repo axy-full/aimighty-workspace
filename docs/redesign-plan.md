@@ -275,3 +275,13 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 9. **Remotion scaffold:** no, not now.
 10. **Pricing gaps** (the 25% spend flag; the internal flag's pricing override and margin exclusion): open items, NEEDS AKSHAY, after the console.
 11. **Lanes:** keep 3 unless the owner says usage is above 50%. Never touch main, Coolify or deploys.
+
+## Owner decisions (Akshay, 12 Oct midday)
+
+1. **#667, option A.** The owner said yes directly to restating two lines of `tests/suites-asset-link-workbench.spec.ts`:
+   - a teammate may open another member's board, view-only;
+   - anyone outside the workspace still gets nothing.
+
+   The owner's correction: the earlier "private drafts stay private" assumed a flag that doesn't exist. The real decision is that teammates see all boards, the whole board, including its script and uploads. #667 merges when green, after a fresh review, and goes in the deploy after the Google one.
+2. **Uploads fix.** A separate small PR, NEEDS AKSHAY, with a privacy review. A member can open an upload only if they uploaded it, or if it's attached to a board in their workspace. An unattached library upload stays the uploader's. Nothing ever crosses workspaces.
+3. **Google deploy prerequisites:** `SELFHOST_BEHIND_PROXY=1`, `APP_ORIGIN` and `KEYRING_SECRET` are confirmed in production. The owner set `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` in Coolify (production only).
