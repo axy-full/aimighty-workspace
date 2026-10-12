@@ -916,6 +916,15 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       await addColumn("generations", `deleted INTEGER NOT NULL DEFAULT 0`);
       await addColumn("uploads", `kind TEXT NOT NULL DEFAULT 'image'`);
       await addColumn("uploads", `duration_s REAL`);
+      /* Who uploaded it (lib/uploadAccess.ts): a member opens an upload only if they uploaded it or it is on work the workspace shares. Rows from before
+         this column are filled from the records that still name their uploader (the chat message that carried it; a finished upload session while its
+         record is kept); the rest stay NULL, unowned, and are an admin's alone to open unless shared work uses them. */
+      await addColumn("uploads", `uploader_id TEXT`);
+      await c.execute(`UPDATE uploads SET uploader_id=(SELECT m.user_id FROM messages m WHERE m.upload_id=uploads.id LIMIT 1)
+        WHERE uploader_id IS NULL AND EXISTS(SELECT 1 FROM messages m WHERE m.upload_id=uploads.id)`);
+      if ((await c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='upload_sessions'")).rows.length)
+        await c.execute(`UPDATE uploads SET uploader_id=(SELECT s.owner_id FROM upload_sessions s WHERE s.upload_id=uploads.id AND s.state='committed' LIMIT 1)
+          WHERE uploader_id IS NULL AND EXISTS(SELECT 1 FROM upload_sessions s WHERE s.upload_id=uploads.id AND s.state='committed')`);
       // The stored original's own length, read from its header at store time
       // or lazily on first read (lib/mediaSource.server.ts); audio and video.
       await addColumn("generations", `duration_s REAL`);

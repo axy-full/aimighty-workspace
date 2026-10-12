@@ -129,6 +129,8 @@ for (const variant of [
       "app/api/uploads/[id]/route.ts",
       {
         "@/lib/storage": storage,
+        /* This spec is about the bytes (ranges, lengths, headers) behind a fake database; who may open an upload is tests/unit/uploadAccess.spec.ts. */
+        "@/lib/uploadAccess": { uploadOpenableBy: async () => true },
         "@/lib/auth": {
           withTenant: (handler: unknown) => handler,
           requireUser: async () => ({ user: { id: "internal-fixture" } }),

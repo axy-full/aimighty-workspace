@@ -2,6 +2,7 @@ import sharp from 'sharp';
 import { requireUser, withTenant } from '@/lib/auth';
 import { db, ready } from '@/lib/db';
 import { requireTenant } from '@/lib/tenant';
+import { uploadOpenableBy } from '@/lib/uploadAccess';
 import { readImageBytes, readUploadBytes } from '@/lib/storage';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -17,6 +18,8 @@ export const GET = withTenant(async (_req: Request, { params }: Context) => {
   const { kind, id } = await params;
   if (!['generation', 'upload'].includes(kind) || !/^[\w-]{1,100}$/.test(id)) return new Response('Not found', { status: 404 });
   await ready();
+  /* An upload's preview is its bytes: the same access, and the same 404, as the original (lib/uploadAccess.ts), before any cached preview is looked up. */
+  if (kind === 'upload' && !(await uploadOpenableBy(id, auth.user))) return new Response('Not found', { status: 404 });
   const result = await db().execute({ sql: kind === 'generation'
     ? `SELECT kind,bytes,'png' AS ext,stored_url FROM generations WHERE id=? AND deleted=0 AND status='succeeded'`
     : 'SELECT kind,bytes,ext,stored_url FROM uploads WHERE id=?', args: [id] });
