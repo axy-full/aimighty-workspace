@@ -1,3 +1,4 @@
+import { sampleWriteRefusal } from "@/lib/demo/readonly.server";
 import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { NextResponse } from "next/server";
 import { billedCreditsSum } from "@/lib/creditSql";
@@ -103,6 +104,8 @@ export const POST = withTenant(async function POST(req: Request) {
   if (problem) return NextResponse.json({ error: problem }, { status: 400 });
 
   const projectId = scope(body.projectId ? String(body.projectId) : null);
+  /* Nothing is written into the marked sample production, by anyone (lib/demo/readonly.server.ts). */
+  { const refused = await sampleWriteRefusal(projectId); if (refused) return refused; }
   if (code) {
     const clash = (await listShots(projectId)).find(
       (s) => s.code.toLowerCase() === code.toLowerCase());

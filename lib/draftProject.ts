@@ -41,6 +41,27 @@ export async function isMarkedSample(projectId: string, ex: Exec = db()): Promis
   return parseSampleMark(raw)?.projectId === projectId;
 }
 
+/**
+ * The marked sample production (lib/demo/mark.server.ts), whatever kind of project it is: the explore-only production every viewer opens. It is READ-ONLY for
+ * everyone, the workspace's owner and admins included (owner, 12 Oct): nothing is written into it, not its canvas, its saved board, its shots, takes or library;
+ * undoing the mark (Settings) lifts it. Making one's own board from it is the one thing that stays.
+ */
+export async function sampleMarkNow(ex: Exec = db()): Promise<{ projectId: string; draftOwner: string; draftId: string; markedBy: string } | null> {
+  const row = (await ex.execute({ sql: "SELECT value FROM settings WHERE key=? LIMIT 1", args: [SAMPLE_SETTING_KEY] })).rows[0];
+  if (!row) return null;
+  try { const mark = parseSampleMark(JSON.parse(String(row.value))); return mark ? { projectId: mark.projectId, draftOwner: mark.draftOwner, draftId: mark.draftId, markedBy: mark.markedBy } : null; } catch { return null; }
+}
+export async function isSampleProject(projectId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
+  if (!projectId) return false;
+  return (await sampleMarkNow(ex))?.projectId === projectId;
+}
+/** Whether saving this draft would write the sample: a copy someone opened of it (`sample-…`), the marker's own board it was marked from, or any draft linked to it. */
+export async function isSampleDraft(owner: string, draftId: string, productionId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
+  const mark = await sampleMarkNow(ex);
+  if (!mark) return false;
+  return draftId.startsWith("sample-") || (mark.draftOwner === owner && mark.draftId === draftId) || (!!productionId && productionId === mark.projectId);
+}
+
 /** The serialized form of the flag the author sets on a shared board; a plain substring test on it keeps a workspace with no shared boards at one cheap pass. */
 const SHARED_FLAG = '"teamShared":true';
 /**
@@ -76,7 +97,10 @@ export function currentPerson(): { id: string; role?: string } | null {
  * author has shared (`teamShared`), for READING only. Any other project is the workspace's.
  */
 export async function mayReachProject(person: { id: string } | null, projectId: string | null | undefined, access: "read" | "write" = "write", ex: Exec = db()): Promise<boolean> {
-  if (!person || !isDraftProject(projectId)) return true;
+  if (!person) return true;
+  /* The sample is nobody's to write: not its marker's, not the workspace owner's or an admin's. */
+  if (access === "write" && (await isSampleProject(projectId, ex))) return false;
+  if (!isDraftProject(projectId)) return true;
   if (await ownsDraftProject(person.id, projectId!, ex)) return true;
   if (await isMarkedSample(projectId!, ex)) return true;
   return access === "read" && (await draftIsTeamShared(projectId!, ex));

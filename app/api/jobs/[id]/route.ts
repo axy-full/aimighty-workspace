@@ -1,3 +1,4 @@
+import { sampleWriteRefusal } from "@/lib/demo/readonly.server";
 import {reserveRecoveryContinuation} from "@/lib/recovery";
 import { workbenchReady, workbenchTransaction } from "@/lib/workbench/records";
 import { mediaBindingProblem } from "@/lib/mediaBindings";
@@ -62,6 +63,13 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   await ready();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+  /* Nothing is written into the marked sample production, by anyone: not a take's move into it or out of it, nor its filing against one of its shots (lib/demo/readonly.server.ts). */
+  {
+    const inTake = (await db().execute({ sql: "SELECT project_id FROM generations WHERE id=?", args: [id] })).rows[0];
+    const named = (value: unknown) => (typeof value === "string" && value ? value : null);
+    const shotProject = named(body.shotId) ? (await getShot(String(body.shotId)))?.projectId ?? null : null;
+    for (const project of [inTake?.project_id == null ? null : String(inTake.project_id), named(body.projectId), shotProject]) { const refused = await sampleWriteRefusal(project); if (refused) return refused; }
+  }
   /* A review is checked before anything is written: a state the trail knows
      (an unknown word used to clear a sign-off), a take still in the project,
      and a mark only on a take that finished — a render in flight, held or

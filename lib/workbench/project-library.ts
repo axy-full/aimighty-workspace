@@ -1,3 +1,7 @@
+import { isSampleProject } from '@/lib/draftProject';
+import { requireTenant } from '@/lib/tenant';
+import { sampleViewOnly } from '@/lib/workbench/team-boards';
+import { viewOnlyRefusal } from '@/lib/workbench/view-only';
 import type { Client } from '@libsql/client';
 import { db, now } from '@/lib/db';
 import { assetCursor, assetPageQuery, AssetQueryError } from '@/lib/assetPagination';
@@ -89,6 +93,8 @@ export async function listProjectLibrary(owner: string, params: URLSearchParams)
 export async function linkProjectLibraryUpload(owner: string, projectId: string, uploadId: string) {
   const scope = await resolveProjectLibrary(owner, projectId);
   if (!uploadId || uploadId.length > 200) throw new ProjectLibraryError('Choose a stored upload.');
+  /* The marked sample production takes no filing, from anyone (lib/demo/readonly.server.ts). */
+  if (await isSampleProject(scope.productionProjectId)) throw new ProjectLibraryError(viewOnlyRefusal((await sampleViewOnly(requireTenant())).owner.name), 403);
   const result = await db().execute({
     sql:`INSERT INTO project_library_uploads(project_id,upload_id,created_by,created_at)
       SELECT ?,id,?,? FROM uploads WHERE id=? ON CONFLICT(project_id,upload_id) DO NOTHING`,

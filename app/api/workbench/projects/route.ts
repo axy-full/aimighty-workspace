@@ -1,4 +1,4 @@
-import { isDraftProject, isMarkedSample, mayReachProject, ownsDraftProject, projectLister } from '@/lib/draftProject';
+import { isDraftProject, isMarkedSample, isSampleDraft, isSampleProject, mayReachProject, ownsDraftProject, projectLister } from '@/lib/draftProject';
 import { crossOriginProblem } from '@/lib/requestOrigin';
 import { gzipSync } from 'node:zlib';
 import {readProjectBody} from '@/lib/workbench/request-body';
@@ -12,7 +12,7 @@ import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
-import { sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
+import { sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -70,7 +70,9 @@ export const GET=withTenant(async(req:Request)=>{
   /* ?reach=<production>: may this person open it, and if it is a teammate's shared board, which draft opens it view-only (a link to a take asks, lib/shell/use-asset-link.ts). A private board answers as an unknown production does. */
   const reachParam=new URL(req.url).searchParams.get('reach');
   const reach=reachParam?await reachOf(auth.user,reachParam):null;
-  return projectResponse(req,{projects:list.rows,productions:productions.rows.filter(r=>listed(String(r.id))),project:draft?.project||null,revision:draft?.revision||0,shared,...(team?{team}:{}),...(reach?{reach}:{})});
+  /* A board that is the sample, a copy of it or the one it was marked from is read-only: it opens with the same view-only treatment a shared board gets. */
+  const sampleView=draft&&await isSampleDraft(auth.user.id,draft.project.id,draft.project.productionProjectId)?await sampleViewOnly(requireTenant()):null;
+  return projectResponse(req,{projects:list.rows,productions:productions.rows.filter(r=>listed(String(r.id))),project:draft?.project||null,revision:draft?.revision||0,shared,...(team?{team}:{}),...(reach?{reach}:{}),...(sampleView?{viewOnly:sampleView}:{})});
 });
 
 /** Whether `user` may open the production `id`, and the shared draft that opens it: an ordinary production, their own board, the marked sample or a shared board are reachable; any other private board is not. */
@@ -101,6 +103,9 @@ export const PUT=withTenant(async(req:Request)=>{
   /* A teammate's board opens view-only: a save of it is refused here, never kept as a second copy under this person's name. */
   const theirs=await otherOwnersBoard(requireTenant(),auth.user.id,p.id);
   if(theirs)return Response.json({error:viewOnlyRefusal(theirs.name),code:'view_only'},{status:403,headers:noStore});
+  /* The marked sample production is read-only for everyone, its marker and the workspace's owner included: a save of it, of a copy opened of it or of the board it was marked from is refused in the same words. */
+  const stored=(await readDraft(auth.user.id,p.id))?.project.productionProjectId;
+  if(await isSampleDraft(auth.user.id,p.id,p.productionProjectId||stored)){const{owner}=await sampleViewOnly(requireTenant());return Response.json({error:viewOnlyRefusal(owner.name),code:'view_only'},{status:403,headers:noStore});}
   try{return Response.json(await saveDraft(auth.user.id,p,revision,write));}
   catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.',...(error instanceof DraftConflictError?{code:error.code}:{})},{status:409});}
 });
@@ -128,7 +133,7 @@ export const POST=withTenant(async(req:Request)=>{
     /* A private board is its owner's alone: to anyone else it is as absent as an unknown id (lib/draftProject.ts). */
     if(!row||!(await mayReachProject(auth.user,body.projectId,'read')))return Response.json({error:'Project not found'},{status:404});
     /* A teammate's SHARED board is theirs to look at, not to save: it opens view-only (no draft of their own is made or saved against it), as a board link does. */
-    const viewOnly=(await mayReachProject(auth.user,body.projectId,'write'))?null:(await sharedBoardOwnerOf(requireTenant(),body.projectId))??{id:'',name:'A teammate'};
+    const viewOnly=(await mayReachProject(auth.user,body.projectId,'write'))?null:(await sharedBoardOwnerOf(requireTenant(),body.projectId))??((await isSampleProject(body.projectId))?(await sampleViewOnly(requireTenant())).owner:{id:'',name:'A teammate'});
     const latest=(await db().execute({sql:'SELECT body,version FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[body.projectId]})).rows[0];
     const shared=latest?JSON.parse(String(latest.body)):null;
     const p:Project={...newProject(String(row.name)),description:String(row.description||''),productionProjectId:String(row.id),...(shared?{brief:shared.brief,script:shared.script,scriptFormat:shared.scriptFormat==='adfilm'?'adfilm':'screenplay',scriptSource:shared.scriptSource,scriptReviews:shared.scriptReviews,direction:shared.direction,assets:shared.assets,nodes:shared.nodes,sharedAssets:shared.assets,sharedNodes:shared.nodes,sharedAssetIds:shared.assets.map((a:{id:string})=>a.id),sharedNodeIds:shared.nodes.map((n:{id:string})=>n.id),bibleVersion:Number(latest!.version)}:{})};
