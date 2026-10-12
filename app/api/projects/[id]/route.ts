@@ -1,3 +1,5 @@
+import { isDraftProject, ownsDraftProject } from "@/lib/draftProject";
+import { assertMoveAllowed, MoveRefused, parseJson } from "@/lib/projectMove";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -118,6 +120,17 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
       { sql: `SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_library_uploads'`, args: [] },
     ]);
     if (!found.rows.length) return false;
+    /* A draft's own project is one person's board: only its owner deletes it. Its renders and identities then fall to Unfiled, which is shared (the
+       database sets their project to NULL), so it is asked like a move out: the owner must be able to open every upload they name (lib/projectMove.ts). */
+    if (isDraftProject(id)) {
+      if (!(await ownsDraftProject(got.user.id, id, tx))) return false;
+      const named = [
+        ...(await tx.execute({ sql: "SELECT params FROM generations WHERE project_id=?", args: [id] })).rows.map((r) => parseJson(r.params)),
+        ...(await tx.execute({ sql: "SELECT photos, cover_upload_id FROM identities WHERE project_id=?", args: [id] })).rows.map((r) => ({ photos: parseJson(r.photos), uploadId: r.cover_upload_id })),
+      ];
+      try { await assertMoveAllowed(tx, { from: id, to: null, named }, { id: got.user.id, role: got.user.role }); }
+      catch (error) { if (error instanceof MoveRefused) return false; throw error; }
+    }
     const elementIds = elements.rows.map((r) => String((r as unknown as { id: string }).id));
     const holes = elementIds.map(() => "?").join(",");
     /* Rig's rows go with it. Foreign keys are declared but not enforced here,

@@ -89,26 +89,31 @@ async function sharedAmong(ex: Exec, ids: readonly string[]): Promise<Set<string
           const rows = (await ex.execute({ sql: `SELECT DISTINCT t.${source.direct} AS a FROM ${source.table} t WHERE t.${source.direct} IN (${open.map(() => "?").join(",")})${filter}`, args: open })).rows;
           for (const row of rows) used.add(String(row.a));
         } else if (open.length <= FEW) {
-          /* A few ids: a plain substring test per id picks the candidate rows; only those are parsed and read exactly. */
+          /* A few ids: a plain substring test per id picks the candidate rows (the id as a whole JSON string, or inside an /api/uploads/ value), and only those
+             are parsed and read exactly. Quoting the id keeps "up_1" from matching every "up_10…" row. */
           const rows = (await ex.execute({
-            sql: `SELECT t.${source.json} AS v FROM ${source.table} t WHERE (${open.map(() => `instr(t.${source.json},?)>0`).join(" OR ")})${filter} LIMIT 200`,
-            args: open,
+            sql: `SELECT t.${source.json} AS v FROM ${source.table} t WHERE (${open.map(() => `instr(t.${source.json},?)>0 OR instr(t.${source.json},?)>0`).join(" OR ")})${filter} LIMIT 1000`,
+            args: open.flatMap((id) => [`"${id}"`, `/api/uploads/${id}`]),
           })).rows;
           for (const row of rows) for (const id of uploadsIn(row.v, source.photos)) if (open.includes(id)) used.add(id);
         } else {
-          /* Many ids: the values a body holds under the keys the app writes (or as an /api/uploads/<id> value), matched to exactly the ids asked. */
-          const urls = open.map((id) => `/api/uploads/${id}`);
+          /* Many ids: the values a body holds under the keys the app writes, matched to exactly the ids asked, and every /api/uploads/<id> value with a ? or #
+             suffix cut off as `referencedMedia` cuts it (the cut happens in SQL, so only the ids asked come back). */
           const keyed = "photos" in source ? "1" : "j.key IN ('uploadId','sourceUploadId','coverUploadId')";
+          const marks = open.map(() => "?").join(",");
           const rows = (await ex.execute({
-            sql: `SELECT DISTINCT j.atom AS a FROM ${source.table} t, json_tree(t.${source.json}) j
-                  WHERE json_valid(t.${source.json})${filter} AND j.type='text'
-                    AND ((j.atom IN (${open.map(() => "?").join(",")}) AND ${keyed}) OR j.atom IN (${urls.map(() => "?").join(",")}))`,
-            args: [...open, ...urls],
+            sql: `SELECT j.atom AS a FROM ${source.table} t, json_tree(t.${source.json}) j
+                  WHERE json_valid(t.${source.json})${filter} AND j.type='text' AND j.atom IN (${marks}) AND ${keyed}
+                  UNION
+                  SELECT n AS a FROM (
+                    SELECT CASE WHEN q>0 AND (h=0 OR q<h) THEN substr(r,1,q-1) WHEN h>0 THEN substr(r,1,h-1) ELSE r END AS n FROM (
+                      SELECT r, instr(r,'?') AS q, instr(r,'#') AS h FROM (
+                        SELECT substr(j.atom,14) AS r FROM ${source.table} t, json_tree(t.${source.json}) j
+                        WHERE json_valid(t.${source.json})${filter} AND j.type='text' AND j.atom LIKE '/api/uploads/%')))
+                  WHERE n IN (${marks})`,
+            args: [...open, ...open],
           })).rows;
-          for (const row of rows) {
-            const atom = String(row.a);
-            used.add(atom.startsWith("/api/uploads/") ? atom.slice("/api/uploads/".length) : atom);
-          }
+          for (const row of rows) used.add(String(row.a));
         }
       } catch (error) {
         if (!missingTable(error)) throw error;
@@ -188,4 +193,14 @@ export async function assertUploadsOpenable(ex: Exec, ids: Iterable<string>, vie
   const mine = await openableAmong([...exists], viewer, ex);
   if ([...exists].some((id) => !mine.has(id)))
     throw new MediaSourceError("A referenced upload is no longer available. Remove or replace it before saving.");
+}
+
+/**
+ * Before a write opens its transaction: asks, and so remembers, whether the person may open each upload `value` names, so the check inside the write lock
+ * answers from the yes-cache and stays cheap. An answer is only a head start: the check inside the write is the one that decides.
+ */
+export async function warmOpenable(value: unknown, viewer: Viewer | null = currentViewer()): Promise<void> {
+  if (!viewer) return;
+  const ids = referencedMedia(value).uploads;
+  if (ids.size) await openableAmong([...ids], viewer).catch(() => undefined);
 }

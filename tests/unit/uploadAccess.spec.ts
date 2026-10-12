@@ -462,6 +462,132 @@ test("autosave: a draft that already names a teammate's upload keeps saving; onl
   }, as("u_mate"));
 });
 
+/** A route file loaded with sign-in faked and every other `@/…` import resolved to the real module. */
+function loadRoute<T>(file: string, viewer: () => { id: string; role: string }): T {
+  const root = process.cwd();
+  const real = createRequire(path.resolve(file));
+  const fakes: Record<string, unknown> = {
+    "@/lib/auth": { withTenant: (handler: unknown) => handler, requireUser: async () => ({ user: viewer() }), requireRender: async () => ({ user: viewer() }), requireSession: async () => ({ user: viewer() }) },
+    "@/lib/workbench/request-scope": { workbenchScopeProblem: () => null },
+    "@/lib/requestOrigin": { crossOriginProblem: () => null },
+    "@/lib/demo/spend-guard.server": { sampleWorkspaceOff: async () => null },
+  };
+  return loadWith<T>(file, (name) => (Object.hasOwn(fakes, name) ? fakes[name] : name.startsWith("@/") ? real(path.join(root, name.slice(2))) : real(name)));
+}
+function loadWith<T>(file: string, resolve: (name: string) => unknown): T {
+  const filename = path.resolve(file);
+  const compiled = ts.transpileModule(readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  const mod = { exports: {} };
+  new Function("require", "module", "exports", compiled)(resolve, mod, mod.exports);
+  return mod.exports as T;
+}
+
+test("moving a record is asked like an addition: B cannot move Y's private take or shot out of a private board, nor delete the board into the shared pool, and then open the upload", async () => {
+  const h = await harness();
+  const { mappedId } = await import("../../lib/draftProject");
+  const ws = workspace(`access-q-${run}`);
+  let who = { id: "u_mate", role: "member" };
+  const jobs = loadRoute<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts", () => who);
+  const shots = loadRoute<typeof import("../../app/api/shots/[id]/route")>("app/api/shots/[id]/route.ts", () => who);
+  const projects = loadRoute<typeof import("../../app/api/projects/[id]/route")>("app/api/projects/[id]/route.ts", () => who);
+  const patch = (route: { PATCH: (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response> }, id: string, body: unknown) =>
+    route.PATCH(new Request("https://particl.test/x", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), ctx(id));
+  const draftProject = mappedId("prj_wb_", ws.id, "u_up", "d1");
+  const mine = `upl_mv_take_${run}`, mineShot = `upl_mv_shot_${run}`, mineDel = `upl_mv_del_${run}`, plain = `upl_mv_plain_${run}`;
+  await h.tenant.runInTenant(ws, async () => {
+    await h.database.ready();
+    await seedDraft(h, "u_up", "d1", draftProject);
+    await h.database.db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('prod_target','Shared',0)", args: [] });
+    for (const id of [mine, mineShot, mineDel, plain]) await seedUpload(h, id, "u_up");
+    const take = (id: string, project: string, upload: string, shot?: string) => h.database.db().execute({
+      sql: "INSERT INTO generations(id,project_id,shot_id,model,prompt,params,status,created_at,updated_at,kind) VALUES(?,?,?,?,?,?,'succeeded',1,1,'image')", args: [id, project, shot ?? null, "m", "p", JSON.stringify({ references: [{ uploadId: upload }] })] });
+    await take(`gen_mv_take_${run}`, draftProject, mine);
+    await h.database.db().execute({ sql: "INSERT INTO shots(id,project_id,code,setup,created_at,updated_at) VALUES(?,?,'S1',?,1,1)", args: [`shot_mv_${run}`, draftProject, JSON.stringify({ look: { uploadId: mineShot } })] });
+    await take(`gen_mv_shot_${run}`, draftProject, plain, `shot_mv_${run}`);
+    await take(`gen_mv_del_${run}`, draftProject, mineDel);
+  });
+  /* B: none of it moves, and nothing opens. */
+  await h.tenant.runInTenant(ws, async () => {
+    who = { id: "u_mate", role: "member" };
+    for (const to of ["", "prod_target"]) {
+      const res = await patch(jobs, `gen_mv_take_${run}`, { projectId: to });
+      expect(res.status, `take to "${to}"`).toBe(404);
+    }
+    const moved = await patch(shots, `shot_mv_${run}`, { projectId: "prod_target" });
+    expect(moved.status).toBe(404);
+    expect((await h.database.db().execute({ sql: "SELECT project_id FROM generations WHERE id IN (?,?)", args: [`gen_mv_take_${run}`, `gen_mv_shot_${run}`] })).rows.map((r) => r.project_id)).toEqual([draftProject, draftProject]);
+    expect((await h.database.db().execute({ sql: "SELECT project_id FROM shots WHERE id=?", args: [`shot_mv_${run}`] })).rows[0].project_id).toBe(draftProject);
+    /* Deleting the board would drop its takes into the shared Unfiled: only its owner may, so B cannot. */
+    expect((await projects.DELETE(new Request("https://particl.test/x", { method: "DELETE" }), ctx(draftProject))).status).toBe(404);
+    expect((await h.database.db().execute({ sql: "SELECT project_id FROM generations WHERE id=?", args: [`gen_mv_del_${run}`] })).rows[0].project_id).toBe(draftProject);
+    expect((await h.database.db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [draftProject] })).rows).toHaveLength(1);
+    for (const id of [mine, mineShot, plain, mineDel]) { h.as("u_mate"); expect(await status(h, id), id).toBe(404); }
+  }, { user: { id: "u_mate", email: "", name: "m", role: "member", owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
+  /* The owner may delete their own board; its takes then fall to the shared Unfiled (the database unfiles them), which opens what they name, as a move would. */
+  await h.tenant.runInTenant(ws, async () => {
+    who = { id: "u_up", role: "member" };
+    expect((await projects.DELETE(new Request("https://particl.test/x", { method: "DELETE" }), ctx(draftProject))).status).toBe(200);
+    expect((await h.database.db().execute({ sql: "SELECT project_id FROM generations WHERE id=?", args: [`gen_mv_del_${run}`] })).rows[0].project_id).toBeNull();
+    h.as("u_mate");
+    expect(await status(h, mineDel)).toBe(200);
+  }, { user: { id: "u_up", email: "", name: "u", role: "member", owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
+});
+
+test("transcription refuses a teammate's private upload with the unknown-id answer, quote included; the uploader is quoted; /api/uploads/<id>?… values count as references", async () => {
+  const h = await harness();
+  process.env.ENGINE_MOCK = "1";
+  let who = { id: "u_up", role: "member" };
+  const route = loadRoute<typeof import("../../app/api/audio/transcribe/route")>("app/api/audio/transcribe/route.ts", () => who);
+  const quote = async (id: string) => { const res = await route.POST(new Request("https://particl.test/api/audio/transcribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sourceUploadId: id, quoteOnly: true }) }), undefined as never); return [res.status, await res.json()] as const; };
+  const asUser = (id: string) => ({ user: { id, email: "", name: id, role: "member" as const, owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
+  const ws = workspace(`access-s-${run}`);
+  const audio = `upl_tr_${run}`;
+  await h.tenant.runInTenant(ws, async () => {
+    await h.database.ready();
+    await h.database.db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind,duration_s,uploader_id) VALUES(?,?,?,?,?,?,'',1,'audio',30,'u_up')", args: [audio, "talk.mp3", "audio/mpeg", "mp3", 10, "x"] });
+  }, asUser("u_up"));
+  await h.tenant.runInTenant(ws, async () => { who = { id: "u_up", role: "member" }; const [status_, body] = await quote(audio); expect([status_, body.error ?? ""]).toEqual([200, ""]); }, asUser("u_up"));
+  await h.tenant.runInTenant(ws, async () => {
+    who = { id: "u_mate", role: "member" };
+    expect(await quote(audio)).toEqual(await quote("upl_no_such_upload"));
+    expect((await quote(audio))[0]).toBe(404);
+  }, asUser("u_mate"));
+  /* The many-ids path reads a url with a query or a fragment the way referencedMedia does. */
+  await h.tenant.runInTenant(ws, async () => {
+    await h.database.ready();
+    const ids = Array.from({ length: 9 }, (_, i) => `upl_q${i}_${run}`);
+    for (const id of ids) await seedUpload(h, id, "u_up");
+    await h.database.db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('prod_q','Shared',0)", args: [] });
+    await h.database.db().execute({ sql: "INSERT INTO boards(id,project_id,name,nodes,wires,created_at,updated_at) VALUES(?,?,?,?,?,1,1)", args: [`brd_q_${run}`, "prod_q", "B", JSON.stringify([{ url: `/api/uploads/${ids[0]}?download=1` }, { url: `/api/uploads/${ids[1]}#t=3` }, { uploadId: ids[2] }]), "[]"] });
+    const open = await (await import("../../lib/uploadAccess")).openableAmong(ids, { id: "u_mate" });
+    expect([...open].sort()).toEqual(ids.slice(0, 3).sort());
+  }, asUser("u_mate"));
+});
+
+test("moving: the owner moves their own private take to a shared project (their upload opens for the team then); a shared take moves freely; an unopenable upload blocks a move out", async () => {
+  const h = await harness();
+  const { assertMoveAllowed } = await import("../../lib/projectMove");
+  const { mappedId } = await import("../../lib/draftProject");
+  const ws = workspace(`access-r-${run}`);
+  const draftProject = mappedId("prj_wb_", ws.id, "u_up", "d1");
+  const asUser = (id: string) => ({ user: { id, email: "", name: id, role: "member" as const, owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
+  const own = `upl_own_${run}`, theirs = `upl_theirs_${run}`;
+  await h.tenant.runInTenant(ws, async () => { await h.database.ready(); await seedDraft(h, "u_up", "d1", draftProject); await seedUpload(h, own, "u_up"); await seedUpload(h, theirs, "u_other"); }, asUser("u_up"));
+  await h.tenant.runInTenant(ws, async () => {
+    const db = h.database.db();
+    await assertMoveAllowed(db, { from: draftProject, to: null, named: [{ uploadId: own }] });
+    await assertMoveAllowed(db, { from: draftProject, to: "prod_x", named: [] });
+    await assertMoveAllowed(db, { from: "prod_a", to: "prod_b", named: [{ uploadId: own }] });
+    /* Into a private project nothing is shared, so nothing is asked. */
+    await assertMoveAllowed(db, { from: "prod_a", to: draftProject, named: [{ uploadId: theirs }] });
+    /* The owner's take names someone else's private upload (a draft saved before this rule): it cannot go out to the shared pool. */
+    await expect(assertMoveAllowed(db, { from: draftProject, to: null, named: [{ uploadId: theirs }] })).rejects.toThrow("Not found");
+  }, asUser("u_up"));
+  await h.tenant.runInTenant(ws, async () => {
+    await expect(assertMoveAllowed(h.database.db(), { from: draftProject, to: null, named: [] })).rejects.toThrow("Not found");
+  }, asUser("u_mate"));
+});
+
 test("the preview door (thumbnails) answers the same: the uploader gets the picture, a teammate a 404 before any cached preview is looked up", async () => {
   const h = await harness();
   const sharp = (await import("sharp")).default;

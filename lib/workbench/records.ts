@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import {mappedId} from '@/lib/draftProject';
 import { db, ready, now } from '@/lib/db';
 import { requireTenant } from '@/lib/tenant';
 import { getPlatformLayer, planOf } from '@/lib/platform';
@@ -9,7 +9,7 @@ import type { Project } from './studio';
 import type { Client, Transaction } from '@libsql/client';
 import {publishedContext} from './published-context';
 import {referencedMedia} from '@/lib/mediaBindings';
-import {assertUploadsOpenable,currentViewer,openableAmong} from '@/lib/uploadAccess';
+import {assertUploadsOpenable,currentViewer,openableAmong,warmOpenable} from '@/lib/uploadAccess';
 import {diffForTeam} from './team-canvas-model';
 import {applyTeamCanvasPatch, teamCanvasReady, TeamCanvasError} from './team-canvas';
 import {scheduleCanvasPush} from './canvas-push';
@@ -39,9 +39,7 @@ export async function workbenchReady() {
   await initialized.get(client);
 }
 
-export function mappedId(prefix: string, ...parts: string[]) {
-  return prefix + createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0,24);
-}
+export {mappedId};
 
 export async function readDraft(owner: string, id: string): Promise<{project: Project; revision:number}|null> {
   await workbenchReady();
@@ -160,6 +158,8 @@ export async function saveDraft(owner:string, project:Project, revision:number, 
   const gone=!!stored && !(await db().execute({sql:'SELECT id FROM projects WHERE id=?',args:[stored]})).rows.length;
   const pid=gone?stored!:await linkProduction(owner,{...project,productionProjectId:stored||project.productionProjectId});
   await teamCanvasReady();
+  /* Asked outside the write lock and remembered: inside it, the check for what this save adds answers from memory (lib/uploadAccess.ts). */
+  await warmOpenable(project);
   return workbenchTransaction(async(tx)=>{
     if(write){
       /* A save its editor already had checked (or one delivered twice) never lands late. */
@@ -225,6 +225,7 @@ export async function publishBible(owner:string, name:string, draftId:string, ex
   const p=draft.project;
   if(!Number.isInteger(expectedVersion)||expectedVersion<0)throw new Error('Load the current shared context before publishing.');
   const snapshot={...publishedContext(p),publishedBy:name};
+  await warmOpenable(snapshot);
   return workbenchTransaction(async(tx)=>{
     const latest=Number((await tx.execute({sql:'SELECT COALESCE(MAX(version),0) AS n FROM workbench_bibles WHERE project_id=?',args:[p.productionProjectId!]})).rows[0].n);
     if(latest!==expectedVersion)throw new BibleConflictError(latest);

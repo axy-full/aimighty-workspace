@@ -1,7 +1,7 @@
 import type { Transaction } from "@libsql/client";
 import { db, ready } from "./db";
 import { MediaSourceError, referencedMedia } from "./mediaBindings";
-import { assertUploadsOpenable } from "./uploadAccess";
+import { assertUploadsOpenable, warmOpenable } from "./uploadAccess";
 
 /** What the record this write replaces already holds (read inside the same transaction), so only what the write adds is asked. */
 export type PriorOf = (tx: Transaction) => Promise<unknown>;
@@ -62,6 +62,8 @@ export async function withMediaSources<T>(
   write: (tx: Transaction) => Promise<T>,
   priorOf?: PriorOf,
 ): Promise<T> {
+  /* The check for who may open what the write adds is asked here, outside the write lock, and remembered; inside the lock it answers from memory. */
+  await warmOpenable(value);
   return mediaMutation(async (tx) => {
     await validateMediaSources(tx, value, priorOf);
     return write(tx);

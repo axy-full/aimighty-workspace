@@ -1,3 +1,4 @@
+import { assertMoveAllowed, MoveRefused, parseJson } from "@/lib/projectMove";
 import {reserveRecoveryContinuation} from "@/lib/recovery";
 import { workbenchReady, workbenchTransaction } from "@/lib/workbench/records";
 import { mediaBindingProblem } from "@/lib/mediaBindings";
@@ -62,6 +63,15 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   await ready();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+  /* A move to another project (or to none) changes who may open the uploads the take names: asked like an addition, before anything is written
+     (lib/projectMove.ts). A take in a draft's own project leaves it only with its owner. Refused as an unknown take is. */
+  if (body.projectId !== undefined) {
+    const cur = (await db().execute({ sql: "SELECT project_id, params FROM generations WHERE id=?", args: [id] })).rows[0];
+    if (cur) {
+      try { await assertMoveAllowed(db(), { from: cur.project_id == null ? null : String(cur.project_id), to: body.projectId ? String(body.projectId) : null, named: [parseJson(cur.params)] }); }
+      catch (error) { if (error instanceof MoveRefused) return NextResponse.json({ error: "Not found" }, { status: 404 }); throw error; }
+    }
+  }
   /* A review is checked before anything is written: a state the trail knows
      (an unknown word used to clear a sign-off), a take still in the project,
      and a mark only on a take that finished — a render in flight, held or
