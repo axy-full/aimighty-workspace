@@ -308,3 +308,28 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 
    Uploads on a private draft, and unattached library uploads, stay the uploader's. Nothing ever crosses workspaces.
 3. **Google deploy prerequisites:** `SELFHOST_BEHIND_PROXY=1`, `APP_ORIGIN` and `KEYRING_SECRET` are confirmed in production. The owner set `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` in Coolify (production only).
+
+## Owner decisions (Akshay, 12 Oct 15:45 IST)
+
+1. **#674:** the owner merges and deploys; the Google test follows.
+2. **The live team-canvas hole: YES, build the fix now.**
+   - A private board's team canvas, and its listing, are owner-only.
+   - Teammates get access only once the board is shared.
+   - It must merge before the owner invites any testers. The lead merges it on green CI after an Opus privacy review.
+3. **Changing others' work:** only the board's owner or a workspace admin may rename, move, approve, trash, restore or delete takes, shots and projects.
+   - Deleting a project: the owner or an admin.
+   - API tokens follow the same rule as the person who created them.
+   - NEEDS AKSHAY, Opus review.
+4. **#675:**
+   - Old uploads with no uploader stay open.
+   - **A deleted private board's takes (and identities) stay PRIVATE to their owner, not shared.** Change this.
+   - Published references and shot presets keep sharing.
+   - Keep the owner-only export.
+   - The setup-only test edits are confirmed.
+   - It ships with #668 in a migration deploy after the owner's backup.
+5. **#667:** sharing a board is person-only. Keep.
+6. **Repeated answers:**
+   - #669's tightened privacy tests are approved.
+   - #668: yes to the audit table; build the grant cap after the current merges.
+   - Plans: Explore is the sign-up default, with NO automatic monthly credits; Studio, Agency and Production stay hidden.
+   - The pricing gaps (the 25% spend flag, the internal flag) come later, NEEDS AKSHAY.
