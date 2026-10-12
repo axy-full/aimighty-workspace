@@ -152,3 +152,97 @@ test("a render or a quote is filed only into a project its writer may write: no 
   const elsewhere = await tenant.runInTenant(other, async () => { await database.ready(); const r = await prepareGeneration(body({ projectId: privateProject }), as("u_owner") as never); return r.ok ? ["ok"] as const : [r.status, r.body] as const; }, { user: user("u_owner") });
   expect(elsewhere).toEqual(unknownProject);
 });
+
+test("client links, the treatment, the scene drafter and the cast: a private board's are its owner's; a shared board's are to look at; anyone else is answered as for an unknown project, and nothing is sent or spent", async () => {
+  const ws = workspace(`ps-d-${run}`);
+  const { tenant, database, privateProject } = await fixture(ws);
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  await platformReady();
+  let who = as("u_owner");
+  const reviewLinks = loadRoute<typeof import("../../app/api/review-links/route")>("app/api/review-links/route.ts", () => who);
+  const treatment = loadRoute<typeof import("../../app/api/atomik/treatment/route")>("app/api/atomik/treatment/route.ts", () => who);
+  const scene = loadRoute<typeof import("../../app/api/atomik/treatment/scene/route")>("app/api/atomik/treatment/scene/route.ts", () => who);
+  const drafter = loadRoute<typeof import("../../app/api/atomik/shots/draft/route")>("app/api/atomik/shots/draft/route.ts", () => who);
+  const cast = loadRoute<typeof import("../../app/api/cast/route")>("app/api/cast/route.ts", () => who);
+  const json = (method: string, body: unknown) => new Request("https://particl.test/x", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const url = (path: string) => new Request(`https://particl.test${path}`);
+  const answer = async (res: Response) => [res.status, await res.json().catch(() => null)] as const;
+  await tenant.runInTenant(ws, async () => {
+    const db = database.db();
+    await db.execute({ sql: "INSERT INTO treatments(id,project_id,title,logline,setup,scenes,notes,updated_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,1,1)", args: [`tr_${run}`, privateProject, "Secret treatment", "Secret logline", "{}", JSON.stringify([{ n: 1, title: "Scene", secs: 5, prose: "Secret prose" }]), "[]", "u_owner"] }).catch(() => undefined);
+    await db.execute({ sql: "INSERT INTO cast_members(id,project_id,name,created_at) VALUES(?,?,?,1)", args: [`cast_${run}`, privateProject, "SecretCast"] });
+    await db.execute({ sql: "INSERT INTO cast_members(id,project_id,name,created_at) VALUES(?,?,?,1)", args: [`cast_o_${run}`, "prod_open", "OpenCast"] });
+  }, { user: user("u_owner") });
+  const count = async (sql: string, args: unknown[] = []) => Number((await platformDb().execute({ sql, args: args as never[] }).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n);
+  const moneyRows = async () => (await count("SELECT COUNT(*) AS n FROM meter_events WHERE workspace_id=?", [ws.id])) + (await count("SELECT COUNT(*) AS n FROM generation_reservations WHERE workspace_id=?", [ws.id]));
+  const asking = async (actor: ReturnType<typeof as>, fn: () => Promise<Response>) => { who = actor; return tenant.runInTenant(ws, async () => { try { return answer(await fn()); } catch (e) { return Promise.resolve(["threw", String((e as Error).message)] as const); } }, { user: actor.user, token: actor.token as never }); };
+  const unknownId = "prj_wb_doesnotexist0000000000";
+  const before = await tenant.runInTenant(ws, moneyRows, { user: user("u_owner") });
+  const readers = [as("u_mate"), as("u_admin", "admin"), as("u_mate", "member", true)];
+  for (const id of [privateProject]) {
+    /* The treatment (read) and the cast list: as for an unknown project. */
+    const unknownTreatment = await asking(as("u_mate"), () => treatment.GET(url(`/api/atomik/treatment?projectId=${unknownId}`), undefined as never));
+    const unknownCast = await asking(as("u_mate"), () => cast.GET(url(`/api/cast?projectId=${unknownId}`), undefined as never));
+    for (const actor of readers) {
+      expect(await asking(actor, () => treatment.GET(url(`/api/atomik/treatment?projectId=${id}`), undefined as never)), `${actor.user.id}: treatment`).toEqual(unknownTreatment);
+      expect(await asking(actor, () => cast.GET(url(`/api/cast?projectId=${id}`), undefined as never)), `${actor.user.id}: cast`).toEqual(unknownCast);
+      expect(JSON.stringify(await asking(actor, () => cast.GET(url("/api/cast"), undefined as never))), `${actor.user.id}: every cast`).not.toContain("SecretCast");
+      expect(JSON.stringify(await asking(actor, () => reviewLinks.GET(url(`/api/review-links?projectId=${id}`), undefined as never)))).toBe(JSON.stringify(await asking(actor, () => reviewLinks.GET(url(`/api/review-links?projectId=${unknownId}`), undefined as never))));
+    }
+    const owner = await asking(as("u_owner"), () => treatment.GET(url(`/api/atomik/treatment?projectId=${id}`), undefined as never));
+    expect(JSON.stringify(owner), "the owner reads their own treatment").toContain("Secret logline");
+    expect(JSON.stringify(await asking(as("u_owner"), () => cast.GET(url(`/api/cast?projectId=${id}`), undefined as never)))).toContain("SecretCast");
+    /* Writes and spends: the treatment, the cast, a client link, the scene drafter and the scene rewrite. */
+    for (const actor of readers) {
+      expect(await asking(actor, () => treatment.PUT(json("PUT", { projectId: id, title: "Hijack", scenes: [], notes: [] }), undefined as never)), `${actor.user.id}: treatment PUT`).toEqual(
+        await asking(actor, () => treatment.PUT(json("PUT", { projectId: unknownId, title: "Hijack", scenes: [], notes: [] }), undefined as never)));
+      expect(await asking(actor, () => cast.POST(json("POST", { projectId: id, name: "Hijack" }), undefined as never)), `${actor.user.id}: cast POST`).toEqual(
+        await asking(actor, () => cast.POST(json("POST", { projectId: unknownId, name: "Hijack" }), undefined as never)));
+      expect((await asking({ ...actor, user: { ...actor.user, role: "admin" } }, () => reviewLinks.POST(json("POST", { projectId: id }), undefined as never)))[0], `${actor.user.id}: a client link`).toBe(404);
+      for (const [route, body] of [[drafter, { projectId: id, scene: 1 }], [scene, { projectId: id, n: 1 }]] as const) {
+        const refused = await asking(actor, () => route.POST(json("POST", body), undefined as never));
+        const unknown = await asking(actor, () => route.POST(json("POST", { ...body, projectId: unknownId }), undefined as never));
+        expect(refused, `${actor.user.id}: ${route === drafter ? "drafter" : "scene"}`).toEqual(unknown);
+      }
+    }
+  }
+  expect(await tenant.runInTenant(ws, moneyRows, { user: user("u_owner") }), "nothing was reserved or metered").toBe(before);
+  const titles = await tenant.runInTenant(ws, async () => (await database.db().execute({ sql: "SELECT title FROM treatments WHERE project_id=?", args: [privateProject] })).rows.map((r) => r.title), { user: user("u_owner") });
+  expect(titles).not.toContain("Hijack");
+  /* Shared: view-only, so reads open to a teammate and every write still does not. */
+  await tenant.runInTenant(ws, () => database.db().execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.teamShared',json('true')) WHERE owner='u_owner'", args: [] }), { user: user("u_owner") });
+  expect(JSON.stringify(await asking(as("u_mate"), () => cast.GET(url(`/api/cast?projectId=${privateProject}`), undefined as never)))).toContain("SecretCast");
+  expect(JSON.stringify(await asking(as("u_mate"), () => treatment.GET(url(`/api/atomik/treatment?projectId=${privateProject}`), undefined as never)))).toContain("Secret logline");
+  expect((await asking(as("u_mate"), () => cast.POST(json("POST", { projectId: privateProject, name: "Hijack" }), undefined as never)))[0]).not.toBe(200);
+  expect((await asking(as("u_admin", "admin"), () => reviewLinks.POST(json("POST", { projectId: privateProject }), undefined as never)))[0]).toBe(404);
+});
+
+test("a render admitted with a claim on a private board writes no hold, claim row or reservation, and answers as for an unknown project", async () => {
+  const ws = workspace(`ps-e-${run}`);
+  const { tenant, database, privateProject } = await fixture(ws);
+  const { executeGenerationAdmission } = await import("../../lib/generationAdmission");
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const { alignLedgerUnit } = await import("../helpers/ledgerUnit");
+  await platformReady();
+  await alignLedgerUnit();
+  await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,?,?,?)", args: [`grant_pse_${run}`, ws.id, 5000, "Test", Date.now()] });
+  const counts = async () => tenant.runInTenant(ws, async () => ({
+    generations: Number((await database.db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n),
+    meter: Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM meter_events WHERE workspace_id=?", args: [ws.id] })).rows[0].n),
+    reservations: Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM generation_reservations WHERE workspace_id=?", args: [ws.id] }).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n),
+    held: Number((await database.db().execute("SELECT COUNT(*) AS n FROM generations WHERE status='held'")).rows[0].n),
+  }), { user: user("u_owner") });
+  const body = (projectId: string) => ({ model: "grok-imagine-video", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, projectId, maxCredits: 5000 });
+  let key = 0;
+  const admit = async (actor: ReturnType<typeof as>, projectId: string) =>
+    tenant.runInTenant(ws, async () => {
+      await database.ready();
+      const r = await executeGenerationAdmission(body(projectId), actor as never, { defer: async () => {}, requestClaim: { userId: actor.user.id, key: `claim-${run}-${++key}` } as never });
+      return [r.status, r.body] as const;
+    }, { user: actor.user, token: actor.token as never });
+  const unknown = await admit(as("u_mate"), "prj_wb_doesnotexist0000000000");
+  expect(unknown).toEqual([404, { error: "No such project." }]);
+  const before = await counts();
+  for (const actor of [as("u_mate"), as("u_admin", "admin"), as("u_mate", "member", true)]) expect(await admit(actor, privateProject), actor.user.id).toEqual(unknown);
+  expect(await counts(), "no take, hold, meter row or reservation was written").toEqual(before);
+});

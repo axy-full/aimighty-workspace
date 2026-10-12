@@ -93,3 +93,10 @@ export async function projectLister(person: { id: string } | null, ex: Exec = db
   if (mark) { try { sample = parseSampleMark(JSON.parse(String(mark.value)))?.projectId ?? null; } catch { sample = null; } }
   return (projectId) => !isDraftProject(projectId) || own.has(projectId!) || shared.has(projectId!) || projectId === sample;
 }
+
+/** An id that names no project: a route that must answer a private board exactly as it answers an unknown id runs on this in the board's place. */
+export const NO_SUCH_PROJECT = "\u0000unknown";
+/** `projectId` when `person` may reach it for `access`, else the id of no project: the one question, always asked, so the reads that follow are the same either way. */
+export async function reachableOr(person: { id: string } | null, projectId: string, access: "read" | "write" = "write", ex: Exec = db()): Promise<string> {
+  return (await mayReachProject(person, projectId, access, ex)) ? projectId : NO_SUCH_PROJECT;
+}

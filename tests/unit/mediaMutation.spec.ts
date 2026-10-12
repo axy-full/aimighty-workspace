@@ -38,6 +38,7 @@ async function route(file: string): Promise<Record<string, Handler>> {
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/mediaMutation": await import("../../lib/mediaMutation"),
     "@/lib/cast": await import("../../lib/cast"),
+    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/shots": await import("../../lib/shots"),
     "@/lib/cache": await import("../../lib/cache"),
     "@/lib/workbench/request-scope":

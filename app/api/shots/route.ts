@@ -112,7 +112,8 @@ export const POST = withTenant(async function POST(req: Request) {
   if (projectId) {
     await ready();
     const known = (await db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [projectId] })).rows.length > 0;
-    if (!known || !(await mayReachProject(got.user, projectId, "write"))) return NextResponse.json({ error: "No such project." }, { status: 404 });
+    const reach = await mayReachProject(got.user, projectId, "write");
+    if (!known || !reach) return NextResponse.json({ error: "No such project." }, { status: 404 });
   }
   if (code) {
     const clash = (await listShots(projectId)).find(

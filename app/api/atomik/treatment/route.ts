@@ -1,3 +1,4 @@
+import { reachableOr } from "@/lib/draftProject";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -10,9 +11,11 @@ export const dynamic = "force-dynamic";
 export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
-  const projectId = new URL(req.url).searchParams.get("projectId");
-  if (!projectId) return NextResponse.json({ error: "Which production?" }, { status: 400 });
+  const asked = new URL(req.url).searchParams.get("projectId");
+  if (!asked) return NextResponse.json({ error: "Which production?" }, { status: 400 });
   await ready();
+  /* A private board is its owner's, and a shared one a teammate's to look at (lib/draftProject.ts): to anyone else it is read as a production that does not exist. */
+  const projectId = await reachableOr(got.user, asked, "read");
   const versionWanted = Number(new URL(req.url).searchParams.get("version") ?? NaN);
   const [treatment, cast, versions, snapshot] = await Promise.all([
     getTreatment(projectId), listCast(projectId), listTreatmentVersions(projectId),
@@ -35,8 +38,11 @@ export const PUT = withTenant(async function PUT(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
-  const projectId = body.projectId ? String(body.projectId) : "";
-  if (!projectId) return NextResponse.json({ error: "Which production?" }, { status: 400 });
+  const named = body.projectId ? String(body.projectId) : "";
+  if (!named) return NextResponse.json({ error: "Which production?" }, { status: 400 });
+  /* Only a board's owner writes its treatment; to anyone else it is a production that does not exist. */
+  await ready();
+  const projectId = await reachableOr(got.user, named, "write");
   const scenes: Scene[] = Array.isArray(body.scenes) ? body.scenes : [];
   const notes: Note[] = Array.isArray(body.notes) ? body.notes : [];
   const expected = body.expectedUpdatedAt;
