@@ -96,6 +96,10 @@ async function scope(
       ws,
       async () => {
         await ready();
+        /* The house's id is fixed (ws_legacy), so another spec in this worker may have booted its own database under that id and left this one's request table unmade. */
+        await db().execute(`CREATE TABLE IF NOT EXISTS generation_requests (
+          user_id TEXT NOT NULL, request_key TEXT NOT NULL, fingerprint TEXT NOT NULL, generation_id TEXT, response_json TEXT, response_status INTEGER,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(user_id, request_key))`);
         await db().execute(
           "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('project','Project',0)",
         );
