@@ -333,3 +333,7 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
    - #668: yes to the audit table; build the grant cap after the current merges.
    - Plans: Explore is the sign-up default, with NO automatic monthly credits; Studio, Agency and Production stay hidden.
    - The pricing gaps (the 25% spend flag, the internal flag) come later, NEEDS AKSHAY.
+
+## Owner decision (Akshay, 12 Oct evening)
+
+- Google sign-in is tested on production (invite → Google → joined; plain /login with Google). It stays in Google's **Testing** mode. The owner publishes it once the privacy fixes are live (#681, the canvas hole; the owner-or-admin rule for changing others' work) and before inviting outside testers.
