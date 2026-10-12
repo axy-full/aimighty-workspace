@@ -72,7 +72,7 @@ export const GET = withTenant(async (req: Request) => {
         return Response.json({ error: "Check the attached files before asking." }, { status: 400, headers: NO_STORE });
       return Response.json({ agent: await rigAgentState(productionId, who.userId!, draftId && /^[a-zA-Z0-9-]{1,100}$/.test(draftId) ? draftId : null, attachments) }, { headers: NO_STORE });
     }
-    await requireProduction(productionId);
+    await requireProduction(productionId, undefined, "read");
     /* The board's History (stream 3; lead decision 26): this production's canvas changes and who made them, read only. */
     if (url.searchParams.get("history") === "1") return Response.json({ history: await boardHistory(productionId) }, { headers: NO_STORE });
     /* Anything the live room has not taken yet goes out again, after this answer. */

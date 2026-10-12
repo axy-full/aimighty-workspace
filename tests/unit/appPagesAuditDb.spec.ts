@@ -101,11 +101,13 @@ async function listRoutes(ws: { current: unknown }) {
     "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
     "@/lib/creditSql": await import("../../lib/creditSql"),
     "@/lib/shots": await import("../../lib/shots"),
+    "@/lib/workAccess": await import("../../lib/workAccess"),
     "@/lib/productions": await import("../../lib/productions"),
     "@/lib/cache": await import("../../lib/cache"),
     "@/lib/platform": await import("../../lib/platform"),
     "@/lib/planLimits": await import("../../lib/planLimits"),
     "@/lib/archive": await import("../../lib/archive"),
+    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/caps": await import("../../lib/caps"),
     "@/lib/workbench/request-scope": await import("../../lib/workbench/request-scope"),
     /* Signed in as an admin of whichever workspace the test has chosen. */

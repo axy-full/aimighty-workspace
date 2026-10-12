@@ -30,6 +30,9 @@ async function closeDock(page: Page) {
 
 test.describe("desktop, switch on", () => {
   test.beforeEach(({}, info) => test.skip(!DESKTOP.includes(info.project.name), "desktop sizes"));
+  /* The first test answers the board's team-canvas reads through a route that fetches them: one still in flight when the test ends would fail
+     as "route.fetch: Test ended" in the next test. Taking the routes off waits for it to finish. */
+  test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
 
   test("the reply is asked as a client round, planned and priced by the server, approved once; no round is kept for renders that are not the client's shots", async ({ page }) => {
     test.setTimeout(420_000);

@@ -39,6 +39,8 @@ section.plans { background: var(--gx-root); }
 /* The four-card rows (plans, notes, packs): four across above 1040, two
    across from 720 to 1040, one on a phone. Never three and an orphan. */
 .four { --mk-col: 220px; }
+.three { --mk-col: 300px; }
+.group { margin: 8px 0 0; font-size: 17px; font-weight: 600; text-align: left; }
 @media (max-width: 1040px) { .four { --mk-col: 320px; } }
 
 /* This page is the pricing: the shared bottom's pricing teaser would repeat

@@ -126,6 +126,8 @@ test("plans, the welcome grant, the Starter pack and the approval line at US$0.1
 
   expect(DEFAULT_PLANS.map((p) => [p.label, p.priceUsd, p.includedCredits])).toEqual([
     ["Invite", 0, 0], ["Studio", 49, 400], ["Agency", 199, 1600], ["Production", 999, 9000],
+    ["Explore", 50, 500], ["Create", 100, 1000], ["Master", 250, 2500],
+    ["Business 100", 100, 1000], ["Business 250", 250, 2500], ["Business 500", 500, 5000],
   ]);
   /* Invite's 250 are the one-time welcome grant, not an inclusion (lib/plans.ts). */
   expect(signupCredits()).toBe(250);

@@ -1,3 +1,4 @@
+import { currentPerson, projectLister } from "./draftProject";
 import { syncCreditReceipts } from "./creditReceipts";
 import { db, ready, id as newId, now } from "./db";
 import { billedCreditsSum } from "./creditSql";
@@ -103,7 +104,15 @@ export async function listProductions(): Promise<ProductionRow[]> {
   /* What each project has used, as the reservation gate counts it (lib/caps.ts spentBy): one figure on every screen. */
   const used = dollars ? null : await spentBy("project_id", (projs.rows as Row[]).map((r) => String(r.id)));
   const byProd = new Map<string, ProjectRow[]>();
-  for (const r of projs.rows as Row[]) {
+  /* A private board (`prj_wb_…`) is listed only to its owner (lib/draftProject.ts); background work with no signed-in person sees all. */
+  const listed = await projectLister(currentPerson());
+  /* A production made only of private boards the person may not see (every draft has its own, named for the board) is not listed either. */
+  const hiddenOnly = new Map<string, boolean>();
+  for (const row of projs.rows as Row[]) {
+    const production = String(row.production_id ?? "");
+    hiddenOnly.set(production, (hiddenOnly.get(production) ?? true) && !listed(String(row.id)));
+  }
+  for (const r of (projs.rows as Row[]).filter((row) => listed(String(row.id)))) {
     const row: ProjectRow = {
       id: String(r.id), productionId: String(r.production_id ?? ""), name: String(r.name), format: String(r.format ?? ""),
       runtimeSecs: r.runtime_target == null ? null : Number(r.runtime_target), step: cleanStep(r.step),
@@ -115,7 +124,7 @@ export async function listProductions(): Promise<ProductionRow[]> {
     const list = byProd.get(row.productionId) ?? [];
     list.push(row); byProd.set(row.productionId, list);
   }
-  return (prods.rows as Row[]).map((r) => {
+  return (prods.rows as Row[]).filter((r) => !hiddenOnly.get(String(r.id))).map((r) => {
     const projects = byProd.get(String(r.id)) ?? [];
     return {
       id: String(r.id), name: String(r.name), client: String(r.client ?? ""), status: cleanStatus(r.status),

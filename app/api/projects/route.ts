@@ -1,3 +1,4 @@
+import { projectLister } from "@/lib/draftProject";
 import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { NextResponse } from "next/server";
 import { createProduction } from "@/lib/productions";
@@ -46,7 +47,10 @@ export const GET = withTenant(async function GET() {
   const inCredits = creditsApply(requireTenant());
   const unit = inCredits ? "cr" : "usd";
   const hit = cached<{ unit?: "cr" | "usd"; projects: { id: string; capCredits: number | null; credits?: number }[] }>(PROJECTS_KEY, TTL_MS);
-  if (hit?.unit === unit) return NextResponse.json(await withCaps(hit, inCredits));
+  /* The memo is shared by every viewer; a private board (`prj_wb_…`) is listed only to its owner (lib/draftProject.ts), filtered per request. */
+  const listed = await projectLister(got.user);
+  const forViewer = <B extends { projects: { id: string }[] }>(body: B): B => ({ ...body, projects: body.projects.filter((p) => listed(p.id)) });
+  if (hit?.unit === unit) return NextResponse.json(await withCaps(forViewer(hit), inCredits));
 
   /* One grouped pass over generations for the counts and the money, then a
      handful of correlated subqueries for the shot-level facts the Projects
@@ -139,7 +143,7 @@ export const GET = withTenant(async function GET() {
     })),
   };
   putCache(PROJECTS_KEY, body);
-  return NextResponse.json(await withCaps(body, inCredits));
+  return NextResponse.json(await withCaps(forViewer(body), inCredits));
 });
 
 export const POST = withTenant(async function POST(req: Request) {
