@@ -215,8 +215,8 @@ export function Bar(props: BarProps) {
           ) : null}
           {chips}
           <input ref={input} className="v12-bar-input" value={value} placeholder={placeholder} aria-label={label} maxLength={maxLength} disabled={disabled}
-            role={mentions || skills ? "combobox" : undefined} aria-expanded={mentions || skills ? listOpen || slashOpen : undefined} aria-controls={listOpen ? listId : slashOpen ? skillsId : undefined}
-            aria-activedescendant={listOpen ? `${listId}-${current}` : slashOpen && listed.length ? `${skillsId}-${skillCurrent}` : undefined} aria-autocomplete={mentions || skills ? "list" : undefined}
+            role={mentions || slashOpen ? "combobox" : undefined} aria-expanded={mentions || slashOpen ? listOpen || slashOpen : undefined} aria-controls={listOpen ? listId : slashOpen ? skillsId : undefined}
+            aria-activedescendant={listOpen ? `${listId}-${current}` : slashOpen && listed.length ? `${skillsId}-${skillCurrent}` : undefined} aria-autocomplete={mentions || slashOpen ? "list" : undefined}
             onChange={(e) => { const next = e.target.value; onChange(next); setSlashOff(false); setSkillActive(0); if (mentions?.length && /(^|\s)@$/.test(next)) openList(); }}
             onKeyDown={onKey} data-testid={`${testId}-input`} />
           <button type="button" className={send.variant === "outlined" ? "v12-bar-send v12-bar-send-outlined" : send.variant === "quiet" ? "v12-bar-send v12-bar-send-quiet" : "v12-bar-send"} onClick={() => canSend && onSubmit()}
