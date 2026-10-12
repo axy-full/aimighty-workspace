@@ -5,6 +5,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { getShot, STATUSES, codeProblem } from "@/lib/shots";
 import { archiveAndDelete, archiveDeleteStatements, archiveTransaction } from "@/lib/archive";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
+import { NOT_YOURS, mayChangeProject, mayChangeWork } from "@/lib/workAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
   await ready();
   const shot = await getShot(shotId);
   if (!shot) return NextResponse.json({ error: "No such shot." }, { status: 404 });
+  /* Someone else's shot is changed by its maker, the board's owner or an admin only: a rename, a move, a status, an edit (lib/workAccess.ts). */
+  if (!(await mayChangeWork(got.user, shot))) return NextResponse.json({ error: NOT_YOURS.shot }, { status: 403 });
 
   /* Nothing is written into the marked sample production, by anyone: not the shot, not a move into it or out of it (lib/demo/readonly.server.ts). */
   const bodyForGuard = await req.clone().json().catch(() => ({}));
@@ -31,6 +34,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
   if (typeof body.projectId === "string" && body.projectId && body.projectId !== shot.projectId) {
     const target = await db().execute({ sql: `SELECT id FROM projects WHERE id = ?`, args: [body.projectId] });
     if (!target.rows.length) return NextResponse.json({ error: "No such project." }, { status: 404 });
+    /* Where it goes is asked as well as the shot: a project that is someone else's work takes it from its owner or an admin only. */
+    if (!(await mayChangeProject(got.user, body.projectId))) return NextResponse.json({ error: NOT_YOURS.moveToProject }, { status: 403 });
     sets.push("project_id = ?"); args.push(body.projectId);
     moveTo = body.projectId;
   }
@@ -87,6 +92,9 @@ export const DELETE = withTenant(async function DELETE(_req: Request, ctx: { par
   const { id: shotId } = await ctx.params;
   await ready();
   { const { sampleWriteRefusal } = await import("@/lib/demo/readonly.server"); const refused = await sampleWriteRefusal((await getShot(shotId))?.projectId); if (refused) return refused; }
+  /* A shot that is there is deleted by its maker, the board's owner or an admin only; an unknown id is answered as it always was. */
+  const there = await getShot(shotId);
+  if (there && !(await mayChangeWork(got.user, there))) return NextResponse.json({ error: NOT_YOURS.shot }, { status: 403 });
   // Renders outlive the shot they were filed under — unfile them, never
   // delete work because a slate was tidied away.
   /* What this shot pointed at goes with it. A binding is not work and holds

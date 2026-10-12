@@ -51,7 +51,7 @@ async function seed(ws: TenantWorkspace) {
   await runInTenant(ws, async () => {
     await ready();
     const take = (id: string, status: string, deleted = 0) => ({
-      sql: `INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,title,deleted) VALUES(?,'fixture','A prompt','{}',?,100,100,'image',?,?)`,
+      sql: `INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,title,deleted,created_by) VALUES(?,'fixture','A prompt','{}',?,100,100,'image',?,?,'member')`,
       args: [id, status, `Take ${id}`, deleted],
     });
     const person = (id: string, role: string, disabled = 0) => ({

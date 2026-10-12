@@ -40,6 +40,7 @@ async function route(file: string): Promise<Record<string, Handler>> {
     "@/lib/cast": await import("../../lib/cast"),
     "@/lib/shots": await import("../../lib/shots"),
     "@/lib/demo/readonly.server": await import("../../lib/demo/readonly.server"),
+    "@/lib/workAccess": await import("../../lib/workAccess"),
     "@/lib/cache": await import("../../lib/cache"),
     "@/lib/workbench/request-scope":
       await import("../../lib/workbench/request-scope"),
@@ -47,7 +48,7 @@ async function route(file: string): Promise<Record<string, Handler>> {
     "@/lib/platformOwnerPrivacy": await import("../../lib/platformOwnerPrivacy"),
     "@/lib/auth": {
       withTenant: (handler: Handler) => handler,
-      requireUser: async () => ({ user: { id: "owner", name: "Owner" } }),
+      requireUser: async () => ({ user: { id: "owner", name: "Owner", role: "admin" } }),
     },
   };
   const compiled = ts.transpileModule(

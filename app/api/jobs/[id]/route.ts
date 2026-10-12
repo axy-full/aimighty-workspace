@@ -13,6 +13,7 @@ import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { discardHeldJob } from "@/lib/held";
 import { withLedgerCharges } from "@/lib/usageLedger";
+import { NOT_YOURS, mayChangeProject, mayChangeWork } from "@/lib/workAccess";
 import type { Transaction } from "@libsql/client";
 
 const ACTIVE = "This generation is still active. Wait for it to finish before deleting it.";
@@ -28,6 +29,30 @@ async function discardHeld(tx: Transaction, id: string, row: Record<string, unkn
   if (user.role !== "admin" && String(row.created_by ?? "") !== user.id)
     return "Only the person who made this take, or an admin, can discard it.";
   return (await discardHeldJob(id, tx)) ? null : ACTIVE;
+}
+
+/** A take someone else made: its maker, the board's owner or an admin changes it (lib/workAccess.ts). A missing take is an unknown id and is left to the route's own answer for one. Null when the person may. */
+async function notYours(user: { id: string; role: "admin" | "member"; owner?: boolean }, id: string): Promise<Response | null> {
+  const row = (await db().execute({ sql: "SELECT created_by, project_id, status FROM generations WHERE id=?", args: [id] })).rows[0];
+  if (!row) return null;
+  /* A held take was never sent: taking it out of the line is its author's or an admin's (discardHeld), and that rule speaks for it. */
+  if (String(row.status) === "held") return null;
+  if (await mayChangeWork(user, { createdBy: row.created_by == null ? null : String(row.created_by), projectId: row.project_id == null ? null : String(row.project_id) })) return null;
+  return NextResponse.json({ error: NOT_YOURS.take }, { status: 403 });
+}
+
+/** Where a take is moved to is asked as well as the take: a project or a shot that is someone else's work takes it from its owner or an admin only. An unknown target is answered as it always was. */
+async function notThere(user: { id: string; role: "admin" | "member"; owner?: boolean }, body: { projectId?: unknown; shotId?: unknown }): Promise<Response | null> {
+  if (body.projectId !== undefined && body.projectId) {
+    const target = String(body.projectId);
+    if ((await db().execute({ sql: "SELECT 1 FROM projects WHERE id=?", args: [target] })).rows.length && !(await mayChangeProject(user, target)))
+      return NextResponse.json({ error: NOT_YOURS.moveToProject }, { status: 403 });
+  }
+  if (body.shotId !== undefined && body.shotId) {
+    const shot = await getShot(String(body.shotId));
+    if (shot && !(await mayChangeWork(user, shot))) return NextResponse.json({ error: NOT_YOURS.moveToShot }, { status: 403 });
+  }
+  return null;
 }
 
 export const dynamic = "force-dynamic";
@@ -84,6 +109,12 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     if (wanted && String(row.status) !== "succeeded") return NextResponse.json({ error: "Only a finished take can be picked, approved or sent back." }, { status: 409 });
     reviewedFrom = String(row.review_state ?? "");
   }
+  /* Someone else's take is changed by its maker, the board's owner or an admin only: a rename, a move, a review, a trash or a restore alike.
+     (After the checks above, which only read: a word the trail does not know, a take that is gone or not finished answer as they did.) */
+  const refused = await notYours(got.user, id);
+  if (refused) return refused;
+  const refusedTarget = await notThere(got.user, body);
+  if (refusedTarget) return refusedTarget;
   /* Discard a held take without hiding it: it stays in the list as cancelled. */
   if (body.discard === true) {
     const problem = await workbenchTransaction(async (tx) => {
@@ -241,6 +272,8 @@ export const DELETE = withTenant(async function DELETE(req: Request, { params }:
   const { id } = await params;
   await workbenchReady();
   await mediaDeletionReady();
+  const refused = await notYours(got.user, id);
+  if (refused) return refused;
   const problem = await workbenchTransaction(async tx => {
     const row = (await tx.execute({ sql: "SELECT status, created_by FROM generations WHERE id=?", args: [id] })).rows[0];
     if (row && ["queued", "running"].includes(String(row.status))) return ACTIVE;
