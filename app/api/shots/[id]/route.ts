@@ -16,13 +16,13 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
   await ready();
   const shot = await getShot(shotId);
   if (!shot) return NextResponse.json({ error: "No such shot." }, { status: 404 });
-  /* Someone else's shot is changed by its maker, the board's owner or an admin only: a rename, a move, a status, an edit (lib/workAccess.ts). */
-  if (!(await mayChangeWork(got.user, shot))) return NextResponse.json({ error: NOT_YOURS.shot }, { status: 403 });
-
   /* Nothing is written into the marked sample production, by anyone: not the shot, not a move into it or out of it (lib/demo/readonly.server.ts). */
   const bodyForGuard = await req.clone().json().catch(() => ({}));
   const { sampleWriteRefusal } = await import("@/lib/demo/readonly.server");
   for (const project of [shot.projectId, typeof bodyForGuard?.projectId === "string" ? bodyForGuard.projectId : null]) { const refused = await sampleWriteRefusal(project); if (refused) return refused; }
+  /* Someone else's shot is changed by its maker, the board's owner or an admin only: a rename, a move, a status, an edit (lib/workAccess.ts). */
+  if (!(await mayChangeWork(got.user, shot))) return NextResponse.json({ error: NOT_YOURS.shot }, { status: 403 });
+
   const body = await req.json().catch(() => ({}));
   const sets: string[] = [];
   let moveTo: string | null = null;
