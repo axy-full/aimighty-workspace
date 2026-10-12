@@ -1,3 +1,4 @@
+import { projectLister } from "@/lib/draftProject";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -16,7 +17,8 @@ export const GET = withTenant(async function GET() {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const rs = await db().execute(`
     SELECT p.id, p.name, (SELECT COUNT(*) FROM shots s WHERE s.project_id = p.id) AS shots FROM projects p`);
-  const projects = new Map((rs.rows as any[]).map((r) => [String(r.id), { name: String(r.name), shots: Number(r.shots ?? 0) }]));
+  const listed = await projectLister(got.user);
+  const projects = new Map((rs.rows as any[]).filter((r) => listed(String(r.id))).map((r) => [String(r.id), { name: String(r.name), shots: Number(r.shots ?? 0) }]));
   const users = await db().execute(`SELECT id, name FROM users`);
   const names = new Map((users.rows as any[]).map((r) => [String(r.id), String(r.name)]));
   return NextResponse.json({

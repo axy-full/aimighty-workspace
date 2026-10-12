@@ -20,6 +20,8 @@ function route() {
   const draft = newProject("Private production");
   const mocks: Record<string, unknown> = {
     "@/lib/workbench/request-body": requestBody,
+    /* The list of private boards is tests/unit/privateCanvas.spec.ts's; this spec is about what a refused save touches. */
+    "@/lib/draftProject": { projectLister: async () => () => true },
     "@/lib/requestOrigin": requestOrigin,
     "@/lib/auth": {
       withTenant: (handler: unknown) => handler,

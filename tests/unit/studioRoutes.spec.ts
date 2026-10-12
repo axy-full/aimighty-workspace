@@ -53,6 +53,7 @@ test("a project refused by the plan's production ceiling leaves no empty product
   const invite = planById(DEFAULT_PLANS, "invite")!;
   const projects = await route("app/api/projects/route.ts", {
     "@/lib/productions": await import("../../lib/productions"),
+    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/db": await import("../../lib/db"),
     "@/lib/cache": await import("../../lib/cache"),
     "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
