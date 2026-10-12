@@ -16,6 +16,8 @@ import { CANCELLED_FREE_TOAST, type CancelVia } from "./renderState";
 export type CancelOutcome = { text: string; cancelled: boolean; pending: boolean };
 
 export const CANCEL_SENT = "Cancel sent · nothing billed once the engine confirms";
+/** Seedance, Kling or Topaz: the engine was asked. Nothing is promised about billing until it answers; the take says what it cost. */
+export const CANCEL_ASKED = "Cancel sent · waiting for the engine to confirm";
 export const CANCEL_STARTED = "It had already started, so it could not be cancelled.";
 export const CANCEL_FINISHED = "It had already finished, so it could not be cancelled.";
 export const CANCEL_STOPPED = "It had already stopped. The take says what it cost.";
@@ -34,6 +36,11 @@ export function providerQueueOutcome(status: unknown): CancelOutcome {
     case "failed": return { text: CANCEL_STOPPED, cancelled: false, pending: false };
     default: return { text: CANCEL_UNSURE, cancelled: false, pending: false };
   }
+}
+
+/** The route's answer for a Seedance, Kling or Topaz video: as above, but a cancel that is only sent says nothing about billing. */
+export function providerAskOutcome(status: unknown): CancelOutcome {
+  return status === "requested" ? { text: CANCEL_ASKED, cancelled: false, pending: true } : providerQueueOutcome(status);
 }
 
 /** A press that came back with a refusal: the server's own words when it gave them; for a provider cancel nothing is claimed about billing. */

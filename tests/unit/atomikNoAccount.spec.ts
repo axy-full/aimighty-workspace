@@ -168,13 +168,13 @@ test("the plans Atomik runs on a page never read, quote, submit or poll on the a
 
 /* ── Claude, OpenAI and Grok ─────────────────────────────────────────── */
 
-test("Atomik's planner and agent offer only the Claude, OpenAI and Grok families, with Claude Sonnet 4.6 as the default", async () => {
+test("Atomik's planner and agent offer only the Claude, OpenAI and Grok families, with Claude Sonnet 5.5 as the default", async () => {
   const policy = await import("../../lib/atomikModelPolicy");
   const { FEATURED } = await import("../../lib/catalog");
   const family = (id: string) => id.split("/")[0];
   expect(new Set(policy.ATOMIK_MODEL_IDS.map(family))).toEqual(new Set(["anthropic", "openai", "spacexai"]));
   expect(policy.ATOMIK_FAMILIES).toEqual(["anthropic", "openai", "spacexai"]);
-  expect(policy.ATOMIK_DEFAULT_MODEL).toBe("anthropic/claude-sonnet-4.6");
+  expect(policy.ATOMIK_DEFAULT_MODEL).toBe("anthropic/claude-sonnet-5.5");
   expect(policy.ATOMIK_MODEL_IDS[0]).toBe(policy.ATOMIK_DEFAULT_MODEL);
   for (const id of policy.ATOMIK_AUTO_MODEL_IDS) expect(policy.isAtomikModel(id), id).toBe(true);
   expect([...FEATURED.planner]).toEqual([...policy.ATOMIK_MODEL_IDS]);
@@ -185,7 +185,8 @@ test("Atomik's planner and agent offer only the Claude, OpenAI and Grok families
   /* Auto routes among the three only: a Gemini route or a Gemini-only catalogue never plans. */
   const served = [GEMINI, "google/gemini-3.5-flash", "spacexai/grok-4.7", "openai/gpt-5.5"];
   expect(policy.selectAtomikModel("auto", served, GEMINI)).toBe("openai/gpt-5.5");
-  expect(policy.selectAtomikModel("auto", [...served, "anthropic/claude-sonnet-4.6"])).toBe("anthropic/claude-sonnet-4.6");
+  expect(policy.selectAtomikModel("auto", [...served, "anthropic/claude-sonnet-4.6"])).toBe("openai/gpt-5.5");
+  expect(policy.selectAtomikModel("auto", [...served, "anthropic/claude-sonnet-5.5"])).toBe("anthropic/claude-sonnet-5.5");
   expect(() => policy.selectAtomikModel("auto", [GEMINI, "google/gemini-3.5-flash"])).toThrow("No supported Atomik");
 
   /* The workbench agent's priced menu drops what is outside the three families. */

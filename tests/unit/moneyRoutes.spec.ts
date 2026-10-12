@@ -141,6 +141,7 @@ async function writerRoutes(ws: TenantWorkspace, text: string) {
     "@/lib/cast": { listCast: async () => [] },
     "@/lib/atomik": { requestEffort: () => undefined, resolveModel: async () => "test/text" },
     "@/lib/gateway": { gatewayReachable: () => true },
+    "@/lib/language-provider": { languageReachable: () => true },
     "@/lib/studio": await import("../../lib/studio"),
     "@/lib/shotBuilder": await import("../../lib/shotBuilder"),
     "@/lib/credits": await import("../../lib/credits"),

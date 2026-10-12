@@ -6,7 +6,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useTrayPrices, renderTakeOf } from "@/components/v12/make/use-results";
 import { batchSummary, renderState, type CancelVia, type RenderState, type RenderTake } from "@/lib/v12/renderState";
 import { parseTypicalTimes, type TypicalTimesReply } from "@/lib/v12/typicalTimes";
-import { cancelFailure, mayCancelTake, discardedOutcome, providerQueueOutcome, type CancelOutcome } from "@/lib/v12/renderCancel";
+import { cancelFailure, mayCancelTake, discardedOutcome, providerAskOutcome, providerQueueOutcome, type CancelOutcome } from "@/lib/v12/renderCancel";
 import { announceJob } from "@/lib/shell/jobs-bus";
 import { refreshProjectLibrary } from "@/lib/workspace/library";
 
@@ -116,7 +116,7 @@ export function useCancelTake(scope: string, projectId: string | null, toast: (t
         ? await fetcher(`/api/jobs/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ discard: true }) })
         : await fetcher(`/api/generations/${encodeURIComponent(id)}/cancel`, { method: "POST" });
       const body = (await response.json().catch(() => null)) as { error?: string; status?: string } | null;
-      outcome = !response.ok ? cancelFailure(via, body?.error) : via === "discard" ? discardedOutcome() : providerQueueOutcome(body?.status);
+      outcome = !response.ok ? cancelFailure(via, body?.error) : via === "discard" ? discardedOutcome() : via === "provider-ask" ? providerAskOutcome(body?.status) : providerQueueOutcome(body?.status);
     } catch {
       outcome = cancelFailure(via, null);
     }

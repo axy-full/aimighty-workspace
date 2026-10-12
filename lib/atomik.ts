@@ -1,10 +1,9 @@
-import { vendorKey } from './vendorKeys';
+import { languageReachable } from './language-provider';
 import { savedAtomikChoice, selectAtomikModel } from "./atomikModelPolicy";
 import { aliasModel } from "./modelAliases";
 import { withMediaSources } from "./mediaMutation";
 import { MediaSourceError } from "./mediaBindings";
 import { db, ready, now, id as newId } from "./db";
-import { gatewayReachable } from "./gateway";
 import { catalog, findModel, videoCostUsd, imageCostUsd } from "./catalog";
 import { MODELS, type ModelDef } from "./models";
 import { getSetting } from "./settings";
@@ -899,9 +898,9 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
   if (opts.userMessage) messages.push({ id: "", chatId: chat.id, role: "user", text: opts.userMessage.text,
     attachments: opts.userMessage.attachments, activity: [], ask: null, workedMs: null, costUsd: 0, model: "", createdAt: 0 });
 
-  if (!gatewayReachable() && !vendorKey('openai')) {
+  if (!languageReachable()) {
     throw new Error(
-      "Atomik needs the model gateway. Set AI_GATEWAY_API_KEY, or run on the host with OIDC."
+      "Atomik has no language model connected. Set a provider key (TEXT_DIRECT), OPENAI_API_KEY or AI_GATEWAY_API_KEY."
     );
   }
 

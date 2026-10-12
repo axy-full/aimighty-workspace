@@ -51,13 +51,16 @@ else {
 if (!Array.isArray(body?.data) || !body.data.length) throw new Error("the model list is empty");
 
 const pricedAt = pricedAtArg ?? new Date().toISOString().slice(0, 10);
-const snapshot = buildCatalogSnapshot(body.data, SNAPSHOT_CATALOG_IDS, pricedAt, SOURCE);
-const text = `${JSON.stringify(snapshot, null, 2)}\n`;
+// Provider-priced entries (models the gateway does not list, priced from each provider's own page) are carried over untouched.
+const providerPriced = JSON.parse(await readFile(out, "utf8").catch(() => "{}")).providerPriced ?? [];
+const handPriced = new Set(providerPriced.map((m) => m.id));
+const snapshot = buildCatalogSnapshot(body.data, SNAPSHOT_CATALOG_IDS.filter((id) => !handPriced.has(id)), pricedAt, SOURCE);
+const text = `${JSON.stringify({ ...snapshot, ...(providerPriced.length ? { providerPriced } : {}) }, null, 2)}\n`;
 
 const perProvider = {};
 for (const m of snapshot.models) perProvider[m.providerId] = (perProvider[m.providerId] ?? 0) + 1;
 const unpriced = PRICED_TEXT_IDS.filter((id) => {
-  const m = snapshot.models.find((x) => x.id === id);
+  const m = snapshot.models.find((x) => x.id === id) ?? providerPriced.find((x) => x.id === id);
   return !m || m.pricing?.input == null || m.pricing?.output == null;
 });
 console.log(JSON.stringify({ pricedAt, models: snapshot.models.length, perProvider, missing: snapshot.missing, unpricedRequired: unpriced }, null, 2));

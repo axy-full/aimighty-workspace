@@ -82,3 +82,27 @@ export function figureWords(figure: MakeFigure | null): string | null {
   if (figure.kind === "approximate") return figure.parts.join(" ");
   return priceWords(figure.value);
 }
+
+/**
+ * The figure on Make's button when the press may carry an enhancement (Enhance On, lib/v12/enhance.ts): the take plus the
+ * enhancement, ONE total, from the quote routes' own figures.
+ *  - A credit workspace: the credits of both, exact (no dollars, the quote routes send it none).
+ *  - The house workspace, which pays at cost (lib/houseWorkspace.ts): the engine's dollars for the take (`takeUsd`, per take, as the
+ *    composer's live quote gives them) plus the text model's own estimate in dollars for the enhancement (`enhanceUsd`), "up to":
+ *    the real cost of the enhancement cannot pass its estimate. Only when both are known in dollars, and the take's own figure
+ *    is not a batch re-quoted take by take; otherwise it has no dollar figure and the price layer shows none (never the customer
+ *    price turned into dollars).
+ * `total` is the takes' credits (as the composer totals a batch); `enhanceCredits` the enhancement's, null or 0 when there is none.
+ */
+export function goFigure(o: { total: number; count: number; type: ComposerType; takeUsd: number | null; batchRequoted: boolean; enhanceCredits: number | null; enhanceUsd: number | null }): { value: PriceValue | null; usd: number | null } {
+  const added = o.enhanceCredits ?? 0;
+  /* The house's enhancement may be 0 credits (nothing is billed in credits there) and still cost dollars. */
+  if (added > 0 || (o.enhanceUsd ?? 0) > 0) {
+    const house = o.enhanceUsd != null;
+    return {
+      value: (house ? upTo(o.total + added) : null) ?? makeQuoteValue(o.total + added, o.type),
+      usd: o.takeUsd != null && o.enhanceUsd != null && !o.batchRequoted ? o.takeUsd * o.count + o.enhanceUsd : null,
+    };
+  }
+  return { value: makeQuoteValue(o.total, o.type), usd: o.takeUsd != null && !o.batchRequoted ? o.takeUsd * o.count : null };
+}

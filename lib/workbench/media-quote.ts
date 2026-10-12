@@ -106,7 +106,7 @@ function soundProblem(model: ModelDef, refs: ReferencePrices): string | null {
  * what sound's measured charge adds when the take is asked for with sound. Its sound is priced only where it is
  * offered (`soundOffered`, lib/cinemaSoundPricing.ts); anywhere else asking for it is refused.
  */
-export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: string; ratio: string; duration: number; audio?: boolean; soundOffered?: boolean }, refs: ReferencePrices) {
+function priceWorkbenchMedia(model: ModelDef, params: { resolution: string; ratio: string; duration: number; audio?: boolean; soundOffered?: boolean }, refs: ReferencePrices) {
   if (!model.resolutions.includes(params.resolution) || !model.ratios.includes(params.ratio) || (model.kind === 'video' && !model.durations.includes(params.duration))) throw new MediaQuoteError('Choose a size, aspect and duration supported by this engine.');
   if (refs.images > model.maxReferenceImages) throw new MediaQuoteError(`${model.label} accepts at most ${model.maxReferenceImages} reference images.`);
   if (refs.videos > model.maxReferenceVideos || (model.kind === 'image' && refs.videos)) throw new MediaQuoteError(`${model.label} accepts at most ${model.maxReferenceVideos} reference videos.`);
@@ -119,9 +119,25 @@ export function quoteWorkbenchMedia(model: ModelDef, params: { resolution: strin
     : model.cinemaStudio ? cinemaStudioQuoteUsd({ resolution: params.resolution, ratio: params.ratio, duration: params.duration,
         hasVideoInput: refs.hasVideoInput, inputSeconds: refs.inputSeconds, generateAudio: Boolean(params.audio) })
     : estimateCostUsd(model.id, params.resolution, params.ratio, params.duration, refs.inputSeconds, refs.hasVideoInput, { audio: Boolean(params.audio && model.supportsAudio), task: 'generate' })?.net;
-  return { credits: usd != null ? billCredits(usd, model.id) : null, inputSeconds: refs.inputSeconds, hasVideoInput: refs.hasVideoInput,
+  return { credits: usd != null ? billCredits(usd, model.id) : null, usd: usd ?? null, inputSeconds: refs.inputSeconds, hasVideoInput: refs.hasVideoInput,
     /* Cinema Studio is quoted from published pricing and settles on its delivered output. */
     ...(model.cinemaStudio ? { approximate: true as const } : {}) };
+}
+
+type QuoteParams = Parameters<typeof priceWorkbenchMedia>[1];
+/** One take's price in credits, as customers see it: the engine's dollars never leave here. */
+export function quoteWorkbenchMedia(model: ModelDef, params: QuoteParams, refs: ReferencePrices) {
+  const { usd: _usd, ...quote } = priceWorkbenchMedia(model, params, refs);
+  void _usd;
+  return quote;
+}
+/**
+ * The same quote with the engine's own dollars (the figure admission reserves and the meter settles at), for the house
+ * workspace only (lib/houseWorkspace.ts): it is never billed in credits and sees every price at cost. The route adds this
+ * for a workspace that is not billed in credits and for no other: a customer is never sent a vendor cost.
+ */
+export function quoteWorkbenchMediaAtCost(model: ModelDef, params: QuoteParams, refs: ReferencePrices) {
+  return priceWorkbenchMedia(model, params, refs);
 }
 
 /**
@@ -151,10 +167,10 @@ export function workbenchUse(model: ModelDef): string | undefined {
 }
 
 /** What an engine is priced at, and what it costs, in credits only. `sound`: the figure is for a take with sound. */
-export type WorkbenchRate = { credits: number; resolution: string; ratio: string; duration: number | null; approximate?: true; sound?: true };
+export type WorkbenchRate = { credits: number; resolution: string; ratio: string; duration: number | null; approximate?: true; sound?: true; /** The engine's own dollars: only for the house workspace (`RateAt.atCost`), never for a customer. */ usd?: number };
 /** Where the model sheet prices the list: the composer's picks, the project's aspect, its references, and whether
  *  Cinema Studio's Sound switch is offered in this workspace. */
-export type RateAt = { picks?: ComposerPicks; aspect?: string; soundOffered?: boolean };
+export type RateAt = { picks?: ComposerPicks; aspect?: string; soundOffered?: boolean; /** Add the engine's dollars to each rate: the house workspace alone. */ atCost?: boolean };
 export const NO_REFERENCES: ReferencePrices = { images: 0, videos: 0, inputSeconds: 0, hasVideoInput: false };
 
 /**
@@ -174,9 +190,9 @@ export function workbenchRate(model: ModelDef, at: RateAt = {}, refs: ReferenceP
   const { resolution, ratio, duration, generateAudio } = composerSettings({ id: model.id, label: model.label, type: model.kind, ratios: model.ratios, resolutions: model.resolutions, durations: model.durations, ...(model.supportsDraft ? { draft: true as const } : {}),
     ...(model.cinemaStudio && at.soundOffered ? { sound: true as const } : {}) }, at.aspect, at.picks);
   try {
-    const { credits } = quoteWorkbenchMedia(model, { resolution, ratio, duration, audio: Boolean(generateAudio), soundOffered: at.soundOffered }, refs);
+    const { credits, usd } = priceWorkbenchMedia(model, { resolution, ratio, duration, audio: Boolean(generateAudio), soundOffered: at.soundOffered }, refs);
     return credits == null ? null : { credits, resolution, ratio, duration: model.kind === 'video' ? duration : null, ...(model.cinemaStudio ? { approximate: true as const } : {}),
-      ...(generateAudio ? { sound: true as const } : {}) };
+      ...(generateAudio ? { sound: true as const } : {}), ...(at.atCost && usd != null ? { usd } : {}) };
   } catch (error) {
     if (error instanceof MediaQuoteError) return null;
     throw error;

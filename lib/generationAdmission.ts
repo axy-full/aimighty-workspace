@@ -1,3 +1,5 @@
+import { ENHANCE_MAX_PROMPT } from "./shell/enhancer";
+import { enhancementRan } from "./enhanceProof";
 import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/genjutsuTypes";
 import { genjutsuInput, estimateGenjutsuInput, genjutsuSourceProblem, genjutsuFrameProblem } from "@/lib/genjutsu";
 import { CINEMA_STUDIO_LIMITS, isCinemaStudioAudioMime, isCinemaStudioModel, readCinemaControls } from "@/lib/cinemaStudioTypes";
@@ -347,6 +349,22 @@ function needsConfirmedPrice(
 
 /** Shared admission preserves the composer's validation, compilation and spending checks.
  * Preparation stops at the final checkpoint; only admission writes a generation. */
+/**
+ * Make's Enhance toggle labels the take (lib/v12/enhance.ts): `{ from }` says the words were enhanced first and carries the words
+ * as typed, `false` says they went as written. `from` is believed only on proof that the enhancer's own paid job ran for exactly
+ * those words and answered what this take is sent with (lib/enhanceProof.ts); without it no label is stored. The typed words go in
+ * `enhancedFrom`, never in `rawPrompt` (which keeps its meaning: the words Recreate hands back). A label only: no price, no
+ * fingerprint, no model call.
+ */
+async function enhancedLabel(body: unknown, sentWords: string): Promise<{ from: string; mark: boolean | undefined }> {
+  const given = (body as { enhanced?: unknown } | null)?.enhanced;
+  if (given === false) return { from: "", mark: false };
+  const from = given && typeof given === "object" && typeof (given as { from?: unknown }).from === "string"
+    ? (given as { from: string }).from.trim().slice(0, ENHANCE_MAX_PROMPT) : "";
+  if (!from || !(await enhancementRan(from, sentWords))) return { from: "", mark: undefined };
+  return { from, mark: true };
+}
+
 export async function executeGenerationAdmission(
   input: Record<string, unknown>,
   got: AdmissionActor,
@@ -1523,6 +1541,7 @@ export async function executeGenerationAdmission(
       }
       const genId = id("gen");
       const ts = now();
+      const stillEnhanced = await enhancedLabel(body, prompt);
       const stillParams = {
         ...(marketing ? { marketing, higgsfieldCredentialFingerprint: marketingFingerprint, higgsfieldVendorCostUsd: estStillUsd } : {}),
         ...(soulBinding ? { soulIdentityId: soulBinding.id, soulReferenceId: soulBinding.providerReferenceId,
@@ -1554,6 +1573,8 @@ export async function executeGenerationAdmission(
          own lines. The theatre shows this, and a fresh render is built from
          it rather than from the compiled text (brief 2.5). */
         rawPrompt: stillPrompt !== prompt ? prompt : undefined,
+        enhanced: stillEnhanced.mark,
+        enhancedFrom: stillEnhanced.from || undefined,
         cast: castUsed.length ? castUsed : undefined,
         reason: stillReason ?? undefined,
         /* A still's framing, lens, light and look from Gen's chips, so Recreate brings them back set. */
@@ -1735,6 +1756,8 @@ export async function executeGenerationAdmission(
     let rawPrompt: string | undefined = final
       ? final.carried.rawPrompt
       : castPrompt !== prompt ? prompt : undefined;
+    /* The Enhance label (enhancedLabel): the words as typed become `rawPrompt`. */
+    const enhanced = final ? { from: "", mark: undefined } : await enhancedLabel(body, prompt);
     let refineModel: string | null = null;
     /* Whose balance paid for the writer's text (generations.refine_ledger, lib/reconcile.ts PROMPT_LEDGER). */
     let refineLedger: string | null = null;
@@ -2131,6 +2154,8 @@ export async function executeGenerationAdmission(
       hasVideoInput,
       inputSeconds: hasVideoInput ? inputSeconds : undefined,
       rawPrompt,
+      enhanced: enhanced.mark,
+      enhancedFrom: enhanced.from || undefined,
       cast: castUsed.length ? castUsed : undefined,
       // Why this take was made past an approved one (brief 2.1).
       reason: reason ?? undefined,

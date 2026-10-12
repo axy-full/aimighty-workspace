@@ -1,4 +1,5 @@
 import { ToolLoopAgent, Output, isStepCount, tool, type LanguageModel, type LanguageModelUsage } from "ai";
+import { finalToolStep } from "../language-provider";
 import type { LanguageModelV4, LanguageModelV4Content, LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import { z } from "zod";
 import { ATOMIK_AUTO_MODEL_IDS, isAtomikModel } from "../atomikModelPolicy";
@@ -235,7 +236,7 @@ export async function runPlanner(snapshot: BoardSnapshot, model: LanguageModel, 
     prepareStep: ({ stepNumber }) => {
       if (over) throw new PlannerError("Atomik's plan went past its limit. Ask for a smaller board.");
       /* A provider may ignore toolChoice, so the last step's tools are removed too. */
-      return stepNumber >= PLANNER_STEPS - 1 ? { toolChoice: "none" as const, activeTools: [] } : {};
+      return stepNumber >= PLANNER_STEPS - 1 ? finalToolStep(model) : {};
     },
   });
   const generated = await agent.generate({

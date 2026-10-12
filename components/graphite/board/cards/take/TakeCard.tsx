@@ -214,7 +214,7 @@ export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
         {v && hasStatus(v) ? <StatusLine version={v} ctx={ctx} /> : null}
         {data.blocking ? <ShotBlockingStrip ctx={ctx} nodeId={row.nodeId} index={row.index} view={data.blocking} /> : null}
         {judging && v ? <GridActions row={row} version={v} ctx={ctx} /> : null}
-        {grid.state && !grid.state.failed && !(v && hasStatus(v)) ? <div className="v12-rc-moneyrow"><RenderMoney state={grid.state} /></div> : null}
+        {grid.state && !grid.state.failed && !(v && hasStatus(v)) ? <div className="v12-rc-moneyrow"><RenderMoney state={grid.state} pending={Boolean(grid.genId && grid.state.stage === "queue" && grid.cancelling.pending.has(grid.genId))} /></div> : null}
       </div>
     </article>
   );
