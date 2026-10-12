@@ -25,7 +25,7 @@ async function route(file: string, dependencies: Record<string, unknown>): Promi
     "@/lib/requestOrigin": requestOrigin,
     "@/lib/auth": {
       withTenant: (handler: Handler) => handler,
-      requireUser: async () => ({ user: { id: "owner", name: "Owner" } }),
+      requireUser: async () => ({ user: { id: "owner", name: "Owner", role: "admin" } }),
     },
     ...dependencies,
   };
@@ -89,6 +89,7 @@ test("a shot moved to another project takes its Rig wires along; a wire to the o
     "@/lib/mediaMutation": await import("../../lib/mediaMutation"),
     "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/shots": await import("../../lib/shots"),
+    "@/lib/workAccess": await import("../../lib/workAccess"),
     "@/lib/cache": cache,
   });
   await runInTenant(workspace("shot-move"), async () => {
