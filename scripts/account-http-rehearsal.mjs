@@ -233,9 +233,10 @@ try {
     await api.post("/api/auth/verify", { data: { token: proof() } }),
     200,
   );
+  /* The sign-up carried "annual", and the next address says monthly: yearly is hidden while YEARLY_SHOWN (lib/plans.ts) is false. */
   assert.equal(
     verified.next,
-    "/billing?plan=agency&cadence=annual&onboarding=1",
+    "/billing?plan=agency&cadence=monthly&onboarding=1",
   );
   await openSignup(false);
   assert.equal((await json(await api.get("/api/auth/signup"), 200)).open, false);
