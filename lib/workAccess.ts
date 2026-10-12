@@ -15,6 +15,7 @@ import { mappedId, workbenchReady } from "./workbench/records";
  *    only an admin changes it.
  *  - A shot's owner is its `created_by`; the project's maker may also change it.
  *  - A take's owner is its `created_by` (the person who made it); the maker of the project it is in may also change it.
+ *  - A production's owner is the maker of a project that belongs to it. A move needs the right over the item moved AND over where it goes.
  * Nothing here decides who may SEE an item: every route answers a missing id as an unknown one and keeps its own reads.
  */
 export type Actor = { id: string; role: "admin" | "member"; owner?: boolean };
@@ -26,6 +27,9 @@ export const NOT_YOURS = {
   take: "This take is someone else's work. Only its maker, the board's owner or an admin can change it.",
   shot: "This shot is someone else's work. Only its maker, the board's owner or an admin can change it.",
   project: "This project is someone else's work. Only its owner or an admin can change it.",
+  production: "This production belongs to someone else's board. Only that board's owner or an admin can change it.",
+  moveToProject: "That project is someone else's work. Only its owner or an admin can move work into it.",
+  moveToShot: "That shot is someone else's work. Only its maker, the board's owner or an admin can file work against it.",
 } as const;
 
 /** The maker of a project (see above), or null when none is recorded. */
@@ -45,6 +49,14 @@ export async function projectMaker(projectId: string | null | undefined): Promis
 export async function mayChangeProject(actor: Actor, projectId: string | null | undefined): Promise<boolean> {
   if (isAdmin(actor)) return true;
   return (await projectMaker(projectId)) === actor.id;
+}
+
+/** Whether `actor` may change a production's name, client or status: an admin, or the maker of a project that belongs to it. A production with no such project is an admin's. */
+export async function mayChangeProduction(actor: Actor, productionId: string): Promise<boolean> {
+  if (isAdmin(actor)) return true;
+  const projects = (await db().execute({ sql: "SELECT id FROM projects WHERE production_id = ?", args: [productionId] })).rows;
+  for (const row of projects) if ((await projectMaker(String(row.id))) === actor.id) return true;
+  return false;
 }
 
 /** Whether `actor` may change a take or a shot: its own maker, the maker of its project, or an admin. */

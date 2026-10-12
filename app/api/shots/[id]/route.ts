@@ -5,7 +5,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { getShot, STATUSES, codeProblem } from "@/lib/shots";
 import { archiveAndDelete, archiveDeleteStatements, archiveTransaction } from "@/lib/archive";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
-import { NOT_YOURS, mayChangeWork } from "@/lib/workAccess";
+import { NOT_YOURS, mayChangeProject, mayChangeWork } from "@/lib/workAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +30,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
   if (typeof body.projectId === "string" && body.projectId && body.projectId !== shot.projectId) {
     const target = await db().execute({ sql: `SELECT id FROM projects WHERE id = ?`, args: [body.projectId] });
     if (!target.rows.length) return NextResponse.json({ error: "No such project." }, { status: 404 });
+    /* Where it goes is asked as well as the shot: a project that is someone else's work takes it from its owner or an admin only. */
+    if (!(await mayChangeProject(got.user, body.projectId))) return NextResponse.json({ error: NOT_YOURS.moveToProject }, { status: 403 });
     sets.push("project_id = ?"); args.push(body.projectId);
     moveTo = body.projectId;
   }
