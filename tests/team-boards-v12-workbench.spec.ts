@@ -47,7 +47,16 @@ test("desktop: Home lists a teammate's board with its maker; it opens view-only 
     await page.getByTestId("v12-board-menu").click();
     const shareItem = page.getByTestId("v12-menu-share-team");
     await expect(shareItem).toHaveText("Share with team");
-    await expect(shareItem).toHaveAttribute("title", "Teammates can view this board. Only you can edit it.");
+    /* The one-line tooltip (the new interface's, not a native title): on hover, and on keyboard focus. */
+    const TIP = "Teammates can view this board. Only you can edit it.";
+    await expect(shareItem).not.toHaveAttribute("title", /.+/);
+    await shareItem.hover();
+    await expect(page.getByTestId("v12-tooltip")).toHaveText(TIP);
+    await page.mouse.move(0, 0);
+    await expect(page.getByTestId("v12-tooltip")).toHaveCount(0);
+    await page.keyboard.press("End");
+    await expect(shareItem).toBeFocused();
+    await expect(page.getByTestId("v12-tooltip")).toHaveText(TIP);
     await shareItem.click();
     await expect(page.getByText(/^Shared with team/).first()).toBeVisible();
     await expect.poll(async () => ((await (await page.request.get(`/api/workbench/projects?id=${made.project.id}`, { headers: { "X-Workbench-Scope": `particl-active-${owner.workspace.id}-${owner.id}` } })).json()) as { project: { teamShared?: boolean } }).project.teamShared, { timeout: 30_000 }).toBe(true);
@@ -94,7 +103,8 @@ test("desktop: Home lists a teammate's board with its maker; it opens view-only 
     await page.getByTestId("v12-home-board").first().click({ button: "right" });
     const stop = page.getByTestId("v12-menu-share-team");
     await expect(stop).toHaveText("Stop sharing with team");
-    await expect(stop).toHaveAttribute("title", "Teammates can view this board. Only you can edit it.");
+    await stop.hover();
+    await expect(page.getByTestId("v12-tooltip")).toHaveText("Teammates can view this board. Only you can edit it.");
     await stop.click();
     await expect(page.getByTestId("v12-toast")).toContainText("No longer shared with the team");
     await expect.poll(async () => ((await (await mate.request.get(`/api/workbench/projects?id=${made.project.id}`, { headers: { "X-Workbench-Scope": scope } })).json()) as { project: unknown }).project ?? null, { timeout: 30_000 }).toBeNull();

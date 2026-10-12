@@ -752,7 +752,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     { id: "fit", label: "Fit to view", shortcut: "0", onSelect: () => void flow.fitView({ padding: 0.08, duration: GLIDE_MS, ease: glideEase }) },
     ...(freeCards.length && !offline ? [{ id: "tidy", label: "Tidy", onSelect: () => void tidy() }] : []),
     /* Author only: a teammate's board is view-only and a sample is nobody's to share. */
-    ...(v12Frame && !viewing && !offline && !gate.exploreOnly ? [{ id: "share-team", label: teamShared ? SHARE_TEAM.stop : SHARE_TEAM.share, title: SHARE_TEAM.tip, testId: "v12-menu-share-team", onSelect: toggleShare }] : []),
+    ...(v12Frame && !viewing && !offline && !gate.exploreOnly ? [{ id: "share-team", label: teamShared ? SHARE_TEAM.stop : SHARE_TEAM.share, tip: SHARE_TEAM.tip, testId: "v12-menu-share-team", onSelect: toggleShare }] : []),
   ];
   const regionBoxes = board.rail.flatMap((entry) => { const box = placed.regions.get(entry.id); return box ? [box] : []; });
   return (

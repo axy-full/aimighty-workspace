@@ -140,7 +140,7 @@ export function YourBoards({ scope, projects, status, error, onRetry, now, appro
         <ContextMenu at={boardMenu.menu.at} onClose={boardMenu.close} label={menuCard.name} width={200} testId="v12-board-menu"
           items={[
             ...menuItems(menuFor("board", new Set(disabled ? ["copy-link"] : ["open", "copy-link"])), (id) => { if (id === "open") onOpen(menuCard.id); else copyBoardLink(menuCard.id, toast); }),
-            ...(disabled ? [] : [{ separator: true, id: "share-sep" } as MenuItem, { id: "share-team", label: isShared(menuCard.id) ? SHARE_TEAM.stop : SHARE_TEAM.share, title: SHARE_TEAM.tip, testId: "v12-menu-share-team", onSelect: () => void toggleShare(menuCard.id) } as MenuItem]),
+            ...(disabled ? [] : [{ separator: true, id: "share-sep" } as MenuItem, { id: "share-team", label: isShared(menuCard.id) ? SHARE_TEAM.stop : SHARE_TEAM.share, tip: SHARE_TEAM.tip, testId: "v12-menu-share-team", onSelect: () => void toggleShare(menuCard.id) } as MenuItem]),
           ]} />
       ) : null}
     </section>
