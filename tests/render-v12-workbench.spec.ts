@@ -97,12 +97,30 @@ test.describe("desktop, switch on", () => {
       expect(field.b, `card ${n + 1}: the field ends where the text begins`).toBeLessThanOrEqual(text.y + 1);
     }
 
-    /* Cancel: only on the take held for a slot (nothing was sent or reserved). Never on Preparing, Rendering or Saving, or one in a provider's queue. */
-    await expect(page.getByTestId("v12-render-cancel")).toHaveCount(1);
+    /* Cancel: on the take held for a slot (nothing was sent or reserved) and on one waiting in its engine's own queue with the engine's receipt (nth 6, Kling).
+       Never on Preparing, Rendering or Saving. */
+    await expect(page.getByTestId("v12-render-cancel")).toHaveCount(2);
+    await expect(shots(page).nth(6).getByTestId("v12-render-cancel")).toBeVisible();
     await expect(shots(page).nth(7).getByTestId("v12-render-cancel")).toBeVisible();
+    for (const n of [3, 4, 5]) await expect(shots(page).nth(n).getByTestId("v12-render-cancel")).toHaveCount(0);
+    /* The take in the engine's queue asks the engine: its tooltip never says nothing is billed (that waits for the engine's confirmation); the held take's does. */
+    const asks = await shots(page).nth(6).getByTestId("v12-render-cancel").getAttribute("title");
+    expect(asks).toBe("Ask the engine to cancel — free if it confirms");
+    expect(asks).not.toMatch(/nothing is billed|not billed/i);
+    expect(await shots(page).nth(7).getByTestId("v12-render-cancel").getAttribute("title")).toMatch(/nothing is billed/);
     /* Esc never cancels. */
     await page.keyboard.press("Escape");
-    await expect(page.getByTestId("v12-render-cancel")).toHaveCount(1);
+    await expect(page.getByTestId("v12-render-cancel")).toHaveCount(2);
+    /* Pressing it on the engine's queue: sent, nothing claimed about billing, and the hold still stands until the engine answers. */
+    await shots(page).nth(6).getByTestId("v12-render-cancel").click();
+    await expect(page.getByTestId("v12-toast")).toContainText("Cancel sent", { timeout: 30_000 });
+    await expect(page.getByTestId("v12-toast")).not.toContainText(/nothing billed|not billed/i);
+    await expect(shots(page).nth(6).getByTestId("v12-render-cancel-sent")).toBeVisible({ timeout: 30_000 });
+    await expect(shots(page).nth(6).getByTestId("v12-render-cancel")).toHaveCount(0);
+    /* The hold stands, from the same price: the line says what is true now, that it settles when the engine confirms (not "charged only when it's ready"). */
+    await expect(shots(page).nth(6).getByTestId("v12-render-money")).toHaveText("7 cr held · settles when the engine confirms");
+    await expect(shots(page).nth(6)).not.toContainText(/nothing billed|charged only when/i);
+    /* The held take is discarded for good: that one is free, said so. */
     await shots(page).nth(7).getByTestId("v12-render-cancel").click();
     await expect(page.getByTestId("v12-toast")).toContainText("Cancelled · nothing billed · the frame stays", { timeout: 30_000 });
     await expect(page.getByTestId("v12-render-cancel")).toHaveCount(0, { timeout: 30_000 });

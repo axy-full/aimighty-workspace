@@ -10,7 +10,8 @@ import { askAtomik, planningFor, productionOf } from "@/components/graphite/home
 import { useThinkingPrice } from "@/components/graphite/home/use-thinking-price";
 import { COMPOSER, COMPOSER_LENGTH, FLAVOR_BOARD, KIND_CARDS, boardName, detectCard, flavorForCard, type KindCard } from "@/lib/v12/board/kinds";
 import { KIND_LABEL, applyStageEdit, stageLimit, stagesOf, type SavedStage, type StageEdit } from "@/lib/v12/board/stages";
-import { IDLE, LOADING, QUOTE_FAULT, knownQuote, type Quote } from "@/lib/v12/quote";
+import { IDLE, LOADING, QUOTE_FAULT, planningQuote, type Quote } from "@/lib/v12/quote";
+import { useSession } from "@/lib/session";
 import { Price } from "@/components/v12/ui/Price";
 import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { useToast } from "@/components/v12/ui";
@@ -39,6 +40,7 @@ export function NewBoard({ scope, onCreate, initialKind }: { scope: string; onCr
   const toast = useToast();
   const fetcher = useScopedFetch(scope);
   const { thinking, retry } = useThinkingPrice(scope);
+  const session = useSession();
   const [card, setCard] = useState<KindCard | null>(initialKind);
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -71,7 +73,7 @@ export function NewBoard({ scope, onCreate, initialKind }: { scope: string; onCr
   const value = (chip: Chip, options: readonly string[]) => chips[chip] ?? (chip === "length" ? (options.includes(COMPOSER_LENGTH) ? COMPOSER_LENGTH : options[0]) : chip === "aspect" ? DEFAULT_ASPECT : options[0]);
 
   /* Atomik's thinking, as the button states it: the planning figure, "up to N cr". */
-  const quote: Quote = thinking.state === "ready" ? knownQuote(upTo(thinking.credits))
+  const quote: Quote = thinking.state === "ready" ? planningQuote(upTo(thinking.credits), thinking.usd, session.rates.unit === "usd")
     : thinking.state === "loading" ? LOADING
     : thinking.state === "error" ? { state: "error", message: thinking.message || QUOTE_FAULT, retry }
     : IDLE;

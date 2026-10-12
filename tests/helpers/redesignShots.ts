@@ -13,7 +13,8 @@ import sharp from "sharp";
  * Output: <REDESIGN_SHOTS_DIR or ../redesign-shots>/<name>/<width>x<height>-{app,proto,beside}.png
  */
 
-const ROOT = path.resolve(__dirname, "../../design/particl-prototype-12");
+/* REDESIGN_PROTOTYPE_DIR points at another round of the prototype (v14 until it is merged); the default is the repo's own. */
+const ROOT = path.resolve(process.env.REDESIGN_PROTOTYPE_DIR ?? path.join(__dirname, "../../design/particl-prototype-12"));
 const PAGE = "Particl prototype.dc.html";
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".webp": "image/webp", ".css": "text/css", ".txt": "text/plain" };
 

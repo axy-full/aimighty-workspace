@@ -25,9 +25,9 @@ test("an explicit retired or unapproved thinking model cannot silently become a 
 
 test("the planner catalogue is the Claude, OpenAI and Grok part of the verified text catalogue, and excludes media and classifiers", async () => {
   const { ATOMIK_MODEL_IDS, VERIFIED_TEXT_MODEL_IDS, isAtomikModel, isVerifiedTextModel, isRetiredAtomikModel } = await import('../../lib/atomikModelPolicy');
-  expect(VERIFIED_TEXT_MODEL_IDS.length).toBe(80);
-  expect(ATOMIK_MODEL_IDS.length).toBe(69);
-  for (const id of ['openai/gpt-6-astra', 'anthropic/claude-opus-5', 'openai/gpt-4o-mini', 'spacexai/grok-4.7', 'spacexai/grok-4.1-fast-reasoning']) expect(isAtomikModel(id)).toBe(true);
+  expect(VERIFIED_TEXT_MODEL_IDS.length).toBe(83);
+  expect(ATOMIK_MODEL_IDS.length).toBe(72);
+  for (const id of ['openai/gpt-6-astra', 'anthropic/claude-opus-5', 'anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5', 'openai/gpt-4o-mini', 'spacexai/grok-4.7', 'spacexai/grok-4.1-fast-reasoning']) expect(isAtomikModel(id)).toBe(true);
   /* Gemini is verified text, used by the prompt enhancer, and no longer Atomik's. */
   for (const id of ['google/gemini-3.8-flash', 'google/gemini-3.1-pro-preview']) {
     expect(isAtomikModel(id), id).toBe(false);
@@ -54,7 +54,9 @@ test("Auto without a route prefers its own choices: OpenAI-only plans on GPT-5.5
   expect(selectAtomikModel("auto", openai)).toBe("openai/gpt-5.5");
   expect(selectAtomikModel("auto", claude)).toBe("anthropic/claude-sonnet-4.6");
   expect(selectAtomikModel("auto", ["anthropic/claude-haiku-4.5", "anthropic/claude-opus-4.6"])).toBe("anthropic/claude-opus-4.6");
-  expect(selectAtomikModel("auto", [...openai, ...claude])).toBe("anthropic/claude-sonnet-4.6");
+  /* Auto's own list (Sonnet 5.5, Opus 5.5, Sonnet 5, Opus 5, GPT-5.5) outranks an older Claude. */
+  expect(selectAtomikModel("auto", [...openai, ...claude])).toBe("openai/gpt-5.5");
+  expect(selectAtomikModel("auto", [...openai, ...claude, "anthropic/claude-sonnet-5"])).toBe("anthropic/claude-sonnet-5");
   /* The platform's route still wins when it is served, even outside Auto's list; a dropped route is its alias. */
   expect(selectAtomikModel("auto", [...openai, ...claude], "openai/gpt-4o-mini")).toBe("openai/gpt-4o-mini");
   expect(selectAtomikModel("auto", openai, "anthropic/claude-opus-5")).toBe("openai/gpt-5.5");

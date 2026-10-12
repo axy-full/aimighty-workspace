@@ -275,6 +275,12 @@ export type ComposerHost = {
  */
 export type ComposerSent = { projectId: string; nodeId: string; name: string; jobId: string | null; batchId: string | null; credits: number; takes: number; held: boolean };
 
+/** The request's `enhanced` label for the words in the box now (Make's Enhance toggle), or nothing for a screen without one. */
+function enhancedField(now: { enhancedOf?: (prompt: string) => false | { from: string } | undefined; state: { prompt: string } }): { enhanced?: false | { from: string } } {
+  const label = now.enhancedOf?.(now.state.prompt);
+  return label === undefined ? {} : { enhanced: label };
+}
+
 export function useComposer(options: {
   scope: string;
   open: boolean;
@@ -315,6 +321,12 @@ export function useComposer(options: {
    * changes no price; the quote is asked for the same body, seed included, so its fingerprint covers it.
    */
   seed?: { value: number; model: string } | null;
+  /**
+   * Whether the words were enhanced first (Make's Enhance toggle, lib/v12/enhance.ts), asked at the moment of the press for the
+   * words in the box: `{ from }` the words as typed, `false` for words sent as written, undefined for a screen with no toggle. Sent
+   * with a still's or clip's request as a label (admission records it); never part of a price.
+   */
+  enhanced?: (prompt: string) => false | { from: string } | undefined;
 }): ComposerHost {
   const { scope, open, project } = options;
   const ws = useWorkspace();
@@ -328,6 +340,8 @@ export function useComposer(options: {
   const [engines, setEngines] = useState<{ rows: EngineRow[]; error: string | null; loading: boolean }>({ rows: [], error: null, loading: true });
   const [enginesRead, setEnginesRead] = useState(0);
   const [audio, setAudio] = useState<NodeAudioSetup | null>(null);
+  /* A press that found the price moved sets the new figure; a house quote then reads its dollars again (they are not part of that answer). */
+  const [requote, setRequote] = useState(0);
   const [quoteAnswer, setQuoteAnswer] = useState<{ scope: string; quote: ComposerQuote | null } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   /* The last press that did not go through, for the panel's Result. It says nothing about the charge: a refusal here can be a lost reply,
@@ -418,7 +432,7 @@ export function useComposer(options: {
     const timer = setTimeout(() => {
       const ask = async (): Promise<ComposerQuote> => {
         if (audioBody) {
-          const result = await studioRequest<{ estimatedCredits?: number }>("/api/audio", {
+          const result = await studioRequest<{ estimatedCredits?: number; price?: number; unit?: string }>("/api/audio", {
             method: "POST", signal: controller.signal,
             headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
             body: JSON.stringify({ ...audioBody, quoteOnly: true }),
@@ -426,18 +440,19 @@ export function useComposer(options: {
           const credits = result.estimatedCredits;
           if (typeof credits !== "number" || !Number.isFinite(credits))
             return { key: quoteKey, credits: null, state: "unavailable", reason: "Sound cannot be priced with these settings." };
-          return { key: quoteKey, credits, state: "ready", reason: null };
+          /* The house workspace is told the engine's dollars beside the credits (unit "usd"): the figure it is shown. */
+          return { key: quoteKey, credits, state: "ready", reason: null, ...(result.unit === "usd" && typeof result.price === "number" && Number.isFinite(result.price) ? { usd: result.price } : {}) };
         }
         /* The Sound switch is in the read: the figure is for the take as it will be asked for. */
         const query = new URLSearchParams({ model: model!.id, resolution: settings.resolution, ratio: settings.ratio, duration: String(settings.duration),
           ...(settings.generateAudio ? { audio: "1" } : {}) });
         const references = state.references.length ? mediaQuoteReferences(state.references.map(referenceAsset)) : "";
-        const result = await studioRequest<{ credits: number | null; approximate?: boolean }>(`${API}/engines?${query}${references ? `&${references}` : ""}`, {
+        const result = await studioRequest<{ credits: number | null; approximate?: boolean; usd?: number }>(`${API}/engines?${query}${references ? `&${references}` : ""}`, {
           signal: controller.signal, headers: { "X-Workbench-Scope": scope }, cache: "no-store",
         });
         if (typeof result.credits !== "number" || !Number.isFinite(result.credits))
           return { key: quoteKey, credits: null, state: "unavailable", reason: "This model cannot be priced with these settings." };
-        return { key: quoteKey, credits: result.credits, state: "ready", reason: null, ...(result.approximate === true ? { approximate: true } : {}) };
+        return { key: quoteKey, credits: result.credits, state: "ready", reason: null, ...(result.approximate === true ? { approximate: true } : {}), ...(typeof result.usd === "number" && Number.isFinite(result.usd) ? { usd: result.usd } : {}) };
       };
       void ask()
         .then((value) => { if (!controller.signal.aborted) setQuote(value); })
@@ -450,7 +465,7 @@ export function useComposer(options: {
     return () => { clearTimeout(timer); controller.abort(); };
     /* `quoteKey` names every input the figure prices. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blockedForQuote, quoteKey, scope, target?.id]);
+  }, [blockedForQuote, quoteKey, scope, target?.id, requote]);
 
   const credits = liveCredits(quote, quoteKey);
   /* The price on Generate — the button's own total, every take — in this workspace's credits, is the header's last quote
@@ -468,8 +483,9 @@ export function useComposer(options: {
   });
 
   /* ── Generate ───────────────────────────────────────────────────────── */
-  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed });
-  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed }; });
+  const enhancedOf = options.enhanced;
+  const live = useRef({ state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed, enhancedOf });
+  useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed, enhancedOf }; });
   const busy = useRef(false);
 
   /** The project to file into: the open one, or a new "Untitled" through the ordinary creation path. */
@@ -607,6 +623,7 @@ export function useComposer(options: {
                   ratio: settings.ratio, resolution: settings.resolution, duration: settings.duration, references: references(), firstFrameAssetId: "",
                   batch: { id: batchId, variation }, shotSpec: now.sent.shotSpec, cinema: now.sent.cinema,
                   ...(now.seed !== null ? { seed: variationSeed(now.seed, variation) } : {}),
+                  ...enhancedField(now),
                   ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },
               };
@@ -614,6 +631,7 @@ export function useComposer(options: {
           if (outcome.state === "repriced") {
             batchShot.current = shotNow;
             setQuote({ key: now.quoteKey, credits: outcome.takes[0], state: "ready", reason: null, takes: outcome.takes });
+            if (now.quote?.usd !== undefined) setRequote((n) => n + 1);
             dispatch({ type: "notice", value: `${before}${outcome.reason}` });
             return;
           }
@@ -723,6 +741,7 @@ export function useComposer(options: {
                   shotSpec: now.sent.shotSpec,
                   cinema: now.sent.cinema,
                   ...(now.seed !== null ? { seed: now.seed } : {}),
+                  ...enhancedField(now),
                   ...(settings.draft ? { draft: true } : {}),
                   ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },
@@ -731,6 +750,7 @@ export function useComposer(options: {
         });
         if (outcome.state === "repriced") {
           setQuote({ key: now.quoteKey, credits: outcome.credits, state: "ready", reason: null });
+          if (now.quote?.usd !== undefined) setRequote((n) => n + 1);
           setRun(null);
           dispatch({ type: "notice", value: `${before}${outcome.reason}` });
           return;

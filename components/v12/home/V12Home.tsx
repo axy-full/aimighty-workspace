@@ -9,8 +9,8 @@ import { recreatePreset } from "@/lib/shell/recipe";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { spendAttrsOf } from "@/lib/spend";
+import { fmtLedgerUsd } from "@/lib/usageLedgerTerms";
 import { pickedBrief, startQuote, startWords, waitingShown, wallRow, type WallTile } from "@/lib/v12/home";
-import { useMoney } from "@/lib/price";
 import { useOverlay } from "@/components/v12/ui/overlay";
 import { ASPECTS, BLANK, BRIEF_MAX, LENGTHS, appendBrief, draftAspect, draftLength, withAspect, withLength } from "@/components/graphite/home/home-model";
 import { BriefFileError, briefKind, readBriefFile } from "@/components/graphite/home/brief-file";
@@ -63,11 +63,10 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
   const nav = useHomeNav();
   const shell = useShell();
   const session = useSession();
-  const money = useMoney();
   /* One unit for every figure Start shows: the button, its marker and the note that a higher price needs another press. */
   const dollars = session.rates.unit === "usd";
   const creditUsd = creditRate(session.rates.creditUsd);
-  const wordsOf = useCallback((credits: number) => startWords(startQuote({ spendOff: false, figure: credits, thinking: { state: "ready" }, dollars, creditUsd }), { creditUsd, dollars: money.price }) ?? priceWords(upTo(credits)) ?? "", [dollars, creditUsd, money.price]);
+  const wordsOf = useCallback((credits: number, usd?: number | null) => startWords(startQuote({ spendOff: false, figure: credits, thinking: { state: "ready" }, dollars, usd }), { creditUsd, dollars: fmtLedgerUsd }) ?? (dollars ? "no price yet" : priceWords(upTo(credits))) ?? "", [dollars, creditUsd]);
   const s = useHomeStart({ scope, projects, onPick, onCreate, onStarter, openBoard: nav.openBoard, worded: wordsOf });
   const approvals = useApprovals();
   const spendOff = useSampleWorkspace();
@@ -104,8 +103,8 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
      layer; the house workspace sees that same figure in dollars. */
   const words = picked ? pickedBrief(picked, s.draft.text) : s.draft.text;
   const figure = s.figureFor(words);
-  const quote = startQuote({ spendOff: Boolean(spendOff), figure, thinking: s.thinking, dollars, creditUsd });
-  const startMarker = startWords(quote, { creditUsd, dollars: money.price });
+  const quote = startQuote({ spendOff: Boolean(spendOff), figure, thinking: s.thinking, dollars, usd: s.figureUsdFor(words) });
+  const startMarker = startWords(quote, { creditUsd, dollars: fmtLedgerUsd });
 
   /* After joining (`?joined=1`, docs/redesign/inventory.md § 8.6): what the visitor typed before the join sheet is in the bar, kept in
      this browser (lib/guest/brief.ts), with Start's price beside it as always. Once, and only into an empty bar. */
@@ -198,7 +197,7 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
           <WaitingStrip items={items} shown={waitingShown(wide)} onApprove={approvals.approve}
             onOpen={() => nav.openApprovals()} onMore={() => nav.openApprovals()} onHide={hide} />
         ) : null}
-        <Wall tiles={wall.tiles} status={wall.status} row={wallRow(stripOn)} picked={picked?.id ?? null} onPick={pick} onRemix={remix} onMenu={(e, tile) => wallMenu.open(e, tile.id)} />
+        <Wall tiles={wall.tiles} status={wall.status} row={wallRow(stripOn)} picked={picked?.id ?? null} onPick={pick} onRemix={remix} onMenu={(e, tile) => wallMenu.open(e, tile.id)} onBroken={(tile) => wall.markBroken(tile.id)} unloaded={wall.unloaded} />
         <WallMenu scope={scope} tiles={wall.tiles} menu={wallMenu.menu} onClose={wallMenu.close} onChoose={(tile) => setPickedId(tile.id)} onRemix={remix} />
         <div className="v12-hm-lower" data-dim={picked ? "" : undefined}>
           <YourBoards scope={scope} projects={projects} status={status} error={error} onRetry={onRetry} now={now} approvals={approvalsByDraft}

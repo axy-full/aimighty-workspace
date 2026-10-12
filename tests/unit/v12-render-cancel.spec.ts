@@ -53,3 +53,29 @@ test("the money line says it once, in the workspace's own unit, from the take's 
   expect(renderState({ ...base, price: { amount: 0.84, unit: "usd" } }, 30_000).money?.text).toMatch(/^\$0\.84\d* held · charged only when it’s ready$/);
   expect(renderState(base, 30_000).money?.text).toBe("Charged only when it’s ready");
 });
+
+test("Seedance, Kling or Topaz: a sent cancel waits for the engine and says nothing about billing; only its confirmation says nothing was billed", async () => {
+  const { providerAskOutcome, CANCEL_ASKED } = await import("../../lib/v12/renderCancel");
+  expect(providerAskOutcome("requested")).toEqual({ text: CANCEL_ASKED, cancelled: false, pending: true });
+  expect(CANCEL_ASKED).not.toMatch(/nothing (was |is )?billed|not billed|free/i);
+  expect(providerAskOutcome("cancelled")).toEqual({ text: CANCELLED_FREE_TOAST, cancelled: true, pending: false });
+  /* The rest are the provider answers as they were. */
+  for (const status of ["running", "succeeded", "failed", "odd", undefined]) expect(providerAskOutcome(status)).toEqual(providerQueueOutcome(status));
+});
+
+test("the hold line while a cancel is on its way keeps its figure and says it settles when the engine confirms; otherwise it keeps its own words", async () => {
+  const { moneyLine, renderState, SETTLES_WHEN_CONFIRMED } = await import("../../lib/v12/renderState");
+  const state = renderState({ id: "g", status: "queued", kind: "video", model: "fal-ai/kling-video/v3/standard", provider: "fal", createdAt: 0, atProvider: true, price: { amount: 7, unit: "cr" } } as never, 30_000);
+  const line = state.money!;
+  expect(moneyLine(line)).toEqual({ head: "7 cr held", tail: " · charged only when it’s ready" });
+  expect(moneyLine(line, true)).toEqual({ head: "7 cr held", tail: " · settles when the engine confirms" });
+  expect(SETTLES_WHEN_CONFIRMED).toBe("settles when the engine confirms");
+  /* No figure on the take: nothing to hold the words beside, so only what is true, never "Charged when ready". */
+  const unpriced = renderState({ id: "g", status: "queued", kind: "video", model: "fal-ai/kling-video/v3/standard", provider: "fal", createdAt: 0, atProvider: true } as never, 30_000).money!;
+  expect(unpriced.short).toBe("Charged when ready");
+  expect(moneyLine(unpriced, true)).toEqual({ head: "Settles when the engine confirms", tail: "" });
+  expect(moneyLine(unpriced)).toEqual({ head: "Charged when ready", tail: "" });
+  /* The same figure either way: never a second price. */
+  expect(moneyLine(line, true).head).toBe(moneyLine(line).head);
+  expect(`${moneyLine(line, true).head}${moneyLine(line, true).tail}`).not.toMatch(/charged only when|nothing billed/i);
+});
