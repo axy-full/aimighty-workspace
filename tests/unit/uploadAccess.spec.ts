@@ -140,20 +140,26 @@ test("a private draft and a person's own tools do not share an upload: it stays 
   });
 });
 
-test("an upload from before uploaders were recorded is an admin's alone, unless shared work uses it", async () => {
+test("an unowned older upload is openable by members, as today; an owned one is not, and another workspace's never is", async () => {
   const h = await harness();
   const ws = workspace(`access-d-${run}`);
   await h.tenant.runInTenant(ws, async () => {
     await h.database.ready();
-    const id = `upl_old_${run}`;
-    await seedUpload(h, id, null);
+    const old = `upl_old_${run}`, owned = `upl_owned_${run}`;
+    await seedUpload(h, old, null);
+    await seedUpload(h, owned, "u_up");
+    for (const [who, role] of [["u_mate", "member"], ["u_admin", "admin"], ["u_up", "member"]] as const) {
+      h.as(who, role);
+      expect(await status(h, old), `${role} ${who}, unowned`).toBe(200);
+      expect((await h.metadata(request("/x"), ctx(old))).status).toBe(200);
+    }
     h.as("u_mate");
-    expect(await status(h, id)).toBe(404);
-    h.as("u_admin", "admin");
-    expect(await status(h, id)).toBe(200);
+    expect(await status(h, owned)).toBe(404);
+  });
+  await h.tenant.runInTenant(workspace(`access-d2-${run}`), async () => {
+    await h.database.ready();
     h.as("u_mate");
-    await h.database.db().execute({ sql: "INSERT INTO cast_members(id,name,upload_id,created_at) VALUES(?,?,?,1)", args: [`cast_old_${run}`, "Lead", id] });
-    expect(await status(h, id)).toBe(200);
+    expect(await status(h, `upl_old_${run}`)).toBe(404);
   });
 });
 

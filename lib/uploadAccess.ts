@@ -11,8 +11,8 @@ import { requireTenant } from "./tenant";
  *      (`workbench_bibles`), a cast member, an identity (cover and photos), a shot preset or a catalog version of an attribute, or a team-chat message.
  *
  * Not shared work, so no grant: a private draft (`workbench_projects`, one person's), an edit version, Atomik's own messages and steps. An upload only
- * those use stays its uploader's. Rows from before `uploader_id` that no record could name are unowned: an admin's alone, unless shared work uses them.
- * Anything else is a 404 from the caller, never a 403, so nothing says the upload exists.
+ * those use stays its uploader's. Rows from before `uploader_id` that no record could name are unowned and stay open to the workspace's members, as
+ * they are today (an owner decision to tighten later). Anything else is a 404 from the caller, never a 403, so nothing says the upload exists.
  *
  * Narrow by design, no scan of boards in JS: the relational links are indexed or small direct-column lookups; the JSON bodies are tested in SQL with a plain
  * substring match on the id (ids are long and random, so a match is a reference) and only after the cheaper checks have said no, smallest table first,
@@ -50,7 +50,7 @@ async function usedBySharedWork(id: string): Promise<boolean> {
 }
 
 /** Whether `viewer` may open the upload `id` in the current workspace. Unknown ids and other people's private uploads answer false alike. */
-export async function uploadOpenableBy(id: string, viewer: { id: string; role: string }): Promise<boolean> {
+export async function uploadOpenableBy(id: string, viewer: { id: string; role?: string }): Promise<boolean> {
   if (!id || id.length > 200) return false;
   await ready();
   const workspace = requireTenant().id;
@@ -65,6 +65,6 @@ export async function uploadOpenableBy(id: string, viewer: { id: string; role: s
     yes.set(key, Date.now() + YES_MS);
     return true;
   }
-  /* Unowned (from before uploaders were recorded) and on no shared work: an admin's. */
-  return row.uploader_id == null && viewer.role === "admin";
+  /* Unowned (from before uploaders were recorded, and no record names who): open to the workspace's members, as today. */
+  return row.uploader_id == null;
 }
