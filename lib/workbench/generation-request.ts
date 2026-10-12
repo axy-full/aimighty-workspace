@@ -37,7 +37,7 @@ export type GenerationBodyInput = {
   /** The shot setup picked from the camera bank (Gen's film vocabulary), kept on the take so Recreate brings it back. */
   shotSpec?: Record<string, string> | null;
   /** One take of a batch (Gen's takes 2–4): admission stores both, and Takes shows the siblings as one strip. */
-  batch?: { id: string; variation: number };
+  batch?: { id: string; variation: number; size?: number };
   /** Seedance 2.5 draft mode (lib/draftFinal.ts): a 480p watermarked draft whose 1080p final is made after. */
   draft?: boolean;
   /** Cinema Studio 4.0's creative controls (lib/cinemaStudioTypes.ts): only picked ones; none is every control on Auto. */
@@ -83,7 +83,7 @@ export function generationRequestBody(input: GenerationBodyInput): Record<string
     ...(input.kind === "video" ? { firstFrameAssetId: input.firstFrameAssetId ?? "" } : {}),
     ...(model.soulIdentity && input.soul ? input.soul : {}),
     ...(input.shotSpec && Object.keys(input.shotSpec).length ? { shotSpec: input.shotSpec } : {}),
-    ...(input.batch ? { batchId: input.batch.id, variation: input.batch.variation } : {}),
+    ...(input.batch ? { batchId: input.batch.id, variation: input.batch.variation, ...(input.batch.size && input.batch.size > 1 ? { batchSize: input.batch.size } : {}) } : {}),
     ...(input.draft && input.kind === "video" ? { draft: true } : {}),
     ...(input.cinema && Object.keys(input.cinema).length ? { cinema: input.cinema } : {}),
     ...(input.generateAudio === true && input.kind === "video" ? { generateAudio: true } : {}),

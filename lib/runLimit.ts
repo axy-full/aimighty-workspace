@@ -107,4 +107,6 @@ export type RunSpend = {
   band: number;
   /** Null while the run may spend; otherwise why not, said to the person. */
   live?: () => Promise<string | null>;
+  /** A step Atomik's Auto approved itself, with no person's tap: a machine for guardrail 4 (a job over the approval line is never started by it). */
+  auto?: boolean;
 };
