@@ -283,6 +283,7 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
    - Teammates may open, view-only, only boards that are shared in the workspace, never private drafts. No shared flag exists today, so #667 adds an author-set "Share with team" mark. It is private by default, and every existing board stays private.
    - A shared board shows its whole contents to teammates, including its script and uploads.
    - Adding a check that outsiders get nothing is fine (tightening).
+   - **The UI (owner, approved):** "Share with team" is one item in the board's existing ⋯ menu and right-click menu, in v14 style. Its one-line tooltip reads "Teammates can view this board. Only you can edit it." No new screen or layout. It goes into the next Claude Design round. The PR includes screenshots of the menu item and of a teammate's view-only board.
    - #667 merges when green, after a fresh review, and goes in the deploy after the Google one.
    - (An earlier message that day chose "teammates see all boards" and a guard restatement. The owner withdrew it; it was never applied.)
 2. **Uploads fix, as an extra safety layer.** A separate small PR, NEEDS AKSHAY, with an Opus privacy review. It must not loosen anything that works today. A member opens an upload only if:
