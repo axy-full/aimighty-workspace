@@ -26,5 +26,8 @@ test("the menu's two lines", () => {
 test("the avatar carries the person's initials, then the workspace's, then P", () => {
   expect(avatarInitials({ name: "Ada Rowan" }, "Harbour Studio")).toBe("AR");
   expect(avatarInitials({ name: null }, "Harbour Studio")).toBe("HS");
+  /* No readable name: the address's first letter comes before the workspace's. */
+  expect(avatarInitials({ name: null, email: "ada@studio.example" }, "Harbour Studio")).toBe("A");
+  expect(avatarInitials({ name: "Ada Rowan", email: "x@y.example" }, "Harbour Studio")).toBe("AR");
   expect(avatarInitials({ name: "y_AD14WC77MG9aHYEi7qvdd6" }, "Browser y_AD14WC77MG9aHYEi7qvdd6")).toBe("P");
 });

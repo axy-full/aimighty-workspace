@@ -9,7 +9,7 @@
 export type TabsState = { open: readonly string[]; closed: readonly string[] };
 
 export const EMPTY_TABS: TabsState = { open: [], closed: [] };
-/** Board tabs shown before the rest go under "+N ▾". */
+/** Board tabs shown before the header has measured its room (it then shows as many as really fit: `fitBoardTabs`). */
 export const MAX_BOARD_TABS = 4;
 /** How many closed boards "Recently closed" remembers. */
 export const MAX_CLOSED = 5;
@@ -61,6 +61,22 @@ export function visibleTabs(open: readonly string[], active: string | null, max 
   let shown = open.slice(0, max);
   if (active && open.includes(active) && !shown.includes(active)) shown = [...shown.slice(0, max - 1), active];
   return { shown, hidden: open.filter((id) => !shown.includes(id)) };
+}
+
+/**
+ * How many board tabs fit (the header measures real space; prototype v14): the most `visibleTabs` can show so that the tabs it shows,
+ * each as wide as `widths` says (its own width plus the gap after it), and the "+N ▾" button when some are hidden, fit in `room`.
+ * The open board always shows, so the answer is never below one while a board is open.
+ */
+export function fitBoardTabs({ open, active, widths, moreWidth, room }: {
+  open: readonly string[]; active: string | null; widths: Readonly<Record<string, number>>; moreWidth: number; room: number;
+}): number {
+  for (let n = open.length; n > 0; n--) {
+    const { shown, hidden } = visibleTabs(open, active, n);
+    const used = shown.reduce((sum, id) => sum + (widths[id] ?? 0), 0) + (hidden.length ? moreWidth : 0);
+    if (used <= room) return n;
+  }
+  return active && open.includes(active) ? 1 : 0;
 }
 
 /** Where to go when the open board's tab closes: the tab before it, else the one after, else Home. */

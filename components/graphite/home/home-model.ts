@@ -181,6 +181,15 @@ export function startFigure(started: { text: string; figure: number | null } | n
   return (started && started.text === text ? started.figure : null) ?? (thinking.state === "ready" && typeof thinking.credits === "number" ? thinking.credits : null);
 }
 
+/**
+ * The same figure in the engines' own dollars, for the house workspace (the only one sent them): the refused press's newer figure, else the
+ * planner's. Null when there is none, and the house is then shown no price (never the credits turned into dollars).
+ */
+export function startFigureUsd(started: { text: string; figure: number | null; usd?: number | null } | null, thinking: { state: string; usd?: number }, text: string): number | null {
+  if (started && started.text === text && started.figure != null) return typeof started.usd === "number" ? started.usd : null;
+  return thinking.state === "ready" && typeof thinking.usd === "number" ? thinking.usd : null;
+}
+
 /** The longest request Atomik takes (lib/workbench/rig-agent-plan.ts › PLAN_LIMITS.goal), and the shortest. */
 export const GOAL_MAX = 2000;
 export const GOAL_MIN = 3;

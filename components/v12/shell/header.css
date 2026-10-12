@@ -6,7 +6,7 @@
 .v12 .v12-header {
   height: var(--gx-h-header); flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--gx-sp-16);
   padding: 0 var(--gx-sp-16); border-bottom: 1px solid var(--gx-hair-strong); background: var(--gx-root); color: var(--gx-text);
-  font-family: var(--gx-font); font-size: var(--gx-fs-meta);
+  font-family: var(--gx-font); font-size: var(--gx-fs-meta); position: relative;
 }
 :where(.v12 .v12-header) :where(button) { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; }
 
@@ -48,6 +48,10 @@
 .v12 .v12-header .v12-tab-more[aria-expanded="true"], .v12 .v12-header .v12-tab-more:hover { background: var(--gx-selected); }
 .v12 .v12-iconbtn.v12-tab-plus { width: var(--gx-h-tab); height: var(--gx-h-tab); border-radius: var(--gx-r-tab); color: var(--gx-text-strong); }
 
+/* The board tabs as they would draw, unseen: the header reads their widths to tell how many fit (components/v12/shell/use-tab-fit.ts). */
+.v12 .v12-tabs-measure { position: absolute; left: 0; top: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; display: flex; gap: var(--gx-sp-2); white-space: nowrap; }
+.v12 .v12-tabs-measure .v12-tab-xspace { flex: none; width: 18px; margin-right: var(--gx-sp-6); }
+
 /* The merged Atomik field */
 /* Flexible after the tabs between 280 and 560 px (owner, 11 Oct). Whatever it leaves is empty space before the pinned pair. */
 .v12 .v12-field {
@@ -67,8 +71,9 @@
 .v12 .v12-iconbtn.v12-field-panel[aria-pressed="true"] { background: var(--gx-tint); color: var(--gx-accent-text); }
 
 /* Activity pill */
+/* The Activity pill, the low-credit chip and the avatar: one group, pinned to the right edge with the logo's 16 px margin at every width. */
+.v12 .v12-right { margin-left: auto; flex: none; display: flex; align-items: center; gap: var(--gx-sp-16); }
 .v12 .v12-header .v12-activity {
-  margin-left: auto; /* the Activity pill, the low-credit chip and the avatar are pinned to the right edge at every width */
   flex: none; white-space: nowrap; height: var(--gx-h-input); display: flex; align-items: center; gap: var(--gx-sp-8); padding: 0 var(--gx-sp-12);
   border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-pill); color: var(--gx-text); font-size: var(--gx-fs-meta); font-weight: 500;
 }
@@ -99,6 +104,7 @@
 .v12 .v12-act-empty { margin: 0; padding: var(--gx-sp-12) var(--gx-sp-10); color: var(--gx-text-sec); font-size: var(--gx-fs-meta); }
 
 /* Account menu */
+.v12 .v12-owner-badge { padding: 1px var(--gx-sp-8); border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-pill); font-family: var(--gx-font); font-size: var(--gx-fs-label); color: var(--gx-text-2); }
 .v12 .v12-acct-balance { display: flex; justify-content: space-between; align-items: center; padding: var(--gx-sp-8) var(--gx-sp-10); border-bottom: 1px solid var(--gx-hair); margin-bottom: var(--gx-sp-4); }
 .v12 .v12-acct-credits { font-family: var(--gx-mono); font-size: var(--gx-fs-meta); font-weight: 600; }
 .v12 .v12-acct-topup { height: 26px; padding: 0 var(--gx-sp-10); border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-tab); font-size: var(--gx-fs-label); font-weight: 500; white-space: nowrap; }
@@ -133,5 +139,4 @@
   .v12 .v12-activity[data-tone="live"] .v12-activity-dot, .v12 .v12-act-dot[data-kind="running"] { animation: none; opacity: 1; }
   .v12 .v12-tab { transition: none; }
 }
-/* The platform console's menu line carries an Owner badge: only the platform owner ever sees it. */
-.v12 .v12-acct-owner { font-size: var(--gx-fs-eyebrow); font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-accent-text); }
+.v12 .v12-acct-note { font-size: var(--gx-fs-label); color: var(--gx-text-sec); text-align: right; }

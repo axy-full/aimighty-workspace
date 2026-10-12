@@ -1,5 +1,6 @@
 import { recoveryFetch as fetch } from "./recovery";
 import { vendorKey, deploymentIdentityAllowed } from "./vendorKeys";
+import { productionIntended } from "./vercelGuard";
 import { engineMock, mockCompletion, mockDelay } from "./mock";
 import { assertTextProvider, openaiDirectPost, TEXT_PROVIDER_HEADER, textVendor } from './openai-direct';
 import { isDirectRoute, textRoute } from './textRoute';
@@ -18,6 +19,8 @@ export const GATEWAY_URL = () => `${GATEWAY_BASE()}/chat/completions`;
 
 export function gatewayReachable(): boolean {
   if (engineMock()) return true;
+  /* Closed in production whatever is set (lib/vercelGuard.ts): its key is not read there and its identity is not allowed. */
+  if (productionIntended()) return false;
   if (vendorKey("gateway")) return true;
   return deploymentIdentityAllowed() && Boolean(process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL);
 }

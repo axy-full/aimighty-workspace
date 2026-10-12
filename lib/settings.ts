@@ -74,6 +74,11 @@ export const DEFAULTS = {
    */
   promptEnhancer: "higgsfield",
   /**
+   * Whether Make's Enhance toggle starts On for people in this workspace (the new interface; lib/v12/enhance.ts): "on" or "off".
+   * A person's own choice, kept in their browser, overrides it. Nothing is asked at sign-up.
+   */
+  enhanceDefault: "on",
+  /**
    * When this workspace's cast was mirrored into Rig's elements (brief 3).
    *
    * Blank means it has not happened, and the first read of the element
