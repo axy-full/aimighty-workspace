@@ -58,7 +58,7 @@ export const GET = withTenant(async function GET() {
   if (got.response) return got.response;
 
   /* Particl's own engines only: Atomik never plans on a signed-in account. */
-  const [chats, menu, eng] = await Promise.all([listChats(), menuFor("planner"), engines()]);
+  const [chats, menu, eng] = await Promise.all([listChats(got.user.id), menuFor("planner"), engines()]);
   /* The Marketing Studio presets the planner may name are the ones this key listed within the hour. When
      none are, the catalogue is read after this response (free, non-generating), never inside a planning quote. */
   if (await plannerPresetsStale().catch(() => false)) {

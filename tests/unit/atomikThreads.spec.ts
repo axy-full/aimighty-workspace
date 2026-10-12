@@ -109,18 +109,19 @@ test("a project's threads: newest activity first, numbered by when each was star
     await chat({ id: "c_deleted", deleted: 1, created: 500, updated: 99_500 });
 
     const threads = await listThreads("p1", "u_ana");
+    /* A chat is its person's (lib/atomikAccess.ts): Ana is listed her own threads, numbered among them; Ben's is not there for her. */
     expect(threads.map((t) => [t.id, t.number, t.state])).toEqual([
-      ["c_named", 2, "planning"], ["c_run", 4, "running"], ["c_done", 5, "done"], ["c_ask", 1, "approval"],
-      ["c_acct", 7, "done"], ["c_fail", 6, "stopped"], ["c_new", 3, "new"],
+      ["c_run", 3, "running"], ["c_done", 4, "done"], ["c_ask", 1, "approval"],
+      ["c_acct", 6, "done"], ["c_fail", 5, "stopped"], ["c_new", 2, "new"],
     ]);
     const by = Object.fromEntries(threads.map((t) => [t.id, t]));
     /* Untitled, a thread is called by its first ask (sixty characters at most, the cut marked), and New thread before anyone asks. */
     expect(by.c_ask.title).toBe("A bottle spot for the spring launch, thirty seconds, cold o…");
     expect(by.c_ask.title).toHaveLength(60);
-    expect(by.c_named.title).toBe("Harbour teaser");
+    expect(by.c_named).toBeUndefined();
+    expect((await listThreads("p1", "u_ben")).map((t) => [t.id, t.title, t.number, t.startedByYou, t.state])).toEqual([["c_named", "Harbour teaser", 1, true, "planning"]]);
     expect(by.c_new.title).toBe("New thread");
     expect(by.c_ask).toMatchObject({ projectId: "p1", startedByYou: true, startedByName: "Ana", startedAt: 1000, lastActivityAt: 5000, archivedAt: null });
-    expect(by.c_named).toMatchObject({ startedByYou: false, startedByName: "Ben" });
     expect((await listThreads("p2", "u_ana")).map((t) => [t.id, t.number])).toEqual([["c_other", 1]]);
     expect((await listThreads(null, "u_ana")).map((t) => t.id)).toEqual(["c_unfiled"]);
     expect(await listThreads("p1", "u_ana", { archived: true })).toEqual([]);
@@ -148,7 +149,8 @@ test("starting a thread is starting a chat; its first ask names it until a perso
     await expect(renameThread("ach_gone", "A name")).rejects.toMatchObject({ status: 404 });
     /* A second thread of the project is its own conversation, numbered after the first. */
     const second = await createChat({ userId: "u_ben", projectId: "p1", model: "auto", agentMode: "ask" });
-    expect((await listThreads("p1", "u_ana")).find((t) => t.id === second)).toMatchObject({ number: 2, startedByYou: false });
+    expect((await listThreads("p1", "u_ana")).find((t) => t.id === second), "not listed to someone else").toBeUndefined();
+    expect((await listThreads("p1", "u_ben")).find((t) => t.id === second)).toMatchObject({ number: 1, startedByYou: true });
   });
 });
 
@@ -183,7 +185,7 @@ test("a project's conversation from before threads is its thread 1, as it was: l
       id: "c_old", projectId: "p_old", number: 1, title: "Bottle spot", state: "approval", startedByYou: true, lastActivityAt: 2000, archivedAt: null,
     })]);
     /* The index still lists it for its production, waiting on its approval, so Atomik opens on it as it always did. */
-    expect((await listChats()).find((c) => c.id === "c_old")).toMatchObject({ projectId: "p_old", needsApproval: true, archivedAt: null });
+    expect((await listChats("u_ana")).find((c) => c.id === "c_old")).toMatchObject({ projectId: "p_old", needsApproval: true, archivedAt: null });
     const loaded = (await getChat("c_old"))!;
     expect(loaded.messages.map((m) => m.text)).toEqual(["A bottle spot for the launch.", "Two shots."]);
     expect(loaded.steps.map((s) => [s.id, s.status])).toEqual([["s_done", "done"], ["s_taken", "running"], ["s_next", "proposed"]]);
@@ -253,9 +255,9 @@ test("archive hides a thread and keeps every row of it; the archived list says w
     const shelf = await listThreads("p1", "u_ana", { archived: true });
     expect(shelf).toEqual([expect.objectContaining({ id: "tA", number: 1, title: "A harbour at dawn.", archivedByYou: false, archivedByName: "Ben", lastActivityAt: 5000 })]);
     expect(shelf[0].archivedAt).toEqual(expect.any(Number));
-    expect((await listThreads("p1", "u_ben", { archived: true }))[0].archivedByYou).toBe(true);
+    expect(await listThreads("p1", "u_ben", { archived: true }), "someone else's archived thread is not listed to them").toEqual([]);
     /* Hidden from the index too, so Atomik never opens on it by itself; read directly, it says it is archived. */
-    expect((await listChats()).map((c) => c.id)).not.toContain("tA");
+    expect((await listChats("u_ana")).map((c) => c.id)).not.toContain("tA");
     expect((await getChat("tA"))!.chat).toMatchObject({ archivedBy: "u_ben", archivedAt: expect.any(Number) });
     expect(await threadArchived("tA")).toBe(true);
     expect(await threadArchived("tB")).toBe(false);

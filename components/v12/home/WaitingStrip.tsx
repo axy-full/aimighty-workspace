@@ -98,13 +98,14 @@ function Item({ item, level, onApprove, onOpen }: { item: QueueItem; level: Wait
         <span className="v12-hm-dot" data-tone={problem ? "problem" : "waiting"} aria-hidden="true" />
         <span className="v12-hm-wait-name">{words.name}</span>
         {words.where ? <span className="v12-hm-wait-where">· {words.where}</span> : null}
+        {item.open.kind === "none" && item.price ? <span className="v12-hm-wait-where" data-testid="v12-home-waiting-price">· <Price quote={knownQuote(item.price)} /></span> : null}
       </button>
       {canPress ? (
         <button type="button" className="v12-hm-chip-btn" onClick={() => void press()} disabled={busy} aria-busy={busy || undefined}
           data-testid="v12-home-waiting-approve" {...spendAttrsOf(item.price)}>
           {busy ? "Approving…" : <span>Approve · <Price quote={knownQuote(item.price)} /></span>}
         </button>
-      ) : (
+      ) : item.open.kind === "none" ? null : (
         <button type="button" className="v12-hm-chip-btn" onClick={onOpen} data-testid="v12-home-waiting-action">Open</button>
       )}
       {problem ? <span className="v12-hm-sr" role="alert">{problem}</span> : null}

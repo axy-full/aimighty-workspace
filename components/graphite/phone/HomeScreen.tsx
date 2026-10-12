@@ -130,7 +130,7 @@ function ApprovalRow({ item, approvals, online, now, onTopUp, onPlan, onThread }
   };
   let action: React.ReactNode;
   /* An Atomik plan's step is approved with its plan's Continue, never from this row: Open shows the plan, as on the desktop. */
-  if (item.approve?.kind === "thread") action = (
+  if (item.approve?.kind === "thread") action = item.open.kind === "none" ? (item.price ? <span className="ph-row-price" data-testid="phone-row-price"><Price value={item.price} /></span> : null) : (
     <button type="button" className="ph-btn" onClick={() => onThread(item)} aria-label={`Open the plan: ${item.title}`} data-testid="phone-row-open">Open</button>
   );
   /* The sample spends nothing: its row says so in its line, and offers no priced button. */

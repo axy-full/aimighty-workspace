@@ -35,7 +35,7 @@ type Row = any;
 const text = (v: unknown) => (v == null || v === "" ? null : String(v));
 
 /**
- * A project's threads (null: the ones filed under no project), newest
+ * The viewer's own threads in a project (null: the ones filed under no project; a chat is its person's, lib/atomikAccess.ts), newest
  * activity first: the active ones, or with `archived`, the archived ones.
  * A step planned on the connected account never waits for anyone and never
  * runs again (lib/atomikAccountStep.ts), so it moves no thread's state.
@@ -44,7 +44,7 @@ export async function listThreads(projectId: string | null, viewer: string, opts
   await ready();
   const rs = await db().execute({
     sql: `SELECT c.id, c.project_id, c.title, c.status, c.created_by, c.created_at, c.updated_at, c.archived_at, c.archived_by,
-            (SELECT COUNT(*) FROM atomik_chats o WHERE o.deleted = 0 AND o.project_id IS c.project_id
+            (SELECT COUNT(*) FROM atomik_chats o WHERE o.deleted = 0 AND o.project_id IS c.project_id AND o.created_by = c.created_by
                AND (o.created_at < c.created_at OR (o.created_at = c.created_at AND o.id <= c.id))) AS number,
             (SELECT m.text FROM atomik_messages m WHERE m.chat_id = c.id AND m.role = 'user'
                ORDER BY m.created_at ASC, m.rowid ASC LIMIT 1) AS first_ask,
@@ -55,9 +55,9 @@ export async function listThreads(projectId: string | null, viewer: string, opts
           FROM atomik_chats c
           LEFT JOIN users u ON u.id = c.created_by
           LEFT JOIN users a ON a.id = c.archived_by
-          WHERE c.deleted = 0 AND c.project_id IS ? AND c.archived_at IS ${opts.archived ? "NOT NULL" : "NULL"}
+          WHERE c.deleted = 0 AND c.project_id IS ? AND c.created_by = ? AND c.archived_at IS ${opts.archived ? "NOT NULL" : "NULL"}
           ORDER BY c.updated_at DESC, c.id DESC LIMIT ?`,
-    args: [projectId, THREAD_LIMITS.list],
+    args: [projectId, viewer, THREAD_LIMITS.list],
   });
   return rs.rows.map((r: Row): Thread => ({
     id: String(r.id),

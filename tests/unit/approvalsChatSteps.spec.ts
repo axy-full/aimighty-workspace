@@ -85,14 +85,17 @@ test("an admin sees another member's step only while it needs an admin: over the
   const { creditUsd, billCredits, marginKeyOf } = await import("../../lib/creditTerms");
   const admin = await read(A, { id: "u_admin", role: "admin" });
   /* ach_a and ach_b are under the line: absent. ach_big (a member's) is over it: shown. Another admin's and the owner's are absent. */
-  expect(threads(admin)).toEqual(["thread:ach_big"]);
+  expect(threads(admin)).toEqual(["thread:st_ach_big"]);
   const credits = billCredits(40, marginKeyOf("video", MODEL));
   expect(credits).toBeGreaterThan(jobApprovalLineCredits(creditUsd()));
-  const item = admin.items.find((i) => i.id === "thread:ach_big")!;
-  expect(item).toMatchObject({ title: "Step of ach_big", price: { kind: "up-to", credits }, needsAdmin: true, note: null, step: null, where: "Atomik" });
+  const item = admin.items.find((i) => i.id === "thread:st_ach_big")!;
+  expect(item).toMatchObject({ title: "Step of ach_big", price: { kind: "up-to", credits }, needsAdmin: true, note: null, step: null, where: "Atomik", canApprove: false, decline: null, open: { kind: "none" } });
+  /* The step's own id is all that names it: no chat id anywhere. */
+  expect(item.approve).toEqual({ kind: "thread", chatId: null, stepId: "st_ach_big", productionId: null });
   const json = JSON.stringify(admin);
   expect(json, "no chat words, prompt or attachment").not.toMatch(/SECRET/);
   expect(json).not.toMatch(/A plan|first_ask|attach|uploadId|"prompt"/);
+  expect(json).not.toMatch(/"chatId":"|thread:ach_/);
   expect(admin.decided.length).toBe(0);
 });
 
@@ -103,22 +106,22 @@ test("the per-shot cap rule counts too, and the step goes as soon as it needs no
   const cheap = billCredits(0.5, marginKeyOf("video", MODEL));
   await runInTenant(A, async () => { await setSetting("approvalRule", "cap", "u_admin"); await setSetting("shotCapCredits", String(Math.max(1, cheap - 1)), "u_admin"); });
   const over = await read(A, { id: "u_admin", role: "admin" });
-  expect(threads(over), "over the cap, the cheap steps need an admin too").toEqual(["thread:ach_a", "thread:ach_b", "thread:ach_big"]);
+  expect(threads(over), "over the cap, the cheap steps need an admin too").toEqual(["thread:st_ach_a", "thread:st_ach_b", "thread:st_ach_big"]);
   expect(JSON.stringify(over)).not.toMatch(/SECRET/);
   await runInTenant(A, async () => { await setSetting("shotCapCredits", String(cheap + 1000), "u_admin"); });
   const under = await read(A, { id: "u_admin", role: "admin" });
-  expect(threads(under), "above the cap again, only the guardrail's one is left").toEqual(["thread:ach_big"]);
+  expect(threads(under), "above the cap again, only the guardrail's one is left").toEqual(["thread:st_ach_big"]);
   await runInTenant(A, async () => { await setSetting("approvalRule", "anyone", "u_admin"); });
 });
 
 test("the workspace owner is an admin here; an admin's own chat shows in full to them, another admin's does not; an agent identity sees nothing extra; another workspace is its own", async () => {
   const owner = await read(A, { id: "u_owner", role: "admin", owner: true });
-  expect(threads(owner).sort()).toEqual(["thread:ach_big", "thread:ach_owner"]);
+  expect(threads(owner).sort()).toEqual(["thread:ach_owner", "thread:st_ach_big"]);
   expect(owner.items.find((i) => i.id === "thread:ach_owner")?.title).toBe("SECRETOWN chat");
-  expect(owner.items.find((i) => i.id === "thread:ach_big")?.title).toBe("Step of ach_big");
+  expect(owner.items.find((i) => i.id === "thread:st_ach_big")?.title).toBe("Step of ach_big");
   expect(JSON.stringify(owner)).not.toMatch(/SECRETBIG|SECRETADM|SECRETA\b|SECRETB\b/);
   const admin2 = await read(A, { id: "u_admin2", role: "admin" });
-  expect(threads(admin2).sort()).toEqual(["thread:ach_adm2", "thread:ach_big"]);
+  expect(threads(admin2).sort()).toEqual(["thread:ach_adm2", "thread:st_ach_big"]);
   /* Atomik's agent identity: no chat is its own, and it is never an admin. */
   const agent = await read(A, { id: "agent:run1", role: "admin", owner: true });
   expect(threads(agent)).toEqual([]);

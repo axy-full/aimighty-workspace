@@ -193,7 +193,8 @@ export function stepForBrowser(step: Step): Step {
   };
 }
 
-export async function listChats(limit = 40): Promise<(Chat & { needsApproval: boolean })[]> {
+/** The viewer's own chats (lib/atomikAccess.ts): a chat is its person's, so no one else's is listed, nor flagged as waiting. */
+export async function listChats(viewer: string, limit = 40): Promise<(Chat & { needsApproval: boolean })[]> {
   await ready();
   /* A step planned on the connected account can no longer be approved, so it
      never makes a chat wait for one (lib/atomikAccountStep.ts). An archived
@@ -203,9 +204,9 @@ export async function listChats(limit = 40): Promise<(Chat & { needsApproval: bo
     sql: `SELECT c.*, EXISTS(
             SELECT 1 FROM atomik_steps s WHERE s.chat_id = c.id AND s.status = 'proposed' AND s.model NOT LIKE 'connected:%'
           ) AS needs
-          FROM atomik_chats c WHERE c.deleted = 0 AND c.archived_at IS NULL
+          FROM atomik_chats c WHERE c.deleted = 0 AND c.archived_at IS NULL AND c.created_by = ?
           ORDER BY c.updated_at DESC LIMIT ?`,
-    args: [Math.min(Math.max(1, limit), 100)],
+    args: [viewer, Math.min(Math.max(1, limit), 100)],
   });
   return rs.rows.map((r: Row) => chatForBrowser({ ...toChat(r), needsApproval: Number(r.needs) === 1 }));
 }

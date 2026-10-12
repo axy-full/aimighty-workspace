@@ -46,7 +46,8 @@ export type ApproveRef =
   | { kind: "board-approve"; productionId: string; runId: string; fingerprint: string; plan?: boolean }
   | { kind: "board-render"; productionId: string; runId: string; seq: number; fingerprint: string }
   /* A plan's step: approved by the plan's own Continue, at its live price (ThreadCheckpoint). */
-  | { kind: "thread"; chatId: string; stepId: string; productionId: string | null };
+  /* `chatId` is null on another member's step an admin is shown as a title and a price: nothing opens or continues it from here. */
+  | { kind: "thread"; chatId: string | null; stepId: string; productionId: string | null };
 
 /** "Not now": the item's own existing path. Nothing is charged by any of them. */
 export type DeclineRef =
@@ -59,7 +60,9 @@ export type DeclineRef =
 export type OpenRef =
   | { kind: "take"; genId: string; draftId: string | null }
   | { kind: "board"; productionId: string; draftId: string | null }
-  | { kind: "thread"; chatId: string; productionId: string | null };
+  | { kind: "thread"; chatId: string; productionId: string | null }
+  /* Nothing to open (an admin is shown a step that is another person's as a title and a price only). */
+  | { kind: "none" };
 
 export type QueueItem = {
   /** Stable across reads: `<source>:<record id>`. */

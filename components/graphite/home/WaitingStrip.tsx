@@ -44,7 +44,7 @@ function Row({ item, now, onApprove, onOpen, onTopUp }: {
         {problem ? <span className="gx-hm-problem" role="alert" data-testid="home-waiting-problem">{problem}</span> : null}
       </span>
       <span className="gx-hm-wait-actions">
-        <button type="button" className="gx-hm-btn" onClick={onOpen} data-testid="home-waiting-open">Open</button>
+        {item.open.kind === "none" ? (item.price ? <span className="gx-hm-wait-line" title={title ?? undefined} data-testid="home-waiting-price"><Price value={item.price} /></span> : null) : <button type="button" className="gx-hm-btn" onClick={onOpen} data-testid="home-waiting-open">Open</button>}
         {why ? <span className="gx-hm-wait-why" data-testid="home-waiting-why">{why}</span>
           : canPress ? (
             <button type="button" className="gx-hm-btn gx-hm-approve" onClick={() => void press()} disabled={busy || Boolean(short)} aria-busy={busy || undefined}

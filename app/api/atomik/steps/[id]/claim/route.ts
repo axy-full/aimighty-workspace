@@ -29,6 +29,8 @@ export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) 
   /* The sample workspace spends nothing: no step is taken there. */
   { const off = await sampleWorkspaceOff(); if (off) return off; }
   const { id } = await ctx.params;
+  /* TODO(owner decision, asked 12 Oct; lib/atomikAccess.ts): who may claim a step that is another person's (an admin, for one over the cap or line) and what the claim returns to them
+     are unchanged here. Today any signed-in person who can name a step id claims it and is handed the step. */
 
   /* A step planned on the connected account is never claimed: nothing here
      runs on that account any more, so it stays exactly as it was. */

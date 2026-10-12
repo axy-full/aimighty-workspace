@@ -52,6 +52,8 @@ export function ApprovalRow({ item, onApprove, onDecline, onOpen, onTopUp }: {
         <span className="cr-row-title">{item.title}</span>
         <span className="cr-row-line">{itemLine(item)}</span>
         {item.note ? <span className="cr-row-note">{item.note}</span> : null}
+        {/* Another person's step an admin is shown: its price, and nothing to press (lib/atomikAccess.ts). */}
+        {item.open.kind === "none" && item.price ? <span className="cr-row-note" title={dollars} data-testid="approval-price"><Price value={item.price} /></span> : null}
         {item.why ? <span className="cr-row-why" data-testid="approval-why">{item.why}</span> : null}
         {short ? (
           <span className="cr-row-short" data-testid="approval-short">
@@ -62,7 +64,7 @@ export function ApprovalRow({ item, onApprove, onDecline, onOpen, onTopUp }: {
         {problem ? <span className="cr-row-error" role="alert" data-testid="approval-problem">{problem}</span> : null}
       </span>
       <span className="cr-row-actions">
-        <button type="button" className="cr-btn" onClick={() => onOpen(item)} data-testid="approval-open">Open</button>
+        {item.open.kind === "none" ? null : <button type="button" className="cr-btn" onClick={() => onOpen(item)} data-testid="approval-open">Open</button>}
         {item.decline && !thread ? (
           <button type="button" className="cr-btn" disabled={busy !== null} onClick={() => void press("decline")} data-testid="approval-not-now">
             {busy === "decline" ? "Setting aside…" : "Not now"}
@@ -81,7 +83,7 @@ export function ApprovalRow({ item, onApprove, onDecline, onOpen, onTopUp }: {
           ) : null}
         </>)}
       </span>
-      {thread && checkpoint ? <ThreadCheckpoint chatId={thread.chatId} productionId={thread.productionId} /> : null}
+      {thread && thread.chatId && checkpoint ? <ThreadCheckpoint chatId={thread.chatId} productionId={thread.productionId} /> : null}
     </li>
   );
 }

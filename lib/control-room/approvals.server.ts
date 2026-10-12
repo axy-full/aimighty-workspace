@@ -4,9 +4,9 @@ import { platformDb, platformReady } from "@/lib/platform";
 import { currentTenant } from "@/lib/tenant";
 import { creditsApply, creditState } from "@/lib/credits";
 import { getSetting } from "@/lib/settings";
-import { cleanRule, cleanShotCap, jobApprovalLineCredits } from "@/lib/approvalRule";
+import { cleanRule, cleanShotCap } from "@/lib/approvalRule";
+import { needsAdminTap, ownerIsAdmin, shotCap as chatShotCap, stepCredits } from "@/lib/atomikAccess";
 import { isAgentId } from "@/lib/security/people-only";
-import { billCredits, creditUsd, marginKeyOf } from "@/lib/creditTerms";
 import { FREE, exact, shortBy as shortOf, upTo } from "@/lib/shell/price-words";
 import { listGenerations, type Generation } from "@/lib/jobs";
 import { heldNeeds, mayRelease } from "@/lib/workspace/release";
@@ -66,11 +66,8 @@ export const shortText = (value: string, max = 60) => {
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
 };
 
-/** The per-shot rule as the workspace set it (lib/approvalRule.ts): the cap in credits when the rule is `cap`, else null. */
-async function shotCap(): Promise<number | null> {
-  const [rule, cap] = await Promise.all([getSetting("approvalRule").catch(() => "anyone"), getSetting("shotCapCredits").catch(() => "50")]);
-  return cleanRule(rule) === "cap" ? cleanShotCap(cap) : null;
-}
+/** The per-shot rule as the workspace set it (lib/atomikAccess.ts): the cap in credits when the rule is `cap`, else null. */
+const shotCap = chatShotCap;
 
 /** The rule's own sentence for a member over the cap. */
 const capWords = (cap: number) => `Members up to ${cap.toLocaleString("en-US")} cr a shot; an admin above it`;
@@ -304,29 +301,22 @@ async function threadItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: 
   /* A chat step is its own person's (owner, 12 Oct): a member is shown their own steps and nothing of anyone else's, not even that one exists. An admin is shown
      another MEMBER's step only while it needs an admin's tap (over the workspace's per-shot cap, or over guardrail 4's line), and then only its title and its price:
      never the chat's words, the plan's step bodies or what was asked. Once it no longer needs one it is not shown. Another admin's step needs only its owner. */
-  const ownerId = currentTenant()?.workspace?.ownerId ?? null;
-  const line = jobApprovalLineCredits(creditUsd());
-  const priceOf = (r: Row): number | null => {
-    const est = r.est_cost_usd == null ? null : Number(r.est_cost_usd);
-    return ctx.inCredits && est !== null && Number.isFinite(est) ? billCredits(est, marginKeyOf(text(r.kind), text(r.model))) : null;
-  };
   const shown = [...first.values()].filter((r) => {
     if (String(r.chat_owner ?? "") === viewer.id) return true;
     if (!ctx.admin || isAgentId(viewer.id)) return false;
-    const theirOwnerIsAdmin = String(r.owner_role ?? "") === "admin" || String(r.chat_owner ?? "") === ownerId;
-    const credits = priceOf(r);
-    return !theirOwnerIsAdmin && credits !== null && ((ctx.cap !== null && credits > ctx.cap) || (line > 0 && credits > line));
+    return !ownerIsAdmin(r.chat_owner, r.owner_role) && needsAdminTap(stepCredits(r, ctx.inCredits), ctx.cap);
   }).slice(0, SOURCE_LIMIT);
   const items = shown.map((r): QueueItem => {
-    const credits = priceOf(r);
+    const credits = stepCredits(r, ctx.inCredits);
     const price: QueuePrice = upTo(credits);
     const shortBy = shortOf(ctx.balance, price);
     const productionId = text(r.project_id);
     const mine = String(r.chat_owner ?? "") === viewer.id;
     if (!mine) {
-      /* Title and price only. The ids are what Open and Continue need to reach the step; they carry no words. */
+      /* Title and price only, and the step's own id: no chat id, so nothing opens the chat. Nothing is offered to press until the owner decides who may claim it
+         (TODO in lib/atomikAccess.ts). */
       return {
-        id: `thread:${String(r.chat_id)}`,
+        id: `thread:${String(r.id)}`,
         source: "thread",
         title: shortText(text(r.title) ?? "A step"),
         where: "Atomik",
@@ -334,15 +324,15 @@ async function threadItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: 
         project: NO_PROJECT,
         price,
         needsAdmin: true,
-        canApprove: true,
+        canApprove: false,
         why: null,
-        shortBy,
+        shortBy: null,
         note: null,
         step: null,
         sample: false,
-        approve: { kind: "thread", chatId: String(r.chat_id), stepId: String(r.id), productionId: null },
-        decline: { kind: "thread-stop", stepId: String(r.id) },
-        open: { kind: "thread", chatId: String(r.chat_id), productionId: null },
+        approve: { kind: "thread", chatId: null, stepId: String(r.id), productionId: null },
+        decline: null,
+        open: { kind: "none" },
       };
     }
     const gate = capGate(credits, ctx.cap, ctx.admin);

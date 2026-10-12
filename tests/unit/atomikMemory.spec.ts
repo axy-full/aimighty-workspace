@@ -365,6 +365,8 @@ test("the chat planner's quote and its turn read the same memory, and only this 
   await inTenant(other, () => m.addMemory({ kind: "brand", text: "Another workspace's orange." }, "x"));
   await inTenant(ws, async () => {
     await project("p1"); await project("p2");
+    /* The chat is its person's (lib/atomikAccess.ts): the route reads its owner from the database, though the chat itself is read through the fake below. */
+    await (await import("../../lib/db")).db().execute({ sql: "INSERT INTO atomik_chats(id,project_id,title,status,created_by,created_at,updated_at) VALUES('ach_1','p1','Chat','idle','u_chat',0,0)", args: [] });
     await m.addMemory({ kind: "brand", text: "Teal and sand." }, "u");
     await m.addMemory({ kind: "audience", text: "Night riders.", projectId: "p1" }, "u");
     await m.addMemory({ kind: "note", text: "The other production's rule.", projectId: "p2" }, "u");
