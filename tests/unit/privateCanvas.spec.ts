@@ -46,7 +46,8 @@ async function boards(ws: TenantWorkspace) {
     const db = database.db();
     privateProject = draft.mappedId("prj_wb_", ws.id, "u_owner", "d1");
     await db.execute({ sql: "INSERT OR IGNORE INTO productions(id,name,created_at) VALUES('prod_group','Group',0)", args: [] });
-    await db.execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at,production_id) VALUES(?,?,0,'prod_group')", args: [privateProject, "Private board"] });
+    await db.execute({ sql: "INSERT OR IGNORE INTO productions(id,name,created_at) VALUES('prod_private','Private board',0)", args: [] });
+    await db.execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at,production_id) VALUES(?,?,0,'prod_private')", args: [privateProject, "Private board"] });
     await db.execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at,production_id) VALUES('prod_shared','Shared production',0,'prod_group')", args: [] });
     await db.execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,0)", args: ["u_owner:d1", "u_owner", "d1", "d1", JSON.stringify({ ...newProject("d1"), id: "d1", productionProjectId: privateProject })] });
     await db.execute({ sql: "INSERT INTO workbench_team_canvas(production_id,body,revision,updated_by,updated_at) VALUES(?,?,1,'u_owner',1)", args: [privateProject, JSON.stringify({ nodes: { n1: { id: "n1", title: "Secret" } } })] });
@@ -126,6 +127,7 @@ test("project lists show a private board to its owner only: /api/projects, the p
     return tenant.runInTenant(ws, async () => ({
       projects: await ids(await projects.GET(new Request("https://particl.test/api/projects"), undefined as never)),
       productions: (await listProductions()).flatMap((p) => p.projects.map((q) => q.id)),
+      productionRows: (await listProductions()).map((p) => p.id),
       studio: await ids(await studio.GET(new Request("https://particl.test/api/workbench/projects"), undefined as never), "productions"),
       page: (await one.GET(new Request("https://particl.test/x"), { params: Promise.resolve({ id: privateProject }) })).status,
     }), person(user));
@@ -140,6 +142,10 @@ test("project lists show a private board to its owner only: /api/projects, the p
   expect(mate.projects).toContain("prod_shared");
   expect(mate.productions).not.toContain(privateProject);
   expect(mate.studio).not.toContain(privateProject);
+  /* The board's own production (named for the board) is not listed to a teammate either, while the owner and an ordinary production's group still are. */
+  expect(mate.productionRows).not.toContain("prod_private");
+  expect(mate.productionRows).toContain("prod_group");
+  expect(owner.productionRows).toContain("prod_private");
   expect(mate.page).toBe(404);
   /* The memo is shared by every viewer: the owner after the teammate still sees it. */
   expect((await listed("u_owner")).projects).toContain(privateProject);
