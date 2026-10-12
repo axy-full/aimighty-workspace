@@ -62,7 +62,12 @@ test.describe("phone", () => {
     const writes: string[] = [];
     page.on("request", (r) => { if (r.method() !== "GET") writes.push(r.method() + " " + new URL(r.url()).pathname); });
     await individual.first().getByRole("button", { name: "Choose" }).click();
-    await expect(page.getByTestId("settings-plan-choose-note")).toHaveText("Checkout is not open yet. Nothing was changed.");
+    const note = page.getByTestId("settings-plan-choose-note");
+    await expect(note).toHaveText("Checkout is not open yet. Nothing was changed.");
+    /* Tapping Choose visibly does something: the note is on screen, in the Individual section beside the tapped row, not out of sight below. */
+    await expect(note).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId("settings-plans-individual").getByTestId("settings-plan-choose-note")).toHaveCount(1);
+    await expect(page.getByTestId("settings-plan-choose-note")).toHaveCount(1);
     expect(writes).toEqual([]);
     /* Every plan row stays inside the screen and keeps its name on one line of words (a long figure never squeezes the name into a column). */
     const rows = await page.locator('[data-testid^="settings-plan-"]').evaluateAll((els, width) => els.map((el) => {
