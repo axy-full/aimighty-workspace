@@ -19,6 +19,7 @@ import { fromTenths, isRunLimitAmount, runTally, toTenths, type RunCharge } from
 import { applyCanvasOps } from "./canvas-ops";
 import type { OpOutcome } from "./canvas-ops-model";
 import { readDraft, workbenchTransaction } from "./records";
+import { sampleMarkNow } from "@/lib/draftProject";
 import { bindSampleLift } from "@/lib/demo/lift.server";
 import { SAMPLE_LINE } from "@/lib/demo/sample";
 import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
@@ -337,7 +338,8 @@ export async function askRigAgent(input: { productionId: string; draftId: string
   if (!isRunLimitAmount(input.limit, MAX_RUN_LIMIT)) throw new RigAgentError("Set a limit for this run: a number of credits, in tenths at most.", 400);
   const mode: RigAgentMode = input.mode ?? "ask";
   if (!RIG_AGENT_MODES.includes(mode)) throw new RigAgentError("Choose Ask or Auto.", 400);
-  await requireProduction(input.productionId, input.userId);
+  /* An ask writes no canvas row itself, it makes a run: in the sample the spend guard below answers it (409), as it always has, not the board's view-only lock. */
+  await requireProduction(input.productionId, input.userId, (await sampleMarkNow())?.projectId === input.productionId ? "read" : "write");
   const draft = await readDraft(input.userId, input.draftId);
   if (!draft) throw new RigAgentError("Open this project's Rig first.", 404);
   if (draft.project.productionProjectId !== input.productionId) throw new RigAgentError("This project is not saved to that production.", 409);

@@ -1,4 +1,3 @@
-import { sampleWriteRefusal } from "@/lib/demo/readonly.server";
 import { withMediaSources } from "@/lib/mediaMutation";
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
@@ -19,6 +18,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
 
   /* Nothing is written into the marked sample production, by anyone: not the shot, not a move into it or out of it (lib/demo/readonly.server.ts). */
   const bodyForGuard = await req.clone().json().catch(() => ({}));
+  const { sampleWriteRefusal } = await import("@/lib/demo/readonly.server");
   for (const project of [shot.projectId, typeof bodyForGuard?.projectId === "string" ? bodyForGuard.projectId : null]) { const refused = await sampleWriteRefusal(project); if (refused) return refused; }
   const body = await req.json().catch(() => ({}));
   const sets: string[] = [];
@@ -86,7 +86,7 @@ export const DELETE = withTenant(async function DELETE(_req: Request, ctx: { par
   if (got.response) return got.response;
   const { id: shotId } = await ctx.params;
   await ready();
-  { const refused = await sampleWriteRefusal((await getShot(shotId))?.projectId); if (refused) return refused; }
+  { const { sampleWriteRefusal } = await import("@/lib/demo/readonly.server"); const refused = await sampleWriteRefusal((await getShot(shotId))?.projectId); if (refused) return refused; }
   // Renders outlive the shot they were filed under — unfile them, never
   // delete work because a slate was tidied away.
   /* What this shot pointed at goes with it. A binding is not work and holds

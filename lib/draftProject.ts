@@ -51,13 +51,27 @@ export async function sampleMarkNow(ex: Exec = db()): Promise<{ projectId: strin
   if (!row) return null;
   try { const mark = parseSampleMark(JSON.parse(String(row.value))); return mark ? { projectId: mark.projectId, draftOwner: mark.draftOwner, draftId: mark.draftId, markedBy: mark.markedBy } : null; } catch { return null; }
 }
-export async function isSampleProject(projectId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
+/**
+ * The sample as a place to write: the mark, except while the owner or an admin has lifted it for one run (lib/demo/lift.server.ts) and is the person
+ * asking: the run they asked for builds in the sample, so it is theirs to write until the lift ends (it ends by itself, and nobody else is let in).
+ */
+async function sampleLocked(ex: Exec, asker?: string | null): Promise<Awaited<ReturnType<typeof sampleMarkNow>>> {
+  const mark = await sampleMarkNow(ex);
+  if (!mark) return null;
+  const me = asker ?? currentTenant()?.user?.id;
+  if (me) {
+    const { liveSampleLift } = await import("./demo/lift.server");
+    if ((await liveSampleLift(ex))?.liftedBy === me) return null;
+  }
+  return mark;
+}
+export async function isSampleProject(projectId: string | null | undefined, ex: Exec = db(), asker?: string | null): Promise<boolean> {
   if (!projectId) return false;
-  return (await sampleMarkNow(ex))?.projectId === projectId;
+  return (await sampleLocked(ex, asker))?.projectId === projectId;
 }
 /** Whether saving this draft would write the sample: a copy someone opened of it (`sample-…`), the marker's own board it was marked from, or any draft linked to it. */
 export async function isSampleDraft(owner: string, draftId: string, productionId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
-  const mark = await sampleMarkNow(ex);
+  const mark = await sampleLocked(ex);
   if (!mark) return false;
   return draftId.startsWith("sample-") || (mark.draftOwner === owner && mark.draftId === draftId) || (!!productionId && productionId === mark.projectId);
 }
@@ -99,7 +113,7 @@ export function currentPerson(): { id: string; role?: string } | null {
 export async function mayReachProject(person: { id: string } | null, projectId: string | null | undefined, access: "read" | "write" = "write", ex: Exec = db()): Promise<boolean> {
   if (!person) return true;
   /* The sample is nobody's to write: not its marker's, not the workspace owner's or an admin's. */
-  if (access === "write" && (await isSampleProject(projectId, ex))) return false;
+  if (access === "write" && (await isSampleProject(projectId, ex, person.id))) return false;
   if (!isDraftProject(projectId)) return true;
   if (await ownsDraftProject(person.id, projectId!, ex)) return true;
   if (await isMarkedSample(projectId!, ex)) return true;

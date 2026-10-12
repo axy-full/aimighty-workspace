@@ -1,4 +1,3 @@
-import { sampleWriteRefusal } from "@/lib/demo/readonly.server";
 import {reserveRecoveryContinuation} from "@/lib/recovery";
 import { workbenchReady, workbenchTransaction } from "@/lib/workbench/records";
 import { mediaBindingProblem } from "@/lib/mediaBindings";
@@ -68,6 +67,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     const inTake = (await db().execute({ sql: "SELECT project_id FROM generations WHERE id=?", args: [id] })).rows[0];
     const named = (value: unknown) => (typeof value === "string" && value ? value : null);
     const shotProject = named(body.shotId) ? (await getShot(String(body.shotId)))?.projectId ?? null : null;
+    /* Loaded here: only this edit asks, the delete below never does. */
+    const { sampleWriteRefusal } = await import("@/lib/demo/readonly.server");
     for (const project of [inTake?.project_id == null ? null : String(inTake.project_id), named(body.projectId), shotProject]) { const refused = await sampleWriteRefusal(project); if (refused) return refused; }
   }
   /* A review is checked before anything is written: a state the trail knows
