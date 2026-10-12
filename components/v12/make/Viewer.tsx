@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { takeEnhance } from "@/lib/v12/enhance";
 import { createPortal } from "react-dom";
 import { displayModelName } from "@/lib/models";
 import { downloadHref } from "@/lib/format";
@@ -41,6 +42,8 @@ export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReuseSeed, o
   useFocusReturn(open, panel);
   const portal = useV12PortalRoot();
   const [now] = useState(() => Date.now());
+  /* "See original" opens the words an enhanced take was made from; it closes again on the next take. */
+  const [original, setOriginal] = useState<string | null>(null);
   const n = tiles.length;
   useEffect(() => {
     if (!open || index === null) return;
@@ -58,9 +61,12 @@ export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReuseSeed, o
   const g = tile.source;
   const p = (g.params ?? {}) as Record<string, unknown>;
   const seed = typeof p.seed === "number" ? p.seed : null;
+  const enhance = takeEnhance(p);
   const meta = [displayModelName(g.model), typeof p.resolution === "string" ? p.resolution : null, typeof p.ratio === "string" ? p.ratio : null,
     seed != null ? `seed ${seed}` : null, clock(g.createdAt)].filter(Boolean).join(" · ");
-  const cost = !paysInDollars && typeof g.creditsBilled === "number" ? knownQuote(exact(g.creditsBilled)) : null;
+  /* What the take cost: the ledger's credits, or for the house workspace (never billed in credits) the engine's dollars it was metered at. */
+  const cost = !paysInDollars && typeof g.creditsBilled === "number" ? knownQuote(exact(g.creditsBilled))
+    : paysInDollars && typeof g.costUsd === "number" && g.costUsd > 0 ? { state: "ready" as const, price: { unit: "usd" as const, usd: g.costUsd, upTo: false } } : null;
   return createPortal(
     <div className="v12-scrim v12-mk-viewer-scrim" data-scrim="viewer" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }} data-testid="v12-make-viewer">
       <div ref={panel} role="dialog" aria-modal="true" aria-label={`${tile.type}: ${tile.prompt}`} tabIndex={-1} className="v12-mk-viewer">
@@ -92,6 +98,19 @@ export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReuseSeed, o
           </div>
           <button type="button" className="v12-mk-viewer-prompt" onClick={() => onReuse(tile)} disabled={Boolean(tile.reuseBlock)}
             title={tile.reuseBlock ?? "Load this prompt and its settings into the composer"} data-testid="v12-make-viewer-prompt">{tile.prompt}</button>
+          {enhance ? (
+            <div className="v12-mk-viewer-enh" data-testid="v12-make-viewer-enhance">
+              <span className="v12-mk-viewer-enh-label" data-testid="v12-make-viewer-enhance-label">{enhance.label}</span>
+              {enhance.label === "Enhanced" && enhance.original ? (
+                <button type="button" className="v12-mk-link" aria-expanded={original === tile.id} onClick={() => setOriginal(original === tile.id ? null : tile.id)} data-testid="v12-make-viewer-see-original">
+                  {original === tile.id ? "Hide original" : "See original"}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {enhance?.label === "Enhanced" && enhance.original && original === tile.id ? (
+            <p className="v12-mk-viewer-original" data-testid="v12-make-viewer-original">{enhance.original}</p>
+          ) : null}
           <div className="v12-mk-viewer-meta">
             <span data-testid="v12-make-viewer-meta">{meta}</span>
             {cost ? <span className="v12-mk-mono" data-testid="v12-make-viewer-cost"><Price quote={cost} /> for this take</span> : null}

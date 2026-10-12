@@ -126,8 +126,17 @@ const oldNames: Matcher = (text) => {
  * string or template literals, never comments, identifiers, imports or comparisons.
  */
 export function uiWordsIn(fileName: string, source: string): UiWord[] {
-  return walk(fileName, source, oldNames, () => false).map(({ word, line, text }) => ({ word, line, text }));
+  return walk(fileName, source, oldNames, () => false).filter(({ word }) => !processorName(fileName, word)).map(({ word, line, text }) => ({ word, line, text }));
 }
+
+/**
+ * The one exception to the ban on retired vendor names in UI text, by the owner's decision (11 October 2026): the privacy page
+ * may NAME the services that receive prompts or files, because it has to say who they are. Processor names only (Higgsfield, the
+ * one such name on the ban list), and only in that file: any other file, and every other banned word in this one, is still caught.
+ * tests/unit/processorNameException.spec.ts holds the exception to exactly this.
+ */
+export const PROCESSOR_NAME_EXCEPTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({ "app/(app)/privacy/page.tsx": ["Higgsfield"] });
+const processorName = (fileName: string, word: string): boolean => Object.hasOwn(PROCESSOR_NAME_EXCEPTIONS, fileName) && PROCESSOR_NAME_EXCEPTIONS[fileName].includes(word);
 
 /* ------------------------------------------------------------------------------------------ */
 /* The wider net (tests/unit/ui-names-guard.spec.ts): every banned name in every UI string.   */
@@ -184,5 +193,5 @@ export type BannedName = UiWord & { title: boolean };
  * `commandK` says the file is the ⌘K palette: Business and Viral as suite names and a "01" stage number on a row are banned there too.
  */
 export function bannedNamesIn(fileName: string, source: string, options: { navigation?: boolean; commandK?: boolean } = {}): BannedName[] {
-  return walk(fileName, source, (text) => bannedNames(text, !!options.navigation, !!options.commandK), inPageTitle);
+  return walk(fileName, source, (text) => bannedNames(text, !!options.navigation, !!options.commandK), inPageTitle).filter(({ word }) => !processorName(fileName, word));
 }

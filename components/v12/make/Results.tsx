@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import type { TrayJob } from "@/lib/jobsTray";
 import { downloadHref } from "@/lib/format";
-import { byDay, justify, resultsCount, type ResultTile } from "@/lib/v12/make";
+import { byDay, justify, resultsCount, tileTail, type ResultTile } from "@/lib/v12/make";
 import { renderState } from "@/lib/v12/renderState";
 import type { TypicalTimesReply } from "@/lib/v12/typicalTimes";
 import { renderTakeOf } from "./use-results";
@@ -136,6 +136,7 @@ function Tile({ tile, width, now, typical, trayPrice, paysInDollars, selected, o
           <span className="v12-mk-render-text">
             <span className="v12-mk-render-stage" data-tone={state.tone}><span className="v12-mk-dot" aria-hidden="true" />{state.label}</span>
             {state.tile ? <span className="v12-mk-render-line" title={state.line?.title ?? state.tile} data-testid="v12-make-tile-line">{state.tile}</span> : null}
+            {tileTail(state) ? <span className="v12-mk-render-line v12-mk-render-tail" title={state.money?.text} data-testid="v12-make-tile-tail">{tileTail(state)}</span> : null}
             {state.bar ? <span className="v12-mk-bar" data-hold={state.bar.hold ? "" : undefined}><span style={{ width: `${Math.round(state.bar.pct * 100)}%` }} /></span> : null}
             {state.failed && !tile.reuseBlock ? <button type="button" className="v12-mk-retry" onClick={onReuse} title="Load it into the composer; Make shows its price" data-testid="v12-make-tile-retry">{state.retry?.label ?? "Retry"}</button> : null}
           </span>

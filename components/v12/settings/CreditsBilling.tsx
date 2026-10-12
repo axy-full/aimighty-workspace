@@ -1,18 +1,18 @@
 "use client";
 import { useState } from "react";
 import { useSession } from "@/lib/session";
-import { fmtCredits } from "@/lib/price";
+import { fmtCredits, useMoney } from "@/lib/price";
 import { creditRate, creditsUsd } from "@/lib/shell/price-words";
 import { creditRateLine } from "@/lib/creditTerms";
 import { HOUSE_NOT_BILLED } from "@/lib/houseWorkspace";
-import type { CreditLedgerRow } from "@/lib/usageLedgerTerms";
+import { fmtLedgerUsd, type CreditLedgerRow, type DollarLedgerRow } from "@/lib/usageLedgerTerms";
 import type { BillingSubscription, Topups } from "@/lib/shell/workspace-view";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
 import { HERO_TAKE, PLAN_CARDS, type PlanCard } from "@/lib/marketing/planCards";
 import { LOW_CREDIT_PERCENT } from "@/lib/v12/lowCredit";
 import { useLowCredit } from "@/lib/v12/useLowCredit";
 import { useQuote } from "@/lib/v12/useQuote";
-import { boardRows, cycleDates, cycleNow, heroTakes, historyRows, planNowOf, signedCredits, takesWords, type BillingCycle } from "@/lib/v12/billing";
+import { boardRows, cycleDates, cycleNow, dollarBoards, dollarHistoryRows, heroTakes, historyRows, planNowOf, signedCredits, takesWords, type BillingCycle } from "@/lib/v12/billing";
 import { monthKey, monthLine, monthTotalsOf, planView, topUpLabel, topUpPack, type PlanDefLike } from "@/components/graphite/settings/model";
 import { useRead } from "@/components/graphite/settings/use-settings";
 import "./billing.css";
@@ -23,7 +23,9 @@ import "./billing.css";
  * plan cards are the display-only placeholders in lib/marketing/plans' sibling, lib/marketing/planCards.ts.
  *
  * Top up does not request, charge or pay here: it opens today's flow, unchanged (Settings › Plan & credits with its packs
- * open, `onTopUp`). The house workspace pays in dollars and is never shown credit figures.
+ * open, `onTopUp`). The house workspace pays in dollars, at the engines' cost, and is never shown credit figures: it gets the
+ * same page in dollars from the Usage reads (GET /api/usage for spend by board, GET /api/usage?rows=1 for history and the
+ * CSV), with no plans, no top-up and no balance.
  */
 type Billing = { canManage?: boolean; plans?: PlanDefLike[]; subscription?: BillingSubscription | null; cycles?: BillingCycle[]; plan?: unknown };
 
@@ -36,6 +38,9 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
 }) {
   const session = useSession();
   const inCredits = session.rates.unit === "cr" && Boolean(session.credits);
+  /* The house (lib/houseWorkspace.ts): the server hands "usd" to no other workspace. */
+  const inDollars = session.rates.unit === "usd";
+  const money = useMoney();
   const rate = creditRate(session.rates.creditUsd);
   const balance = account?.credits?.balance ?? session.credits?.balance ?? null;
   const rule = useLowCredit(balance);
@@ -47,6 +52,9 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
   const ledger = useRead<{ unit?: string; rows?: CreditLedgerRow[] }>(inCredits ? `/api/usage?rows=1&month=${month}&limit=20` : null);
   const boards = useRead<unknown>(inCredits ? `/api/usage/boards?month=${month}` : null);
   const hero = useQuote(inCredits ? { route: "engine", ...HERO_TAKE } : null);
+  /* The house reads the same Usage routes in their dollar form: the board totals (all time) and the month's dollar ledger. */
+  const usage = useRead<{ spentUsd?: number; byProject?: unknown }>(inDollars ? "/api/usage" : null);
+  const dollarLedger = useRead<{ unit?: string; rows?: DollarLedgerRow[] }>(inDollars ? `/api/usage?rows=1&month=${month}&limit=20` : null);
 
   const totals = monthTotalsOf(ledger.data);
   const plan = planNowOf(billing.data);
@@ -57,6 +65,9 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
   const askAdmin = Boolean(topups.data?.applies && !topups.data.canRequest);
   const history = historyRows(ledger.data?.unit === "credits" ? ledger.data.rows : [], topups.data?.history ?? [], now);
   const perBoard = boardRows(boards.data);
+  const dollarBoardList = dollarBoards(usage.data);
+  const dollarHistory = dollarHistoryRows(dollarLedger.data?.unit === "usd" ? dollarLedger.data.rows : [], now);
+  const spentAll = typeof usage.data?.spentUsd === "number" ? usage.data.spentUsd : null;
   const perTake = hero.state === "ready" && hero.price.unit === "cr" && hero.price.value.kind !== "free" ? hero.price.value.credits : null;
 
   return (
@@ -72,7 +83,23 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
             <span className="v12-bill-eyebrow">Balance</span>
             {inCredits && creditRateLine(rate) ? <span className="v12-bill-meta">{creditRateLine(rate)}</span> : null}
           </div>
-          {!inCredits ? <div className="v12-bill-empty">{HOUSE_NOT_BILLED}</div> : (
+          {inDollars ? (
+            <>
+              <div className="v12-bill-row" data-testid="v12-billing-house">
+                <span>Billing</span>
+                <span>In dollars, at the engines’ cost</span>
+              </div>
+              <div className="v12-bill-row" data-testid="v12-billing-spent">
+                <span>Spent · all time</span>
+                <span className="v12-bill-mono v12-bill-accent">{spentAll != null ? money.price(spentAll) : usage.error ? "—" : "Reading…"}</span>
+              </div>
+              <div className="v12-bill-row" data-testid="v12-billing-no-topup">
+                <span>Top up</span>
+                <span className="v12-bill-quiet">None: this workspace has no credits to buy.</span>
+              </div>
+              {usage.error ? <Problem text={usage.error} onRetry={() => void usage.read()} /> : null}
+            </>
+          ) : !inCredits ? <div className="v12-bill-empty">{HOUSE_NOT_BILLED}</div> : (
             <>
               <div className="v12-bill-row" data-testid="v12-billing-credits">
                 <span>Credits</span>
@@ -111,6 +138,37 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
             </>
           )}
         </section>
+
+        {inDollars ? (
+          <section className="v12-bill-sec" data-testid="v12-billing-boards">
+            <span className="v12-bill-eyebrow">Per board · all time</span>
+            {usage.error ? <Problem text={usage.error} onRetry={() => void usage.read()} /> : dollarBoardList === null ? <div className="v12-bill-empty">Reading…</div> : null}
+            {dollarBoardList?.map((b) => (
+              <div key={b.name} className="v12-bill-board" data-testid="v12-billing-board">
+                <span><span className="v12-bill-board-name">{b.name}</span><span className="v12-bill-sub">{takesWords(b.n)}</span></span>
+                <span className="v12-bill-mono">{money.price(b.usd)}</span>
+                <span />
+              </div>
+            ))}
+            {dollarBoardList && !dollarBoardList.length ? <div className="v12-bill-empty">Nothing spent yet.</div> : null}
+          </section>
+        ) : null}
+
+        {inDollars ? (
+          <section className="v12-bill-sec" data-testid="v12-billing-history">
+            <span className="v12-bill-eyebrow">History · this month</span>
+            {dollarLedger.error ? <Problem text={dollarLedger.error} onRetry={() => void dollarLedger.read()} /> : null}
+            {dollarHistory.map((h) => (
+              <div key={h.id} className="v12-bill-hist" data-testid="v12-billing-history-row">
+                <span className="v12-bill-quiet" style={{ fontSize: 13 }}>{h.when}</span>
+                <span title={h.what}>{h.what}</span>
+                <span className="v12-bill-mono">{fmtLedgerUsd(h.usd)}</span>
+              </div>
+            ))}
+            {dollarLedger.data && !dollarHistory.length ? <div className="v12-bill-empty">Nothing spent this month yet.</div> : null}
+            <a className="v12-bill-btn v12-bill-export" href={`/api/usage?rows=1&format=csv&month=${month}`} download data-testid="v12-billing-export">Export for billing · CSV</a>
+          </section>
+        ) : null}
 
         {inCredits ? (
           <section className="v12-bill-sec" data-testid="v12-billing-plans">

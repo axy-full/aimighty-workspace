@@ -284,7 +284,8 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
 
 /** An engine's price at the settings it names, in credits (lib/workbench/media-quote.ts › workbenchRate). */
 export type EngineRate = { credits: number; resolution: string; ratio: string; duration: number | null; /** An approximate figure: shown as "about". */ approximate?: true;
-  /** The figure is for a take with sound (Cinema Studio's Sound switch on). */ sound?: true };
+  /** The figure is for a take with sound (Cinema Studio's Sound switch on). */ sound?: true;
+  /** The engine's own dollars, sent to the house workspace alone (lib/houseWorkspace.ts: it sees every price at cost). */ usd?: number };
 
 /** A row of GET /api/workbench/engines, as the composer reads it. */
 export type EngineRow = {
@@ -452,6 +453,8 @@ export type ComposerQuote = {
   takes?: number[];
   /** The figure is approximate (the engine settles on what it delivers): the button says "about". */
   approximate?: boolean;
+  /** One take's price in the engine's own dollars: sent to the house workspace alone, which sees every price at cost. Display only: the credits above are what is approved and sent. */
+  usd?: number;
 };
 
 /**

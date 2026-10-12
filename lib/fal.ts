@@ -125,6 +125,19 @@ export async function falStatus(model: string, requestId: string, withLogs = fal
   );
 }
 
+/**
+ * Ask fal to take a request off its queue: PUT {queue}/{app}/requests/{id}/cancel (fal queue API, "Cancel a request").
+ * A request still IN_QUEUE is removed (answer 202 `CANCELLATION_REQUESTED`); one already running may still complete, and one
+ * already done answers 400 `ALREADY_COMPLETED`. So callers (lib/queuedCancel.ts) ask only after a status read said IN_QUEUE,
+ * and read the status again before calling it cancelled. Throws FalHttpError on a refusal.
+ */
+export async function falCancel(model: string, requestId: string): Promise<void> {
+  await call<unknown>(`${base()}/${queueApp(model)}/requests/${encodeURIComponent(requestId)}/cancel`, {
+    method: "PUT",
+    headers: { Authorization: auth() },
+  });
+}
+
 export async function falResult<T>(model: string, requestId: string): Promise<T> {
   if (isMockJob(requestId)) {
     return {

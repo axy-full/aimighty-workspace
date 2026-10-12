@@ -9,7 +9,7 @@ import { displayModelName } from "@/lib/models";
 import { recipePrompt, recreateBlock } from "@/lib/shell/recipe";
 import { GOAL_MAX, type BoardKind } from "@/components/graphite/home/home-model";
 import { upTo } from "@/lib/shell/price-words";
-import { IDLE, LOADING, NO_DOLLAR_PRICE, knownQuote, priceDisplay, type Quote } from "./quote";
+import { IDLE, LOADING, NO_AT_COST_PRICE, knownQuote, priceDisplay, type Quote } from "./quote";
 
 /* ── The wall ─────────────────────────────────────────────────────────── */
 
@@ -120,20 +120,22 @@ export function pickedBrief(tile: Pick<WallTile, "title" | "prompt">, added: str
 
 /**
  * Start's price as the quote layer draws it, from the one figure Start approves when pressed (use-home-start
- * `figureFor`): "up to N cr", or for the house workspace, which pays in dollars, that figure's dollars (N × the price
- * of a credit, the same sum the board-start quote makes, lib/v12/quote.ts). One figure, so shown always equals approved.
+ * `figureFor`): "up to N cr", or for the house workspace, which pays in dollars at cost, the planner's own dollars (the same
+ * figure the board-start quote shows, lib/v12/quote.ts). The press approves the credits; the dollars are what is shown.
  */
-export function startQuote({ spendOff, figure, thinking, dollars, creditUsd }: {
+export function startQuote({ spendOff, figure, thinking, dollars, usd }: {
   spendOff: boolean;
   figure: number | null;
   thinking: { state: string; message?: string };
   dollars: boolean;
-  creditUsd: number | null;
+  /** The same figure in the engines' own dollars (the house workspace alone is sent it). */
+  usd?: number | null;
 }): Quote {
   if (spendOff) return IDLE;
   if (figure != null) {
     if (!dollars) return knownQuote(upTo(figure));
-    return creditUsd ? { state: "ready", price: { unit: "usd", usd: figure * creditUsd, upTo: true } } : { state: "error", message: NO_DOLLAR_PRICE };
+    /* The house is shown the planner's own dollars, never its credits turned into dollars: with none, no figure. */
+    return typeof usd === "number" && Number.isFinite(usd) && usd > 0 ? { state: "ready", price: { unit: "usd", usd, upTo: true } } : { state: "error", message: NO_AT_COST_PRICE };
   }
   if (thinking.state === "loading") return LOADING;
   return { state: "error", message: thinking.state === "error" && thinking.message ? thinking.message : thinking.state === "off" ? "Atomik isn't on for this workspace yet." : "Atomik's thinking can't be priced right now." };
