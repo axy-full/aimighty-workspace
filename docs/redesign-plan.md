@@ -275,6 +275,7 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 - **A disabled member's shared board** (#681 review nit): `draftIsTeamShared` and `projectLister` (`lib/draftProject.ts`) don't require the maker to be active, while `sharedBoardOfProduction` does. So the board stays listed and readable while `?reach` says it can't be opened. Inconsistent, but nothing new leaks. Align them.
 - **Admission's agent exemption** (#685 review): `lib/generationAdmission.ts` treats every `agent:*` or server caller as reaching any project. Today only `/api/generate` calls admission, with a person or token, so this can't be reached. Before any server-side run calls admission, resolve the run's owner and check that person's reach.
 - **Over-line steps in workspaces not billed in credits** (#688 review): `priceOf` returns null when the workspace isn't in credits, so an admin never sees another member's over-line step there. If those workspaces have a dollar over-line rule, the admin's tap can't be reached from the queue.
+- **Flake: `demo-int-board-everyone-workbench.spec.ts:62` at 1920x1080** ("Make sits left of the board's dock"). It failed once in #688's CI (run 38312050459) and passed 5 of 5 locally on release/1 and on the branch. Likely the panel was measured mid-animation. Root-cause it when it recurs.
 
 ## Housekeeping rules (owner, 12 Oct)
 
