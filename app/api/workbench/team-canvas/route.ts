@@ -204,6 +204,8 @@ export const POST = withTenant(async (req: Request) => {
     }
     const { productionId } = action;
     /* On the sample a run is its own person's to stop, undo, set aside or change (for a lift run, the lifter); anyone else is refused as view-only (lib/demo/readonly.server.ts). */
+    /* Undo removes a run's cards from the board, and the sample is nobody's to write: refused up front for everyone, the run's own person included, before anything is stopped. */
+    if (action.action === "agent.undo") { const { sampleWriteRefusal } = await import("@/lib/demo/readonly.server"); const refused = await sampleWriteRefusal(productionId, { id: userId }); if (refused) return refused; }
     if ("runId" in action) { const { sampleRunRefusal } = await import("@/lib/demo/readonly.server"); const refused = await sampleRunRefusal(productionId, action.runId, { id: userId }); if (refused) return refused; }
     const run =
       action.action === "agent.plan" ? await askRigAgent({ productionId, draftId: action.projectId, userId, requestId: action.requestId, goal: action.goal, model: action.model, limit: action.limit, mode: action.mode, attachments: action.attachments })

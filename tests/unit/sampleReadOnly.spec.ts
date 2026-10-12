@@ -208,10 +208,19 @@ test("every other way in is shut too: cast, treatment, cards, assets, wires, boa
       expect(await code(await runsRoute.POST(json("POST", { projectId: sample }), undefined as never)), `${label}: a pipeline run`).toEqual(VIEW);
       expect(await code(await runState.POST(json("POST", { state: "paused" }), ctx(`run_s_${run}`))), `${label}: a run's state`).toEqual(VIEW);
       expect(await code(await runFix.POST(json("POST", { stageId: "s", fixId: "f" }), ctx(`run_s_${run}`))), `${label}: a run's fix`).toEqual(VIEW);
-      for (const act of ["agent.undo", "agent.stop"]) {
-        const res = await teamCanvas.POST(json("POST", { action: act, productionId: sample, runId: agentRun }), undefined as never);
-        if (id === "u_owner") expect(await code(res), `${label}: their own run's ${act}`).not.toEqual(VIEW);
-        else expect(await code(res), `${label}: another's run ${act}`).toEqual(VIEW);
+      /* Undo is refused for everyone, the run's own person included, before anything is stopped; the run's own person may stop their run, anyone else may not. */
+      const agentState = async () => String((await database.db().execute({ sql: "SELECT state FROM rig_agent_runs WHERE id=?", args: [agentRun] })).rows[0].state);
+      const canvasBody = async () => String((await database.db().execute({ sql: "SELECT body FROM workbench_team_canvas WHERE production_id=?", args: [sample] })).rows[0].body);
+      const beforeState = await agentState(), beforeCanvas = await canvasBody();
+      expect(await code(await teamCanvas.POST(json("POST", { action: "agent.undo", productionId: sample, runId: agentRun }), undefined as never)), `${label}: undo`).toEqual(VIEW);
+      expect(await agentState(), `${label}: an undo attempt did not stop the run`).toBe(beforeState);
+      expect(await canvasBody(), `${label}: nor touch the canvas`).toBe(beforeCanvas);
+      const stopped = await teamCanvas.POST(json("POST", { action: "agent.stop", productionId: sample, runId: agentRun }), undefined as never);
+      if (id === "u_owner") {
+        expect(await code(stopped), `${label}: their own run's stop`).not.toEqual(VIEW);
+        expect(stopped.status, `${label}: their own stop works`).toBe(200);
+      } else {
+        expect(await code(stopped), `${label}: another's run stop`).toEqual(VIEW);
       }
       /* Sharing, publishing and mapping from the sample's copy and from the board it was marked from. */
       expect(await sampleDraftRefusal(id, copy), `${label}: a copy`).not.toBeNull();
