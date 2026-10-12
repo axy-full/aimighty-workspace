@@ -1,4 +1,4 @@
-import { mayReachProject, projectLister } from '@/lib/draftProject';
+import { isDraftProject, isMarkedSample, mayReachProject, ownsDraftProject, projectLister } from '@/lib/draftProject';
 import { crossOriginProblem } from '@/lib/requestOrigin';
 import { gzipSync } from 'node:zlib';
 import {readProjectBody} from '@/lib/workbench/request-body';
@@ -12,7 +12,7 @@ import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
-import { sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
+import { sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -67,8 +67,18 @@ export const GET=withTenant(async(req:Request)=>{
       shared={...body,version:Number(row.version)};
     }
   }
-  return projectResponse(req,{projects:list.rows,productions:productions.rows.filter(r=>listed(String(r.id))),project:draft?.project||null,revision:draft?.revision||0,shared,...(team?{team}:{})});
+  /* ?reach=<production>: may this person open it, and if it is a teammate's shared board, which draft opens it view-only (a link to a take asks, lib/shell/use-asset-link.ts). A private board answers as an unknown production does. */
+  const reachParam=new URL(req.url).searchParams.get('reach');
+  const reach=reachParam?await reachOf(auth.user,reachParam):null;
+  return projectResponse(req,{projects:list.rows,productions:productions.rows.filter(r=>listed(String(r.id))),project:draft?.project||null,revision:draft?.revision||0,shared,...(team?{team}:{}),...(reach?{reach}:{})});
 });
+
+/** Whether `user` may open the production `id`, and the shared draft that opens it: an ordinary production, their own board, the marked sample or a shared board are reachable; any other private board is not. */
+async function reachOf(user:{id:string;role?:string},id:string):Promise<{reachable:boolean;shared:{id:string;owner:{id:string;name:string;support?:true}}|null}>{
+  if(!isDraftProject(id)||await ownsDraftProject(user.id,id)||await isMarkedSample(id))return{reachable:true,shared:null};
+  const shared=await sharedBoardOfProduction(requireTenant(),id);
+  return shared?{reachable:true,shared:{id:shared.draftId,owner:shared.owner}}:{reachable:false,shared:null};
+}
 
 /** A feature film's project (and its shared copy) can pass Vercel's 4.5 MB response limit, so a large answer leaves gzipped; browsers unpack it. */
 function projectResponse(req:Request,value:unknown){

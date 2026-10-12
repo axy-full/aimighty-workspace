@@ -123,7 +123,15 @@ async function cardFloors(page: Page, info: TestInfo) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), "no horizontal page scroll").toBeLessThanOrEqual(1);
 }
 
-test("a teammate's link opens the reader's own draft of the production — offered, never made while the link loads — and never the sender's private draft", async ({ browser }, info) => {
+const CANT_OPEN = "This take is in a production you can’t open.";
+
+/** The author's one switch (the same request the board's ⋯ menu sends): the board is shared with the team, to look at. */
+async function share(sender: Person, draftId: string, shared: boolean) {
+  const res = await sender.page.request.post("/api/workbench/projects", { headers: sender.headers, data: { action: "team-share", projectId: draftId, shared } });
+  expect(res.ok(), await res.text()).toBe(true);
+}
+
+test("a teammate's link to a take on a PRIVATE board says it is a production they can't open — never its name, never the sender's draft — and once the owner shares the board the same link opens it view-only", async ({ browser }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const sender = await person(browser, info, "Sender");
   const made = await production(sender);
@@ -133,35 +141,22 @@ test("a teammate's link opens the reader's own draft of the production — offer
   const reader = await person(browser, info, "Teammate");
   await join(reader, sender.workspace);
   try {
-    /* No draft of this production yet: opening it is offered, and nothing is made or read until it is pressed. */
+    /* The sender's board is private: the link opens nothing, names nothing, and offers nothing to open. */
     await reader.page.goto(link.pathname + link.search);
-    await expect(reader.page.getByTestId("link-card")).toHaveAttribute("data-phase", "no-draft");
-    await expect(reader.page.getByTestId("link-lead")).toHaveText(`This take is in ${made.draft.name}, which you have not opened yet.`);
+    await expect(reader.page.getByTestId("link-card")).toHaveAttribute("data-phase", "unavailable");
+    await expect(reader.page.getByTestId("link-lead")).toHaveText(CANT_OPEN);
+    await expect(reader.page.getByTestId("link-open"), "nothing to open").toHaveCount(0);
+    await expect(reader.page.getByText(made.draft.name), "the board's name is never shown").toHaveCount(0);
     await nothingOfTheTake(reader, made.take);
     expect(reader.apiCalls.filter((call) => call.startsWith("/api/workbench/library")), "no library is read while the link is held").toEqual([]);
     expect(await reader.page.request.get(`/api/workbench/projects?production=${made.production}`, { headers: reader.headers }).then((r) => r.json())).toEqual({ id: null });
     await cardFloors(reader.page, info);
 
-    await reader.page.getByTestId("link-open").click();
-    await takeOpened(reader.page, made.asset);
-    const url = new URL(reader.page.url());
-    expect(url.searchParams.has("ws")).toBe(false);
-    expect(url.searchParams.has("production")).toBe(false);
-    const own = (await reader.page.request.get(`/api/workbench/projects?production=${made.production}`, { headers: reader.headers }).then((r) => r.json())) as { id: string };
-    expect(own.id).toBeTruthy();
-    expect(own.id).not.toBe(made.draft.id);
-    expect(url.searchParams.get("project")).toBe(own.id);
-
-    /* The sender's private draft stays theirs: not readable, not a library, and its private upload is not in the reader's. */
+    /* The sender's private draft stays theirs: not readable, not a library, not openable. */
     expect((await reader.page.request.get(`/api/workbench/projects?id=${made.draft.id}`, { headers: reader.headers }).then((r) => r.json())).project).toBeNull();
     expect((await reader.page.request.get(`/api/workbench/library?projectId=${made.draft.id}&source=uploads`, { headers: reader.headers })).status()).toBe(404);
-    expect((await reader.page.request.get(`/api/workbench/library?projectId=${own.id}&source=uploads&id=${made.privateUpload}`, { headers: reader.headers }).then((r) => r.json())).uploads).toEqual([]);
-    expect((await reader.page.request.get(`/api/workbench/library?projectId=${own.id}&source=generations&id=${made.take}`, { headers: reader.headers }).then((r) => r.json())).generations.map((g: { id: string }) => g.id)).toEqual([made.take]);
-
-    /* With a draft of their own, the same link goes straight to the take. */
-    await reader.page.goto(link.pathname + link.search);
-    await takeOpened(reader.page, made.asset);
-    await expect(reader.page.getByTestId("link-card")).toHaveCount(0);
+    expect((await reader.page.request.post("/api/workbench/projects", { headers: reader.headers, data: { action: "open", projectId: made.production } })).status(), "opening it is refused as an unknown project").toBe(404);
+    expect(await reader.page.request.get(`/api/workbench/projects?production=${made.production}`, { headers: reader.headers }).then((r) => r.json()), "still no draft of their own").toEqual({ id: null });
 
     /* An address-bar URL naming the sender's draft opens nothing in its place — not the reader's own project either. */
     reader.apiCalls.length = 0;
@@ -173,7 +168,34 @@ test("a teammate's link opens the reader's own draft of the production — offer
     await reader.page.getByTestId("link-dismiss").click();
     await expect(reader.page.getByTestId("link-card")).toHaveCount(0);
     await expect.poll(() => new URL(reader.page.url()).searchParams.get("asset")).toBeNull();
-    await expect(reader.page.getByTestId(isPhone(reader.page) ? "phone-record" : "board")).toBeVisible({ timeout: 60_000 });
+    /* The reader has no project of their own here, so nothing is opened in its place; and still nothing of the take is shown. */
+    await expect(reader.page.getByTestId("board")).toHaveCount(0);
+    await expect(reader.page.getByText(TAKE_TITLE)).toHaveCount(0);
+
+    /* The owner shares the board: the same link now opens it, view-only, on the sender's own draft; no copy is made for the reader. */
+    await share(sender, made.draft.id, true);
+    await reader.page.goto(link.pathname + link.search);
+    await takeOpened(reader.page, made.asset);
+    await expect(reader.page.getByTestId("link-card")).toHaveCount(0);
+    expect(new URL(reader.page.url()).searchParams.get("project"), "the sender's own draft, to look at").toBe(made.draft.id);
+    expect(await reader.page.request.get(`/api/workbench/projects?production=${made.production}`, { headers: reader.headers }).then((r) => r.json()), "no draft of their own was made").toEqual({ id: null });
+    const seen = await reader.page.request.get(`/api/workbench/projects?id=${made.draft.id}`, { headers: reader.headers }).then((r) => r.json());
+    expect(seen.viewOnly?.owner?.name, "view-only, naming the owner").toBeTruthy();
+    /* Only the owner can edit: a teammate's save of it is refused, and so is a write to its canvas. */
+    const save = await reader.page.request.put("/api/workbench/projects", { headers: reader.headers, data: { project: seen.project, revision: seen.revision } });
+    expect(save.status()).toBe(403);
+    expect((await save.json()).code).toBe("view_only");
+    const edit = await reader.page.request.patch("/api/workbench/team-canvas", { headers: reader.headers, data: { productionId: made.production, upsertNodes: [], removeNodes: [], upsertAssets: [], order: null } });
+    expect(edit.status(), "a canvas write is the owner's").toBe(404);
+    /* The sender's other, unshared drafts are still no one else's. */
+    const other = { ...newProject("Still private"), assets: [] };
+    expect((await sender.page.request.put("/api/workbench/projects", { headers: sender.headers, data: { project: other, revision: 0 } })).ok()).toBe(true);
+    expect((await reader.page.request.get(`/api/workbench/projects?id=${other.id}`, { headers: reader.headers }).then((r) => r.json())).project).toBeNull();
+    /* Stopped, it is a production they can't open again. */
+    await share(sender, made.draft.id, false);
+    await reader.page.goto(link.pathname + link.search);
+    await expect(reader.page.getByTestId("link-card")).toHaveAttribute("data-phase", "unavailable");
+    await expect(reader.page.getByTestId("link-lead")).toHaveText(CANT_OPEN);
   } finally {
     await reader.page.context().close();
     await sender.page.context().close();
@@ -211,9 +233,17 @@ test("a link from a workspace the reader is not in resolves nothing there; one o
     await nothingOfTheTake(member, made.take);
     await cardFloors(member.page, info);
     await member.page.getByTestId("link-switch").click();
-    await expect(member.page.getByTestId("link-card")).toHaveAttribute("data-phase", "no-draft");
-    await member.page.getByTestId("link-open").click();
+    /* The sender's board is private, so even in their workspace the link opens nothing and names nothing: a production they can't open. */
+    await expect(member.page.getByTestId("link-card")).toHaveAttribute("data-phase", "unavailable");
+    await expect(member.page.getByTestId("link-lead")).toHaveText(CANT_OPEN);
+    await expect(member.page.getByTestId("link-open")).toHaveCount(0);
+    await expect(member.page.getByText(made.draft.name)).toHaveCount(0);
+    await nothingOfTheTake(member, made.take);
+    /* Shared by its owner, the same link opens it view-only. */
+    await share(sender, made.draft.id, true);
+    await member.page.goto(link.pathname + link.search);
     await takeOpened(member.page, made.asset);
+    expect(new URL(member.page.url()).searchParams.get("project")).toBe(made.draft.id);
   } finally {
     await outsider.page.context().close();
     await member.page.context().close();

@@ -107,10 +107,17 @@ export async function findTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string,
   return null;
 }
 
-/** The maker of the SHARED board whose own production project is `productionId` (lib/draftProject.ts), as a teammate sees them; null when that board is not shared or its maker is not an active member. */
-export async function sharedBoardOwnerOf(ws: Pick<TenantWorkspace, "id">, productionId: string): Promise<BoardOwner | null> {
+/** The SHARED board whose own production project is `productionId` (lib/draftProject.ts): its draft id and its maker as a teammate sees them; null when that board is not shared or its maker is not an active member. */
+export async function sharedBoardOfProduction(ws: Pick<TenantWorkspace, "id">, productionId: string): Promise<{ draftId: string; owner: BoardOwner } | null> {
   await workbenchReady();
   const rows = (await db().execute({ sql: `SELECT owner, project_id FROM workbench_projects WHERE ${SHARED}`, args: [] })).rows;
   const hit = rows.find((row) => mappedId(DRAFT_PROJECT_PREFIX, ws.id, String(row.owner), String(row.project_id)) === productionId);
-  return hit ? ownerOf(ws, await activeMembers(ws), String(hit.owner)) : null;
+  if (!hit) return null;
+  const owner = await ownerOf(ws, await activeMembers(ws), String(hit.owner));
+  return owner ? { draftId: String(hit.project_id), owner } : null;
+}
+
+/** The maker of the SHARED board whose own production project is `productionId`, as a teammate sees them. */
+export async function sharedBoardOwnerOf(ws: Pick<TenantWorkspace, "id">, productionId: string): Promise<BoardOwner | null> {
+  return (await sharedBoardOfProduction(ws, productionId))?.owner ?? null;
 }

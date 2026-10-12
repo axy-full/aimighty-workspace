@@ -35,9 +35,10 @@ export type LinkView =
   | { phase: "checking"; error?: string | null }
   | { phase: "workspace"; switchTo: { id: string; name: string } | null; busy: boolean; error: string | null }
   | { phase: "no-draft"; name: string | null; busy: boolean; error: string | null }
-  | { phase: "unavailable"; why: "broken" | "project" | "production" };
+  | { phase: "unavailable"; why: "broken" | "project" | "production" | "private" };
 
-type Resolved = { production: string; draft: string | null; name: string | null };
+/** `blocked`: the production is a private board of someone else's that is not shared, so it cannot be opened here (owner decision, 12 Oct: until the author shares it). */
+type Resolved = { production: string; draft: string | null; name: string | null; blocked?: boolean };
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 type Acting = { busy: boolean; error: string | null };
 
@@ -96,13 +97,16 @@ export function useAssetLink(input: {
       const read = async (url: string) => {
         const response = await fetch(url, { cache: "no-store" });
         if (!response.ok) throw new Error(await failure(response, "Projects could not be loaded."));
-        return response.json() as Promise<{ id?: unknown; productions?: { id: string; name: string }[] }>;
+        return response.json() as Promise<{ id?: unknown; productions?: { id: string; name: string }[]; reach?: { reachable: boolean; shared: { id: string } | null } }>;
       };
       try {
-        const [own, list] = await Promise.all([read(`/api/workbench/projects?production=${encodeURIComponent(production)}`), read("/api/workbench/projects")]);
+        const [own, list] = await Promise.all([read(`/api/workbench/projects?production=${encodeURIComponent(production)}`), read(`/api/workbench/projects?reach=${encodeURIComponent(production)}`)]);
         if (!live || !same(asked)) return;
         const name = list.productions?.find((p) => p.id === production)?.name ?? null;
-        setResolved({ production, draft: typeof own.id === "string" ? own.id : null, name });
+        const mine = typeof own.id === "string" ? own.id : null;
+        /* A teammate's private board that is not shared opens for no one else; one that is shared opens view-only, on the author's own draft. Nothing of either is named. */
+        const blocked = !mine && list.reach?.reachable === false;
+        setResolved({ production, draft: mine ?? list.reach?.shared?.id ?? null, name, ...(blocked ? { blocked: true } : {}) });
       } catch (error) {
         if (live && same(asked)) setCheckError(error instanceof Error ? error.message : "Projects could not be loaded.");
       }
@@ -185,6 +189,7 @@ export function useLinkView(control: LinkControl, data: { status: "loading" | "r
   if (where !== "here") return { phase: "workspace", switchTo, ...acting };
   if (production) {
     if (resolved?.production !== production) return { phase: "checking", error: checkError };
+    if (resolved.blocked) return { phase: "unavailable", why: "private" };
     if (!resolved.draft) return { phase: "no-draft", name: resolved.name, ...acting };
     if (data.missing === resolved.draft) return { phase: "unavailable", why: "production" };
     return { phase: "checking" };

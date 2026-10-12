@@ -386,3 +386,32 @@ test("opening a teammate's shared board from the production gives a view-only op
     expect((await mine.json()).viewOnly, "the owner's own open is not view-only").toBeUndefined();
   }, person("u_owner"));
 });
+
+test("a link's reach question: an ordinary production opens, a private board of someone else's does not, a shared one opens on the author's own draft, and a private board's name is never in the answer", async () => {
+  const ws = workspace(`pc-l-${run}`);
+  const { tenant, privateProject } = await boards(ws);
+  let who = { id: "u_owner", role: "member" };
+  const studio = loadRoute<typeof import("../../app/api/workbench/projects/route")>("app/api/workbench/projects/route.ts", () => who);
+  const reach = async (id: string) => (await studio.GET(new Request(`https://particl.test/api/workbench/projects?reach=${id}`), undefined as never)).json();
+  const post = (body: unknown) => studio.POST(new Request("https://particl.test/x", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), undefined as never);
+  await tenant.runInTenant(ws, async () => {
+    who = { id: "u_mate", role: "member" };
+    expect((await reach("prod_shared")).reach).toEqual({ reachable: true, shared: null });
+    const hidden = await reach(privateProject);
+    expect(hidden.reach).toEqual({ reachable: false, shared: null });
+    expect(JSON.stringify(hidden)).not.toContain("Private board");
+    expect((await reach("prj_wb_doesnotexist0000000000")).reach, "the same as an unknown production").toEqual(hidden.reach);
+  }, person("u_mate"));
+  await tenant.runInTenant(ws, async () => { who = { id: "u_owner", role: "member" }; expect((await reach(privateProject)).reach.reachable).toBe(true); }, person("u_owner"));
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  await platformReady();
+  await platformDb().execute({ sql: "INSERT OR IGNORE INTO accounts (id, email, name, password_hash, created_at) VALUES ('u_owner', ?, 'Owner Person', 'x', 0)", args: [`owner-l-${run}@example.test`] });
+  await platformDb().execute({ sql: "INSERT OR IGNORE INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,?,'member',0,0)", args: [ws.id, "u_owner"] });
+  await tenant.runInTenant(ws, async () => { who = { id: "u_owner", role: "member" }; expect((await post({ action: "team-share", projectId: "d1", shared: true })).status).toBe(200); }, person("u_owner"));
+  await tenant.runInTenant(ws, async () => {
+    who = { id: "u_mate", role: "member" };
+    const shared = (await reach(privateProject)).reach;
+    expect(shared.reachable).toBe(true);
+    expect(shared.shared.id).toBe("d1");
+  }, person("u_mate"));
+});
