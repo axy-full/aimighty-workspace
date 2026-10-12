@@ -29,7 +29,7 @@ All params are parsed in the constructor (L405–L428). After the first interact
 | `kind` | `Film` · `Pre-vis` · `Campaign` · `Social` → new-board kind; any other value (e.g. `Products`) → Library tray kind filter | dual use | |
 | `propose` | `agency` · `pitch` (prefill the ask) · `film/previs/campaign/social/full` | sets text; the proposal card itself is not rendered | dead |
 | `import` | `1` | storyboard_v3.pdf imported state | |
-| `tabs` | 1–7 (capped at 7) | number of open board tabs | 4 shown, then "+N ▾" |
+| `tabs` | 1–7 (capped at 7) | number of open board tabs | as many as fit (v14: 3 at 1440, 2 at 1280, 6 at 1920 with long names), then "+N ▾" |
 | `plus` | `1` | **+ popover** open | |
 | `activity` | `1` | **Activity dropdown** (Needs you / Running) | README's `jobs=1` is **not read**. Use `activity=1` |
 | `atomik` | `1` | **Atomik side panel** (⌘J) open | |
@@ -225,7 +225,7 @@ A pill (padding 9×16, radius 999, `#0B0B0D`, border 0.12, 13/500, 6 px green do
 - (a) every signed-in URL; `?view=home&tabs=5|7`.
 - (b) 56 px, padding 0 16, gap 16, bottom hairline. Left to right:
   - logo button (30×14 dot-mark SVG + "particl" 15/600, −0.01em).
-  - **tab group** `nav`: flex `0 1 auto` so it **hugs** its tabs. bg `#0D0D10`, radius 8, padding 3, gap 2, margin-left 8. Tabs: 30 h, max-width 200, padding 0 6 0 10, radius 6, 13/500, active `#1C1C20` + `#F5F5F7`, idle 0.7 white. Home has a house icon. Make has "✦" and is pinned. Board tabs show a 6 px state dot, the name ellipsised, and a × (18×18). An optional 12 px conic progress ring sits on the left. Max 4 board tabs, then "+N ▾" (opens "All boards" 280 px list with "+ New board"). Then **+** (30×30).
+  - **tab group** `nav`: flex `0 1 auto` so it **hugs** its tabs. bg `#0D0D10`, radius 8, padding 3, gap 2, margin-left 8. Tabs: 30 h, max-width 160, padding 0 6 0 10, radius 6, 13/500, active `#1C1C20` + `#F5F5F7`, idle 0.7 white. Home has a house icon. Make has "✦" and is pinned. Board tabs show a 6 px state dot, the name ellipsised, and a × (18×18). An optional 12 px conic progress ring sits on the left. As many board tabs as really fit (measured; the field shrinks to 280 first), then "+N ▾" (opens "All boards" 280 px list with "+ New board"). Then **+** (30×30).
   - **merged Atomik field**: flex `1 1 280px`, min 280, max 560 (owner, 11 Oct), after the tabs; Activity, the low chip and the avatar pinned right, 32 h, `#0A0A0C`, border 0.08, radius 8. Inside: a button "◆ Ask Atomik, search or go to · ⌘K" (13 px, 0.6 white, ◆ in `#6EB4FF`) and a 32×32 **panel icon** (rect with a divider) behind a left hairline. Open state: tint bg + `#6EB4FF`. A 7 px blue unread dot sits top-right.
   - **Activity pill** (signed in): 32 h, radius 999, border 0.14, 13/500, 7 px dot (orange when anything needs you, else blue pulsing). Label "‹N› need you · ‹M› running" or "‹M› running".
   - **low-credit chip** (only when low): border `rgba(255,159,10,.5)`, orange dot, "Low on credits · Top up". Opens Settings › Credits & billing.

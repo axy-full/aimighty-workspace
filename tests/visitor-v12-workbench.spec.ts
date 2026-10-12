@@ -304,7 +304,7 @@ test("phones: the visitor's Home is the phone's own — Log in and Request acces
   await expect(s).toHaveAttribute("data-variant", "sheet");
   await expect(page.getByTestId("v12-join-title")).toHaveText("To start a board you need a Particl account");
   await expect(page.getByTestId("v12-join-email")).toBeVisible();
-  await expect(page.getByTestId("v12-join-google")).toBeVisible();
+  await expect(page.getByTestId("v12-join-google")).toHaveCount(0);
   for (const id of ["v12-join-name", "v12-join-work-email", "v12-join-company", "v12-join-role", "v12-join-size", "v12-join-want"]) await expect(page.getByTestId(id)).toBeAttached();
   await expect(page.getByTestId("v12-join-login")).toBeAttached();
   await expect(s).toContainText("Your work stays private to your workspace.");

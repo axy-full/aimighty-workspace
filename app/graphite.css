@@ -237,7 +237,7 @@
   --gx-w-tray: 360px;
   --gx-h-bar: 40px;          /* bar inputs and buttons */
   --gx-h-tab: 30px;
-  --gx-w-tab-max: 200px;
+  --gx-w-tab-max: 160px;
   --gx-h-item: 32px;         /* menu items, card action buttons */
   --gx-h-filter: 26px;       /* filter chips */
   --gx-h-progress: 3px;

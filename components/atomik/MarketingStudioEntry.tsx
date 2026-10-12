@@ -72,18 +72,18 @@ function ProjectMarketingEntry() {
         prefetch={false}
         onClick={follow}
         className={styles.link}
-        aria-label="Open Moleculr"
+        aria-label="Open Ads"
       >
         <span className={styles.icon}>
           <Megaphone size={18} strokeWidth={1.6} />
         </span>
         <span className={styles.copy}>
-          <strong>Moleculr</strong>
+          <strong>Ads</strong>
           <span>Build a campaign with Atomik.</span>
         </span>
         <ArrowUpRight size={16} className={styles.arrow} aria-hidden="true" />
       </Link>
-      {error && <p role="alert">Could not open Moleculr. Try again.</p>}
+      {error && <p role="alert">Could not open Ads. Try again.</p>}
     </div>
   );
 }
