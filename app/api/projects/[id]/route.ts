@@ -6,6 +6,7 @@ import { archiveDeleteStatements, archiveTransaction, type ArchiveStep } from "@
 import { effectiveCapRow, setOwnCap, unlockAtCap, workspaceBudget } from "@/lib/caps";
 import { creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
+import { NOT_YOURS, mayChangeProject } from "@/lib/workAccess";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -80,6 +81,9 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
       return NextResponse.json({ ok: true });
     }
   }
+  /* A rename (or a code or a category) of someone else's project is its owner's or an admin's only (lib/workAccess.ts); an unknown id is answered as it always was. */
+  if ((await db().execute({ sql: `SELECT 1 FROM projects WHERE id = ?`, args: [id] })).rows.length && !(await mayChangeProject(got.user, id)))
+    return NextResponse.json({ error: NOT_YOURS.project }, { status: 403 });
   const code = typeof body.code === "string"
     ? body.code.trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 16)
     : null;
@@ -105,6 +109,9 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
+  /* Deleting a project is its owner's or an admin's (lib/workAccess.ts); an unknown id is answered as it always was ("No such project."). */
+  if ((await db().execute({ sql: `SELECT 1 FROM projects WHERE id = ?`, args: [id] })).rows.length && !(await mayChangeProject(got.user, id)))
+    return NextResponse.json({ error: NOT_YOURS.project }, { status: 403 });
   /* One write transaction: every step lands or none does, so a failure
      partway never leaves a production still standing with its renders
      already unfiled and its cast already archived. */

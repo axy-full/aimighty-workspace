@@ -64,8 +64,10 @@ export default function PrivacyPage() {
         <p>
           Published project bibles and shared workspace assets are visible to
           your team. Private workbench drafts are scoped to their author. Access
-          also depends on role: members render, pick and approve; admins run the
-          team and the ledger; the owner alone deletes the workspace or exports
+          also depends on role: members render, and rename, move, pick, approve,
+          trash or delete their own takes, shots and boards; changing someone
+          else&rsquo;s is for its owner or an admin; admins run the team and
+          the ledger; the owner alone deletes the workspace or exports
           it. The platform&rsquo;s desk sees each workspace&rsquo;s spend,
           balance, engine health and any report about it, and can suspend a
           workspace; it does not browse a workspace&rsquo;s takes.
