@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import {mappedId} from '@/lib/draftProject';
 import { db, ready, now } from '@/lib/db';
 import { requireTenant } from '@/lib/tenant';
 import { getPlatformLayer, planOf } from '@/lib/platform';
@@ -38,9 +38,7 @@ export async function workbenchReady() {
   await initialized.get(client);
 }
 
-export function mappedId(prefix: string, ...parts: string[]) {
-  return prefix + createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0,24);
-}
+export {mappedId};
 
 export async function readDraft(owner: string, id: string): Promise<{project: Project; revision:number}|null> {
   await workbenchReady();

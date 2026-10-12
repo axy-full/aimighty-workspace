@@ -247,7 +247,7 @@ export type RigAgentAskTerms = { limit: number; jobCeiling: number; planning: nu
  * run in progress whose wake is due is nudged, so a board open in a browser keeps it moving.
  */
 export async function rigAgentState(productionId: string, viewer: string, draftId?: string | null, attachments: readonly string[] = []): Promise<{ enabled: boolean; run: RigAgentRunView | null; ask: RigAgentAskTerms | null }> {
-  await requireProduction(productionId);
+  await requireProduction(productionId, viewer);
   const enabled = rigAgentEnabled();
   /* Files the ask would attach are priced in: checked here as the ask checks them (an unknown or foreign one is refused). */
   const attached = attachments.length ? attachedOf(await checkedAttachments(productionId, attachments)) : [];
@@ -337,7 +337,7 @@ export async function askRigAgent(input: { productionId: string; draftId: string
   if (!isRunLimitAmount(input.limit, MAX_RUN_LIMIT)) throw new RigAgentError("Set a limit for this run: a number of credits, in tenths at most.", 400);
   const mode: RigAgentMode = input.mode ?? "ask";
   if (!RIG_AGENT_MODES.includes(mode)) throw new RigAgentError("Choose Ask or Auto.", 400);
-  await requireProduction(input.productionId);
+  await requireProduction(input.productionId, input.userId);
   const draft = await readDraft(input.userId, input.draftId);
   if (!draft) throw new RigAgentError("Open this project's Rig first.", 404);
   if (draft.project.productionProjectId !== input.productionId) throw new RigAgentError("This project is not saved to that production.", 409);

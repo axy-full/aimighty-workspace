@@ -1,3 +1,4 @@
+import { mayReachProject } from "@/lib/draftProject";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -27,7 +28,8 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
   });
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const r = rs.rows[0] as any;
-  if (!r) return NextResponse.json({ error: "No such project." }, { status: 404 });
+  /* A private board (`prj_wb_…`) is its owner's alone (lib/draftProject.ts): to anyone else it is as absent as an unknown id. */
+  if (!r || !(await mayReachProject(got.user, String(r.id)))) return NextResponse.json({ error: "No such project." }, { status: 404 });
   /* The cap the gate enforces: its own, else the workspace's budget per production (lib/caps.ts projectCap). */
   const inCredits = creditsApply(requireTenant());
   const capped = effectiveCapRow({ capCredits: r.cap_credits == null ? null : Number(r.cap_credits) }, inCredits ? await workspaceBudget() : null, inCredits);

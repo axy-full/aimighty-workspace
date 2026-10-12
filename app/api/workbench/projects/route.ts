@@ -1,3 +1,4 @@
+import { projectLister } from '@/lib/draftProject';
 import { crossOriginProblem } from '@/lib/requestOrigin';
 import { gzipSync } from 'node:zlib';
 import {readProjectBody} from '@/lib/workbench/request-body';
@@ -51,7 +52,8 @@ export const GET=withTenant(async(req:Request)=>{
       shared={...body,version:Number(row.version)};
     }
   }
-  return projectResponse(req,{projects:list.rows,productions:productions.rows,project:draft?.project||null,revision:draft?.revision||0,shared});
+  const listed=await projectLister(auth.user);
+  return projectResponse(req,{projects:list.rows,productions:productions.rows.filter(r=>listed(String(r.id))),project:draft?.project||null,revision:draft?.revision||0,shared});
 });
 
 /** A feature film's project (and its shared copy) can pass Vercel's 4.5 MB response limit, so a large answer leaves gzipped; browsers unpack it. */
