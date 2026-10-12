@@ -77,6 +77,7 @@ async function load(kind: "uploads" | "jobs", cleanupFails = false) {
     "@/lib/serveType": {},
     "@/lib/recovery": { reserveRecoveryContinuation: async (_kind: string, handler: unknown) => handler },
     "@/lib/jobs": {},
+    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/shots": {},
     "@/lib/workAccess": await import("../../lib/workAccess"),
     "@/lib/push": {},

@@ -55,19 +55,21 @@ async function setup(ws: TenantWorkspace) {
     requireUser: async () => ({ user: { id: state.who.id, name: state.who.id, role: state.who.role, owner: Boolean(state.who.owner) }, ...(state.who.token ? { token: { id: "tok", name: "t", scope: "render" } } : {}) }),
   };
   const common = { "@/lib/auth": auth, "@/lib/db": database, "@/lib/tenant": tenant, "@/lib/cache": { invalidate: () => {}, PROJECTS_KEY: "projects" }, "@/lib/workAccess": await import("../../lib/workAccess") };
+  /* Whether a person may REACH a private board is tests/unit/privateShots.spec.ts's (real, asked first on each of these routes, before the rules below); here the routes but the project's are about who may CHANGE work once it can be reached, so everything is reachable to them. The project route (which asked first before) keeps the real check. */
+  const reachable = { ...common, "@/lib/draftProject": { mayReachProject: async () => true, productionReachable: async () => true, NO_SUCH_PROJECT: "\u0000unknown" } };
   const jobs = load<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts", {
-    ...common, "@/lib/workbench/records": records, "@/lib/workbench/request-scope": await import("../../lib/workbench/request-scope"),
+    ...reachable, "@/lib/workbench/records": records, "@/lib/workbench/request-scope": await import("../../lib/workbench/request-scope"),
     "@/lib/mediaBindings": await import("../../lib/mediaBindings"), "@/lib/mediaDeletion": await import("../../lib/mediaDeletion"),
     "@/lib/jobs": await import("../../lib/jobs"), "@/lib/shots": await import("../../lib/shots"), "@/lib/held": await import("../../lib/held"),
     "next/server": { NextResponse, after: () => {} }, "@/lib/recovery": { reserveRecoveryContinuation: async (_n: string, task: () => Promise<unknown>) => task },
     "@/lib/push": { notify: async () => {} }, "@/lib/usageLedger": {},
   });
   const shots = load<typeof import("../../app/api/shots/[id]/route")>("app/api/shots/[id]/route.ts", {
-    ...common, "@/lib/archive": await import("../../lib/archive"), "@/lib/mediaMutation": await import("../../lib/mediaMutation"), "@/lib/shots": await import("../../lib/shots"),
+    ...reachable, "@/lib/archive": await import("../../lib/archive"), "@/lib/mediaMutation": await import("../../lib/mediaMutation"), "@/lib/shots": await import("../../lib/shots"),
   });
-  const reorder = load<typeof import("../../app/api/shots/reorder/route")>("app/api/shots/reorder/route.ts", common);
-  const productions = load<typeof import("../../app/api/productions/[id]/route")>("app/api/productions/[id]/route.ts", { ...common, "@/lib/productions": await import("../../lib/productions") });
-  const sync = load<typeof import("../../app/api/shots/sync/route")>("app/api/shots/sync/route.ts", common);
+  const reorder = load<typeof import("../../app/api/shots/reorder/route")>("app/api/shots/reorder/route.ts", reachable);
+  const productions = load<typeof import("../../app/api/productions/[id]/route")>("app/api/productions/[id]/route.ts", { ...reachable, "@/lib/productions": await import("../../lib/productions") });
+  const sync = load<typeof import("../../app/api/shots/sync/route")>("app/api/shots/sync/route.ts", reachable);
   const projects = load<typeof import("../../app/api/projects/[id]/route")>("app/api/projects/[id]/route.ts", {
     ...common, "@/lib/archive": await import("../../lib/archive"), "@/lib/caps": await import("../../lib/caps"), "@/lib/credits": await import("../../lib/credits"),
   });

@@ -1,3 +1,5 @@
+import { mayReachProject } from "@/lib/draftProject";
+import { isAgentId } from "@/lib/security/people-only";
 import { languageReachable } from '@/lib/language-provider';
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
@@ -47,9 +49,11 @@ export const POST = withTenant(async function POST(req: Request) {
   const projectId = String(body.projectId ?? "");
   const n = Number(body.n);
   if (!projectId || !Number.isInteger(n) || n < 1) return NextResponse.json({ error: "Which scene?" }, { status: 400 });
+  /* A private board is its owner's, and a shared one a teammate's to look at (lib/draftProject.ts): asked always, before the gateway or any reservation, and refused as a scene that is not there is. */
+  const reach = await mayReachProject(isAgentId(got.user.id) ? null : got.user, projectId, "write");
   const t = await getTreatment(projectId);
   const scene = t?.scenes.find((s) => s.n === n);
-  if (!t || !scene) return NextResponse.json({ error: "No such scene." }, { status: 404 });
+  if (!t || !scene || !reach) return NextResponse.json({ error: "No such scene." }, { status: 404 });
   if (!languageReachable()) return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
 
   const effort = requestEffort(body.effort);
