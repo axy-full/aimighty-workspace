@@ -278,10 +278,17 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 
 ## Owner decisions (Akshay, 12 Oct midday)
 
-1. **#667, option A.** The owner said yes directly to restating two lines of `tests/suites-asset-link-workbench.spec.ts`:
-   - a teammate may open another member's board, view-only;
-   - anyone outside the workspace still gets nothing.
+1. **#667: option (a), corrected by the owner.**
+   - The existing privacy test lines in `tests/suites-asset-link-workbench.spec.ts` are NOT changed. A sender's private draft, and its uploads, stays unreadable to teammates, exactly as the guard says.
+   - Teammates may open, view-only, only boards that are shared in the workspace, never private drafts. No shared flag exists today, so #667 adds an author-set "Share with team" mark. It is private by default, and every existing board stays private.
+   - A shared board shows its whole contents to teammates, including its script and uploads.
+   - Adding a check that outsiders get nothing is fine (tightening).
+   - #667 merges when green, after a fresh review, and goes in the deploy after the Google one.
+   - (An earlier message that day chose "teammates see all boards" and a guard restatement. The owner withdrew it; it was never applied.)
+2. **Uploads fix, as an extra safety layer.** A separate small PR, NEEDS AKSHAY, with an Opus privacy review. It must not loosen anything that works today. A member opens an upload only if:
+   - they uploaded it; or
+   - it is attached to a board shared with the team; or
+   - it is referenced by production or shared work that already exposes it today.
 
-   The owner's correction: the earlier "private drafts stay private" assumed a flag that doesn't exist. The real decision is that teammates see all boards, the whole board, including its script and uploads. #667 merges when green, after a fresh review, and goes in the deploy after the Google one.
-2. **Uploads fix.** A separate small PR, NEEDS AKSHAY, with a privacy review. A member can open an upload only if they uploaded it, or if it's attached to a board in their workspace. An unattached library upload stays the uploader's. Nothing ever crosses workspaces.
+   Uploads on a private draft, and unattached library uploads, stay the uploader's. Nothing ever crosses workspaces.
 3. **Google deploy prerequisites:** `SELFHOST_BEHIND_PROXY=1`, `APP_ORIGIN` and `KEYRING_SECRET` are confirmed in production. The owner set `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` in Coolify (production only).
