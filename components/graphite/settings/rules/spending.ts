@@ -14,7 +14,7 @@ export type { SpendingRules } from "./spending-words";
  *
  *  - Who may approve: the cost approval rule and its per-shot cap (GET /api/settings; lib/approvalRule.ts).
  *    Limits are by role: members up to the cap, an admin above it.
- *  - The platform line: JOB_APPROVAL_LINE_USD at the server's credit rate. A job above it never runs without a tap.
+ *  - The platform line: JOB_APPROVAL_LINE_USD at the server's credit rate. A job above it needs an admin's own tap, whatever the rule.
  *  - Spend without asking: "ask". Ask or Auto is picked per Board run today (Ask by default; lib/workbench/
  *    rig-agent-limits.ts); in Auto a draft at or under the per-job line runs without a tap. The per-job line is
  *    RIG_AGENT_JOB_CEILING_CREDITS, which is null, so it is the platform line (tests/unit/demo-s09-settings.spec.ts
