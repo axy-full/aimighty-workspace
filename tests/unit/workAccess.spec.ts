@@ -304,7 +304,7 @@ test("a draft that names a project as its production does not make its owner tha
   const ws = workspace("work-linked");
   const api = await setup(ws);
   const board = await seed(ws, api.mappedId);
-  const { projectMaker, NOT_YOURS } = await import("../../lib/workAccess");
+  const { projectMaker } = await import("../../lib/workAccess");
   const { runInTenant } = await import("../../lib/tenant");
   /* The teammate's own draft carries productionProjectId = the maker's board (seeded), as an opened link does: the maker is still the maker. */
   expect(await runInTenant(ws, () => projectMaker(board))).toBe(PEOPLE.maker.id);
