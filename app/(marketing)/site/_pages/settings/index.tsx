@@ -16,8 +16,8 @@ const settings = SITE_SUITES.find((s) => s.id === "settings")!;
 
 export default async function SettingsPage() {
   const { plans } = await sitePrices();
-  const paid = plans.filter((plan) => plan.priceUsd > 0);
-  const members = paid.length > 0 && paid.every((plan) => plan.maxMembers == null) ? "Unlimited on paid plans" : "Set per plan";
+  const paid = plans.filter((plan) => plan.offered && plan.priceUsd > 0);
+  const members = paid.length > 0 && paid.every((plan) => plan.maxMembers == null) ? "One person, or a seat each on a team plan" : "Set per plan";
 
   const FACTS: [string, string][] = [
     ["Members", members],
