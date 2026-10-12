@@ -267,6 +267,8 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
   - `POST /api/shots` lets any member add shots to any project, a private board's included. Gate it with #681's private-board rule.
   - `POST /api/projects {productionId}` lets any member add a project to any production, a private board's included. Under #681 that would list the production, under the private board's name, to everyone. Gate it with the owner-or-admin rule (#680 round-2 review). Related owner question: in a production holding several people's boards, may any one board's owner rename it or mark it delivered?
   - Setting an element's current version (`app/api/rig/attributes/[id]/current`) clears approvals on takes in other people's shots. Decide whether that side effect should follow the owner-or-admin rule.
+- **The phone's Plan & credits page still shows the old plans** (found in the #665 shots, 12 Oct). On phones, Settings › Plan & credits reads "Studio · $49 a month" with Change plan; the desktop shows the owner's final plans from #661 (Explore, Create, Master; Individual/Business). Bring the phone page onto the same plan display, with the owner's yes on screenshots.
+- **The workbench warm-up** (`tests/workbench.warmup.ts`, #682) still writes the old `newInterfaceWorkspaces` key, which #665's switch ignores. Harmless; tidy it when #665 lands.
 
 ## Housekeeping rules (owner, 12 Oct)
 
