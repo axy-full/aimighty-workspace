@@ -89,12 +89,12 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   /* Everything the turn reads from the request, read now: it may finish after its reply (answerAfterMs). */
   const b = await req.clone().json().catch(() => ({}));
   const { id } = await ctx.params;
-  /* A turn in someone else's chat is a paid planning call on it: the chat is gone to anyone but its person, before anything is quoted or claimed. */
-  if (!(await chatIsMine(id, got.user))) return NextResponse.json({ error: CHAT_GONE }, { status: 404 });
   const quoteOnly = b?.quoteOnly === true;
   if (quoteOnly) { const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure; }
   /* The sample workspace spends nothing: answered before the request is claimed. A quote still answers. */
   if (!quoteOnly) { const off = await sampleWorkspaceOff(); if (off) return off; }
+  /* A turn in someone else's chat is a paid planning call on it: the chat is gone to anyone but its person, before anything is quoted or claimed (asked after the refusals that do not depend on the chat). */
+  if (!(await chatIsMine(id, got.user))) return NextResponse.json({ error: CHAT_GONE }, { status: 404 });
   const run = async () => {
   const text = String(b.text ?? "").trim().slice(0, 20000);
   if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });

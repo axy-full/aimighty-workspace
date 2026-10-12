@@ -121,8 +121,13 @@ test("a chat and its steps are their person's: lists leave others out, every doo
   const claimed = (actor: Who, step: string, token = false) => { asToken = token; return asking(actor, () => claim.POST(req("POST") as never, ctx(step))).finally(() => { asToken = false; }); };
   const unknownClaim = await claimed(admin, "st_nothing");
   expect(unknownClaim).toEqual(GONE_STEP);
-  for (const [label, actor, token] of [["an admin", admin, false], ["a member", other, false], ["the owner of the workspace", owner, false], ["a token of a member", other, true], ["a token of an admin", admin, true]] as const)
-    expect(await claimed(actor, "st_ach_a", token), `${label}: claim on another's step`).toEqual(unknownClaim);
+  for (const [label, actor] of [["an admin", admin], ["a member", other], ["the owner of the workspace", owner]] as const)
+    expect(await claimed(actor, "st_ach_a"), `${label}: claim on another's step`).toEqual(unknownClaim);
+  /* A token is refused as a person-only press, first (403), whether or not the step exists or is its person's; the step is left as it was. */
+  for (const [label, actor] of [["a token of a member", other], ["a token of an admin", admin], ["a token of the step's own person", mate]] as const) {
+    expect((await claimed(actor, "st_ach_a", true))[0], `${label}: claim`).toBe(403);
+    expect((await claimed(actor, "st_nothing", true))[0], `${label}: claim on an unknown step`).toBe(403);
+  }
   expect(await claimed(admin, "st_ach_big"), "an admin's claim on an over-the-line step waits for the owner").toEqual(unknownClaim);
   const states = await tenant.runInTenant(ws, async () => (await db().execute({ sql: "SELECT id, status, attempt, claimed_by FROM atomik_steps ORDER BY id", args: [] })).rows.map((r) => [r.id, r.status, r.attempt, r.claimed_by]), { user: owner });
   expect(states, "no step was touched").toEqual([["st_ach_a", "proposed", 0, null], ["st_ach_b", "proposed", 0, null], ["st_ach_big", "proposed", 0, null]]);
