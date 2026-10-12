@@ -1,3 +1,4 @@
+import { projectLister } from "@/lib/draftProject";
 import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
@@ -35,7 +36,10 @@ export const GET = withTenant(async function GET(req: Request) {
 
   const url = new URL(req.url);
   const raw = url.searchParams.get("projectId");
-  const projectId = raw && raw !== "all" && raw !== "unfiled" ? raw : null;
+  /* A private board (`prj_wb_…`) is its owner's alone (lib/draftProject.ts): asked about by anyone else it answers as an id that matches nothing does, and in the
+     lists below its spend stays in the totals but its name, id and shots do not show. */
+  const listed = await projectLister(got.user);
+  const projectId = raw && raw !== "all" && raw !== "unfiled" ? (listed(raw) ? raw : "\u0000unknown") : null;
   const days = Math.max(0, Math.min(365, Number(url.searchParams.get("days") ?? 0)));
   const since = days ? Date.now() - days * 86400_000 : 0;
 
@@ -99,7 +103,7 @@ export const GET = withTenant(async function GET(req: Request) {
       // setup is fighting them.
       db().execute({ sql: `
         SELECT s.id AS id, s.code AS code, s.scene AS scene, s.title AS title,
-               s.status AS status,
+               s.status AS status, s.project_id AS project_id,
                COUNT(*) AS takes, ${SPEND} AS spend, ${CREDITS} AS credits,
                SUM(g.status='succeeded') AS ok,
                SUM(g.status='failed')    AS failed,
@@ -194,7 +198,7 @@ export const GET = withTenant(async function GET(req: Request) {
       spentAllTime: num((allSpend.rows[0] as any)?.s),
     },
     byProject: byProject.rows.map((r: any) => ({
-      id: r.id ?? null, name: r.name, n: num(r.n), spend: num(r.spend), credits: num(r.credits),
+      id: r.id == null || !listed(String(r.id)) ? null : r.id, name: r.id != null && !listed(String(r.id)) ? "A private board" : r.name, n: num(r.n), spend: num(r.spend), credits: num(r.credits),
       failed: num(r.failed), people: num(r.people), renderMs: num(r.render_ms),
     })),
     /* Everyone's spend is for owners and admins; a member sees their own row. */
@@ -208,7 +212,7 @@ export const GET = withTenant(async function GET(req: Request) {
       model: r.model, label: label(r.model), n: num(r.n), spend: num(r.spend), credits: num(r.credits),
       failed: num(r.failed), avgMs: r.avg_ms == null ? null : num(r.avg_ms),
     })),
-    byShot: byShot.rows.map((r: any) => ({
+    byShot: byShot.rows.filter((r: any) => listed(r.project_id == null ? null : String(r.project_id))).map((r: any) => ({
       id: r.id, code: r.code, scene: r.scene, title: r.title, status: r.status,
       takes: num(r.takes), spend: num(r.spend), credits: num(r.credits), ok: num(r.ok),
       failed: num(r.failed), latest: num(r.latest),

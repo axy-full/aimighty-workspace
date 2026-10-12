@@ -6,6 +6,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { getShot, STATUSES, codeProblem } from "@/lib/shots";
 import { archiveAndDelete, archiveDeleteStatements, archiveTransaction } from "@/lib/archive";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
+import { NOT_YOURS, mayChangeProject, mayChangeWork } from "@/lib/workAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
   await ready();
   const shot = await getShot(shotId);
   if (!shot) return NextResponse.json({ error: "No such shot." }, { status: 404 });
+  /* Someone else's shot is changed by its maker, the board's owner or an admin only: a rename, a move, a status, an edit (lib/workAccess.ts). */
+  if (!(await mayChangeWork(got.user, shot))) return NextResponse.json({ error: NOT_YOURS.shot }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const sets: string[] = [];
@@ -38,6 +41,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
         ],
       });
     } catch (error) { if (error instanceof MoveRefused) return NextResponse.json({ error: "No such shot." }, { status: 404 }); throw error; }
+    /* Where it goes is asked as well as the shot: a project that is someone else's work takes it from its owner or an admin only. */
+    if (!(await mayChangeProject(got.user, body.projectId))) return NextResponse.json({ error: NOT_YOURS.moveToProject }, { status: 403 });
     sets.push("project_id = ?"); args.push(body.projectId);
     moveTo = body.projectId;
   }
@@ -93,6 +98,9 @@ export const DELETE = withTenant(async function DELETE(_req: Request, ctx: { par
   if (got.response) return got.response;
   const { id: shotId } = await ctx.params;
   await ready();
+  /* A shot that is there is deleted by its maker, the board's owner or an admin only; an unknown id is answered as it always was. */
+  const there = await getShot(shotId);
+  if (there && !(await mayChangeWork(got.user, there))) return NextResponse.json({ error: NOT_YOURS.shot }, { status: 403 });
   // Renders outlive the shot they were filed under — unfile them, never
   // delete work because a slate was tidied away.
   /* What this shot pointed at goes with it. A binding is not work and holds

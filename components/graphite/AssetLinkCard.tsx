@@ -30,7 +30,7 @@ export function AssetLinkCard({ link, view }: { link: LinkControl; view: LinkVie
       <button key="open" type="button" className="gx-primary" disabled={view.busy} onClick={() => void link.openProduction()} data-testid="link-open">{view.busy ? "Opening…" : "Open the production"}</button>,
       view.error,
     ]
-    : [view.why === "broken" ? "This link is incomplete, so it does not open." : view.why === "project" ? "The project this link names is not one of yours." : "This link’s production could not be opened.", null, null, null];
+    : [view.why === "broken" ? "This link is incomplete, so it does not open." : view.why === "project" ? "The project this link names is not one of yours." : view.why === "private" ? "This take is in a production you can’t open." : "This link’s production could not be opened.", view.why === "private" ? "Its owner can share it with the team." : null, null, null];
   return (
     <section className="gx-first gx-link-card" aria-label="Linked take" data-testid="link-card" data-phase={view.phase}>
       <p className="gx-first-lead" data-testid="link-lead">{lead}</p>

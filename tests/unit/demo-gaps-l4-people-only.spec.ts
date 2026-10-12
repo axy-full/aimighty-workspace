@@ -107,6 +107,14 @@ async function seed() {
       "INSERT INTO projects(id,name,created_at,production_id) VALUES('prod-l4','A 15-second film',0,'container-l4')",
       { sql: "INSERT INTO api_tokens(id,token_hash,name,user_id,scope,created_at) VALUES('tok_l4',?,'outside agent','boss','render',0)", args: [tokenHash(RAW)] },
     ], "write");
+    /* The member made a board of their own in this production (a draft of theirs, and the project the draft's id makes), so renaming the production is theirs to do (lib/workAccess.ts). */
+    const { workbenchReady, mappedId } = await import("../../lib/workbench/records");
+    await workbenchReady();
+    const own = mappedId("prj_wb_", WS.id, "mem", "draft-l4-member");
+    await db().batch([
+      { sql: "INSERT INTO projects(id,name,created_at,production_id) VALUES(?,'The member board',0,'container-l4')", args: [own] },
+      { sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES('mem:draft-l4-member','mem','draft-l4-member','The member board',?,1,0)", args: [JSON.stringify({ id: "draft-l4-member", name: "The member board", productionProjectId: own })] },
+    ], "write");
   });
 }
 const exec = async (sql: string) => {

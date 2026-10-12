@@ -24,6 +24,7 @@ export const GET = withTenant(async function GET() {
   return NextResponse.json({
     ideas: ideas.map((i) => ({
       ...i,
+      projectId: i.projectId && !listed(i.projectId) ? null : i.projectId,
       projectName: i.projectId ? projects.get(i.projectId)?.name ?? null : null,
       shots: i.projectId ? projects.get(i.projectId)?.shots ?? 0 : 0,
       byName: names.get(i.createdBy) ?? null,
