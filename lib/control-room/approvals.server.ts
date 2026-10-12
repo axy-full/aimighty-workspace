@@ -4,8 +4,9 @@ import { platformDb, platformReady } from "@/lib/platform";
 import { currentTenant } from "@/lib/tenant";
 import { creditsApply, creditState } from "@/lib/credits";
 import { getSetting } from "@/lib/settings";
-import { cleanRule, cleanShotCap } from "@/lib/approvalRule";
-import { billCredits, marginKeyOf } from "@/lib/creditTerms";
+import { cleanRule, cleanShotCap, jobApprovalLineCredits } from "@/lib/approvalRule";
+import { isAgentId } from "@/lib/security/people-only";
+import { billCredits, creditUsd, marginKeyOf } from "@/lib/creditTerms";
 import { FREE, exact, shortBy as shortOf, upTo } from "@/lib/shell/price-words";
 import { listGenerations, type Generation } from "@/lib/jobs";
 import { heldNeeds, mayRelease } from "@/lib/workspace/release";
@@ -270,7 +271,7 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
 
 /* ── A step of an Atomik plan (lib/atomik.ts) ──────────────────────────── */
 
-async function threadItems(_viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: QueueItem[]; productions: string[] }> {
+async function threadItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: QueueItem[]; productions: string[] }> {
   /* The checkpoint, as the plan shows it (components/atomik/AtomikProvider.tsx): the first proposed step, by
      position, of the chat's last answer; never a step planned on the connected account, never in a chat that
      is still planning, archived or removed. */
@@ -280,13 +281,14 @@ async function threadItems(_viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items:
             WHERE m.role = 'assistant' AND m.created_at = (SELECT MAX(x.created_at) FROM atomik_messages x WHERE x.chat_id = m.chat_id AND x.role = 'assistant')
           )
           SELECT s.id, s.chat_id, s.position, s.kind, s.title, s.model, s.est_cost_usd, s.created_at,
-                 c.project_id, c.title AS chat_title,
+                 c.project_id, c.title AS chat_title, c.created_by AS chat_owner, o.role AS owner_role,
                  (SELECT u.text FROM atomik_messages u WHERE u.chat_id = c.id AND u.role = 'user' ORDER BY u.created_at ASC, u.rowid ASC LIMIT 1) AS first_ask,
                  (SELECT COUNT(*) FROM atomik_steps t WHERE t.chat_id = s.chat_id AND t.message_id = s.message_id AND t.status <> 'rejected') AS plan_steps,
                  (SELECT COUNT(*) FROM atomik_steps t WHERE t.chat_id = s.chat_id AND t.message_id = s.message_id AND t.status <> 'rejected'
                     AND (t.position < s.position OR (t.position = s.position AND t.id < s.id))) AS before
           FROM atomik_steps s
           JOIN atomik_chats c ON c.id = s.chat_id
+          LEFT JOIN users o ON o.id = c.created_by
           JOIN last l ON l.chat_id = s.chat_id AND l.message_id = s.message_id
           WHERE s.status = 'proposed' AND s.model NOT LIKE 'connected:%'
             AND c.deleted = 0 AND c.archived_at IS NULL AND c.status <> 'running'
@@ -299,16 +301,53 @@ async function threadItems(_viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items:
   });
   const first = new Map<string, Row>();
   for (const r of rs.rows as Row[]) if (!first.has(String(r.chat_id))) first.set(String(r.chat_id), r);
-  const items = [...first.values()].slice(0, SOURCE_LIMIT).map((r): QueueItem => {
+  /* A chat step is its own person's (owner, 12 Oct): a member is shown their own steps and nothing of anyone else's, not even that one exists. An admin is shown
+     another MEMBER's step only while it needs an admin's tap (over the workspace's per-shot cap, or over guardrail 4's line), and then only its title and its price:
+     never the chat's words, the plan's step bodies or what was asked. Once it no longer needs one it is not shown. Another admin's step needs only its owner. */
+  const ownerId = currentTenant()?.workspace?.ownerId ?? null;
+  const line = jobApprovalLineCredits(creditUsd());
+  const priceOf = (r: Row): number | null => {
     const est = r.est_cost_usd == null ? null : Number(r.est_cost_usd);
-    /* Continue sends its live quote as the ceiling, so what a person approves is never passed: "up to". */
-    const credits = ctx.inCredits && est !== null && Number.isFinite(est) ? billCredits(est, marginKeyOf(text(r.kind), text(r.model))) : null;
+    return ctx.inCredits && est !== null && Number.isFinite(est) ? billCredits(est, marginKeyOf(text(r.kind), text(r.model))) : null;
+  };
+  const shown = [...first.values()].filter((r) => {
+    if (String(r.chat_owner ?? "") === viewer.id) return true;
+    if (!ctx.admin || isAgentId(viewer.id)) return false;
+    const theirOwnerIsAdmin = String(r.owner_role ?? "") === "admin" || String(r.chat_owner ?? "") === ownerId;
+    const credits = priceOf(r);
+    return !theirOwnerIsAdmin && credits !== null && ((ctx.cap !== null && credits > ctx.cap) || (line > 0 && credits > line));
+  }).slice(0, SOURCE_LIMIT);
+  const items = shown.map((r): QueueItem => {
+    const credits = priceOf(r);
     const price: QueuePrice = upTo(credits);
+    const shortBy = shortOf(ctx.balance, price);
+    const productionId = text(r.project_id);
+    const mine = String(r.chat_owner ?? "") === viewer.id;
+    if (!mine) {
+      /* Title and price only. The ids are what Open and Continue need to reach the step; they carry no words. */
+      return {
+        id: `thread:${String(r.chat_id)}`,
+        source: "thread",
+        title: shortText(text(r.title) ?? "A step"),
+        where: "Atomik",
+        at: Number(r.created_at ?? 0),
+        project: NO_PROJECT,
+        price,
+        needsAdmin: true,
+        canApprove: true,
+        why: null,
+        shortBy,
+        note: null,
+        step: null,
+        sample: false,
+        approve: { kind: "thread", chatId: String(r.chat_id), stepId: String(r.id), productionId: null },
+        decline: { kind: "thread-stop", stepId: String(r.id) },
+        open: { kind: "thread", chatId: String(r.chat_id), productionId: null },
+      };
+    }
     const gate = capGate(credits, ctx.cap, ctx.admin);
     const n = Number(r.before ?? 0) + 1, of = Math.max(n, Number(r.plan_steps ?? 1));
     const title = text(r.title) ?? "The next step";
-    const shortBy = shortOf(ctx.balance, price);
-    const productionId = text(r.project_id);
     return {
       id: `thread:${String(r.chat_id)}`,
       source: "thread",
@@ -330,7 +369,7 @@ async function threadItems(_viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items:
       open: { kind: "thread", chatId: String(r.chat_id), productionId },
     };
   });
-  return { items, productions: [...first.values()].map((r) => text(r.project_id) ?? "") };
+  return { items, productions: shown.map((r) => (String(r.chat_owner ?? "") === viewer.id ? text(r.project_id) ?? "" : "")) };
 }
 
 /* ── What was decided ──────────────────────────────────────────────────── */
@@ -427,14 +466,15 @@ async function boardDecisions(since: number): Promise<Found[]> {
   return found;
 }
 
-async function planDecisions(since: number): Promise<Found[]> {
+async function planDecisions(since: number, viewer: string): Promise<Found[]> {
   /* A step continued (claimed by a person, then sent) or turned down. */
   const steps = (await db().execute({
     sql: `SELECT s.id, s.title, s.status, s.gen_id, s.claimed_by, s.updated_at, c.project_id FROM atomik_steps s
           JOIN atomik_chats c ON c.id = s.chat_id
           WHERE s.status IN ('done','failed','rejected') AND s.updated_at >= ? AND s.model NOT LIKE 'connected:%' AND c.deleted = 0
+            AND c.created_by = ?
           ORDER BY s.updated_at DESC LIMIT ?`,
-    args: [since, DECIDED_LIMIT],
+    args: [since, viewer, DECIDED_LIMIT],
   }).catch((error: unknown) => {
     if (missingTable(error)) return { rows: [] as Row[] };
     throw error;
@@ -466,7 +506,7 @@ async function releaseDecisions(since: number): Promise<Found[]> {
 async function decidedItems(viewer: ApprovalsViewer, ctx: Ctx, since: number): Promise<(DecidedItem & { production: string | null })[]> {
   /* A decision on a run of a private board is its owner's alone (lib/draftProject.ts). */
   const listed = await projectLister({ id: viewer.id });
-  const found = (await Promise.all([boardDecisions(since), planDecisions(since), releaseDecisions(since)])).flat().filter((f) => !f.production || listed(f.production));
+  const found = (await Promise.all([boardDecisions(since), planDecisions(since, viewer.id), releaseDecisions(since)])).flat().filter((f) => !f.production || listed(f.production));
   const recent = found.filter((f) => Number.isFinite(f.at)).sort((a, b) => b.at - a.at).slice(0, DECIDED_LIMIT);
   const meter = await meterOf(ctx.workspaceId, recent.map((f) => f.job).filter((id): id is string => !!id)).catch(() => new Map<string, MeterRow>());
   const authors = [...new Set(recent.map((f) => f.author).filter((a): a is string => !!a))];
@@ -498,7 +538,7 @@ export async function readApprovals(viewer: ApprovalsViewer, now = Date.now()): 
   const [cap, state] = await Promise.all([shotCap(), inCredits ? creditState().catch(() => null) : Promise.resolve(null)]);
   const ctx: Ctx = {
     workspaceId: workspace.id, inCredits, cap, balance: state ? state.balance : null,
-    admin: viewer.owner === true || viewer.role === "admin" || viewer.role === "owner",
+    admin: !isAgentId(viewer.id) && (viewer.owner === true || viewer.role === "admin" || viewer.role === "owner"),
   };
   const [held, board, threads, decided] = await Promise.all([
     heldItems(viewer, ctx),
