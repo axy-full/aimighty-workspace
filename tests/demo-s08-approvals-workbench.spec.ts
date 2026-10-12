@@ -199,7 +199,7 @@ test("every kind of wait reads as the code has it; one tap approves only the lis
   await expect(spend.getByRole("button", { name: "Ask" })).toHaveAttribute("aria-current", "true");
   await expect(spend.getByRole("button", { name: "Auto" })).toHaveAttribute("aria-disabled", "true");
   await expect(spend.getByTestId("spend-edit")).toHaveText("Edit in Settings › Spending rules ›");
-  await expect(page.getByTestId("who-may-approve")).toContainText(/Any job over [\d,]+ cr needs a person’s approval, even under Auto\./);
+  await expect(page.getByTestId("who-may-approve")).toContainText(/Any job over [\d,]+ cr needs an admin’s tap, even under Auto\./);
 
   await floors(page, info.project.use.isMobile === true);
   await shoot(page, info.project.name, "approvals-kinds");

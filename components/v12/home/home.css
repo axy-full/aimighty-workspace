@@ -131,3 +131,4 @@
 @media (prefers-reduced-motion: reduce) {
   .v12-hm-tile, .v12-hm-tile-media, .v12-hm-lower, .v12-hm-board-cover { transition: none; }
 }
+.v12-hm-team-title { margin: 18px 0 8px; }

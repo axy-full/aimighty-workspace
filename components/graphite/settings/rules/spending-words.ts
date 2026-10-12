@@ -25,7 +25,7 @@ export type SpendingRules = {
 export type SpendingLines = {
   /** "Members up to 50 cr a shot; an admin above it." */
   ruleLine: string | null;
-  /** "Any job over 200 cr needs a person's approval, even under Auto." */
+  /** "Any job over 200 cr needs an admin’s tap, even under Auto." */
   platformLineText: string | null;
   /** "Every paid step waits for a person." */
   modeLine: string;
@@ -47,7 +47,7 @@ export function spendingLines(r: SpendingRules, cr: (n: number) => string): Spen
       : r.rule === "cap" ? (r.shotCap === null ? null : `Members up to ${cr(r.shotCap)} a shot; an admin above it.`)
       : r.rule === "producer" ? "A producer signs off on every take."
       : "Members render freely.",
-    platformLineText: r.platformLine === null ? null : `Any job over ${cr(r.platformLine)} needs a person’s approval, even under Auto.`,
+    platformLineText: r.platformLine === null ? null : `Any job over ${cr(r.platformLine)} needs an admin’s tap, even under Auto.`,
     modeLine: "Every paid step waits for a person.",
     autoLine: r.perJobLine === null ? null : `Auto is picked per Board run, for drafts at or under ${cr(r.perJobLine)}.`,
     budgetLine: r.capWarnPct === null || r.atCap === null ? null : `Auto drafts ask at ${r.capWarnPct}% of a production’s budget · ${AT_CAP[r.atCap]}`,

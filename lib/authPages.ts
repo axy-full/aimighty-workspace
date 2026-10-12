@@ -1,4 +1,5 @@
 /** Small pure helpers shared by the sign-up, sign-in and invitation pages. */
+import { GOOGLE_REFUSALS, isGoogleRefusal } from "./googleSignInText";
 
 export const billingPath = (plan: string, cadence: string) =>
   `/billing?plan=${encodeURIComponent(plan)}&cadence=${cadence}&onboarding=1`;
@@ -40,6 +41,8 @@ export async function readAnswer(
 
 /** A line for the sign-in form from where the visitor was sent from. */
 export function signInNotice(params: { get(name: string): string | null }) {
+  const google = params.get("google");
+  if (isGoogleRefusal(google)) return GOOGLE_REFUSALS[google];
   return params.get("passwordReset") === "1"
     ? "Password changed. Sign in with your new password and your authenticator code."
     : null;
