@@ -35,7 +35,8 @@ async function seeded(request: APIRequestContext) {
     platform.close();
   }
   const tenant = createClient({ url: dbUrl, timeout: 10_000 });
-  const at = Date.now() - 60_000;
+  /* A fixed instant, so no timestamp the routes print (ISO text or epoch) can ever contain a dollar figure these checks look for ("0.51", "1.34"): 2026-01-01T00:00:00.000Z, and +1 ms for the second take. */
+  const at = Date.parse("2026-01-01T00:00:00.000Z");
   try {
     for (const [i, cost] of VENDOR_USD.entries())
       await tenant.execute({
