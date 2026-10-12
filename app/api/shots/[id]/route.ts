@@ -1,3 +1,4 @@
+import { mayReachProject } from "@/lib/draftProject";
 import { assertMoveAllowed, MoveRefused, parseJson } from "@/lib/projectMove";
 import { withMediaSources } from "@/lib/mediaMutation";
 import { NextResponse } from "next/server";
@@ -16,7 +17,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
   const { id: shotId } = await ctx.params;
   await ready();
   const shot = await getShot(shotId);
-  if (!shot) return NextResponse.json({ error: "No such shot." }, { status: 404 });
+  /* A shot of a private board is its owner's alone (lib/draftProject.ts), asked before the rule about who may change work: to anyone else it is an unknown shot. */
+  if (!shot || !(await mayReachProject(got.user, shot.projectId, "write"))) return NextResponse.json({ error: "No such shot." }, { status: 404 });
   /* Someone else's shot is changed by its maker, the board's owner or an admin only: a rename, a move, a status, an edit (lib/workAccess.ts). */
   if (!(await mayChangeWork(got.user, shot))) return NextResponse.json({ error: NOT_YOURS.shot }, { status: 403 });
 
