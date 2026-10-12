@@ -2,7 +2,6 @@
 import { useId, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
 import { Dialog } from "../ui";
 import { PlanPicker } from "@/components/v12/settings/PlanPicker";
-import { fmtCredits } from "@/lib/price";
 import { saveJoinReturn } from "@/lib/v12/joinReturn";
 import { COMPANY_SIZES, ROLES, cleanCode, emailPath, inviteTitle, joinTitle, loginPath, requestBody, requestProblem, signupPath, type InviteKind, type RequestFields } from "./join-model";
 import { readCode } from "./read-code";

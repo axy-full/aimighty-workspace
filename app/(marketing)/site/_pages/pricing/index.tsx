@@ -43,7 +43,7 @@ export default async function Pricing() {
         <PlanCards individual={individual} team={[business, enterprise]}>
           <div className="mk-eyebrow">Pricing · 1 credit = US{unit}</div>
           <h1 className={`mk-h1 ${s.title}`}>Pick a plan. Credits are the unit.</h1>
-          <p className={`mk-lead ${s.lead}`}>One person pays a month for their credits. A team pays a seat a month, and the seats' credits are pooled.</p>
+          <p className={`mk-lead ${s.lead}`}>One person pays a month for their credits. A team pays a seat a month, and the seats’ credits are pooled.</p>
         </PlanCards>
         <Grid className={s.notes}>
           <Note lead="Included credits expire at cycle end.">No rollover.</Note>
