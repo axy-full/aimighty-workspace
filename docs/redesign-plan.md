@@ -273,6 +273,7 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 - **"Current plan" on phones** comes from the subscription alone, while desktop also honours an admin's plan label (#683 review). Display only; align when the phone page next changes.
 - **Copy-link nudge, option (c)** (owner, 12 Oct 21:05): "Copy link" on a private board offers "Share with team" first. A small UI follow-up after #681.
 - **A disabled member's shared board** (#681 review nit): `draftIsTeamShared` and `projectLister` (`lib/draftProject.ts`) don't require the maker to be active, while `sharedBoardOfProduction` does. So the board stays listed and readable while `?reach` says it can't be opened. Inconsistent, but nothing new leaks. Align them.
+- **Admission's agent exemption** (#685 review): `lib/generationAdmission.ts` treats every `agent:*` or server caller as reaching any project. Today only `/api/generate` calls admission, with a person or token, so this can't be reached. Before any server-side run calls admission, resolve the run's owner and check that person's reach.
 
 ## Housekeeping rules (owner, 12 Oct)
 
