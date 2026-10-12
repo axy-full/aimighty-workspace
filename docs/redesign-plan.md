@@ -260,7 +260,7 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 
   **Done when:** no import of the switch remains; the one-design guard's old-sheet allow-list is empty; the five-minute test (v14) and the full suite pass; and screenshots at the five sizes show only v14.
 - **Board ids unique across members** (from the #667 review): a teammate's save that names another member's private board id creates a separate copy under their own key, the same as on release/1. If both are later shared, a plain `?id=` link opens the newer one, though the header still names the real maker. Fix: refuse a new save whose id another member already uses, with the unknown-id answer.
-- **Who sees Atomik chat steps** (from the #681 review): the approvals queue lists every member's Atomik chat steps by title, with no board name or id. Who may see a chat is a separate question from board privacy, for the owner to decide.
+- **Who sees Atomik chat steps** (owner, 12 Oct evening). In the approvals queue, members see only their own Atomik chat steps. A workspace admin sees another member's step only when it needs an admin's approval (e.g. the over-200 cr rule from #670), and then only its title and price, never the chat. A small NEEDS AKSHAY PR with an Opus privacy review, after #681 merges.
 - **Uploads access** (owner, 12 Oct): a member opens an upload only if they uploaded it, or it's on a board shared with the team, or production or shared work already exposes it. Being built by lane C, NEEDS AKSHAY, with an Opus privacy review.
 
 ## Housekeeping rules (owner, 12 Oct)
@@ -338,3 +338,5 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 ## Owner decision (Akshay, 12 Oct evening)
 
 - Google sign-in is tested on production (invite → Google → joined; plain /login with Google). It stays in Google's **Testing** mode. The owner publishes it once the privacy fixes are live (#681, the canvas hole; the owner-or-admin rule for changing others' work) and before inviting outside testers.
+
+- #681 (the private canvas): merge when green (owner, 12 Oct evening).
