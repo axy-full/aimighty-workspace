@@ -37,7 +37,7 @@ function stub(reply: () => Response) {
   return { calls, fetch };
 }
 
-const anthropicReply = (text = '{"ok":true}') => ({ id: 'msg_fixture', type: 'message', role: 'assistant', model: 'claude-sonnet-4-6', content: [{ type: 'text', text }], stop_reason: 'end_turn', stop_sequence: null,
+const anthropicReply = (text = '{"ok":true}') => ({ id: 'msg_fixture', type: 'message', role: 'assistant', model: 'claude-sonnet-5', content: [{ type: 'text', text }], stop_reason: 'end_turn', stop_sequence: null,
   usage: { input_tokens: 100, cache_creation_input_tokens: 40, cache_read_input_tokens: 60, output_tokens: 25 } });
 const googleReply = (text = '{"ok":true}') => ({ candidates: [{ content: { parts: [{ text }], role: 'model' }, finishReason: 'STOP', index: 0 }],
   usageMetadata: { promptTokenCount: 200, candidatesTokenCount: 30, thoughtsTokenCount: 50, cachedContentTokenCount: 120, totalTokenCount: 280 }, modelVersion: 'gemini-2.5-flash', responseId: 'resp_google_fixture' });
@@ -81,21 +81,24 @@ test('every offered Claude, Gemini and Grok id is mapped explicitly or listed as
   for (const id of new Set([...VERIFIED_TEXT_MODEL_IDS.filter(id => !id.startsWith('openai/')), ...catalogued.filter(id => !isDroppedModel(id))])) {
     expect(Object.hasOwn(DIRECT_MODEL_IDS, id) !== unmapped.has(id), id).toBe(true);
   }
-  expect(directModelId('anthropic/claude-sonnet-4.6')).toBe('claude-sonnet-4-6');
-  expect(directModelId('anthropic/claude-haiku-4.5')).toBe('claude-haiku-4-5');
+  expect(directModelId('anthropic/claude-sonnet-5')).toBe('claude-sonnet-5');
+  expect(directModelId('anthropic/claude-opus-5.5')).toBe('claude-opus-5-5');
+  /* Not on the owner's Anthropic key list (11 Oct 2026): no direct door. */
+  expect(() => directModelId('anthropic/claude-sonnet-4.6')).toThrow('no direct provider model');
   expect(directModelId('spacexai/grok-4.7')).toBe('grok-4.7');
   expect(directModelId('xai/grok-4.7')).toBe('grok-4.7');
   for (const id of UNMAPPED_DIRECT_MODEL_IDS) expect(() => directModelId(id)).toThrow('no direct provider model');
   for (const id of DROPPED_MODEL_IDS.filter(id => !id.startsWith('openai/'))) {
     expect(() => directModelId(id), id).toThrow('no direct provider model');
-    expect(Object.hasOwn(DIRECT_MODEL_IDS, MODEL_ALIASES[id]), id).toBe(true);
+    /* The alias runs direct, unless the owner's key list left it out (then it is refused before sending, like any unmapped id). */
+    expect(Object.hasOwn(DIRECT_MODEL_IDS, MODEL_ALIASES[id]) || UNMAPPED_DIRECT_MODEL_IDS.includes(MODEL_ALIASES[id]), id).toBe(true);
   }
   expect(() => directModelId('anthropic/claude-sonnet-9')).toThrow('no direct provider model');
 });
 
 test('Anthropic: request and reply fixture through the SDK, cache tokens in usage, no cost', async () => {
   process.env.TEXT_DIRECT = 'anthropic';
-  const model = 'anthropic/claude-sonnet-4.6';
+  const model = 'anthropic/claude-sonnet-5';
   const auth = await languageAuth(model);
   expect(auth[TEXT_PROVIDER_HEADER]).toBe('anthropic');
   const { calls, fetch } = stub(() => Response.json(anthropicReply()));
@@ -106,13 +109,13 @@ test('Anthropic: request and reply fixture through the SDK, cache tokens in usag
   expect(call.headers.get('x-api-key')).toBe(KEYS.ANTHROPIC_API_KEY);
   expect(call.headers.get('authorization')).toBeNull(); expect(call.headers.get(TEXT_PROVIDER_HEADER)).toBeNull();
   expect(call.init?.redirect).toBe('error');
-  expect(call.body).toMatchObject({ model: 'claude-sonnet-4-6', max_tokens: 4000, system: [{ type: 'text', text: 'Inspect the references.' }],
+  expect(call.body).toMatchObject({ model: 'claude-sonnet-5', max_tokens: 4000, system: [{ type: 'text', text: 'Inspect the references.' }],
     messages: [{ role: 'user', content: [{ type: 'text', text: 'Review.' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } }] }],
     output_config: { format: { type: 'json_schema', schema } } });
   expect(JSON.stringify(call.body)).not.toContain('gateway');
   expect(reply.ok).toBe(true);
   const json = JSON.parse(reply.text);
-  expect(json).toMatchObject({ provider: 'anthropic', model: 'claude-sonnet-4-6', choices: [{ index: 0, message: { role: 'assistant', content: '{"ok":true}' }, finish_reason: 'stop' }],
+  expect(json).toMatchObject({ provider: 'anthropic', model: 'claude-sonnet-5', choices: [{ index: 0, message: { role: 'assistant', content: '{"ok":true}' }, finish_reason: 'stop' }],
     usage: { prompt_tokens: 200, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 40 } } });
   expect(json.usage).not.toHaveProperty('cost'); expect(json).not.toHaveProperty('cost');
   // What PR 3 will bill: uncached input, cache reads and cache writes each at their own price.
@@ -122,12 +125,12 @@ test('Anthropic: request and reply fixture through the SDK, cache tokens in usag
 
 test('Google: request and reply fixture, thought tokens billed as output, cached tokens inside the prompt', async () => {
   process.env.TEXT_DIRECT = 'google';
-  const model = 'google/gemini-2.5-flash';
+  const model = 'google/gemini-3.5-flash-lite';
   const { calls, fetch } = stub(() => Response.json(googleReply()));
   const reply = await textPost(body(model, { response_format: { type: 'json_object' }, providerOptions: { google: { thinkingConfig: { thinkingLevel: 'low' } }, vertex: { thinkingConfig: { thinkingLevel: 'low' } } } }), { auth: await languageAuth(model), fetch });
   expect(calls).toHaveLength(1);
   const [call] = calls;
-  expect(call.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
+  expect(call.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
   expect(call.headers.get('x-goog-api-key')).toBe(KEYS.GEMINI_API_KEY); expect(call.init?.redirect).toBe('error');
   expect(call.body).toMatchObject({ systemInstruction: { parts: [{ text: 'Inspect the references.' }] },
     contents: [{ role: 'user', parts: [{ text: 'Review.' }, { inlineData: { mimeType: 'image/png', data: 'iVBORw0KGgo=' } }] }],
@@ -183,13 +186,11 @@ test('reasoning maps to each provider\'s native options', () => {
   expect(() => grok({ reasoning: { enabled: true, max_tokens: 1024 } })).toThrow('not available');
 });
 
-test('Anthropic budget thinking keeps the approved max_tokens on the wire', async () => {
+test('a Claude model the owner\'s key did not list is refused before sending (its thinking budget too)', async () => {
   process.env.TEXT_DIRECT = 'anthropic';
-  const model = 'anthropic/claude-sonnet-4.5';
-  const { calls, fetch } = stub(() => Response.json({ ...anthropicReply('Done.'), model: 'claude-sonnet-4-5' }));
-  await textPost(JSON.stringify({ model, max_tokens: 9000, temperature: .4, reasoning: { enabled: true, max_tokens: 4096 }, messages: [{ role: 'user', content: 'Hi.' }] }), { auth: await languageAuth(model), fetch });
-  expect(calls[0].body).toMatchObject({ model: 'claude-sonnet-4-5', max_tokens: 9000, thinking: { type: 'enabled', budget_tokens: 4096 } });
-  expect(calls[0].body).not.toHaveProperty('temperature');
+  const { calls, fetch } = stub(() => Response.json(anthropicReply('Done.')));
+  const reply = await textPost(JSON.stringify({ model: 'anthropic/claude-sonnet-4.5', max_tokens: 9000, reasoning: { enabled: true, max_tokens: 4096 }, messages: [{ role: 'user', content: 'Hi.' }] }), { auth: await languageAuth('anthropic/claude-sonnet-4.5'), fetch });
+  expect(reply).toMatchObject({ ok: false, status: 422 }); expect(calls).toHaveLength(0);
 });
 
 test('usage maps from the provider\'s raw usage; an unreported count stays unknown', () => {
@@ -206,7 +207,7 @@ test('usage maps from the provider\'s raw usage; an unreported count stays unkno
 
 test('a missing key fails before sending and names the variable; no fallback to the gateway', async () => {
   process.env.TEXT_DIRECT = 'anthropic,google,xai';
-  for (const [model, name] of [['anthropic/claude-sonnet-4.6', 'ANTHROPIC_API_KEY'], ['google/gemini-2.5-flash', 'GEMINI_API_KEY'], ['spacexai/grok-4.6', 'XAI_API_KEY']]) {
+  for (const [model, name] of [['anthropic/claude-sonnet-5', 'ANTHROPIC_API_KEY'], ['google/gemini-3.5-flash-lite', 'GEMINI_API_KEY'], ['spacexai/grok-4.6', 'XAI_API_KEY']]) {
     delete process.env[name];
     await expect(languageAuth(model)).rejects.toThrow(name);
     expect(() => languageModel(model, { auth: {} })).toThrow(name);
@@ -236,20 +237,20 @@ test('the fetch guard refuses a foreign origin or another endpoint and forbids r
   // A base URL from the environment cannot move the Anthropic key elsewhere.
   process.env.TEXT_DIRECT = 'anthropic'; process.env.ANTHROPIC_BASE_URL = 'https://evil.example/v1';
   const anthropic = stub(() => Response.json(anthropicReply()));
-  await textPost(body('anthropic/claude-sonnet-4.6'), { fetch: anthropic.fetch });
+  await textPost(body('anthropic/claude-sonnet-5'), { fetch: anthropic.fetch });
   expect(anthropic.calls.map(call => call.url)).toEqual(['https://api.anthropic.com/v1/messages']);
 
   // A redirect makes fetch throw once the request is out: uncertain, so it surfaces as an error, never a retry.
   let sent = 0;
   const redirecting: typeof globalThis.fetch = async (_url, init) => { sent++; if (init?.redirect === 'error') throw new TypeError('fetch failed: unexpected redirect'); return Response.redirect('https://evil.example/', 307); };
-  await expect(textPost(body('anthropic/claude-sonnet-4.6'), { fetch: redirecting })).rejects.toThrow();
+  await expect(textPost(body('anthropic/claude-sonnet-5'), { fetch: redirecting })).rejects.toThrow();
   expect(sent).toBe(1);
 });
 
 test('a provider refusal returns its status once, with account wording, and is never retried', async () => {
   process.env.TEXT_DIRECT = 'anthropic';
   const { calls, fetch } = stub(() => Response.json({ type: 'error', error: { type: 'rate_limit_error', message: 'Fixture rate limit.' } }, { status: 429 }));
-  const reply = await textPost(body('anthropic/claude-sonnet-4.6'), { fetch });
+  const reply = await textPost(body('anthropic/claude-sonnet-5'), { fetch });
   expect(reply).toMatchObject({ ok: false, status: 429 }); expect(calls).toHaveLength(1);
   expect(explainGatewayFailure(reply.status, reply.text)).toContain('rate or usage limit');
 });
@@ -257,7 +258,7 @@ test('a provider refusal returns its status once, with account wording, and is n
 test('a direct vendor never reaches the gateway, by any path', async () => {
   process.env.TEXT_DIRECT = 'anthropic';
   let calls = 0; globalThis.fetch = async () => { calls++; throw new Error('must not send'); };
-  const model = 'anthropic/claude-sonnet-4.6';
+  const model = 'anthropic/claude-sonnet-5';
   await expect(gatewayPost(body(model))).rejects.toThrow('routed to its provider directly');
   // An approval issued for the gateway no longer matches once the vendor is switched on.
   await expect(textPost(body(model), { auth: { Authorization: 'Bearer x', [TEXT_PROVIDER_HEADER]: 'gateway' } })).rejects.toThrow('connection changed');
@@ -277,7 +278,7 @@ test('SDK callers get the provider\'s own model with the guard and the mapped id
 
 test('a Gemini reply without a candidates count reports unknown output, so the caller cannot bill it as zero', async () => {
   process.env.TEXT_DIRECT = 'google';
-  const model = 'google/gemini-2.5-flash';
+  const model = 'google/gemini-3.5-flash-lite';
   const { usageMetadata, ...rest } = googleReply('Hello.');
   const { candidatesTokenCount: _dropped, ...partial } = usageMetadata; void _dropped;
   const { fetch } = stub(() => Response.json({ ...rest, usageMetadata: partial }));
@@ -294,7 +295,7 @@ test('provider errors are logged and rethrown without the request body, so the p
   console.warn = (...args: unknown[]) => { lines.push(args.map(String).join(' ')); };
   console.error = (...args: unknown[]) => { lines.push(args.map(String).join(' ')); };
   try {
-    const raw = JSON.stringify({ model: 'anthropic/claude-sonnet-4.6', max_tokens: 100, messages: [{ role: 'user', content: secret }] });
+    const raw = JSON.stringify({ model: 'anthropic/claude-sonnet-5', max_tokens: 100, messages: [{ role: 'user', content: secret }] });
     // Refused by the provider: status returned, one summary line.
     const refused = await textPost(raw, { fetch: async () => Response.json({ type: 'error', error: { type: 'overloaded_error', message: 'Fixture.' } }, { status: 529 }) });
     expect(refused.status).toBe(529);
@@ -304,7 +305,7 @@ test('provider errors are logged and rethrown without the request body, so the p
     expect((thrown as { requestBodyValues?: unknown }).requestBodyValues).toBeUndefined();
     expect(JSON.stringify(thrown)).not.toContain(secret);
     // The SDK path (agents) gets the same redacted error from languageModel().
-    const sdk = await generateText({ model: languageModel('anthropic/claude-sonnet-4.6', { auth: {}, fetch: async () => Response.json({ type: 'error', error: { type: 'rate_limit_error', message: 'Fixture.' } }, { status: 429 }) }), prompt: secret, maxOutputTokens: 50, maxRetries: 0 }).catch((error: unknown) => error);
+    const sdk = await generateText({ model: languageModel('anthropic/claude-sonnet-5', { auth: {}, fetch: async () => Response.json({ type: 'error', error: { type: 'rate_limit_error', message: 'Fixture.' } }, { status: 429 }) }), prompt: secret, maxOutputTokens: 50, maxRetries: 0 }).catch((error: unknown) => error);
     expect((sdk as APICallError).statusCode).toBe(429);
     expect((sdk as APICallError).requestBodyValues).toBeUndefined();
     expect(lines.length).toBeGreaterThan(0);
@@ -317,30 +318,30 @@ test('provider errors are logged and rethrown without the request body, so the p
 test('direct text is billed (PR 3): the rig planner prices a direct turn from raw usage, and the inline writer sends and prices its call', async () => {
   process.env.TEXT_DIRECT = 'anthropic';
   process.env.MODEL_CATALOG = 'static';
-  // Claude Sonnet 4.6 at the snapshot, for anthropicReply's usage: 100 uncached, 60 read, 40 written, 25 out.
-  const usd = 100 * 0.000003 + 60 * 0.0000003 + 40 * 0.00000375 + 25 * 0.000015;
+  // Claude Sonnet 5 at the snapshot, for anthropicReply's usage: 100 uncached, 60 read, 40 written, 25 out.
+  const usd = 100 * 0.000002 + 60 * 0.0000002 + 40 * 0.0000025 + 25 * 0.00001;
 
   // The rig agent prices its planning turn on the direct door and reads the provider's raw counts.
   const { plannerPrice } = await import('../../lib/workbench/rig-agent');
   const { plannerCostUsd } = await import('../../lib/workbench/rig-agent-planner');
-  const price = await plannerPrice('anthropic/claude-sonnet-4.6');
-  expect(price).toMatchObject({ id: 'anthropic/claude-sonnet-4.6', direct: true, engine: 'anthropic' });
+  const price = await plannerPrice('anthropic/claude-sonnet-5');
+  expect(price).toMatchObject({ id: 'anthropic/claude-sonnet-5', direct: true, engine: 'anthropic' });
   // The SDK's normalised totals leave the cache out; the raw usage does not.
   const step = { inputTokens: 100, outputTokens: 25, totalTokens: 125, raw: anthropicReply().usage } as unknown as LanguageModelUsage;
   expect(stepTextUsage(price.id, step, true)).toMatchObject({ prompt_tokens: 200, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 40 } });
   expect(plannerCostUsd(price.catalog, [step], price.direct)).toBeCloseTo(usd, 15);
   // On the gateway the same turn keeps its gateway engine and the SDK's totals.
   delete process.env.TEXT_DIRECT;
-  expect(await plannerPrice('anthropic/claude-sonnet-4.6')).toMatchObject({ direct: false, engine: 'vercel' });
+  expect(await plannerPrice('anthropic/claude-sonnet-5')).toMatchObject({ direct: false, engine: 'vercel' });
   process.env.TEXT_DIRECT = 'anthropic';
 
   // The inline writer (house workspaces) reads PROMPT_MODELS, still under its old name, and goes through the router.
-  process.env.GATEWAY_PROMPT_MODELS = 'anthropic/claude-sonnet-4.6';
+  process.env.GATEWAY_PROMPT_MODELS = 'anthropic/claude-sonnet-5';
   const sent: string[] = [];
   globalThis.fetch = async (url) => { sent.push(String(url)); return Response.json({ ...anthropicReply('A slow dolly toward the door.\nCAMERA: push') }); };
   const { enhancePrompt } = await import('../../lib/enhance');
   const refined = await enhancePrompt({ prompt: 'A slow dolly.', citations: [], provider: 'gateway' });
   expect(sent).toEqual(['https://api.anthropic.com/v1/messages']);
-  expect(refined).toMatchObject({ text: 'A slow dolly toward the door.', move: 'push', model: 'anthropic/claude-sonnet-4.6', ledger: 'anthropic' });
+  expect(refined).toMatchObject({ text: 'A slow dolly toward the door.', move: 'push', model: 'anthropic/claude-sonnet-5', ledger: 'anthropic' });
   expect(refined.costUsd).toBeCloseTo(usd, 15);
 });

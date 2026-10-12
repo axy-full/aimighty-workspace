@@ -30,13 +30,16 @@ export function PhoneHeader({ title, account, onBack, onTopUp }: { title: string
   const balance = account?.credits?.balance ?? null;
   const credits = creditsLabel(balance, rates.unit, rates.creditUsd);
   const usd = credits.known && typeof balance === "number" ? creditsUsd(balance, rate) : null;
+  /* The house pays in dollars at the engines' cost (lib/houseWorkspace.ts): no credits to top up, and the chip says so. */
+  const house = rates.unit === "usd";
   return (
     <header className="ph-header" data-testid="phone-header">
       <div className="ph-header-lead">
         {onBack ? <button type="button" className="ph-back" aria-label="Back" onClick={onBack} data-testid="phone-back">‹</button> : null}
         <h1 className="ph-title" data-testid="phone-title">{title}</h1>
       </div>
-      <button type="button" className="ph-credits" onClick={onTopUp} title={usd ? `${usd} · Top up` : credits.title} data-testid="phone-credits">{credits.text}</button>
+      <button type="button" className="ph-credits" onClick={onTopUp} title={house ? "Billed in dollars at the engines' cost: this workspace has no credits to top up." : usd ? `${usd} · Top up` : credits.title}
+        aria-label={house ? "At cost, no top-up" : undefined} data-testid="phone-credits">{house ? "At cost" : credits.text}</button>
     </header>
   );
 }

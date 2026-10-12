@@ -541,19 +541,22 @@ test('a Claude suite step with a thinking budget stays inside its quoted ceiling
   });
 });
 
-test('on the wire, a direct Claude suite step asks Anthropic for exactly the quoted ceiling (answer + thinking budget)', async () => {
+test('on the wire, a direct Claude suite step asks Anthropic for exactly the quoted ceiling, with adaptive thinking and its effort', async () => {
   const saved = { direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
   process.env.TEXT_DIRECT = 'anthropic'; process.env.ANTHROPIC_API_KEY = 'test-anthropic-key-never-sent';
   try {
     const { languageModel } = await import('../../lib/language-provider');
     const bodies: Record<string, unknown>[] = [];
     const fetch: typeof globalThis.fetch = async (_url, init) => { bodies.push(JSON.parse(String(init?.body))); return Response.json({ type: 'error', error: { type: 'invalid_request_error', message: 'Fixture stop.' } }, { status: 400 }); };
-    const envelope = { suite: 'particl' as const, model: 'anthropic/claude-sonnet-4.6', context: 'Brief.', maxTokens: 6000, inputTokenBudget: 50000, toolResultByteBudget: 20000,
-      providerOptions: { anthropic: { thinking: { type: 'enabled' as const, budgetTokens: 2048 } } }, assetIds: [], images: [] };
+    /* Sonnet 5.5, on the owner's key list; the 5.x models take adaptive thinking and effort, not a token budget
+       (the budget arithmetic for older models is suiteAgentMaxOutputTokens, above). */
+    const envelope = { suite: 'particl' as const, model: 'anthropic/claude-sonnet-5.5', context: 'Brief.', maxTokens: 6000, inputTokenBudget: 50000, toolResultByteBudget: 20000,
+      providerOptions: { anthropic: { thinking: { type: 'adaptive' as const }, effort: 'low' } }, assetIds: [], images: [] };
     await createSuiteAgent(envelope, languageModel(envelope.model, { auth: {}, fetch })).generate({ messages: suiteAgentMessages(envelope) }).catch(() => null);
     expect(bodies).toHaveLength(1);
     expect(bodies[0].max_tokens).toBe(6000);
-    expect(bodies[0].thinking).toEqual({ type: 'enabled', budget_tokens: 2048 });
+    expect(bodies[0].thinking).toEqual({ type: 'adaptive' });
+    expect(bodies[0].output_config).toMatchObject({ effort: 'low' });
   } finally {
     for (const [name, value] of [['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
   }

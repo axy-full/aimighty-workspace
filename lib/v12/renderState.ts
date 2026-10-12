@@ -71,7 +71,7 @@ export type RenderTake = {
 export type RenderStage = "held" | "queue" | "preparing" | "rendering" | "saving" | "ready" | "failed" | "cancelled";
 export type RenderTone = "grey" | "blue" | "amber" | "green" | "red";
 /** How a cancel would be done: a held take is discarded (lib/held discardHeldJob); a take in the provider's queue is cancelled there (POST /api/generations/:id/cancel). */
-export type CancelVia = "discard" | "provider-queue";
+export type CancelVia = "discard" | "provider-queue" | "provider-ask";
 
 export type RenderLine = {
   /** "Seedance 2.5 · usually 2–4 min · 1:12 so far" — or, slow, the whole sentence. */
@@ -127,6 +127,8 @@ export const SLOW_TEXT = "Taking longer than usual — the provider is slow righ
 export const SLOW_SHORT = "Taking longer than usual · still working";
 export const CANCEL_FREE = "Cancel this take — nothing is billed for a cancelled take";
 export const CANCEL_PREPARING = "It’s being sent to the engine now, so it can’t be cancelled.";
+/** Seedance and Kling or Topaz in their provider's queue: the engine is asked, and only its confirmation makes the take free. Never promises "nothing billed" before that. */
+export const CANCEL_ASK = "Ask the engine to cancel — free if it confirms";
 export const CANCEL_PROVIDER_QUEUE = "This engine’s queue can’t be cancelled from here yet. It’s charged only when it’s ready.";
 export const CANCEL_RUNNING = "It has started rendering, so it can’t be cancelled.";
 export const CANCEL_NOT_YOURS = "Only the person who made this take, or an admin, can cancel it.";
@@ -134,6 +136,23 @@ export const CANCEL_NOT_YOURS = "Only the person who made this take, or an admin
 export const CANCEL_MAY_CHARGE = "This engine may charge for a take cancelled in its queue, so it can’t be cancelled here.";
 /** The toast after a cancel that bills nothing (the only cancels offered). */
 export const CANCELLED_FREE_TOAST = "Cancelled · nothing billed · the frame stays";
+
+/** What follows the figure on a take's hold line while a cancel is on its way to the engine and not confirmed. */
+export const SETTLES_WHEN_CONFIRMED = "settles when the engine confirms";
+
+/**
+ * The money line's two runs: the figure ("$0.045 held") and what follows it ("· charged only when it’s ready"). While a cancel is on
+ * its way to the engine and not confirmed, "charged only when it’s ready" is not the whole story (a take that stops can be charged),
+ * so the same figure is followed by what is true: it "settles when the engine confirms".
+ */
+export function moneyLine(money: { text: string; short: string }, pending = false): { head: string; tail: string } {
+  if (pending) {
+    /* With no figure on the line (no price on the take) there is nothing to hold it beside: the line says only what is true. */
+    if (!money.text.startsWith(`${money.short} ·`)) return { head: `${SETTLES_WHEN_CONFIRMED.charAt(0).toUpperCase()}${SETTLES_WHEN_CONFIRMED.slice(1)}`, tail: "" };
+    return { head: money.short, tail: ` · ${SETTLES_WHEN_CONFIRMED}` };
+  }
+  return { head: money.short, tail: money.text.startsWith(money.short) ? money.text.slice(money.short.length) : "" };
+}
 
 /** A take's price in the unit its workspace pays in: "43 cr", "$0.840". */
 export const fmtRenderPrice = (p: RenderPrice): string => (p.unit === "usd" ? fmtLedgerUsd(p.amount) : fmtLedgerCredits(p.amount));
@@ -187,8 +206,10 @@ export function stageOf(take: Pick<RenderTake, "status" | "held" | "atProvider" 
  * its provider refunds a cancelled request). Cinema Studio goes through the
  * same cancel, but a cancelled Cinema take is charged what its provider
  * reports (lib/genjutsuVideo.ts, lib/meter.ts heldSettlement), so it is not
- * offered. Ark and fal document a queued cancel too, but calling them is new
- * money-adjacent code (NEEDS AKSHAY), so not yet. Once a take is rendering, no
+ * offered. A Seedance (BytePlus) or Kling and Topaz (fal) video waiting in its
+ * provider's queue is offered too: the server asks the provider first, cancels
+ * only while it is still queued, and releases the credits only when the
+ * provider confirms (lib/queuedCancel.ts). Once a take is rendering, no
  * provider promises a stopped job is not billed.
  */
 export function cancelOf(take: RenderTake, stage: RenderStage = stageOf(take)): RenderState["cancel"] {
@@ -199,9 +220,12 @@ export function cancelOf(take: RenderTake, stage: RenderStage = stageOf(take)): 
   if (take.status === "held") return take.mayCancel === false ? refuse(CANCEL_NOT_YOURS) : free("discard");
   if (stage === "queue") {
     const higgsVideo = take.provider === "higgsfield" && take.kind === "video";
+    /* Seedance (BytePlus) and Kling or Topaz (fal): cancelled while the provider still has the take queued (lib/queuedCancel.ts). The server asks the provider first and refuses in its own words if it has started. */
+    const queuedAtProvider = (take.provider === "byteplus" || take.provider === "fal") && take.kind === "video";
     if (higgsVideo && isCinemaStudioModel(take.model)) return refuse(CANCEL_MAY_CHARGE);
-    if (!(higgsVideo && isGenjutsuModel(take.model))) return refuse(CANCEL_PROVIDER_QUEUE);
-    return take.mayCancel === false ? refuse(CANCEL_NOT_YOURS) : free("provider-queue");
+    if (!queuedAtProvider && !(higgsVideo && isGenjutsuModel(take.model))) return refuse(CANCEL_PROVIDER_QUEUE);
+    if (take.mayCancel === false) return refuse(CANCEL_NOT_YOURS);
+    return queuedAtProvider ? { cancellable: true, via: "provider-ask", tooltip: CANCEL_ASK, toast: null } : free("provider-queue");
   }
   if (stage === "preparing") return refuse(CANCEL_PREPARING);
   return refuse(CANCEL_RUNNING);

@@ -781,7 +781,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}
           {rigOn ? <RigView model={rigModelNow!} project={project} scope={scope} userId={userId ?? null} apply={rig.apply} readOnly={offline || Boolean(gate.readOnly)}
             onStage={(id) => { setRigView(false); goStage(id); }} onAsk={(words) => { setDockOpen(true); window.setTimeout(() => ctx.askAtomik(words), 80); }} /> : null}
-          {v12Frame && !list && !rigOn && !empty ? (
+          {v12Frame && !list && !empty ? (
             <BoardBar ctx={ctx} selection={crumb} onClearSelection={() => pick(new Set(), null)} tool={tool} onDisarm={() => setTool("select")}
               onAttach={(picked) => void upload(picked)} library={items} onAsked={() => setDockOpen(true)} />
           ) : null}

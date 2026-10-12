@@ -1,8 +1,9 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { agentAsk } from "@/lib/shell/board-agent";
 import { spendAttrsOf } from "@/lib/spend";
-import { knownQuote } from "@/lib/v12/quote";
+import { planningQuote } from "@/lib/v12/quote";
+import { useSession } from "@/lib/session";
 import type { LibraryEntry } from "@/lib/workspace/library";
 import type { BoardCtx } from "@/components/graphite/board/cards/types";
 import { useAgentRun } from "@/components/graphite/board/agent/use-board-agent";
@@ -42,6 +43,7 @@ export function BoardBar({ ctx, selection, onClearSelection, tool, onDisarm, onA
   onAsked: () => void;
 }) {
   const agent = useAgentRun();
+  const session = useSession();
   const [words, setWords] = useState("");
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
@@ -77,8 +79,21 @@ export function BoardBar({ ctx, selection, onClearSelection, tool, onDisarm, onA
 
   const armed = ARMED[tool] ?? null;
   const note = said ?? ask.reason ?? sample;
+  /* The bar's height (it grows with a selection chip or a note) is published on its parent, so a view drawn under it (the Rig)
+     keeps its last row clear: --v12-bd-bar-h. */
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current, host = el?.parentElement;
+    if (!el || !host) return;
+    const set = () => host.style.setProperty("--v12-bd-bar-h", `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    set();
+    if (typeof ResizeObserver === "undefined") return () => host.style.removeProperty("--v12-bd-bar-h");
+    const seen = new ResizeObserver(set);
+    seen.observe(el);
+    return () => { seen.disconnect(); host.style.removeProperty("--v12-bd-bar-h"); };
+  }, []);
   return (
-    <div className="v12-bd-bar" data-testid="v12-board-bar">
+    <div className="v12-bd-bar" data-testid="v12-board-bar" ref={box}>
       <Bar
         value={words}
         onChange={(text) => { setWords(text); setSaid(null); }}
@@ -99,7 +114,7 @@ export function BoardBar({ ctx, selection, onClearSelection, tool, onDisarm, onA
         note={note ? { tone: said ? "problem" : "note", text: note } : null}
         send={{
           label: busy ? "Asking…" : "Ask",
-          price: ask.price && !busy ? <Price quote={knownQuote(ask.price)} testId="v12-board-bar-price" /> : undefined,
+          price: ask.price && !busy ? <Price quote={planningQuote(ask.price, agent.terms?.planningUsd, session.rates.unit === "usd")} testId="v12-board-bar-price" /> : undefined,
           disabled: ask.disabled,
           busy,
           busyLabel: "Asking…",

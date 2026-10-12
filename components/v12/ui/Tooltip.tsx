@@ -48,7 +48,9 @@ export function TooltipBody({ name, line, shortcut, price }: TooltipContent) {
  * a press; drawn above the page and kept on screen (components/v12/ui/place.ts). The child must be one focusable
  * element; it gets aria-describedby pointing at the tooltip.
  */
-export function Tooltip({ children, side = "bottom", delay = TIP_DELAY_MS, disabled = false, named = false, ...content }: TooltipContent & {
+export function Tooltip({ children, side = "bottom", delay = TIP_DELAY_MS, disabled = false, named = false, pinned = false, ...content }: TooltipContent & {
+  /** Kept open by the caller (a tap or click on an ⓘ pins it): shown whatever the pointer does, until the caller lets go. */
+  pinned?: boolean;
   /** The control's own accessible name is already the tooltip's name: the description leaves it out, so it is not read twice. */
   named?: boolean;
   children: ReactElement<{ "aria-describedby"?: string }>;
@@ -60,7 +62,8 @@ export function Tooltip({ children, side = "bottom", delay = TIP_DELAY_MS, disab
   const anchor = useRef<HTMLSpanElement>(null);
   const tip = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [open, setOpen] = useState(false);
+  const [hovered, setOpen] = useState(false);
+  const open = hovered || pinned;
   const [at, setAt] = useState<{ left: number; top: number; side: Side } | null>(null);
 
   const clear = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } };
@@ -73,7 +76,6 @@ export function Tooltip({ children, side = "bottom", delay = TIP_DELAY_MS, disab
   const hide = useCallback(() => {
     clear();
     setOpen((was) => { if (was) lastHidden = Date.now(); return false; });
-    setAt(null);
   }, []);
 
   useEffect(() => clear, []);
@@ -82,11 +84,13 @@ export function Tooltip({ children, side = "bottom", delay = TIP_DELAY_MS, disab
     /* In the capture phase, so an Esc the overlay stack spends on a layer still hides the tooltip. */
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") hide(); };
     window.addEventListener("keydown", onKey, true);
-    window.addEventListener("scroll", hide, true);
+    /* A pinned tooltip stays where its owner put it; the owner lets go of it (Esc, a click elsewhere). */
+    if (!pinned) window.addEventListener("scroll", hide, true);
     return () => { window.removeEventListener("keydown", onKey, true); window.removeEventListener("scroll", hide, true); };
-  }, [open, hide]);
+  }, [open, pinned, hide]);
 
   useLayoutEffect(() => {
+    /* The place is measured before paint each time it opens, so a stale one is never seen; a pinned tooltip keeps its place when the pointer leaves. */
     if (!open || !tip.current) return;
     const target = (anchor.current?.firstElementChild ?? anchor.current) as HTMLElement | null;
     if (!target) return;

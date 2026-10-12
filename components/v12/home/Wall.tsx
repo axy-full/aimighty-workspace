@@ -1,6 +1,6 @@
 "use client";
 import type { CSSProperties, MouseEvent } from "react";
-import { wallLayout, type WallTile } from "@/lib/v12/home";
+import { clipFrameUrl, wallLayout, type WallTile } from "@/lib/v12/home";
 import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { FitText } from "./FitText";
 
@@ -10,7 +10,7 @@ import { FitText } from "./FitText";
  * clicking picks it (a "Picked" pill, the others fade, the bar opens its sheet). Remix opens Make with the take's own
  * recipe, where Make shows its price. A new workspace sees one quiet line instead of sample work.
  */
-export function Wall({ tiles, status, row, picked, onPick, onRemix, onMenu }: {
+export function Wall({ tiles, status, row, picked, onPick, onRemix, onMenu, onBroken, unloaded = 0 }: {
   tiles: readonly WallTile[];
   status: "loading" | "ready" | "error";
   /** Grid row height, px. */
@@ -20,6 +20,10 @@ export function Wall({ tiles, status, row, picked, onPick, onRemix, onMenu }: {
   onRemix: (tile: WallTile) => void;
   /** A right-click on a tile (components/v12/menus/WallMenu.tsx). */
   onMenu?: (event: MouseEvent, tile: WallTile) => void;
+  /** A tile's picture would not load (a take whose file is gone or not yet reachable): the wall leaves it out. */
+  onBroken?: (tile: WallTile) => void;
+  /** How many takes were left out because their picture would not load: with no tile left, the wall says so instead of "What you make shows here". */
+  unloaded?: number;
 }) {
   const cells = wallLayout(tiles.length);
   const style = { "--v12-wall-row": `${row}px` } as CSSProperties;
@@ -27,7 +31,7 @@ export function Wall({ tiles, status, row, picked, onPick, onRemix, onMenu }: {
     return (
       <div className="v12-hm-wall v12-hm-wall-empty" style={style} data-testid="v12-home-wall" data-state={status}>
         <p className="v12-hm-wall-note" data-testid="v12-home-wall-empty">
-          {status === "loading" ? "Reading your work…" : status === "error" ? "Your work could not be read. It shows here when it loads." : "What you make shows here. Describe a film, ad or idea below to start."}
+          {status === "loading" ? "Reading your work…" : unloaded > 0 ? "Your recent work could not be loaded. It shows here when it can." : status === "error" ? "Your work could not be read. It shows here when it loads." : "What you make shows here. Describe a film, ad or idea below to start."}
         </p>
       </div>
     );
@@ -40,9 +44,9 @@ export function Wall({ tiles, status, row, picked, onPick, onRemix, onMenu }: {
           <div key={tile.id} className="v12-hm-tile" style={{ gridColumn: cells[i].col, gridRow: cells[i].row }} data-picked={on ? "" : undefined}
             data-faded={picked && !on ? "" : undefined} data-testid="v12-home-tile" data-tile={tile.id} onContextMenu={onMenu ? (e) => onMenu(e, tile) : undefined}>
             {tile.media === "video"
-              ? <video className="v12-hm-tile-media" src={tile.url} muted playsInline preload="metadata" aria-hidden="true" />
+              ? <video className="v12-hm-tile-media" src={clipFrameUrl(tile.url)} muted playsInline preload="metadata" aria-hidden="true" onError={() => onBroken?.(tile)} />
               // eslint-disable-next-line @next/next/no-img-element -- Particl's own media route (/api/media), already sized
-              : <img className="v12-hm-tile-media" src={tile.url} alt="" loading="lazy" />}
+              : <img className="v12-hm-tile-media" src={tile.url} alt="" loading="lazy" decoding="async" onError={() => onBroken?.(tile)} />}
             <Tooltip name={`${tile.title} · ${tile.type}`} line="Make one like this: click to pick it, or right-click for more.">
               <button type="button" className="v12-hm-tile-pick" onClick={() => onPick(tile)} aria-pressed={on}
                 aria-label={`${on ? "Picked" : "Pick"}: ${tile.title}`} data-testid="v12-home-tile-pick" />
