@@ -132,9 +132,12 @@ test("settled per project counts only settled meter rows of this workspace", asy
 });
 
 test("an admin reads names; a workspace not billed in credits gets no figures", async () => {
+  /* A chat is its own person's (owner, 12 Oct): the admin is not shown the member's chat run at all, and the member reads the admin's press as a teammate's. */
   const admin = await read(A, { id: "u_admin", role: "admin" }, "prod_a");
-  const keyframes = admin.runs.find((r) => r.id === "thread:ach_a")!.steps.find((s) => s.title === "Keyframes")!;
-  expect(keyframes).toMatchObject({ by: "Admin", byYou: true });
+  expect(admin.runs.find((r) => r.id === "thread:ach_a")).toBeUndefined();
+  const own = await read(A, { id: "u_member", role: "member" }, "prod_a");
+  const keyframes = own.runs.find((r) => r.id === "thread:ach_a")!.steps.find((s) => s.title === "Keyframes")!;
+  expect(keyframes).toMatchObject({ by: "Teammate", byYou: false });
   const house = await read(HOUSE, { id: "u_member", role: "member" }, "prod_a");
   expect(house.inCredits).toBe(false);
   expect(house.projects).toEqual([]);

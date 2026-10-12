@@ -171,8 +171,10 @@ test("who may press follows each record's own rule, and the per-shot rule never 
   expect(pick(member, `board-render:${RUN_ONE}:4`)).toMatchObject({ canApprove: true, needsAdmin: false });
   expect(pick(other, `board-render:${RUN_ONE}:4`)).toMatchObject({ canApprove: false, why: "Only the person who asked Atomik for this run can approve its renders." });
   expect(pick(member, `board-render:${RUN_TWO}:2`)).toMatchObject({ canApprove: false, needsAdmin: true, why: "Members up to 40 cr a shot; an admin above it" });
-  /* A plan's step: any member, at its live price. */
-  expect(pick(other, "thread:ach_1").canApprove).toBe(true);
+  /* A plan's step is its own person's (owner, 12 Oct): another member does not see it, and an admin does not either while it needs nobody's tap above the member's. */
+  expect(other.items.find((i) => i.id === "thread:ach_1")).toBeUndefined();
+  expect(admin.items.find((i) => i.id === "thread:ach_1")).toBeUndefined();
+  expect(pick(member, "thread:ach_1").canApprove).toBe(true);
 });
 
 test("decisions read the meter of this workspace only, and name people as the usage ledger does", async () => {
@@ -180,7 +182,8 @@ test("decisions read the meter of this workspace only, and name people as the us
   const admin = await read(A, { id: "u_admin", role: "admin" });
   const done = (r: typeof member) => r.decided.find((d) => d.id === "thread-step:astp_done")!;
   expect(done(member)).toMatchObject({ what: "approved", by: "Teammate", byYou: false, outcome: { kind: "settled", credits: 9 } });
-  expect(done(admin)).toMatchObject({ by: "Admin", byYou: true });
+  /* Another member's chat decision is not the admin's to read (owner, 12 Oct). */
+  expect(done(admin)).toBeUndefined();
   /* A meter row of another workspace is never read: no figure, rather than its 77. */
   expect(member.decided.find((d) => d.id === "thread-step:astp_cross")?.outcome).toEqual({ kind: "unknown" });
   /* Turned down before anything was sent: nothing was charged. */
