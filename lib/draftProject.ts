@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { db } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
 import { isAgentId } from "./security/people-only";
+import { parseSampleMark, SAMPLE_SETTING_KEY } from "./demo/sample";
 
 type Exec = { execute(statement: InStatement): Promise<ResultSet> };
 
@@ -27,14 +28,32 @@ export async function ownsDraftProject(userId: string, projectId: string, ex: Ex
 }
 
 /**
+ * The marked sample production (lib/demo/mark.server.ts) is the marker's own `prj_wb_…` board, and it is meant for everyone: each viewer opens a copy of it
+ * (lib/demo/open.server.ts) linked to it and reads and writes its canvas. So it is shared for both, as it was before private boards were gated. An undone
+ * mark (`hiddenAt`) reads as none.
+ */
+export async function isMarkedSample(projectId: string, ex: Exec = db()): Promise<boolean> {
+  if (!isDraftProject(projectId)) return false;
+  const row = (await ex.execute({ sql: "SELECT value FROM settings WHERE key=? LIMIT 1", args: [SAMPLE_SETTING_KEY] })).rows[0];
+  if (!row) return false;
+  let raw: unknown = row.value;
+  try { raw = JSON.parse(String(row.value)); } catch { /* an unreadable mark marks nothing */ return false; }
+  return parseSampleMark(raw)?.projectId === projectId;
+}
+
+/** The serialized form of the flag the author sets on a shared board; a plain substring test on it keeps a workspace with no shared boards at one cheap pass. */
+const SHARED_FLAG = '"teamShared":true';
+const SHARED_BOARDS = `SELECT owner, project_id FROM workbench_projects WHERE instr(body, '${SHARED_FLAG}')>0 AND json_valid(body) AND json_extract(body,'$.teamShared')=1`;
+
+/**
  * Whether the author has shared this draft's board with the team: `teamShared: true` in the draft's saved body (set by the author, lane A's #667). Nothing
  * writes the flag on release/1, so this answers false for every board until it exists; it is the one place the gate learns about sharing. A shared board is
- * for teammates to read (view-only) as that PR decides; writes stay the owner's.
+ * for teammates to READ (view-only); writes stay the owner's.
  */
 export async function draftIsTeamShared(projectId: string, ex: Exec = db()): Promise<boolean> {
   if (!isDraftProject(projectId)) return false;
   const workspace = requireTenant().id;
-  const rows = (await ex.execute({ sql: "SELECT owner, project_id FROM workbench_projects WHERE json_valid(body) AND json_extract(body,'$.teamShared')=1", args: [] })).rows;
+  const rows = (await ex.execute({ sql: SHARED_BOARDS, args: [] })).rows;
   return rows.some((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id)) === projectId);
 }
 
@@ -47,18 +66,25 @@ export function currentPerson(): { id: string; role?: string } | null {
   return user && !isAgentId(user.id) ? { id: user.id, role: user.role } : null;
 }
 
-/** Whether `person` may reach the draft project `projectId` (its team canvas, its listing): its owner; a teammate only once the author has shared it. Any other project is the workspace's. */
-export async function mayReachProject(person: { id: string } | null, projectId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
+/**
+ * Whether `person` may reach the draft project `projectId`: its owner, for reading and writing; the marked sample, for everyone, as before; a board the
+ * author has shared (`teamShared`), for READING only. Any other project is the workspace's.
+ */
+export async function mayReachProject(person: { id: string } | null, projectId: string | null | undefined, access: "read" | "write" = "write", ex: Exec = db()): Promise<boolean> {
   if (!person || !isDraftProject(projectId)) return true;
-  return (await ownsDraftProject(person.id, projectId!, ex)) || (await draftIsTeamShared(projectId!, ex));
+  if (await ownsDraftProject(person.id, projectId!, ex)) return true;
+  if (await isMarkedSample(projectId!, ex)) return true;
+  return access === "read" && (await draftIsTeamShared(projectId!, ex));
 }
 
-/** A filter for lists of projects: what `person` may see among them. One read of the person's drafts (and of shared ones), then a set lookup per row. */
+/** A filter for lists of projects: what `person` may see among them (reading). One read of the person's drafts, of shared boards and of the sample mark, then a set lookup per row. */
 export async function projectLister(person: { id: string } | null, ex: Exec = db()): Promise<(projectId: string | null | undefined) => boolean> {
   if (!person) return () => true;
   const workspace = requireTenant().id;
   const own = new Set((await ex.execute({ sql: "SELECT project_id FROM workbench_projects WHERE owner=?", args: [person.id] })).rows.map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, person.id, String(row.project_id))));
-  const shared = new Set((await ex.execute({ sql: "SELECT owner, project_id FROM workbench_projects WHERE json_valid(body) AND json_extract(body,'$.teamShared')=1", args: [] })).rows
-    .map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id))));
-  return (projectId) => !isDraftProject(projectId) || own.has(projectId!) || shared.has(projectId!);
+  const shared = new Set((await ex.execute({ sql: SHARED_BOARDS, args: [] })).rows.map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id))));
+  const mark = (await ex.execute({ sql: "SELECT value FROM settings WHERE key=? LIMIT 1", args: [SAMPLE_SETTING_KEY] })).rows[0];
+  let sample: string | null = null;
+  if (mark) { try { sample = parseSampleMark(JSON.parse(String(mark.value)))?.projectId ?? null; } catch { sample = null; } }
+  return (projectId) => !isDraftProject(projectId) || own.has(projectId!) || shared.has(projectId!) || projectId === sample;
 }

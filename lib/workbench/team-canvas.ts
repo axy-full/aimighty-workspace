@@ -70,15 +70,16 @@ export function productionOfRoom(room: string, workspaceId: string): string | nu
 /**
  * Only a production of this workspace has a team canvas, and a private board's (`prj_wb_…`, lib/draftProject.ts) is open only to the draft's owner (a
  * teammate once the author has shared the board). Whoever may not is answered exactly as for a production that does not exist, so nothing says it does.
- * `actor` is the person asking; omitted, the signed-in person of this request. Background work and Atomik runs (no person) are not asked.
+ * `actor` is the person asking; omitted, the signed-in person of this request. `access` is "write" by default: a board the author has shared (`teamShared`) is a
+ * teammate's to READ only, and the marked sample is everyone's (lib/draftProject.ts). Background work and Atomik runs (no person) are not asked.
  */
-export async function requireProduction(productionId: string, actor?: string | null) {
+export async function requireProduction(productionId: string, actor?: string | null, access: "read" | "write" = "write") {
   if (!ID.test(productionId)) throw new TeamCanvasError("Open a saved project first.", 400);
   await ready();
   const row = (await db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [productionId] })).rows[0];
   if (!row) throw new TeamCanvasError("That project is not in this workspace.", 404);
   const person = actor === undefined ? currentPerson() : actor && !isAgentId(actor) ? { id: actor } : null;
-  if (!(await mayReachProject(person, productionId))) throw new TeamCanvasError("That project is not in this workspace.", 404);
+  if (!(await mayReachProject(person, productionId, access))) throw new TeamCanvasError("That project is not in this workspace.", 404);
 }
 
 export async function readTeamCanvas(productionId: string): Promise<{ canvas: TeamCanvas; revision: number } | null> {

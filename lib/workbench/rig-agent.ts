@@ -247,7 +247,7 @@ export type RigAgentAskTerms = { limit: number; jobCeiling: number; planning: nu
  * run in progress whose wake is due is nudged, so a board open in a browser keeps it moving.
  */
 export async function rigAgentState(productionId: string, viewer: string, draftId?: string | null, attachments: readonly string[] = []): Promise<{ enabled: boolean; run: RigAgentRunView | null; ask: RigAgentAskTerms | null }> {
-  await requireProduction(productionId, viewer);
+  await requireProduction(productionId, viewer, "read");
   const enabled = rigAgentEnabled();
   /* Files the ask would attach are priced in: checked here as the ask checks them (an unknown or foreign one is refused). */
   const attached = attachments.length ? attachedOf(await checkedAttachments(productionId, attachments)) : [];

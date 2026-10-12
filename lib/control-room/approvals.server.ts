@@ -1,3 +1,4 @@
+import { projectLister } from "@/lib/draftProject";
 import { db, ready } from "@/lib/db";
 import { platformDb, platformReady } from "@/lib/platform";
 import { currentTenant } from "@/lib/tenant";
@@ -172,9 +173,11 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
   const enabled = rigAgentEnabled();
   const items: QueueItem[] = [];
   const productions: string[] = [];
+  /* A run on a private board (`prj_wb_…`) is its owner's alone: its goal, plan and titles are not listed to anyone else (lib/draftProject.ts). */
+  const listed = await projectLister({ id: viewer.id });
   for (const id of ids) {
     const run = await getRun(db(), id);
-    if (!run) continue;
+    if (!run || !listed(run.productionId)) continue;
     const view = runView(run, await stepsOf(db(), run.id), viewer.id, await ledgerOf(run), await planApprovalOf(db(), run.id));
     productions.push(run.productionId);
     const open = { kind: "board" as const, productionId: run.productionId, draftId: null };
