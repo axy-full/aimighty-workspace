@@ -252,3 +252,26 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 
 - **Enhance in the board bar** (from #657, owner 11 Oct: not now). In the board bar Atomik plans the steps and writes each prompt, so a switch there would change nothing a person typed. To make it real, enhance each planned still/clip step server-side, with its real text-model cost in the plan's total and approved once (rule 14), and label each take Enhanced/Raw like Make's. Done when: the switch shows in the board bar when a placed image/video card is selected (v14); the plan prices enhancement per step; the approval covers it; tests prove the approved total equals what's shown, and that nothing is enhanced or charged with the switch off.
 - **Teammates editing boards** (from #667, owner 11 Oct): next, with a "this changed since you opened it, reload" rule; no silent overwrite.
+
+## Owner decisions (Akshay, 12 Oct morning)
+
+1. **Deploy:** the owner merged #671 into main (a merge commit) and is deploying in Coolify. On "deployed", the lead runs read-only post-deploy checks: health/readiness, the sign-in page, the Make price with Enhance on and off, model menus listing Claude, OpenAI, Grok and Gemini, Credits & billing from the avatar, no "Moleculr", and the Google button hidden. No paid generations.
+2. **Port 8765:** the owner killed the server. Lanes never bind 0.0.0.0; 127.0.0.1 only.
+3. **Guard changes, the owner's direct yes to all five:**
+   - #661: the publicSitePages guard says "Business".
+   - #661: remove the stale CreditsBilling.tsx exception in tests/helpers/paidRoutes.ts.
+   - #665: the five-minute test is rewritten for v14 (lane A's draft).
+   - #664: the one-design guard names v14 as the design, with v12 kept as reference.
+   - The money export spec (r1-port-credit-units-workbench) pins its seed time.
+4. **Merges into release/1** (green CI plus a fresh review of the final head): #664, #667 (view-only), #670, then #661, then #654, #655 and #656.
+5. **#670:** one press is one job for the 200 cr line. The house is NOT exempt.
+6. **#668 Platform console:**
+   - Yes to the platform_audit table. It's a migration, so it ships in the next deploy after the owner's backup.
+   - Build the grant_budget_usd monthly cap next.
+   - Invites: an "All" filter comes later.
+   - Stays NEEDS AKSHAY.
+7. **#669 Workspace settings:** narrow /api/usage?rows=1 so members see only their own rows. Stays NEEDS AKSHAY.
+8. **#665:** once #661 is in, send screenshots of a non-house workspace and wait for the owner's yes.
+9. **Remotion scaffold:** no, not now.
+10. **Pricing gaps** (the 25% spend flag; the internal flag's pricing override and margin exclusion): open items, NEEDS AKSHAY, after the console.
+11. **Lanes:** keep 3 unless the owner says usage is above 50%. Never touch main, Coolify or deploys.
