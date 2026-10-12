@@ -135,7 +135,7 @@ test.describe("Plan & credits, as the code has it", () => {
     const plans = DEFAULT_PLANS;
     expect(planView(plans, null)).toEqual({ meta: "No plan on record", included: null, renews: null, status: null });
     const v = planView(plans, { planId: "studio", status: "active", currentPeriodEnd: Date.UTC(2026, 10, 1) / 1000 });
-    expect(v).toEqual({ meta: "Studio · $49 a month", included: 400, renews: { word: "Renews", date: "1 Nov 2026" }, status: null });
+    expect(v).toEqual({ meta: "Studio", included: 400, renews: { word: "Renews", date: "1 Nov 2026" }, status: null });
     expect(planView(plans, { planId: "invite", status: "past_due" }).included).toBeNull();
     expect(planView(plans, { planId: "invite", status: "past_due" }).status).toBe("past due");
   });
