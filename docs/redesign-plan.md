@@ -269,6 +269,9 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
   - Setting an element's current version (`app/api/rig/attributes/[id]/current`) clears approvals on takes in other people's shots. Decide whether that side effect should follow the owner-or-admin rule.
 - **The phone's Plan & credits page still shows the old plans** (found in the #665 shots, 12 Oct). On phones, Settings › Plan & credits reads "Studio · $49 a month" with Change plan; the desktop shows the owner's final plans from #661 (Explore, Create, Master; Individual/Business). Bring the phone page onto the same plan display, with the owner's yes on screenshots.
 - **The workbench warm-up** (`tests/workbench.warmup.ts`, #682) still writes the old `newInterfaceWorkspaces` key, which #665's switch ignores. Harmless; tidy it when #665 lands.
+- **Retired plan prices on /billing** (from the #683 review): `components/commercial/BillingClient.tsx:217` still shows a Studio subscriber a "$49 / month" card. No workspace can hold that subscription while checkout is closed. Retire it when checkout work starts, to keep the owner's "no Studio · $49 anywhere".
+- **"Current plan" on phones** comes from the subscription alone, while desktop also honours an admin's plan label (#683 review). Display only; align when the phone page next changes.
+- **Copy-link nudge, option (c)** (owner, 12 Oct 21:05): "Copy link" on a private board offers "Share with team" first. A small UI follow-up after #681.
 
 ## Housekeeping rules (owner, 12 Oct)
 
