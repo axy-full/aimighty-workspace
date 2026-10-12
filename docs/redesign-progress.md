@@ -35,7 +35,7 @@ The running log of the overnight redesign build. A restarted session reads this 
 
 ## Prices with no live quote path ("quoted")
 
-Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of #655 at cc4270cc, 12 Oct. The owner's override lets these show "quoted" until a live quote path exists.
+Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/1 after #656, 13 Oct. The owner's override lets these show "quoted" until a live quote path exists.
 
 - Lip-sync
 - Make turnaround
@@ -51,6 +51,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of #655 at 
 - A language of a finished cut: dubbed voice, lip-sync and on-screen text (Deliver)
 - A still format's run (Campaign › Formats)
 - A format with no brief or engine behind it (Campaign › Formats)
+- A saved "/" skill with a parameter still to fill in
+- A saved "/" skill with an engine to choose
+- A saved "/" skill with a step that has no list rate
 - Transfer motion (Make › Remix)
 - Swap an object (Make › Remix)
 - Cut into clips (Make › Remix)
@@ -240,3 +243,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of #655 at 
 - 13 Oct, 03:48 IST: **#688 CI failed on guards** (run 38312050459). (1) demo-gaps-l5-tokens:169: token claim 404 instead of 403. Code fix: people-only first, then ownership. (2) demo-s12-sample-workspace-off:172: the sample refusal must come before ownership. Code fix. (3) **noVendorCostToCustomers:241**: the guard seeds the chat as created_by 'u_member' (line 105) and expects the workspace OWNER to read GET atomik/[id] and steps/[id] (200), so the owner's 'chats are their person's' rule conflicts with it. NEEDS the owner's direct word. Recommended: a setup-only seed change so the chat is the owner's (created_by = owner); the scan stays meaningful and others get 404. (4) demo-int-board-everyone:62 at 1920 (layout): lane C is checking whether it's #688 or a flake. **Merged #683 (07ed94f9).** #656 in CI.
 - 13 Oct, 04:04 IST: #688 at 30aae347: people-only and sample refusals now run before ownership (both guards pass); noVendorCostToCustomers left failing for the owner's word; the 1920 layout failure is a flake (logged). #688 waits on the owner.
 - 13 Oct, 04:31 IST: #656 CI failed: social-v12:50/:117 at 1440 and 1920 (Make's 'Describe it' textbox not found after the Social → Make audio handoff). release/1 07ed94f9 is green (run 38314787113), so the cause is in #656. Lane A is fixing it in code.
+- 13 Oct, 05:29 IST: **Merged #656 (P6-d, the '/' skills list in the bar, each item on its button's priced route; Opus approved 20dc31ed, later deltas lead-reviewed, incl. the Bar's combobox role only while '/' is open; CI 24/24 on 07ed94f9).** The 'quoted' list above was regenerated from unpriced.ts.
