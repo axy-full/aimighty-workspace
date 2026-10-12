@@ -265,6 +265,7 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 - **After #681 merges, from the #680 review** (12 Oct):
   - `lib/workAccess.ts`'s `projectMaker` scans and parses every draft on each non-admin check. Swap it for #681's indexed `ownsDraftProject`, so "maker" has one definition.
   - `POST /api/shots` lets any member add shots to any project, a private board's included. Gate it with #681's private-board rule.
+  - `POST /api/projects {productionId}` lets any member add a project to any production, a private board's included. Under #681 that would list the production, under the private board's name, to everyone. Gate it with the owner-or-admin rule (#680 round-2 review). Related owner question: in a production holding several people's boards, may any one board's owner rename it or mark it delivered?
   - Setting an element's current version (`app/api/rig/attributes/[id]/current`) clears approvals on takes in other people's shots. Decide whether that side effect should follow the owner-or-admin rule.
 
 ## Housekeeping rules (owner, 12 Oct)
