@@ -12,6 +12,7 @@ import { cycleBounds } from "./cycle";
 import { billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
 import { creditsApply } from "./credits";
 import { isHouseWorkspace } from "./houseWorkspace";
+import { batchTally, takesToCome, type BatchRef } from "./batchLine";
 import { LEDGER_UNIT_PAUSED, ledgerOpenTx, restateFactor, workspaceUnitTx } from "./ledgerUnit";
 import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
@@ -434,6 +435,11 @@ type ReservationOptions = {
    * token, no agent, no author). Only such a caller sets it; any other reservation with no actor is judged as no admin's.
    */
   continuation?: boolean;
+  /**
+   * The press this take belongs to (lib/batchLine.ts): guardrail 4 counts one press as one job, so the takes already reserved under this batch id
+   * and the ones still to come are judged with this one.
+   */
+  batch?: BatchRef;
 };
 export async function reserveGenerationSpend(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   // Local libsql clients share a connection; never interleave transactions on it.
@@ -466,6 +472,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   // Its private unit never appears in the refusal sent to customers.
   const legacyCap = projectId ? (await db().execute({ sql: "SELECT cap_usd,cap_credits,cap_unlocked FROM projects WHERE id=?", args: [projectId] })).rows[0] : null;
   const limits = await workspaceLimits();
+  /* The press's other takes already reserved (read here, never inside the platform's write): one press is one job for guardrail 4. */
+  const siblings = await batchTally(options.batch, event.id);
   const shotCapExempt = options.shotCapExempt ?? currentTenant()?.user?.role === "admin";
   /* Guardrail 4's admin tap (lib/approvalRule.ts): the caller said (a held take's release decides from its author), else the signed-in admin's, else
      (background work for a person, nobody signed in) the job's author: the workspace's owner or an admin member. A token, an MCP client, an agent
@@ -613,8 +621,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
        (lib/credits.ts), against the same line, worded without a figure. A workspace that is neither the house nor on the platform's credits is not judged. */
     const house = isHouseWorkspace(ws);
     if ((paid || house) && !prior && lineJudged && (house ? cost > 0 : held > 0)) {
-      const atCost = billCreditsWith(cost, 1, terms.creditUsd) * keptBand;
-      const stop = jobLineVerdict({ credits: house ? atCost : held, lineCredits: jobApprovalLineCredits(terms.creditUsd), machine: machineCaller, isAdmin: adminTap, figures: creditsApply(ws) });
+      const more = takesToCome(options.batch, siblings);
+      const atCost = billCreditsWith(siblings.usd + cost * keptBand * more, 1, terms.creditUsd);
+      const stop = jobLineVerdict({ credits: house ? atCost : siblings.credits + held * more, lineCredits: jobApprovalLineCredits(terms.creditUsd), machine: machineCaller, isAdmin: adminTap, figures: creditsApply(ws) });
       if (stop.blocked) throw new SpendReservationError(stop.line, JOB_LINE_STATUS, true);
     }
     /* Last, once everything else admits it: a take refused here waits only for a slot. Its slot and its

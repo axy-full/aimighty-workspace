@@ -267,6 +267,115 @@ test("the reservation at the line: exactly 200 cr is allowed, 201 cr is refused;
   });
 });
 
+test("one press is one job at the reservation: a press of 4 x 60 cr from a member is refused with nothing reserved; an admin's is allowed; a token's is refused; a single 60 cr take is unchanged; a press that sums to exactly 200 cr is allowed, 201 cr is not", async () => {
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const { ready } = await import("../../lib/db");
+  const { creditsAtTerms, currentBillingTerms } = await import("../../lib/billingTerms");
+  await platformReady();
+  const terms = currentBillingTerms("video", "mock");
+  const per = creditsAtTerms(1000, terms) / 1000;
+  const costFor = (credits: number) => { let usd = (credits - 0.5) / per; for (let i = 0; i < 20 && creditsAtTerms(usd, terms) !== credits; i++) usd *= credits / creditsAtTerms(usd, terms); return usd; };
+  const funded = async (name: string) => {
+    const ws = workspace(`press_${name}_${run}`);
+    await platformDb().execute({ sql: `INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,?,?,?)`, args: [`grant_press_${name}_${run}`, ws.id, 100_000, "Test", 0] });
+    return ws;
+  };
+  const reserved = async (id: string) => Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM generation_reservations WHERE id=?", args: [id] })).rows[0].n);
+  const refusal = async (work: () => Promise<unknown>) => { try { await work(); } catch (e) { return e as Error & { status?: number }; } return null; };
+  const batch = (name: string, size: number) => ({ id: `b_${name}${run}`, size });
+  const sixty = costFor(60);
+  expect(creditsAtTerms(sixty, terms)).toBe(60);
+  /* A member: the first take of 4 x 60 = 240 cr is refused, so are the others, and nothing is reserved for any of them. */
+  await runInTenant(await funded("member"), async () => {
+    await ready();
+    for (let n = 1; n <= 4; n++) {
+      const e = await refusal(() => reserveGenerationSpend(event(`gen_press_m${n}_${run}`, sixty), { batch: batch("m", 4) }));
+      expect(e, `take ${n}`).toMatchObject({ status: 403 });
+      expect(e!.message).toMatch(/An admin has to start it\./);
+      expect(await reserved(`gen_press_m${n}_${run}`), `take ${n}`).toBe(0);
+    }
+    /* A single 60 cr take, and a press of 3 (180 cr), are unchanged. */
+    await reserveGenerationSpend(event(`gen_press_single_${run}`, sixty));
+    expect(await reserved(`gen_press_single_${run}`)).toBe(1);
+    await reserveGenerationSpend(event(`gen_press_three_${run}`, sixty), { batch: batch("t", 3) });
+    expect(await reserved(`gen_press_three_${run}`)).toBe(1);
+  }, { user: person("u_member", "member") });
+  /* An admin's tap clears the press of 4; a token is refused outright. */
+  await runInTenant(await funded("admin"), async () => {
+    await ready();
+    await reserveGenerationSpend(event(`gen_press_a1_${run}`, sixty), { batch: batch("a", 4) });
+    expect(await reserved(`gen_press_a1_${run}`)).toBe(1);
+  }, { user: person("u_admin", "admin") });
+  await runInTenant(await funded("token"), async () => {
+    await ready();
+    const e = await refusal(() => reserveGenerationSpend(event(`gen_press_t1_${run}`, sixty), { batch: batch("k", 4), token: { id: "tok_press", capUsd: null, capCredits: null } }));
+    expect(e).toMatchObject({ status: 403 });
+    expect(e!.message).toMatch(/never start it/);
+    expect(await reserved(`gen_press_t1_${run}`)).toBe(0);
+  }, { user: person("u_admin", "admin"), token: { id: "tok_press", name: "agent", scope: "render", capUsd: null } });
+  /* Exactly 200 cr as one press (4 x 50) is allowed; 201 cr (3 x 67) is not. */
+  await runInTenant(await funded("edge"), async () => {
+    await ready();
+    const fifty = costFor(50);
+    await reserveGenerationSpend(event(`gen_press_e200_${run}`, fifty), { batch: batch("e", 4) });
+    expect(await reserved(`gen_press_e200_${run}`)).toBe(1);
+    const e = await refusal(() => reserveGenerationSpend(event(`gen_press_e201_${run}`, costFor(67)), { batch: batch("f", 3) }));
+    expect(e).toMatchObject({ status: 403 });
+    expect(await reserved(`gen_press_e201_${run}`)).toBe(0);
+  }, { user: person("u_member", "member") });
+  /* The takes already reserved under the id count: after 2 x 60 cr, a third of 60 passes (180) and a fourth does not (240), though no size was named. */
+  await runInTenant(await funded("acc"), async () => {
+    await ready();
+    const { db } = await import("../../lib/db");
+    for (let n = 1; n <= 3; n++) {
+      const id = `gen_press_acc${n}_${run}`;
+      await reserveGenerationSpend(event(id, sixty), { batch: { id: `b_acc${run}`, size: 1 } });
+      await db().execute({ sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at) VALUES(?,?,?,?,'t',?,'running','u_member',?,?)`,
+        args: [id, "video", "byteplus", "mock", JSON.stringify({ batchId: `b_acc${run}` }), Date.now(), Date.now()] });
+    }
+    const e = await refusal(() => reserveGenerationSpend(event(`gen_press_acc4_${run}`, sixty), { batch: { id: `b_acc${run}`, size: 1 } }));
+    expect(e).toMatchObject({ status: 403 });
+    expect(await reserved(`gen_press_acc4_${run}`)).toBe(0);
+  }, { user: person("u_member", "member") });
+});
+
+test("one press is one job in the house, at cost: 4 x $6 (60 cr at cost each) from a member is refused with nothing reserved; an admin's is allowed; a token's is refused; $5 x 4 (exactly $20) is allowed", async () => {
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const { ready } = await import("../../lib/db");
+  await platformReady();
+  const house = { ...workspace(`press_house_${run}`), id: "ws_legacy", slug: "house", name: "House", legacy: true, usesPlatformKeys: false };
+  const reserved = async (id: string) => Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM generation_reservations WHERE id=?", args: [id] })).rows[0].n);
+  const refusal = async (work: () => Promise<unknown>) => { try { await work(); } catch (e) { return e as Error & { status?: number }; } return null; };
+  await keepingHouseJobsClean(async () => {
+    await runInTenant(house, async () => {
+      await ready();
+      for (let n = 1; n <= 4; n++) {
+        const e = await refusal(() => reserveGenerationSpend(event(`gen_hpress_m${n}_${run}`, 6), { batch: { id: `b_hm${run}`, size: 4 } }));
+        expect(e, `take ${n}`).toMatchObject({ status: 403 });
+        expect(e!.message).toMatch(/An admin has to start it\./);
+        expect(e!.message).not.toMatch(/\bcr\b|\d/);
+        expect(await reserved(`gen_hpress_m${n}_${run}`), `take ${n}`).toBe(0);
+      }
+      /* A single $6 job, and a press of 4 x $5 (exactly the line), are unchanged. */
+      await reserveGenerationSpend(event(`gen_hpress_single_${run}`, 6));
+      await reserveGenerationSpend(event(`gen_hpress_edge_${run}`, 5), { batch: { id: `b_he${run}`, size: 4 } });
+      expect(await reserved(`gen_hpress_edge_${run}`)).toBe(1);
+      const t = await refusal(() => reserveGenerationSpend(event(`gen_hpress_t_${run}`, 6), { batch: { id: `b_ht${run}`, size: 4 }, token: { id: "tok_hp", capUsd: null, capCredits: null } }));
+      expect(t).toMatchObject({ status: 403 });
+      expect(await reserved(`gen_hpress_t_${run}`)).toBe(0);
+    }, { user: person("u_member", "member") });
+    await runInTenant(house, async () => {
+      await ready();
+      await reserveGenerationSpend(event(`gen_hpress_a_${run}`, 6), { batch: { id: `b_ha${run}`, size: 4 } });
+      expect(await reserved(`gen_hpress_a_${run}`)).toBe(1);
+    }, { user: person("u_admin", "admin") });
+  });
+});
+
 test("no actor: a reservation with nobody behind it is refused over the line unless its caller marks it a continuation; a known author is judged as themselves", async () => {
   const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
   const { runInTenant } = await import("../../lib/tenant");

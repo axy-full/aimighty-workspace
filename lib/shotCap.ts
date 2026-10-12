@@ -8,6 +8,7 @@ import { paidByPlatform } from "./platformSpend";
 import { isHouseWorkspace } from "./houseWorkspace";
 import type { VendorKeyName } from "./vendorKeys";
 import { isAgentId } from "./security/people-only";
+import { NO_BATCH, takesToCome, type BatchRef, type BatchTally } from "./batchLine";
 import { spentBy } from "./caps";
 
 /**
@@ -45,19 +46,22 @@ export async function shotCapGate(o: { shotId: string; code: string; takeUsd: nu
  * worded without a figure. Work on no credit of the platform's and not the house (an own-key workspace, if one ever exists) is not judged.
  * Null when nothing stops it.
  */
-export function jobLineGateAt(o: { credits: number; usd: number; band?: number; key: VendorKeyName; isAdmin: boolean; machine: boolean }): string | null {
+export function jobLineGateAt(o: { credits: number; usd: number; band?: number; key: VendorKeyName; isAdmin: boolean; machine: boolean; batch?: { ref?: BatchRef; tally: BatchTally } }): string | null {
   const ws = currentTenant()?.workspace;
   const house = isHouseWorkspace(ws);
   if (!house && !paidByPlatform(o.key)) return null;
   const band = Number.isInteger(o.band) && o.band! > 1 ? o.band! : 1;
-  const credits = house ? billCreditsWith(o.usd, 1, creditUsd()) * band : o.credits * band;
+  /* One press is one job: the takes of its batch already reserved, plus this one and those to come, each at its hold. */
+  const tally = o.batch?.tally ?? NO_BATCH;
+  const more = takesToCome(o.batch?.ref, tally);
+  const credits = house ? billCreditsWith(tally.usd + o.usd * band * more, 1, creditUsd()) : tally.credits + o.credits * band * more;
   const v = jobLineVerdict({ credits, lineCredits: jobApprovalLineCredits(creditUsd()), isAdmin: o.isAdmin, machine: o.machine, figures: creditsApply(ws) });
   return v.blocked ? v.line : null;
 }
 
 /** The same, for a take's engine cost: its price in credits (a take that holds its ceiling counts at its band). */
-export function jobLineGate(o: { takeUsd: number; modelId: string; band?: number; key: VendorKeyName; isAdmin: boolean; machine: boolean }): string | null {
-  return jobLineGateAt({ credits: billCredits(o.takeUsd, o.modelId), usd: o.takeUsd, band: o.band, key: o.key, isAdmin: o.isAdmin, machine: o.machine });
+export function jobLineGate(o: { takeUsd: number; modelId: string; band?: number; key: VendorKeyName; isAdmin: boolean; machine: boolean; batch?: { ref?: BatchRef; tally: BatchTally } }): string | null {
+  return jobLineGateAt({ credits: billCredits(o.takeUsd, o.modelId), usd: o.takeUsd, band: o.band, key: o.key, isAdmin: o.isAdmin, machine: o.machine, batch: o.batch });
 }
 
 /**

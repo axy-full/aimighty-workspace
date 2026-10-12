@@ -109,6 +109,7 @@ import {
   RENDER_RATIOS,
 } from "@/lib/identities";
 import { isBatchId } from "@/lib/variations";
+import { batchRefOf, batchTally } from "@/lib/batchLine";
 import { uploadSourceParams } from "@/lib/sourceClip";
 import { jobLineGate, shotCapGate } from "@/lib/shotCap";
 import { isAgentId } from "@/lib/security/people-only";
@@ -1386,7 +1387,9 @@ export async function executeGenerationAdmission(
       }
       /* Guardrail 4: a job over the approval line needs an admin's own tap, whatever the rule or shot (lib/approvalRule.ts). */
       {
-        const over = jobLineGate({ takeUsd: estStillUsd, modelId, key: renderKeyNameFor(model.provider), isAdmin: got.user.role === "admin", machine: got.token != null || isAgentId(got.user.id) || options.run?.auto === true });
+        const batchRef = batchRefOf(body);
+        const over = jobLineGate({ takeUsd: estStillUsd, modelId, key: renderKeyNameFor(model.provider), isAdmin: got.user.role === "admin", machine: got.token != null || isAgentId(got.user.id) || options.run?.auto === true,
+          batch: { ref: batchRef, tally: await batchTally(batchRef) } });
         if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
       }
       /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
@@ -1489,7 +1492,7 @@ export async function executeGenerationAdmission(
               shotId: stillShot,
               createdBy: got.user.id,
             },
-            { token: got.token, run: options.run },
+            { token: got.token, run: options.run, batch: batchRefOf(body) },
           );
         } catch (e) {
           await meter({
@@ -1687,7 +1690,7 @@ export async function executeGenerationAdmission(
             shotId: stillShot,
             createdBy: got.user.id,
           },
-          { token: got.token, run: options.run },
+          { token: got.token, run: options.run, batch: batchRefOf(body) },
         );
       } catch (e) {
         /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik
@@ -2068,7 +2071,9 @@ export async function executeGenerationAdmission(
     }
     /* Guardrail 4: a job over the approval line needs an admin's own tap, whatever the rule or shot (lib/approvalRule.ts); its hold counts. */
     {
-      const over = jobLineGate({ takeUsd: estUsd, modelId, band, key: renderKeyNameFor(model.provider), isAdmin: got.user.role === "admin", machine: got.token != null || isAgentId(got.user.id) || options.run?.auto === true });
+      const batchRef = batchRefOf(body);
+      const over = jobLineGate({ takeUsd: estUsd, modelId, band, key: renderKeyNameFor(model.provider), isAdmin: got.user.role === "admin", machine: got.token != null || isAgentId(got.user.id) || options.run?.auto === true,
+        batch: { ref: batchRef, tally: await batchTally(batchRef) } });
       if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
     }
     /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
@@ -2382,7 +2387,7 @@ export async function executeGenerationAdmission(
           createdBy: got.user.id,
         },
         /* Cinema Studio holds its quote times its band, recorded on its meter row (lib/cinemaHold.ts). */
-        { token: got.token, run: options.run, holdBand: band },
+        { token: got.token, run: options.run, holdBand: band, batch: batchRefOf(body) },
       );
     } catch (e) {
       /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik

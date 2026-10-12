@@ -249,3 +249,69 @@ test("the house is judged at cost: a member over the line is told an admin must 
     }, "ws_legacy", { ...admin, token: { id: "tok_g4h", name: "agent", scope: "render", capUsd: null } } as AdmissionActor);
   });
 });
+
+/* One press is one job: Seedance 2.0 at 1080p for 10 s is 57 cr a take, so a press of 4 is 228 cr as one job (over the line) and a press of 3 is 171 cr (under it). */
+const TAKE = { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", projectId: "project", ratio: "16:9", resolution: "1080p", duration: 10 };
+const take = (batch: string, variation: number, size?: number) => ({ ...TAKE, batchId: batch, variation, ...(size ? { batchSize: size } : {}) });
+let batchNo = 0;
+const batchId = () => `b_g4${Math.random().toString(36).slice(2, 8)}${++batchNo}`;
+
+test("one press is one job: 4 x 57 cr from a member is refused at the quote and at every take, and nothing is reserved for any take; a single take, and a press of 3, are unchanged", async () =>
+  scope("g4-batch", async (service) => {
+    const single = await quoteRoute(service).POST(quoteRequest(TAKE));
+    expect(single.status, JSON.stringify(await single.clone().json())).toBe(200);
+    expect((await single.json()).estimatedCredits).toBe(57);
+    const id = batchId();
+    const before = [(await rows()).length, (await meters()).length];
+    for (let variation = 1; variation <= 4; variation++) {
+      const q = await quoteRoute(service).POST(quoteRequest(take(id, variation, 4)));
+      expect(q.status, `take ${variation}: ${JSON.stringify(await q.clone().json())}`).toBe(403);
+      expect(await q.json()).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/An admin has to start it\./) });
+      const pressed = await press(service, take(id, variation, 4), `g4-batch4-${id}-${variation}`);
+      expect(pressed.status, `take ${variation}`).toBe(403);
+      expect(await pressed.json()).toMatchObject({ needsAdmin: true });
+    }
+    expect([(await rows()).length, (await meters()).length], "nothing created, nothing reserved for any take").toEqual(before);
+    /* A single 57 cr take is unchanged. */
+    expect((await press(service, TAKE, `g4-single-${id}`)).status).toBeLessThan(300);
+    /* A press of 3 (171 cr as one job) goes, every take. */
+    const three = batchId();
+    for (let variation = 1; variation <= 3; variation++)
+      expect((await press(service, take(three, variation, 3), `g4-batch3-${three}-${variation}`)).status, `take ${variation}`).toBeLessThan(300);
+  }, "g4-batch", member));
+
+test("one press is one job: the takes already reserved under its batch id count, so a batch that names no size is stopped at the take that passes the line", async () =>
+  scope("g4-batch", async (service) => {
+    const id = batchId();
+    for (let variation = 1; variation <= 3; variation++)
+      expect((await press(service, take(id, variation), `g4-acc-${id}-${variation}`)).status, `take ${variation}`).toBeLessThan(300);
+    const before = [(await rows()).length, (await meters()).length];
+    /* 57 x 4 = 228 cr: the fourth take of the same press is told an admin must start it. */
+    const fourth = await press(service, take(id, 4), `g4-acc-${id}-4`);
+    expect(fourth.status).toBe(403);
+    expect(await fourth.json()).toMatchObject({ needsAdmin: true });
+    expect([(await rows()).length, (await meters()).length]).toEqual(before);
+  }, "g4-batch", member));
+
+test("one press is one job: an admin's tap clears a press of 4 x 57 cr, every take; a token is refused at the first", async () => {
+  await scope("g4-batch", async (service) => {
+    const id = batchId();
+    const before = (await meters()).length;
+    for (let variation = 1; variation <= 4; variation++) {
+      const q = await quoteRoute(service).POST(quoteRequest(take(id, variation, 4)));
+      expect(q.status, `quote ${variation}: ${JSON.stringify(await q.clone().json())}`).toBe(200);
+      const made = await press(service, take(id, variation, 4), `g4-admin-batch-${id}-${variation}`);
+      expect(made.status, `take ${variation}: ${JSON.stringify(await made.clone().json())}`).toBeLessThan(300);
+    }
+    expect((await meters()).length - before).toBe(4);
+  }, "g4-batch", admin);
+  await scope("g4-batch", async (service) => {
+    const id = batchId();
+    const before = [(await rows()).length, (await meters()).length];
+    const q = await quoteRoute(service).POST(quoteRequest(take(id, 1, 4)));
+    expect(q.status).toBe(403);
+    expect(await q.json()).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/never start it\./) });
+    expect((await press(service, take(id, 1, 4), `g4-token-batch-${id}`)).status).toBe(403);
+    expect([(await rows()).length, (await meters()).length]).toEqual(before);
+  }, "g4-batch", { ...admin, token: { id: "tok_g4b", name: "agent", scope: "render", capUsd: null } } as AdmissionActor);
+});

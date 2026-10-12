@@ -599,8 +599,8 @@ export function useComposer(options: {
           const request = (variation: number): DispatchRequest => model.audioTask
             ? {
                 endpoint: "/api/audio",
-                quoteBody: { ...now.audioBody!, batchId, variation },
-                body: { ...now.audioBody!, projectId: mapping.productionProjectId, shotId: mapping.shotId, batchId, variation },
+                quoteBody: { ...now.audioBody!, batchId, variation, batchSize: count },
+                body: { ...now.audioBody!, projectId: mapping.productionProjectId, shotId: mapping.shotId, batchId, variation, batchSize: count },
               }
             : {
                 endpoint: "/api/generate",
@@ -608,7 +608,7 @@ export function useComposer(options: {
                   /* Every take of the batch goes in the words as sent: the film vocabulary written in, the setup as data. */
                   prompt: now.sent.prompt.trim(), kind: model.type === "video" ? "video" : "image", model: { id: model.id }, mapping,
                   ratio: settings.ratio, resolution: settings.resolution, duration: settings.duration, references: references(), firstFrameAssetId: "",
-                  batch: { id: batchId, variation }, shotSpec: now.sent.shotSpec, cinema: now.sent.cinema,
+                  batch: { id: batchId, variation, size: count }, shotSpec: now.sent.shotSpec, cinema: now.sent.cinema,
                   ...(now.seed !== null ? { seed: variationSeed(now.seed, variation) } : {}),
                   ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },
