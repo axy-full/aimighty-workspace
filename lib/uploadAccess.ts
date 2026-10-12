@@ -2,6 +2,7 @@ import type { InStatement, ResultSet } from "@libsql/client";
 import { db, ready } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
 import { MediaSourceError, referencedMedia } from "./mediaBindings";
+import { writeGenerationOf } from "./recoveryDatabaseClient";
 import { isAgentId } from "./security/people-only";
 
 /**
@@ -31,6 +32,16 @@ import { isAgentId } from "./security/people-only";
 const YES_MS = 30_000;
 const yes = new Map<string, number>();
 const MAX_YES = 5000;
+/**
+ * A "no" is remembered for a few seconds, for one person and one upload, only while no write has been made through the workspace's database client
+ * (`writeGeneration`, lib/recoveryDatabaseClient.ts): any write that could have granted access ends it at once, so a new grant opens immediately. It
+ * keeps a refused save from paying for the scan twice, once to warm outside the write lock and again inside it.
+ */
+const NO_MS = 5_000;
+const no = new Map<string, { generation: number; until: number }>();
+const generationNow = () => writeGenerationOf(db());
+const refusedBefore = (key: string, generation: number) => { const hit = no.get(key); return !!hit && hit.until > Date.now() && hit.generation === generation; };
+const remember = (key: string, generation: number) => { if (no.size >= MAX_YES) no.clear(); no.set(key, { generation, until: Date.now() + NO_MS }); };
 
 type Exec = { execute(statement: InStatement): Promise<ResultSet> };
 export type Viewer = { id: string; role?: string };
@@ -148,11 +159,15 @@ export async function openableAmong(ids: readonly string[], viewer: Viewer, ex: 
     }
   }
   if (rest.length) {
-    for (const id of await sharedAmong(ex, rest)) {
+    const generation = generationNow();
+    const toScan = rest.filter((id) => !refusedBefore(`${workspace}:${viewer.id}:${id}`, generation));
+    const found = toScan.length ? await sharedAmong(ex, toScan) : new Set<string>();
+    for (const id of found) {
       ok.add(id);
       if (yes.size >= MAX_YES) yes.clear();
       yes.set(`${workspace}:${id}`, Date.now() + YES_MS);
     }
+    for (const id of toScan) if (!found.has(id)) remember(`${workspace}:${viewer.id}:${id}`, generation);
   }
   return ok;
 }
@@ -167,11 +182,15 @@ export async function uploadOpenableBy(id: string, viewer: Viewer, ex: Exec = db
   if (row.uploader_id == null || String(row.uploader_id) === viewer.id) return true;
   const key = `${workspace}:${id}`;
   if ((yes.get(key) ?? 0) > Date.now()) return true;
+  const generation = generationNow();
+  const refused = `${workspace}:${viewer.id}:${id}`;
+  if (refusedBefore(refused, generation)) return false;
   if (await usedBySharedWork(ex, id)) {
     if (yes.size >= MAX_YES) yes.clear();
     yes.set(key, Date.now() + YES_MS);
     return true;
   }
+  remember(refused, generation);
   return false;
 }
 
@@ -196,11 +215,12 @@ export async function assertUploadsOpenable(ex: Exec, ids: Iterable<string>, vie
 }
 
 /**
- * Before a write opens its transaction: asks, and so remembers, whether the person may open each upload `value` names, so the check inside the write lock
+ * Before a write opens its transaction: asks, and so remembers, whether the person may open each upload `value` ADDS to what the record held (`prior`), so the check inside the write lock
  * answers from the yes-cache and stays cheap. An answer is only a head start: the check inside the write is the one that decides.
  */
-export async function warmOpenable(value: unknown, viewer: Viewer | null = currentViewer()): Promise<void> {
+export async function warmOpenable(value: unknown, viewer: Viewer | null = currentViewer(), prior?: unknown): Promise<void> {
   if (!viewer) return;
-  const ids = referencedMedia(value).uploads;
-  if (ids.size) await openableAmong([...ids], viewer).catch(() => undefined);
+  const held = prior === undefined ? new Set<string>() : referencedMedia(prior).uploads;
+  const ids = [...referencedMedia(value).uploads].filter((id) => !held.has(id));
+  if (ids.length) await openableAmong(ids, viewer).catch(() => undefined);
 }

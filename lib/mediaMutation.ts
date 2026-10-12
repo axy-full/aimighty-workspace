@@ -63,7 +63,7 @@ export async function withMediaSources<T>(
   priorOf?: PriorOf,
 ): Promise<T> {
   /* The check for who may open what the write adds is asked here, outside the write lock, and remembered; inside the lock it answers from memory. */
-  await warmOpenable(value);
+  await warmOpenable(value, undefined, priorOf ? await priorOf(db() as unknown as Transaction).catch(() => undefined) : undefined);
   return mediaMutation(async (tx) => {
     await validateMediaSources(tx, value, priorOf);
     return write(tx);

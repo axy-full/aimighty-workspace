@@ -72,6 +72,17 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
       catch (error) { if (error instanceof MoveRefused) return NextResponse.json({ error: "Not found" }, { status: 404 }); throw error; }
     }
   }
+  /* Filing a take against a shot moves it into the shot's project (the COALESCE in the update below): asked like any move, before anything is written,
+     and refused as a missing shot is. */
+  if (typeof body.shotId === "string" && body.shotId) {
+    const shot = await getShot(body.shotId);
+    const cur = shot ? (await db().execute({ sql: "SELECT project_id, params FROM generations WHERE id=?", args: [id] })).rows[0] : null;
+    if (shot && cur) {
+      const from = cur.project_id == null ? null : String(cur.project_id);
+      try { await assertMoveAllowed(db(), { from, to: shot.projectId ?? from, named: [parseJson(cur.params)] }); }
+      catch (error) { if (error instanceof MoveRefused) return NextResponse.json({ error: "That shot is gone." }, { status: 404 }); throw error; }
+    }
+  }
   /* A review is checked before anything is written: a state the trail knows
      (an unknown word used to clear a sign-off), a take still in the project,
      and a mark only on a take that finished — a render in flight, held or

@@ -159,7 +159,7 @@ export async function saveDraft(owner:string, project:Project, revision:number, 
   const pid=gone?stored!:await linkProduction(owner,{...project,productionProjectId:stored||project.productionProjectId});
   await teamCanvasReady();
   /* Asked outside the write lock and remembered: inside it, the check for what this save adds answers from memory (lib/uploadAccess.ts). */
-  await warmOpenable(project);
+  await warmOpenable(project,undefined,current?.project);
   return workbenchTransaction(async(tx)=>{
     if(write){
       /* A save its editor already had checked (or one delivered twice) never lands late. */
