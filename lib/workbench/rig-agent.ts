@@ -10,7 +10,7 @@ import { PipelineError } from "@/lib/pipeline/schema";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
 import { requireTenant, runInTenant, type TenantWorkspace } from "@/lib/tenant";
 import { catalog, type CatalogModel } from "@/lib/catalog";
-import { creditState, quotedCredits } from "@/lib/credits";
+import { creditState, creditsApply, quotedCredits } from "@/lib/credits";
 import { reserveGenerationSpend, runCharges, RUN_LIMIT_REACHED, SpendReservationError } from "@/lib/generationRequests";
 import { languageAuth, languageModel } from "@/lib/language-provider";
 import { meter } from "@/lib/meter";
@@ -237,7 +237,9 @@ export async function planGateQuote(productionId: string, runId: string): Promis
 }
 
 /** What asking costs, for the ask form: the suggested limit, the per-job line, and the planning turn's approximate ceiling. */
-export type RigAgentAskTerms = { limit: number; jobCeiling: number; planning: number | null };
+export type RigAgentAskTerms = { limit: number; jobCeiling: number; planning: number | null;
+  /** The planner's ceiling in the engines' own dollars, sent to the house workspace alone (it is never billed in credits and sees every price at cost). Display only: the limit a press approves is `planning`, in credits. */
+  planningUsd?: number | null };
 
 /**
  * The run card's read: the switch, and the newest run on this production (with what the viewer may
@@ -260,26 +262,31 @@ export async function rigAgentState(productionId: string, viewer: string, draftI
 async function askTerms(productionId: string, draftId: string, viewer: string, attached: readonly SnapshotAttachment[] = []): Promise<RigAgentAskTerms> {
   const [limit, jobCeiling] = await Promise.all([suggestedRunLimit(), rigJobCeiling()]);
   let planning: number | null = null;
+  let planningUsd: number | null = null;
   const draft = await readDraft(viewer, draftId);
   if (draft && draft.project.productionProjectId === productionId) {
     const saved = await readTeamCanvas(productionId);
     const nodes = saved ? orderedIds(saved.canvas).map((id) => saved.canvas.nodes[id]) : draft.project.nodes;
-    planning = await planningCredits(draft.project, { nodes, assets: saved ? Object.values(saved.canvas.assets) : [] }, attached);
+    const figure = await planningCredits(draft.project, { nodes, assets: saved ? Object.values(saved.canvas.assets) : [] }, attached);
+    planning = figure.credits;
+    planningUsd = figure.usd;
   }
-  return { limit, jobCeiling, planning };
+  return { limit, jobCeiling, planning, ...(atCost() ? { planningUsd } : {}) };
 }
 
 /**
  * Planning's approximate ceiling for a board, in credits; null when the planner's price can't be read. The same
  * estimator the charge reserves at (plannerCeilingUsd over boardSnapshot), with the same attached files.
  */
-async function planningCredits(project: Project, canvas: { nodes: CanvasNode[]; assets: Asset[] }, attached: readonly SnapshotAttachment[] = []): Promise<number | null> {
-  /* The request at its longest, so the figure holds whatever is typed. */
+async function planningCredits(project: Project, canvas: { nodes: CanvasNode[]; assets: Asset[] }, attached: readonly SnapshotAttachment[] = []): Promise<{ credits: number | null; usd: number | null }> {
+  /* The request at its longest, so the figure holds whatever is typed. The credits are what a press approves; the same ceiling in the
+     engines' own dollars is what the house workspace (never billed in credits) is shown, and a credit workspace is never sent it. */
   const snapshot = boardSnapshot(project, canvas, "x".repeat(PLAN_LIMITS.goal), attached);
   const price = await plannerPrice("auto").catch(() => null);
   const usd = price ? plannerCeilingUsd(price.catalog, snapshot, price.direct) : null;
-  return usd == null ? null : quotedCredits(usd, "text");
+  return { credits: usd == null ? null : quotedCredits(usd, "text"), usd };
 }
+const atCost = () => !creditsApply(requireTenant());
 
 /**
  * What asking would cost on a new, empty board: Home's "Start · up to N cr", shown before its project
@@ -290,7 +297,7 @@ export async function newBoardAskTerms(): Promise<{ enabled: boolean; run: null;
   const enabled = rigAgentEnabled();
   if (!enabled) return { enabled, run: null, ask: null };
   const [limit, jobCeiling, planning] = await Promise.all([suggestedRunLimit(), rigJobCeiling(), planningCredits(newProject(""), { nodes: [], assets: [] })]);
-  return { enabled, run: null, ask: { limit, jobCeiling, planning } };
+  return { enabled, run: null, ask: { limit, jobCeiling, planning: planning.credits, ...(atCost() ? { planningUsd: planning.usd } : {}) } };
 }
 
 /** A running run whose wake is due and that nobody holds: one reader claims the wake and dispatches a tick. */

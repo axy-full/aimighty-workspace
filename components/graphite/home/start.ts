@@ -24,16 +24,17 @@ export async function productionOf(fetcher: Fetcher, draftId: string): Promise<{
 }
 
 /** Planning's figure for this project as it is now; null when Atomik can't be asked here. */
-export async function planningFor(fetcher: Fetcher, productionId: string, draftId: string): Promise<{ planning: number } | { error: string }> {
+export async function planningFor(fetcher: Fetcher, productionId: string, draftId: string): Promise<{ planning: number; planningUsd?: number } | { error: string }> {
   const query = new URLSearchParams({ agent: "1", productionId, projectId: draftId });
   const response = await fetcher(`/api/workbench/team-canvas?${query}`, { cache: "no-store" }).catch(() => null);
   if (!response?.ok) return { error: await fail(response, "Atomik's thinking price didn't load. Try again.") };
-  const body = (await response.json().catch(() => null)) as { agent?: { enabled?: boolean; run?: { state?: string } | null; ask?: { planning?: unknown } | null } } | null;
+  const body = (await response.json().catch(() => null)) as { agent?: { enabled?: boolean; run?: { state?: string } | null; ask?: { planning?: unknown; planningUsd?: unknown } | null } } | null;
   const agent = body?.agent;
   if (!agent?.enabled) return { error: "Atomik isn't on for this workspace yet." };
   if (!agent.ask) return { error: "Atomik is already working on this project." };
   const planning = agent.ask.planning;
-  return typeof planning === "number" && planning > 0 ? { planning } : { error: "Atomik's thinking can't be priced right now. Try again." };
+  const usd = agent.ask.planningUsd;
+  return typeof planning === "number" && planning > 0 ? { planning, ...(typeof usd === "number" && Number.isFinite(usd) && usd > 0 ? { planningUsd: usd } : {}) } : { error: "Atomik's thinking can't be priced right now. Try again." };
 }
 
 /** Ask Atomik to plan, with the limit the person pressed. */

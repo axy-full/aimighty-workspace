@@ -17,10 +17,10 @@ import { useGoSettings } from "@/components/graphite/settings/navigate";
 import { Menu, Tooltip, useToast, type MenuItem } from "../ui";
 
 /**
- * The avatar and its menu (docs/redesign/inventory.md § 5.5; prototype L54): the balance with Top up, Credits &
- * billing, Settings, then Sign out. The balance lives here, not in a header pill. Top up opens today's Plan & credits
- * flow unchanged, and is drawn only where that flow can take a request (an owner or admin of a workspace on credits): a
- * member is told who can, and the house workspace, which pays in dollars at the engines' cost, has none and says so.
+ * The avatar and its menu (prototype v14): the balance with Top up, Workspace settings, Credits & billing, the
+ * Platform console (Owner badge, the platform owner only), then Sign out. The balance lives here, not in a header pill. Top up opens
+ * today's Plan & credits flow unchanged, and is drawn only where that flow can take a request (an owner or admin of a workspace on
+ * credits): a member is told who can, and the house workspace, which pays in dollars at the engines' cost, has none and says so.
  * Never a button that goes nowhere. Both answers are today's reads (GET /api/workspaces/topups, GET /api/usage/summary),
  * read when the menu opens. Sign out and switching workspace are today's (components/graphite/SettingsMenu.tsx).
  */
@@ -66,7 +66,7 @@ export function AccountMenu({ account }: { account: WorkspaceAccount | null }) {
       onSelect: () => { void switchWorkspace({ id: w.id, fetch: scopedFetch, go: () => window.location.assign("/suites") }).then((why) => { if (why) toast({ text: why }); }); },
     })),
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    ...(session.superAdmin ? [{ id: "platform-desk", label: "Platform desk", onSelect: () => window.location.assign("/admin") }] : []),
+    ...(session.superAdmin ? [{ id: "platform-console", label: "Platform console", hint: <span className="v12-owner-badge">Owner</span>, onSelect: () => window.location.assign("/admin"), testId: "v12-account-platform" }] : []),
     { id: "sep", separator: true },
     {
       id: "sign-out", label: signingOut ? "Signing out…" : "Sign out", tone: "quiet", disabled: busy, testId: "v12-account-signout",
@@ -81,7 +81,7 @@ export function AccountMenu({ account }: { account: WorkspaceAccount | null }) {
     <>
       <Tooltip name="Account" line="Credits, settings, sign out.">
         <button ref={anchor} type="button" className="v12-avatar" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)} data-testid="v12-avatar">
-          {avatarInitials({ name: session.name }, account?.workspace?.name)}
+          {avatarInitials({ name: session.name, email: session.email }, account?.workspace?.name)}
         </button>
       </Tooltip>
       <Menu open={open} onClose={() => setOpen(false)} anchor={anchor} label="Account" align="end" width={240} items={items} testId="v12-account-menu"
