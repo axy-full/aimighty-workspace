@@ -8,8 +8,13 @@ import { test, expect, type Page } from "@playwright/test";
  */
 const status = (page: Page, enabled: boolean) => page.route("**/api/auth/google/status", (route) => route.fulfill({ json: { enabled } }));
 async function stubStart(page: Page) {
-  const started: string[] = [];
-  await page.route("**/api/auth/google/start**", (route) => { started.push(new URL(route.request().url()).search); return route.fulfill({ status: 200, contentType: "text/html", body: "<title>Google stub</title>" }); });
+  /* What reached the start: its method and its fields (a POST's form body, or a GET's query). */
+  const started: { method: string; fields: string }[] = [];
+  await page.route("**/api/auth/google/start**", (route) => {
+    const r = route.request();
+    started.push({ method: r.method(), fields: r.method() === "POST" ? r.postData() ?? "" : new URL(r.url()).search });
+    return route.fulfill({ status: 200, contentType: "text/html", body: "<title>Google stub</title>" });
+  });
   return started;
 }
 async function openJoin(page: Page, google: boolean) {
@@ -39,7 +44,9 @@ test("the join sheet draws Continue with Google only when it is on, beside Conti
   await page.getByTestId("v12-join-code").fill("an-invite-code-123");
   await google.click();
   await expect.poll(() => started.length).toBe(1);
-  const query = new URLSearchParams(started[0]);
+  /* The join sheet starts with a form POST from its own page: only that keeps the invite (lib/googleSignIn.ts startIntent). */
+  expect(started[0].method).toBe("POST");
+  const query = new URLSearchParams(started[0].fields);
   expect(query.get("invite")).toBe("an-invite-code-123");
   expect(query.get("accept")).toBe("1");
   expect(query.get("next")?.startsWith("/")).toBe(true);
@@ -55,8 +62,9 @@ test("the sign-in page offers Continue with Google when it is on, and says in a 
   await expect(google).toBeVisible({ timeout: 60_000 });
   await google.click();
   await expect.poll(() => started.length).toBe(1);
-  expect(new URLSearchParams(started[0]).get("next")).toBe("/suites");
-  expect(new URLSearchParams(started[0]).get("invite")).toBeNull();
+  expect(started[0].method).toBe("GET");
+  expect(new URLSearchParams(started[0].fields).get("next")).toBe("/suites");
+  expect(new URLSearchParams(started[0].fields).get("invite")).toBeNull();
   await noOverflow(page);
   for (const [code, words] of [["no_account", "invite-only"], ["unverified", "has not verified"], ["invite_mismatch", "different email address"], ["two_step", "two-step"], ["expired", "Start again"], ["limited", "Too many attempts"], ["use_email", "Continue with email"]]) {
     await page.goto(`/login?google=${code}`);

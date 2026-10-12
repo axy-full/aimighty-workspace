@@ -7,7 +7,7 @@ import { saveJoinReturn } from "@/lib/v12/joinReturn";
 import { COMPANY_SIZES, ROLES, cleanCode, emailPath, inviteTitle, joinTitle, loginPath, requestBody, requestProblem, signupPath, type InviteKind, type RequestFields } from "./join-model";
 import { readCode } from "./read-code";
 import type { JoinState } from "./JoinProvider";
-import { googleStartPath } from "@/lib/googleSignInText";
+import { GOOGLE_START, googleJoinFields } from "@/lib/googleSignInText";
 import "./join.css";
 
 /**
@@ -115,9 +115,13 @@ function InvitePath({ state, setState, invite, back, google }: { state: JoinStat
       <div className="v12-join-stack">
         {/* Continue with Google is drawn only where Google sign-in is on (lib/useGoogleSignIn.ts); with a team invite the filled next step stays Continue with email. */}
         {google ? (
-          <button type="button" className="v12-join-btn" onClick={() => { saveJoinReturn(back); window.location.assign(googleStartPath({ invite: code, accept: true, next: back })); }} data-testid="v12-join-google">
-            Continue with Google
-          </button>
+          /* A form POST from this page, not a link: only that keeps the invite and the policy accepted (lib/googleSignIn.ts startIntent). */
+          <form method="post" action={GOOGLE_START} onSubmit={() => saveJoinReturn(back)} style={{ display: "contents" }}>
+            {Object.entries(googleJoinFields({ invite: code, next: back })).map(([name, value]) => <input key={name} type="hidden" name={name} value={value} />)}
+            <button type="submit" className="v12-join-btn" data-testid="v12-join-google">
+              Continue with Google
+            </button>
+          </form>
         ) : null}
         <button type="button" className={team ? "v12-join-btn v12-join-primary" : "v12-join-btn"} onClick={() => void withEmail()} disabled={busy} aria-busy={busy || undefined} data-testid="v12-join-email">
           {busy ? "Checking the code…" : "Continue with email"}

@@ -22,12 +22,17 @@ export type GoogleRefusal = keyof typeof GOOGLE_REFUSALS;
 export const isGoogleRefusal = (value: unknown): value is GoogleRefusal => typeof value === "string" && Object.prototype.hasOwnProperty.call(GOOGLE_REFUSALS, value);
 
 
-/** The address that starts "Continue with Google": `invite` a team invitation's code, `accept` the content policy and terms accepted where the button is, `next` where to land. */
-export function googleStartPath(input: { invite?: string; accept?: boolean; next?: string }): string {
-  const query = new URLSearchParams();
-  if (input.invite) query.set("invite", input.invite);
-  if (input.accept) query.set("accept", "1");
-  if (input.next) query.set("next", input.next);
-  const text = query.toString();
-  return `/api/auth/google/start${text ? `?${text}` : ""}`;
+export const GOOGLE_START = "/api/auth/google/start";
+
+/** The link that starts a plain "Continue with Google" (the sign-in page): `next` where to land. It never carries an invite. */
+export function googleStartPath(input: { next?: string }): string {
+  return input.next ? `${GOOGLE_START}?${new URLSearchParams({ next: input.next })}` : GOOGLE_START;
+}
+
+/**
+ * The fields of the join sheet's form, POSTed to GOOGLE_START: `invite` a team invitation's code, `accept` the content policy and terms
+ * accepted on the sheet, `next` where to land. Only a POST from Particl's own page keeps the invite (lib/googleSignIn.ts startIntent).
+ */
+export function googleJoinFields(input: { invite: string; next?: string }): Record<string, string> {
+  return { invite: input.invite, accept: "1", ...(input.next ? { next: input.next } : {}) };
 }

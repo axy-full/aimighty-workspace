@@ -219,14 +219,15 @@ const INVITE_CODE = /^[A-Za-z0-9_-]{8,128}$/;
 export const cleanInviteCode = (raw: unknown): string => (typeof raw === "string" && INVITE_CODE.test(raw.trim()) ? raw.trim() : "");
 
 /**
- * What the start keeps from its query (app/api/auth/google/start). An invite and the policy accepted ride along only when the browser
- * says the navigation came from Particl's own pages (`Sec-Fetch-Site: same-origin`, which a page cannot set). A link on another site, or
- * a browser that does not say, gets a plain sign-in: otherwise `?invite=…&accept=1` sent by a workspace's admin would join the person to
- * that workspace from Google's chooser alone, without the Join screen and without them reading the policy.
+ * What the start keeps (app/api/auth/google/start). An invite and the policy accepted ride along only on a form POST from Particl's own
+ * join sheet: the browser's `Origin` is ours and it says `Sec-Fetch-Site: same-origin` (neither can be set by a page). A GET (a link,
+ * a redirect, a `next` bounced through sign-in) is always a plain sign-in, as is a POST from anywhere else or from a browser that does not
+ * say: otherwise `?invite=…&accept=1` sent by a workspace's admin would join the person to that workspace from Google's chooser alone,
+ * without the Join screen and without them reading the policy.
  */
-export function startIntent(query: URLSearchParams, fetchSite: string | null): { invite: string; accept: boolean } {
-  if (fetchSite !== "same-origin") return { invite: "", accept: false };
-  return { invite: cleanInviteCode(query.get("invite")), accept: query.get("accept") === "1" };
+export function startIntent(fields: { get(name: string): unknown }, request: { post: boolean; fetchSite: string | null; ourOrigin: boolean }): { invite: string; accept: boolean } {
+  if (!request.post || !request.ourOrigin || request.fetchSite !== "same-origin") return { invite: "", accept: false };
+  return { invite: cleanInviteCode(fields.get("invite")), accept: fields.get("accept") === "1" };
 }
 
 /**

@@ -234,17 +234,23 @@ test("refusals count against the source as wrong passwords do, and a locked sour
   expect(await refusal((await attempt({ claims: { email: "nobody-else@example.test" }, source: "a-quiet-source" })).run())).toBe("no_account");
 });
 
-test("an invite and the policy ride along only from Particl's own pages; a link from another site is a plain sign-in", async () => {
+test("an invite and the policy ride along only on the join sheet's own form POST; any link, redirect or other site is a plain sign-in", async () => {
   const g = await import("../../lib/googleSignIn");
-  const query = new URLSearchParams({ invite: "good-invite-code-1", accept: "1", next: "/x" });
-  expect(g.startIntent(query, "same-origin")).toEqual({ invite: "good-invite-code-1", accept: true });
-  for (const site of ["cross-site", "same-site", "none", null]) expect(g.startIntent(query, site)).toEqual({ invite: "", accept: false });
-  expect(g.startIntent(new URLSearchParams({ invite: "<bad>", accept: "yes" }), "same-origin")).toEqual({ invite: "", accept: false });
+  const fields = new URLSearchParams({ invite: "good-invite-code-1", accept: "1", next: "/x" });
+  const ours = { post: true, fetchSite: "same-origin", ourOrigin: true };
+  expect(g.startIntent(fields, ours)).toEqual({ invite: "good-invite-code-1", accept: true });
+  /* A GET is never a join, even from our own page: a link, a redirect, or a `next` bounced through password sign-in. */
+  expect(g.startIntent(fields, { ...ours, post: false })).toEqual({ invite: "", accept: false });
+  for (const site of ["cross-site", "same-site", "none", null]) expect(g.startIntent(fields, { ...ours, fetchSite: site })).toEqual({ invite: "", accept: false });
+  expect(g.startIntent(fields, { ...ours, ourOrigin: false })).toEqual({ invite: "", accept: false });
+  expect(g.startIntent(new URLSearchParams({ invite: "<bad>", accept: "yes" }), ours)).toEqual({ invite: "", accept: false });
+  const text = await import("../../lib/googleSignInText");
+  expect(text.googleJoinFields({ invite: "abc12345", next: "/x" })).toEqual({ invite: "abc12345", accept: "1", next: "/x" });
 });
 
 test("Google is told nothing the person did not choose, and the callback reads no token but the ID token", async () => {
   const text = await import("../../lib/googleSignInText");
-  expect(text.googleStartPath({ invite: "abc12345", accept: true, next: "/x" })).toBe("/api/auth/google/start?invite=abc12345&accept=1&next=%2Fx");
+  expect(text.googleStartPath({ next: "/x" })).toBe("/api/auth/google/start?next=%2Fx");
   expect(text.googleStartPath({})).toBe("/api/auth/google/start");
   for (const code of Object.keys(text.GOOGLE_REFUSALS)) expect(text.isGoogleRefusal(code)).toBe(true);
   expect(text.isGoogleRefusal("<script>")).toBe(false);
