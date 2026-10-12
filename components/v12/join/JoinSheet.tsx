@@ -1,8 +1,7 @@
 "use client";
 import { useId, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
 import { Dialog } from "../ui";
-import { PLAN_CARDS } from "@/lib/marketing/planCards";
-import { fmtCredits } from "@/lib/price";
+import { PlanPicker } from "@/components/v12/settings/PlanPicker";
 import { saveJoinReturn } from "@/lib/v12/joinReturn";
 import { COMPANY_SIZES, ROLES, cleanCode, emailPath, inviteTitle, joinTitle, loginPath, requestBody, requestProblem, signupPath, type InviteKind, type RequestFields } from "./join-model";
 import { readCode } from "./read-code";
@@ -195,12 +194,11 @@ function RequestPath({ state, setState, primary }: { state: JoinState; setState:
 
 /**
  * A new-workspace invite (§ 8.4): the workspace's name, then the plan to look at, then today's sign-up page for the code.
- * The plan cards are the display-only placeholders (lib/marketing/planCards.ts); the choice is not carried anywhere, and
+ * The plan cards are the owner's plans, display only (lib/planCards.ts, from lib/plans.ts); the choice is not carried anywhere, and
  * the sign-up page and checkout stay as they are today.
  */
 function NewWorkspace({ state, setState, invite, back }: { state: JoinState; setState: Dispatch<SetStateAction<JoinState>>; invite: Extract<InviteKind, { kind: "new" }>; back: string }) {
   const id = useId();
-  const plan = PLAN_CARDS.find((p) => p.id === state.plan) ?? PLAN_CARDS[0];
   const next = () => setState((now) => ({ ...now, step: "plan" }));
   const go = () => { saveJoinReturn(back); window.location.assign(signupPath(invite.code, state.workspace)); };
   return (
@@ -218,18 +216,9 @@ function NewWorkspace({ state, setState, invite, back }: { state: JoinState; set
       ) : (
         <>
           <p className="v12-join-line">Create your workspace · choose a plan or add credits</p>
-          <div className="v12-join-plans" role="group" aria-label="Plan">
-            {PLAN_CARDS.map((p) => (
-              <button key={p.id} type="button" className="v12-join-plan" aria-pressed={p.id === plan.id} data-plan={p.id} data-testid="v12-join-plan"
-                onClick={() => setState((now) => ({ ...now, plan: p.id }))}>
-                <span className="v12-join-plan-name">{p.name}</span>
-                <span className="v12-join-plan-price">{fmtCredits(p.credits)} · ${p.priceUsd.toLocaleString("en-US")}</span>
-                <span className="v12-join-plan-line">{p.line === "hero-takes" ? "Hero takes are priced once you are in" : p.line}</span>
-              </button>
-            ))}
-          </div>
-          <p className="v12-join-note">Prices are placeholders · confirm. Nothing runs without a price shown first.</p>
-          <button type="button" className="v12-join-btn v12-join-primary" onClick={go} data-testid="v12-join-continue">Continue · {fmtCredits(plan.credits)} · ${plan.priceUsd.toLocaleString("en-US")}</button>
+          <PlanPicker selected={state.plan || null} onChoose={(id) => setState((now) => ({ ...now, plan: id }))} />
+          <p className="v12-join-note">Monthly plans. Checkout is not open yet. Nothing runs without a price shown first.</p>
+          <button type="button" className="v12-join-btn v12-join-primary" onClick={go} data-testid="v12-join-continue">Continue</button>
         </>
       )}
     </div>

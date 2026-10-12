@@ -8,11 +8,10 @@ import { HOUSE_NOT_BILLED } from "@/lib/houseWorkspace";
 import { fmtLedgerUsd, type CreditLedgerRow, type DollarLedgerRow } from "@/lib/usageLedgerTerms";
 import type { BillingSubscription, Topups } from "@/lib/shell/workspace-view";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
-import { HERO_TAKE, PLAN_CARDS, type PlanCard } from "@/lib/marketing/planCards";
+import { PlanPicker } from "./PlanPicker";
 import { LOW_CREDIT_PERCENT } from "@/lib/v12/lowCredit";
 import { useLowCredit } from "@/lib/v12/useLowCredit";
-import { useQuote } from "@/lib/v12/useQuote";
-import { boardRows, cycleDates, cycleNow, dollarBoards, dollarHistoryRows, heroTakes, historyRows, planNowOf, signedCredits, takesWords, type BillingCycle } from "@/lib/v12/billing";
+import { boardRows, cycleDates, cycleNow, dollarBoards, dollarHistoryRows, historyRows, planNowOf, signedCredits, takesWords, type BillingCycle } from "@/lib/v12/billing";
 import { monthKey, monthLine, monthTotalsOf, planView, topUpLabel, topUpPack, type PlanDefLike } from "@/components/graphite/settings/model";
 import { useRead } from "@/components/graphite/settings/use-settings";
 import "./billing.css";
@@ -20,7 +19,7 @@ import "./billing.css";
 /**
  * Settings › Credits & billing in the new interface (docs/redesign-plan.md, item B2; docs/redesign/inventory.md § 5.6;
  * prototype `?view=billing`). Display only: every figure is a route's answer (lib/v12/billing.ts lists them) and the
- * plan cards are the display-only placeholders in lib/marketing/plans' sibling, lib/marketing/planCards.ts.
+ * plan cards are the owner's plans, display only (lib/planCards.ts, from lib/plans.ts).
  *
  * Top up does not request, charge or pay here: it opens today's flow, unchanged (Settings › Plan & credits with its packs
  * open, `onTopUp`). The house workspace pays in dollars, at the engines' cost, and is never shown credit figures: it gets the
@@ -46,12 +45,12 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
   const rule = useLowCredit(balance);
   /* The month as the page opened: the ledger files a job by when it started (UTC). */
   const [now] = useState(() => Date.now());
+  const [chooseNote, setChooseNote] = useState(false);
   const month = monthKey(now);
   const billing = useRead<Billing>(inCredits ? "/api/billing" : null);
   const topups = useRead<Topups>(inCredits ? "/api/workspaces/topups" : null);
   const ledger = useRead<{ unit?: string; rows?: CreditLedgerRow[] }>(inCredits ? `/api/usage?rows=1&month=${month}&limit=20` : null);
   const boards = useRead<unknown>(inCredits ? `/api/usage/boards?month=${month}` : null);
-  const hero = useQuote(inCredits ? { route: "engine", ...HERO_TAKE } : null);
   /* The house reads the same Usage routes in their dollar form: the board totals (all time) and the month's dollar ledger. */
   const usage = useRead<{ spentUsd?: number; byProject?: unknown }>(inDollars ? "/api/usage" : null);
   const dollarLedger = useRead<{ unit?: string; rows?: DollarLedgerRow[] }>(inDollars ? `/api/usage?rows=1&month=${month}&limit=20` : null);
@@ -68,7 +67,6 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
   const dollarBoardList = dollarBoards(usage.data);
   const dollarHistory = dollarHistoryRows(dollarLedger.data?.unit === "usd" ? dollarLedger.data.rows : [], now);
   const spentAll = typeof usage.data?.spentUsd === "number" ? usage.data.spentUsd : null;
-  const perTake = hero.state === "ready" && hero.price.unit === "cr" && hero.price.value.kind !== "free" ? hero.price.value.credits : null;
 
   return (
     <div className="v12-bill" data-testid="v12-billing" data-screen-label="Settings · Credits & billing">
@@ -174,11 +172,10 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
           <section className="v12-bill-sec" data-testid="v12-billing-plans">
             <div className="v12-bill-head">
               <span className="v12-bill-eyebrow">Plans</span>
-              <span className="v12-bill-meta">Placeholders · names and prices are not final</span>
+              <span className="v12-bill-meta">Monthly · checkout is not open yet</span>
             </div>
-            <div className="v12-bill-cards">
-              {PLAN_CARDS.map((card) => <PlanCardView key={card.id} card={card} perTake={perTake} rate={rate} />)}
-            </div>
+            <PlanPicker plans={billing.data?.plans} current={plan?.id ?? null} onChoose={() => setChooseNote(true)} />
+            {chooseNote ? <div className="v12-bill-quiet" role="status" data-testid="v12-billing-choose-note">Checkout is not open yet. Nothing was changed.</div> : null}
           </section>
         ) : null}
 
@@ -213,18 +210,6 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
           </section>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-function PlanCardView({ card, perTake, rate }: { card: PlanCard; perTake: number | null; rate: number | null }) {
-  const takes = card.line === "hero-takes" ? heroTakes(card.credits, perTake) : null;
-  const line = card.line === "hero-takes" ? (takes != null ? `about ${takes} hero takes` : null) : card.line;
-  return (
-    <div className="v12-bill-card" data-testid="v12-billing-plan-card" data-plan={card.id}>
-      <span className="v12-bill-card-name">{card.name}</span>
-      <span className="v12-bill-mono" title={creditsUsd(card.credits, rate) ?? undefined}>{fmtCredits(card.credits)} · ${card.priceUsd.toLocaleString("en-US")}</span>
-      {line ? <span className="v12-bill-sub">{line}</span> : null}
     </div>
   );
 }

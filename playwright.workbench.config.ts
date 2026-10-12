@@ -9,6 +9,8 @@ const sizes = [
 ];
 export default defineConfig({
   testDir: "tests",
+  /* A cold dev server compiles each screen on its first visit and the page rebuilds meanwhile: one walk first (tests/workbench.warmup.ts). */
+  globalSetup: "./tests/workbench.warmup.ts",
   timeout: 120_000,
   expect: { timeout: 15_000 },
   workers: 1,

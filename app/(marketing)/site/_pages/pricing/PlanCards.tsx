@@ -1,70 +1,54 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { usd } from "@/lib/marketing/format";
+import type { ReactNode } from "react";
 import { ACCESS_HREF } from "@/lib/marketing/links";
 import s from "./pricing.module.css";
 
-/** One plan card, already worded on the server (planLines, PLAN_AUDIENCE). */
-export type PlanCard = { id: string; label: string; priceUsd: number; audience: string; lines: string[] };
+/** One plan card, already worded on the server (planLines, PLAN_AUDIENCE). `price` is the figure as it reads ("$50", "from $100"); none for Enterprise. */
+export type PlanCard = { id: string; label: string; price: string | null; unit: string; audience: string; lines: string[]; cta: string; badge?: string };
 
-/** "400 credits a month" → the figure in bold, the rest plain. */
+/** "500 credits a month" → the figure in bold, the rest plain. */
 function Line({ text }: { text: string }) {
   const m = /^([\d,]+ credits)(.*)$/.exec(text);
   return m ? <li><strong>{m[1]}</strong>{m[2]}</li> : <li>{text}</li>;
 }
 
-/**
- * The Monthly | Yearly control and the four plan cards it reprices. Yearly
- * shows the monthly equivalent of an annual subscription, the same figure
- * checkout charges (lib/billingConfig.ts): the monthly price less the annual
- * discount. The head (eyebrow, title, lead) arrives server-rendered.
- */
-export default function PlanCards({ plans, discountPercent, children }: {
-  plans: PlanCard[]; discountPercent: number; children: ReactNode;
-}) {
-  const [yearly, setYearly] = useState(false);
-  const factor = yearly ? 1 - discountPercent / 100 : 1;
-  const note = yearly ? `billed yearly · ${discountPercent}% off` : "billed monthly";
+function Card({ plan }: { plan: PlanCard }) {
+  const hl = Boolean(plan.badge);
+  return (
+    <div className={`mk-card ${s.plan}${hl ? ` mk-card--hl ${s.planHl}` : ""}`} data-plan={plan.id}>
+      <div className={s.planTop}>
+        <span className={`mk-tag${hl ? "" : " mk-tag--muted"}`}>{plan.label}</span>
+        {plan.badge && <span className={s.badge}>{plan.badge}</span>}
+      </div>
+      <div>
+        <div className={s.price}>{plan.price ?? "Get in touch"}{plan.price && plan.unit && <small>{plan.unit}</small>}</div>
+        <div className={s.billing}>{plan.price ? "billed monthly" : ""}</div>
+      </div>
+      <p className={s.audience}>{plan.audience}</p>
+      <ul className={s.lines}>
+        {plan.lines.map((line) => <Line key={line} text={line} />)}
+      </ul>
+      <a href={ACCESS_HREF} className={`mk-btn ${s.cta} ${hl ? "gx-primary" : "mk-btn--secondary"}`}>{plan.cta}</a>
+    </div>
+  );
+}
 
+/**
+ * The plan cards, monthly only: one person's three plans, then a team's card (priced a seat, from its lowest level)
+ * and Enterprise ("Get in touch", no price). The head (eyebrow, title, lead) arrives server-rendered.
+ */
+export default function PlanCards({ individual, team, children }: { individual: PlanCard[]; team: PlanCard[]; children: ReactNode }) {
   return (
     <>
-      <div className={s.head}>
-        {children}
-        <div className={s.seg} role="group" aria-label="Billing period">
-          <button type="button" aria-pressed={!yearly} onClick={() => setYearly(false)}>Monthly</button>
-          <button type="button" aria-pressed={yearly} onClick={() => setYearly(true)}>
-            Yearly{discountPercent > 0 && <span className={s.off}>&minus;{discountPercent}%</span>}
-          </button>
-        </div>
+      <div className={s.head}>{children}</div>
+      <h2 className={`mk-h3 ${s.group}`}>For one person</h2>
+      <div className={`mk-grid ${s.three} ${s.planGrid}`} data-testid="plans-individual">
+        {individual.map((plan) => <Card key={plan.id} plan={plan} />)}
       </div>
-
-      <div className={`mk-grid ${s.four} ${s.planGrid}`}>
-        {plans.map((plan) => {
-          const hl = plan.id === "agency";
-          const invite = plan.id === "invite";
-          const paid = plan.priceUsd > 0;
-          const price = Math.round(plan.priceUsd * factor * 100) / 100;
-          return (
-            <div key={plan.id} className={`mk-card ${s.plan}${hl ? ` mk-card--hl ${s.planHl}` : ""}`}>
-              <div className={s.planTop}>
-                <span className={`mk-tag${hl ? "" : " mk-tag--muted"}`}>{plan.label}</span>
-                {hl && <span className={s.badge}>Most teams</span>}
-              </div>
-              <div>
-                <div className={s.price}>{usd(price)}{paid && <small>/mo</small>}</div>
-                <div className={s.billing}>{invite ? "one-time grant" : paid ? note : ""}</div>
-              </div>
-              <p className={s.audience}>{plan.audience}</p>
-              <ul className={s.lines}>
-                {plan.lines.map((line) => <Line key={line} text={line} />)}
-              </ul>
-              <a href={ACCESS_HREF} className={`mk-btn ${s.cta} ${hl ? "gx-primary" : "mk-btn--secondary"}`}>
-                {plan.id === "production" ? "Talk to us" : "Request access"}
-              </a>
-            </div>
-          );
-        })}
+      <h2 className={`mk-h3 ${s.group}`}>For a team</h2>
+      <div className={`mk-grid ${s.three} ${s.planGrid}`} data-testid="plans-team">
+        {team.map((plan) => <Card key={plan.id} plan={plan} />)}
       </div>
     </>
   );

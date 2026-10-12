@@ -45,7 +45,7 @@ Always a full run:
    - the switch-off test of every new-interface spec that has one (`--grep "switch off" --pass-with-no-tests` over those spec files only): customers see today's app
    - `tests/customer.spec.ts`: the customer smoke test
    - the five-minute test (`playwright.five-minute.config.ts`): a new person with an invitation reaches an approved first render, on a laptop and a phone
-3. All of it on fresh dev servers in chunks of at most six spec files, each server warmed (`scripts/ci-run-specs.sh`).
+3. All of it on fresh dev servers in chunks of at most six spec files, each server warmed (`scripts/ci-run-specs.sh`): its routes answered once (`scripts/warm-dev-routes.mjs`), and then, before the first workbench spec of each run, the main screens opened once in a browser by a throwaway person (`tests/workbench.warmup.ts`, the workbench config's global set-up). A cold dev server compiles a screen's client chunks on the first browser visit, and the page rebuilds and reloads while it does; a spec that opens a menu in that window finds the page gone. The walk ends when the server answers `/api/health` quickly five times in a row. `PW_NO_WARMUP=1` skips it on a server that is already warm.
 
 Nothing here removes a test from a spec: a spec that runs, runs whole (except the switch-off pass, which is the switch-off tests by name).
 
