@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sourceKey, sourceLocked } from "@/lib/auth";
 import { AccountError, sameOriginProblem, takeAccountLimit } from "@/lib/accountDb";
+import { readBoundedText } from "@/lib/requestBody";
 import { safeNext } from "@/lib/safeNext";
 import {
   GOOGLE_COOKIE, GOOGLE_THROTTLE_KEY, STATE_TTL_MS, authorizationUrl, googleConfig, newGoogleRequest, sealGoogleCookie, startIntent, type GoogleRefusal,
@@ -45,7 +46,11 @@ export async function GET(req: Request) {
   return start(req, new URL(req.url).searchParams, false);
 }
 
+/* The join sheet's form is url-encoded and a few hundred bytes. Anything else, or anything bigger, is read no further than 4 KB and
+ * becomes a plain sign-in: an anonymous POST never buffers a large body on the server. */
 export async function POST(req: Request) {
-  const form = await req.formData().catch(() => null);
-  return start(req, form ?? new URLSearchParams(), true);
+  const urlencoded = (req.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase() === "application/x-www-form-urlencoded";
+  const text = urlencoded ? await readBoundedText(req, 4096).catch(() => "") : "";
+  if (!urlencoded) void req.body?.cancel().catch(() => {});
+  return start(req, new URLSearchParams(text), true);
 }

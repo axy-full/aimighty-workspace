@@ -248,6 +248,39 @@ test("an invite and the policy ride along only on the join sheet's own form POST
   expect(text.googleJoinFields({ invite: "abc12345", next: "/x" })).toEqual({ invite: "abc12345", accept: "1", next: "/x" });
 });
 
+test("the start route itself: the join sheet's small form keeps the invite; a GET, another site, a big or non-form body do not", async () => {
+  const keep = { id: process.env.GOOGLE_OAUTH_CLIENT_ID, secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET };
+  process.env.GOOGLE_OAUTH_CLIENT_ID = CLIENT;
+  process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+  try {
+    const route = await import("../../app/api/auth/google/start/route");
+    const g = await import("../../lib/googleSignIn");
+    const url = "https://app.example.test/api/auth/google/start";
+    const form = "application/x-www-form-urlencoded";
+    const ours = { origin: "https://app.example.test", "sec-fetch-site": "same-origin", "x-forwarded-for": "198.51.100.77" };
+    const kept = async (res: Response) => {
+      expect(res.status).toBe(303);
+      expect(res.headers.get("location")).toContain("accounts.google.com");
+      const raw = /particl-google=([^;]+)/.exec(res.headers.get("set-cookie") ?? "")?.[1];
+      const cookie = g.openGoogleCookie(raw ? decodeURIComponent(raw) : null);
+      return { invite: cookie?.invite, accept: cookie?.accept, next: cookie?.next };
+    };
+    const body = "invite=good-invite-code-1&accept=1&next=%2Fx";
+    expect(await kept(await route.POST(new Request(url, { method: "POST", headers: { ...ours, "content-type": form }, body }))))
+      .toEqual({ invite: "good-invite-code-1", accept: true, next: "/x" });
+    expect(await kept(await route.GET(new Request(`${url}?${body}`, { headers: ours })))).toEqual({ invite: "", accept: false, next: "/x" });
+    expect(await kept(await route.POST(new Request(url, { method: "POST", headers: { ...ours, origin: "https://elsewhere.example", "sec-fetch-site": "cross-site", "content-type": form }, body }))))
+      .toMatchObject({ invite: "", accept: false });
+    expect(await kept(await route.POST(new Request(url, { method: "POST", headers: { ...ours, "content-type": form }, body: `${body}&pad=${"x".repeat(8000)}` }))))
+      .toMatchObject({ invite: "", accept: false });
+    expect(await kept(await route.POST(new Request(url, { method: "POST", headers: { ...ours, "content-type": "text/plain" }, body }))))
+      .toMatchObject({ invite: "", accept: false });
+  } finally {
+    if (keep.id === undefined) delete process.env.GOOGLE_OAUTH_CLIENT_ID; else process.env.GOOGLE_OAUTH_CLIENT_ID = keep.id;
+    if (keep.secret === undefined) delete process.env.GOOGLE_OAUTH_CLIENT_SECRET; else process.env.GOOGLE_OAUTH_CLIENT_SECRET = keep.secret;
+  }
+});
+
 test("Google is told nothing the person did not choose, and the callback reads no token but the ID token", async () => {
   const text = await import("../../lib/googleSignInText");
   expect(text.googleStartPath({ next: "/x" })).toBe("/api/auth/google/start?next=%2Fx");
