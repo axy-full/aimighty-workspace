@@ -154,7 +154,7 @@ test.describe("the spending rules, read-only (DECISIONS 1, 10)", () => {
   test("each line says what the code does", () => {
     const l = spendingLines(base, creditsText);
     expect(l.ruleLine).toBe("Members up to 50 cr a shot; an admin above it.");
-    expect(l.platformLineText).toBe("Any job over 200 cr needs a person’s approval, even under Auto.");
+    expect(l.platformLineText).toBe("Any job over 200 cr needs an admin’s tap, even under Auto.");
     expect(l.modeLine).toBe("Every paid step waits for a person.");
     expect(l.autoLine).toBe("Auto is picked per Board run, for drafts at or under 200 cr.");
     expect(l.budgetLine).toBe("Auto drafts ask at 80% of a production’s budget · at the cap an admin unlocks it");
