@@ -417,3 +417,52 @@ test("sending a project's shot list across is its owner's or an admin's", async 
   api.as("stranger");
   expect((await api.sync("no-such-project")).status).toBe(200);
 });
+
+test("a production holding boards: one person's is theirs (or an admin's); two people's, or none, is an admin's alone", async () => {
+  const ws = workspace("work-production-boards");
+  const api = await setup(ws);
+  await seed(ws, api.mappedId);
+  const { NOT_YOURS } = await import("../../lib/workAccess");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const name = async (id: string) => String((await read(ws, "SELECT name FROM productions WHERE id=?", [id]))[0]?.name);
+
+  /* prod-board holds the maker's one board (and nothing of anyone else's): the maker or an admin. */
+  api.as("maker");
+  expect((await api.productionPatch("prod-board", { name: "By its only maker" })).status).toBe(200);
+  api.as("teammate");
+  expect(await refusal(await api.productionPatch("prod-board", { name: "no" }))).toEqual({ status: 403, error: NOT_YOURS.production });
+  api.as("admin");
+  expect((await api.productionPatch("prod-board", { status: "delivered" })).status).toBe(200);
+
+  /* A project with no recorded maker beside it does not count as anyone's board: still the one maker's. */
+  await runInTenant(ws, () => db().execute("INSERT INTO projects(id,name,created_at,production_id) VALUES('no-maker-here','No maker',0,'prod-board')"));
+  api.as("maker");
+  expect((await api.productionPatch("prod-board", { client: "Still theirs" })).status).toBe(200);
+
+  /* Two people's boards: the teammate makes a board of their own in it (a draft whose id works out to the project's id). Now only an admin. */
+  const second = api.mappedId("prj_wb_", ws.id, PEOPLE.teammate.id, "draft-t2");
+  await runInTenant(ws, async () => {
+    await db().batch([
+      { sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,0)", args: [`${PEOPLE.teammate.id}:draft-t2`, PEOPLE.teammate.id, "draft-t2", "Teammate board", JSON.stringify({ id: "draft-t2", name: "Teammate board", productionProjectId: second })] },
+      { sql: "INSERT INTO projects(id,name,created_at,production_id) VALUES(?,?,0,'prod-board')", args: [second, "Teammate board"] },
+    ], "write");
+  });
+  for (const who of ["maker", "teammate", "stranger", "strangerToken"]) {
+    api.as(who);
+    expect(await refusal(await api.productionPatch("prod-board", { name: `By ${who}` })), who).toEqual({ status: 403, error: NOT_YOURS.production });
+  }
+  expect(await name("prod-board")).toBe("By its only maker");
+  for (const who of ["admin", "owner", "adminToken"]) {
+    api.as(who);
+    expect((await api.productionPatch("prod-board", { name: `By ${who}`, status: "active" })).status, who).toBe(200);
+  }
+
+  /* No board at all (a production with only a project that has no maker, or with no project): an admin's alone. */
+  api.as("maker");
+  expect((await api.productionPatch("prod-plain", { name: "no" })).status).toBe(403);
+  await runInTenant(ws, () => db().execute("INSERT INTO productions(id,name,created_at) VALUES('prod-empty','Empty',0)"));
+  expect((await api.productionPatch("prod-empty", { name: "no" })).status).toBe(403);
+  api.as("admin");
+  expect((await api.productionPatch("prod-empty", { name: "By an admin" })).status).toBe(200);
+});

@@ -19,7 +19,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: Ctx) {
     if (got.user.role !== "admin") return NextResponse.json({ error: "An admin sets a production's cap." }, { status: 403 });
   }
   const status: ProductionStatus | undefined = b.status === "delivered" || b.status === "active" ? b.status : undefined;
-  /* A name, a client or a status of a production that is there is changed by the owner of the board it belongs to or an admin (lib/workAccess.ts); an unknown id is answered as it always was. */
+  /* A name, a client or a status of a production that is there is changed by an admin, or the one person who made every board in it (lib/workAccess.ts); an unknown id is answered as it always was. */
   if (typeof b.name === "string" || typeof b.client === "string" || status !== undefined) {
     await ready();
     if ((await db().execute({ sql: "SELECT 1 FROM productions WHERE id = ?", args: [id] })).rows.length && !(await mayChangeProduction(got.user, id)))

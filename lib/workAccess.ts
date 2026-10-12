@@ -15,7 +15,7 @@ import { mappedId, workbenchReady } from "./workbench/records";
  *    only an admin changes it.
  *  - A shot's owner is its `created_by`; the project's maker may also change it.
  *  - A take's owner is its `created_by` (the person who made it); the maker of the project it is in may also change it.
- *  - A production's owner is the maker of a project that belongs to it. A move needs the right over the item moved AND over where it goes.
+ *  - A production's name, client and status are an admin's, or the one person who made every board in it. A move needs the right over the item moved AND over where it goes.
  * Nothing here decides who may SEE an item: every route answers a missing id as an unknown one and keeps its own reads.
  */
 export type Actor = { id: string; role: "admin" | "member"; owner?: boolean };
@@ -51,12 +51,17 @@ export async function mayChangeProject(actor: Actor, projectId: string | null | 
   return (await projectMaker(projectId)) === actor.id;
 }
 
-/** Whether `actor` may change a production's name, client or status: an admin, or the maker of a project that belongs to it. A production with no such project is an admin's. */
+/**
+ * Whether `actor` may change a production's name, client or status: an admin, or the one person who made every board in it. A production holding
+ * boards of two or more people, or no board of anyone's, is an admin's (each person manages their own boards, not the production over them);
+ * a project with no recorded maker is no one's board and does not count (owner, 12 Oct 2026).
+ */
 export async function mayChangeProduction(actor: Actor, productionId: string): Promise<boolean> {
   if (isAdmin(actor)) return true;
   const projects = (await db().execute({ sql: "SELECT id FROM projects WHERE production_id = ?", args: [productionId] })).rows;
-  for (const row of projects) if ((await projectMaker(String(row.id))) === actor.id) return true;
-  return false;
+  const makers = new Set<string>();
+  for (const row of projects) { const maker = await projectMaker(String(row.id)); if (maker) makers.add(maker); }
+  return makers.size === 1 && makers.has(actor.id);
 }
 
 /** Whether `actor` may change a take or a shot: its own maker, the maker of its project, or an admin. */
