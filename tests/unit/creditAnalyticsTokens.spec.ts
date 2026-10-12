@@ -97,6 +97,7 @@ async function routes(ws: TenantWorkspace) {
     "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
     "@/lib/creditSql": await import("../../lib/creditSql"),
     "@/lib/credits": await import("../../lib/credits"),
+    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/maskEmail": await import("../../lib/maskEmail"),
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/analyticsRedact": await import("../../lib/analyticsRedact"),
