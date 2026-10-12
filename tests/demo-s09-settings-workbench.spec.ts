@@ -274,7 +274,7 @@ test("Spending rules: the rule, the platform line and Ask, read as the code has 
   await expect(page.getByTestId("settings-approve")).toContainText("people only · Atomik never approves");
   await expect(page.getByTestId("settings-rule")).toContainText("Members up to 50 cr a shot; an admin above it.");
   await expect(page.getByTestId("settings-rule").locator(".gs-row-v")).toHaveText("50 cr");
-  await expect(page.getByTestId("settings-platform-line")).toContainText("Any job over 200 cr needs a person’s approval, even under Auto.");
+  await expect(page.getByTestId("settings-platform-line")).toContainText("Any job over 200 cr needs an admin’s tap, even under Auto.");
   await expect(page.getByTestId("settings-budget")).toContainText("Auto drafts ask at 80% of a production’s budget · at the cap an admin unlocks it");
   /* Spend without asking is Ask, read-only: no Auto switch, no invented pause. */
   await expect(page.getByTestId("settings-auto")).toContainText("Every paid step waits for a person.");

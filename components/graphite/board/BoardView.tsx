@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ReactFlowProvider, useReactFlow, useStoreApi, type Viewport } from "@xyflow/react";
 import { useRig } from "@/components/workspace/rig/RigProvider";
+import { SHARE_TEAM, viewOnlyLine } from "@/lib/workbench/view-only";
 import { markBoardOpen } from "@/lib/board/active";
 import { GLIDE_MS, glideEase } from "@/lib/board/ease";
 import { frameDrawer, frameRegion } from "@/lib/board/frames";
@@ -168,7 +169,9 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const lift = useSampleLift();
   const liftedHere = !!lift?.mine && !!project && !isSampleDraftId(project.id)
     && (lift.productionId == null || lift.productionId === (project.productionProjectId ?? null));
-  const gate = useMemo(() => ({ exploreOnly: liftedHere ? null : onSample.exploreOnly ?? spendOff, readOnly: onSample.readOnly }), [liftedHere, onSample, spendOff]);
+  /* A teammate's board opens view-only (lib/workbench/team-boards.ts): the stage header says whose it is, and every control that honours `readOnly` is off. */
+  const viewing = rig.viewOnly ? viewOnlyLine(rig.viewOnly.owner.name) : null;
+  const gate = useMemo(() => ({ exploreOnly: liftedHere ? null : onSample.exploreOnly ?? spendOff, readOnly: viewing ?? onSample.readOnly }), [liftedHere, onSample, spendOff, viewing]);
   /* While it is lifted the board's line says so (for anyone else its paid controls stay closed in the sample's words). */
   const pill = lift?.lifted && gate.exploreOnly !== CHECK_LINE ? LIFT_LINE : gate.exploreOnly;
   const sample = onSample.exploreOnly ? sampleBoard : null;
@@ -650,6 +653,16 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     shell.setScreenParams({ kind: null, stage: stays ? stage.id : null }, "replace");
     undoable("The board kind is back as it was", () => { rig.apply((p) => ({ ...p, ...before })); }, withUndoHint(`Board kind · ${KIND_LABEL[to]} · the rail changed; your cards are kept`));
   }, [flavor, rig, shell, stage, undoable, ws]);
+  /* Share with team (owner, 12 Oct 2026): the author's one flag in the draft's own JSON, saved like every edit, with ⌘Z. Teammates then open the board view-only. */
+  const teamShared = rig.project?.teamShared === true;
+  const toggleShare = useCallback(() => {
+    const current = rig.project;
+    if (!current) return;
+    const to = current.teamShared !== true;
+    const refusal = rig.apply((p) => ({ ...p, teamShared: to }));
+    if (refusal) { ws.toast(refusal); return; }
+    undoable(to ? SHARE_TEAM.stopped : SHARE_TEAM.shared, () => { rig.apply((p) => ({ ...p, teamShared: !to })); }, withUndoHint(to ? SHARE_TEAM.shared : SHARE_TEAM.stopped));
+  }, [rig, undoable, ws]);
   /* 1–9 jump to stage N; [ and ] to the stage before and after (inventory § 4.2). Never while typing. */
   useEffect(() => {
     if (!v12Frame) return;
@@ -739,6 +752,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     ...(v12Frame && blocking ? [{ id: "blocking", label: "3D blocking", onSelect: () => openBlocking(blocking) }] : []),
     { id: "fit", label: "Fit to view", shortcut: "0", onSelect: () => void flow.fitView({ padding: 0.08, duration: GLIDE_MS, ease: glideEase }) },
     ...(freeCards.length && !offline ? [{ id: "tidy", label: "Tidy", onSelect: () => void tidy() }] : []),
+    /* Author only: a teammate's board is view-only and a sample is nobody's to share. */
+    ...(v12Frame && !viewing && !offline && !gate.exploreOnly ? [{ id: "share-team", label: teamShared ? SHARE_TEAM.stop : SHARE_TEAM.share, tip: SHARE_TEAM.tip, testId: "v12-menu-share-team", onSelect: toggleShare }] : []),
   ];
   const regionBoxes = board.rail.flatMap((entry) => { const box = placed.regions.get(entry.id); return box ? [box] : []; });
   return (
@@ -749,11 +764,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             readOnly={offline ? "Offline" : gate.readOnly ?? null} onPick={goStage} onEdit={editStages} addBlocked={stageLimit(stages.length)} />
         ) : <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} render={kind === "studio"} />}
         <div className="bd-main" data-testid="board-canvas">
-          {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={headPrimary} menu={boardMenu} badge={round ? <RoundBadge board={project.name || "Board"} round={round} /> : null}
+          {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={viewing ? null : headPrimary} menu={boardMenu} viewOnly={viewing} badge={round ? <RoundBadge board={project.name || "Board"} round={round} /> : null}
             onBoard={() => { if (stages[0]) goStage(stages[0].id); }} onStage={() => pick(new Set(), null)} /> : null}
           <StageColumn on={v12Frame}>
           {list ? <List ctx={ctx} cards={placed.cards} /> : (
-            <BoardCanvas placed={placed} selection={selection} onSelect={pick} onFreeMoved={onFreeMoved} readOnly={offline} onMoveEnd={onMoveEnd}
+            <BoardCanvas placed={placed} selection={selection} onSelect={pick} onFreeMoved={onFreeMoved} readOnly={offline || Boolean(viewing)} onMoveEnd={onMoveEnd}
               placing={tool === "note" || tool === "text"} onPlace={place}
               onOpen={(id) => {
                 const card = placed.byId.get(id);
@@ -786,7 +801,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
               onAttach={(picked) => void upload(picked)} library={items} onAsked={() => setDockOpen(true)} />
           ) : null}
           {batch.offer && !list ? <NotifyAsk onTell={() => void batch.tellMe()} onNotNow={batch.notNow} /> : null}
-          {list || page || rigOn ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
+          {list || page || rigOn ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline || Boolean(viewing)} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12Frame} />
           {v12Frame ? <ViewSwitch view={list ? "list" : rigOn ? "rig" : "canvas"} onView={(v) => { setList(v === "list"); setRigView(v === "rig"); }} /> : null}
           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}

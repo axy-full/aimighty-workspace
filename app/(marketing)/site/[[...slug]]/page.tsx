@@ -10,6 +10,7 @@ import Settings, { metadata as settings } from "../_pages/settings";
 import Pricing, { metadata as pricing } from "../_pages/pricing";
 import { GuestHome } from "@/components/graphite/guest/GuestHome";
 import { VisitorApp } from "@/components/v12/visitor/VisitorApp";
+import { googleConfig } from "@/lib/googleSignIn";
 import { visitorAsk } from "@/lib/v12/visitor";
 import { readSite } from "@/lib/site/settings.server";
 import { guestSample } from "@/lib/guest/sample.server";
@@ -57,7 +58,7 @@ export default async function SiteRoute({ params, searchParams }: Props) {
        owner's own switch for them on too (`visitorPages`, off by default): off, a visitor sees today's Guest Home. */
     if (one(q.guest) === "1" && site.visitorPages) {
       const sample = await guestSample();
-      return <VisitorApp ask={visitorAsk(q)} sampleTitle={sample?.title ?? SAMPLE_TITLE} sampleBoard={sample?.board ?? null} />;
+      return <VisitorApp ask={visitorAsk(q)} sampleTitle={sample?.title ?? SAMPLE_TITLE} sampleBoard={sample?.board ?? null} google={googleConfig() !== null} />;
     }
     const invite = one(q.invite);
     const [sample, welcome] = await Promise.all([guestSample(), approvedWelcomeCredits().catch(() => null)]);
