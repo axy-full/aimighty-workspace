@@ -1,0 +1,25 @@
+{
+  "name": "particl-remotion",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Particl's own export templates (captions, title and end cards, reframe, cutdowns, final assembly). Rendered only by our self-hosted worker; never given user code.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "bundle": "node node/bundle.mjs",
+    "test": "node --test --test-concurrency=1 test/render.test.mjs"
+  },
+  "dependencies": {
+    "@remotion/renderer": "4.0.530",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.530"
+  },
+  "devDependencies": {
+    "@remotion/bundler": "4.0.530",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "typescript": "5.9.3"
+  }
+}

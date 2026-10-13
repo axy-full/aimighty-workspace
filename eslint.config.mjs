@@ -17,6 +17,7 @@ const eslintConfig = defineConfig([
     "public/vendor/pdfjs-*/**", // Unmodified Mozilla distribution, copied by postinstall.
         "design/**", // Supplied standalone design reference runtimes, not application code.
     "out/**",
+    "remotion/build/**", // The built bundle and export command; built by remotion/node/bundle.mjs.
     "build/**",
     "next-env.d.ts",
   ]),
