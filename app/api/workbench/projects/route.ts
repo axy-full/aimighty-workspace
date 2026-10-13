@@ -1,4 +1,4 @@
-import { rotateRoom } from '@/lib/workbench/room-rotation';
+import { closeRoom } from '@/lib/workbench/room-rotation';
 import { type ShareMode, isDraftProject, isMarkedSample, isSampleDraft, isSampleProject, mayReachProject, ownsDraftProject, projectLister } from '@/lib/draftProject';
 import { crossOriginProblem } from '@/lib/requestOrigin';
 import { gzipSync } from 'node:zlib';
@@ -192,9 +192,10 @@ export const POST=withTenant(async(req:Request)=>{
     if(asked===now)return Response.json({ok:true,shared:now!=='none',mode:now,revision:draft.revision});
     const changed=await setBoardSharing(storageOwner,body.projectId,{teamShared:asked!=='none',teamEdit:asked==='edit'},auth.user.id);
     if(!changed)return Response.json({error:'Save your project first.'},{status:404});
-    /* Can edit taken away (or sharing stopped): the live room closes at once, so a person who could write the board cannot go on through a token or a connection they already hold. */
-    const rotated=now==='edit'&&asked!=='edit'&&draft.project.productionProjectId?await rotateRoom(draft.project.productionProjectId):null;
-    return Response.json({ok:true,shared:changed.teamShared,mode:asked,revision:changed.revision,...(rotated?{roomRotated:true}:{})});
+    /* Can edit taken away (or sharing stopped): the room already moved on inside the share change itself; its old connections are closed now, after the commit
+       (retried; if Liveblocks still cannot, the new generation keeps the old room's tokens out all the same). */
+    if(changed.rotation)await closeRoom(changed.rotation.from);
+    return Response.json({ok:true,shared:changed.teamShared,mode:asked,revision:changed.revision,...(changed.rotation?{roomRotated:true}:{})});
   }
   if(body.action==='map-shot'){
     try{return Response.json({productionProjectId:draft.project.productionProjectId,shotId:await mapNodeShot(storageOwner,draft.project,String(body.nodeId||''),auth.user.id)})}

@@ -13,6 +13,7 @@ import {assertUploadsOpenable,currentViewer,openableAmong,warmOpenable} from '@/
 import {diffForTeam} from './team-canvas-model';
 import {applyTeamCanvasPatch, teamCanvasReady, TeamCanvasError} from './team-canvas';
 import {scheduleCanvasPush} from './canvas-push';
+import {bumpRoomGeneration} from './room-rotation';
 
 const initialized = new WeakMap<Client, Promise<void>>();
 export async function workbenchReady() {
@@ -226,7 +227,7 @@ export async function saveDraft(owner:string, project:Project, revision:number, 
  * flags in the stored JSON, in one write, and not the revision: every save keeps the flags as stored, so an open window's next save neither undoes nor
  * conflicts with it. `owner` is the key the board is stored under; `actor` is who changed it, recorded on the row. Null when there is no such board.
  */
-export async function setBoardSharing(owner:string, draftId:string, flags:{teamShared:boolean;teamEdit?:boolean}, actor:string=owner):Promise<{revision:number;teamShared:boolean;teamEdit:boolean}|null> {
+export async function setBoardSharing(owner:string, draftId:string, flags:{teamShared:boolean;teamEdit?:boolean}, actor:string=owner):Promise<{revision:number;teamShared:boolean;teamEdit:boolean;rotation:{from:string;to:string}|null}|null> {
   await workbenchReady();
   /* "Can edit" only exists on a shared board: an edit flag without sharing is no flag. */
   const teamShared=flags.teamShared===true, teamEdit=teamShared&&flags.teamEdit===true;
@@ -234,10 +235,15 @@ export async function setBoardSharing(owner:string, draftId:string, flags:{teamS
     const row=(await tx.execute({sql:'SELECT body,revision FROM workbench_projects WHERE key=?',args:[owner+':'+draftId]})).rows[0];
     if(!row)return null;
     const body=JSON.parse(String(row.body)) as Record<string,unknown>;
+    const hadEdit=body.teamShared===true&&body.teamEdit===true;
     if(teamShared)body.teamShared=true; else delete body.teamShared;
     if(teamEdit)body.teamEdit=true; else delete body.teamEdit;
     await tx.execute({sql:'UPDATE workbench_projects SET body=?,updated_at=?,updated_by=? WHERE key=?',args:[JSON.stringify(body),now(),actor,owner+':'+draftId]});
-    return {revision:Number(row.revision),teamShared,teamEdit};
+    /* Can edit taken away: the live room moves on in the SAME transaction, so the share change and the closing of the old room are one fact. The caller
+       closes the old room's connections after the commit (lib/workbench/room-rotation.ts › closeRoom). */
+    const production=typeof body.productionProjectId==='string'?body.productionProjectId:null;
+    const rotation=hadEdit&&!teamEdit&&production?await bumpRoomGeneration(tx,requireTenant().id,production):null;
+    return {revision:Number(row.revision),teamShared,teamEdit,rotation};
   });
 }
 

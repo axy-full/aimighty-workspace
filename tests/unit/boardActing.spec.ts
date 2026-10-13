@@ -114,7 +114,7 @@ test("the share flags are the server's: no save sets or clears them", async () =
   expect(await stored()).toBeUndefined();
   // The action shares it (and only the flag changes: the revision is the same, the actor is recorded).
   const shared = await f.as(who("u_owner"), () => f.records.setBoardSharing("u_owner", "d1", { teamShared: true }, "u_owner"));
-  expect(shared).toEqual({ revision, teamShared: true, teamEdit: false });
+  expect(shared).toEqual({ revision, teamShared: true, teamEdit: false, rotation: null });
   expect(await stored()).toBe(true);
   expect(Number((await f.row()).revision)).toBe(revision);
   // A save that says "private", that never heard of the flag, or from a stale window's copy: the board stays shared.

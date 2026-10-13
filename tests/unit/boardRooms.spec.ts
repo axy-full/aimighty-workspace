@@ -186,8 +186,131 @@ test("rotating a room: the generation moves first, a room that does not exist or
     const c = await rotateRoom("prj_x", null);
     return { a, b, c, generation: await roomGeneration("prj_x"), other: await roomGeneration("prj_y") };
   });
-  expect(moved.a).toEqual({ from: `particl:${f.ws.id}:prj_x`, to: `particl:${f.ws.id}:prj_x:1` });
+  expect(moved.a).toEqual({ from: `particl:${f.ws.id}:prj_x`, to: `particl:${f.ws.id}:prj_x:1`, closed: true });
   expect(moved.b.to.endsWith(":2") && moved.c.to.endsWith(":3")).toBe(true);
   expect(moved).toMatchObject({ generation: 3, other: 0 });
   expect(gone).toEqual([`particl:${f.ws.id}:prj_x`]);
+});
+
+test("the share change and the room's rotation are one transaction: if the room cannot move, the board stays as it was", async () => {
+  const f = await fixture("atomic");
+  const { roomGeneration } = await import("../../lib/workbench/room-rotation");
+  const production = f.first.productionProjectId as string;
+  const stored = async () => JSON.parse(String((await f.row()).body));
+  await f.as(who("u_owner"), () => f.post({ action: "team-share", projectId: "d1", mode: "edit" }));
+  expect(await stored()).toMatchObject({ teamShared: true, teamEdit: true });
+  // The generation lives in the workspace's settings: take that table away for a moment, so the rotation inside the share change cannot be written.
+  await f.as(who("u_owner"), () => f.database.db().execute("ALTER TABLE settings RENAME TO settings_away"));
+  let refused: unknown;
+  try { refused = await f.as(who("u_owner"), () => f.records.setBoardSharing("u_owner", "d1", { teamShared: true, teamEdit: false }, "u_owner").then(() => "changed", (e: Error) => e.message)); }
+  finally { await f.as(who("u_owner"), () => f.database.db().execute("ALTER TABLE settings_away RENAME TO settings")); }
+  expect(refused).toMatch(/settings/);
+  // Nothing half-done: still shared with edit, same revision, generation not moved.
+  expect(await stored()).toMatchObject({ teamShared: true, teamEdit: true });
+  expect(await f.as(who("u_owner"), () => roomGeneration(production))).toBe(0);
+  // With the table back, the one change does both, and says what it moved.
+  const done = await f.as(who("u_owner"), () => f.records.setBoardSharing("u_owner", "d1", { teamShared: true, teamEdit: false }, "u_owner"));
+  expect(done).toMatchObject({ teamEdit: false, rotation: { from: `particl:${f.ws.id}:${production}`, to: `particl:${f.ws.id}:${production}:1` } });
+  expect(await f.as(who("u_owner"), () => roomGeneration(production))).toBe(1);
+  expect(await stored()).toMatchObject({ teamShared: true });
+  expect((await stored()).teamEdit).toBeUndefined();
+  // A change that does not take edit away moves nothing.
+  const same = await f.as(who("u_owner"), () => f.records.setBoardSharing("u_owner", "d1", { teamShared: true, teamEdit: true }, "u_owner"));
+  expect(same?.rotation).toBeNull();
+  expect(await f.as(who("u_owner"), () => roomGeneration(production))).toBe(1);
+});
+
+test("closing the old room is retried, and when Liveblocks cannot be reached the new generation still keeps the old room's tokens out", async () => {
+  process.env.LIVEBLOCKS_SECRET_KEY = "sk_test_stub_secret";
+  const { closeRoom } = await import("../../lib/workbench/room-rotation");
+  // Three tries, then it gives up without throwing; a room that is already gone counts as closed.
+  let tries = 0;
+  expect(await closeRoom("r", { deleteRoom: async () => { tries++; if (tries < 3) throw new Error("503"); } }, [0, 0])).toBe(true);
+  expect(tries).toBe(3);
+  tries = 0;
+  expect(await closeRoom("r", { deleteRoom: async () => { tries++; throw new Error("503"); } }, [0, 0])).toBe(false);
+  expect(tries).toBe(3);
+  expect(await closeRoom("r", { deleteRoom: async () => { throw Object.assign(new Error("no room"), { status: 404 }); } }, [0, 0])).toBe(true);
+  expect(await closeRoom("r", null)).toBe(true);
+  // Through the route, with Liveblocks answering 500 to every delete: the share change still succeeds, and the old room still gets no token.
+  const f = await fixture("blocked");
+  const production = f.first.productionProjectId as string;
+  const { teamRoomFor } = await import("../../lib/workbench/team-canvas");
+  const deletes: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if ((init?.method ?? (input instanceof Request ? input.method : "GET")) === "DELETE" && url.includes("/rooms/")) { deletes.push(url); return new Response(JSON.stringify({ error: "down" }), { status: 500 }); }
+    throw new Error(`unexpected network call ${url}`);
+  }) as typeof fetch;
+  const realTimeout = globalThis.setTimeout;
+  (globalThis as { setTimeout: unknown }).setTimeout = ((fn: () => void, ms?: number, ...rest: unknown[]) => realTimeout(fn, ms && ms > 100 ? 1 : ms, ...rest)) as typeof setTimeout;
+  try {
+    await f.as(who("u_owner"), () => f.post({ action: "team-share", projectId: "d1", mode: "edit" }));
+    const res = await f.as(who("u_owner"), () => f.post({ action: "team-share", projectId: "d1", mode: "none" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, mode: "none", roomRotated: true });
+    expect(deletes.length).toBe(3);
+    let current = who("u_owner");
+    const auth = authRoute(() => current);
+    const token = (room: string) => f.as(current, () => auth.POST(new Request("https://particl.test/api/collab/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ room }) })));
+    expect((await token(teamRoomFor(f.ws.id, production))).status, "the old room, never closed by Liveblocks").toBe(403);
+  } finally { globalThis.fetch = realFetch; globalThis.setTimeout = realTimeout; }
+});
+
+test("a member switched off or removed closes every Can edit room; re-enabling, and boards that are only viewed or private, do not", async () => {
+  process.env.LIVEBLOCKS_SECRET_KEY = "sk_test_stub_secret";
+  const f = await fixture("membership");
+  const { roomGeneration } = await import("../../lib/workbench/room-rotation");
+  const { newProject } = await import("../../lib/workbench/studio");
+  const { createNode } = await import("../../lib/workbench/node-graph");
+  const owner = who("u_owner");
+  const generations = async () => f.as(owner, async () => {
+    const rows = (await f.database.db().execute("SELECT owner, project_id, body FROM workbench_projects ORDER BY project_id")).rows;
+    const out: Record<string, number> = {};
+    for (const r of rows) out[String(r.project_id)] = await roomGeneration((await import("../../lib/workbench/records")).mappedId("prj_wb_", f.ws.id, String(r.owner), String(r.project_id)));
+    return out;
+  });
+  // d1 (edit), d2 (edit), d3 (view), d4 (private).
+  for (const id of ["d2", "d3", "d4"]) await f.as(owner, () => f.records.saveDraft("u_owner", { ...newProject(id), id, nodes: [{ ...createNode("scene", 0), id: "n1" }] } as never, 0));
+  await f.as(owner, () => f.post({ action: "team-share", projectId: "d1", mode: "edit" }));
+  await f.as(owner, () => f.post({ action: "team-share", projectId: "d2", mode: "edit" }));
+  await f.as(owner, () => f.post({ action: "team-share", projectId: "d3", mode: "view" }));
+  expect(await generations()).toEqual({ d1: 0, d2: 0, d3: 0, d4: 0 });
+  const deletes: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if ((init?.method ?? (input instanceof Request ? input.method : "GET")) === "DELETE" && url.includes("/rooms/")) { deletes.push(decodeURIComponent(url.split("/rooms/")[1])); return new Response(null, { status: 204 }); }
+    throw new Error(`unexpected network call ${url}`);
+  }) as typeof fetch;
+  try {
+    const admin = { ...who("u_owner", "admin"), owner: true };
+    const root = process.cwd();
+    const file = "app/api/team/[id]/route.ts";
+    const real = createRequire(path.resolve(file));
+    const fakes: Record<string, unknown> = {
+      "@/lib/auth": { withTenant: (h: unknown) => h, requireAdmin: async () => ({ user: admin }), isPlatformOwner: async () => false },
+      "next/server": real("next/server"),
+    };
+    const compiled = ts.transpileModule(readFileSync(path.resolve(file), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+    const mod = { exports: {} as { PATCH: (r: Request, c: unknown) => Promise<Response>; DELETE: (r: Request, c: unknown) => Promise<Response> } };
+    new Function("require", "module", "exports", compiled)((name: string) => (Object.hasOwn(fakes, name) ? fakes[name] : name.startsWith("@/") ? real(path.join(root, name.slice(2))) : real(name)), mod, mod.exports);
+    const ctx = { params: Promise.resolve({ id: "u_mate" }) };
+    const patch = (body: unknown) => f.as(admin, () => mod.exports.PATCH(new Request("https://particl.test/api/team/u_mate", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), ctx));
+    // Switched off: d1 and d2 move on, d3 (view) and d4 (private) do not; each old room is deleted.
+    const off = await patch({ disabled: true });
+    expect(off.status, JSON.stringify(await off.clone().json())).toBe(200);
+    expect(await generations()).toEqual({ d1: 1, d2: 1, d3: 0, d4: 0 });
+    expect(deletes.length).toBe(2);
+    // Switched back on, or only the role changed (a role change is the owner's call; the admin is the owner here): nothing moves.
+    expect((await patch({ disabled: false })).status).toBe(200);
+    expect(await generations()).toEqual({ d1: 1, d2: 1, d3: 0, d4: 0 });
+    expect(deletes.length).toBe(2);
+    // Removed: every Can edit room moves again.
+    const removed = await f.as(admin, () => mod.exports.DELETE(new Request("https://particl.test/api/team/u_mate", { method: "DELETE" }), ctx));
+    expect(removed.status, JSON.stringify(await removed.clone().json())).toBe(200);
+    expect(await generations()).toEqual({ d1: 2, d2: 2, d3: 0, d4: 0 });
+    expect(deletes.length).toBe(4);
+  } finally { globalThis.fetch = realFetch; }
 });
