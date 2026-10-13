@@ -1,4 +1,4 @@
-import { currentPerson, projectLister } from "./draftProject";
+import { currentPerson, projectLister, takeLister } from "./draftProject";
 import { db, ready } from "./db";
 import { requireTenant } from "./tenant";
 import { platformDb } from "./platform";
@@ -83,7 +83,7 @@ export async function creditUsage(viewer: LedgerViewer) {
       args: [ws.id],
     }),
     p.execute({
-      sql: `SELECT id,model,engine,kind,status,${charge} AS credits,created_at FROM meter_events WHERE workspace_id=? AND (status='succeeded' OR (status='failed' AND ${charge}>0)) ORDER BY created_at DESC,id DESC LIMIT 60`,
+      sql: `SELECT id,model,engine,kind,status,project_id,${charge} AS credits,created_at FROM meter_events WHERE workspace_id=? AND (status='succeeded' OR (status='failed' AND ${charge}>0)) ORDER BY created_at DESC,id DESC LIMIT 60`,
       args: [ws.id],
     }),
     db().execute("SELECT id,name FROM projects"),
@@ -93,6 +93,7 @@ export async function creditUsage(viewer: LedgerViewer) {
   ]);
   /* A private board is its owner's alone (lib/draftProject.ts): its spend stays in the totals, its name does not show to anyone else. */
   const listed = await projectLister(currentPerson());
+  const takesListed = await takeLister(currentPerson());
   const projectLabel = new Map(
     projectNames.rows.map((r) => [String(r.id), listed(String(r.id)) ? String(r.name) : "A private board"]),
   );
@@ -169,6 +170,10 @@ export async function creditUsage(viewer: LedgerViewer) {
     byPerson,
     byMonth: months.rows.map((r) => ({ month: String(r.month), ...amount(r) })),
     recent: recent.rows.map((r) => {
+      /* A render in a private board this person may not see keeps its spend (the totals above stay whole) and its engine, kind, status and time,
+         and nothing that says what it was: no id, title, prompt or settings. Its row reads as the board's name does in the per-board list. */
+      if (r.project_id != null && !takesListed(String(r.project_id)))
+        return { id: "", model: String(r.model), label: modelLabel(String(r.model)), provider: String(r.engine), kind: String(r.kind), status: String(r.status), title: "A private board", prompt: "", credits: Number(r.credits), params: {}, createdAt: Number(r.created_at), refineLabel: null };
       const detail = descriptionsById.get(String(r.id));
       return {
         id: String(r.id),

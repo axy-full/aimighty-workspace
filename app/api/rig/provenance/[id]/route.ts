@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
 import { db, ready } from "@/lib/db";
+import { mayReadTake } from "@/lib/draftProject";
 import { provenanceOf } from "@/lib/provenance";
 
 /**
@@ -22,12 +23,13 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
 
   const rs = await db().execute({
     sql: `SELECT g.id, g.shot_id, g.version, g.model, g.review_state, g.created_by, g.created_at,
-                 g.cost_usd, g.kind, s.code AS shot_code, s.title AS shot_title
+                 g.cost_usd, g.kind, g.project_id, s.code AS shot_code, s.title AS shot_title
           FROM generations g LEFT JOIN shots s ON s.id = g.shot_id
           WHERE g.id = ? AND g.deleted = 0`,
     args: [id],
   });
-  if (!rs.rows.length) return NextResponse.json({ error: "No such take." }, { status: 404 });
+  /* A take of a private board this person may not see is as absent as an unknown id (lib/draftProject.ts): the same 404, after the same read. */
+  if (!rs.rows.length || !(await mayReadTake(got.user, rs.rows[0].project_id == null ? null : String(rs.rows[0].project_id)))) return NextResponse.json({ error: "No such take." }, { status: 404 });
   const r = rs.rows[0] as unknown as Record<string, unknown>;
 
   return NextResponse.json({

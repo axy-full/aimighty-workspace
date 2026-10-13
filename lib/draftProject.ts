@@ -161,3 +161,15 @@ export function visibleTakesClause(visible: string[]): { sql: string; args: unkn
     args: [JSON.stringify(visible)],
   };
 }
+
+/** Which of the projects `viewer` may see the takes of, as a lookup: everything for an admin or for nobody (background work), else `projectLister`'s (their own boards, shared ones, the sample, ordinary productions). */
+export async function takeLister(viewer: Viewer, ex: Exec = db()): Promise<(projectId: string | null | undefined) => boolean> {
+  if (!viewer || seesEveryBoard(viewer)) return () => true;
+  return projectLister(viewer, ex);
+}
+
+/** `projectId` when `viewer` may READ that project (its owner, an admin of the workspace, anyone for a shared board or the sample), else the id of no project: what a route that feeds a project's takes, titles or prompts to a model runs on, so a private board is as unknown as an unknown id and nothing of it is read. */
+export async function readableProjectOr(viewer: Viewer, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
+  if (projectId == null) return null;
+  return seesEveryBoard(viewer) || (await mayReachProject(viewer, projectId, "read", ex)) ? projectId : NO_SUCH_PROJECT;
+}

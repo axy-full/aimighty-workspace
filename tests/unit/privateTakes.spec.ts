@@ -25,12 +25,13 @@ const user = (id: string, role: "admin" | "member" = "member", owner = false) =>
 type Actor = { user: ReturnType<typeof user>; token?: unknown };
 const as = (id: string, role: "admin" | "member" = "member", token = false, owner = false): Actor => ({ user: user(id, role, owner), ...(token ? { token: { id: `tok_${id}`, name: "agent", scope: "render" as const, capUsd: null } } : {}) });
 
-function loadRoute<T>(file: string, who: () => Actor): T {
+function loadRoute<T>(file: string, who: () => Actor, extra: Record<string, unknown> = {}): T {
   const root = process.cwd();
   const real = createRequire(path.resolve(file));
   const fakes: Record<string, unknown> = {
     "@/lib/auth": { withTenant: (handler: unknown) => handler, requireUser: async () => ({ ...who() }), requireRender: async () => ({ ...who() }), requireSession: async () => ({ ...who() }) },
     "@/lib/workbench/request-scope": { workbenchScopeProblem: () => null },
+    ...extra,
   };
   const filename = path.resolve(file);
   const compiled = ts.transpileModule(readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
@@ -70,6 +71,8 @@ async function fixture(ws: TenantWorkspace) {
     await take(`t_sample_${run}`, `${SAMPLE}-one`, projects.sample, 60);
     await take(`t_open_${run}`, `${OPEN}-one`, "prod_open", 50);
     await take(`t_free_${run}`, `${FREE}-one`, null, 40);
+    /* What a planner would read about each board: one named cast member in the private board. */
+    await db.execute({ sql: "INSERT INTO cast_members(id,project_id,name,kind,description,created_by,created_at) VALUES(?,?,?,?,?,?,1)", args: [`cast_${run}`, projects.private, "SecretCast", "character", "Only the owner's board", "u_owner"] });
   }, { user: user("u_owner") });
   return { tenant, database, projects };
 }
@@ -216,4 +219,126 @@ test("the project Library, a take's file and the approved-takes package: the sam
   expect(none[0]).toBe(404);
   for (const actor of SEES_PRIVATE) expect(await count(actor, projects.private), actor.user.id).toEqual([200, { approved: 1 }]);
   for (const actor of HIDDEN_FROM) expect(await count(actor, projects.private), actor.user.id).toEqual(none);
+});
+
+
+/* ── Usage, thumbnails, provenance, the strip's take, and Atomik's context ─────────────────────────────────────────── */
+
+test("GET /api/usage: a private board's render stays in the spend and loses its words; the owner and admins read it; another workspace has none", async () => {
+  const ws = workspace(`pt-e-${run}`);
+  const { tenant, projects } = await fixture(ws);
+  const { alignLedgerUnit } = await import("../helpers/ledgerUnit");
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const { creditUsage } = await import("../../lib/creditUsage");
+  await platformReady(); await alignLedgerUnit();
+  const meter = (id: string, projectId: string | null, credits: number, at: number) => platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,?,'image','google','gemini-3.1-flash-image','succeeded',0.01,?,1,'u_owner',?,?)", args: [id, ws.id, projectId, credits, at, at] });
+  await meter(`t_priv1_${run}`, projects.private, 12, 80); await meter(`t_shared_${run}`, projects.shared, 5, 70); await meter(`t_open_${run}`, "prod_open", 3, 50);
+  const usage = (actor: Actor, within: TenantWorkspace = ws) => tenant.runInTenant(within, () => creditUsage({ id: actor.user.id, admin: actor.user.role === "admin" }), { user: actor.user, token: actor.token as never });
+  const total = (body: { byModel: { credits: number }[] }) => body.byModel.reduce((n, m) => n + m.credits, 0);
+  for (const actor of HIDDEN_FROM) {
+    const body = await usage(actor);
+    /* The money is whole: 12 + 5 + 3. The words are not: no id, title, prompt or settings of the hidden render. */
+    expect(total(body), actor.user.id).toBe(20);
+    const hidden = body.recent.find((r: { credits: number }) => r.credits === 12)!;
+    expect(hidden, actor.user.id).toMatchObject({ id: "", title: "A private board", prompt: "", params: {}, status: "succeeded" });
+    expect(JSON.stringify(body), actor.user.id).not.toContain(`t_priv1_${run}`);
+    expect(JSON.stringify(body), actor.user.id).not.toContain(PRIV);
+    expect(body.recent.find((r: { credits: number }) => r.credits === 5), actor.user.id).toMatchObject({ id: `t_shared_${run}`, prompt: `${SHARED}-one` });
+  }
+  for (const actor of SEES_PRIVATE) {
+    const row = (await usage(actor)).recent.find((r: { credits: number }) => r.credits === 12)!;
+    expect(row, actor.user.id).toMatchObject({ id: `t_priv1_${run}`, prompt: `${PRIV}-one` });
+  }
+  /* Another workspace: its ledger has none of these. */
+  const other = workspace(`pt-e2-${run}`);
+  await tenant.runInTenant(other, async () => { await (await import("../../lib/db")).ready(); }, { user: user("u_admin", "admin") });
+  expect((await usage(ADMIN, other)).recent).toEqual([]);
+});
+
+test("a thumbnail, a take's provenance and the strip's take: a hidden take is the unknown id's answer, and the shot's strip shows no take", async () => {
+  const ws = workspace(`pt-f-${run}`);
+  const { tenant, database, projects } = await fixture(ws);
+  let who: Actor = OWNER;
+  const preview = loadRoute<typeof import("../../app/api/workbench/preview/[kind]/[id]/route")>("app/api/workbench/preview/[kind]/[id]/route.ts", () => who);
+  const provenance = loadRoute<typeof import("../../app/api/rig/provenance/[id]/route")>("app/api/rig/provenance/[id]/route.ts", () => who);
+  const bindings = loadRoute<typeof import("../../app/api/rig/bindings/[id]/route")>("app/api/rig/bindings/[id]/route.ts", () => who);
+  /* A real picture for the owner's take, and a shot of the private board that holds it. */
+  await tenant.runInTenant(ws, async () => {
+    const db = database.db();
+    await db.execute({ sql: "UPDATE generations SET kind='image',bytes=10 WHERE id IN (?,?)", args: [`t_priv1_${run}`, `t_open_${run}`] });
+    await db.execute({ sql: "INSERT INTO shots(id,project_id,code,title,description,setup,created_at,updated_at) VALUES(?,?,?,?,?,?,1,1)", args: [`shot_p_${run}`, projects.private, "SH010", "Secret title", "", "{}"] });
+    await db.execute({ sql: "UPDATE generations SET shot_id=? WHERE id=?", args: [`shot_p_${run}`, `t_priv1_${run}`] });
+  }, { user: user("u_owner") });
+  const as_ = <R>(actor: Actor, run_: () => Promise<R>) => { who = actor; return tenant.runInTenant(ws, run_, { user: actor.user, token: actor.token as never }); };
+  const thumb = (actor: Actor, id: string) => as_(actor, async () => { const res = await preview.GET(new Request(`https://particl.test/x`), { params: Promise.resolve({ kind: "generation", id }) }); return [res.status, await res.text()] as const; });
+  const prov = (actor: Actor, id: string) => as_(actor, async () => { const res = await provenance.GET(new Request("https://particl.test/x"), { params: Promise.resolve({ id }) }); return [res.status, await res.json()] as const; });
+  const strip = (actor: Actor) => as_(actor, async () => (await (await bindings.GET(new Request("https://particl.test/x"), { params: Promise.resolve({ id: `shot_p_${run}` }) })).json()) as { take: { id: string } | null });
+  const unknownProv = await prov(MATE, "t_does_not_exist");
+  expect(unknownProv[0]).toBe(404);
+  const unknownThumb = await thumb(MATE, "t_does_not_exist");
+  for (const actor of SEES_PRIVATE) {
+    expect((await prov(actor, `t_priv1_${run}`))[0], actor.user.id).toBe(200);
+    expect((await strip(actor)).take, actor.user.id).toMatchObject({ id: `t_priv1_${run}` });
+    /* The picture itself is read from storage (not in this test): the owner's answer is not the unknown id's "Not found". */
+    expect((await thumb(actor, `t_priv1_${run}`))[1], actor.user.id).not.toBe("Not found");
+  }
+  for (const actor of HIDDEN_FROM) {
+    expect(await prov(actor, `t_priv1_${run}`), actor.user.id).toEqual(unknownProv);
+    expect(await thumb(actor, `t_priv1_${run}`), actor.user.id).toEqual(unknownThumb);
+    expect((await strip(actor)).take, actor.user.id).toBeNull();
+  }
+  expect((await prov(MATE, `t_shared_${run}`))[0]).toBe(200);
+  expect((await thumb(MATE, `t_open_${run}`))[1]).not.toBe("Not found");
+  /* Another workspace's admin: the same ids are no takes there. */
+  const other = workspace(`pt-f2-${run}`);
+  await tenant.runInTenant(other, async () => { await (await import("../../lib/db")).ready(); }, { user: user("u_admin", "admin") });
+  who = ADMIN;
+  expect(await tenant.runInTenant(other, async () => { const res = await provenance.GET(new Request("https://particl.test/x"), { params: Promise.resolve({ id: `t_priv1_${run}` }) }); return [res.status, await res.json()] as const; }, { user: ADMIN.user })).toEqual(unknownProv);
+});
+
+test("Atomik: a project the caller may not read is the id of no project for the model, before anything is read; an owner and an admin read it; another workspace reads nothing", async () => {
+  const ws = workspace(`pt-g-${run}`);
+  const { tenant, projects } = await fixture(ws);
+  const atomik = await import("../../lib/atomik");
+  const { PaidTextError } = await import("../../lib/paidText");
+  const { NO_SUCH_PROJECT } = await import("../../lib/draftProject");
+  type Seen = { projectId: string | null | undefined; context: string | undefined; library: unknown };
+  const seen: Seen[] = [];
+  /* runTurn is the model: stand-in records what it was handed and stops. Everything before it (the cast, memory, library reads) is real. */
+  const spy = { ...atomik, runTurn: async (_id: string | null, opts: { projectId?: string | null; context?: string; library?: unknown }) => { seen.push({ projectId: opts.projectId, context: opts.context, library: opts.library }); throw new PaidTextError("stop", 400); } };
+  let who: Actor = OWNER;
+  const start = loadRoute<typeof import("../../app/api/atomik/route")>("app/api/atomik/route.ts", () => who, { "@/lib/atomik": spy });
+  const turn = loadRoute<typeof import("../../app/api/atomik/[id]/route")>("app/api/atomik/[id]/route.ts", () => who, { "@/lib/atomik": spy });
+  const ask = (actor: Actor, projectId: string, within: TenantWorkspace = ws) => {
+    who = actor; seen.length = 0;
+    const headers = { "Content-Type": "application/json", "X-Workbench-Scope": `particl-active-${within.id}-${actor.user.id}` };
+    return tenant.runInTenant(within, async () => {
+      /* A quote on a named project, and a turn in a chat that names it. */
+      await start.POST(new Request("https://particl.test/api/atomik", { method: "POST", headers, body: JSON.stringify({ quoteOnly: true, text: "plan it", projectId }) }) as never, undefined as never);
+      const chat = await atomik.createChat({ userId: actor.user.id, projectId, model: "auto", agentMode: "ask" });
+      await turn.POST(new Request(`https://particl.test/api/atomik/${chat}`, { method: "POST", headers, body: JSON.stringify({ quoteOnly: true, text: "plan it" }) }) as never, { params: Promise.resolve({ id: chat }) });
+      return seen.map((s) => ({ ...s }));
+    }, { user: actor.user, token: actor.token as never });
+  };
+  const unknown = await ask(MATE, "prj_wb_doesnotexist0000000000");
+  expect(unknown).toHaveLength(2);
+  for (const actor of HIDDEN_FROM) {
+    const got = await ask(actor, projects.private);
+    expect(got.map((s) => s.projectId), actor.user.id).toEqual([NO_SUCH_PROJECT, NO_SUCH_PROJECT]);
+    expect(JSON.stringify(got), actor.user.id).not.toMatch(/SecretCast|PRIV-|Only the owner/);
+    expect(got.map((s) => s.context), actor.user.id).toEqual(unknown.map((s) => s.context));
+  }
+  /* Shared and the sample: readable (view), as for anyone. */
+  expect((await ask(MATE, projects.shared)).map((s) => s.projectId)).toEqual([projects.shared, projects.shared]);
+  expect((await ask(MATE, projects.sample)).map((s) => s.projectId)).toEqual([projects.sample, projects.sample]);
+  for (const actor of [OWNER, ADMIN, ADMIN_TOKEN, WS_OWNER]) {
+    const got = await ask(actor, projects.private);
+    expect(got.map((s) => s.projectId), actor.user.id).toEqual([projects.private, projects.private]);
+    expect(got[0].context, actor.user.id).toContain("SecretCast");
+  }
+  /* Another workspace: the id is no project there, and it reads no cast. */
+  const other = workspace(`pt-g2-${run}`);
+  await tenant.runInTenant(other, async () => { await (await import("../../lib/db")).ready(); }, { user: user("u_admin", "admin") });
+  const there = await ask(ADMIN, projects.private, other);
+  expect(JSON.stringify(there)).not.toContain("SecretCast");
 });

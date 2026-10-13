@@ -893,7 +893,8 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
   await ready();
   const loaded = chatId ? await getChat(chatId) : null;
   if (!loaded && !opts.quoteOnly) throw new Error("That chat is gone.");
-  const chat: Chat = loaded?.chat ?? { id: "", projectId: opts.projectId ?? null, title: "New chat", model: "auto", effort: "auto", agentMode: "ask", status: "idle", textCostUsd: 0, createdBy: "", createdAt: 0, updatedAt: 0 };
+  /* A project the route says this person may not read stands as the id of no project for the whole turn (its steps, spend lines and memory), whatever the chat names. */
+  const chat: Chat = (loaded && opts.projectId !== undefined ? { ...loaded.chat, projectId: opts.projectId } : loaded?.chat) ?? { id: "", projectId: opts.projectId ?? null, title: "New chat", model: "auto", effort: "auto", agentMode: "ask", status: "idle", textCostUsd: 0, createdBy: "", createdAt: 0, updatedAt: 0 };
   const messages: Message[] = [...(loaded?.messages ?? [])];
   if (opts.userMessage) messages.push({ id: "", chatId: chat.id, role: "user", text: opts.userMessage.text,
     attachments: opts.userMessage.attachments, activity: [], ask: null, workedMs: null, costUsd: 0, model: "", createdAt: 0 });
