@@ -145,6 +145,7 @@ test("the selects count is one per approved take, even when a prompt holds a lin
   const { db, ready } = await import("../../lib/db");
   const selects = await route("app/api/export/selects/route.ts", {
     "@/lib/db": await import("../../lib/db"),
+    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/settings": await import("../../lib/settings"),
     "@/lib/naming": await import("../../lib/naming"),
     "@/lib/models": await import("../../lib/models"),
