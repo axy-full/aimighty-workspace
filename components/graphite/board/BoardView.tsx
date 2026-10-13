@@ -663,7 +663,10 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     if (!current) return false;
     const reply = await fetcher("/api/workbench/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "team-share", projectId: current.id, shared: to }) }).catch(() => null);
     if (!reply?.ok) { ws.toast("Sharing was not changed. Try again."); return false; }
+    const answer = (await reply.json().catch(() => null)) as { roomRotated?: boolean } | null;
     rig.adoptSharing(to);
+    /* The live room was closed (Can edit was on): this window joins the new one, from the saved canvas. */
+    if (answer?.roomRotated) rig.team.rejoin();
     return true;
   }, [fetcher, rig, ws]);
   const toggleShare = useCallback(() => {

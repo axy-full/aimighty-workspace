@@ -38,6 +38,7 @@ import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 import { viewOnlyRefusal, type ActingOn, type ViewOnly } from "@/lib/workbench/view-only";
 import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
 import { createHeldEdits, editsFrozen, registerDrain, sendsAllowed, subscribeSwitch, whileSwitching } from "@/lib/shell/switch-workspace";
+import { actingOwnerField, setActingOwner } from "@/lib/workbench/acting-on";
 
 /**
  * The Rig's live state, shared by the shot list, the node graph, the
@@ -132,7 +133,7 @@ export type RigContext = {
   /** Deletes a shot (with the inputs only it used); returns the refusal, or null. ⌘Z brings it back in the Suites. */
   removeShot: (id: string) => string | null;
   /** The production's shared canvas: who else is here, presence to show them, and the server's own changes (Tidy). */
-  team: Pick<TeamCanvasApi, "mode" | "peers" | "presence" | "server" | "tidy" | "refresh">;
+  team: Pick<TeamCanvasApi, "mode" | "peers" | "presence" | "server" | "tidy" | "refresh" | "rejoin">;
   /** The locked elements (the masters) on this production's canvas, as the server has them. A card is a master when its element is one. */
   masters: ReadonlySet<string>;
   /** Whether this person may unlock a master (an admin). */
@@ -228,6 +229,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   const load = useCallback(async (id: string, signal?: AbortSignal): Promise<Draft | null> => {
     const data = await draftRequest<{ project?: Project | null; revision: number; viewOnly?: ViewOnly; actingOn?: ActingOn }>(`${API}/projects?id=${encodeURIComponent(id)}`, scope, { signal });
+    if (data.project) setActingOwner(data.project.id, data.actingOn?.owner.id ?? null);
     return data.project ? { project: data.project, revision: data.revision, base: data.project, writer: draftWriter(), ancestors: new Map(), made: new Map(), ...(data.viewOnly ? { viewOnly: data.viewOnly } : {}), ...(data.actingOn ? { actingOn: data.actingOn } : {}) } : null;
   }, [scope]);
 
@@ -624,7 +626,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
         if (!(await flush()) || draftRef.current?.project.id !== draftId) throw new SaveFailedError();
         const mapping = await studioRequest<unknown>(`${API}/projects`, {
           method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-          body: JSON.stringify({ action: "map-shot", projectId: draftId, nodeId: shot.id }),
+          body: JSON.stringify({ action: "map-shot", projectId: draftId, nodeId: shot.id, ...actingOwnerField(draftId) }),
         });
         if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
         update((p) => ({ ...p, productionProjectId: mapping.productionProjectId, shotMappings: { ...(p.shotMappings ?? {}), [shot.id]: mapping.shotId } }));
@@ -981,7 +983,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     toast(why ?? `${asset.name} is a new shot in the Rig`);
   }, [openId, onRigPage, intents, apply, toast]);
 
-  const teamView = useMemo(() => ({ mode: team.mode, peers: team.peers, presence: team.presence, server: team.server, tidy: team.tidy, refresh: team.refresh }), [team.mode, team.peers, team.presence, team.server, team.tidy, team.refresh]);
+  const teamView = useMemo(() => ({ mode: team.mode, peers: team.peers, presence: team.presence, server: team.server, tidy: team.tidy, refresh: team.refresh, rejoin: team.rejoin }), [team.mode, team.peers, team.presence, team.server, team.tidy, team.refresh, team.rejoin]);
   const masters = team.locks;
   const value = useMemo<RigContext>(() => ({
     status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, viewOnly, actingOn, saveError, selected, selectedNode, selectedCard,
