@@ -1,4 +1,4 @@
-import { currentPerson, mayReachProject } from "../draftProject";
+import { currentPerson, isSampleProject, mayReachProject } from "../draftProject";
 import { isAgentId } from "../security/people-only";
 import { z } from "zod";
 import type { Client, Transaction } from "@libsql/client";
@@ -141,6 +141,9 @@ export async function writeCanvasRow(tx: Transaction, productionId: string, next
     throw new TeamCanvasError(`A canvas holds at most ${PROJECT_LIMITS.nodes.toLocaleString("en-US")} nodes.`, 413);
   const body = JSON.stringify(next);
   if (body.length > PROJECT_JSON_BYTES) throw new TeamCanvasError("This canvas has reached the 24 MB project limit.", 413);
+  /* The marked sample production is read-only for every person, its marker, the workspace's owner and admins included (lib/draftProject.ts): a write to its canvas
+     is refused as a project that is not there. A draft save's implied write, and every other writer, meets this too; an Atomik run (no person) is not asked. */
+  if (!isAgentId(by) && (await isSampleProject(productionId, tx))) throw new TeamCanvasError("That project is not in this workspace.", 404);
   const revision = previous + 1;
   await tx.execute({
     sql: `INSERT INTO workbench_team_canvas(production_id,body,revision,updated_by,updated_at) VALUES(?,?,?,?,?)

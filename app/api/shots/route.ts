@@ -107,6 +107,8 @@ export const POST = withTenant(async function POST(req: Request) {
   if (problem) return NextResponse.json({ error: problem }, { status: 400 });
 
   const projectId = scope(body.projectId ? String(body.projectId) : null);
+  /* Nothing is written into the marked sample production, by anyone (lib/demo/readonly.server.ts). */
+  { const { sampleWriteRefusal } = await import("@/lib/demo/readonly.server"); const refused = await sampleWriteRefusal(projectId); if (refused) return refused; }
   /* A shot is written into a project its writer may write: a private board is its owner's and a shared one is view-only for everyone else, so anyone else's
      answer is the one an unknown project gets (lib/draftProject.ts). */
   if (projectId) {

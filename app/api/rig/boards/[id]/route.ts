@@ -1,4 +1,5 @@
 import { crossOriginProblem } from "@/lib/requestOrigin";
+import { sampleRowRefusal } from "@/lib/demo/readonly.server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireSession, requireUser, withTenant } from "@/lib/auth";
@@ -32,6 +33,8 @@ export const PUT = withTenant(async function PUT(req: Request, ctx: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await ctx.params;
+  /* The marked sample's boards are nobody's to save (lib/demo/readonly.server.ts). */
+  { const refused = await sampleRowRefusal("boards", id); if (refused) return refused; }
   const b = await req.json().catch(() => ({}));
   const patch = {
     name: typeof b.name === "string" ? b.name : undefined,

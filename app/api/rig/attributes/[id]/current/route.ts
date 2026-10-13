@@ -1,3 +1,4 @@
+import { sampleRowRefusal } from "@/lib/demo/readonly.server";
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { db, ready, now } from "@/lib/db";
@@ -40,6 +41,8 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   await ready();
 
   const { id: attributeId } = await params;
+  /* The marked sample's assets take no new current version, from anyone (lib/demo/readonly.server.ts). */
+  { const refused = await sampleRowRefusal("element_attributes", attributeId); if (refused) return refused; }
   const body = await req.json().catch(() => ({}));
   const versionId = String(body.versionId ?? "");
   if (!versionId) return NextResponse.json({ error: "Name the version to move to." }, { status: 400 });

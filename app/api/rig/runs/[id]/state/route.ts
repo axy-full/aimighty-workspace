@@ -1,3 +1,4 @@
+import { sampleRowRefusal } from "@/lib/demo/readonly.server";
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { setRunState } from "@/lib/runs";
@@ -11,6 +12,8 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   const got = await requireRender();
   if (got.response) return got.response;
   const { id } = await params;
+  /* The marked sample's runs are nobody's to hold or release (lib/demo/readonly.server.ts). */
+  { const refused = await sampleRowRefusal("runs", id); if (refused) return refused; }
   const body = await req.json().catch(() => ({}));
 
   const want = body.state === "paused" ? "paused" : body.state === "running" ? "running" : null;
