@@ -474,3 +474,25 @@ Status by 09:00 IST: what merged (real PR numbers and commits), deploy #2's PR n
 - **Bug** (production, Skoda board, Script stage): Canvas showed nothing while List showed the beats. Fix: Canvas renders script beats as text cards, in order.
 - **Defaults:** each stage opens in its natural view (Script → List; Storyboard, Shots, Cast and Elements → Canvas; Cut → Strip). The person's manual switch is remembered per board.
 - Audit every stage × view and list the findings before fixing. Tests and screenshots. Can ride in deploy #3 if green, otherwise the next deploy.
+
+## Owner decisions (Akshay, 13 Oct 13:55)
+**A. Delete, undo, Trash**
+1. The board was "Skoda", the owner's own house board, not the sample. In List, beats can be deleted one at a time; on Canvas and in the Rig nothing can be deleted. That's the bug. **The sample stays editable for its owner and for the platform owner; it is read-only only for other viewers.** Check #686 does this before deploy #3.
+2. Delete everywhere: Delete/Backspace, right-click › Remove and ⋯ › Remove, on Canvas, List and Rig, for the board's owner, a Can edit teammate (once that exists) or an admin. If a never-delete guard blocks this, show the exact lines first.
+3. Multi-select:
+   - List: a tick box on each row (appears on hover, stays once one is ticked), "Select all", and a bar "3 selected · Remove · Cancel"; Shift-click selects a range.
+   - Canvas and Rig: drag a box, or ⌘-click.
+4. EVERYTHING removed goes to the board's Trash, paid or not (takes, frames, looks, identities, beats, notes, text), restorable any time. Paid items keep their billing record; undo and restore never touch billing.
+5. Undo with no time limit: a session undo history per board (50+ steps), ⌘Z / Ctrl+Z undo, ⌘⇧Z / Ctrl+Shift+Z redo. Removing is one step. The "Removed · Undo" toast is only a shortcut. With Can edit, each person's undo covers only their own changes.
+6. The Trash screen, and the List tick boxes with the selection bar, go to Claude Design (next round). Build now: delete on Canvas and Rig, the multi-select logic, undo/redo, and Trash server-side. Tests for delete, multi-select, undo/redo and Trash restore.
+
+**B. Remotion (plan only; don't build yet)**
+1. Adopted on the Free License (SensAI = 3 people total; the owner is confirming in writing with Remotion). Rendering is self-hosted on our droplet only (no Remotion Lambda/AWS), with only our own templates (users never upload Remotion projects). At 4 people the Company License must be bought; this goes in CLAUDE.md.
+2. Price rule: Remotion exports are FREE to customers (0 cr, button "Free") for as long as Remotion charges us nothing. Paid engine steps inside an export (VO, a regenerated shot) are priced as usual. If the licence ever costs us, the owner sets the new price; never add one.
+3. Protect the server instead of charging:
+   - a separate render worker (like the Blender/Astra worker) with its own limits, starting around 3 CPU / 6–8 GB, 2–3 frames in parallel, no GPU;
+   - a queue, with a fair per-workspace limit on exports at once and per hour ("Export queued — 2 ahead of you");
+   - measure a real 30 s 1080p export and set the limits from it.
+4. First uses: captions on a cut, title and end cards, 16:9 ↔ 9:16, 6/15/30 s cutdowns, final MP4. Later: Export to Premiere/Resolve (XML + media) and a multi-track timeline.
+5. The server parts need no design. Every new screen element (Export button, caption styles, format picker, timeline) goes to Claude Design first.
+6. The plan lives in docs/plans/remotion.md, with the exact Coolify steps for the owner. The build comes after deploy #3 and the board-sharing PRs. NEEDS AKSHAY.
