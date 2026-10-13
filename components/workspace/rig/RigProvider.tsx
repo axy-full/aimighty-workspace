@@ -120,6 +120,11 @@ export type RigContext = {
   planRequests: NamedShotBody[];
   /** Applies a pure Rig operation (lib/production/rig-build); returns its refusal, or null. `select` picks the shot it made. */
   apply: (fn: (project: Project) => Project | { project: Project; id?: string }, select?: boolean) => string | null;
+  /**
+   * The board's sharing, as the server now holds it (the `team-share` action answered): shown at once, in the open draft and the version it is merged
+   * from, and never saved from here. The flags are the server's; a save of the board does not carry them.
+   */
+  adoptSharing: (shared: boolean) => void;
   /** Saves pending edits; true once saved (an agent step reads the saved project). */
   save: () => Promise<boolean>;
   /** Deletes a shot (with the inputs only it used); returns the refusal, or null. ⌘Z brings it back in the Suites. */
@@ -879,6 +884,20 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       throw err;
     }
   }, [make, select]);
+  const adoptSharing = useCallback((shared: boolean) => {
+    const current = draftRef.current;
+    if (!current || current.viewOnly) return;
+    const set = (p: Project): Project => {
+      if (shared) return p.teamShared === true ? p : { ...p, teamShared: true };
+      if (p.teamShared === undefined) return p;
+      const { teamShared: _gone, ...rest } = p;
+      void _gone;
+      return rest as Project;
+    };
+    const project = set(current.project), base = set(current.base);
+    if (project === current.project && base === current.base) return;
+    setDraft({ ...current, project, base });
+  }, [setDraft]);
   const save = useCallback(() => flush({ force: true }), [flush]);
   /* Leaving the workspace: the open project's pending edit (a save already out ends first, and one that failed is sent
      again), the team canvas's, then the projects left with edits not saved yet — each tried once more now. An edit made
@@ -962,9 +981,9 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const masters = team.locks;
   const value = useMemo<RigContext>(() => ({
     status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, viewOnly, saveError, selected, selectedNode, selectedCard,
-    select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, team: teamView,
+    select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, adoptSharing, save, removeShot, team: teamView,
     masters, canUnlock, lockMaster, unlockMaster, cutouts: cut.cutouts, quoteCutout: cut.quote, startCutout: cut.start,
-  }), [projectId, status, error, project, shots, mediaJobs, saveState, viewOnly, saveError, selected, selectedNode, selectedCard, select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, save, removeShot, teamView, masters, canUnlock, lockMaster, unlockMaster, cut.cutouts, cut.quote, cut.start]);
+  }), [projectId, status, error, project, shots, mediaJobs, saveState, viewOnly, saveError, selected, selectedNode, selectedCard, select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, adoptSharing, save, removeShot, teamView, masters, canUnlock, lockMaster, unlockMaster, cut.cutouts, cut.quote, cut.start]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

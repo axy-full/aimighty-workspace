@@ -12,7 +12,7 @@
  * The platform owner reads as "Particl support" with an opaque id outside the house (lib/platformOwnerPrivacy.ts), as on the Team page.
  */
 import { db } from "@/lib/db";
-import { DRAFT_PROJECT_PREFIX, mappedId, sampleMarkNow, TEAM_SHARED_SQL } from "@/lib/draftProject";
+import { DRAFT_PROJECT_PREFIX, mappedId, mayEditSample, mayReachProject, sampleMarkNow, TEAM_SHARED_SQL } from "@/lib/draftProject";
 import { platformDb, platformReady } from "@/lib/platform";
 import { ownerMaskFor, resolveMemberId, supportMemberId } from "@/lib/platformOwnerPrivacy";
 import type { TenantWorkspace } from "@/lib/tenant";
@@ -127,4 +127,52 @@ export async function sampleViewOnly(ws: Pick<TenantWorkspace, "id">): Promise<{
   const mark = await sampleMarkNow();
   const owner = mark?.markedBy ? await ownerOf(ws, await activeMembers(ws), mark.markedBy) : null;
   return { owner: owner ?? { id: "", name: "Sample" } };
+}
+
+/**
+ * Acting on a board stored under someone else's key. A board is stored under its author's key (`workbench_projects.owner`); a person with an
+ * EXPLICIT grant to write it, who is not the author, saves, maps shots and publishes against that key, as themselves (the actor is recorded on the row and
+ * on what the save implies for the team canvas).
+ *
+ * Never `mayReachProject`'s default alone: it answers yes for every production that is not a private board's own (the workspace's), and a draft can be linked
+ * to such a production (a starter draft, one opened from a production or a take link). So a request that names another person's key is allowed only when
+ *   1. the key is an active member of this workspace, and
+ *   2. a grant names this board: today the marked sample's editors, for the sample's own draft (#694); the "Can edit" share mode and the admin rule add theirs
+ *      here, each as one more line of `grants`, and
+ *   3. the board is the draft's own private production (`mappedId(prj_wb_, workspace, owner, draftId)`), which the draft is linked to, and the actor may
+ *      write it (`mayReachProject`, asked after the grant, never instead of it).
+ * Every step is decided from identifiers before the draft is read, so a refusal reads and writes nothing, and is answered exactly as a write to a board
+ * that is not theirs always was (`view-only` naming the maker when the board is shared and visible, otherwise not found): it never says whether a private
+ * board, a starter draft or an opened production is there.
+ *
+ * `claimed` is the owner a request names (`owner` in the body); absent, or the person's own id, is their own board and nothing is asked.
+ */
+export async function boardKeyFor(
+  ws: Pick<TenantWorkspace, "id">,
+  actor: { id: string; role?: string },
+  claimed: string | undefined,
+  draftId: string,
+): Promise<{ owner: string } | { refused: true }> {
+  if (!claimed || claimed === actor.id) return { owner: actor.id };
+  const owner = await resolveMemberId(ws, claimed);
+  if (owner === actor.id) return { owner: actor.id };
+  if (!(await activeMembers(ws)).has(owner)) return { refused: true };
+  const board = mappedId(DRAFT_PROJECT_PREFIX, ws.id, owner, draftId);
+  const grants: (() => Promise<boolean>)[] = [
+    async () => { const mark = await sampleMarkNow(); return !!mark && mark.draftOwner === owner && mark.draftId === draftId && mark.projectId === board && (await mayEditSample(actor.id)); },
+  ];
+  let granted = false;
+  for (const grant of grants) if (await grant()) { granted = true; break; }
+  if (!granted) return { refused: true };
+  const draft = await readDraft(owner, draftId);
+  if (!draft || draft.project.productionProjectId !== board || !(await mayReachProject(actor, board, "write"))) return { refused: true };
+  return { owner };
+}
+
+/**
+ * Who may change a board's sharing: its author (admins join with the admin rule, one line here). Not a teammate who may edit its cards, and not
+ * anyone through a save: the flags are the server's (lib/workbench/records.ts › setBoardSharing).
+ */
+export function maySetSharing(actor: { id: string; role?: string }, storageOwner: string): boolean {
+  return actor.id === storageOwner;
 }

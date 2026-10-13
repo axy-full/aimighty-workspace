@@ -98,11 +98,11 @@ export async function isSampleProject(projectId: string | null | undefined, ex: 
   const who = person === undefined ? currentPerson() : person;
   return !(await mayEditSample(who?.id, ex));
 }
-/** Whether saving this draft would write the sample against `owner`: a copy someone opened of it (`sample-…`), the marker's own board it was marked from, or any draft linked to it, unless `owner` may edit the sample. */
-export async function isSampleDraft(owner: string, draftId: string, productionId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
+/** Whether saving this draft would write the sample against `owner` (the key it is stored under; `actor` is the person saving, `owner` unless acting on another's board): a copy someone opened of it (`sample-…`), the marker's own board it was marked from, or any draft linked to it, unless `owner` may edit the sample. */
+export async function isSampleDraft(owner: string, draftId: string, productionId: string | null | undefined, ex: Exec = db(), actor: string = owner): Promise<boolean> {
   const mark = await sampleMarkNow(ex);
   if (!mark) return false;
-  if (await mayEditSample(owner, ex)) return false;
+  if (await mayEditSample(actor, ex)) return false;
   return draftId.startsWith("sample-") || (mark.draftOwner === owner && mark.draftId === draftId) || (!!productionId && productionId === mark.projectId);
 }
 
