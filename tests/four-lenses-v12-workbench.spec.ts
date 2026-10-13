@@ -150,7 +150,7 @@ test("a person's switch is remembered for that stage on that board; moving betwe
   await page.locator(".gx-shotlist-n").first().click();
   await expect(current(page)).toHaveAccessibleName("List");
   /* Kept on this device, under the board's own key, by stage. */
-  expect(await page.evaluate(([s, p]) => JSON.parse(localStorage.getItem(`board-lens:${s}:${p}`) ?? "null"), [scope, project.id])).toEqual({ script: "canvas", storyboard: "list" });
+  expect(await page.evaluate(([s, p]) => JSON.parse(localStorage.getItem(`particl:board-lens:${s}:${p}`) ?? "null"), [scope, project.id])).toEqual({ script: "canvas", storyboard: "list" });
   await page.reload();
   await expect(page.getByTestId("board")).toHaveAttribute("data-stage", "storyboard", { timeout: 90_000 });
   await expect(current(page)).toHaveAccessibleName("List");

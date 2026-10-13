@@ -4,7 +4,7 @@
  *
  *  - Defaults: Script opens in List; Storyboard, Shots, Cast and Elements open in Canvas; Cut opens in Canvas until Strip is built (the owner: switch to Strip then);
  *    every other stage opens in Canvas.
- *  - A person's own switch is remembered per board and per stage, on this device (`board-lens:{scope}:{projectId}`), and nothing else resets it: moving between
+ *  - A person's own switch is remembered per board and per stage, on this device (`particl:board-lens:{scope}:{projectId}`), and nothing else resets it: moving between
  *    stages, gliding to a card or arriving by a link never changes what was chosen.
  */
 import type { Flavor } from "./kinds";
@@ -24,7 +24,7 @@ export function lensFor(stageId: string | null | undefined, flavor: Flavor, chos
   return (stageId ? chosen[stageId] : undefined) ?? defaultLens(stageId, flavor);
 }
 
-export const lensKey = (scope: string, projectId: string) => `board-lens:${scope}:${projectId}`;
+export const lensKey = (scope: string, projectId: string) => `particl:board-lens:${scope}:${projectId}`;
 
 /** What this device remembers for a board: the lens chosen for each stage. Anything unreadable is nothing. */
 export function readLenses(scope: string, projectId: string): Record<string, Lens> {

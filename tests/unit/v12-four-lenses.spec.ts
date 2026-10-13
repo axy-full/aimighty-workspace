@@ -115,7 +115,7 @@ test("a person's own switch is remembered per board and per stage on this device
   const store = new Map<string, string>();
   (globalThis as { localStorage?: unknown }).localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); }, removeItem: (k: string) => { store.delete(k); } };
   try {
-    expect(lensKey("scope-1", "prj_1")).toBe("board-lens:scope-1:prj_1");
+    expect(lensKey("scope-1", "prj_1")).toBe("particl:board-lens:scope-1:prj_1");
     expect(readLenses("scope-1", "prj_1")).toEqual({});
     const after = saveLens("scope-1", "prj_1", "script", "canvas");
     expect(after).toEqual({ script: "canvas" });
