@@ -497,3 +497,10 @@ Status by 09:00 IST: what merged (real PR numbers and commits), deploy #2's PR n
 4. First uses: captions on a cut, title and end cards, 16:9 ↔ 9:16, 6/15/30 s cutdowns, final MP4. Later: Export to Premiere/Resolve (XML + media) and a multi-track timeline.
 5. The server parts need no design. Every new screen element (Export button, caption styles, format picker, timeline) goes to Claude Design first.
 6. The plan lives in docs/plans/remotion.md, with the exact Coolify steps for the owner. The build comes after deploy #3 and the board-sharing PRs. NEEDS AKSHAY.
+
+## Owner answers (Akshay, 13 Oct ~15:50)
+1. Remotion licence key: pass licenseKey "free-license" on every server render (it declares Free License eligibility; per Remotion's docs, with no key nothing is sent, and with "free-license" only successful-render events are sent). Note it in CLAUDE.md next to the licence record. Confirm that nothing sent contains customer content.
+   - The lead is checking this against the worker's no-egress design before changing anything.
+2. Make's results grid shows only takes made in Make. Do it without a new column if possible. If it needs a "made in" field, that's a migration: not in deploy #3, queued for the next migration deploy.
+3. Cut stage: opens in Canvas until Strip is built, then in Strip.
+- Deploy #3: pin when release/1 is green (adding #695 and #696 if green within the hour), open the PR, and send its contents, both migrations (what each changes, and whether each is safe to roll back) and the env names. The owner takes the backup, then merges.
