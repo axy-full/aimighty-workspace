@@ -8,8 +8,11 @@ import type { LibraryEntry } from "@/lib/workspace/library";
 import type { BoardCtx } from "@/components/graphite/board/cards/types";
 import { useAgentRun } from "@/components/graphite/board/agent/use-board-agent";
 import { Bar, BarChip, type BarMention } from "@/components/v12/bar/Bar";
+import { FORMATS_FROM_BOARD, useBarSkills } from "@/components/v12/bar/use-bar-skills";
+import { useShell } from "@/lib/shell/state";
 import { Price } from "@/components/v12/ui/Price";
 import { clientRoundGoal, looksLikeClientFeedback, parseFeedback } from "@/lib/v12/rounds";
+import { flavorOf } from "@/lib/v12/board/kinds";
 import "./board-bar.css";
 
 /** The tools that arm and wait for a click on the canvas (the others open Make or the file picker at once). */
@@ -77,6 +80,14 @@ export function BoardBar({ ctx, selection, onClearSelection, tool, onDisarm, onA
     .map((entry) => ({ id: entry.take.id, name: entry.take.name.replace(/\.[a-z0-9]{2,5}$/i, "") || entry.take.name, kind: KIND_WORD[entry.media ?? ""] ?? "File", thumb: entry.media === "image" || entry.media === "video" ? entry.url : null, media: entry.media === "image" || entry.media === "video" ? entry.media : null })),
   [library]);
 
+  /* "/" skills: a format opens this Campaign board's Formats stage (Pick and Make are there); any other board says why not. */
+  const shell = useShell();
+  /* The kind the board shows, as BoardView reads it: an older ads board with no saved kind is a Campaign. */
+  const campaign = flavorOf(ctx.kind, ctx.project.boardFlavor) === "campaign";
+  const skills = useBarSkills(words, setWords, {
+    projectId: ctx.project.id,
+    onBuiltIn: () => { if (!campaign) return FORMATS_FROM_BOARD; shell.setScreenParams({ stage: "formats" }, "push"); return null; },
+  });
   const armed = ARMED[tool] ?? null;
   const note = said ?? ask.reason ?? sample;
   /* The bar's height (it grows with a selection chip or a note) is published on its parent, so a view drawn under it (the Rig)
@@ -95,6 +106,7 @@ export function BoardBar({ ctx, selection, onClearSelection, tool, onDisarm, onA
   return (
     <div className="v12-bd-bar" data-testid="v12-board-bar" ref={box}>
       <Bar
+        skills={skills}
         value={words}
         onChange={(text) => { setWords(text); setSaid(null); }}
         onSubmit={() => void send()}

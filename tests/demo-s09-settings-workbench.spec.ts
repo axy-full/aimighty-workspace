@@ -206,7 +206,9 @@ test("Plan & credits: the balance with its dollars, this month settled and held,
   await expect(credits).toContainText(/1 credit = \$\d/);
   await expect(credits).toContainText(/[\d,]+ cr · \$[\d,]+\.\d\d/);
   await expect(page.getByTestId("settings-month")).toContainText("163 cr settled · 20 cr held");
-  await expect(page.getByTestId("settings-plan")).toContainText("Studio · $49 a month");
+  /* The plan reads by its name alone (a retired plan's old price is never shown: the plans below carry the owner's prices). */
+  await expect(page.getByTestId("settings-plan")).toContainText("Studio");
+  await expect(page.getByTestId("settings-plan")).not.toContainText("$49");
   await expect(page.getByTestId("settings-plan-included")).toContainText("400 cr");
   await expect(page.getByTestId("settings-plan-renews")).toContainText("Renews");
   await expect(page.getByTestId("settings-change-plan")).toHaveAttribute("href", "/billing");

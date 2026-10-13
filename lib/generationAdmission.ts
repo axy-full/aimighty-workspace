@@ -1,3 +1,4 @@
+import { mayReachProject } from "@/lib/draftProject";
 import { ENHANCE_MAX_PROMPT } from "./shell/enhancer";
 import { enhancementRan } from "./enhanceProof";
 import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/genjutsuTypes";
@@ -437,7 +438,10 @@ export async function executeGenerationAdmission(
         sql: `SELECT id FROM projects WHERE id=?`,
         args: [String(body.projectId)],
       });
-      if (!project.rows.length)
+      /* A private board is its owner's, and a shared one a teammate's to look at (lib/draftProject.ts): filing into either is refused as a missing project is,
+         before anything is quoted, held or reserved, so the answer says nothing about whether it exists. An Atomik run (no person) is not asked. */
+      const reach = await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "write");
+      if (!project.rows.length || !reach)
         return admissionReply({ error: "No such project." }, { status: 404 });
     }
     /* The sample workspace spends nothing, filed or not, save the one run its mark is lifted for: refused before anything is held or reserved. A quote (no request claim) still answers. */
@@ -447,7 +451,9 @@ export async function executeGenerationAdmission(
     }
     if (body.shotId) {
       const shot = await getShot(String(body.shotId));
-      if (!shot)
+      /* A shot of a board this person may not write is as absent as an unknown one; the question is asked either way. */
+      const shotReach = await mayReachProject(isAgentId(got.user.id) ? null : got.user, shot?.projectId, "write");
+      if (!shot || !shotReach)
         return admissionReply({ error: "No such shot." }, { status: 404 });
       if (body.projectId && shot.projectId !== String(body.projectId))
         return admissionReply(

@@ -1,3 +1,4 @@
+import { projectExists, projectLister, reachableOr } from "@/lib/draftProject";
 import { mediaMutation, validateMediaSources } from "@/lib/mediaMutation";
 import { NextResponse } from "next/server";
 import { db, ready, now, id } from "@/lib/db";
@@ -11,8 +12,11 @@ export const dynamic = "force-dynamic";
 export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
-  const projectId = new URL(req.url).searchParams.get("projectId");
-  const cast = await listCast(projectId && projectId !== "all" && projectId !== "unfiled" ? projectId : null);
+  const asked = new URL(req.url).searchParams.get("projectId");
+  /* A private board's cast is its owner's alone, and a shared board's is for looking at (lib/draftProject.ts): a list of one reads as an unknown project's, and the list of every cast leaves them out. */
+  const listed = await projectLister(got.user);
+  const named = asked && asked !== "all" && asked !== "unfiled" ? await reachableOr(got.user, asked, "read") : null;
+  const cast = (await listCast(named)).filter((c) => listed(c.projectId));
   return NextResponse.json({ cast });
 });
 
@@ -35,8 +39,10 @@ export const POST = withTenant(async function POST(req: Request) {
 
   const projectId =
     body.projectId && body.projectId !== "all" && body.projectId !== "unfiled"
-      ? String(body.projectId)
+      ? await reachableOr(got.user, String(body.projectId), "write")
       : null;
+  /* Asked before anything is written: a board that is not theirs and one that does not exist get the same answer. */
+  if (projectId !== null && !(await projectExists(projectId))) return NextResponse.json({ error: "No such project." }, { status: 404 });
 
   const result = await mediaMutation(async (tx) => {
     // Two @Mayas a production can see would make a citation ambiguous.
