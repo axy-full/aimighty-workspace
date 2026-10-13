@@ -10,6 +10,8 @@
  */
 
 import { displayModelName, getModel } from "./models";
+import { EXPORT_COMPOSITIONS } from "./exports/contract";
+import { exportsEnabled } from "./exports/switch";
 
 /**
  * The longest wait_for_render may hold its request open. No request stays
@@ -145,6 +147,47 @@ export const TOOLS: ToolDef[] = [
     inputSchema: { type: "object", properties: {} },
   },
 ];
+
+/**
+ * The export tools (lib/exports/tool.ts): offered only while REMOTION_EXPORTS is on. Exports are FREE (0 cr); they
+ * make a finished file from takes and uploads the workspace already holds, with our own templates.
+ */
+export const EXPORT_TOOLS: ToolDef[] = [
+  {
+    name: "export_video",
+    description:
+      "Make a finished file from media already in Particl, with Particl's own templates. Free: it costs no credits. " +
+      `Templates: ${EXPORT_COMPOSITIONS.join(", ")}. Returns an id immediately; the export is queued, then rendered and saved ` +
+      "(usually a minute or two), so use get_export to collect it. Name media by handle, never by URL: " +
+      '{"take": "<take id>"} or {"upload": "<upload id>"}; a clip may add "hasAudio": true to keep its sound. ' +
+      "For example, captions on a cut: composition 'captions', props {aspect:'9:16', clip:{source:{take:'…', hasAudio:true}, cues:[{startMs,endMs,text}]}, captionStyle:'bold'}. " +
+      "Cutdowns are 6, 15 or 30 s ('cutdown', props {aspect, source:{take:'…'}, targetSeconds:15}). Nothing is spent, and a failed export says nothing was billed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        composition: { type: "string", enum: [...EXPORT_COMPOSITIONS], description: "Which template." },
+        props: { type: "object", description: "The template's props, with media named by handle (see the description)." },
+        request_id: { type: "string", description: "Optional: any string unique to this export (a UUID is ideal, 8–100 letters, digits, dashes or underscores). Retried with the same request_id, you get the export it started." },
+      },
+      required: ["composition", "props"],
+    },
+  },
+  {
+    name: "get_export",
+    description: "Check an export: queued (with how many are ahead), rendering, saving, ready (with the link to the file), or failed (with why, and that nothing was billed).",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "The export id from export_video." } }, required: ["id"] },
+  },
+  {
+    name: "cancel_export",
+    description: "Stop an export that is queued or rendering. Nothing is billed.",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "The export id." } }, required: ["id"] },
+  },
+];
+
+/** The tools this deployment offers: the workspace tools, plus the export tools while REMOTION_EXPORTS is on. */
+export function toolsOffered(env: Readonly<Record<string, string | undefined>> = process.env): ToolDef[] {
+  return exportsEnabled(env) ? [...TOOLS, ...EXPORT_TOOLS] : TOOLS;
+}
 
 const usd = (n: number | null | undefined) => (n == null ? "—" : `$${Number(n).toFixed(2)}`);
 const cr = (n: number | null | undefined) => `${Math.round(Number(n ?? 0)).toLocaleString("en-US")} cr`;
@@ -390,7 +433,34 @@ export async function runTool(
       );
     }
 
+    case "export_video": {
+      if (!exportsEnabled()) throw new Error(`Unknown tool: ${name}`);
+      const requestId = args.request_id ?? `mcp-${crypto.randomUUID()}`;
+      const out = (await call("/api/exports", { method: "POST", body: { requestId, composition: args.composition, props: args.props } })) as { job: ExportSummary };
+      return `${exportLine(out.job)}\n\nid: ${out.job.id}\nprice: Free (0 cr)\n\nCall get_export with this id to collect it.`;
+    }
+
+    case "get_export": {
+      if (!exportsEnabled()) throw new Error(`Unknown tool: ${name}`);
+      const { job } = (await call(`/api/exports/${encodeURIComponent(String(args.id))}`)) as { job: ExportSummary };
+      return exportDescribe(job, origin);
+    }
+
+    case "cancel_export": {
+      if (!exportsEnabled()) throw new Error(`Unknown tool: ${name}`);
+      const { job } = (await call(`/api/exports/${encodeURIComponent(String(args.id))}`, { method: "PATCH", body: { action: "cancel" } })) as { job: ExportSummary };
+      return exportLine(job);
+    }
+
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
+}
+
+type ExportSummary = { id: string; status: string; queueLine: string | null; error: string | null; outputs: { url: string; filename: string }[] };
+const EXPORT_WORDS: Record<string, string> = { queued: "In queue", rendering: "Rendering", saving: "Saving", ready: "Ready", failed: "Failed", cancelled: "Cancelled" };
+const exportLine = (job: ExportSummary) => job.queueLine ?? `${EXPORT_WORDS[job.status] ?? job.status}${job.error ? ` — ${job.error}` : ""}`;
+function exportDescribe(job: ExportSummary, origin: string): string {
+  const files = job.outputs.map((o) => `${o.filename}: ${origin}${o.url}\n(That link needs the same token — it is not public.)`).join("\n");
+  return `${job.id} · ${exportLine(job)}${files ? `\n\n${files}` : ""}`;
 }

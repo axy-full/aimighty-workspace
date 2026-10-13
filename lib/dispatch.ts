@@ -24,6 +24,8 @@ export const EVENTS = {
   /** A still or a piece of audio whose row already exists as "running"; or a video to submit. */
   render: "render/requested",
   astraRender: "astra-blender/render.requested",
+  /** A queued Remotion export to render on the export worker (lib/exports/jobs.ts). Native dispatch only: Inngest registers no export function. */
+  exportRender: "remotion/export.requested",
   development: "workbench/development.requested",
   /** A funded dubbing project to submit, ask after, or collect (lib/dubbing.ts). */
   dubbing: "audio/dubbing.requested",
@@ -51,6 +53,7 @@ export const WORKER_EVENT_NAMES = [
   EVENTS.probe,
   EVENTS.render,
   EVENTS.astraRender,
+  EVENTS.exportRender,
   EVENTS.development,
   EVENTS.dubbing,
   EVENTS.rigAgent,

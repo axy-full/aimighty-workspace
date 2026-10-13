@@ -1,4 +1,5 @@
 import { runAstraRender, reconcileAstraRender } from "./astra-blender/render-jobs";
+import { runExport } from "./exports/jobs";
 import { advanceDubbingJob } from "./dubbing";
 import { withRecoveryJob } from "./recovery";
 import { db, ready, now } from "./db";
@@ -27,6 +28,7 @@ export type RenderKind = "image" | "audio" | "video";
 export type RenderEventData = { genId: string; kind: RenderKind; workspaceId: string };
 export type AstraEventData = { jobId: string; workspaceId: string };
 export type DubbingEventData = { jobId: string; workspaceId: string };
+export type ExportEventData = { jobId: string; workspaceId: string };
 export type DevelopmentEventData = { jobId: string; owner: string; workspaceId: string };
 export type ProbeEventData = {
   workspaceId: string;
@@ -198,6 +200,25 @@ export async function handleAstraRender(data: AstraEventData, deps: AstraDeps = 
   );
 }
 
+/* ── remotion/export.requested ────────────────────────────────────── */
+
+export type ExportRenderDeps = { workspaceOf?: typeof workspaceOf; run?: typeof runExport };
+
+/**
+ * One attempt at one queued export (FREE to customers: nothing here reserves or charges credits). Duplicate
+ * delivery is safe: only the queued -> rendering claim starts a run. `busy` and `waiting` say the job stayed in the
+ * queue (every export worker busy, or this workspace's share already running); nothing started, nothing is billed.
+ */
+export async function handleExportRender(data: ExportEventData, deps: ExportRenderDeps = {}): Promise<{ jobId: string; busy?: true; waiting?: true }> {
+  const { jobId, workspaceId } = data;
+  return withRecoveryJob(workspaceId, jobId, async () =>
+    runInTenant(await (deps.workspaceOf ?? workspaceOf)(data), async () => {
+      const outcome = await (deps.run ?? runExport)(jobId);
+      return outcome === "busy" ? { jobId, busy: true as const } : outcome === "waiting" ? { jobId, waiting: true as const } : { jobId };
+    }),
+  );
+}
+
 /* ── audio/dubbing.requested ──────────────────────────────────────── */
 
 export type DubbingDeps = { workspaceOf?: typeof workspaceOf; advance?: typeof advanceDubbingJob };
@@ -334,6 +355,7 @@ export function workerJobId(event: WorkerEvent): string {
     case EVENTS.render:
       return event.data.genId ?? "";
     case EVENTS.astraRender:
+    case EVENTS.exportRender:
     case EVENTS.development:
     case EVENTS.dubbing:
       return event.data.jobId ?? "";
@@ -355,6 +377,8 @@ export async function runWorkerHandler(event: WorkerEvent): Promise<unknown> {
     }
     case EVENTS.astraRender:
       return handleAstraRender({ jobId: String(data.jobId ?? ""), workspaceId: String(data.workspaceId ?? "") });
+    case EVENTS.exportRender:
+      return handleExportRender({ jobId: String(data.jobId ?? ""), workspaceId: String(data.workspaceId ?? "") });
     case EVENTS.development:
       return handleDevelopment({
         jobId: String(data.jobId ?? ""),
