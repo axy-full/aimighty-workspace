@@ -73,3 +73,8 @@ Nothing here costs money. Mirrors `ops/render-worker/README.md` › "Setup click
 - **Licence terms:** the plan assumes the Free License covers a company of up to 3 people and self-hosted server-side rendering. The owner's written confirmation from Remotion settles it. If it doesn't, stop before PR 2.
 - **Chrome in a no-egress container:** fonts and images must be bundled or passed in as files. Compositions may not fetch anything (enforced by the egress gate and by tests).
 - **The droplet is also production:** the worker's CPU/memory limits are what protect the app. They are never raised without measuring.
+
+## Build now (owner, 13 Oct): server side only, third lane
+- **The switch:** `REMOTION_EXPORTS` (env, runtime). Unset or off means the export tool isn't offered, its route answers 404, and no job is admitted. It's off in production until the owner turns it on after testing.
+- **Job states:** the same as other renders. In queue (with the position, "2 ahead of you"), then Rendering, then Saving, then Ready or Failed ("Nothing billed").
+- **Order of PRs:** compositions (1), the worker (2), then the app's export tool and the fair queue (3). Each has mocked tests. Then one real timing test on our server: a 30 s 1080p export run under heavy.sh, CPU only, outside Docker (the lanes never touch Docker), with the result written into "Measure first" to set the limits. The worker's own limits are measured again after the owner deploys it.
