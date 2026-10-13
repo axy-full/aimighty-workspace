@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { InStatement, Transaction } from "@libsql/client";
 import { db, ready } from "./db";
 import { archiveDeleteStatements, archiveTransaction } from "./archive";
-import { markGenerationDeletion, mediaDeletionReady } from "./mediaDeletion";
+import { markGenerationDeletion, markGenerationRestored, mediaDeletionReady, recordTakeInTrash } from "./mediaDeletion";
+import { isAgentId } from "./security/people-only";
 import { mediaBindingProblem } from "./mediaBindings";
 import { mayReachProject } from "./draftProject";
 import { NOT_YOURS, mayChangeWork, type Actor } from "./workAccess";
@@ -12,7 +13,8 @@ import { workbenchReady, workbenchTransaction } from "./workbench/records";
  * A board's Trash (owner, 13 Oct 2026): everything removed from a board goes here, paid or not, and can be restored at any time. Nothing is erased,
  * and nothing here touches billing: a removed take keeps its cost, its ledger line and its bytes; restoring puts it back as it was.
  *
- * Two sorts of item:
+ * Two sorts of item (browser items are the remover's alone: each person's draft is private, so a person lists and restores only what they removed, an admin
+ * and a teammate of a shared board included; a take or a shot is the board's, and whoever may change that work may put it back):
  *  - SERVER items the server removes itself, as one write: a take (hidden, `deleted=1`, never erased: the clean-up that frees a deleted take's bytes skips
  *    one in the Trash) and a shot (its row and wires archived as ever, its takes unfiled, and what is needed to put it all back kept here).
  *  - CLIENT items the board holds in the person's draft (a card, a note, a piece of text, a storyboard frame, a look, a beat, a cast entry...): the browser
@@ -29,6 +31,10 @@ export const isTrashKind = (value: unknown): value is TrashKind => [...SERVER_KI
 const isServerKind = (kind: TrashKind): kind is (typeof SERVER_KINDS)[number] => (SERVER_KINDS as readonly string[]).includes(kind);
 
 export const PAYLOAD_MAX_BYTES = 200_000;
+/** Open browser records one person may hold on one board (a person's own removals; past it, put something back first). */
+export const CLIENT_CAP = 500;
+/** A refusal inside a write that must roll back whatever it had done (a claim included). */
+class Refusal extends Error {}
 export const TRASH_LIST_LIMIT = 500;
 const ID = /^[A-Za-z0-9_:.-]{1,160}$/;
 
@@ -84,7 +90,7 @@ export async function listTrash(person: Actor & { id: string }, projectId: strin
   await ready(); await mediaDeletionReady();
   const allowed = await board(person, projectId, false);
   if (!allowed.ok) return allowed;
-  const recorded = (await db().execute({ sql: "SELECT id, kind, item_id, label, removed_by, removed_at FROM board_trash WHERE project_id=? AND restored_at IS NULL ORDER BY removed_at DESC, id DESC LIMIT ?", args: [projectId, TRASH_LIST_LIMIT] })).rows as Record<string, unknown>[];
+  const recorded = (await db().execute({ sql: "SELECT id, kind, item_id, label, removed_by, removed_at FROM board_trash WHERE project_id=? AND restored_at IS NULL AND (holder='' OR holder=?) ORDER BY removed_at DESC, id DESC LIMIT ?", args: [projectId, person.id, TRASH_LIST_LIMIT] })).rows as Record<string, unknown>[];
   const takes = new Map<string, { ok: boolean; why: string | null }>();
   const takeIds = recorded.filter((row) => row.kind === "take").map((row) => String(row.item_id));
   const legacy = (await db().execute({ sql: `SELECT g.id, g.title, g.prompt, g.updated_at, g.stored_url, g.bytes, d.lease FROM generations g LEFT JOIN generation_deletions d ON d.id=g.id
@@ -125,8 +131,10 @@ export async function removeToTrash(person: Actor & { id: string }, projectId: s
       if (String(now.status) === "held") return fail(409, "This take is waiting for approval. Discard it from the approvals queue instead.");
       const binding = await mediaBindingProblem(tx, "generation", itemId);
       if (binding) return fail(409, binding);
-      if (!Number(now.deleted)) await markGenerationDeletion(tx, itemId, at);
-      return await record(tx, projectId, "take", itemId, label || clean(row.title || row.prompt, 80), null, person.id, at);
+      if (!Number(now.deleted)) await markGenerationDeletion(tx, itemId, at, person.id);
+      await recordTakeInTrash(tx, itemId, person.id, at);
+      const open = (await tx.execute({ sql: "SELECT id, kind, item_id, label, removed_by, removed_at FROM board_trash WHERE project_id=? AND kind='take' AND item_id=? AND restored_at IS NULL", args: [projectId, itemId] })).rows[0] as Record<string, unknown> | undefined;
+      return open ? entryOf(open, new Map()) : fail(409, "This take could not be added to the Trash.");
     });
     if ("ok" in result && !result.ok) return result;
     return { ok: true, entry: await withName(result as TrashEntry) };
@@ -157,18 +165,27 @@ export async function removeToTrash(person: Actor & { id: string }, projectId: s
   const payload = JSON.stringify(input.payload);
   if (Buffer.byteLength(payload) > PAYLOAD_MAX_BYTES) return fail(413, "That is too large to keep in the Trash in one piece.");
   const entry = await workbenchTransaction(async (tx) => record(tx, projectId, kind, itemId, label || kind, payload, person.id, at));
-  return { ok: true, entry: entry as TrashEntry };
+  if ("ok" in entry) return entry;
+  return { ok: true, entry: await withName(entry) };
 }
 
-/** One record in the Trash; the same item already there (not restored) is that record (removing twice is one removal). */
+/**
+ * One record in the Trash. A shot is the board's (one record, whoever removed it); a browser item is the remover's own: the same person removing the same item
+ * twice is one record, and another person's record of the same id is a different one (nobody can pre-empt another's), capped per person per board.
+ */
 async function recordStatement(tx: Transaction, projectId: string, kind: TrashKind, itemId: string, label: string, payload: string | null, by: string, at: number): Promise<{ entry: TrashEntry } | { error: string }> {
-  const existing = (await tx.execute({ sql: "SELECT id, kind, item_id, label, removed_by, removed_at FROM board_trash WHERE project_id=? AND kind=? AND item_id=? AND restored_at IS NULL", args: [projectId, kind, itemId] })).rows[0] as Record<string, unknown> | undefined;
+  const holder = isServerKind(kind) ? "" : by;
+  const existing = (await tx.execute({ sql: "SELECT id, kind, item_id, label, removed_by, removed_at FROM board_trash WHERE project_id=? AND kind=? AND item_id=? AND holder=? AND restored_at IS NULL", args: [projectId, kind, itemId, holder] })).rows[0] as Record<string, unknown> | undefined;
   if (existing) {
-    if (isServerKind(kind) && kind === "shot") return { error: "This shot is already in the Trash." };
+    if (kind === "shot") return { error: "This shot is already in the Trash." };
     return { entry: entryOf(existing, new Map()) };
   }
+  if (holder) {
+    const held = Number((await tx.execute({ sql: "SELECT COUNT(*) AS n FROM board_trash WHERE project_id=? AND holder=? AND restored_at IS NULL", args: [projectId, holder] })).rows[0]?.n ?? 0);
+    if (held >= CLIENT_CAP) return { error: `Your Trash for this board already holds ${CLIENT_CAP} items, the most it keeps at once. Put something back first.` };
+  }
   const id = randomUUID();
-  await tx.execute({ sql: "INSERT INTO board_trash(id,project_id,kind,item_id,label,payload,removed_by,removed_at) VALUES(?,?,?,?,?,?,?,?)", args: [id, projectId, kind, itemId, label, payload, by, at] });
+  await tx.execute({ sql: "INSERT INTO board_trash(id,project_id,kind,item_id,label,payload,removed_by,removed_at,holder) VALUES(?,?,?,?,?,?,?,?,?)", args: [id, projectId, kind, itemId, label, payload, by, at, holder] });
   return { entry: entryOf({ id, kind, item_id: itemId, label, removed_by: by, removed_at: at }, new Map()) };
 }
 async function record(tx: Transaction, projectId: string, kind: TrashKind, itemId: string, label: string, payload: string | null, by: string, at: number): Promise<TrashEntry | TrashFailure> {
@@ -195,8 +212,10 @@ export async function restoreFromTrash(person: Actor & { id: string }, projectId
   const legacyTake = entryId.startsWith("take:") ? entryId.slice(5) : null;
   const row = legacyTake
     ? ({ id: entryId, kind: "take", item_id: legacyTake, label: "", payload: null, removed_by: "", removed_at: 0 } as Record<string, unknown>)
-    : ((await db().execute({ sql: "SELECT * FROM board_trash WHERE id=? AND project_id=? AND restored_at IS NULL", args: [entryId, projectId] })).rows[0] as Record<string, unknown> | undefined);
+    : ((await db().execute({ sql: "SELECT * FROM board_trash WHERE id=? AND project_id=? AND restored_at IS NULL AND (holder='' OR holder=?)", args: [entryId, projectId, person.id] })).rows[0] as Record<string, unknown> | undefined);
   if (!row) return fail(404, "Nothing like that is in the Trash.");
+  /* An agent run puts back only what it removed itself: someone else's removal is theirs to put back (and an unrecorded one has no remover). */
+  if (isAgentId(person.id) && String(row.removed_by ?? "") !== person.id) return fail(404, "Nothing like that is in the Trash.");
   const kind = String(row.kind) as TrashKind;
   const itemId = String(row.item_id);
 
@@ -214,7 +233,8 @@ export async function restoreFromTrash(person: Actor & { id: string }, projectId
         await tx.execute({ sql: "DELETE FROM generation_deletions WHERE id=?", args: [itemId] });
         await tx.execute({ sql: "UPDATE generations SET deleted=0, updated_at=? WHERE id=?", args: [at, itemId] });
       }
-      if (!legacyTake) await tx.execute({ sql: "UPDATE board_trash SET restored_by=?, restored_at=? WHERE id=? AND restored_at IS NULL", args: [person.id, at, entryId] });
+      /* Its open record is closed whichever id put it back (`take:<id>` included). */
+      await markGenerationRestored(tx, itemId, person.id, at);
       return null;
     });
     if (problem) return problem;
@@ -225,10 +245,11 @@ export async function restoreFromTrash(person: Actor & { id: string }, projectId
     let payload: { shot: Record<string, unknown>; takeIds: string[]; bindings: Record<string, unknown>[] };
     try { payload = JSON.parse(String(row.payload)); } catch { return fail(409, "This shot cannot be put back: its record is unreadable."); }
     if (!(await mayChangeWork(person, { createdBy: payload.shot?.created_by == null ? null : String(payload.shot.created_by), projectId }))) return fail(403, NOT_YOURS.shot);
+    /* Every refusal throws inside the write so the claim rolls back with everything else: a shot that could not be put back is still in the Trash. */
     const problem = await archiveTransaction(async (tx): Promise<string | null> => {
       const claimed = await tx.execute({ sql: "UPDATE board_trash SET restored_by=?, restored_at=? WHERE id=? AND restored_at IS NULL", args: [person.id, at, entryId] });
-      if (!claimed.rowsAffected) return "Already restored.";
-      if ((await tx.execute({ sql: "SELECT 1 FROM shots WHERE id=?", args: [itemId] })).rows.length) return "A shot with this id is already on the board.";
+      if (!claimed.rowsAffected) throw new Refusal("Already restored.");
+      if ((await tx.execute({ sql: "SELECT 1 FROM shots WHERE id=?", args: [itemId] })).rows.length) throw new Refusal("A shot with this id is already on the board.");
       const columns = (await tx.execute("PRAGMA table_info(shots)")).rows.map((r) => String(r.name));
       const keep = columns.filter((c) => c in payload.shot);
       await tx.execute({ sql: `INSERT INTO shots(${keep.join(",")}) VALUES(${keep.map(() => "?").join(",")})`, args: keep.map((c) => payload.shot[c] as never) });
@@ -241,13 +262,17 @@ export async function restoreFromTrash(person: Actor & { id: string }, projectId
       for (const id of payload.takeIds) statements.push({ sql: "UPDATE generations SET shot_id=? WHERE id=? AND shot_id IS NULL AND project_id=?", args: [itemId, id, projectId] });
       if (statements.length) await tx.batch(statements);
       return null;
-    }).catch((error: unknown) => (/UNIQUE|constraint/i.test(String(error)) ? "A shot with this number is already on the board. Rename or remove it, then restore this one." : Promise.reject(error)));
+    }).catch((error: unknown) => {
+      if (error instanceof Refusal) return error.message;
+      if (/UNIQUE|constraint/i.test(String(error))) return "A shot with this number is already on the board. Rename or remove it, then restore this one.";
+      return Promise.reject(error);
+    });
     if (problem) return fail(409, problem);
     return { ok: true, entry: entryOf(row, new Map()), payload: null };
   }
 
   /* A client item: claimed once, handed back whole. */
-  const claimed = await db().execute({ sql: "UPDATE board_trash SET restored_by=?, restored_at=? WHERE id=? AND restored_at IS NULL", args: [person.id, at, entryId] });
+  const claimed = await db().execute({ sql: "UPDATE board_trash SET restored_by=?, restored_at=? WHERE id=? AND holder=? AND restored_at IS NULL", args: [person.id, at, entryId, person.id] });
   if (!claimed.rowsAffected) return fail(409, "Already restored.");
   let payload: unknown = null;
   try { payload = JSON.parse(String(row.payload)); } catch { payload = null; }
