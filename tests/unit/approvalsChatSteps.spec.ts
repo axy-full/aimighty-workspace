@@ -91,13 +91,13 @@ test("an admin sees another member's step only while it needs an admin: over the
   expect(credits).toBeGreaterThan(jobApprovalLineCredits(creditUsd()));
   const item = admin.items.find((i) => i.source === "thread")!;
   expect(item.id).toMatch(/^thread-step:[0-9a-f]{16}$/);
-  expect(item).toMatchObject({ title: "Step of ach_big", price: { kind: "up-to", credits }, needsAdmin: true, note: null, step: null, where: "Atomik", canApprove: false, decline: null, open: { kind: "none" } });
-  /* Nothing names the step or its chat: no approve, no step id, no chat id. */
-  expect(item.approve).toBeNull();
+  expect(item).toMatchObject({ title: "Step of ach_big", price: { kind: "up-to", credits }, needsAdmin: true, note: null, step: null, where: "Atomik", canApprove: true, decline: null, open: { kind: "none" } });
+  /* An admin may approve it (owner, 13 Oct): the step's id is what the claim needs; there is no chat id and nothing to open. */
+  expect(item.approve).toEqual({ kind: "thread", chatId: null, stepId: "st_ach_big", productionId: null });
   const json = JSON.stringify(admin);
   expect(json, "no chat words, prompt or attachment").not.toMatch(/SECRET/);
   expect(json).not.toMatch(/A plan|first_ask|attach|uploadId|"prompt"/);
-  expect(json).not.toMatch(/"chatId":"|thread:ach_|st_ach|"stepId"/);
+  expect(json).not.toMatch(/"chatId":"|thread:ach_|"id":"st_ach/);
   expect(admin.decided.length).toBe(0);
 });
 

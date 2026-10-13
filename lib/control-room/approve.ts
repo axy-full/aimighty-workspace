@@ -1,3 +1,5 @@
+import type { Step } from "@/lib/atomik";
+import { approvedBody, fetchStepQuote, stepRender } from "@/lib/atomikStepRender";
 import { batchable, pressable, type QueueItem } from "./queue";
 
 /**
@@ -11,7 +13,8 @@ import { batchable, pressable, type QueueItem } from "./queue";
  *  - a board build: POST /api/workbench/team-canvas {action:"agent.approve", fingerprint}
  *  - a board plan:  POST /api/workbench/team-canvas {action:"agent.approvePlan", fingerprint} (approved once, at its total)
  *  - a board render: POST /api/workbench/team-canvas {action:"agent.render", seq, fingerprint}
- *  - a plan's step: its own Continue, at its live price (ThreadCheckpoint); never from here.
+ *  - a plan's step: its own Continue, at its live price (ThreadCheckpoint); never from here, except another member's step that is over the cap or the line, which an
+ *    admin approves from here (`approveAnotherStep`: claim, price, render, record; never the chat).
  *
  * "Not now" is the item's own way to let it go, and charges nothing:
  * discard a held take, set a build aside, skip a render, turn a step down.
@@ -63,8 +66,39 @@ export async function approveItem(item: QueueItem, fetcher: Fetcher): Promise<Pr
     case "board-render":
       return send(fetcher, "/api/workbench/team-canvas", json({ action: "agent.render", productionId: ref.productionId, runId: ref.runId, seq: ref.seq, fingerprint: ref.fingerprint }), "This render could not be approved.");
     case "thread":
-      return { ok: false, reason: THREAD_CONTINUE, status: null };
+      return ref.chatId === null ? approveAnotherStep(item, ref.stepId, fetcher) : { ok: false, reason: THREAD_CONTINUE, status: null };
   }
+}
+
+/**
+ * An admin approves another member's step that needs an admin's tap (owner, 13 Oct): the claim (which marks it running and hands back the step itself, never its chat),
+ * its live price from the route that will render it, the render at that price, and what became of it recorded on the step. If the live price is above the one shown,
+ * nothing is rendered or charged; the step is left to be claimed again.
+ */
+async function approveAnotherStep(item: QueueItem, stepId: string, fetcher: Fetcher): Promise<PressOutcome> {
+  let claimed: Response;
+  try { claimed = await fetcher(`/api/atomik/steps/${encodeURIComponent(stepId)}/claim`, { method: "POST", cache: "no-store" }); } catch { return { ok: false, reason: LOST_REPLY, status: null }; }
+  const claim = (await claimed.json().catch(() => null)) as { error?: unknown; step?: Step } | null;
+  if (!claimed.ok || !claim?.step) return { ok: false, reason: typeof claim?.error === "string" && claim.error ? claim.error : "This step couldn't be started. Nothing was charged.", status: claimed.status };
+  const step = claim.step;
+  const render = stepRender(step, null);
+  const quoted = await fetchStepQuote(render, "", undefined, fetcher as unknown as typeof fetch);
+  if ("error" in quoted) return { ok: false, reason: `${quoted.error} Nothing was charged.`, status: null };
+  const shown = item.price && item.price.kind !== "free" ? item.price.credits : null;
+  if (shown !== null && quoted.quote.estimatedCredits > shown)
+    return { ok: false, reason: "The price moved above the one shown. Nothing was charged; read the queue again.", status: null };
+  let rendered: Response;
+  try {
+    rendered = await fetcher(render.url, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": step.requestKey ?? `atomik-step:${step.id}` }, body: JSON.stringify(approvedBody(render, quoted.quote)) });
+  } catch { return { ok: false, reason: LOST_REPLY, status: null }; }
+  const made = (await rendered.json().catch(() => ({}))) as { id?: string; error?: string; pending?: boolean; code?: string };
+  /* Still being accepted, or set aside: the step settles from the request's record when it is next read, and nothing is sent again from here. */
+  if (rendered.status === 409 && (made.pending || made.code === "set_aside")) return { ok: false, reason: made.error ?? "That render is still being accepted. It will show once it has started.", status: 409 };
+  try {
+    await fetcher(`/api/atomik/steps/${encodeURIComponent(step.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(rendered.ok ? { status: "done", genId: made.id ?? null } : { status: "failed", error: made.error ?? `Failed (${rendered.status})` }) });
+  } catch { /* the render's own record settles the step the next time it is read */ }
+  return rendered.ok ? { ok: true } : { ok: false, reason: made.error ?? "That render didn't start.", status: rendered.status };
 }
 
 /** Not now, through the item's own route. Nothing is charged by any of them. */

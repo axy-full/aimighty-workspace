@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
 import { getStep, patchStep, stepForBrowser, StepEditError, type StepStatus } from "@/lib/atomik";
 import { ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
-import { STEP_GONE, adminStepSheet, stepIsMine } from "@/lib/atomikAccess";
+import { STEP_GONE, adminStepSheet, stepClaimedBy, stepIsMine } from "@/lib/atomikAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -41,12 +41,17 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
   if (got.response) return got.response;
   const { id } = await ctx.params;
   /* Only the step's person edits it, turns it down or records what became of it: to anyone else it is gone. (An admin is shown another member's over-line step to read, not to change.) */
-  if ((await stepIsMine(id, got.user)) !== true) return NextResponse.json({ error: STEP_GONE }, { status: 404 });
+  const mine = (await stepIsMine(id, got.user)) === true;
+  /* The one other writer is the admin who claimed another member's over-the-line step (owner, 13 Oct): they record what became of it (done or failed, the take, the error), never edit it. */
+  const claimant = !mine && (await stepClaimedBy(id)) === got.user.id;
+  if (!mine && !claimant) return NextResponse.json({ error: STEP_GONE }, { status: 404 });
 
   const cur = await getStep(id);
   if (!cur) return NextResponse.json({ error: STEP_GONE }, { status: 404 });
 
   const b = await req.json().catch(() => ({}));
+  if (claimant && (b.prompt !== undefined || b.model !== undefined || b.params !== undefined || (b.status !== undefined && b.status !== "done" && b.status !== "failed")))
+    return NextResponse.json({ error: STEP_GONE }, { status: 404 });
   const wantsEdit = b.prompt !== undefined || b.model !== undefined || b.params !== undefined;
   if (wantsEdit && cur.status !== "proposed") {
     return NextResponse.json(
@@ -69,6 +74,7 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
       genId: b.genId === undefined ? undefined : (b.genId || null),
       error: b.error === undefined ? undefined : (b.error || null),
     });
+    if (claimant && step) { const { chatId: _c, messageId: _m, position: _p, ...own } = stepForBrowser(step) as unknown as Record<string, unknown>; void _c; void _m; void _p; return NextResponse.json(own); }
     return NextResponse.json(step && stepForBrowser(step));
   } catch (error) {
     if (error instanceof StepEditError) return NextResponse.json({ error: error.message }, { status: error.status });

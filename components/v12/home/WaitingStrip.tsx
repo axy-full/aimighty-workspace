@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { pressable, sortQueue, type QueueItem } from "@/lib/control-room/queue";
+import { pressable, sortQueue, viaPlan, type QueueItem } from "@/lib/control-room/queue";
 import type { PressOutcome } from "@/lib/control-room/approve";
 import { spendAttrsOf } from "@/lib/spend";
 import { knownQuote } from "@/lib/v12/quote";
@@ -80,7 +80,7 @@ function Item({ item, level, onApprove, onOpen }: { item: QueueItem; level: Wait
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   /* A plan's step is approved with its plan's Continue; a short balance tops up first: those open instead. */
-  const canPress = pressable(item) && item.approve?.kind !== "thread" && !((item.shortBy ?? 0) > 0);
+  const canPress = pressable(item) && !viaPlan(item) && !((item.shortBy ?? 0) > 0);
   const where = [item.project.name, item.where].filter(Boolean).join(" · ");
   const words = waitingWords({ title: item.title, where }, level);
   const press = async () => {
@@ -98,7 +98,7 @@ function Item({ item, level, onApprove, onOpen }: { item: QueueItem; level: Wait
         <span className="v12-hm-dot" data-tone={problem ? "problem" : "waiting"} aria-hidden="true" />
         <span className="v12-hm-wait-name">{words.name}</span>
         {words.where ? <span className="v12-hm-wait-where">· {words.where}</span> : null}
-        {item.open.kind === "none" && item.price ? <span className="v12-hm-wait-where" data-testid="v12-home-waiting-price">· <Price quote={knownQuote(item.price)} /></span> : null}
+        {item.open.kind === "none" && item.price && !pressable(item) ? <span className="v12-hm-wait-where" data-testid="v12-home-waiting-price">· <Price quote={knownQuote(item.price)} /></span> : null}
       </button>
       {canPress ? (
         <button type="button" className="v12-hm-chip-btn" onClick={() => void press()} disabled={busy} aria-busy={busy || undefined}

@@ -128,7 +128,8 @@ test("a chat and its steps are their person's: lists leave others out, every doo
     expect((await claimed(actor, "st_ach_a", true))[0], `${label}: claim`).toBe(403);
     expect((await claimed(actor, "st_nothing", true))[0], `${label}: claim on an unknown step`).toBe(403);
   }
-  expect(await claimed(admin, "st_ach_big"), "an admin's claim on an over-the-line step waits for the owner").toEqual(unknownClaim);
+  /* An admin's claim on another member's step UNDER the line is gone too (ach_b's, ach_a's). */
+  expect(await claimed(admin, "st_ach_b"), "an admin on an under-the-line step").toEqual(unknownClaim);
   const states = await tenant.runInTenant(ws, async () => (await db().execute({ sql: "SELECT id, status, attempt, claimed_by FROM atomik_steps ORDER BY id", args: [] })).rows.map((r) => [r.id, r.status, r.attempt, r.claimed_by]), { user: owner });
   expect(states, "no step was touched").toEqual([["st_ach_a", "proposed", 0, null], ["st_ach_b", "proposed", 0, null], ["st_ach_big", "proposed", 0, null]]);
   /* An unknown id answers a model or effort change as another member's chat does (not a 200). */
@@ -156,4 +157,21 @@ test("a chat and its steps are their person's: lists leave others out, every doo
   expect(await asking(admin, () => chat.GET(req("GET") as never, ctx("ach_big")))).toEqual(GONE_CHAT);
   /* The step's own person reads it in full. */
   expect((await asking(other, () => stepRoute.GET(req("GET") as never, ctx("st_ach_big"))))[0]).toBe(200);
+  /* An admin claims another member's step OVER the line (owner, 13 Oct): handed the step itself (its prompt), never its chat. */
+  const adminClaim = await claimed(admin, "st_ach_big");
+  expect(adminClaim[0], "an admin claims an over-the-line step").toBe(200);
+  const handed = (adminClaim[1] as { step: Record<string, unknown> }).step;
+  expect(handed).toMatchObject({ id: "st_ach_big", status: "running", prompt: "prompt ach_big", title: "Step of ach_big" });
+  for (const field of ["chatId", "messageId", "position"]) expect(handed, field).not.toHaveProperty(field);
+  expect(JSON.stringify(adminClaim), "no chat words, plan or messages").not.toMatch(/ach_big chat|ask ach|A plan|messages|chat_id/);
+  expect((await claimed(admin, "st_ach_big"))[0], "claimed once").toBe(404);
+  /* The admin who claimed it records what became of it, and cannot edit it; another member cannot. */
+  expect((await asking(admin, () => stepRoute.PATCH(req("PATCH", { prompt: "Rewrite" }) as never, ctx("st_ach_big"))))).toEqual(GONE_STEP);
+  expect((await asking(other, () => stepRoute.PATCH(req("PATCH", { status: "done" }) as never, ctx("st_ach_big"))))[0], "its own person may").toBe(200);
+  await tenant.runInTenant(ws, async () => { await db().execute({ sql: "UPDATE atomik_steps SET status='running', gen_id=NULL WHERE id='st_ach_big'", args: [] }); }, { user: owner });
+  const settled = await asking(admin, () => stepRoute.PATCH(req("PATCH", { status: "failed", error: "It did not start." }) as never, ctx("st_ach_big")));
+  expect(settled[0]).toBe(200);
+  for (const field of ["chatId", "messageId", "position"]) expect(settled[1], field).not.toHaveProperty(field);
+  /* The chat stays gone to the admin throughout. */
+  expect(await asking(admin, () => chat.GET(req("GET") as never, ctx("ach_big")))).toEqual(GONE_CHAT);
 });

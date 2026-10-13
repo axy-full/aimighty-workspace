@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { pressable, type QueueItem } from "@/lib/control-room/queue";
+import { pressable, viaPlan, type QueueItem } from "@/lib/control-room/queue";
 import { exact } from "@/lib/shell/price-words";
 import { spendAttrsOf } from "@/lib/spend";
 import type { PressOutcome } from "@/lib/control-room/approve";
@@ -27,7 +27,8 @@ export function ApprovalRow({ item, onApprove, onDecline, onOpen, onTopUp }: {
   const [busy, setBusy] = useState<"approve" | "decline" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [checkpoint, setCheckpoint] = useState(false);
-  const thread = item.approve?.kind === "thread" ? item.approve : null;
+  /* A step of the person's own plan opens its Continue; another member's over-line step an admin approves is pressed here like any other (lib/control-room/approve.ts). */
+  const thread = viaPlan(item) && item.approve?.kind === "thread" ? item.approve : null;
   /* The dollars of the price on the button, on the whole button. */
   const dollars = usePriceTitle(item.price) ?? undefined;
   const short = (item.shortBy ?? 0) > 0;
@@ -53,7 +54,7 @@ export function ApprovalRow({ item, onApprove, onDecline, onOpen, onTopUp }: {
         <span className="cr-row-line">{itemLine(item)}</span>
         {item.note ? <span className="cr-row-note">{item.note}</span> : null}
         {/* Another person's step an admin is shown: its price, and nothing to press (lib/atomikAccess.ts). */}
-        {item.open.kind === "none" && item.price ? <span className="cr-row-note" title={dollars} data-testid="approval-price"><Price value={item.price} /></span> : null}
+        {item.open.kind === "none" && item.price && !pressable(item) ? <span className="cr-row-note" title={dollars} data-testid="approval-price"><Price value={item.price} /></span> : null}
         {item.why ? <span className="cr-row-why" data-testid="approval-why">{item.why}</span> : null}
         {short ? (
           <span className="cr-row-short" data-testid="approval-short">

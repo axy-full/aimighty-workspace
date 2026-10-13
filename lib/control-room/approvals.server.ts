@@ -314,10 +314,10 @@ async function threadItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: 
     const productionId = text(r.project_id);
     const mine = String(r.chat_owner ?? "") === viewer.id;
     if (!mine) {
-      /* Title and price only: no chat id and no step id, so nothing opens, claims or names it. Nothing is offered to press until the owner decides an admin's path
-         (TODO in lib/atomikAccess.ts). */
+      /* Title and price, and Approve (owner, 13 Oct: an admin may approve another member's over-line step): the step's id is what the claim needs, and there is no chat id
+         and nothing to open. Not now stays the step's person's. */
       return {
-        /* An opaque key (stable for this reader), not the chat's or the step's id: nothing in the item names the step. */
+        /* An opaque key (stable for this reader), not the chat's or the step's id. */
         id: `thread-step:${createHash("sha256").update(`${ctx.workspaceId}:${viewer.id}:${String(r.id)}`).digest("hex").slice(0, 16)}`,
         source: "thread",
         title: shortText(text(r.title) ?? "A step"),
@@ -326,13 +326,13 @@ async function threadItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: 
         project: NO_PROJECT,
         price,
         needsAdmin: true,
-        canApprove: false,
+        canApprove: true,
         why: null,
-        shortBy: null,
+        shortBy: shortOf(ctx.balance, price),
         note: null,
         step: null,
         sample: false,
-        approve: null,
+        approve: { kind: "thread", chatId: null, stepId: String(r.id), productionId: null },
         decline: null,
         open: { kind: "none" },
       };

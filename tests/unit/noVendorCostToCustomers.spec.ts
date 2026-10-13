@@ -102,7 +102,7 @@ async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
         JSON.stringify({ demo: true, demoCostUsd: cost.demo, resolution: "1080p", duration: 5 }),
         "u_owner", at + 4, at + 4, "byteplus", 0, null, null, null, "/fixtures/clip.mp4", null] },
       { sql: "INSERT INTO api_tokens(id,token_hash,name,user_id,scope,cap_usd,created_at) VALUES('tok_margin','hash_margin','Assistant','u_owner','render',20,?)", args: [at] },
-      { sql: "INSERT INTO atomik_chats(id,project_id,title,model,agent_mode,status,text_cost_usd,created_by,created_at,updated_at,deleted) VALUES('ach_margin','p_margin','Harbour plan','auto','ask','waiting',?,'u_member',?,?,0)", args: [cost.turn, at, at] },
+      { sql: "INSERT INTO atomik_chats(id,project_id,title,model,agent_mode,status,text_cost_usd,created_by,created_at,updated_at,deleted) VALUES('ach_margin','p_margin','Harbour plan','auto','ask','waiting',?,'u_owner',?,?,0)", args: [cost.turn, at, at] },
       { sql: "INSERT INTO atomik_messages(id,chat_id,role,text,cost_usd,model,created_at) VALUES('amsg_margin','ach_margin','assistant','Two shots.',?,'anthropic/claude-test',?)", args: [cost.turn, at] },
       { sql: `INSERT INTO atomik_steps(id,chat_id,message_id,position,kind,title,prompt,model,params,status,est_cost_usd,created_at,updated_at)
               VALUES('ast_margin','ach_margin','amsg_margin',0,'video','Harbour wide','A harbour at dawn',?,?,'proposed',?,?,?)`,

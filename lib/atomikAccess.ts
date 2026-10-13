@@ -15,9 +15,10 @@ import { isAgentId } from "./security/people-only";
  * The one exception: an admin, for another MEMBER's step that is over the workspace's per-shot cap or over guardrail 4's line right now (so it needs an admin's tap),
  * who is shown its id, title and price and nothing else (`adminStepSheet`). Once it needs no admin it is gone for them too. Another admin's step needs only its owner.
  *
- * Claiming a step (app/api/atomik/steps/[id]/claim: it marks the step running, which approves its spend, and returns its prompt) is the step's person's alone, like
- * every other door. TODO(owner decision, asked 12 Oct): an admin's path to claim another member's over-the-cap or over-the-line step waits for the owner; until then it
- * is closed, and the queue offers an admin no Approve, Open or Not now on another person's step: it shows the title and the price.
+ * Claiming a step (app/api/atomik/steps/[id]/claim: it marks the step running, which approves its spend, and returns its prompt) is the step's person's, and an admin's
+ * for another member's step only while it needs an admin's tap (owner, 13 Oct: "admins may approve another member's over-line step and see its prompt, not the chat").
+ * The claim then returns the step's own fields (no chat, message or position) and nothing of its chat; the admin who claimed it settles it (`stepClaimedBy`). Steps
+ * under the line, or not proposed, stay gone to an admin, and tokens and agent identities are refused first (people only).
  */
 export const CHAT_GONE = "That chat is gone.";
 export const STEP_GONE = "That step is gone.";
@@ -79,6 +80,13 @@ export async function adminStepSheet(stepId: string, viewer: ChatViewer): Promis
   if (credits === null || !needsAdminTap(credits, await shotCap())) return null;
   const title = String(row.title ?? "").replace(/\s+/g, " ").trim();
   return { stepId: String(row.id), title: title.length > 60 ? `${title.slice(0, 59).trimEnd()}…` : title || "A step", credits };
+}
+
+/** Who claimed a step (the person who pressed Continue), or null: they settle it, whoever's chat it is in. */
+export async function stepClaimedBy(stepId: string): Promise<string | null> {
+  await ready();
+  const row = (await db().execute({ sql: "SELECT claimed_by FROM atomik_steps WHERE id=? LIMIT 1", args: [stepId] }).catch(missing)).rows[0] as Record<string, unknown> | undefined;
+  return row?.claimed_by ? String(row.claimed_by) : null;
 }
 
 /** The chat a step is in, and whether it is the viewer's own: null when the step is not there. */

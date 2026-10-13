@@ -164,6 +164,9 @@ export function countsByDraft(items: readonly QueueItem[]): Map<string, number> 
   return out;
 }
 
+/** A step approved with its plan's own Continue (the person's own chat), as against another member's over-line step an admin approves from here. */
+export const viaPlan = (item: QueueItem) => item.approve?.kind === "thread" && item.approve.chatId !== null;
+
 /**
  * An item a person can press here. A plan's step opens its Continue, which
  * prices it live before anything is sent; every other item needs a price the
