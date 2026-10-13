@@ -109,7 +109,7 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     const effort = requestEffort(b.effort);
     if (b.model !== undefined && (typeof b.model !== "string" || !b.model || b.model.length > 120))
       return NextResponse.json({ error: "Choose an available Atomik model." }, { status: 400 });
-    /* A project this person may not read (a private board; lib/draftProject.ts) is the id of no project: nothing of its takes, titles or prompts is read for the model, before anything is reserved. */
+    /* A project this person may not read (a private board; lib/draftProject.ts) is no project (null): nothing of its takes, titles or prompts is read for the model, before anything is reserved. */
     const projectId = await readableProjectOr(got.user, loaded.chat.projectId);
     const context = await projectContext(projectId);
     /* The team's memory for this project (lib/atomikMemory): ranked and small, never money. The quote and the turn read it alike. */

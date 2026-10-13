@@ -381,3 +381,33 @@ test("a member's real turn on a private board's chat writes the placeholder nowh
     if (table === "meter_events" || table === "generation_reservations" || table === "spend_reservations") expect(text, table).not.toContain(projects.private);
   }
 });
+
+test("Atomik chats on a private board are their person's (#688's rule): a member can neither read, list nor post into the owner's chat; to them it is an unknown chat; the owner can", async () => {
+  const ws = workspace(`pt-i-${run}`);
+  const { tenant, database, projects } = await fixture(ws);
+  const atomik = await import("../../lib/atomik");
+  /* A workspace with no sample production, so a turn would be let spend were it not refused first. */
+  await tenant.runInTenant(ws, () => database.db().execute("DELETE FROM settings WHERE key='sampleProduction'"), { user: user("u_owner") });
+  let who: Actor = OWNER;
+  const list = loadRoute<typeof import("../../app/api/atomik/route")>("app/api/atomik/route.ts", () => who);
+  const chatRoute = loadRoute<typeof import("../../app/api/atomik/[id]/route")>("app/api/atomik/[id]/route.ts", () => who);
+  const chat = await tenant.runInTenant(ws, () => atomik.createChat({ userId: "u_owner", projectId: projects.private, model: "auto", agentMode: "ask" }), { user: OWNER.user });
+  const inWs = <R>(actor: Actor, fn: () => Promise<R>) => { who = actor; return tenant.runInTenant(ws, fn, { user: actor.user, token: actor.token as never }); };
+  const headers = (actor: Actor) => ({ "Content-Type": "application/json", "X-Workbench-Scope": `particl-active-${ws.id}-${actor.user.id}` });
+  const read = (actor: Actor, id: string) => inWs(actor, async () => { const res = await chatRoute.GET(new Request(`https://particl.test/api/atomik/${id}`) as never, { params: Promise.resolve({ id }) }); return [res.status, await res.json()] as const; });
+  const post = (actor: Actor, id: string) => inWs(actor, async () => { const res = await chatRoute.POST(new Request(`https://particl.test/api/atomik/${id}`, { method: "POST", headers: headers(actor), body: JSON.stringify({ text: "plan it", maxCredits: 50 }) }) as never, { params: Promise.resolve({ id }) }); return [res.status, await res.json()] as const; });
+  const chats = (actor: Actor) => inWs(actor, async () => (await (await list.GET(new Request("https://particl.test/api/atomik") as never, undefined as never)).json()) as { chats: { id: string }[] });
+  const unknownRead = await read(MATE, "ach_does_not_exist"), unknownPost = await post(MATE, "ach_does_not_exist");
+  expect(unknownRead[0]).toBe(404);
+  /* The owner reads it, lists it and plans in it. */
+  expect((await read(OWNER, chat))[0]).toBe(200);
+  expect((await chats(OWNER)).chats.map((c) => c.id)).toContain(chat);
+  /* Anyone else (a member, a member's token, an admin, an admin's token): gone, as an unknown chat is, and nothing is planned or spent. */
+  for (const actor of [MATE, MATE_TOKEN, ADMIN, ADMIN_TOKEN, WS_OWNER]) {
+    expect(await read(actor, chat), `${actor.user.id} read`).toEqual(unknownRead);
+    expect(await post(actor, chat), `${actor.user.id} post`).toEqual(unknownPost);
+    expect((await chats(actor)).chats.map((c) => c.id), `${actor.user.id} list`).not.toContain(chat);
+  }
+  const messages = await tenant.runInTenant(ws, async () => (await database.db().execute({ sql: "SELECT COUNT(*) AS n FROM atomik_messages WHERE chat_id=?", args: [chat] })).rows[0].n, { user: OWNER.user });
+  expect(Number(messages), "nobody posted into it").toBe(0);
+});

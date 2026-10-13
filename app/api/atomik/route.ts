@@ -87,7 +87,7 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure;
     const text = typeof body.text === "string" ? body.text.trim().slice(0, 20000) : "";
     if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
-    /* A project this person may not read (a private board; lib/draftProject.ts) is the id of no project: nothing of its takes, titles or prompts is read for the model. */
+    /* A project this person may not read (a private board; lib/draftProject.ts) is no project (null): nothing of its takes, titles or prompts is read for the model. */
     const projectId = await readableProjectOr(got.user, typeof body.projectId === "string" ? body.projectId : null);
     /* The project's library and presets for library steps, read as the turn will read them. */
     const inputs = await plannerInputs(auth.user.id, projectId);
