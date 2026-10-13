@@ -1,7 +1,8 @@
 "use client";
-import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useOverlay } from "@/components/v12/ui/overlay";
 import { typingSlash } from "@/lib/v12/skills";
+import { onMention as listenForMention } from "@/lib/v12/mention";
 import { Tooltip } from "@/components/v12/ui/Tooltip";
 import "./bar.css";
 
@@ -124,6 +125,9 @@ export function Bar(props: BarProps) {
   const close = () => setMentionOpen(false);
   /* A menu on the overlay stack: Esc closes it before anything under it, and so does a click outside the list, the @ and the words. */
   useOverlay("menu", listOpen, close, { refs: [pop, at, input], outside: true });
+
+  /* A bar that hands its @ items to the screen (Make's references) also takes what the Library tray hands it: a tile picked there is the same as one picked from @ (lib/v12/mention.ts). */
+  useEffect(() => (onMention ? listenForMention((m) => onMention({ id: m.id, name: m.name, kind: "" })) : undefined), [onMention]);
 
   const mention = (m: BarMention) => {
     const typed = /(^|\s)@$/.test(value) ? value.slice(0, -1) : value;
