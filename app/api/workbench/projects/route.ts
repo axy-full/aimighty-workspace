@@ -1,5 +1,5 @@
 import { closeRoom } from '@/lib/workbench/room-rotation';
-import { type ShareMode, isDraftProject, isMarkedSample, isSampleDraft, isSampleProject, mayReachProject, ownsDraftProject, projectLister } from '@/lib/draftProject';
+import { type ShareMode, DRAFT_PROJECT_PREFIX, mappedId, isDraftProject, isMarkedSample, isSampleDraft, isSampleProject, mayReachProject, ownsDraftProject, projectLister } from '@/lib/draftProject';
 import { crossOriginProblem } from '@/lib/requestOrigin';
 import { gzipSync } from 'node:zlib';
 import {readProjectBody} from '@/lib/workbench/request-body';
@@ -122,7 +122,10 @@ export const PUT=withTenant(async(req:Request)=>{
   const stored=(await readDraft(storageOwner,p.id))?.project.productionProjectId;
   if(await isSampleDraft(storageOwner,p.id,p.productionProjectId||stored,undefined,auth.user.id)){const{owner}=await sampleViewOnly(requireTenant());return Response.json({error:viewOnlyRefusal(owner.name),code:'view_only'},{status:403,headers:noStore});}
   /* A new board (its first save, under the person's own key) starts shared or private by the workspace's plan; a later save keeps what is stored. */
-  const initial=revision===0&&storageOwner===auth.user.id&&!stored?await defaultSharing():undefined;
+  /* Only a genuinely NEW board: its production is its own private one (or none yet: the save makes it). A draft opened from a workspace production or a take link
+     (linked to that production) and a personal copy of another board (linked to the original's) are not new boards, and stay private. */
+  const ownProduction=!p.productionProjectId||p.productionProjectId===mappedId(DRAFT_PROJECT_PREFIX,requireTenant().id,auth.user.id,p.id);
+  const initial=revision===0&&storageOwner===auth.user.id&&!stored&&ownProduction?await defaultSharing():undefined;
   try{return Response.json(await saveDraft(storageOwner,p,revision,write,auth.user.id,initial));}
   catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.',...(error instanceof DraftConflictError?{code:error.code}:{})},{status:409});}
 });

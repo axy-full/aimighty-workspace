@@ -152,3 +152,21 @@ test("what the server makes itself stays private, even in a Business workspace: 
   const rows = (await f.as(who("u_owner"), async () => (await f.database.db().execute("SELECT project_id, body FROM workbench_projects WHERE project_id IN ('starter','sample-copy')")).rows));
   expect(rows.map((r) => stateOf(JSON.parse(String(r.body))))).toEqual(["none", "none"]);
 });
+
+test("only a genuinely new board is stamped: a draft opened from a workspace production or a take link, and a personal copy, stay private", async () => {
+  const f = await fixture("genuine", { plan: "business100" });
+  const { mappedId } = await import("../../lib/workbench/records");
+  const { runInTenant } = await import("../../lib/tenant");
+  await f.as(who("u_owner"), async () => {
+    await f.database.db().execute({ sql: "INSERT OR IGNORE INTO productions(id,name,created_at) VALUES('prod_ordinary','Ordinary',0)", args: [] });
+    await f.database.db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at,production_id) VALUES('prj_ordinary','Ordinary project',0,'prod_ordinary')", args: [] });
+  });
+  // Linked to a workspace production (opened from it, or from a take link): private, whatever the plan.
+  expect(await newBoard(f, "opened", { productionProjectId: "prj_ordinary" })).toBe("none");
+  // A personal copy: linked to the original board's own production (not to a production of its own).
+  const original = mappedId("prj_wb_", f.ws.id, "u_owner", "d1");
+  expect(await newBoard(f, "copy", { productionProjectId: original })).toBe("none");
+  // A board with no production yet is new, and stamped.
+  expect(await newBoard(f, "fresh")).toBe("edit");
+  void runInTenant;
+});

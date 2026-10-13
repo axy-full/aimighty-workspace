@@ -22,7 +22,7 @@ function route() {
   const mocks: Record<string, unknown> = {
     "@/lib/workbench/request-body": requestBody,
     /* The list of private boards is tests/unit/privateCanvas.spec.ts's; this spec is about what a refused save touches. */
-    "@/lib/draftProject": { projectLister: async () => () => true, isSampleDraft: async () => false },
+    "@/lib/draftProject": { projectLister: async () => () => true, isSampleDraft: async () => false, DRAFT_PROJECT_PREFIX: "prj_wb_", mappedId: (prefix: string, ...parts: string[]) => prefix + parts.join(":") },
     "@/lib/demo/readonly.server": { sampleDraftRefusal: async () => null },
     "@/lib/requestOrigin": requestOrigin,
     "@/lib/auth": {
