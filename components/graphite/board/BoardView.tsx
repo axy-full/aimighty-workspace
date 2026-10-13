@@ -250,21 +250,20 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   });
   const [urlLens, setUrlLens] = useState<Lens | null>(openedAs);
   const [classicList, setClassicList] = useState(openedAs === "list");
-  const lensBoard = project?.id ? `${scope}:${project.id}` : null;
+  const lensProject = project?.id ?? null;
+  const lensBoard = lensProject ? `${scope}:${lensProject}` : null;
   const [chosen, setChosen] = useState<{ board: string | null; map: Record<string, Lens> }>({ board: null, map: {} });
-  const remembered = useMemo(() => (project?.id ? readLenses(scope, project.id) : {}), [scope, project?.id]);
+  const remembered = useMemo(() => (lensProject ? readLenses(scope, lensProject) : {}), [scope, lensProject]);
   const chosenHere = useMemo(() => ({ ...remembered, ...(chosen.board === lensBoard ? chosen.map : {}) }), [remembered, chosen, lensBoard]);
   const lens: Lens = !v12Frame ? (classicList ? "list" : "canvas") : urlLens ?? lensFor(stage?.id, flavor, chosenHere);
-  const lensRef = useRef(lens);
-  lensRef.current = lens;
   const setLens = useCallback((next: Lens | ((was: Lens) => Lens)) => {
-    const to = typeof next === "function" ? next(lensRef.current) : next;
+    const to = typeof next === "function" ? next(lens) : next;
     if (!v12Frame) { setClassicList(to === "list"); return; }
     setUrlLens(null);
-    if (!stage || !project?.id) return;
-    const map = saveLens(scope, project.id, stage.id, to);
+    if (!stage || !lensProject) return;
+    const map = saveLens(scope, lensProject, stage.id, to);
     setChosen({ board: lensBoard, map });
-  }, [lensBoard, project?.id, scope, stage, v12Frame]);
+  }, [lens, lensBoard, lensProject, scope, stage, v12Frame]);
   const list = lens === "list";
   const setList = useCallback((value: boolean | ((was: boolean) => boolean)) => {
     setLens((was) => ((typeof value === "function" ? value(was === "list") : value) ? "list" : "canvas"));
@@ -552,7 +551,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [compact, drawer, flow, offline, pick, remove, selection.ids.size, tool, chooseTool]);
+  }, [compact, drawer, flow, offline, pick, remove, selection.ids.size, setList, tool, chooseTool]);
 
   /* ── The same, said by name (⌘K, Atomik's palette): each runs the code its button runs ── */
   useBoardCommands((command) => {
