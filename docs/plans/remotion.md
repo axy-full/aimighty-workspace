@@ -1,6 +1,6 @@
 # Remotion: exports rendered on our own server (plan, 13 Oct 2026)
 
-**Status: plan only. NEEDS AKSHAY.** The build comes after deploy #3 and the board-sharing PRs (the owner's order, 13 Oct). Nothing here is built yet.
+**Status (13 Oct, owner):** the licence is CONFIRMED in writing by Remotion (13 Oct 2026; the owner holds the email). The SERVER SIDE starts now in a third lane, with no screens until Claude Design. Everything sits behind a switch, OFF in production, until the screens exist and the owner has tested it. NEEDS AKSHAY.
 
 ## Owner decisions (13 Oct 13:55, verbatim in docs/redesign-plan.md)
 - **Licence.** Remotion is adopted on the **Free License**: SensAI is 3 people in total, and the owner is confirming this in writing with hi@remotion.dev.
