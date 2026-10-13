@@ -26,7 +26,7 @@ export const STUDIO_RAIL: readonly RailEntry[] = [
 ];
 
 /** The Studio board's bands, top to bottom, as the master lays them out; regions in one band sit side by side. */
-export const STUDIO_BANDS: readonly (readonly RegionId[])[] = [["looks"], ["brief", "storyboard"], ["shots"], ["cast"], ["cut", "deliver"], ["next"], ["made"]];
+export const STUDIO_BANDS: readonly (readonly RegionId[])[] = [["script"], ["looks"], ["brief", "storyboard"], ["shots"], ["cast"], ["cut", "deliver"], ["next"], ["made"]];
 
 export const STUDIO_REGIONS: readonly StudioRegion[] = STUDIO_RAIL.map((entry) => entry.id as StudioRegion);
 

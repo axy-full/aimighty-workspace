@@ -2,6 +2,7 @@ import { nodesForSet, STUDIO_GROUP } from "@/lib/board/regions";
 import type { RigAgentRunView } from "@/lib/workbench/rig-agent-plan";
 import type { BoardCard, BoardSource, CardState, GroupData } from "@/lib/board/types";
 import { briefDoc, type BriefDoc } from "../doc/model";
+import { deriveScript } from "../doc/script-cards";
 import { deriveLooks } from "../looks/derive";
 import { pickedLook } from "../looks/model";
 import { storyboard } from "../storyboard/model";
@@ -21,7 +22,10 @@ import { shotTakes, shotsTakeOver } from "../take/take-model";
 /** The brief card: the project's own brief, or a brief card placed on the canvas. */
 export type DocData =
   | { variant: "brief"; doc: BriefDoc }
-  | { variant: "node"; nodeId: string; title: string; text: string };
+  | { variant: "node"; nodeId: string; title: string; text: string }
+  /** The Script stage's cards (script-cards.ts): the script itself, and one beat of the beat sheet. */
+  | { variant: "script"; text: string }
+  | { variant: "beat"; shotId: string; title: string; text: string };
 
 /** One storyboard frame. */
 export type FrameData = {
@@ -67,11 +71,16 @@ export function derivePlanCards(src: BoardSource): BoardCard[] {
     });
   });
 
+  /* The new interface's Script stage: the script and a card per beat, so its Canvas shows what its List shows. */
+  if (src.lenses) cards.push(...deriveScript(project));
+
   cards.push(...deriveLooks(project));
   const board = storyboard(project, { look: pickedLook(project)?.name ?? null, approved: Boolean(src.agent && APPROVED.includes(src.agent.state)) });
   /* Frames become takes in place (README § 3.1 f): once the Shots cards take over, the storyboard group gives way. */
   const takenOver = shotsTakeOver(shotTakes(project, src.library), src.agent);
-  if (board.frames.length && !takenOver) {
+  /* In the new interface each stage keeps its own cards: the Storyboard's frames stay on the Storyboard after the first take (the shots are the Shots stage's, never drawn on it). */
+  const framesStay = !takenOver || src.lenses === true;
+  if (board.frames.length && framesStay) {
     const group: GroupData = { title: board.title, meta: board.meta, columns: 2 };
     cards.push({
       id: STUDIO_GROUP.storyboard, kind: "group", region: "storyboard", order: -1, state: board.state,
@@ -98,7 +107,7 @@ export function derivePlanCards(src: BoardSource): BoardCard[] {
   /* The plan sits in the Storyboard group's open slot (README § 3.1 e); once the Shots cards have taken the group's place it stands alone beside them. */
   const run = src.agent;
   if (run && PLAN_STATES.includes(run.state) && run.paid.some((p) => p.tool === "render")) {
-    const inGroup = cards.some((c) => c.id === STUDIO_GROUP.storyboard);
+    const inGroup = !takenOver && cards.some((c) => c.id === STUDIO_GROUP.storyboard);
     cards.push({
       id: PLAN_CARD_ID, kind: "plan", region: inGroup ? "storyboard" : "shots", order: inGroup ? 10_000 : -1, ...(inGroup ? { group: STUDIO_GROUP.storyboard } : {}),
       state: run.state === "awaiting_approval" || run.state === "needs_you" || run.state === "paused" ? "needs" : "working",
@@ -108,7 +117,7 @@ export function derivePlanCards(src: BoardSource): BoardCard[] {
   }
   /* The explore-only sample has no run: its plan is built from the ledger's recorded prices (stream 12), never seeded. */
   if (!run && src.sample && src.sample.plan.steps.length) {
-    const inGroup = cards.some((c) => c.id === STUDIO_GROUP.storyboard);
+    const inGroup = !takenOver && cards.some((c) => c.id === STUDIO_GROUP.storyboard);
     const card = samplePlanCard(samplePlanModel(src.sample.plan.steps, src.sample.line), planStepsOpen("sample"));
     cards.push(inGroup ? card : { ...card, region: "shots", order: -1, group: undefined });
   }

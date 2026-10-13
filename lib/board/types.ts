@@ -23,8 +23,8 @@ export const isBoardKind = (value: unknown): value is BoardKind => BOARD_KINDS.i
 export type StudioRegion = "brief" | "looks" | "storyboard" | "shots" | "cast" | "cut" | "deliver";
 export type AdsRegion = "brand" | "product" | "hooks" | "formats" | "ads" | "adapt" | "deliver";
 export type SocialRegion = "source" | "clips" | "hooks" | "effects" | "posts";
-/** `next` is the "Where to next?" band and `made` the "Made in Make" band: laid out, never on the rail. */
-export type RegionId = StudioRegion | AdsRegion | SocialRegion | "next" | "made";
+/** `next` is the "Where to next?" band and `made` the "Made in Make" band: laid out, never on the rail. `script` holds the Script stage's cards in the new interface (the script and a card per beat): also never on the rail. */
+export type RegionId = StudioRegion | AdsRegion | SocialRegion | "next" | "made" | "script";
 
 /** The rail's four statuses (README § 1.1): needs > working > done > empty when a region rolls its cards up. */
 export type CardState = "empty" | "working" | "needs" | "done";
@@ -85,4 +85,6 @@ export type BoardSource = {
   /** The explore-only sample production's recorded prices, cast and cut (stream 12, lib/demo); null on any other production. */
   sample?: SampleBoard | null;
   now: number;
+  /** The new interface's stages show one stage at a time, every view with the same content (docs/redesign-plan.md "one board, four lenses"): the Script stage's cards are derived, and a storyboard frame stays on its stage after its first take. Absent: today's board, which draws neither. */
+  lenses?: true;
 };

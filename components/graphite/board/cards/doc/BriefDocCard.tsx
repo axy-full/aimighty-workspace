@@ -78,14 +78,16 @@ export function DocText({ label, value, max, placeholder, readOnly, onEdit, test
  * A brief card from the canvas (a Rig "brief" node): its title and its text, the text edited in place. The same
  * card as the project's brief, drawn for the briefs a team placed on the board.
  */
-export function NodeDocCard({ title, text, readOnly, onEdit, testId = "board-brief-node" }: {
+export function NodeDocCard({ title, text, readOnly, onEdit, testId = "board-brief-node", eyebrow = "Brief", placeholder = "What this brief says", max = NODE_TEXT_LIMIT }: {
   title: string; text: string; readOnly: string | null; onEdit: (value: string) => void; testId?: string;
+  /** The card's small heading: "Brief" for a brief, "Script" or "Beat" on the Script stage (script-cards.ts). */
+  eyebrow?: string; placeholder?: string; max?: number;
 }) {
   return (
-    <article className="gx-doc" data-testid={testId} aria-label={title || "Brief"}>
-      <div className="gx-doc-eyebrow">Brief</div>
-      <h2 className="gx-doc-title">{title || "Brief"}</h2>
-      <DocText label={`${title || "Brief"} text`} value={text} max={NODE_TEXT_LIMIT} placeholder="What this brief says" readOnly={readOnly} onEdit={onEdit} testId={`${testId}-text`} />
+    <article className="gx-doc" data-testid={testId} aria-label={title || eyebrow}>
+      <div className="gx-doc-eyebrow">{eyebrow}</div>
+      <h2 className="gx-doc-title">{title || eyebrow}</h2>
+      <DocText label={`${title || eyebrow} text`} value={text} max={max} placeholder={placeholder} readOnly={readOnly} onEdit={onEdit} testId={`${testId}-text`} />
     </article>
   );
 }

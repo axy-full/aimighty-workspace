@@ -8,10 +8,10 @@ import type { CardProps } from "../types";
  * keeps them after the Undo on "Use as script" has gone; a brief placed on the canvas says what it says.
  */
 export function DocInspector({ data, ctx }: CardProps<DocData>) {
-  if (data.variant === "node") {
+  if (data.variant !== "brief") {
     return (
       <div className="gx-insp-take" data-testid="insp-doc">
-        <div className="gx-insp-title">{data.title}</div>
+        <div className="gx-insp-title">{data.variant === "script" ? "Script" : data.title}</div>
         {data.text.trim() ? <p className="gx-insp-prompt">{data.text}</p> : null}
       </div>
     );

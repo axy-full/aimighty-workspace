@@ -31,7 +31,7 @@ export const planCards: CardSet = {
       kind: "doc",
       size: (data) => ({
         w: BRIEF_DOC_WIDTH,
-        h: data.variant === "brief" ? briefDocHeight(data.doc) : briefDocHeight({ title: data.title, brief: data.text, look: "", footer: "" }),
+        h: data.variant === "brief" ? briefDocHeight(data.doc) : briefDocHeight({ title: data.variant === "script" ? "Script" : data.title, brief: data.text, look: "", footer: "" }),
       }),
       Card: DocCard,
       Inspector: DocInspector,

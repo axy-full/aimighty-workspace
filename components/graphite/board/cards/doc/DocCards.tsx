@@ -2,13 +2,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { sha256Hex } from "@/lib/production/hash";
 import type { BoardCard } from "@/lib/board/types";
-import type { BeatRemoval } from "@/lib/production/beats";
+import { BEAT_LIMITS, type BeatRemoval } from "@/lib/production/beats";
 import type { BoardCtx, CardProps } from "../types";
 import type { DocData } from "../plan/derive";
 import { frameState } from "../storyboard/model";
 import { BriefDocCard, NodeDocCard } from "./BriefDocCard";
 import { shotRows, withBriefField, withNewShot, withNodeText, withShotBack, withShotDuration, withShotField, withoutShot } from "./model";
 import { ShotListDoc, type ShotState } from "./ShotListDoc";
+import { ShotList as ShotNodeList } from "../board/ShotList";
 import { shotListState, type ShotListState, type ShotTakes } from "../take/take-model";
 
 /** Why the board can't be edited now, or null (offline: the board is read-only, README § 3.1). */
@@ -27,6 +28,12 @@ export function DocCard({ data, ctx }: CardProps<DocData>) {
   const readOnly = readOnlyOf(ctx);
   if (data.variant === "brief")
     return <BriefDocCard doc={data.doc} readOnly={readOnly} onEdit={(field, value) => { ctx.rig.apply((p) => withBriefField(p, field, value)); }} />;
+  /* The Script stage (script-cards.ts): the script, read here (it is written in the Brief's script tool, with its earlier versions), and a beat, edited in place as the List edits it. */
+  if (data.variant === "script")
+    return <NodeDocCard title="Script" text={data.text} eyebrow="Script" readOnly={readOnly ?? "Written in the Brief"} onEdit={() => {}} testId="board-script" />;
+  if (data.variant === "beat")
+    return <NodeDocCard title={data.title} text={data.text} eyebrow="Beat" placeholder="What the camera sees" max={BEAT_LIMITS.description} readOnly={readOnly} testId="board-beat"
+      onEdit={(value) => { ctx.rig.apply((p) => withShotField(p, data.shotId, "description", value, new Date().toISOString())); }} />;
   return <NodeDocCard title={data.title} text={data.text} readOnly={readOnly} onEdit={(value) => { ctx.rig.apply((p) => withNodeText(p, data.nodeId, value)); }} />;
 }
 
@@ -60,6 +67,8 @@ export function ShotList({ ctx, cards, stateOf }: { ctx: BoardCtx; cards: readon
     return out;
   }, [cards, project.nodes]);
   const onCard = (shotId: string) => cards.some((c) => c.id === `frame:${shotId}`);
+  /* No beat sheet: the List lists the board's own shots, as the plain list does (lib/board/list.ts), so it is never empty while the Canvas has shots. */
+  if (!rows.length && ctx.rig.shots.length) return <div className="gx-shotlist-scroll"><ShotNodeList ctx={ctx} cards={cards} /></div>;
   return (
     <div className="gx-shotlist-scroll">
     <ShotListDoc

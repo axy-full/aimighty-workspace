@@ -40,8 +40,8 @@ const castVariant = (card: BoardCard, want: "people" | "things") => {
 /** Film's rail (§ 6.1) over today's Studio regions. Looks travel with the Brief, as references. */
 export const FILM_STAGES: readonly StageDef[] = [
   { id: "brief", label: "Brief", regions: ["brief", "looks"] },
-  /* Nothing on today's board draws the script (it is read in the brief's tools); the stage is empty until P2's stage contents. */
-  { id: "script", label: "Script", regions: [] },
+  /* The script and a card per beat of the beat sheet, in order (components/graphite/board/cards/plan/derive.ts): the Canvas shows what the List shows. */
+  { id: "script", label: "Script", regions: ["script"] },
   { id: "cast", label: "Cast", regions: ["cast"], holds: (card) => castVariant(card, "people") },
   { id: "elements", label: "Elements", regions: ["cast"], holds: (card) => castVariant(card, "things") },
   { id: "storyboard", label: "Storyboard", regions: ["storyboard"] },

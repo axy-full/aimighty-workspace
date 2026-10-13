@@ -55,6 +55,7 @@ import { CheckAgain } from "../CheckAgain";
 import { sampleGate } from "@/lib/demo/sample";
 import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
+import { lensFor, readLenses, saveLens, type Lens } from "@/lib/v12/board/lens";
 import { stageLimit, stagePage, type StagePageKind, addStage, currentStage, freeCards as unstagedCards, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
 import { RigView } from "@/components/v12/rig/RigView";
@@ -179,8 +180,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* An Ads or Social board's own session data (stream 11): pending site reads, the agent's runs. */
   const extra = useKindExtra(kind, project);
   const src = useMemo<BoardSource | null>(() => (project ? {
-    kind, project, shots: rig.shots, jobs: rig.jobs, library: items, masters: rig.masters, extra, agent, sample, now,
-  } : null), [kind, project, rig.shots, rig.jobs, items, rig.masters, extra, agent, sample, now]);
+    kind, project, shots: rig.shots, jobs: rig.jobs, library: items, masters: rig.masters, extra, agent, sample, now, ...(v12 && !compact ? { lenses: true as const } : {}),
+  } : null), [kind, project, rig.shots, rig.jobs, items, rig.masters, extra, agent, sample, now, v12, compact]);
   /* What Make filed while this board was open (the "Made in Make" band; session only, never saved). */
   const [madeNow, setMadeNow] = useState<{ projectId: string; nodeId: string }[]>([]);
   const madeHere = useMemo<MadeEntry[]>(() => madeNow.filter((m) => m.projectId === project?.id).map((m) => ({ nodeId: m.nodeId })), [madeNow, project?.id]);
@@ -240,20 +241,47 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     }
     setInView(best);
   }, [board.rail, placed.regions, store]);
-  const [list, setList] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("list") === "1");
-  /* The Rig, the new interface's fourth view (components/v12/rig): what feeds what. `v=rig` opens on it. */
-  const [rigView, setRigView] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("v") === "rig");
-  const rigOn = v12Frame && rigView && !list;
+  /* The board's lenses (lib/v12/board/lens.ts): in the new interface each stage opens in its natural view, and a person's own switch is remembered for it, on this board.
+     `list=1` and `v=rig` in the address open the first stage that way. Today's board keeps its one List switch. */
+  const [openedAs] = useState<Lens | null>(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("list") === "1" ? "list" : params.get("v") === "rig" ? "rig" : null;
+  });
+  const [urlLens, setUrlLens] = useState<Lens | null>(openedAs);
+  const [classicList, setClassicList] = useState(openedAs === "list");
+  const lensBoard = project?.id ? `${scope}:${project.id}` : null;
+  const [chosen, setChosen] = useState<{ board: string | null; map: Record<string, Lens> }>({ board: null, map: {} });
+  const remembered = useMemo(() => (project?.id ? readLenses(scope, project.id) : {}), [scope, project?.id]);
+  const chosenHere = useMemo(() => ({ ...remembered, ...(chosen.board === lensBoard ? chosen.map : {}) }), [remembered, chosen, lensBoard]);
+  const lens: Lens = !v12Frame ? (classicList ? "list" : "canvas") : urlLens ?? lensFor(stage?.id, flavor, chosenHere);
+  const lensRef = useRef(lens);
+  lensRef.current = lens;
+  const setLens = useCallback((next: Lens | ((was: Lens) => Lens)) => {
+    const to = typeof next === "function" ? next(lensRef.current) : next;
+    if (!v12Frame) { setClassicList(to === "list"); return; }
+    setUrlLens(null);
+    if (!stage || !project?.id) return;
+    const map = saveLens(scope, project.id, stage.id, to);
+    setChosen({ board: lensBoard, map });
+  }, [lensBoard, project?.id, scope, stage, v12Frame]);
+  const list = lens === "list";
+  const setList = useCallback((value: boolean | ((was: boolean) => boolean)) => {
+    setLens((was) => ((typeof value === "function" ? value(was === "list") : value) ? "list" : "canvas"));
+  }, [setLens]);
+  /* The Rig, the new interface's fourth view (components/v12/rig): what feeds what. */
+  const rigOn = v12Frame && lens === "rig";
   /* The Rig's reading of the whole board (every stage's cards, not only this stage's). */
   const rigModelNow = useMemo(() => (rigOn && project ? rigModel({ cards: allCards, project, library: items }) : null), [rigOn, allCards, project, items]);
   const glide = useCallback((to: RegionId | { card: string }) => {
-    if (list) setList(false);
+    /* Today's board leaves its List for the card; the new interface keeps the lens a person chose (a glide never resets it). */
+    if (list && !v12Frame) setList(false);
     const zoom = flow.getZoom();
     const box = typeof to === "string" ? placed.regions.get(to) ?? placed.slots.get(to) : placed.boxes.get(to.card);
     if (!box) return;
     const next = viewportFor(box, zoom, typeof to !== "string");
     void flow.setViewport(next, { duration: GLIDE_MS, ease: glideEase }).then(() => measureInView(next));
-  }, [flow, list, measureInView, placed.boxes, placed.regions, placed.slots, viewportFor]);
+  }, [flow, list, measureInView, placed.boxes, placed.regions, placed.slots, setList, v12Frame, viewportFor]);
 
   /* ── Selection: the board's own; a card that draws a canvas node is the workspace's selection too ── */
   const [selection, setSelection] = useState<BoardSelection>(NO_SELECTION);
@@ -615,10 +643,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* ── The new interface's stages (lib/v12/board/stages.ts) ── */
   const { userId } = useSession();
   const goStage = useCallback((id: string) => {
-    if (list) setList(false);
+    /* Moving between stages never changes a lens: each stage shows the one chosen for it, else its own (lib/v12/board/lens.ts). */
+    setUrlLens(null);
     pick(new Set(), null);
     shell.setScreenParams({ stage: id }, "push");
-  }, [list, pick, shell]);
+  }, [pick, shell]);
   /* A rail change is one draft edit (`boardStages`, the draft's JSON), with Undo. */
   const editStages = useCallback((edit: StageEdit) => {
     const current = rig.project;
@@ -767,7 +796,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={viewing ? null : headPrimary} menu={boardMenu} viewOnly={viewing} badge={round ? <RoundBadge board={project.name || "Board"} round={round} /> : null}
             onBoard={() => { if (stages[0]) goStage(stages[0].id); }} onStage={() => pick(new Set(), null)} /> : null}
           <StageColumn on={v12Frame}>
-          {list ? <List ctx={ctx} cards={placed.cards} /> : (
+          {list ? (stageIsEmpty ? null : <List ctx={ctx} cards={placed.cards} />) : (
             <BoardCanvas placed={placed} selection={selection} onSelect={pick} onFreeMoved={onFreeMoved} readOnly={offline || Boolean(viewing)} onMoveEnd={onMoveEnd}
               placing={tool === "note" || tool === "text"} onPlace={place}
               onOpen={(id) => {
@@ -793,9 +822,9 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
               {roundShare ? <div className="v12-stage-round" data-card-id={roundShare.id}><RoundCard card={roundShare as BoardCard<RoundCardData>} data={roundShare.data as RoundCardData} selected={false} ctx={ctx} /></div> : null}
             </div>
           ) : null}
-          {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}
-          {rigOn ? <RigView model={rigModelNow!} project={project} scope={scope} userId={userId ?? null} apply={rig.apply} readOnly={offline || Boolean(gate.readOnly)}
-            onStage={(id) => { setRigView(false); goStage(id); }} onAsk={(words) => { setDockOpen(true); window.setTimeout(() => ctx.askAtomik(words), 80); }} /> : null}
+          {stageIsEmpty && stage ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}
+          {rigOn && !stageIsEmpty ? <RigView model={rigModelNow!} project={project} scope={scope} userId={userId ?? null} apply={rig.apply} readOnly={offline || Boolean(gate.readOnly)}
+            onStage={(id) => goStage(id)} onAsk={(words) => { setDockOpen(true); window.setTimeout(() => ctx.askAtomik(words), 80); }} /> : null}
           {v12Frame && !list && !empty ? (
             <BoardBar ctx={ctx} selection={crumb} onClearSelection={() => pick(new Set(), null)} tool={tool} onDisarm={() => setTool("select")}
               onAttach={(picked) => void upload(picked)} library={items} onAsked={() => setDockOpen(true)} />
@@ -803,7 +832,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           {batch.offer && !list ? <NotifyAsk onTell={() => void batch.tellMe()} onNotNow={batch.notNow} /> : null}
           {list || page || rigOn ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline || Boolean(viewing)} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12Frame} />
-          {v12Frame ? <ViewSwitch view={list ? "list" : rigOn ? "rig" : "canvas"} onView={(v) => { setList(v === "list"); setRigView(v === "rig"); }} /> : null}
+          {v12Frame ? <ViewSwitch view={lens} onView={setLens} /> : null}
           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}
           {pill ? <p className="bd-sample" role="status" data-testid="board-sample" data-lifted={pill === LIFT_LINE || undefined}>{pill}{pill === CHECK_LINE ? <> <CheckAgain className="bd-link" /></> : null}</p> : null}
           {live ? <WhoIsHere peers={peers} /> : null}

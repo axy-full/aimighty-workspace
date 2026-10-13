@@ -33,9 +33,10 @@ test.describe("desktop, switch on", () => {
       expect(await page.getByTestId("v12-stage-primary").count(), `${id}: at most one primary`).toBeLessThanOrEqual(1);
       expect(await noSideways(page), `${id}: no sideways scroll`).toBe(true);
     }
-    /* Script has nothing on today's board: it says what goes there. */
+    /* Script draws what the board holds for it, a card per beat (one board, four lenses: its List shows the same beats): not empty. */
     await page.locator('[data-testid="v12-stage-row"][data-stage="script"] .v12-rail-btn').click();
-    await expect(page.getByTestId("v12-stage-empty")).toBeVisible();
+    await expect(page.getByTestId("v12-stage-empty")).toHaveCount(0);
+    await expect(page.getByTestId("board-shotlist-row").first()).toBeVisible();
     /* Cut draws today's cut card: a stage shows what today's board has, nothing invented. */
     await page.locator('[data-testid="v12-stage-row"][data-stage="cut"] .v12-rail-btn').click();
     await expect(page.getByTestId("v12-stage-empty")).toHaveCount(0);
