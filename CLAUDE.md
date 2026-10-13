@@ -42,6 +42,7 @@ These amend the ground rules above and the scope they were copied from (the full
 - **"Rig" is a UI word again.** Prototype 12 names a board view "Rig" and the owner kept the name. The old ban (4 Oct scope, "No UI text says … Rig …") is lifted for it; the other retired words stay banned (`tests/helpers/uiStrings.ts`).
 - **"quoted"** is shown where an action has no live quote path, which overrides rule 14's "never the bare word quoted" for the prototype-12 build. Each such action is listed in docs/redesign-progress.md.
 - **The new-interface switch** (`lib/newInterface.ts`) stays until launch: off for every customer workspace, on for the house workspace.
+- **Remotion (owner, 13 Oct 2026).** Remotion: Free License, confirmed by Remotion 13 Oct 2026; no licence key, nothing sent to Remotion; pinned to 4.x. SensAI is 3 people in total. Rendering is self-hosted on our own server only (no Remotion Lambda, no AWS), on a sealed worker with no internet, and only our own templates are rendered; users never upload Remotion projects. **When SensAI's headcount reaches 4, the Remotion Company License must be bought before the next release.** Any upgrade to Remotion 5.x is flagged to the owner first (5.0 may require a key): NEEDS AKSHAY. Remotion exports are free to customers (0 cr, "Free") for as long as Remotion charges us nothing; paid engine steps inside an export are priced as usual; only the owner sets a price for exports. The plan is docs/plans/remotion.md on the redesign branches.
 
 # Pricing
 
