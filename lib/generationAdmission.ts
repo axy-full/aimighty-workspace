@@ -1,3 +1,4 @@
+import { claimedStepFiling } from "@/lib/atomikAccess";
 import { mayReachProject } from "@/lib/draftProject";
 import { ENHANCE_MAX_PROMPT } from "./shell/enhancer";
 import { enhancementRan } from "./enhanceProof";
@@ -433,6 +434,16 @@ export async function executeGenerationAdmission(
       body.shotId = final.shotId ?? undefined;
     }
 
+    /* An approval of another member's step (owner, 13 Oct): the render files into that step's own chat's project, resolved here from a step this caller claimed and has
+       not sent, never named by the client, so its caps and the 200 cr line apply as on any render there and the approver never reads the board. */
+    let stepFiled = false;
+    if (body.atomikStepId !== undefined) {
+      const filing = typeof body.atomikStepId === "string" ? await claimedStepFiling(body.atomikStepId, got.user) : null;
+      if (!filing) return admissionReply({ error: "That step is gone." }, { status: 404 });
+      body.projectId = filing.projectId ?? undefined;
+      delete body.shotId;
+      stepFiled = true;
+    }
     if (body.projectId) {
       const project = await db().execute({
         sql: `SELECT id FROM projects WHERE id=?`,
@@ -440,7 +451,7 @@ export async function executeGenerationAdmission(
       });
       /* A private board is its owner's, and a shared one a teammate's to look at (lib/draftProject.ts): filing into either is refused as a missing project is,
          before anything is quoted, held or reserved, so the answer says nothing about whether it exists. An Atomik run (no person) is not asked. */
-      const reach = await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "write");
+      const reach = stepFiled || (await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "write"));
       if (!project.rows.length || !reach)
         return admissionReply({ error: "No such project." }, { status: 404 });
     }

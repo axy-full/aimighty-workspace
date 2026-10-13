@@ -53,12 +53,13 @@ export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) 
   if (pending && (await threadArchived(pending.chatId)))
     return NextResponse.json({ error: ARCHIVED_NOTE, step: shown(pending) }, { status: 409 });
 
-  let step = await claimStep(id, got.user.id);
+  /* An admin's claim keeps the chat out of the step's render key (it is `atomik-step:<step>`), so no response carries the chat's id. */
+  let step = await claimStep(id, got.user.id, { chatless: !mine });
   /* A step left running by an approval that never reached the renderer is
      settled first; if nothing was sent, it is proposed again and this
      approval may take it. */
   if (!step && pending?.status === "running" && !pending.genId && (await reconcileRunningSteps(pending.chatId)))
-    step = await claimStep(id, got.user.id);
+    step = await claimStep(id, got.user.id, { chatless: !mine });
   if (step) return NextResponse.json({ step: shown(step) });
 
   /* Nothing was claimed. Say which of the two reasons it was, because

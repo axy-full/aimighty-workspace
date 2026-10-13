@@ -72,7 +72,7 @@ export async function adminStepSheet(stepId: string, viewer: ChatViewer): Promis
   const row = (await db().execute({
     sql: `SELECT s.id, s.title, s.kind, s.model, s.est_cost_usd, c.created_by AS chat_owner, o.role AS owner_role
           FROM atomik_steps s JOIN atomik_chats c ON c.id = s.chat_id LEFT JOIN users o ON o.id = c.created_by
-          WHERE s.id = ? AND s.status = 'proposed' AND s.model NOT LIKE 'connected:%' AND c.deleted = 0 AND c.archived_at IS NULL AND c.status <> 'running' LIMIT 1`,
+          WHERE s.id = ? AND s.status = 'proposed' AND s.kind <> 'audio' AND s.model NOT LIKE 'connected:%' AND c.deleted = 0 AND c.archived_at IS NULL AND c.status <> 'running' LIMIT 1`,
     args: [stepId],
   }).catch(missing)).rows[0] as Record<string, unknown> | undefined;
   if (!row || String(row.chat_owner ?? "") === viewer.id || ownerIsAdmin(row.chat_owner, row.owner_role)) return null;
@@ -82,7 +82,23 @@ export async function adminStepSheet(stepId: string, viewer: ChatViewer): Promis
   return { stepId: String(row.id), title: title.length > 60 ? `${title.slice(0, 59).trimEnd()}…` : title || "A step", credits };
 }
 
-/** Who claimed a step (the person who pressed Continue), or null: they settle it, whoever's chat it is in. */
+/**
+ * Where the render of a step the viewer has claimed files: its own chat's project, resolved here and never named by the client. The step must be running, claimed by the
+ * viewer, with nothing sent yet. Admission uses this (lib/generationAdmission.ts), so an admin's approval of another member's step lands in that member's project, under its
+ * caps and the 200 cr line, and the admin never reads the board. Null when the step is not the viewer's to render.
+ */
+export async function claimedStepFiling(stepId: string, viewer: ChatViewer): Promise<{ projectId: string | null } | null> {
+  if (!viewer.id || !stepId) return null;
+  await ready();
+  const row = (await db().execute({
+    sql: `SELECT c.project_id FROM atomik_steps s JOIN atomik_chats c ON c.id = s.chat_id
+          WHERE s.id = ? AND s.status = 'running' AND s.claimed_by = ? AND s.gen_id IS NULL AND s.kind <> 'audio' AND c.deleted = 0 LIMIT 1`,
+    args: [stepId, viewer.id],
+  }).catch(missing)).rows[0] as Record<string, unknown> | undefined;
+  return row ? { projectId: row.project_id == null || row.project_id === "" ? null : String(row.project_id) } : null;
+}
+
+/** Who claimed a step (the person who pressed Continue), or null. */
 export async function stepClaimedBy(stepId: string): Promise<string | null> {
   await ready();
   const row = (await db().execute({ sql: "SELECT claimed_by FROM atomik_steps WHERE id=? LIMIT 1", args: [stepId] }).catch(missing)).rows[0] as Record<string, unknown> | undefined;

@@ -352,7 +352,7 @@ export async function deleteChat(chatId: string): Promise<void> {
  * a render is always billed for what was priced, not for whatever the
  * browser had in memory when the button went down.
  */
-export async function claimStep(stepId: string, userId?: string): Promise<Step | null> {
+export async function claimStep(stepId: string, userId?: string, options: { chatless?: boolean } = {}): Promise<Step | null> {
   await ready();
   const rs = await db().execute({
     /* A step settled back to proposed carries why; approving it again clears that. Each approval
@@ -362,7 +362,7 @@ export async function claimStep(stepId: string, userId?: string): Promise<Step |
        with the claim, from the row's own chat and the new attempt (the right side reads the row
        as it was). */
     sql: `UPDATE atomik_steps SET status = 'running', error = NULL, updated_at = ?, attempt = attempt + 1, claimed_by = ?,
-            request_key = 'atomik-step:' || chat_id || ':' || id || CASE WHEN attempt + 1 > 1 THEN ':' || (attempt + 1) ELSE '' END
+            request_key = 'atomik-step:' || ${options.chatless ? "" : "chat_id || ':' || "}id || CASE WHEN attempt + 1 > 1 THEN ':' || (attempt + 1) ELSE '' END
           WHERE id = ? AND status = 'proposed'`,
     args: [now(), userId ?? null, stepId],
   });
@@ -528,6 +528,26 @@ export async function reconcileRunningSteps(chatId: string, at = now()): Promise
   }
   if (settled) await db().execute({ sql: `UPDATE atomik_chats SET updated_at = ? WHERE id = ?`, args: [at, chatId] });
   return settled;
+}
+
+/**
+ * The person who claimed a step takes it back to proposed when nothing was sent (a price that moved, a quote that failed): its key is fenced first, so a render that was
+ * merely delayed can never land afterwards, exactly as a stranded claim is (reconcileRunningSteps). False when the step is not theirs, is not running, or something was sent.
+ */
+export async function releaseClaim(stepId: string, userId: string, at = now()): Promise<boolean> {
+  await ready();
+  const row = (await db().execute({ sql: `SELECT * FROM atomik_steps WHERE id = ? AND status = 'running' AND gen_id IS NULL AND claimed_by = ?`, args: [stepId, userId] })).rows[0] as Row | undefined;
+  if (!row || isAccountStep(toStep(row))) return false;
+  await requestKeyIndexReady();
+  const key = stepKeyOf(row);
+  const sent = await db().execute({ sql: `SELECT 1 FROM generation_requests WHERE request_key = ? LIMIT 1`, args: [key] });
+  if (sent.rows.length) return false;
+  if (!(await fenceGenerationRequest({ userId, key, fingerprint: STRANDED_FENCE }))) return false;
+  const done = await db().execute({
+    sql: `UPDATE atomik_steps SET status = 'proposed', error = ?, updated_at = ?, claimed_by = NULL WHERE id = ? AND status = 'running' AND gen_id IS NULL AND claimed_by = ?`,
+    args: ["The approval was not sent, so nothing was charged. Approve it again.", at, stepId, userId],
+  });
+  return Number(done.rowsAffected ?? 0) > 0;
 }
 
 /** An edit to a step that cannot be made: a person's mistake, answered with a 400. */

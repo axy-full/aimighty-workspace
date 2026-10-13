@@ -56,6 +56,8 @@ test("a chat and its steps are their person's: lists leave others out, every doo
   const threadsRoute = R<typeof import("../../app/api/atomik/threads/route")>("app/api/atomik/threads/route.ts");
   const stepRoute = R<typeof import("../../app/api/atomik/steps/[id]/route")>("app/api/atomik/steps/[id]/route.ts");
   const claim = R<typeof import("../../app/api/atomik/steps/[id]/claim/route")>("app/api/atomik/steps/[id]/claim/route.ts");
+  const settle = R<typeof import("../../app/api/atomik/steps/[id]/settle/route")>("app/api/atomik/steps/[id]/settle/route.ts");
+  const release = R<typeof import("../../app/api/atomik/steps/[id]/release/route")>("app/api/atomik/steps/[id]/release/route.ts");
   const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
   const req = (method: string, body?: unknown) => new Request("https://particl.test/x", { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
   await tenant.runInTenant(ws, async () => {
@@ -165,13 +167,29 @@ test("a chat and its steps are their person's: lists leave others out, every doo
   for (const field of ["chatId", "messageId", "position"]) expect(handed, field).not.toHaveProperty(field);
   expect(JSON.stringify(adminClaim), "no chat words, plan or messages").not.toMatch(/ach_big chat|ask ach|A plan|messages|chat_id/);
   expect((await claimed(admin, "st_ach_big"))[0], "claimed once").toBe(404);
-  /* The admin who claimed it records what became of it, and cannot edit it; another member cannot. */
-  expect((await asking(admin, () => stepRoute.PATCH(req("PATCH", { prompt: "Rewrite" }) as never, ctx("st_ach_big"))))).toEqual(GONE_STEP);
-  expect((await asking(other, () => stepRoute.PATCH(req("PATCH", { status: "done" }) as never, ctx("st_ach_big"))))[0], "its own person may").toBe(200);
-  await tenant.runInTenant(ws, async () => { await db().execute({ sql: "UPDATE atomik_steps SET status='running', gen_id=NULL WHERE id='st_ach_big'", args: [] }); }, { user: owner });
-  const settled = await asking(admin, () => stepRoute.PATCH(req("PATCH", { status: "failed", error: "It did not start." }) as never, ctx("st_ach_big")));
-  expect(settled[0]).toBe(200);
-  for (const field of ["chatId", "messageId", "position"]) expect(settled[1], field).not.toHaveProperty(field);
+  /* The claim names no chat: the render key is the step's own. */
+  expect(handed.requestKey).toBe("atomik-step:st_ach_big");
+  expect(JSON.stringify(adminClaim)).not.toContain("ach_big chat");
+  expect(JSON.stringify(adminClaim), "the chat's own id is nowhere in it").not.toMatch(/"ach_big"|atomik-step:ach_big|chat_id|chatId/);
+  /* Nobody but the step's person writes the step: not an admin who claimed it, whatever they send. */
+  for (const body of [{ prompt: "Rewrite" }, { status: "done", genId: "gen_x" }, { status: "failed" }])
+    expect(await asking(admin, () => stepRoute.PATCH(req("PATCH", body) as never, ctx("st_ach_big"))), JSON.stringify(body)).toEqual(GONE_STEP);
+  /* Settling is the server's, from the render's own record: with no render it changes nothing, any number of times, and reads nothing from the caller. */
+  const status = () => tenant.runInTenant(ws, async () => (await db().execute({ sql: "SELECT status, gen_id FROM atomik_steps WHERE id='st_ach_big'", args: [] })).rows[0], { user: owner });
+  expect(await asking(admin, () => settle.POST(req("POST", { status: "done", genId: "gen_x" }) as never, ctx("st_ach_big")))).toEqual([200, { status: "running" }]);
+  expect(await asking(admin, () => settle.POST(req("POST") as never, ctx("st_ach_big")))).toEqual([200, { status: "running" }]);
+  expect(await status(), "no render: still running, no take").toMatchObject({ status: "running", gen_id: null });
+  expect(await asking(other, () => settle.POST(req("POST") as never, ctx("st_ach_big"))), "its person may settle it too").toEqual([200, { status: "running" }]);
+  expect(await asking(owner, () => settle.POST(req("POST") as never, ctx("st_ach_big"))), "a stranger (the workspace owner) may not").toEqual(GONE_STEP);
+  /* Releasing: only the claimant, and only while nothing was sent; the step is proposed again, claimable once more, and a stranger cannot. */
+  expect(await asking(owner, () => release.POST(req("POST") as never, ctx("st_ach_big")))).toEqual(GONE_STEP);
+  expect(await asking(other, () => release.POST(req("POST") as never, ctx("st_ach_big"))), "its person is not the claimant").toEqual(GONE_STEP);
+  expect(await asking(admin, () => release.POST(req("POST") as never, ctx("st_ach_big")))).toEqual([200, { released: true }]);
+  expect(await status()).toMatchObject({ status: "proposed", gen_id: null });
+  expect(await asking(admin, () => release.POST(req("POST") as never, ctx("st_ach_big"))), "a second release").toEqual(GONE_STEP);
+  const again = await claimed(admin, "st_ach_big");
+  expect(again[0], "claimable again").toBe(200);
+  expect((again[1] as { step: { requestKey: string } }).step.requestKey, "under a key of its own").toBe("atomik-step:st_ach_big:2");
   /* The chat stays gone to the admin throughout. */
   expect(await asking(admin, () => chat.GET(req("GET") as never, ctx("ach_big")))).toEqual(GONE_CHAT);
 });

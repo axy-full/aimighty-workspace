@@ -30,9 +30,12 @@ function fetcher(quote: { estimatedCredits: number }, over: { claim?: Response; 
 test("claim, price, render at the quote, record: in that order, and no call names a chat", async () => {
   const f = fetcher({ estimatedCredits: 520 });
   expect(await approveItem(item(), f.fn)).toEqual({ ok: true });
-  expect(f.calls.map((c) => [c.method, c.url])).toEqual([["POST", "/api/atomik/steps/st_1/claim"], ["POST", "/api/generate/quote"], ["POST", "/api/generate"], ["PATCH", "/api/atomik/steps/st_1"]]);
-  expect(f.calls[2].body).toMatchObject({ maxCredits: 520, quoteFingerprint: "a".repeat(64), prompt: "A slow push-in." });
-  expect(f.calls[3].body).toEqual({ status: "done", genId: "gen_1" });
+  expect(f.calls.map((c) => [c.method, c.url])).toEqual([["POST", "/api/atomik/steps/st_1/claim"], ["POST", "/api/generate/quote"], ["POST", "/api/generate"], ["POST", "/api/atomik/steps/st_1/settle"]]);
+  /* The request names only the step: no project, no shot; the server resolves where it files. */
+  expect(f.calls[1].body).toMatchObject({ atomikStepId: "st_1", projectId: null });
+  expect(f.calls[2].body).toMatchObject({ maxCredits: 520, quoteFingerprint: "a".repeat(64), prompt: "A slow push-in.", atomikStepId: "st_1", projectId: null });
+  /* Nothing of the result is sent back for the step: the server settles it from the render's own record. */
+  expect(f.calls[3].body).toBeNull();
   expect(JSON.stringify(f.calls)).not.toMatch(/\/api\/atomik\/ach|chatId/);
 });
 
@@ -40,7 +43,15 @@ test("a live price above the one shown renders and charges nothing", async () =>
   const f = fetcher({ estimatedCredits: 700 });
   const out = await approveItem(item(600), f.fn);
   expect(out).toMatchObject({ ok: false, reason: expect.stringContaining("Nothing was charged") });
-  expect(f.calls.map((c) => c.url)).toEqual(["/api/atomik/steps/st_1/claim", "/api/generate/quote"]);
+  /* The claim is handed back: the step is proposed again. */
+  expect(f.calls.map((c) => c.url)).toEqual(["/api/atomik/steps/st_1/claim", "/api/generate/quote", "/api/atomik/steps/st_1/release"]);
+});
+
+test("a quote that cannot be had hands the claim back too", async () => {
+  const calls: string[] = [];
+  const fn = async (url: string) => { calls.push(url); return url.endsWith("/claim") ? reply({ step }) : url === "/api/generate/quote" ? reply({ error: "No quote." }, 422) : reply({ released: true }); };
+  expect(await approveItem(item(), fn)).toMatchObject({ ok: false });
+  expect(calls).toEqual(["/api/atomik/steps/st_1/claim", "/api/generate/quote", "/api/atomik/steps/st_1/release"]);
 });
 
 test("a claim that is refused stops there: nothing is priced, rendered or recorded; a failed render is recorded as failed", async () => {
@@ -49,7 +60,8 @@ test("a claim that is refused stops there: nothing is priced, rendered or record
   expect(gone.calls).toHaveLength(1);
   const failed = fetcher({ estimatedCredits: 10 }, { render: reply({ error: "Not accepted." }, 422) });
   expect(await approveItem(item(), failed.fn)).toMatchObject({ ok: false, reason: "Not accepted." });
-  expect(failed.calls.at(-1)).toMatchObject({ method: "PATCH", body: { status: "failed", error: "Not accepted." } });
+  /* Refused before anything started: handed back, then settled from whatever the server recorded. */
+  expect(failed.calls.slice(-2).map((c) => c.url)).toEqual(["/api/atomik/steps/st_1/release", "/api/atomik/steps/st_1/settle"]);
 });
 
 test("a step of the person's own plan is approved by its Continue, never from here; an admin has no Not now on another's", async () => {
