@@ -73,6 +73,36 @@ test("the platform desk marks a deleted workspace and restores it; money stays o
   expect(again.ok(), await again.text()).toBe(true);
 });
 
+test("the platform desk keeps one workspace on today's screens and brings it back; a signed-out caller is refused", async ({ page, playwright }, testInfo) => {
+  test.skip(testInfo.project.name !== "customer-1440x900", "the platform desk is a desktop console: one desktop size");
+  const me = await platformOwner(page);
+  const name = `Kept back ${randomBytes(4).toString("hex")}`;
+  const created = await page.request.post("/api/workspaces", {
+    headers: { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` },
+    data: { name },
+  });
+  expect(created.ok(), await created.text()).toBe(true);
+  const ws = (await created.json()).workspace;
+  const outsider = await playwright.request.newContext({ baseURL: testInfo.project.use.baseURL });
+  expect((await outsider.patch("/api/admin/site", { data: { newInterfaceOffAdd: ws.id } })).status()).toBe(401);
+  await outsider.dispose();
+  expect((await page.request.patch("/api/admin/site", { data: { newInterfaceOffAdd: "ws_not_here" } })).status()).toBe(400);
+  const added = await page.request.patch("/api/admin/site", { data: { newInterfaceOffAdd: ws.id } });
+  expect(added.ok(), await added.text()).toBe(true);
+  expect((await added.json()).newInterfaceOff).toContain(ws.id);
+  try {
+    await page.goto("/admin");
+    const card = page.getByTestId("site-new-interface-off");
+    await expect(card.getByTestId("site-new-interface-listed").filter({ hasText: name })).toBeVisible();
+    expect(await noSideScroll(page)).toBe(true);
+    await card.getByTestId("site-new-interface-listed").filter({ hasText: name }).getByRole("button", { name: "Remove" }).click();
+    await expect(card.getByTestId("site-new-interface-listed").filter({ hasText: name })).toHaveCount(0);
+    expect((await page.request.get("/api/admin/site").then((r) => r.json())).newInterfaceOff).not.toContain(ws.id);
+  } finally {
+    await page.request.patch("/api/admin/site", { data: { newInterfaceOffRemove: ws.id } });
+  }
+});
+
 test("the platform desk reads the house workspace as never billed: no balance, nothing added, its spend at cost", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "customer-1440x900", "the platform desk is a desktop console: one desktop size");
   const me = await platformOwner(page);

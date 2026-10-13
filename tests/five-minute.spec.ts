@@ -1,12 +1,16 @@
 import { test, expect, request as playwrightRequest, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { writeFileSync } from "node:fs";
 import {
-  balanceCr, bannedNamesIn, mockInvitation, noSidewaysScroll, PASSPHRASE, runOf, scopeFor, unpricedSpendButtons, visibleText,
+  bannedNamesIn, mockInvitation, noSidewaysScroll, PASSPHRASE, runOf, scopeFor, unpricedSpendButtons, visibleText,
   watchSpending, type SpendLedger,
 } from "./helpers/fiveMinute";
 import { expectFloors } from "./phoneFloors";
 
 /**
  * THE FIVE-MINUTE TEST (scope v2 § 2 "Done when"; docs/plans/u1-ease.md § 3.1).
+ *
+ * The laptop path is the journey on the new screens (prototype 14), ported from the v14 draft on the owner's direct word (12-13 Oct);
+ * the phone path is the phone app's, unchanged.
  *
  * A brand-new person with a mocked invitation reaches an approved first render, on a laptop (1440x900) and on a phone
  * (390x844), in under five minutes of wall time, against a local server with ENGINE_MOCK=1: sign-up (invite-only,
@@ -28,7 +32,8 @@ import { expectFloors } from "./phoneFloors";
  */
 const FIVE_MINUTES = 5 * 60_000;
 /** Taps from the invitation link to the approved take (clicks and ticks; typing is not a tap). Set from the first green run; lower it when a PR removes a tap. */
-const TAP_BUDGET = { desktop: 9, phone: 9 };
+/* Laptop, 7 taps, on the new screens (prototype 14; owner, 12-13 Oct): terms, sign up, Start, the Shots stage, Build, Approve (plan), Approve (take). */
+const TAP_BUDGET = { desktop: 7, phone: 9 };
 /* Phone stays at 9 until the owner decides whether it stays 9 or the product saves a tap. */
 /* Phone, 9 taps: terms, sign up, Start, Record's Open, Build, the plan row (Build returns Home), Approve, Review, Approve. The earlier 7 was set while Start was a fixture (not a tap) and
    before the plan path; one tap goes if Build stays on the plan screen at its price (proposed, not built: PlanScreen is money code). */
@@ -53,6 +58,10 @@ type Run = {
   ceiling: number | null;
   /** The N on Start, as the screen showed it. */
   startFigure: number | null;
+  /** Approvals a person gave on the laptop path (rule 17). */
+  approvals: number;
+  /** The last step that passed: where the path stopped, if it did (rule 17). */
+  reached: string;
 };
 
 /** The takes of the project the Library holds as approved: a lasting state, read from the server (not a toast that comes and goes). */
@@ -61,6 +70,12 @@ async function approvedTakes(run: Run): Promise<number> {
   const reply = await run.page.request.get(`/api/workbench/library?projectId=${encodeURIComponent(run.draftId)}&source=generations&limit=60`, { headers });
   const json = await reply.json().catch(() => null) as { generations?: { reviewState?: string }[] } | null;
   return (json?.generations ?? []).filter((g) => g.reviewState === "approved").length;
+}
+
+/** The workspace's balance as the server holds it (the new screens show it in Settings, not a header). */
+async function balanceOf(page: Page): Promise<number> {
+  const me = (await (await page.request.get("/api/me")).json()) as { credits?: { balance?: number } };
+  return Number(me.credits?.balance ?? NaN);
 }
 
 async function open(browser: Browser, viewport: { width: number; height: number }, phone: boolean): Promise<Run> {
@@ -72,11 +87,11 @@ async function open(browser: Browser, viewport: { width: number; height: number 
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  return { page, context, spend: watchSpending(page), errors, started: 0, taps: 0, marks: {}, email: "", draftId: "", productionId: "", balanceAtStart: null, thinking: null, rendered: null, ceiling: null, startFigure: null };
+  return { page, context, spend: watchSpending(page), errors, started: 0, taps: 0, marks: {}, email: "", draftId: "", productionId: "", balanceAtStart: null, thinking: null, rendered: null, ceiling: null, startFigure: null, approvals: 0, reached: "none" };
 }
 
 const elapsed = (run: Run) => (run.started ? Date.now() - run.started : 0);
-const mark = (run: Run, name: string) => { run.marks[name] = Math.round(elapsed(run) / 100) / 10; };
+const mark = (run: Run, name: string) => { run.marks[name] = Math.round(elapsed(run) / 100) / 10; run.reached = name; };
 async function tap(run: Run, target: ReturnType<Page["getByRole"]>) {
   run.taps++;
   await target.click();
@@ -124,20 +139,25 @@ async function anAgentCannotApprove(run: Run, runId: string, fingerprint: string
 
 /* ───────────────────────────── a laptop, 1440x900 ───────────────────────────── */
 
-test.describe("the five-minute test · laptop 1440x900", () => {
+test.describe("the five-minute test · laptop 1440x900, the new screens (prototype 14)", () => {
   test.describe.configure({ mode: "serial" });
   let run: Run;
   test.beforeAll(async ({ browser }, info) => {
     test.skip(info.project.name !== "five-minute-desktop", "the laptop path");
     run = await open(browser, { width: 1440, height: 900 }, false);
   });
-  test.afterAll(async () => { await run?.context.close(); });
+  test.afterAll(async ({}, info) => {
+    if (!run) return;
+    /* Rule 17: timings and counts only, never the brief's words. */
+    const record = { project: info.project.name, marks: run.marks, reached: run.reached, taps: run.taps, approvals: run.approvals, seconds: Math.round(elapsed(run) / 100) / 10, paid: run.spend.spent.map((s) => s.kind) };
+    info.annotations.push({ type: "five-minute", description: JSON.stringify(record) });
+    try { writeFileSync(info.outputPath("five-minute-timings.json"), JSON.stringify(record, null, 2)); } catch { /* the report's annotation still has it */ }
+    await run.context.close();
+  });
 
   test("1 · the invitation link opens sign-up, the email already filled in", async () => {
     const base = process.env.PW_BASE_URL || "http://localhost:4551";
     const invite = await mockInvitation(base);
-    run.email = invite.email;
-    /* Invite-only: a code that was never issued is refused. */
     const forged = await run.page.request.get("/api/auth/signup?code=not-an-issued-invitation");
     expect(forged.ok(), "a made-up invitation opens nothing").toBe(false);
     run.started = Date.now();
@@ -145,9 +165,9 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     await expect(run.page.getByRole("heading", { name: /create your account/i })).toBeVisible({ timeout: 60_000 });
     await expect(run.page.getByTestId("signup-email")).toHaveValue(invite.email);
     await expect(run.page.getByTestId("signup-email")).toHaveJSProperty("readOnly", true);
-    /* The invitation names the person, so the form does not ask again. */
     await expect(run.page.getByTestId("signup-name")).toHaveCount(0);
     await screenIsClean(run);
+    mark(run, "invitation");
   });
 
   test("2 · the person names the workspace and signs up", async () => {
@@ -159,69 +179,73 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     await tap(run, page.getByTestId("signup-submit"));
     await page.waitForURL((url) => !/\/signup/.test(url.pathname), { timeout: 120_000 });
     mark(run, "signed up");
-    run.balanceAtStart = null;
   });
 
-  test("3 · sign-up lands on Home, 'What are we making?'", async () => {
+  test("3 · sign-up lands on the new Home: the bar, Start with its price", async () => {
     const { page } = run;
-    await expect(page.getByRole("heading", { name: "What are we making?" })).toBeVisible({ timeout: 90_000 });
-    await expect(page.getByTestId("home")).toBeVisible();
+    await expect(page.getByTestId("v12-home")).toBeVisible({ timeout: 90_000 });
     expect(new URL(page.url()).searchParams.get("view"), "the address is Home's").toBe("home");
-    await expect(page.getByTestId("home-start")).toHaveText(/^Start · up to \d[\d,]* cr$/, { timeout: 30_000 });
-    run.balanceAtStart = await balanceCr(page);
-    expect(run.balanceAtStart, "the header shows the balance").not.toBeNull();
+    await expect(page.getByTestId("v12-home-bar-input")).toBeVisible();
+    await expect(page.getByTestId("v12-home-start")).toHaveText(/^Start · up to \d[\d,]* cr$/, { timeout: 60_000 });
+    run.balanceAtStart = await balanceOf(page);
+    expect(run.balanceAtStart, "the new workspace has its welcome credits").toBeGreaterThan(0);
     mark(run, "landed on Home");
   });
 
-  test("4 · Home: the brief typed, Start with its price, the templates", async () => {
+  test("4 · Home: the brief typed, Start shows the server's own figure", async () => {
     const { page } = run;
-    await page.getByTestId("home-brief").fill(BRIEF);
-    await expect(page.getByTestId("home-templates")).toBeVisible();
-    await screenIsClean(run, ['[data-testid="home-start-row"]']);
-    expect(run.spend.spent, "nothing paid yet").toEqual([]);
-    mark(run, "home");
+    await page.getByTestId("v12-home-bar-input").fill(BRIEF);
+    const start = page.getByTestId("v12-home-start");
+    await expect(start).toBeEnabled({ timeout: 30_000 });
+    /* The figure is the server's own: the quote route's answer for a new board, never a number kept in the app. */
+    const { headers } = await scopeFor(page.request);
+    const quote = await page.request.get("/api/workbench/team-canvas?agent=1&board=new", { headers });
+    expect(quote.ok(), await quote.text()).toBe(true);
+    const planning = ((await quote.json()) as { agent?: { ask?: { planning?: number } | null } }).agent?.ask?.planning;
+    expect(planning, "the quote route prices Atomik's thinking").toBeGreaterThan(0);
+    run.startFigure = Number(/(\d[\d,]*)/.exec(await start.innerText())?.[1].replace(/,/g, ""));
+    expect(run.startFigure, "Start shows the server's figure").toBe(planning);
+    await screenIsClean(run, ['[data-testid="v12-home-bar"]']);
+    expect(run.spend.spent, "typing the brief spends nothing").toEqual([]);
+    mark(run, "brief typed");
   });
 
-  test("5 · the person picks the Film template and the board opens with the brief on it", async () => {
+  test("5 · the person presses Start at its price; the board opens and Atomik's plan is waiting on Shots", async () => {
     const { page } = run;
-    await tap(run, page.getByTestId("home-template-film"));
+    run.spend.allow("agent.plan", "Start · up to N cr");
+    await tap(run, page.getByTestId("v12-home-start"));
     await expect(page.getByTestId("board")).toBeVisible({ timeout: 90_000 });
-    await expect(page.getByTestId("board-brief-text")).toContainText("courier crossing a rooftop", { timeout: 60_000 });
     const params = new URL(page.url()).searchParams;
     run.draftId = params.get("project") ?? "";
     expect(run.draftId, "the board is the new project's").not.toBe("");
-    expect(params.get("view"), "the template lands on the board, not Home").not.toBe("home");
+    expect(params.get("view"), "Start lands on the board").toBe("board");
     const { headers } = await scopeFor(page.request);
     const saved = await page.request.get(`/api/workbench/projects?id=${run.draftId}`, { headers });
     run.productionId = String(((await saved.json()) as { project?: { productionProjectId?: string } }).project?.productionProjectId ?? "");
     expect(run.productionId, "the project has its production").not.toBe("");
-    await expect(page.getByTestId("agent-ask")).toHaveText(/^Ask · up to \d[\d,]* cr$/);
-    await screenIsClean(run, ['[data-testid="board-agent-panel"]']);
-    expect(run.spend.spent, "choosing a template spends nothing").toEqual([]);
+    await expect.poll(async () => (await runOf(page.request, headers, run.productionId, run.draftId)).run?.state, { message: "Atomik has answered the brief with a plan", timeout: 90_000 }).toBe("awaiting_approval");
+    run.spend.close("agent.plan");
+    const planRequest = run.spend.spent.find((x) => x.kind === "agent.plan");
+    expect(planRequest?.body?.limit, "the ask's limit is the figure on Start").toBe(run.startFigure);
+    expect(run.spend.spent.map((x) => x.kind)).toEqual(["agent.plan"]);
+    await screenIsClean(run);
     mark(run, "board");
   });
 
-  test("6 · the person asks Atomik to plan, at the price on the button, and the plan card appears", async () => {
+  test("6 · the person opens Shots: the plan card says what it makes, and Build is free", async () => {
     const { page } = run;
-    await page.getByPlaceholder(/Ask Atomik/).fill("Plan three shots for this film");
-    await expect(page.getByTestId("agent-ask")).toBeEnabled({ timeout: 30_000 });
-    const planning = Number(/(\d[\d,]*)/.exec(await page.getByTestId("agent-ask").innerText())?.[1].replace(/,/g, ""));
-    expect(planning).toBeGreaterThan(0);
-    run.spend.allow("agent.plan", "Ask · up to N cr");
-    await tap(run, page.getByTestId("agent-ask"));
-    await expect(page.getByTestId("board-plan")).toBeVisible({ timeout: 90_000 });
-    run.spend.close("agent.plan");
+    await tap(run, page.getByTestId("v12-stage-row").filter({ hasText: "Shots" }));
+    await expect(page.getByTestId("board-plan")).toBeVisible({ timeout: 60_000 });
     await expect(page.getByTestId("board-plan")).toContainText(/Make \d+ shots?/);
-    expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan"]);
-    expect(run.spend.spent[0].body?.limit, "the ask's limit is the figure on its button").toBe(planning);
-    await screenIsClean(run, ['[data-testid="board-agent-panel"]']);
+    await expect(page.getByTestId("board-plan-primary")).toHaveText("Build · free");
+    await screenIsClean(run, ['[data-testid="board-plan"]']);
+    expect(run.spend.spent.map((x) => x.kind), "opening the plan spent nothing more").toEqual(["agent.plan"]);
     mark(run, "plan card");
   });
 
-  test("7 · Build is free; once its shots are on the board the card says 'Make N shots · N cr · at most 2N cr' and Approve carries its price", async () => {
+  test("7 · Build is free; once the shots are on the board the card says 'Make N shots · N cr · at most 2N cr' and Approve carries its price", async () => {
     const { page } = run;
     const primary = page.getByTestId("board-plan-primary");
-    await expect(primary).toHaveText("Build · free");
     await tap(run, primary);
     await expect(primary).toHaveText(/^Approve · (up to )?\d[\d,]*(\.\d)? cr$/, { timeout: 90_000 });
     const card = page.getByTestId("board-plan");
@@ -229,7 +253,7 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     run.ceiling = Number(/at most (\d[\d,]*(?:\.\d)?) cr/.exec(await card.innerText())?.[1].replace(/,/g, "") ?? NaN);
     expect(run.spend.spent.map((s) => s.kind), "building billed nothing").toEqual(["agent.plan"]);
     run.thinking = Number(/Thinking · (\d[\d,]*(?:\.\d)?) cr/.exec(await visibleText(page))?.[1] ?? NaN);
-    await screenIsClean(run, ['[data-testid="board-plan"]', '[data-testid="board-agent-panel"]']);
+    await screenIsClean(run, ['[data-testid="board-plan"]']);
     mark(run, "plan priced");
   });
 
@@ -242,13 +266,14 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     expect(run.spend.spent.map((s) => s.kind), "the agent's tries spent nothing").toEqual(["agent.plan"]);
   });
 
-  test("9 · a person approves the plan once, at its price; the first render goes with no tap of its own", async () => {
+  test("9 · a person approves the plan once, at its price; the renders go with no tap of their own", async () => {
     const { page } = run;
     const primary = page.getByTestId("board-plan-primary");
     const quoted = (await runOf(page.request, (await scopeFor(page.request)).headers, run.productionId, run.draftId)).run?.plan?.quote?.fingerprint ?? null;
     expect(quoted, "the priced plan has a quote fingerprint").toMatch(/^[a-f0-9]{64}$/);
     run.spend.allow("agent.approvePlan", await primary.innerText());
     await tap(run, primary);
+    run.approvals++;
     const card = page.getByTestId("board-plan");
     await expect(card).toContainText(/Rendered · [\d.,]+ cr settled/, { timeout: 120_000 });
     run.spend.close("agent.approvePlan");
@@ -257,35 +282,30 @@ test.describe("the five-minute test · laptop 1440x900", () => {
     run.rendered = Number(/Rendered · ([\d.,]+) cr settled/.exec(await card.innerText())?.[1].replace(/,/g, "") ?? NaN);
     expect(run.rendered).toBeGreaterThan(0);
     expect(run.spend.spent.map((s) => s.kind), "one approval, and no render pressed").toEqual(["agent.plan", "agent.approvePlan"]);
-    await screenIsClean(run, ['[data-testid="board-plan"]', '[data-testid="board-agent-panel"]']);
+    await screenIsClean(run, ['[data-testid="board-plan"]']);
     mark(run, "plan approved");
   });
 
-  test("10 · the first take lands on the board", async () => {
+  test("10 · the first take lands on the board, and the balance fell by what was settled", async () => {
     const { page } = run;
-    /* The take is on the board's Shots; the person goes there from the rail. */
-    await tap(run, page.getByTestId("board-rail").getByRole("button", { name: "Shots" }));
     const first = page.getByTestId("take-card").filter({ hasText: "Shot 1" });
-    await expect(first.locator("img, video").first()).toBeVisible({ timeout: 30_000 });
+    await expect(first.locator("img, video").first()).toBeVisible({ timeout: 60_000 });
     mark(run, "first render on the board");
     expect(run.spend.spent.map((s) => s.kind)).toEqual(["agent.plan", "agent.approvePlan"]);
-    /* The ledger matches: the balance fell by the thinking and at least the first render, and never by more than the plan's ceiling. */
     const start = (run.balanceAtStart ?? NaN) - (run.thinking ?? NaN);
-    await expect.poll(() => balanceCr(page), { timeout: 30_000 }).toBeLessThanOrEqual(start - run.rendered!);
-    expect(await balanceCr(page)).toBeGreaterThanOrEqual(start - run.ceiling!);
+    await expect.poll(() => balanceOf(page), { timeout: 30_000 }).toBeLessThanOrEqual(start - run.rendered!);
+    expect(await balanceOf(page)).toBeGreaterThanOrEqual(start - run.ceiling!);
     await screenIsClean(run, ['[data-testid="board-plan"]']);
   });
 
-  test("11 · the person opens the first take and approves it", async () => {
+  test("11 · the person approves the first take", async () => {
     const { page } = run;
     const first = page.getByTestId("take-card").filter({ hasText: "Shot 1" });
-    const approve = page.getByTestId("insp-approve");
-    /* No reload: the board read the Library again when the render finished. */
-    await tap(run, first);
-    await expect(approve).toBeVisible({ timeout: 30_000 });
-    expect(await unpricedSpendButtons(page, '[data-testid="board-inspector"]'), "inspector buttons that spend carry their price").toEqual([]);
+    const approve = first.getByTestId("take-approve");
+    await expect(approve).toBeEnabled({ timeout: 60_000 });
+    expect(await unpricedSpendButtons(page, '[data-testid="take-card"]'), "take buttons that spend carry their price").toEqual([]);
     await tap(run, approve);
-    await expect(page.getByTestId("board-group").filter({ hasText: /Shots · 1 of \d+ approved/ })).toBeVisible({ timeout: 30_000 });
+    run.approvals++;
     await expect.poll(() => approvedTakes(run), { message: "the Library holds the take as approved", timeout: 30_000 }).toBeGreaterThanOrEqual(1);
     mark(run, "first take approved");
     expect(run.spend.spent.map((s) => s.kind), "approving a take spends nothing").toEqual(["agent.plan", "agent.approvePlan"]);
@@ -294,8 +314,7 @@ test.describe("the five-minute test · laptop 1440x900", () => {
 
   test("12 · all of it inside five minutes, within the tap budget, nothing paid unasked", async () => {
     const wall = elapsed(run);
-    console.log(`five-minute (laptop 1440x900): ${Math.round(wall / 100) / 10} s, ${run.taps} taps, marks ${JSON.stringify(run.marks)}, paid ${JSON.stringify(run.spend.spent)}`);
-    test.info().annotations.push({ type: "five-minute", description: `${Math.round(wall / 100) / 10} s · ${run.taps} taps · ${JSON.stringify(run.marks)}` });
+    console.log(`five-minute (laptop 1440x900): ${Math.round(wall / 100) / 10} s, ${run.taps} taps, ${run.approvals} approvals, marks ${JSON.stringify(run.marks)}, paid ${JSON.stringify(run.spend.spent.map((s) => s.kind))}`);
     expect(wall, "wall time from the invitation link to the approved take").toBeLessThan(FIVE_MINUTES);
     expect(run.taps, "taps from the invitation link to the approved take").toBeLessThanOrEqual(TAP_BUDGET.desktop);
     expect(run.spend.violations, "paid requests with no person's press").toEqual([]);

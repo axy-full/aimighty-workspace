@@ -1,14 +1,10 @@
-import { isHouseWorkspace } from "./houseWorkspace";
-
 /**
- * Who sees the interface being built from design/particl-prototype-12 (docs/redesign-plan.md).
- *
- * Off for every customer workspace. On for the house workspace (lib/houseWorkspace.ts), and for any workspace the
- * platform owner lists in the site setting `newInterfaceWorkspaces` (lib/site/settings.ts), which is also how the
- * browser tests and the screenshot tool see it. Its own field in the `site` row: the switch deleted on 6 Oct
- * (`platform_layer` key `interface`) is never read. Pure: no database, safe on the client.
+ * Who sees the interface built from design/particl-prototype-14 (docs/redesign-plan.md): every workspace (owner, 11 October 2026),
+ * except when the platform owner turns "New interface for everyone" off (then nobody, with no deploy) or keeps one workspace on
+ * today's screens (lib/site/settings.ts: `newInterfaceEveryone`, and one `ni_off:<workspace id>` row per workspace). A signed-in
+ * person always has a workspace, so the only other "off" is no workspace at all (signed out). The visitor pages stay behind their
+ * own setting (`visitorPages`, off). Pure: no database, safe on the client.
  */
-export function newInterfaceOn(workspace: { id: string } | null | undefined, listed: readonly string[] = []): boolean {
-  if (!workspace) return false;
-  return isHouseWorkspace(workspace) || listed.includes(workspace.id);
+export function newInterfaceOn(workspace: { id: string } | null | undefined, opts: { everyone?: boolean; workspaceOff?: boolean } = {}): boolean {
+  return Boolean(workspace) && (opts.everyone ?? true) && !opts.workspaceOff;
 }

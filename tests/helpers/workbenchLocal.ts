@@ -54,9 +54,32 @@ export async function signInLocally(api: APIRequestContext, name = "Workbench Te
     },
   });
   expect(signup.ok(), await signup.text()).toBeTruthy();
-  return (await signup.json()) as {
+  const signed = (await signup.json()) as {
     workspace: { id: string; name: string; slug: string };
   };
+  /* The new interface is on for every workspace (lib/newInterface.ts); the specs that assert today's screens keep their workspace on
+     them by the platform owner's opt-out, as the owner could from /admin. A spec of the new interface lifts it (signInToRedesign). */
+  await setNewInterfaceOff(signed.workspace.id, true);
+  return signed;
+}
+
+/**
+ * Keeps a workspace on today's screens (or lifts it) in the local platform database, as the platform owner would from /admin: one row of
+ * its own per workspace (`ni_off:<id>`, lib/site/settings.ts), so parallel workers never write the same row.
+ */
+export async function setNewInterfaceOff(workspaceId: string, off: boolean) {
+  const db = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try {
+    if (off) {
+      await db.execute({
+        sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES (?, '1', ?, 'test')
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+        args: [`ni_off:${workspaceId}`, Date.now()],
+      });
+    } else await db.execute({ sql: "DELETE FROM platform_layer WHERE key = ?", args: [`ni_off:${workspaceId}`] });
+  } finally {
+    db.close();
+  }
 }
 
 /**

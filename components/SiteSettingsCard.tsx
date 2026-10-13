@@ -3,17 +3,18 @@
 import { useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { appAlert, appConfirm } from "@/components/dialog";
-import type { SiteSettings } from "@/lib/site/settings";
+import type { SitePatch, SiteSettings } from "@/lib/site/settings";
 
 /**
  * /admin's "Site" block (lib/site/settings.ts): who may sign up, and what a signed-out visitor sees at "/".
  * Off by default. Turning either on asks first; the server checks every field again.
  */
 export function SiteSettingsCard({ workspaces }: { workspaces: { id: string; name: string }[] }) {
-  const { data, refresh } = useApi<SiteSettings>("/api/admin/site", 0);
+  const { data, refresh } = useApi<SiteSettings & { newInterfaceOff: string[] }>("/api/admin/site", 0);
   const [busy, setBusy] = useState(false);
+  const [pick, setPick] = useState("");
 
-  async function save(patch: Partial<SiteSettings>, ask?: [string, string, string]) {
+  async function save(patch: SitePatch, ask?: [string, string, string]) {
     if (ask && !(await appConfirm(ask[0], ask[1], { confirmLabel: ask[2] }))) return;
     setBusy(true);
     try {
@@ -28,7 +29,7 @@ export function SiteSettingsCard({ workspaces }: { workspaces: { id: string; nam
   if (!data) return null;
   return (
     <section className="scard" data-testid="site-settings">
-      <div className="scard-h"><span>Site</span><span>What a signed-out visitor sees, and who may sign up. Both are off by default.</span></div>
+      <div className="scard-h"><span>Site</span><span>What a signed-out visitor sees, who may sign up, and which screens people get.</span></div>
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="flex flex-col gap-0.5"><span className="font-medium">Open sign-up</span><span className="text-[12px] text-lead">{data.openSignup ? "Anyone may create an account without an invitation link." : "Sign-up needs an invitation link. Requests for access land in “Asked to be let in”."}</span></span>
@@ -50,6 +51,34 @@ export function SiteSettingsCard({ workspaces }: { workspaces: { id: string; nam
             onClick={() => void save({ visitorPages: !data.visitorPages }, data.visitorPages ? undefined : ["Show the new visitor pages?", "With Guest Home on, signed-out visitors at /?guest=1 then see the new interface’s Home, Make, sample board and join sheet. Nothing they do there thinks or spends.", "Show them"])}>
             {data.visitorPages ? "New visitor pages · on" : "New visitor pages · off"}
           </button>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="flex flex-col gap-0.5"><span className="font-medium">New interface for everyone</span><span className="text-[12px] text-lead">{data.newInterfaceEveryone ? "Every workspace uses the new interface." : "Every workspace is back on today’s screens."}</span></span>
+          <button type="button" className={`chip !py-0.5 !text-[12px] ${data.newInterfaceEveryone ? "is-on" : ""}`} disabled={busy} aria-pressed={data.newInterfaceEveryone} data-testid="site-new-interface"
+            onClick={() => void save({ newInterfaceEveryone: !data.newInterfaceEveryone }, data.newInterfaceEveryone ? ["Put everyone back on today’s screens?", "Every workspace, signed in now or later, returns to today’s screens at once. Nothing is lost; turn this on again to bring the new interface back.", "Put everyone back"] : undefined)}>
+            {data.newInterfaceEveryone ? "New interface · on" : "New interface · off"}
+          </button>
+        </div>
+        <div className="flex flex-col gap-2" data-testid="site-new-interface-off">
+          <span className="flex flex-col gap-0.5"><span className="font-medium">Keep a workspace on today’s screens</span><span className="text-[12px] text-lead">Only that workspace goes back; the rest keep the new interface.</span></span>
+          <div className="flex flex-wrap items-center gap-2">
+            <select className="ctl !h-9 w-[260px]" value={pick} disabled={busy} aria-label="Workspace to keep on today’s screens" data-testid="site-new-interface-pick" onChange={(e) => setPick(e.target.value)}>
+              <option value="">Choose a workspace</option>
+              {workspaces.filter((w) => !data.newInterfaceOff.includes(w.id)).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+            <button type="button" className="chip !py-0.5 !text-[12px]" disabled={busy || !pick} data-testid="site-new-interface-add"
+              onClick={() => void save({ newInterfaceOffAdd: pick }, ["Keep this workspace on today’s screens?", `${workspaces.find((w) => w.id === pick)?.name ?? "This workspace"} goes back to today’s screens at once. Everyone else keeps the new interface.`, "Keep it there"]).then(() => setPick(""))}>Keep on today’s screens</button>
+          </div>
+          {data.newInterfaceOff.length > 0 && (
+            <ul className="flex flex-col gap-1">
+              {data.newInterfaceOff.map((id) => (
+                <li key={id} className="flex items-center justify-between gap-3" data-testid="site-new-interface-listed">
+                  <span>{workspaces.find((w) => w.id === id)?.name ?? id}</span>
+                  <button type="button" className="chip !py-0.5 !text-[12px]" disabled={busy} onClick={() => void save({ newInterfaceOffRemove: id })}>Remove</button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <label className="flex flex-wrap items-center justify-between gap-3">
           <span className="flex flex-col gap-0.5"><span className="font-medium">The sample’s workspace</span><span className="text-[12px] text-lead">The separate public workspace that holds the sample production (“Particl sample”). Guests read only its sample; never the house workspace or a demo workspace.</span></span>

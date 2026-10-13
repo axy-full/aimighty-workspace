@@ -21,6 +21,7 @@ function load(who: Who, writes: unknown[]) {
     "@/lib/site/settings.server": {
       SiteSettingsError,
       readSite: async () => model.DEFAULT_SITE,
+      listNewInterfaceOff: async () => [] as string[],
       writeSite: async (patch: { guestWorkspace?: string | null }) => {
         if (patch.guestWorkspace === "ws_gone") throw new SiteSettingsError("That workspace is not on this deployment.");
         writes.push(patch);
@@ -47,7 +48,7 @@ test("nobody but the platform owner reads or changes the site switches", async (
     expect(writes, who).toEqual([]);
   }
   const owner = load("owner", []);
-  expect(await (await owner.GET()).json()).toEqual(model.DEFAULT_SITE);
+  expect(await (await owner.GET()).json()).toEqual({ ...model.DEFAULT_SITE, newInterfaceOff: [] });
 });
 
 test("the owner's change is checked: junk and unknown fields are refused, a gone workspace too", async () => {
@@ -58,6 +59,6 @@ test("the owner's change is checked: junk and unknown fields are refused, a gone
   expect((await route.PATCH(patch({ guestWorkspace: "ws_gone" }))).status).toBe(400);
   expect(writes).toEqual([]);
   const ok = await route.PATCH(patch({ guestHome: true, guestWorkspace: "ws_demo" }));
-  expect(await ok.json()).toEqual({ ok: true, openSignup: false, guestHome: true, visitorPages: false, guestWorkspace: "ws_demo", newInterfaceWorkspaces: [] });
+  expect(await ok.json()).toEqual({ ok: true, openSignup: false, guestHome: true, visitorPages: false, guestWorkspace: "ws_demo", newInterfaceEveryone: true, newInterfaceOff: [] });
   expect(writes).toEqual([{ guestHome: true, guestWorkspace: "ws_demo" }]);
 });
