@@ -179,6 +179,11 @@ test("the reach is read at every request: view, none, a disabled owner or a stra
   const refused = await f.as(mate, () => f.put({ ...f.board, name: "Not any more" }, revision + 1, { owner: "u_owner" }));
   expect(refused.status).toBeGreaterThanOrEqual(400);
   expect(JSON.parse(String((await f.row()).body)).name).toBe("Allowed");
+  // Everywhere the same: the reach itself (the canvas route, its rooms and a render's admission ask it) refuses write and render, and read stays.
+  const { mayReachProject } = await import("../../lib/draftProject");
+  const board = f.first.productionProjectId as string;
+  const reach = (access: "read" | "write" | "admit") => f.as(mate, () => mayReachProject({ id: "u_mate" }, board, access));
+  expect([await reach("read"), await reach("write"), await reach("admit")]).toEqual([true, false, false]);
 });
 
 test("a board linked to an ordinary production is not an editable board, even when its draft says Can edit", async () => {

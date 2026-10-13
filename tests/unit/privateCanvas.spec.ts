@@ -239,6 +239,11 @@ test("a board shared with \"Can edit\" (teamEdit, set the way the author sets it
   const mode = (value: unknown, as = "u_owner") => { who = { id: as, role: "member" }; return studio.POST(new Request("https://particl.test/x", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "team-share", projectId: "d1", mode: value }) }), undefined as never); };
   const asMate = (fn: () => Promise<void>) => tenant.runInTenant(ws, async () => { who = { id: "u_mate", role: "member" }; await fn(); }, person("u_mate"));
   const asOwner = (fn: () => Promise<Response>) => tenant.runInTenant(ws, fn, person("u_owner"));
+  /* The maker is an active member of the workspace (Can edit lapses with its maker). */
+  const platform = await import("../../lib/platform");
+  await platform.platformReady();
+  await platform.platformDb().execute({ sql: "INSERT OR IGNORE INTO accounts(id,email,name,password_hash,created_at) VALUES('u_owner','u_owner@example.test','u_owner','x',0)", args: [] });
+  await platform.platformDb().execute({ sql: "INSERT OR REPLACE INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,'u_owner','member',0,0)", args: [ws.id] });
   /* Can edit: a teammate reads and writes the canvas, and may be asked to write it. */
   expect((await asOwner(() => mode("edit"))).status).toBe(200);
   await asMate(async () => {
@@ -249,6 +254,16 @@ test("a board shared with \"Can edit\" (teamEdit, set the way the author sets it
     const refused = await mode("none", "u_mate");
     expect([403, 404]).toContain(refused.status);
   });
+  /* The maker is switched off: Can edit lapses (reads stay, writes are refused), and comes back with them. */
+  await platform.platformDb().execute({ sql: "UPDATE memberships SET disabled=1 WHERE workspace_id=? AND account_id='u_owner'", args: [ws.id] });
+  await asMate(async () => {
+    await expect(requireProduction(privateProject, undefined, "read")).resolves.toBeUndefined();
+    await expect(requireProduction(privateProject, undefined, "write")).rejects.toThrow(/not in this workspace/);
+    expect((await read()).status, "a teammate still reads").toBe(200);
+    expect((await write()).status, "no write while the maker is off").toBe(404);
+  });
+  await platform.platformDb().execute({ sql: "UPDATE memberships SET disabled=0 WHERE workspace_id=? AND account_id='u_owner'", args: [ws.id] });
+  await asMate(async () => { expect((await write()).status).toBe(200); });
   /* Can view: back to read only. */
   expect((await asOwner(() => mode("view"))).status).toBe(200);
   await asMate(async () => {

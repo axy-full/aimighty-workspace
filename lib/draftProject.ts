@@ -127,11 +127,30 @@ export type ShareMode = "none" | "view" | "edit";
  * "edit" board (mayReachProject).
  */
 export async function draftShareMode(projectId: string, ex: Exec = db()): Promise<ShareMode> {
-  if (!isDraftProject(projectId)) return "none";
+  return (await draftShare(projectId, ex)).mode;
+}
+
+/** The share mode and the key the shared board is stored under (null when it is not shared). */
+export async function draftShare(projectId: string, ex: Exec = db()): Promise<{ mode: ShareMode; owner: string | null }> {
+  if (!isDraftProject(projectId)) return { mode: "none", owner: null };
   const workspace = requireTenant().id;
   const rows = (await ex.execute({ sql: SHARED_BOARDS, args: [] })).rows;
   const hit = rows.find((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id)) === projectId);
-  return !hit ? "none" : Number(hit.edit) === 1 ? "edit" : "view";
+  return !hit ? { mode: "none", owner: null } : { mode: Number(hit.edit) === 1 ? "edit" : "view", owner: String(hit.owner) };
+}
+
+/**
+ * Whether `accountId` is an active member of this workspace: the membership and the account are not disabled, the account is not deleted. A board whose maker
+ * is not one is read-only to everyone else (its "Can edit" mode lapses with its maker), and is not acted on.
+ */
+export async function isActiveMember(accountId: string): Promise<boolean> {
+  const { platformDb, platformReady } = await import("./platform");
+  await platformReady();
+  const rows = (await platformDb().execute({
+    sql: `SELECT 1 FROM memberships m JOIN accounts a ON a.id = m.account_id WHERE m.workspace_id = ? AND m.account_id = ? AND m.disabled = 0 AND a.disabled = 0 AND a.deleted_at IS NULL LIMIT 1`,
+    args: [requireTenant().id, accountId],
+  })).rows;
+  return rows.length > 0;
 }
 
 /** Whether the author has shared this draft's board with the team (to look at, or to edit). */
@@ -161,8 +180,10 @@ export async function mayReachProject(person: { id: string } | null, projectId: 
   if (await isMarkedSample(projectId!, ex)) return true;
   /* A shared board is the team's to read; one shared with "Can edit" is also theirs to write and to render on. Sharing settings, rename and delete are not
      this rule's: they stay the owner's or an admin's (lib/workAccess.ts, lib/workbench/team-boards.ts › maySetSharing). */
-  const mode = await draftShareMode(projectId!, ex);
-  return access === "read" ? mode !== "none" : mode === "edit";
+  const { mode, owner } = await draftShare(projectId!, ex);
+  if (access === "read") return mode !== "none";
+  /* Can edit lapses with its maker: a disabled or removed owner's board refuses writes everywhere (the canvas, its rooms, a render's admission), and stays readable. */
+  return mode === "edit" && !!owner && (await isActiveMember(owner));
 }
 
 /** A filter for lists of projects: what `person` may see among them (reading). One read of the person's drafts, of shared boards and of the sample mark, then a set lookup per row. */
