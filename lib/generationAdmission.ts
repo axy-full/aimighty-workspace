@@ -1,3 +1,5 @@
+import { claimedStepFiling } from "@/lib/atomikAccess";
+import { stepRender } from "@/lib/atomikStepRender";
 import { mayReachProject } from "@/lib/draftProject";
 import { ENHANCE_MAX_PROMPT } from "./shell/enhancer";
 import { enhancementRan } from "./enhanceProof";
@@ -433,6 +435,28 @@ export async function executeGenerationAdmission(
       body.shotId = final.shotId ?? undefined;
     }
 
+    /* An approval of another member's step (owner, 13 Oct): the render files into that step's own chat's project, resolved here from a step this caller claimed and has
+       not sent, never named by the client, so its caps and the 200 cr line apply as on any render there and the approver never reads the board. */
+    let stepFiled = false;
+    if (body.atomikStepId !== undefined) {
+      const filing = typeof body.atomikStepId === "string" ? await claimedStepFiling(body.atomikStepId, got.user) : null;
+      if (!filing) return admissionReply({ error: "That step is gone." }, { status: 404 });
+      /* One render per claim: a render goes only under the key the claim set (so release and reconcile can fence it), and a final is not a step's render. */
+      if (body.finalOf != null) return admissionReply({ error: "A step's render is made from the step." }, { status: 400 });
+      if (options.requestClaim && options.requestClaim.key !== filing.requestKey) return admissionReply({ error: "That step is gone." }, { status: 404 });
+      /* Built from the step's own kind, model, prompt, settings and references, whatever the client sent; only its ceiling (`maxCredits`) and the step's id are kept. */
+      const keep: Record<string, unknown> = { atomikStepId: body.atomikStepId };
+      /* The most it may charge is the figure the queue showed: the lower of the client's ceiling and the step's own "up to" price, so a live price above it refuses the render. */
+      if (body.maxCredits != null && typeof body.maxCredits !== "number") keep.maxCredits = body.maxCredits;
+      else {
+        const ceiling = Math.min(typeof body.maxCredits === "number" ? body.maxCredits : Infinity, filing.ceilingCredits ?? Infinity);
+        if (Number.isFinite(ceiling)) keep.maxCredits = ceiling;
+      }
+      for (const key of Object.keys(body)) delete body[key];
+      Object.assign(body, stepRender({ kind: filing.step.kind as never, title: filing.step.title, prompt: filing.step.prompt, model: filing.step.model, params: filing.step.params as never, refs: filing.step.refs as never }, filing.projectId).body, keep);
+      if (body.projectId == null) delete body.projectId;
+      stepFiled = true;
+    }
     if (body.projectId) {
       const project = await db().execute({
         sql: `SELECT id FROM projects WHERE id=?`,
@@ -440,7 +464,7 @@ export async function executeGenerationAdmission(
       });
       /* A private board is its owner's, and a shared one a teammate's to look at (lib/draftProject.ts): filing into either is refused as a missing project is,
          before anything is quoted, held or reserved, so the answer says nothing about whether it exists. An Atomik run (no person) is not asked. */
-      const reach = await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "admit");
+      const reach = stepFiled || (await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "admit"));
       if (!project.rows.length || !reach)
         return admissionReply({ error: "No such project." }, { status: 404 });
     }

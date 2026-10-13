@@ -219,7 +219,7 @@ test("a chat saved on a model Atomik no longer offers plans with Auto and says s
     const loaded = (await getChat("gem"))!;
     expect(loaded.chat).toMatchObject({ model: "auto", modelNote: saved.note });
     expect(loaded.chat.effort).toBeUndefined();
-    expect((await listChats()).find((c) => c.id === "gem")).toMatchObject({ model: "auto", modelNote: saved.note });
+    expect((await listChats("owner")).find((c) => c.id === "gem")).toMatchObject({ model: "auto", modelNote: saved.note });
     /* The stored row is left as it was: nothing a team made is rewritten. */
     expect((await db().execute({ sql: "SELECT model, effort FROM atomik_chats WHERE id = ?", args: ["gem"] })).rows[0]).toMatchObject({ model: GEMINI, effort: "high" });
     /* A model Atomik no longer offers is not saved as a new choice. */
@@ -260,7 +260,7 @@ test("steps planned on the account before stay readable and read-only: never app
     expect(await estimateStepUsd("video", "connected:kling3_0", { connected: accountMeta })).toBeNull();
 
     /* Never waited on: an account step does not make its chat need an approval. */
-    const chats = await listChats();
+    const chats = await listChats("owner");
     expect(chats.find((c) => c.id === "old")?.needsApproval).toBe(false);
     expect(chats.find((c) => c.id === "own")?.needsApproval).toBe(true);
 
@@ -295,6 +295,8 @@ async function route(file: string, fake: Record<string, unknown>): Promise<Recor
     "@/lib/atomikAccountStep": await import("../../lib/atomikAccountStep"),
     /* The claim route is people-only (a signed-in person, never a token): the owner here is one. */
     "@/lib/security/people-only": await import("../../lib/security/people-only"),
+    /* A step is its chat's person's (lib/atomikAccess.ts); this spec is about the account step's refusal, so the step is the caller's own here. */
+    "@/lib/atomikAccess": { STEP_GONE: "That step is gone.", stepIsMine: async () => true, adminStepSheet: async () => null },
     /* The claim route also refuses a step of an archived thread (lib/atomikThreads.ts); an account step is refused first. */
     "@/lib/atomikThreads": { ARCHIVED_NOTE: (await import("../../lib/atomikThreadsText")).ARCHIVED_NOTE, threadArchived: (fake.threadArchived as (() => Promise<boolean>) | undefined) ?? (async () => false) },
   };

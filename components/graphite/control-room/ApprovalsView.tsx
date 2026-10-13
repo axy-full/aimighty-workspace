@@ -37,6 +37,7 @@ export function ApprovalsView() {
     const to = item.open;
     if (to.kind === "take") { select(to.draftId); shell.openMake("recent"); return; }
     if (to.kind === "board") { select(to.draftId); shell.goSuite("studio", "rig"); return; }
+    if (to.kind === "none") return;
     select(item.project.draftId);
     openAtomikChat({ chatId: to.chatId, projectId: to.productionId });
     shell.goSuite("atomik", "agent");
