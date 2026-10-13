@@ -26,7 +26,7 @@ import { withUndoHint } from "@/lib/shell/undo";
 import { useShell } from "@/lib/shell/state";
 import { useCompact } from "@/lib/shell/use-compact";
 import { useNewInterface } from "@/lib/session";
-import { findProjectTake, libraryEntries, projectLibraryState, refreshProjectLibrary, uploadFilesToProject, type LibraryEntry } from "@/lib/workspace/library";
+import { findProjectTake, libraryEntries, projectLibraryState, uploadFilesToProject, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { uid, type Asset, type Project } from "@/lib/workbench/studio";
 import { assetFromUpload } from "@/lib/workspace/draft-editor";
@@ -435,7 +435,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
      selection (lib/board/remove.ts), so removing a mix of shots and free cards never brings one back; the draft's edit is refused in its own words (view-only,
      a switch in progress), never claimed; a locked card says so. Everything removed goes to the board's Trash (lib/boardTrash.ts) and ⌘Z puts it back. */
   const fetcher = useScopedFetch(scope);
-  const removeFrom = useCallback((cards: readonly BoardCard[]) => {
+  const removeFrom = useCallback(async (cards: readonly BoardCard[]) => {
     const current = rig.project;
     if (!current || !cards.length) return;
     if (offline) { ws.toast("Needs a connection to remove a card."); return; }
@@ -443,45 +443,48 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     let plan: ReturnType<typeof planRemoval>;
     try { plan = planRemoval(current, cards); } catch (error) { if (error instanceof RigBuildError) { ws.toast(error.message); return; } throw error; }
     const why = plan.refused[0]?.why;
-    if (!plan.removed && !plan.takes.length) { ws.toast(why ?? "Nothing there can be removed."); return; }
-    if (plan.removed) {
+    if (!plan.removed && !plan.drawings.length) { ws.toast(why ?? "Nothing there can be removed."); return; }
+    /* The draft's own edit first, refused in its own words (view-only, a switch in progress) and never claimed. */
+    if (plan.removed || plan.drawings.length) {
       const refusal = rig.apply(() => plan.project);
       if (refusal) { ws.toast(refusal); return; }
     }
+    pick(new Set(), null);
     const board = current.productionProjectId ?? null;
     const removed = plan.removed;
-    /* The Trash's records: what leaves the draft is recorded whole; a drawn take is hidden by the server. Undo claims them back. */
     const entries: string[] = [];
     const problems: string[] = [];
-    const recorded = (async () => {
-      if (!board) { problems.push("This board has no Trash yet"); return; }
-      const all = [...plan.records, ...plan.takes.map((t) => ({ kind: "take" as const, itemId: t.genId, label: t.label, payload: null }))];
-      for (const result of await Promise.all(all.map((record) => recordToTrash(fetcher, board, record)))) {
+    /* What leaves the draft is recorded whole in the Trash, in the background (the draft's edit has already happened). */
+    const recordedNodes = (async () => {
+      if (!plan.records.length) return;
+      if (!board) { problems.push("This board has no Trash yet."); return; }
+      for (const result of await Promise.all(plan.records.map((record) => recordToTrash(fetcher, board, record)))) {
         if ("entry" in result) entries.push(result.entry); else problems.push(result.error);
       }
-      if (plan.takes.length && projectId) void refreshProjectLibrary(scope, projectId);
     })();
-    void recorded.then(() => { if (problems.length) ws.toast(`${problems[0]}${removed ? " ⌘Z still brings it back." : ""}`); });
-    const count = (removed?.removed.length ?? 0) - plan.alsoGone.length + plan.takes.length;
+    const nodeCount = (removed?.removed.length ?? 0) - plan.alsoGone.length;
+    const count = nodeCount + plan.drawings.length;
+    if (!count) { ws.toast(problems[0] ?? why ?? "Nothing there could be removed."); return; }
     const name = cards.length === 1 ? (cards[0].data as { title?: string; name?: string } | null)?.title || (cards[0].data as { name?: string } | null)?.name : null;
-    const what = name ? `“${name.slice(0, 40)}”` : count === 1 ? "1 card" : `${count} cards`;
+    const what = name && count === 1 ? `“${name.slice(0, 40)}”` : count === 1 ? "1 card" : `${count} cards`;
+    const note = problems[0] ?? why ?? null;
     undoable(`${what} is back`, async () => {
-      await recorded;
-      if (removed) { const refusal = rig.apply((p) => restoreRemoved(p, removed)); if (refusal) { ws.toast(refusal); return; } }
-      await Promise.all(entries.map((entry) => board ? restoreFromTrash(fetcher, board, entry) : false));
-      if (plan.takes.length && projectId) void refreshProjectLibrary(scope, projectId);
-    }, withUndoHint(`Removed ${what}${why ? ` · ${why}` : ""}`));
-    pick(new Set(), null);
-  }, [fetcher, gate.readOnly, offline, pick, projectId, rig, scope, undoable, ws]);
+      await recordedNodes;
+      const refusal = rig.apply((p) => restoreRemoved(p, plan));
+      if (refusal) { ws.toast(refusal); return; }
+      await Promise.all(entries.map((entry) => (board ? restoreFromTrash(fetcher, board, entry) : false)));
+    }, withUndoHint(`Removed ${what}${note ? ` · ${note}` : ""}`));
+    void recordedNodes.then(() => { if (problems.length && !note) ws.toast(`${problems[0]} ⌘Z still brings it back.`); });
+  }, [fetcher, gate.readOnly, offline, pick, rig, undoable, ws]);
   const remove = useCallback(() => {
-    removeFrom([...selection.ids].map((id) => placed.byId.get(id)).filter((card): card is BoardCard => Boolean(card)));
+    void removeFrom([...selection.ids].map((id) => placed.byId.get(id)).filter((card): card is BoardCard => Boolean(card)));
   }, [placed.byId, removeFrom, selection.ids]);
   /* The Rig removes by node: a shot or an input, planned like any card. */
   const [rigPicked, setRigPicked] = useState<string[]>([]);
   const removeNodes = useCallback((nodeIds: readonly string[]) => {
     const current = rig.project;
     if (!current) return;
-    removeFrom(nodeIds.flatMap((id) => { const node = current.nodes.find((n) => n.id === id); return node ? [{ id, kind: node.type === "media" ? "media" : "take", nodeId: id, region: null, order: 0, state: "empty", data: { title: node.title } } as BoardCard] : []; }));
+    void removeFrom(nodeIds.flatMap((id) => { const node = current.nodes.find((n) => n.id === id); return node ? [{ id, kind: node.type === "media" ? "media" : "take", nodeId: id, region: null, order: 0, state: "empty", data: { title: node.title } } as BoardCard] : []; }));
   }, [removeFrom, rig.project]);
   /* Free media cards: pictures and videos added with Upload or let go on the canvas; one edit, with Undo. Other files stay in the Library. */
   const addMedia = useCallback((assets: Asset[], at: BoardPoint): number => {

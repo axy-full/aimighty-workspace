@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { openBoard } from "./helpers/boardV12";
+import { openRigBoard, type ShotRow } from "./helpers/rigV12";
 
 /**
  * Remove, on the canvas (owner, 13 Oct: "Delete/Backspace, right-click › Remove and ⋯ › Remove"): the card leaves the board and goes to the board's Trash;
@@ -33,18 +34,24 @@ test.describe("desktop", () => {
     const card = (id: string) => page.locator(`.bd-node[data-card-id="${id}"]`);
     const toast = page.getByTestId("toast");
 
-    /* Delete: the card is gone, said with its name and an Undo, and recorded. */
-    await card(ids[0]).click();
-    await page.keyboard.press("Delete");
-    await expect(card(ids[0])).toHaveCount(0);
-    await expect(toast).toContainText("Removed");
-    await expect(toast).toContainText("Undo");
-    await expect.poll(async () => (await trashed()).length, { timeout: 30_000 }).toBe(1);
-    if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); for (const size of SIZES) { await page.setViewportSize(size); await page.waitForTimeout(400); await page.screenshot({ path: path.join(SHOTS, `removed-toast-${size.width}x${size.height}.png`) }); } await page.setViewportSize(SIZES[0]); }
-    /* Undo in the toast: back, and the Trash no longer holds it. */
-    await page.getByTestId("toast-undo").click();
-    await expect(card(ids[0])).toHaveCount(1);
-    await expect.poll(async () => (await trashed()).length, { timeout: 30_000 }).toBe(0);
+    /* Delete, at each size: the card is gone, said with its name and an Undo, and recorded; Undo brings it back and the Trash no longer holds it. */
+    for (const size of SIZES) {
+      await page.setViewportSize(size);
+      await page.waitForTimeout(400);
+      await card(ids[0]).click();
+      await page.keyboard.press("Delete");
+      await expect(card(ids[0])).toHaveCount(0);
+      await expect(toast).toContainText("Removed");
+      await expect(page.getByTestId("toast-undo")).toBeVisible();
+      /* The toast waits while the pointer is on it. */
+      await page.getByTestId("toast").hover();
+      if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, `removed-toast-${size.width}x${size.height}.png`) }); }
+      await expect.poll(async () => (await trashed()).length, { timeout: 30_000 }).toBe(1);
+      await page.getByTestId("toast-undo").click();
+      await expect(card(ids[0])).toHaveCount(1);
+      await expect.poll(async () => (await trashed()).length, { timeout: 30_000 }).toBe(0);
+    }
+    await page.setViewportSize(SIZES[0]);
 
     /* Backspace and ⌘Z. */
     await card(ids[1]).click();
@@ -74,6 +81,64 @@ test.describe("desktop", () => {
     await page.getByTestId("v12-board-menu").click();
     await expect(page.getByTestId("v12-menu-remove")).toHaveCount(0);
     await page.keyboard.press("Escape");
+    expect(errors).toEqual([]);
+  });
+
+  test("in the Rig, Delete, right-click › Remove and ⋯ › Remove take a shot off the board into its Trash, with Undo", async ({ page }) => {
+    test.setTimeout(300_000);
+    const MADE: ShotRow[] = Array.from({ length: 8 }, () => ({ status: "succeeded", ageS: 3600 }));
+    const board = await openRigBoard(page, "/suites?view=board&stage=shots&v=rig", { rows: MADE, rig: true });
+    await expect(page.getByTestId("v12-rig")).toBeVisible({ timeout: 90_000 });
+    const shots = page.getByTestId("v12-rig-shot");
+    await expect(shots).toHaveCount(8);
+    /* The Atomik dock covers the Rig's right edge: closed, as the Rig's own specs do. */
+    const collapse = page.getByTestId("agent-collapse");
+    await collapse.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
+    if (await collapse.isVisible().catch(() => false)) await collapse.click({ timeout: 2_000 }).catch(() => {});
+    const trashed = await trash(page, board.scope, board.project.id);
+    const toast = page.getByTestId("toast");
+
+    /* Delete on a picked shot. */
+    await shots.nth(0).click();
+    await page.keyboard.press("Delete");
+    await expect(shots).toHaveCount(7);
+    await expect(toast).toContainText("Removed");
+    await expect.poll(async () => (await trashed()).length, { timeout: 30_000 }).toBe(1);
+    if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, "rig-removed-1440x900.png") }); }
+    await page.getByTestId("toast-undo").click();
+    await expect(shots).toHaveCount(8, { timeout: 30_000 });
+    await expect.poll(async () => (await trashed()).length, { timeout: 30_000 }).toBe(0);
+
+    /* Right-click › Remove. */
+    await shots.nth(1).click({ button: "right" });
+    await page.getByTestId("v12-rig-menu-remove").click();
+    await expect(shots).toHaveCount(7);
+    await page.getByTestId("toast-undo").click();
+    await expect(shots).toHaveCount(8, { timeout: 30_000 });
+
+    /* ⋯ › Remove, with a shot picked. */
+    await shots.nth(2).click();
+    await page.getByTestId("v12-board-menu").click();
+    await page.getByTestId("v12-menu-remove").click();
+    await expect(shots).toHaveCount(7);
+    await page.getByTestId("toast-undo").click();
+    await expect(shots).toHaveCount(8, { timeout: 30_000 });
+  });
+
+  test("a drawn storyboard frame is removed by its drawing, which goes to the Trash whole (the takes stay in the Library), with Undo", async ({ page }) => {
+    test.setTimeout(300_000);
+    const { project, scope, errors } = await openBoard(page, "/suites?view=board&stage=storyboard");
+    const trashed = await trash(page, scope, project.id);
+    const frames = page.locator('.bd-node[data-card-kind="frame"][data-removable="true"]');
+    await expect(frames.first()).toBeVisible({ timeout: 90_000 });
+    const toast = page.getByTestId("toast");
+    await frames.first().click();
+    await page.keyboard.press("Delete");
+    await expect(toast).toContainText("Removed", { timeout: 30_000 });
+    await page.getByTestId("toast").hover();
+    await expect.poll(async () => (await trashed()).map((i) => i.kind), { timeout: 30_000 }).toEqual(["frame"]);
+    await page.getByTestId("toast-undo").click();
+    await expect.poll(async () => (await trashed()).length, { timeout: 30_000 }).toBe(0);
     expect(errors).toEqual([]);
   });
 });

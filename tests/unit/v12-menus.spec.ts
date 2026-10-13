@@ -15,7 +15,7 @@ const labels = (entries: readonly MenuEntry[]) => entries.map((e) => (e.sep ? "�
 test("card: the prototype's order and words, with the keys that work", () => {
   const menu = menuFor("card", all("open", "download", "copy", "use-as-reference", "move", "redraw", "approve", "delete"));
   expect(labels(menu)).toEqual([
-    "Open", "Download original", "—", "Copy ⌘C", "—", "Use as reference", "Move to board…", "—", "Redraw", "—", "Approve A", "—", "Delete ⌫",
+    "Open", "Download original", "—", "Copy ⌘C", "—", "Use as reference", "Move to board…", "—", "Redraw", "—", "Approve A", "—", "Remove ⌫",
   ]);
   const redraw = menu.find((e) => !e.sep && e.id === "redraw");
   expect(redraw && !redraw.sep && redraw.priced).toBe(true);
@@ -28,8 +28,8 @@ test("a menu lists only what can be done, with no stray separators", () => {
   expect(labels(menuFor("card", all("open", "make-like", "download", "use-as-reference", "remix")))).toEqual([
     "Open", "Make one like this", "Download original", "—", "Use as reference", "—", "Remix this",
   ]);
-  /* Only Delete: no separator before it. */
-  expect(labels(menuFor("card", all("delete")))).toEqual(["Delete ⌫"]);
+  /* Only Remove: no separator before it. */
+  expect(labels(menuFor("card", all("delete")))).toEqual(["Remove ⌫"]);
   expect(menuFor("card", all())).toEqual([]);
   for (const kind of ["card", "multi", "canvas", "empty", "board", "make-empty"] as const) {
     const menu = menuFor(kind, all("open", "download", "copy", "approve", "approve-all", "delete-all", "paste", "upload", "fit", "library", "palette", "copy-link"));
@@ -41,7 +41,7 @@ test("a menu lists only what can be done, with no stray separators", () => {
 });
 
 test("multi, canvas, empty space and a board card", () => {
-  expect(labels(menuFor("multi", all("approve-all", "delete-all")))).toEqual(["Approve all A", "—", "Delete ⌫"]);
+  expect(labels(menuFor("multi", all("approve-all", "delete-all")))).toEqual(["Approve all A", "—", "Remove ⌫"]);
   const canvas = menuFor("canvas", all("paste", "new", "new-note", "new-text", "new-image", "new-video", "new-audio", "upload", "ask-atomik", "select-all", "tidy", "fit"));
   expect(labels(canvas)).toEqual(["Paste ⌘V", "—", "New", "Upload… U", "—", "Ask Atomik ⌘J", "—", "Select all ⌘A", "Tidy", "Zoom to fit 0"]);
   const fresh = canvas.find((e) => !e.sep && e.id === "new");
