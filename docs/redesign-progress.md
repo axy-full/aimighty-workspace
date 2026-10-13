@@ -246,3 +246,19 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - 13 Oct, 05:29 IST: **Merged #656 (P6-d, the '/' skills list in the bar, each item on its button's priced route; Opus approved 20dc31ed, later deltas lead-reviewed, incl. the Bar's combobox role only while '/' is open; CI 24/24 on 07ed94f9).** The 'quoted' list above was regenerated from unpriced.ts.
 - 13 Oct, 06:14 IST: release/1 f896e673 (with #683 and #656) full run RED on one test: gaps-l1-takes:101 at 1440x900 (Cancel leaves the reject panel open). Failed shard rerun; lane A is bisecting #656 vs #683 vs an existing flake.
 - 13 Oct, 06:48 IST: release/1 f896e673 rerun GREEN 24/24, so gaps-l1-takes:101 at 1440 is a flake (one failure). Lane A is root-causing it as a fix PR; not blocking.
+- 13 Oct, 07:56 IST: **Merged #689 (0ebd6eb4, the Reject panel opens with the card in view; flake root cause; CI 24/24 on f896e673; screenshots in ~/lead-notes/shots-689).**
+- 13 Oct, 07:56 IST: **STATUS for the owner (09:00).**
+  - Merged overnight: #654 064b0cbd, #681 07dda487, #655 d6f6d81c, #680 d01d3ddb, #684 04699a3f, #683 07ed94f9, #656 f896e673, #689 0ebd6eb4.
+  - Deploy #2 is PR #687 (04699a3f, 11 PRs), not merged. Migrations: none (re-checked on today's release/1). Env: nothing new.
+  - NEEDS AKSHAY:
+    - #685: import-list edits including moneyRoutes.
+    - #688: the noVendorCostToCustomers seed, the Activity change and restated tests, and the admin approve path.
+    - #686: the privateCanvas tightening.
+    - Whether admins can open others' private boards.
+    - Hiding private boards' takes.
+    - #665: the five-minute swap and screenshots.
+    - Deploy #3 after the backup: #675 ready; #668 to refresh.
+  - CI: release/1 0ebd6eb4 full run in progress; last green f896e673.
+  - Hygiene: removed 11 worktrees and about 23 GB of temp; no test servers.
+  - Disk: 36G / 619G (6%).
+  - Status page updated.
