@@ -223,3 +223,146 @@ test("the marked sample is nobody's to write: removing from it or restoring into
   expect((await trash.items(OWNER, priv))[0]).toBe(404);
   expect(await tenant.runInTenant(ws, async () => Number((await database.db().execute({ sql: "SELECT deleted FROM generations WHERE id=?", args: [`t_priv_${run}`] })).rows[0].deleted), { user: user("u_owner") })).toBe(1);
 });
+
+
+test("browser items are the remover's alone: a teammate (or an admin) cannot list or restore my note, and cannot pre-empt it with a forged one", async () => {
+  const ws = workspace(`bt-f-${run}`);
+  const { tenant } = await fixture(ws);
+  const trash = api(tenant, ws);
+  /* An ordinary production, where several people can write: each person's draft is their own, so each person's Trash of what they removed is too. */
+  const real = { id: "node-same", type: "note", title: "Mine", text: "the owner's real words", x: 1, y: 2, width: 200, linked: [] };
+  const forged = { id: "node-same", type: "note", title: "Forged", text: "a teammate's forgery", x: 9, y: 9, width: 200, linked: [] };
+  /* A teammate records first, under the id the owner's card has. */
+  const planted = await trash.remove(MATE, "prod_open", { kind: "note", itemId: "node-same", label: "Forged", payload: forged });
+  expect(planted[0]).toBe(200);
+  /* The owner's own removal of that card is its own record (not dropped for the teammate's), and it hands back the owner's payload. */
+  const mine = await trash.remove(OWNER, "prod_open", { kind: "note", itemId: "node-same", label: "Mine", payload: real });
+  expect(mine[0]).toBe(200);
+  expect(mine[1].entry.id).not.toBe(planted[1].entry.id);
+  expect((await trash.items(OWNER, "prod_open"))[1].items.map((i: { id: string }) => i.id)).toEqual([mine[1].entry.id]);
+  expect((await trash.items(MATE, "prod_open"))[1].items.map((i: { id: string }) => i.id)).toEqual([planted[1].entry.id]);
+  expect((await trash.items(ADMIN, "prod_open"))[1].items).toEqual([]);
+  /* Nobody else can restore it, whatever the id says: the answer is an entry that is not there. */
+  const gone = await trash.restore(OWNER, "prod_open", "nothing-like-this");
+  for (const actor of [MATE, MATE_TOKEN, ADMIN, ADMIN_TOKEN]) expect(await trash.restore(actor, "prod_open", mine[1].entry.id), actor.user.id).toEqual(gone);
+  expect((await trash.restore(MATE, "prod_open", planted[1].entry.id))[1].payload.text).toBe("a teammate's forgery");
+  expect((await trash.restore(OWNER, "prod_open", mine[1].entry.id))[1].payload.text).toBe("the owner's real words");
+});
+
+test("a failed shot restore keeps its entry (the claim rolls back); a person holds at most 500 browser items on a board, and the cap is per person", async () => {
+  const ws = workspace(`bt-g-${run}`);
+  const { tenant, database, priv } = await fixture(ws);
+  const trash = api(tenant, ws);
+  const inDb = <R>(fn: (db: ReturnType<typeof database.db>) => Promise<R>) => tenant.runInTenant(ws, () => fn(database.db()), { user: user("u_owner") });
+  const removed = await trash.remove(OWNER, priv, { kind: "shot", itemId: `shot_${run}` });
+  expect(removed[0]).toBe(200);
+  /* A shot with the same id appears (a teammate's tool, a re-import): the restore is refused in plain words and the entry is still there. */
+  await inDb((db) => db.execute({ sql: "INSERT INTO shots(id,project_id,code,title,description,status,position,created_by,created_at,updated_at) VALUES(?,?,'020','Clash','d','open',2,'u_owner',1,1)", args: [`shot_${run}`, priv] }));
+  const refused = await trash.restore(OWNER, priv, removed[1].entry.id);
+  expect(refused[0]).toBe(409);
+  expect(refused[1].error).toMatch(/already on the board/);
+  expect((await trash.items(OWNER, priv))[1].items.map((i: { id: string }) => i.id)).toEqual([removed[1].entry.id]);
+  await inDb((db) => db.execute({ sql: "DELETE FROM shots WHERE id=?", args: [`shot_${run}`] }));
+  expect((await trash.restore(OWNER, priv, removed[1].entry.id))[0]).toBe(200);
+  /* The cap: 500 open browser items by one person on one board; the next is refused in words; another person's own are not counted against them. */
+  await inDb((db) => db.batch(Array.from({ length: 500 }, (_, i) => ({ sql: "INSERT INTO board_trash(id,project_id,kind,item_id,label,payload,removed_by,removed_at,holder) VALUES(?,?,'note',?,'n','{}','u_owner',1,'u_owner')", args: [`cap-${i}`, "prod_open", `n-${i}`] })), "write"));
+  const over = await trash.remove(OWNER, "prod_open", { kind: "note", itemId: "n-over", payload: {} });
+  expect(over[0]).toBe(409);
+  expect(over[1].error).toMatch(/500 items/);
+  expect((await trash.remove(OWNER, "prod_open", { kind: "note", itemId: "n-0", payload: {} }))[0], "an item already recorded is the same record").toBe(200);
+  expect((await trash.remove(MATE, "prod_open", { kind: "note", itemId: "n-over", payload: {} }))[0], "the cap is per person").toBe(200);
+});
+
+test("the customer export holds a person's own browser items and the takes and shots of boards they may list, never a teammate's private Trash", async () => {
+  const ws = workspace(`bt-h-${run}`);
+  const { tenant, priv } = await fixture(ws);
+  const { workspaceExport } = await import("../../lib/workspaceExport");
+  const trash = api(tenant, ws);
+  await trash.remove(OWNER, priv, { kind: "note", itemId: "n-owner", label: "Owner's note", payload: { text: "private words" } });
+  await trash.remove(OWNER, priv, { kind: "shot", itemId: `shot_${run}` });
+  await trash.remove(OWNER, priv, { kind: "take", itemId: `t_priv_${run}` });
+  await trash.remove(MATE, "prod_open", { kind: "note", itemId: "n-mate", label: "Mate's note", payload: { text: "mate words" } });
+  await trash.remove(MATE, "prod_open", { kind: "take", itemId: `t_mate_${run}` });
+  const exported = (actor: Actor) => tenant.runInTenant(ws, () => workspaceExport(actor.user.id, actor.user.email), { user: actor.user });
+  const items = (e: { board_trash?: { item_id: string; kind: string }[] }) => (e.board_trash ?? []).map((r) => `${r.kind}:${r.item_id}`).sort();
+  /* The owner: their own note, and the shot and take on their own board and the ordinary production's take. */
+  expect(items(await exported(OWNER) as never)).toEqual([`note:n-owner`, `shot:shot_${run}`, `take:t_mate_${run}`, `take:t_priv_${run}`].sort());
+  /* A teammate: their own note, and what is on boards they may list: the ordinary production's take, and none of the owner's private board's. */
+  const mate = await exported(MATE) as never;
+  expect(items(mate)).toEqual([`note:n-mate`, `take:t_mate_${run}`].sort());
+  expect(JSON.stringify((mate as { board_trash?: unknown }).board_trash)).not.toMatch(/private words|Owner's note|prj_wb_/);
+  /* An admin who removed nothing: only what is on boards they may list. */
+  expect(items(await exported(ADMIN) as never)).toEqual([`take:t_mate_${run}`]);
+});
+
+test("a take removed or put back through the older routes goes through the Trash too, and one in the Trash cannot be moved; an agent puts back only what it removed", async () => {
+  const ws = workspace(`bt-i-${run}`);
+  const { tenant, database } = await fixture(ws);
+  const trash = api(tenant, ws);
+  let who: Actor = ADMIN;
+  const jobs = loadRoute<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts", () => who);
+  const call = (actor: Actor, method: "PATCH" | "DELETE", id: string, body?: unknown) => { who = actor; return tenant.runInTenant(ws, async () => { const res = await jobs[method](new Request(`https://particl.test/api/jobs/${id}`, { method, headers: { "Content-Type": "application/json", "X-Workbench-Scope": `particl-active-${ws.id}-${actor.user.id}` }, body: body ? JSON.stringify(body) : undefined }), { params: Promise.resolve({ id }) }); return [res.status, await res.json().catch(() => ({}))] as const; }, { user: actor.user, token: actor.token as never }); };
+  const open = async () => (await trash.items(ADMIN, "prod_open"))[1].items as { id: string; itemId: string; kind: string; removedBy: { id: string } | null }[];
+  /* PATCH trashed:true records it; trashed:false closes the record. */
+  const first = await call(ADMIN, "PATCH", `t_mate_${run}`, { trashed: true });
+  expect(first[1], JSON.stringify(first[1])).toBeTruthy();
+  expect(first[0], JSON.stringify(first[1])).toBe(200);
+  expect((await open()).map((i) => i.itemId)).toEqual([`t_mate_${run}`]);
+  expect((await open())[0].removedBy).toMatchObject({ id: "u_admin" });
+  /* A take in the Trash is not moved until it is put back. */
+  expect((await call(ADMIN, "PATCH", `t_mate_${run}`, { projectId: null }))[0]).toBe(409);
+  expect((await call(ADMIN, "PATCH", `t_mate_${run}`, { trashed: false }))[0]).toBe(200);
+  expect(await open()).toEqual([]);
+  /* DELETE too. */
+  expect((await call(ADMIN, "DELETE", `t_owner_${run}`))[0]).toBe(200);
+  const entry = (await open())[0];
+  expect(entry).toMatchObject({ itemId: `t_owner_${run}`, kind: "take" });
+  /* Restoring by its `take:` id closes the same open record. */
+  expect((await trash.restore(ADMIN, "prod_open", `take:t_owner_${run}`))[0]).toBe(200);
+  expect(await open()).toEqual([]);
+  /* An agent run puts back only what it removed itself. */
+  const { restoreFromTrash, removeToTrash } = await import("../../lib/boardTrash");
+  const agent = { id: "agent:run1", role: "member" as const };
+  await trash.remove(ADMIN, "prod_open", { kind: "take", itemId: `t_owner_${run}` });
+  const theirs = (await open())[0];
+  const refused = await tenant.runInTenant(ws, () => restoreFromTrash(agent, "prod_open", theirs.id), { user: user("u_admin", "admin") });
+  expect(refused).toMatchObject({ ok: false, status: 404 });
+  expect((await open()).map((i) => i.id)).toEqual([theirs.id]);
+  void removeToTrash; void database;
+});
+
+test("the registry tools list_trash, remove_to_trash and restore_from_trash run the same routes under the same rules, as the token's person", async () => {
+  const { runTool } = await import("../../lib/mcp");
+  const ws = workspace(`bt-j-${run}`);
+  const { tenant } = await fixture(ws);
+  const trash = api(tenant, ws);
+  let who: Actor = MATE_TOKEN;
+  const list = loadRoute<typeof import("../../app/api/boards/[id]/trash/route")>("app/api/boards/[id]/trash/route.ts", () => who);
+  const restore = loadRoute<typeof import("../../app/api/boards/[id]/trash/[entryId]/restore/route")>("app/api/boards/[id]/trash/[entryId]/restore/route.ts", () => who);
+  /* The caller the MCP bridge makes (lib/mcp.ts makeCaller), answered by the real routes for this token's person. */
+  const caller = (actor: Actor) => async (pathname: string, init: { method?: string; body?: unknown } = {}) => {
+    who = actor;
+    return tenant.runInTenant(ws, async () => {
+      if (pathname === "/api/projects") return { projects: [{ id: "prod_open", name: "Ordinary" }] };
+      const url = new URL(`https://particl.test${pathname}`);
+      const m = /^\/api\/boards\/([^/]+)\/trash(?:\/([^/]+)\/restore)?$/.exec(url.pathname)!;
+      const req = new Request(url, { method: init.method ?? "GET", body: init.body ? JSON.stringify(init.body) : undefined });
+      const res = m[2] ? await restore.POST(req, { params: Promise.resolve({ id: m[1], entryId: m[2] }) }) : init.method === "POST" ? await list.POST(req, { params: Promise.resolve({ id: m[1] }) }) : await list.GET(req, { params: Promise.resolve({ id: m[1] }) });
+      const json = (await res.json()) as Record<string, unknown>;
+      if (!res.ok) throw new Error(String(json.error));
+      return json;
+    }, { user: actor.user, token: actor.token as never });
+  };
+  const tool = (actor: Actor, name: string, args: Record<string, string>) => runTool(name, args, caller(actor) as never, "https://particl.test");
+  expect(await tool(MATE_TOKEN, "list_trash", { project: "Ordinary" })).toBe("The Trash is empty.");
+  /* A member's token removes the take of its own person, and not the owner's. */
+  expect(await tool(MATE_TOKEN, "remove_to_trash", { project: "Ordinary", kind: "take", id: `t_mate_${run}` })).toMatch(/Removed take .* to the Trash/);
+  await expect(tool(MATE_TOKEN, "remove_to_trash", { project: "Ordinary", kind: "take", id: `t_owner_${run}` })).rejects.toThrow(/someone else's work/);
+  const listed = await tool(MATE_TOKEN, "list_trash", { project: "Ordinary" });
+  expect(listed).toContain(`take · Title t_mate_${run}`);
+  const entry = (await trash.items(MATE, "prod_open"))[1].items[0].id as string;
+  /* An admin's token puts it back; nothing is charged and the Trash is empty again. */
+  expect(await tool(ADMIN_TOKEN, "restore_from_trash", { project: "Ordinary", entry })).toMatch(/back\. Nothing was charged/);
+  expect(await tool(MATE_TOKEN, "list_trash", { project: "Ordinary" })).toBe("The Trash is empty.");
+  await expect(tool(MATE_TOKEN, "remove_to_trash", { project: "Ordinary", kind: "note", id: "x" })).rejects.toThrow(/take or shot/);
+});

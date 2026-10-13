@@ -45,6 +45,7 @@ export async function markGenerationDeletion(
   tx: Transaction,
   id: string,
   at = Date.now(),
+  by = "",
 ) {
   if (await consumerOriginalPending(tx, id))
     throw new MediaSourceError(CONSUMER_ORIGINAL_PENDING_MESSAGE);
@@ -57,6 +58,23 @@ export async function markGenerationDeletion(
     sql: "INSERT INTO generation_deletions(id,updated_at) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at",
     args: [id, at],
   });
+  /* A person removing a take (`by`) puts it in its board's Trash; a removal with no person (a system clean-up) does not, and its original is cleaned up as before. */
+  if (by) await recordTakeInTrash(tx, id, by, at);
+}
+
+/** A take filed on a board is in that board's Trash (lib/boardTrash.ts): its original is kept and it can be put back. One already there stays as it is. */
+export async function recordTakeInTrash(tx: Transaction, id: string, by: string, at = Date.now()) {
+  await tx.execute({
+    sql: `INSERT INTO board_trash(id,project_id,kind,item_id,label,payload,removed_by,removed_at,holder)
+          SELECT lower(hex(randomblob(16))),project_id,'take',id,substr(COALESCE(NULLIF(title,''),prompt,''),1,80),NULL,?,?,'' FROM generations WHERE id=? AND project_id IS NOT NULL
+          ON CONFLICT DO NOTHING`,
+    args: [by, at, id],
+  });
+}
+
+/** The take is back (not deleted): its Trash record, if it has one, is closed. */
+export async function markGenerationRestored(tx: Transaction, id: string, by: string, at = Date.now()) {
+  await tx.execute({ sql: "UPDATE board_trash SET restored_by=?, restored_at=? WHERE kind='take' AND item_id=? AND restored_at IS NULL", args: [by, at, id] });
 }
 
 /** Quota remains retained on the generation until all original objects were removed. */
