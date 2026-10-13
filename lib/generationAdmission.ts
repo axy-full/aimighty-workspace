@@ -1,4 +1,5 @@
 import { claimedStepFiling } from "@/lib/atomikAccess";
+import { stepRender } from "@/lib/atomikStepRender";
 import { mayReachProject } from "@/lib/draftProject";
 import { ENHANCE_MAX_PROMPT } from "./shell/enhancer";
 import { enhancementRan } from "./enhanceProof";
@@ -440,8 +441,15 @@ export async function executeGenerationAdmission(
     if (body.atomikStepId !== undefined) {
       const filing = typeof body.atomikStepId === "string" ? await claimedStepFiling(body.atomikStepId, got.user) : null;
       if (!filing) return admissionReply({ error: "That step is gone." }, { status: 404 });
-      body.projectId = filing.projectId ?? undefined;
-      delete body.shotId;
+      /* One render per claim: a render goes only under the key the claim set (so release and reconcile can fence it), and a final is not a step's render. */
+      if (body.finalOf != null) return admissionReply({ error: "A step's render is made from the step." }, { status: 400 });
+      if (options.requestClaim && options.requestClaim.key !== filing.requestKey) return admissionReply({ error: "That step is gone." }, { status: 404 });
+      /* Built from the step's own kind, model, prompt, settings and references, whatever the client sent; only its ceiling (`maxCredits`) and the step's id are kept. */
+      const keep: Record<string, unknown> = { atomikStepId: body.atomikStepId };
+      if (body.maxCredits !== undefined) keep.maxCredits = body.maxCredits;
+      for (const key of Object.keys(body)) delete body[key];
+      Object.assign(body, stepRender({ kind: filing.step.kind as never, title: filing.step.title, prompt: filing.step.prompt, model: filing.step.model, params: filing.step.params as never, refs: filing.step.refs as never }, filing.projectId).body, keep);
+      if (body.projectId == null) delete body.projectId;
       stepFiled = true;
     }
     if (body.projectId) {
