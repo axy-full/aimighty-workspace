@@ -1,3 +1,4 @@
+import { openableAmong } from "./uploadAccess";
 import { db, ready } from "./db";
 import { takeOncePerWindow, windowTakenAt } from "./operationLease";
 import { requireTenant } from "./tenant";
@@ -97,7 +98,10 @@ export async function plannerLibrary(p: { owner: string; projectId: string | nul
     uploadsOf("video", LIBRARY_LIMITS.videos), uploadsOf("image", LIBRARY_LIMITS.stills),
     takesOf("video", LIBRARY_LIMITS.videos), takesOf("image", LIBRARY_LIMITS.stills),
   ]);
-  const uploads = [...uploadClips.rows, ...uploadStills.rows];
+  /* Only what the person may open is shown to the planner (lib/uploadAccess.ts): a teammate's unattached upload is neither listed nor cited. */
+  const rawUploads = [...uploadClips.rows, ...uploadStills.rows];
+  const openable = await openableAmong(rawUploads.map((r: Row) => String(r.id)), { id: p.owner });
+  const uploads = rawUploads.filter((r: Row) => openable.has(String(r.id)));
   const takes = [...takeClips.rows, ...takeStills.rows];
   type Found = Omit<LibraryItem, "handle"> & { at: number };
   const found: Found[] = [

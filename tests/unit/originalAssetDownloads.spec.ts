@@ -45,8 +45,8 @@ async function fixture() {
   await tenant.runInTenant(studio, async () => {
     await records.workbenchReady();
     await database.db().execute({
-      sql: `INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,created_at,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-      args: ['original', 'Caméra master.webp', 'image/webp', 'webp', bytes.length, sha256(bytes), 1672, 941, '', 1, 'image'],
+      sql: `INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,created_at,kind,uploader_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+      args: ['original', 'Caméra master.webp', 'image/webp', 'webp', bytes.length, sha256(bytes), 1672, 941, '', 1, 'image', 'owner'],
     });
     await database.db().execute({
       sql: `INSERT INTO workbench_media(id,owner,name,mime,ext,size,stored_url,sha256) VALUES(?,?,?,?,?,?,?,?)`,

@@ -75,9 +75,12 @@ async function load(kind: "uploads" | "jobs", cleanupFails = false) {
     },
     "@/lib/contentDisposition": await import("../../lib/contentDisposition"),
     "@/lib/serveType": {},
+    /* This file loads the route for its DELETE (a stricter loader than most); GET's access check (tests/unit/uploadAccess.spec.ts) is not exercised here. */
+    "@/lib/uploadAccess": { uploadOpenableBy: async () => true },
+    "@/lib/projectMove": await import("../../lib/projectMove"),
+    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/recovery": { reserveRecoveryContinuation: async (_kind: string, handler: unknown) => handler },
     "@/lib/jobs": {},
-    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/demo/readonly.server": await import("../../lib/demo/readonly.server"),
     "@/lib/shots": {},
     "@/lib/workAccess": await import("../../lib/workAccess"),

@@ -9,6 +9,7 @@ import {
   uploadFailure,
 } from "@/lib/uploadReservations";
 import { db, ready } from "@/lib/db";
+import { uploadOpenableBy } from "@/lib/uploadAccess";
 import { archiveReady } from "@/lib/archive";
 import { servingFor } from "@/lib/serveType";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -34,6 +35,8 @@ export const GET = withTenant(async function GET(
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
+  /* A member opens an upload they made or one on shared work (lib/uploadAccess.ts); any other answer is the same 404 an unknown id gets. */
+  if (!(await uploadOpenableBy(id, got.user))) return new Response("Not found", { status: 404 });
 
   const rs = await db().execute({
     sql: `SELECT mime, ext, bytes, kind, filename, stored_url FROM uploads WHERE id = ? LIMIT 1`,

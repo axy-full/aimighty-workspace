@@ -1,3 +1,4 @@
+import { uploadOpenableBy } from "@/lib/uploadAccess";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -100,7 +101,8 @@ async function sourceFor(asset: Asset, owner: string, canonical = false) {
         args: [uploadId],
       })
     ).rows[0];
-    if (!row)
+    /* The person asking must be able to open the upload (lib/uploadAccess.ts); said as a missing one is. */
+    if (!row || !(await uploadOpenableBy(String(uploadId), { id: owner })))
       throw new AtomikReferenceError(
         "A selected upload is unavailable in this workspace.",
         404,

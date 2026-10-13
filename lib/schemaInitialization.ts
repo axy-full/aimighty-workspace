@@ -16,7 +16,7 @@ export async function columnInstaller(client: Client) {
   return async (
     table: string,
     declaration: string,
-    after: InStatement[] = [],
+    afterAdding: InStatement[] | ((hasTable: (name: string) => boolean) => InStatement[]) = [],
   ): Promise<boolean> => {
     const name = declaration
       .match(/^([A-Za-z_][A-Za-z0-9_]*)\s/)?.[1]
@@ -24,6 +24,8 @@ export async function columnInstaller(client: Client) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table) || !name)
       throw new Error("Invalid schema column declaration");
     if (columns.get(table)?.has(name)) return false;
+    /* What follows the new column may depend on which tables exist; it is worked out only when the column is added, never on a boot that finds it. */
+    const after = typeof afterAdding === "function" ? afterAdding((t) => columns.has(t)) : afterAdding;
     const sql = `ALTER TABLE "${table}" ADD COLUMN ${declaration}`;
     try {
       // The column and its one-time data classification must land together:
