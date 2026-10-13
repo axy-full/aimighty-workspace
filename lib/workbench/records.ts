@@ -121,7 +121,7 @@ export async function linkProduction(owner: string, project: Project): Promise<s
 }
 
 /** An explicit stable node→shot identity, independent of editable labels and collaborator drafts. */
-export async function mapNodeShot(owner:string, project:Project, nodeId:string):Promise<string> {
+export async function mapNodeShot(owner:string, project:Project, nodeId:string, actor:string=owner):Promise<string> {
   const node=project.nodes.find(n=>n.id===nodeId);
   if(!node || !project.productionProjectId) throw new Error('Save this node in a project first.');
   const pid=await linkProduction(owner,project);
@@ -130,11 +130,27 @@ export async function mapNodeShot(owner:string, project:Project, nodeId:string):
     const prior=(await tx.execute({sql:'SELECT m.shot_id FROM workbench_shots m JOIN shots s ON s.id=m.shot_id WHERE m.owner=? AND m.draft_id=? AND m.node_id=?',args:[owner,project.id,nodeId]})).rows[0];
     if(!prior) {
       const position=Number((await tx.execute({sql:'SELECT COALESCE(MAX(position),-1)+1 AS n FROM shots WHERE project_id=?',args:[pid]})).rows[0].n);
-      await tx.execute({sql:`INSERT INTO shots (id,project_id,scene,code,title,description,status,position,created_by,created_at,updated_at,planned,setup,cast,kind,dirty) VALUES (?,?,?,?,?,?,'open',?,?,?,?,5,'{}','[]','render',1)`,args:[sid,pid,node.title.slice(0,40),'WB'+sid.slice(-8).toUpperCase(),node.title.slice(0,160),(node.text||'').slice(0,2000),position,owner,now(),now()]});
+      await tx.execute({sql:`INSERT INTO shots (id,project_id,scene,code,title,description,status,position,created_by,created_at,updated_at,planned,setup,cast,kind,dirty) VALUES (?,?,?,?,?,?,'open',?,?,?,?,5,'{}','[]','render',1)`,args:[sid,pid,node.title.slice(0,40),'WB'+sid.slice(-8).toUpperCase(),node.title.slice(0,160),(node.text||'').slice(0,2000),position,actor,now(),now()]});
       await tx.execute({sql:'INSERT INTO workbench_shots(owner,draft_id,node_id,project_id,shot_id) VALUES (?,?,?,?,?) ON CONFLICT(owner,draft_id,node_id) DO UPDATE SET shot_id=excluded.shot_id,project_id=excluded.project_id',args:[owner,project.id,nodeId,pid,sid]});
     }
     return prior?String(prior.shot_id):sid;
   });
+}
+
+/**
+ * The board's sharing is SERVER-OWNED: the flags below live in the draft's own JSON, but no save of the draft ever sets or clears them. Every save keeps
+ * what is stored; only `setBoardSharing` (the `team-share` action, by the board's owner) changes them. A save that names a different value, a stale
+ * window, a copy of the board or a client that never heard of the flag, can neither share a private board nor take a shared one back.
+ */
+export const SHARE_FLAGS = ['teamShared'] as const;
+function keepStoredSharing<T extends Record<string,unknown>>(body:T,stored:unknown):T {
+  const out:Record<string,unknown>={...body};
+  const was=stored&&typeof stored==='object'?stored as Record<string,unknown>:{};
+  for(const flag of SHARE_FLAGS){
+    if(was[flag]===undefined)delete out[flag];
+    else out[flag]=was[flag];
+  }
+  return out as T;
 }
 
 /** Another save of this draft landed first: the caller may merge its edits into the newer version and save again. */
@@ -145,8 +161,14 @@ export type DraftWriteTag = { writer: string; seq: number };
 /** How long an editor's last save stays checkable. */
 const WRITES_KEPT_MS = 30*24*60*60*1000;
 
-/** Revision zero may only insert; stale windows may never overwrite a newer draft. */
-export async function saveDraft(owner:string, project:Project, revision:number, write?:DraftWriteTag) {
+/**
+ * Revision zero may only insert; stale windows may never overwrite a newer draft.
+ *
+ * `owner` is the key the board is STORED under (its author); `actor` is the person saving, the same unless a teammate with write reach, or an admin, acts on
+ * a board stored under someone else's key (the route asks `mayReachProject` first; this function does not decide who may). The actor is recorded on the row
+ * (`updated_by`) and as the author of what the save implies for the team canvas; the key, the mappings and the revision stay the board's own.
+ */
+export async function saveDraft(owner:string, project:Project, revision:number, write?:DraftWriteTag, actor:string=owner) {
   await workbenchReady();
   const current=await readDraft(owner,project.id);
   if((current?.revision??0)!==revision)throw new DraftConflictError('This project changed in another window. Download your work before reloading.');
@@ -172,10 +194,10 @@ export async function saveDraft(owner:string, project:Project, revision:number, 
     try { before=JSON.parse(String((await tx.execute({sql:'SELECT body FROM workbench_projects WHERE key=?',args:[owner+':'+project.id]})).rows[0]?.body??'null')); } catch { before=undefined; }
     await validateStoredMedia(tx,project,before??undefined);
     const mappings=Object.fromEntries((await tx.execute({sql:'SELECT node_id,shot_id FROM workbench_shots WHERE owner=? AND draft_id=?',args:[owner,project.id]})).rows.map(r=>[String(r.node_id),String(r.shot_id)]));
-    const body={...project,productionProjectId:pid,shotMappings:mappings};
-    const result=await tx.execute({sql:`INSERT INTO workbench_projects (key,owner,project_id,name,body,revision,updated_at) VALUES (?,?,?,?,?,1,?)
-      ON CONFLICT(key) DO UPDATE SET name=excluded.name,body=excluded.body,revision=workbench_projects.revision+1,updated_at=excluded.updated_at WHERE workbench_projects.revision=?`,
-      args:[owner+':'+project.id,owner,project.id,project.name,JSON.stringify(body),now(),revision]});
+    const body=keepStoredSharing({...project,productionProjectId:pid,shotMappings:mappings},before);
+    const result=await tx.execute({sql:`INSERT INTO workbench_projects (key,owner,project_id,name,body,revision,updated_at,updated_by) VALUES (?,?,?,?,?,1,?,?)
+      ON CONFLICT(key) DO UPDATE SET name=excluded.name,body=excluded.body,revision=workbench_projects.revision+1,updated_at=excluded.updated_at,updated_by=excluded.updated_by WHERE workbench_projects.revision=?`,
+      args:[owner+':'+project.id,owner,project.id,project.name,JSON.stringify(body),now(),actor,revision]});
     if(!result.rowsAffected)throw new DraftConflictError('A newer version exists. Your changes have not overwritten it.');
     if(write){
       await tx.execute({sql:`INSERT INTO workbench_draft_writes(owner,draft_id,writer,seq,revision,updated_at) VALUES (?,?,?,?,?,?)
@@ -189,10 +211,27 @@ export async function saveDraft(owner:string, project:Project, revision:number, 
        (it may have been lost to a stale view), and the live room is told to keep it too. */
     const shared=current&&!gone?diffForTeam(current.project,body,0):null;
     if(shared){
-      const applied=await applyTeamCanvasPatch(tx,pid,shared,owner,true,{implied:true}).catch((error)=>{if(!(error instanceof TeamCanvasError))throw error;return null;});
+      const applied=await applyTeamCanvasPatch(tx,pid,shared,actor,true,{implied:true}).catch((error)=>{if(!(error instanceof TeamCanvasError))throw error;return null;});
       if(applied?.held.length)scheduleCanvasPush(pid);
     }
     return {revision:revision+1,productionProjectId:pid,shotMappings:mappings};
+  });
+}
+
+/**
+ * Share a board with the team, or stop: the one writer of the sharing flags (the `team-share` action calls it for the board's owner). It changes only the
+ * flags in the stored JSON, in one write, and not the revision: every save keeps the flags as stored, so an open window's next save neither undoes nor
+ * conflicts with it. `owner` is the key the board is stored under; `actor` is who changed it, recorded on the row. Null when there is no such board.
+ */
+export async function setBoardSharing(owner:string, draftId:string, flags:{teamShared:boolean}, actor:string=owner):Promise<{revision:number;teamShared:boolean}|null> {
+  await workbenchReady();
+  return workbenchTransaction(async(tx)=>{
+    const row=(await tx.execute({sql:'SELECT body,revision FROM workbench_projects WHERE key=?',args:[owner+':'+draftId]})).rows[0];
+    if(!row)return null;
+    const body=JSON.parse(String(row.body)) as Record<string,unknown>;
+    if(flags.teamShared)body.teamShared=true; else delete body.teamShared;
+    await tx.execute({sql:'UPDATE workbench_projects SET body=?,updated_at=?,updated_by=? WHERE key=?',args:[JSON.stringify(body),now(),actor,owner+':'+draftId]});
+    return {revision:Number(row.revision),teamShared:flags.teamShared};
   });
 }
 
@@ -220,7 +259,7 @@ export class BibleConflictError extends Error {
 }
 
 /** Immutable shared versions require the author's explicit current base. */
-export async function publishBible(owner:string, name:string, draftId:string, expectedVersion:number) {
+export async function publishBible(owner:string, name:string, draftId:string, expectedVersion:number, actor:string=owner) {
   const draft=await readDraft(owner,draftId);
   if(!draft?.project.productionProjectId)throw new Error('Save your project first.');
   const p=draft.project;
@@ -232,7 +271,7 @@ export async function publishBible(owner:string, name:string, draftId:string, ex
     if(latest!==expectedVersion)throw new BibleConflictError(latest);
     await validateStoredMedia(tx,snapshot);
     const version=latest+1;
-    await tx.execute({sql:'INSERT INTO workbench_bibles(project_id,version,owner,body,created_at) VALUES (?,?,?,?,?)',args:[p.productionProjectId!,version,owner,JSON.stringify(snapshot),now()]});
+    await tx.execute({sql:'INSERT INTO workbench_bibles(project_id,version,owner,body,created_at) VALUES (?,?,?,?,?)',args:[p.productionProjectId!,version,actor,JSON.stringify(snapshot),now()]});
     return {version,shared:{...snapshot,version}};
   });
 }

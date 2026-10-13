@@ -12,7 +12,7 @@
  * The platform owner reads as "Particl support" with an opaque id outside the house (lib/platformOwnerPrivacy.ts), as on the Team page.
  */
 import { db } from "@/lib/db";
-import { DRAFT_PROJECT_PREFIX, mappedId, sampleMarkNow, TEAM_SHARED_SQL } from "@/lib/draftProject";
+import { DRAFT_PROJECT_PREFIX, mappedId, mayReachProject, sampleMarkNow, TEAM_SHARED_SQL } from "@/lib/draftProject";
 import { platformDb, platformReady } from "@/lib/platform";
 import { ownerMaskFor, resolveMemberId, supportMemberId } from "@/lib/platformOwnerPrivacy";
 import type { TenantWorkspace } from "@/lib/tenant";
@@ -127,4 +127,38 @@ export async function sampleViewOnly(ws: Pick<TenantWorkspace, "id">): Promise<{
   const mark = await sampleMarkNow();
   const owner = mark?.markedBy ? await ownerOf(ws, await activeMembers(ws), mark.markedBy) : null;
   return { owner: owner ?? { id: "", name: "Sample" } };
+}
+
+/**
+ * Acting on a board stored under someone else's key. A board is stored under its author's key (`workbench_projects.owner`); a person with write reach to
+ * it, who is not the author, saves, maps shots and publishes against that key, as themselves (the actor is recorded on the row and on what the save
+ * implies for the team canvas). The reach is the one rule (`mayReachProject` with "write": the author; the marked sample's editors; and, as the share
+ * modes and admin reach land, a teammate who may edit and an admin), never a rule of this file's own.
+ *
+ * `claimed` is the owner a request names (`owner` in the body); absent, or the person's own id, is their own board and nothing is asked. Otherwise the
+ * board must exist under that key and be writable for the person; anything else is `refused`, and the caller answers it exactly as it answers a
+ * write to a board that is not theirs (`view-only` naming the maker when the board is shared and visible, otherwise not found), so a refusal never
+ * says whether a private board is there.
+ */
+export async function boardKeyFor(
+  ws: Pick<TenantWorkspace, "id">,
+  actor: { id: string; role?: string },
+  claimed: string | undefined,
+  draftId: string,
+): Promise<{ owner: string } | { refused: true }> {
+  if (!claimed || claimed === actor.id) return { owner: actor.id };
+  const owner = await resolveMemberId(ws, claimed);
+  if (owner === actor.id) return { owner: actor.id };
+  const draft = await readDraft(owner, draftId);
+  const production = draft?.project.productionProjectId;
+  if (!production || !(await mayReachProject(actor, production, "write"))) return { refused: true };
+  return { owner };
+}
+
+/**
+ * Who may change a board's sharing: its author (admins join with the admin rule, one line here). Not a teammate who may edit its cards, and not
+ * anyone through a save: the flags are the server's (lib/workbench/records.ts › setBoardSharing).
+ */
+export function maySetSharing(actor: { id: string; role?: string }, storageOwner: string): boolean {
+  return actor.id === storageOwner;
 }
