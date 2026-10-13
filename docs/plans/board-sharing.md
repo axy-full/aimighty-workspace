@@ -79,3 +79,32 @@ The owner's decisions on 13 Oct are in docs/redesign-plan.md. This plan was read
 6. **All boards:** the admins' view of every board in the workspace, not on Home (PR 5).
 7. **The view-only bar for an admin on someone's private board, with an Edit action (PR 1 and 3).**
 Each must pass the one-design and UI-names guards. No new style sheet.
+
+## v15: the design for board sharing (approved by the owner, 13 Oct)
+v15 is v14 plus board sharing, and it replaces v14 as THE design (design/particl-prototype-15; v12 stays as reference). Each screen part is built from v15, with the owner's fixes:
+1. "Move this board to…" and "Move <name>'s boards to…" are truly CENTRED sheets. The prototype anchors their corner at the screen centre, which is a bug.
+2. "Move <name>'s boards to…" includes the acting admin themself ("You") in the picker.
+3. The "Private" tag is at least 12 px (the prototype has 11 px).
+4. The avatar shows the signed-in person's real initials.
+5. Placeholder names never ship: Northwind, Lena, Sam, Noor, Jonas, Maggi, Dune, Canva. A test asserts none of them appear in the app's code or copy.
+
+**Order:** server-side parts first, then screens. Each PR has tests, an Opus privacy review, screenshots at 1440×900 and 1280×800, and is NEEDS AKSHAY. It all comes after deploy #2 and deploy #3.
+
+### v15 items mapped to PRs
+| v15 item | PR |
+|---|---|
+| 1 Share submenu (Not shared / Can view / Can edit, ticked; others see it disabled with "Only the owner or an admin can change sharing") | 6 (server), 10 (screen) |
+| 2 Share-state icon on board cards (lock / eye / two-person, with a tooltip) | 10 |
+| 3 "Viewed by <admin> · date" (and "Edited by … (admin)") history line | 1 (server and audit), 10 or its own small screen PR |
+| 4 Who's editing: an avatar stack (max 3 + "+N"), ring = active, hover lists editing/viewing | 8 (live presence), 10 |
+| 5 A card someone else is editing: an outline in their colour, plus initials | 8 |
+| 6 "Changed since you opened it" bar: Reload (filled) · Keep my version (quiet); the stage's next action turns outline | 8 |
+| 7 Move this board to… (centred sheet; members picker; Undo toast for 10 s) | 4 (server), 5 (screen) |
+| 8 All boards chip for admins on Home (owner line, Private tag ≥12 px); members never see it | 1 (server), 5 (screen) |
+| 9 Admin view bar on a member's private board: "Edit anyway" (adds "Edited by … (admin)") and × | 1 and 3 (server), 5 (screen) |
+| 10 Others' private boards gone from Home, ⌘K and the + board picker (except admins' All boards) | 1 (server; partly done by #681/#690) |
+| 11 Make bar: the Make button reserves 124 px so Enhance ⓘ doesn't shift | its own small screen PR (not sharing) |
+| 12 People: "Owner of N boards"; Remove first asks "Move <name>'s boards to…" (picker incl. "You") then "Move and remove" | 4 (server), 5 (screen) |
+| 13 README and screens file | the design PR |
+
+The design PR (lane C) puts v15 in design/, removes v14 and names v15 in the one-design guard, on the owner's direct word.
