@@ -405,3 +405,23 @@ test("the same value changed in two windows: asked, the save is not sent and say
   expect(fine.calls).toEqual(["PUT", "GET", "PUT"]);
   expect(done.project.nodes[0]).toMatchObject({ title: "Renamed by them", text: "Mine" });
 });
+
+test("a held draft, left at the version it opened on, reports the conflict again on every later save (a parked or drained one never fast-forwards over theirs)", async () => {
+  const base = { ...newProject("Held"), nodes: [{ ...node("n1"), text: "Original" }, { ...node("n2"), text: "Two" }] };
+  const theirs = { ...base, nodes: [{ ...base.nodes[0], text: "Their line" }, { ...base.nodes[1], text: "Their two" }] };
+  const mine = { ...base, nodes: [{ ...base.nodes[0], text: "My line" }, base.nodes[1]] };
+  const first = server({ project: theirs, revision: 5 });
+  const error = await writeMergedDraft("/api/workbench", "scope", { base, mine, revision: 4, conflicts: "ask" }).catch((e) => e) as DraftChangedError;
+  expect(error).toBeInstanceOf(DraftChangedError);
+  // What the Rig keeps while held: the merged project on screen, the base and revision it opened on.
+  const held = error.merged;
+  expect(held.nodes.map((n) => n.text)).toEqual(["My line", "Their two"]);
+  for (let round = 0; round < 2; round++) {
+    const again = server({ project: theirs, revision: 5 });
+    const next = await writeMergedDraft("/api/workbench", "scope", { base, mine: held, revision: 4, conflicts: "ask" }).catch((e) => e);
+    expect(next).toBeInstanceOf(DraftChangedError);
+    expect((next as DraftChangedError).conflicts).toMatchObject([{ path: ["nodes", "[id=n1]", "text"], mine: "My line", theirs: "Their line" }]);
+    expect(again.project.nodes[0].text, "theirs survives").toBe("Their line");
+  }
+  expect(first.project.nodes[0].text).toBe("Their line");
+});

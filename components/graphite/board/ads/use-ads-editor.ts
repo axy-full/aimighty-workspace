@@ -11,7 +11,7 @@ import type { DraftEditor } from "@/lib/workspace/use-draft-editor";
  */
 const SAVE_WORDS: Record<RigContext["saveState"], string> = { saved: "Saved", saving: "Saving", held: "Not saved yet", error: "Not saved" };
 
-export function riggedEditor(rig: Pick<RigContext, "status" | "project" | "saveState" | "saveError" | "apply" | "save">): DraftEditor {
+export function riggedEditor(rig: Pick<RigContext, "status" | "project" | "saveState" | "saveError" | "apply" | "save"> & Partial<Pick<RigContext, "changedSince" | "resolveChanged">>): DraftEditor {
   return {
     status: rig.status === "ready" ? "ready" : rig.status === "error" ? "error" : "loading",
     project: rig.project,
@@ -22,10 +22,12 @@ export function riggedEditor(rig: Pick<RigContext, "status" | "project" | "saveS
     ensureSaved: () => rig.save(),
     refresh: async () => { await rig.save(); return rig.project; },
     reload: () => undefined,
+    changed: rig.changedSince ?? null,
+    resolveChanged: rig.resolveChanged ?? (() => undefined),
   };
 }
 
 export function useRiggedEditor(rig: RigContext): DraftEditor {
-  const { status, project, saveState, saveError, apply, save } = rig;
-  return useMemo(() => riggedEditor({ status, project, saveState, saveError, apply, save }), [status, project, saveState, saveError, apply, save]);
+  const { status, project, saveState, saveError, apply, save, changedSince, resolveChanged } = rig;
+  return useMemo(() => riggedEditor({ status, project, saveState, saveError, apply, save, changedSince, resolveChanged }), [status, project, saveState, saveError, apply, save, changedSince, resolveChanged]);
 }

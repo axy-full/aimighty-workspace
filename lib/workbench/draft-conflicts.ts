@@ -53,17 +53,17 @@ export function takeTheirs(project: Project, theirs: Project, conflicts: readonl
   return out;
 }
 
-const WORDS: Record<string, string> = { name: "the board's name", description: "the description", brief: "the brief", script: "the script", direction: "the direction", assets: "the media", nodes: "the cards" };
+const WORDS: Record<string, string> = { name: "the board's name", description: "the description", brief: "the brief", script: "the script", direction: "the direction", assets: "the media", nodes: "the cards", boardStages: "the stages" };
 const humanize = (key: string) => key.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
 
 /** What a conflict is about, for the bar: the card's or file's title when it is inside one, else the field in plain words. */
 export function conflictThing(project: Project, conflict: MergeConflict): string {
   const [top, record] = conflict.path;
-  if ((top === "nodes" || top === "assets") && record && SEGMENT.test(record)) {
+  const ONE: Record<string, string> = { nodes: "a card", assets: "a file", boardStages: "a stage" };
+  if (top && ONE[top] && record && SEGMENT.test(record)) {
     const item = valueAt(project, [top, record]);
-    const title = isRow(item) ? (typeof item.title === "string" && item.title.trim() ? item.title : typeof item.name === "string" ? item.name : "") : "";
-    if (title.trim()) return title.trim().slice(0, 60);
-    return top === "nodes" ? "a card" : "a file";
+    const title = isRow(item) ? [item.title, item.name, item.label].find((v): v is string => typeof v === "string" && v.trim() !== "") ?? "" : "";
+    return title ? title.trim().slice(0, 60) : ONE[top];
   }
   return WORDS[top] ?? humanize(top ?? "the board");
 }

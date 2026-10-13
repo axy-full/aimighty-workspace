@@ -12,7 +12,7 @@
  * The platform owner reads as "Particl support" with an opaque id outside the house (lib/platformOwnerPrivacy.ts), as on the Team page.
  */
 import { db } from "@/lib/db";
-import { DRAFT_PROJECT_PREFIX, draftShareMode, mappedId, mayEditSample, mayReachProject, sampleMarkNow, TEAM_EDIT_SQL, TEAM_SHARED_SQL } from "@/lib/draftProject";
+import { DRAFT_PROJECT_PREFIX, mappedId, mayEditSample, mayReachProject, sampleMarkNow, TEAM_EDIT_SQL, TEAM_SHARED_SQL } from "@/lib/draftProject";
 import { platformDb, platformReady } from "@/lib/platform";
 import { ownerMaskFor, resolveMemberId, supportMemberId } from "@/lib/platformOwnerPrivacy";
 import type { TenantWorkspace } from "@/lib/tenant";
@@ -142,15 +142,13 @@ export async function sampleViewOnly(ws: Pick<TenantWorkspace, "id">): Promise<{
 export async function mayWriteBoard(ws: Pick<TenantWorkspace, "id">, actor: { id: string; role?: string }, owner: string, draftId: string): Promise<boolean> {
   if (!(await activeMembers(ws)).has(owner)) return false;
   const board = mappedId(DRAFT_PROJECT_PREFIX, ws.id, owner, draftId);
-  const grants: (() => Promise<boolean>)[] = [
-    async () => { const mark = await sampleMarkNow(); return !!mark && mark.draftOwner === owner && mark.draftId === draftId && mark.projectId === board && (await mayEditSample(actor.id)); },
-    async () => (await draftShareMode(board)) === "edit",
-  ];
-  let granted = false;
-  for (const grant of grants) if (await grant()) { granted = true; break; }
-  if (!granted) return false;
-  const draft = await readDraft(owner, draftId);
-  return !!draft && draft.project.productionProjectId === board && (await mayReachProject(actor, board, "write"));
+  /* One narrow read of the board's row (its production and whether it is shared for editing), not the board and not a scan of every shared board. */
+  await workbenchReady();
+  const row = (await db().execute({ sql: `SELECT CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END AS production, (${TEAM_EDIT_SQL}) AS edit FROM workbench_projects WHERE key=?`, args: [`${owner}:${draftId}`] })).rows[0];
+  if (!row || row.production !== board) return false;
+  const sampleGrant = async () => { const mark = await sampleMarkNow(); return !!mark && mark.draftOwner === owner && mark.draftId === draftId && mark.projectId === board && (await mayEditSample(actor.id)); };
+  if (Number(row.edit) !== 1 && !(await sampleGrant())) return false;
+  return mayReachProject(actor, board, "write");
 }
 
 /**

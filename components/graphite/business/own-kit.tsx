@@ -6,6 +6,7 @@ import { entryAsset } from "@/lib/production/sequence";
 import { PROJECT_LIMITS } from "@/lib/workbench/project-limits";
 import type { Asset, Project } from "@/lib/workbench/studio";
 import { refreshProjectLibrary, uploadFilesToProject, type LibraryEntry } from "@/lib/workspace/library";
+import { CHANGED_WORDS, changedLine } from "@/lib/workbench/changed-since";
 import type { useDraftEditor } from "@/lib/workspace/use-draft-editor";
 import { SaveFailedError } from '@/lib/workbench/save-then-continue';
 
@@ -118,7 +119,14 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 
 /** What the draft says about its last save: saved, saving, or why not. */
 export function SaveLine({ editor, testId }: { editor: OwnEditor; testId: string }) {
-  return <p className="gx-hint bo-save" role="status" data-testid={testId}>{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</p>;
+  const changed = editor.changed;
+  const [now] = useState(() => Date.now());
+  return (
+    <p className="gx-hint bo-save" role="status" data-testid={testId}>
+      {changed ? changedLine(changed, Math.max(now, changed.at)) : <>{editor.saveState}{editor.error ? ` — ${editor.error}` : ""}{editor.notice ? ` · ${editor.notice}` : ""}</>}
+      {changed ? <> <button type="button" className="gx-link" onClick={() => editor.resolveChanged("reload")} data-testid={`${testId}-reload`}>{CHANGED_WORDS.reload}</button> <button type="button" className="gx-link" onClick={() => editor.resolveChanged("keep")} data-testid={`${testId}-keep`}>{CHANGED_WORDS.keep}</button></> : null}
+    </p>
+  );
 }
 
 /**

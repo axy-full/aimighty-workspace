@@ -74,6 +74,8 @@ import { BoardBar } from "@/components/v12/board/BoardBar";
 import { useOverlay } from "@/components/v12/ui/overlay";
 import { StageRail, type StageEdit } from "@/components/v12/board/StageRail";
 import { StageHeader } from "@/components/v12/board/StageHeader";
+import { CHANGED_WORDS } from "@/lib/workbench/changed-since";
+import { ChangedBar } from "@/components/v12/board/ChangedBar";
 import { StageEmpty } from "@/components/v12/board/StageEmpty";
 import { cleanLanguages } from "@/lib/v12/deliver";
 import { isDubbingLanguage } from "@/lib/workbench/dubbing-options";
@@ -778,8 +780,9 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             readOnly={offline ? "Offline" : gate.readOnly ?? null} onPick={goStage} onEdit={editStages} addBlocked={stageLimit(stages.length)} />
         ) : <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} render={kind === "studio"} />}
         <div className="bd-main" data-testid="board-canvas">
-          {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={viewing ? null : headPrimary} menu={boardMenu} viewOnly={viewing} badge={round ? <RoundBadge board={project.name || "Board"} round={round} /> : null}
+          {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={viewing ? null : headPrimary} menu={boardMenu} viewOnly={viewing} quietPrimary={Boolean(rig.changedSince)} badge={round ? <RoundBadge board={project.name || "Board"} round={round} /> : null}
             onBoard={() => { if (stages[0]) goStage(stages[0].id); }} onStage={() => pick(new Set(), null)} /> : null}
+          {v12Frame && rig.changedSince ? <ChangedBar changed={rig.changedSince} onReload={() => { rig.resolveChanged("reload"); ws.toast(CHANGED_WORDS.reloaded); }} onKeep={() => { rig.resolveChanged("keep"); ws.toast(CHANGED_WORDS.kept); }} /> : null}
           <StageColumn on={v12Frame}>
           {list ? <List ctx={ctx} cards={placed.cards} /> : (
             <BoardCanvas placed={placed} selection={selection} onSelect={pick} onFreeMoved={onFreeMoved} readOnly={offline || Boolean(viewing)} onMoveEnd={onMoveEnd}

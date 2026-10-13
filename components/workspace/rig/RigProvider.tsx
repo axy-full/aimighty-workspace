@@ -79,7 +79,9 @@ import { actingOwnerField, setActingOwner } from "@/lib/workbench/acting-on";
  * `ancestors`: shots an undo put back, as they were when deleted — merged from, if another window has them too.
  * `made`: what the Rig's builds made (shots from boards, inputs, filed takes), as made — merged from likewise.
  */
-type Draft = { project: Project; revision: number; base: Project; writer: DraftWriter; ancestors: Map<string, CanvasNode>; made: MadeRecords; /** A teammate's board, to look at: it takes no edit and is never saved (lib/workbench/team-boards.ts). */ viewOnly?: ViewOnly; /** A teammate's board opened to edit ("Can edit"): whose it is; every save names that owner. */ actingOn?: ActingOn };
+type Draft = { project: Project; revision: number; base: Project; writer: DraftWriter; ancestors: Map<string, CanvasNode>; made: MadeRecords; /** A teammate's board, to look at: it takes no edit and is never saved (lib/workbench/team-boards.ts). */ viewOnly?: ViewOnly; /** A teammate's board opened to edit ("Can edit"): whose it is; every save names that owner. */ actingOn?: ActingOn; /** Someone else's saved change touches a value this window also changed: held with the draft (base and revision stay at what this window opened, so any later save reports the conflict) until the person chooses Reload or Keep my version. */ held?: Held };
+/** The saved version that conflicts (`latest` at `revision`) and the places where it does. */
+type Held = { latest: Project; revision: number; conflicts: MergeConflict[]; at: number };
 /**
  * A project the person left with edits not saved yet: they keep being saved until they are, or the project is back.
  * `inflight` is the attempt out now (what it saved, or null); coming back waits for it.
@@ -223,10 +225,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const [saveState, setSaveState] = useState<RigContext["saveState"]>("saved");
   const [saveError, setSaveError] = useState<string | null>(null);
   /* A saved change to a value this window also changed (see RigContext.changedSince): held until the person chooses. */
-  const [heldSince, setChangedSince] = useState<(NonNullable<RigContext["changedSince"]> & { id: string }) | null>(null);
-  const changedSince = heldSince && heldSince.id === projectId ? heldSince : null;
-  const changedRef = useRef<{ id: string; latest: Project; revision: number; conflicts: MergeConflict[] } | null>(null);
-  const holdRef = useRef<(latest: Project, revision: number, conflicts: MergeConflict[]) => void>(() => {});
+  const [heldWho, setHeldWho] = useState<{ latest: Project; by: string | null; at: number } | null>(null);
   const draftRef = useRef<Draft | null>(null);
   const dirty = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -265,7 +264,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     chain.current = chain.current.catch(() => false).then(async () => {
       if (!draftRef.current) return false;
       /* A change of someone else's to the same value is waiting for the person's choice: nothing is sent over it. */
-      if (changedRef.current && changedRef.current.id === draftRef.current?.project.id && !options.keep) return false;
+      if (draftRef.current.held && !options.keep) return false;
       if (!dirty.current && !options.force) return true;
       /* The switch route has been asked (lib/shell/switch-workspace.ts): nothing more goes to this workspace. */
       if (!sendsAllowed()) return !dirty.current;
@@ -299,9 +298,9 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
           const now = draftRef.current;
           if (now && now.project.id === current.project.id) {
             const project = rebaseProject(current.project, now.project, err.merged);
-            setDraft({ ...now, project, base: err.latest, revision: err.revision });
+            setDraft({ ...now, project, held: { latest: err.latest, revision: err.revision, conflicts: err.conflicts, at: Date.now() } });
             dirty.current = true;
-            holdRef.current(err.latest, err.revision, err.conflicts);
+            setSaveState("held");
           }
           return false;
         }
@@ -381,13 +380,22 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     const name = draft.project.name || "the last project";
     void (async () => {
       for (let attempt = 0; !entry.stop; attempt++) {
+        /* A change of someone else's to the same value is waiting for the person's choice: nothing is sent over it; the hold comes back with the draft. */
+        if (entry.draft.held) { entry.stop = true; toast(`${name} changed while you were away. Open it to choose.`); return; }
         /* A workspace switch has asked its route: nothing more goes to this workspace (if it does not happen, this goes on). */
         if (!sendsAllowed()) {
           await new Promise<void>((resolve) => { entry.wake = resolve; setTimeout(resolve, RETRY_MS); });
           continue;
         }
-        const step = writeMergedDraft(API, scope, { base: draft.base, mine: draft.project, revision: draft.revision, writer: draft.writer, ancestors: draft.ancestors, made: draft.made, owner: draft.actingOn?.owner.id })
+        const step = writeMergedDraft(API, scope, { base: draft.base, mine: draft.project, revision: draft.revision, writer: draft.writer, ancestors: draft.ancestors, made: draft.made, owner: draft.actingOn?.owner.id, conflicts: "ask" })
           .catch((err: unknown) => {
+            if (err instanceof DraftChangedError) {
+              /* Someone saved a change to the same value while this was left: not sent; the hold stays with the draft, shown when the project is opened. */
+              entry.draft = { ...entry.draft, project: err.merged, held: { latest: err.latest, revision: err.revision, conflicts: err.conflicts, at: Date.now() } };
+              entry.stop = true;
+              toast(`${name} changed while you were away. Open it to choose.`);
+              return null;
+            }
             if (!(err instanceof DraftRequestError && (err.retryable || err.uncertain))) {
               /* Kept as they are: opening the project again shows them, unsaved, with why. */
               entry.stop = true;
@@ -430,7 +438,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
         if (leaving && leaving.project.id !== projectId && dirty.current) park(leaving);
         dirty.current = !!back;
         retries.current = 0;
-        setSaveState(back ? "saving" : "saved");
+        setSaveState(back ? (next?.held ? "held" : "saving") : "saved");
         setSaveError(null);
         setDraft(next);
         setStatus("ready");
@@ -469,40 +477,47 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       try { data = await draftRequest(`${API}/projects?id=${encodeURIComponent(id)}`, scope); }
       catch { return true; }
       const now = draftRef.current;
-      if (!data.project || !now || now.project.id !== id || !(data.revision > now.revision) || now.writer.unconfirmed) return true;
+      if (!data.project || !now || now.project.id !== id || !(data.revision > Math.max(now.revision, now.held?.revision ?? 0)) || now.writer.unconfirmed) return true;
       const conflicts: MergeConflict[] = [];
       const project = mergeDraft(now.base, now.project, data.project, { ancestors: now.ancestors, made: now.made, conflicts });
-      setDraft({ ...now, project, base: data.project, revision: data.revision });
+      /* A value changed in both windows: this window's stays on screen, nothing is saved over the other's until the person chooses, and the draft keeps the version it
+         opened on (base, revision), so any later save of it, from anywhere, reports the same conflict. */
+      if (conflicts.length) {
+        setDraft({ ...now, project, held: { latest: data.project, revision: data.revision, conflicts, at: Date.now() } });
+        dirty.current = true;
+        setSaveState("held");
+      } else setDraft({ ...now, project, base: data.project, revision: data.revision });
       if (project !== now.project) catchUpRef.current?.(now.project, project);
-      /* A value changed in both windows: this window's stays on screen, and nothing is saved over the other's until the person chooses. */
-      if (conflicts.length) { dirty.current = true; holdRef.current(data.project, data.revision, conflicts); }
       return true;
     });
   }, [scope, setDraft]);
 
-  /* Someone else's saved change touches a value this window also changed: held (nothing is sent), named, until the person chooses. Who saved it is asked of the server
-     (the name this workspace may read); a failed ask still shows the bar, without a name. */
-  const hold = useCallback((latest: Project, revision: number, conflicts: MergeConflict[]) => {
-    const current = draftRef.current;
-    if (!current) return;
-    changedRef.current = { id: current.project.id, latest, revision, conflicts };
-    setSaveState("held");
-    const things = conflictThings(current.project, conflicts);
-    setChangedSince({ id: current.project.id, by: null, at: Date.now(), things });
-    const ownerQuery = current.actingOn ? `&owner=${encodeURIComponent(current.actingOn.owner.id)}` : "";
-    void draftRequest<{ by: string | null; updatedAt: number; mine: boolean }>(`${API}/projects?id=${encodeURIComponent(current.project.id)}&head=1${ownerQuery}`, scope)
-      .then((head) => { if (changedRef.current?.latest === latest) setChangedSince({ id: current.project.id, by: head.mine ? null : head.by, at: head.updatedAt, things }); })
+  /* Who saved the change that is held (the name this workspace may read) is asked of the server; a failed ask still shows the bar, without a name. */
+  const heldLatest = draft?.held?.latest ?? null, heldOwner = draft?.actingOn?.owner.id ?? null, heldId = draft?.project.id ?? null;
+  useEffect(() => {
+    if (!heldLatest || !heldId) return;
+    let live = true;
+    const ownerQuery = heldOwner ? `&owner=${encodeURIComponent(heldOwner)}` : "";
+    void draftRequest<{ by: string | null; updatedAt: number; mine: boolean }>(`${API}/projects?id=${encodeURIComponent(heldId)}&head=1${ownerQuery}`, scope)
+      .then((head) => { if (live) setHeldWho({ latest: heldLatest, by: head.mine ? null : head.by, at: head.updatedAt }); })
       .catch(() => {});
-  }, [scope]);
-  useEffect(() => { holdRef.current = hold; }, [hold]);
+    return () => { live = false; };
+  }, [heldLatest, heldId, heldOwner, scope]);
+  const changedSince = useMemo<RigContext["changedSince"]>(() => {
+    const held = draft?.held;
+    if (!held || !draft || draft.project.id !== projectId) return null;
+    const who = heldWho && heldWho.latest === held.latest ? heldWho : null;
+    return { by: who?.by ?? null, at: who?.at ?? held.at, things: conflictThings(draft.project, held.conflicts) };
+  }, [draft, projectId, heldWho]);
 
   /* The person's choice: take the saved version at those places (the rest of this window's edits stay and are saved), or save this window's over it. */
   const resolveChanged = useCallback((choice: "reload" | "keep") => {
-    const held = changedRef.current, current = draftRef.current;
-    if (!held || !current) return;
-    changedRef.current = null;
-    setChangedSince(null);
-    if (choice === "reload") setDraft({ ...current, project: takeTheirs(current.project, held.latest, held.conflicts) });
+    const current = draftRef.current;
+    const held = current?.held;
+    if (!current || !held) return;
+    const rest: Draft = { ...current };
+    delete rest.held;
+    setDraft(choice === "reload" ? { ...rest, project: takeTheirs(current.project, held.latest, held.conflicts) } : rest);
     dirty.current = true;
     setSaveState("saving");
     void flush({ keep: choice === "keep" });
@@ -511,7 +526,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   /* Another window saved: the live room says so (a hint; the server's revision is what counts), and with no room the head is asked every few seconds. */
   const onSavedHint = useCallback((revision: number) => {
     const current = draftRef.current;
-    if (current && revision > current.revision) catchUpSaved(current.project.id);
+    if (current && revision > Math.max(current.revision, current.held?.revision ?? 0)) catchUpSaved(current.project.id);
   }, [catchUpSaved]);
 
   /* Back on the Rig after another page of this tab saved the draft (a Studio stage, Marketing): it catches up before
@@ -559,7 +574,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       if (!current || current.viewOnly || current.project.id !== projectId || document.visibilityState === "hidden") return;
       const ownerQuery = current.actingOn ? `&owner=${encodeURIComponent(current.actingOn.owner.id)}` : "";
       void draftRequest<{ revision: number }>(`${API}/projects?id=${encodeURIComponent(projectId)}&head=1${ownerQuery}`, scope)
-        .then((head) => { const now = draftRef.current; if (now && now.project.id === projectId && head.revision > now.revision) catchUpSaved(projectId); })
+        .then((head) => { const now = draftRef.current; if (now && now.project.id === projectId && head.revision > Math.max(now.revision, now.held?.revision ?? 0)) catchUpSaved(projectId); })
         .catch(() => {});
     }, HEAD_POLL_MS);
     return () => clearInterval(timer);
@@ -996,7 +1011,12 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       for (const [id, entry] of [...parked.current]) {
         if (entry.stop) {
           /* Refused when it was left: once more, here. Its loop has ended, so nothing else is sending it. */
-          const saved = await writeMergedDraft(API, scope, { base: entry.draft.base, mine: entry.draft.project, revision: entry.draft.revision, writer: entry.draft.writer, ancestors: entry.draft.ancestors, made: entry.draft.made, owner: entry.draft.actingOn?.owner.id }).catch(() => null);
+          /* Held for the person's choice (or found to conflict now): never written over the other save; the hold stays with the draft. */
+          if (entry.draft.held) return false;
+          const saved = await writeMergedDraft(API, scope, { base: entry.draft.base, mine: entry.draft.project, revision: entry.draft.revision, writer: entry.draft.writer, ancestors: entry.draft.ancestors, made: entry.draft.made, owner: entry.draft.actingOn?.owner.id, conflicts: "ask" }).catch((err: unknown) => {
+            if (err instanceof DraftChangedError) entry.draft = { ...entry.draft, project: err.merged, held: { latest: err.latest, revision: err.revision, conflicts: err.conflicts, at: Date.now() } };
+            return null;
+          });
           if (saved && parked.current.get(id) === entry) parked.current.delete(id);
         } else {
           /* Still being saved on its own: its next try now rather than after its wait, and this waits for it. */
