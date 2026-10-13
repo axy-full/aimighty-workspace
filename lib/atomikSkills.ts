@@ -1,3 +1,4 @@
+import { chatIsMine } from "./atomikAccess";
 import type { Client, InStatement } from "@libsql/client";
 import { db, ready, now, id as newId } from "./db";
 import { requireTenant } from "./tenant";
@@ -181,16 +182,16 @@ export function engineLabel(id: string, allowed: readonly Pick<Engine, "id" | "l
  * A step on the connected account, a library step or one that worked from
  * attached media is not counted (lib/atomikSkillsText.ts › unkeptReason).
  */
-export async function savableRuns(projectId: unknown): Promise<SavableRun[]> {
+export async function savableRuns(projectId: unknown, viewer: string): Promise<SavableRun[]> {
   await ready();
   const project = typeof projectId === "string" && PROJECT_ID.test(projectId) ? projectId : null;
   const rs = await db().execute({
     sql: `SELECT c.id, c.title, c.project_id, c.updated_at, COUNT(s.id) AS n FROM atomik_chats c
           JOIN atomik_steps s ON s.chat_id = c.id AND s.status <> 'rejected' AND s.model NOT LIKE 'connected:%'
             AND s.model NOT IN (${KEY_STEP_MODELS.map(() => "?").join(",")}) AND (s.refs IS NULL OR s.refs IN ('', '[]'))
-          WHERE c.deleted = 0${project ? " AND c.project_id = ?" : ""}
+          WHERE c.deleted = 0 AND c.created_by = ?${project ? " AND c.project_id = ?" : ""}
           GROUP BY c.id ORDER BY c.updated_at DESC LIMIT 12`,
-    args: [...KEY_STEP_MODELS, ...(project ? [project] : [])],
+    args: [...KEY_STEP_MODELS, viewer, ...(project ? [project] : [])],
   });
   return rs.rows.map((r) => ({ chatId: String(r.id), title: String(r.title ?? "New chat"), projectId: text(r.project_id), steps: Number(r.n ?? 0), updatedAt: Number(r.updated_at ?? 0) }));
 }
@@ -202,8 +203,10 @@ function latestPlan(loaded: { messages: { id: string; role: string }[]; steps: S
   return new Set(loaded.steps.filter((s) => !last || s.messageId === last.id).map((s) => s.id));
 }
 
-async function runOf(chatId: unknown) {
+async function runOf(chatId: unknown, viewer: string) {
   if (typeof chatId !== "string" || !/^ach_[A-Za-z0-9]{4,60}$/.test(chatId)) throw new SkillError("That run is gone.", 404);
+  /* A run is its chat's person's (lib/atomikAccess.ts). */
+  if (!(await chatIsMine(chatId, { id: viewer }))) throw new SkillError("That run is gone.", 404);
   const loaded = await getChat(chatId);
   if (!loaded) throw new SkillError("That run is gone.", 404);
   return loaded;
@@ -215,8 +218,8 @@ async function runOf(chatId: unknown) {
  * person's own request that its prompts repeat, as suggested parameters.
  * Read-only and free.
  */
-export async function draftFromRun(chatId: unknown): Promise<SkillDraft> {
-  const loaded = await runOf(chatId);
+export async function draftFromRun(chatId: unknown, viewer: string): Promise<SkillDraft> {
+  const loaded = await runOf(chatId, viewer);
   const allowed = await engines();
   const steps = loaded.steps.filter((s) => s.status !== "rejected");
   const latest = latestPlan(loaded);
@@ -272,7 +275,7 @@ const FULL = `A workspace keeps ${SKILL_LIMITS.activeSkills} skills. Archive som
 export async function saveSkillFromRun(input: {
   chatId: unknown; stepIds?: unknown; parameters?: unknown; name?: unknown; slug?: unknown; description?: unknown; scope?: unknown;
 }, by: string): Promise<SkillView> {
-  const loaded = await runOf(input.chatId);
+  const loaded = await runOf(input.chatId, by);
   let chosen: Step[];
   if (Array.isArray(input.stepIds)) {
     const ids = [...new Set(input.stepIds.map(String))];
@@ -547,7 +550,7 @@ export async function runSkill(id: unknown, input: {
   const chatId = typeof input.chatId === "string" && input.chatId ? input.chatId : null;
   let projectId: string | null = null;
   if (chatId) {
-    const chat = (await db().execute({ sql: "SELECT id, project_id, status FROM atomik_chats WHERE id = ? AND deleted = 0", args: [chatId] })).rows[0] as Row | undefined;
+    const chat = (await db().execute({ sql: "SELECT id, project_id, status FROM atomik_chats WHERE id = ? AND deleted = 0 AND created_by = ?", args: [chatId, by] })).rows[0] as Row | undefined;
     if (!chat) throw new SkillError("That chat is gone.", 404);
     if (chat.status === "running") throw new SkillError("Atomik is still planning in this chat. Run the skill when it has answered.", 409);
     projectId = text(chat.project_id);

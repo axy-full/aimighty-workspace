@@ -36,6 +36,8 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
     await workbenchReady();
     const draft = await readDraft(caller.userId, solution.projectId);
     if (!draft) throw new CrewError("Save your project first.", 404);
+    /* The sample's copies and the board it was marked from take nothing sent onward (lib/demo/readonly.server.ts). */
+    { const { sampleDraftRefusal } = await import("@/lib/demo/readonly.server"); const refused = await sampleDraftRefusal(caller.userId, draft.project); if (refused) return refused; }
     const project = { ...draft.project };
     let placed: { nodeId: string; title: string } | null = null;
     if (to === "brief") project.brief = `${project.brief.trimEnd()}${project.brief.trim() ? "\n\n" : ""}Crew · ${solution.text}`;

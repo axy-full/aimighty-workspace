@@ -132,9 +132,20 @@ test("settled per project counts only settled meter rows of this workspace", asy
 });
 
 test("an admin reads names; a workspace not billed in credits gets no figures", async () => {
+  /* A chat is its own person's (owner, 12 Oct): the admin is not shown the member's chat run at all, and the member reads the admin's press as a teammate's. */
   const admin = await read(A, { id: "u_admin", role: "admin" }, "prod_a");
-  const keyframes = admin.runs.find((r) => r.id === "thread:ach_a")!.steps.find((s) => s.title === "Keyframes")!;
-  expect(keyframes).toMatchObject({ by: "Admin", byYou: true });
+  expect(admin.runs.find((r) => r.id === "thread:ach_a")).toBeUndefined();
+  const own = await read(A, { id: "u_member", role: "member" }, "prod_a");
+  const keyframes = own.runs.find((r) => r.id === "thread:ach_a")!.steps.find((s) => s.title === "Keyframes")!;
+  expect(keyframes).toMatchObject({ by: "Teammate", byYou: false });
+  /* The admin still reads a person's name where the record is the board's (an admin's own records are theirs, a member's press is named to them): a render the member approved. */
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  await runInTenant(A, () => db().execute({ sql: `INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,prepared,state,quote_credits,band,approved_by,approved_at,job_id,credits_settled,created_at,updated_at)
+              VALUES(?,?,5,'render','Closing shot','take','[]','done',7,1,'u_member',?,?,7,?,?)`, args: [`${RUN}:5`, RUN, now - 14_000, ids.auto, now - 20_000, now - 5_000] }));
+  const named = await read(A, { id: "u_admin", role: "admin" }, "prod_a");
+  expect(named.runs.find((r) => r.id === `board:${RUN}`)!.steps.find((s) => s.title === "Closing shot")).toMatchObject({ by: "Member", byYou: false });
+  await runInTenant(A, () => db().execute({ sql: "DELETE FROM rig_agent_steps WHERE id=?", args: [`${RUN}:5`] }));
   const house = await read(HOUSE, { id: "u_member", role: "member" }, "prod_a");
   expect(house.inCredits).toBe(false);
   expect(house.projects).toEqual([]);

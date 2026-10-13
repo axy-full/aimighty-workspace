@@ -98,8 +98,19 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   const scopeProblem = workbenchScopeProblem(req, requireTenant().id, got.user.id, !got.token);
   if (scopeProblem) return NextResponse.json({ error: scopeProblem }, { status: 409 });
   await ready();
-  const id = await takeIdFor(got.user, (await params).id);
+  const asked = (await params).id;
   const body = await req.json().catch(() => ({}));
+  /* Nothing is written into the marked sample production, by anyone: not a take's move into it or out of it, nor its filing against one of its shots (lib/demo/readonly.server.ts).
+     Read from the id as it was asked, before the private-board rule below reads such a take as no take: the sample answers "view only" to everyone. */
+  {
+    const inTake = (await db().execute({ sql: "SELECT project_id FROM generations WHERE id=?", args: [asked] })).rows[0];
+    const named = (value: unknown) => (typeof value === "string" && value ? value : null);
+    const shotProject = named(body.shotId) ? (await getShot(String(body.shotId)))?.projectId ?? null : null;
+    /* Loaded here: only this edit asks, the delete below never does. */
+    const { sampleWriteRefusal } = await import("@/lib/demo/readonly.server");
+    for (const project of [inTake?.project_id == null ? null : String(inTake.project_id), named(body.projectId), shotProject]) { const refused = await sampleWriteRefusal(project); if (refused) return refused; }
+  }
+  const id = await takeIdFor(got.user, asked);
   /* A review is checked before anything is written: a state the trail knows
      (an unknown word used to clear a sign-off), a take still in the project,
      and a mark only on a take that finished — a render in flight, held or
@@ -273,7 +284,15 @@ export const DELETE = withTenant(async function DELETE(req: Request, { params }:
   const scopeProblem = workbenchScopeProblem(req, requireTenant().id, got.user.id, !got.token);
   if (scopeProblem) return NextResponse.json({ error: scopeProblem }, { status: 409 });
   await ready();
-  const id = await takeIdFor(got.user, (await params).id);
+  const asked = (await params).id;
+  /* The sample's takes are nobody's to delete: 403 view-only for everyone, before the private-board answer (lib/demo/readonly.server.ts). */
+  {
+    const inTake = (await db().execute({ sql: "SELECT project_id FROM generations WHERE id=?", args: [asked] })).rows[0];
+    const { sampleWriteRefusal } = await import("@/lib/demo/readonly.server");
+    const refusedSample = await sampleWriteRefusal(inTake?.project_id == null ? null : String(inTake.project_id));
+    if (refusedSample) return refusedSample;
+  }
+  const id = await takeIdFor(got.user, asked);
   await workbenchReady();
   await mediaDeletionReady();
   const refused = await notYours(got.user, id);

@@ -1,7 +1,7 @@
 "use client";
 import { spendAttrsOf } from "@/lib/spend";
 import { useState } from "react";
-import { pressable, sortQueue, type QueueItem } from "@/lib/control-room/queue";
+import { pressable, sortQueue, viaPlan, type QueueItem } from "@/lib/control-room/queue";
 import type { PressOutcome } from "@/lib/control-room/approve";
 import { shortByWords } from "@/lib/shell/price-words";
 import { Price, usePriceTitle } from "../Price";
@@ -20,7 +20,7 @@ function Row({ item, now, onApprove, onOpen, onTopUp }: {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const title = usePriceTitle(item.price);
-  const thread = item.approve?.kind === "thread";
+  const thread = viaPlan(item);
   const short = (item.shortBy ?? 0) > 0 && item.price && item.price.kind !== "free" ? shortByWords(0, { kind: "exact", credits: item.shortBy! }) : null;
   const canPress = pressable(item) && !thread;
   const press = async () => {
@@ -44,7 +44,7 @@ function Row({ item, now, onApprove, onOpen, onTopUp }: {
         {problem ? <span className="gx-hm-problem" role="alert" data-testid="home-waiting-problem">{problem}</span> : null}
       </span>
       <span className="gx-hm-wait-actions">
-        <button type="button" className="gx-hm-btn" onClick={onOpen} data-testid="home-waiting-open">Open</button>
+        {item.open.kind === "none" ? (item.price && !pressable(item) ? <span className="gx-hm-wait-line" title={title ?? undefined} data-testid="home-waiting-price"><Price value={item.price} /></span> : null) : <button type="button" className="gx-hm-btn" onClick={onOpen} data-testid="home-waiting-open">Open</button>}
         {why ? <span className="gx-hm-wait-why" data-testid="home-waiting-why">{why}</span>
           : canPress ? (
             <button type="button" className="gx-hm-btn gx-hm-approve" onClick={() => void press()} disabled={busy || Boolean(short)} aria-busy={busy || undefined}

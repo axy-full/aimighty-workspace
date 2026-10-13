@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
 import { patchProduction, type ProductionStatus } from "@/lib/productions";
 import { db, ready } from "@/lib/db";
+import { sampleProductionRefusal } from "@/lib/demo/readonly.server";
 import { productionReachable } from "@/lib/draftProject";
 import { NOT_YOURS, mayChangeProduction } from "@/lib/workAccess";
 
@@ -22,6 +23,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: Ctx) {
   const status: ProductionStatus | undefined = b.status === "delivered" || b.status === "active" ? b.status : undefined;
   /* A production whose every board is a private one of someone else's is, to this person, a production that is not there (asked before who may change it). */
   await ready();
+  /* The sample's own production is nobody's to change (lib/demo/readonly.server.ts). */
+  { const refused = await sampleProductionRefusal(id); if (refused) return refused; }
   if (!(await productionReachable(got.user, id))) return NextResponse.json({ error: "No such production." }, { status: 404 });
   /* A name, a client or a status of a production that is there is changed by an admin, or the one person who made every board in it (lib/workAccess.ts); an unknown id is answered as it always was. */
   if (typeof b.name === "string" || typeof b.client === "string" || status !== undefined) {
