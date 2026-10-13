@@ -339,12 +339,21 @@ test("the registry tools list_trash, remove_to_trash and restore_from_trash run 
   let who: Actor = MATE_TOKEN;
   const list = loadRoute<typeof import("../../app/api/boards/[id]/trash/route")>("app/api/boards/[id]/trash/route.ts", () => who);
   const restore = loadRoute<typeof import("../../app/api/boards/[id]/trash/[entryId]/restore/route")>("app/api/boards/[id]/trash/[entryId]/restore/route.ts", () => who);
+  const wsList = loadRoute<typeof import("../../app/api/trash/route")>("app/api/trash/route.ts", () => who);
+  const wsRestore = loadRoute<typeof import("../../app/api/trash/[entryId]/restore/route")>("app/api/trash/[entryId]/restore/route.ts", () => who);
   /* The caller the MCP bridge makes (lib/mcp.ts makeCaller), answered by the real routes for this token's person. */
   const caller = (actor: Actor) => async (pathname: string, init: { method?: string; body?: unknown } = {}) => {
     who = actor;
     return tenant.runInTenant(ws, async () => {
       if (pathname === "/api/projects") return { projects: [{ id: "prod_open", name: "Ordinary" }] };
       const url = new URL(`https://particl.test${pathname}`);
+      const w = /^\/api\/trash(?:\/([^/]+)\/restore)?$/.exec(url.pathname);
+      if (w) {
+        const res = w[1] ? await wsRestore.POST(new Request(url, { method: "POST" }), { params: Promise.resolve({ entryId: w[1] }) }) : await wsList.GET(new Request(url), undefined as never);
+        const json = (await res.json()) as Record<string, unknown>;
+        if (!res.ok) throw new Error(String(json.error));
+        return json;
+      }
       const m = /^\/api\/boards\/([^/]+)\/trash(?:\/([^/]+)\/restore)?$/.exec(url.pathname)!;
       const req = new Request(url, { method: init.method ?? "GET", body: init.body ? JSON.stringify(init.body) : undefined });
       const res = m[2] ? await restore.POST(req, { params: Promise.resolve({ id: m[1], entryId: m[2] }) }) : init.method === "POST" ? await list.POST(req, { params: Promise.resolve({ id: m[1] }) }) : await list.GET(req, { params: Promise.resolve({ id: m[1] }) });
@@ -365,4 +374,79 @@ test("the registry tools list_trash, remove_to_trash and restore_from_trash run 
   expect(await tool(ADMIN_TOKEN, "restore_from_trash", { project: "Ordinary", entry })).toMatch(/back\. Nothing was charged/);
   expect(await tool(MATE_TOKEN, "list_trash", { project: "Ordinary" })).toBe("The Trash is empty.");
   await expect(tool(MATE_TOKEN, "remove_to_trash", { project: "Ordinary", kind: "note", id: "x" })).rejects.toThrow(/take or shot/);
+  /* With no project, the workspace's Trash: a take its person unfiled and removed. */
+  const { cleanupDeletedGenerations } = await import("../../lib/mediaDeletion"); void cleanupDeletedGenerations;
+  await tenant.runInTenant(ws, async () => { const db = (await import("../../lib/db")).db(); await db.execute({ sql: "UPDATE generations SET project_id=NULL WHERE id=?", args: [`t_mate_${run}`] }); const { workbenchTransaction } = await import("../../lib/workbench/records"); const { markGenerationDeletion, mediaDeletionReady } = await import("../../lib/mediaDeletion"); await mediaDeletionReady(); await workbenchTransaction((tx) => markGenerationDeletion(tx, `t_mate_${run}`, Date.now(), "u_mate")); }, { user: MATE.user });
+  const unfiled = await tool(MATE_TOKEN, "list_trash", {});
+  expect(unfiled).toContain(`take · Title t_mate_${run}`);
+  const unfiledEntry = unfiled.split(" · ")[0];
+  expect(await tool(MATE_TOKEN, "list_trash", {})).not.toBe("The Trash is empty.");
+  expect(await tool(MATE_TOKEN, "restore_from_trash", { entry: unfiledEntry })).toMatch(/back\. Nothing was charged/);
+  expect(await tool(MATE_TOKEN, "list_trash", {})).toBe("The Trash is empty.");
+});
+
+test("an unfiled take removed by a person is in the workspace's Trash: its bytes are kept, its remover (and an admin) can put it back, nobody else can see it", async () => {
+  const ws = workspace(`bt-k-${run}`);
+  const { tenant, database } = await fixture(ws);
+  let who: Actor = MATE;
+  const jobs = loadRoute<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts", () => who);
+  const wsList = loadRoute<typeof import("../../app/api/trash/route")>("app/api/trash/route.ts", () => who);
+  const wsRestore = loadRoute<typeof import("../../app/api/trash/[entryId]/restore/route")>("app/api/trash/[entryId]/restore/route.ts", () => who);
+  const as_ = <R>(actor: Actor, fn: () => Promise<R>) => { who = actor; return tenant.runInTenant(ws, fn, { user: actor.user, token: actor.token as never }); };
+  const patch = (actor: Actor, id: string, body: unknown) => as_(actor, async () => { const res = await jobs.PATCH(new Request(`https://particl.test/api/jobs/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json", "X-Workbench-Scope": `particl-active-${ws.id}-${actor.user.id}` }, body: JSON.stringify(body) }), { params: Promise.resolve({ id }) }); return res.status; });
+  const items = (actor: Actor) => as_(actor, async () => ((await (await wsList.GET(new Request("https://particl.test/api/trash"), undefined as never)).json()) as { items: { id: string; itemId: string; restorable: boolean }[] }).items);
+  const restore = (actor: Actor, entry: string) => as_(actor, async () => { const res = await wsRestore.POST(new Request("https://particl.test/x", { method: "POST" }), { params: Promise.resolve({ entryId: entry }) }); return [res.status, await res.json()] as const; });
+  const take = `t_mate_${run}`;
+  const row = () => tenant.runInTenant(ws, async () => (await database.db().execute({ sql: "SELECT deleted, project_id, stored_url, bytes FROM generations WHERE id=?", args: [take] })).rows[0], { user: user("u_owner") });
+  /* The person unfiles their take, then removes it. */
+  expect(await patch(MATE, take, { projectId: null })).toBe(200);
+  expect((await row()).project_id).toBeNull();
+  expect(await patch(MATE, take, { trashed: true })).toBe(200);
+  expect(Number((await row()).deleted)).toBe(1);
+  /* Its bytes are kept through the clean-up. */
+  const { cleanupDeletedGenerations } = await import("../../lib/mediaDeletion");
+  await tenant.runInTenant(ws, () => cleanupDeletedGenerations(20), { user: user("u_owner") });
+  expect(await row()).toMatchObject({ stored_url: `/api/media/${take}`, bytes: 1000 });
+  /* Its remover lists it; an admin does; another member does not, and cannot put it back. */
+  const mine = await items(MATE);
+  expect(mine.map((i) => i.itemId)).toEqual([take]);
+  expect(mine[0].restorable).toBe(true);
+  expect((await items(ADMIN)).map((i) => i.itemId)).toEqual([take]);
+  expect(await items(OWNER)).toEqual([]);
+  expect((await restore(OWNER, mine[0].id))[0]).toBe(404);
+  /* A take in the Trash is not filed anywhere until it is put back. */
+  expect(await patch(MATE, take, { projectId: "prod_open" })).toBe(409);
+  /* Put back by its remover: it is back, unfiled, whole, and the Trash is empty. */
+  expect((await restore(MATE, mine[0].id))[0]).toBe(200);
+  expect(await row()).toMatchObject({ deleted: 0, stored_url: `/api/media/${take}`, bytes: 1000 });
+  expect(await items(MATE)).toEqual([]);
+  expect((await restore(MATE, mine[0].id))[0]).toBe(404);
+  /* An admin puts one back that a member removed, too. */
+  expect(await patch(MATE, take, { trashed: true })).toBe(200);
+  const again = (await items(ADMIN))[0];
+  expect((await restore(ADMIN, again.id))[0]).toBe(200);
+  expect(Number((await row()).deleted)).toBe(0);
+});
+
+test("the older schema of the Trash is brought up to date: the holder column, and a one-open-record index that includes it", async () => {
+  const ws = workspace(`bt-l-${run}`);
+  const tenant = await import("../../lib/tenant"), database = await import("../../lib/db");
+  await tenant.runInTenant(ws, async () => { await database.ready(); }, { user: user("u_owner") });
+  /* A database that holds the first shape: no holder, and the index that let one person pre-empt another. */
+  const { createClient } = await import("@libsql/client");
+  const file = createClient({ url: ws.dbUrl });
+  await file.batch(["DROP INDEX IF EXISTS idx_board_trash_open_v2", "DROP TABLE board_trash",
+    "CREATE TABLE board_trash (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, item_id TEXT NOT NULL, label TEXT NOT NULL DEFAULT '', payload TEXT, removed_by TEXT NOT NULL, removed_at INTEGER NOT NULL, restored_by TEXT, restored_at INTEGER)",
+    "CREATE UNIQUE INDEX idx_board_trash_open ON board_trash(project_id, kind, item_id) WHERE restored_at IS NULL"], "write");
+  file.close();
+  /* The next start (a new client for the same file) migrates it. */
+  const ws2 = { ...ws, id: `${ws.id}-again` } as TenantWorkspace;
+  await tenant.runInTenant(ws2, async () => { await database.ready(); }, { user: user("u_owner") });
+  const check = createClient({ url: ws.dbUrl });
+  const cols = (await check.execute("PRAGMA table_info(board_trash)")).rows.map((r) => String(r.name));
+  const indexes = (await check.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='board_trash'")).rows.map((r) => String(r.name));
+  check.close();
+  expect(cols).toContain("holder");
+  expect(indexes).toContain("idx_board_trash_open_v2");
+  expect(indexes).not.toContain("idx_board_trash_open");
 });
