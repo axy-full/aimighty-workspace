@@ -277,7 +277,9 @@ test("the sample's owner (the person it was marked from) and the platform owner 
   const ws = workspace(`sro-d-${run}`);
   const { tenant, database, sample, newProject } = await fixture(ws);
   /* The platform owner is named by the deployment (isPlatformOwner, lib/auth.ts): the configured address. */
+  const previous = process.env.SUPER_ADMIN_EMAIL;
   process.env.SUPER_ADMIN_EMAIL = "u_platform@example.test";
+  try {
   let who = user("u_mate");
   const R = <T,>(file: string) => loadRoute<T>(file, () => who);
   const canvas = R<typeof import("../../app/api/workbench/team-canvas/route")>("app/api/workbench/team-canvas/route.ts");
@@ -337,5 +339,9 @@ test("the sample's owner (the person it was marked from) and the platform owner 
       expect(made.status, `${label}: a shot`).toBe(403);
     }, { user: user(id, role) });
   }
-  delete process.env.SUPER_ADMIN_EMAIL;
+  } finally {
+    /* The next spec in this worker must not inherit a platform owner. */
+    if (previous === undefined) delete process.env.SUPER_ADMIN_EMAIL;
+    else process.env.SUPER_ADMIN_EMAIL = previous;
+  }
 });
