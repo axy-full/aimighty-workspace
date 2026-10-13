@@ -332,6 +332,7 @@ const SCHEMA = [
      holder      TEXT NOT NULL DEFAULT ''
    )`,
   `CREATE INDEX IF NOT EXISTS idx_board_trash_project ON board_trash(project_id, removed_at)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_board_trash_open_v2 ON board_trash(project_id, kind, item_id, holder) WHERE restored_at IS NULL`,
   /* Atomik's words. An IDEA is a card: a logline, a tone, a few references,
      pinned by whoever thinks it is worth a brief. A TREATMENT is one document
      per production: scenes with prose, the setup defaults and the margin
@@ -893,7 +894,15 @@ async function addIndex(c: Client, stmt: string): Promise<void> {
  * rather than inheriting a rejected promise for the life of the container.
  */
 async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
-      await c.batch(SCHEMA, "write");
+      try {
+        await c.batch(SCHEMA, "write");
+      } catch (error) {
+        /* The Trash's earlier shape (lib/boardTrash.ts): a table with no `holder`, and an index that would let one person's record pre-empt another's. Nothing shipped
+           it; this repairs a database that ran it, and costs nothing on any other (it is only reached when the table has no `holder`). The failed batch rolled back whole. */
+        if (!/no such column: holder/i.test(String((error as Error).message ?? error))) throw error;
+        await c.batch(["ALTER TABLE board_trash ADD COLUMN holder TEXT NOT NULL DEFAULT ''", "DROP INDEX IF EXISTS idx_board_trash_open"], "write");
+        await c.batch(SCHEMA, "write");
+      }
       const addColumn = await columnInstaller(c);
       /* Bindings: drop the old one-row-per-slot constraint.
  
@@ -933,12 +942,6 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
 
       // Lightweight migrations for columns added after first deploy.
       await addColumn("generations", `deleted INTEGER NOT NULL DEFAULT 0`);
-      /* The Trash (lib/boardTrash.ts): `holder` and the one-open-record index that includes it. A database that has an earlier shape of the table (no `holder`, an index
-         without it, which would let one person's record pre-empt another's) gets the column, loses the old index and gets the new one under a new name. Nothing shipped
-         the earlier shape; this is here for the databases that ran it. */
-      await addColumn("board_trash", `holder TEXT NOT NULL DEFAULT ''`);
-      await c.execute(`DROP INDEX IF EXISTS idx_board_trash_open`);
-      await addIndex(c, `CREATE UNIQUE INDEX IF NOT EXISTS idx_board_trash_open_v2 ON board_trash(project_id, kind, item_id, holder) WHERE restored_at IS NULL`);
       await addColumn("uploads", `kind TEXT NOT NULL DEFAULT 'image'`);
       await addColumn("uploads", `duration_s REAL`);
       /* Who uploaded it (lib/uploadAccess.ts): a member opens an upload only if they uploaded it or shared work uses it. Rows from before this column are

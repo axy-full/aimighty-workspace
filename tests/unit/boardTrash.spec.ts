@@ -426,6 +426,14 @@ test("an unfiled take removed by a person is in the workspace's Trash: its bytes
   const again = (await items(ADMIN))[0];
   expect((await restore(ADMIN, again.id))[0]).toBe(200);
   expect(Number((await row()).deleted)).toBe(0);
+  /* An admin removes a member's unfiled take: the take's maker sees it and can put it back too; another member still cannot. */
+  expect(await patch(ADMIN, take, { trashed: true })).toBe(200);
+  const adminsEntry = (await items(MATE))[0];
+  expect(adminsEntry.itemId).toBe(take);
+  expect(await items(OWNER)).toEqual([]);
+  expect((await restore(OWNER, adminsEntry.id))[0]).toBe(404);
+  expect((await restore(MATE, adminsEntry.id))[0]).toBe(200);
+  expect(Number((await row()).deleted)).toBe(0);
 });
 
 test("the older schema of the Trash is brought up to date: the holder column, and a one-open-record index that includes it", async () => {
