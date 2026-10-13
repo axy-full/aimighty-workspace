@@ -61,7 +61,9 @@ export const GET = withTenant(async function GET(req: Request) {
   if (view === "tray")
     return NextResponse.json(await trayJobs(got.user.id), { headers: { "Cache-Control": "private, no-store" } });
 
+  /* A private board's takes (lib/draftProject.ts) are its owner's, and the workspace's admins'; a shared board's and the sample's are for looking at. Left out of the list itself, so a page, its cursor and what it holds are this person's. A token acts as its person. */
   const rows = await listGenerations({
+    viewer: got.user,
     projectId: projectId && projectId !== "all" ? projectId : undefined,
     createdBy: url.searchParams.get("mine") === "1" ? got.user.id : undefined,
     ...filter,

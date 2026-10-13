@@ -150,3 +150,57 @@ export async function productionReachable(person: { id: string } | null, product
   for (const row of rows) if (await mayReachProject(person, String(row.id), "read", ex)) return true;
   return false;
 }
+
+/* ── The takes of a private board ─────────────────────────────────────────────────────────────────────────────────── */
+
+/** Whoever is asking: the signed-in person (a token acts as its person), or nobody (background work, which is not asked). */
+export type Viewer = { id: string; role?: string } | null;
+
+/**
+ * Who may see the TAKES filed under a private board (a `prj_wb_…` project, lib/draftProject.ts). Owner decision: the board's owner always, a teammate
+ * only once it is shared (to look at) or if it is the marked sample, and a workspace admin (the owner included) of the SAME workspace, whose queries
+ * these are, for the work belongs to the workspace. Another workspace's people never reach these queries at all.
+ *
+ * This is the one place that rule is written for takes. The wider change, where admins read and write every board in their workspace
+ * (`mayReachProject`), replaces `seesEveryBoard` here and nothing else.
+ */
+export const seesEveryBoard = (viewer: Viewer): boolean => viewer?.role === "admin";
+
+/** Whether `viewer` may see a take filed under `projectId`: one read for a private board, none for anything else. */
+export async function mayReadTake(viewer: Viewer, projectId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
+  if (!viewer || seesEveryBoard(viewer) || !isDraftProject(projectId)) return true;
+  return mayReachProject(viewer, projectId, "read", ex);
+}
+
+/**
+ * The private boards' project ids that hold takes AND that `viewer` may see, or null when nothing needs hiding (an admin, nobody, or no take is filed
+ * under a private board). A list of takes keeps those takes of ordinary projects and of unfiled work, and of these boards only: counts, pages and
+ * cursors are then the viewer's own, because the rows are left out in the query, not after it.
+ */
+export async function visibleBoardsOfTakes(viewer: Viewer, ex: Exec = db()): Promise<string[] | null> {
+  if (!viewer || seesEveryBoard(viewer)) return null;
+  const held = (await ex.execute({ sql: "SELECT DISTINCT project_id FROM generations WHERE project_id GLOB 'prj_wb_*'", args: [] })).rows.map((row) => String(row.project_id));
+  if (!held.length) return null;
+  const listed = await projectLister(viewer, ex);
+  return held.filter((id) => listed(id));
+}
+
+/** The SQL a list of takes adds: unfiled or ordinary takes, or those of a private board the viewer may see. Arguments follow the clause. */
+export function visibleTakesClause(visible: string[]): { sql: string; args: unknown[] } {
+  return {
+    sql: "(g.project_id IS NULL OR g.project_id NOT GLOB 'prj_wb_*' OR g.project_id IN (SELECT value FROM json_each(?)))",
+    args: [JSON.stringify(visible)],
+  };
+}
+
+/** Which of the projects `viewer` may see the takes of, as a lookup: everything for an admin or for nobody (background work), else `projectLister`'s (their own boards, shared ones, the sample, ordinary productions). */
+export async function takeLister(viewer: Viewer, ex: Exec = db()): Promise<(projectId: string | null | undefined) => boolean> {
+  if (!viewer || seesEveryBoard(viewer)) return () => true;
+  return projectLister(viewer, ex);
+}
+
+/** `projectId` when `viewer` may READ that project (its owner, an admin of the workspace, anyone for a shared board or the sample), else null, no project: what a route that feeds a project's takes, titles or prompts to a model runs on, so nothing of a private board is read and no record (a meter line, a reservation, a memory) is ever written against it or against a placeholder id. */
+export async function readableProjectOr(viewer: Viewer, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
+  if (projectId == null) return null;
+  return seesEveryBoard(viewer) || (await mayReachProject(viewer, projectId, "read", ex)) ? projectId : null;
+}

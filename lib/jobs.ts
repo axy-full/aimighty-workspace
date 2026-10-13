@@ -8,6 +8,7 @@ import { reconcileGenjutsuVideo } from "./genjutsuVideo";
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
 import { db, ready, now } from "./db";
+import { currentPerson, visibleBoardsOfTakes, visibleTakesClause, type Viewer } from "./draftProject";
 import { PROVIDER_VIDEO_TIMEOUT_MS, REQUEST_PATH_QUEUE_WAIT_MS, storeVideo, type StoreVideoOptions } from "./storage";
 import { R2_ABORT_TIMEOUT_MS } from "./storage/r2";
 import { HEARTBEAT_MAX_DURATION_MS, RECONCILIATION_BUDGET_MS } from "./reconciliation";
@@ -306,11 +307,17 @@ export async function listGenerations(opts: {
   includeNext?: boolean;
   /** Only takes filed against no project — Make's wall and the Library's Unfiled lens (§10, §11). */
   unfiled?: boolean;
+  /** Whose view this is. Takes filed under a private board that this person may not see are left out (lib/draftProject.ts); omitted, the signed-in person of this request, and `null` is nobody (background work). */
+  viewer?: Viewer;
 } = {}): Promise<Generation[]> {
   await ready();
   await syncCreditReceipts();
   const where: string[] = [];
   const args: any[] = [];
+
+  /* A private board's takes are left out in the query, so pages, cursors and counts never hold a take the viewer may not see. */
+  const visible = await visibleBoardsOfTakes(opts.viewer === undefined ? currentPerson() : opts.viewer);
+  if (visible) { const clause = visibleTakesClause(visible); where.push(clause.sql); args.push(...clause.args); }
 
   if (opts.projectLibrary) {
     where.push(`(g.project_id = ? OR g.id IN (SELECT value FROM json_each(?))

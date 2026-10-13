@@ -13,7 +13,7 @@ import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { discardHeldJob } from "@/lib/held";
 import { withLedgerCharges } from "@/lib/usageLedger";
-import { NO_SUCH_PROJECT, mayReachProject } from "@/lib/draftProject";
+import { NO_SUCH_PROJECT, mayReachProject, mayReadTake } from "@/lib/draftProject";
 import { NOT_YOURS, mayChangeProject, mayChangeWork } from "@/lib/workAccess";
 import type { Transaction } from "@libsql/client";
 
@@ -78,7 +78,8 @@ export const GET = withTenant(async function GET(req: Request, { params }: Ctx) 
   if (problem) return NextResponse.json({ error: problem }, { status: 409 });
   const { id } = await params;
   const gen = await getGeneration(id);
-  if (!gen) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  /* A take of a private board this person may not see is as absent as an unknown id (lib/draftProject.ts): the same 404, the same words, after the same read. */
+  if (!gen || !(await mayReadTake(got.user, gen.projectId))) return NextResponse.json({ error: "Not found" }, { status: 404 });
   // Drag resolution only needs persisted metadata. It must not poll a provider,
   // copy a master or advance accounting merely because someone selected a take.
   const synced = new URL(req.url).searchParams.get("sync") === "0"

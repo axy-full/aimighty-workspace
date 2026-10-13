@@ -4,6 +4,7 @@ import {
 } from "@/lib/storage";
 import { originalMediaOf } from "@/lib/originalMedia";
 import { getGeneration } from "@/lib/jobs";
+import { mayReadTake } from "@/lib/draftProject";
 import { downloadFilename } from "@/lib/downloadName";
 import { requireUser, withTenant } from "@/lib/auth";
 import { attachmentDisposition } from "@/lib/contentDisposition";
@@ -37,7 +38,8 @@ export const GET = withTenant(async function GET(req: Request, { params }: Ctx) 
   const { id } = await params;
 
   const gen = await getGeneration(id).catch(() => null);
-  if (!gen || gen.status !== "succeeded") return new Response("Not found", { status: 404 });
+  /* A take of a private board this person may not see is as absent as an unknown id (lib/draftProject.ts). */
+  if (!gen || gen.status !== "succeeded" || !(await mayReadTake(got.user, gen.projectId))) return new Response("Not found", { status: 404 });
   /* A starter production's demo take (lib/starter.ts) has no original in this workspace's storage: its picture
      is the platform's neutral preview or the shipped fixture clip, both on this origin. Send the viewer there. */
   if (isDemoMediaUrl(gen.storedUrl)) {
