@@ -7,17 +7,20 @@ export type RealRendererOptions = {
   frameTimeoutMs?: number;
   /** Cache for video frames, bytes. */
   offthreadVideoCacheSizeInBytes?: number;
+  /** Loads the renderer module; only tests substitute it. */
+  loadModule?: () => Promise<unknown>;
 };
 
 /**
  * @remotion/renderer, loaded lazily so the tests (and the app) never need it installed.
- * No licenseKey is passed: the Free License needs none, and passing "free-license" would make
- * the renderer call remotion.pro, which the worker cannot reach and must not try to.
+ * NO licenseKey and NO apiKey is ever passed (owner decision, 14 Oct 2026): server-side with no key the
+ * renderer sends nothing to Remotion, which is allowed under the Free License. The worker stays sealed (no
+ * internet). tests/unit/remotionLicense.spec.ts fails if a key or a usage call appears here.
  */
 export function createRealRenderer(options: RealRendererOptions = {}): Renderer {
   const moduleName = "@remotion/renderer";
   let mod: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any
-  const load = async () => (mod ??= await import(/* @vite-ignore */ moduleName));
+  const load = async () => (mod ??= await (options.loadModule ? options.loadModule() : import(/* @vite-ignore */ moduleName)));
   const common = () => ({
     browserExecutable: options.browserExecutable ?? undefined,
     chromeMode: "headless-shell" as const,
