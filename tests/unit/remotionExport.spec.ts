@@ -203,7 +203,7 @@ test.describe("declared values are checked against the files", () => {
       [{ durationSeconds: 10.2 }, "is 10.20 s"],
       [{ width: 1280, height: 720 }, "is 1280x720, the request says 1920x1080"],
       [{ width: 1921 }, "is 1921x1080"],
-      [{ hasAudio: false }, "has no audio, the request says it has"],
+
       [{ hasVideo: false }, "has no picture"],
       ["unreadable", "could not be read as media"],
     ];
@@ -215,6 +215,16 @@ test.describe("declared values are checked against the files", () => {
       expect(result.errors.join(" ")).toContain(reason);
       expect(calls).toEqual([]);
     }
+  });
+
+  test("sound: a file with none is refused when the request says it has some; a file with sound the request does not use is muted, not refused", async () => {
+    const { result } = await run({ "clips/a.mp4": { hasAudio: false } });
+    expect(result).toMatchObject({ ok: false, code: "input_mismatch" });
+    if (!result.ok) expect(result.errors.join(" ")).toContain("has no audio, the request says it has");
+    const spec = finalSpec();
+    ((spec.props as { clips: { source: { hasAudio?: boolean } }[] }).clips[0].source).hasAudio = false;
+    const muted = await runExport(args(spec, fakeRenderer().renderer, { prober: fakeProber({ "clips/a.mp4": { hasAudio: true } }).prober }));
+    expect(muted.ok).toBe(true);
   });
 
   test("within 0.1 s is accepted", async () => {

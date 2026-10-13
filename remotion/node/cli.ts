@@ -14,7 +14,7 @@
  *                                and the working directory here is the session folder, so the command moves to this
  *                                folder once it has read its session paths (all of them are absolute).
  * Exit codes: 0 done, 2 spec invalid or too long, 3 an input file is missing or is not what the spec says it is
- * (ffprobe reads every clip and music file; a different length (over 0.1 s), size or audio is refused), 4 the render failed.
+ * (ffprobe reads every clip and music file; a different length (over 0.1 s), a different size, or sound the request says is there but is not, is refused), 4 the render failed.
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";

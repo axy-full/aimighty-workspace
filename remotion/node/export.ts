@@ -100,7 +100,9 @@ export async function contradictions(declared: Declared[], inputDir: string, pro
     if (d.kind === "video") {
       if (!facts.hasVideo) reasons.push(`input/${d.file}: has no picture`);
       else if (facts.width !== d.width || facts.height !== d.height) reasons.push(`input/${d.file}: is ${facts.width}x${facts.height}, the request says ${d.width}x${d.height}`);
-      if (d.hasAudio !== undefined && facts.hasAudio !== d.hasAudio) reasons.push(`input/${d.file}: ${facts.hasAudio ? "has" : "has no"} audio, the request says ${d.hasAudio ? "it has" : "it has none"}`);
+      // Asking for the sound of a file that has none is a contradiction. Not using the sound of a file that has some is
+      // the request's own choice (it is how a clip is muted), so that is not refused.
+      if (d.hasAudio === true && !facts.hasAudio) reasons.push(`input/${d.file}: has no audio, the request says it has`);
     } else if (!facts.hasAudio) reasons.push(`input/${d.file}: has no audio`);
     if (Math.abs(facts.durationSeconds - d.durationSeconds) > DURATION_TOLERANCE_SECONDS) {
       reasons.push(`input/${d.file}: is ${facts.durationSeconds.toFixed(2)} s, the request says ${d.durationSeconds} s`);
