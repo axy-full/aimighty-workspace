@@ -129,13 +129,14 @@ export function MenuHost({ children }: { children: ReactNode }) {
   if (target?.kind === "card") {
     kind = "card";
     const file = cardFile(target.node);
-    const free = target.node.dataset.free === "true" || target.node.dataset.cardKind === "take";
+    /* Remove: any card that can be removed (lib/board/remove.ts), not only free cards and shots. */
+    const removable = target.node.dataset.removable === "true";
     label = file?.name ?? "Card";
     can.add("open");
     if (file) can.add("download");
     if (file && (file.kind === "image" || file.kind === "video")) can.add("use-as-reference");
     if (approveButton(target.node, true)) can.add("approve");
-    if (free) can.add("delete");
+    if (removable) can.add("delete");
     run = (id) => {
       switch (id) {
         case "open": board({ name: "select", card: target.id }); return;
@@ -154,7 +155,7 @@ export function MenuHost({ children }: { children: ReactNode }) {
     kind = "multi";
     label = `${target.ids.length} cards`;
     if (target.ids.some((id) => approveButton(nodeOf(id), false))) can.add("approve-all");
-    if (target.ids.some((id) => { const n = nodeOf(id); return n?.dataset.free === "true" || n?.dataset.cardKind === "take"; })) can.add("delete-all");
+    if (target.ids.some((id) => nodeOf(id)?.dataset.removable === "true")) can.add("delete-all");
     run = (id) => { if (id === "approve-all") approve(target.ids); else if (id === "delete-all") board({ name: "remove" }); };
   } else if (target?.kind === "canvas") {
     kind = "canvas";

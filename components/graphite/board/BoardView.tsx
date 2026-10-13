@@ -477,6 +477,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     removeFrom([...selection.ids].map((id) => placed.byId.get(id)).filter((card): card is BoardCard => Boolean(card)));
   }, [placed.byId, removeFrom, selection.ids]);
   /* The Rig removes by node: a shot or an input, planned like any card. */
+  const [rigPicked, setRigPicked] = useState<string[]>([]);
   const removeNodes = useCallback((nodeIds: readonly string[]) => {
     const current = rig.project;
     if (!current) return;
@@ -790,6 +791,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     ...(v12Frame && blocking ? [{ id: "blocking", label: "3D blocking", onSelect: () => openBlocking(blocking) }] : []),
     { id: "fit", label: "Fit to view", shortcut: "0", onSelect: () => void flow.fitView({ padding: 0.08, duration: GLIDE_MS, ease: glideEase }) },
     ...(freeCards.length && !offline ? [{ id: "tidy", label: "Tidy", onSelect: () => void tidy() }] : []),
+    /* Remove (owner, 13 Oct): what is selected on the canvas or in the Rig, into the Trash, with Undo. Shown when something is selected. */
+    ...(v12Frame && !viewing && !offline && (rigOn ? rigPicked.length : selection.ids.size) ? [{ id: "remove", label: "Remove", shortcut: "⌫", tone: "danger" as const, testId: "v12-menu-remove", onSelect: () => (rigOn ? removeNodes(rigPicked) : remove()) }] : []),
     /* Author only: a teammate's board is view-only and a sample is nobody's to share. */
     ...(v12Frame && !viewing && !offline && !gate.exploreOnly ? [{ id: "share-team", label: teamShared ? SHARE_TEAM.stop : SHARE_TEAM.share, tip: SHARE_TEAM.tip, testId: "v12-menu-share-team", onSelect: toggleShare }] : []),
   ];
@@ -832,7 +835,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             </div>
           ) : null}
           {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}
-          {rigOn ? <RigView model={rigModelNow!} project={project} scope={scope} userId={userId ?? null} apply={rig.apply} readOnly={offline || Boolean(gate.readOnly)}
+          {rigOn ? <RigView model={rigModelNow!} project={project} scope={scope} userId={userId ?? null} apply={rig.apply} readOnly={offline || Boolean(gate.readOnly)} onSelect={setRigPicked} onRemove={removeNodes}
             onStage={(id) => { setRigView(false); goStage(id); }} onAsk={(words) => { setDockOpen(true); window.setTimeout(() => ctx.askAtomik(words), 80); }} /> : null}
           {v12Frame && !list && !empty ? (
             <BoardBar ctx={ctx} selection={crumb} onClearSelection={() => pick(new Set(), null)} tool={tool} onDisarm={() => setTool("select")}

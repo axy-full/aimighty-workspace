@@ -59,14 +59,14 @@ const CARD: readonly MenuEntry[] = [
   sep("s4"),
   item("approve", "Approve", { key: keyOf("approve") }),
   sep("s5"),
-  item("delete", "Delete", { key: keyOf("delete"), danger: true }),
+  item("delete", "Remove", { key: keyOf("delete"), danger: true }),
 ];
 
-/** Card, multi: the prototype's "Approve all A" and "Delete ⌫" (the rest is in NOT_BUILT). */
+/** Card, multi: the prototype's "Approve all A" and "Remove ⌫" (the rest is in NOT_BUILT). */
 const MULTI: readonly MenuEntry[] = [
   item("approve-all", "Approve all", { key: keyOf("approve") }),
   sep("s1"),
-  item("delete-all", "Delete", { key: keyOf("delete"), danger: true }),
+  item("delete-all", "Remove", { key: keyOf("delete"), danger: true }),
 ];
 
 /** New ▸ on the canvas: the board's own tools (prototype right toolbar), each with its key. */

@@ -54,7 +54,7 @@ export function removeShots(project: Project, ids: string[]): { project: Project
   const targets = project.nodes.filter((n) => ids.includes(n.id));
   if (!targets.length) throw new RigBuildError("That shot is no longer in the Rig.");
   const locked = targets.find((n) => n.locked);
-  if (locked) throw new RigBuildError(`Unlock ${locked.title || "this shot"} before deleting it.`);
+  if (locked) throw new RigBuildError(`Unlock ${locked.title || "this shot"} before removing it.`);
   const gone = new Set(targets.map((n) => n.id));
   /* Inputs made for these shots and used by nothing else leave with them. */
   for (const shot of targets) for (const inputId of shot.linked) {
